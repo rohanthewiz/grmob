@@ -8,7 +8,7 @@
 
 ## Goal
 
-Gap 5's long tail from `ai_docs/plans/govinci-mobile-feasibility-analysis.md`:
+Gap 5's long tail from `ai_docs/plans/grmob-mobile-feasibility-analysis.md`:
 list virtualization, gestures, and accessibility on the Compose/SwiftUI
 renderers (images were already covered by both).
 
@@ -60,19 +60,19 @@ TalkBack descriptions, and real LazyColumn virtualization + recycling.
 - `"List"` → `ScrollView { LazyVStack }` (deliberately NOT SwiftUI `List`,
   which drags in UITableView chrome). Same Fragment flattening; row identity
   is the existing `viewID` (key else object identity).
-- Gestures live in `govinciBox(onTap:onLongPress:)` at the same box layer as
-  Android, via a `GovinciGestures` ViewModifier: `contentShape(Rectangle())`
+- Gestures live in `grMobBox(onTap:onLongPress:)` at the same box layer as
+  Android, via a `GrMobGestures` ViewModifier: `contentShape(Rectangle())`
   + tap/long-press gestures + VoiceOver activate action and a named
   "Long press" action. **Harness constraint solved**: `ios/verify` compiles
-  GovinciStyle/Node/TreeStore *without* Renderer.swift or the runtime, so
+  GrMobStyle/Node/TreeStore *without* Renderer.swift or the runtime, so
   the modifier dispatches through a new runtime-free environment closure
-  (`govinciDispatch: (String) -> Void`) that GovinciRoot fills from the live
-  runtime — an EnvironmentKey referencing GovinciRuntime would have broken
+  (`grMobDispatch: (String) -> Void`) that GrMobRoot fills from the live
+  runtime — an EnvironmentKey referencing GrMobRuntime would have broken
   the harness build.
-- A11y in `govinciBox`: hidden wins; a non-empty label applies
+- A11y in `grMobBox`: hidden wins; a non-empty label applies
   `accessibilityElement(children: .combine)` + label + hint — one swipe stop
   per labeled row. Image `alt` fallback only applies when no style label is
-  set (`govinciAltLabel`; the old unconditional modifier would override with
+  set (`grMobAltLabel`; the old unconditional modifier would override with
   an empty string).
 
 ### Demo app + transcripts
@@ -84,7 +84,7 @@ TalkBack descriptions, and real LazyColumn virtualization + recycling.
   `TestFeedTabListGestures` (restores tab 0 so test order stays irrelevant).
 - `ios/verify/gen.go`: transcript now switches to Feed and drives a row's
   onClick and onLongPress (9 patch batches, up from 6).
-- `ios/GovinciUITests`: new `testFeedListGesturesAndVirtualization` — rows
+- `ios/GrMobUITests`: new `testFeedListGesturesAndVirtualization` — rows
   addressed BY accessibility label + button trait (lookup itself proves the
   a11y wiring), virtualization probed via `isHittable`, long-press via
   `press(forDuration:)`, then scroll until row 30 is hittable.

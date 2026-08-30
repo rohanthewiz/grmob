@@ -1,8 +1,8 @@
 package main
 
 import (
-	. "github.com/GraHms/govinci/core"
-	"github.com/GraHms/govinci/htmlout"
+	. "github.com/rohanthewiz/grmob/core"
+	"github.com/rohanthewiz/grmob/htmlout"
 	"os"
 )
 
@@ -24,7 +24,7 @@ func SocialApp() View {
 					Spacer(12),
 					FeedPost("https://picsum.photos/401", "code_africa", "Sunset in Maputo ❤️"),
 					Spacer(12),
-					FeedPost("https://picsum.photos/402", "golang.club", "Govinci v0.1 released 🎉"),
+					FeedPost("https://picsum.photos/402", "golang.club", "GrMob v0.1 released 🎉"),
 				),
 				BottomNav(),
 			),
@@ -36,7 +36,7 @@ func TopBar() View {
 	return Row(
 		BackgroundColor("#FFFFFF"),
 		Padding(16),
-		Text("GovinciGram", FontSize(20), FontWeight(Bold), TextColor("#000")),
+		Text("GrMobGram", FontSize(20), FontWeight(Bold), TextColor("#000")),
 	)
 }
 

@@ -1,4 +1,4 @@
-package com.govinci.runtime
+package com.grmob.runtime
 
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.CubicBezierEasing
@@ -35,7 +35,7 @@ import org.json.JSONObject
  * half-implemented. Transition IS mapped: Go declares it, Compose drives
  * the frames (see transitionMs/transitionEasing and boxModifier below).
  */
-data class GovinciStyle(
+data class GrMobStyle(
     val fontSize: Float,
     val fontWeight: Int,
     val textColor: Color?,
@@ -68,9 +68,9 @@ data class GovinciStyle(
     fun <T> transitionTween() = tween<T>(transitionMs, easing = transitionEasing)
 
     companion object {
-        fun parse(obj: JSONObject?): GovinciStyle? {
+        fun parse(obj: JSONObject?): GrMobStyle? {
             if (obj == null) return null
-            return GovinciStyle(
+            return GrMobStyle(
                 fontSize = obj.optDouble("FontSize", 0.0).toFloat(),
                 fontWeight = obj.optInt("FontWeight", 0),
                 textColor = parseColor(obj.optString("TextColor")),
@@ -205,7 +205,7 @@ data class GovinciStyle(
  * padding, making the whole visible box — padding included, margin excluded —
  * the touch target, with the ripple clipped to the node's shape.
  */
-fun GovinciStyle?.boxModifier(extra: Modifier = Modifier, gestures: Modifier = Modifier): Modifier {
+fun GrMobStyle?.boxModifier(extra: Modifier = Modifier, gestures: Modifier = Modifier): Modifier {
     var m: Modifier = extra
     if (this == null) return m.then(gestures)
 
@@ -260,7 +260,7 @@ fun GovinciStyle?.boxModifier(extra: Modifier = Modifier, gestures: Modifier = M
     return m
 }
 
-private val Edges0 = GovinciStyle.Edges(0, 0, 0, 0)
+private val Edges0 = GrMobStyle.Edges(0, 0, 0, 0)
 
 /**
  * Maps a Go dimension string onto a size modifier. Supported forms: "120px"

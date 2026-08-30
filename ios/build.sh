@@ -1,5 +1,5 @@
 #!/bin/sh
-# Build the Govinci xcframework with gomobile.
+# Build the GrMob xcframework with gomobile.
 #
 # Binds the `mobile` bridge package (the Swift runtime's call surface) plus
 # an app package, whose init() registers the root view with the bridge.
@@ -33,8 +33,8 @@ mkdir -p ios/Frameworks
 APP_PKG="${1:-./examples/mobileapp}"
 
 # Both slices so the same framework serves the simulator and real devices.
-# The framework module is named from -o (Govinci); symbols inside carry
+# The framework module is named from -o (GrMob); symbols inside carry
 # per-package prefixes (Mobile*, plus one per bound app package).
 gomobile bind -target=ios,iossimulator \
-  -o ios/Frameworks/Govinci.xcframework \
+  -o ios/Frameworks/GrMob.xcframework \
   ./mobile "$APP_PKG"

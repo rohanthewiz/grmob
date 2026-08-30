@@ -4,8 +4,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/GraHms/govinci/core"
-	"github.com/GraHms/govinci/hooks"
+	"github.com/rohanthewiz/grmob/core"
+	"github.com/rohanthewiz/grmob/hooks"
 )
 
 // awaitSignal waits for one value on ch or fails the test. The generous

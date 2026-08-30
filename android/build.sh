@@ -1,5 +1,5 @@
 #!/bin/sh
-# Build the Govinci AAR with gomobile.
+# Build the GrMob AAR with gomobile.
 #
 # Binds the `mobile` bridge package (the Kotlin runtime's call surface) plus
 # an app package, whose init() registers the root view with the bridge.
@@ -31,5 +31,5 @@ mkdir -p android/app/libs
 APP_PKG="${1:-./examples/mobileapp}"
 
 gomobile bind -target=android -androidapi 24 \
-  -o android/app/libs/govinci.aar \
+  -o android/app/libs/grmob.aar \
   ./mobile "$APP_PKG"

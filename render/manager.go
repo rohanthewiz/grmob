@@ -4,8 +4,8 @@ import (
 	"encoding/json"
 	"sync"
 
-	"github.com/GraHms/govinci/core"
-	"github.com/GraHms/govinci/reconcile"
+	"github.com/rohanthewiz/grmob/core"
+	"github.com/rohanthewiz/grmob/reconcile"
 )
 
 // PatchListener is the Go→native push channel: the native shell implements it

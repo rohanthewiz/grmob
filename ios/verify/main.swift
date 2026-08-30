@@ -1,6 +1,6 @@
 // Data-layer conformance harness (see run.sh). Reads the transcript gen.go
-// produced, replays it through the real runtime files — GovinciNode parsing,
-// GovinciStyle decoding, TreeStore patch application — and deep-compares the
+// produced, replays it through the real runtime files — GrMobNode parsing,
+// GrMobStyle decoding, TreeStore patch application — and deep-compares the
 // resulting tree against the Go side's final full render. Runs as a plain
 // macOS executable: the data layer is UI-free, so no Xcode or simulator is
 // needed to prove the Swift store agrees with the Go reconciler.
@@ -15,7 +15,7 @@ struct Transcript: Decodable {
 /// Structural equality, reported as per-path differences so a failure names
 /// the exact node that diverged instead of dumping two whole trees.
 @MainActor
-func diff(_ got: GovinciNode?, _ want: GovinciNode?, path: String, into problems: inout [String]) {
+func diff(_ got: GrMobNode?, _ want: GrMobNode?, path: String, into problems: inout [String]) {
     guard let got, let want else {
         if (got == nil) != (want == nil) {
             problems.append("\(path): one side is missing (got \(got == nil ? "nil" : "node"), want \(want == nil ? "nil" : "node"))")
@@ -67,7 +67,7 @@ func run() -> Int32 {
         print("FAIL: final tree is not valid JSON")
         return 1
     }
-    let want = GovinciNode.parse(finalObj)
+    let want = GrMobNode.parse(finalObj)
 
     var problems: [String] = []
     diff(store.root, want, path: "root", into: &problems)

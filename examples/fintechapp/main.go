@@ -1,8 +1,8 @@
 package main
 
 import (
-	"github.com/GraHms/govinci/core"
-	"github.com/GraHms/govinci/htmlout"
+	"github.com/rohanthewiz/grmob/core"
+	"github.com/rohanthewiz/grmob/htmlout"
 	"os"
 )
 
@@ -10,8 +10,8 @@ func main() {
 	ctx := core.NewContext().With(
 		core.WithThemeOpt(MaterialTheme()),
 		core.WithConfigOpt(&core.AppConfig{
-			Name:        "Govinci Material Wallet",
-			Description: "A Material Design wallet interface built with Govinci",
+			Name:        "GrMob Material Wallet",
+			Description: "A Material Design wallet interface built with GrMob",
 			Version:     "1.0",
 		}),
 	)
@@ -42,7 +42,7 @@ func HeaderSection(ctx *core.Context) core.View {
 	return core.Column(
 		core.Image("https://dummyimage.com/60x60/6200EE/ffffff&text=G"),
 		core.Spacer(12),
-		core.Text("Govinci Wallet", core.FontSize(t.Typography.Title.FontSize), core.FontWeight(t.Typography.Title.FontWeight), core.TextColor(t.Colors.TextPrimary)),
+		core.Text("GrMob Wallet", core.FontSize(t.Typography.Title.FontSize), core.FontWeight(t.Typography.Title.FontWeight), core.TextColor(t.Colors.TextPrimary)),
 		core.Spacer(4),
 		core.Text("Welcome back, Ismael", core.FontSize(15), core.TextColor(t.Colors.TextSecondary)),
 	)

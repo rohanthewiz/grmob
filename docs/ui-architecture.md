@@ -1,4 +1,4 @@
-# **Styling Architecture and Theme System for Govinci**
+# **Styling Architecture and Theme System for GrMob**
 
 **Ismael GraHms**  
 *April 2025*

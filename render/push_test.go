@@ -8,9 +8,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/GraHms/govinci/core"
-	"github.com/GraHms/govinci/hooks"
-	"github.com/GraHms/govinci/render"
+	"github.com/rohanthewiz/grmob/core"
+	"github.com/rohanthewiz/grmob/hooks"
+	"github.com/rohanthewiz/grmob/render"
 )
 
 // chanListener adapts the PatchListener push into a channel so tests can wait

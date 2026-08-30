@@ -3,7 +3,7 @@ package reconcile
 import (
 	"testing"
 
-	"github.com/GraHms/govinci/core"
+	"github.com/rohanthewiz/grmob/core"
 )
 
 // node is a test helper that builds a Node the same way core's view builders

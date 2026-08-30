@@ -24,8 +24,8 @@
 package mobile
 
 import (
-	"github.com/GraHms/govinci/core"
-	"github.com/GraHms/govinci/render"
+	"github.com/rohanthewiz/grmob/core"
+	"github.com/rohanthewiz/grmob/render"
 )
 
 // PatchListener is re-declared here (rather than aliased to

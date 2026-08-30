@@ -8,7 +8,7 @@
 
 ## Goal
 
-Step 4 of the attack order in `ai_docs/plans/govinci-mobile-feasibility-analysis.md`:
+Step 4 of the attack order in `ai_docs/plans/grmob-mobile-feasibility-analysis.md`:
 replace the View-based `PatchRenderer.kt` with a Jetpack Compose renderer. Full design
 rationale lives in `ai_docs/plans/compose-renderer-design.md` (written this session).
 
@@ -30,17 +30,17 @@ Handler, which *is* the arrival-order contract.
 
 ## New files
 
-- `android/app/src/main/java/com/govinci/runtime/` — app-agnostic runtime:
-  - `GovinciNode.kt` — snapshot-state node tree + JSON parsing (Go-cap keys: `Type`,
+- `android/app/src/main/java/com/grmob/runtime/` — app-agnostic runtime:
+  - `GrMobNode.kt` — snapshot-state node tree + JSON parsing (Go-cap keys: `Type`,
     `Props`, `Style`, `Children`; props keys lowercase)
   - `TreeStore.kt` — patch application; non-JSON initial payload logged, not crashed on
-  - `GovinciStyle.kt` — Go `Style` → Modifier, CSS box-model order (margin → size →
+  - `GrMobStyle.kt` — Go `Style` → Modifier, CSS box-model order (margin → size →
     shadow → clip → background → border → padding); colors accept `#RRGGBBAA`
   - `Renderer.kt` — all 20 node types; material3 for Button/Checkbox/TabRow,
     foundation elsewhere; FlexGrow → scope `weight` passed down as the child's
     `extra` modifier; controlled inputs locally-owned while focused, Go-owned when not
-  - `GovinciRuntime.kt` — `GovinciBridge` interface + threading funnel
-- `android/app/src/main/java/com/govinci/app/GomobileBridge.kt` — impl over generated
+  - `GrMobRuntime.kt` — `GrMobBridge` interface + threading funnel
+- `android/app/src/main/java/com/grmob/app/GomobileBridge.kt` — impl over generated
   `mobile.Mobile` (verified 1:1 against the gomobile sources jar; Go int → Java long)
 - `android/app/src/main/AndroidManifest.xml` (was missing), `android/gradle.properties`
   (`android.useAndroidX=true`), Compose gradle config (Kotlin 1.9.24 ↔ compose-compiler
@@ -48,7 +48,7 @@ Handler, which *is* the arrival-order contract.
 - `examples/mobileapp/` — demo app bound into the AAR (counter + interval clock +
   input/checkbox form in a TabView) with `app_test.go` replaying the exact Kotlin call
   sequence
-- Deleted: `PatchRenderer.kt`, old JNI `GovinciBridge.kt`; `MainActivity` rewritten;
+- Deleted: `PatchRenderer.kt`, old JNI `GrMobBridge.kt`; `MainActivity` rewritten;
   `build.sh` now binds `./mobile ./examples/mobileapp` and defaults ANDROID_HOME/NDK
 
 ## Bugs found & fixed (Go side)

@@ -17,81 +17,81 @@ import SwiftUI
 
 // The runtime rides the environment (the analog of Renderer.kt's
 // CompositionLocal) so leaf views can dispatch events without prop-drilling.
-private struct GovinciRuntimeKey: EnvironmentKey {
-    static let defaultValue: GovinciRuntime? = nil
+private struct GrMobRuntimeKey: EnvironmentKey {
+    static let defaultValue: GrMobRuntime? = nil
 }
 
 extension EnvironmentValues {
-    var govinciRuntime: GovinciRuntime? {
-        get { self[GovinciRuntimeKey.self] }
-        set { self[GovinciRuntimeKey.self] = newValue }
+    var grMobRuntime: GrMobRuntime? {
+        get { self[GrMobRuntimeKey.self] }
+        set { self[GrMobRuntimeKey.self] = newValue }
     }
 }
 
-struct GovinciRoot: View {
-    let runtime: GovinciRuntime
+struct GrMobRoot: View {
+    let runtime: GrMobRuntime
 
     var body: some View {
         if let root = runtime.store.root {
             // Pin the tree to the window's top-leading corner: SwiftUI centers
-            // a smaller-than-window view by default, but Govinci's layout
+            // a smaller-than-window view by default, but GrMob's layout
             // model (like the Android renderer's root Column) flows content
             // from the top and lets the tree decide its own extent.
             RenderNode(node: root)
-                .environment(\.govinciRuntime, runtime)
+                .environment(\.grMobRuntime, runtime)
                 // The style layer's gesture modifier dispatches through this
                 // plain closure instead of the runtime type; see
-                // GovinciDispatchKey for why the indirection exists.
-                .environment(\.govinciDispatch) { [runtime] id in runtime.click(id) }
+                // GrMobDispatchKey for why the indirection exists.
+                .environment(\.grMobDispatch) { [runtime] id in runtime.click(id) }
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
     }
 }
 
 /// `grow` carries the parent-scope sizing (main-axis FlexGrow) that only the
-/// parent can determine, since it knows the stack axis; see GovinciGrow.
+/// parent can determine, since it knows the stack axis; see GrMobGrow.
 struct RenderNode: View {
-    let node: GovinciNode
-    var grow: GovinciGrow = .none
+    let node: GrMobNode
+    var grow: GrMobGrow = .none
 
     var body: some View {
         let style = node.style
         if style?.display == "none" {
-            // Not rendered at all; "hidden" keeps space via opacity(0) in govinciBox.
+            // Not rendered at all; "hidden" keeps space via opacity(0) in grMobBox.
         } else {
             switch node.type {
-            case "Text": GovinciText(node: node, grow: grow)
-            case "Button": GovinciButton(node: node, grow: grow)
+            case "Text": GrMobText(node: node, grow: grow)
+            case "Button": GrMobButton(node: node, grow: grow)
 
-            case "Input": GovinciTextField(node: node, grow: grow)
-            case "InputPassword": GovinciTextField(node: node, grow: grow, password: true)
-            case "NumericInput": GovinciTextField(node: node, grow: grow, numeric: true)
-            case "TextArea": GovinciTextField(node: node, grow: grow, multiline: true)
-            case "Checkbox": GovinciCheckbox(node: node, grow: grow)
+            case "Input": GrMobTextField(node: node, grow: grow)
+            case "InputPassword": GrMobTextField(node: node, grow: grow, password: true)
+            case "NumericInput": GrMobTextField(node: node, grow: grow, numeric: true)
+            case "TextArea": GrMobTextField(node: node, grow: grow, multiline: true)
+            case "Checkbox": GrMobCheckbox(node: node, grow: grow)
 
-            case "Row": GovinciRow(node: node, grow: grow)
-            case "Column", "Card": GovinciColumn(node: node, grow: grow) // Card = Column whose Go theme style carries the card look
-            case "List": GovinciList(node: node, grow: grow)
+            case "Row": GrMobRow(node: node, grow: grow)
+            case "Column", "Card": GrMobColumn(node: node, grow: grow) // Card = Column whose Go theme style carries the card look
+            case "List": GrMobList(node: node, grow: grow)
             case "Box": ZStack(alignment: .topLeading) { PlainChildren(node: node) }
-                .govinciBox(node.style, grow: grow,
+                .grMobBox(node.style, grow: grow,
                             onTap: node.stringProp("onClick"),
                             onLongPress: node.stringProp("onLongPress"))
             case "Spacer": Color.clear.frame(width: CGFloat(node.intProp("size")), height: CGFloat(node.intProp("size")))
             case "Scroll":
                 ScrollView {
                     VStack(alignment: .leading, spacing: 0) { PlainChildren(node: node) }
-                }.govinciBox(node.style, grow: grow)
+                }.grMobBox(node.style, grow: grow)
             case "SafeArea":
                 // SwiftUI already lays out inside the safe area by default, so
                 // this is just a grouping box — the node exists so Go apps can
                 // be explicit about it and so an ignoresSafeArea escape hatch
                 // has a home later.
-                ZStack(alignment: .topLeading) { PlainChildren(node: node) }.govinciBox(node.style, grow: grow)
+                ZStack(alignment: .topLeading) { PlainChildren(node: node) }.grMobBox(node.style, grow: grow)
 
-            case "TabView": GovinciTabView(node: node, grow: grow)
-            case "Modal": GovinciModal(node: node)
+            case "TabView": GrMobTabView(node: node, grow: grow)
+            case "Modal": GrMobModal(node: node)
             case "Image":
-                // The AccessibilityLabel style prop travels through govinciBox;
+                // The AccessibilityLabel style prop travels through grMobBox;
                 // the legacy "alt" prop fills in only when no style label is set
                 // (an unconditional outer accessibilityLabel would override the
                 // box's label with an empty string).
@@ -100,17 +100,17 @@ struct RenderNode: View {
                 } placeholder: {
                     ProgressView()
                 }
-                .govinciBox(node.style, grow: grow,
+                .grMobBox(node.style, grow: grow,
                             onTap: node.stringProp("onClick"),
                             onLongPress: node.stringProp("onLongPress"))
-                .govinciAltLabel(
+                .grMobAltLabel(
                     (node.style?.accessibilityLabel ?? "").isEmpty
                         ? node.stringProp("alt") : "")
 
             // Camera capture needs an AVFoundation integration pass of its
             // own; until then render the styled surface and any overlay so
             // layouts hold up.
-            case "CameraView": ZStack(alignment: .topLeading) { PlainChildren(node: node) }.govinciBox(node.style, grow: grow)
+            case "CameraView": ZStack(alignment: .topLeading) { PlainChildren(node: node) }.grMobBox(node.style, grow: grow)
 
             // Fragment and Theme are grouping nodes with no visual box of
             // their own: Group flattens the children into whatever stack
@@ -119,13 +119,13 @@ struct RenderNode: View {
 
             // Unknown node type (newer Go core than this runtime): render the
             // children so the subtree isn't a dead end.
-            default: VStack(alignment: .leading, spacing: 0) { PlainChildren(node: node) }.govinciBox(node.style, grow: grow)
+            default: VStack(alignment: .leading, spacing: 0) { PlainChildren(node: node) }.grMobBox(node.style, grow: grow)
             }
         }
     }
 }
 
-extension GovinciNode {
+extension GrMobNode {
     /// ForEach identity: explicit key when present, object identity otherwise
     /// (see the header comment on why object identity is the right default).
     var viewID: AnyHashable {
@@ -135,7 +135,7 @@ extension GovinciNode {
 
 /// Children of a non-flex container (no grow, no justify-content emulation).
 private struct PlainChildren: View {
-    let node: GovinciNode
+    let node: GrMobNode
 
     var body: some View {
         ForEach(node.children, id: \.viewID) { child in
@@ -148,31 +148,31 @@ private struct PlainChildren: View {
 // Flex containers
 // ---------------------------------------------------------------------------
 
-private struct GovinciRow: View {
-    let node: GovinciNode
-    let grow: GovinciGrow
+private struct GrMobRow: View {
+    let node: GrMobNode
+    let grow: GrMobGrow
 
     var body: some View {
         let s = node.style
         HStack(alignment: crossAlignmentV(s), spacing: CGFloat(s?.gap ?? 0)) {
             FlexChildren(node: node, axis: .horizontal)
         }
-        .govinciBox(s, grow: grow,
+        .grMobBox(s, grow: grow,
                     onTap: node.stringProp("onClick"),
                     onLongPress: node.stringProp("onLongPress"))
     }
 }
 
-private struct GovinciColumn: View {
-    let node: GovinciNode
-    let grow: GovinciGrow
+private struct GrMobColumn: View {
+    let node: GrMobNode
+    let grow: GrMobGrow
 
     var body: some View {
         let s = node.style
         VStack(alignment: crossAlignmentH(s), spacing: CGFloat(s?.gap ?? 0)) {
             FlexChildren(node: node, axis: .vertical)
         }
-        .govinciBox(s, grow: grow,
+        .grMobBox(s, grow: grow,
                     onTap: node.stringProp("onClick"),
                     onLongPress: node.stringProp("onLongPress"))
     }
@@ -186,7 +186,7 @@ private struct GovinciColumn: View {
 /// space-around is approximated as space-evenly (equal spacers at edges and
 /// between) — exact half-size edge gaps would need a custom Layout.
 private struct FlexChildren: View {
-    let node: GovinciNode
+    let node: GrMobNode
     let axis: Axis
 
     var body: some View {
@@ -205,26 +205,26 @@ private struct FlexChildren: View {
     }
 
     /// FlexGrow maps onto an infinity frame along this stack's main axis —
-    /// the parent computes it and hands it down (see GovinciGrow).
-    private func growFor(_ child: GovinciNode) -> GovinciGrow {
+    /// the parent computes it and hands it down (see GrMobGrow).
+    private func growFor(_ child: GrMobNode) -> GrMobGrow {
         guard (child.style?.flexGrow ?? 0) > 0 else { return .none }
         return axis == .horizontal ? .horizontal : .vertical
     }
 }
 
-/// The virtualized sibling of GovinciColumn: LazyVStack materializes only the
+/// The virtualized sibling of GrMobColumn: LazyVStack materializes only the
 /// rows near the viewport as the ScrollView scrolls, so Go can hand over a
 /// thousand-row feed as plain data. (SwiftUI's List is deliberately not used:
 /// it brings UITableView chrome — separators, insets, selection styling —
-/// that Govinci's unopinionated box model doesn't ask for.)
+/// that GrMob's unopinionated box model doesn't ask for.)
 ///
 /// Go's For helper wraps generated rows in a Fragment node; those wrappers
 /// are flattened so each row is an individually lazy item rather than one
 /// giant Fragment item. Row identity is viewID (explicit key, else object
 /// identity), same as every other children loop.
-private struct GovinciList: View {
-    let node: GovinciNode
-    let grow: GovinciGrow
+private struct GrMobList: View {
+    let node: GrMobNode
+    let grow: GrMobGrow
 
     var body: some View {
         let s = node.style
@@ -240,21 +240,21 @@ private struct GovinciList: View {
             // removal instead of teleporting — the Android renderer's
             // animateItemPlacement analog. Scoped by the row-identity array
             // so only structural changes trigger it; a row's own property
-            // changes animate under its own Transition via govinciBox.
+            // changes animate under its own Transition via grMobBox.
             .animation(s?.swiftUIAnimation, value: rows.map(\.viewID))
         }
-        .govinciBox(s, grow: grow,
+        .grMobBox(s, grow: grow,
                     onTap: node.stringProp("onClick"),
                     onLongPress: node.stringProp("onLongPress"))
     }
 }
 
 /// Inlines Fragment/Theme grouping nodes so their children become list rows.
-private func flattenFragments(_ children: [GovinciNode]) -> [GovinciNode] {
+private func flattenFragments(_ children: [GrMobNode]) -> [GrMobNode] {
     guard children.contains(where: { $0.type == "Fragment" || $0.type == "Theme" }) else {
         return children
     }
-    var out: [GovinciNode] = []
+    var out: [GrMobNode] = []
     out.reserveCapacity(children.count)
     for child in children {
         if child.type == "Fragment" || child.type == "Theme" {
@@ -268,7 +268,7 @@ private func flattenFragments(_ children: [GovinciNode]) -> [GovinciNode] {
 
 /// AlignItems governs cross-axis placement; the DSL's simpler Align
 /// ("center"/"end") acts as a fallback when AlignItems is unset.
-private func crossAlignmentH(_ s: GovinciStyle?) -> HorizontalAlignment {
+private func crossAlignmentH(_ s: GrMobStyle?) -> HorizontalAlignment {
     var v = s?.alignItems ?? ""
     if v.isEmpty { v = s?.align ?? "" }
     switch v {
@@ -278,7 +278,7 @@ private func crossAlignmentH(_ s: GovinciStyle?) -> HorizontalAlignment {
     }
 }
 
-private func crossAlignmentV(_ s: GovinciStyle?) -> VerticalAlignment {
+private func crossAlignmentV(_ s: GrMobStyle?) -> VerticalAlignment {
     switch s?.alignItems ?? "" {
     case "center": return .center
     case "flex-end": return .bottom
@@ -290,14 +290,14 @@ private func crossAlignmentV(_ s: GovinciStyle?) -> VerticalAlignment {
 // Leaf components
 // ---------------------------------------------------------------------------
 
-private struct GovinciText: View {
-    let node: GovinciNode
-    let grow: GovinciGrow
+private struct GrMobText: View {
+    let node: GrMobNode
+    let grow: GrMobGrow
 
     var body: some View {
         Text(node.stringProp("content"))
-            .govinciTextStyle(node.style)
-            .govinciBox(node.style, grow: grow,
+            .grMobTextStyle(node.style)
+            .grMobBox(node.style, grow: grow,
                         onTap: node.stringProp("onClick"),
                         onLongPress: node.stringProp("onLongPress"))
     }
@@ -305,21 +305,21 @@ private struct GovinciText: View {
 
 extension View {
     /// Text styling shared by Text and the input fields.
-    func govinciTextStyle(_ s: GovinciStyle?, defaultSize: CGFloat = 17) -> some View {
+    func grMobTextStyle(_ s: GrMobStyle?, defaultSize: CGFloat = 17) -> some View {
         let size = (s?.fontSize ?? 0) > 0 ? s!.fontSize : defaultSize
         return self
-            .font(.system(size: size, weight: govinciFontWeight(s?.fontWeight ?? 0)))
+            .font(.system(size: size, weight: grMobFontWeight(s?.fontWeight ?? 0)))
             .foregroundStyle(s?.textColor ?? .primary)
             // SwiftUI has line *spacing*, not line height; the difference
             // between the requested height and the font size approximates it.
             .lineSpacing((s?.lineHeight ?? 0) > 0 ? max(CGFloat(s!.lineHeight) - size, 0) : 0)
-            .multilineTextAlignment(govinciTextAlignment(s?.align ?? ""))
+            .multilineTextAlignment(grMobTextAlignment(s?.align ?? ""))
     }
 }
 
 /// Go's Weight constants are the CSS numeric scale (200/400/700...); map the
 /// hundreds onto SwiftUI's named weights.
-private func govinciFontWeight(_ w: Int) -> Font.Weight {
+private func grMobFontWeight(_ w: Int) -> Font.Weight {
     switch w {
     case ..<1: .regular
     case ..<200: .ultraLight
@@ -334,7 +334,7 @@ private func govinciFontWeight(_ w: Int) -> Font.Weight {
     }
 }
 
-private func govinciTextAlignment(_ align: String) -> TextAlignment {
+private func grMobTextAlignment(_ align: String) -> TextAlignment {
     switch align {
     case "center": .center
     case "end": .trailing
@@ -342,16 +342,16 @@ private func govinciTextAlignment(_ align: String) -> TextAlignment {
     }
 }
 
-private struct GovinciButton: View {
-    let node: GovinciNode
-    let grow: GovinciGrow
-    @Environment(\.govinciRuntime) private var runtime
+private struct GrMobButton: View {
+    let node: GrMobNode
+    let grow: GrMobGrow
+    @Environment(\.grMobRuntime) private var runtime
 
     var body: some View {
         let s = node.style
         let onClick = node.stringProp("onClick")
         // Style properties the Go theme owns are fed into the button's own
-        // label/background rather than govinciBox: the control draws its own
+        // label/background rather than grMobBox: the control draws its own
         // container, so background/radius/padding belong inside the pressable
         // area (and inside the press feedback), with only margin/size outside.
         Button {
@@ -359,26 +359,26 @@ private struct GovinciButton: View {
         } label: {
             Text(node.stringProp("label"))
                 .font(.system(size: (s?.fontSize ?? 0) > 0 ? s!.fontSize : 17,
-                              weight: govinciFontWeight(s?.fontWeight ?? 0)))
+                              weight: grMobFontWeight(s?.fontWeight ?? 0)))
                 .foregroundStyle(s?.textColor ?? .white)
                 .padding(paddingOrDefault(s))
                 .frame(maxWidth: grow == .horizontal ? .infinity : nil)
         }
-        .buttonStyle(GovinciButtonStyle(
+        .buttonStyle(GrMobButtonStyle(
             background: s?.background ?? .accentColor,
             radius: (s?.borderRadius ?? 0) > 0 ? s!.borderRadius : 8
         ))
-        .govinciBox(marginAndSizeOnly(s), grow: grow)
+        .grMobBox(marginAndSizeOnly(s), grow: grow)
     }
 
-    private func paddingOrDefault(_ s: GovinciStyle?) -> EdgeInsets {
+    private func paddingOrDefault(_ s: GrMobStyle?) -> EdgeInsets {
         let p = s?.padding ?? .zero
         if p == .zero { return EdgeInsets(top: 10, leading: 16, bottom: 10, trailing: 16) }
         return p.insets
     }
 }
 
-private struct GovinciButtonStyle: ButtonStyle {
+private struct GrMobButtonStyle: ButtonStyle {
     let background: Color
     let radius: CGFloat
 
@@ -392,9 +392,9 @@ private struct GovinciButtonStyle: ButtonStyle {
 }
 
 /// Margin + explicit dimensions only — for controls that draw their own box.
-/// Mirrors the Android renderer's marginAndSize: reuse govinciBox's ordering
+/// Mirrors the Android renderer's marginAndSize: reuse grMobBox's ordering
 /// by handing it a style stripped of the box-drawing fields.
-private func marginAndSizeOnly(_ s: GovinciStyle?) -> GovinciStyle? {
+private func marginAndSizeOnly(_ s: GrMobStyle?) -> GrMobStyle? {
     guard var t = s else { return nil }
     t.background = nil
     t.borderColor = nil
@@ -405,10 +405,10 @@ private func marginAndSizeOnly(_ s: GovinciStyle?) -> GovinciStyle? {
     return t
 }
 
-private struct GovinciCheckbox: View {
-    let node: GovinciNode
-    let grow: GovinciGrow
-    @Environment(\.govinciRuntime) private var runtime
+private struct GrMobCheckbox: View {
+    let node: GrMobNode
+    let grow: GrMobGrow
+    @Environment(\.grMobRuntime) private var runtime
 
     var body: some View {
         let cb = node.stringProp("onToggle")
@@ -420,7 +420,7 @@ private struct GovinciCheckbox: View {
             set: { if !cb.isEmpty { runtime?.toggled(cb, $0) } }
         )) { EmptyView() }
             .labelsHidden()
-            .govinciBox(marginAndSizeOnly(node.style), grow: grow)
+            .grMobBox(marginAndSizeOnly(node.style), grow: grow)
     }
 }
 
@@ -440,14 +440,14 @@ private struct GovinciCheckbox: View {
 /// one that matches nothing we sent can only be Go speaking for itself, so it
 /// wins even while focused. Moving the cursor then is correct: the text under
 /// it was replaced.
-private struct GovinciTextField: View {
-    let node: GovinciNode
-    let grow: GovinciGrow
+private struct GrMobTextField: View {
+    let node: GrMobNode
+    let grow: GrMobGrow
     var password = false
     var numeric = false
     var multiline = false
 
-    @Environment(\.govinciRuntime) private var runtime
+    @Environment(\.grMobRuntime) private var runtime
     @FocusState private var focused: Bool
     @State private var text = ""
     @State private var pendingEchoes: [String] = []
@@ -495,8 +495,8 @@ private struct GovinciTextField: View {
                 }
             }
             .textFieldStyle(.plain)
-            .govinciTextStyle(node.style)
-            .govinciBox(node.style, grow: grow)
+            .grMobTextStyle(node.style)
+            .grMobBox(node.style, grow: grow)
     }
 
     @ViewBuilder
@@ -509,13 +509,13 @@ private struct GovinciTextField: View {
                 .lineLimit(rows > 0 ? rows : 3, reservesSpace: true)
         } else {
             TextField(text: value, prompt: prompt) { EmptyView() }
-                .govinciKeyboard(numeric: numeric)
+                .grMobKeyboard(numeric: numeric)
         }
     }
 }
 
 extension View {
-    @ViewBuilder fileprivate func govinciKeyboard(numeric: Bool) -> some View {
+    @ViewBuilder fileprivate func grMobKeyboard(numeric: Bool) -> some View {
         #if os(iOS)
         keyboardType(numeric ? .decimalPad : .default)
         #else
@@ -529,13 +529,13 @@ extension View {
 // ---------------------------------------------------------------------------
 
 /// A top tab bar + the selected child. SwiftUI's native TabView is a bottom
-/// bar whose selection wants to be locally owned; Govinci's selection is Go
+/// bar whose selection wants to be locally owned; GrMob's selection is Go
 /// state (a controlled int prop), so a hand-rolled top bar — matching the
 /// Android renderer's material TabRow — is both simpler and correct.
-private struct GovinciTabView: View {
-    let node: GovinciNode
-    let grow: GovinciGrow
-    @Environment(\.govinciRuntime) private var runtime
+private struct GrMobTabView: View {
+    let node: GrMobNode
+    let grow: GrMobGrow
+    @Environment(\.grMobRuntime) private var runtime
 
     var body: some View {
         let selected = node.intProp("selectedIndex")
@@ -573,7 +573,7 @@ private struct GovinciTabView: View {
                     .id(selected)
             }
         }
-        .govinciBox(node.style, grow: grow)
+        .grMobBox(node.style, grow: grow)
     }
 }
 
@@ -581,9 +581,9 @@ private struct GovinciTabView: View {
 /// Dialog. Visibility is a controlled bool: presenting and dismissing both go
 /// through Go (the binding's set only reports the dismiss gesture upstream;
 /// the sheet actually closes when Go flips `visible` and the patch lands).
-private struct GovinciModal: View {
-    let node: GovinciNode
-    @Environment(\.govinciRuntime) private var runtime
+private struct GrMobModal: View {
+    let node: GrMobNode
+    @Environment(\.grMobRuntime) private var runtime
 
     var body: some View {
         let onDismiss = node.stringProp("onDismiss")

@@ -1,4 +1,4 @@
-package com.govinci.runtime
+package com.grmob.runtime
 
 import androidx.compose.animation.Animatable
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -65,39 +65,39 @@ import coil.compose.AsyncImage
  * accessibility semantics (via material3 components). The Go side only has to
  * keep the data tree correct; nothing here caches views or paths.
  */
-val LocalGovinciRuntime = compositionLocalOf<GovinciRuntime> {
-    error("GovinciRoot not mounted")
+val LocalGrMobRuntime = compositionLocalOf<GrMobRuntime> {
+    error("GrMobRoot not mounted")
 }
 
 @Composable
-fun GovinciRoot(runtime: GovinciRuntime) {
-    CompositionLocalProvider(LocalGovinciRuntime provides runtime) {
+fun GrMobRoot(runtime: GrMobRuntime) {
+    CompositionLocalProvider(LocalGrMobRuntime provides runtime) {
         runtime.store.root?.let { RenderNode(it) }
     }
 }
 
 /**
  * `extra` carries parent-scope modifiers (Row/Column weight) that only the
- * parent can construct; see GovinciStyle.boxModifier.
+ * parent can construct; see GrMobStyle.boxModifier.
  */
 @Composable
-fun RenderNode(node: GovinciNode, extra: Modifier = Modifier) {
+fun RenderNode(node: GrMobNode, extra: Modifier = Modifier) {
     val style = node.style
     if (style?.display == "none") return // not composed at all; "hidden" keeps space
 
     when (node.type) {
-        "Text" -> GovinciText(node, extra)
-        "Button" -> GovinciButton(node, extra)
+        "Text" -> GrMobText(node, extra)
+        "Button" -> GrMobButton(node, extra)
 
-        "Input" -> GovinciTextField(node, extra)
-        "InputPassword" -> GovinciTextField(node, extra, password = true)
-        "NumericInput" -> GovinciTextField(node, extra, numeric = true)
-        "TextArea" -> GovinciTextField(node, extra, multiline = true)
-        "Checkbox" -> GovinciCheckbox(node, extra)
+        "Input" -> GrMobTextField(node, extra)
+        "InputPassword" -> GrMobTextField(node, extra, password = true)
+        "NumericInput" -> GrMobTextField(node, extra, numeric = true)
+        "TextArea" -> GrMobTextField(node, extra, multiline = true)
+        "Checkbox" -> GrMobCheckbox(node, extra)
 
-        "Row" -> GovinciRow(node, extra)
-        "Column", "Card" -> GovinciColumn(node, extra) // Card = Column whose Go theme style carries the card look
-        "List" -> GovinciList(node, extra)
+        "Row" -> GrMobRow(node, extra)
+        "Column", "Card" -> GrMobColumn(node, extra) // Card = Column whose Go theme style carries the card look
+        "List" -> GrMobList(node, extra)
         "Box" -> Box(animatedStyle(style).boxModifier(extra, gestureModifier(node))) { RenderChildren(node) }
         "Spacer" -> Spacer(Modifier.size(node.intProp("size").dp))
         "Scroll" -> Column(
@@ -105,8 +105,8 @@ fun RenderNode(node: GovinciNode, extra: Modifier = Modifier) {
         ) { ColumnChildren(node) }
         "SafeArea" -> Box(style.boxModifier(extra).safeDrawingPadding()) { RenderChildren(node) }
 
-        "TabView" -> GovinciTabView(node, extra)
-        "Modal" -> GovinciModal(node)
+        "TabView" -> GrMobTabView(node, extra)
+        "Modal" -> GrMobModal(node)
         "Image" -> AsyncImage(
             model = node.stringProp("src"),
             // The Go-side AccessibilityLabel style prop is the first choice
@@ -136,7 +136,7 @@ fun RenderNode(node: GovinciNode, extra: Modifier = Modifier) {
 
 /** Children of a non-flex container; keyed so reorder/replace keeps sibling state. */
 @Composable
-private fun RenderChildren(node: GovinciNode) {
+private fun RenderChildren(node: GrMobNode) {
     node.children.forEachIndexed { i, child ->
         key(child.key.ifEmpty { i }) { RenderNode(child) }
     }
@@ -158,7 +158,7 @@ private fun RenderChildren(node: GovinciNode) {
  * reconciler's intent (replace = a different thing, not a changed one).
  */
 @Composable
-private fun animatedStyle(s: GovinciStyle?): GovinciStyle? {
+private fun animatedStyle(s: GrMobStyle?): GrMobStyle? {
     if (s == null || s.transitionMs <= 0) return s
 
     // Driven by hand (Animatable rather than animateColorAsState) because a
@@ -190,11 +190,11 @@ private fun animatedStyle(s: GovinciStyle?): GovinciStyle? {
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun gestureModifier(node: GovinciNode): Modifier {
+private fun gestureModifier(node: GrMobNode): Modifier {
     val onClick = node.stringProp("onClick")
     val onLongPress = node.stringProp("onLongPress")
     if (onClick.isEmpty() && onLongPress.isEmpty()) return Modifier
-    val runtime = LocalGovinciRuntime.current
+    val runtime = LocalGrMobRuntime.current
     return Modifier.combinedClickable(
         onClick = { if (onClick.isNotEmpty()) runtime.click(onClick) },
         onLongClick = if (onLongPress.isEmpty()) null else {
@@ -208,7 +208,7 @@ private fun gestureModifier(node: GovinciNode): Modifier {
 // ---------------------------------------------------------------------------
 
 @Composable
-private fun GovinciText(node: GovinciNode, extra: Modifier) {
+private fun GrMobText(node: GrMobNode, extra: Modifier) {
     val s = animatedStyle(node.style)
     Text(
         text = node.stringProp("content"),
@@ -217,7 +217,7 @@ private fun GovinciText(node: GovinciNode, extra: Modifier) {
     )
 }
 
-private fun textStyle(s: GovinciStyle?): TextStyle {
+private fun textStyle(s: GrMobStyle?): TextStyle {
     if (s == null) return TextStyle.Default
     return TextStyle(
         color = s.textColor ?: Color.Unspecified,
@@ -236,8 +236,8 @@ private fun textStyle(s: GovinciStyle?): TextStyle {
 }
 
 @Composable
-private fun GovinciButton(node: GovinciNode, extra: Modifier) {
-    val runtime = LocalGovinciRuntime.current
+private fun GrMobButton(node: GrMobNode, extra: Modifier) {
+    val runtime = LocalGrMobRuntime.current
     val s = node.style
     val onClick = node.stringProp("onClick")
     // Style properties the Go theme owns are fed into material3's slots
@@ -265,20 +265,20 @@ private fun GovinciButton(node: GovinciNode, extra: Modifier) {
 }
 
 /** Margin + explicit dimensions only — for components that draw their own box. */
-private fun marginAndSize(s: GovinciStyle?, extra: Modifier): Modifier {
+private fun marginAndSize(s: GrMobStyle?, extra: Modifier): Modifier {
     if (s == null) return extra
     // Reuse boxModifier's ordering by building a margin/size-only style.
     val trimmed = s.copy(
         background = null, borderColor = null, borderWidth = 0f,
         borderRadius = 0f, shadow = 0f,
-        padding = GovinciStyle.Edges(0, 0, 0, 0),
+        padding = GrMobStyle.Edges(0, 0, 0, 0),
     )
     return trimmed.boxModifier(extra)
 }
 
 @Composable
-private fun GovinciCheckbox(node: GovinciNode, extra: Modifier) {
-    val runtime = LocalGovinciRuntime.current
+private fun GrMobCheckbox(node: GrMobNode, extra: Modifier) {
+    val runtime = LocalGrMobRuntime.current
     val cb = node.stringProp("onToggle")
     Checkbox(
         checked = node.boolProp("checked"),
@@ -306,14 +306,14 @@ private fun GovinciCheckbox(node: GovinciNode, extra: Modifier) {
  * it was replaced.
  */
 @Composable
-private fun GovinciTextField(
-    node: GovinciNode,
+private fun GrMobTextField(
+    node: GrMobNode,
     extra: Modifier,
     password: Boolean = false,
     numeric: Boolean = false,
     multiline: Boolean = false,
 ) {
-    val runtime = LocalGovinciRuntime.current
+    val runtime = LocalGrMobRuntime.current
     val s = node.style
     val upstream = node.stringProp("value")
     val onChange = node.stringProp("onChange")
@@ -400,7 +400,7 @@ private fun GovinciTextField(
 // ---------------------------------------------------------------------------
 
 @Composable
-private fun GovinciRow(node: GovinciNode, extra: Modifier) {
+private fun GrMobRow(node: GrMobNode, extra: Modifier) {
     val s = animatedStyle(node.style)
     Row(
         modifier = s.boxModifier(extra, gestureModifier(node)),
@@ -414,7 +414,7 @@ private fun GovinciRow(node: GovinciNode, extra: Modifier) {
 }
 
 @Composable
-private fun GovinciColumn(node: GovinciNode, extra: Modifier) {
+private fun GrMobColumn(node: GrMobNode, extra: Modifier) {
     val s = animatedStyle(node.style)
     Column(
         modifier = s.boxModifier(extra, gestureModifier(node)),
@@ -435,7 +435,7 @@ private fun GovinciColumn(node: GovinciNode, extra: Modifier) {
  * computes it and hands it down as the child's `extra` modifier.
  */
 @Composable
-private fun RowScope.RowChildren(node: GovinciNode) {
+private fun RowScope.RowChildren(node: GrMobNode) {
     node.children.forEachIndexed { i, child ->
         key(child.key.ifEmpty { i }) {
             val grow = child.style?.flexGrow ?: 0f
@@ -445,7 +445,7 @@ private fun RowScope.RowChildren(node: GovinciNode) {
 }
 
 @Composable
-private fun ColumnScope.ColumnChildren(node: GovinciNode) {
+private fun ColumnScope.ColumnChildren(node: GrMobNode) {
     node.children.forEachIndexed { i, child ->
         key(child.key.ifEmpty { i }) {
             val grow = child.style?.flexGrow ?: 0f
@@ -455,7 +455,7 @@ private fun ColumnScope.ColumnChildren(node: GovinciNode) {
 }
 
 /**
- * The virtualized sibling of GovinciColumn: LazyColumn composes only the rows
+ * The virtualized sibling of GrMobColumn: LazyColumn composes only the rows
  * on screen and recycles compositions by contentType as the user scrolls, so
  * Go can hand over a thousand-row feed as plain data.
  *
@@ -467,7 +467,7 @@ private fun ColumnScope.ColumnChildren(node: GovinciNode) {
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun GovinciList(node: GovinciNode, extra: Modifier) {
+private fun GrMobList(node: GrMobNode, extra: Modifier) {
     val s = animatedStyle(node.style)
     // Reading node.children in composition subscribes this scope to the
     // SnapshotStateList, so structural patches recompose the list.
@@ -503,9 +503,9 @@ private fun GovinciList(node: GovinciNode, extra: Modifier) {
 }
 
 /** Inlines Fragment/Theme grouping nodes so their children become list rows. */
-private fun flattenFragments(children: List<GovinciNode>): List<GovinciNode> {
+private fun flattenFragments(children: List<GrMobNode>): List<GrMobNode> {
     if (children.none { it.type == "Fragment" || it.type == "Theme" }) return children
-    val out = ArrayList<GovinciNode>(children.size)
+    val out = ArrayList<GrMobNode>(children.size)
     for (child in children) {
         if (child.type == "Fragment" || child.type == "Theme") {
             out.addAll(flattenFragments(child.children))
@@ -516,7 +516,7 @@ private fun flattenFragments(children: List<GovinciNode>): List<GovinciNode> {
     return out
 }
 
-private fun horizontalArrangement(s: GovinciStyle?): Arrangement.Horizontal =
+private fun horizontalArrangement(s: GrMobStyle?): Arrangement.Horizontal =
     when (s?.justifyContent) {
         "center" -> Arrangement.Center
         "flex-end" -> Arrangement.End
@@ -526,7 +526,7 @@ private fun horizontalArrangement(s: GovinciStyle?): Arrangement.Horizontal =
         else -> if ((s?.gap ?: 0f) > 0f) Arrangement.spacedBy(s!!.gap.dp) else Arrangement.Start
     }
 
-private fun verticalArrangement(s: GovinciStyle?): Arrangement.Vertical =
+private fun verticalArrangement(s: GrMobStyle?): Arrangement.Vertical =
     when (s?.justifyContent) {
         "center" -> Arrangement.Center
         "flex-end" -> Arrangement.Bottom
@@ -541,8 +541,8 @@ private fun verticalArrangement(s: GovinciStyle?): Arrangement.Vertical =
 // ---------------------------------------------------------------------------
 
 @Composable
-private fun GovinciTabView(node: GovinciNode, extra: Modifier) {
-    val runtime = LocalGovinciRuntime.current
+private fun GrMobTabView(node: GrMobNode, extra: Modifier) {
+    val runtime = LocalGrMobRuntime.current
     val selected = node.intProp("selectedIndex")
     val onTabChange = node.stringProp("onTabChange")
 
@@ -571,9 +571,9 @@ private fun GovinciTabView(node: GovinciNode, extra: Modifier) {
 }
 
 @Composable
-private fun GovinciModal(node: GovinciNode) {
+private fun GrMobModal(node: GrMobNode) {
     if (!node.boolProp("visible")) return
-    val runtime = LocalGovinciRuntime.current
+    val runtime = LocalGrMobRuntime.current
     val onDismiss = node.stringProp("onDismiss")
     Dialog(
         onDismissRequest = { if (onDismiss.isNotEmpty()) runtime.click(onDismiss) },

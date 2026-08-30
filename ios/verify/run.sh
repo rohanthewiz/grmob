@@ -7,7 +7,7 @@
 set -e
 cd "$(dirname "$0")"
 
-out="${TMPDIR:-/tmp}/govinci-ios-verify"
+out="${TMPDIR:-/tmp}/grmob-ios-verify"
 mkdir -p "$out"
 
 go run . > "$out/transcript.json"
@@ -16,8 +16,8 @@ go run . > "$out/transcript.json"
 # macOS 14 — typecheck-equivalent for everything the harness touches.
 swiftc -o "$out/harness" -target arm64-apple-macos14.0 \
   main.swift \
-  ../Govinci/Runtime/GovinciNode.swift \
-  ../Govinci/Runtime/GovinciStyle.swift \
-  ../Govinci/Runtime/TreeStore.swift
+  ../GrMob/Runtime/GrMobNode.swift \
+  ../GrMob/Runtime/GrMobStyle.swift \
+  ../GrMob/Runtime/TreeStore.swift
 
 "$out/harness" "$out/transcript.json"

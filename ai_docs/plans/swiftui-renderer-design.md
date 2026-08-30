@@ -18,7 +18,7 @@ Go side                     bridge                Swift side
 core.Node tree ─ diff ─▶ patch JSON ─▶ TreeStore.applyPatches
                                           │ mutates @Observable state
                                           ▼
-                                    GovinciNode tree ─ read ─▶ SwiftUI Views
+                                    GrMobNode tree ─ read ─▶ SwiftUI Views
                                                                  │ (SwiftUI diffing:
                                                                  ▼  identity, recycling, a11y)
                                                               iOS UI
@@ -29,14 +29,14 @@ core.Node tree ─ diff ─▶ patch JSON ─▶ TreeStore.applyPatches
 | Compose (Android runtime)             | SwiftUI (iOS runtime)                          |
 |---------------------------------------|------------------------------------------------|
 | snapshot state (`mutableStateOf`)     | `@Observable` per-property tracking (iOS 17 floor) |
-| `SnapshotStateList` children          | plain `[GovinciNode]` var on an `@Observable` class |
+| `SnapshotStateList` children          | plain `[GrMobNode]` var on an `@Observable` class |
 | `key(child.key or index)`             | ForEach id = explicit key, else **object identity** (see below) |
-| `CompositionLocal` runtime            | `@Environment(\.govinciRuntime)`               |
+| `CompositionLocal` runtime            | `@Environment(\.grMobRuntime)`               |
 | `Modifier` chain (outermost-first)    | modifier chain (innermost-first) — same CSS order, reversed in source |
-| `Modifier.weight` (FlexGrow)          | infinity frame on the main axis (`GovinciGrow`), parent-computed |
+| `Modifier.weight` (FlexGrow)          | infinity frame on the main axis (`GrMobGrow`), parent-computed |
 | `Arrangement` (justify-content, gap)  | stack `spacing` + flexible-Spacer emulation    |
 | single main `Handler` funnel          | `DispatchQueue.main.async` funnel (FIFO — not `Task`, which orders nothing) |
-| events single-thread executor         | serial `DispatchQueue("govinci-events")`       |
+| events single-thread executor         | serial `DispatchQueue("grmob-events")`       |
 | material3 Button/Checkbox/TabRow      | styled `Button`, `Toggle` (switch — iOS has no checkbox), hand-rolled top tab bar |
 | Coil `AsyncImage`                     | built-in `AsyncImage`                          |
 | `Dialog`                              | `.sheet` (the iOS idiom for Modal)             |
@@ -60,21 +60,21 @@ directly when unfocused.
 
 ## File map
 
-- `ios/Govinci/Runtime/` — app-agnostic runtime, file-for-file mirror of
-  `android/.../runtime/`: `GovinciNode.swift`, `GovinciStyle.swift`
-  (+ `govinciBox` in CSS box-model order), `TreeStore.swift`,
-  `GovinciRuntime.swift` (+ `GovinciBridge` protocol), `Renderer.swift`.
-- `ios/Govinci/App/` — shell: `GovinciApp.swift`, `GomobileBridge.swift` over
+- `ios/GrMob/Runtime/` — app-agnostic runtime, file-for-file mirror of
+  `android/.../runtime/`: `GrMobNode.swift`, `GrMobStyle.swift`
+  (+ `grMobBox` in CSS box-model order), `TreeStore.swift`,
+  `GrMobRuntime.swift` (+ `GrMobBridge` protocol), `Renderer.swift`.
+- `ios/GrMob/App/` — shell: `GrMobApp.swift`, `GomobileBridge.swift` over
   the gomobile-generated C functions (`MobileRenderInitial`,
   `MobileTrigger*Callback`, `MobileSetListener` /
   `MobilePatchListenerProtocol` — names verified against gobind's actual
   generated header, Go `int` ↔ `long` ↔ Swift `Int`).
 - `ios/build.sh` — `gomobile bind -target=ios,iossimulator` →
-  `ios/Frameworks/Govinci.xcframework` (same package pair as Android:
+  `ios/Frameworks/GrMob.xcframework` (same package pair as Android:
   `./mobile ./examples/mobileapp`; the gobind linkage trap and its
   `mobileapp.AppName` fix apply identically).
 - `ios/project.yml` — xcodegen spec (source of truth; the generated
-  `GovinciApp.xcodeproj` is untracked). iOS 17 deployment floor.
+  `GrMobApp.xcodeproj` is untracked). iOS 17 deployment floor.
 - `ios/verify/` — data-layer conformance harness, see below.
 
 ## Verification without Xcode (this machine has only the CLT)
@@ -88,7 +88,7 @@ Two layers, both green:
 2. **Transcript replay** (`ios/verify/run.sh`): `gen.go` drives the real
    bridge + demo app through every event kind, recording each patch batch in
    arrival order plus the final full tree; a compiled macOS harness replays
-   the batches through the real `GovinciNode`/`GovinciStyle`/`TreeStore`
+   the batches through the real `GrMobNode`/`GrMobStyle`/`TreeStore`
    files and deep-compares trees. This is the iOS analog of
    `examples/mobileapp/app_test.go` and the fast feedback loop for store or
    parser changes.
@@ -108,4 +108,4 @@ on-device verification pass that step 4 got on Android.
 - Line height maps to `lineSpacing` (height − font size) — an approximation.
 - On-device pass pending Xcode: install Xcode, `sudo xcode-select -s
   /Applications/Xcode.app`, run `ios/build.sh`, `cd ios && xcodegen
-  generate && open GovinciApp.xcodeproj`, run on an iOS 17+ simulator.
+  generate && open GrMobApp.xcodeproj`, run on an iOS 17+ simulator.

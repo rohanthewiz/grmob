@@ -4,7 +4,7 @@ import (
 	"reflect"
 	"strconv"
 
-	"github.com/GraHms/govinci/core"
+	"github.com/rohanthewiz/grmob/core"
 )
 
 // Patch represents a minimal change set between two Node trees.
@@ -37,7 +37,7 @@ type Patch struct {
 // TargetIDs cannot express "this node moved from index 3 to index 1" safely,
 // because the first applied move would invalidate the paths of every patch
 // after it. True move patches require identity-based node IDs and are planned
-// alongside that change (see ai_docs/plans/govinci-mobile-feasibility-analysis.md).
+// alongside that change (see ai_docs/plans/grmob-mobile-feasibility-analysis.md).
 // Until then, a keyed mismatch rebuilds the slot — visually correct, though the
 // replaced subtree loses transient native state (focus, scroll offset).
 func Diff(old, new *core.Node, path string) []Patch {

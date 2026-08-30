@@ -1,6 +1,6 @@
-// govinci-camera.js (WASM-specific Camera bridge)
+// grmob-camera.js (WASM-specific Camera bridge)
 
-window.GovinciCameraView = class {
+window.GrMobCameraView = class {
     constructor(props) {
         this.props = props;
         this.videoElement = document.createElement("video");

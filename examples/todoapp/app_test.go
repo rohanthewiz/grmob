@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/GraHms/govinci/core"
-	"github.com/GraHms/govinci/mobile"
+	"github.com/rohanthewiz/grmob/core"
+	"github.com/rohanthewiz/grmob/mobile"
 )
 
 // TestMain gives the whole suite a data directory before the first render,

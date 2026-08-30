@@ -1,6 +1,6 @@
-// govinci-runtime.js
+// grmob-runtime.js
 
-const Govinci = (() => {
+const GrMob = (() => {
     let rootElement = null;
     const DEBUG = true;
 
@@ -27,7 +27,7 @@ const Govinci = (() => {
         const el = document.createElement(tagForType(node.Type));
 
         if (node.Style) {
-            Object.assign(el.style, styleFromGovinci(node.Style));
+            Object.assign(el.style, styleFromGrMob(node.Style));
         }
 
         if (node.Props) {
@@ -65,7 +65,7 @@ const Govinci = (() => {
         return el;
     }
 
-    function styleFromGovinci(style) {
+    function styleFromGrMob(style) {
         const out = {};
         if (style.FontSize) out.fontSize = `${style.FontSize}px`;
         if (style.TextColor) out.color = style.TextColor;
@@ -172,7 +172,7 @@ const Govinci = (() => {
 
 
                 case "update-style":
-                    Object.assign(el.style, styleFromGovinci(p.Changes));
+                    Object.assign(el.style, styleFromGrMob(p.Changes));
                     break;
 
                 case "replace":
@@ -201,15 +201,15 @@ const Govinci = (() => {
 
 function checkLoop() {
 
-    if (window.GovinciWASM.IsDirty()) {
-        const patch = window.GovinciWASM.RenderAgain();
-        Govinci.patch(patch);
+    if (window.GrMobWASM.IsDirty()) {
+        const patch = window.GrMobWASM.RenderAgain();
+        GrMob.patch(patch);
     }
     requestAnimationFrame(checkLoop);
 }
 
 function waitForWasm() {
-    if (window.GovinciWASM) {
+    if (window.GrMobWASM) {
         checkLoop();
     } else {
         setTimeout(waitForWasm, 100);
@@ -218,7 +218,7 @@ function waitForWasm() {
 waitForWasm();
 
 
-window.GovinciRequestPermission = function (permission, callback) {
+window.GrMobRequestPermission = function (permission, callback) {
     if (permission === "camera") {
         navigator.mediaDevices.getUserMedia({ video: true })
             .then(stream => {

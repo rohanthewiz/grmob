@@ -4,7 +4,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/GraHms/govinci/core"
+	"github.com/rohanthewiz/grmob/core"
 )
 
 // intervalRecord is the per-hook-slot state of one UseInterval: the liveness

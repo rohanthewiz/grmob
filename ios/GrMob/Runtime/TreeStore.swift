@@ -11,15 +11,15 @@ import os
 /// highest-index-first) are exactly what makes this walk safe within a batch.
 ///
 /// Threading: @MainActor — every mutation happens on the main thread.
-/// GovinciRuntime funnels both delivery paths (synchronous event returns and
+/// GrMobRuntime funnels both delivery paths (synchronous event returns and
 /// async pushes) through DispatchQueue.main, which also preserves the
 /// bridge's arrival-order contract.
 @MainActor
 @Observable
 final class TreeStore {
-    private(set) var root: GovinciNode?
+    private(set) var root: GrMobNode?
 
-    private let log = Logger(subsystem: "com.govinci", category: "TreeStore")
+    private let log = Logger(subsystem: "com.grmob", category: "TreeStore")
 
     /// Mounts the initial full tree (the RenderInitial payload).
     func mount(_ json: String) {
@@ -32,7 +32,7 @@ final class TreeStore {
             log.error("initial payload is not a tree: \(json, privacy: .public)")
             return
         }
-        root = GovinciNode.parse(obj)
+        root = GrMobNode.parse(obj)
     }
 
     /// Applies one patch batch (the RenderAgain / push payload).
@@ -56,11 +56,11 @@ final class TreeStore {
             resolve(path)?.props = changes as? [String: Any] ?? [:]
 
         case "update-style":
-            resolve(path)?.style = GovinciStyle.parse(changes as? [String: Any])
+            resolve(path)?.style = GrMobStyle.parse(changes as? [String: Any])
 
         case "replace":
             guard let obj = changes as? [String: Any] else { return }
-            let node = GovinciNode.parse(obj)
+            let node = GrMobNode.parse(obj)
             guard let (parent, index) = parentOf(path) else {
                 // Path is "root" itself: swap the whole tree.
                 if path == Self.rootPath { root = node } else { warn(type, path) }
@@ -78,12 +78,12 @@ final class TreeStore {
         case "add":
             guard let obj = changes as? [String: Any] else { return }
             guard let (parent, index) = parentOf(path) else { return warn(type, path) }
-            parent.children.insert(GovinciNode.parse(obj), at: min(max(index, 0), parent.children.count))
+            parent.children.insert(GrMobNode.parse(obj), at: min(max(index, 0), parent.children.count))
 
         case "add-child":
             guard let obj = changes as? [String: Any] else { return }
             guard let parent = resolve(path) else { return warn(type, path) }
-            parent.children.append(GovinciNode.parse(obj))
+            parent.children.append(GrMobNode.parse(obj))
 
         case "remove", "remove-child":
             guard let (parent, index) = parentOf(path) else { return warn(type, path) }
@@ -99,7 +99,7 @@ final class TreeStore {
     }
 
     /// Walks a positional path ("root/0/2") to its node, or nil if it dangles.
-    private func resolve(_ path: String) -> GovinciNode? {
+    private func resolve(_ path: String) -> GrMobNode? {
         guard var node = root else { return nil }
         if path == Self.rootPath { return node }
         for seg in path.dropFirst(Self.rootPath.count + 1).split(separator: "/") {
@@ -110,7 +110,7 @@ final class TreeStore {
     }
 
     /// Resolves a path to (parent node, child index); nil for "root" or a dangling path.
-    private func parentOf(_ path: String) -> (GovinciNode, Int)? {
+    private func parentOf(_ path: String) -> (GrMobNode, Int)? {
         guard let cut = path.lastIndex(of: "/"),
               let index = Int(path[path.index(after: cut)...]),
               let parent = resolve(String(path[..<cut]))

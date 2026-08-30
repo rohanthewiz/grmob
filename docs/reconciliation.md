@@ -1,16 +1,16 @@
-# The Govinci Reconciliation Engine: Architecture and Rationale
+# The GrMob Reconciliation Engine: Architecture and Rationale
 
 ## Abstract
 
-In modern declarative UI systems, reconciliation is the bridge between intention and rendering. It determines how a new virtual tree of UI components should translate into efficient, minimal updates to the actual interface. This document explores the inner workings of the Govinci reconciliation engine—its design, its motivations, and its mechanisms—providing a deep technical understanding of how Govinci handles rendering, state, and diffing to ensure efficient and predictable UI updates.
+In modern declarative UI systems, reconciliation is the bridge between intention and rendering. It determines how a new virtual tree of UI components should translate into efficient, minimal updates to the actual interface. This document explores the inner workings of the GrMob reconciliation engine—its design, its motivations, and its mechanisms—providing a deep technical understanding of how GrMob handles rendering, state, and diffing to ensure efficient and predictable UI updates.
 
 ---
 
 ## Introduction
 
-User interfaces are not static. They change with state, with time, and with interaction. In a declarative model such as Govinci, the developer expresses what the UI should look like given the current state. The job of the reconciliation engine is to decide what needs to be updated between frames.
+User interfaces are not static. They change with state, with time, and with interaction. In a declarative model such as GrMob, the developer expresses what the UI should look like given the current state. The job of the reconciliation engine is to decide what needs to be updated between frames.
 
-Unlike imperative systems where changes are applied directly, Govinci adopts a virtual view model. The application renders a tree of `Node` structures, representing the desired UI. These nodes are compared with the previous tree using a diffing algorithm, producing a set of patches. These patches are then applied to the native layer or renderer.
+Unlike imperative systems where changes are applied directly, GrMob adopts a virtual view model. The application renders a tree of `Node` structures, representing the desired UI. These nodes are compared with the previous tree using a diffing algorithm, producing a set of patches. These patches are then applied to the native layer or renderer.
 
 ---
 
@@ -89,7 +89,7 @@ Component identity is preserved by position and structure. If a node stays at th
 
 ## Conclusion
 
-The reconciliation engine in Govinci is designed to bring the rigor of functional design into the performance constraints of mobile UI development. Through immutability, intelligent diffing, and a structured render flow, it achieves the balance between expressiveness and efficiency.
+The reconciliation engine in GrMob is designed to bring the rigor of functional design into the performance constraints of mobile UI development. Through immutability, intelligent diffing, and a structured render flow, it achieves the balance between expressiveness and efficiency.
 
 Future enhancements will include keyed diffing, partial subtree memoization, and asynchronous scheduling—bringing it closer to production-grade engines like React Fiber or Flutter's Element tree.
 

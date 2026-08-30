@@ -1,10 +1,10 @@
 import Foundation
-import Govinci
+import GrMob
 
-/// GovinciBridge implementation over the gomobile-generated framework.
+/// GrMobBridge implementation over the gomobile-generated framework.
 ///
 /// The `Mobile*` functions and `MobilePatchListenerProtocol` come from
-/// Frameworks/Govinci.xcframework, produced by ../build.sh from the Go
+/// Frameworks/GrMob.xcframework, produced by ../build.sh from the Go
 /// `mobile` package (see mobile/bridge.go for the delivery contract). gobind
 /// prefixes each bound package's symbols with its capitalized package name,
 /// so the bridge package's functions surface as MobileRenderInitial,
@@ -17,7 +17,7 @@ import Govinci
 /// happen the app is installed. (The Go side requires the app package to
 /// export at least one bindable symbol or gobind never links it; see
 /// mobileapp.AppName.)
-final class GomobileBridge: GovinciBridge, @unchecked Sendable {
+final class GomobileBridge: GrMobBridge, @unchecked Sendable {
     // Go holds a proxy for the listener it was handed, but keep our own
     // strong reference too so the Swift object's lifetime never depends on
     // the bridge's internal ref-counting.
@@ -27,7 +27,7 @@ final class GomobileBridge: GovinciBridge, @unchecked Sendable {
         // Register the writable directory before anything renders — Go-side
         // persistence (mobile.SetDataDir / DataDir; see examples/todoapp's
         // bytdb store) hydrates on the first render pass, so this must beat
-        // GovinciRuntime.start(). Application Support rather than Documents:
+        // GrMobRuntime.start(). Application Support rather than Documents:
         // a database is app-managed data, not a user-visible document, and
         // unlike Documents the directory doesn't exist until created.
         let fm = FileManager.default
@@ -67,7 +67,7 @@ final class GomobileBridge: GovinciBridge, @unchecked Sendable {
             self.deliver = deliver
         }
 
-        // Called from a Go goroutine; GovinciRuntime hops to the main thread.
+        // Called from a Go goroutine; GrMobRuntime hops to the main thread.
         func applyPatches(_ patches: String?) {
             deliver(patches ?? "")
         }

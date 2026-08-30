@@ -2,8 +2,8 @@ package main
 
 import (
 	"fmt"
-	"github.com/GraHms/govinci/core"
-	"github.com/GraHms/govinci/render"
+	"github.com/rohanthewiz/grmob/core"
+	"github.com/rohanthewiz/grmob/render"
 )
 
 func App(ctx *core.Context) core.View {
@@ -11,7 +11,7 @@ func App(ctx *core.Context) core.View {
 	name := core.NewState(ctx, "")
 
 	return core.Column(
-		core.Text("Bem-vindo ao Govinci"),
+		core.Text("Bem-vindo ao GrMob"),
 		core.Input(name.Get(), "Digite o seu nome", func(val string) {
 			name.Set(val)
 		}),

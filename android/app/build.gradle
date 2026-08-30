@@ -4,11 +4,11 @@ plugins {
 }
 
 android {
-    namespace 'com.govinci.app'
+    namespace 'com.grmob.app'
     compileSdk 34
 
     defaultConfig {
-        applicationId "com.govinci.app"
+        applicationId "com.grmob.app"
         minSdk 24
         targetSdk 34
         versionCode 1
@@ -44,7 +44,7 @@ android {
 
 dependencies {
     // The Go core + app, bound by gomobile. Produced by ../build.sh.
-    implementation files('libs/govinci.aar')
+    implementation files('libs/grmob.aar')
 
     def composeBom = platform('androidx.compose:compose-bom:2024.06.00')
     implementation composeBom
@@ -52,7 +52,7 @@ dependencies {
     implementation 'androidx.activity:activity-compose:1.9.0'
     implementation 'androidx.compose.foundation:foundation'
     // material3 supplies the interaction-heavy widgets (Button ripple,
-    // Checkbox, TabRow) with correct accessibility semantics; Govinci styles
+    // Checkbox, TabRow) with correct accessibility semantics; GrMob styles
     // are injected through their color/shape/padding slots.
     implementation 'androidx.compose.material3:material3'
     implementation 'androidx.compose.ui:ui'

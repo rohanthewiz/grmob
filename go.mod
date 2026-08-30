@@ -1,4 +1,4 @@
-module github.com/GraHms/govinci
+module github.com/rohanthewiz/grmob
 
 go 1.26.1
 

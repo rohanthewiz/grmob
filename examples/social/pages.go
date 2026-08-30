@@ -1,7 +1,7 @@
 package social
 
 import (
-	. "github.com/GraHms/govinci/core"
+	. "github.com/rohanthewiz/grmob/core"
 )
 
 func HomePage(ctx *Context) View {

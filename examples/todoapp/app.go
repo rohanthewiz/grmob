@@ -1,4 +1,4 @@
-// Package todoapp is a self-contained todo application built on the govinci
+// Package todoapp is a self-contained todo application built on the grmob
 // core widgets. It follows the same integration contract as examples/mobileapp:
 // the init below registers the root view with the mobile bridge, so swapping
 // this package into ios/build.sh or android/build.sh ships it natively, and
@@ -16,8 +16,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/GraHms/govinci/core"
-	"github.com/GraHms/govinci/mobile"
+	"github.com/rohanthewiz/grmob/core"
+	"github.com/rohanthewiz/grmob/mobile"
 )
 
 func init() {
@@ -29,7 +29,7 @@ func init() {
 // (function-typed parameters are unsupported), and without this the package —
 // including the init that registers the app — would be dropped from the
 // native library, leaving the bridge with a nil manager.
-func AppName() string { return "Govinci Todo" }
+func AppName() string { return "GrMob Todo" }
 
 // Todo is a plain value, not a pointer: mutation helpers copy the slice and
 // replace items wholesale, so the reconciler always diffs against an
@@ -63,7 +63,7 @@ const (
 )
 
 // App is the root view. All state lives here, in the root component, and is
-// passed down as values + closures. This is deliberate: govinci hooks are
+// passed down as values + closures. This is deliberate: grmob hooks are
 // positional slots on the Context (React rules apply), so per-row NewState
 // calls inside a list that grows, shrinks, or reorders would silently read
 // another row's slot. Rows below are therefore pure functions of their Todo.

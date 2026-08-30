@@ -1,6 +1,6 @@
-# Govinci
+# GrMob
 
-**Govinci** is a fully idiomatic Go framework for building native mobile apps using a declarative, functional DSL. Designed entirely in Go — Govinci offers a new approach to mobile development where UI, logic, and state management are written in pure Go, and rendered natively on Android and iOS.
+**GrMob** is a fully idiomatic Go framework for building native mobile apps using a declarative, functional DSL. Designed entirely in Go — GrMob offers a new approach to mobile development where UI, logic, and state management are written in pure Go, and rendered natively on Android and iOS.
 
 ---
 
@@ -31,7 +31,7 @@ package main
 
 import (
     "fmt"
-    "github.com/grahms/govinci/core"
+    "github.com/rohanthewiz/grmob/core"
 )
 
 func main() {
@@ -49,7 +49,7 @@ func main() {
 
 ### `app.go`
 ```go
-import "github.com/grahms/govinci/core"
+import "github.com/rohanthewiz/grmob/core"
 
 func App(ctx *core.Context) core.View {
     return core.SafeArea(
@@ -68,7 +68,7 @@ func App(ctx *core.Context) core.View {
 
 ### `profile.go`
 ```go
-import "github.com/grahms/govinci/core"
+import "github.com/rohanthewiz/grmob/core"
 
 func ProfileHeader() core.View {
     return core.Column(
@@ -98,11 +98,11 @@ func Stat(label, value string) core.View {
 
 ### `posts.go`
 ```go
-import "github.com/grahms/govinci/core"
+import "github.com/rohanthewiz/grmob/core"
 
 func PostList() core.View {
     return core.Column(
-        Post("Enjoying the Govinci project! 🚀"),
+        Post("Enjoying the GrMob project! 🚀"),
         core.Spacer(8),
         Post("Working on UI DSLs in Go is pure joy.", "#golang #ux #native"),
     )
@@ -128,7 +128,7 @@ func Post(content string, tags ...string) core.View {
 ```
 ## 🧠 Conditional Components
 
-Govinci offers expressive helpers like `If`, `IfElse`, `Match`, and `When` to enable clear and composable **conditional rendering**.
+GrMob offers expressive helpers like `If`, `IfElse`, `Match`, and `When` to enable clear and composable **conditional rendering**.
 
 This eliminates verbose control flow scattered across functions and allows you to describe UI variations naturally and declaratively.
 
@@ -193,7 +193,7 @@ core.ButtonWithEvent("Hold", "TouchStart", func() {
 
 ## 📖 Tutorial
 
-New to Govinci? [Building a Todo App](docs/tutorial-todo.md) is an in-depth,
+New to GrMob? [Building a Todo App](docs/tutorial-todo.md) is an in-depth,
 start-to-finish walkthrough: state and the rules of hooks, controlled inputs
 with Enter-to-submit, the virtualized keyed `List`, theming pitfalls,
 accessibility, testing at three levels, and shipping the same Go code to the
@@ -231,7 +231,7 @@ Renderers are responsible for turning the abstract `Node` tree into real UI elem
    ```
 2. Generate the Android library from the Go code:
    ```bash
-   gomobile bind -target=android -tags govinci -o android/app/libs/govinci.aar ./
+   gomobile bind -target=android -tags grmob -o android/app/libs/grmob.aar ./
    ```
 3. Open the `android/` folder in Android Studio and run the `app` module on a device or emulator.
 

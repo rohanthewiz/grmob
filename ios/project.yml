@@ -1,52 +1,52 @@
-# xcodegen spec — generates GovinciApp.xcodeproj (which stays untracked; this
+# xcodegen spec — generates GrMobApp.xcodeproj (which stays untracked; this
 # file is the source of truth). Regenerate after changing it:
 #   brew install xcodegen   # once
 #   cd ios && xcodegen generate
-name: GovinciApp
+name: GrMobApp
 options:
-  bundleIdPrefix: com.govinci
+  bundleIdPrefix: com.grmob
   deploymentTarget:
     iOS: "17.0" # floor set by the runtime's use of @Observable + containerRelativeFrame
 settings:
   SWIFT_VERSION: "5.9"
 targets:
-  GovinciApp:
+  GrMobApp:
     type: application
     platform: iOS
     sources:
-      - Govinci
+      - GrMob
     dependencies:
       # gomobile emits a static xcframework, so it links in; nothing to embed.
-      - framework: Frameworks/Govinci.xcframework
+      - framework: Frameworks/GrMob.xcframework
         embed: false
     info:
-      path: Govinci/Info.plist
+      path: GrMob/Info.plist
       properties:
         UILaunchScreen: {} # system default launch screen; without it iOS letterboxes the app
     settings:
-      PRODUCT_BUNDLE_IDENTIFIER: com.govinci.demo
+      PRODUCT_BUNDLE_IDENTIFIER: com.grmob.demo
       # gomobile's generated glue is Objective-C; the app is Swift-only, but
       # linking Go's runtime archive wants the ObjC linker flag.
       OTHER_LDFLAGS: -ObjC
   # Simulator smoke test: drives the demo app through all four event kinds
-  # plus the push channel (see GovinciUITests.swift). Run with:
-  #   xcodebuild test -project GovinciApp.xcodeproj -scheme GovinciApp \
+  # plus the push channel (see GrMobUITests.swift). Run with:
+  #   xcodebuild test -project GrMobApp.xcodeproj -scheme GrMobApp \
   #     -destination 'platform=iOS Simulator,name=iPhone 17 Pro'
-  GovinciUITests:
+  GrMobUITests:
     type: bundle.ui-testing
     platform: iOS
     sources:
-      - GovinciUITests
+      - GrMobUITests
     settings:
       GENERATE_INFOPLIST_FILE: YES
     dependencies:
-      - target: GovinciApp
+      - target: GrMobApp
 schemes:
-  GovinciApp:
+  GrMobApp:
     build:
       targets:
-        GovinciApp: all
-        GovinciUITests: [test]
+        GrMobApp: all
+        GrMobUITests: [test]
     test:
       targets:
-        - GovinciUITests
+        - GrMobUITests

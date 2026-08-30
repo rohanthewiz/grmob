@@ -1,4 +1,4 @@
-# Govinci: Feasibility Analysis for Modern Android/iOS Apps
+# GrMob: Feasibility Analysis for Modern Android/iOS Apps
 
 *Analysis date: 2026-08-29*
 
@@ -16,7 +16,7 @@ raw Views) cuts the remaining work by an order of magnitude.
 - Go components build a `core.Node` tree (`core/node.go`).
 - State lives in cursor-indexed slots on a `Context` (React-hooks style, `core/context.go`).
 - The reconciler diffs old vs. new trees into JSON patches (`reconcile/patch.go`).
-- A thin native shell applies patches — `PatchRenderer.kt` on Android, `govinci-runtime.js`
+- A thin native shell applies patches — `PatchRenderer.kt` on Android, `grmob-runtime.js`
   for WASM. Events flow back as string callback IDs (`core/event.go`).
 
 This is a proven pattern (React Native, NativeScript, Lynx). Go specifically is fine on
@@ -49,7 +49,7 @@ an AAR/xcframework, GC pauses are sub-millisecond, and actual drawing is native.
    identity, then real move patches.
 
 3. **No Go→native push channel.** The bridge is strictly request/response
-   (`GovinciBridge.kt`). `UseInterval`, network responses, or any goroutine calling
+   (`GrMobBridge.kt`). `UseInterval`, network responses, or any goroutine calling
    `state.Set()` cannot tell the native side "re-render now" (WASM polls `IsDirty`).
    Fix: `gomobile bind` lets native code register an interface implementation with Go;
    Go pushes patches to a `Renderer` callback on the UI thread. Small work, unblocks the
@@ -72,7 +72,7 @@ an AAR/xcframework, GC pauses are sub-millisecond, and actual drawing is native.
 
 ## Strategic recommendation
 
-Do not build the renderer against classic Android Views and UIKit. **Map the Govinci node
+Do not build the renderer against classic Android Views and UIKit. **Map the GrMob node
 tree into Jetpack Compose and SwiftUI.** Both are declarative tree-diffing systems: hand
 each new tree (or subtree) to Compose/SwiftUI and let their mature reconcilers handle view
 identity, animation, recycling (`LazyColumn`/`List`), and accessibility. The Go reconciler

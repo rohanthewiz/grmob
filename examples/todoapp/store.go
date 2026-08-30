@@ -30,7 +30,7 @@ import (
 	"path/filepath"
 	"sync"
 
-	"github.com/GraHms/govinci/mobile"
+	"github.com/rohanthewiz/grmob/mobile"
 	"github.com/rohanthewiz/bytdb"
 	bsql "github.com/rohanthewiz/bytdb/sql"
 )

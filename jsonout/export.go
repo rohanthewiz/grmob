@@ -2,7 +2,7 @@ package jsonout
 
 import (
 	"encoding/json"
-	"github.com/GraHms/govinci/core"
+	"github.com/rohanthewiz/grmob/core"
 )
 
 func Export(node *core.Node) string {

@@ -16,9 +16,9 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/GraHms/govinci/core"
-	"github.com/GraHms/govinci/hooks"
-	"github.com/GraHms/govinci/mobile"
+	"github.com/rohanthewiz/grmob/core"
+	"github.com/rohanthewiz/grmob/hooks"
+	"github.com/rohanthewiz/grmob/mobile"
 )
 
 func init() {
@@ -30,7 +30,7 @@ func init() {
 // (function-typed parameters are unsupported), and with zero bindable symbols
 // the package — including the init that registers the app — is never linked
 // into the AAR, leaving the bridge with no app (nil manager) at runtime.
-func AppName() string { return "Govinci Demo" }
+func AppName() string { return "GrMob Demo" }
 
 func App(ctx *core.Context) core.View {
 	tab := core.NewState(ctx, 0)

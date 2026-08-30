@@ -12,7 +12,7 @@ import Foundation
 /// main thread, so an implementation must be safe to touch from both. The
 /// gomobile functions are — cgo calls into a Go runtime that serializes
 /// render passes behind its own mutex.
-protocol GovinciBridge: Sendable {
+protocol GrMobBridge: Sendable {
     func renderInitial() -> String
     func triggerCallback(_ id: String) -> String
     func triggerTextCallback(_ id: String, _ value: String) -> String
@@ -43,13 +43,13 @@ protocol GovinciBridge: Sendable {
 /// bridge call spans a full Go render pass and may briefly block on the
 /// render mutex, and the serial queue keeps events themselves ordered.
 @MainActor
-final class GovinciRuntime {
+final class GrMobRuntime {
     let store = TreeStore()
 
-    private let bridge: GovinciBridge
-    private let events = DispatchQueue(label: "govinci-events")
+    private let bridge: GrMobBridge
+    private let events = DispatchQueue(label: "grmob-events")
 
-    init(bridge: GovinciBridge) {
+    init(bridge: GrMobBridge) {
         self.bridge = bridge
     }
 
@@ -83,7 +83,7 @@ final class GovinciRuntime {
         dispatch { $0.triggerIntCallback(callbackID, value) }
     }
 
-    private func dispatch(_ call: @escaping (GovinciBridge) -> String) {
+    private func dispatch(_ call: @escaping (GrMobBridge) -> String) {
         events.async { [bridge, store] in
             let patches = call(bridge)
             DispatchQueue.main.async {

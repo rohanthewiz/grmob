@@ -37,21 +37,21 @@ One declaration, four backends:
 
 ## What changed
 
-- **Android** (`GovinciStyle.kt`, `Renderer.kt`): parsed `transitionMs` +
+- **Android** (`GrMobStyle.kt`, `Renderer.kt`): parsed `transitionMs` +
   `transitionEasing` fields with a `transitionTween<T>()` helper;
   `animateContentSize(tween)` in boxModifier (inserted before the dimension
   modifiers so explicit and content-driven size changes both animate);
   `animatedStyle()` composable animates the background via a hand-driven
-  `Animatable` (see gotcha below); GovinciList rows get
+  `Animatable` (see gotcha below); GrMobList rows get
   `animateItemPlacement` when the List declares a Transition (foundation
   1.6 under BOM 2024.06 — the 1.7 `animateItem` API isn't available;
   `LazyItemScope`-only, so it's built inside the item lambda).
-- **iOS** (`GovinciStyle.swift`, `Renderer.swift`): `transition` field +
+- **iOS** (`GrMobStyle.swift`, `Renderer.swift`): `transition` field +
   `swiftUIAnimation` computed parse (`.timingCurve` for the CSS beziers);
-  `govinciBox` ends with `.animation(anim, value: s)` scoped to the node's
-  own style; GovinciList attaches `.animation(anim, value: rows.map(\.viewID))`
+  `grMobBox` ends with `.animation(anim, value: s)` scoped to the node's
+  own style; GrMobList attaches `.animation(anim, value: rows.map(\.viewID))`
   for placement.
-- **Web**: `htmlout` styleAttr and `wasm/govinci-runtime.js` emit
+- **Web**: `htmlout` styleAttr and `wasm/grmob-runtime.js` emit
   `transition: all <decl>` — the canonical form is valid CSS as-is.
 - **Demo** (`examples/mobileapp`): feed rows declare
   `Transition(250, EaseInOut)` so the selection highlight fades.
@@ -62,8 +62,8 @@ One declaration, four backends:
 
 1. **Swift compiler crash** (signal 6, "Possible non-terminating conformance
    substitution", `substOpaqueTypesWithUnderlyingTypes`): one more
-   `@ViewBuilder` conditional stacked on govinciBox's opaque-type tower blew
-   the compiler's substitution limit. Fix: `govinciTransition` is a plain
+   `@ViewBuilder` conditional stacked on grMobBox's opaque-type tower blew
+   the compiler's substitution limit. Fix: `grMobTransition` is a plain
    unconditional modifier — `.animation(nil, value:)` is already the
    no-animation case. Comment in code warns the next conditional will
    reintroduce the crash.
@@ -80,7 +80,7 @@ One declaration, four backends:
 - Go: build, vet, `go test -race ./...`, wasm build — green. New
   `core/animation_test.go` (canonical form, clearing, node plumbing).
 - iOS: `ios/verify/run.sh` conforms (9 batches — the harness compiles
-  GovinciStyle.swift, so it also caught the compiler crash); xcframework
+  GrMobStyle.swift, so it also caught the compiler crash); xcframework
   rebuilt; XCUITest **2/2** on the iPhone 17 Pro simulator with the feed
   transition active.
 - Android: AAR + APK rebuilt (scratchpad Gradle 8.5, `ANDROID_HOME` env),

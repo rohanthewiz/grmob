@@ -1,4 +1,4 @@
-# Building a Todo App with Govinci — an in-depth tutorial
+# Building a Todo App with GrMob — an in-depth tutorial
 
 This tutorial builds a complete, natively-rendered todo application in pure Go
 and ships it to the iOS simulator and the Android emulator. The finished code
@@ -23,7 +23,7 @@ framework surface. Each feature maps to a concept:
 
 ## 1. The mental model
 
-Govinci is a declarative UI framework: you describe the whole screen as a pure
+GrMob is a declarative UI framework: you describe the whole screen as a pure
 function of state, and the framework figures out what actually changed. Three
 types carry the model (`core/view.go`, `core/node.go`, `core/context.go`):
 
@@ -70,8 +70,8 @@ An app is a Go package with two obligations (mirroring `examples/mobileapp`):
 package todoapp
 
 import (
-	"github.com/GraHms/govinci/core"
-	"github.com/GraHms/govinci/mobile"
+	"github.com/rohanthewiz/grmob/core"
+	"github.com/rohanthewiz/grmob/mobile"
 )
 
 func init() {
@@ -83,7 +83,7 @@ func init() {
 // (function-typed parameters are unsupported), and without this the package —
 // including the init that registers the app — would be dropped from the
 // native library, leaving the bridge with a nil manager.
-func AppName() string { return "Govinci Todo" }
+func AppName() string { return "GrMob Todo" }
 ```
 
 The `init` is the whole integration: gomobile runs package inits when the
@@ -260,7 +260,7 @@ upstream change that matches a queued entry is an echo of the user's own edit
 deliberately rewriting the value — and that lands immediately, focused or
 not. As an app author you don't manage any of this; you just `Set` the state
 and the contract holds. (If you're curious, the mechanism lives in
-`GovinciTextField` in both `ios/Govinci/Runtime/Renderer.swift` and
+`GrMobTextField` in both `ios/GrMob/Runtime/Renderer.swift` and
 `android/.../Renderer.kt`.)
 
 ### The filter bar: selection as style, driven by one loop
@@ -439,7 +439,7 @@ MobileSetDataDir(dir.path)
 
 ```kotlin
 // MainActivity.kt (Android): filesDir is the equivalent.
-val runtime = GovinciRuntime(GomobileBridge(filesDir.absolutePath))
+val runtime = GrMobRuntime(GomobileBridge(filesDir.absolutePath))
 ```
 
 With no directory registered — the web preview targets, plain `go test` —
@@ -511,7 +511,7 @@ Nearly everything. The one todo-app bug that reached a device — Add not
 clearing the input — lived in the *renderer*, below what bridge tests can
 see: Go emitted the correct `"value":""` patch, and the focused native field
 dropped it. Only a test that owns a real keyboard could catch it, which is
-what `ios/GovinciUITests/TodoAppUITests.swift` does:
+what `ios/GrMobUITests/TodoAppUITests.swift` does:
 
 ```swift
         field.tap()
@@ -526,9 +526,9 @@ what `ios/GovinciUITests/TodoAppUITests.swift` does:
 Run it (after the build in section 6) with:
 
 ```sh
-cd ios && xcodebuild test -project GovinciApp.xcodeproj -scheme GovinciApp \
+cd ios && xcodebuild test -project GrMobApp.xcodeproj -scheme GrMobApp \
   -destination 'platform=iOS Simulator,name=iPhone 17 Pro' \
-  -only-testing:GovinciUITests/TodoAppUITests
+  -only-testing:GrMobUITests/TodoAppUITests
 ```
 
 ### Level 3: Android emulator via adb
@@ -558,22 +558,22 @@ the `examples/mobileapp` demo).
 **iOS** (needs full Xcode + gomobile):
 
 ```sh
-ios/build.sh ./examples/todoapp        # gomobile bind → Govinci.xcframework
+ios/build.sh ./examples/todoapp        # gomobile bind → GrMob.xcframework
 cd ios && xcodegen generate
-xcodebuild -project GovinciApp.xcodeproj -scheme GovinciApp \
+xcodebuild -project GrMobApp.xcodeproj -scheme GrMobApp \
   -destination 'platform=iOS Simulator,name=iPhone 17 Pro' build
-xcrun simctl install booted <path-to>/GovinciApp.app
-xcrun simctl launch booted com.govinci.demo
+xcrun simctl install booted <path-to>/GrMobApp.app
+xcrun simctl launch booted com.grmob.demo
 ```
 
 **Android** (needs SDK/NDK + JDK 17; export `ANDROID_HOME` for Gradle —
 `build.sh` only sets it for gomobile):
 
 ```sh
-android/build.sh ./examples/todoapp    # gomobile bind → app/libs/govinci.aar
+android/build.sh ./examples/todoapp    # gomobile bind → app/libs/grmob.aar
 cd android && gradle assembleDebug
 adb install -r app/build/outputs/apk/debug/app-debug.apk
-adb shell am start -n com.govinci.app/.MainActivity
+adb shell am start -n com.grmob.app/.MainActivity
 ```
 
 The same Go code, the same state, the same tests — rendered by SwiftUI on one

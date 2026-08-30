@@ -10,7 +10,7 @@ import XCTest
 // Element lookup leans on SwiftUI's default accessibility: Button/TextField/
 // Toggle surface as-is; the hand-rolled tab bar wraps each label in a Button,
 // so tabs are addressed as buttons.
-final class GovinciUITests: XCTestCase {
+final class GrMobUITests: XCTestCase {
 
     override func setUpWithError() throws {
         continueAfterFailure = false

@@ -80,7 +80,7 @@ verified on both simulators.
   `~/.gradle/wrapper/dists/gradle-8.14-all/<hash>/gradle-8.14/bin/gradle
   assembleDebug` with `ANDROID_HOME` exported.
 - Both simulators left running the persistent todoapp build (iOS
-  `com.govinci.demo`, Android `com.govinci.app`; Android has one done row
+  `com.grmob.demo`, Android `com.grmob.app`; Android has one done row
   "Persist on Android").
 
 ## Possible next steps

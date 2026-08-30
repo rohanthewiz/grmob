@@ -18,11 +18,11 @@ import (
 	"os"
 	"sync"
 
-	"github.com/GraHms/govinci/mobile"
+	"github.com/rohanthewiz/grmob/mobile"
 
 	// Imported for its init: registers the demo app with the bridge, the same
 	// wiring the bound framework gets.
-	_ "github.com/GraHms/govinci/examples/mobileapp"
+	_ "github.com/rohanthewiz/grmob/examples/mobileapp"
 )
 
 type transcript struct {

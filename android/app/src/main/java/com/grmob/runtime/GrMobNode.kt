@@ -1,4 +1,4 @@
-package com.govinci.runtime
+package com.grmob.runtime
 
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
@@ -26,18 +26,18 @@ import org.json.JSONObject
  *
  * `type` and `key` are immutable by design: the Go reconciler never mutates
  * a node across those axes — it emits `replace`, which swaps in a fresh
- * GovinciNode instance here.
+ * GrMobNode instance here.
  */
-class GovinciNode(
+class GrMobNode(
     val type: String,
     val key: String,
     props: Map<String, Any?>,
-    style: GovinciStyle?,
-    children: List<GovinciNode>,
+    style: GrMobStyle?,
+    children: List<GrMobNode>,
 ) {
     var props by mutableStateOf(props)
     var style by mutableStateOf(style)
-    val children = mutableStateListOf<GovinciNode>().apply { addAll(children) }
+    val children = mutableStateListOf<GrMobNode>().apply { addAll(children) }
 
     /** Typed prop accessors; Go serializes props with lowercase keys. */
     fun stringProp(name: String): String = props[name] as? String ?: ""
@@ -46,9 +46,9 @@ class GovinciNode(
 
     companion object {
         /** Decodes a Go core.Node JSON object (keys are the Go field names). */
-        fun parse(obj: JSONObject): GovinciNode {
+        fun parse(obj: JSONObject): GrMobNode {
             val childArray = obj.optJSONArray("Children")
-            val children = ArrayList<GovinciNode>(childArray?.length() ?: 0)
+            val children = ArrayList<GrMobNode>(childArray?.length() ?: 0)
             if (childArray != null) {
                 for (i in 0 until childArray.length()) {
                     // Go child slots can hold JSON null (nil *Node); skip them —
@@ -57,11 +57,11 @@ class GovinciNode(
                     children.add(parse(child))
                 }
             }
-            return GovinciNode(
+            return GrMobNode(
                 type = obj.optString("Type"),
                 key = obj.optString("Key"),
                 props = parseProps(obj.optJSONObject("Props")),
-                style = GovinciStyle.parse(obj.optJSONObject("Style")),
+                style = GrMobStyle.parse(obj.optJSONObject("Style")),
                 children = children,
             )
         }

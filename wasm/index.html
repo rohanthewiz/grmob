@@ -2,7 +2,7 @@
 <html>
 <head>
     <meta charset="utf-8">
-    <title>Govinci WASM</title>
+    <title>GrMob WASM</title>
 </head>
 <body>
 <div id="app"></div>
@@ -11,7 +11,7 @@
 <script src="wasm_exec.js"></script>
 
 <!-- Runtime JavaScript -->
-<script src="govinci-runtime.js"></script>
+<script src="grmob-runtime.js"></script>
 <script src="camera.js"></script>
 
 <!-- Init WASM -->
@@ -23,17 +23,17 @@
         WebAssembly.instantiate(buffer, go.importObject)
     ).then(result => {
         go.run(result.instance);
-        const patch = window.GovinciWASM.RenderInitial();
+        const patch = window.GrMobWASM.RenderInitial();
         console.log("Initial Render:", patch);
-        Govinci.mount(patch);
+        GrMob.mount(patch);
     });
 
     window.GoInvokeCallback = (id, payload) => {
         console.log("Triggering:", id, payload);
-        window.GovinciWASM.ReceiveEvent(id, JSON.stringify(payload));
-        const patch = window.GovinciWASM.RenderAgain();
+        window.GrMobWASM.ReceiveEvent(id, JSON.stringify(payload));
+        const patch = window.GrMobWASM.RenderAgain();
         console.log("found patch:", patch);
-        Govinci.patch(patch);
+        GrMob.patch(patch);
     };
 </script>
 </body>

@@ -18,18 +18,18 @@ import Observation
 ///
 /// `type` and `key` are immutable by design: the Go reconciler never mutates
 /// a node across those axes — it emits `replace`, which swaps in a fresh
-/// GovinciNode instance here. Because instances are the ForEach identity,
+/// GrMobNode instance here. Because instances are the ForEach identity,
 /// that swap is precisely what resets SwiftUI view state for the replaced
 /// subtree while structural inserts/removes leave sibling state untouched.
 @Observable
-final class GovinciNode {
+final class GrMobNode {
     let type: String
     let key: String
     var props: [String: Any]
-    var style: GovinciStyle?
-    var children: [GovinciNode]
+    var style: GrMobStyle?
+    var children: [GrMobNode]
 
-    init(type: String, key: String, props: [String: Any], style: GovinciStyle?, children: [GovinciNode]) {
+    init(type: String, key: String, props: [String: Any], style: GrMobStyle?, children: [GrMobNode]) {
         self.type = type
         self.key = key
         self.props = props
@@ -44,8 +44,8 @@ final class GovinciNode {
 
     /// Decodes a Go core.Node JSON object (keys are the Go field names,
     /// as produced by JSONSerialization).
-    static func parse(_ obj: [String: Any]) -> GovinciNode {
-        var children: [GovinciNode] = []
+    static func parse(_ obj: [String: Any]) -> GrMobNode {
+        var children: [GrMobNode] = []
         if let childArray = obj["Children"] as? [Any] {
             children.reserveCapacity(childArray.count)
             for slot in childArray {
@@ -55,11 +55,11 @@ final class GovinciNode {
                 children.append(parse(child))
             }
         }
-        return GovinciNode(
+        return GrMobNode(
             type: obj["Type"] as? String ?? "",
             key: obj["Key"] as? String ?? "",
             props: obj["Props"] as? [String: Any] ?? [:],
-            style: GovinciStyle.parse(obj["Style"] as? [String: Any]),
+            style: GrMobStyle.parse(obj["Style"] as? [String: Any]),
             children: children
         )
     }

@@ -1,6 +1,6 @@
 # Compose-Based Android Renderer (Attack-Order Step 4)
 
-*Design date: 2026-08-29. Companion to `govinci-mobile-feasibility-analysis.md`.*
+*Design date: 2026-08-29. Companion to `grmob-mobile-feasibility-analysis.md`.*
 
 ## The one strategic decision
 
@@ -8,7 +8,7 @@ Patches are applied to a **Kotlin data tree, never to views**. The old
 `PatchRenderer.kt` kept a `path → View` map and mutated Android Views by hand —
 which meant re-implementing view identity, recycling, animation, and
 accessibility from scratch (the "honest 80%" of the feasibility analysis).
-Instead, the Compose runtime holds a `GovinciNode` mirror of Go's tree whose
+Instead, the Compose runtime holds a `GrMobNode` mirror of Go's tree whose
 mutable aspects are Compose **snapshot state**; composables read that state and
 Compose's own reconciler does everything downstream.
 
@@ -18,7 +18,7 @@ Go side                     bridge                Kotlin side
 core.Node tree ─ diff ─▶ patch JSON ─▶ TreeStore.applyPatches
                                           │ mutates snapshot state
                                           ▼
-                                    GovinciNode tree ─ read ─▶ @Composables
+                                    GrMobNode tree ─ read ─▶ @Composables
                                                                  │ (Compose reconciler:
                                                                  ▼  identity, recycling, a11y)
                                                               Android UI
@@ -26,7 +26,7 @@ core.Node tree ─ diff ─▶ patch JSON ─▶ TreeStore.applyPatches
 
 ## How patches short-circuit into recomposition
 
-Each `GovinciNode` splits its mutable surface into independently observable
+Each `GrMobNode` splits its mutable surface into independently observable
 state so a patch invalidates the narrowest possible composable scope:
 
 | patch                    | mutates                              | recomposes                       |
@@ -49,7 +49,7 @@ highest-index-first) are exactly what make the walk safe within a batch.
 One rule: **all patch application happens on the main thread, in arrival
 order.** Both delivery paths funnel into a single `Handler.post`:
 
-- **Event path** — composable handlers call `GovinciRuntime.click/textChanged/
+- **Event path** — composable handlers call `GrMobRuntime.click/textChanged/
   toggled/intChanged`, which run the bridge `Trigger*` call on a dedicated
   single-thread executor (a bridge call spans a full Go render pass; the single
   thread also keeps events ordered), then post the returned patches to main.
@@ -65,7 +65,7 @@ the pump renders; render passes were already serialized behind
 ## Node → Composable mapping
 
 Material3 is used where interaction/a11y semantics are expensive to hand-roll
-(Button ripple, Checkbox, TabRow); Govinci styles flow into their color/shape/
+(Button ripple, Checkbox, TabRow); GrMob styles flow into their color/shape/
 padding slots. Everything else is foundation primitives.
 
 | Go node | Composable | notes |
@@ -86,7 +86,7 @@ padding slots. Everything else is foundation primitives.
 | CameraView | styled `Box` stub | real CameraX integration is its own pass |
 | unknown | `Column` of children | forward compatibility |
 
-Style mapping lives in `GovinciStyle.boxModifier()`, applied in CSS box-model
+Style mapping lives in `GrMobStyle.boxModifier()`, applied in CSS box-model
 order (margin → size → shadow → clip → background → border → padding — the
 order is load-bearing). JSON keys are Go's exported field names verbatim
 (no json tags on `core.Style`). `Display: "none"` skips composition;
@@ -101,17 +101,17 @@ typing).
 
 ## File map
 
-- `android/app/src/main/java/com/govinci/runtime/` — app-agnostic runtime:
-  `GovinciNode.kt`, `GovinciStyle.kt`, `TreeStore.kt`, `GovinciRuntime.kt`
-  (+ `GovinciBridge` interface), `Renderer.kt`.
-- `android/app/src/main/java/com/govinci/app/` — shell: `MainActivity.kt`,
+- `android/app/src/main/java/com/grmob/runtime/` — app-agnostic runtime:
+  `GrMobNode.kt`, `GrMobStyle.kt`, `TreeStore.kt`, `GrMobRuntime.kt`
+  (+ `GrMobBridge` interface), `Renderer.kt`.
+- `android/app/src/main/java/com/grmob/app/` — shell: `MainActivity.kt`,
   `GomobileBridge.kt` (impl over gomobile-generated `mobile.Mobile`).
 - `examples/mobileapp/` — demo Go app bound into the AAR; its `init()` calls
   `mobile.Register`. Exercises all four event kinds + the push channel, with a
   Go-side smoke test (`app_test.go`) that replays the exact Kotlin call
   sequence.
 - `android/build.sh` — `gomobile bind ./mobile ./examples/mobileapp` →
-  `app/libs/govinci.aar` (replaces the broken bind-the-repo-root + raw-JNI
+  `app/libs/grmob.aar` (replaces the broken bind-the-repo-root + raw-JNI
   setup).
 
 ## Fixed along the way (Go side)

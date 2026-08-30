@@ -8,7 +8,7 @@
 
 ## Goal
 
-Step 5 of the attack order in `ai_docs/plans/govinci-mobile-feasibility-analysis.md`:
+Step 5 of the attack order in `ai_docs/plans/grmob-mobile-feasibility-analysis.md`:
 iOS via SwiftUI, porting the Compose renderer design one-to-one. Full rationale in
 `ai_docs/plans/swiftui-renderer-design.md` (written this session).
 
@@ -21,12 +21,12 @@ with Android as designed.
 ## The port in one paragraph
 
 Same architecture, Swift dialect: patches are applied to an `@Observable`
-`GovinciNode` data tree (`@Observable` per-property tracking is the SwiftUI
+`GrMobNode` data tree (`@Observable` per-property tracking is the SwiftUI
 analog of Compose snapshot state — `update-props` re-evaluates only readers of
 that node's props; structural patches only the parent's children loop).
 `TreeStore` (`@MainActor`) resolves positional paths against the live tree at
 apply time. Threading: `Trigger*` calls run on a serial
-`DispatchQueue("govinci-events")`; both delivery paths funnel through
+`DispatchQueue("grmob-events")`; both delivery paths funnel through
 `DispatchQueue.main.async` — deliberately not `Task`, which carries no FIFO
 guarantee — which *is* the arrival-order contract. One improvement over the
 Android port: ForEach identity is the node *instance* (`ObjectIdentifier`,
@@ -35,20 +35,20 @@ explicit key when set), so in-place patches preserve sibling view state and
 
 ## New files
 
-- `ios/Govinci/Runtime/` — app-agnostic runtime, file-for-file mirror of
-  `android/.../runtime/`: `GovinciNode.swift`, `GovinciStyle.swift` (govinciBox
+- `ios/GrMob/Runtime/` — app-agnostic runtime, file-for-file mirror of
+  `android/.../runtime/`: `GrMobNode.swift`, `GrMobStyle.swift` (grMobBox
   chain in CSS box-model order — reversed in source since SwiftUI chains read
   innermost-first; strokeBorder for inside borders; compositingGroup before
-  shadow), `TreeStore.swift`, `GovinciRuntime.swift` (+ `GovinciBridge`
+  shadow), `TreeStore.swift`, `GrMobRuntime.swift` (+ `GrMobBridge`
   protocol, Sendable by contract), `Renderer.swift` (all 20 node types).
-- `ios/Govinci/App/` — `GovinciApp.swift` (@main; start() in App.init),
+- `ios/GrMob/App/` — `GrMobApp.swift` (@main; start() in App.init),
   `GomobileBridge.swift` over the generated C surface.
 - `ios/build.sh` — `gomobile bind -target=ios,iossimulator` →
-  `ios/Frameworks/Govinci.xcframework`; binds the same `./mobile
+  `ios/Frameworks/GrMob.xcframework`; binds the same `./mobile
   ./examples/mobileapp` pair (the gobind linkage trap + `mobileapp.AppName`
   fix apply identically).
 - `ios/project.yml` — xcodegen spec (source of truth; generated
-  `GovinciApp.xcodeproj` untracked, iOS 17 floor, `-ObjC` ldflag).
+  `GrMobApp.xcodeproj` untracked, iOS 17 floor, `-ObjC` ldflag).
 - `ios/verify/` — **data-layer conformance harness**: `gen.go` replays every
   event kind through the real bridge + demo app, recording each patch batch in
   arrival order plus the final full tree; `main.swift` (compiled as a macOS
@@ -60,10 +60,10 @@ explicit key when set), so in-place patches preserve sibling view state and
 ## iOS-specific mappings (vs. Android)
 
 Checkbox → `Toggle` (switch; iOS has no checkbox). TabView → hand-rolled top
-tab bar (native TabView wants locally-owned selection; Govinci's is a
+tab bar (native TabView wants locally-owned selection; GrMob's is a
 controlled Go int). Modal → `.sheet` with medium/large detents. Image →
 built-in `AsyncImage`. FlexGrow → infinity frame on the parent's main axis
-(`GovinciGrow`); justify-content emulated with flexible Spacers
+(`GrMobGrow`); justify-content emulated with flexible Spacers
 (`space-around` ≈ `space-evenly`); proportional weights need a custom Layout.
 Controlled inputs: local `@State` buffer authoritative while `@FocusState`
 reports focus (seeded from Go's value at focus arrival), Go-owned otherwise.
@@ -90,7 +90,7 @@ gomobile pinned @188f512ec823 (do not bump — forces Go 1.26 floor).
 ## Next step (needs Xcode)
 
 Install Xcode, `sudo xcode-select -s /Applications/Xcode.app`, then:
-`ios/build.sh` → `cd ios && xcodegen generate && open GovinciApp.xcodeproj` →
+`ios/build.sh` → `cd ios && xcodegen generate && open GrMobApp.xcodeproj` →
 run on an iOS 17+ simulator and exercise all four event kinds + the interval
 push channel (the on-device pass step 4 got on Android). Watch for: gomobile
 bind actually succeeding at this pin with current Xcode, sheet-Modal behavior,

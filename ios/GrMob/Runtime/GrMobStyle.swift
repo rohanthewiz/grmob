@@ -8,11 +8,11 @@ import SwiftUI
 /// web-oriented fields (Position, ZIndex, Animation, pseudo states) have no
 /// SwiftUI analog at this layer and are intentionally ignored rather than
 /// half-implemented. Transition IS mapped: Go declares it, SwiftUI drives
-/// the frames (see swiftUIAnimation and govinciTransition below).
+/// the frames (see swiftUIAnimation and grMobTransition below).
 ///
 /// This is a value type swapped wholesale by `update-style` patches — the
 /// exact analog of the Kotlin data class held in a `mutableStateOf`.
-struct GovinciStyle: Equatable {
+struct GrMobStyle: Equatable {
     struct Edges: Equatable {
         var top = 0, right = 0, bottom = 0, left = 0
         static let zero = Edges()
@@ -75,13 +75,13 @@ struct GovinciStyle: Equatable {
         }
     }
 
-    static func parse(_ obj: [String: Any]?) -> GovinciStyle? {
+    static func parse(_ obj: [String: Any]?) -> GrMobStyle? {
         guard let obj else { return nil }
         func num(_ key: String) -> CGFloat { CGFloat((obj[key] as? NSNumber)?.doubleValue ?? 0) }
         func int(_ key: String) -> Int { (obj[key] as? NSNumber)?.intValue ?? 0 }
         func str(_ key: String) -> String { obj[key] as? String ?? "" }
 
-        var s = GovinciStyle()
+        var s = GrMobStyle()
         s.fontSize = num("FontSize")
         s.fontWeight = int("FontWeight")
         s.textColor = parseColor(str("TextColor"))
@@ -159,36 +159,36 @@ struct GovinciStyle: Equatable {
 /// for the common single-grower case. Multiple growers split leftover space
 /// equally regardless of their weights — proportional weights need a custom
 /// Layout and are future work.
-enum GovinciGrow {
+enum GrMobGrow {
     case none, horizontal, vertical
 }
 
 /// Event dispatch for gesture-bearing boxes, injected as a plain closure so
-/// this file stays free of GovinciRuntime — the verify harness compiles the
+/// this file stays free of GrMobRuntime — the verify harness compiles the
 /// style/node/store layer without Renderer.swift or the runtime, and an
 /// EnvironmentKey referencing the runtime type would drag them in.
-/// GovinciRoot fills it in from the live runtime.
-private struct GovinciDispatchKey: EnvironmentKey {
+/// GrMobRoot fills it in from the live runtime.
+private struct GrMobDispatchKey: EnvironmentKey {
     static let defaultValue: (@MainActor (String) -> Void)? = nil
 }
 
 extension EnvironmentValues {
-    var govinciDispatch: (@MainActor (String) -> Void)? {
-        get { self[GovinciDispatchKey.self] }
-        set { self[GovinciDispatchKey.self] = newValue }
+    var grMobDispatch: (@MainActor (String) -> Void)? {
+        get { self[GrMobDispatchKey.self] }
+        set { self[GrMobDispatchKey.self] = newValue }
     }
 }
 
 /// Tap/long-press wiring for nodes that don't draw their own control (Button
-/// and the inputs handle their own interaction). Inserted into govinciBox
+/// and the inputs handle their own interaction). Inserted into grMobBox
 /// after the background layer, so the touch target is the visible box —
 /// padding included, margin excluded — matching the Android renderer.
 /// The accessibility actions mirror the gestures so a VoiceOver user can
 /// activate a row (and reach its long-press action by name) without touch.
-private struct GovinciGestures: ViewModifier {
+private struct GrMobGestures: ViewModifier {
     let onTap: String
     let onLongPress: String
-    @Environment(\.govinciDispatch) private var dispatch
+    @Environment(\.grMobDispatch) private var dispatch
 
     func body(content: Content) -> some View {
         if onTap.isEmpty && onLongPress.isEmpty {
@@ -197,14 +197,14 @@ private struct GovinciGestures: ViewModifier {
             content
                 // Transparent regions of the box must still hit-test.
                 .contentShape(Rectangle())
-                .govinciOnTap(onTap, dispatch)
-                .govinciOnLongPress(onLongPress, dispatch)
+                .grMobOnTap(onTap, dispatch)
+                .grMobOnLongPress(onLongPress, dispatch)
         }
     }
 }
 
 extension View {
-    @ViewBuilder fileprivate func govinciOnTap(
+    @ViewBuilder fileprivate func grMobOnTap(
         _ id: String, _ dispatch: (@MainActor (String) -> Void)?
     ) -> some View {
         if id.isEmpty {
@@ -216,7 +216,7 @@ extension View {
         }
     }
 
-    @ViewBuilder fileprivate func govinciOnLongPress(
+    @ViewBuilder fileprivate func grMobOnLongPress(
         _ id: String, _ dispatch: (@MainActor (String) -> Void)?
     ) -> some View {
         if id.isEmpty {
@@ -237,28 +237,28 @@ extension View {
     /// painted, padding after background would paint outside the box, etc.
     ///
     /// `onTap`/`onLongPress` are the node's gesture callback IDs (empty when
-    /// absent); see GovinciGestures for where they sit in the layer order.
-    func govinciBox(
-        _ s: GovinciStyle?, grow: GovinciGrow = .none,
+    /// absent); see GrMobGestures for where they sit in the layer order.
+    func grMobBox(
+        _ s: GrMobStyle?, grow: GrMobGrow = .none,
         onTap: String = "", onLongPress: String = ""
     ) -> some View {
         let shape = RoundedCornerShapeIfAny(radius: s?.borderRadius ?? 0)
         return self
             .padding((s?.padding ?? .zero).insets)
             .background(s?.background ?? .clear)
-            .modifier(GovinciGestures(onTap: onTap, onLongPress: onLongPress))
-            .govinciClip(shape)
-            .govinciBorder(shape, color: s?.borderColor, width: s?.borderWidth ?? 0)
-            .govinciShadow(s?.shadow ?? 0)
-            .govinciDimension(s?.width ?? "", axis: .horizontal)
-            .govinciDimension(s?.height ?? "", axis: .vertical)
+            .modifier(GrMobGestures(onTap: onTap, onLongPress: onLongPress))
+            .grMobClip(shape)
+            .grMobBorder(shape, color: s?.borderColor, width: s?.borderWidth ?? 0)
+            .grMobShadow(s?.shadow ?? 0)
+            .grMobDimension(s?.width ?? "", axis: .horizontal)
+            .grMobDimension(s?.height ?? "", axis: .vertical)
             .padding((s?.margin ?? .zero).insets)
-            .govinciGrow(grow)
+            .grMobGrow(grow)
             // "hidden" keeps the node's space but not its pixels ("none" is
             // handled earlier by not rendering the node at all — see RenderNode).
             .opacity(s?.display == "hidden" ? 0 : 1)
-            .govinciAccessibility(s)
-            .govinciTransition(s)
+            .grMobAccessibility(s)
+            .grMobTransition(s)
     }
 
     /// The property-change half of Transition support: when the style
@@ -273,10 +273,10 @@ extension View {
     ///
     /// Deliberately NOT a @ViewBuilder conditional: `.animation(nil, ...)`
     /// is already the no-animation case, and one more _ConditionalContent
-    /// layer on top of govinciBox's opaque-type tower crashes the Swift
+    /// layer on top of grMobBox's opaque-type tower crashes the Swift
     /// compiler ("non-terminating conformance substitution" in
     /// substOpaqueTypesWithUnderlyingTypes).
-    fileprivate func govinciTransition(_ s: GovinciStyle?) -> some View {
+    fileprivate func grMobTransition(_ s: GrMobStyle?) -> some View {
         animation(s?.swiftUIAnimation, value: s)
     }
 
@@ -285,37 +285,37 @@ extension View {
     /// accessibility element (the feed-row pattern: one swipe stop per row,
     /// announced by the label) — leaves are single elements already, so the
     /// combine is a no-op for them.
-    @ViewBuilder fileprivate func govinciAccessibility(_ s: GovinciStyle?) -> some View {
+    @ViewBuilder fileprivate func grMobAccessibility(_ s: GrMobStyle?) -> some View {
         if s?.accessibilityHidden == true {
             accessibilityHidden(true)
         } else if let s, !s.accessibilityLabel.isEmpty {
             accessibilityElement(children: .combine)
                 .accessibilityLabel(s.accessibilityLabel)
-                .govinciA11yHint(s.accessibilityHint)
+                .grMobA11yHint(s.accessibilityHint)
         } else if let s, !s.accessibilityHint.isEmpty {
-            govinciA11yHint(s.accessibilityHint)
+            grMobA11yHint(s.accessibilityHint)
         } else {
             self
         }
     }
 
-    @ViewBuilder fileprivate func govinciA11yHint(_ hint: String) -> some View {
+    @ViewBuilder fileprivate func grMobA11yHint(_ hint: String) -> some View {
         if hint.isEmpty { self } else { accessibilityHint(hint) }
     }
 
     /// Conditional label for the Image "alt" fallback (internal because the
     /// Image case in Renderer.swift decides whether the fallback applies).
-    @ViewBuilder func govinciAltLabel(_ label: String) -> some View {
+    @ViewBuilder func grMobAltLabel(_ label: String) -> some View {
         if label.isEmpty { self } else { accessibilityLabel(label) }
     }
 
-    @ViewBuilder fileprivate func govinciClip(_ shape: RoundedRectangle?) -> some View {
+    @ViewBuilder fileprivate func grMobClip(_ shape: RoundedRectangle?) -> some View {
         // Clipping is strictly conditional: a radius-0 clipShape would still
         // cut off child overflow (e.g. shadows), which un-clipped boxes allow.
         if let shape { clipShape(shape) } else { self }
     }
 
-    @ViewBuilder fileprivate func govinciBorder(_ shape: RoundedRectangle?, color: Color?, width: CGFloat) -> some View {
+    @ViewBuilder fileprivate func grMobBorder(_ shape: RoundedRectangle?, color: Color?, width: CGFloat) -> some View {
         if let color, width > 0 {
             // strokeBorder insets the stroke fully inside the shape — the
             // Compose Modifier.border behavior — where a plain stroke would
@@ -326,7 +326,7 @@ extension View {
         }
     }
 
-    @ViewBuilder fileprivate func govinciShadow(_ radius: CGFloat) -> some View {
+    @ViewBuilder fileprivate func grMobShadow(_ radius: CGFloat) -> some View {
         if radius > 0 {
             // compositingGroup flattens the subtree first so the shadow wraps
             // the box as a whole; without it SwiftUI shadows every opaque
@@ -342,7 +342,7 @@ extension View {
     /// (fraction of the nearest container — an approximation of
     /// fraction-of-parent, which SwiftUI cannot express without a
     /// GeometryReader), and ""/"auto" (intrinsic size, no frame).
-    @ViewBuilder fileprivate func govinciDimension(_ value: String, axis: Axis) -> some View {
+    @ViewBuilder fileprivate func grMobDimension(_ value: String, axis: Axis) -> some View {
         if value.isEmpty || value == "auto" {
             self
         } else if value == "100%" {
@@ -364,7 +364,7 @@ extension View {
         }
     }
 
-    @ViewBuilder func govinciGrow(_ grow: GovinciGrow) -> some View {
+    @ViewBuilder func grMobGrow(_ grow: GrMobGrow) -> some View {
         switch grow {
         case .none: self
         case .horizontal: frame(maxWidth: .infinity)

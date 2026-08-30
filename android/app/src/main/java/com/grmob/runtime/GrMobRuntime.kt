@@ -1,4 +1,4 @@
-package com.govinci.runtime
+package com.grmob.runtime
 
 import android.os.Handler
 import android.os.Looper
@@ -12,7 +12,7 @@ import java.util.concurrent.Executors
  * tests compile without the generated AAR on the classpath. The app module
  * provides the real implementation (GomobileBridge).
  */
-interface GovinciBridge {
+interface GrMobBridge {
     fun renderInitial(): String
     fun triggerCallback(id: String): String
     fun triggerTextCallback(id: String, value: String): String
@@ -42,12 +42,12 @@ interface GovinciBridge {
  * thread: a bridge call spans a full Go render pass and may briefly block on
  * the render mutex, and the single thread keeps events themselves ordered.
  */
-class GovinciRuntime(private val bridge: GovinciBridge) {
+class GrMobRuntime(private val bridge: GrMobBridge) {
     val store = TreeStore()
 
     private val main = Handler(Looper.getMainLooper())
     private val events = Executors.newSingleThreadExecutor { r ->
-        Thread(r, "govinci-events").apply { isDaemon = true }
+        Thread(r, "grmob-events").apply { isDaemon = true }
     }
 
     /** Mounts the initial tree and opens the push channel. Call once, on the main thread. */

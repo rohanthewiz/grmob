@@ -1,13 +1,13 @@
-package com.govinci.app
+package com.grmob.app
 
-import com.govinci.runtime.GovinciBridge
+import com.grmob.runtime.GrMobBridge
 import mobile.Mobile
 import mobile.PatchListener
 
 /**
- * GovinciBridge implementation over the gomobile-generated classes.
+ * GrMobBridge implementation over the gomobile-generated classes.
  *
- * `mobile.Mobile` / `mobile.PatchListener` come from app/libs/govinci.aar,
+ * `mobile.Mobile` / `mobile.PatchListener` come from app/libs/grmob.aar,
  * produced by ../build.sh from the Go `mobile` package (see mobile/bridge.go
  * for the delivery contract). This replaces the old hand-rolled JNI
  * `external fun` bridge — gomobile owns the FFI now.
@@ -22,9 +22,9 @@ import mobile.PatchListener
  * holds no Context. Registered with Go before anything renders: Go-side
  * persistence (mobile.SetDataDir / DataDir; see examples/todoapp's bytdb
  * store) hydrates on the first render pass, so this must beat
- * GovinciRuntime.start().
+ * GrMobRuntime.start().
  */
-class GomobileBridge(dataDir: String) : GovinciBridge {
+class GomobileBridge(dataDir: String) : GrMobBridge {
     init {
         Mobile.setDataDir(dataDir)
     }

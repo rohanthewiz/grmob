@@ -1,4 +1,4 @@
-package com.govinci.runtime
+package com.grmob.runtime
 
 import android.util.Log
 import androidx.compose.runtime.getValue
@@ -17,13 +17,13 @@ import org.json.JSONObject
  * order; sibling removals arrive highest-index-first) are exactly what makes
  * this walk safe within a batch.
  *
- * Threading: every method must be called on the main thread. GovinciRuntime
+ * Threading: every method must be called on the main thread. GrMobRuntime
  * funnels both delivery paths (synchronous event returns and async pushes)
  * through a single main-thread handler, which also preserves the bridge's
  * arrival-order contract.
  */
 class TreeStore {
-    var root by mutableStateOf<GovinciNode?>(null)
+    var root by mutableStateOf<GrMobNode?>(null)
         private set
 
     /** Mounts the initial full tree (the RenderInitial payload). */
@@ -32,10 +32,10 @@ class TreeStore {
             // Not a tree — most likely a Go-side error report. Surface it in
             // full (logcat truncates single lines) instead of crashing on the
             // JSON parse and burying the real failure.
-            json.chunked(3000).forEach { Log.e("Govinci", it) }
+            json.chunked(3000).forEach { Log.e("GrMob", it) }
             return
         }
-        root = GovinciNode.parse(JSONObject(json))
+        root = GrMobNode.parse(JSONObject(json))
     }
 
     /** Applies one patch batch (the RenderAgain / push payload). */
@@ -54,13 +54,13 @@ class TreeStore {
     private fun apply(type: String, path: String, changes: Any?) {
         when (type) {
             "update-props" -> resolve(path)?.props =
-                GovinciNode.parseProps(changes as? JSONObject)
+                GrMobNode.parseProps(changes as? JSONObject)
 
             "update-style" -> resolve(path)?.style =
-                GovinciStyle.parse(changes as? JSONObject)
+                GrMobStyle.parse(changes as? JSONObject)
 
             "replace" -> {
-                val node = GovinciNode.parse(changes as? JSONObject ?: return)
+                val node = GrMobNode.parse(changes as? JSONObject ?: return)
                 val (parent, index) = parentOf(path) ?: run {
                     // Path is "root" itself: swap the whole tree.
                     if (path == ROOT) root = node else warn(type, path)
@@ -74,12 +74,12 @@ class TreeStore {
             // targets the parent and always appends. Both reduce to an insert
             // clamped to the current child count.
             "add" -> {
-                val node = GovinciNode.parse(changes as? JSONObject ?: return)
+                val node = GrMobNode.parse(changes as? JSONObject ?: return)
                 val (parent, index) = parentOf(path) ?: return warn(type, path)
                 parent.children.add(index.coerceIn(0, parent.children.size), node)
             }
             "add-child" -> {
-                val node = GovinciNode.parse(changes as? JSONObject ?: return)
+                val node = GrMobNode.parse(changes as? JSONObject ?: return)
                 val parent = resolve(path) ?: return warn(type, path)
                 parent.children.add(node)
             }
@@ -95,7 +95,7 @@ class TreeStore {
     }
 
     /** Walks a positional path ("root/0/2") to its node, or null if it dangles. */
-    private fun resolve(path: String): GovinciNode? {
+    private fun resolve(path: String): GrMobNode? {
         var node = root ?: return null
         if (path == ROOT) return node
         for (seg in path.removePrefix("$ROOT/").split('/')) {
@@ -106,7 +106,7 @@ class TreeStore {
     }
 
     /** Resolves a path to (parent node, child index); null for "root" or a dangling path. */
-    private fun parentOf(path: String): Pair<GovinciNode, Int>? {
+    private fun parentOf(path: String): Pair<GrMobNode, Int>? {
         val cut = path.lastIndexOf('/')
         if (cut < 0) return null
         val index = path.substring(cut + 1).toIntOrNull() ?: return null
@@ -117,7 +117,7 @@ class TreeStore {
     private fun warn(type: String, path: String) {
         // A dangling patch means the Go and Kotlin trees disagree — log loudly
         // rather than crash; the next full replace re-synchronizes.
-        Log.w("Govinci", "patch $type could not resolve $path")
+        Log.w("GrMob", "patch $type could not resolve $path")
     }
 
     private companion object {

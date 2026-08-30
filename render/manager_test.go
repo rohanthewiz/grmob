@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/GraHms/govinci/core"
-	"github.com/GraHms/govinci/render"
+	"github.com/rohanthewiz/grmob/core"
+	"github.com/rohanthewiz/grmob/render"
 )
 
 // jsonNode mirrors the wire shape of core.Node for decoding RenderInitial output.

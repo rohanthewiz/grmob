@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/GraHms/govinci/mobile"
+	"github.com/rohanthewiz/grmob/mobile"
 )
 
 // The package init has already run mobile.Register by the time tests execute,

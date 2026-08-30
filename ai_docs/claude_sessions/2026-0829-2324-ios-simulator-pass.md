@@ -13,7 +13,7 @@ last session, so run the pending xcframework build + simulator pass and exercise
 every event kind on a real simulator.
 
 **Outcome: complete, all green.** Step 5 of
-`ai_docs/plans/govinci-mobile-feasibility-analysis.md` is now fully verified end
+`ai_docs/plans/grmob-mobile-feasibility-analysis.md` is now fully verified end
 to end. One real layout bug found and fixed.
 
 ## What ran
@@ -21,7 +21,7 @@ to end. One real layout bug found and fixed.
 Toolchain now: Xcode 26.6 (iOS 26.5 SDK + simulators), selected via
 xcode-select. gomobile at the pinned rev (@188f512ec823) binds fine under it.
 
-1. `ios/build.sh` → `Govinci.xcframework` (device + simulator slices). The app
+1. `ios/build.sh` → `GrMob.xcframework` (device + simulator slices). The app
    then compiled against the *real* gobind surface — the stub header from last
    session matched exactly.
 2. `xcodegen generate` → build → install → launch on "iPhone 17 Pro"
@@ -36,24 +36,24 @@ xcode-select. gomobile at the pinned rev (@188f512ec823) binds fine under it.
 
 ## Bug found & fixed
 
-The whole tree rendered vertically centered (tab bar mid-screen): `GovinciRoot`
+The whole tree rendered vertically centered (tab bar mid-screen): `GrMobRoot`
 handed the tree to the window bare, and SwiftUI centers a smaller-than-window
-view by default. Fix in `ios/Govinci/Runtime/Renderer.swift` (GovinciRoot):
+view by default. Fix in `ios/GrMob/Runtime/Renderer.swift` (GrMobRoot):
 `.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)` —
 matches the Android root's top-flowing layout. Verified by screenshot + test
 re-run.
 
 ## New/changed files
 
-- `ios/GovinciUITests/GovinciUITests.swift` — **new**: simulator analog of
+- `ios/GrMobUITests/GrMobUITests.swift` — **new**: simulator analog of
   `examples/mobileapp/app_test.go`; drives all four event kinds + push channel
   + tab-state retention via real taps. Tab labels are addressed as *buttons*
   (the hand-rolled tab bar wraps each label in a SwiftUI Button).
-- `ios/project.yml` — added the `GovinciUITests` bundle.ui-testing target
+- `ios/project.yml` — added the `GrMobUITests` bundle.ui-testing target
   (needs `GENERATE_INFOPLIST_FILE: YES` or codesign fails) and an explicit
-  `GovinciApp` scheme including it. Run with:
-  `xcodebuild test -project GovinciApp.xcodeproj -scheme GovinciApp -destination 'platform=iOS Simulator,name=iPhone 17 Pro'`
-- `ios/Govinci/Runtime/Renderer.swift` — the root-alignment fix above.
+  `GrMobApp` scheme including it. Run with:
+  `xcodebuild test -project GrMobApp.xcodeproj -scheme GrMobApp -destination 'platform=iOS Simulator,name=iPhone 17 Pro'`
+- `ios/GrMob/Runtime/Renderer.swift` — the root-alignment fix above.
 
 ## Gotchas recorded
 
@@ -70,4 +70,4 @@ Go app actually uses Modal (medium/large detents).
 ## Next step
 
 Step 5 is done. Continue with the next step in the attack order in
-`ai_docs/plans/govinci-mobile-feasibility-analysis.md`.
+`ai_docs/plans/grmob-mobile-feasibility-analysis.md`.

@@ -3,7 +3,7 @@ package hooks
 import (
 	"reflect"
 
-	"github.com/GraHms/govinci/core"
+	"github.com/rohanthewiz/grmob/core"
 )
 
 // effectRecord is the per-hook-slot memory of UseEffect: whether the effect

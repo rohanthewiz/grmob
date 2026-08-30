@@ -16,7 +16,7 @@ Branch: `master` — all work committed; tree clean at wrap.
 2. **Ran it on the iOS simulator** — parameterized `ios/build.sh` (optional
    first arg = app package, default `./examples/mobileapp`), bound todoapp,
    xcodegen + xcodebuild, installed/launched on the booted iPhone 17 Pro as
-   `com.govinci.demo`. First screenshot exposed an invisible white label on
+   `com.grmob.demo`. First screenshot exposed an invisible white label on
    the selected filter chip → fixed by overriding text+background together
    (`13f242f`).
 3. **User bug report: input not cleared after Add.** Root cause was in both
@@ -25,8 +25,8 @@ Branch: `master` — all work committed; tree clean at wrap.
    writes. Fix (`68155fc`): queue every value the field sends upstream; an
    upstream change matching a queued entry is an echo (ignored), one matching
    nothing is a deliberate Go rewrite and lands mid-focus. Applied to
-   `ios/Govinci/Runtime/Renderer.swift` and `android/.../Renderer.kt`.
-   Pinned by new `ios/GovinciUITests/TodoAppUITests.swift` (real typing +
+   `ios/GrMob/Runtime/Renderer.swift` and `android/.../Renderer.kt`.
+   Pinned by new `ios/GrMobUITests/TodoAppUITests.swift` (real typing +
    tap; passed on simulator).
 4. **Ran the Android fix on the emulator** — parameterized `android/build.sh`
    the same way (`a7ef8cc`), built APK with cached Gradle 8.14, drove the
@@ -68,7 +68,7 @@ Branch: `master` — all work committed; tree clean at wrap.
 - **Both build scripts** now take the app package as arg 1:
   `ios/build.sh ./examples/todoapp`, `android/build.sh ./examples/todoapp`.
   Rebuilding with no arg restores the mobileapp demo (same bundle/app id:
-  `com.govinci.demo` on iOS, `com.govinci.app/.MainActivity` on Android).
+  `com.grmob.demo` on iOS, `com.grmob.app/.MainActivity` on Android).
 - **Text-field contract (renderers):** locally-owned while focused; echoes of
   the field's own sends are dropped via a pending-values queue; any other
   upstream value is an authoritative Go rewrite and applies immediately.
@@ -80,7 +80,7 @@ Branch: `master` — all work committed; tree clean at wrap.
   (no moves) ⇒ keyed rows stay correct but lose transient native state.
 - **Testing pyramid:** Go bridge tests (inner loop, sub-second) →
   `TodoAppUITests` on iOS (runs alone via
-  `-only-testing:GovinciUITests/TodoAppUITests`; the default GovinciUITests
+  `-only-testing:GrMobUITests/TodoAppUITests`; the default GrMobUITests
   suite targets the mobileapp demo and needs the default framework) →
   adb-driven checks on Android (uiautomator dump; placeholder visible ⟺ field
   empty).

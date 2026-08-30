@@ -5,15 +5,15 @@ import XCTest
 //
 //   ios/build.sh ./examples/todoapp
 //
-// and runs alone, since GovinciUITests drives the mobileapp demo bound by the
+// and runs alone, since GrMobUITests drives the mobileapp demo bound by the
 // default build:
 //
-//   xcodebuild test ... -only-testing:GovinciUITests/TodoAppUITests
+//   xcodebuild test ... -only-testing:GrMobUITests/TodoAppUITests
 //
 // Beyond the CRUD flow it pins the regression the data-layer test cannot see:
 // Go clearing the draft after Add must reach the *focused* TextField, whose
 // local buffer otherwise swallows upstream writes (the echo/rewrite split in
-// Renderer.swift's GovinciTextField).
+// Renderer.swift's GrMobTextField).
 final class TodoAppUITests: XCTestCase {
 
     override func setUpWithError() throws {

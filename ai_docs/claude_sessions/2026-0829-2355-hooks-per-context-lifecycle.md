@@ -119,7 +119,7 @@ Two decisions, both following the gap-4 per-root-pointer pattern:
 - `core.State[T]` methods have pointer receivers — `core.NewState(...).Get()`
   doesn't compile; bind the return to a variable first.
 - `GOOS=js GOARCH=wasm go build ./wasm/` fails with "build output wasm
-  already exists and is a directory" — pass `-o <scratch>/govinci.wasm`.
+  already exists and is a directory" — pass `-o <scratch>/grmob.wasm`.
 
 ## Next step
 

@@ -3,8 +3,8 @@ package main
 import (
 	"os"
 
-	"github.com/GraHms/govinci/core"
-	"github.com/GraHms/govinci/htmlout"
+	"github.com/rohanthewiz/grmob/core"
+	"github.com/rohanthewiz/grmob/htmlout"
 )
 
 func AppLayoutExample() core.View {
@@ -46,7 +46,7 @@ func Footer() core.View {
 		core.BackgroundColor("#EEEEEE"),
 		core.Padding(12),
 		core.Align(core.AlignCenter),
-		core.Text("© 2025 Govinci Labs", core.FontSize(12), core.TextColor("#666")),
+		core.Text("© 2025 GrMob Labs", core.FontSize(12), core.TextColor("#666")),
 	)
 }
 func main() {

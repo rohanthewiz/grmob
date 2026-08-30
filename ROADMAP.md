@@ -1,4 +1,4 @@
-# Govinci Roadmap
+# GrMob Roadmap
 
 > A native UI runtime for Go — declarative, composable, and portable.
 
@@ -15,7 +15,7 @@
 - [x] Style system with reusable `StyleProps`
 - [x] `Box`, `Text`, `Image`, `Button`, `Input`, `Spacer`, etc.
 - [x] Hooks: `UseInterval`, `UseTimeout`, `UseMemo`, `UseReducer`
-- [x] WASM runtime (`govinci-runtime.js`) with event bridge
+- [x] WASM runtime (`grmob-runtime.js`) with event bridge
 
 ### 🧪 Layout & Styling
 - [x] `FlexRow`, `FlexColumn`, `Gap`, `Align`, `Justify`, `ZIndex`
@@ -55,9 +55,9 @@
 - [ ] Keyboard-aware scroll area for mobile
 
 ### 📦 Packaging
-- [ ] `govinci build --target=wasm`
-- [ ] `govinci build --target=android`
-- [ ] `govinci build --target=ios`
+- [ ] `grmob build --target=wasm`
+- [ ] `grmob build --target=android`
+- [ ] `grmob build --target=ios`
 
 ---
 

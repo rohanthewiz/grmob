@@ -4,9 +4,9 @@ package main
 
 import (
 	"encoding/json"
-	"github.com/GraHms/govinci/core"
-	. "github.com/GraHms/govinci/examples/social"
-	"github.com/GraHms/govinci/render"
+	"github.com/rohanthewiz/grmob/core"
+	. "github.com/rohanthewiz/grmob/examples/social"
+	"github.com/rohanthewiz/grmob/render"
 	"syscall/js"
 )
 
@@ -26,28 +26,28 @@ func renderInitial(this js.Value, args []js.Value) any {
 		manager.Close()
 	}
 	manager = render.New(ctx, App) // `App` é tua função de root view
-	// Push channel: if the host page defines GovinciApplyPatches, async state
+	// Push channel: if the host page defines GrMobApplyPatches, async state
 	// changes (timers, goroutines) are pushed to it as patch JSON instead of
 	// relying on the IsDirty polling loop. Pages without it keep polling —
 	// the manager never consumes a diff unless a listener is attached.
-	if js.Global().Get("GovinciApplyPatches").Type() == js.TypeFunction {
+	if js.Global().Get("GrMobApplyPatches").Type() == js.TypeFunction {
 		manager.SetListener(jsPatchListener{})
 	}
 	out := manager.RenderInitial()
 	return js.ValueOf(out)
 }
 
-// jsPatchListener forwards pushed patches to the page's GovinciApplyPatches
+// jsPatchListener forwards pushed patches to the page's GrMobApplyPatches
 // handler. ApplyPatches runs on the pump goroutine, which on js/wasm is
 // scheduled cooperatively on the single JS thread, so calling into JS here is
 // safe without extra marshalling.
 type jsPatchListener struct{}
 
 func (jsPatchListener) ApplyPatches(patches string) {
-	js.Global().Call("GovinciApplyPatches", patches)
+	js.Global().Call("GrMobApplyPatches", patches)
 }
 func RequestPermission(p Permission, onResult func(granted bool)) {
-	js.Global().Call("GovinciRequestPermission", string(p), js.FuncOf(func(this js.Value, args []js.Value) any {
+	js.Global().Call("GrMobRequestPermission", string(p), js.FuncOf(func(this js.Value, args []js.Value) any {
 		granted := args[0].Bool()
 		onResult(granted)
 		return nil
@@ -92,7 +92,7 @@ func receiveEvent(this js.Value, args []js.Value) any {
 }
 
 func registerCallbacks() {
-	js.Global().Set("GovinciWASM", map[string]any{
+	js.Global().Set("GrMobWASM", map[string]any{
 		"RenderInitial": js.FuncOf(renderInitial),
 		"RenderAgain":   js.FuncOf(renderAgain),
 		"ReceiveEvent":  js.FuncOf(receiveEvent),
@@ -103,7 +103,7 @@ func registerCallbacks() {
 func main() {
 	c := make(chan struct{})
 	registerCallbacks()
-	println("Govinci WASM ready.")
+	println("GrMob WASM ready.")
 	<-c
 }
 

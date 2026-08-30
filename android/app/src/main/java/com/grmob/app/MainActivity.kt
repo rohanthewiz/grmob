@@ -1,10 +1,10 @@
-package com.govinci.app
+package com.grmob.app
 
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import com.govinci.runtime.GovinciRoot
-import com.govinci.runtime.GovinciRuntime
+import com.grmob.runtime.GrMobRoot
+import com.grmob.runtime.GrMobRuntime
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -13,8 +13,8 @@ class MainActivity : ComponentActivity() {
         // channel; after that the composition tracks the TreeStore on its own.
         // Recreation (rotation, process restore) simply remounts from Go's
         // current state — the Go side is a process-wide singleton.
-        val runtime = GovinciRuntime(GomobileBridge(filesDir.absolutePath))
+        val runtime = GrMobRuntime(GomobileBridge(filesDir.absolutePath))
         runtime.start()
-        setContent { GovinciRoot(runtime) }
+        setContent { GrMobRoot(runtime) }
     }
 }

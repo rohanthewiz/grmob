@@ -9,7 +9,7 @@
 ## Goal
 
 The attack order's five numbered steps in
-`ai_docs/plans/govinci-mobile-feasibility-analysis.md` were all complete, so
+`ai_docs/plans/grmob-mobile-feasibility-analysis.md` were all complete, so
 this session took the next outstanding item from the gaps list: **gap 4,
 global mutable state** — "consolidate onto Context, one render mutex, marshal
 mutations onto one goroutine."
