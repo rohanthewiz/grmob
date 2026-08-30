@@ -259,4 +259,4 @@ Renderers are responsible for turning the abstract `Node` tree into real UI elem
 
 ## 📃 License
 
-MIT License © 2026 Rohan Allison · © 2025 Ismael GraHms
+MIT License © 2026 Rohan Allison · © 2025 Ismael Matsinhe
