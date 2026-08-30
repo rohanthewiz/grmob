@@ -20,7 +20,7 @@ func SocialApp() View {
 			Column(
 				TopBar(),
 				Scroll(
-					FeedPost("https://picsum.photos/400", "grahms_dev", "Exploring UI in Go!"),
+					FeedPost("https://picsum.photos/400", "gopher_dev", "Exploring UI in Go!"),
 					Spacer(12),
 					FeedPost("https://picsum.photos/401", "code_africa", "Sunset in Maputo ❤️"),
 					Spacer(12),

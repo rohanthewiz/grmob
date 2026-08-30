@@ -37,7 +37,7 @@ func SearchPage(ctx *Context) View {
 func ProfilePage(ctx *Context) View {
 	return Column(
 		Text("👤 Perfil", FontSize(24), FontWeight(Bold)),
-		Text("Nome: Ismael GraHms", FontSize(16)),
+		Text("Nome: Fulano de Tal", FontSize(16)),
 		Text("Profissão: Engenheiro de Software"),
 	)
 }

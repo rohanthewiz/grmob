@@ -37,7 +37,7 @@ import (
 func main() {
     ctx := core.NewContext().WithConfig(&core.AppConfig{
         Name: "LetsBe Social",
-        Author: "Ismael GraHms",
+        Author: "Your Name",
         Version: "0.1.0",
         Locale: "en-MZ"
     })
@@ -73,7 +73,7 @@ import "github.com/rohanthewiz/grmob/core"
 func ProfileHeader() core.View {
     return core.Column(
         core.Image("https://example.com/avatar.jpg", core.UseStyle(core.Style{BorderRadius: 40})),
-        core.Text("Ismael GraHms", core.FontSize(20), core.FontWeight(core.Bold)),
+        core.Text("Jane Doe", core.FontSize(20), core.FontWeight(core.Bold)),
         core.Text("Software Engineer • Maputo"),
     )
 }
