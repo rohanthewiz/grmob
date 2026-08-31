@@ -54,7 +54,7 @@ func renderNode(b *element.Builder, node *core.Node) (x any) {
 	// attributes the WASM runtime dispatches on (their names are a contract
 	// with runtime/main.go's event bridge).
 	attrs := make([]string, 0, 8)
-	if sv := styleValue(node.Style); sv != "" {
+	if sv := styleValue(node.Style, node.Type); sv != "" {
 		attrs = append(attrs, "style", sv)
 	}
 	// A slice, not a map: map iteration order would make attribute order (and
@@ -157,7 +157,12 @@ func tagForType(t string) string {
 // styleValue serializes the subset of Style the HTML exporter understands into
 // a CSS declaration list ("" when nothing is set). The caller places it in a
 // style attribute; element handles the attribute-value escaping.
-func styleValue(s *core.Style) string {
+//
+// nodeType is needed for Gap: CSS gap only has meaning on a flex/grid
+// container, and the main axis it spaces along is the node's own stacking
+// direction (Row lays out horizontally, every other container vertically) —
+// information that lives in the node type, not in Style.
+func styleValue(s *core.Style, nodeType string) string {
 	if s == nil {
 		return ""
 	}
@@ -181,6 +186,41 @@ func styleValue(s *core.Style) string {
 			styles = append(styles, "text-align:right")
 		}
 	}
+	// Flex container properties, emitted before Display so an explicit Display
+	// (set by the author) lands after and wins the browser's
+	// last-declaration-wins parse.
+	//
+	// The native renderers implement these directly — a Compose Row/Column or
+	// a SwiftUI HStack/VStack is inherently a stack, so Gap becomes
+	// Arrangement.spacedBy / stack spacing and JustifyContent becomes the
+	// arrangement. HTML has no such default: a plain <div> is block flow and
+	// ignores gap, justify-content and align-items entirely, so the container
+	// must be made flex for any of them to do anything.
+	//
+	// Only nodes that actually set one of these become flex containers;
+	// everything else keeps the block-flow output this exporter has always
+	// produced. The main axis defaults to the node's own stacking direction
+	// (Row horizontal, every other container vertical) and an explicit
+	// FlexDirection overrides it.
+	if s.Gap != 0 || s.JustifyContent != "" || s.AlignItems != "" || s.FlexDirection != "" {
+		dir := "column"
+		if nodeType == "Row" {
+			dir = "row"
+		}
+		if s.FlexDirection != "" {
+			dir = string(s.FlexDirection)
+		}
+		styles = append(styles, "display:flex", fmt.Sprintf("flex-direction:%s", dir))
+		if s.Gap != 0 {
+			styles = append(styles, fmt.Sprintf("gap:%gpx", s.Gap))
+		}
+		if s.JustifyContent != "" {
+			styles = append(styles, fmt.Sprintf("justify-content:%s", s.JustifyContent))
+		}
+		if s.AlignItems != "" {
+			styles = append(styles, fmt.Sprintf("align-items:%s", s.AlignItems))
+		}
+	}
 	if s.Display != "" {
 		styles = append(styles, fmt.Sprintf("display:%s", s.Display))
 	}
@@ -189,6 +229,12 @@ func styleValue(s *core.Style) string {
 	}
 	if s.Margin != (core.EdgeInsets{}) {
 		styles = append(styles, fmt.Sprintf("margin:%dpx %dpx %dpx %dpx", s.Margin.Top, s.Margin.Right, s.Margin.Bottom, s.Margin.Left))
+	}
+	// Flex *item* properties, as opposed to the container properties above:
+	// they describe how this node behaves inside its parent's flex layout, so
+	// they need no display:flex of their own.
+	if s.FlexGrow != 0 {
+		styles = append(styles, fmt.Sprintf("flex-grow:%g", s.FlexGrow))
 	}
 	if s.BorderRadius != 0 {
 		styles = append(styles, fmt.Sprintf("border-radius:%gpx", s.BorderRadius))

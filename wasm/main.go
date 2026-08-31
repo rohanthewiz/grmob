@@ -25,7 +25,10 @@ func renderInitial(this js.Value, args []js.Value) any {
 	if manager != nil {
 		manager.Close()
 	}
-	manager = render.New(ctx, App) // `App` é tua função de root view
+	// App is examples/social's root view (reached through the dot-import
+	// above). The app tree belongs to the example package; this file is host
+	// wiring only — JS bindings, the manager, and the event bridge.
+	manager = render.New(ctx, App)
 	// Push channel: if the host page defines GrMobApplyPatches, async state
 	// changes (timers, goroutines) are pushed to it as patch JSON instead of
 	// relying on the IsDirty polling loop. Pages without it keep polling —
@@ -105,25 +108,6 @@ func main() {
 	registerCallbacks()
 	println("GrMob WASM ready.")
 	<-c
-}
-
-func App(ctx *core.Context) core.View {
-	return core.Navigator(func(ctx *core.Context) core.View {
-		currentTab := core.NewState(ctx, "home")
-
-		return core.Column(
-			core.Match(currentTab.Get(),
-				core.Case("home", HomePage(ctx)),
-				core.Case("search", SearchPage(ctx)),
-				core.Case("profile", ProfilePage(ctx)),
-			),
-			core.Row( // tab bar
-				TabButton("🏠", "home", currentTab),
-				TabButton("🔍", "search", currentTab),
-				TabButton("👤", "profile", currentTab),
-			),
-		)
-	})
 }
 
 func TabsComponent(ctx *core.Context, activeTab core.State[string]) core.View {

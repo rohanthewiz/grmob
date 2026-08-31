@@ -14,7 +14,20 @@ import (
 // mirroring the shells (which call SetDataDir before RenderInitial). That
 // routes every mutation in TestTodoLifecycle through the bytdb write-through
 // path too, instead of leaving persistence to its dedicated test alone.
+//
+// It also turns debug mode on for the whole suite. The switch is process-wide,
+// so one call covers every test here, and every render pass driven below is
+// audited for cursor drift and duplicate keys; the render-driving tests then
+// assert the audit came back empty (assertNoConcerns). Duplicate keys are the
+// live risk in this app specifically — the todo rows are keyed by ID, so an ID
+// scheme that ever reused a value would show up here rather than as rows
+// silently swapping identity on the native side.
+//
+// The mode is set before SetDataDir so nothing, not even a hydration render,
+// escapes the audit; neither call has ordering requirements against the other.
 func TestMain(m *testing.M) {
+	core.SetDebugMode(true)
+
 	dir, err := os.MkdirTemp("", "todoapp-test-")
 	if err != nil {
 		panic(err)
@@ -24,6 +37,15 @@ func TestMain(m *testing.M) {
 	closeStore() // release the file lock before removing the directory
 	os.RemoveAll(dir)
 	os.Exit(code)
+}
+
+// assertNoConcerns fails the test with the full dump if the debug audit
+// recorded anything during the passes it drove.
+func assertNoConcerns(t *testing.T) {
+	t.Helper()
+	if cs := core.Concerns(); len(cs) != 0 {
+		t.Fatalf("debug concerns raised:\n%s", core.DumpConcerns())
+	}
 }
 
 // The package init has already run mobile.Register by the time tests execute,
@@ -104,6 +126,11 @@ func addTodo(t *testing.T, title string) {
 }
 
 func TestTodoLifecycle(t *testing.T) {
+	// The concern collector is process-wide like the mode switch, so clear it
+	// first: without this, a finding from an earlier test would fail this one.
+	core.ClearConcerns()
+	defer assertNoConcerns(t)
+
 	initial := mobile.RenderInitial()
 	if !strings.Contains(initial, "No tasks yet") {
 		t.Fatalf("initial tree missing empty state:\n%s", initial)
@@ -226,6 +253,9 @@ func relaunch(t *testing.T) {
 }
 
 func TestTodoPersistence(t *testing.T) {
+	core.ClearConcerns()
+	defer assertNoConcerns(t)
+
 	// A fresh directory isolates this test from whatever TestTodoLifecycle
 	// left in the TestMain-wide store; openStore notices the changed path
 	// and reopens there. The fresh Register drops the previous test's

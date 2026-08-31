@@ -2,14 +2,41 @@ package mobileapp
 
 import (
 	"encoding/json"
+	"os"
 	"strings"
 	"testing"
 
+	"github.com/rohanthewiz/grmob/core"
 	"github.com/rohanthewiz/grmob/mobile"
 )
 
 // The package init has already run mobile.Register by the time tests execute,
 // so these tests exercise exactly the call sequence the Kotlin shell makes.
+
+// TestMain turns debug mode on for the whole suite. It is a process-wide
+// switch, so one call covers every test in the package, and every render pass
+// the bridge drives below is then audited for cursor drift, duplicate keys,
+// and hooks/callbacks inside a core.Cached subtree. Each test asserts the
+// audit came back empty — hook-discipline regressions fail the build instead
+// of silently corrupting state at run time.
+//
+// One case to read carefully if it ever fires: appHeader is deliberately
+// wrapped in core.Cached and is deliberately inert (no hooks, no callbacks).
+// A cached-hooks or cached-callbacks concern naming it is therefore a real
+// regression in appHeader, not test noise.
+func TestMain(m *testing.M) {
+	core.SetDebugMode(true)
+	os.Exit(m.Run())
+}
+
+// assertNoConcerns fails the test with the full dump if the debug audit
+// recorded anything during the passes it drove.
+func assertNoConcerns(t *testing.T) {
+	t.Helper()
+	if cs := core.Concerns(); len(cs) != 0 {
+		t.Fatalf("debug concerns raised:\n%s", core.DumpConcerns())
+	}
+}
 
 type node struct {
 	Type     string
@@ -37,6 +64,11 @@ func findProp(n *node, nodeType, prop string) (string, bool) {
 }
 
 func TestDemoAppRendersAndDispatchesEvents(t *testing.T) {
+	// The concern collector is process-wide like the mode switch, so clear it
+	// first: without this, a finding from an earlier test would fail this one.
+	core.ClearConcerns()
+	defer assertNoConcerns(t)
+
 	initial := mobile.RenderInitial()
 
 	var tree node
@@ -86,6 +118,9 @@ func TestDemoAppRendersAndDispatchesEvents(t *testing.T) {
 }
 
 func TestFeedTabListGestures(t *testing.T) {
+	core.ClearConcerns()
+	defer assertNoConcerns(t)
+
 	// The gap-5 surface end to end at the bridge level: the Feed tab holds a
 	// List whose rows carry OnClick/OnLongPress behavior props — dispatching
 	// them must land in Go state and patch the status line back out.

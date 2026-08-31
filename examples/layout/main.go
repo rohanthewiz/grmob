@@ -10,11 +10,14 @@ import (
 func AppLayoutExample() core.View {
 	return core.WithTheme(core.DefaultTheme,
 		core.SafeArea(
+			// Gap on the container replaces interleaved Spacers: the spacing
+			// here is uniform, so one prop expresses it instead of N-1 filler
+			// views — fewer nodes to diff, and no way to add a child and
+			// forget its separator.
 			core.Column(
+				core.Gap(8),
 				Header(),
-				core.Spacer(8),
 				BodySection(),
-				core.Spacer(8),
 				Footer(),
 			),
 		),
@@ -34,8 +37,8 @@ func BodySection() core.View {
 		core.Column(
 			core.BackgroundColor("#F5F5F5"),
 			core.Padding(16),
+			core.Gap(8),
 			core.Text("Welcome, Ismael!", core.FontSize(18)),
-			core.Spacer(8),
 			core.Text("Here's your dashboard overview."),
 		),
 	)
@@ -51,7 +54,11 @@ func Footer() core.View {
 }
 func main() {
 	ctx := core.NewContext()
-	node := AppLayoutExample().Render(ctx)
+	// core.Render is the documented entry point: it resets the hook cursor
+	// before rendering, so it is safe to call on every pass, not just the
+	// first. This exporter renders once, but copying view.Render(ctx) into a
+	// host that re-renders is exactly how state starts reading the wrong slot.
+	node := core.Render(ctx, AppLayoutExample())
 	html := htmlout.ExportHTML(node)
 	_ = os.WriteFile("layout.html", []byte(html), 0644)
 }

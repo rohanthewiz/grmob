@@ -141,6 +141,13 @@ func (ctx *Context) WithConfig(cfg *AppConfig) *Context {
 		registry:      ctx.registry,
 		nav:           ctx.nav,
 		cleanup:       ctx.cleanup,
+		// Share the scope table rather than leaving it nil: this is the same
+		// context wearing a different config, so a scope reached through it
+		// must be the same scope reached through the original. A nil map here
+		// also made ctx.Scope panic outright (assignment to a nil map) on
+		// every context derived this way — which is the path render.New and
+		// the WASM host take.
+		scopes: ctx.scopes,
 	}
 }
 
@@ -154,6 +161,9 @@ func (ctx *Context) WithTheme(theme *Theme) *Context {
 		registry:      ctx.registry,
 		nav:           ctx.nav,
 		cleanup:       ctx.cleanup,
+		// See WithConfig: the scope table is shared, not re-created, so
+		// ctx.Scope works (and resolves to the same scopes) on a themed copy.
+		scopes: ctx.scopes,
 	}
 }
 

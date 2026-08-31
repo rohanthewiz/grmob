@@ -88,6 +88,12 @@ func counterTab() core.View {
 				FontWeight: core.Bold,
 			})),
 			core.Button("Increment", func() { count.Set(count.Get() + 1) }),
+			// Non-uniform spacing, so this one stays a Spacer: the count and
+			// its button are one block with nothing between them, and the 16
+			// separates that block from the passive timer line below. core.Gap
+			// sets a single value for *every* gap in a container, so it cannot
+			// express "nothing here, 16 there" — that is precisely where
+			// Spacer keeps its job (contrast formTab, a uniform run on Gap).
 			core.Spacer(16),
 			core.Text(fmt.Sprintf("App running for %ds", seconds.Get()), core.UseStyle(core.Style{
 				FontSize:  13,
@@ -176,11 +182,14 @@ func formTab() core.View {
 			subLabel = "Subscribed"
 		}
 
+		// Uniform 8 between every child, so the spacing is one prop on the
+		// container rather than filler views between the children: fewer nodes
+		// for the reconciler to walk each pass, and no way to add a field and
+		// forget its separator.
 		return core.Column(
+			core.Gap(8),
 			core.Input(name.Get(), "Your name", func(v string) { name.Set(v) }),
-			core.Spacer(8),
 			core.Text(greeting),
-			core.Spacer(8),
 			core.Row(
 				core.Checkbox(subscribed.Get(), func(v bool) { subscribed.Set(v) }),
 				core.Text(subLabel),
