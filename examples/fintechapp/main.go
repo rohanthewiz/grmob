@@ -117,13 +117,13 @@ func TransactionList(ctx *core.Context) core.View {
 			// unusable anywhere the spacing differed. Gap is what replaces
 			// that pattern.
 			core.Gap(12),
-			TransactionItem("Farmácia", "-750 MZN", t.Colors.Error, t.Colors.Background),
+			TransactionItem("Farmácia", "-750 MZN", components.VariantError),
 			// Credits take Success, not Secondary. They read the same under
 			// the old palette only by accident: Secondary is a *brand* slot a
 			// theme may set to any hue, so a rebrand to magenta would have
 			// turned "money in" magenta. Success carries the meaning.
-			TransactionItem("Transferência recebida", "+10,000 MZN", t.Colors.SuccessColor(), t.Colors.Background),
-			TransactionItem("Recarga de saldo", "+3,500 MZN", t.Colors.SuccessColor(), t.Colors.Background),
+			TransactionItem("Transferência recebida", "+10,000 MZN", components.VariantSuccess),
+			TransactionItem("Recarga de saldo", "+3,500 MZN", components.VariantSuccess),
 		),
 	)
 }
@@ -133,7 +133,7 @@ func TransactionList(ctx *core.Context) core.View {
 // components.Badge — a non-interactive status pill rather than a hand-styled
 // Text. Badge owns the pill shape (an oversized radius that clamps to a
 // stadium at any height) and the padding, so this example is left expressing
-// only what is actually its subject: which theme color means what.
+// only what is actually its subject: which status each row carries.
 //
 // The row previously pinned the amount with Justify(JustifyBetween). ListRow
 // pins it with FlexGrow on its middle column instead, which is the same
@@ -141,14 +141,17 @@ func TransactionList(ctx *core.Context) core.View {
 // between *every* pair of children, so it silently stops meaning "pin the
 // trailing element" the moment a row grows a third slot.
 //
-// ink is passed explicitly because Badge defaults its label color to the
-// theme's Background, which is chosen to read on Primary. A semantic color
-// picked per row — a dark red debit, a dark green credit — needs its own ink
-// to stay legible, and Badge.TextColor is the slot for exactly that.
-func TransactionItem(label, amount, color, ink string) core.View {
+// The row names a *variant* rather than a pair of colors. It used to pass a
+// background and a matching ink pulled off the theme by hand, which put two
+// obligations on every call site: know which palette role means "money in",
+// and know which ink stays legible on it. Both now live in the widget — the
+// fill comes from the palette's status role and the ink is picked by contrast
+// against it — so this function is left expressing only its actual subject,
+// which is that a debit is an error and a credit is a success.
+func TransactionItem(label, amount string, variant components.Variant) core.View {
 	return components.ListRow{
 		Title:    label,
-		Trailing: components.Badge{Text: amount, Color: color, TextColor: ink},
+		Trailing: components.Badge{Text: amount, Variant: variant},
 	}
 }
 

@@ -131,6 +131,48 @@ components.Badge{Text: "3"}
 components.Badge{Text: "beta", Color: "#7B1FA2"}
 ```
 
+### Variants
+
+`Variant` names what the badge *means* and takes its colors from the
+palette's status roles, so a status pill carries no literal hex:
+
+```go
+components.Badge{Text: "Paid",     Variant: components.VariantSuccess}
+components.Badge{Text: "Expiring", Variant: components.VariantWarning}
+components.Badge{Text: "Failed",   Variant: components.VariantError}
+```
+
+| variant | fill |
+|---|---|
+| `VariantDefault` (zero value) | `Primary` |
+| `VariantSuccess` | `Success` |
+| `VariantWarning` | `Warning` |
+| `VariantError` | `Error` |
+
+The zero value is the look every badge had before the field existed, so
+adding it restyles nothing.
+
+**The ink is computed, not fixed.** The palette pairs no ink with a status
+role, and the right answer flips between themes — `DefaultTheme`'s Success is
+a *light* green wanting dark ink, `MaterialTheme`'s is a dark one wanting
+light ink. So for a status variant the label takes whichever of the theme's
+two ink roles has more contrast against the fill. Reusing the default
+variant's white ink would render DefaultTheme's Success and Warning badges at
+~2.2:1 — unreadable. `VariantDefault` is exempt and keeps the theme's
+Primary/Background pairing, which is what makes the zero value a no-op.
+
+Explicit `Color` beats `Variant`, and the ink is still resolved against
+whichever fill won, so an override cannot silently produce an illegible pill.
+Explicit `TextColor` beats the computed ink.
+
+**A variant reinforces the text, it does not replace it.** Nothing announces
+"warning" to a screen reader, and a reader who cannot tell the tints apart
+sees only the label — so the label has to say it ("Overdue", not "!").
+
+`Variant` is a package-level type, not Badge's own, so a future Alert or
+banner resolves the same four roles the same way. `Variant.Color(theme)` and
+`Variant.Ink(theme, bg)` are exported for building your own status surface.
+
 For a *selectable* pill, use Chip.
 
 ## Chip

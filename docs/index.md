@@ -61,7 +61,9 @@ flowchart LR
   change patches one node.
 - **Theming** — a `Theme` carries palette, typography, spacing, and
   per-component base styles; widgets read it from the context, so restyling an
-  app is a data change.
+  app is a data change. The palette names *roles* — `Primary`/`Secondary` for
+  brand, `Error`/`Success`/`Warning` for status, `Border` for strokes — and
+  widgets like `Badge{Variant:}` select a role rather than a color.
 - **Widget library** — the [`components` package](components.md) adds
   struct-configured widgets with composition slots: `Card`, `ListRow`,
   `Separator`, `Avatar`, `ProgressBar`, `Chip`, `Badge`, `FormField`,
