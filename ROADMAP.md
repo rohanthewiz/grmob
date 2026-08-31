@@ -61,16 +61,14 @@
 ### 🧬 Extensions
 - [x] Animations & transitions (`Transition`, easing curves)
 - [x] Accessibility labels, hints and announced selection state
-- [x] Navigation (`Navigator`, `Push`, `Pop`) and `core.Modal` / toasts
+- [x] Navigation (`Navigator`, `Push`, `Pop`, `Replace`, `PopToRoot`, `Reset`,
+      per-frame state) and `core.Modal` / toasts
 - [x] Camera: `CameraView`, capture event
 - [x] Persistence via `bytdb` (see `examples/todoapp`)
 
 ---
 
 ## 🧩 In Progress
-
-### 🔧 Core Abstractions
-- [ ] `Reset` for the navigation stack (`Push` / `Pop` are done)
 
 ### 🧰 UI DSL
 - [ ] Forms with validation — `FormField` renders an `Error`, but nothing

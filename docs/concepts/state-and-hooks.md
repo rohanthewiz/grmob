@@ -85,17 +85,21 @@ what the previous pass already captured.
 Two tools give a component (or a screen) its own slot array:
 
 - **`ctx.Scope(key)`** — a *named* child context, created on first use and
-  stable forever after. The right tool for routes/screens: a scope that
-  renders on some passes and not others shifts nothing, because its slots are
-  its own.
+  stable forever after. A scope that renders on some passes and not others
+  shifts nothing, because its slots are its own — which makes it the tool for
+  a branch that appears and disappears within one screen.
 
     ```go
-    func SettingsScreen(ctx *core.Context) core.View {
+    func SettingsPanel(ctx *core.Context) core.View {
         sctx := ctx.Scope("settings")
         volume := core.NewState(sctx, 50)
         ...
     }
     ```
+
+    Routes do **not** need this. [`Navigator`](navigation.md) already renders
+    each stack frame into a scope of its own, so a screen's hooks are isolated
+    from every other screen's without asking.
 
 - **`core.UseChildContext(ctx)`** — a *positional* child context: it occupies
   a hook slot itself, so it follows the rules of hooks like any other hook.

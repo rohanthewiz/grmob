@@ -205,10 +205,14 @@ core.Navigator(HomeScreen)          // root view
 core.Push(ctx, DetailsScreen)       // push a route
 core.Pop(ctx)                       // back
 core.Replace(ctx, OtherScreen)      // swap the top
-core.Reset(ctx, HomeScreen)         // clear the stack to one route
+core.PopToRoot(ctx)                 // unwind, keeping the root's state
+core.Reset(ctx, HomeScreen)         // clear the stack to one fresh route
 ```
 
-Routes are `func(*core.Context) core.View` — plain view functions.
+Routes are `func(*core.Context) core.View` — plain view functions. Each stack
+frame renders into its own hook namespace, so routes may use hooks freely and
+a frame's state is discarded when it leaves the stack. See
+[Navigation](navigation.md) for the full picture.
 
 !!! note
     `core.Reset(ctx, route)` (navigation) is unrelated to `ctx.Reset()`

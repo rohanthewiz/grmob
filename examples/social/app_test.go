@@ -84,12 +84,16 @@ func assertNoConcerns(t *testing.T) {
 
 // TestNavigationKeepsRouteAndTabStateSeparate is the executable form of the
 // comment on DetailsPage: the pushed route's counter and the shell's tab state
-// share a context, and only the ctx.Scope in DetailsPage keeps them from
-// aliasing the same positional slot.
+// must not alias the same positional slot, which they would if both routes
+// rendered into one context — the counter would read the tab's string, and the
+// popped shell would find an int where its tab name was.
 //
-// If the scope were removed, this test fails in two visible ways before the
-// concerns assertion even runs — the counter reads the tab's string, and the
-// popped shell finds an int where its tab name was.
+// The isolation is Navigator's per-frame scope, so removing it fails this test
+// in both of those visible ways before the concerns assertion even runs.
+//
+// The pop half also pins the other side of the contract: a frame that is still
+// on the stack keeps its state. The root frame is never popped, so the shell
+// comes back exactly as it was left.
 func TestNavigationKeepsRouteAndTabStateSeparate(t *testing.T) {
 	// The concern collector is process-wide too, so clear it up front rather
 	// than inheriting a finding from another test in the package.
@@ -134,11 +138,18 @@ func TestNavigationKeepsRouteAndTabStateSeparate(t *testing.T) {
 	assertNoConcerns(t)
 }
 
-// TestScopedStateSurvivesRemount pushes the same route twice. The scope is
-// created on first use and stable forever after, so the counter is still 2 the
-// second time Details appears — a positional child context would have been
-// re-created and reset.
-func TestScopedStateSurvivesRemount(t *testing.T) {
+// TestPushedRouteStateIsDiscardedOnPop is the counterpart to the test above:
+// state belonging to a frame that LEFT the stack must be gone, not waiting.
+//
+// The same route function is pushed twice with a Pop in between. Each push
+// mints a new frame id and therefore a new scope, so the counter starts at 0
+// the second time. Before per-frame scopes this test asserted the opposite —
+// DetailsPage's ctx.Scope("details") hung off the shared context and outlived
+// every pop, so a screen's state silently leaked into its own next visit.
+//
+// Asserting "Contador: 0" rather than "not 2" is deliberate: it distinguishes
+// a genuinely fresh frame from one that was merely re-initialized part-way.
+func TestPushedRouteStateIsDiscardedOnPop(t *testing.T) {
 	core.ClearConcerns()
 
 	mgr := render.New(core.NewContext().WithTheme(core.DefaultTheme), App)
@@ -147,12 +158,14 @@ func TestScopedStateSurvivesRemount(t *testing.T) {
 
 	tap(t, mgr, "Abrir Detalhes")
 	tap(t, mgr, "➕ Incrementar")
-	tap(t, mgr, "➕ Incrementar")
+	if after := tap(t, mgr, "➕ Incrementar"); !strings.Contains(after, "Contador: 2") {
+		t.Fatalf("counter did not reach 2 before the pop:\n%s", after)
+	}
 	tap(t, mgr, "⬅️ Voltar")
 
 	again := tap(t, mgr, "Abrir Detalhes")
-	if !strings.Contains(again, "Contador: 2") {
-		t.Fatalf("scoped counter did not survive the pop/push cycle:\n%s", again)
+	if !strings.Contains(again, "Contador: 0") {
+		t.Fatalf("re-pushed route inherited the popped frame's state:\n%s", again)
 	}
 
 	assertNoConcerns(t)

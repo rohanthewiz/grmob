@@ -18,27 +18,30 @@ func HomePage(ctx *Context) View {
 	)
 }
 
-// DetailsPage is the pushed route, and it owns state — which is the whole
-// lesson of this file.
+// DetailsPage is the pushed route, and it owns state — which used to be the
+// whole lesson of this file.
 //
-// Navigator renders whichever route is on top into the *same* context the
-// Navigator's initial route uses. Hook slots are positional, so a bare
-// NewState(ctx, 0) here would claim slot 0 — the slot App's `currentTab`
-// already owns. The two would alias: this counter would read a string, and
-// popping back would find the tab state overwritten with an int.
+// It once needed ctx.Scope("details") to survive: Navigator rendered every
+// route into the *same* context, hook slots are positional, so a bare
+// NewState(ctx, 0) here claimed slot 0 — the slot App's `currentTab` already
+// owned. The two aliased: this counter read a string, and popping back found
+// the tab state overwritten with an int.
 //
-// ctx.Scope("details") is the fix: a *named* child context, created on first
-// use and stable forever after. A scope that renders on some passes and not
-// others shifts nothing, because its slots are its own. That is exactly the
-// route/screen case.
+// Navigator now gives each stack frame its own scope, so a route's hooks are
+// its own by construction and the plain NewState below is correct. Two
+// consequences are worth seeing in this example:
 //
-// The tripwire for getting this wrong is debug mode's cursor-drift check
-// (core.SetDebugMode(true) + core.DumpConcerns()): a route allocating hooks on
-// the shared context changes that context's hook count between passes, which
-// is what the audit reports.
+//   - Popping back to the shell still finds `currentTab` intact, because the
+//     root frame never left the stack (TestNavigationKeepsRouteAndTabStateSeparate).
+//   - Pushing Details again after a Pop starts the counter back at 0, because
+//     the popped frame's state was discarded (TestPushedRouteStateIsDiscardedOnPop).
+//     State that should outlive a screen belongs above the Navigator — see the
+//     note in App.
+//
+// ctx.Scope is still the right tool for a *long-lived* named sub-tree within
+// one screen; it is simply no longer load-bearing for route isolation.
 func DetailsPage(ctx *Context) View {
-	sc := ctx.Scope("details")
-	counter := NewState(sc, 0)
+	counter := NewState(ctx, 0)
 
 	return Column(
 		Gap(10),

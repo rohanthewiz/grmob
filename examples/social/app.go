@@ -16,8 +16,16 @@ import (
 //
 // The whole shell is one route so Push/Pop layer *over* the tab bar: pushing
 // DetailsPage replaces the tabbed screen entirely, and Pop restores it with the
-// selected tab intact, because the tab state lives in a slot that the pushed
-// route never touches. See DetailsPage for what "never touches" requires.
+// selected tab intact — `currentTab` lives in the root frame's own scope, and
+// the root frame never leaves the stack. See DetailsPage for the history of
+// that guarantee.
+//
+// Where state must outlive a frame, put it above the Navigator. The `ctx`
+// parameter here is the context the Navigator renders into, so
+// `ctx.Scope("session")` (captured by the route closures below) would survive
+// a Reset that discarded every screen — the shape to reach for when something
+// like a draft message or an upload queue must not die with the screen that
+// started it.
 func App(ctx *Context) View {
 	return Navigator(func(ctx *Context) View {
 		currentTab := NewState(ctx, "home")
