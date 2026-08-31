@@ -56,6 +56,29 @@ type Style struct {
 	AccessibilityLabel  string
 	AccessibilityHint   string
 	AccessibilityHidden bool
+
+	// Disabled marks the node inert: the renderers hand it to the platform's
+	// own disabled state rather than emulating one, so the control stops
+	// accepting input, loses focus eligibility, and — the part an emulation
+	// cannot buy — announces itself as disabled to the screen reader
+	// (Compose's `enabled = false`, SwiftUI's `.disabled(true)`, the HTML
+	// `disabled` attribute).
+	//
+	// It lives on Style for the same reason the accessibility fields do:
+	// every builder already takes StyleProps, so Button, the inputs, the
+	// checkbox and any tappable container support it without a signature
+	// change, and a change to it patches like any other style property.
+	//
+	// Disabling is *not* the same as dropping the handler. Go must keep
+	// registering the callback (a nil handler in the registry panics when a
+	// native tap races the patch that disabled the control), and the
+	// renderers must additionally refuse to dispatch — a platform disabled
+	// state already does that, which is what closes the race properly.
+	//
+	// Visual muting is deliberately not implied. What "disabled" looks like
+	// is a palette decision (components.Button spends Surface/TextSecondary
+	// on it); what it *means* is this flag.
+	Disabled bool
 }
 
 type Weight int
@@ -253,6 +276,9 @@ func (s Style) applyTo(target *Style) {
 	}
 	if s.AccessibilityHidden {
 		target.AccessibilityHidden = true
+	}
+	if s.Disabled {
+		target.Disabled = true
 	}
 
 	// Nested styles. These three are reference types, and a Style value gets

@@ -125,18 +125,24 @@ type Button struct {
 	// inert there and the width alone does the work.
 	FullWidth bool
 
-	// Disabled renders the muted treatment and swallows taps.
+	// Disabled renders the muted treatment and marks the control inert.
 	//
-	// The handler is replaced with a no-op rather than dropped: core.Button
-	// registers whatever it is given, and a nil func() in the registry panics
-	// when a late native tap dispatches to it. A no-op is the same
-	// "nothing happens" with no crash on the racing-event path.
+	// Three independent things have to be true, and the widget does not get to
+	// pick two:
 	//
-	// There is no platform disabled state to set — no renderer carries one —
-	// so the announcement rides the accessibility label as ", disabled",
-	// following the ", selected" convention Chip and ListRow already use. A
-	// screen reader therefore hears the state even though the control still
-	// reports as a button.
+	//   - The platform must refuse to dispatch. That is core.Disabled, which
+	//     every renderer now maps onto the native state (Compose's
+	//     `enabled = false`, SwiftUI's `.disabled(true)`, the HTML disabled
+	//     attribute). It is also what makes the control announce itself as
+	//     disabled to a screen reader — VoiceOver says "dimmed", TalkBack
+	//     reads the Disabled property — which is why the label no longer
+	//     carries a hand-written ", disabled" suffix. Doing both would
+	//     announce the state twice.
+	//   - The handler must still be registered, replaced with a no-op rather
+	//     than dropped: core.Button registers whatever it is given, and a nil
+	//     func() in the registry panics if a native tap arrives in the window
+	//     between the user pressing and the disabling patch landing.
+	//   - It must look inert, which is the colorProps treatment below.
 	Disabled bool
 
 	// Style is applied after the variant treatment, so any single property
@@ -160,13 +166,18 @@ func (b Button) Render(ctx *core.Context) *core.Node {
 		styles = append(styles, core.Width("100%"), core.Display(core.DisplayBlock))
 	}
 
-	// Caller styles land after the treatment and before accessibility, so a
-	// one-off override wins over the variant without being able to clobber
-	// the ", disabled" suffix computed below.
+	// Caller styles land after the treatment, so a one-off override wins over
+	// the variant, and before the two props below that are not looks at all.
 	styles = append(styles, b.Style...)
 
-	if label := b.accessibilityLabel(); label != "" {
-		styles = append(styles, core.AccessibilityLabel(label))
+	// After the caller's styles: whether the control is inert is not a look,
+	// so a one-off Style override must not be able to re-enable it.
+	if b.Disabled {
+		styles = append(styles, core.Disabled(true))
+	}
+
+	if b.AccessibilityLabel != "" {
+		styles = append(styles, core.AccessibilityLabel(b.AccessibilityLabel))
 	}
 	if b.AccessibilityHint != "" {
 		styles = append(styles, core.AccessibilityHint(b.AccessibilityHint))
@@ -220,19 +231,4 @@ func (b Button) colorProps(t *core.Theme) []core.StyleProp {
 		core.BackgroundColor(fill),
 		core.TextColor(b.Variant.Ink(t, fill)),
 	}
-}
-
-// accessibilityLabel appends the disabled state to whatever name the button
-// will be announced with. When no explicit label was given, the visible Label
-// is promoted to one so the suffix has something to attach to — otherwise a
-// disabled button would announce its name and nothing else.
-func (b Button) accessibilityLabel() string {
-	name := b.AccessibilityLabel
-	if !b.Disabled {
-		return name
-	}
-	if name == "" {
-		name = b.Label
-	}
-	return name + ", disabled"
 }

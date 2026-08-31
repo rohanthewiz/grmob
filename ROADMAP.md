@@ -25,6 +25,13 @@
 - [x] `PositionSticky`, `Absolute`, `Relative`, etc.
 - [x] Responsive layouts via style merging
 - [x] Shadow, border, radius, hover styles
+- [x] Proportional flex weights on every target — `GrMobFlexStack`, a custom
+      SwiftUI `Layout`, brought iOS in line with Compose's `Modifier.weight`
+      (and made `justify-content` exact rather than Spacer-emulated)
+- [x] `AlignItems: "stretch"` on both native renderers
+- [x] A `ContentMode` prop on `Image` (`Fit` / `Fill` / `Stretch` / `Center`)
+- [x] A native disabled state — `core.Disabled` maps onto the platform's own,
+      subtree-propagating, and announced by the screen reader
 
 ### 🧠 Developer Experience
 - [x] Internal path-based rendering IDs for patches (`reconcile.Patch.TargetID`)
@@ -74,10 +81,6 @@
 - [ ] Forms with validation — `FormField` renders an `Error`, but nothing
       validates
 - [ ] Keyboard-aware scroll area for mobile
-- [ ] Proportional flex weights on iOS (needs a custom SwiftUI `Layout`)
-- [ ] `AlignItems: "stretch"` on both native renderers
-- [ ] A `ContentMode` prop on `Image`
-- [ ] A native disabled state — no renderer carries one
 
 ### 📦 Packaging
 - [ ] `grmob build --target=wasm`

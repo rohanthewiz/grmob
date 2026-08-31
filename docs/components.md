@@ -193,10 +193,18 @@ fix is a second palette value per role, which is a palette decision.
 `FullWidth` sets both a `100%` width and a **block** display: the bundled
 themes give Button an inline display, and width does nothing to an inline box.
 
-`Disabled` renders the palette's muted pair (Surface fill, TextSecondary ink)
-and swallows taps. There is no platform disabled state to set — no renderer
-carries one — so the announcement rides the accessibility label as
-`", disabled"`, the same convention Chip and ListRow use for `", selected"`.
+`Disabled` does three separate things, and all three are needed. It renders
+the palette's muted pair (Surface fill, TextSecondary ink); it replaces the
+handler with a no-op (dropping it would leave a nil func in the callback
+registry for a tap that races the disabling patch to panic on); and it sets
+[`core.Disabled`](concepts/styling-and-theming.md#disabled), which is what
+makes the *platform* refuse to dispatch and announce the state to a screen
+reader.
+
+That last part is why the accessibility label is left alone. The widget used
+to append `", disabled"` to it — the `", selected"` convention Chip and
+ListRow still use — because no renderer carried a disabled state. Now that
+they all do, appending it as well would announce the state twice.
 
 ## InputRow
 

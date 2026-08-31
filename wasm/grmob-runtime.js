@@ -25,9 +25,13 @@ const GrMob = (() => {
 
     function createElement(node) {
         const el = document.createElement(tagForType(node.Type));
+        // The Go node type, kept on the element because the tag alone cannot
+        // recover it (Row, Column, Card and Box are all divs) and update-style
+        // patches carry only the changed Style — see the patch handler.
+        el.dataset.nodeType = node.Type;
 
         if (node.Style) {
-            Object.assign(el.style, styleFromGrMob(node.Style));
+            applyStyle(el, node.Style, node.Type);
         }
 
         if (node.Props) {
@@ -58,6 +62,9 @@ const GrMob = (() => {
                 else if (key === "src" && node.Type === "Image") {
                     el.src = value;
                 }
+                else if (key === "contentMode" && node.Type === "Image") {
+                    el.style.objectFit = objectFitFor(value);
+                }
 
             }
         }
@@ -65,7 +72,47 @@ const GrMob = (() => {
         return el;
     }
 
-    function styleFromGrMob(style) {
+    // Applies a Go Style to a live element. Split from styleFromGrMob because
+    // one Go field does not map to CSS at all: Disabled is an element
+    // *property* on form controls (which is what makes the browser refuse to
+    // dispatch the events whose callback IDs are wired above), and an ARIA
+    // state plus pointer-events elsewhere. Both the initial render and the
+    // update-style patch go through here so a control that becomes disabled
+    // mid-session actually stops responding.
+    function applyStyle(el, style, nodeType) {
+        Object.assign(el.style, styleFromGrMob(style, nodeType));
+
+        const disabled = !!style.Disabled;
+        if (FORM_CONTROLS.has(el.tagName.toLowerCase())) {
+            el.disabled = disabled;
+        } else {
+            if (disabled) {
+                el.setAttribute("aria-disabled", "true");
+            } else {
+                el.removeAttribute("aria-disabled");
+            }
+            el.style.pointerEvents = disabled ? "none" : "";
+        }
+    }
+
+    const FORM_CONTROLS = new Set(["button", "input", "textarea", "select"]);
+
+    // core.ContentMode -> CSS object-fit. Kept in sync with htmlout's
+    // objectFit(); an unknown or absent mode clears the property so the
+    // browser's own default applies.
+    function objectFitFor(mode) {
+        return {
+            fit: "contain",
+            fill: "cover",
+            stretch: "fill",
+            center: "none",
+        }[mode] || "";
+    }
+
+    // The Style -> CSS mapping. nodeType decides the default flex axis, the
+    // same rule htmlout's styleValue uses: a Row stacks horizontally, every
+    // other container vertically.
+    function styleFromGrMob(style, nodeType) {
         const out = {};
         if (style.FontSize) out.fontSize = `${style.FontSize}px`;
         if (style.TextColor) out.color = style.TextColor;
@@ -73,6 +120,32 @@ const GrMob = (() => {
         if (style.Padding) out.padding = edgeToCSS(style.Padding);
         if (style.Margin) out.margin = edgeToCSS(style.Margin);
         if (style.BorderRadius) out.borderRadius = `${style.BorderRadius}px`;
+        if (style.Width) out.width = style.Width;
+        if (style.Height) out.height = style.Height;
+        // Flex layout. A plain <div> is block flow and ignores gap,
+        // justify-content and align-items entirely, so a node that sets any
+        // of them has to be made a flex container first — without this,
+        // AlignItems ("stretch" included) was declared in Go and silently
+        // dropped on the web, while both natives honored it.
+        if (style.Gap || style.JustifyContent || style.AlignItems || style.FlexDirection) {
+            out.display = "flex";
+            out.flexDirection = style.FlexDirection || (nodeType === "Row" ? "row" : "column");
+            if (style.Gap) out.gap = `${style.Gap}px`;
+            if (style.JustifyContent) out.justifyContent = style.JustifyContent;
+            if (style.AlignItems) out.alignItems = style.AlignItems;
+        }
+        // Display is deliberately NOT emitted. Go's DisplayMode carries values
+        // that are not CSS display keywords ("visible", "hidden"), and unlike
+        // htmlout — where an invalid declaration is dropped and the earlier
+        // display:flex survives — assigning one through el.style would
+        // overwrite the flex display in this object first and then be
+        // rejected by the browser, leaving the container in block flow.
+        // A flex *item* property: how this node behaves inside its parent's
+        // layout, so it needs no display:flex of its own.
+        if (style.FlexGrow) out.flexGrow = `${style.FlexGrow}`;
+        if (style.BorderWidth && style.BorderColor) {
+            out.border = `${style.BorderWidth}px solid ${style.BorderColor}`;
+        }
         // core.Transition's canonical "<ms>ms <easing>" is valid CSS as-is;
         // the browser drives the frames, same declare-in-Go model as the
         // native renderers.
@@ -153,6 +226,11 @@ const GrMob = (() => {
                         } else if (k === "placeholder") {
                             if (el.placeholder === v) continue;
                             el.placeholder = v;
+                        } else if (k === "src") {
+                            if (el.src === v) continue;
+                            el.src = v;
+                        } else if (k === "contentMode") {
+                            el.style.objectFit = objectFitFor(v);
                         } else if (k.startsWith("on")) {
                             const event = mapEventName(k);
                             el.dataset[`listener_${k}`] = v;
@@ -172,7 +250,10 @@ const GrMob = (() => {
 
 
                 case "update-style":
-                    Object.assign(el.style, styleFromGrMob(p.Changes));
+                    // The patch carries only the changed Style, not the node
+                    // type — and styleFromGrMob needs the type to pick a
+                    // flex axis. It was recorded on the element at creation.
+                    applyStyle(el, p.Changes, el.dataset.nodeType || "");
                     break;
 
                 case "replace":

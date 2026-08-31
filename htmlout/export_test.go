@@ -265,3 +265,134 @@ func TestNestedGroupingNodesFlattenCompletely(t *testing.T) {
 		t.Fatalf("nested grouping nodes dropped the child:\n%s", out)
 	}
 }
+
+// --- ContentMode and the disabled state -------------------------------------
+//
+// Both are renderer-level concepts that the export has to reproduce for the
+// HTML target to agree with what ships on device: an Image scales the same
+// way, and a disabled control is inert and announced as such.
+
+func TestImageContentModeBecomesObjectFit(t *testing.T) {
+	for _, tc := range []struct {
+		mode core.ContentMode
+		want string
+	}{
+		{core.ContentModeFit, "object-fit:contain"},
+		{core.ContentModeFill, "object-fit:cover"},
+		{core.ContentModeStretch, "object-fit:fill"},
+		{core.ContentModeCenter, "object-fit:none"},
+	} {
+		t.Run(string(tc.mode), func(t *testing.T) {
+			n := &core.Node{Type: "Image", Props: map[string]any{
+				"src": "a.png", "contentMode": string(tc.mode),
+			}}
+			if out := ExportHTML(n); !strings.Contains(out, tc.want) {
+				t.Fatalf("mode %q did not export %q:\n%s", tc.mode, tc.want, out)
+			}
+		})
+	}
+}
+
+// The default has to stay absent rather than become object-fit:contain: a
+// mode-less Image is the pre-ContentMode output, and every existing snapshot
+// pins it.
+func TestImageWithoutContentModeEmitsNoObjectFit(t *testing.T) {
+	n := &core.Node{Type: "Image", Props: map[string]any{"src": "a.png"}}
+	if out := ExportHTML(n); strings.Contains(out, "object-fit") {
+		t.Fatalf("a mode-less image emitted object-fit:\n%s", out)
+	}
+}
+
+// An unrecognized mode must not leak an invalid declaration into the style
+// attribute — a malformed declaration can invalidate the ones around it.
+func TestUnknownContentModeIsDropped(t *testing.T) {
+	n := &core.Node{Type: "Image", Props: map[string]any{
+		"src": "a.png", "contentMode": "sideways",
+	}}
+	if out := ExportHTML(n); strings.Contains(out, "object-fit") {
+		t.Fatalf("unknown mode reached the output:\n%s", out)
+	}
+}
+
+// The object-fit declaration has to join the node's existing style attribute.
+// An element carries exactly one; a second would be dropped by the parser,
+// silently taking the box styling with it.
+func TestContentModeJoinsTheExistingStyleAttribute(t *testing.T) {
+	n := &core.Node{
+		Type:  "Image",
+		Props: map[string]any{"src": "a.png", "contentMode": string(core.ContentModeFill)},
+		Style: &core.Style{Width: "80px", Height: "80px"},
+	}
+	out := ExportHTML(n)
+	if strings.Count(out, `style=`) != 1 {
+		t.Fatalf("expected exactly one style attribute:\n%s", out)
+	}
+	for _, want := range []string{"width:80px", "height:80px", "object-fit:cover"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("missing %q:\n%s", want, out)
+		}
+	}
+}
+
+func TestDisabledFormControlsGetTheAttribute(t *testing.T) {
+	for _, nodeType := range []string{"Button", "Input", "InputPassword", "NumericInput", "TextArea", "Checkbox"} {
+		t.Run(nodeType, func(t *testing.T) {
+			n := &core.Node{
+				Type:  nodeType,
+				Props: map[string]any{"label": "Send", "value": ""},
+				Style: &core.Style{Disabled: true},
+			}
+			out := ExportHTML(n)
+			if !strings.Contains(out, `disabled="disabled"`) {
+				t.Fatalf("%s did not export the disabled attribute:\n%s", nodeType, out)
+			}
+		})
+	}
+}
+
+func TestEnabledControlHasNoDisabledAttribute(t *testing.T) {
+	n := &core.Node{Type: "Button", Props: map[string]any{"label": "Send"}, Style: &core.Style{}}
+	if out := ExportHTML(n); strings.Contains(out, "disabled") {
+		t.Fatalf("an enabled button exported a disabled state:\n%s", out)
+	}
+}
+
+// A container is a div, where `disabled` is not a valid attribute and would be
+// ignored. The pair below is what actually reproduces the native behavior: the
+// ARIA state for the screen reader, and pointer-events for the taps that
+// Compose and SwiftUI stop dispatching.
+func TestDisabledContainerGetsAriaAndPointerEvents(t *testing.T) {
+	n := &core.Node{
+		Type:  "Row",
+		Props: map[string]any{"onClick": "cb-1"},
+		Style: &core.Style{Disabled: true},
+	}
+	out := ExportHTML(n)
+	if !strings.Contains(out, `aria-disabled="true"`) {
+		t.Fatalf("no aria-disabled on a disabled container:\n%s", out)
+	}
+	if !strings.Contains(out, "pointer-events:none") {
+		t.Fatalf("a disabled container still accepts pointer events:\n%s", out)
+	}
+	if strings.Contains(out, `disabled="disabled"`) {
+		t.Fatalf("a div got the form-control disabled attribute:\n%s", out)
+	}
+	// The callback ID stays: Go keeps the handler registered, and the
+	// platform — here the browser — is what refuses to dispatch.
+	if !strings.Contains(out, "cb-1") {
+		t.Fatalf("the disabled node dropped its callback ID:\n%s", out)
+	}
+}
+
+// The stretch value needs no special casing — AlignItems is emitted verbatim
+// and "stretch" is valid CSS — but the flex block it rides in is conditional,
+// so a node that sets *only* AlignItems must still become a flex container.
+func TestAlignItemsStretchMakesTheContainerFlex(t *testing.T) {
+	n := &core.Node{Type: "Row", Style: &core.Style{AlignItems: core.AlignItemsStretch}}
+	out := ExportHTML(n)
+	for _, want := range []string{"display:flex", "flex-direction:row", "align-items:stretch"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("missing %q:\n%s", want, out)
+		}
+	}
+}

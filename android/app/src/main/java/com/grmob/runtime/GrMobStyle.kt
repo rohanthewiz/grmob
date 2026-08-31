@@ -20,6 +20,7 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.disabled
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import org.json.JSONObject
@@ -58,6 +59,8 @@ data class GrMobStyle(
     val accessibilityLabel: String,
     val accessibilityHint: String,
     val accessibilityHidden: Boolean,
+    /** Platform disabled state; see Go's core.Style.Disabled. */
+    val disabled: Boolean,
     /** Parsed Transition duration; 0 means "no transition, snap changes". */
     val transitionMs: Int,
     val transitionEasing: Easing,
@@ -93,6 +96,7 @@ data class GrMobStyle(
                 accessibilityLabel = obj.optString("AccessibilityLabel"),
                 accessibilityHint = obj.optString("AccessibilityHint"),
                 accessibilityHidden = obj.optBoolean("AccessibilityHidden", false),
+                disabled = obj.optBoolean("Disabled", false),
                 transitionMs = parseTransitionMs(obj.optString("Transition")),
                 transitionEasing = parseTransitionEasing(obj.optString("Transition")),
             )
@@ -214,12 +218,25 @@ fun GrMobStyle?.boxModifier(extra: Modifier = Modifier, gestures: Modifier = Mod
     // subtree from the accessibility tree entirely (decorative content).
     // TalkBack has no separate hint slot, so a hint is folded into the
     // content description after the label.
+    // Bound before the semantics lambda: inside it, `disabled` would read as
+    // the SemanticsPropertyReceiver's own disabled() marker rather than this
+    // style's flag.
+    val isDisabled = disabled
     if (accessibilityHidden) {
         m = m.clearAndSetSemantics { }
-    } else if (accessibilityLabel.isNotEmpty() || accessibilityHint.isNotEmpty()) {
+    } else if (accessibilityLabel.isNotEmpty() || accessibilityHint.isNotEmpty() || isDisabled) {
         val description = listOf(accessibilityLabel, accessibilityHint)
             .filter { it.isNotEmpty() }.joinToString(". ")
-        m = m.semantics { contentDescription = description }
+        m = m.semantics {
+            if (description.isNotEmpty()) contentDescription = description
+            // TalkBack announces the Disabled property itself, so a disabled
+            // node needs no ", disabled" folded into its description. The
+            // material3 controls set this from their own `enabled` parameter;
+            // this branch is for everything else — a tappable Box or Row,
+            // whose gesture modifier is dropped in Renderer.kt when disabled
+            // and which would otherwise still look activatable to TalkBack.
+            if (isDisabled) disabled()
+        }
     }
 
     if (margin != Edges0) {

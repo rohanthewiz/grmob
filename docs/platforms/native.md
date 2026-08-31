@@ -106,9 +106,85 @@ so don't open stores in `init`). With no data dir set — web preview, tests —
 [tutorial's persistence chapter](../tutorial-todo.md) for the bytdb store
 pattern.
 
+## How the layout model reaches each platform
+
+Go declares CSS-flavored layout; neither native toolkit speaks it natively.
+Four of the mappings are worth knowing because they are where the platforms
+needed real work rather than a lookup table.
+
+### `FlexGrow` — proportional weights
+
+Compose has `Modifier.weight`, which is proportional by construction, so a Row
+child with `FlexGrow(3)` beside one with `FlexGrow(1)` has always split the
+leftover space 75/25 there.
+
+SwiftUI has no weight. The renderer used to give every grower a
+`.frame(maxWidth: .infinity)`, which makes a stack split leftover space
+**equally** — so the same declaration rendered 50/50 on iOS and 75/25 on
+Android. `GrMobFlexStack`, a hand-written SwiftUI `Layout`, now runs the CSS
+algorithm directly (`flex-basis: auto`, proportional grow, proportional
+shrink) and replaces `HStack`/`VStack` for `Row`/`Column`. Two things came
+along with it: `justify-content` is exact rather than emulated with hidden
+`Spacer`s (`space-around` and `space-evenly` are different values again), and
+the stack keeps SwiftUI's hug-unless-something-claims-the-space behavior, so
+layouts that predate it render unchanged.
+
+### `AlignItems: "stretch"`
+
+A stretched child is *sized* to the container's cross axis, not *placed*
+along it, so neither toolkit's alignment enum can express it — both have
+start/center/end and nothing else.
+
+- **iOS** — `GrMobFlexStack` proposes the full cross extent to each child.
+- **Android** — the container hands each child a `fillMaxWidth()` (Column) or
+  `fillMaxHeight()` (Row); a stretched Row is additionally pinned to
+  `IntrinsicSize.Max` so its children stretch to the tallest sibling rather
+  than to the whole screen. Intrinsic measurement is why a `List` inside a
+  stretched `Row` is unsupported — a lazy list cannot report an intrinsic
+  height. Give that Row an explicit `Height` instead.
+
+Both renderers apply it to lazy lists too, where it is the only flex property
+that means anything (a scrolling axis has no leftover space to divide).
+
+### `ContentMode` on `Image`
+
+```go
+core.ImageWithMode(url, core.ContentModeFill, core.Width("64px"), core.Height("64px"))
+```
+
+`core.Image` keeps its old signature and its old rendering; the mode is a
+required argument on the `WithMode` builder rather than an option buried in a
+style list.
+
+| `core.ContentMode` | SwiftUI | Compose | CSS |
+|---|---|---|---|
+| `Fit` (default) | `scaledToFit()` | `ContentScale.Fit` | `object-fit: contain` |
+| `Fill` | `scaledToFill().clipped()` | `ContentScale.Crop` | `object-fit: cover` |
+| `Stretch` | `resizable()` | `ContentScale.FillBounds` | `object-fit: fill` |
+| `Center` | intrinsic size, clipped | `ContentScale.None` | `object-fit: none` |
+
+`Fill` and `Center` crop on every target — an unclipped image would paint over
+its siblings.
+
+### `Disabled`
+
+`core.Disabled(bool)` becomes the platform's own inert state — `enabled =
+false` on Android, `.disabled(true)` on iOS — and propagates to the subtree on
+both, so one declaration can freeze a whole section. Full contract, including
+why it deliberately changes no colors and why it must not also be announced
+through the accessibility label, in
+[Styling & Theming](../concepts/styling-and-theming.md#disabled).
+
 ## Testing without a device
 
 `render.Manager` and the bridge are plain Go — the exact call sequence a
 shell makes runs in a test (`examples/todoapp/app_test.go`,
 `mobile/bridge_test.go`). Most development happens at that level; the
 simulator/emulator is for final verification.
+
+`ios/verify/run.sh` goes one step further without needing Xcode or a
+simulator: Go generates a bridge transcript from the demo app, Swift replays
+it through the real `GrMobNode`/`GrMobStyle`/`TreeStore` files and deep-
+compares the resulting tree against Go's final render, and the view layer
+(`Renderer.swift`, `GrMobFlexStack` included) is then type-checked. Only Go
+and the Xcode Command Line Tools are required.

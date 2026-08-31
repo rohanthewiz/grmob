@@ -10,10 +10,13 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
@@ -44,6 +47,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -69,6 +73,27 @@ val LocalGrMobRuntime = compositionLocalOf<GrMobRuntime> {
     error("GrMobRoot not mounted")
 }
 
+/**
+ * Inherited disabled state.
+ *
+ * A node's own `Style.Disabled` covers the common case — a button, a field —
+ * but "disable this whole section while the form submits" is the other half
+ * of what the flag is for, and Compose has no subtree-wide equivalent of
+ * SwiftUI's `.disabled(true)` or CSS's `pointer-events: none`, both of which
+ * propagate. This CompositionLocal is that equivalent, so one Go declaration
+ * means the same thing on all three targets rather than "the node only" here
+ * and "the node and everything under it" there.
+ *
+ * It is one-way: nothing re-enables a subtree inside a disabled ancestor,
+ * which is also how the two platform mechanisms it mirrors behave.
+ */
+val LocalGrMobDisabled = compositionLocalOf { false }
+
+/** This node's effective disabled state: its own flag, or an ancestor's. */
+@Composable
+private fun GrMobNode.isDisabled(): Boolean =
+    style?.disabled == true || LocalGrMobDisabled.current
+
 @Composable
 fun GrMobRoot(runtime: GrMobRuntime) {
     CompositionLocalProvider(LocalGrMobRuntime provides runtime) {
@@ -82,8 +107,24 @@ fun GrMobRoot(runtime: GrMobRuntime) {
  */
 @Composable
 fun RenderNode(node: GrMobNode, extra: Modifier = Modifier) {
+    if (node.style?.display == "none") return // not composed at all; "hidden" keeps space
+
+    // Opening the disabled scope here, once, rather than inside every control
+    // means a container's flag reaches leaves it does not know about — and
+    // the provider is skipped when nothing changes, so an enabled tree pays
+    // nothing for the mechanism.
+    if (node.style?.disabled == true && !LocalGrMobDisabled.current) {
+        CompositionLocalProvider(LocalGrMobDisabled provides true) {
+            RenderNodeContent(node, extra)
+        }
+    } else {
+        RenderNodeContent(node, extra)
+    }
+}
+
+@Composable
+private fun RenderNodeContent(node: GrMobNode, extra: Modifier) {
     val style = node.style
-    if (style?.display == "none") return // not composed at all; "hidden" keeps space
 
     when (node.type) {
         "Text" -> GrMobText(node, extra)
@@ -109,6 +150,7 @@ fun RenderNode(node: GrMobNode, extra: Modifier = Modifier) {
         "Modal" -> GrMobModal(node)
         "Image" -> AsyncImage(
             model = node.stringProp("src"),
+            contentScale = contentScaleFor(node.stringProp("contentMode")),
             // The Go-side AccessibilityLabel style prop is the first choice
             // for the description; the legacy "alt" prop remains a fallback.
             // The label is delivered through AsyncImage's own semantics slot,
@@ -194,6 +236,13 @@ private fun gestureModifier(node: GrMobNode): Modifier {
     val onClick = node.stringProp("onClick")
     val onLongPress = node.stringProp("onLongPress")
     if (onClick.isEmpty() && onLongPress.isEmpty()) return Modifier
+    // A disabled node keeps its callback IDs (Go still has the handlers
+    // registered — see core.Style.Disabled) and simply stops being
+    // clickable, which also removes the click/long-click accessibility
+    // actions. Dropping the modifier rather than passing
+    // `combinedClickable(enabled = false)` also drops the ripple, which is
+    // what a disabled surface should look like.
+    if (node.isDisabled()) return Modifier
     val runtime = LocalGrMobRuntime.current
     return Modifier.combinedClickable(
         onClick = { if (onClick.isNotEmpty()) runtime.click(onClick) },
@@ -201,6 +250,22 @@ private fun gestureModifier(node: GrMobNode): Modifier {
             { runtime.click(onLongPress) }
         },
     )
+}
+
+/**
+ * core.ContentMode -> Compose ContentScale. An absent or unknown mode is Fit,
+ * which is both core.Image's documented default and what this renderer drew
+ * before the prop existed, so existing trees are unchanged.
+ *
+ * ContentScale.None (Center) leaves the bitmap at its intrinsic pixel size;
+ * AsyncImage's default alignment is already Center, so "no scaling, centered"
+ * needs nothing further.
+ */
+private fun contentScaleFor(mode: String): ContentScale = when (mode) {
+    "fill" -> ContentScale.Crop
+    "stretch" -> ContentScale.FillBounds
+    "center" -> ContentScale.None
+    else -> ContentScale.Fit
 }
 
 // ---------------------------------------------------------------------------
@@ -246,10 +311,21 @@ private fun GrMobButton(node: GrMobNode, extra: Modifier) {
     Button(
         onClick = { if (onClick.isNotEmpty()) runtime.click(onClick) },
         modifier = marginAndSize(s, extra),
+        // The platform disabled state: material3 stops dispatching, drops the
+        // ripple, and marks the node disabled for TalkBack.
+        enabled = !node.isDisabled(),
         shape = RoundedCornerShape((s?.borderRadius ?: 8f).dp),
         colors = ButtonDefaults.buttonColors(
             containerColor = s?.background ?: Color.Unspecified,
             contentColor = s?.textColor ?: Color.Unspecified,
+            // material3 would otherwise paint its own disabled tones (the
+            // container color at 12% alpha) over whatever the Go theme chose,
+            // so a widget that styles its own disabled look — components.
+            // Button spends Surface/TextSecondary on it — would be silently
+            // overruled. Feeding the same colors into both slots keeps Go the
+            // single source of truth for the palette.
+            disabledContainerColor = s?.background ?: Color.Unspecified,
+            disabledContentColor = s?.textColor ?: Color.Unspecified,
         ),
         contentPadding = androidx.compose.foundation.layout.PaddingValues(
             start = (s?.padding?.left ?: 16).dp, top = (s?.padding?.top ?: 10).dp,
@@ -284,6 +360,7 @@ private fun GrMobCheckbox(node: GrMobNode, extra: Modifier) {
         checked = node.boolProp("checked"),
         onCheckedChange = { if (cb.isNotEmpty()) runtime.toggled(cb, it) },
         modifier = marginAndSize(node.style, extra),
+        enabled = !node.isDisabled(),
     )
 }
 
@@ -353,6 +430,10 @@ private fun GrMobTextField(
 
     BasicTextField(
         value = text,
+        // A disabled field refuses focus outright, so the IME never opens and
+        // the focused/blurred bookkeeping above simply stays in its blurred
+        // branch — Go-owned, which is the correct reading of an inert field.
+        enabled = !node.isDisabled(),
         onValueChange = {
             text = it
             if (onChange.isNotEmpty()) {
@@ -403,7 +484,7 @@ private fun GrMobTextField(
 private fun GrMobRow(node: GrMobNode, extra: Modifier) {
     val s = animatedStyle(node.style)
     Row(
-        modifier = s.boxModifier(extra, gestureModifier(node)),
+        modifier = s.boxModifier(extra.then(stretchRowHeight(s)), gestureModifier(node)),
         horizontalArrangement = horizontalArrangement(s),
         verticalAlignment = when (s?.alignItems) {
             "center" -> Alignment.CenterVertically
@@ -433,26 +514,73 @@ private fun GrMobColumn(node: GrMobNode, extra: Modifier) {
  * The children loops live inside RowScope/ColumnScope because FlexGrow maps
  * onto Modifier.weight, which exists only as a scope extension — the parent
  * computes it and hands it down as the child's `extra` modifier.
+ *
+ * The other parent-computed piece is `AlignItems: "stretch"`. Compose's
+ * Alignment.Horizontal/Vertical enums have no stretch member — a stretched
+ * item is not *placed* differently, it is *measured* differently — so the
+ * container cannot express it and the children carry a fill modifier
+ * instead. That is the same shape as weight: a cross-axis decision only the
+ * parent knows, applied to the child.
+ *
+ * Weight and fill compose cleanly because they act on different axes: in a
+ * Column, weight distributes height and fillMaxWidth sets width.
  */
 @Composable
 private fun RowScope.RowChildren(node: GrMobNode) {
+    val stretch = isStretch(node.style)
     node.children.forEachIndexed { i, child ->
         key(child.key.ifEmpty { i }) {
             val grow = child.style?.flexGrow ?: 0f
-            RenderNode(child, if (grow > 0f) Modifier.weight(grow) else Modifier)
+            var m: Modifier = if (grow > 0f) Modifier.weight(grow) else Modifier
+            if (stretch) m = m.fillMaxHeight()
+            RenderNode(child, m)
         }
     }
 }
 
 @Composable
 private fun ColumnScope.ColumnChildren(node: GrMobNode) {
+    val stretch = isStretch(node.style)
     node.children.forEachIndexed { i, child ->
         key(child.key.ifEmpty { i }) {
             val grow = child.style?.flexGrow ?: 0f
-            RenderNode(child, if (grow > 0f) Modifier.weight(grow) else Modifier)
+            var m: Modifier = if (grow > 0f) Modifier.weight(grow) else Modifier
+            if (stretch) m = m.fillMaxWidth()
+            RenderNode(child, m)
         }
     }
 }
+
+private fun isStretch(s: GrMobStyle?): Boolean = s?.alignItems == "stretch"
+
+/**
+ * The container half of a stretched Row.
+ *
+ * CSS stretches a row's items to the container's content height, which for an
+ * auto-height row is the tallest item. A bare fillMaxHeight on the children
+ * would instead resolve against whatever maximum the *parent* handed down —
+ * usually the whole screen — so the row has to be pinned to its tallest child
+ * first. IntrinsicSize.Max is exactly that measurement.
+ *
+ * Skipped when the style names an explicit height: that height is already the
+ * definite container size CSS would stretch against, and an intrinsic
+ * measurement would fight the frame boxModifier applies for it.
+ *
+ * Two combinations to avoid, both fixable by giving the Row an explicit
+ * Height (which takes the early exit above):
+ *
+ *  - A List inside a stretched Row. Intrinsic measurement asks every child
+ *    for its own intrinsic height, which a lazy list cannot answer —
+ *    LazyColumn/LazyRow throw rather than materialize every row to measure.
+ *  - A stretched Row that is itself a FlexGrow child of a Column. The parent
+ *    hands it a weight-derived height and this modifier overrides it with the
+ *    tallest child's, so the row hugs instead of filling its share. The
+ *    conflict cannot be detected here: `extra` is opaque, and the same
+ *    FlexGrow inside a *Row* parent sets width, where the intrinsic height is
+ *    still exactly right.
+ */
+private fun stretchRowHeight(s: GrMobStyle?): Modifier =
+    if (isStretch(s) && s?.height.isNullOrEmpty()) Modifier.height(IntrinsicSize.Max) else Modifier
 
 /**
  * The virtualized sibling of GrMobColumn: LazyColumn composes only the rows
@@ -492,12 +620,16 @@ private fun GrMobList(node: GrMobNode, extra: Modifier) {
             // on a row animates that row's own property changes — two
             // declarations, two scopes.) Built here because
             // animateItemPlacement only exists inside LazyItemScope.
-            val placement = if ((s?.transitionMs ?: 0) > 0) {
+            var m: Modifier = if ((s?.transitionMs ?: 0) > 0) {
                 Modifier.animateItemPlacement(s!!.transitionTween())
             } else {
                 Modifier
             }
-            RenderNode(row, placement)
+            // Same cross-axis stretch as ColumnChildren; a lazy item has no
+            // weight to combine it with, since a lazy list's main axis is
+            // scrollable and therefore unbounded.
+            if (isStretch(s)) m = m.fillMaxWidth()
+            RenderNode(row, m)
         }
     }
 }

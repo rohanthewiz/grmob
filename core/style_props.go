@@ -248,6 +248,22 @@ func AccessibilityHidden() StyleProp {
 	})
 }
 
+// Disabled hands the node to the platform's own disabled state: it stops
+// accepting taps, keystrokes and focus, and screen readers announce it as
+// disabled (Compose `enabled = false`, SwiftUI `.disabled(true)`, the HTML
+// `disabled` attribute). See Style.Disabled for the full contract.
+//
+// It takes the value rather than being a no-arg flag (unlike
+// AccessibilityHidden) because the caller almost always has a bool in hand —
+// `core.Disabled(form.Submitting)` — and because passing false is the only way
+// to force a node back to enabled: UseStyle's "a zero value means unset" rule
+// means a Style{Disabled: false} cannot clear a flag already on the target.
+func Disabled(disabled bool) StyleProp {
+	return styleFunc(func(s *Style) {
+		s.Disabled = disabled
+	})
+}
+
 func (s Style) With(other Style) Style {
 	merged := s
 	UseStyle(other).Apply(&merged)

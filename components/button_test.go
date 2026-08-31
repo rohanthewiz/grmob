@@ -2,7 +2,6 @@ package components
 
 import (
 	"reflect"
-	"strings"
 	"testing"
 
 	"github.com/rohanthewiz/grmob/core"
@@ -238,42 +237,50 @@ func TestButtonDisabled(t *testing.T) {
 		}
 	})
 
-	t.Run("announces the state", func(t *testing.T) {
+	// The state travels as core.Style.Disabled, which every renderer hands to
+	// the platform's own disabled state — that is what makes a screen reader
+	// announce it. The widget used to synthesize a ", disabled" suffix on the
+	// accessibility label because no renderer carried the state; keeping both
+	// now would announce it twice.
+	t.Run("sets the platform disabled state", func(t *testing.T) {
 		ctx := core.NewContext()
 		ctx.BeginRenderPass()
 
-		// No explicit label: the visible one is promoted so the suffix has
-		// something to attach to.
 		n := Button{Label: "Send", Disabled: true}.Render(ctx)
-		if got := n.Style.AccessibilityLabel; got != "Send, disabled" {
-			t.Errorf("label = %q, want %q", got, "Send, disabled")
+		if !n.Style.Disabled {
+			t.Error("a disabled button did not set Style.Disabled")
+		}
+		// No label is synthesized to carry the announcement any more.
+		if n.Style.AccessibilityLabel != "" {
+			t.Errorf("label = %q, want it left to the platform", n.Style.AccessibilityLabel)
 		}
 
-		// With one: the suffix rides the explicit name, which is the case
-		// that matters for a glyph button.
+		// An explicit label is the button's name and nothing else: the state
+		// is no longer appended to it.
 		n = Button{Label: "✕", AccessibilityLabel: "Delete task", Disabled: true}.Render(ctx)
-		if got := n.Style.AccessibilityLabel; got != "Delete task, disabled" {
-			t.Errorf("label = %q, want %q", got, "Delete task, disabled")
+		if got := n.Style.AccessibilityLabel; got != "Delete task" {
+			t.Errorf("label = %q, want %q", got, "Delete task")
 		}
 
-		// Enabled buttons gain no suffix and no synthesized label.
 		n = Button{Label: "Send"}.Render(ctx)
+		if n.Style.Disabled {
+			t.Error("an enabled button set Style.Disabled")
+		}
 		if n.Style.AccessibilityLabel != "" {
 			t.Errorf("enabled button synthesized a label: %q", n.Style.AccessibilityLabel)
 		}
 	})
 
-	t.Run("the suffix cannot be clobbered by Style", func(t *testing.T) {
+	t.Run("the state cannot be cleared by Style", func(t *testing.T) {
 		ctx := core.NewContext()
 		ctx.BeginRenderPass()
 		n := Button{
 			Label:    "Send",
 			Disabled: true,
-			Style:    []core.StyleProp{core.AccessibilityLabel("Send")},
+			Style:    []core.StyleProp{core.Disabled(false)},
 		}.Render(ctx)
-		if !strings.HasSuffix(n.Style.AccessibilityLabel, ", disabled") {
-			t.Errorf("label = %q; the state announcement must outlast a caller style",
-				n.Style.AccessibilityLabel)
+		if !n.Style.Disabled {
+			t.Error("a caller style re-enabled a disabled button")
 		}
 	})
 }

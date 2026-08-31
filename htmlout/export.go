@@ -75,8 +75,24 @@ func renderNode(b *element.Builder, node *core.Node) (x any) {
 	// Shared attributes: inline style first, then the callback-ID data
 	// attributes the WASM runtime dispatches on (their names are a contract
 	// with runtime/main.go's event bridge).
-	attrs := make([]string, 0, 8)
-	if sv := styleValue(node.Style, node.Type); sv != "" {
+	attrs := make([]string, 0, 10)
+	// The declaration list is assembled before the attribute so the two
+	// prop-driven declarations below (object-fit, pointer-events) can join it
+	// rather than needing a second, illegal, style attribute.
+	sv := styleValue(node.Style, node.Type)
+	if node.Type == "Image" {
+		sv = addDecl(sv, objectFit(getStr(node.Props["contentMode"])))
+	}
+	if node.Style != nil && node.Style.Disabled && !isFormControl(node.Type) {
+		// HTML's disabled attribute is only valid on form controls, so a
+		// disabled container gets the ARIA state plus the one declaration
+		// that actually makes a browser stop routing pointer events to it.
+		// Together they are the closest the export gets to what Compose's
+		// `enabled = false` and SwiftUI's `.disabled(true)` do natively.
+		sv = addDecl(sv, "pointer-events:none")
+		attrs = append(attrs, "aria-disabled", "true")
+	}
+	if sv != "" {
 		attrs = append(attrs, "style", sv)
 	}
 	// A slice, not a map: map iteration order would make attribute order (and
@@ -89,6 +105,15 @@ func renderNode(b *element.Builder, node *core.Node) (x any) {
 		if id, ok := node.Props[cb.prop].(string); ok {
 			attrs = append(attrs, cb.attr, id)
 		}
+	}
+	// element emits key="value" pairs only, so the bare boolean attribute is
+	// written in its spec-blessed long form — the same shape the checked
+	// attribute uses below. A disabled control also stops firing the events
+	// whose callback IDs were just attached, which is the point: the Go
+	// handler stays registered (see Style.Disabled) and the platform, not the
+	// app, refuses to dispatch.
+	if node.Style != nil && node.Style.Disabled && isFormControl(node.Type) {
+		attrs = append(attrs, "disabled", "disabled")
 	}
 
 	switch node.Type {
@@ -176,6 +201,49 @@ func tagForType(t string) string {
 	default:
 		return "div"
 	}
+}
+
+// isFormControl reports whether the node exports as an HTML element that
+// accepts the disabled attribute. Everything else is a div or a span, where
+// disabled is not a valid attribute and would simply be ignored.
+func isFormControl(nodeType string) bool {
+	switch nodeType {
+	case "Button", "Input", "InputPassword", "NumericInput", "TextArea", "Checkbox":
+		return true
+	}
+	return false
+}
+
+// objectFit maps core.ContentMode onto the CSS property that means the same
+// thing. An unset (or unrecognized) mode yields "", which addDecl drops — the
+// browser's own object-fit default is `fill`, but an <img> with no explicit
+// size is laid out at its intrinsic ratio either way, which is what a
+// mode-less Image has always exported as.
+func objectFit(mode string) string {
+	switch core.ContentMode(mode) {
+	case core.ContentModeFit:
+		return "object-fit:contain"
+	case core.ContentModeFill:
+		return "object-fit:cover"
+	case core.ContentModeStretch:
+		return "object-fit:fill"
+	case core.ContentModeCenter:
+		return "object-fit:none"
+	}
+	return ""
+}
+
+// addDecl appends one "prop:value" declaration to a declaration list, joining
+// with the same "; " separator styleValue uses and tolerating either side
+// being empty.
+func addDecl(list, decl string) string {
+	switch {
+	case decl == "":
+		return list
+	case list == "":
+		return decl
+	}
+	return list + "; " + decl
 }
 
 // styleValue serializes the subset of Style the HTML exporter understands into

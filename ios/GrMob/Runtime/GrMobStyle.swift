@@ -44,6 +44,8 @@ struct GrMobStyle: Equatable {
     var accessibilityLabel: String = ""
     var accessibilityHint: String = ""
     var accessibilityHidden: Bool = false
+    /// Platform disabled state; see Go's core.Style.Disabled.
+    var disabled: Bool = false
     var transition: String = ""
 
     /// The Go Transition declaration as a SwiftUI Animation, or nil when the
@@ -104,6 +106,7 @@ struct GrMobStyle: Equatable {
         s.accessibilityLabel = str("AccessibilityLabel")
         s.accessibilityHint = str("AccessibilityHint")
         s.accessibilityHidden = obj["AccessibilityHidden"] as? Bool ?? false
+        s.disabled = obj["Disabled"] as? Bool ?? false
         s.transition = str("Transition")
         return s
     }
@@ -152,15 +155,34 @@ struct GrMobStyle: Equatable {
     }
 }
 
-/// Main-axis growth the parent computed for a child from its FlexGrow.
+/// Per-axis "fill the space you were given" flags, computed by a flex parent
+/// for each child.
 ///
-/// SwiftUI has no Compose-style weight; an infinity frame along the stack's
-/// main axis makes the child absorb leftover space, which matches FlexGrow
-/// for the common single-grower case. Multiple growers split leftover space
-/// equally regardless of their weights — proportional weights need a custom
-/// Layout and are future work.
-enum GrMobGrow {
-    case none, horizontal, vertical
+/// Two separate axes rather than one enum because the two reasons a child
+/// fills are independent and can both apply at once: **main**-axis fill comes
+/// from FlexGrow (the child was allotted a slice of the leftover space by
+/// GrMobFlexStack), and **cross**-axis fill comes from the container's
+/// `AlignItems: "stretch"`. A grown, stretched child in a Row fills both.
+///
+/// The layout arithmetic itself lives in GrMobFlexStack — it proposes each
+/// child an exact size. This modifier is the other half of that handshake:
+/// a proposal is only an offer, and a Text or a styled Box would take its
+/// ideal size and leave the rest of the region empty (with its background
+/// unpainted) without a flexible frame telling it to accept.
+struct GrMobGrow: Equatable {
+    var fillWidth = false
+    var fillHeight = false
+
+    static let none = GrMobGrow()
+    static let horizontal = GrMobGrow(fillWidth: true)
+    static let vertical = GrMobGrow(fillHeight: true)
+
+    /// Adds `other`'s axes to this one — how a container combines a child's
+    /// main-axis growth with its own cross-axis stretch.
+    func union(_ other: GrMobGrow) -> GrMobGrow {
+        GrMobGrow(fillWidth: fillWidth || other.fillWidth,
+                  fillHeight: fillHeight || other.fillHeight)
+    }
 }
 
 /// Event dispatch for gesture-bearing boxes, injected as a plain closure so
@@ -188,10 +210,17 @@ extension EnvironmentValues {
 private struct GrMobGestures: ViewModifier {
     let onTap: String
     let onLongPress: String
+    let disabled: Bool
     @Environment(\.grMobDispatch) private var dispatch
 
     func body(content: Content) -> some View {
-        if onTap.isEmpty && onLongPress.isEmpty {
+        // A disabled node keeps its callback IDs — Go still has the handlers
+        // registered (see core.Style.Disabled) — and simply stops recognizing
+        // gestures, which also removes the accessibility actions below so
+        // VoiceOver stops offering an activation that would do nothing.
+        // `.disabled(true)` in grMobBox handles the controls; this handles
+        // the plain boxes and rows, which draw no control of their own.
+        if disabled || (onTap.isEmpty && onLongPress.isEmpty) {
             content
         } else {
             content
@@ -246,7 +275,8 @@ extension View {
         return self
             .padding((s?.padding ?? .zero).insets)
             .background(s?.background ?? .clear)
-            .modifier(GrMobGestures(onTap: onTap, onLongPress: onLongPress))
+            .modifier(GrMobGestures(onTap: onTap, onLongPress: onLongPress,
+                                    disabled: s?.disabled ?? false))
             .grMobClip(shape)
             .grMobBorder(shape, color: s?.borderColor, width: s?.borderWidth ?? 0)
             .grMobShadow(s?.shadow ?? 0)
@@ -257,6 +287,17 @@ extension View {
             // "hidden" keeps the node's space but not its pixels ("none" is
             // handled earlier by not rendering the node at all — see RenderNode).
             .opacity(s?.display == "hidden" ? 0 : 1)
+            // The platform disabled state. SwiftUI's `.disabled` propagates
+            // down the subtree, which is deliberate and is what the Android
+            // renderer's LocalGrMobDisabled and the web target's
+            // pointer-events:none reproduce: one Go flag on a container means
+            // the same thing on all three. It also carries the accessibility
+            // half — VoiceOver announces the control as dimmed — which no
+            // amount of styling can fake. Applied unconditionally because
+            // `.disabled(false)` is the identity case, and a @ViewBuilder
+            // branch here would add another _ConditionalContent layer to this
+            // chain (see grMobTransition for what that costs).
+            .disabled(s?.disabled ?? false)
             .grMobAccessibility(s)
             .grMobTransition(s)
     }
@@ -364,11 +405,15 @@ extension View {
         }
     }
 
+    /// Kept strictly conditional: the no-fill case must add no frame at all,
+    /// or every leaf in the tree would gain a layout container that changes
+    /// how it reports its own ideal size.
     @ViewBuilder func grMobGrow(_ grow: GrMobGrow) -> some View {
-        switch grow {
-        case .none: self
-        case .horizontal: frame(maxWidth: .infinity)
-        case .vertical: frame(maxHeight: .infinity)
+        if grow == .none {
+            self
+        } else {
+            frame(maxWidth: grow.fillWidth ? .infinity : nil,
+                  maxHeight: grow.fillHeight ? .infinity : nil)
         }
     }
 }

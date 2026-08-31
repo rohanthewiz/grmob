@@ -43,6 +43,18 @@ func diff(_ got: GrMobNode?, _ want: GrMobNode?, path: String, into problems: in
 
 @MainActor
 func run() -> Int32 {
+    // The flex arithmetic is independent of the transcript, so it is checked
+    // first: a layout regression should be reported even if the bridge
+    // transcript cannot be read at all.
+    let flexProblems = checkFlexSolver()
+    if flexProblems.isEmpty {
+        print("OK: flex solver matches the CSS rules")
+    } else {
+        print("FAIL: \(flexProblems.count) flex solver difference(s)")
+        for p in flexProblems { print("  " + p) }
+        return 1
+    }
+
     guard CommandLine.arguments.count == 2,
           let data = FileManager.default.contents(atPath: CommandLine.arguments[1]),
           let transcript = try? JSONDecoder().decode(Transcript.self, from: data)

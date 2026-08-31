@@ -30,7 +30,14 @@ surfaces (`BackgroundColor`, `BorderRadius`, `Shadow`, `BorderColor`,
 `MinWidth`, `MaxWidth`, ...), flex layout (`FlexGrow`, `FlexShrink`,
 `FlexBasis`, `Gap`, `Justify`, `AlignItemsProp`, `FlexDir`, `FlexWrap`),
 positioning (`ZIndex`, `Left`, `Right`, `Bottom`), plus `Transition(ms,
-easing)` for animated style changes.
+easing)` for animated style changes and `Disabled(bool)` for the platform's
+inert state.
+
+`AlignItemsProp` takes the CSS values, `core.AlignItemsStretch` included: a
+stretched child is sized to the container's cross axis rather than placed
+along it, which both native renderers now implement (Compose has no stretch
+alignment, so the children carry a fill modifier; SwiftUI's flex layout
+proposes the cross extent directly).
 
 ### Accessibility props
 
@@ -47,6 +54,41 @@ core.AccessibilityHint("Filters the task list")  // describes the result of acti
 
 Renderers map them to `contentDescription` (Android) and
 `accessibilityLabel` / `accessibilityHint` / `accessibilityHidden` (iOS).
+
+### `Disabled`
+
+`core.Disabled(bool)` rides `Style` for the same reason — one prop, every
+builder — and every renderer hands it to the platform's own disabled state
+rather than emulating one:
+
+```go
+core.Button("Send", submit, core.Disabled(draft == ""))
+core.Input(v, "Email", onChange, core.Disabled(form.Submitting))
+```
+
+| target | what it becomes |
+|---|---|
+| Android | `enabled = false` on the material3 control; the gesture modifier is dropped from a tappable box |
+| iOS | `.disabled(true)` |
+| HTML / WASM | the `disabled` attribute on form controls; `aria-disabled` + `pointer-events: none` elsewhere |
+
+Two consequences worth knowing:
+
+- **It announces itself.** VoiceOver says "dimmed", TalkBack reads the
+  disabled property, a browser reports the attribute. Do *not* also append
+  `", disabled"` to an accessibility label — that announces the state twice.
+- **It propagates.** Disabling a container disables its subtree, on all three
+  targets. That is what makes "freeze this section while the form submits" a
+  single declaration.
+
+What it does **not** do is change any colors. How a disabled control looks is
+a palette decision — `components.Button` spends the theme's `Surface` and
+`TextSecondary` on it — while `Disabled` says only what the control *is*.
+
+Note the signature: `Disabled(false)` is meaningful, unlike the no-argument
+`AccessibilityHidden()`. `UseStyle` treats a zero value as "not set", so
+passing `false` through the prop is the only way to force a node that already
+carries the flag back to enabled.
 
 ## Reusable styles
 

@@ -96,7 +96,7 @@ struct RenderNode: View {
                 // (an unconditional outer accessibilityLabel would override the
                 // box's label with an empty string).
                 AsyncImage(url: URL(string: node.stringProp("src"))) { image in
-                    image.resizable().scaledToFit()
+                    grMobScaled(image, mode: node.stringProp("contentMode"))
                 } placeholder: {
                     ProgressView()
                 }
@@ -122,6 +122,31 @@ struct RenderNode: View {
             default: VStack(alignment: .leading, spacing: 0) { PlainChildren(node: node) }.grMobBox(node.style, grow: grow)
             }
         }
+    }
+}
+
+/// core.ContentMode -> SwiftUI image scaling. An absent or unknown mode is
+/// fit, which is both core.Image's documented default and what this renderer
+/// drew before the prop existed, so existing trees are unchanged.
+///
+/// `.clipped()` on the two overflowing modes is not cosmetic: CSS object-fit
+/// and Compose's ContentScale.Crop both crop to the box, and an uncropped
+/// SwiftUI image would paint over its siblings instead.
+@ViewBuilder
+private func grMobScaled(_ image: Image, mode: String) -> some View {
+    switch mode {
+    case "fill":
+        image.resizable().scaledToFill().clipped()
+    case "stretch":
+        // Resizable with no aspectRatio: the image takes the frame exactly,
+        // distorting. Nothing to clip — it never exceeds the box.
+        image.resizable()
+    case "center":
+        // Deliberately NOT resizable, so the bitmap keeps its intrinsic pixel
+        // size and is centered by the frame it sits in.
+        image.clipped()
+    default:
+        image.resizable().scaledToFit()
     }
 }
 
@@ -154,7 +179,7 @@ private struct GrMobRow: View {
 
     var body: some View {
         let s = node.style
-        HStack(alignment: crossAlignmentV(s), spacing: CGFloat(s?.gap ?? 0)) {
+        GrMobFlexStack(axis: .horizontal, style: s) {
             FlexChildren(node: node, axis: .horizontal)
         }
         .grMobBox(s, grow: grow,
@@ -169,7 +194,7 @@ private struct GrMobColumn: View {
 
     var body: some View {
         let s = node.style
-        VStack(alignment: crossAlignmentH(s), spacing: CGFloat(s?.gap ?? 0)) {
+        GrMobFlexStack(axis: .vertical, style: s) {
             FlexChildren(node: node, axis: .vertical)
         }
         .grMobBox(s, grow: grow,
@@ -178,37 +203,183 @@ private struct GrMobColumn: View {
     }
 }
 
-/// Main-axis distribution. SwiftUI stacks have no justify-content, so the
-/// CSS values are emulated with flexible Spacers — faithful because CSS
-/// justify-content likewise only matters when the container has free space
-/// along the main axis (here: when the stack was given a size or a grow
-/// frame; a hugging stack has no free space and the spacers collapse).
-/// space-around is approximated as space-evenly (equal spacers at edges and
-/// between) — exact half-size edge gaps would need a custom Layout.
+/// The children of a flex container, each tagged with the flex weight its
+/// parent's layout needs.
+///
+/// Two channels carry the same number, and both are required. The layout
+/// value is what GrMobFlexStack reads to divide leftover space; the
+/// GrMobGrow flags are what make the child actually accept the size it is
+/// then proposed (see GrMobGrow). Cross-axis stretch rides the second
+/// channel only — it is a property of the container, so the layout already
+/// knows it.
 private struct FlexChildren: View {
     let node: GrMobNode
     let axis: Axis
 
     var body: some View {
-        let justify = node.style?.justifyContent ?? ""
-        let edges = ["center", "flex-end", "space-around", "space-evenly"].contains(justify)
-        let between = ["space-between", "space-around", "space-evenly"].contains(justify)
-        let n = node.children.count
-
-        if edges, justify != "flex-end" { Spacer(minLength: 0) }
-        if justify == "flex-end" { Spacer(minLength: 0) }
-        ForEach(Array(node.children.enumerated()), id: \.element.viewID) { i, child in
-            if between, i > 0 { Spacer(minLength: 0) }
-            RenderNode(node: child, grow: growFor(child))
+        let stretch = (node.style?.alignItems ?? "") == "stretch"
+        ForEach(node.children, id: \.viewID) { child in
+            let weight = child.style?.flexGrow ?? 0
+            RenderNode(node: child, grow: fill(weight: weight, stretch: stretch))
+                .layoutValue(key: GrMobFlexWeight.self, value: weight)
         }
-        if edges, justify != "flex-end", n > 0 { Spacer(minLength: 0) }
     }
 
-    /// FlexGrow maps onto an infinity frame along this stack's main axis —
-    /// the parent computes it and hands it down (see GrMobGrow).
-    private func growFor(_ child: GrMobNode) -> GrMobGrow {
-        guard (child.style?.flexGrow ?? 0) > 0 else { return .none }
-        return axis == .horizontal ? .horizontal : .vertical
+    private func fill(weight: CGFloat, stretch: Bool) -> GrMobGrow {
+        var g = GrMobGrow()
+        if weight > 0 {
+            if axis == .horizontal { g.fillWidth = true } else { g.fillHeight = true }
+        }
+        if stretch {
+            if axis == .horizontal { g.fillHeight = true } else { g.fillWidth = true }
+        }
+        return g
+    }
+}
+
+/// Per-child flex weight, handed from FlexChildren to GrMobFlexLayout.
+///
+/// A LayoutValueKey rather than a stored array on the layout because a Layout
+/// receives its children as opaque proxies: `subviews[i]` cannot be traced
+/// back to the GrMobNode it came from, and a parallel array would silently
+/// mis-align the moment SwiftUI flattened a Group or dropped an empty view.
+private struct GrMobFlexWeight: LayoutValueKey {
+    static let defaultValue: CGFloat = 0
+}
+
+/// The flex containers' layout: a SwiftUI `Layout` running the CSS algorithm.
+///
+/// SwiftUI's own stacks cannot express three things GrMob's Go DSL declares,
+/// which is what this replaces HStack/VStack for:
+///
+///  1. **Proportional FlexGrow.** A stack has no Compose-style weight. The
+///     previous approach — an infinity frame on every grower — makes SwiftUI
+///     split leftover space *equally*, so `FlexGrow(3)` beside `FlexGrow(1)`
+///     rendered 50/50 instead of 75/25.
+///  2. **`AlignItems: "stretch"`.** A stack's alignment only *places* a
+///     child; stretch has to *size* it, which only the container's layout can
+///     propose.
+///  3. **Exact `justify-content`.** The Spacer emulation could not tell
+///     space-around from space-evenly (CSS gives space-around half-width
+///     gaps at the two edges), and every Spacer was an extra view in the
+///     tree that the app never declared.
+///
+/// The arithmetic lives in GrMobFlexSolver (GrMobFlex.swift), which is pure
+/// and therefore testable off-device; what stays here is the part that needs
+/// SwiftUI — measuring subviews and placing them.
+struct GrMobFlexStack<Content: View>: View {
+    let axis: Axis
+    let style: GrMobStyle?
+    @ViewBuilder let content: Content
+
+    var body: some View {
+        GrMobFlexLayout(
+            axis: axis,
+            spacing: style?.gap ?? 0,
+            justify: style?.justifyContent ?? "",
+            // AlignItems governs cross-axis placement; the DSL's simpler
+            // Align ("center"/"end") is the fallback, but only where it has
+            // ever applied — a Column's horizontal cross axis. Align is a
+            // text-alignment concept and was never read for a Row's vertical
+            // one; honoring it there now would move existing rows.
+            crossAlign: (style?.alignItems).flatMap { $0.isEmpty ? nil : $0 }
+                ?? (axis == .vertical ? (style?.align ?? "") : "")
+        ) {
+            content
+        }
+    }
+}
+
+private struct GrMobFlexLayout: Layout {
+    let axis: Axis
+    let spacing: CGFloat
+    let justify: String
+    let crossAlign: String
+
+    private var solver: GrMobFlexSolver {
+        GrMobFlexSolver(spacing: spacing, justify: justify)
+    }
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        guard !subviews.isEmpty else { return .zero }
+        let bases = baseMains(subviews)
+        let weights = subviews.map { $0[GrMobFlexWeight.self] }
+        let offered = axis == .horizontal ? proposal.width : proposal.height
+        let main = solver.containerMain(offered: offered, bases: bases, weights: weights)
+        let resolved = solver.resolve(main: main, bases: bases, weights: weights)
+
+        // Cross size is re-measured at each child's *final* main size: a Text
+        // that had to shrink wraps to more lines, and asking it before the
+        // main axis was settled would under-report its height.
+        let cross = zip(subviews, resolved.mains)
+            .map { crossOf($0.sizeThatFits(mainProposal($1))) }
+            .max() ?? 0
+        return size(main: main, cross: cross)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        guard !subviews.isEmpty else { return }
+        // Resolved against `bounds`, not `proposal`: the parent is free to
+        // hand over a different size than the one sizeThatFits asked for, and
+        // bounds is the size that is actually being drawn into.
+        let bases = baseMains(subviews)
+        let weights = subviews.map { $0[GrMobFlexWeight.self] }
+        let containerCross = crossOf(bounds.size)
+        let resolved = solver.resolve(main: mainOf(bounds.size), bases: bases, weights: weights)
+        let stretch = crossAlign == "stretch"
+
+        var offset = resolved.leading
+        for (i, subview) in subviews.enumerated() {
+            let childMain = resolved.mains[i]
+            // A stretched child is proposed the full cross extent; otherwise
+            // it is proposed nothing on that axis and keeps its ideal size.
+            let childProposal = stretch
+                ? proposedSize(main: childMain, cross: containerCross)
+                : mainProposal(childMain)
+            let childCross = stretch
+                ? containerCross
+                : crossOf(subview.sizeThatFits(childProposal))
+
+            let mainPos = mainOf(bounds.origin) + offset
+            let crossPos = crossOf(bounds.origin) + GrMobFlexSolver.crossOffset(
+                align: crossAlign, child: childCross, extent: containerCross)
+            subview.place(
+                at: axis == .horizontal ? CGPoint(x: mainPos, y: crossPos)
+                                        : CGPoint(x: crossPos, y: mainPos),
+                anchor: .topLeading,
+                proposal: childProposal
+            )
+            offset += childMain + spacing + resolved.gap
+        }
+    }
+
+    /// Each child's content size along the main axis (CSS `flex-basis: auto`).
+    /// Measured with a fully unspecified proposal so the child reports its
+    /// ideal size rather than accepting whatever the container was offered.
+    private func baseMains(_ subviews: Subviews) -> [CGFloat] {
+        subviews.map { mainOf($0.sizeThatFits(.unspecified)) }
+    }
+
+    // -- axis-agnostic helpers ---------------------------------------------
+
+    private func mainOf(_ s: CGSize) -> CGFloat { axis == .horizontal ? s.width : s.height }
+    private func crossOf(_ s: CGSize) -> CGFloat { axis == .horizontal ? s.height : s.width }
+    private func mainOf(_ p: CGPoint) -> CGFloat { axis == .horizontal ? p.x : p.y }
+    private func crossOf(_ p: CGPoint) -> CGFloat { axis == .horizontal ? p.y : p.x }
+
+    private func size(main: CGFloat, cross: CGFloat) -> CGSize {
+        axis == .horizontal ? CGSize(width: main, height: cross)
+                            : CGSize(width: cross, height: main)
+    }
+
+    private func mainProposal(_ main: CGFloat) -> ProposedViewSize {
+        axis == .horizontal ? ProposedViewSize(width: main, height: nil)
+                            : ProposedViewSize(width: nil, height: main)
+    }
+
+    private func proposedSize(main: CGFloat, cross: CGFloat) -> ProposedViewSize {
+        axis == .horizontal ? ProposedViewSize(width: main, height: cross)
+                            : ProposedViewSize(width: cross, height: main)
     }
 }
 
@@ -231,8 +402,16 @@ private struct GrMobList: View {
         let rows = flattenFragments(node.children)
         ScrollView {
             LazyVStack(alignment: crossAlignmentH(s), spacing: CGFloat(s?.gap ?? 0)) {
+                // Cross-axis stretch, the same contract GrMobFlexStack
+                // implements for Row/Column. A lazy stack cannot be replaced
+                // by a custom Layout — laziness is the whole point of using
+                // it — so stretch is expressed the only way it can be here:
+                // a flexible frame on each row. There is no main-axis
+                // counterpart because a scrolling axis has no leftover space
+                // for FlexGrow to divide.
+                let stretch = (s?.alignItems ?? "") == "stretch"
                 ForEach(rows, id: \.viewID) { row in
-                    RenderNode(node: row)
+                    RenderNode(node: row, grow: stretch ? .horizontal : .none)
                 }
             }
             // A Transition declared on the List itself animates row
@@ -268,6 +447,13 @@ private func flattenFragments(_ children: [GrMobNode]) -> [GrMobNode] {
 
 /// AlignItems governs cross-axis placement; the DSL's simpler Align
 /// ("center"/"end") acts as a fallback when AlignItems is unset.
+///
+/// Only GrMobList still needs this. Row and Column place their children
+/// through GrMobFlexLayout, which computes the offset itself — it has to,
+/// since it also has to handle the "stretch" value that no SwiftUI alignment
+/// can express. A LazyVStack cannot be replaced by a custom Layout without
+/// giving up laziness, so it keeps a native alignment. (The vertical
+/// counterpart went with the HStack it served.)
 private func crossAlignmentH(_ s: GrMobStyle?) -> HorizontalAlignment {
     var v = s?.alignItems ?? ""
     if v.isEmpty { v = s?.align ?? "" }
@@ -275,14 +461,6 @@ private func crossAlignmentH(_ s: GrMobStyle?) -> HorizontalAlignment {
     case "center": return .center
     case "flex-end", "end": return .trailing
     default: return .leading
-    }
-}
-
-private func crossAlignmentV(_ s: GrMobStyle?) -> VerticalAlignment {
-    switch s?.alignItems ?? "" {
-    case "center": return .center
-    case "flex-end": return .bottom
-    default: return .top
     }
 }
 
