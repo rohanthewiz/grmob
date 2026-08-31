@@ -14,45 +14,72 @@
 - [x] `If`, `Match`, `For` for conditional and iterative rendering
 - [x] Style system with reusable `StyleProps`
 - [x] `Box`, `Text`, `Image`, `Button`, `Input`, `Spacer`, etc.
-- [x] Hooks: `UseInterval`, `UseTimeout`, `UseMemo`, `UseReducer`
+- [x] Hooks: `UseInterval`, `UseTimeout`, `UseEffect`, `UseChildContext`
 - [x] WASM runtime (`grmob-runtime.js`) with event bridge
 
 ### 🧪 Layout & Styling
-- [x] `FlexRow`, `FlexColumn`, `Gap`, `Align`, `Justify`, `ZIndex`
+- [x] `Row`, `Column`, `Gap`, `Align`, `Justify`, `ZIndex`
 - [x] `PositionSticky`, `Absolute`, `Relative`, etc.
 - [x] Responsive layouts via style merging
 - [x] Shadow, border, radius, hover styles
 
 ### 🧠 Developer Experience
-- [x] One-line hot reload with patch diffing
-- [x] Error boundaries and safe rendering fallback
-- [x] Component-scoped rendering paths with `data-node-path`
-- [x] Internal path-based rendering IDs for patches
+- [x] Internal path-based rendering IDs for patches (`reconcile.Patch.TargetID`)
 - [x] Logging and inspection of patches
-
+- [x] Debug mode: cursor-drift, duplicate-key and unknown-item concerns
+- [x] `htmlout` HTML export for tests and tooling
+- [x] Snapshot testing for views — the migration tests pin a widget's
+      exported markup to the hand-rolled original byte for byte
 
 ### 🌐 Web Support
 - [x] WASM compilation with `main.wasm`
 - [x] HTML + JS runtime to mount and patch views
 - [x] WebAssembly event bridge to Go via `window.GoInvokeCallback`
 
+### 🎨 Theming
+- [x] `Theme{}` with `ColorPalette`, `Typography`, `SpacingScale`, component defaults
+- [x] Two bundled themes (`DefaultTheme`, `MaterialTheme`) — an Apple-like
+      and a Google-like design system, which was the "real-world design
+      system demo" this file used to track
+- [x] Semantic status roles: `Success`, `Warning`, `Error`, `Border`
+
+### 📱 Native Runtime Bridges
+- [x] **Android Runtime** (Go → JSON → Jetpack Compose renderer)
+- [x] **iOS Runtime** (Go → JSON → SwiftUI renderer)
+- [x] gomobile bridge with a four-channel event surface (`mobile/bridge.go`)
+
+### 🧩 Widget Library (`components`)
+- [x] `Screen`, `Button`, `InputRow`, `SegmentedControl`, `Card`, `ListRow`
+- [x] `Badge`, `Chip`, `Separator`, `Avatar`, `ProgressBar`
+- [x] `FormField`, `Accordion`, `Tabs`
+- [x] `Variant` × `Emphasis` color axes with contrast-picked ink
+
+### 🧬 Extensions
+- [x] Animations & transitions (`Transition`, easing curves)
+- [x] Accessibility labels, hints and announced selection state
+- [x] Navigation (`Navigator`, `Push`, `Pop`) and `core.Modal` / toasts
+- [x] Camera: `CameraView`, capture event
+- [x] Persistence via `bytdb` (see `examples/todoapp`)
+
 ---
 
 ## 🧩 In Progress
 
 ### 🔧 Core Abstractions
-- [ ] Children-aware `Context` to preserve subcomponent state
-- [ ] Navigation system (`Push`, `Pop`, `Reset`) stack-safe
-- [ ] Theming system (`Theme{}` with ColorPalette, Typography)
-
-### 📱 Native Runtime Bridges 
-- [ ] **Android Runtime** (Go → JSON → Swift/Java UI Renderer)
+- [ ] `Reset` for the navigation stack (`Push` / `Pop` are done)
+- [ ] Error boundaries and safe rendering fallback — nothing recovers a
+      panicking `Render` today
+- [ ] `UseMemo` and `UseReducer` — listed as done here for several
+      releases; neither identifier has ever existed in the tree
 
 ### 🧰 UI DSL
-- [ ] Real-world design system demo (Google-like, Apple-like, Flat)
-- [ ] Components like `Tabs`, `Modal`, `Snackbar`, `Avatar`, `Badge`
-- [ ] Forms with validation
+- [ ] Forms with validation — `FormField` renders an `Error`, but nothing
+      validates
 - [ ] Keyboard-aware scroll area for mobile
+- [ ] Proportional flex weights on iOS (needs a custom SwiftUI `Layout`)
+- [ ] `AlignItems: "stretch"` on both native renderers
+- [ ] A `ContentMode` prop on `Image`
+- [ ] A native disabled state — no renderer carries one
 
 ### 📦 Packaging
 - [ ] `grmob build --target=wasm`
@@ -66,7 +93,6 @@
 
 ### Native Bridge (Planned for Android/iOS)
 
-- [ ] Camera: `CameraView`, capture event
 - [ ] Keystore (Secure): `Keystore.Save()`, `Keystore.Get()`
 - [ ] Device Storage (Plain): `DeviceStorage.Set()`, `DeviceStorage.Get()`
 - [ ] Bluetooth: `Scan`, `Connect`, `Send`
@@ -76,7 +102,6 @@
 
 ### 📱 Native Runtime Bridges
 
-- [ ] **iOS Runtime** (via Swift bridge)
 - [ ] **Still thinking** for desktop
 
 ### 🛠️ DevTools
@@ -86,13 +111,12 @@
 
 ### 🧪 Testing & Perf
 - [ ] Benchmark diff/patch engine
-- [ ] Snapshot testing for views
 - [ ] Latency profiling in runtime patching
 
 ### 🧬 Extensions
-- [ ] Animations & transitions
 - [ ] Router-style navigation for web
-- [ ] Accessibility & keyboard navigation
+- [ ] Keyboard navigation (the accessibility *labels* are done; focus
+      traversal is not)
 
 ---
 
