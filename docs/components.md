@@ -35,6 +35,86 @@ All widgets take their look from `ctx.Theme()` — palette colors, spacing and
 typography scales, never hard-coded values — and accept `Style` overrides
 for per-use adjustment.
 
+## Screen
+
+The root scaffold: safe-area inset, an optional scroll region, and the
+vertical column that holds the screen's content.
+
+```
+SafeArea
+  └─ Scroll            (only when Scroll is true)
+       └─ Column       ← Gap / Fill / Style land here
+            ├─ Children[0]
+            └─ …
+```
+
+```go
+// The zero value: SafeArea(Column(children...)), nothing else.
+components.Screen{
+    Children: []core.View{header, body, composer},
+}
+
+// A screen that scrolls as a whole.
+components.Screen{
+    Scroll:   true,
+    Children: []core.View{hero, section1, section2},
+}
+
+// A screen whose list fills the space and pushes a footer down.
+components.Screen{
+    Fill: true,
+    Gap:  12,
+    Children: []core.View{title, entryRow, list, footer},
+}
+```
+
+| field | effect |
+|---|---|
+| `Children` | laid out top to bottom in the column; a `nil` entry is skipped |
+| `Scroll` | wraps the column in `core.Scroll` |
+| `Gap` | uniform vertical spacing, in points; zero means *unset* |
+| `Fill` | `FlexGrow(1)` on the column — claim the full safe-area height |
+| `Style` | applied to the column **after** `Gap` and `Fill`, so it overrides both |
+
+**Every field defaults to contributing nothing**, so the zero value renders
+the bare scaffold with no style props at all and the theme's `Column` base
+carries through untouched. That is what let all five migrations stay
+byte-identical. It matters specifically for `Gap`: style props *set* rather
+than merge, so an unconditional `core.Gap(0)` would overwrite a gap the
+theme's `Column` base had set. Unset and zero therefore have to mean the same
+thing — the absence of a gap, not the imposition of one.
+
+**`Scroll` is for screens with no scrolling region inside them.** Leave it
+false when the screen already contains a `core.List` or its own `Scroll` — a
+scroll view nested in a scroll view fights for the same drag on both natives.
+Of the five app roots in `examples/`, exactly one (`fintechapp`) scrolls as a
+whole; `chat` scrolls its message list and `todoapp` scrolls a virtualized
+`core.List`.
+
+**`Fill` is load-bearing wherever a child grows.** A `FlexGrow` child can only
+grow inside a parent that has height to give, so a screen whose list should
+expand into the leftover space needs `Fill: true` on the scaffold —
+`examples/todoapp` is the worked example. `Fill` with `Scroll` is legal but
+unusual: it makes the scrolled content at least as tall as the viewport, which
+is how you bottom-anchor a footer on a short page. It does not make a scroll
+view fill anything.
+
+Because `Children` flows into `core.Column`'s argument list, which skips nil
+items, the conditional-region idiom costs the tree nothing when the condition
+is false:
+
+```go
+var banner core.View
+if offline {
+    banner = OfflineBanner()
+}
+components.Screen{Children: []core.View{banner, body}}
+```
+
+That is the same contract behind [`core.MaybeProp`](concepts/views.md) — no
+node, no flex slot, no stray `Gap` — where a `core.If` would leave an empty
+`Fragment` for the column to space against.
+
 ## Button
 
 A themed action button with **two orthogonal color axes** and no per-call hex.

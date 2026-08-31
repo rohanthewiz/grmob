@@ -66,8 +66,8 @@ flowchart LR
   widgets like `Badge{Variant:}` and `Button{Variant:}` select a role rather
   than a color.
 - **Widget library** — the [`components` package](components.md) adds
-  struct-configured widgets with composition slots: `Button`, `Card`,
-  `ListRow`, `Separator`, `Avatar`, `ProgressBar`, `Chip`, `Badge`,
+  struct-configured widgets with composition slots: `Screen`, `Button`,
+  `Card`, `ListRow`, `Separator`, `Avatar`, `ProgressBar`, `Chip`, `Badge`,
   `FormField`, `Accordion`, `Tabs`.
 - **Debug mode** — opt-in runtime checks catch the silent failure modes of
   positional hooks (cursor drift, duplicate sibling keys, misused caches) and

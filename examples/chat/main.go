@@ -75,13 +75,17 @@ func ChatApp(ctx *core.Context) core.View {
 		draft.Set("")
 	}
 
-	return core.SafeArea(
-		core.Column(
+	// Screen.Scroll stays false: the scrolling region here is MessageList's
+	// own Scroll, which is what lets the header and composer stay put while
+	// only the thread moves. A scrolling screen would put a scroll view inside
+	// a scroll view, and the two would fight over the same drag natively.
+	return components.Screen{
+		Children: []core.View{
 			ThreadHeader("Ana"),
 			MessageList(thread.Get()),
 			Composer(draft, send),
-		),
-	)
+		},
+	}
 }
 
 func ThreadHeader(who string) core.View {

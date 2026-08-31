@@ -211,11 +211,17 @@ func App(ctx *core.Context) core.View {
 
 	// --- View ------------------------------------------------------------
 
-	return core.SafeArea(
-		core.Column(
-			core.FlexGrow(1),
-			core.Gap(12),
-
+	// Fill (FlexGrow(1) on the column) is load-bearing here, not decoration:
+	// the List below asks to grow into the leftover space, and a flex child
+	// can only grow inside a parent that has height to give. Without it the
+	// column would shrink to its content and the list would never expand.
+	//
+	// Scroll stays false for the same reason chat's does — the List is
+	// virtualized and scrolls itself.
+	return components.Screen{
+		Fill: true,
+		Gap:  12,
+		Children: []core.View{
 			core.Text("Todos", core.UseStyle(core.Style{
 				FontSize:   28,
 				FontWeight: core.Bold,
@@ -278,8 +284,8 @@ func App(ctx *core.Context) core.View {
 				})),
 				Trailing: clearButton,
 			},
-		),
-	)
+		},
+	}
 }
 
 // filterBar renders the three filter chips from one loop, on

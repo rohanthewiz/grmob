@@ -49,12 +49,15 @@ var appHeader = core.Cached(core.Text("GrMob Demo", core.UseStyle(core.Style{
 func App(ctx *core.Context) core.View {
 	tab := core.NewState(ctx, 0)
 
-	return core.SafeArea(
-		core.Column(
+	// No Gap and no Fill: the header sits directly on the tab view, and the
+	// TabView owns the height it needs. The zero value is the whole scaffold
+	// here, which is exactly the case that used to be four lines of nesting.
+	return components.Screen{
+		Children: []core.View{
 			appHeader,
 			tabs(tab),
-		),
-	)
+		},
+	}
 }
 
 func tabs(tab core.State[int]) core.View {

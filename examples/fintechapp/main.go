@@ -29,24 +29,27 @@ func main() {
 }
 
 func App(ctx *core.Context) core.View {
-	return core.SafeArea(
-		core.Scroll(
-			// Non-uniform spacing (24, 24, 28), so this column keeps explicit
-			// Spacers. core.Gap sets one value for every gap in a container;
-			// Spacer stays the right tool exactly when the gaps differ, and
-			// that is the whole rule — Gap for uniform runs, Spacer for the
-			// deliberate exception.
-			core.Column(
-				HeaderSection(ctx),
-				core.Spacer(24),
-				BalanceCard(ctx),
-				core.Spacer(24),
-				ActionsSection(ctx),
-				core.Spacer(28),
-				TransactionList(ctx),
-			),
-		),
-	)
+	// The one screen here that scrolls as a whole: its content is a single
+	// run of sections with nothing pinned, so Screen.Scroll owns the whole
+	// viewport rather than a region inside it.
+	//
+	// Screen.Gap is left unset. The spacing is non-uniform (24, 24, 28), so
+	// this column keeps explicit Spacers — Gap sets one value for every gap in
+	// a container, and Spacer stays the right tool exactly when the gaps
+	// differ. That is the whole rule: Gap for uniform runs, Spacer for the
+	// deliberate exception.
+	return components.Screen{
+		Scroll: true,
+		Children: []core.View{
+			HeaderSection(ctx),
+			core.Spacer(24),
+			BalanceCard(ctx),
+			core.Spacer(24),
+			ActionsSection(ctx),
+			core.Spacer(28),
+			TransactionList(ctx),
+		},
+	}
 }
 
 func HeaderSection(ctx *core.Context) core.View {
