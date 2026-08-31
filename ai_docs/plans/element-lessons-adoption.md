@@ -1,6 +1,6 @@
 # Adopting Lessons from the Element Library
 
-**Status:** Planned
+**Status:** Complete — all four workstreams landed 2026-08-30
 **Date:** 2026-08-30
 **Source:** Comparative review of `github.com/rohanthewiz/element` (../element) against grmob's view layer.
 
@@ -170,6 +170,23 @@ These come from differences between grmob and element that element never had to 
 **Priority: medium, largest surface.** Element's components library (accordion, card,
 tabs, modal, pagination, form fields…) shows the idiom: a struct with named config
 fields, where a `Component`-typed field is a *slot* (`Card{BodyComponent: …}`).
+
+**Status: DONE (2026-08-30).** `components/` ships Card (Title simple path,
+Header slot wins when both set), Badge, Chip, FormField (Error replaces Hint),
+Accordion (the one hook-owning widget — its doc comment carries the render-
+unconditionally rule and notes debug mode catches violations), and Tabs. The
+tabview open question resolved as **wrap**: core.TabView is the "TabView"
+node-type wire contract the native renderers consume, so components.Tabs is a
+named-field facade delegating to it — one implementation to keep in sync.
+All widgets are theme-styled (no hard-coded colors; Badge inks with
+Colors.Background on Primary, Chip's selected default is Surface/Primary) and
+accept Style/SelectedStyle overrides. Ergonomics + acceptance proven by the
+todoapp filter bar rewritten on components.Chip: chip_migration_test.go keeps
+the pre-extraction bar verbatim and asserts the Workstream-1 exporter emits
+byte-identical HTML for all three active states (fresh contexts per render, so
+per-pass callback IDs line up and any diff is structural). Chip owns appending
+", selected" to the accessibility label. Per-widget focused tests throughout;
+the package compiles against public core API only.
 
 ### Why structs, not more funcs in core
 

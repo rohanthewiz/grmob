@@ -16,6 +16,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/rohanthewiz/grmob/components"
 	"github.com/rohanthewiz/grmob/core"
 	"github.com/rohanthewiz/grmob/mobile"
 )
@@ -260,33 +261,36 @@ func App(ctx *core.Context) core.View {
 	)
 }
 
-// filterBar renders the three filter chips from one loop. The active chip is
+// filterBar renders the three filter chips from one loop, on
+// components.Chip — the widget extracted from this bar's original hand-rolled
+// implementation (see chip_migration_test.go, which pins the rendered output
+// to the pre-extraction markup byte for byte). The active chip is
 // distinguished by style only, so switching filters patches two backgrounds
-// instead of restructuring the row.
+// instead of restructuring the row; Chip also owns appending ", selected" to
+// the accessibility label.
 func filterBar(active int, onSelect func(int)) core.View {
 	return core.Row(
 		core.Gap(8),
 		core.For(filterLabels, func(label string, i int) core.View {
-			styles := []core.StyleProp{
-				core.FontSize(13),
-				core.Transition(200, core.EaseInOut),
-				core.AccessibilityHint("Filters the task list"),
-			}
-			accLabel := "Show " + strings.ToLower(label) + " tasks"
-			if i == active {
+			return core.Keyed("filter-"+label, components.Chip{
+				Label:    label,
+				Selected: i == active,
+				OnTap:    func() { onSelect(i) },
+				Style: []core.StyleProp{
+					core.FontSize(13),
+					core.Transition(200, core.EaseInOut),
+				},
 				// The theme's Button base paints a white label; on the pale
 				// accent background that is illegible, so the selected chip
-				// overrides both colors together.
-				styles = append(styles,
+				// overrides both colors together (Chip's theme default is
+				// overridden to keep this app's palette).
+				SelectedStyle: []core.StyleProp{
 					core.BackgroundColor(colorAccent),
 					core.TextColor(colorAccentInk),
-				)
-				accLabel += ", selected"
-			}
-			styles = append(styles, core.AccessibilityLabel(accLabel))
-			return core.Keyed("filter-"+label,
-				core.Button(label, func() { onSelect(i) }, styles...),
-			)
+				},
+				AccessibilityLabel: "Show " + strings.ToLower(label) + " tasks",
+				AccessibilityHint:  "Filters the task list",
+			})
 		}),
 	)
 }
