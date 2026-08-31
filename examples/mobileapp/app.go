@@ -32,23 +32,43 @@ func init() {
 // into the AAR, leaving the bridge with no app (nil manager) at runtime.
 func AppName() string { return "GrMob Demo" }
 
+// appHeader is a static banner routed through core.Cached: it renders once,
+// and because Cached replays the identical *Node every pass, the reconciler's
+// pointer-equality fast path skips the whole subtree on every re-render. It
+// must be a package-level var — App runs on every pass, so a Cached built
+// inside its body would be a fresh wrapper each time and cache nothing. Kept
+// deliberately inert (no hooks, no callbacks, no theme reads): those are the
+// things a cached view must not contain — see core.Cached.
+var appHeader = core.Cached(core.Text("GrMob Demo", core.UseStyle(core.Style{
+	FontSize:   17,
+	FontWeight: core.Bold,
+	Padding:    core.EdgeInsets{Top: 8, Bottom: 8, Left: 16, Right: 16},
+})))
+
 func App(ctx *core.Context) core.View {
 	tab := core.NewState(ctx, 0)
 
 	return core.SafeArea(
-		core.TabView(
-			core.SelectedIndex(tab.Get()),
-			core.OnTabChange(func(i int) { tab.Set(i) }),
-			core.Tabs(
-				core.Tab("Counter", ""),
-				core.Tab("Form", ""),
-				core.Tab("Feed", ""),
-			),
-			core.Content(
-				counterTab(),
-				formTab(),
-				feedTab(),
-			),
+		core.Column(
+			appHeader,
+			tabs(tab),
+		),
+	)
+}
+
+func tabs(tab core.State[int]) core.View {
+	return core.TabView(
+		core.SelectedIndex(tab.Get()),
+		core.OnTabChange(func(i int) { tab.Set(i) }),
+		core.Tabs(
+			core.Tab("Counter", ""),
+			core.Tab("Form", ""),
+			core.Tab("Feed", ""),
+		),
+		core.Content(
+			counterTab(),
+			formTab(),
+			feedTab(),
 		),
 	)
 }

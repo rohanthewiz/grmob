@@ -82,6 +82,17 @@ order, single-pass buffered output, and pretty-printing.
 component with `sync.Once` and replays bytes. grmob's version is *more* valuable
 because the reconciler can exploit it.
 
+**Status: DONE (2026-08-30).** `core/cached.go` + the `old == new` guard at the top of
+`reconcile.Diff` (it subsumes the old both-nil check). Node immutability contract
+documented on `core.Node`. Guard proven live, not just passing: the fast-path tests use
+a func-valued prop as a sentinel (`reflect.DeepEqual` reports non-nil funcs unequal
+even against themselves), so they fail if Diff falls through to the deep walk —
+verified by stashing the guard. Living documentation: `appHeader` in
+examples/mobileapp, a package-level `core.Cached` var (constructed once — a Cached
+built inside a render body is a fresh wrapper each pass and caches nothing; this
+usage constraint is documented on Cached alongside the no-hooks/no-callbacks ones).
+Debug bypass left as a comment hook in cachedView.Render for Workstream 4.
+
 ### Design
 
 ```go

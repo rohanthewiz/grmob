@@ -41,11 +41,17 @@ type Patch struct {
 // Until then, a keyed mismatch rebuilds the slot — visually correct, though the
 // replaced subtree loses transient native state (focus, scroll offset).
 func Diff(old, new *core.Node, path string) []Patch {
-	// Both absent: nothing to do. This guard also protects the recursive calls
-	// below from dereferencing nil when a slot is empty on both sides.
-	if old == nil && new == nil {
+	// Same pointer: the subtree is unchanged by definition, since nodes are
+	// frozen after render (see core.Node's immutability contract). This is the
+	// fast path core.Cached buys — a cached view returns the identical *Node
+	// every pass, so its whole subtree costs one comparison here instead of a
+	// deep props/style/children walk. Also covers old == new == nil.
+	if old == new {
 		return nil
 	}
+	// One side absent (both-absent was handled by the pointer guard above).
+	// These nil checks also protect the recursive calls below from
+	// dereferencing nil when a slot is empty on one side.
 	if old == nil {
 		return []Patch{{
 			Type:     "add",

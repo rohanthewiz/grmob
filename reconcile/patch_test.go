@@ -270,3 +270,41 @@ func TestDiffMixedChangeOrdering(t *testing.T) {
 		t.Errorf("remove-child target = %q, want root/1", patches[2].TargetID)
 	}
 }
+
+func TestDiffSamePointerShortCircuits(t *testing.T) {
+	// Proves the identity guard fires rather than the walk merely finding
+	// deep equality. The sentinel is a func-valued prop: reflect.DeepEqual
+	// reports non-nil funcs unequal even against themselves, so if Diff fell
+	// through to propsChanged on a same-pointer node it would emit a spurious
+	// update-props. Zero patches means the pointer guard returned first.
+	n := node("Box", map[string]any{"sentinel": func() {}}, nil)
+	if patches := Diff(n, n, "root"); len(patches) != 0 {
+		t.Fatalf("Diff(n, n) = %+v, want nothing — identity guard did not fire", patches)
+	}
+}
+
+func TestDiffCachedSubtreeEmitsNoPatches(t *testing.T) {
+	// The core.Cached shape: two consecutive render passes rebuild the dynamic
+	// parts from scratch (fresh allocations, as consecutive renders do) while
+	// a cached child is the identical *Node in both trees. The same func-prop
+	// sentinel as above sits deep inside the shared subtree, so any patch
+	// touching it would prove Diff recursed instead of short-circuiting.
+	shared := node("Column", nil, &core.Style{Gap: 8},
+		node("Text", map[string]any{"content": "nav"}, nil),
+		node("Box", map[string]any{"sentinel": func() {}}, nil),
+	)
+	old := node("Column", nil, nil,
+		shared,
+		node("Text", map[string]any{"content": "Count: 0"}, nil),
+	)
+	new := node("Column", nil, nil,
+		shared,
+		node("Text", map[string]any{"content": "Count: 1"}, nil),
+	)
+
+	patches := Diff(old, new, "root")
+	requirePatchTypes(t, patches, "update-props")
+	if patches[0].TargetID != "root/1" {
+		t.Errorf("patch target = %q, want root/1 (the dynamic sibling, never the cached subtree)", patches[0].TargetID)
+	}
+}
