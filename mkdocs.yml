@@ -1,0 +1,51 @@
+site_name: GrMob
+site_description: Native mobile apps in pure Go — declarative views, hook-based state, diff-patched rendering on Android, iOS, and the web.
+repo_url: https://github.com/rohanthewiz/grmob
+repo_name: rohanthewiz/grmob
+
+theme:
+  name: material
+  palette:
+    - scheme: default
+      primary: blue
+      toggle:
+        icon: material/weather-night
+        name: Dark mode
+    - scheme: slate
+      primary: blue
+      toggle:
+        icon: material/weather-sunny
+        name: Light mode
+  features:
+    - navigation.sections
+    - content.code.copy
+
+markdown_extensions:
+  - admonition
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+
+nav:
+  - Home: index.md
+  - Getting Started: getting-started.md
+  - Tutorial — Todo App: tutorial-todo.md
+  - Concepts:
+      - Architecture: concepts/architecture.md
+      - Views & Composition: concepts/views.md
+      - State & Hooks: concepts/state-and-hooks.md
+      - Events & Callbacks: concepts/events.md
+      - Styling & Theming: concepts/styling-and-theming.md
+      - Reconciliation: concepts/reconciliation.md
+      - Caching: concepts/caching.md
+      - Debug Mode: concepts/debug-mode.md
+  - Widget Library: components.md
+  - Platforms:
+      - Native Android & iOS: platforms/native.md
+      - WebAssembly: platforms/wasm.md
+      - Exporters: platforms/exporters.md
