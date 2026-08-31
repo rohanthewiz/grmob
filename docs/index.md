@@ -51,7 +51,7 @@ flowchart LR
 
 - **Declarative views** — compose UI from pure functions: `Column`, `Row`,
   `Card`, `List`, `Text`, `Button`, `Input`, and friends, plus conditional
-  helpers (`If`, `IfElse`, `Match`, `For`) that keep render logic reading
+  helpers (`If`, `IfElse`, `Match`, `For`, `MaybeProp`) that keep render logic reading
   like prose.
 - **Hook-based state** — `NewState`, `hooks.UseEffect`, `hooks.UseInterval`,
   `hooks.UseTimeout`; state changes mark the tree dirty and re-render

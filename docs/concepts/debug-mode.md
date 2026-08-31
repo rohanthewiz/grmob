@@ -39,6 +39,7 @@ grmob debug: 2 concern(s)
 | `duplicate-key` | Two siblings in one container with the same non-empty `Key` | Keyed reconciliation matching the wrong rows — identity attached to the wrong data |
 | `cached-hooks` | A `core.Cached` view consuming hook slots | The cache stops consuming slots after pass 1, shifting later components |
 | `cached-callbacks` | A `core.Cached` view registering callbacks | Purged handlers + shifted callback IDs for everything after the cached subtree |
+| `unknown-container-item` | An argument to `Row`/`Column`/`Card`/`Box`/`List` that is neither a `StyleProp`, a `BehaviorProp` nor a `View` | `PropsAndChildren` is `any`, so a bare `core.Style` where `core.UseStyle(style)` was meant compiles and is silently dropped — a style that never took effect. A `nil` is exempt: that is [`MaybeProp`](views.md#one-optional-item-maybeprop)'s false path |
 
 ### Cursor drift, precisely
 
@@ -68,6 +69,27 @@ Checked at the single choke point every container's children pass through,
 so the concern names the container (`Column`, `For`, `List` via its
 container type, `Modal`, `TabView`, ...) and the offending key. Empty keys
 never collide.
+
+### Unknown container items
+
+`Row`, `Column`, `Card`, `Box` and `List` take `...core.PropsAndChildren`,
+which is an alias for `any` — the compiler will hand them literally anything,
+and `containerNode` drops whatever it cannot classify as a `StyleProp`, a
+`BehaviorProp` or a `View`. Nothing fails; the property just never appears.
+Debug mode names the container and the Go type that was dropped:
+
+```
+[unknown-container-item] ×3 Row: argument of type core.Style is not a
+StyleProp, BehaviorProp or View and was ignored
+```
+
+The usual causes are a bare `core.Style` in place of `core.UseStyle(style)`, a
+`core.WhenClause` that never reached `MatchBool`, and a `*core.Node` where a
+`core.View` was wanted.
+
+An untyped `nil` is deliberately **not** reported: that is
+[`core.MaybeProp`](views.md#one-optional-item-maybeprop)'s false path, and
+dropping it is the point.
 
 ### Cached bypass
 

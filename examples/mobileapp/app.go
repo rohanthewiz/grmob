@@ -145,7 +145,9 @@ func feedTab() core.View {
 					// a []core.PropsAndChildren so the selected background
 					// could be added conditionally — core.If emits a real
 					// child node, so it was not usable for a *style* prop.
-					// ListRow.SelectedStyle is that conditional, declared.
+					// (core.MaybeProp is the general answer to that now;
+					// ListRow.SelectedStyle is the same conditional declared,
+					// which is better still because the widget owns it.)
 					// And the ", selected" suffix on the accessibility label
 					// was appended by hand in the same branch; ListRow owns
 					// that convention, so the label here is just the name.

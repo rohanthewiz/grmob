@@ -58,6 +58,14 @@ const (
 	// the un-consumed counter slots shift the callback IDs of everything
 	// registered after it.
 	ConcernCachedCallbacks = "cached-callbacks"
+
+	// ConcernUnknownItem: a container (Row, Column, Card, Box, List) was
+	// handed an argument that is neither a StyleProp, a BehaviorProp nor a
+	// View. PropsAndChildren is an alias for any, so the compiler accepts
+	// anything and containerNode drops what it cannot classify — the symptom
+	// is a style or handler that simply never took effect. An untyped nil is
+	// exempt: that is MaybeProp's false path, not a mistake.
+	ConcernUnknownItem = "unknown-container-item"
 )
 
 // Concern is one detected issue. Kind is one of the Concern* constants;

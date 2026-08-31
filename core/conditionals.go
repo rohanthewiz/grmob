@@ -72,3 +72,59 @@ func Match[T comparable](input T, cases ...MatchCase[T]) View {
 	}
 	return Fragment()
 }
+
+// MaybeProp conditionally contributes one item to a container's argument list:
+// Row, Column, Card, Box and List, the variadic ...PropsAndChildren builders.
+// It returns prop when cond holds and an untyped nil otherwise, and
+// containerNode skips a nil item, so a false condition costs the tree nothing
+// at all — no node, no slot, no style.
+//
+// It exists because core.If cannot do this job, in two separate ways:
+//
+//  1. If(false, view) returns Fragment(), and an empty Fragment is still a
+//     real child node. Inside a flex container it takes a slot, so it opens a
+//     stray Gap and shifts a Justify. If earns its place where the alternative
+//     is a whole branch of the tree; it is the wrong tool for one optional
+//     item in a row of three.
+//  2. If is typed View -> View. There is no If for a StyleProp or a
+//     BehaviorProp, so "apply this padding only when selected" or "attach
+//     OnClick only when a handler was supplied" had no expression form at all.
+//     MaybeProp takes PropsAndChildren, so it covers all three item kinds
+//     with one helper.
+//
+// Together those replace the accumulate-into-a-slice idiom this codebase kept
+// reaching for:
+//
+//	items := make([]core.PropsAndChildren, 0, 3)
+//	items = append(items, core.UseStyle(bubble))
+//	if !mine {
+//	    items = append(items, core.Text(from))
+//	}
+//	items = append(items, core.Text(body))
+//	return core.Column(items...)
+//
+//	// becomes
+//	return core.Column(
+//	    core.UseStyle(bubble),
+//	    core.MaybeProp(!mine, core.Text(from)),
+//	    core.Text(body),
+//	)
+//
+// Two limits, both deliberate:
+//
+// prop is evaluated eagerly, like any Go argument — the condition does not
+// guard it. That is safe for the prop constructors, which only build values
+// (core.Text returns a closure; nothing renders until the container renders
+// it), but MaybeProp is not a substitute for an if statement around an
+// expression that would panic or do real work on the false path.
+//
+// The return type is PropsAndChildren (i.e. any), so this is only valid in the
+// container builders' argument lists. Text and Button take typed variadics
+// (...StyleProp), which will not accept it — and must not, since their loops
+// call Apply on every element and would panic on a nil.
+func MaybeProp(cond bool, prop PropsAndChildren) PropsAndChildren {
+	if cond {
+		return prop
+	}
+	return nil
+}

@@ -139,26 +139,25 @@ func MessageBubble(m Message) core.View {
 		side = core.JustifyEnd
 	}
 
-	// Built as a slice rather than with core.If: a false core.If still returns
-	// a Fragment, and an empty Fragment is a real child — it would take a slot
-	// in the bubble's own flex layout and open a stray gap. core.If earns its
-	// place where the alternative is a whole branch of the tree; a single
-	// optional label is cheaper to just not append.
-	inner := make([]core.PropsAndChildren, 0, 3)
-	inner = append(inner, core.UseStyle(bubble))
-	if !m.Mine() {
-		// Only their messages are labelled: our own name on our own bubbles is
-		// noise.
-		inner = append(inner, core.Text(m.From, core.FontSize(12), core.FontWeight(core.Bold)))
-	}
-	inner = append(inner, core.Text(m.Text, core.FontSize(15)))
-
 	return core.Row(
 		core.Justify(side),
 		// The gap between consecutive messages; see MessageList for why it
 		// lives here rather than on the list container.
 		core.UseStyle(core.Style{Margin: core.EdgeInsets{Bottom: 8}}),
-		core.Column(inner...),
+		core.Column(
+			core.UseStyle(bubble),
+			// Only their messages are labelled: our own name on our own
+			// bubbles is noise. core.MaybeProp and not core.If, because a
+			// false core.If still returns a Fragment, and an empty Fragment
+			// is a real child — it would take a slot in the bubble's own flex
+			// layout and open a stray gap where the label is absent.
+			// MaybeProp's false path is an untyped nil, which the container
+			// skips outright, so the tree is identical to one written without
+			// the label at all.
+			core.MaybeProp(!m.Mine(),
+				core.Text(m.From, core.FontSize(12), core.FontWeight(core.Bold))),
+			core.Text(m.Text, core.FontSize(15)),
+		),
 	)
 }
 

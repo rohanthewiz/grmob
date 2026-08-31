@@ -86,6 +86,49 @@ core.MatchBool(
     core.Otherwise(memberView))
 ```
 
+### One optional item: `MaybeProp`
+
+`If` returns a view, and a false `If` returns an **empty `Fragment`** — a real
+child node. Inside a flex container that node still takes a slot, so it opens a
+stray `Gap` and shifts a `Justify`. And `If` is `View → View`, so there was no
+expression form at all for an optional *style* or *behavior* prop.
+
+`MaybeProp` covers both. It returns its argument when the condition holds and
+`nil` otherwise, and the container builders skip a `nil` item outright — no
+node, no slot, no style:
+
+```go
+core.Column(
+    core.UseStyle(bubble),
+    core.MaybeProp(!mine, core.Text(from)),          // an optional child
+    core.MaybeProp(selected, core.Padding(12)),      // an optional style prop
+    core.MaybeProp(onTap != nil, core.OnClick(onTap)), // an optional handler
+    core.Text(body),
+)
+```
+
+Reach for it instead of accumulating a `[]core.PropsAndChildren` by hand. Two
+limits:
+
+- The argument is **evaluated eagerly**, like any Go argument. That is free for
+  the prop constructors (`core.Text` only builds a closure), but `MaybeProp` is
+  not a substitute for an `if` around work that would be expensive or panic on
+  the false path.
+- It returns `PropsAndChildren` (i.e. `any`), so it only fits the container
+  builders — `Row`, `Column`, `Card`, `Box`, `List`. `Text` and `Button` take
+  `...StyleProp` and will not accept it.
+
+Use `If` where the alternative is a whole branch of the tree; use `MaybeProp`
+for a single optional item among siblings.
+
+!!! tip "Debug mode catches the silent drop"
+    Because `PropsAndChildren` is `any`, a container accepts *anything* at
+    compile time and quietly ignores what it cannot classify — a bare
+    `core.Style` where `core.UseStyle(style)` was meant is the classic case.
+    [Debug mode](debug-mode.md) reports it as an
+    `unknown-container-item` concern naming the container and the dropped type.
+    `MaybeProp`'s `nil` is exempt: that is the contract, not a mistake.
+
 !!! warning "Conditionals hide views, not hooks"
     `If`/`Match` decide which **view** renders — but a view that calls
     `NewState` and renders only sometimes violates the

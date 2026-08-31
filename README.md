@@ -128,7 +128,7 @@ func Post(content string, tags ...string) core.View {
 ```
 ## 🧠 Conditional Components
 
-GrMob offers expressive helpers like `If`, `IfElse`, `Match`, and `When` to enable clear and composable **conditional rendering**.
+GrMob offers expressive helpers like `If`, `IfElse`, `Match`, and `When` to enable clear and composable **conditional rendering**, plus `MaybeProp` for a single optional child, style prop or handler inside a container's argument list.
 
 This eliminates verbose control flow scattered across functions and allows you to describe UI variations naturally and declaratively.
 

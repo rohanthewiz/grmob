@@ -15,6 +15,10 @@ type PropsAndChildren any
 // order, before any child renders (children are collected during the loop
 // but rendered after it) — so a container's own callback IDs always precede
 // its children's within a render pass, regardless of argument interleaving.
+//
+// Nil contract: a nil item is skipped. That is what makes MaybeProp work —
+// its false path returns an untyped nil rather than a placeholder node, so a
+// conditional prop that does not apply leaves no trace in the tree at all.
 func containerNode(ctx *Context, typ string, base Style, items []PropsAndChildren) *Node {
 	style := &base
 	n := &Node{Type: typ, Style: style}
@@ -27,6 +31,22 @@ func containerNode(ctx *Context, typ string, base Style, items []PropsAndChildre
 			children = append(children, v)
 		case BehaviorProp:
 			v.Apply(ctx, n)
+		case nil:
+			// A nil item is a contract, not an accident: MaybeProp(false, ...)
+			// returns an untyped nil so a dropped prop costs the tree nothing.
+			// Cased explicitly ahead of the default below so that contract is
+			// visible here, at the one place it is honored, and so the
+			// unknown-item concern cannot fire on it.
+		default:
+			// Anything else silently vanished. That is a real footgun — a bare
+			// core.Style instead of core.UseStyle(style), a WhenClause that
+			// never reached MatchBool, a *Node instead of a View — and it
+			// produces no compile error and no visible failure, just a missing
+			// property. Debug mode names the type that was dropped.
+			if IsDebugMode() {
+				upsertConcern(ConcernUnknownItem,
+					fmt.Sprintf("%s: argument of type %T is not a StyleProp, BehaviorProp or View and was ignored", typ, v))
+			}
 		}
 	}
 	n.Children = renderAll(ctx, typ, children)
