@@ -48,7 +48,7 @@ func CameraView(props ...CameraProp) View {
 			Type:     "CameraView",
 			Props:    propMap,
 			Style:    &node.Style,
-			Children: renderAll(ctx, children),
+			Children: renderAll(ctx, "CameraView", children),
 		}
 	})
 }

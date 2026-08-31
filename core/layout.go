@@ -29,7 +29,7 @@ func containerNode(ctx *Context, typ string, base Style, items []PropsAndChildre
 			v.Apply(ctx, n)
 		}
 	}
-	n.Children = renderAll(ctx, children)
+	n.Children = renderAll(ctx, typ, children)
 	return n
 }
 
@@ -58,14 +58,10 @@ func Spacer(size int) View {
 
 func Scroll(children ...View) View {
 	return ComponentFunc(func(ctx *Context) *Node {
-		var nodes []*Node
-		for _, child := range children {
-			nodes = append(nodes, child.Render(ctx))
-		}
 		return &Node{
 			Type:     "Scroll",
 			Props:    map[string]any{},
-			Children: nodes,
+			Children: renderAll(ctx, "Scroll", children),
 		}
 	})
 }
@@ -87,7 +83,7 @@ func Fragment(children ...View) View {
 		}
 		return &Node{
 			Type:     "Fragment",
-			Children: renderAll(ctx, children),
+			Children: renderAll(ctx, "Fragment", children),
 		}
 	})
 }
@@ -122,10 +118,18 @@ func BorderWidth(px float64) StyleProp {
 	})
 }
 
-func renderAll(ctx *Context, views []View) []*Node {
+// renderAll renders a sibling list. It is the one choke point every
+// container's children pass through (containerNode, Fragment, For, Modal,
+// TabView, camera overlays), which makes it the natural home for the debug
+// duplicate-key check: parentType names the container in the concern so a
+// finding points at the right sibling list.
+func renderAll(ctx *Context, parentType string, views []View) []*Node {
 	var out []*Node
 	for _, v := range views {
 		out = append(out, v.Render(ctx))
+	}
+	if IsDebugMode() {
+		checkDuplicateKeys(parentType, out)
 	}
 	return out
 }

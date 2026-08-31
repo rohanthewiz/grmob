@@ -44,7 +44,7 @@ func TabView(props ...TabViewProp) View {
 		return &Node{
 			Type:     "TabView",
 			Props:    propMap,
-			Children: renderAll(ctx, node.Content),
+			Children: renderAll(ctx, "TabView", node.Content),
 		}
 	})
 }

@@ -15,7 +15,7 @@ func For[T any](items []T, render func(item T, index int) View) View {
 		}
 		return &Node{
 			Type:     "Fragment",
-			Children: renderAll(ctx, children),
+			Children: renderAll(ctx, "For", children),
 		}
 	})
 }

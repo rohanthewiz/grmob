@@ -22,7 +22,7 @@ func Modal(props ...ModalProp) View {
 			p.Apply(node)
 		}
 
-		children := renderAll(ctx, node.Content)
+		children := renderAll(ctx, "Modal", node.Content)
 
 		propMap := map[string]any{
 			"visible":  node.Visible,

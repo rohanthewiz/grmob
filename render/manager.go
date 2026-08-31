@@ -160,6 +160,10 @@ func (r *Manager) RenderInitial() string {
 	r.context.BeginRenderPass()
 	r.context.Reset()
 	r.currentTree = r.renderFunc(r.context).Render(r.context)
+	// Close the debug pass boundary (no-op unless core.SetDebugMode is on):
+	// the initial pass records each context's baseline hook count for the
+	// cursor-drift check on later passes.
+	r.context.EndRenderPass()
 	return renderJSON(r.currentTree)
 }
 
@@ -178,6 +182,9 @@ func (r *Manager) renderAgainLocked() string {
 	r.context.BeginRenderPass()
 	r.context.Reset()
 	newTree := r.renderFunc(r.context).Render(r.context)
+	// Debug-mode audit of the pass that just finished (cursor drift across
+	// the context tree); a no-op when debug mode is off.
+	r.context.EndRenderPass()
 	patches := reconcile.Diff(r.currentTree, newTree, "root")
 	r.currentTree = newTree
 	r.context.ClearDirty()
@@ -248,6 +255,7 @@ func (r *Manager) RenderAndGetPatches() string {
 	r.context.BeginRenderPass()
 	r.context.Cursor = 0
 	newTree := r.renderFunc(r.context).Render(r.context)
+	r.context.EndRenderPass()
 
 	if r.currentTree == nil {
 		r.currentTree = newTree

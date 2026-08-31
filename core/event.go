@@ -128,6 +128,17 @@ func (r *callbackRegistry) registerInt(fn func(int)) string {
 	return id
 }
 
+// registrationCount is the total callbacks registered so far in the current
+// pass, across all four kinds. The debug-mode Cached bypass samples it before
+// and after rendering a cached subtree: any advance means the subtree
+// registers callbacks, which the production cache would break (see
+// ConcernCachedCallbacks).
+func (r *callbackRegistry) registrationCount() int {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.voidCounter + r.textCounter + r.boolCounter + r.intCounter
+}
+
 // lookupVoid (and the sibling lookups below) fetch the handler and mark the
 // ID live under the lock, but return the function for the caller to invoke
 // OUTSIDE the lock. Handlers are app code: they may run for a while, and they

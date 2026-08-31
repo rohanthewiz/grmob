@@ -212,6 +212,27 @@ fields, where a `Component`-typed field is a *slot* (`Card{BodyComponent: …}`)
 pairs, unbalanced elements) and tags debug output with `data-ele-id`. grmob's
 equivalent class of silent bugs is worse because hooks are positional:
 
+**Status: DONE (2026-08-30), checks 1–2 + Cached bypass; check 3 sketched.**
+`core/debug.go`: `SetDebugMode`/`IsDebugMode` (process-wide atomic, mirroring
+element), a deduplicating concerns collector (`Concerns()` for tests,
+`DumpConcerns()` for humans, count-per-finding so per-pass repeats don't flood),
+and `Context.EndRenderPass()` — called from all three of render.Manager's pass
+methods — which audits every context (children, slot-held contexts, scopes).
+Cursor drift is two comparisons: `0 < cursor < len(slots)` catches a skipped
+hook; cursor-vs-last-rendered-pass (both nonzero) catches the growth direction,
+where the appended slot makes the counts line up. The nonzero guards are what
+keep navigated-away Scopes (legitimately 0-cursor passes) from false-positiving
+— covered by an explicit test. Duplicate keys are checked in `renderAll`, now
+the single choke point (Scroll's hand loop folded into it; all call sites pass
+the container type so findings are locatable). The Cached debug bypass renders
+fresh and *measures* the two constraint violations by sampling the parent
+cursor and the registry's per-pass counters (new `registrationCount()`) around
+the render — so hook/callback escapes are reported directly rather than
+exhibited as downstream corruption. Provenance (check 3) is sketched in a
+comment in debug.go: deferred because anonymous ComponentFuncs all name as
+`core.Row.func1`, so stamping is only useful once named user components are
+common.
+
 1. **Cursor drift:** a `NewState` called conditionally or in a loop shifts every later
    slot — today this manifests as mysterious state bleed. Detect: record slot count
    per context after each pass; a pass that ends with a different cursor than the

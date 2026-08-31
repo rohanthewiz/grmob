@@ -28,6 +28,14 @@ type Context struct {
 	children       []*Context
 	childrenCursor int
 	scopes         map[string]*Context
+
+	// Debug-mode bookkeeping for the cursor-drift check (see auditCursor):
+	// the ending cursor of the last pass in which this context rendered
+	// anything, and whether such a pass has happened yet. Only read/written
+	// inside EndRenderPass, which runs under the render driver's pass
+	// serialization, so no lock is needed.
+	debugLastCursor int
+	debugPassSeen   bool
 }
 
 func (ctx *Context) MarkDirty() {

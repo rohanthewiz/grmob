@@ -1,6 +1,9 @@
 package core
 
-import "sync"
+import (
+	"fmt"
+	"sync"
+)
 
 // Cached wraps a view so it renders exactly once; every later pass returns
 // the same *Node pointer. The payoff is in the reconciler: Diff short-circuits
@@ -60,13 +63,50 @@ func Cached(view View) View {
 // underlying render and publishes the node write, so every caller — including
 // ones that lost the race — observes the fully built node.
 func (c *cachedView) Render(ctx *Context) *Node {
-	// Debug-mode hook point (debug workstream in the element-lessons plan):
-	// when a debug flag lands, bypass the cache here and re-render fresh —
-	//	if IsDebugMode() { return c.view.Render(ctx) }
-	// — so the concern checks (cursor drift, callback registration escaping
-	// through a cached render) can see the real subtree every pass.
+	// Debug bypass, same move as element's Cached: re-render fresh every
+	// pass so the debug checks can see the real subtree. The bypass also
+	// converts the two Cached constraint violations (hooks, callbacks) from
+	// invisible time bombs into direct measurements — see debugRender.
+	if IsDebugMode() {
+		return c.debugRender(ctx)
+	}
 	c.once.Do(func() {
 		c.node = c.view.Render(ctx)
 	})
 	return c.node
+}
+
+// debugRender renders the wrapped view fresh and flags the two things a
+// cached view must never do. Both are detected by sampling around the render
+// rather than by instrumenting the hooks/registry themselves, so the check
+// costs nothing anywhere but here:
+//
+//   - hook usage: the parent context's cursor advanced, so the view consumed
+//     hook slots that the production cache would stop consuming after pass 1,
+//     shifting every later component's slots (ConcernCachedHooks);
+//   - callback registration: the registry's per-pass counters advanced, so
+//     the view registered handlers that the production cache would let be
+//     purged — and whose vacated counter slots would shift every later
+//     component's callback IDs (ConcernCachedCallbacks).
+//
+// Note the debug/production behavior difference is deliberate but real: under
+// the bypass the subtree consumes hooks and callback IDs consistently every
+// pass, so the drift is *reported* here rather than *exhibited* — an app that
+// only misbehaves with debug mode off has likely tripped exactly these
+// concerns.
+func (c *cachedView) debugRender(ctx *Context) *Node {
+	cursorBefore := ctx.Cursor
+	cbBefore := ctx.registry.registrationCount()
+	node := c.view.Render(ctx)
+	if ctx.Cursor != cursorBefore {
+		upsertConcern(ConcernCachedHooks, fmt.Sprintf(
+			"Cached(%T) consumed %d hook slot(s) during render: cached views must not call NewState/UseChildContext (they render once, then stop consuming slots, shifting every later component's state)",
+			c.view, ctx.Cursor-cursorBefore))
+	}
+	if after := ctx.registry.registrationCount(); after != cbBefore {
+		upsertConcern(ConcernCachedCallbacks, fmt.Sprintf(
+			"Cached(%T) registered %d callback(s) during render: cached views must not contain interactive components or behavior props (their handlers are purged after the first skipped pass, and later components' callback IDs shift)",
+			c.view, after-cbBefore))
+	}
+	return node
 }
