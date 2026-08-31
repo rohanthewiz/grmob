@@ -2,6 +2,8 @@ package render
 
 import (
 	"encoding/json"
+	"fmt"
+	"log"
 	"sync"
 
 	"github.com/rohanthewiz/grmob/core"
@@ -159,12 +161,50 @@ func (r *Manager) RenderInitial() string {
 	defer r.mu.Unlock()
 	r.context.BeginRenderPass()
 	r.context.Reset()
-	r.currentTree = r.renderFunc(r.context).Render(r.context)
+
+	var tree *core.Node
+	if rerr := core.Guard(func() {
+		tree = r.renderFunc(r.context).Render(r.context)
+	}); rerr != nil {
+		// Nothing was mounted, so unlike a later pass there is no last-good
+		// tree to fall back to — the screen would be blank and, worse,
+		// currentTree would stay nil, which the pump reads as "not mounted
+		// yet" and refuses to render forever. Standing in a placeholder tree
+		// keeps the app alive and lets a later state change try again.
+		logRenderPanic("initial render", rerr)
+		tree = panicPlaceholder()
+	}
+	r.currentTree = tree
+
 	// Close the debug pass boundary (no-op unless core.SetDebugMode is on):
 	// the initial pass records each context's baseline hook count for the
 	// cursor-drift check on later passes.
 	r.context.EndRenderPass()
 	return renderJSON(r.currentTree)
+}
+
+// panicPlaceholder is the tree a failed pass stands in when there is no
+// last-good tree to keep. Built by hand rather than through core's builders so
+// it cannot itself run app code or consume hook slots on a context whose pass
+// has already gone wrong.
+func panicPlaceholder() *core.Node {
+	return &core.Node{
+		Type:  "Text",
+		Props: map[string]any{"content": "Something went wrong."},
+		Style: &core.Style{},
+	}
+}
+
+// logRenderPanic reports a panic that no ErrorBoundary caught.
+//
+// The Manager logs where core.ErrorBoundary deliberately does not: a boundary
+// hands the error to a fallback the app wrote, so the app decides what to do
+// with it, but a panic that reaches here has no such owner. Recovering it
+// silently would convert a crash — loud, with a stack, reported by every
+// crash reporter on the platform — into a screen that quietly stops updating,
+// which is a far worse thing to debug.
+func logRenderPanic(where string, rerr *core.RenderError) {
+	log.Printf("grmob: recovered panic during %s: %v\n%s", where, rerr.Value, rerr.Stack)
 }
 
 // RenderAgain ReRender Used after an event (input/click/state change) to get diff
@@ -181,7 +221,40 @@ func (r *Manager) renderAgainLocked() string {
 	// after the diff then drops only IDs no longer registered this pass.
 	r.context.BeginRenderPass()
 	r.context.Reset()
-	newTree := r.renderFunc(r.context).Render(r.context)
+
+	var newTree *core.Node
+	if rerr := core.Guard(func() {
+		newTree = r.renderFunc(r.context).Render(r.context)
+	}); rerr != nil {
+		// Top-level safety net: a panic no core.ErrorBoundary caught. Abandon
+		// the pass rather than trying to salvage it — the tree is
+		// half-constructed and the only honest thing left on screen is what
+		// was there before.
+		//
+		// Three things are deliberately NOT done here:
+		//
+		//   currentTree is not replaced, so the last complete tree stays
+		//   mounted and the emitted "[]" tells the host nothing changed.
+		//
+		//   PurgeUnusedCallbacks is not called. Purge keeps only IDs marked
+		//   used since BeginRenderPass, and this pass got partway through
+		//   marking them; purging on that partial set would delete the
+		//   handlers of the tree still on screen and leave every button dead.
+		//
+		//   EndRenderPass is not called. The debug cursor audit describes a
+		//   completed pass; running it over a half-rendered context tree
+		//   reports drift that says nothing except that a panic happened,
+		//   which the log line above already said.
+		//
+		// The dirty flag IS cleared: the state change that prompted this pass
+		// has been consumed, and a deterministic panic will not render any
+		// better on an immediate retry — leaving it set would just make a
+		// polling host (WASM) re-panic on every poll.
+		logRenderPanic("render pass", rerr)
+		r.context.ClearDirty()
+		return "[]"
+	}
+
 	// Debug-mode audit of the pass that just finished (cursor drift across
 	// the context tree); a no-op when debug mode is off.
 	r.context.EndRenderPass()
@@ -212,7 +285,7 @@ func (r *Manager) renderAgainLocked() string {
 func (m *Manager) DispatchCallback(id string) string {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.context.TriggerCallback(id)
+	m.guardHandler(id, func() { m.context.TriggerCallback(id) })
 	return m.renderAgainLocked()
 }
 
@@ -220,7 +293,7 @@ func (m *Manager) DispatchCallback(id string) string {
 func (m *Manager) DispatchTextCallback(id string, value string) string {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.context.TriggerTextCallback(id, value)
+	m.guardHandler(id, func() { m.context.TriggerTextCallback(id, value) })
 	return m.renderAgainLocked()
 }
 
@@ -228,7 +301,7 @@ func (m *Manager) DispatchTextCallback(id string, value string) string {
 func (m *Manager) DispatchBoolCallback(id string, value bool) string {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.context.TriggerBoolCallback(id, value)
+	m.guardHandler(id, func() { m.context.TriggerBoolCallback(id, value) })
 	return m.renderAgainLocked()
 }
 
@@ -236,8 +309,33 @@ func (m *Manager) DispatchBoolCallback(id string, value bool) string {
 func (m *Manager) DispatchIntCallback(id string, value int) string {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.context.TriggerIntCallback(id, value)
+	m.guardHandler(id, func() { m.context.TriggerIntCallback(id, value) })
 	return m.renderAgainLocked()
+}
+
+// guardHandler runs one event handler under a panic guard.
+//
+// core.ErrorBoundary covers render; this covers the other half. A handler runs
+// on the native event thread with a bridge call in flight, so a panic there
+// unwinds straight out through the Go/JNI (or cgo) boundary and kills the
+// process — a tap on a button whose handler dereferences a nil is as fatal as
+// a panicking Render, and no boundary in the tree can see it, because handlers
+// run between passes rather than during one.
+//
+// Recovery is deliberately partial: the handler's own work is abandoned
+// wherever it stopped, so it may have written some of its state and not the
+// rest. Nothing here can know what half-applied means for an app, so the pass
+// that follows simply renders whatever state actually exists. That is strictly
+// better than the alternative — the same half-written state, plus a dead
+// process.
+func (m *Manager) guardHandler(id string, fn func()) {
+	if rerr := core.Guard(fn); rerr != nil {
+		logRenderPanic("event handler "+id, rerr)
+		if core.IsDebugMode() {
+			core.ReportConcern(core.ConcernHandlerPanic,
+				fmt.Sprintf("handler %s panicked: %v", id, rerr.Value))
+		}
+	}
 }
 
 // JSON encoder
@@ -254,7 +352,21 @@ func (r *Manager) RenderAndGetPatches() string {
 	defer r.mu.Unlock()
 	r.context.BeginRenderPass()
 	r.context.Cursor = 0
-	newTree := r.renderFunc(r.context).Render(r.context)
+
+	var newTree *core.Node
+	if rerr := core.Guard(func() {
+		newTree = r.renderFunc(r.context).Render(r.context)
+	}); rerr != nil {
+		// Same safety net as renderAgainLocked, and the same reasoning about
+		// what must not run afterwards; see that function's comment. With no
+		// mounted tree yet there is nothing to keep, so a placeholder stands in.
+		logRenderPanic("render pass", rerr)
+		if r.currentTree == nil {
+			r.currentTree = panicPlaceholder()
+			return render(r.currentTree)
+		}
+		return render([]reconcile.Patch{})
+	}
 	r.context.EndRenderPass()
 
 	if r.currentTree == nil {

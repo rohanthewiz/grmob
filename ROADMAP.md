@@ -16,6 +16,8 @@
 - [x] `Box`, `Text`, `Image`, `Button`, `Input`, `Spacer`, etc.
 - [x] Hooks: `UseInterval`, `UseTimeout`, `UseEffect`, `UseMemo`,
       `UseReducer`, `UseChildContext`
+- [x] `ErrorBoundary` / `SafeRender`, plus the driver's pass and event-handler
+      panic guards — a panicking component costs its subtree, not the process
 - [x] WASM runtime (`grmob-runtime.js`) with event bridge
 
 ### 🧪 Layout & Styling
@@ -27,7 +29,8 @@
 ### 🧠 Developer Experience
 - [x] Internal path-based rendering IDs for patches (`reconcile.Patch.TargetID`)
 - [x] Logging and inspection of patches
-- [x] Debug mode: cursor-drift, duplicate-key and unknown-item concerns
+- [x] Debug mode: cursor-drift, duplicate-key, unknown-item, render-panic
+      and handler-panic concerns
 - [x] `htmlout` HTML export for tests and tooling
 - [x] Snapshot testing for views — the migration tests pin a widget's
       exported markup to the hand-rolled original byte for byte
@@ -68,8 +71,6 @@
 
 ### 🔧 Core Abstractions
 - [ ] `Reset` for the navigation stack (`Push` / `Pop` are done)
-- [ ] Error boundaries and safe rendering fallback — nothing recovers a
-      panicking `Render` today
 
 ### 🧰 UI DSL
 - [ ] Forms with validation — `FormField` renders an `Error`, but nothing

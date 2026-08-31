@@ -66,6 +66,23 @@ const (
 	// is a style or handler that simply never took effect. An untyped nil is
 	// exempt: that is MaybeProp's false path, not a mistake.
 	ConcernUnknownItem = "unknown-container-item"
+
+	// ConcernRenderPanic: an ErrorBoundary caught a panic escaping a
+	// component's Render and swapped in its fallback. The app kept running —
+	// that is the boundary doing its job — which is exactly why this needs
+	// reporting: a boundary placed high in the tree can hide a component that
+	// has been dead for weeks behind a plausible-looking "unavailable" panel.
+	// The detail carries the panic value; the full stack goes to the
+	// fallback, not here.
+	ConcernRenderPanic = "render-panic"
+
+	// ConcernHandlerPanic: an event handler panicked and the render driver
+	// recovered it. Distinct from ConcernRenderPanic because the failure is
+	// in a different phase with a different blast radius: a render panic
+	// costs a subtree's frame, while a handler panic abandons the handler
+	// partway, so the app's state may be half-updated in a way no fallback
+	// can describe.
+	ConcernHandlerPanic = "handler-panic"
 )
 
 // Concern is one detected issue. Kind is one of the Concern* constants;
@@ -104,6 +121,21 @@ func upsertConcern(kind, detail string) {
 		return
 	}
 	concerns.items[key] = &Concern{Kind: kind, Detail: detail, Count: 1}
+}
+
+// ReportConcern records a concern from outside this package.
+//
+// The detection sites for most concern kinds live in core, so they call
+// upsertConcern directly; the panic guards in the render driver do not, and a
+// recovered panic is exactly the sort of silent-by-design event the concern
+// list exists to surface. Callers should gate on IsDebugMode themselves —
+// detail strings usually cost a Sprintf to build, and there is no reason to
+// pay for one in a release build.
+//
+// Deduplicated on kind+detail like every other concern, so a failure that
+// repeats every frame occupies one entry with a rising count.
+func ReportConcern(kind, detail string) {
+	upsertConcern(kind, detail)
 }
 
 // Concerns returns a snapshot of all recorded concerns, sorted by kind then

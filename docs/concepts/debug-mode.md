@@ -40,6 +40,8 @@ grmob debug: 2 concern(s)
 | `cached-hooks` | A `core.Cached` view consuming hook slots | The cache stops consuming slots after pass 1, shifting later components |
 | `cached-callbacks` | A `core.Cached` view registering callbacks | Purged handlers + shifted callback IDs for everything after the cached subtree |
 | `unknown-container-item` | An argument to `Row`/`Column`/`Card`/`Box`/`List` that is neither a `StyleProp`, a `BehaviorProp` nor a `View` | `PropsAndChildren` is `any`, so a bare `core.Style` where `core.UseStyle(style)` was meant compiles and is silently dropped — a style that never took effect. A `nil` is exempt: that is [`MaybeProp`](views.md#one-optional-item-maybeprop)'s false path |
+| `render-panic` | An [`ErrorBoundary`](error-boundaries.md) caught a panic and swapped in its fallback | The app kept running, which is the problem: a boundary high in the tree can hide a component that has been dead for weeks behind a plausible "unavailable" panel |
+| `handler-panic` | An event handler panicked and `render.Manager` recovered it | Same silence, different phase — and a worse blast radius, since the handler was abandoned partway and app state may be half-updated |
 
 ### Cursor drift, precisely
 

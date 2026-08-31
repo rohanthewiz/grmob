@@ -4,6 +4,8 @@ package main
 
 import (
 	"encoding/json"
+	"log"
+
 	"github.com/rohanthewiz/grmob/core"
 	. "github.com/rohanthewiz/grmob/examples/social"
 	"github.com/rohanthewiz/grmob/render"
@@ -87,10 +89,22 @@ func receiveEvent(this js.Value, args []js.Value) any {
 
 	// Dispatch through the app's own context: the callback registry is
 	// per-context-tree state now, not a package global.
-	ctx.ReceiveEventPayload(map[string]any{
-		"callback": id,
-		"value":    payload["value"],
-	})
+	//
+	// Guarded because this host dispatches directly rather than through
+	// render.Manager's Dispatch* (which carry the same guard): a panic
+	// escaping a handler here would unwind into the js.Func callback and
+	// abort the Go runtime, taking the page's app with it. The same partial
+	// recovery caveat applies as on the native path — the handler's work is
+	// abandoned wherever it stopped, and the next render shows whatever state
+	// actually exists.
+	if rerr := core.Guard(func() {
+		ctx.ReceiveEventPayload(map[string]any{
+			"callback": id,
+			"value":    payload["value"],
+		})
+	}); rerr != nil {
+		log.Printf("grmob: recovered panic in handler %s: %v\n%s", id, rerr.Value, rerr.Stack)
+	}
 	return nil
 }
 

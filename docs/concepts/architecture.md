@@ -61,6 +61,12 @@ whichever host triggered it:
 5. **`Diff`** — the new tree is compared with `currentTree`; patches out.
 6. **`PurgeUnusedCallbacks`** — handlers for nodes that left the tree are dropped.
 
+Step 3 runs under a panic guard. A panic no
+[`ErrorBoundary`](error-boundaries.md) caught aborts the pass after step 3:
+steps 4–6 are skipped (purging on a partial pass would delete the handlers of
+the tree still on screen), `currentTree` is kept, and the pass emits `[]` — the
+last complete tree stays mounted instead of the process dying.
+
 The `Node` is deliberately small:
 
 ```go

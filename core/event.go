@@ -331,3 +331,71 @@ func (ctx *Context) ReceiveEventPayload(payload map[string]any) {
 		ctx.TriggerCallback(id)
 	}
 }
+
+// ---- Counter snapshot / rollback (ErrorBoundary) ----
+
+// counterSnapshot is the registry's four ID counters at one instant. It is
+// only ever produced and consumed inside a single render pass — the counters
+// restart at every beginPass, so a snapshot has no meaning across passes.
+type counterSnapshot struct {
+	void    int
+	text    int
+	boolean int
+	integer int
+}
+
+// snapshotCounters records where the next callback ID of each kind would be
+// assigned. ErrorBoundary takes one before rendering a child it might have to
+// abandon.
+func (r *callbackRegistry) snapshotCounters() counterSnapshot {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return counterSnapshot{
+		void:    r.voidCounter,
+		text:    r.textCounter,
+		boolean: r.boolCounter,
+		integer: r.intCounter,
+	}
+}
+
+// rollbackCounters rewinds the counters to a snapshot and un-marks the IDs
+// registered in between, undoing the registration side-effects of a render
+// that panicked partway through.
+//
+// Both halves are needed and they fix different problems:
+//
+//   - Rewinding the counters keeps ID assignment positional. A panicking
+//     subtree registers a number of handlers that depends on how far it got —
+//     which can vary with data between passes — so without the rewind every
+//     component rendered after the boundary would see its IDs shift whenever
+//     the failure point moved, and taps would land on the wrong handlers.
+//     After the rewind the boundary's footprint is just its fallback's.
+//
+//   - Un-marking makes purge collect the abandoned handlers. purge keeps
+//     every ID marked used since beginPass; the abandoned subtree marked its
+//     own, and those nodes are not on screen, so leaving the marks would keep
+//     dead handlers dispatchable for as long as the failure persists.
+//
+// The entries in the four callback maps are deliberately left alone: purge
+// removes exactly the unmarked ones at the end of the pass, and any ID in the
+// rolled-back range that the fallback or a later sibling re-uses is
+// overwritten and re-marked on registration, as it would be normally.
+func (r *callbackRegistry) rollbackCounters(s counterSnapshot) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	unmark := func(prefix string, from, to int) {
+		for i := from; i < to; i++ {
+			delete(r.used, prefix+strconv.Itoa(i))
+		}
+	}
+	unmark("cb_", s.void, r.voidCounter)
+	unmark("txt_cb_", s.text, r.textCounter)
+	unmark("bool_cb_", s.boolean, r.boolCounter)
+	unmark("int_cb_", s.integer, r.intCounter)
+
+	r.voidCounter = s.void
+	r.textCounter = s.text
+	r.boolCounter = s.boolean
+	r.intCounter = s.integer
+}

@@ -43,6 +43,7 @@ nav:
       - Styling & Theming: concepts/styling-and-theming.md
       - Reconciliation: concepts/reconciliation.md
       - Caching: concepts/caching.md
+      - Error Boundaries: concepts/error-boundaries.md
       - Debug Mode: concepts/debug-mode.md
   - Widget Library: components.md
   - Platforms:
