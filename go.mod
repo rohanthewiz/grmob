@@ -4,6 +4,8 @@ go 1.26.1
 
 require github.com/rohanthewiz/bytdb v0.11.0
 
+require github.com/rohanthewiz/element v0.7.0
+
 require (
 	github.com/rohanthewiz/btypedb v0.7.0 // indirect
 	github.com/rohanthewiz/serr v1.4.0 // indirect

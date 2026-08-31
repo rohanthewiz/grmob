@@ -1,113 +1,137 @@
+// Package htmlout exports a rendered core.Node tree as a standalone HTML
+// document. It is the demo/inspection path (the example apps print its output);
+// the WASM runtime does not consume it, so readability is favored over
+// compactness.
 package htmlout
 
 import (
 	"fmt"
-	"github.com/rohanthewiz/grmob/core"
+	"strconv"
 	"strings"
+
+	"github.com/rohanthewiz/element"
+	"github.com/rohanthewiz/grmob/core"
 )
 
+// ExportHTML renders the node tree into a complete HTML document.
+//
+// Output is built on the element library rather than hand-assembled strings so
+// that escaping is handled once, in one place: element quote-escapes every
+// attribute value (a raw double quote is the attribute-breakout character), and
+// text content goes through TE(), which entity-escapes it. User-originated
+// strings — Text content, input values, labels, image srcs — therefore cannot
+// re-enter the document as live markup.
 func ExportHTML(node *core.Node) string {
-	var builder strings.Builder
-	builder.WriteString("<!DOCTYPE html>\n<html lang=\"en\">\n<body>\n")
-	renderNode(&builder, node, 1)
-	builder.WriteString("</body>\n</html>")
-	return builder.String()
+	b := element.NewBuilder()
+	// b.Html writes the <!DOCTYPE html> declaration itself.
+	b.Html("lang", "en").R(
+		b.Body().R(
+			renderNode(b, node),
+		),
+	)
+	// Pretty re-indents the compact single-pass output for human readers.
+	// Escaped content is inert entities by this point, so re-parsing is safe.
+	return b.Pretty()
 }
 
-func renderNode(b *strings.Builder, node *core.Node, indent int) {
-	pad := strings.Repeat("  ", indent)
-
-	tag := tagForType(node.Type)
-	if tag == "" {
+// renderNode writes one node (and, for containers, its subtree) into the
+// builder. The return value exists only so calls can sit inline as R()
+// arguments, which is how element establishes evaluation order; it is ignored.
+func renderNode(b *element.Builder, node *core.Node) (x any) {
+	if node == nil {
 		return
 	}
 
-	// Special case for Spacer
+	// Spacer is pure layout: a fixed-height gap, no children, no other props.
 	if node.Type == "Spacer" {
 		if size, ok := node.Props["size"].(int); ok {
-			b.WriteString(fmt.Sprintf("%s<div style=\"height:%dpx\"></div>\n", pad, size))
+			b.Div("style", fmt.Sprintf("height:%dpx", size)).R()
 			return
 		}
 	}
 
-	attrs := styleAttr(node.Style)
+	// Shared attributes: inline style first, then the callback-ID data
+	// attributes the WASM runtime dispatches on (their names are a contract
+	// with runtime/main.go's event bridge).
+	attrs := make([]string, 0, 8)
+	if sv := styleValue(node.Style); sv != "" {
+		attrs = append(attrs, "style", sv)
+	}
+	// A slice, not a map: map iteration order would make attribute order (and
+	// therefore the exported document) nondeterministic across runs.
+	for _, cb := range [...]struct{ prop, attr string }{
+		{"onClick", "data-onclick"},
+		{"onChange", "data-onchange"},
+		{"onToggle", "data-ontoggle"},
+	} {
+		if id, ok := node.Props[cb.prop].(string); ok {
+			attrs = append(attrs, cb.attr, id)
+		}
+	}
 
-	// Add dynamic attributes
-	if id, ok := node.Props["onClick"].(string); ok {
-		attrs += fmt.Sprintf(" data-onclick=\"%s\"", id)
-	}
-	if id, ok := node.Props["onChange"].(string); ok {
-		attrs += fmt.Sprintf(" data-onchange=\"%s\"", id)
-	}
-	if id, ok := node.Props["onToggle"].(string); ok {
-		attrs += fmt.Sprintf(" data-ontoggle=\"%s\"", id)
-	}
-
-	// Open tag
 	switch node.Type {
 	case "Input":
-		val := getStr(node.Props["value"])
-		ph := getStr(node.Props["placeholder"])
-		b.WriteString(fmt.Sprintf("%s<input type=\"text\" value=\"%s\" placeholder=\"%s\"%s />\n", pad, val, ph, attrs))
-		return
+		b.Input(withLead(attrs, "type", "text",
+			"value", getStr(node.Props["value"]),
+			"placeholder", getStr(node.Props["placeholder"]))...).R()
 	case "InputPassword":
-		val := getStr(node.Props["value"])
-		ph := getStr(node.Props["placeholder"])
-		b.WriteString(fmt.Sprintf("%s<input type=\"password\" value=\"%s\" placeholder=\"%s\"%s />\n", pad, val, ph, attrs))
-		return
+		b.Input(withLead(attrs, "type", "password",
+			"value", getStr(node.Props["value"]),
+			"placeholder", getStr(node.Props["placeholder"]))...).R()
 	case "NumericInput":
-		val := getStr(node.Props["value"])
-		b.WriteString(fmt.Sprintf("%s<input type=\"number\" value=\"%s\"%s />\n", pad, val, attrs))
-		return
+		b.Input(withLead(attrs, "type", "number",
+			"value", getStr(node.Props["value"]))...).R()
 	case "TextArea":
-		val := getStr(node.Props["value"])
 		rows := 3
 		if r, ok := node.Props["rows"].(int); ok {
 			rows = r
 		}
-		b.WriteString(fmt.Sprintf("%s<textarea rows=\"%d\"%s>%s</textarea>\n", pad, rows, attrs, val))
-		return
+		// TE keeps a value containing "</textarea>" from closing the element.
+		b.TextArea(withLead(attrs, "rows", strconv.Itoa(rows))...).TE(getStr(node.Props["value"]))
 	case "Checkbox":
-		checked := ""
+		lead := []string{"type", "checkbox"}
 		if v, ok := node.Props["checked"].(bool); ok && v {
-			checked = " checked"
+			// element emits key="value" pairs only; checked="checked" is the
+			// spec-blessed spelling of the bare boolean attribute.
+			lead = append(lead, "checked", "checked")
 		}
-		b.WriteString(fmt.Sprintf("%s<input type=\"checkbox\"%s%s />\n", pad, checked, attrs))
-		return
+		b.Input(withLead(attrs, lead...)...).R()
 	case "Image":
 		if src, ok := node.Props["src"].(string); ok {
-			b.WriteString(fmt.Sprintf("%s<img src=\"%s\"%s />\n", pad, src, attrs))
+			b.Img(withLead(attrs, "src", src)...).R()
 			return
 		}
+		// No src: fall through to the default container rendering, matching
+		// how unknown/underspecified nodes degrade to a plain div.
+		renderContainer(b, node, attrs)
 	case "Text":
-		b.WriteString(fmt.Sprintf("%s<span%s>", pad, attrs))
-		if content, ok := node.Props["content"].(string); ok {
-			b.WriteString(content)
-		}
-		b.WriteString("</span>\n")
-		return
+		b.Span(attrs...).TE(getStr(node.Props["content"]))
 	case "Button":
-		b.WriteString(fmt.Sprintf("%s<button%s>", pad, attrs))
-		if label, ok := node.Props["label"].(string); ok {
-			b.WriteString(label)
-		}
-		b.WriteString("</button>\n")
-		return
+		b.Button(attrs...).TE(getStr(node.Props["label"]))
 	case "CameraView":
-		b.WriteString(fmt.Sprintf("%s<div%s>[Camera View]</div>\n", pad, attrs))
-		return
+		b.Div(attrs...).T("[Camera View]") // placeholder text authored here, not user data
+	default:
+		renderContainer(b, node, attrs)
 	}
+	return
+}
 
-	// Default open tag
-	b.WriteString(fmt.Sprintf("%s<%s%s>\n", pad, tag, attrs))
-
-	// Children
+// renderContainer renders a generic container tag with the node's children.
+// element writes the opening tag when Ele() is called and the closing tag when
+// R() runs, so the children rendered in between land inside the element.
+func renderContainer(b *element.Builder, node *core.Node, attrs []string) {
+	e := b.Ele(tagForType(node.Type), attrs...)
 	for _, child := range node.Children {
-		renderNode(b, child, indent+1)
+		renderNode(b, child)
 	}
+	e.R()
+}
 
-	// Close tag
-	b.WriteString(fmt.Sprintf("%s</%s>\n", pad, tag))
+// withLead prepends type-specific attribute pairs (type, value, src, ...) ahead
+// of the shared style/data attributes, preserving the attribute order the
+// previous string-based exporter emitted.
+func withLead(attrs []string, lead ...string) []string {
+	return append(lead, attrs...)
 }
 
 func getStr(v any) string {
@@ -130,7 +154,10 @@ func tagForType(t string) string {
 	}
 }
 
-func styleAttr(s *core.Style) string {
+// styleValue serializes the subset of Style the HTML exporter understands into
+// a CSS declaration list ("" when nothing is set). The caller places it in a
+// style attribute; element handles the attribute-value escaping.
+func styleValue(s *core.Style) string {
 	if s == nil {
 		return ""
 	}
@@ -172,8 +199,5 @@ func styleAttr(s *core.Style) string {
 		// renderers' behavior.
 		styles = append(styles, fmt.Sprintf("transition:all %s", s.Transition))
 	}
-	if len(styles) == 0 {
-		return ""
-	}
-	return fmt.Sprintf(" style=\"%s\"", strings.Join(styles, "; "))
+	return strings.Join(styles, "; ")
 }

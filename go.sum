@@ -2,6 +2,8 @@ github.com/rohanthewiz/btypedb v0.7.0 h1:i8zu+Rc5YIkocbVuNk1jlnb94g9RTtJQGAGm9xo
 github.com/rohanthewiz/btypedb v0.7.0/go.mod h1:K+7M8clbmaVh33X9QYm1sA5A7DWDKOE1+O9WFQflMI0=
 github.com/rohanthewiz/bytdb v0.11.0 h1:s7SyK5clCv7DKkNOkIzmBQ0iPDXCEXnamhP1g/O+XBA=
 github.com/rohanthewiz/bytdb v0.11.0/go.mod h1:HKuQb7ptS/dPzagWWttvfy1qkQulke/p8JUHZeDOvO4=
+github.com/rohanthewiz/element v0.7.0 h1:vLPrti03a7EevsBVeM8TAWsMLmg8UM8owXwe5Vf1rI0=
+github.com/rohanthewiz/element v0.7.0/go.mod h1:YZnKqWX2lSsR+zi06x3vhViYVoOSx8xHQjUMTmM/FLo=
 github.com/rohanthewiz/serr v1.4.0 h1:twQnnRRB3+orPJBrdVBaxaYScNE+Dk9MxSLtEabvoGA=
 github.com/rohanthewiz/serr v1.4.0/go.mod h1:l01AbjXw1zP0kxe5tX5s/sADHiBbl0Rwfo/igde4b88=
 github.com/tidwall/btype v0.3.0 h1:VU0/oeVecbqY+2OpyzN0wPQU9CBvCnmOv3w5A+pn42A=
