@@ -40,6 +40,7 @@ nav:
       - Views & Composition: concepts/views.md
       - State & Hooks: concepts/state-and-hooks.md
       - Events & Callbacks: concepts/events.md
+      - Forms & Validation: concepts/forms.md
       - Navigation: concepts/navigation.md
       - Styling & Theming: concepts/styling-and-theming.md
       - Reconciliation: concepts/reconciliation.md

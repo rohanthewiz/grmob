@@ -7,6 +7,21 @@ import "github.com/rohanthewiz/grmob/core"
 // the wrapper owns the text furniture so every form in an app annotates its
 // inputs the same way, and the Input slot keeps it agnostic to what is being
 // wrapped (Input, TextArea, NumericInput, a custom picker...).
+//
+// The widget renders feedback; it does not produce any. Error is a string the
+// caller supplies, and the thing that supplies it — including the decision
+// about *when* a message should be visible at all — is package forms:
+//
+//	components.FormField{
+//	    Label: "Email",
+//	    Hint:  "We never share it",
+//	    Error: form.Error("email"),
+//	    Input: form.Input("email", "you@example.com"),
+//	}
+//
+// That split is why the dependency runs one way and only in the caller: forms
+// produces the strings and the bound controls, this widget frames them, and
+// neither package imports the other.
 type FormField struct {
 	Label string
 	// Hint is the quiet guidance line under the input. Error replaces it

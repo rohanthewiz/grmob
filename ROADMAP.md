@@ -70,6 +70,10 @@
 - [x] Accessibility labels, hints and announced selection state
 - [x] Navigation (`Navigator`, `Push`, `Pop`, `Replace`, `PopToRoot`, `Reset`,
       per-frame state) and `core.Modal` / toasts
+- [x] Forms with validation (`forms`) — a rule vocabulary, cross-field checks,
+      a reveal policy so a form explains itself only once the user claims to
+      be done, and server-side errors; `FormField`'s `Error` slot finally has
+      a source (`examples/signup`)
 - [x] Camera: `CameraView`, capture event
 - [x] Persistence via `bytdb` (see `examples/todoapp`)
 
@@ -78,8 +82,6 @@
 ## 🧩 In Progress
 
 ### 🧰 UI DSL
-- [ ] Forms with validation — `FormField` renders an `Error`, but nothing
-      validates
 - [ ] Keyboard-aware scroll area for mobile
 
 ### 📦 Packaging

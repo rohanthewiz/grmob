@@ -84,6 +84,7 @@ flowchart LR
 | Learn the framework end to end | [Tutorial — Todo App](tutorial-todo.md) |
 | Understand the render pipeline | [Architecture](concepts/architecture.md) |
 | Manage state correctly | [State & Hooks](concepts/state-and-hooks.md) |
+| Validate a form | [Forms & Validation](concepts/forms.md) |
 | Ship to a phone | [Native Android & iOS](platforms/native.md) |
 
 ## License

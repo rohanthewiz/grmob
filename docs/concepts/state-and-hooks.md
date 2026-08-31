@@ -202,6 +202,27 @@ Two rules follow from that lock:
 `initial` is evaluated every render but only the first pass's value is kept,
 the same as `core.NewState`.
 
+### `forms.UseForm(ctx, spec)`
+
+A form's values, plus the decision about when its errors become visible. It
+lives in its own package because validation is a vocabulary rather than a
+primitive, but it is a hook like any other — one slot, called unconditionally,
+in a stable position.
+
+```go
+form := forms.UseForm(ctx, forms.Spec{
+    Fields: []forms.Field{
+        {Name: "email", Rules: []forms.Rule{forms.Required(""), forms.Email("")}},
+    },
+})
+```
+
+Like `UseReducer` it keeps its state behind a mutex-guarded record reached by
+pointer, so writes from a native event thread are atomic and it asks for its
+own renders. Unlike every other hook here it stores **nothing derived**: the
+errors are recomputed from the values and the current spec on every read.
+See [Forms & Validation](forms.md).
+
 ## Lifecycle & cleanup
 
 Background resources register cleanup with the context:

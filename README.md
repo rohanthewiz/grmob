@@ -206,6 +206,7 @@ iOS simulator and Android emulator. The finished app is
 
 - `core/` – core abstractions: Node, View, Context, State, Style
 - `hooks/` – reactive utilities like `UseInterval`, `UseTimeout`, `UseEffect` (coming soon)
+- `forms/` – form state and validation: rules, cross-field checks, reveal policy
 - `render/` – render manager, patching logic, and JSON tree generation
 - `android/` – native renderer for Android (Kotlin)
 - `ios/` – native renderer for iOS (Swift or Kotlin Multiplatform)

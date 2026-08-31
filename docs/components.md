@@ -658,6 +658,33 @@ feedback; an error outranks guidance) and inks with the theme's Error color.
 The `Input` slot keeps it agnostic to what is wrapped — `Input`, `TextArea`,
 `NumericInput`, a custom picker.
 
+The widget renders feedback; it does not produce any. What fills `Error` is
+[`forms`](concepts/forms.md), which also decides *when* a message should be
+visible:
+
+```go
+components.FormField{
+    Label: "Email",
+    Hint:  "We never share it",
+    Error: form.Error("email"),
+    Input: form.Input("email", "you@example.com"),
+}
+```
+
+Because the `Input` slot takes any view, wrapping is also how a control with
+no error line of its own gets one — a checkbox row, for instance, with the
+`ListRow` title standing in for the label:
+
+```go
+components.FormField{
+    Error: form.Error("terms"),
+    Input: components.ListRow{
+        Leading: form.Checkbox("terms"),
+        Title:   "I accept the terms of service",
+    },
+}
+```
+
 ## Accordion
 
 A collapsible section — tappable chevron header, content shown while
