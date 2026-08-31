@@ -145,3 +145,35 @@ func TestStyleAttrSerialized(t *testing.T) {
 		t.Fatalf("style attribute not serialized:\n%s", out)
 	}
 }
+
+// Border needs both halves, matching the native renderers: Compose draws its
+// Modifier.border only when width > 0 and color != null, so a half-specified
+// border must draw nothing here too rather than falling back to CSS's default
+// medium/currentColor.
+func TestBorderNeedsBothWidthAndColor(t *testing.T) {
+	cases := []struct {
+		name  string
+		style core.Style
+		want  string // "" means no border declaration at all
+	}{
+		{"both", core.Style{BorderWidth: 1, BorderColor: "#FF3B30"}, "border:1px solid #FF3B30"},
+		{"fractional", core.Style{BorderWidth: 0.5, BorderColor: "#000"}, "border:0.5px solid #000"},
+		{"width only", core.Style{BorderWidth: 2}, ""},
+		{"color only", core.Style{BorderColor: "#FF3B30"}, ""},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			s := c.style
+			out := ExportHTML(&core.Node{Type: "Box", Style: &s})
+			if c.want == "" {
+				if strings.Contains(out, "border:") {
+					t.Fatalf("half-specified border was emitted: %s", out)
+				}
+				return
+			}
+			if !strings.Contains(out, c.want) {
+				t.Fatalf("want %q in output, got: %s", c.want, out)
+			}
+		})
+	}
+}

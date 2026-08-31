@@ -82,23 +82,25 @@ func ActionsSection(ctx *core.Context) core.View {
 	t := ctx.Theme()
 	return core.Row(
 		core.Gap(12),
-		MaterialButton("Transfer", t.Colors.Primary, "#FFF", func() {}),
-		MaterialButton("Recharge", "#FFF", t.Colors.Secondary, func() {}),
-	)
-}
-
-// MaterialButton is left hand-rolled rather than moved onto components.Chip.
-// Chip is a *selection* affordance — it carries a Selected flag and renders a
-// pressed-in variant, which is the filter-bar pattern it was extracted from.
-// "Transfer" and "Recharge" are one-shot primary actions with no selected
-// state, so a Chip here would be a Button wearing the wrong name.
-func MaterialButton(label string, bg string, fg string, onClick func()) core.View {
-	return core.Button(label,
-		onClick,
-		core.BackgroundColor(bg),
-		core.TextColor(fg),
-		core.Padding(12),
-		core.BorderRadius(6),
+		// The local MaterialButton helper this replaces took a background and
+		// a matching foreground per call — the two obligations components.Button
+		// removes. "Transfer" is the primary action and takes the theme's
+		// Button base untouched.
+		components.Button{Label: "Transfer", OnTap: func() {}},
+		// "Recharge" is the secondary action, and its treatment is the one
+		// case the semantic variants deliberately do not cover: Secondary is a
+		// brand slot, not a status role, so there is no VariantSecondary to
+		// ask for. Style is the documented escape hatch — an outlined button
+		// re-tinted to the brand's second color.
+		components.Button{
+			Label:    "Recharge",
+			OnTap:    func() {},
+			Emphasis: components.EmphasisOutlined,
+			Style: []core.StyleProp{
+				core.TextColor(t.Colors.Secondary),
+				core.BorderColor(t.Colors.Secondary),
+			},
+		},
 	)
 }
 
@@ -180,5 +182,27 @@ func MaterialTheme() *core.Theme {
 			Caption:  core.Style{FontSize: 12},
 		},
 		Spacing: core.SpacingScale{XS: 4, SM: 8, MD: 16, LG: 24, XL: 32},
+		// This theme had no Components block at all, which stayed invisible
+		// only because every widget in the app was hand-styled at the call
+		// site. Moving the action row onto components.Button made it visible
+		// immediately: the widget's zero value deliberately applies *nothing*
+		// so a theme's own Button base carries the look, and here there was no
+		// base — so the button rendered with no style whatsoever.
+		//
+		// These are the values the local MaterialButton helper used to hardcode
+		// per call, so the rendered result is unchanged; they now live in one
+		// place and retint with the theme.
+		//
+		// The rest of ComponentDefaults (Card, Input, Row, Column, ...) is
+		// still empty. Nothing in this app reads them yet, but the same
+		// surprise waits there for the next widget that does.
+		Components: core.ComponentDefaults{
+			Button: core.Style{
+				Background:   "#6200EE",
+				TextColor:    "#FFF",
+				Padding:      core.EdgeInsets{Top: 12, Bottom: 12, Left: 12, Right: 12},
+				BorderRadius: 6,
+			},
+		},
 	}
 }

@@ -35,6 +35,89 @@ All widgets take their look from `ctx.Theme()` — palette colors, spacing and
 typography scales, never hard-coded values — and accept `Style` overrides
 for per-use adjustment.
 
+## Button
+
+A themed action button with **two orthogonal color axes** and no per-call hex.
+
+```go
+components.Button{Label: "Save",   OnTap: save}                                   // theme Button base
+components.Button{Label: "Delete", OnTap: rm,   Variant: components.VariantError}
+components.Button{Label: "Cancel", OnTap: back, Emphasis: components.EmphasisOutlined}
+components.Button{Label: "Skip",   OnTap: skip, Emphasis: components.EmphasisGhost}
+```
+
+`Variant` says **which** color (the meaning) and is the same enum
+[Badge](#variants) uses, so a danger button and an error badge are the same red
+by construction. `Emphasis` says **how much** of it:
+
+| emphasis | fill | label | rule |
+|---|---|---|---|
+| `EmphasisFilled` (zero value) | the variant's color | contrast-picked against the fill | — |
+| `EmphasisOutlined` | transparent | the variant's color | 1px, the variant's color |
+| `EmphasisGhost` | transparent | the variant's color | — |
+
+!!! note "Why two fields instead of one `Primary | Secondary | Danger | Ghost`"
+    A flat enum conflates the two questions, so it cannot express an outlined
+    destructive button — the ordinary shape of a "Delete" confirmation —
+    without a fifth value, and then a ghost destructive needs a sixth.
+
+**The zero value applies nothing.** `Button{Label: l, OnTap: f}` renders
+exactly `core.Button(l, f)` — the theme's own `Components.Button` carries the
+look through untouched, rather than being re-derived from the palette. A theme
+whose Button base deliberately differs from `Colors.Primary` keeps that choice.
+
+The flip side: a theme with *no* `Components.Button` gets a button with no
+styling. That is not new — `core.Button` has always behaved that way — but the
+widget makes it visible, which is how `examples/fintechapp` turned out to have
+no `Components` block at all.
+
+### Secondary is deliberately not a variant
+
+`Variant` carries *meaning*; `Secondary` is a brand slot a theme may set to
+anything. `Style` is the escape hatch for the brand case:
+
+```go
+components.Button{
+    Label: "Recharge", Emphasis: components.EmphasisOutlined,
+    Style: []core.StyleProp{
+        core.TextColor(t.Colors.Secondary),
+        core.BorderColor(t.Colors.Secondary),
+    },
+}
+```
+
+### Contrast, and what the widget can promise
+
+`EmphasisFilled` owns both the fill and the label, so it picks the label by
+contrast and is tested to clear WCAG AA under both bundled themes.
+
+Outlined and Ghost own neither — the fill is transparent, so the label's real
+backdrop is whatever you placed the button on. Their label is the variant's
+color **verbatim**. Measured against each theme's own `Background` (both
+`#FFFFFF`):
+
+| variant | DefaultTheme | MaterialTheme |
+|---|---|---|
+| default | 4.02:1 | 7.63:1 |
+| success | 2.22:1 | 5.13:1 |
+| warning | 2.20:1 | 3.08:1 |
+| error | 3.55:1 | 7.33:1 |
+
+Prefer `EmphasisFilled` for a status action; override `TextColor` where those
+numbers do not hold. Darkening the role color until it passes was rejected — it
+would repaint DefaultTheme's own brand blue, i.e. the default case. The durable
+fix is a second palette value per role, which is a palette decision.
+
+### FullWidth and Disabled
+
+`FullWidth` sets both a `100%` width and a **block** display: the bundled
+themes give Button an inline display, and width does nothing to an inline box.
+
+`Disabled` renders the palette's muted pair (Surface fill, TextSecondary ink)
+and swallows taps. There is no platform disabled state to set — no renderer
+carries one — so the announcement rides the accessibility label as
+`", disabled"`, the same convention Chip and ListRow use for `", selected"`.
+
 ## Card
 
 A surface with optional header, body, and footer regions, on the theme's

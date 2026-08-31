@@ -63,11 +63,12 @@ flowchart LR
   per-component base styles; widgets read it from the context, so restyling an
   app is a data change. The palette names *roles* — `Primary`/`Secondary` for
   brand, `Error`/`Success`/`Warning` for status, `Border` for strokes — and
-  widgets like `Badge{Variant:}` select a role rather than a color.
+  widgets like `Badge{Variant:}` and `Button{Variant:}` select a role rather
+  than a color.
 - **Widget library** — the [`components` package](components.md) adds
-  struct-configured widgets with composition slots: `Card`, `ListRow`,
-  `Separator`, `Avatar`, `ProgressBar`, `Chip`, `Badge`, `FormField`,
-  `Accordion`, `Tabs`.
+  struct-configured widgets with composition slots: `Button`, `Card`,
+  `ListRow`, `Separator`, `Avatar`, `ProgressBar`, `Chip`, `Badge`,
+  `FormField`, `Accordion`, `Tabs`.
 - **Debug mode** — opt-in runtime checks catch the silent failure modes of
   positional hooks (cursor drift, duplicate sibling keys, misused caches) and
   report them as inspectable concerns. See [Debug Mode](concepts/debug-mode.md).

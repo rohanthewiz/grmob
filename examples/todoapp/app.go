@@ -59,9 +59,15 @@ const (
 	colorDim       = "#3C3C4399" // secondary text (iOS systemGray-ish)
 	colorAccent    = "#E8F0FE"   // selected filter chip background
 	colorAccentInk = "#0B57D0"   // selected filter chip label — readable on colorAccent
-	colorDanger    = "#B3261E"   // destructive-action background (delete, clear)
 	// No hairline constant: the rule's tint now comes from the theme's Border
 	// role, which is the same #E5E5EA this app used to spell out by hand.
+	//
+	// No danger constant either. The delete and bulk-clear buttons used to
+	// pin #B3261E; they now ask for components.VariantError and take the
+	// theme's Error role. That *is* a visible change — white on #B3261E
+	// became the contrast-picked ink on #FF3B30 — and it is the point: the
+	// app's destructive red is now the same red its error Badge would use,
+	// and it retints with a theme swap. Both pairings clear WCAG AA.
 )
 
 // App is the root view. All state lives here, in the root component, and is
@@ -190,13 +196,17 @@ func App(ctx *core.Context) core.View {
 	// variable is only ever assigned inside the branch).
 	var clearButton core.View
 	if doneCount > 0 {
-		// Same destructive treatment as the per-row delete: the red glyph
-		// color was invisible against the Button base's blue background.
-		clearButton = core.Button("Clear completed", clearDone, core.UseStyle(core.Style{
-			FontSize:   13,
-			TextColor:  "#FFFFFF",
-			Background: colorDanger,
-		}))
+		// Same destructive treatment as the per-row delete, and now literally
+		// the same declaration: VariantError names the intent, and the widget
+		// picks both the fill and a legible ink from the palette. What this
+		// replaced spelled the pair out by hand, in a different shape from the
+		// delete button that meant the same thing.
+		clearButton = components.Button{
+			Label:   "Clear completed",
+			OnTap:   clearDone,
+			Variant: components.VariantError,
+			Style:   []core.StyleProp{core.FontSize(13)},
+		}
 	}
 
 	// --- View ------------------------------------------------------------
@@ -221,9 +231,11 @@ func App(ctx *core.Context) core.View {
 					addTodo,
 					core.FlexGrow(1),
 				),
-				core.Button("Add", addTodo,
-					core.AccessibilityHint("Adds the task typed in the field"),
-				),
+				components.Button{
+					Label:             "Add",
+					OnTap:             addTodo,
+					AccessibilityHint: "Adds the task typed in the field",
+				},
 			),
 
 			filterBar(filter.Get(), func(i int) { filter.Set(i) }),
@@ -335,14 +347,16 @@ func todoRow(t Todo, setDone func(int, bool), remove func(int)) core.View {
 			TextColor: titleColor,
 		})),
 		// Destructive affordance: the theme's Button base is a medium blue,
-		// which both hides the red glyph and reads as a primary action — so
-		// the delete button overrides the pair, white glyph on danger red.
-		Trailing: core.Button("✕", func() { remove(id) },
-			core.FontSize(13),
-			core.TextColor("#FFFFFF"),
-			core.BackgroundColor(colorDanger),
-			core.AccessibilityLabel("Delete "+t.Title),
-		),
+		// which both hides the red glyph and reads as a primary action. The
+		// variant says which role to take instead; the widget resolves the
+		// fill and a legible ink for it.
+		Trailing: components.Button{
+			Label:              "✕",
+			OnTap:              func() { remove(id) },
+			Variant:            components.VariantError,
+			Style:              []core.StyleProp{core.FontSize(13)},
+			AccessibilityLabel: "Delete " + t.Title,
+		},
 		Style: []core.StyleProp{
 			core.Padding(8),
 			core.Gap(10),

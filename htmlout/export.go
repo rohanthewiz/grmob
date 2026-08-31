@@ -254,6 +254,18 @@ func styleValue(s *core.Style, nodeType string) string {
 	if s.BorderRadius != 0 {
 		styles = append(styles, fmt.Sprintf("border-radius:%gpx", s.BorderRadius))
 	}
+	// Both natives already honor BorderColor/BorderWidth — Compose applies a
+	// Modifier.border, SwiftUI a .grMobBorder overlay — so a widget that draws
+	// a rule (components.Button's outlined emphasis) had an edge on device and
+	// none in the HTML export. Same class of silent disagreement the Width and
+	// Height emission above fixed.
+	//
+	// Both halves are required, matching the natives: Compose skips the border
+	// unless borderWidth > 0 && borderColor != null, so a color with no width
+	// or a width with no color draws nothing there and must draw nothing here.
+	if s.BorderWidth != 0 && s.BorderColor != "" {
+		styles = append(styles, fmt.Sprintf("border:%gpx solid %s", s.BorderWidth, s.BorderColor))
+	}
 	if s.Transition != "" {
 		// core.Transition's canonical "<ms>ms <easing>" is valid CSS as-is;
 		// "all" scopes it to every animatable property, matching the native

@@ -22,6 +22,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/rohanthewiz/grmob/components"
 	"github.com/rohanthewiz/grmob/core"
 	"github.com/rohanthewiz/grmob/htmlout"
 )
@@ -174,12 +175,11 @@ func Composer(draft core.State[string], send func()) core.View {
 			send,
 			core.FlexGrow(1),
 		),
-		core.Button("Enviar", send,
-			core.BackgroundColor(core.PrimaryColor()),
-			core.TextColor("#FFFFFF"),
-			core.Padding(12),
-			core.BorderRadius(8),
-		),
+		// The theme's Button base already is a filled Primary with padding
+		// and a radius, so this re-spelled it by hand in four props. The
+		// widget's zero value applies nothing at all, which is how the same
+		// look survives a theme swap instead of staying pinned to these.
+		components.Button{Label: "Enviar", OnTap: send},
 	)
 }
 

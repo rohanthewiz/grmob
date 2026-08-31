@@ -144,6 +144,18 @@ bg := ctx.Theme().Colors.SuccessColor()
 The original seven need no resolver and deliberately have none: every theme
 that exists predates them, so none can be missing.
 
+!!! warning "`ComponentDefaults` has no resolvers either — and *can* be missing"
+    The same reasoning does not extend to `Theme.Components`. It is a plain
+    struct literal, so a theme may simply not set `Button` (or `Card`, or
+    `Input`), and the zero `Style` that results is genuinely no styling rather
+    than a default. `examples/fintechapp` shipped for months with no
+    `Components` block at all, invisibly, because every widget in it was
+    hand-styled at the call site — the omission surfaced only when its action
+    row moved onto [`components.Button`](../components.md#button), whose zero
+    value deliberately applies nothing so a theme's own base carries through.
+
+    When you write a theme, fill in `Components.Button` at minimum.
+
 Two themes ship with the framework: `core.DefaultTheme` (iOS-flavored) and
 `core.MaterialTheme`. Install one at the root:
 
