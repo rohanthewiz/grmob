@@ -44,6 +44,11 @@ func UseEffect(ctx *core.Context, effect func(), deps ...any) {
 		return
 	}
 	rec.ran = true
-	rec.deps = deps
+	// Copy the deps rather than retaining the caller's slice. A caller that
+	// spreads a slice it owns (UseEffect(ctx, fn, args...)) would otherwise
+	// have the record alias that slice: a later mutation would rewrite the
+	// stored deps in lockstep with the new ones, DeepEqual would report
+	// "unchanged", and the effect would never run again. Mirrors UseMemo.
+	rec.deps = append([]any(nil), deps...)
 	go effect()
 }

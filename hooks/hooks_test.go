@@ -84,6 +84,30 @@ func TestUseEffectWithNoDepsRunsOnce(t *testing.T) {
 	assertQuiet(t, runs, 100*time.Millisecond, "re-run of a no-deps effect")
 }
 
+func TestUseEffectDoesNotAliasCallerDeps(t *testing.T) {
+	// A caller spreading a slice it owns: the record must hold a copy, or the
+	// caller's mutation would rewrite the stored deps too, DeepEqual would
+	// report "unchanged", and the effect would never run again.
+	ctx := core.NewContext()
+	deps := []any{1}
+	runs := make(chan int, 8)
+
+	render := func() {
+		renderPass(ctx, func(ctx *core.Context) {
+			hooks.UseEffect(ctx, func() { runs <- deps[0].(int) }, deps...)
+		})
+	}
+
+	render()
+	awaitSignal(t, runs, "mount effect")
+
+	deps[0] = 2
+	render()
+	if got := awaitSignal(t, runs, "effect after the caller mutated its deps slice"); got != 2 {
+		t.Fatalf("re-run effect saw dep %d, want 2", got)
+	}
+}
+
 func TestUseEffectSlotsAreIndependent(t *testing.T) {
 	// Two effects in one component and the same component shape in a second
 	// app: four distinct slots, each with its own deps memory. Under the old

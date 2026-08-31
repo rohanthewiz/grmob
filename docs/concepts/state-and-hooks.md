@@ -102,8 +102,9 @@ Two tools give a component (or a screen) its own slot array:
 
 ## Side effects: the hooks package
 
-Render functions must stay pure — `hooks` is where time and side effects go.
-All three are slot-backed, so they follow the rules of hooks.
+Render functions must stay pure — `hooks` is where time, side effects, and
+derived state go. All of them are slot-backed, so they follow the rules of
+hooks.
 
 ```go
 import "github.com/rohanthewiz/grmob/hooks"
@@ -134,6 +135,68 @@ ticker stops when the context closes.
 
 Runs `fn` once after `delay`; does not re-arm on re-render; cancelled by
 context close.
+
+### `hooks.UseMemo(ctx, compute, deps...)`
+
+Returns the result of `compute`, recomputing only when `deps` change
+(`reflect.DeepEqual`); with no deps it computes once for the lifetime of the
+slot. Unlike `UseEffect` it runs **inline** on the render goroutine — its
+result is needed to build the view.
+
+```go
+visible := hooks.UseMemo(ctx, func() []Todo {
+    return filterAndSort(todos.Get(), filter.Get())
+}, todos.Get(), filter.Get())
+```
+
+Reach for it when the work is expensive *relative to a render pass* —
+sorting or filtering a large slice, parsing, building a derived index — since
+a render function re-runs in full on every pass. `compute` must be pure, and
+the returned value is handed back unchanged on every cache hit, so treat it
+as read-only.
+
+There is no `UseCallback`. Memoizing a closure only pays off in a framework
+that skips subtrees on unchanged prop identity; here the
+[reconciler](reconciliation.md) diffs the rendered tree instead, so a stable
+closure buys nothing.
+
+### `hooks.UseReducer(ctx, reducer, initial)`
+
+State that evolves through named actions instead of raw writes. Returns the
+current state and a `dispatch`; `dispatch` applies the reducer to the live
+state and requests a render, exactly as `State.Set` does.
+
+```go
+type action int
+const (increment action = iota; reset)
+
+count, dispatch := hooks.UseReducer(ctx, func(s int, a action) int {
+    switch a {
+    case increment: return s + 1
+    case reset:     return 0
+    }
+    return s
+}, 0)
+
+core.Button("+1", func() { dispatch(increment) })
+```
+
+`dispatch` is safe from any goroutine, and unlike the hand-rolled
+`s.Set(reduce(s.Get(), a))` it is **atomic**: the reducer runs under the
+hook's own lock, so two concurrent dispatches both land instead of one
+overwriting the other. That sequencing is the reason to prefer it over
+`NewState` for multi-step or multi-source state.
+
+Two rules follow from that lock:
+
+- The reducer must return a **new** state value rather than mutating the one
+  it is given — earlier renders still hold the old one.
+- The reducer must **not** dispatch. It runs while the lock is held, so a
+  re-entrant dispatch deadlocks; chain actions from an event handler or a
+  `UseEffect` instead.
+
+`initial` is evaluated every render but only the first pass's value is kept,
+the same as `core.NewState`.
 
 ## Lifecycle & cleanup
 

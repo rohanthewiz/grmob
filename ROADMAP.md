@@ -14,7 +14,8 @@
 - [x] `If`, `Match`, `For` for conditional and iterative rendering
 - [x] Style system with reusable `StyleProps`
 - [x] `Box`, `Text`, `Image`, `Button`, `Input`, `Spacer`, etc.
-- [x] Hooks: `UseInterval`, `UseTimeout`, `UseEffect`, `UseChildContext`
+- [x] Hooks: `UseInterval`, `UseTimeout`, `UseEffect`, `UseMemo`,
+      `UseReducer`, `UseChildContext`
 - [x] WASM runtime (`grmob-runtime.js`) with event bridge
 
 ### 🧪 Layout & Styling
@@ -69,8 +70,6 @@
 - [ ] `Reset` for the navigation stack (`Push` / `Pop` are done)
 - [ ] Error boundaries and safe rendering fallback — nothing recovers a
       panicking `Render` today
-- [ ] `UseMemo` and `UseReducer` — listed as done here for several
-      releases; neither identifier has ever existed in the tree
 
 ### 🧰 UI DSL
 - [ ] Forms with validation — `FormField` renders an `Error`, but nothing
