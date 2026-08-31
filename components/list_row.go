@@ -37,8 +37,9 @@ import "github.com/rohanthewiz/grmob/core"
 //
 // Selection is controlled by the caller, as with Chip: ListRow holds no
 // state, it renders Selected and reports taps. Selected rows take the theme's
-// Surface as a background tint — the palette's only muted highlight (it has
-// no dedicated Border/Selected entry yet) — and, when an AccessibilityLabel
+// Surface as a background tint — the palette's only muted *fill*, and still
+// the right one now that Border exists, since Border is a stroke role; there
+// is no dedicated Selected entry — and, when an AccessibilityLabel
 // is set, get ", selected" appended so the state is announced along with the
 // name. That suffix convention is the same one Chip owns internally.
 type ListRow struct {

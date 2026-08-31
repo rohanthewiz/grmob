@@ -60,7 +60,8 @@ const (
 	colorAccent    = "#E8F0FE"   // selected filter chip background
 	colorAccentInk = "#0B57D0"   // selected filter chip label — readable on colorAccent
 	colorDanger    = "#B3261E"   // destructive-action background (delete, clear)
-	colorHair      = "#E5E5EA"   // hairline divider
+	// No hairline constant: the rule's tint now comes from the theme's Border
+	// role, which is the same #E5E5EA this app used to spell out by hand.
 )
 
 // App is the root view. All state lives here, in the root component, and is
@@ -228,8 +229,10 @@ func App(ctx *core.Context) core.View {
 			filterBar(filter.Get(), func(i int) { filter.Set(i) }),
 
 			// Hairline separator. The widget owns the thickness, the tint and
-			// the decorative-only accessibility treatment.
-			components.Separator{Color: colorHair},
+			// the decorative-only accessibility treatment — the tint by
+			// reading the theme's Border role, so this app's rule retints with
+			// a theme swap instead of staying pinned to a local constant.
+			components.Separator{},
 
 			// The list is virtualized (LazyColumn / LazyVStack natively), so
 			// it stays cheap even with many rows. Rows are keyed by todo ID:

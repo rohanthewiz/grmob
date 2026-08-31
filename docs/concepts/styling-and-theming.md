@@ -91,7 +91,8 @@ A `Theme` centralizes the design system:
 ```go
 type Theme struct {
     Colors     ColorPalette      // Primary, Secondary, Background, Surface,
-                                 // TextPrimary, TextSecondary, Error
+                                 // TextPrimary, TextSecondary, Error,
+                                 // Border, Success, Warning
     Typography Typography        // Title, Subtitle, Body, Caption (each a Style)
     Spacing    SpacingScale      // XS SM MD LG XL
     Components ComponentDefaults // base Style per widget: Button, Card, Input, ...
@@ -106,6 +107,42 @@ flowchart LR
     A["Theme component base<br/>(Components.Button, ...)"] --> B["Inline style props<br/>(in argument order)"]
     B --> C["Final Style struct<br/>on the Node"]
 ```
+
+### Color roles
+
+Name the *role*, never the literal, and one theme swap restyles the tree:
+
+| role | meaning |
+|---|---|
+| `Primary`, `Secondary` | brand slots — a theme may tint these anything |
+| `Background`, `Surface` | page ground and the raised/muted **fill** on top of it |
+| `TextPrimary`, `TextSecondary` | ink and de-emphasized ink |
+| `Error`, `Success`, `Warning` | the status triad — meaning, not brand |
+| `Border` | strokes and hairlines: rules, card outlines, input borders |
+
+Two distinctions the names do not make obvious:
+
+- **`Border` is not `Surface`.** `Surface` is a fill, and on a light theme
+  the two are near neighbors — a `Surface`-tinted hairline drawn on a
+  `Surface` panel is invisible. `Border` exists so a stroke has its own knob.
+- **`Success` is not `Secondary`,** even though `DefaultTheme` happens to
+  tint both the same green. `Secondary` is a brand slot a theme is free to
+  make teal or magenta (`MaterialTheme` makes it teal), while `Success`
+  carries meaning — a magenta "saved" badge is a bug.
+
+`Border`, `Success` and `Warning` were added on 2026-08-31, after the other
+seven. A theme written before that leaves them empty, and an empty color is
+not "the default" — it is *no color*. So read those three through their
+resolver methods, which fall back to `core.FallbackBorder` / `FallbackSuccess`
+/ `FallbackWarning` (`DefaultTheme`'s own values):
+
+```go
+core.BorderColor(ctx.Theme().Colors.BorderColor())   // not .Colors.Border
+bg := ctx.Theme().Colors.SuccessColor()
+```
+
+The original seven need no resolver and deliberately have none: every theme
+that exists predates them, so none can be missing.
 
 Two themes ship with the framework: `core.DefaultTheme` (iOS-flavored) and
 `core.MaterialTheme`. Install one at the root:

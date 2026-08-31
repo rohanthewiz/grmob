@@ -183,9 +183,10 @@ row's height, and neither renderer maps `AlignItems: "stretch"` (Compose
 falls through to `Alignment.Top`, SwiftUI to `.top`), so it would collapse
 to zero height on both. The field can land with the renderer support.
 
-The default tint is a constant in the package rather than a theme lookup,
-because `ColorPalette` has no `Border` role yet. When it grows one, the
-constant becomes its fallback.
+The default tint is the theme's `Border` role, read through
+`ColorPalette.BorderColor()` rather than off the field, so a theme written
+before that role existed falls back to `core.FallbackBorder` (`#E5E5EA`)
+instead of rendering an invisible rule. `Color` still overrides per instance.
 
 ## Avatar
 

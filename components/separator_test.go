@@ -19,8 +19,9 @@ func TestSeparatorDefaults(t *testing.T) {
 	if n.Style.Height != "1px" {
 		t.Errorf("Height = %q, want the 1px default", n.Style.Height)
 	}
-	if n.Style.Background != hairlineColor {
-		t.Errorf("Background = %q, want the hairline default %q", n.Style.Background, hairlineColor)
+	if n.Style.Background != core.DefaultTheme.Colors.Border {
+		t.Errorf("Background = %q, want the default theme's Border role %q",
+			n.Style.Background, core.DefaultTheme.Colors.Border)
 	}
 	if n.Style.Margin != (core.EdgeInsets{}) {
 		t.Errorf("no Inset must mean no margin at all — core.Divider's forced Margin(8) is the "+
@@ -72,5 +73,50 @@ func TestSeparatorStyleOverridesDefaults(t *testing.T) {
 	if n.Style.Height != "2px" || n.Style.Background != "#123456" {
 		t.Errorf("caller Style must be applied last and win; got Height=%q Background=%q",
 			n.Style.Height, n.Style.Background)
+	}
+}
+
+// The rule is themed, not hardcoded: a theme swap must retint every separator
+// in the tree without any call site changing.
+func TestSeparatorTakesTintFromTheme(t *testing.T) {
+	ctx := core.NewContext().WithTheme(core.MaterialTheme)
+	n := Separator{}.Render(ctx)
+
+	if n.Style.Background != core.MaterialTheme.Colors.Border {
+		t.Errorf("Background = %q, want MaterialTheme's Border %q",
+			n.Style.Background, core.MaterialTheme.Colors.Border)
+	}
+	// Guard against the test passing because both themes agree.
+	if core.MaterialTheme.Colors.Border == core.DefaultTheme.Colors.Border {
+		t.Error("the two bundled themes now share a Border tint; this test no longer " +
+			"proves the theme is being read")
+	}
+}
+
+// A custom theme predating the Border role leaves it empty, and an empty
+// Background is not a default — it is no color, i.e. an invisible rule. The
+// resolver is what keeps such a theme drawing a visible hairline.
+func TestSeparatorFallsBackOnAThemeWithoutABorderRole(t *testing.T) {
+	legacy := &core.Theme{Colors: core.ColorPalette{
+		Primary:    "#6200EE",
+		Background: "#FFFFFF",
+		Surface:    "#F5F5F5",
+	}}
+	n := Separator{}.Render(core.NewContext().WithTheme(legacy))
+
+	if n.Style.Background != core.FallbackBorder {
+		t.Errorf("Background = %q, want the fallback hairline %q — a theme missing the "+
+			"Border role must not render an invisible separator",
+			n.Style.Background, core.FallbackBorder)
+	}
+}
+
+// Color is still the per-instance escape hatch, above whatever the theme says.
+func TestSeparatorColorOverridesTheTheme(t *testing.T) {
+	ctx := core.NewContext().WithTheme(core.MaterialTheme)
+	n := Separator{Color: "#FF0000"}.Render(ctx)
+
+	if n.Style.Background != "#FF0000" {
+		t.Errorf("Background = %q, want the explicit override", n.Style.Background)
 	}
 }

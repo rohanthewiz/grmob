@@ -118,8 +118,12 @@ func TransactionList(ctx *core.Context) core.View {
 			// that pattern.
 			core.Gap(12),
 			TransactionItem("Farmácia", "-750 MZN", t.Colors.Error, t.Colors.Background),
-			TransactionItem("Transferência recebida", "+10,000 MZN", t.Colors.Secondary, t.Colors.TextPrimary),
-			TransactionItem("Recarga de saldo", "+3,500 MZN", t.Colors.Secondary, t.Colors.TextPrimary),
+			// Credits take Success, not Secondary. They read the same under
+			// the old palette only by accident: Secondary is a *brand* slot a
+			// theme may set to any hue, so a rebrand to magenta would have
+			// turned "money in" magenta. Success carries the meaning.
+			TransactionItem("Transferência recebida", "+10,000 MZN", t.Colors.SuccessColor(), t.Colors.Background),
+			TransactionItem("Recarga de saldo", "+3,500 MZN", t.Colors.SuccessColor(), t.Colors.Background),
 		),
 	)
 }
@@ -139,7 +143,7 @@ func TransactionList(ctx *core.Context) core.View {
 //
 // ink is passed explicitly because Badge defaults its label color to the
 // theme's Background, which is chosen to read on Primary. A semantic color
-// picked per row — a dark red debit, a light teal credit — needs its own ink
+// picked per row — a dark red debit, a dark green credit — needs its own ink
 // to stay legible, and Badge.TextColor is the slot for exactly that.
 func TransactionItem(label, amount, color, ink string) core.View {
 	return components.ListRow{
@@ -158,6 +162,13 @@ func MaterialTheme() *core.Theme {
 			TextSecondary: "#666666",
 			Background:    "#FFFFFF",
 			Surface:       "#F5F5F5",
+			// The status triad. Error was already here; Success and Warning
+			// complete it, so a credit row can name what it *means* instead of
+			// borrowing the brand's Secondary. Border gives the hairline its
+			// own role rather than leaning on Surface, which is a fill.
+			Border:  "#E0E0E0",
+			Success: "#2E7D32",
+			Warning: "#EF6C00",
 		},
 		Typography: core.Typography{
 			Title:    core.Style{FontSize: 24, FontWeight: core.Bold},

@@ -6,30 +6,21 @@ import (
 	"github.com/rohanthewiz/grmob/core"
 )
 
-// hairlineColor is the default separator tint.
-//
-// It is a constant here rather than a theme lookup because ColorPalette has no
-// Border entry yet (Primary, Secondary, Background, Surface, TextPrimary,
-// TextSecondary, Error — and nothing for a rule). Surface is the nearest
-// available neutral but it is a *fill* color: on a Surface-colored panel a
-// Surface hairline is invisible. So the value stays literal until the palette
-// grows a Border role, at which point this constant becomes its fallback and
-// Separator reads ctx.Theme() like every other widget.
-//
-// The point of pinning it here is that the two examples that draw a hairline
-// each hardcoded this same value in their own package. One definition is the
-// improvement available today; the themed one needs the palette change.
-const hairlineColor = "#E5E5EA"
-
 // Separator is the hairline rule between list rows and between sections.
 //
 // core.Divider already draws a line, but it takes a literal color and
 // force-applies Margin(8) — an unconditional gap that makes it wrong inside a
 // list, which is presumably why neither example that wanted a rule used it.
-// Separator leaves spacing to the caller and defaults its own color, so the
-// common case is the zero value:
+// Separator leaves spacing to the caller and takes its tint from the theme's
+// Border role, so the common case is the zero value:
 //
 //	components.Separator{}
+//
+// The tint reads through ColorPalette.BorderColor rather than off the Border
+// field, so a theme written before that role existed draws a visible default
+// hairline instead of an invisible one. Surface would have been the nearest
+// pre-existing neutral and is the wrong answer: it is a *fill* color, so on a
+// Surface-colored panel a Surface hairline disappears.
 //
 // It is always hidden from assistive technology. A rule is decoration: it
 // carries no information a screen reader can use, and announcing one between
@@ -44,7 +35,7 @@ const hairlineColor = "#E5E5EA"
 // platforms. Adding the field would be advertising something that does not
 // work; it can land with the renderer support.
 type Separator struct {
-	// Color overrides the hairline tint. Empty uses hairlineColor.
+	// Color overrides the hairline tint. Empty takes the theme's Border role.
 	Color string
 
 	// Thickness is the rule's height in px; 0 means 1. Fractional values are
@@ -67,7 +58,7 @@ type Separator struct {
 func (s Separator) Render(ctx *core.Context) *core.Node {
 	color := s.Color
 	if color == "" {
-		color = hairlineColor
+		color = ctx.Theme().Colors.BorderColor()
 	}
 	thickness := s.Thickness
 	if thickness == 0 {
