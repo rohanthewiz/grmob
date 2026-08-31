@@ -58,12 +58,23 @@ func Overflow(value string) StyleProp {
 		s.Overflow = value // "hidden", "scroll", "visible"
 	})
 }
+
+// Responsive registers a style variant under a named key in PseudoStates
+// (":hover", ":focus", or a breakpoint name).
+//
+// The entry is written into a fresh map rather than into whatever map the
+// target already holds. A Style is copied by assignment throughout the
+// framework — containerNode starts each node from a shallow copy of the
+// theme's component Style — so the target's map may well be the theme's own.
+// Writing into it in place would edit the theme for every render afterwards.
 func Responsive(breakpoint string, style Style) StyleProp {
 	return styleFunc(func(s *Style) {
-		if s.PseudoStates == nil {
-			s.PseudoStates = make(map[string]Style)
+		next := make(map[string]Style, len(s.PseudoStates)+1)
+		for k, v := range s.PseudoStates {
+			next[k] = v
 		}
-		s.PseudoStates[breakpoint] = style
+		next[breakpoint] = style
+		s.PseudoStates = next
 	})
 }
 func FontSize(size float64) StyleProp {

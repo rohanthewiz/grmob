@@ -65,14 +65,24 @@ fields onto a copy):
 core.UseStyle(primaryButton.With(core.Style{BorderRadius: 8}))
 ```
 
-!!! warning "UseStyle merges non-zero fields — of a subset"
-    `UseStyle` copies only fields that are set (non-zero), and currently
-    covers the commonly used fields (font, colors, radius, shadow, align,
-    display, padding, margin, position offsets, z-index) — not the full
-    struct. Two consequences: you cannot *zero out* a field through
-    `UseStyle` (use a direct prop — `core.Padding(0)` assigns
-    unconditionally), and for fields outside the merged subset use their
-    dedicated props.
+!!! note "UseStyle merges non-zero fields"
+    `UseStyle` copies every field of `Style` that is set (non-zero) and
+    leaves the rest of the target alone — that is what lets a role style
+    layer onto theme defaults without blanking them out. `HoverStyle`,
+    `FocusStyle` and `PseudoStates` merge recursively, field by field and
+    key by key, so a value describing only `":hover"` will not delete a
+    `":focus"` already present.
+
+    The one consequence is that a zero value is indistinguishable from
+    "not set", so you cannot *clear* a field through `UseStyle`. Use a
+    direct prop for that — `core.Padding(0)` and
+    `core.FontSize(0)` assign unconditionally.
+
+    (Before 2026-08-31 this merged only fourteen fields; `Width`,
+    `Height`, `Top`, the flex group and the accessibility fields were
+    silently dropped. If you worked around that with dedicated props,
+    nothing breaks — the props still win, since they run in argument
+    order.)
 
 ## Themes
 
