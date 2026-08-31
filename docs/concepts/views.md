@@ -39,6 +39,9 @@ core.Row(
   for short content, `List` for long data-driven collections — and give
   every row a stable identity with `Keyed`.
 - `Scroll`, `SafeArea`, `Spacer(px)`, `Divider(height, color)`, `Fragment`.
+  (`Divider` force-applies `Margin(8)`; for a rule inside a list use
+  `components.Separator`, which leaves spacing to the caller and defaults
+  its own hairline tint.)
 
 Behavior props (`OnClick`, `OnTouch`, `OnLongPress`, or the generic
 `On(event, fn)`) register their callbacks in argument order, before any child

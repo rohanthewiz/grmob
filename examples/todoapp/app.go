@@ -227,12 +227,9 @@ func App(ctx *core.Context) core.View {
 
 			filterBar(filter.Get(), func(i int) { filter.Set(i) }),
 
-			// Hairline separator, decorative only — hidden from screen readers.
-			core.Box(
-				core.Height("1px"),
-				core.BackgroundColor(colorHair),
-				core.AccessibilityHidden(),
-			),
+			// Hairline separator. The widget owns the thickness, the tint and
+			// the decorative-only accessibility treatment.
+			components.Separator{Color: colorHair},
 
 			// The list is virtualized (LazyColumn / LazyVStack natively), so
 			// it stays cheap even with many rows. Rows are keyed by todo ID:

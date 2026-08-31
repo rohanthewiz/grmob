@@ -176,6 +176,21 @@ func styleValue(s *core.Style, nodeType string) string {
 	if s.FontSize != 0 {
 		styles = append(styles, fmt.Sprintf("font-size:%gpx", s.FontSize))
 	}
+	// Emitted verbatim: core's dimension strings ("40px", "45%", "auto") are
+	// already CSS lengths, which is where the format came from. The native
+	// renderers parse the same strings back into Compose modifiers and
+	// SwiftUI frames.
+	//
+	// Without these, every widget that sizes itself — a 1px Separator, an
+	// Avatar's disc, a ProgressBar's fill — exported as a zero-height or
+	// full-width box, so the HTML target silently disagreed with both natives
+	// about the layout.
+	if s.Width != "" {
+		styles = append(styles, fmt.Sprintf("width:%s", s.Width))
+	}
+	if s.Height != "" {
+		styles = append(styles, fmt.Sprintf("height:%s", s.Height))
+	}
 	if s.Align != "" {
 		switch s.Align {
 		case core.AlignCenter:

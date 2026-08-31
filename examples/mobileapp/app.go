@@ -130,12 +130,9 @@ func feedTab() core.View {
 				FontSize:  13,
 				TextColor: "#3C3C4399",
 			})),
-			// Decorative divider: hidden from the accessibility tree.
-			core.Box(
-				core.Height("1px"),
-				core.BackgroundColor("#E5E5EA"),
-				core.AccessibilityHidden(),
-			),
+			// Decorative divider. components.Separator supplies the hairline
+			// tint, so the color is no longer written out per package.
+			components.Separator{},
 			core.List(
 				core.FlexGrow(1),
 				core.For(articles, func(n int, _ int) core.View {

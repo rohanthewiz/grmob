@@ -158,6 +158,112 @@ The todoapp filter bar is built on Chip; `examples/todoapp/chip_migration_test.g
 pins its rendered HTML to the pre-extraction hand-rolled markup byte for
 byte — the pattern to copy when extracting your own widgets.
 
+## Separator
+
+The hairline rule between rows and between sections. The zero value is the
+common case:
+
+```go
+components.Separator{}
+components.Separator{Inset: 56}          // starts under the text, not the avatar
+components.Separator{Thickness: 0.5}     // sub-pixel hairline on a 2x display
+```
+
+- Always hidden from assistive technology. A rule carries no information,
+  and one between every pair of rows turns a 20-row feed into 39
+  utterances.
+- No forced margin, which is what makes it usable inside a list —
+  `core.Divider` force-applies `Margin(8)`, and that is why neither example
+  that wanted a rule used it.
+- `Inset` is applied as left/right **margin**, not `EdgeInsets.Horizontal`:
+  the HTML exporter reads only the four per-side fields.
+
+**Horizontal only, deliberately.** A vertical rule has to stretch to its
+row's height, and neither renderer maps `AlignItems: "stretch"` (Compose
+falls through to `Alignment.Top`, SwiftUI to `.top`), so it would collapse
+to zero height on both. The field can land with the renderer support.
+
+The default tint is a constant in the package rather than a theme lookup,
+because `ColorPalette` has no `Border` role yet. When it grows one, the
+constant becomes its fallback.
+
+## Avatar
+
+The circular portrait: a remote image when there is one, initials on a
+colored disc when there is not.
+
+```go
+components.Avatar{Src: user.PhotoURL, Name: user.Name}  // image, labelled
+components.Avatar{Name: "Ada Lovelace"}                 // "AL" on a disc
+components.Avatar{Name: "Ada Lovelace", Size: 64}
+```
+
+- Both branches are the same square with `BorderRadius = Size/2`, so `Size`
+  is the single knob. (An oversized fixed radius would also give a circle,
+  but would silently keep the old geometry when `Size` changed.)
+- Initials derive from the **first and last** words of `Name` — "Ada King
+  Lovelace" is AL, not AK — uppercased, rune-based so non-Latin names keep
+  whole characters. `Initials` overrides when the rule gets it wrong.
+- The disc is a `Row` with `JustifyCenter` + `AlignItemsCenter`, because
+  `Box` is pinned to the top-leading corner on both platforms and cannot
+  centre a child.
+- Image avatars default to a Surface background: `core.Image`'s theme base
+  is `Components.Camera`, whose background is solid black — right behind a
+  viewfinder, wrong behind a portrait that has not downloaded yet.
+
+**Accessibility**, unlike `ListRow`, *is* synthesized here, because an
+avatar has exactly one meaning and `Name` is it:
+
+| state | result |
+|---|---|
+| `AccessibilityLabel` set | used verbatim |
+| `Name` set | used as the label |
+| neither | the node is hidden from assistive tech |
+
+The last row is the important one: an unnamed avatar is decoration beside
+text that already names the person, and unlabeled it is announced as
+"image" or read out as its URL.
+
+*Non-square images letterbox* inside the circle — the renderers scale with
+`.scaledToFit` / Compose's Fit default. Filling needs a `ContentMode` prop
+on `Image`, which is a two-renderer pass of its own.
+
+## ProgressBar
+
+The determinate track-and-fill bar.
+
+```go
+components.ProgressBar{Value: 0.45, AccessibilityLabel: "Upload"}
+components.ProgressBar{Value: done / total, Thickness: 10, Color: "#34C759"}
+```
+
+- `Value` is clamped to 0–1 rather than rejected (NaN reads as 0): a bar fed
+  a live ratio should pin at full and keep rendering.
+- The percentage is appended to the accessibility label, because no renderer
+  has a progress semantic to carry the value natively. With no label the bar
+  is hidden — an unlabeled bar announces a bare number with nothing to
+  attach it to.
+- The fill renders at every value, zero-width included. A constant child
+  count keeps advancing progress a *style patch* on one node instead of an
+  insert/remove, which is also what lets a `Transition` animate it.
+
+**Why a percentage width and not two flex weights.** The obvious build is
+two boxes weighted `FlexGrow(v)` / `FlexGrow(1-v)`. That is exact on
+Android, where `FlexGrow` maps onto Compose's `Modifier.weight`, and
+silently wrong on iOS, where it maps onto `frame(maxWidth: .infinity)`:
+SwiftUI stacks have no weight, so two growers split free space *equally
+regardless of their values*. Every bar would sit at 50% on iOS. A percentage
+width is proportional on all three targets instead:
+
+| target | mapping | accuracy |
+|---|---|---|
+| Android | `fillMaxWidth(fraction)` | exact |
+| HTML | `width:<pct>%` | exact |
+| iOS | `containerRelativeFrame` | proportional; measured against the nearest *container*, so a bar that spans its container is exact and one inset in a narrow card reads wide |
+
+When proportional weights land on iOS (a custom `Layout`), this can move to
+flex.
+
 ## FormField
 
 The label / input / hint-or-error frame around any input:
