@@ -183,6 +183,21 @@ func App(ctx *core.Context) core.View {
 		itemWord = "item"
 	}
 
+	// Bulk-clear exists only when something is completed. Declared as a nil
+	// core.View rather than wrapped in core.If so the footer row can simply
+	// leave its trailing slot empty (an interface nil, not a typed nil — the
+	// variable is only ever assigned inside the branch).
+	var clearButton core.View
+	if doneCount > 0 {
+		// Same destructive treatment as the per-row delete: the red glyph
+		// color was invisible against the Button base's blue background.
+		clearButton = core.Button("Clear completed", clearDone, core.UseStyle(core.Style{
+			FontSize:   13,
+			TextColor:  "#FFFFFF",
+			Background: colorDanger,
+		}))
+	}
+
 	// --- View ------------------------------------------------------------
 
 	return core.SafeArea(
@@ -239,24 +254,18 @@ func App(ctx *core.Context) core.View {
 			),
 
 			// Footer: live count plus bulk-clear, which only appears once it
-			// has something to act on.
-			core.Row(
-				core.Gap(8),
-				core.Text(fmt.Sprintf("%d %s left", remaining, itemWord), core.UseStyle(core.Style{
+			// has something to act on. A ListRow whose Trailing is simply nil
+			// when there is nothing to clear — that leaves the tree with no
+			// node for the absent button at all, where the core.If this
+			// replaced emitted a real (empty) child for the reconciler to
+			// diff on every pass.
+			components.ListRow{
+				Content: core.Text(fmt.Sprintf("%d %s left", remaining, itemWord), core.UseStyle(core.Style{
 					FontSize:  13,
 					TextColor: colorDim,
-				}), core.FlexGrow(1)),
-				core.If(doneCount > 0,
-					// Same destructive treatment as the per-row delete: the
-					// red glyph color was invisible against the Button base's
-					// blue background.
-					core.Button("Clear completed", clearDone, core.UseStyle(core.Style{
-						FontSize:   13,
-						TextColor:  "#FFFFFF",
-						Background: colorDanger,
-					})),
-				),
-			),
+				})),
+				Trailing: clearButton,
+			},
 		),
 	)
 }
@@ -298,6 +307,16 @@ func filterBar(active int, onSelect func(int)) core.View {
 // todoRow is a pure function of its Todo — no hooks, per the positional-slot
 // constraint explained on App. Completion is conveyed by dimming the title;
 // the Style struct has no strikethrough field yet.
+//
+// It is a components.ListRow: checkbox leading, title in the growing middle,
+// delete button trailing. The widget owns what used to be hand-rolled here —
+// the FlexGrow(1) that pins the ✕ to the trailing edge, and the vertical
+// centring of a checkbox against a text line.
+//
+// The title goes in Content rather than Title because it is *conditionally
+// styled*: Title takes the theme's Body role verbatim, and this one has to
+// dim when the todo is done. Content is the escape hatch for exactly that —
+// an arbitrary view in the growing slot.
 func todoRow(t Todo, setDone func(int, bool), remove func(int)) core.View {
 	titleColor := "#000000"
 	if t.Done {
@@ -309,27 +328,31 @@ func todoRow(t Todo, setDone func(int, bool), remove func(int)) core.View {
 	// visible slice is rebuilt under a different filter.
 	id := t.ID
 
-	return core.Keyed(fmt.Sprintf("todo-%d", t.ID), core.Row(
-		core.Padding(8),
-		core.Gap(10),
-		core.Transition(200, core.EaseInOut),
-		core.AccessibilityLabel(rowAccessibilityLabel(t)),
-
-		core.Checkbox(t.Done, func(v bool) { setDone(id, v) }),
-		core.Text(t.Title, core.UseStyle(core.Style{
+	return core.Keyed(fmt.Sprintf("todo-%d", t.ID), components.ListRow{
+		Leading: core.Checkbox(t.Done, func(v bool) { setDone(id, v) }),
+		Content: core.Text(t.Title, core.UseStyle(core.Style{
 			FontSize:  16,
 			TextColor: titleColor,
-		}), core.FlexGrow(1)),
+		})),
 		// Destructive affordance: the theme's Button base is a medium blue,
 		// which both hides the red glyph and reads as a primary action — so
 		// the delete button overrides the pair, white glyph on danger red.
-		core.Button("✕", func() { remove(id) },
+		Trailing: core.Button("✕", func() { remove(id) },
 			core.FontSize(13),
 			core.TextColor("#FFFFFF"),
 			core.BackgroundColor(colorDanger),
 			core.AccessibilityLabel("Delete "+t.Title),
 		),
-	))
+		Style: []core.StyleProp{
+			core.Padding(8),
+			core.Gap(10),
+			core.Transition(200, core.EaseInOut),
+		},
+		// Not ListRow.Selected: "done" is not "selected". The widget's
+		// Selected flag appends ", selected", whereas this app announces
+		// completion — so the whole label stays the app's to compose.
+		AccessibilityLabel: rowAccessibilityLabel(t),
+	})
 }
 
 func rowAccessibilityLabel(t Todo) string {

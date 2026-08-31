@@ -124,26 +124,28 @@ func TransactionList(ctx *core.Context) core.View {
 	)
 }
 
-// TransactionItem is the app's one use of the components package: the amount
-// is a components.Badge — a non-interactive status pill — rather than a
-// hand-styled Text. The badge owns the pill shape (an oversized radius that
-// clamps to a stadium at any height) and the padding, so this example is left
-// expressing only what is actually its subject: which theme color means what.
+// TransactionItem is built from two components: components.ListRow supplies
+// the label-left / amount-right frame, and the amount itself is a
+// components.Badge — a non-interactive status pill rather than a hand-styled
+// Text. Badge owns the pill shape (an oversized radius that clamps to a
+// stadium at any height) and the padding, so this example is left expressing
+// only what is actually its subject: which theme color means what.
+//
+// The row previously pinned the amount with Justify(JustifyBetween). ListRow
+// pins it with FlexGrow on its middle column instead, which is the same
+// result here and the correct one in general: JustifyBetween spreads slack
+// between *every* pair of children, so it silently stops meaning "pin the
+// trailing element" the moment a row grows a third slot.
 //
 // ink is passed explicitly because Badge defaults its label color to the
 // theme's Background, which is chosen to read on Primary. A semantic color
 // picked per row — a dark red debit, a light teal credit — needs its own ink
 // to stay legible, and Badge.TextColor is the slot for exactly that.
 func TransactionItem(label, amount, color, ink string) core.View {
-	return core.Row(
-		// Label left, amount right: the amount is the scannable column in a
-		// transaction list, so it is pinned to the trailing edge rather than
-		// left to sit wherever the label text ends.
-		core.Justify(core.JustifyBetween),
-		core.AlignItemsProp(core.AlignItemsCenter),
-		core.Text(label),
-		components.Badge{Text: amount, Color: color, TextColor: ink},
-	)
+	return components.ListRow{
+		Title:    label,
+		Trailing: components.Badge{Text: amount, Color: color, TextColor: ink},
+	}
 }
 
 func MaterialTheme() *core.Theme {

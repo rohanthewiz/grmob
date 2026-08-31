@@ -63,8 +63,8 @@ flowchart LR
   per-component base styles; widgets read it from the context, so restyling an
   app is a data change.
 - **Widget library** — the [`components` package](components.md) adds
-  struct-configured widgets with composition slots: `Card`, `Chip`, `Badge`,
-  `FormField`, `Accordion`, `Tabs`.
+  struct-configured widgets with composition slots: `Card`, `ListRow`,
+  `Chip`, `Badge`, `FormField`, `Accordion`, `Tabs`.
 - **Debug mode** — opt-in runtime checks catch the silent failure modes of
   positional hooks (cursor drift, duplicate sibling keys, misused caches) and
   report them as inspectable concerns. See [Debug Mode](concepts/debug-mode.md).

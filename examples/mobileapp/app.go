@@ -16,6 +16,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/rohanthewiz/grmob/components"
 	"github.com/rohanthewiz/grmob/core"
 	"github.com/rohanthewiz/grmob/hooks"
 	"github.com/rohanthewiz/grmob/mobile"
@@ -142,26 +143,36 @@ func feedTab() core.View {
 					if starred.Get() == n {
 						title += " ★"
 					}
-					label := fmt.Sprintf("Article %d", n)
-					parts := []core.PropsAndChildren{
-						core.Padding(12),
-						// Selection restyles the row; Transition makes the
-						// highlight fade in natively (Compose/SwiftUI drive
-						// the frames — no patches during the animation).
-						core.Transition(250, core.EaseInOut),
-						core.OnClick(func() { selected.Set(n) }),
-						core.OnLongPress(func() { starred.Set(n) }),
-					}
-					if selected.Get() == n {
-						parts = append(parts, core.BackgroundColor("#E8F0FE"))
-						label += ", selected"
-					}
-					parts = append(parts,
-						core.AccessibilityLabel(label),
-						core.AccessibilityHint("Selects the article; long-press to star it"),
-						core.Text(title),
-					)
-					return core.Keyed(fmt.Sprintf("article-%d", n), core.Row(parts...))
+					// A components.ListRow, which collapses what this used to
+					// hand-roll in two ways. The row was built by appending to
+					// a []core.PropsAndChildren so the selected background
+					// could be added conditionally — core.If emits a real
+					// child node, so it was not usable for a *style* prop.
+					// ListRow.SelectedStyle is that conditional, declared.
+					// And the ", selected" suffix on the accessibility label
+					// was appended by hand in the same branch; ListRow owns
+					// that convention, so the label here is just the name.
+					return core.Keyed(fmt.Sprintf("article-%d", n), components.ListRow{
+						Title:       title,
+						Selected:    selected.Get() == n,
+						OnTap:       func() { selected.Set(n) },
+						OnLongPress: func() { starred.Set(n) },
+						Style: []core.StyleProp{
+							core.Padding(12),
+							// Selection restyles the row; Transition makes the
+							// highlight fade in natively (Compose/SwiftUI drive
+							// the frames — no patches during the animation).
+							core.Transition(250, core.EaseInOut),
+						},
+						// Overrides ListRow's theme default (a Surface tint):
+						// this demo wants the same pale blue the todoapp
+						// filter chips use.
+						SelectedStyle: []core.StyleProp{
+							core.BackgroundColor("#E8F0FE"),
+						},
+						AccessibilityLabel: fmt.Sprintf("Article %d", n),
+						AccessibilityHint:  "Selects the article; long-press to star it",
+					})
 				}),
 			),
 		).Render(ctx)
@@ -190,10 +201,15 @@ func formTab() core.View {
 			core.Gap(8),
 			core.Input(name.Get(), "Your name", func(v string) { name.Set(v) }),
 			core.Text(greeting),
-			core.Row(
-				core.Checkbox(subscribed.Get(), func(v bool) { subscribed.Set(v) }),
-				core.Text(subLabel),
-			),
+			// Checkbox plus its label is the ListRow shape at its smallest:
+			// a leading control and a title, no trailing slot. Worth the
+			// widget even here, because it is ListRow that vertically centres
+			// the box against the text — the bare Row this replaced left both
+			// on their top edges.
+			components.ListRow{
+				Leading: core.Checkbox(subscribed.Get(), func(v bool) { subscribed.Set(v) }),
+				Title:   subLabel,
+			},
 		).Render(ctx)
 	})
 }

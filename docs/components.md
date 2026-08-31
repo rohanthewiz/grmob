@@ -54,6 +54,72 @@ components.Card{
 }
 ```
 
+## ListRow
+
+The leading-control / flexible-title / trailing-action shape every list
+needs: a checkbox and a task with a delete button, an avatar and a name with
+a chevron, a label and an amount.
+
+```go
+components.ListRow{
+    Leading:  core.Checkbox(t.Done, func(v bool) { setDone(id, v) }),
+    Title:    t.Title,
+    Subtitle: "Due today",
+    Trailing: core.Button("✕", func() { remove(id) }),
+    OnTap:    func() { open(id) },
+
+    Selected:           id == selectedID,
+    AccessibilityLabel: t.Title,
+    AccessibilityHint:  "Opens the task",
+}
+```
+
+**How the trailing slot gets pinned.** The examples that hand-rolled this
+shape disagreed: some used `Justify(JustifyBetween)` on the row, others
+`FlexGrow(1)` on the middle text. They are not equivalent —
+`JustifyBetween` distributes slack between *every* pair of children, so a
+row with no trailing slot pushes leading and title apart. ListRow settles it
+on `FlexGrow`: a middle column takes all the slack, so leading and trailing
+sit hard against the row's edges in every configuration.
+
+```
+┌ Row ─────────────────────────────────────────────────────────┐
+│ [Leading]  ┌ Column FlexGrow(1) ────────────┐    [Trailing]  │
+│            │ Title                          │                │
+│            │ Subtitle                       │                │
+│            └────────────────────────────────┘                │
+└──────────────────────────────────────────────────────────────┘
+            └──────── takes all the slack ────┘
+```
+
+The middle column is rendered **even when empty** — unlike `Card`, which
+omits empty regions. Here the middle is structure, not content: making it
+conditional would make the pinning conditional too.
+
+Other notes:
+
+- `Content` is the escape hatch for the middle, overriding `Title`/
+  `Subtitle` — the same simple-path-plus-slot idiom as `Card.Header`.
+- `OnTap` / `OnLongPress` make the whole row a target and are wired only
+  when non-nil, so a presentational row registers no callback at all. Both
+  may be set at once; the renderers wire them as one gesture recognizer, so
+  a long press never also fires the tap.
+- `Selected` tints the row with the theme's `Surface` (override with
+  `SelectedStyle`) and appends `", selected"` to the accessibility label —
+  the same convention Chip owns.
+- No label is synthesized from `Title`. A row is a compound control whose
+  slots carry meaning the widget cannot see, and labelling the container
+  overrides how its children are announced, so naming the row is the
+  caller's call.
+
+All five hand-rolled instances in the examples are now built on it:
+`todoapp`'s task row and footer, `mobileapp`'s feed row and subscribe
+toggle, and `fintechapp`'s transaction row. Two of them lost workarounds in
+the process — `mobileapp`'s feed row no longer appends to a
+`[]core.PropsAndChildren` to add a conditional style prop (`SelectedStyle`
+is that conditional, declared), and `todoapp`'s footer no longer wraps its
+bulk-clear button in `core.If` (a nil `Trailing` emits no node at all).
+
 ## Badge
 
 A small **non-interactive** status pill — a count, a "verified" mark, a
