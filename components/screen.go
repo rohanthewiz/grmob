@@ -44,7 +44,8 @@ import "github.com/rohanthewiz/grmob/core"
 //	return components.Screen{Children: []core.View{banner, body}}
 //
 // — costs the tree no node at all when the condition is false, rather than the
-// empty Fragment a core.If would leave behind in the flex column.
+// empty Fragment a core.If would leave behind for the reconciler to walk on
+// every pass. (That Fragment draws nothing; the cost is the node, not a gap.)
 type Screen struct {
 	// Children are the screen's content, laid out top to bottom in the
 	// column. A nil entry is skipped (see above).

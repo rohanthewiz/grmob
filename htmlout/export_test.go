@@ -177,3 +177,91 @@ func TestBorderNeedsBothWidthAndColor(t *testing.T) {
 		})
 	}
 }
+
+// --- Grouping nodes ---------------------------------------------------------
+//
+// Fragment (what core.For wraps its generated children in) and Theme (what
+// core.WithTheme wraps a subtree in) carry no Style and have no visual box.
+// Both native renderers already inline them into the parent's layout scope,
+// so the exporter has to as well or the HTML disagrees with what ships.
+
+func TestFragmentEmitsNoWrapperElement(t *testing.T) {
+	n := &core.Node{Type: "Fragment", Children: []*core.Node{
+		textNode("first"), textNode("second"),
+	}}
+
+	out := ExportHTML(n)
+	if strings.Contains(out, "<div>") {
+		t.Fatalf("Fragment emitted a wrapper element:\n%s", out)
+	}
+	if !strings.Contains(out, "first") || !strings.Contains(out, "second") {
+		t.Fatalf("Fragment dropped a child:\n%s", out)
+	}
+}
+
+func TestThemeEmitsNoWrapperElement(t *testing.T) {
+	n := &core.Node{Type: "Theme", Props: map[string]any{}, Children: []*core.Node{
+		textNode("themed"),
+	}}
+
+	out := ExportHTML(n)
+	if strings.Contains(out, "<div>") {
+		t.Fatalf("Theme emitted a wrapper element:\n%s", out)
+	}
+	if !strings.Contains(out, "themed") {
+		t.Fatalf("Theme dropped its child:\n%s", out)
+	}
+}
+
+// The bug this fixes, stated as the behavior a user can see. A wrapper around
+// the generated children becomes the container's single flex item, so the
+// container's gap has nothing to space and the children it was meant to
+// separate sit flush against each other. Pinning it on child *count* rather
+// than on the absence of a div is what makes it a layout test: it is the
+// number of things the flex container can see that was wrong.
+func TestFragmentChildrenBecomeSiblingsOfTheFlexContainer(t *testing.T) {
+	row := &core.Node{
+		Type:  "Row",
+		Style: &core.Style{Gap: 8, Display: core.DisplayFlex},
+		Children: []*core.Node{
+			{Type: "Fragment", Children: []*core.Node{
+				{Type: "Button", Props: map[string]any{"label": "All"}},
+				{Type: "Button", Props: map[string]any{"label": "Active"}},
+				{Type: "Button", Props: map[string]any{"label": "Done"}},
+			}},
+		},
+	}
+
+	out := ExportHTML(row)
+	if n := strings.Count(out, "<button"); n != 3 {
+		t.Fatalf("want 3 buttons, got %d:\n%s", n, out)
+	}
+	// The three buttons must be direct children of the gapped row: nothing
+	// may sit between the row's opening tag and the first button.
+	i := strings.Index(out, "gap:8px")
+	if i < 0 {
+		t.Fatalf("row lost its gap:\n%s", out)
+	}
+	between := out[strings.Index(out[i:], ">")+i : strings.Index(out, "<button")]
+	if strings.Contains(between, "<") {
+		t.Fatalf("an element sits between the gapped row and its first button (%q):\n%s", between, out)
+	}
+}
+
+// Nested grouping nodes flatten all the way down — a For inside a For, or a
+// For inside a WithTheme, must not reintroduce a box at any level.
+func TestNestedGroupingNodesFlattenCompletely(t *testing.T) {
+	n := &core.Node{Type: "Theme", Children: []*core.Node{
+		{Type: "Fragment", Children: []*core.Node{
+			{Type: "Fragment", Children: []*core.Node{textNode("deep")}},
+		}},
+	}}
+
+	out := ExportHTML(n)
+	if strings.Contains(out, "<div>") {
+		t.Fatalf("nested grouping nodes still emitted a wrapper:\n%s", out)
+	}
+	if !strings.Contains(out, "deep") {
+		t.Fatalf("nested grouping nodes dropped the child:\n%s", out)
+	}
+}

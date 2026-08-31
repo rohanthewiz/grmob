@@ -82,10 +82,20 @@ func Match[T comparable](input T, cases ...MatchCase[T]) View {
 // It exists because core.If cannot do this job, in two separate ways:
 //
 //  1. If(false, view) returns Fragment(), and an empty Fragment is still a
-//     real child node. Inside a flex container it takes a slot, so it opens a
-//     stray Gap and shifts a Justify. If earns its place where the alternative
-//     is a whole branch of the tree; it is the wrong tool for one optional
-//     item in a row of three.
+//     real child node: the reconciler walks and diffs it on every pass, and
+//     it occupies a child index, so anything addressing children by position
+//     counts it. If earns its place where the alternative is a whole branch
+//     of the tree; it is the wrong tool for one optional item in a row of
+//     three.
+//
+//     It does not, however, draw anything. A grouping node with no children
+//     renders no box on any of the three targets — that is what both native
+//     renderers have always done, and what the HTML exporter now does too.
+//     An earlier version of this note claimed the empty Fragment took a flex
+//     slot and opened a stray Gap; that was true only of the exporter, which
+//     wrapped every grouping node in a div, and it is fixed. The cost is a
+//     node, not a gap.
+//
 //  2. If is typed View -> View. There is no If for a StyleProp or a
 //     BehaviorProp, so "apply this padding only when selected" or "attach
 //     OnClick only when a handler was supplied" had no expression form at all.

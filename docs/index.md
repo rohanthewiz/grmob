@@ -67,8 +67,8 @@ flowchart LR
   than a color.
 - **Widget library** — the [`components` package](components.md) adds
   struct-configured widgets with composition slots: `Screen`, `Button`,
-  `Card`, `ListRow`, `Separator`, `Avatar`, `ProgressBar`, `Chip`, `Badge`,
-  `FormField`, `Accordion`, `Tabs`.
+  `InputRow`, `SegmentedControl`, `Card`, `ListRow`, `Separator`, `Avatar`,
+  `ProgressBar`, `Chip`, `Badge`, `FormField`, `Accordion`, `Tabs`.
 - **Debug mode** — opt-in runtime checks catch the silent failure modes of
   positional hooks (cursor drift, duplicate sibling keys, misused caches) and
   report them as inspectable concerns. See [Debug Mode](concepts/debug-mode.md).

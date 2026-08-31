@@ -50,6 +50,28 @@ func renderNode(b *element.Builder, node *core.Node) (x any) {
 		}
 	}
 
+	// Fragment and Theme are grouping nodes with no visual box of their own:
+	// core.For wraps its generated children in a Fragment, and core.WithTheme
+	// wraps a subtree in a Theme. Neither ever carries a Style (see
+	// core/conditionals.go, core/layout.go and core/theme.go — all three
+	// construct the node with Children and nothing else), so emitting a <div>
+	// for them does not just add a redundant element, it changes the layout:
+	// inside a flex container the wrapper becomes the single flex item, which
+	// swallows the parent's gap, flex-direction and alignment before they can
+	// reach the children that were supposed to receive them.
+	//
+	// Both native renderers already treat these as transparent — SwiftUI's
+	// Group (Renderer.swift) and a bare RenderChildren into the parent's
+	// scope (Renderer.kt) — so a wrapper here made the HTML export disagree
+	// with what actually ships. Emitting the children directly is what brings
+	// the three targets back into line.
+	if node.Type == "Fragment" || node.Type == "Theme" {
+		for _, child := range node.Children {
+			renderNode(b, child)
+		}
+		return
+	}
+
 	// Shared attributes: inline style first, then the callback-ID data
 	// attributes the WASM runtime dispatches on (their names are a contract
 	// with runtime/main.go's event bridge).
@@ -145,7 +167,9 @@ func tagForType(t string) string {
 	switch t {
 	case "Text":
 		return "span"
-	case "Column", "Row", "Card", "Scroll", "Fragment", "Theme", "SafeArea":
+	// Fragment and Theme never reach here — renderNode emits their children
+	// directly rather than a box. See the note there.
+	case "Column", "Row", "Card", "Scroll", "SafeArea":
 		return "div"
 	case "Button":
 		return "button"

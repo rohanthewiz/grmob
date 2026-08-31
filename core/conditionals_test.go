@@ -10,8 +10,10 @@ import (
 
 // The headline difference from core.If, and the reason MaybeProp exists at
 // all. Both express "this child only when the flag holds", but If(false, ...)
-// returns an empty Fragment, which renders as a real node and takes a slot in
-// the container's flex layout.
+// returns an empty Fragment, which is a real node in the tree — one the
+// reconciler diffs every pass and one that occupies a child index. It draws
+// nothing on any target (see the note on MaybeProp), so what this pins is the
+// node count, which is the cost that actually remains.
 func TestMaybePropLeavesNoNodeWhereIfLeavesAnEmptyFragment(t *testing.T) {
 	ctx := NewContext()
 	ctx.BeginRenderPass()

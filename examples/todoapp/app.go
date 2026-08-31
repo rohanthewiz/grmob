@@ -229,20 +229,20 @@ func App(ctx *core.Context) core.View {
 
 			// Entry row. The Input is fully controlled (value in, onChange
 			// out); the keyboard's return/done key and the Add button are
-			// two paths to the same commit.
-			core.Row(
-				core.Gap(8),
-				core.InputWithSubmit(draft.Get(), "What needs doing?",
-					func(v string) { draft.Set(v) },
-					addTodo,
-					core.FlexGrow(1),
-				),
-				components.Button{
+			// two paths to the same commit — and now literally one handler,
+			// since the button inherits OnSubmit rather than repeating it.
+			// Gap is unset: the widget defaults to the theme's SM step,
+			// which is the 8 this row used to spell out.
+			components.InputRow{
+				Value:       draft.Get(),
+				Placeholder: "What needs doing?",
+				OnChange:    func(v string) { draft.Set(v) },
+				OnSubmit:    addTodo,
+				Button: components.Button{
 					Label:             "Add",
-					OnTap:             addTodo,
 					AccessibilityHint: "Adds the task typed in the field",
 				},
-			),
+			},
 
 			filterBar(filter.Get(), func(i int) { filter.Set(i) }),
 
@@ -288,38 +288,44 @@ func App(ctx *core.Context) core.View {
 	}
 }
 
-// filterBar renders the three filter chips from one loop, on
-// components.Chip — the widget extracted from this bar's original hand-rolled
-// implementation (see chip_migration_test.go, which pins the rendered output
-// to the pre-extraction markup byte for byte). The active chip is
-// distinguished by style only, so switching filters patches two backgrounds
-// instead of restructuring the row; Chip also owns appending ", selected" to
-// the accessibility label.
+// filterBar is a components.SegmentedControl. The widget owns the row, the
+// 8pt gap, the per-segment key, and the index comparison that decides which
+// chip is selected; what stays here is what is actually this app's — the
+// palette override and the sentence a screen reader reads.
+//
+// The filter constants are indices into filterLabels (see their declaration),
+// so the app's own enum is the control's Selected value with no mapping in
+// between.
 func filterBar(active int, onSelect func(int)) core.View {
-	return core.Row(
-		core.Gap(8),
-		core.For(filterLabels, func(label string, i int) core.View {
-			return core.Keyed("filter-"+label, components.Chip{
-				Label:    label,
-				Selected: i == active,
-				OnTap:    func() { onSelect(i) },
-				Style: []core.StyleProp{
-					core.FontSize(13),
-					core.Transition(200, core.EaseInOut),
-				},
-				// The theme's Button base paints a white label; on the pale
-				// accent background that is illegible, so the selected chip
-				// overrides both colors together (Chip's theme default is
-				// overridden to keep this app's palette).
-				SelectedStyle: []core.StyleProp{
-					core.BackgroundColor(colorAccent),
-					core.TextColor(colorAccentInk),
-				},
-				AccessibilityLabel: "Show " + strings.ToLower(label) + " tasks",
-				AccessibilityHint:  "Filters the task list",
-			})
-		}),
-	)
+	return components.SegmentedControl{
+		Labels:    filterLabels,
+		Selected:  active,
+		OnSelect:  onSelect,
+		KeyPrefix: "filter-",
+		// The template: everything every chip shares. Label, Selected and
+		// OnTap are the control's to fill in.
+		Segment: components.Chip{
+			Style: []core.StyleProp{
+				core.FontSize(13),
+				core.Transition(200, core.EaseInOut),
+			},
+			// The theme's Button base paints a white label; on the pale
+			// accent background that is illegible, so the selected chip
+			// overrides both colors together (Chip's theme default is
+			// overridden to keep this app's palette).
+			SelectedStyle: []core.StyleProp{
+				core.BackgroundColor(colorAccent),
+				core.TextColor(colorAccentInk),
+			},
+			AccessibilityHint: "Filters the task list",
+		},
+		// The one thing that varies per segment and is not the caption:
+		// "Active" is announced as "Show active tasks". Chip appends
+		// ", selected" to whichever name it is given.
+		SegmentLabel: func(label string, _ int) string {
+			return "Show " + strings.ToLower(label) + " tasks"
+		},
+	}
 }
 
 // todoRow is a pure function of its Todo — no hooks, per the positional-slot

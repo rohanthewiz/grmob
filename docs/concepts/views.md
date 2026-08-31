@@ -86,12 +86,49 @@ core.MatchBool(
     core.Otherwise(memberView))
 ```
 
+### Fragments are transparent
+
+`Fragment` — and the `Theme` node `WithTheme` produces — are **grouping nodes**:
+they hold children and carry no style of their own. `For` wraps everything it
+generates in one, so a loop inside a container arrives as a single child:
+
+```go
+core.Row(
+    core.Gap(8),
+    core.For(labels, func(l string, i int) core.View { return chip(l, i) }),
+)
+```
+
+All three targets inline that grouping node into the parent's layout, so the
+three chips are what the `Row` spaces — not the `Fragment`. On iOS it is a
+SwiftUI `Group`, on Android the children are emitted straight into the parent's
+scope, and the HTML exporter writes the children with no wrapper element.
+
+That last one was not always true. The exporter used to emit a `<div>` for every
+grouping node, and a styleless `div` inside a flex container is a real flex item:
+it became the container's only child, so `gap`, `flex-direction` and alignment
+stopped at the wrapper instead of reaching the children. The HTML therefore
+disagreed with both natives — visibly, in `examples/todoapp`, whose filter bar
+lost its 8pt gap in the browser while keeping it on device. Grouping nodes now
+emit their children directly.
+
+The node still exists in the tree even though it draws nothing, which is the
+distinction the next section turns on.
+
 ### One optional item: `MaybeProp`
 
 `If` returns a view, and a false `If` returns an **empty `Fragment`** — a real
-child node. Inside a flex container that node still takes a slot, so it opens a
-stray `Gap` and shifts a `Justify`. And `If` is `View → View`, so there was no
-expression form at all for an optional *style* or *behavior* prop.
+child node. The reconciler walks and diffs it on every pass, and it occupies a
+child index, so anything addressing children by position counts it. And `If` is
+`View → View`, so there was no expression form at all for an optional *style*
+or *behavior* prop.
+
+The empty `Fragment` does not *draw* anything: a grouping node with no children
+renders no box on any of the three targets. (It briefly appeared to, because the
+HTML exporter wrapped every grouping node in a `div` — a real flex item that
+swallowed the parent's `gap`. That is fixed; see
+[Fragments are transparent](#fragments-are-transparent) below.) The cost `MaybeProp`
+removes is a node, not a gap.
 
 `MaybeProp` covers both. It returns its argument when the condition holds and
 `nil` otherwise, and the container builders skip a `nil` item outright — no

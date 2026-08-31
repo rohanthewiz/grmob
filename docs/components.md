@@ -198,6 +198,88 @@ and swallows taps. There is no platform disabled state to set — no renderer
 carries one — so the announcement rides the accessibility label as
 `", disabled"`, the same convention Chip and ListRow use for `", selected"`.
 
+## InputRow
+
+The composer: a text field that fills the row, and an optional trailing button
+that commits it.
+
+```
+Row (Gap)
+  ├─ Input   ← FlexGrow(1), value / placeholder / onChange / onSubmit
+  └─ Button  ← only when Button.Label is set; OnTap defaults to OnSubmit
+```
+
+```go
+// A field and a Send button, one commit action.
+components.InputRow{
+    Value:       draft.Get(),
+    Placeholder: "What needs doing?",
+    OnChange:    func(v string) { draft.Set(v) },
+    OnSubmit:    addTodo,
+    Button:      components.Button{Label: "Add"},
+}
+
+// A search field with no button: the return key commits it.
+components.InputRow{
+    Value:       query.Get(),
+    Placeholder: "Search",
+    OnChange:    func(v string) { query.Set(v) },
+    OnSubmit:    runSearch,
+}
+
+// A docked composer, with the bar treatment this widget has no opinion about.
+components.InputRow{
+    Value: draft.Get(), Placeholder: "Mensagem…",
+    OnChange: func(v string) { draft.Set(v) },
+    OnSubmit: send,
+    Button:   components.Button{Label: "Enviar"},
+    Style: []core.StyleProp{
+        core.BackgroundColor("#FFFFFF"),
+        core.Padding(12),
+    },
+}
+```
+
+| field | effect |
+|---|---|
+| `Value` | the field's text — fully controlled, so `OnChange` is the only way it changes |
+| `Placeholder` | empty-state text; the field's only label |
+| `OnChange` | fires on every keystroke |
+| `OnSubmit` | the commit action: keyboard return/done **and** the button's tap |
+| `Button` | trailing commit button; the zero value renders **no node at all** |
+| `Gap` | horizontal spacing, in points; zero means the theme's `SM` step |
+| `Style` | applied to the row **after** `Gap`, so it overrides it |
+
+**One commit action, three paths.** The button *is* the field's submit,
+rendered as a tap target for the case where the keyboard's return key is not
+obvious or not reachable — so `OnSubmit` drives both and the two cannot drift
+apart. Both hand-written call sites this replaced named the same helper twice.
+Setting `Button.OnTap` explicitly still wins, but it has to be said out loud.
+
+**`Gap` defaults to the theme's step, unlike `Screen`'s.** `Screen` treats a
+zero `Gap` as *unset*, because the spacing between a screen's sections is the
+app's decision. The gap here is the opposite kind of thing — it is the widget's
+internal layout, and the field and the button must not touch — so `InputRow`
+owns it the way `FormField` owns the spacing between its label and its input.
+Zero means the theme's `SM` step (8pt in both bundled themes). To ask for no
+gap at all, say it through `Style`:
+
+```go
+Style: []core.StyleProp{core.Gap(0)}
+```
+
+**A nil `OnSubmit` builds the field without a submit path**, rather than with
+one wired to a no-op: the renderers read the `onSubmit` prop to decide whether
+to show a submit affordance on the keyboard, and a registered no-op would
+advertise an action the row ignores.
+
+**The input is owned, not slotted.** Unlike [`FormField`](#formfield), which
+takes whatever input it is given, `InputRow` builds its own — the wiring *is*
+the widget, and a slot would hand it back to the caller. So the field itself
+takes no per-call styling; a composer that needs to restyle its input has
+outgrown this and should go back to `core.Row` + `core.InputWithSubmit`. Wrap
+the row in a `FormField` when it needs a caption or an error line.
+
 ## Card
 
 A surface with optional header, body, and footer regions, on the theme's
@@ -362,6 +444,87 @@ components.Chip{
 The todoapp filter bar is built on Chip; `examples/todoapp/chip_migration_test.go`
 pins its rendered HTML to the pre-extraction hand-rolled markup byte for
 byte — the pattern to copy when extracting your own widgets.
+
+## SegmentedControl
+
+A controlled single-select rendered as a row of chips — a filter bar, a mode
+switcher, a scope picker.
+
+```
+Row (Gap)
+  ├─ Chip "All"     ← Selected == 0
+  ├─ Chip "Active"
+  └─ Chip "Done"
+```
+
+```go
+components.SegmentedControl{
+    Labels:   []string{"All", "Active", "Done"},
+    Selected: filter.Get(),
+    OnSelect: func(i int) { filter.Set(i) },
+}
+```
+
+| field | effect |
+|---|---|
+| `Labels` | segment captions, left to right; `Selected` indexes this slice |
+| `Selected` | index of the active segment; out of range selects **nothing** |
+| `OnSelect` | fires with the tapped segment's index |
+| `Segment` | the `Chip` template every segment is rendered from |
+| `SegmentLabel` | derives a segment's accessibility name from its caption |
+| `KeyPrefix` | prepended to each segment's reconciler key (default: the caption) |
+| `Gap` | spacing between segments; zero means the theme's `SM` step |
+| `Style` | applied to the row **after** `Gap`, so it overrides it |
+
+**Selection is an index and the caller owns it.** The control holds no state:
+it renders `Selected` and reports taps — the same contract [`Chip`](#chip) has,
+one level up. That is what lets the selected index *be* the app's own filter
+enum; `examples/todoapp` declares `filterAll`/`filterActive`/`filterDone` as
+indices into its label slice, so there is no mapping in between.
+
+An out-of-range `Selected` selects nothing. That is a legal state, not a
+defensive check: a scope picker that starts with no scope chosen says so with
+`-1` rather than by growing a fourth "none" segment.
+
+**`Segment` is a template, not a set of pass-through fields.** Everything a
+`Chip` can do — `Style`, `SelectedStyle`, `AccessibilityHint` — is set once and
+applies to all of them:
+
+```go
+components.SegmentedControl{
+    Labels:    filterLabels,
+    Selected:  active,
+    OnSelect:  onSelect,
+    KeyPrefix: "filter-",
+    Segment: components.Chip{
+        Style:             []core.StyleProp{core.FontSize(13)},
+        SelectedStyle:     []core.StyleProp{core.BackgroundColor(colorAccent)},
+        AccessibilityHint: "Filters the task list",
+    },
+    SegmentLabel: func(label string, _ int) string {
+        return "Show " + strings.ToLower(label) + " tasks"
+    },
+}
+```
+
+`Label`, `Selected` and `OnTap` on the template are ignored — those three are
+exactly what the control computes. The alternative was re-exporting Chip's
+surface as `SegmentStyle`, `SelectedSegmentStyle`, `SegmentHint` and so on,
+which grows a field every time `Chip` does. It is the same move
+[`InputRow`](#inputrow) makes with `Button`.
+
+**`SegmentLabel` is a function because the name is the one thing that varies
+per segment and is not derivable from the caption** — todoapp announces "Show
+active tasks" for a chip captioned "Active". A parallel `[]string` would have
+to be kept in step with `Labels` by hand. `Chip` still appends `", selected"`
+to whichever name it ends up with, so state and name are announced together;
+return the name only. A nil `SegmentLabel` leaves `Chip` to announce the
+caption itself.
+
+**Segments are keyed**, by `KeyPrefix` + caption. Keys never appear in exported
+HTML but they drive reconciler matching and native view recycling, so captions
+are assumed distinct — two identical captions collide, which debug mode reports
+rather than silently mismatching segments.
 
 ## Separator
 

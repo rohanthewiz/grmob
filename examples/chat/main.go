@@ -103,9 +103,18 @@ func ThreadHeader(who string) core.View {
 // slot — which on native means the row keeps its recycled view and any
 // transient state attached to it.
 //
-// The row spacing rides on the bubble (a bottom margin), not on a Gap on this
-// Column: core.For groups its output in a single Fragment child, so a Gap here
-// would space the Fragment against its siblings, not the messages inside it.
+// The row spacing rides on the bubble (a bottom margin) rather than on a Gap
+// on this Column. That used to be a workaround: core.For groups its output in
+// a Fragment, and the HTML exporter emitted that Fragment as a real div, which
+// became the Column's single flex item and swallowed any Gap set here. The
+// natives never had the problem — both inline a Fragment into the parent's
+// layout scope — and the exporter now does the same, so a Gap here would work
+// on all three targets.
+//
+// The margin stays because it is also the more honest expression for this
+// list: the spacing belongs to a message bubble wherever one is placed, not
+// to this particular container. Switching to Gap is a legitimate cleanup, not
+// a fix.
 func MessageList(msgs []Message) core.View {
 	return core.Scroll(
 		core.Column(
@@ -154,11 +163,10 @@ func MessageBubble(m Message) core.View {
 			// Only their messages are labelled: our own name on our own
 			// bubbles is noise. core.MaybeProp and not core.If, because a
 			// false core.If still returns a Fragment, and an empty Fragment
-			// is a real child — it would take a slot in the bubble's own flex
-			// layout and open a stray gap where the label is absent.
-			// MaybeProp's false path is an untyped nil, which the container
-			// skips outright, so the tree is identical to one written without
-			// the label at all.
+			// is a real child node — one the reconciler walks and diffs on
+			// every pass, for a label that is not there. MaybeProp's false
+			// path is an untyped nil, which the container skips outright, so
+			// the tree is identical to one written without the label at all.
 			core.MaybeProp(!m.Mine(),
 				core.Text(m.From, core.FontSize(12), core.FontWeight(core.Bold))),
 			core.Text(m.Text, core.FontSize(15)),
@@ -166,25 +174,31 @@ func MessageBubble(m Message) core.View {
 	)
 }
 
-// Composer is the input row. InputWithSubmit registers both an onChange (every
-// keystroke, keeping the field controlled by Go state) and an onSubmit (the
-// keyboard's send key) — the button is the third path to the same helper.
+// Composer is the input row: the field, its commit action, and the tap target
+// for the same commit. All three used to be spelled out here — a Row, a
+// FlexGrow(1) on the field, and `send` named twice (once as the keyboard's
+// onSubmit, once as the button's OnTap). InputRow owns that wiring, so the
+// two paths cannot drift apart, and what is left is what is actually specific
+// to this screen: the white bar it sits in.
 func Composer(draft core.State[string], send func()) core.View {
-	return core.Row(
-		core.BackgroundColor("#FFFFFF"),
-		core.Padding(12),
-		core.Gap(8),
-		core.InputWithSubmit(draft.Get(), "Mensagem…",
-			func(val string) { draft.Set(val) },
-			send,
-			core.FlexGrow(1),
-		),
+	return components.InputRow{
+		Value:       draft.Get(),
+		Placeholder: "Mensagem…",
+		OnChange:    func(val string) { draft.Set(val) },
+		OnSubmit:    send,
 		// The theme's Button base already is a filled Primary with padding
-		// and a radius, so this re-spelled it by hand in four props. The
-		// widget's zero value applies nothing at all, which is how the same
-		// look survives a theme swap instead of staying pinned to these.
-		components.Button{Label: "Enviar", OnTap: send},
-	)
+		// and a radius, so no color props here; OnTap is left unset and
+		// inherits OnSubmit above.
+		Button: components.Button{Label: "Enviar"},
+		// Gap is unset: the widget's default is the theme's SM step, which
+		// is the 8 this row used to write by hand. The background and the
+		// padding are this screen's own — a docked composer reads as a bar
+		// against the thread behind it.
+		Style: []core.StyleProp{
+			core.BackgroundColor("#FFFFFF"),
+			core.Padding(12),
+		},
+	}
 }
 
 // renderPass drives one hand-rolled render pass, the same boundary
