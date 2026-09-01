@@ -62,7 +62,18 @@ const (
 // vocabulary — CSS object-fit in htmlout and the WASM runtime, SwiftUI
 // scaling in Renderer.swift, Compose's ContentScale in Renderer.kt — and
 // none of them can be asked "did you cover every mode?" without a list to
-// check against. htmlout.ObjectFits is the first table held to it.
+// check against. All four are now held to it:
+//
+//	htmlout.ObjectFits          htmlout/objectfit_test.go
+//	the WASM runtime's copy     wasm/verify/objectfit_test.go (via htmlout)
+//	Renderer.swift              mobile/verify/contentmode_test.go
+//	Renderer.kt                 mobile/verify/contentmode_test.go
+//
+// The first two are table comparisons — both sides map a mode onto the same
+// CSS keyword, so the values can be compared as well as the keys. The natives
+// map onto SwiftUI and Compose vocabularies that share nothing with CSS or
+// with each other, so only the key set is comparable; those two checks read
+// the arms out of the native source and check coverage alone.
 //
 // A fresh slice per call rather than a package-level var: a var of slice type
 // is writable by any importer, and four elements are cheaper to build than to

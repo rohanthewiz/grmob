@@ -311,11 +311,24 @@ private fun gestureModifier(node: GrMobNode): Modifier {
  * ContentScale.None (Center) leaves the bitmap at its intrinsic pixel size;
  * AsyncImage's default alignment is already Center, so "no scaling, centered"
  * needs nothing further.
+ *
+ * Every mode core declares is listed explicitly, including "fit" — which the
+ * `else` arm below would already have handled. That redundancy is the point:
+ * `else` swallows an unrecognized mode silently, so a fifth ContentMode added
+ * to core would render here as Fit while both DOM targets fell back to the
+ * browser default, and nothing anywhere would fail. Listing the modes makes
+ * the coverage readable from outside, and mobile/verify/contentmode_test.go
+ * reads it — it compares these arms with core.ContentModes() under a plain
+ * `go test ./...`. Keep the arms one per line, string-literal first, and keep
+ * the `else` arm; that is the shape the parse requires.
  */
 private fun contentScaleFor(mode: String): ContentScale = when (mode) {
+    "fit" -> ContentScale.Fit
     "fill" -> ContentScale.Crop
     "stretch" -> ContentScale.FillBounds
     "center" -> ContentScale.None
+    // Absent (core.imageNode omits the prop entirely) or a mode this build of
+    // the runtime predates.
     else -> ContentScale.Fit
 }
 

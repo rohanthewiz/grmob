@@ -166,6 +166,33 @@ style list.
 `Fill` and `Center` crop on every target — an unclipped image would paint over
 its siblings.
 
+Note the three value columns have nothing in common: SwiftUI modifier chains,
+Compose `ContentScale` cases, CSS keywords. Only the first column — the mode
+names — is shared by all four renderers, so the DOM pair can be checked by
+comparing tables while the natives can only be checked for **coverage**: does
+every mode core declares have an arm of its own?
+
+Coverage is the half that matters here, because both natives fold the
+unrecognized case into `Fit` (neither SwiftUI nor Compose has CSS's "unset" to
+fall back to). Without a check, adding a fifth `ContentMode` would draw as
+`Fit` on iOS and Android while both DOM targets fell back to the browser
+default — four renderers, two behaviors, no error anywhere.
+
+`mobile/verify/contentmode_test.go` closes that. It reads the `switch mode` in
+`Renderer.swift` and the `when (mode)` in `Renderer.kt` as text and holds their
+arms up against `core.ContentModes()`. Reading rather than compiling is not a
+shortcut: `default` and `else` make a string switch exhaustive by construction,
+so "you forgot a mode" is not a type error in either language and never will
+be — only something comparing the arms with Go's list can notice. Doing that in
+Go is what puts the check inside a plain `go test ./...`, where it runs without
+Xcode, without the Android SDK, and without anyone remembering a `run.sh`.
+
+The price is a shape both functions must keep, stated in a comment beside each:
+one arm per line, string literals first on the line, the catch-all last, and
+every mode listed explicitly — including the one the catch-all would have
+handled anyway. Every violation fails as a named error saying what changed,
+rather than as an empty comparison that agrees with everything.
+
 ### `Disabled`
 
 `core.Disabled(bool)` becomes the platform's own inert state — `enabled =
@@ -188,3 +215,10 @@ it through the real `GrMobNode`/`GrMobStyle`/`TreeStore` files and deep-
 compares the resulting tree against Go's final render, and the view layer
 (`Renderer.swift`, `GrMobFlexStack` included) is then type-checked. Only Go
 and the Xcode Command Line Tools are required.
+
+`mobile/verify` needs even less — just Go. It holds the checks that have to
+hold in *both* native renderers at once, which is why they live under
+`mobile/` (the bridge surface both shells are written against) rather than in
+either platform's own harness. Its checks read native source as text, so they
+run under `go test ./...` alongside everything else; `ContentMode` coverage is
+the first of them.

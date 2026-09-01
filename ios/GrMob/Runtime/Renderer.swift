@@ -134,9 +134,22 @@ struct RenderNode: View {
 /// `.clipped()` on the two overflowing modes is not cosmetic: CSS object-fit
 /// and Compose's ContentScale.Crop both crop to the box, and an uncropped
 /// SwiftUI image would paint over its siblings instead.
+///
+/// Every mode core declares is listed explicitly, including "fit" — whose
+/// body the `default` arm below repeats verbatim. The repetition is deliberate
+/// and must not be folded away: `default` swallows an unrecognized mode
+/// silently, so a fifth ContentMode added to core would draw here as fit while
+/// both DOM targets fell back to the browser default, and nothing anywhere
+/// would fail. Listing the modes makes the coverage readable from outside, and
+/// mobile/verify/contentmode_test.go reads it — it compares these case labels
+/// with core.ContentModes() under a plain `go test ./...`. Keep one
+/// `case "…":` per line and keep the `default` arm; that is the shape the
+/// parse requires.
 @ViewBuilder
 private func grMobScaled(_ image: Image, mode: String) -> some View {
     switch mode {
+    case "fit":
+        image.resizable().scaledToFit()
     case "fill":
         image.resizable().scaledToFill().clipped()
     case "stretch":
@@ -148,6 +161,8 @@ private func grMobScaled(_ image: Image, mode: String) -> some View {
         // size and is centered by the frame it sits in.
         image.clipped()
     default:
+        // Absent (core.imageNode omits the prop entirely) or a mode this build
+        // of the runtime predates. Same drawing as "fit" above.
         image.resizable().scaledToFit()
     }
 }

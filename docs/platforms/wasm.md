@@ -126,12 +126,18 @@ An absent or unrecognized mode yields `""`, and the runtime assigns that,
 `contentMode` needs, so the image falls back to the browser's default instead
 of keeping the last mode it was handed.
 
-This table is the one whose coverage can actually be checked: `ContentMode` is
-a named type with four declared constants, and `core.ContentModes()` — itself
+Coverage is checkable here in a way the tag table's is not: `ContentMode` is a
+named type with four declared constants, and `core.ContentModes()` — itself
 pinned to that `const` block by a test that reads the file's syntax tree —
 gives `TestObjectFitsCoversEveryContentMode` a list to check against. The tag
 table has no equivalent, because node types are string literals scattered
-across core's construction sites. (`replay_test.mjs` holds a third
+across core's construction sites.
+
+That same list now holds all four renderers, not just this pair. The natives
+map `ContentMode` onto SwiftUI and Compose vocabularies with no CSS in them, so
+they cannot be compared as tables; `mobile/verify/contentmode_test.go` reads
+their `switch`/`when` arms out of the source and checks coverage alone. See
+[Native platforms](native.md#contentmode-on-image). (`replay_test.mjs` holds a third
 copy on purpose: a conformance test has to state the rule independently, or
 it only proves the implementation agrees with itself.)
 
