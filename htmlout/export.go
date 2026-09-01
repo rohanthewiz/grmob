@@ -70,7 +70,7 @@ func renderNode(b *element.Builder, node *core.Node) (x any) {
 	// rather than needing a second, illegal, style attribute.
 	sv := styleValue(node.Style, node.Type)
 	if node.Type == "Image" {
-		sv = addDecl(sv, objectFit(getStr(node.Props["contentMode"])))
+		sv = addDecl(sv, objectFitDecl(getStr(node.Props["contentMode"])))
 	}
 	if node.Style != nil && node.Style.Disabled && !isFormControl(node.Type) {
 		// HTML's disabled attribute is only valid on form controls, so a
@@ -248,23 +248,22 @@ func isFormControl(nodeType string) bool {
 	return false
 }
 
-// objectFit maps core.ContentMode onto the CSS property that means the same
-// thing. An unset (or unrecognized) mode yields "", which addDecl drops — the
+// objectFitDecl wraps the shared table's value in the CSS declaration
+// styleValue's list is built from. The mapping itself lives in objectFits
+// (objectfit.go), which the WASM runtime's copy is checked against; only the
+// "object-fit:" prefix is this function's own, because the runtime assigns the
+// value to a property and never spells the declaration.
+//
+// An unset (or unrecognized) mode yields "", which addDecl drops — the
 // browser's own object-fit default is `fill`, but an <img> with no explicit
 // size is laid out at its intrinsic ratio either way, which is what a
 // mode-less Image has always exported as.
-func objectFit(mode string) string {
-	switch core.ContentMode(mode) {
-	case core.ContentModeFit:
-		return "object-fit:contain"
-	case core.ContentModeFill:
-		return "object-fit:cover"
-	case core.ContentModeStretch:
-		return "object-fit:fill"
-	case core.ContentModeCenter:
-		return "object-fit:none"
+func objectFitDecl(mode string) string {
+	fit := ObjectFitFor(mode)
+	if fit == "" {
+		return ""
 	}
-	return ""
+	return "object-fit:" + fit
 }
 
 // addDecl appends one "prop:value" declaration to a declaration list, joining

@@ -103,9 +103,35 @@ in JavaScript because it is the side that actually sets the attribute and
 cannot call into Go to ask. The two are not kept in step by hand — a Go test
 in `wasm/verify` parses the runtime's literal out of `grmob-runtime.js` and
 compares it against `htmlout.InputTypes()`, so a change to either side fails
-`go test ./...` until it is made to both. (Both runtime tables are parsed by
-the same helper, which is why they are written in the same shape: a flat
-object literal in a named function, followed by `[type] || "<fallback>"`.) (`replay_test.mjs` holds a third
+`go test ./...` until it is made to both.
+
+All three of the runtime's lookup tables — tags, `<input>` types, and the
+`object-fit` values below — are parsed by the same helper, which is why they
+are written in the same shape: a flat object literal in a named function,
+subscripted by that function's own argument, with a `|| "<fallback>"` default
+that the parse checks too.
+
+### Image content modes
+
+`core.ContentMode` maps onto CSS `object-fit`: `fit` → `contain`, `fill` →
+`cover`, `stretch` → `fill`, `center` → `none`. `htmlout/objectfit.go` is the
+authority and `TestRuntimeObjectFitsMatchGo` pins the runtime's copy to it.
+
+Go's table holds the bare value rather than the whole declaration, because
+that is the half the two sides share: `htmlout` joins `object-fit:` onto it
+for a style attribute, the runtime assigns it to `el.style.objectFit`.
+
+An absent or unrecognized mode yields `""`, and the runtime assigns that,
+**clearing** the property — which is what a patch removing an Image's
+`contentMode` needs, so the image falls back to the browser's default instead
+of keeping the last mode it was handed.
+
+This table is the one whose coverage can actually be checked: `ContentMode` is
+a named type with four declared constants, and `core.ContentModes()` — itself
+pinned to that `const` block by a test that reads the file's syntax tree —
+gives `TestObjectFitsCoversEveryContentMode` a list to check against. The tag
+table has no equivalent, because node types are string literals scattered
+across core's construction sites. (`replay_test.mjs` holds a third
 copy on purpose: a conformance test has to state the rule independently, or
 it only proves the implementation agrees with itself.)
 

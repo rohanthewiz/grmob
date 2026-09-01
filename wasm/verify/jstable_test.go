@@ -23,17 +23,24 @@ import (
 // `go test ./...` reaches these checks, unlike run.sh, which a human has to
 // remember.
 
-// The shape both runtime lookups are written in, and which the parse below
-// requires:
+// The shape all three runtime lookups are written in, and which the parse
+// below requires:
 //
-//	function <name>(type) {
+//	function <name>(<param>) {
 //	    return {
 //	        Key: "value",
 //	        ...
-//	    }[type] || "<fallback>";
+//	    }[<param>] || "<fallback>";
 //	}
 //
-// This is a constraint on how those two functions may be rewritten, and it is
+// The subscript is checked against the function's own parameter name, read off
+// the signature, rather than against a fixed "type" — objectFitFor calls its
+// argument "mode", and forcing all three to agree on one name would be making
+// the runtime read worse to suit its test. Checking it at all is what proves
+// the braces the parse found are the lookup table and not some later object
+// literal in the same function.
+//
+// This is a constraint on how those functions may be rewritten, and it is
 // written down in grmob-runtime.js beside each of them. Every violation of it
 // is a named fatal below rather than a short map, so a rewrite lands as a
 // failure that says what happened.
@@ -71,11 +78,13 @@ func runtimeSource(t *testing.T) string {
 func parseRuntimeTable(t *testing.T, src, funcName, fallback string) map[string]string {
 	t.Helper()
 
-	start := regexp.MustCompile(`function\s+` + regexp.QuoteMeta(funcName) + `\s*\([^)]*\)\s*\{`)
-	loc := start.FindStringIndex(src)
+	start := regexp.MustCompile(`function\s+` + regexp.QuoteMeta(funcName) + `\s*\(\s*(\w+)\s*\)\s*\{`)
+	loc := start.FindStringSubmatchIndex(src)
 	if loc == nil {
-		t.Fatalf("grmob-runtime.js: no %s function found — if it was renamed, update this test", funcName)
+		t.Fatalf("grmob-runtime.js: no %s function taking a single named argument found — "+
+			"if it was renamed or its signature changed, update this test", funcName)
 	}
+	param := src[loc[2]:loc[3]] // the argument the lookup must be subscripted by
 	body := src[loc[1]:]
 
 	open := strings.Index(body, "{")
@@ -91,7 +100,7 @@ func parseRuntimeTable(t *testing.T, src, funcName, fallback string) map[string]
 	}
 	end += open
 
-	wantTail := `[type] || "` + fallback + `";`
+	wantTail := "[" + param + `] || "` + fallback + `";`
 	if got := strings.TrimSpace(body[end+1:]); !strings.HasPrefix(got, wantTail) {
 		t.Fatalf("grmob-runtime.js: %s's table is not followed by %s\n  found: %.40s...",
 			funcName, wantTail, got)

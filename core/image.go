@@ -49,6 +49,33 @@ const (
 	ContentModeCenter ContentMode = "center"
 )
 
+// ContentModes returns every declared ContentMode, in declaration order.
+//
+// Go cannot enumerate the constants of a named string type at run time, so
+// the set has to be written out a second time — and a second copy of a list
+// is exactly the thing that goes stale. This one is pinned to the const block
+// above by TestContentModesMatchTheDeclaredConstants, which reads them out of
+// this file's syntax tree, so adding a constant without adding it here fails
+// `go test ./...` rather than silently shrinking the set.
+//
+// It exists because four renderers each map these modes onto their own
+// vocabulary — CSS object-fit in htmlout and the WASM runtime, SwiftUI
+// scaling in Renderer.swift, Compose's ContentScale in Renderer.kt — and
+// none of them can be asked "did you cover every mode?" without a list to
+// check against. htmlout.ObjectFits is the first table held to it.
+//
+// A fresh slice per call rather than a package-level var: a var of slice type
+// is writable by any importer, and four elements are cheaper to build than to
+// defend.
+func ContentModes() []ContentMode {
+	return []ContentMode{
+		ContentModeFit,
+		ContentModeFill,
+		ContentModeStretch,
+		ContentModeCenter,
+	}
+}
+
 // Image renders a remote or bundled image at the default content mode
 // (ContentModeFit). Use ImageWithMode to choose another.
 func Image(src string, styleProps ...StyleProp) View {

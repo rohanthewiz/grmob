@@ -165,9 +165,27 @@ const GrMob = (() => {
         });
     }
 
-    // core.ContentMode -> CSS object-fit. Kept in sync with htmlout's
-    // objectFit(); an unknown or absent mode clears the property so the
-    // browser's own default applies.
+    // core.ContentMode -> CSS object-fit. Go states this table once, in
+    // htmlout/objectfit.go, and this is its restatement here. The two are
+    // compared by TestRuntimeObjectFitsMatchGo in wasm/verify, which parses
+    // *this literal* out of this file and runs under a plain `go test ./...`,
+    // so a change on either side fails until it is made on both. Keep it a
+    // flat literal in a function named objectFitFor, subscripted by that
+    // function's own argument and falling back to "" — the parse reads that
+    // shape, the same one tagForType and inputTypeFor are written in. (It
+    // takes the subscript name off the signature, so `mode` here and `type`
+    // there are both fine; what it will not accept is a subscript that is
+    // neither.)
+    //
+    // Go's table holds the bare value ("contain") rather than the whole
+    // declaration, because that is the half the two sides share: htmlout
+    // joins "object-fit:" onto it for its style attribute, and this assigns
+    // it to a property.
+    //
+    // An unknown or absent mode yields "", which *clears* the property. That
+    // is not the same as doing nothing, and the patch path is why: an Image
+    // whose contentMode prop is removed has to fall back to the browser's
+    // default rather than keep the last mode it was handed.
     function objectFitFor(mode) {
         return {
             fit: "contain",
