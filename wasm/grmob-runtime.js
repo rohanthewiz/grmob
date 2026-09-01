@@ -30,13 +30,42 @@ const GrMob = (() => {
         // patches carry only the changed Style — see the patch handler.
         el.dataset.nodeType = node.Type;
 
+        if (node.Type === "Modal") {
+            // The overlay chassis. Core's ModalNode carries no Style — its
+            // look is these fixed rules plus the backdrop prop — so this is
+            // assigned once here and only display (visible) and background
+            // (backdrop) ever change, both through the prop paths below.
+            // display starts "none" because Visible defaults to false in Go;
+            // the visible prop in the loop below sets the truth either way.
+            Object.assign(el.style, {
+                position: "fixed",
+                top: 0, left: 0, right: 0, bottom: 0,
+                display: "none",
+                flexDirection: "column",
+                alignItems: "center",
+                justifyContent: "center",
+                zIndex: 1000,
+            });
+        }
+
         if (node.Style) {
             applyStyle(el, node.Style, node.Type);
         }
 
         if (node.Props) {
             for (const [key, value] of Object.entries(node.Props)) {
-                if (key.startsWith("on")) {
+                if (key === "visible" && node.Type === "Modal") {
+                    // flex, not block: the overlay centers its content.
+                    el.style.display = value ? "flex" : "none";
+                } else if (key === "backdrop" && node.Type === "Modal") {
+                    el.style.background = value;
+                } else if (key === "onDismiss" && node.Type === "Modal") {
+                    // Checked before the generic on* branch: "dismiss" is not
+                    // a DOM event. The real trigger is a click on the backdrop
+                    // itself — attachModalDismiss guards on the target so a
+                    // click inside the content never dismisses.
+                    attachModalDismiss(el, value);
+                } else if (key.startsWith("on")) {
                     const event = mapEventName(key);
                     el.dataset[`listener_${key}`] = value;
                     if (!el.dataset[`has_listener_${key}`]) {
@@ -104,6 +133,28 @@ const GrMob = (() => {
     }
 
     const FORM_CONTROLS = new Set(["button", "input", "textarea", "select"]);
+
+    // Wires a Modal's backdrop tap to Go's OnDismiss. Same latest-ID dataset
+    // discipline as the generic listener path: callback IDs are per-pass, so
+    // the listener is attached once and reads the current ID at click time.
+    // The target guard is the semantic line between "tapped outside" and
+    // "tapped the dialog": clicks inside the content bubble up through this
+    // element too, but their target is the content, not the overlay.
+    function attachModalDismiss(el, cbId) {
+        el.dataset.listener_onDismiss = cbId;
+        if (!el.dataset.has_listener_onDismiss) {
+            el.dataset.has_listener_onDismiss = "true";
+            el.addEventListener("click", (e) => {
+                if (e.target !== el) return;
+                const latestCbId = el.dataset.listener_onDismiss;
+                if (latestCbId) {
+                    // Void callback: the envelope must carry no value, like
+                    // focus/blur — see extractEventPayload.
+                    window.GoInvokeCallback(latestCbId, {});
+                }
+            });
+        }
+    }
 
     // Go's focus commands (core.Focus / core.DismissKeyboard) — see
     // core/focus.go. The epoch says when, the action says what.
@@ -211,6 +262,10 @@ const GrMob = (() => {
             case "Scroll":
             case "SafeArea":
             case "Fragment":
+            // Modal is a div like the containers, but listed on its own line
+            // because it is not one: createElement gives it the fixed-overlay
+            // chassis, and the visible/backdrop props drive it thereafter.
+            case "Modal":
             case "Spacer": return "div";
             default: return "div";
         }
@@ -300,6 +355,22 @@ const GrMob = (() => {
                             // Handled with focusEpoch above; on its own it
                             // says when nothing, only what.
                             continue;
+                        } else if (k === "visible" && el.dataset.nodeType === "Modal") {
+                            // This IS the modal open/close path: toggling
+                            // core.Visible reaches the page as a prop patch,
+                            // never as a subtree add/remove — the content
+                            // stays mounted, which is why its state survives
+                            // a close.
+                            el.style.display = v ? "flex" : "none";
+                        } else if (k === "backdrop" && el.dataset.nodeType === "Modal") {
+                            el.style.background = v;
+                        } else if (k === "onDismiss" && el.dataset.nodeType === "Modal") {
+                            // Before the generic on* branch, which would
+                            // attach a listener for a "dismiss" DOM event
+                            // that never fires — and, worse, mark the
+                            // listener slot taken so the real one could
+                            // never be attached.
+                            attachModalDismiss(el, v);
                         } else if (k.startsWith("on")) {
                             const event = mapEventName(k);
                             el.dataset[`listener_${k}`] = v;
@@ -343,11 +414,86 @@ const GrMob = (() => {
         });
     }
 
+    // --- Toast overlay -------------------------------------------------------
+    //
+    // Toasts are host chrome, not app tree: core.ShowToast crosses as a
+    // system event (see GrMobSystemEvent below), so nothing here is ever
+    // reconciled or patched — each toast is a throwaway element with its own
+    // timer. The container is lazily created and permanent: pointer-events
+    // none, so a toast never steals a tap from the app underneath it, and a
+    // z-index above the Modal overlay (1000), because a toast confirming a
+    // modal's action must not be drawn behind the modal it confirms.
+
+    let toastLayer = null;
+
+    function ensureToastLayer() {
+        if (toastLayer) return toastLayer;
+        toastLayer = document.createElement("div");
+        Object.assign(toastLayer.style, {
+            position: "fixed",
+            bottom: "24px",
+            left: 0, right: 0,
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            gap: "8px",
+            zIndex: 2000,
+            pointerEvents: "none",
+        });
+        document.body.appendChild(toastLayer);
+        return toastLayer;
+    }
+
+    function showToast(payload) {
+        const el = document.createElement("div");
+        el.textContent = payload.message || "";
+        // The default look; a styled toast's overrides land on top of it.
+        Object.assign(el.style, {
+            background: "#2F3437",
+            color: "#FFFFFF",
+            padding: "10px 18px",
+            borderRadius: "8px",
+            fontSize: "14px",
+            maxWidth: "80vw",
+            boxShadow: "0 4px 12px rgba(0,0,0,0.25)",
+            opacity: "0",
+            transition: "opacity 150ms ease",
+        });
+        if (payload.style) {
+            // The style crosses as a Go core.Style (capitalized fields), so
+            // it goes through the same mapping every node style does.
+            Object.assign(el.style, styleFromGrMob(payload.style, "Toast"));
+        }
+        ensureToastLayer().appendChild(el);
+        // Two frames, not one: the element must be painted at opacity 0
+        // before the transition target is set, or it appears without fading.
+        requestAnimationFrame(() => requestAnimationFrame(() => {
+            el.style.opacity = "1";
+        }));
+        const duration = payload.duration || 2000;
+        setTimeout(() => {
+            el.style.opacity = "0";
+            setTimeout(() => el.remove(), 200); // after the fade-out
+        }, duration);
+    }
+
     return {
         mount,
         patch,
+        showToast,
     };
 })();
+
+// The system-event sink the WASM host looks for at startup (wasm/main.go's
+// registerSystemEvents): defined at page level, before the wasm module is
+// instantiated, so the host's feature check finds it. Unknown event names are
+// dropped on purpose — a newer app on an older page degrades to silence, the
+// same contract the host applies when this function is missing entirely.
+window.GrMobSystemEvent = function (name, payloadJSON) {
+    if (name === "toast") {
+        GrMob.showToast(JSON.parse(payloadJSON));
+    }
+};
 
 function checkLoop() {
 

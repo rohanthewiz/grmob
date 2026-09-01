@@ -120,9 +120,36 @@ func registerCallbacks() {
 	})
 }
 
+// registerSystemEvents wires core's system-event channel (toasts today) to the
+// page. Guarded the same way as the patch push channel above: the handler is
+// installed only when the page defines GrMobSystemEvent, so a page without the
+// runtime's overlay layer simply drops the events instead of throwing on every
+// toast. The payload crosses as JSON text — the same envelope discipline as
+// patches and events — because js.ValueOf cannot marshal nested Go maps or the
+// *core.Style a styled toast carries, and the page has to parse a string
+// anyway.
+//
+// Handlers run synchronously on the sender's goroutine; on js/wasm every
+// goroutine is scheduled cooperatively on the single JS thread, so calling
+// into JS here is safe without marshalling to another thread.
+func registerSystemEvents() {
+	if js.Global().Get("GrMobSystemEvent").Type() != js.TypeFunction {
+		return
+	}
+	core.SetSystemEventHandler(func(name string, data map[string]any) {
+		payload, err := json.Marshal(data)
+		if err != nil {
+			log.Printf("grmob: dropping system event %q: %v", name, err)
+			return
+		}
+		js.Global().Call("GrMobSystemEvent", name, string(payload))
+	})
+}
+
 func main() {
 	c := make(chan struct{})
 	registerCallbacks()
+	registerSystemEvents()
 	println("GrMob WASM ready.")
 	<-c
 }
