@@ -767,6 +767,14 @@ private fun ColumnScope.ColumnChildren(node: GrMobNode) {
  * still cannot: this is an equality test, not a dispatch, so there are no arms
  * to hold up against a list. It is the same class of bug those tests exist for
  * and a reminder that they only reach the switches.
+ *
+ * GrMobList then repeated the Column half of that history, on both natives at
+ * once: its item loop called isStretch — the Row spelling — while its
+ * placement dispatch read the fallback, so the dispatch's "stretch" arm
+ * promised a fill the loop never applied. A List's cross axis is horizontal
+ * like a Column's, so it takes isColumnStretch. That equality is now the one
+ * stretch read a test does reach: TestListStretchFillReadsTheAlignFallback in
+ * mobile/verify pins the loop to this helper and this helper to the fallback.
  */
 private fun isStretch(s: GrMobStyle?): Boolean = s?.alignItems == "stretch"
 
@@ -852,10 +860,17 @@ private fun GrMobList(node: GrMobNode, extra: Modifier) {
             } else {
                 Modifier
             }
-            // Same cross-axis stretch as ColumnChildren; a lazy item has no
-            // weight to combine it with, since a lazy list's main axis is
-            // scrollable and therefore unbounded.
-            if (isStretch(s)) m = m.fillMaxWidth()
+            // Same cross-axis stretch as ColumnChildren, down to the
+            // spelling: a List's cross axis is horizontal like a Column's,
+            // so it takes the column helper — the one that reads the
+            // Style.Align fallback. This used to call isStretch, the Row
+            // spelling that tests alignItems alone, while the placement
+            // dispatch above read the fallback: Align(AlignStretch) with
+            // AlignItems unset took the "stretch" arm, whose comment
+            // promises this modifier fills the row, and then nothing filled
+            // it. A lazy item has no weight to combine the fill with, since
+            // a lazy list's main axis is scrollable and therefore unbounded.
+            if (isColumnStretch(s)) m = m.fillMaxWidth()
             RenderNode(row, m)
         }
     }

@@ -2,6 +2,7 @@ package verify
 
 import (
 	"sort"
+	"strings"
 	"testing"
 
 	"github.com/rohanthewiz/grmob/core"
@@ -287,6 +288,59 @@ func TestKotlinListAlignmentCoversEveryAlignItems(t *testing.T) {
 		allowed:     crossAxisFallback,
 		consequence: "aligns the list's rows to the start edge",
 	}.check(t, syntax.labels(t))
+}
+
+// --- the stretch fill bindings ----------------------------------------------
+
+// Every check above reads a dispatch's arms, and stretch is the one value no
+// dispatch can finish the story for: a stretched child is not *placed* but
+// *measured*, so each List implements it off the dispatch as an equality test
+// feeding a fill modifier — and an equality has no arms to hold to a list.
+//
+// That blind spot held a real divergence, on both natives at once. Each List's
+// placement dispatch reads AlignItems with the Style.Align fallback, and its
+// "stretch" arm says the fill modifier handles the rest; each fill binding
+// tested AlignItems alone. Align: stretch with AlignItems unset therefore took
+// the "stretch" arm's word for a fill that never happened — rows placed at the
+// start edge, stretched nowhere — while a Column with the identical style
+// stretched. The two Lists agreed with each other perfectly, which is exactly
+// why nothing comparing renderers could notice; they agreed on the wrong
+// answer.
+//
+// A substring is the strongest hold a test can take on an equality, so the pin
+// is two-level, because either level alone is satisfiable by a rename: the
+// List's fill binding must read the helper that owns the fallback
+// (crossAxisValue on iOS; on Android isColumnStretch — the *column* spelling,
+// a List's cross axis being horizontal like a Column's), and that helper must
+// itself still read Align. The substrings are expression fragments rather than
+// names so that a comment mentioning the helper cannot satisfy them.
+func TestListStretchFillReadsTheAlignFallback(t *testing.T) {
+	for _, pin := range []struct {
+		file string
+		// list anchors the List's declaration, which holds the fill binding;
+		// helperCall is the fallback-aware read that binding must make.
+		list, helperCall string
+		// helper anchors the helper's declaration; fallbackRead is the Align
+		// expression it must still contain.
+		helper, fallbackRead string
+	}{
+		{swiftRenderer, "struct GrMobList", "crossAxisValue(s)",
+			"func crossAxisValue(", `s?.align ?? ""`},
+		{kotlinRenderer, "fun GrMobList(", "isColumnStretch(s)",
+			"fun isColumnStretch(", "ifEmpty { s.align }"},
+	} {
+		if !strings.Contains(declSource(t, pin.file, pin.list), pin.helperCall) {
+			t.Errorf("%s: %s's fill binding does not read %s — the stretch equality has come apart "+
+				"from the placement dispatch again, so Align: stretch with AlignItems unset places "+
+				"the rows at the start edge and fills nothing", pin.file, pin.list, pin.helperCall)
+		}
+		if !strings.Contains(declSource(t, pin.file, pin.helper), pin.fallbackRead) {
+			t.Errorf("%s: %s no longer reads %s — the Style.Align fallback is gone from the helper "+
+				"the fill binding relies on, so Align: stretch with AlignItems unset stretches "+
+				"nothing while the placement dispatch still claims it is handled",
+				pin.file, pin.helper, pin.fallbackRead)
+		}
+	}
 }
 
 // --- text-align -------------------------------------------------------------

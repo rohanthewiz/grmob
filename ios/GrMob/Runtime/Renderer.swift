@@ -294,13 +294,14 @@ struct GrMobFlexStack<Content: View>: View {
             axis: axis,
             spacing: style?.gap ?? 0,
             justify: style?.justifyContent ?? "",
-            // AlignItems governs cross-axis placement; the DSL's simpler
-            // Align ("center"/"end") is the fallback, but only where it has
-            // ever applied — a Column's horizontal cross axis. Align is a
-            // text-alignment concept and was never read for a Row's vertical
-            // one; honoring it there now would move existing rows.
-            crossAlign: (style?.alignItems).flatMap { $0.isEmpty ? nil : $0 }
-                ?? (axis == .vertical ? (style?.align ?? "") : "")
+            // AlignItems governs cross-axis placement; crossAxisValue folds
+            // in the DSL's simpler Align ("center"/"end") as the fallback,
+            // but the fallback applies only where it ever has — a Column's
+            // horizontal cross axis. Align is a text-alignment concept and
+            // was never read for a Row's vertical one; honoring it there now
+            // would move existing rows.
+            crossAlign: axis == .vertical ? crossAxisValue(style)
+                                          : (style?.alignItems ?? "")
         ) {
             content
         }
@@ -426,7 +427,17 @@ private struct GrMobList: View {
                 // a flexible frame on each row. There is no main-axis
                 // counterpart because a scrolling axis has no leftover space
                 // for FlexGrow to divide.
-                let stretch = (s?.alignItems ?? "") == "stretch"
+                //
+                // Read through crossAxisValue — the same read the stack's
+                // alignment makes — so the Style.Align fallback reaches this
+                // binding too. It used to test alignItems alone while
+                // crossAlignmentH read the fallback, and the two answers
+                // disagreed exactly when it mattered: Align: stretch with
+                // AlignItems unset took crossAlignmentH's "stretch" arm,
+                // whose comment promises this frame does the filling, and
+                // then no frame was applied. See crossAxisValue for the pin
+                // that keeps the two reads together.
+                let stretch = crossAxisValue(s) == "stretch"
                 ForEach(rows, id: \.viewID) { row in
                     RenderNode(node: row, grow: stretch ? .horizontal : .none)
                 }
@@ -463,8 +474,30 @@ private func flattenFragments(_ children: [GrMobNode]) -> [GrMobNode] {
     return out
 }
 
+/// The effective cross-axis value of a style: AlignItems, else the DSL's
+/// simpler Align as the fallback when AlignItems is unset.
+///
+/// One function because the fallback is read in three places — GrMobFlexStack's
+/// crossAlign (on the vertical axis only; the asymmetry is explained there),
+/// the lazy list's placement dispatch (crossAlignmentH), and the lazy list's
+/// stretch binding — and two of those reads have already come apart once.
+/// GrMobList's stretch binding tested alignItems alone while crossAlignmentH
+/// read the fallback, so Align: stretch with AlignItems unset landed on the
+/// "stretch" arm below — whose comment says the flexible frame does the
+/// filling — while the binding that applies that frame saw no stretch at all.
+/// Rows placed leading and filled nothing, on both natives, while a Column
+/// with the identical style stretched. An equality test has no arms, so the
+/// coverage checks in mobile/verify could not see it;
+/// TestListStretchFillReadsTheAlignFallback now pins the binding to this
+/// helper and this helper to the `align` read instead.
+private func crossAxisValue(_ s: GrMobStyle?) -> String {
+    let items = s?.alignItems ?? ""
+    return items.isEmpty ? (s?.align ?? "") : items
+}
+
 /// AlignItems governs cross-axis placement; the DSL's simpler Align
-/// ("center"/"end") acts as a fallback when AlignItems is unset.
+/// ("center"/"end") acts as a fallback when AlignItems is unset (the
+/// crossAxisValue read above).
 ///
 /// Only GrMobList still needs this. Row and Column place their children
 /// through GrMobFlexLayout, which computes the offset itself — it has to,
@@ -478,11 +511,10 @@ private func flattenFragments(_ children: [GrMobNode]) -> [GrMobNode] {
 /// `default:`'s body are deliberate and must not be folded into it.
 ///
 /// The "end" label alongside "flex-end" is not an AlignItems at all — it is
-/// core.AlignEnd arriving through the `align` fallback two lines up, which is
-/// why this dispatch answers for two vocabularies at once.
+/// core.AlignEnd arriving through crossAxisValue's fallback, which is why
+/// this dispatch answers for two vocabularies at once.
 private func crossAlignmentH(_ s: GrMobStyle?) -> HorizontalAlignment {
-    var v = s?.alignItems ?? ""
-    if v.isEmpty { v = s?.align ?? "" }
+    let v = crossAxisValue(s)
     switch v {
     case "flex-start", "start": return .leading
     case "center": return .center

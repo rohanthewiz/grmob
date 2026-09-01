@@ -169,6 +169,38 @@ func (d dispatchSyntax) labels(t *testing.T) []string {
 	return labels
 }
 
+// declSource returns the source of the declaration that begins at the first
+// occurrence of anchor, cut at the next function declaration (or the end of
+// the file).
+//
+// labels() bounds a dispatch by its braces; this coarser cut exists for the
+// checks that read something other than a switch. One of the declarations
+// they read is expression-bodied (Renderer.kt's isColumnStretch), which has
+// no block to bound — its body is the rest of its own line — so the next
+// declaration is the boundary that works for every shape. The cost of the
+// coarseness is that a declaration's doc comment rides along with the source
+// below it; the substrings held against these regions are expression
+// fragments (`ifEmpty { s.align }`), which prose does not accidentally spell.
+func declSource(t *testing.T, file, anchor string) string {
+	t.Helper()
+
+	raw, err := os.ReadFile(file)
+	if err != nil {
+		t.Fatalf("reading %s: %v", file, err)
+	}
+	src := string(raw)
+
+	at := strings.Index(src, anchor)
+	if at < 0 {
+		t.Fatalf("%s: no %s found — if it was renamed or restructured, update this test", file, anchor)
+	}
+	rest := src[at+len(anchor):]
+	if next := declStart.FindStringIndex(rest); next != nil {
+		rest = rest[:next[0]]
+	}
+	return anchor + rest
+}
+
 // nativeFile locates a renderer source relative to this package. The natives
 // live outside the Go module tree, so every check here reaches up two levels
 // and back down; spelling that once keeps the paths from drifting apart.

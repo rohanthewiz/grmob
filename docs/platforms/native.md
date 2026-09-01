@@ -253,6 +253,18 @@ an equality test, not a dispatch — there are no arms to hold up against a list
 so it was found by reading and fixed by hand (`isColumnStretch`). The switch
 checks reach the switches, and that is all they reach.
 
+`Align(AlignStretch)` on a `List` was the same story again, this time with the
+natives in perfect agreement — on the wrong answer. Each List's placement
+dispatch reads the `Align` fallback, and its `"stretch"` arm defers to the fill
+modifier in the item loop; each item loop tested `alignItems` alone. The value
+took the arm's word for a fill that never happened: rows placed at the start
+edge and stretched nowhere, while a Column with the identical style stretched.
+Both loops now read the fallback-aware helper (`crossAxisValue` on iOS,
+`isColumnStretch` on Android — a List's cross axis is horizontal like a
+Column's), and `TestListStretchFillReadsTheAlignFallback` pins the loop to the
+helper and the helper to the fallback — the one stretch equality a test now
+reaches.
+
 #### Known divergence, left alone
 
 Compose's five distributing `Arrangement`s take no spacing argument, so a `Row`
