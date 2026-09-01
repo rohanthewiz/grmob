@@ -56,6 +56,34 @@ Event wiring on the DOM side uses the callback-ID attributes the tree
 carries (`data-onclick`, `data-onchange`, `data-ontoggle`): the runtime
 listens for interactions, reads the ID, and calls `ReceiveEvent` with it.
 
+### Node types and tags
+
+Which element a node becomes is one table, stated once in Go
+(`htmlout/tag.go`) and restated in `grmob-runtime.js` because the runtime is
+the side that calls `createElement`. `Text` is a `<span>`, `Button` a
+`<button>`, `Image` an `<img>`, `TextArea` a `<textarea>`, the four form
+inputs an `<input>`, and every container — `Row`, `Column`, `Card`, `Box`,
+`Scroll`, `SafeArea`, `List`, `Modal`, `TabView`, `Spacer`, `CameraView` — a
+`<div>`. What distinguishes a `Row` from a `Column` is the flex declarations,
+not the element, which is why the runtime keeps the Go type in
+`data-node-type` instead of reading it back off the tag.
+
+The two copies are compared by `TestRuntimeTagsMatchGo` in `wasm/verify`, the
+same way the `<input>` type table below is, so a row added on one side fails
+`go test ./...` until it is added on both.
+
+**One deliberate divergence.** `Fragment` and `Theme` are grouping nodes with
+no box of their own, and `htmlout` renders them transparently — their children
+land directly in the parent — as do both natives. This runtime boxes them in a
+`<div>`, because patches are addressed positionally (`TargetID` is
+`"root/1/0"`, resolved against the `data-node-path` attributes written while
+walking `node.Children`), so its DOM has to stay isomorphic to the node tree.
+The cost is real: inside a flex parent that `<div>` becomes the single flex
+item and swallows the gap and alignment meant for the children. Closing it
+means teaching the addressing scheme about nodes with no element. The
+divergence is named in `htmlout/tag.go` and pinned by the same test, so it
+reads as a decision rather than as drift.
+
 ### Form controls
 
 Four Go node types share the `<input>` tag, so the runtime writes a `type`
@@ -75,7 +103,9 @@ in JavaScript because it is the side that actually sets the attribute and
 cannot call into Go to ask. The two are not kept in step by hand — a Go test
 in `wasm/verify` parses the runtime's literal out of `grmob-runtime.js` and
 compares it against `htmlout.InputTypes()`, so a change to either side fails
-`go test ./...` until it is made to both. (`replay_test.mjs` holds a third
+`go test ./...` until it is made to both. (Both runtime tables are parsed by
+the same helper, which is why they are written in the same shape: a flat
+object literal in a named function, followed by `[type] || "<fallback>"`.) (`replay_test.mjs` holds a third
 copy on purpose: a conformance test has to state the rule independently, or
 it only proves the implementation agrees with itself.)
 

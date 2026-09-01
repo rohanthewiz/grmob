@@ -225,25 +225,62 @@ const GrMob = (() => {
         return `${edge.Top}px ${edge.Right}px ${edge.Bottom}px ${edge.Left}px`;
     }
 
+    // The Go node type -> the HTML tag. Go states this table once, in
+    // htmlout/tag.go, and this is its restatement in the language that
+    // actually calls createElement — the runtime cannot call into Go to ask.
+    // The two are compared by TestRuntimeTagsMatchGo in wasm/verify, which
+    // parses *this literal* out of this file and runs under a plain
+    // `go test ./...`, so a change made on either side fails until it is made
+    // on both. That test reads the object literal textually and checks the
+    // `[type] || "div"` that follows it, so keep this a flat literal in a
+    // function named tagForType. Same arrangement as inputTypeFor below.
+    //
+    // A census, not a list of exceptions: the plain <div> types are spelled
+    // out even though the fallback would produce the same element, so that a
+    // node type added to core and not taught to this runtime shows up as a
+    // missing row here rather than as silence.
     function tagForType(type) {
-        switch (type) {
-            case "Text": return "span";
-            case "Input":
-            case "InputPassword":
-            case "NumericInput":
-            case "Checkbox": return "input";
-            case "TextArea": return "textarea";
-            case "Button": return "button";
-            case "Image": return "img";
-            case "Card":
-            case "Row":
-            case "Column":
-            case "Scroll":
-            case "SafeArea":
-            case "Fragment":
-            case "Spacer": return "div";
-            default: return "div";
-        }
+        return {
+            Text: "span",
+            Button: "button",
+            Image: "img",
+            TextArea: "textarea",
+
+            // Told apart from each other by inputTypeFor, below.
+            Input: "input",
+            InputPassword: "input",
+            NumericInput: "input",
+            Checkbox: "input",
+
+            Box: "div",
+            Card: "div",
+            Column: "div",
+            Row: "div",
+            Scroll: "div",
+            SafeArea: "div",
+            List: "div",
+            Modal: "div",
+            TabView: "div",
+            Spacer: "div",
+            CameraView: "div",
+
+            // Grouping nodes, and the one place this runtime deliberately
+            // disagrees with htmlout, which emits their children with no box
+            // at all. It can: it is a static snapshot. This runtime cannot,
+            // because patches are addressed positionally — a TargetID of
+            // "root/1/0" is resolved against the data-node-path attributes
+            // renderNode writes by walking node.Children — so the DOM has to
+            // stay isomorphic to the node tree. Dropping the element for a
+            // Fragment would send every patch beneath it to the wrong node.
+            //
+            // The cost is real and known: inside a flex parent this div
+            // becomes the single flex item and swallows the gap and alignment
+            // meant for the children. Fixing it means teaching the addressing
+            // scheme about nodes that have no element, not deleting these two
+            // rows. See transparentTypes in htmlout/tag.go.
+            Fragment: "div",
+            Theme: "div",
+        }[type] || "div";
     }
 
     // The Go node type -> the <input> type attribute. Only the four types

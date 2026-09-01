@@ -50,22 +50,11 @@ func renderNode(b *element.Builder, node *core.Node) (x any) {
 		}
 	}
 
-	// Fragment and Theme are grouping nodes with no visual box of their own:
-	// core.For wraps its generated children in a Fragment, and core.WithTheme
-	// wraps a subtree in a Theme. Neither ever carries a Style (see
-	// core/conditionals.go, core/layout.go and core/theme.go — all three
-	// construct the node with Children and nothing else), so emitting a <div>
-	// for them does not just add a redundant element, it changes the layout:
-	// inside a flex container the wrapper becomes the single flex item, which
-	// swallows the parent's gap, flex-direction and alignment before they can
-	// reach the children that were supposed to receive them.
-	//
-	// Both native renderers already treat these as transparent — SwiftUI's
-	// Group (Renderer.swift) and a bare RenderChildren into the parent's
-	// scope (Renderer.kt) — so a wrapper here made the HTML export disagree
-	// with what actually ships. Emitting the children directly is what brings
-	// the three targets back into line.
-	if node.Type == "Fragment" || node.Type == "Theme" {
+	// Grouping nodes are emitted as their children, with no box of their own.
+	// Which types those are, why a wrapper for them is a layout bug rather
+	// than a redundant element, and why the WASM runtime is the one DOM
+	// renderer that cannot do this, are all in transparentTypes (tag.go).
+	if IsTransparent(node.Type) {
 		for _, child := range node.Children {
 			renderNode(b, child)
 		}
@@ -219,7 +208,15 @@ func renderNode(b *element.Builder, node *core.Node) (x any) {
 // element writes the opening tag when Ele() is called and the closing tag when
 // R() runs, so the children rendered in between land inside the element.
 func renderContainer(b *element.Builder, node *core.Node, attrs []string) {
-	e := b.Ele(tagForType(node.Type), attrs...)
+	// The tag comes from the shared table rather than a switch here, so the
+	// WASM runtime's copy has something to be checked against. The typed
+	// element calls in renderNode above (b.Span, b.Button, b.Img, ...) still
+	// spell their tags themselves, for readability; TestExportedTagsMatchTable
+	// is what holds them to the same table.
+	//
+	// Fragment and Theme never reach here — renderNode emits their children
+	// directly rather than a box.
+	e := b.Ele(TagFor(node.Type), attrs...)
 	for _, child := range node.Children {
 		renderNode(b, child)
 	}
@@ -238,21 +235,6 @@ func getStr(v any) string {
 		return s
 	}
 	return ""
-}
-
-func tagForType(t string) string {
-	switch t {
-	case "Text":
-		return "span"
-	// Fragment and Theme never reach here — renderNode emits their children
-	// directly rather than a box. See the note there.
-	case "Column", "Row", "Card", "Scroll", "SafeArea":
-		return "div"
-	case "Button":
-		return "button"
-	default:
-		return "div"
-	}
 }
 
 // isFormControl reports whether the node exports as an HTML element that
