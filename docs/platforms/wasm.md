@@ -143,8 +143,8 @@ it only proves the implementation agrees with itself.)
 
 ### Text alignment
 
-`core.Alignment` maps onto CSS `text-align`: `start` → `left`, `center` →
-`center`, `end` → `right`, `justify` → `justify`. `htmlout/textalign.go` is the
+`core.Alignment` maps onto CSS `text-align`: `start` → `start`, `center` →
+`center`, `end` → `end`, `justify` → `justify`. `htmlout/textalign.go` is the
 authority and `TestRuntimeTextAlignsMatchGo` pins the runtime's copy to it.
 
 This is the newest of the four tables and the only one that was added to
@@ -162,12 +162,16 @@ CSS `text-align` has no such keyword; they reach the property through
 `core.TextAlignments()` is the list that says so, and both natives are held to
 the same one (see [Native platforms](native.md#alignment-justifycontent-and-alignitems)).
 
-`start` maps to the physical `left` rather than to CSS's direction-aware
-`start`, which is what this exporter has always emitted. It is worth knowing
-that this is itself a divergence — both natives use the direction-aware
-spelling — so an RTL locale would left-align on the web and trailing-align on
-iOS and Android from the same `core.AlignStart`. No table comparison can see
-it: the two DOM copies agree with each other exactly.
+`start` and `end` are CSS's direction-aware keywords, matching the spelling
+both natives use (SwiftUI `.leading`/`.trailing`, Compose
+`TextAlign.Start`/`.End`). The exporter originally emitted the physical
+`left`/`right`, which rendered identically in LTR documents but left-aligned
+in RTL locales while both natives trailing-aligned — from the same
+`core.AlignStart`. No table comparison can see which spelling is right: the
+two DOM copies agree with each other under either one, so the choice lives in
+`htmlout/textalign.go`'s doc and here, not in a test. The table maps every
+text alignment to itself, but it still earns its keep as a filter — the
+identity must not extend to the two cross-axis values.
 
 `justify-content` and `align-items` need no table at all. Core's spellings
 *are* the CSS ones, so both DOM renderers pass them through verbatim and

@@ -25,19 +25,20 @@ import "github.com/rohanthewiz/grmob/core"
 // Renderer.kt was the single target that actually justified the text. Nothing
 // could notice, because there was no list for anything to be checked against.
 //
-// # Physical keywords, not logical ones
+// # Logical keywords, not physical ones
 //
-// Start maps to "left" and End to "right" rather than to CSS's direction-aware
-// "start"/"end". That is what this exporter has always emitted and it is kept
-// deliberately rather than by accident, because changing it is a rendering
-// change and not a table change.
-//
-// It is worth knowing that it is also a divergence: both natives use the
-// direction-aware spelling (SwiftUI .leading/.trailing, Compose TextAlign
-// .Start/.End), so an RTL locale would left-align on the web and right-align
-// on iOS and Android from the same core.AlignStart. No test here can see that
-// — the pin below compares this table with the runtime's, and they agree —
-// which is precisely why it is written down here.
+// Start maps to CSS's direction-aware "start" and End to "end", not to the
+// physical "left"/"right" this exporter originally emitted. The physical
+// spellings were a divergence: both natives use the direction-aware one
+// (SwiftUI .leading/.trailing, Compose TextAlign .Start/.End), so an RTL
+// locale would left-align on the web and trailing-align on iOS and Android
+// from the same core.AlignStart. In an LTR document the two spellings render
+// identically, which is why the divergence survived as long as it did — and
+// why no test can see this choice: the pin below compares this table with the
+// runtime's copy, and they agree with each other under either spelling. The
+// direction-aware keywords are what keep all four renderers answering
+// core.AlignStart the same way, so a reversion to "left"/"right" here must be
+// treated as reopening that divergence, not as a cosmetic swap.
 //
 // # Two ways of saying nothing
 //
@@ -54,9 +55,9 @@ import "github.com/rohanthewiz/grmob/core"
 // one falls back to the document's alignment, which is the same nothing the
 // natives do with it.
 var textAligns = map[core.Alignment]string{
-	core.AlignStart:   "left",
+	core.AlignStart:   "start",
 	core.AlignCenter:  "center",
-	core.AlignEnd:     "right",
+	core.AlignEnd:     "end",
 	core.AlignJustify: "justify",
 }
 

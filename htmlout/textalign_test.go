@@ -64,9 +64,9 @@ func TestTextAlignsOmitTheCrossAxisOnlyAlignments(t *testing.T) {
 // with the runtime, so it is the one part the conformance test cannot see.
 func TestTextAlignDeclPrefixesTheProperty(t *testing.T) {
 	for align, want := range map[string]string{
-		"start":   "text-align:left",
+		"start":   "text-align:start",
 		"center":  "text-align:center",
-		"end":     "text-align:right",
+		"end":     "text-align:end",
 		"justify": "text-align:justify",
 	} {
 		if got := textAlignDecl(align); got != want {
@@ -78,6 +78,11 @@ func TestTextAlignDeclPrefixesTheProperty(t *testing.T) {
 // "" has to stay "" rather than become "text-align:", which is malformed — and
 // one malformed declaration can invalidate the ones beside it in the same
 // style attribute, so this would cost more than the alignment.
+//
+// "left" is in the list on purpose: it is the physical CSS keyword this table
+// used to *emit* for AlignStart, and it has never been a core.Alignment. An
+// app passing the output vocabulary where the input vocabulary belongs gets
+// nothing, same as any other typo.
 func TestTextAlignDeclDropsAnUnknownAlignment(t *testing.T) {
 	for _, align := range []string{"", "stretch", "baseline", "middle", "left"} {
 		if got := textAlignDecl(align); got != "" {
@@ -110,7 +115,7 @@ func TestTextAlignsReturnsACopy(t *testing.T) {
 	if got := TextAlignFor("center"); got != "center" {
 		t.Errorf("deleting from the returned map changed TextAlignFor(center): %q", got)
 	}
-	if got := TextAlignFor("start"); got != "left" {
+	if got := TextAlignFor("start"); got != "start" {
 		t.Errorf("writing to the returned map changed TextAlignFor(start): %q", got)
 	}
 }

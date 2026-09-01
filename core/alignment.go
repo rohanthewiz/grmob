@@ -55,9 +55,9 @@ package core
 //
 //	value    | text-align role      | cross-axis role
 //	---------+----------------------+---------------------------------
-//	start    | left / leading       | items packed to the start edge
+//	start    | leading edge         | items packed to the start edge
 //	center   | centered             | items centered on the cross axis
-//	end      | right / trailing     | items packed to the end edge
+//	end      | trailing edge        | items packed to the end edge
 //	justify  | justified text       | none
 //	stretch  | none                 | items filled to the cross extent
 //	baseline | none                 | items aligned on their baselines

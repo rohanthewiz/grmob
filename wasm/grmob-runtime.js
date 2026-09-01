@@ -217,11 +217,17 @@ const GrMob = (() => {
     // "" clears the property rather than leaving it alone, which is what makes
     // an Align changed from "center" to "stretch" on the patch path stop being
     // centered.
+    //
+    // The four rows map each value to itself: start/end are CSS's
+    // direction-aware keywords (originally the physical left/right, which
+    // disagreed with both natives in RTL locales — see the authority's doc).
+    // The table still earns its keep as a filter, because the identity must
+    // NOT extend to the two cross-axis values above.
     function textAlignFor(align) {
         return {
-            start: "left",
+            start: "start",
             center: "center",
-            end: "right",
+            end: "end",
             justify: "justify",
         }[align] || "";
     }
