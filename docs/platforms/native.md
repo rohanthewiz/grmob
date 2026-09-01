@@ -227,8 +227,11 @@ knowing:
   Column's switch legitimately carries `"start"`/`"end"` arms that are
   `core.Alignment` values, not `AlignItems` ones. Those are *permitted, not
   required* — `GrMobRow` deliberately declines the fallback, because `Align` is
-  a text-alignment concept and has never been read for a Row's vertical axis,
-  and both natives now draw that line in the same place.
+  a text-alignment concept and has never been read for a Row's vertical axis.
+  All four targets now draw that line in the same place: the DOM pair reads
+  the same fallback through `htmlout/crossaxis.go`'s tables, gated to the
+  same three container types and declining `Row` the same way (see
+  [WebAssembly](wasm.md#the-cross-axis-fallback)).
 
 #### What this found
 

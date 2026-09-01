@@ -105,11 +105,11 @@ in `wasm/verify` parses the runtime's literal out of `grmob-runtime.js` and
 compares it against `htmlout.InputTypes()`, so a change to either side fails
 `go test ./...` until it is made to both.
 
-All four of the runtime's lookup tables — tags, `<input>` types, and the
-`object-fit` and `text-align` values below — are parsed by the same helper,
-which is why they are written in the same shape: a flat object literal in a
-named function, subscripted by that function's own argument, with a
-`|| "<fallback>"` default that the parse checks too.
+All of the runtime's lookup tables — tags, `<input>` types, the `object-fit`
+and `text-align` values below, and the cross-axis pair that follows them — are
+parsed by the same helper, which is why they are written in the same shape: a
+flat object literal in a named function, subscripted by that function's own
+argument, with a `|| "<fallback>"` default that the parse checks too.
 
 ### Image content modes
 
@@ -147,8 +147,8 @@ it only proves the implementation agrees with itself.)
 `center`, `end` → `end`, `justify` → `justify`. `htmlout/textalign.go` is the
 authority and `TestRuntimeTextAlignsMatchGo` pins the runtime's copy to it.
 
-This is the newest of the four tables and the only one that was added to
-**close** a gap rather than to pin a copy that already existed. Until it did,
+This was the first table added to **close** a gap rather than to pin a copy
+that already existed (the cross-axis pair below is the second). Until it did,
 this runtime did not read `style.Align` at all, in any form — so every
 `core.Align` on the web target was silently dropped, while `htmlout` emitted a
 declaration for three of the six values and both natives set one. Four
@@ -157,8 +157,9 @@ renderers, three behaviors, and one of them was "nothing".
 Only four of the six `Alignment`s are in the table. `AlignStretch` and
 `AlignBaseline` name a cross-axis placement rather than a text alignment, and
 CSS `text-align` has no such keyword; they reach the property through
-`Style.Align`'s *other* role — the fallback a native container reads when
-`AlignItems` is unset — and fall through to `""`, which clears it.
+`Style.Align`'s *other* role — the fallback a vertical-stacking container
+reads when `AlignItems` is unset, the next section's table — and fall through
+to `""`, which clears it.
 `core.TextAlignments()` is the list that says so, and both natives are held to
 the same one (see [Native platforms](native.md#alignment-justifycontent-and-alignitems)).
 
@@ -173,10 +174,38 @@ two DOM copies agree with each other under either one, so the choice lives in
 text alignment to itself, but it still earns its keep as a filter — the
 identity must not extend to the two cross-axis values.
 
-`justify-content` and `align-items` need no table at all. Core's spellings
+`justify-content` and `align-items` themselves need no table. Core's spellings
 *are* the CSS ones, so both DOM renderers pass them through verbatim and
-neither can be wrong about a value it never interprets — which is why the
-alignment coverage checks are entirely native.
+neither can be wrong about a value it never interprets.
+
+### The cross-axis fallback
+
+`Style.Align`'s second role has a pair of tables of its own, and they closed
+the last alignment behavior the DOM pair did not share with the natives. When
+`AlignItems` is unset on a vertical-stacking container — `Column`, `Card`, or
+`List` — both natives fall back to `Align` for cross-axis placement
+(`crossAxisValue` in `Renderer.swift`, the `alignItems.ifEmpty { align }`
+reads in `Renderer.kt`), and until these tables existed neither DOM target
+did: `Align: "center"` centered the children on device and only the *text* on
+the web, and `Align: "stretch"` filled rows on device while the web agreed
+only wherever block flow happened to produce the same picture.
+
+`htmlout/crossaxis.go` is the authority for both halves. `crossAxisAlignFor`
+maps the four cross-axis `Alignment`s onto the `AlignItems` spellings
+(`start` → `flex-start`, and so on), because the fallback means "behave as if
+that `AlignItems` had been set" — its census holds the values to exactly
+`core.AlignItemsValues()`. `alignFallbackAxisFor` is the gate saying which
+node types consult the fallback at all: exactly the three containers the
+natives read it for, and pointedly not `Row`, whose vertical cross axis
+`Align` has never applied to on any target. `TestRuntimeCrossAxisAlignsMatchGo`
+and `TestRuntimeAlignFallbackAxesMatchGo` pin the runtime's copies, and a
+source pin holds `styleFromGrMob` to actually reading them, with `AlignItems`
+taking precedence.
+
+`justify` and `baseline` have no rows. No native cross-axis dispatch answers
+for either (`baseline` falls through to start-packing), so a row — and CSS
+`align-items` genuinely has a `baseline` keyword someone could be tempted to
+"complete" the table with — would move two targets out of four.
 
 `checked` and `rows` are set as element *properties*, not attributes. A
 `checked` attribute is only the control's default state — the browser stops

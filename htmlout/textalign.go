@@ -49,8 +49,9 @@ import "github.com/rohanthewiz/grmob/core"
 //
 // "Unrecognized" covers more than a typo here. AlignStretch and AlignBaseline
 // are declared Alignments that name no text alignment — they exist for
-// Style.Align's other role, as the cross-axis fallback the native containers
-// read when AlignItems is unset — so they are deliberately absent from this
+// Style.Align's other role, as the cross-axis fallback the vertical-stacking
+// containers read when AlignItems is unset (crossaxis.go, the table for that
+// role) — so they are deliberately absent from this
 // table and deliberately absent from core.TextAlignments(). A Text node given
 // one falls back to the document's alignment, which is the same nothing the
 // natives do with it.

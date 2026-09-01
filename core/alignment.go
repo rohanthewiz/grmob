@@ -37,7 +37,9 @@ package core
 //	                    | Renderer.kt's horizontal/verticalArrangement
 //	AlignItemsValues()  | GrMobFlex.swift's crossOffset,
 //	                    | Renderer.swift's crossAlignmentH,
-//	                    | Renderer.kt's Row/Column/List cross alignment
+//	                    | Renderer.kt's Row/Column/List cross alignment,
+//	                    | htmlout's crossAxisAligns (the Align-fallback
+//	                    | table, whose values must be exactly this list)
 //
 // The native pins live in mobile/verify; the DOM ones in htmlout and
 // wasm/verify. See mobile/verify/switchlabels_test.go for why those are a
@@ -63,8 +65,9 @@ package core
 //	baseline | none                 | items aligned on their baselines
 //
 // Style.Align feeds both: it is the text alignment of a Text node, and it is
-// also the fallback the native containers read when AlignItems is unset (see
-// crossAlignmentH in Renderer.swift). So a text dispatch that was required to
+// also the fallback every renderer's vertical-stacking containers read when
+// AlignItems is unset (crossAxisValue in Renderer.swift; htmlout/crossaxis.go
+// states the DOM pair's version). So a text dispatch that was required to
 // answer for "stretch", or a cross-axis dispatch required to answer for
 // "justify", would be made to write an arm that can never mean anything.
 // TextAlignments is the subset that is a real text alignment;

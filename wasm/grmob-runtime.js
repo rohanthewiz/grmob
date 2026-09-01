@@ -211,8 +211,9 @@ const GrMob = (() => {
     // Only four of the six Alignments are here. AlignStretch and AlignBaseline
     // name a cross-axis placement, not a text alignment, and CSS text-align
     // has no such keyword; they reach this function through Style.Align's
-    // other role (the fallback a container reads when AlignItems is unset) and
-    // are meant to fall through to "". See core.TextAlignments.
+    // other role (the fallback a container reads when AlignItems is unset —
+    // crossAxisAlignFor below is that role's table) and are meant to fall
+    // through to "". See core.TextAlignments.
     //
     // "" clears the property rather than leaving it alone, which is what makes
     // an Align changed from "center" to "stretch" on the patch path stop being
@@ -230,6 +231,51 @@ const GrMob = (() => {
             end: "end",
             justify: "justify",
         }[align] || "";
+    }
+
+    // core.Alignment -> CSS align-items: Style.Align's *second* role, the
+    // cross-axis value a vertical-stacking container falls back to when
+    // AlignItems is unset. Go states this table once, in htmlout/crossaxis.go,
+    // and this is its restatement; the two are compared by
+    // TestRuntimeCrossAxisAlignsMatchGo in wasm/verify. Same shape rule as
+    // textAlignFor above: a flat literal in a function named crossAxisAlignFor,
+    // subscripted by that function's own argument, falling back to "".
+    //
+    // Like the text-align table, this one was added to *close* a gap: both
+    // natives have read the fallback since they existed, so Align: "center" on
+    // a Column centered the children on device and only the text on the web.
+    //
+    // The values are the AlignItems spellings ("flex-start", not CSS's newer
+    // "start") because AlignItems itself is emitted verbatim below, and the
+    // fallback means "behave as if that AlignItems had been set" — one
+    // semantic, one CSS spelling, whichever prop stated it. justify and
+    // baseline have no row: no native dispatch answers for them on the cross
+    // axis (baseline falls through to start-packing there), so a row here
+    // would move two targets out of four. See the authority's doc.
+    function crossAxisAlignFor(align) {
+        return {
+            start: "flex-start",
+            center: "center",
+            end: "flex-end",
+            stretch: "stretch",
+        }[align] || "";
+    }
+
+    // Which node types read the fallback at all, by the flex axis each stacks
+    // along — exactly the containers the natives read it for (Card is a Column
+    // whose Go theme style carries the card look, on every renderer). Row is
+    // absent on purpose, everywhere: the fallback applies to a horizontal
+    // cross axis only, and a gate is needed at all because styleFromGrMob
+    // serializes every node — without it, a Text carrying Align in its
+    // ordinary text role would become a flex container. Go's copy is
+    // alignFallbackAxes in htmlout/crossaxis.go; the two are compared by
+    // TestRuntimeAlignFallbackAxesMatchGo, so keep the flat-literal shape.
+    function alignFallbackAxisFor(nodeType) {
+        return {
+            Column: "column",
+            Card: "column",
+            List: "column",
+        }[nodeType] || "";
     }
 
     // The Style -> CSS mapping. nodeType decides the default flex axis, the
@@ -255,12 +301,28 @@ const GrMob = (() => {
         // of them has to be made a flex container first — without this,
         // AlignItems ("stretch" included) was declared in Go and silently
         // dropped on the web, while both natives honored it.
-        if (style.Gap || style.JustifyContent || style.AlignItems || style.FlexDirection) {
+        //
+        // The effective cross-axis value is AlignItems, else the Align
+        // fallback — the same read Renderer.swift's crossAxisValue does, gated
+        // the same two ways htmlout's styleValue gates it: only the
+        // vertical-stacking container types, and not when an explicit
+        // FlexDirection flipped the node to a row, because the fallback
+        // applies to a horizontal cross axis only on every target. Safe on
+        // the patch path: an update-style patch carries the whole new Style
+        // (reconcile/patch.go), so an absent AlignItems here means unset, not
+        // unmentioned. The prefix test admits "column-reverse", whose cross
+        // axis is horizontal all the same.
+        const dir = style.FlexDirection || (nodeType === "Row" ? "row" : "column");
+        let alignItems = style.AlignItems || "";
+        if (!alignItems && dir.startsWith("column") && alignFallbackAxisFor(nodeType)) {
+            alignItems = crossAxisAlignFor(style.Align || "");
+        }
+        if (style.Gap || style.JustifyContent || alignItems || style.FlexDirection) {
             out.display = "flex";
-            out.flexDirection = style.FlexDirection || (nodeType === "Row" ? "row" : "column");
+            out.flexDirection = dir;
             if (style.Gap) out.gap = `${style.Gap}px`;
             if (style.JustifyContent) out.justifyContent = style.JustifyContent;
-            if (style.AlignItems) out.alignItems = style.AlignItems;
+            if (alignItems) out.alignItems = alignItems;
         }
         // Display is deliberately NOT emitted. Go's DisplayMode carries values
         // that are not CSS display keywords ("visible", "hidden"), and unlike

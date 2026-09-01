@@ -44,9 +44,9 @@ func TestTextAlignsCoverEveryTextAlignment(t *testing.T) {
 // The two Alignments that are deliberately absent, asserted as absent rather
 // than left to the census's silence.
 //
-// Style.Align has a second role — the cross-axis fallback the native
-// containers read when AlignItems is unset — and these two values exist only
-// for it. Without this test, someone "completing" the table by adding
+// Style.Align has a second role — the cross-axis fallback the
+// vertical-stacking containers read when AlignItems is unset, crossaxis.go's
+// table — and these two values exist only for it. Without this test, someone "completing" the table by adding
 // text-align:stretch (not a keyword) or text-align:baseline (not a keyword)
 // would produce declarations the browser drops, and the census above would be
 // happy: it only checks that every TextAlignment is present, and neither of

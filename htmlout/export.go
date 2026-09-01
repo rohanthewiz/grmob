@@ -338,14 +338,28 @@ func styleValue(s *core.Style, nodeType string) string {
 	// produced. The main axis defaults to the node's own stacking direction
 	// (Row horizontal, every other container vertical) and an explicit
 	// FlexDirection overrides it.
-	if s.Gap != 0 || s.JustifyContent != "" || s.AlignItems != "" || s.FlexDirection != "" {
-		dir := "column"
-		if nodeType == "Row" {
-			dir = "row"
+	dir := "column"
+	if nodeType == "Row" {
+		dir = "row"
+	}
+	if s.FlexDirection != "" {
+		dir = string(s.FlexDirection)
+	}
+	// The effective cross-axis value: AlignItems, else the Align fallback the
+	// natives have always read (crossAxisValue in Renderer.swift). The gate is
+	// twofold — the node type must be one of the vertical-stacking containers
+	// (see alignFallbackAxes for why a type table and not a "not Row" test),
+	// and the direction must not have been flipped to a row by an explicit
+	// FlexDirection, because the fallback applies to a horizontal cross axis
+	// only, on every target. The prefix test rather than equality is for
+	// "column-reverse", whose cross axis is horizontal all the same.
+	alignItems := string(s.AlignItems)
+	if alignItems == "" && strings.HasPrefix(dir, "column") {
+		if AlignFallbackAxisFor(nodeType) != "" {
+			alignItems = CrossAxisAlignFor(string(s.Align))
 		}
-		if s.FlexDirection != "" {
-			dir = string(s.FlexDirection)
-		}
+	}
+	if s.Gap != 0 || s.JustifyContent != "" || alignItems != "" || s.FlexDirection != "" {
 		styles = append(styles, "display:flex", fmt.Sprintf("flex-direction:%s", dir))
 		if s.Gap != 0 {
 			styles = append(styles, fmt.Sprintf("gap:%gpx", s.Gap))
@@ -353,8 +367,8 @@ func styleValue(s *core.Style, nodeType string) string {
 		if s.JustifyContent != "" {
 			styles = append(styles, fmt.Sprintf("justify-content:%s", s.JustifyContent))
 		}
-		if s.AlignItems != "" {
-			styles = append(styles, fmt.Sprintf("align-items:%s", s.AlignItems))
+		if alignItems != "" {
+			styles = append(styles, fmt.Sprintf("align-items:%s", alignItems))
 		}
 	}
 	if s.Display != "" {
