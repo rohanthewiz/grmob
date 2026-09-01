@@ -123,12 +123,21 @@ func (r InputRow) Render(ctx *core.Context) *core.Node {
 	// FlexGrow(1) is what makes this a composer rather than two things side
 	// by side: the field takes the row's leftover width and the button keeps
 	// its intrinsic size.
+	// A nil OnChange is substituted with a no-op before it reaches core:
+	// the callback registry invokes handlers unguarded, so an InputRow left
+	// without OnChange panicked on the first keystroke instead of behaving
+	// as the read-only field the doc above describes.
+	onChange := r.OnChange
+	if onChange == nil {
+		onChange = func(string) {}
+	}
+
 	if r.OnSubmit != nil {
 		items = append(items, core.InputWithSubmit(
-			r.Value, r.Placeholder, r.OnChange, r.OnSubmit, core.FlexGrow(1)))
+			r.Value, r.Placeholder, onChange, r.OnSubmit, core.FlexGrow(1)))
 	} else {
 		items = append(items, core.Input(
-			r.Value, r.Placeholder, r.OnChange, core.FlexGrow(1)))
+			r.Value, r.Placeholder, onChange, core.FlexGrow(1)))
 	}
 
 	if r.Button.Label != "" {

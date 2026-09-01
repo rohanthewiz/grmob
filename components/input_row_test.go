@@ -231,3 +231,40 @@ func TestInputRowPassesTheButtonThrough(t *testing.T) {
 		t.Errorf("AccessibilityHint dropped: %q", b.Style.AccessibilityHint)
 	}
 }
+
+// TestInputRowNilOnChangeDoesNotPanic pins the nil-handler guard. The doc on
+// OnChange describes an omitted handler as leaving the field "read-only in
+// practice"; before the guard it instead panicked on the first keystroke,
+// because core.Input registers the nil func and the registry calls it
+// unguarded.
+func TestInputRowNilOnChangeDoesNotPanic(t *testing.T) {
+	ctx := core.NewContext()
+	ctx.BeginRenderPass()
+
+	n := InputRow{Value: "hello", Placeholder: "Say something"}.Render(ctx)
+	field := n.Children[0]
+	id, ok := field.Props["onChange"].(string)
+	if !ok {
+		t.Fatalf("input row's field should register an onChange callback, props: %v", field.Props)
+	}
+	if err := core.Guard(func() { ctx.TriggerTextCallback(id, "typed") }); err != nil {
+		t.Fatalf("typing into an InputRow with no OnChange panicked: %v", err.Value)
+	}
+}
+
+// TestInputRowNilOnChangeWithSubmitDoesNotPanic covers the other branch:
+// InputWithSubmit takes the same handler down a different core builder.
+func TestInputRowNilOnChangeWithSubmitDoesNotPanic(t *testing.T) {
+	ctx := core.NewContext()
+	ctx.BeginRenderPass()
+
+	n := InputRow{Value: "hello", OnSubmit: func() {}}.Render(ctx)
+	field := n.Children[0]
+	id, ok := field.Props["onChange"].(string)
+	if !ok {
+		t.Fatalf("input row's field should register an onChange callback, props: %v", field.Props)
+	}
+	if err := core.Guard(func() { ctx.TriggerTextCallback(id, "typed") }); err != nil {
+		t.Fatalf("typing into a submit-wired InputRow with no OnChange panicked: %v", err.Value)
+	}
+}

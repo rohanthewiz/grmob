@@ -25,6 +25,7 @@ type Style struct {
 	WhiteSpace   string // "nowrap", "normal", "pre-line"
 	LineHeight   int
 	MaxWidth     string
+	MaxHeight    string
 	Gap          float64
 	Transition   string // "all 0.3s ease"
 	Animation    string // "bounce 2s infinite"
@@ -180,6 +181,9 @@ func (s Style) applyTo(target *Style) {
 	}
 	if s.MaxWidth != "" {
 		target.MaxWidth = s.MaxWidth
+	}
+	if s.MaxHeight != "" {
+		target.MaxHeight = s.MaxHeight
 	}
 	if s.Overflow != "" {
 		target.Overflow = s.Overflow

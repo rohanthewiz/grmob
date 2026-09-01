@@ -57,5 +57,15 @@ func (c Chip) Render(ctx *core.Context) *core.Node {
 		styles = append(styles, core.AccessibilityLabel(label))
 	}
 
-	return core.Button(c.Label, c.OnTap, asProps(styles)...).Render(ctx)
+	// A nil OnTap becomes an explicit no-op rather than being handed to
+	// core.Button as-is: the registry stores whatever it is given and
+	// TriggerCallback invokes it unguarded, so a decorative Chip{Label: "x"}
+	// panicked the moment it was tapped. Same guard Button and
+	// SegmentedControl already apply.
+	onTap := c.OnTap
+	if onTap == nil {
+		onTap = func() {}
+	}
+
+	return core.Button(c.Label, onTap, asProps(styles)...).Render(ctx)
 }

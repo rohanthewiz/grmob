@@ -32,6 +32,29 @@ type Context struct {
 	dirty         *dirtyFlag
 	focus         *focusState
 
+	// hooks is set only on the lightweight copies produced by WithTheme and
+	// WithConfig, and points at the context that actually owns the hook
+	// slots (never at another copy — hookOwner collapses chains as they are
+	// built, so this is always at most one hop).
+	//
+	// Those copies exist to override theme/config for a subtree, not to open
+	// a new hook scope: the children rendered through them are the *same*
+	// component positions in the *same* parent scope. Copying `slots` and
+	// `Cursor` by value made that untrue in the worst way — the copy read
+	// and appended at the parent's cursor while the parent's own cursor
+	// never advanced, so children on either side of a WithTheme aliased each
+	// other's state:
+	//
+	//	Column(WithTheme(t, A{NewState(ctx, 0)}), B{NewState(ctx, "s")})
+	//	  pass 1: A takes slot 0 on the copy; parent cursor still 0,
+	//	          so B also takes slot 0 -> both share one slot
+	//	  pass 2: A reads slot 0 as int, B reads the same slot as string
+	//	          -> "interface conversion: interface {} is string, not int"
+	//
+	// Sharing the owner instead means slot indices are handed out by one
+	// cursor under one lock, exactly as if WithTheme were not there.
+	hooks *Context
+
 	children       []*Context
 	childrenCursor int
 	scopes         map[string]*Context
@@ -131,17 +154,20 @@ func (ctx *Context) NewChildContext() *Context {
 	}
 }
 func UseChildContext(ctx *Context) *Context {
-	index := ctx.Cursor
-	ctx.Cursor++
+	// Hook slots belong to the owner (see hookOwner); the child itself is
+	// still built from ctx so it inherits the theme/config in effect here.
+	owner := ctx.hookOwner()
+	index := owner.Cursor
+	owner.Cursor++
 
 	// Same locking rationale as NewState: the append can reallocate the slots
 	// backing array while a concurrent State.Set writes through it.
-	ctx.lock.Lock()
-	defer ctx.lock.Unlock()
-	if index >= len(ctx.slots) {
-		ctx.slots = append(ctx.slots, ctx.NewChildContext())
+	owner.lock.Lock()
+	defer owner.lock.Unlock()
+	if index >= len(owner.slots) {
+		owner.slots = append(owner.slots, ctx.NewChildContext())
 	}
-	return ctx.slots[index].(*Context)
+	return owner.slots[index].(*Context)
 }
 
 type State[T any] struct {
@@ -171,10 +197,25 @@ func (ctx *Context) Config() *AppConfig {
 	return ctx.config
 }
 
+// hookOwner returns the context whose slots, cursor and lock back this
+// context's hooks: itself for a real context, and the original for the
+// theme/config copies described on the `hooks` field.
+//
+// Every slot-touching path (NewState, UseChildContext, Reset) and every
+// reader of the cursor goes through this, so a themed copy is indistinguishable
+// from its owner as far as hook bookkeeping is concerned.
+func (ctx *Context) hookOwner() *Context {
+	if ctx.hooks != nil {
+		return ctx.hooks
+	}
+	return ctx
+}
+
 func (ctx *Context) WithConfig(cfg *AppConfig) *Context {
 	return &Context{
-		slots:         ctx.slots,
-		Cursor:        ctx.Cursor,
+		// Slots, Cursor and lock deliberately stay zero: hookOwner routes
+		// every hook operation to the context named by `hooks` instead.
+		hooks:         ctx.hookOwner(),
 		theme:         ctx.theme,
 		config:        cfg,
 		renderManager: ctx.renderManager,
@@ -195,8 +236,8 @@ func (ctx *Context) WithConfig(cfg *AppConfig) *Context {
 
 func (ctx *Context) WithTheme(theme *Theme) *Context {
 	return &Context{
-		slots:         ctx.slots,
-		Cursor:        ctx.Cursor,
+		// See WithConfig: hook state is delegated, never copied.
+		hooks:         ctx.hookOwner(),
 		theme:         theme,
 		config:        ctx.config,
 		renderManager: ctx.renderManager,
@@ -223,35 +264,41 @@ func (ctx *Context) WithTheme(theme *Theme) *Context {
 // mixing old and new values for one pass, which is benign: the Set also
 // nudges the pump, so a follow-up pass renders the settled state.
 func NewState[T any](ctx *Context, initial T) State[T] {
-	index := ctx.Cursor
-	ctx.Cursor++
+	// All slot bookkeeping happens on the owner so that a themed/configured
+	// copy of a context allocates out of the same numbering as its original
+	// (see the `hooks` field). The closures below capture the owner too, so
+	// a State outlives the transient copy it was created through.
+	owner := ctx.hookOwner()
+	index := owner.Cursor
+	owner.Cursor++
 
-	ctx.lock.Lock()
-	if index >= len(ctx.slots) {
+	owner.lock.Lock()
+	if index >= len(owner.slots) {
 		// First render at this cursor position: seed the slot. The append is
 		// under the lock because it can reallocate the backing array, which
 		// must not race a concurrent Set writing through the old one.
-		ctx.slots = append(ctx.slots, initial)
+		owner.slots = append(owner.slots, initial)
 	}
-	ctx.lock.Unlock()
+	owner.lock.Unlock()
 
 	return State[T]{
 		get: func() T {
-			ctx.lock.Lock()
-			defer ctx.lock.Unlock()
-			return ctx.slots[index].(T)
+			owner.lock.Lock()
+			defer owner.lock.Unlock()
+			return owner.slots[index].(T)
 		},
 		set: func(val T) {
-			ctx.lock.Lock()
-			ctx.slots[index] = val
+			owner.lock.Lock()
+			owner.slots[index] = val
 			// Unlock before notifying: RequestRender -> MarkDirty takes the
 			// same (non-reentrant) lock, and holding it across the notify
 			// would also serialize slot access behind render scheduling.
-			ctx.lock.Unlock()
+			owner.lock.Unlock()
 			// RequestRender rather than a bare TriggerRender: it also marks
 			// the tree dirty, so polling runtimes (WASM IsDirty) and the push
-			// channel observe the same signal.
-			ctx.RequestRender()
+			// channel observe the same signal. Sent through the owner so
+			// a State created under a themed copy still nudges the app.
+			owner.RequestRender()
 		},
 	}
 }
@@ -276,6 +323,10 @@ func WithConfigOpt(c *AppConfig) func(*Context) {
 }
 
 func (ctx *Context) Reset() {
+	// Reset the context that actually holds the slots: calling Reset on a
+	// themed/configured copy must rewind the original, not the copy's empty
+	// (and unused) slot list.
+	ctx = ctx.hookOwner()
 	ctx.Cursor = 0
 	for _, child := range ctx.children {
 		child.Reset()

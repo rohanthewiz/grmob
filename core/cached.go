@@ -95,13 +95,17 @@ func (c *cachedView) Render(ctx *Context) *Node {
 // only misbehaves with debug mode off has likely tripped exactly these
 // concerns.
 func (c *cachedView) debugRender(ctx *Context) *Node {
-	cursorBefore := ctx.Cursor
+	// Through the hook owner: under WithTheme/WithConfig the ctx handed to
+	// the view is a delegating copy whose own Cursor never moves, which would
+	// make this check silently pass for every cached view inside a theme.
+	owner := ctx.hookOwner()
+	cursorBefore := owner.Cursor
 	cbBefore := ctx.registry.registrationCount()
 	node := c.view.Render(ctx)
-	if ctx.Cursor != cursorBefore {
+	if owner.Cursor != cursorBefore {
 		upsertConcern(ConcernCachedHooks, fmt.Sprintf(
 			"Cached(%T) consumed %d hook slot(s) during render: cached views must not call NewState/UseChildContext (they render once, then stop consuming slots, shifting every later component's state)",
-			c.view, ctx.Cursor-cursorBefore))
+			c.view, owner.Cursor-cursorBefore))
 	}
 	if after := ctx.registry.registrationCount(); after != cbBefore {
 		upsertConcern(ConcernCachedCallbacks, fmt.Sprintf(

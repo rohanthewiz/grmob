@@ -257,6 +257,8 @@ func renderRecovered(ctx *Context, view View) (node *Node, rerr *RenderError) {
 	}
 
 	ctx.registry.rollbackCounters(snap)
-	ctx.Cursor = 0
+	// hookOwner: a themed copy's own Cursor is never used, so zeroing it
+	// would leave the real cursor stranded mid-pass.
+	ctx.hookOwner().Cursor = 0
 	return nil, rerr
 }

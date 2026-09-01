@@ -139,14 +139,57 @@ func (m *Manager) pump() {
 			if m.getListener() == nil || !m.hasInitialRender() {
 				continue
 			}
-			out := m.RenderAgain()
-			if out == "[]" {
-				continue
-			}
-			if l := m.getListener(); l != nil {
-				l.ApplyPatches(out)
-			}
+			m.renderAndPush()
 		}
+	}
+}
+
+// renderAndPush runs one pump pass and hands its diff to the listener *inside*
+// the render critical section.
+//
+// Why the delivery is inside the lock, and not after it: the native runtimes
+// funnel both patch paths (a Trigger* call's return value and a listener push)
+// into one FIFO queue and apply them in arrival order, which is only correct
+// if arrival order matches emission order — the contract stated in
+// mobile/bridge.go. Patches carry positional paths ("root/2"), so applying
+// pass N+1 against the pre-N tree addresses the wrong nodes.
+//
+// Releasing mu between the render and the push broke exactly that:
+//
+//	pump (goroutine)            event thread (DispatchCallback)
+//	------------------------    -------------------------------
+//	lock; render pass N
+//	unlock
+//	                            lock; handler; render pass N+1; unlock
+//	                            queue N+1   <-- arrives first
+//	queue N                                 <-- arrives second, stale
+//
+// Holding mu across the ApplyPatches call makes "produce the diff" and "hand
+// it over" one indivisible step, so a dispatch cannot slip a newer pass in
+// front of an older one. The listener contract already requires ApplyPatches
+// to be cheap and non-reentrant (hop to the UI thread and return), so the
+// widened hold does not extend the lock in practice.
+func (m *Manager) renderAndPush() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	out := m.renderAgainLocked()
+	if out == "[]" {
+		return
+	}
+	l := m.getListener()
+	if l == nil {
+		return
+	}
+	// Guarded: ApplyPatches crosses into host code (a JS throw over
+	// syscall/js, a Java exception surfacing through gomobile), and an
+	// unrecovered panic here would kill the pump goroutine outright. The
+	// pump is the only consumer of renderRequests, so its death is silent
+	// and total — every later State.Set fills the one-slot buffer and is
+	// dropped, while taps keep working because they render on their own
+	// thread. That reads as "async updates stopped" with no crash to chase.
+	if rerr := core.Guard(func() { l.ApplyPatches(out) }); rerr != nil {
+		logRenderPanic("patch listener", rerr)
 	}
 }
 

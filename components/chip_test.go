@@ -82,3 +82,21 @@ func TestChipAccessibilityAnnouncesSelection(t *testing.T) {
 		t.Errorf("hint = %q", got)
 	}
 }
+
+// TestChipNilOnTapDoesNotPanic pins the nil-handler guard. A decorative chip
+// (a tag, a status pill) is a reasonable thing to write, and Chip handed a nil
+// OnTap straight to core.Button, which registers whatever it is given; the
+// registry then invoked it unguarded on the first tap.
+func TestChipNilOnTapDoesNotPanic(t *testing.T) {
+	ctx := core.NewContext()
+	ctx.BeginRenderPass()
+
+	n := Chip{Label: "Tag"}.Render(ctx)
+	id, ok := n.Props["onClick"].(string)
+	if !ok {
+		t.Fatal("chip should still register an onClick callback with no OnTap")
+	}
+	if err := core.Guard(func() { ctx.TriggerCallback(id) }); err != nil {
+		t.Fatalf("tapping a chip with no OnTap panicked: %v", err.Value)
+	}
+}

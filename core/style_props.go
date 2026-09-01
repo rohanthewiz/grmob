@@ -153,7 +153,7 @@ func Height(w string) StyleProp {
 }
 func MaxHeight(w string) StyleProp {
 	return styleFunc(func(s *Style) {
-		s.MaxWidth = w
+		s.MaxHeight = w
 	})
 }
 func Background(w string) StyleProp {

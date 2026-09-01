@@ -281,3 +281,59 @@ func TestUseTimeoutCancelledByClose(t *testing.T) {
 
 	assertQuiet(t, fires, 200*time.Millisecond, "fire from a cancelled timeout")
 }
+
+func TestUseIntervalResumesAfterCloseAndRemount(t *testing.T) {
+	// Both hosts re-mount over the *same* context: wasm/main.go's
+	// renderInitial closes the previous manager and calls render.New(ctx, App)
+	// again, and mobile.Register does the same. The hook record lives in a
+	// slot on that surviving context, so a Close that stopped the ticker
+	// without clearing `started` left the re-mounted hook taking its
+	// "already running" early return forever — timers dead for the rest of
+	// the process, with no error anywhere.
+	ctx := core.NewContext()
+	defer ctx.Close()
+	ticks := make(chan struct{}, 64)
+
+	body := func(ctx *core.Context) {
+		hooks.UseInterval(ctx, func() { ticks <- struct{}{} }, 10*time.Millisecond)
+	}
+
+	renderPass(ctx, body)
+	awaitSignal(t, ticks, "first interval tick before Close")
+
+	ctx.Close()
+	// Drain whatever was already in flight so the post-remount tick below
+	// cannot be satisfied by a pre-Close leftover.
+	for {
+		select {
+		case <-ticks:
+			continue
+		case <-time.After(50 * time.Millisecond):
+		}
+		break
+	}
+
+	// Re-mount: same context, fresh render pass.
+	renderPass(ctx, body)
+	awaitSignal(t, ticks, "interval tick after close and re-mount")
+}
+
+func TestUseTimeoutRearmsAfterCloseAndRemount(t *testing.T) {
+	// The UseTimeout half of the same bug. A re-mount is a new mount as far
+	// as the app is concerned — the new tree has never seen the timeout fire
+	// — so the timer must arm again, exactly as it does on a first mount.
+	ctx := core.NewContext()
+	defer ctx.Close()
+	fires := make(chan struct{}, 8)
+
+	body := func(ctx *core.Context) {
+		hooks.UseTimeout(ctx, func() { fires <- struct{}{} }, 20*time.Millisecond)
+	}
+
+	renderPass(ctx, body)
+	awaitSignal(t, fires, "timeout fire before Close")
+
+	ctx.Close()
+	renderPass(ctx, body)
+	awaitSignal(t, fires, "timeout fire after close and re-mount")
+}

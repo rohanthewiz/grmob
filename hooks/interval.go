@@ -21,9 +21,11 @@ import (
 //	   │ fn = latest closure ──[mu]──▶  │ read fn, call it
 //	   ▼                                ▼ ctx.RequestRender()
 //
-// mu guards only fn: the render goroutine refreshes it every pass while the
-// ticker goroutine reads it on every tick. started needs no lock — it is
-// touched exclusively during render passes, which the manager serializes.
+// mu guards fn and started. fn is refreshed by the render goroutine every
+// pass and read by the ticker goroutine on every tick. started is read during
+// render passes (which the manager serializes) but *cleared* from the
+// cleanup path, which runs on whichever goroutine called Close — so it needs
+// the lock too.
 type intervalRecord struct {
 	mu      sync.Mutex
 	fn      func()
@@ -53,12 +55,13 @@ func UseInterval(ctx *core.Context, fn func(), interval time.Duration) {
 
 	rec.mu.Lock()
 	rec.fn = fn
+	alreadyRunning := rec.started
+	rec.started = true
 	rec.mu.Unlock()
 
-	if rec.started {
+	if alreadyRunning {
 		return
 	}
-	rec.started = true
 
 	ticker := time.NewTicker(interval)
 	done := make(chan struct{})
@@ -67,6 +70,21 @@ func UseInterval(ctx *core.Context, fn func(), interval time.Duration) {
 		// the goroutine below would park on the channel forever.
 		ticker.Stop()
 		close(done)
+		// Clearing started is what makes the hook survive a close-and-remount
+		// over the same context — the shape both hosts use (wasm/main.go's
+		// renderInitial and mobile.Register both call Manager.Close() and
+		// then render again on the same ctx). The record lives in a hook slot
+		// on that context, so it outlives the Close; leaving started set made
+		// the re-mounted hook take the "already running" early return above
+		// and never start a replacement ticker, and the app's timers were
+		// silently dead for the rest of the process.
+		//
+		// This is the same drain (not terminal) semantics cleanupRegistry
+		// documents: after a Close the tree stays renderable and its hooks
+		// must be able to register fresh resources.
+		rec.mu.Lock()
+		rec.started = false
+		rec.mu.Unlock()
 	})
 
 	go func() {
@@ -113,12 +131,13 @@ func UseTimeout(ctx *core.Context, fn func(), delay time.Duration) {
 
 	rec.mu.Lock()
 	rec.fn = fn
+	alreadyScheduled := rec.scheduled
+	rec.scheduled = true
 	rec.mu.Unlock()
 
-	if rec.scheduled {
+	if alreadyScheduled {
 		return
 	}
-	rec.scheduled = true
 
 	timer := time.AfterFunc(delay, func() {
 		rec.mu.Lock()
@@ -132,5 +151,13 @@ func UseTimeout(ctx *core.Context, fn func(), delay time.Duration) {
 	})
 	ctx.OnClose(func() {
 		timer.Stop()
+		// See UseInterval's OnClose: clearing the flag is what lets a
+		// re-mount over the same context arm a fresh timer instead of taking
+		// the "already scheduled" early return forever. A timeout that
+		// already fired is re-armed by the re-mount, which is the correct
+		// reading of a mount — the new tree has not seen it fire.
+		rec.mu.Lock()
+		rec.scheduled = false
+		rec.mu.Unlock()
 	})
 }
