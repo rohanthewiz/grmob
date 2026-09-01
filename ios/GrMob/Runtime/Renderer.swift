@@ -472,12 +472,27 @@ private func flattenFragments(_ children: [GrMobNode]) -> [GrMobNode] {
 /// can express. A LazyVStack cannot be replaced by a custom Layout without
 /// giving up laziness, so it keeps a native alignment. (The vertical
 /// counterpart went with the HStack it served.)
+/// Held to core.AlignItemsValues() by
+/// TestSwiftCrossAlignmentCoversEveryAlignItems in mobile/verify. One arm per
+/// line, string literals first, `default:` last; the arms that duplicate
+/// `default:`'s body are deliberate and must not be folded into it.
+///
+/// The "end" label alongside "flex-end" is not an AlignItems at all — it is
+/// core.AlignEnd arriving through the `align` fallback two lines up, which is
+/// why this dispatch answers for two vocabularies at once.
 private func crossAlignmentH(_ s: GrMobStyle?) -> HorizontalAlignment {
     var v = s?.alignItems ?? ""
     if v.isEmpty { v = s?.align ?? "" }
     switch v {
+    case "flex-start", "start": return .leading
     case "center": return .center
     case "flex-end", "end": return .trailing
+    // Not placement. A stretched row is given the whole cross extent by the
+    // flexible frame GrMobList puts on it (see the `stretch` binding in its
+    // body), so by the time the stack's own alignment is consulted there is
+    // nothing left to align — every alignment would look identical. Listed so
+    // that "handled elsewhere" is distinguishable from "not handled".
+    case "stretch": return .leading
     default: return .leading
     }
 }
@@ -530,10 +545,34 @@ private func grMobFontWeight(_ w: Int) -> Font.Weight {
     }
 }
 
+/// core.TextAlignments -> SwiftUI's TextAlignment.
+///
+/// Every value listed explicitly, including the two that `default` would have
+/// produced anyway. That redundancy is the point and must not be folded away:
+/// SwiftUI has no "unset" alignment to fall through to, so an unlisted value
+/// is not left alone, it is silently rendered as leading — which is how
+/// justified text came to render on Compose and nowhere else. Held to
+/// core.TextAlignments() by TestSwiftTextAlignmentCoversEveryTextAlignment in
+/// mobile/verify, which parses these arms; keep one arm per line with its
+/// string literals first and `default:` last.
+///
+/// AlignStretch and AlignBaseline are absent by design. They are Alignments
+/// that name a cross-axis placement rather than a text alignment, they reach
+/// Style.Align through its other role, and core.TextAlignments() leaves them
+/// out for exactly that reason — so they fall to `default:` here, which is the
+/// same nothing htmlout and the WASM runtime do with them.
 private func grMobTextAlignment(_ align: String) -> TextAlignment {
     switch align {
+    case "start": .leading
     case "center": .center
     case "end": .trailing
+    // SwiftUI's TextAlignment has three members and no justified setting;
+    // Text cannot justify at all. This arm exists to say that out loud, not
+    // to do something `default:` would not have done — htmlout and the WASM
+    // runtime emit text-align:justify and Compose sets TextAlign.Justify, so
+    // this is the one target that cannot honor the value, and the difference
+    // deserves to be visible here rather than inferred from an absence.
+    case "justify": .leading
     default: .leading
     }
 }

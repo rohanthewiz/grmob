@@ -316,15 +316,11 @@ func styleValue(s *core.Style, nodeType string) string {
 	if s.Height != "" {
 		styles = append(styles, fmt.Sprintf("height:%s", s.Height))
 	}
-	if s.Align != "" {
-		switch s.Align {
-		case core.AlignCenter:
-			styles = append(styles, "text-align:center")
-		case core.AlignStart:
-			styles = append(styles, "text-align:left")
-		case core.AlignEnd:
-			styles = append(styles, "text-align:right")
-		}
+	// Was an inline switch with three arms; it is a table lookup now because
+	// the WASM runtime needs the same mapping and had none at all. See
+	// htmlout/textalign.go for what the two used to disagree about.
+	if decl := textAlignDecl(string(s.Align)); decl != "" {
+		styles = append(styles, decl)
 	}
 	// Flex container properties, emitted before Display so an explicit Display
 	// (set by the author) lands after and wins the browser's

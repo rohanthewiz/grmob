@@ -195,6 +195,37 @@ const GrMob = (() => {
         }[mode] || "";
     }
 
+    // core.Alignment -> CSS text-align. Go states this table once, in
+    // htmlout/textalign.go, and this is its restatement here; the two are
+    // compared by TestRuntimeTextAlignsMatchGo in wasm/verify. Same shape rule
+    // as objectFitFor above: a flat literal in a function named textAlignFor,
+    // subscripted by that function's own argument, falling back to "".
+    //
+    // This is the newest of the four tables and the only one that was added to
+    // *close* a gap rather than to pin an existing copy. Until it existed this
+    // runtime did not read style.Align at all, in any form — so every
+    // core.Align on the web target was silently dropped while htmlout emitted
+    // a text-align and both natives set one. Four renderers, three behaviors,
+    // and one of them was "nothing".
+    //
+    // Only four of the six Alignments are here. AlignStretch and AlignBaseline
+    // name a cross-axis placement, not a text alignment, and CSS text-align
+    // has no such keyword; they reach this function through Style.Align's
+    // other role (the fallback a container reads when AlignItems is unset) and
+    // are meant to fall through to "". See core.TextAlignments.
+    //
+    // "" clears the property rather than leaving it alone, which is what makes
+    // an Align changed from "center" to "stretch" on the patch path stop being
+    // centered.
+    function textAlignFor(align) {
+        return {
+            start: "left",
+            center: "center",
+            end: "right",
+            justify: "justify",
+        }[align] || "";
+    }
+
     // The Style -> CSS mapping. nodeType decides the default flex axis, the
     // same rule htmlout's styleValue uses: a Row stacks horizontally, every
     // other container vertically.
@@ -202,6 +233,11 @@ const GrMob = (() => {
         const out = {};
         if (style.FontSize) out.fontSize = `${style.FontSize}px`;
         if (style.TextColor) out.color = style.TextColor;
+        // Guarded on style.Align rather than assigned unconditionally, so a
+        // patch whose Changes do not mention Align leaves the property alone —
+        // the same convention every other property in this function follows,
+        // because applyStyle Object.assigns the result over the live style.
+        if (style.Align) out.textAlign = textAlignFor(style.Align);
         if (style.Background) out.background = style.Background;
         if (style.Padding) out.padding = edgeToCSS(style.Padding);
         if (style.Margin) out.margin = edgeToCSS(style.Margin);

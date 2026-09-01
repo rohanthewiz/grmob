@@ -105,11 +105,11 @@ in `wasm/verify` parses the runtime's literal out of `grmob-runtime.js` and
 compares it against `htmlout.InputTypes()`, so a change to either side fails
 `go test ./...` until it is made to both.
 
-All three of the runtime's lookup tables — tags, `<input>` types, and the
-`object-fit` values below — are parsed by the same helper, which is why they
-are written in the same shape: a flat object literal in a named function,
-subscripted by that function's own argument, with a `|| "<fallback>"` default
-that the parse checks too.
+All four of the runtime's lookup tables — tags, `<input>` types, and the
+`object-fit` and `text-align` values below — are parsed by the same helper,
+which is why they are written in the same shape: a flat object literal in a
+named function, subscripted by that function's own argument, with a
+`|| "<fallback>"` default that the parse checks too.
 
 ### Image content modes
 
@@ -140,6 +140,39 @@ their `switch`/`when` arms out of the source and checks coverage alone. See
 [Native platforms](native.md#contentmode-on-image). (`replay_test.mjs` holds a third
 copy on purpose: a conformance test has to state the rule independently, or
 it only proves the implementation agrees with itself.)
+
+### Text alignment
+
+`core.Alignment` maps onto CSS `text-align`: `start` → `left`, `center` →
+`center`, `end` → `right`, `justify` → `justify`. `htmlout/textalign.go` is the
+authority and `TestRuntimeTextAlignsMatchGo` pins the runtime's copy to it.
+
+This is the newest of the four tables and the only one that was added to
+**close** a gap rather than to pin a copy that already existed. Until it did,
+this runtime did not read `style.Align` at all, in any form — so every
+`core.Align` on the web target was silently dropped, while `htmlout` emitted a
+declaration for three of the six values and both natives set one. Four
+renderers, three behaviors, and one of them was "nothing".
+
+Only four of the six `Alignment`s are in the table. `AlignStretch` and
+`AlignBaseline` name a cross-axis placement rather than a text alignment, and
+CSS `text-align` has no such keyword; they reach the property through
+`Style.Align`'s *other* role — the fallback a native container reads when
+`AlignItems` is unset — and fall through to `""`, which clears it.
+`core.TextAlignments()` is the list that says so, and both natives are held to
+the same one (see [Native platforms](native.md#alignment-justifycontent-and-alignitems)).
+
+`start` maps to the physical `left` rather than to CSS's direction-aware
+`start`, which is what this exporter has always emitted. It is worth knowing
+that this is itself a divergence — both natives use the direction-aware
+spelling — so an RTL locale would left-align on the web and trailing-align on
+iOS and Android from the same `core.AlignStart`. No table comparison can see
+it: the two DOM copies agree with each other exactly.
+
+`justify-content` and `align-items` need no table at all. Core's spellings
+*are* the CSS ones, so both DOM renderers pass them through verbatim and
+neither can be wrong about a value it never interprets — which is why the
+alignment coverage checks are entirely native.
 
 `checked` and `rows` are set as element *properties*, not attributes. A
 `checked` attribute is only the control's default state — the browser stops

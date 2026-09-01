@@ -1,7 +1,6 @@
 package verify
 
 import (
-	"path/filepath"
 	"testing"
 
 	"github.com/rohanthewiz/grmob/core"
@@ -37,14 +36,9 @@ import (
 //
 // See switchlabels_test.go for why this is a parse and not a compile.
 
-// contentModeFile locates the two renderers relative to this package.
-func contentModeFile(parts ...string) string {
-	return filepath.Join(append([]string{"..", ".."}, parts...)...)
-}
-
 func TestSwiftScalingCoversEveryContentMode(t *testing.T) {
 	syntax := swiftSwitch.with(
-		contentModeFile("ios", "GrMob", "Runtime", "Renderer.swift"),
+		swiftRenderer,
 		"func grMobScaled(",
 		"switch mode {",
 	)
@@ -53,7 +47,7 @@ func TestSwiftScalingCoversEveryContentMode(t *testing.T) {
 
 func TestKotlinContentScaleCoversEveryContentMode(t *testing.T) {
 	syntax := kotlinWhen.with(
-		contentModeFile("android", "app", "src", "main", "java", "com", "grmob", "runtime", "Renderer.kt"),
+		kotlinRenderer,
 		"fun contentScaleFor(",
 		"when (mode) {",
 	)

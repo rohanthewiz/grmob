@@ -2,6 +2,7 @@ package verify
 
 import (
 	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"testing"
@@ -47,6 +48,18 @@ type dispatchSyntax struct {
 	// written to require the line to begin with a string literal, which is
 	// what keeps a comment or a pattern-matching arm from being read as a
 	// label.
+	//
+	// Neither requires the arm's body to be on the following line. Swift's
+	// used to, and that turned out to be a constraint on the renderer rather
+	// than on the parse: grMobScaled's arms are multi-line statements and read
+	// well broken up, but grMobTextAlignment is a four-line expression switch
+	// whose arms are a single value each (`case "center": .center`), and
+	// forcing those onto two lines apiece to suit a regexp would be the test
+	// dictating style. The capture is non-greedy up to the first colon, so a
+	// body that itself contains one (`case "a": f(x: "y")`) still yields just
+	// the labels — and an arm whose label list is not pure string literals is
+	// still a fatal in parseLabelList, which is where that guarantee actually
+	// lives.
 	arm *regexp.Regexp
 	// fallback matches the catch-all arm. Arms are only collected from *above*
 	// it: anything below is unreachable, and a test that counted it would
@@ -59,7 +72,7 @@ type dispatchSyntax struct {
 
 var (
 	swiftSwitch = dispatchSyntax{
-		arm:          regexp.MustCompile(`(?m)^[ \t]*case[ \t]+("[^\n]*?)[ \t]*:[ \t]*$`),
+		arm:          regexp.MustCompile(`(?m)^[ \t]*case[ \t]+("[^\n]*?)[ \t]*:`),
 		fallback:     regexp.MustCompile(`(?m)^[ \t]*default[ \t]*:`),
 		fallbackDesc: "`default:`",
 	}
@@ -105,6 +118,26 @@ func (d dispatchSyntax) labels(t *testing.T) []string {
 		t.Fatalf("%s: %s does not dispatch on %q — this test cannot tell which arms are the ones it "+
 			"is about", d.file, d.fn, d.open)
 	}
+	// The header search runs forward from the anchor, so on its own it will
+	// happily leave the anchored function and find a lookalike further down.
+	// Both files are full of lookalikes by construction: GrMobFlex.swift has
+	// two `switch justify {` and Renderer.kt has two identical
+	// `when (s?.alignItems?.ifEmpty { s.align }) {`, and the anchor is the only
+	// thing telling each pair apart. Changing `leading` to switch on something
+	// other than `justify` therefore used to pass — the test silently read
+	// `gap`'s arms instead, which cover the same six values, and reported
+	// coverage `leading` no longer had.
+	//
+	// So an intervening declaration is a fatal. This is the header-search
+	// counterpart of the matchingBrace bound below, which fixed the same defect
+	// one level down (arms collected out of the *next* switch); the two
+	// together are what make "this dispatch" mean the anchored one.
+	if at := declStart.FindStringIndex(body[len(d.fn):open]); at != nil {
+		t.Fatalf("%s: the first %q after %s lies past the start of a later declaration (%q), so it "+
+			"is not %s's — either it was changed to dispatch on something else, or the anchor no "+
+			"longer names the function that holds it",
+			d.file, d.open, d.fn, strings.TrimSpace(body[len(d.fn)+at[0]:len(d.fn)+at[1]]), d.fn)
+	}
 	// Bounded to the dispatch's own braces before anything is read out of it.
 	// Both renderers are ~600 lines with several string switches in them — one
 	// on text alignment, one on justify-content, both with a "center" arm — so
@@ -136,6 +169,78 @@ func (d dispatchSyntax) labels(t *testing.T) []string {
 	return labels
 }
 
+// nativeFile locates a renderer source relative to this package. The natives
+// live outside the Go module tree, so every check here reaches up two levels
+// and back down; spelling that once keeps the paths from drifting apart.
+func nativeFile(parts ...string) string {
+	return filepath.Join(append([]string{"..", ".."}, parts...)...)
+}
+
+// The three files every check in this package reads.
+var (
+	swiftRenderer  = nativeFile("ios", "GrMob", "Runtime", "Renderer.swift")
+	swiftFlex      = nativeFile("ios", "GrMob", "Runtime", "GrMobFlex.swift")
+	kotlinRenderer = nativeFile("android", "app", "src", "main", "java", "com", "grmob",
+		"runtime", "Renderer.kt")
+)
+
+// stringArray reads the string literals out of a single-line array literal
+// that follows an anchor, for the one copy of a core list in either renderer
+// that is not a switch: GrMobFlexSolver.justifyClaimsFreeSpace, which asks
+// whether a justify-content value spends the container's leftover space and
+// spells the answer as membership in a five-element array.
+//
+// It is deliberately narrow — one line, one bracket pair, string literals and
+// commas and nothing else — because a general Swift expression parser is not
+// what this needs and would be far more code than the thing it checks. The
+// narrowness is stated beside the array itself, and every way of violating it
+// is a named fatal here rather than a short list, for the reason the rest of
+// this file fails loudly: a check that reads nothing must not read as a pass.
+func stringArray(t *testing.T, file, anchor string) []string {
+	t.Helper()
+
+	raw, err := os.ReadFile(file)
+	if err != nil {
+		t.Fatalf("reading %s: %v", file, err)
+	}
+	src := string(raw)
+
+	at := strings.Index(src, anchor)
+	if at < 0 {
+		t.Fatalf("%s: no %s found — if it was renamed or restructured, update this test", file, anchor)
+	}
+	open := strings.Index(src[at:], "[")
+	if open < 0 {
+		t.Fatalf("%s: no array literal after %s", file, anchor)
+	}
+	open += at
+	close := strings.Index(src[open:], "]")
+	if close < 0 {
+		t.Fatalf("%s: the array literal after %s is unterminated", file, anchor)
+	}
+	close += open
+
+	body := src[open+1 : close]
+	if strings.Contains(body, "\n") {
+		t.Fatalf("%s: the array literal after %s spans more than one line; this parse reads one",
+			file, anchor)
+	}
+
+	var out []string
+	rest := stringLiteral.ReplaceAllStringFunc(body, func(lit string) string {
+		out = append(out, strings.Trim(lit, `"`))
+		return ""
+	})
+	if leftover := strings.Trim(rest, " \t,"); leftover != "" {
+		t.Fatalf("%s: the array after %s holds something this test cannot read: %q (unhandled: %q) — "+
+			"it is required to be string literals so its coverage can be checked", file, anchor, body, leftover)
+	}
+	if len(out) == 0 {
+		t.Fatalf("%s: the array after %s parsed as empty, which is not a pass", file, anchor)
+	}
+	return out
+}
+
 // parseLabelList reads the string literals out of one arm's label list,
 // covering the multi-label forms both languages allow (`case "a", "b":`,
 // `"a", "b" ->`).
@@ -162,6 +267,17 @@ func (d dispatchSyntax) parseLabelList(t *testing.T, list string) []string {
 }
 
 var stringLiteral = regexp.MustCompile(`"[^"]*"`)
+
+// declStart matches the beginning of a function declaration in either
+// language: any run of modifier words (`private`, `static`, `@Composable`)
+// followed by `func` or `fun` and a name, at the start of a line.
+//
+// Deliberately only functions. `val` and `var` lines are everywhere inside
+// these bodies — GrMobRow opens with `val s = animatedStyle(node.style)` — and
+// treating them as boundaries would reject every dispatch that is not the
+// first statement of its function. A function declaration is the boundary that
+// matters here, because it is what the header search can wrongly run past.
+var declStart = regexp.MustCompile(`(?m)^[ \t]*(?:[\w@]+[ \t]+)*(?:func|fun)[ \t]+\w`)
 
 // matchingBrace returns the contents of the block that src opens with, from
 // just after the opening brace to just before the brace that closes it.
