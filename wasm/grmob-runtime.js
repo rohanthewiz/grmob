@@ -282,6 +282,22 @@ const GrMob = (() => {
         }
     }
 
+    // Builds the envelope Go receives for one DOM event.
+    //
+    // `type` is the *Go node type* ("Input", "Checkbox", ...), not the HTML
+    // tag. The two are not interchangeable: tagForType collapses Input,
+    // InputPassword, NumericInput and Checkbox all onto <input>, so a tag
+    // cannot tell a text field from a checkbox and a checkbox would be asked
+    // for its .value instead of its .checked. Both call sites therefore pass
+    // the Go type — createElement has it in hand, and the update path reads
+    // it back off the element, which is one of the reasons it is recorded
+    // there at all.
+    //
+    // Matched case-insensitively so the two call sites cannot drift apart
+    // again: they did once, silently, and the cost was total — a text field
+    // present at the initial render sent {} for every keystroke, Go routed
+    // the void envelope to the void callback map where a txt_ ID does not
+    // exist, and typing did nothing at all.
     function extractEventPayload(e, type) {
         // Focus and blur are void events: Go registered them through the
         // plain callback channel, so the envelope must carry no value at all.
@@ -296,10 +312,11 @@ const GrMob = (() => {
         if (e.type === "focus" || e.type === "blur" || e.type === "keydown") {
             return {};
         }
-        if (["input", "textarea", "numericinput", "inputpassword"].includes(type)) {
+        const goType = String(type || "").toLowerCase();
+        if (["input", "textarea", "numericinput", "inputpassword"].includes(goType)) {
             return { value: e.target.value };
         }
-        if (type === "checkbox") {
+        if (goType === "checkbox") {
             return { value: e.target.checked };
         }
         return {};
@@ -367,7 +384,11 @@ const GrMob = (() => {
                                 el.addEventListener(event, (e) => {
                                     const latestCbId = el.dataset[`listener_${k}`];
                                     if (latestCbId && eventQualifies(k, e)) {
-                                        const payload = extractEventPayload(e, el.tagName.toLowerCase());
+                                        // The Go node type, not the tag: see
+                                        // extractEventPayload. It was
+                                        // recorded on the element at creation
+                                        // because the tag cannot recover it.
+                                        const payload = extractEventPayload(e, el.dataset.nodeType);
                                         window.GoInvokeCallback(latestCbId, payload);
                                     }
                                 });

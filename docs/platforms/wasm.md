@@ -56,6 +56,31 @@ Event wiring on the DOM side uses the callback-ID attributes the tree
 carries (`data-onclick`, `data-onchange`, `data-ontoggle`): the runtime
 listens for interactions, reads the ID, and calls `ReceiveEvent` with it.
 
+## Testing without a browser
+
+`wasm/verify/run.sh` is the WASM analog of `ios/verify`, and needs only Go
+and Node — no npm, no lockfile, no `node_modules`, no network.
+
+It does two things. `gen.go` drives real example apps through
+`render.Manager` and records the initial tree, every patch batch, and the
+final tree; Node then mounts that transcript through the **actual**
+`wasm/grmob-runtime.js` (loaded with `node:vm` against a minimal DOM in
+`dom.mjs`), applies the batches, walks the resulting DOM back into a tree and
+compares it with Go's final render. Alongside it, unit tests cover the
+per-element logic no transcript reaches — the return key's Enter filter, the
+void envelope it sends, `enterkeyhint`, and the focus command's frame
+deferral and epoch guard.
+
+What it cannot answer is anything that needs real rendering: whether
+`enterkeyhint` actually relabels a soft keyboard, whether `focus()` opens
+one, or anything about layout. Those still need a browser, exactly as the
+iOS view layer still needs a simulator.
+
+```
+$ sh wasm/verify/run.sh
+.............................
+```
+
 ## Permissions
 
 Hardware permission requests (camera, microphone, geolocation) route through
