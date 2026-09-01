@@ -410,6 +410,23 @@ const GrMob = (() => {
         // align-items — and now resolves Display against its flex container
         // in styleValue; emitting nothing keeps this runtime out of both
         // traps.
+        // One reading of Display survives, translated rather than emitted:
+        // an inline display is the themes' way of saying "hug your content"
+        // (components.Button documents FullWidth as block display + width
+        // precisely because the bundled themes give Button an inline one).
+        // Inside this runtime's always-flex stacks the inline keyword itself
+        // is inert — flex items are blockified — and the cross-axis default
+        // (stretch) would spread every button across its Column. width:
+        // fit-content carries the same intent in a way that is safe on both
+        // axes: in a Column it stops the stretch, in a Row it restates what
+        // the main axis already does, and unlike align-self it cannot
+        // override the container's cross-axis alignment (which would top-pin
+        // a button inside an AlignItemsCenter Row). An explicit Width — the
+        // other half of the FullWidth contract — wins over it above, hence
+        // the guard.
+        if (!style.Width && (style.Display === "inline" || style.Display === "inline-block")) {
+            out.width = "fit-content";
+        }
         // A flex *item* property: how this node behaves inside its parent's
         // layout, so it needs no display:flex of its own.
         if (style.FlexGrow) out.flexGrow = `${style.FlexGrow}`;
@@ -678,6 +695,15 @@ const GrMob = (() => {
                         } else if (k === "content") {
                             if (el.textContent === v) continue;
                             el.textContent = v;
+                        } else if (k === "label") {
+                            // Buttons carry their text as `label`, not
+                            // `content`, and createElement maps both onto
+                            // textContent — this branch is the update half of
+                            // that mapping. Without it a reused Button kept
+                            // its old caption whenever a navigation diff
+                            // paired it positionally with a different one.
+                            if (el.textContent === v) continue;
+                            el.textContent = v;
                         } else if (k === "placeholder") {
                             if (el.placeholder === v) continue;
                             el.placeholder = v;
@@ -857,6 +883,20 @@ window.GrMobSystemEvent = function (name, payloadJSON) {
     if (name === "toast") {
         GrMob.showToast(JSON.parse(payloadJSON));
     }
+};
+
+// The patch push channel the WASM host feature-checks at startup (wasm/
+// main.go's renderInitial): when this exists, async state changes — timers,
+// goroutines — arrive here directly from the manager's pump, on the state
+// write's own schedule. Without it the host falls back to the IsDirty poll
+// below, which rides requestAnimationFrame — and rAF is fully suspended in a
+// hidden tab, so an UseInterval clock froze the moment the tab lost
+// visibility even though the Go ticker kept running. Defined at page level,
+// before the wasm module is instantiated, so the host's check finds it; the
+// poll loop stays as a harmless fallback (with a listener attached the pump
+// consumes the diff, so the poll sees a clean tree).
+window.GrMobApplyPatches = function (patchJSON) {
+    GrMob.patch(patchJSON);
 };
 
 function checkLoop() {
