@@ -24,6 +24,7 @@ func TestMain(m *testing.M) {
 
 type node struct {
 	Type     string
+	Key      string
 	Props    map[string]any
 	Children []*node
 }

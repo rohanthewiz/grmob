@@ -33,6 +33,7 @@ type Chapter struct {
 // files so a chapter is reviewable as a unit.
 var Chapters = []Chapter{
 	chapter1(),
+	chapter2(),
 }
 
 // lessonEntry is one row of the flattened, ordered lesson index — the
