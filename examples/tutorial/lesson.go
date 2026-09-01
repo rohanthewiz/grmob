@@ -38,6 +38,7 @@ var Chapters = []Chapter{
 	chapter4(),
 	chapter5(),
 	chapter6(),
+	chapter7(),
 }
 
 // lessonEntry is one row of the flattened, ordered lesson index — the

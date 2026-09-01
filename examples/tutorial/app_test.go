@@ -26,7 +26,21 @@ type node struct {
 	Type     string
 	Key      string
 	Props    map[string]any
+	Style    *nodeStyle
 	Children []*node
+}
+
+// nodeStyle decodes the handful of core.Style fields the tests assert on —
+// the wire tree is a straight json.Marshal of core.Node, so the keys are the
+// Go field names. Chapter 7's tests read these to watch prop order, merging,
+// theme swaps and transition declarations land on actual nodes.
+type nodeStyle struct {
+	Background   string
+	TextColor    string
+	FontSize     float64
+	FontWeight   int
+	BorderRadius float64
+	Transition   string
 }
 
 func findNode(n *node, pred func(*node) bool) *node {
