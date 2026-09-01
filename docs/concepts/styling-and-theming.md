@@ -39,6 +39,19 @@ along it, which both native renderers now implement (Compose has no stretch
 alignment, so the children carry a fill modifier; SwiftUI's flex layout
 proposes the cross extent directly).
 
+`Align` is the odd one, because it carries two roles. On a `Text` it is the
+text alignment; on a container it is the cross-axis fallback consulted when
+`AlignItems` is unset. `AlignStart`, `AlignCenter` and `AlignEnd` mean
+something in both roles, `AlignJustify` only in the first, and `AlignStretch`
+and `AlignBaseline` only in the second — so `core.TextAlignments()` names the
+subset a text renderer is required to handle, and the other two are expected to
+fall through wherever text is being drawn. Every renderer is held to that list;
+`Align(AlignJustify)` used to justify text on Android alone, and
+`Align(AlignStretch)` on a Column used to stretch on iOS alone. Both now agree
+across all four targets. The cross-axis fallback is read only on a vertical
+axis (a Column, not a Row), on both natives alike, because `Align` began life
+as a text concept.
+
 ### Accessibility props
 
 Accessibility semantics ride on `Style` so every builder supports them

@@ -60,6 +60,18 @@ struct GrMobFlexSolver {
         return natural
     }
 
+    /// The justify-content values that make the container fill a definite
+    /// offer instead of hugging its children: everything the leftover space
+    /// can be *spent* on. Only flex-start cannot spend it, since packing to
+    /// the leading edge looks identical at either size.
+    ///
+    /// A fifth copy of core's list, and the one that is not a switch — so it
+    /// is pinned by reading the array literal rather than switch arms. See
+    /// TestSwiftJustifyClaimsFreeSpaceClassifiesEveryJustifyContent in
+    /// mobile/verify, which requires this list plus flex-start to be exactly
+    /// core.JustifyContents(): a seventh value added to core has to be
+    /// classified here, not merely defaulted. Keep it one flat array of string
+    /// literals on a single line.
     var justifyClaimsFreeSpace: Bool {
         ["center", "flex-end", "space-between", "space-around", "space-evenly"].contains(justify)
     }
@@ -98,9 +110,26 @@ struct GrMobFlexSolver {
                         gap: gap(free: free, count: n))
     }
 
+    /// The offset of the first child from the leading edge.
+    ///
+    /// This and `gap` below split one question between them: justify-content
+    /// spends the leftover space either *before* the run of children or
+    /// *between* them, and most values spend it entirely on one or the other.
+    /// So each dispatch lists all six values and each returns 0 for the ones
+    /// the other answers for — which is why a value missing from both would be
+    /// invisible rather than obvious. It would simply pack to the start.
+    ///
+    /// Both are held to core.JustifyContents() by
+    /// TestSwiftFlexSolverCoversEveryJustifyContent in mobile/verify. One arm
+    /// per line, string literals first, `default:` last, and the arms that
+    /// duplicate `default:`'s body stay spelled out.
     func leading(free: CGFloat, count n: Int) -> CGFloat {
         guard free > 0, n > 0 else { return 0 }
         switch justify {
+        // Nothing before the first child. flex-start packs to the leading edge
+        // and spends nothing; space-between spends the whole leftover on the
+        // gaps, which is `gap`'s half of the answer.
+        case "flex-start", "space-between": return 0
         case "center": return free / 2
         case "flex-end": return free
         // CSS space-around gives each item an equal margin on both sides, so
@@ -113,9 +142,16 @@ struct GrMobFlexSolver {
         }
     }
 
+    /// Extra space inserted between children, on top of `spacing`. See
+    /// `leading` above for why both dispatches list all six values.
     func gap(free: CGFloat, count n: Int) -> CGFloat {
         guard free > 0, n > 0 else { return 0 }
         switch justify {
+        // The three that spend the leftover on position rather than on
+        // spacing: the children stay packed against each other and only the
+        // whole run moves, so the inter-item gap is the container's `spacing`
+        // and this adds nothing to it.
+        case "flex-start", "center", "flex-end": return 0
         case "space-between": return n > 1 ? free / CGFloat(n - 1) : 0
         case "space-around": return free / CGFloat(n)
         case "space-evenly": return free / CGFloat(n + 1)
@@ -124,12 +160,26 @@ struct GrMobFlexSolver {
     }
 
     /// Cross-axis placement of one child within the container's cross extent.
-    /// "stretch" is absent because a stretched child was already given the
-    /// whole extent and has nothing left to offset by.
+    ///
+    /// Held to core.AlignItemsValues() by
+    /// TestSwiftCrossOffsetCoversEveryAlignItems in mobile/verify. One arm per
+    /// line, string literals first, `default:` last; the arms returning 0 are
+    /// not redundant with `default:` in meaning, only in value, and folding
+    /// them away would lose the distinction between "handled" and "unknown".
+    ///
+    /// The "start" and "end" labels are not AlignItems values — they are
+    /// core.AlignStart and core.AlignEnd arriving through GrMobFlexStack's
+    /// `align` fallback, which a Column consults when AlignItems is unset.
     static func crossOffset(align: String, child: CGFloat, extent: CGFloat) -> CGFloat {
         switch align {
+        case "flex-start", "start": return 0
         case "center": return max(0, (extent - child) / 2)
         case "flex-end", "end": return max(0, extent - child)
+        // A stretched child was already given the whole cross extent by the
+        // caller, so child == extent and every formula above collapses to 0
+        // anyway. Listed rather than left to `default:` so the value reads as
+        // handled-elsewhere instead of unconsidered.
+        case "stretch": return 0
         default: return 0
         }
     }

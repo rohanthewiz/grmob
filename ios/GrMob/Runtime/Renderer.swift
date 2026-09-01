@@ -134,9 +134,22 @@ struct RenderNode: View {
 /// `.clipped()` on the two overflowing modes is not cosmetic: CSS object-fit
 /// and Compose's ContentScale.Crop both crop to the box, and an uncropped
 /// SwiftUI image would paint over its siblings instead.
+///
+/// Every mode core declares is listed explicitly, including "fit" — whose
+/// body the `default` arm below repeats verbatim. The repetition is deliberate
+/// and must not be folded away: `default` swallows an unrecognized mode
+/// silently, so a fifth ContentMode added to core would draw here as fit while
+/// both DOM targets fell back to the browser default, and nothing anywhere
+/// would fail. Listing the modes makes the coverage readable from outside, and
+/// mobile/verify/contentmode_test.go reads it — it compares these case labels
+/// with core.ContentModes() under a plain `go test ./...`. Keep one
+/// `case "…":` per line and keep the `default` arm; that is the shape the
+/// parse requires.
 @ViewBuilder
 private func grMobScaled(_ image: Image, mode: String) -> some View {
     switch mode {
+    case "fit":
+        image.resizable().scaledToFit()
     case "fill":
         image.resizable().scaledToFill().clipped()
     case "stretch":
@@ -148,6 +161,8 @@ private func grMobScaled(_ image: Image, mode: String) -> some View {
         // size and is centered by the frame it sits in.
         image.clipped()
     default:
+        // Absent (core.imageNode omits the prop entirely) or a mode this build
+        // of the runtime predates. Same drawing as "fit" above.
         image.resizable().scaledToFit()
     }
 }
@@ -279,13 +294,14 @@ struct GrMobFlexStack<Content: View>: View {
             axis: axis,
             spacing: style?.gap ?? 0,
             justify: style?.justifyContent ?? "",
-            // AlignItems governs cross-axis placement; the DSL's simpler
-            // Align ("center"/"end") is the fallback, but only where it has
-            // ever applied — a Column's horizontal cross axis. Align is a
-            // text-alignment concept and was never read for a Row's vertical
-            // one; honoring it there now would move existing rows.
-            crossAlign: (style?.alignItems).flatMap { $0.isEmpty ? nil : $0 }
-                ?? (axis == .vertical ? (style?.align ?? "") : "")
+            // AlignItems governs cross-axis placement; crossAxisValue folds
+            // in the DSL's simpler Align ("center"/"end") as the fallback,
+            // but the fallback applies only where it ever has — a Column's
+            // horizontal cross axis. Align is a text-alignment concept and
+            // was never read for a Row's vertical one; honoring it there now
+            // would move existing rows.
+            crossAlign: axis == .vertical ? crossAxisValue(style)
+                                          : (style?.alignItems ?? "")
         ) {
             content
         }
@@ -411,7 +427,17 @@ private struct GrMobList: View {
                 // a flexible frame on each row. There is no main-axis
                 // counterpart because a scrolling axis has no leftover space
                 // for FlexGrow to divide.
-                let stretch = (s?.alignItems ?? "") == "stretch"
+                //
+                // Read through crossAxisValue — the same read the stack's
+                // alignment makes — so the Style.Align fallback reaches this
+                // binding too. It used to test alignItems alone while
+                // crossAlignmentH read the fallback, and the two answers
+                // disagreed exactly when it mattered: Align: stretch with
+                // AlignItems unset took crossAlignmentH's "stretch" arm,
+                // whose comment promises this frame does the filling, and
+                // then no frame was applied. See crossAxisValue for the pin
+                // that keeps the two reads together.
+                let stretch = crossAxisValue(s) == "stretch"
                 ForEach(rows, id: \.viewID) { row in
                     RenderNode(node: row, grow: stretch ? .horizontal : .none)
                 }
@@ -448,8 +474,30 @@ private func flattenFragments(_ children: [GrMobNode]) -> [GrMobNode] {
     return out
 }
 
+/// The effective cross-axis value of a style: AlignItems, else the DSL's
+/// simpler Align as the fallback when AlignItems is unset.
+///
+/// One function because the fallback is read in three places — GrMobFlexStack's
+/// crossAlign (on the vertical axis only; the asymmetry is explained there),
+/// the lazy list's placement dispatch (crossAlignmentH), and the lazy list's
+/// stretch binding — and two of those reads have already come apart once.
+/// GrMobList's stretch binding tested alignItems alone while crossAlignmentH
+/// read the fallback, so Align: stretch with AlignItems unset landed on the
+/// "stretch" arm below — whose comment says the flexible frame does the
+/// filling — while the binding that applies that frame saw no stretch at all.
+/// Rows placed leading and filled nothing, on both natives, while a Column
+/// with the identical style stretched. An equality test has no arms, so the
+/// coverage checks in mobile/verify could not see it;
+/// TestListStretchFillReadsTheAlignFallback now pins the binding to this
+/// helper and this helper to the `align` read instead.
+private func crossAxisValue(_ s: GrMobStyle?) -> String {
+    let items = s?.alignItems ?? ""
+    return items.isEmpty ? (s?.align ?? "") : items
+}
+
 /// AlignItems governs cross-axis placement; the DSL's simpler Align
-/// ("center"/"end") acts as a fallback when AlignItems is unset.
+/// ("center"/"end") acts as a fallback when AlignItems is unset (the
+/// crossAxisValue read above).
 ///
 /// Only GrMobList still needs this. Row and Column place their children
 /// through GrMobFlexLayout, which computes the offset itself — it has to,
@@ -457,12 +505,26 @@ private func flattenFragments(_ children: [GrMobNode]) -> [GrMobNode] {
 /// can express. A LazyVStack cannot be replaced by a custom Layout without
 /// giving up laziness, so it keeps a native alignment. (The vertical
 /// counterpart went with the HStack it served.)
+/// Held to core.AlignItemsValues() by
+/// TestSwiftCrossAlignmentCoversEveryAlignItems in mobile/verify. One arm per
+/// line, string literals first, `default:` last; the arms that duplicate
+/// `default:`'s body are deliberate and must not be folded into it.
+///
+/// The "end" label alongside "flex-end" is not an AlignItems at all — it is
+/// core.AlignEnd arriving through crossAxisValue's fallback, which is why
+/// this dispatch answers for two vocabularies at once.
 private func crossAlignmentH(_ s: GrMobStyle?) -> HorizontalAlignment {
-    var v = s?.alignItems ?? ""
-    if v.isEmpty { v = s?.align ?? "" }
+    let v = crossAxisValue(s)
     switch v {
+    case "flex-start", "start": return .leading
     case "center": return .center
     case "flex-end", "end": return .trailing
+    // Not placement. A stretched row is given the whole cross extent by the
+    // flexible frame GrMobList puts on it (see the `stretch` binding in its
+    // body), so by the time the stack's own alignment is consulted there is
+    // nothing left to align — every alignment would look identical. Listed so
+    // that "handled elsewhere" is distinguishable from "not handled".
+    case "stretch": return .leading
     default: return .leading
     }
 }
@@ -515,10 +577,34 @@ private func grMobFontWeight(_ w: Int) -> Font.Weight {
     }
 }
 
+/// core.TextAlignments -> SwiftUI's TextAlignment.
+///
+/// Every value listed explicitly, including the two that `default` would have
+/// produced anyway. That redundancy is the point and must not be folded away:
+/// SwiftUI has no "unset" alignment to fall through to, so an unlisted value
+/// is not left alone, it is silently rendered as leading — which is how
+/// justified text came to render on Compose and nowhere else. Held to
+/// core.TextAlignments() by TestSwiftTextAlignmentCoversEveryTextAlignment in
+/// mobile/verify, which parses these arms; keep one arm per line with its
+/// string literals first and `default:` last.
+///
+/// AlignStretch and AlignBaseline are absent by design. They are Alignments
+/// that name a cross-axis placement rather than a text alignment, they reach
+/// Style.Align through its other role, and core.TextAlignments() leaves them
+/// out for exactly that reason — so they fall to `default:` here, which is the
+/// same nothing htmlout and the WASM runtime do with them.
 private func grMobTextAlignment(_ align: String) -> TextAlignment {
     switch align {
+    case "start": .leading
     case "center": .center
     case "end": .trailing
+    // SwiftUI's TextAlignment has three members and no justified setting;
+    // Text cannot justify at all. This arm exists to say that out loud, not
+    // to do something `default:` would not have done — htmlout and the WASM
+    // runtime emit text-align:justify and Compose sets TextAlign.Justify, so
+    // this is the one target that cannot honor the value, and the difference
+    // deserves to be visible here rather than inferred from an absence.
+    case "justify": .leading
     default: .leading
     }
 }
@@ -637,6 +723,11 @@ private struct GrMobTextField: View {
         let upstream = node.stringProp("value")
         let onChange = node.stringProp("onChange")
         let onSubmit = node.stringProp("onSubmit")
+        // The keyboard's action key, decided in Go from core.UseFocusOrder:
+        // "next" on every field of a declared order but the last. Go also
+        // wired the onSubmit above to advance the focus, so this prop only
+        // chooses the label — the action itself is an ordinary submit.
+        let imeAction = node.stringProp("imeAction")
         let onFocus = node.stringProp("onFocus")
         let onBlur = node.stringProp("onBlur")
         // The imperative half: core.Focus / core.DismissKeyboard reach the
@@ -662,9 +753,21 @@ private struct GrMobTextField: View {
         field(value: value, prompt: prompt)
             .focused($focused)
             // The return key dispatches onSubmit as a plain void event — the
-            // same channel as a Button tap — and advertises itself as "done"
-            // so the keyboard reflects that the field acts on return.
-            .submitLabel(onSubmit.isEmpty ? .return : .done)
+            // same channel as a Button tap — and advertises what it will do:
+            // "next" for a field with somewhere to go (core.UseFocusOrder),
+            // "done" for one that acts on return, and the plain return key
+            // for a field that does neither.
+            //
+            // Next is tested first because it is the more specific claim: Go
+            // only stamps it on a field whose onSubmit it wired itself, so the
+            // label and the action can never disagree.
+            //
+            // Deliberately not a chained @FocusState enum walked by this
+            // renderer: that would make the order SwiftUI's idea of it, which
+            // is derived from layout and differs from Compose's. The order is
+            // declared in Go and stays there — the platform only reports that
+            // the key was pressed.
+            .submitLabel(imeAction == "next" ? .next : (onSubmit.isEmpty ? .return : .done))
             .onSubmit { if !onSubmit.isEmpty { runtime?.click(onSubmit) } }
             // The focus edges. This is also where the local buffer is seeded,
             // and the seeding goes first: a dispatch into Go can land a render

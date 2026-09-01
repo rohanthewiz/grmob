@@ -166,6 +166,119 @@ style list.
 `Fill` and `Center` crop on every target — an unclipped image would paint over
 its siblings.
 
+Note the three value columns have nothing in common: SwiftUI modifier chains,
+Compose `ContentScale` cases, CSS keywords. Only the first column — the mode
+names — is shared by all four renderers, so the DOM pair can be checked by
+comparing tables while the natives can only be checked for **coverage**: does
+every mode core declares have an arm of its own?
+
+Coverage is the half that matters here, because both natives fold the
+unrecognized case into `Fit` (neither SwiftUI nor Compose has CSS's "unset" to
+fall back to). Without a check, adding a fifth `ContentMode` would draw as
+`Fit` on iOS and Android while both DOM targets fell back to the browser
+default — four renderers, two behaviors, no error anywhere.
+
+`mobile/verify/contentmode_test.go` closes that. It reads the `switch mode` in
+`Renderer.swift` and the `when (mode)` in `Renderer.kt` as text and holds their
+arms up against `core.ContentModes()`. Reading rather than compiling is not a
+shortcut: `default` and `else` make a string switch exhaustive by construction,
+so "you forgot a mode" is not a type error in either language and never will
+be — only something comparing the arms with Go's list can notice. Doing that in
+Go is what puts the check inside a plain `go test ./...`, where it runs without
+Xcode, without the Android SDK, and without anyone remembering a `run.sh`.
+
+The price is a shape both functions must keep, stated in a comment beside each:
+one arm per line, string literals first on the line, the catch-all last, and
+every mode listed explicitly — including the one the catch-all would have
+handled anyway. Every violation fails as a named error saying what changed,
+rather than as an empty comparison that agrees with everything.
+
+### `Alignment`, `JustifyContent` and `AlignItems`
+
+The same coverage argument, applied to the three alignment types — and this
+time it found live bugs rather than a hypothetical one.
+
+These are unlike `ContentMode` in one way that matters. `htmlout` and the WASM
+runtime emit `justify-content` and `align-items` **verbatim**: core's spellings
+*are* the CSS ones, so the DOM pair cannot be wrong about a value it never
+interprets. All of the drift risk is native, where eleven `switch`/`when`
+dispatches across three files each turn a string into a SwiftUI or Compose
+value, and each ends in a catch-all that renders *something*. A value with no
+arm does not error — it packs to the start.
+
+| core | iOS | Android |
+|---|---|---|
+| `JustifyContent` | `GrMobFlexSolver.leading` + `.gap` (arithmetic) | `horizontalArrangement` / `verticalArrangement` |
+| `AlignItems` | `GrMobFlexSolver.crossOffset`, `crossAlignmentH` | Row / Column / List cross alignment |
+| `Alignment` (as text) | `grMobTextAlignment` | `textStyle`'s `textAlign` |
+
+`mobile/verify/alignment_test.go` holds each of them to `core.JustifyContents()`,
+`core.AlignItemsValues()` or `core.TextAlignments()`. Two details are worth
+knowing:
+
+- **The iOS solver answers `justify-content` with two dispatches**, one for the
+  offset before the run of children and one for the gap between them, and each
+  returns 0 for the half the other owns. They are checked *separately*: a union
+  of their arms would pass if each half answered for values it has no business
+  answering for, and the arrangement that makes the solver readable is that each
+  states its own complete opinion.
+- **Several cross-axis dispatches serve two vocabularies at once.** `Style.Align`
+  doubles as the fallback a container reads when `AlignItems` is unset, so a
+  Column's switch legitimately carries `"start"`/`"end"` arms that are
+  `core.Alignment` values, not `AlignItems` ones. Those are *permitted, not
+  required* — `GrMobRow` deliberately declines the fallback, because `Align` is
+  a text-alignment concept and has never been read for a Row's vertical axis.
+  All four targets now draw that line in the same place: the DOM pair reads
+  the same fallback through `htmlout/crossaxis.go`'s tables, gated to the
+  same three container types and declining `Row` the same way (see
+  [WebAssembly](wasm.md#the-cross-axis-fallback)).
+
+#### What this found
+
+`Align` was the worst-behaved prop in the framework: one value, four behaviors.
+`core.Align(core.AlignJustify)` justified the text on Compose, rendered leading
+on SwiftUI, exported no declaration at all from `htmlout`, and did nothing
+whatsoever on the web — the WASM runtime **never read `Style.Align` in any
+form**. All four are now held to `core.TextAlignments()`, and the web target
+reads the prop at all for the first time (see
+[WebAssembly](wasm.md#text-alignment)).
+
+Coverage means a target has *said* what it does with a value, not that it can
+honor it. SwiftUI genuinely cannot justify text — `TextAlignment` has three
+members — so `grMobTextAlignment` carries an explicit `"justify"` arm that
+falls back to leading and names the limit. An explicit arm is an answer;
+silence is not.
+
+`Align(AlignStretch)` on a Column was a second divergence, and one no coverage
+test can reach: it stretched on iOS and did nothing on Android, because Compose
+tested `alignItems` alone where SwiftUI consulted the `Align` fallback. That is
+an equality test, not a dispatch — there are no arms to hold up against a list —
+so it was found by reading and fixed by hand (`isColumnStretch`). The switch
+checks reach the switches, and that is all they reach.
+
+`Align(AlignStretch)` on a `List` was the same story again, this time with the
+natives in perfect agreement — on the wrong answer. Each List's placement
+dispatch reads the `Align` fallback, and its `"stretch"` arm defers to the fill
+modifier in the item loop; each item loop tested `alignItems` alone. The value
+took the arm's word for a fill that never happened: rows placed at the start
+edge and stretched nowhere, while a Column with the identical style stretched.
+Both loops now read the fallback-aware helper (`crossAxisValue` on iOS,
+`isColumnStretch` on Android — a List's cross axis is horizontal like a
+Column's), and `TestListStretchFillReadsTheAlignFallback` pins the loop to the
+helper and the helper to the fallback — the one stretch equality a test now
+reaches.
+
+#### Known divergence, left alone
+
+Compose's five distributing `Arrangement`s take no spacing argument, so a `Row`
+with both a `Gap` and a `JustifyContent` loses the gap on Android. CSS treats
+gap as a minimum that `justify-content` adds to, and the iOS solver does the
+same (it carries `spacing` separately from `justify`).
+`Arrangement.spacedBy(gap, alignment)` would fix the three packing values;
+nothing expresses gap-plus-distribution for the `space-*` three without a custom
+`Arrangement`. Not attempted, because it is a rendering change on the one target
+this repo cannot build.
+
 ### `Disabled`
 
 `core.Disabled(bool)` becomes the platform's own inert state — `enabled =
@@ -188,3 +301,18 @@ it through the real `GrMobNode`/`GrMobStyle`/`TreeStore` files and deep-
 compares the resulting tree against Go's final render, and the view layer
 (`Renderer.swift`, `GrMobFlexStack` included) is then type-checked. Only Go
 and the Xcode Command Line Tools are required.
+
+`mobile/verify` needs even less — just Go. It holds the checks that have to
+hold in *both* native renderers at once, which is why they live under
+`mobile/` (the bridge surface both shells are written against) rather than in
+either platform's own harness. Its checks read native source as text, so they
+run under `go test ./...` alongside everything else: `ContentMode` coverage was
+the first, and the three alignment types are now held the same way — twelve
+dispatches across `Renderer.swift`, `GrMobFlex.swift` and `Renderer.kt`, plus
+one array literal.
+
+The price is a shape those dispatches must keep, stated in a comment beside
+each: one arm per line, string literals first on the line, the catch-all last,
+and every value listed explicitly — including the ones the catch-all would have
+handled anyway. Those redundant arms are the point and must not be tidied away;
+a value that falls through is indistinguishable from one nobody considered.

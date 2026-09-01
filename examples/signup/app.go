@@ -42,6 +42,23 @@ func App(ctx *core.Context) core.View {
 	// FocusTarget would stamp one identity and Focus would compare against
 	// another and the field would never focus.
 	emailField := core.UseFocusRef(ctx)
+	passwordField := core.UseFocusRef(ctx)
+	confirmField := core.UseFocusRef(ctx)
+
+	// The order the return key walks. One line, declared above the fields it
+	// names — membership is read while each field's props are stamped, so a
+	// field rendered before this call would see the previous pass's order.
+	//
+	// It gives the first two fields a keyboard whose action key reads "Next"
+	// and moves the cursor down the form; the confirm field has no successor,
+	// so its key stays the platform's default. That is the shape a signup
+	// form wants: three fields filled without the user reaching back to the
+	// screen between them.
+	//
+	// The terms checkbox is deliberately not in the order. No platform here
+	// gives a checkbox keyboard focus, so a fourth entry would advertise a
+	// Next that lands nowhere.
+	core.UseFocusOrder(ctx, emailField, passwordField, confirmField)
 
 	form := forms.UseForm(ctx, forms.Spec{
 		// RevealOnBlur: each field explains itself the moment the user is
@@ -124,13 +141,13 @@ func App(ctx *core.Context) core.View {
 				Required: form.Required("password"),
 				Hint:     "At least 8 characters",
 				Error:    form.Error("password"),
-				Input:    form.Password("password", "••••••••"),
+				Input:    form.Password("password", "••••••••", core.FocusTarget(passwordField)),
 			},
 			components.FormField{
 				Label:    "Confirm password",
 				Required: form.Required("confirm"),
 				Error:    form.Error("confirm"),
-				Input:    form.Password("confirm", "••••••••"),
+				Input:    form.Password("confirm", "••••••••", core.FocusTarget(confirmField)),
 			},
 
 			// A checkbox has no error line of its own — but FormField's Input

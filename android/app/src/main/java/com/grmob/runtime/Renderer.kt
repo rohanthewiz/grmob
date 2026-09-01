@@ -311,11 +311,24 @@ private fun gestureModifier(node: GrMobNode): Modifier {
  * ContentScale.None (Center) leaves the bitmap at its intrinsic pixel size;
  * AsyncImage's default alignment is already Center, so "no scaling, centered"
  * needs nothing further.
+ *
+ * Every mode core declares is listed explicitly, including "fit" — which the
+ * `else` arm below would already have handled. That redundancy is the point:
+ * `else` swallows an unrecognized mode silently, so a fifth ContentMode added
+ * to core would render here as Fit while both DOM targets fell back to the
+ * browser default, and nothing anywhere would fail. Listing the modes makes
+ * the coverage readable from outside, and mobile/verify/contentmode_test.go
+ * reads it — it compares these arms with core.ContentModes() under a plain
+ * `go test ./...`. Keep the arms one per line, string-literal first, and keep
+ * the `else` arm; that is the shape the parse requires.
  */
 private fun contentScaleFor(mode: String): ContentScale = when (mode) {
+    "fit" -> ContentScale.Fit
     "fill" -> ContentScale.Crop
     "stretch" -> ContentScale.FillBounds
     "center" -> ContentScale.None
+    // Absent (core.imageNode omits the prop entirely) or a mode this build of
+    // the runtime predates.
     else -> ContentScale.Fit
 }
 
@@ -342,7 +355,19 @@ private fun textStyle(s: GrMobStyle?): TextStyle {
         // FontWeight accepts directly.
         fontWeight = if (s.fontWeight > 0) FontWeight(s.fontWeight) else null,
         lineHeight = if (s.lineHeight > 0) s.lineHeight.sp else TextStyle.Default.lineHeight,
+        // core.TextAlignments -> Compose's TextAlign. Every value spelled out,
+        // including the one `else` would have produced, because Compose has no
+        // "unset" to fall through to: an unlisted value is not left alone, it
+        // is silently rendered as Start. Held to core.TextAlignments() by
+        // TestKotlinTextAlignCoversEveryTextAlignment in mobile/verify, which
+        // parses these arms out of textStyle — one per line, string literals first, `else ->`
+        // last, and the arm duplicating `else`'s body stays spelled out.
+        //
+        // AlignStretch and AlignBaseline are absent by design: they are
+        // Alignments naming a cross-axis placement, not a text alignment, and
+        // core.TextAlignments() leaves them out for that reason.
         textAlign = when (s.align) {
+            "start" -> TextAlign.Start
             "center" -> TextAlign.Center
             "end" -> TextAlign.End
             "justify" -> TextAlign.Justify
@@ -446,6 +471,11 @@ private fun GrMobTextField(
     val upstream = node.stringProp("value")
     val onChange = node.stringProp("onChange")
     val onSubmit = node.stringProp("onSubmit")
+    // The keyboard's action key, decided in Go from core.UseFocusOrder: "next"
+    // on every field of a declared order but the last. Go also wired the
+    // onSubmit above to advance the focus, so this prop only has to choose the
+    // label — the action itself is an ordinary submit dispatch.
+    val imeAction = node.stringProp("imeAction")
     val onFocus = node.stringProp("onFocus")
     val onBlur = node.stringProp("onBlur")
     // The imperative half: core.Focus / core.DismissKeyboard reach the screen
@@ -579,13 +609,35 @@ private fun GrMobTextField(
                 else -> KeyboardType.Text
             },
             // A submit-carrying field advertises Done so the IME's action key
-            // reads as "act on this", mirroring the iOS submitLabel.
-            imeAction = if (onSubmit.isNotEmpty()) ImeAction.Done else ImeAction.Default,
+            // reads as "act on this", mirroring the iOS submitLabel; a field
+            // with somewhere to go advertises Next instead, so the key reads
+            // "move on" and the platform draws the arrow users expect.
+            //
+            // Next is tested first because it is the more specific claim: Go
+            // only stamps it on a field whose onSubmit it wired itself, so the
+            // two can never disagree about what the key does.
+            imeAction = when {
+                imeAction == "next" -> ImeAction.Next
+                onSubmit.isNotEmpty() -> ImeAction.Done
+                else -> ImeAction.Default
+            },
         ),
         // The IME action dispatches onSubmit as a plain void event — the same
-        // channel as a Button tap.
+        // channel as a Button tap. Both arms dispatch the same ID: Compose
+        // routes the callback by which action the field advertised, so a field
+        // showing Next arrives here as onNext and one showing Done as onDone,
+        // and Go has already decided which handler that ID points at.
+        //
+        // Deliberately NOT LocalFocusManager.moveFocus(FocusDirection.Next):
+        // that would walk Compose's own focus graph, which is derived from
+        // layout and knows nothing about the order the Go code declared.
+        //
+        // A multiline field never gets here — Compose gives a non-singleLine
+        // BasicTextField a return key that inserts a newline, which is the
+        // right call. A TextArea in a focus order simply does not advance.
         keyboardActions = KeyboardActions(
             onDone = { if (onSubmit.isNotEmpty()) runtime.click(onSubmit) },
+            onNext = { if (onSubmit.isNotEmpty()) runtime.click(onSubmit) },
         ),
         decorationBox = { inner ->
             Box {
@@ -611,9 +663,24 @@ private fun GrMobRow(node: GrMobNode, extra: Modifier) {
     Row(
         modifier = s.boxModifier(extra.then(stretchRowHeight(s)), gestureModifier(node)),
         horizontalArrangement = horizontalArrangement(s),
+        // Held to core.AlignItemsValues() by
+        // TestKotlinRowAlignmentCoversEveryAlignItems in mobile/verify: one arm
+        // per line, string literals first, `else ->` last, and the two arms
+        // duplicating `else`'s body stay spelled out.
+        //
+        // No `align` fallback here, unlike the Column below. Style.Align is a
+        // text-alignment concept and has never been read for a Row's vertical
+        // axis; Renderer.swift draws the same line (GrMobFlexStack consults it
+        // only when the axis is vertical), so the two natives agree.
         verticalAlignment = when (s?.alignItems) {
+            "flex-start" -> Alignment.Top
             "center" -> Alignment.CenterVertically
             "flex-end" -> Alignment.Bottom
+            // Not placement. A stretched child is given the full height by
+            // RowChildren's fillMaxHeight, so nothing is left for the row's own
+            // alignment to place. Listed so "handled elsewhere" is
+            // distinguishable from "not handled".
+            "stretch" -> Alignment.Top
             else -> Alignment.Top
         },
     ) { RowChildren(node) }
@@ -626,10 +693,19 @@ private fun GrMobColumn(node: GrMobNode, extra: Modifier) {
         modifier = s.boxModifier(extra, gestureModifier(node)),
         verticalArrangement = verticalArrangement(s),
         // AlignItems governs cross-axis placement; the DSL's simpler Align
-        // ("center"/"end") acts as a fallback when AlignItems is unset.
+        // ("start"/"center"/"end") acts as a fallback when AlignItems is unset,
+        // which is why this dispatch answers for two vocabularies at once — the
+        // bare "start"/"end" labels are core.AlignStart and core.AlignEnd, not
+        // AlignItems values. Held to core.AlignItemsValues() by
+        // TestKotlinColumnAlignmentCoversEveryAlignItems in mobile/verify; one
+        // arm per line, string literals first, `else ->` last.
         horizontalAlignment = when (s?.alignItems?.ifEmpty { s.align }) {
+            "flex-start", "start" -> Alignment.Start
             "center" -> Alignment.CenterHorizontally
             "flex-end", "end" -> Alignment.End
+            // Given the full width by ColumnChildren's fillMaxWidth, so there
+            // is nothing left to place. See the Row above.
+            "stretch" -> Alignment.Start
             else -> Alignment.Start
         },
     ) { ColumnChildren(node) }
@@ -665,7 +741,7 @@ private fun RowScope.RowChildren(node: GrMobNode) {
 
 @Composable
 private fun ColumnScope.ColumnChildren(node: GrMobNode) {
-    val stretch = isStretch(node.style)
+    val stretch = isColumnStretch(node.style)
     node.children.forEachIndexed { i, child ->
         key(child.key.ifEmpty { i }) {
             val grow = child.style?.flexGrow ?: 0f
@@ -676,7 +752,34 @@ private fun ColumnScope.ColumnChildren(node: GrMobNode) {
     }
 }
 
+/**
+ * Whether a container stretches its children across the cross axis.
+ *
+ * Two spellings, because the Style.Align fallback is axis-dependent and this
+ * is where Android used to disagree with iOS. GrMobFlexStack in Renderer.swift
+ * reads Align as the cross-axis value only when the stack's axis is vertical —
+ * Align is a text-alignment concept and has never been read for a Row's
+ * vertical axis — so `Align(AlignStretch)` on a Column stretches on iOS and on
+ * a Row does not. Compose read `alignItems` alone in both places, so the
+ * Column case silently did nothing here while it worked there.
+ *
+ * The alignment coverage tests in mobile/verify could not have caught this and
+ * still cannot: this is an equality test, not a dispatch, so there are no arms
+ * to hold up against a list. It is the same class of bug those tests exist for
+ * and a reminder that they only reach the switches.
+ *
+ * GrMobList then repeated the Column half of that history, on both natives at
+ * once: its item loop called isStretch — the Row spelling — while its
+ * placement dispatch read the fallback, so the dispatch's "stretch" arm
+ * promised a fill the loop never applied. A List's cross axis is horizontal
+ * like a Column's, so it takes isColumnStretch. That equality is now the one
+ * stretch read a test does reach: TestListStretchFillReadsTheAlignFallback in
+ * mobile/verify pins the loop to this helper and this helper to the fallback.
+ */
 private fun isStretch(s: GrMobStyle?): Boolean = s?.alignItems == "stretch"
+
+private fun isColumnStretch(s: GrMobStyle?): Boolean =
+    s?.alignItems?.ifEmpty { s.align } == "stretch"
 
 /**
  * The container half of a stretched Row.
@@ -728,9 +831,16 @@ private fun GrMobList(node: GrMobNode, extra: Modifier) {
     LazyColumn(
         modifier = s.boxModifier(extra, gestureModifier(node)),
         verticalArrangement = verticalArrangement(s),
+        // The lazy sibling of GrMobColumn's dispatch, with the same contract
+        // and the same two vocabularies. Held to core.AlignItemsValues() by
+        // TestKotlinListAlignmentCoversEveryAlignItems in mobile/verify.
         horizontalAlignment = when (s?.alignItems?.ifEmpty { s.align }) {
+            "flex-start", "start" -> Alignment.Start
             "center" -> Alignment.CenterHorizontally
             "flex-end", "end" -> Alignment.End
+            // A stretched row is filled by the modifier the item loop applies,
+            // not placed by the stack. Same shape as Row and Column above.
+            "stretch" -> Alignment.Start
             else -> Alignment.Start
         },
     ) {
@@ -750,10 +860,17 @@ private fun GrMobList(node: GrMobNode, extra: Modifier) {
             } else {
                 Modifier
             }
-            // Same cross-axis stretch as ColumnChildren; a lazy item has no
-            // weight to combine it with, since a lazy list's main axis is
-            // scrollable and therefore unbounded.
-            if (isStretch(s)) m = m.fillMaxWidth()
+            // Same cross-axis stretch as ColumnChildren, down to the
+            // spelling: a List's cross axis is horizontal like a Column's,
+            // so it takes the column helper — the one that reads the
+            // Style.Align fallback. This used to call isStretch, the Row
+            // spelling that tests alignItems alone, while the placement
+            // dispatch above read the fallback: Align(AlignStretch) with
+            // AlignItems unset took the "stretch" arm, whose comment
+            // promises this modifier fills the row, and then nothing filled
+            // it. A lazy item has no weight to combine the fill with, since
+            // a lazy list's main axis is scrollable and therefore unbounded.
+            if (isColumnStretch(s)) m = m.fillMaxWidth()
             RenderNode(row, m)
         }
     }
@@ -773,25 +890,63 @@ private fun flattenFragments(children: List<GrMobNode>): List<GrMobNode> {
     return out
 }
 
+/**
+ * core.JustifyContents -> Compose Arrangement, on each axis.
+ *
+ * Both are held to core.JustifyContents() by
+ * TestKotlinArrangementsCoverEveryJustifyContent in mobile/verify, which
+ * parses these arms: one per line, string literals first, `else ->` last. The
+ * "flex-start" arm duplicates `else`'s body and stays spelled out — an
+ * unlisted value here does not fall back to some neutral arrangement, it packs
+ * to the start, which is a rendering and not an abstention.
+ *
+ * Known divergence, deliberately left alone: the five distributing
+ * arrangements drop Style.Gap. CSS treats gap as a minimum that
+ * justify-content then adds to, and the iOS solver does the same (it carries
+ * `spacing` separately from `justify`), but Compose's Arrangement.Center and
+ * friends take no spacing argument, so a Row with both a Gap and a
+ * JustifyContent loses the gap here alone. Arrangement.spacedBy(gap, alignment)
+ * would fix the three packing values; nothing expresses gap-plus-distribution
+ * for the space-* three without a custom Arrangement. Not attempted because it
+ * is a rendering change on the one target this repo cannot build.
+ */
 private fun horizontalArrangement(s: GrMobStyle?): Arrangement.Horizontal =
     when (s?.justifyContent) {
+        "flex-start" -> packedHorizontally(s)
         "center" -> Arrangement.Center
         "flex-end" -> Arrangement.End
         "space-between" -> Arrangement.SpaceBetween
         "space-around" -> Arrangement.SpaceAround
         "space-evenly" -> Arrangement.SpaceEvenly
-        else -> if ((s?.gap ?: 0f) > 0f) Arrangement.spacedBy(s!!.gap.dp) else Arrangement.Start
+        else -> packedHorizontally(s)
     }
 
 private fun verticalArrangement(s: GrMobStyle?): Arrangement.Vertical =
     when (s?.justifyContent) {
+        "flex-start" -> packedVertically(s)
         "center" -> Arrangement.Center
         "flex-end" -> Arrangement.Bottom
         "space-between" -> Arrangement.SpaceBetween
         "space-around" -> Arrangement.SpaceAround
         "space-evenly" -> Arrangement.SpaceEvenly
-        else -> if ((s?.gap ?: 0f) > 0f) Arrangement.spacedBy(s!!.gap.dp) else Arrangement.Top
+        else -> packedVertically(s)
     }
+
+/**
+ * Children packed against the start edge, which is what flex-start asks for
+ * and also what an absent or unrecognized JustifyContent gets.
+ *
+ * Extracted so the explicit "flex-start" arm and the `else` arm above can
+ * share one body rather than repeat it: the body is not a bare Arrangement,
+ * because this is the one path where Style.Gap survives (see the divergence
+ * note above), and two copies of that conditional would be two chances to
+ * change only one of them.
+ */
+private fun packedHorizontally(s: GrMobStyle?): Arrangement.Horizontal =
+    if ((s?.gap ?: 0f) > 0f) Arrangement.spacedBy(s!!.gap.dp) else Arrangement.Start
+
+private fun packedVertically(s: GrMobStyle?): Arrangement.Vertical =
+    if ((s?.gap ?: 0f) > 0f) Arrangement.spacedBy(s!!.gap.dp) else Arrangement.Top
 
 // ---------------------------------------------------------------------------
 // Composite components

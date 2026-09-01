@@ -48,6 +48,35 @@ const GrMob = (() => {
             });
         }
 
+        // The <input> variant, which the tag alone cannot express: tagForType
+        // sends four Go node types to <input>, and an <input> with no type
+        // attribute is a text box. Without this a Checkbox drew as a text
+        // field and its state had nowhere to appear at all.
+        //
+        // Set once here and never on the update path, because a node type
+        // cannot change under a patch — the reconciler emits a replace for a
+        // changed type (reconcile/patch.go), so the element that carries a
+        // given type is always one this function built.
+        const inputType = inputTypeFor(node.Type);
+        if (inputType) {
+            el.setAttribute("type", inputType);
+        }
+
+        // Containers are stacks by definition: on the native renderers a
+        // Row/Column is inherently an HStack/VStack, so the web has to opt
+        // into the same default or diverge — a block-flow div lets inline
+        // children (Text renders as <span>) run together on one line, which
+        // is exactly what a bare Column of texts looked like before this.
+        // Assigned before applyStyle so a style-driven flex block (which
+        // carries the axis and alignment logic in styleFromGrMob) still wins.
+        // Modal is excluded: its fixed-overlay chassis above already sets
+        // flex and toggles display through the visible prop. Spacer is
+        // excluded because it is a sized void, not a stack.
+        if (STACK_CONTAINERS.has(node.Type)) {
+            el.style.display = "flex";
+            el.style.flexDirection = node.Type === "Row" ? "row" : "column";
+        }
+
         if (node.Style) {
             applyStyle(el, node.Style, node.Type);
         }
@@ -72,7 +101,7 @@ const GrMob = (() => {
                         el.dataset[`has_listener_${key}`] = "true";
                         el.addEventListener(event, (e) => {
                             const latestCbId = el.dataset[`listener_${key}`];
-                            if (latestCbId) {
+                            if (latestCbId && eventQualifies(key, e)) {
                                 const payload = extractEventPayload(e, node.Type);
                                 window.GoInvokeCallback(latestCbId, payload);
                             }
@@ -87,6 +116,17 @@ const GrMob = (() => {
                 }
                 else if (key === "label") {
                     el.textContent = value;
+                }
+                else if (key === "checked") {
+                    // The property, not the attribute. A `checked` attribute
+                    // is only the control's *default* state, which the
+                    // browser stops consulting the moment the user touches
+                    // the box; the property is the live state, and the live
+                    // state is what Go is describing.
+                    el.checked = !!value;
+                }
+                else if (key === "rows") {
+                    applyRows(el, value);
                 }
                 else if (key === "src" && node.Type === "Image") {
                     el.src = value;
@@ -104,6 +144,11 @@ const GrMob = (() => {
                 }
 
             }
+            // After the loop, not inside it: the hint is a function of two
+            // props (imeAction and onSubmit) and Object.entries fixes no order
+            // between them, so deciding it per key would depend on which one
+            // the map happened to yield first.
+            applyEnterKeyHint(el, node.Props);
         }
 
         return el;
@@ -133,6 +178,16 @@ const GrMob = (() => {
     }
 
     const FORM_CONTROLS = new Set(["button", "input", "textarea", "select"]);
+
+    // The container types that stack their children (Row horizontally,
+    // everything else vertically) — the same axis rule styleFromGrMob and
+    // htmlout's styleValue apply when a node opts into flex explicitly.
+    // Fragment and Theme are grouping nodes, but this runtime draws them as
+    // real divs (see tagForType), so they need the stacking default too.
+    const STACK_CONTAINERS = new Set([
+        "Row", "Column", "Card", "Box", "Scroll", "SafeArea", "List",
+        "Fragment", "Theme",
+    ]);
 
     // Wires a Modal's backdrop tap to Go's OnDismiss. Same latest-ID dataset
     // discipline as the generic listener path: callback IDs are per-pass, so
@@ -186,9 +241,27 @@ const GrMob = (() => {
         });
     }
 
-    // core.ContentMode -> CSS object-fit. Kept in sync with htmlout's
-    // objectFit(); an unknown or absent mode clears the property so the
-    // browser's own default applies.
+    // core.ContentMode -> CSS object-fit. Go states this table once, in
+    // htmlout/objectfit.go, and this is its restatement here. The two are
+    // compared by TestRuntimeObjectFitsMatchGo in wasm/verify, which parses
+    // *this literal* out of this file and runs under a plain `go test ./...`,
+    // so a change on either side fails until it is made on both. Keep it a
+    // flat literal in a function named objectFitFor, subscripted by that
+    // function's own argument and falling back to "" — the parse reads that
+    // shape, the same one tagForType and inputTypeFor are written in. (It
+    // takes the subscript name off the signature, so `mode` here and `type`
+    // there are both fine; what it will not accept is a subscript that is
+    // neither.)
+    //
+    // Go's table holds the bare value ("contain") rather than the whole
+    // declaration, because that is the half the two sides share: htmlout
+    // joins "object-fit:" onto it for its style attribute, and this assigns
+    // it to a property.
+    //
+    // An unknown or absent mode yields "", which *clears* the property. That
+    // is not the same as doing nothing, and the patch path is why: an Image
+    // whose contentMode prop is removed has to fall back to the browser's
+    // default rather than keep the last mode it was handed.
     function objectFitFor(mode) {
         return {
             fit: "contain",
@@ -198,6 +271,89 @@ const GrMob = (() => {
         }[mode] || "";
     }
 
+    // core.Alignment -> CSS text-align. Go states this table once, in
+    // htmlout/textalign.go, and this is its restatement here; the two are
+    // compared by TestRuntimeTextAlignsMatchGo in wasm/verify. Same shape rule
+    // as objectFitFor above: a flat literal in a function named textAlignFor,
+    // subscripted by that function's own argument, falling back to "".
+    //
+    // This is the newest of the four tables and the only one that was added to
+    // *close* a gap rather than to pin an existing copy. Until it existed this
+    // runtime did not read style.Align at all, in any form — so every
+    // core.Align on the web target was silently dropped while htmlout emitted
+    // a text-align and both natives set one. Four renderers, three behaviors,
+    // and one of them was "nothing".
+    //
+    // Only four of the six Alignments are here. AlignStretch and AlignBaseline
+    // name a cross-axis placement, not a text alignment, and CSS text-align
+    // has no such keyword; they reach this function through Style.Align's
+    // other role (the fallback a container reads when AlignItems is unset —
+    // crossAxisAlignFor below is that role's table) and are meant to fall
+    // through to "". See core.TextAlignments.
+    //
+    // "" clears the property rather than leaving it alone, which is what makes
+    // an Align changed from "center" to "stretch" on the patch path stop being
+    // centered.
+    //
+    // The four rows map each value to itself: start/end are CSS's
+    // direction-aware keywords (originally the physical left/right, which
+    // disagreed with both natives in RTL locales — see the authority's doc).
+    // The table still earns its keep as a filter, because the identity must
+    // NOT extend to the two cross-axis values above.
+    function textAlignFor(align) {
+        return {
+            start: "start",
+            center: "center",
+            end: "end",
+            justify: "justify",
+        }[align] || "";
+    }
+
+    // core.Alignment -> CSS align-items: Style.Align's *second* role, the
+    // cross-axis value a vertical-stacking container falls back to when
+    // AlignItems is unset. Go states this table once, in htmlout/crossaxis.go,
+    // and this is its restatement; the two are compared by
+    // TestRuntimeCrossAxisAlignsMatchGo in wasm/verify. Same shape rule as
+    // textAlignFor above: a flat literal in a function named crossAxisAlignFor,
+    // subscripted by that function's own argument, falling back to "".
+    //
+    // Like the text-align table, this one was added to *close* a gap: both
+    // natives have read the fallback since they existed, so Align: "center" on
+    // a Column centered the children on device and only the text on the web.
+    //
+    // The values are the AlignItems spellings ("flex-start", not CSS's newer
+    // "start") because AlignItems itself is emitted verbatim below, and the
+    // fallback means "behave as if that AlignItems had been set" — one
+    // semantic, one CSS spelling, whichever prop stated it. justify and
+    // baseline have no row: no native dispatch answers for them on the cross
+    // axis (baseline falls through to start-packing there), so a row here
+    // would move two targets out of four. See the authority's doc.
+    function crossAxisAlignFor(align) {
+        return {
+            start: "flex-start",
+            center: "center",
+            end: "flex-end",
+            stretch: "stretch",
+        }[align] || "";
+    }
+
+    // Which node types read the fallback at all, by the flex axis each stacks
+    // along — exactly the containers the natives read it for (Card is a Column
+    // whose Go theme style carries the card look, on every renderer). Row is
+    // absent on purpose, everywhere: the fallback applies to a horizontal
+    // cross axis only, and a gate is needed at all because styleFromGrMob
+    // serializes every node — without it, a Text carrying Align in its
+    // ordinary text role would become a flex container. Go's copy is
+    // alignFallbackAxes in htmlout/crossaxis.go; the two are compared by
+    // TestRuntimeAlignFallbackAxesMatchGo, so keep the flat-literal shape.
+    function alignFallbackAxisFor(nodeType) {
+        return {
+            Column: "column",
+            Card: "column",
+            List: "column",
+        }[nodeType] || "";
+    }
+
     // The Style -> CSS mapping. nodeType decides the default flex axis, the
     // same rule htmlout's styleValue uses: a Row stacks horizontally, every
     // other container vertically.
@@ -205,6 +361,11 @@ const GrMob = (() => {
         const out = {};
         if (style.FontSize) out.fontSize = `${style.FontSize}px`;
         if (style.TextColor) out.color = style.TextColor;
+        // Guarded on style.Align rather than assigned unconditionally, so a
+        // patch whose Changes do not mention Align leaves the property alone —
+        // the same convention every other property in this function follows,
+        // because applyStyle Object.assigns the result over the live style.
+        if (style.Align) out.textAlign = textAlignFor(style.Align);
         if (style.Background) out.background = style.Background;
         if (style.Padding) out.padding = edgeToCSS(style.Padding);
         if (style.Margin) out.margin = edgeToCSS(style.Margin);
@@ -216,19 +377,39 @@ const GrMob = (() => {
         // of them has to be made a flex container first — without this,
         // AlignItems ("stretch" included) was declared in Go and silently
         // dropped on the web, while both natives honored it.
-        if (style.Gap || style.JustifyContent || style.AlignItems || style.FlexDirection) {
+        //
+        // The effective cross-axis value is AlignItems, else the Align
+        // fallback — the same read Renderer.swift's crossAxisValue does, gated
+        // the same two ways htmlout's styleValue gates it: only the
+        // vertical-stacking container types, and not when an explicit
+        // FlexDirection flipped the node to a row, because the fallback
+        // applies to a horizontal cross axis only on every target. Safe on
+        // the patch path: an update-style patch carries the whole new Style
+        // (reconcile/patch.go), so an absent AlignItems here means unset, not
+        // unmentioned. The prefix test admits "column-reverse", whose cross
+        // axis is horizontal all the same.
+        const dir = style.FlexDirection || (nodeType === "Row" ? "row" : "column");
+        let alignItems = style.AlignItems || "";
+        if (!alignItems && dir.startsWith("column") && alignFallbackAxisFor(nodeType)) {
+            alignItems = crossAxisAlignFor(style.Align || "");
+        }
+        if (style.Gap || style.JustifyContent || alignItems || style.FlexDirection) {
             out.display = "flex";
-            out.flexDirection = style.FlexDirection || (nodeType === "Row" ? "row" : "column");
+            out.flexDirection = dir;
             if (style.Gap) out.gap = `${style.Gap}px`;
             if (style.JustifyContent) out.justifyContent = style.JustifyContent;
-            if (style.AlignItems) out.alignItems = style.AlignItems;
+            if (alignItems) out.alignItems = alignItems;
         }
         // Display is deliberately NOT emitted. Go's DisplayMode carries values
-        // that are not CSS display keywords ("visible", "hidden"), and unlike
-        // htmlout — where an invalid declaration is dropped and the earlier
-        // display:flex survives — assigning one through el.style would
-        // overwrite the flex display in this object first and then be
-        // rejected by the browser, leaving the container in block flow.
+        // that are not CSS display keywords ("visible", "hidden"), and
+        // assigning one through el.style would overwrite the flex display in
+        // this object first and then be rejected by the browser, leaving the
+        // container in block flow. htmlout hit the sibling problem from the
+        // other side — a valid "block" emitted after the flex declarations
+        // beat them, so a themed Card's own Display: block killed its
+        // align-items — and now resolves Display against its flex container
+        // in styleValue; emitting nothing keeps this runtime out of both
+        // traps.
         // A flex *item* property: how this node behaves inside its parent's
         // layout, so it needs no display:flex of its own.
         if (style.FlexGrow) out.flexGrow = `${style.FlexGrow}`;
@@ -246,28 +427,106 @@ const GrMob = (() => {
         return `${edge.Top}px ${edge.Right}px ${edge.Bottom}px ${edge.Left}px`;
     }
 
+    // The Go node type -> the HTML tag. Go states this table once, in
+    // htmlout/tag.go, and this is its restatement in the language that
+    // actually calls createElement — the runtime cannot call into Go to ask.
+    // The two are compared by TestRuntimeTagsMatchGo in wasm/verify, which
+    // parses *this literal* out of this file and runs under a plain
+    // `go test ./...`, so a change made on either side fails until it is made
+    // on both. That test reads the object literal textually and checks the
+    // `[type] || "div"` that follows it, so keep this a flat literal in a
+    // function named tagForType. Same arrangement as inputTypeFor below.
+    //
+    // A census, not a list of exceptions: the plain <div> types are spelled
+    // out even though the fallback would produce the same element, so that a
+    // node type added to core and not taught to this runtime shows up as a
+    // missing row here rather than as silence.
     function tagForType(type) {
-        switch (type) {
-            case "Text": return "span";
-            case "Input":
-            case "InputPassword":
-            case "NumericInput":
-            case "Checkbox": return "input";
-            case "TextArea": return "textarea";
-            case "Button": return "button";
-            case "Image": return "img";
-            case "Card":
-            case "Row":
-            case "Column":
-            case "Scroll":
-            case "SafeArea":
-            case "Fragment":
-            // Modal is a div like the containers, but listed on its own line
-            // because it is not one: createElement gives it the fixed-overlay
-            // chassis, and the visible/backdrop props drive it thereafter.
-            case "Modal":
-            case "Spacer": return "div";
-            default: return "div";
+        return {
+            Text: "span",
+            Button: "button",
+            Image: "img",
+            TextArea: "textarea",
+
+            // Told apart from each other by inputTypeFor, below.
+            Input: "input",
+            InputPassword: "input",
+            NumericInput: "input",
+            Checkbox: "input",
+
+            Box: "div",
+            Card: "div",
+            Column: "div",
+            Row: "div",
+            Scroll: "div",
+            SafeArea: "div",
+            List: "div",
+            Modal: "div",
+            TabView: "div",
+            Spacer: "div",
+            CameraView: "div",
+
+            // Grouping nodes, and the one place this runtime deliberately
+            // disagrees with htmlout, which emits their children with no box
+            // at all. It can: it is a static snapshot. This runtime cannot,
+            // because patches are addressed positionally — a TargetID of
+            // "root/1/0" is resolved against the data-node-path attributes
+            // renderNode writes by walking node.Children — so the DOM has to
+            // stay isomorphic to the node tree. Dropping the element for a
+            // Fragment would send every patch beneath it to the wrong node.
+            //
+            // The cost is real and known: inside a flex parent this div
+            // becomes the single flex item and swallows the gap and alignment
+            // meant for the children. Fixing it means teaching the addressing
+            // scheme about nodes that have no element, not deleting these two
+            // rows. See transparentTypes in htmlout/tag.go.
+            Fragment: "div",
+            Theme: "div",
+        }[type] || "div";
+    }
+
+    // The Go node type -> the <input> type attribute. Only the four types
+    // tagForType collapses onto <input> appear here; every other node has a
+    // tag that already says what it is, and gets no type attribute (which is
+    // why the fallback below is "" and not an error).
+    //
+    // Go states this table once, in htmlout/inputtype.go, and this is its
+    // restatement in the language that actually sets the attribute — the
+    // runtime cannot call into Go to ask. The two are not kept in step by
+    // hand: htmlout.InputTypes() is compared against *this literal*, parsed
+    // out of this file, by TestRuntimeInputTypesMatchGo in wasm/verify, which
+    // runs under a plain `go test ./...`. So a change made on either side
+    // fails until it is made on both. That test parses the object literal
+    // textually and checks the `[type]` that follows it, so keep this a flat
+    // literal in a function named inputTypeFor.
+    //
+    // This is the discriminator the DOM needs and dataset.nodeType cannot
+    // supply: nodeType tells *this code* what a node is, the type attribute
+    // tells the *browser*, and only the latter decides what gets drawn.
+    function inputTypeFor(type) {
+        return {
+            Input: "text",
+            InputPassword: "password",
+            NumericInput: "number",
+            Checkbox: "checkbox",
+        }[type] || "";
+    }
+
+    // The visible height of a TextArea, in lines. A property rather than an
+    // attribute, matching value and placeholder: this is live control state
+    // the runtime keeps in step with Go, not markup written once.
+    //
+    // Guarded on a positive integer because rows is "limited to only positive
+    // numbers" in the DOM — assigning 0 is an error, not a request for a
+    // zero-line box. core.TextArea always supplies a positive count, so the
+    // guard only covers a hand-built core.Node, which then keeps the
+    // browser's own default height. htmlout differs there, defaulting an
+    // absent rows to 3, because it has to emit *some* attribute value where
+    // this path can simply say nothing.
+    function applyRows(el, rows) {
+        const n = Number(rows);
+        if (Number.isInteger(n) && n > 0) {
+            el.rows = n;
         }
     }
 
@@ -284,10 +543,70 @@ const GrMob = (() => {
             // the node that owns the prop — so nothing more is needed, but a
             // future move to delegated listeners would break exactly here.
             onFocus: "focus",
-            onBlur: "blur"
+            onBlur: "blur",
+            // An <input> outside a <form> has no submit event of its own, so
+            // the return key is observed where it actually happens. The
+            // Enter filter lives in eventQualifies rather than here, because
+            // this map only names events — a keydown listener that fired the
+            // handler on every keystroke would be a very loud bug.
+            onSubmit: "keydown"
         }[propKey] || propKey.toLowerCase().replace(/^on/, "");
     }
 
+    // Filters the raw DOM event before it becomes a Go dispatch.
+    //
+    // Only onSubmit needs this: it listens on keydown (see mapEventName) and
+    // means one particular key. Shift+Enter is excluded so a textarea keeps
+    // its "newline without submitting" convention, which is the same split
+    // the native renderers get for free — Compose gives a multiline field a
+    // newline key rather than an action key.
+    //
+    // Every other event maps one-to-one onto a DOM event and qualifies
+    // unconditionally.
+    function eventQualifies(propKey, e) {
+        if (propKey !== "onSubmit") return true;
+        if (e.key !== "Enter" || e.shiftKey) return false;
+        // Nothing else should also act on this keypress — inside a <form> the
+        // browser would otherwise submit the page out from under the app.
+        e.preventDefault();
+        return true;
+    }
+
+    // The keyboard action hint, the web's thin equivalent of Android's
+    // ImeAction and SwiftUI's submitLabel. A soft keyboard (mobile browsers,
+    // and desktop only in dev tools' device mode) relabels its return key
+    // from it; a hardware keyboard ignores it entirely, which is why the
+    // *behavior* rides onSubmit and never this attribute.
+    //
+    // Removed rather than set to "" when neither prop asks for one: an empty
+    // enterkeyhint is not a valid value, and an update-props patch carries
+    // the whole new map, so a field that loses its submit action has to lose
+    // the attribute with it.
+    function applyEnterKeyHint(el, props) {
+        const hint = props.imeAction === "next" ? "next" : (props.onSubmit ? "done" : "");
+        if (hint) {
+            el.setAttribute("enterkeyhint", hint);
+        } else {
+            el.removeAttribute("enterkeyhint");
+        }
+    }
+
+    // Builds the envelope Go receives for one DOM event.
+    //
+    // `type` is the *Go node type* ("Input", "Checkbox", ...), not the HTML
+    // tag. The two are not interchangeable: tagForType collapses Input,
+    // InputPassword, NumericInput and Checkbox all onto <input>, so a tag
+    // cannot tell a text field from a checkbox and a checkbox would be asked
+    // for its .value instead of its .checked. Both call sites therefore pass
+    // the Go type — createElement has it in hand, and the update path reads
+    // it back off the element, which is one of the reasons it is recorded
+    // there at all.
+    //
+    // Matched case-insensitively so the two call sites cannot drift apart
+    // again: they did once, silently, and the cost was total — a text field
+    // present at the initial render sent {} for every keystroke, Go routed
+    // the void envelope to the void callback map where a txt_ ID does not
+    // exist, and typing did nothing at all.
     function extractEventPayload(e, type) {
         // Focus and blur are void events: Go registered them through the
         // plain callback channel, so the envelope must carry no value at all.
@@ -295,13 +614,18 @@ const GrMob = (() => {
         // <input> would otherwise be sent as {value: "..."}, and Go, seeing a
         // string, would dispatch it to the *text* callback map, where a void
         // ID does not exist. The handler would silently never run.
-        if (e.type === "focus" || e.type === "blur") {
+        // keydown is here for the same reason: it carries onSubmit, which Go
+        // registered as a void callback. Sending {value} would route it into
+        // the *text* callback map, where a void ID does not exist, and the
+        // submit handler would silently never run.
+        if (e.type === "focus" || e.type === "blur" || e.type === "keydown") {
             return {};
         }
-        if (["input", "textarea", "numericinput", "inputpassword"].includes(type)) {
+        const goType = String(type || "").toLowerCase();
+        if (["input", "textarea", "numericinput", "inputpassword"].includes(goType)) {
             return { value: e.target.value };
         }
-        if (type === "checkbox") {
+        if (goType === "checkbox") {
             return { value: e.target.checked };
         }
         return {};
@@ -320,6 +644,20 @@ const GrMob = (() => {
         const patches = typeof patchList === "string" ? JSON.parse(patchList) : patchList;
 
         patches.forEach(p => {
+            // "add" fills a slot that was nil in the old tree, so its
+            // TargetID does not exist in the DOM yet — resolve the parent
+            // from the path and insert at the slot's index instead of
+            // falling through to the lookup below, which would drop it.
+            if (p.Type === "add") {
+                const slash = p.TargetID.lastIndexOf("/");
+                const parent = document.querySelector(`[data-node-path="${p.TargetID.slice(0, slash)}"]`);
+                if (!parent) return;
+                const index = Number(p.TargetID.slice(slash + 1));
+                const added = renderNode(p.Changes, p.TargetID);
+                parent.insertBefore(added, parent.children[index] || null);
+                return;
+            }
+
             const el = document.querySelector(`[data-node-path="${p.TargetID}"]`);
             if (!el) {
                 return;
@@ -327,6 +665,12 @@ const GrMob = (() => {
 
             switch (p.Type) {
                 case "update-props":
+                    // Before the per-key loop, for the same reason
+                    // createElement applies it after one: the hint reads two
+                    // props at once, and the patch carries the whole new map.
+                    if ("imeAction" in p.Changes || "onSubmit" in p.Changes) {
+                        applyEnterKeyHint(el, p.Changes);
+                    }
                     for (const [k, v] of Object.entries(p.Changes)) {
                         if (k === "value") {
                             if (el.value === v) continue;
@@ -337,6 +681,14 @@ const GrMob = (() => {
                         } else if (k === "placeholder") {
                             if (el.placeholder === v) continue;
                             el.placeholder = v;
+                        } else if (k === "checked") {
+                            // No echo guard, unlike value above: assigning a
+                            // boolean back onto a checkbox costs nothing,
+                            // where re-assigning a text field's value would
+                            // move the caret to the end mid-typing.
+                            el.checked = !!v;
+                        } else if (k === "rows") {
+                            applyRows(el, v);
                         } else if (k === "src") {
                             if (el.src === v) continue;
                             el.src = v;
@@ -378,8 +730,12 @@ const GrMob = (() => {
                                 el.dataset[`has_listener_${k}`] = "true";
                                 el.addEventListener(event, (e) => {
                                     const latestCbId = el.dataset[`listener_${k}`];
-                                    if (latestCbId) {
-                                        const payload = extractEventPayload(e, el.tagName.toLowerCase());
+                                    if (latestCbId && eventQualifies(k, e)) {
+                                        // The Go node type, not the tag: see
+                                        // extractEventPayload. It was
+                                        // recorded on the element at creation
+                                        // because the tag cannot recover it.
+                                        const payload = extractEventPayload(e, el.dataset.nodeType);
                                         window.GoInvokeCallback(latestCbId, payload);
                                     }
                                 });
@@ -401,6 +757,14 @@ const GrMob = (() => {
                     el.replaceWith(newEl);
                     break;
 
+                // "remove-child" is the Go diff's shrink patch: the new tree
+                // has fewer children, and each surplus child arrives as its
+                // own path, highest index first (see reconcile.Patch's
+                // ordering contract), so removal is identical to "remove".
+                // Dropping these — the switch's original behavior — left the
+                // old screen's tail siblings alive in the DOM after any
+                // navigation to a screen with fewer children.
+                case "remove-child":
                 case "remove":
                     el.remove();
                     break;

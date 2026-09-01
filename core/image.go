@@ -49,6 +49,44 @@ const (
 	ContentModeCenter ContentMode = "center"
 )
 
+// ContentModes returns every declared ContentMode, in declaration order.
+//
+// Go cannot enumerate the constants of a named string type at run time, so
+// the set has to be written out a second time — and a second copy of a list
+// is exactly the thing that goes stale. This one is pinned to the const block
+// above by TestContentModesMatchTheDeclaredConstants, which reads them out of
+// this file's syntax tree, so adding a constant without adding it here fails
+// `go test ./...` rather than silently shrinking the set.
+//
+// It exists because four renderers each map these modes onto their own
+// vocabulary — CSS object-fit in htmlout and the WASM runtime, SwiftUI
+// scaling in Renderer.swift, Compose's ContentScale in Renderer.kt — and
+// none of them can be asked "did you cover every mode?" without a list to
+// check against. All four are now held to it:
+//
+//	htmlout.ObjectFits          htmlout/objectfit_test.go
+//	the WASM runtime's copy     wasm/verify/objectfit_test.go (via htmlout)
+//	Renderer.swift              mobile/verify/contentmode_test.go
+//	Renderer.kt                 mobile/verify/contentmode_test.go
+//
+// The first two are table comparisons — both sides map a mode onto the same
+// CSS keyword, so the values can be compared as well as the keys. The natives
+// map onto SwiftUI and Compose vocabularies that share nothing with CSS or
+// with each other, so only the key set is comparable; those two checks read
+// the arms out of the native source and check coverage alone.
+//
+// A fresh slice per call rather than a package-level var: a var of slice type
+// is writable by any importer, and four elements are cheaper to build than to
+// defend.
+func ContentModes() []ContentMode {
+	return []ContentMode{
+		ContentModeFit,
+		ContentModeFill,
+		ContentModeStretch,
+		ContentModeCenter,
+	}
+}
+
 // Image renders a remote or bundled image at the default content mode
 // (ContentModeFit). Use ImageWithMode to choose another.
 func Image(src string, styleProps ...StyleProp) View {

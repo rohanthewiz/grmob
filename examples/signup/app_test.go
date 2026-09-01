@@ -457,3 +457,81 @@ func TestSuccessfulSubmitIssuesNoFocusCommand(t *testing.T) {
 	}
 	assertNoConcerns(t)
 }
+
+// The keyboard walks the form. core.UseFocusOrder names the three fields in
+// one line at the top of App; what follows on screen is a return key that
+// reads "Next" on every field but the last.
+func TestTheFormAdvertisesTheNextAction(t *testing.T) {
+	mgr := newApp(t)
+
+	email := findNode(tree(t, mgr), func(n *node) bool {
+		return n.Props["placeholder"] == "you@example.com"
+	})
+	password := findNode(tree(t, mgr), func(n *node) bool {
+		return n.Type == "InputPassword"
+	})
+	confirm := secondPasswordField(t, mgr)
+
+	for _, f := range []struct {
+		name string
+		n    *node
+		want string
+	}{
+		{"email", email, "next"},
+		{"password", password, "next"},
+		// Nothing follows the confirmation field, so its key stays the
+		// platform's own. The terms checkbox is deliberately not in the
+		// order: no platform here gives a checkbox keyboard focus, so a
+		// fourth entry would advertise a Next that landed nowhere.
+		{"confirm", confirm, ""},
+	} {
+		if got := f.n.Props["imeAction"]; got != f.want {
+			t.Errorf("%s advertises imeAction %v, want %q", f.name, got, f.want)
+		}
+	}
+	assertNoConcerns(t)
+}
+
+// Pressing that key is an ordinary submit dispatch — the same thing the
+// renderers do for a Done key — and it lands the cursor one field down.
+func TestNextOnTheEmailFieldFocusesThePassword(t *testing.T) {
+	mgr := newApp(t)
+
+	email := findNode(tree(t, mgr), func(n *node) bool {
+		return n.Props["placeholder"] == "you@example.com"
+	})
+	id, ok := email.Props["onSubmit"].(string)
+	if !ok {
+		t.Fatalf("the email field advertises Next with no submit wired: %#v", email.Props)
+	}
+	mgr.DispatchCallback(id)
+
+	password := findNode(tree(t, mgr), func(n *node) bool {
+		return n.Type == "InputPassword"
+	})
+	if got := password.Props["focusAction"]; got != "focus" {
+		t.Errorf("password focusAction = %v after Next on the email field, want focus:\n%#v",
+			got, password.Props)
+	}
+	// And the field it came from is told nothing to do, rather than to blur —
+	// requesting focus in the password field already takes it from here, and
+	// having both act would race on both native platforms.
+	email = findNode(tree(t, mgr), func(n *node) bool {
+		return n.Props["placeholder"] == "you@example.com"
+	})
+	if got := email.Props["focusAction"]; got != "" {
+		t.Errorf("email focusAction = %v after handing focus on, want empty", got)
+	}
+	assertNoConcerns(t)
+}
+
+// The end of the order is the end of the walk: the confirmation field has no
+// submit to dispatch at all, so its return key falls through to the platform
+// rather than quietly wrapping back to the top of the form.
+func TestTheLastFieldHasNoNextToPress(t *testing.T) {
+	mgr := newApp(t)
+	if _, ok := secondPasswordField(t, mgr).Props["onSubmit"]; ok {
+		t.Error("the confirmation field was wired a submit it has nothing to do with")
+	}
+	assertNoConcerns(t)
+}

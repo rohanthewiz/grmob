@@ -82,6 +82,12 @@ type focusState struct {
 	// into "blur"; nil with epoch == 0 means no command has ever been issued
 	// and nothing is stamped at all.
 	target *FocusRef
+	// ordered records that some UseFocusOrder has run in this app, and stays
+	// set for its lifetime. It is the traversal half's equivalent of the
+	// epoch-0 sentinel above: until it is set, FocusTarget writes no imeAction
+	// key at all, so an app that never declares an order renders unchanged
+	// trees. See setOrder in focus_order.go for why it never clears.
+	ordered bool
 }
 
 func newFocusState() *focusState { return &focusState{} }
@@ -123,6 +129,14 @@ func (f *focusState) command(ref *FocusRef) (epoch int, action string, issued bo
 // UseFocusRef.
 type FocusRef struct {
 	ctx *Context
+
+	// Traversal membership, written by UseFocusOrder and read by FocusNext,
+	// FocusPrevious and FocusTarget — always under focusState.mu, because a
+	// command may be issued from a timer goroutine while a render pass is
+	// rewriting the order. order is nil for a ref that belongs to no order,
+	// which is what makes traversal opt-in. See focus_order.go.
+	order *focusOrder
+	index int
 }
 
 // UseFocusRef returns a FocusRef that is stable for the lifetime of this hook
@@ -180,6 +194,11 @@ func FocusTarget(ref *FocusRef) BehaviorProp {
 		// self-consistent pair. Same values either way, so the overwrite is a
 		// no-op on the ordinary path.
 		stampFocus(ctx, n.Props, ref)
+		// The traversal half. It lives here rather than in leafNode because,
+		// unlike a focus command, it needs the ref: a field with no name has
+		// no place in an order, so there is nothing to stamp on the fields
+		// leafNode reaches by type alone.
+		stampTraversal(ctx, n, ref)
 	})
 }
 

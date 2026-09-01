@@ -50,22 +50,11 @@ func renderNode(b *element.Builder, node *core.Node) (x any) {
 		}
 	}
 
-	// Fragment and Theme are grouping nodes with no visual box of their own:
-	// core.For wraps its generated children in a Fragment, and core.WithTheme
-	// wraps a subtree in a Theme. Neither ever carries a Style (see
-	// core/conditionals.go, core/layout.go and core/theme.go — all three
-	// construct the node with Children and nothing else), so emitting a <div>
-	// for them does not just add a redundant element, it changes the layout:
-	// inside a flex container the wrapper becomes the single flex item, which
-	// swallows the parent's gap, flex-direction and alignment before they can
-	// reach the children that were supposed to receive them.
-	//
-	// Both native renderers already treat these as transparent — SwiftUI's
-	// Group (Renderer.swift) and a bare RenderChildren into the parent's
-	// scope (Renderer.kt) — so a wrapper here made the HTML export disagree
-	// with what actually ships. Emitting the children directly is what brings
-	// the three targets back into line.
-	if node.Type == "Fragment" || node.Type == "Theme" {
+	// Grouping nodes are emitted as their children, with no box of their own.
+	// Which types those are, why a wrapper for them is a layout bug rather
+	// than a redundant element, and why the WASM runtime is the one DOM
+	// renderer that cannot do this, are all in transparentTypes (tag.go).
+	if IsTransparent(node.Type) {
 		for _, child := range node.Children {
 			renderNode(b, child)
 		}
@@ -81,7 +70,7 @@ func renderNode(b *element.Builder, node *core.Node) (x any) {
 	// rather than needing a second, illegal, style attribute.
 	sv := styleValue(node.Style, node.Type)
 	if node.Type == "Image" {
-		sv = addDecl(sv, objectFit(getStr(node.Props["contentMode"])))
+		sv = addDecl(sv, objectFitDecl(getStr(node.Props["contentMode"])))
 	}
 	if node.Style != nil && node.Style.Disabled && !isFormControl(node.Type) {
 		// HTML's disabled attribute is only valid on form controls, so a
@@ -110,6 +99,12 @@ func renderNode(b *element.Builder, node *core.Node) (x any) {
 		// narrowing that.
 		{"onFocus", "data-onfocus"},
 		{"onBlur", "data-onblur"},
+		// The return key's handler, which is also the traversal action: a
+		// field in a core.UseFocusOrder carries an onSubmit that Go wired to
+		// focus the next one. Exported like the rest — the ID, not the
+		// behavior — so a loader that wires the other callbacks gets working
+		// keyboard traversal from the same table.
+		{"onSubmit", "data-onsubmit"},
 	} {
 		if id, ok := node.Props[cb.prop].(string); ok {
 			attrs = append(attrs, cb.attr, id)
@@ -140,18 +135,39 @@ func renderNode(b *element.Builder, node *core.Node) (x any) {
 	if getStr(node.Props["focusAction"]) == "focus" && isFormControl(node.Type) {
 		attrs = append(attrs, "autofocus", "autofocus")
 	}
+	// core.UseFocusOrder's keyboard action, in the spelling HTML has for it.
+	//
+	// Unlike the focus command, this one survives the export intact: the
+	// keyboard hint is a standing property of the field ("this key means
+	// next"), not a moment in time, which is exactly the kind of thing a
+	// static document can carry. A soft keyboard relabels its return key from
+	// it; a hardware keyboard ignores it, so the traversal *behavior* travels
+	// as data-onsubmit above and this attribute only says what the key reads.
+	//
+	// "done" for a field that acts on return and does not advance, mirroring
+	// Android's ImeAction.Done and SwiftUI's .done. Nothing at all for a field
+	// with neither, because enterkeyhint has no empty value — the attribute's
+	// absence is how HTML spells "the browser's default return key".
+	if isFormControl(node.Type) {
+		switch {
+		case getStr(node.Props["imeAction"]) == "next":
+			attrs = append(attrs, "enterkeyhint", "next")
+		case getStr(node.Props["onSubmit"]) != "":
+			attrs = append(attrs, "enterkeyhint", "done")
+		}
+	}
 
 	switch node.Type {
 	case "Input":
-		b.Input(withLead(attrs, "type", "text",
+		b.Input(withLead(attrs, "type", InputTypeFor(node.Type),
 			"value", getStr(node.Props["value"]),
 			"placeholder", getStr(node.Props["placeholder"]))...).R()
 	case "InputPassword":
-		b.Input(withLead(attrs, "type", "password",
+		b.Input(withLead(attrs, "type", InputTypeFor(node.Type),
 			"value", getStr(node.Props["value"]),
 			"placeholder", getStr(node.Props["placeholder"]))...).R()
 	case "NumericInput":
-		b.Input(withLead(attrs, "type", "number",
+		b.Input(withLead(attrs, "type", InputTypeFor(node.Type),
 			"value", getStr(node.Props["value"]))...).R()
 	case "TextArea":
 		rows := 3
@@ -161,7 +177,7 @@ func renderNode(b *element.Builder, node *core.Node) (x any) {
 		// TE keeps a value containing "</textarea>" from closing the element.
 		b.TextArea(withLead(attrs, "rows", strconv.Itoa(rows))...).TE(getStr(node.Props["value"]))
 	case "Checkbox":
-		lead := []string{"type", "checkbox"}
+		lead := []string{"type", InputTypeFor(node.Type)}
 		if v, ok := node.Props["checked"].(bool); ok && v {
 			// element emits key="value" pairs only; checked="checked" is the
 			// spec-blessed spelling of the bare boolean attribute.
@@ -192,7 +208,15 @@ func renderNode(b *element.Builder, node *core.Node) (x any) {
 // element writes the opening tag when Ele() is called and the closing tag when
 // R() runs, so the children rendered in between land inside the element.
 func renderContainer(b *element.Builder, node *core.Node, attrs []string) {
-	e := b.Ele(tagForType(node.Type), attrs...)
+	// The tag comes from the shared table rather than a switch here, so the
+	// WASM runtime's copy has something to be checked against. The typed
+	// element calls in renderNode above (b.Span, b.Button, b.Img, ...) still
+	// spell their tags themselves, for readability; TestExportedTagsMatchTable
+	// is what holds them to the same table.
+	//
+	// Fragment and Theme never reach here — renderNode emits their children
+	// directly rather than a box.
+	e := b.Ele(TagFor(node.Type), attrs...)
 	for _, child := range node.Children {
 		renderNode(b, child)
 	}
@@ -213,21 +237,6 @@ func getStr(v any) string {
 	return ""
 }
 
-func tagForType(t string) string {
-	switch t {
-	case "Text":
-		return "span"
-	// Fragment and Theme never reach here — renderNode emits their children
-	// directly rather than a box. See the note there.
-	case "Column", "Row", "Card", "Scroll", "SafeArea":
-		return "div"
-	case "Button":
-		return "button"
-	default:
-		return "div"
-	}
-}
-
 // isFormControl reports whether the node exports as an HTML element that
 // accepts the disabled attribute. Everything else is a div or a span, where
 // disabled is not a valid attribute and would simply be ignored.
@@ -239,23 +248,22 @@ func isFormControl(nodeType string) bool {
 	return false
 }
 
-// objectFit maps core.ContentMode onto the CSS property that means the same
-// thing. An unset (or unrecognized) mode yields "", which addDecl drops — the
+// objectFitDecl wraps the shared table's value in the CSS declaration
+// styleValue's list is built from. The mapping itself lives in objectFits
+// (objectfit.go), which the WASM runtime's copy is checked against; only the
+// "object-fit:" prefix is this function's own, because the runtime assigns the
+// value to a property and never spells the declaration.
+//
+// An unset (or unrecognized) mode yields "", which addDecl drops — the
 // browser's own object-fit default is `fill`, but an <img> with no explicit
 // size is laid out at its intrinsic ratio either way, which is what a
 // mode-less Image has always exported as.
-func objectFit(mode string) string {
-	switch core.ContentMode(mode) {
-	case core.ContentModeFit:
-		return "object-fit:contain"
-	case core.ContentModeFill:
-		return "object-fit:cover"
-	case core.ContentModeStretch:
-		return "object-fit:fill"
-	case core.ContentModeCenter:
-		return "object-fit:none"
+func objectFitDecl(mode string) string {
+	fit := ObjectFitFor(mode)
+	if fit == "" {
+		return ""
 	}
-	return ""
+	return "object-fit:" + fit
 }
 
 // addDecl appends one "prop:value" declaration to a declaration list, joining
@@ -308,19 +316,15 @@ func styleValue(s *core.Style, nodeType string) string {
 	if s.Height != "" {
 		styles = append(styles, fmt.Sprintf("height:%s", s.Height))
 	}
-	if s.Align != "" {
-		switch s.Align {
-		case core.AlignCenter:
-			styles = append(styles, "text-align:center")
-		case core.AlignStart:
-			styles = append(styles, "text-align:left")
-		case core.AlignEnd:
-			styles = append(styles, "text-align:right")
-		}
+	// Was an inline switch with three arms; it is a table lookup now because
+	// the WASM runtime needs the same mapping and had none at all. See
+	// htmlout/textalign.go for what the two used to disagree about.
+	if decl := textAlignDecl(string(s.Align)); decl != "" {
+		styles = append(styles, decl)
 	}
-	// Flex container properties, emitted before Display so an explicit Display
-	// (set by the author) lands after and wins the browser's
-	// last-declaration-wins parse.
+	// Flex container properties. How these interact with Style.Display is
+	// resolved where Display is emitted, below; the short version is that a
+	// node these props turn into a flex container stays one.
 	//
 	// The native renderers implement these directly — a Compose Row/Column or
 	// a SwiftUI HStack/VStack is inherently a stack, so Gap becomes
@@ -334,26 +338,73 @@ func styleValue(s *core.Style, nodeType string) string {
 	// produced. The main axis defaults to the node's own stacking direction
 	// (Row horizontal, every other container vertical) and an explicit
 	// FlexDirection overrides it.
-	if s.Gap != 0 || s.JustifyContent != "" || s.AlignItems != "" || s.FlexDirection != "" {
-		dir := "column"
-		if nodeType == "Row" {
-			dir = "row"
+	dir := "column"
+	if nodeType == "Row" {
+		dir = "row"
+	}
+	if s.FlexDirection != "" {
+		dir = string(s.FlexDirection)
+	}
+	// The effective cross-axis value: AlignItems, else the Align fallback the
+	// natives have always read (crossAxisValue in Renderer.swift). The gate is
+	// twofold — the node type must be one of the vertical-stacking containers
+	// (see alignFallbackAxes for why a type table and not a "not Row" test),
+	// and the direction must not have been flipped to a row by an explicit
+	// FlexDirection, because the fallback applies to a horizontal cross axis
+	// only, on every target. The prefix test rather than equality is for
+	// "column-reverse", whose cross axis is horizontal all the same.
+	alignItems := string(s.AlignItems)
+	if alignItems == "" && strings.HasPrefix(dir, "column") {
+		if AlignFallbackAxisFor(nodeType) != "" {
+			alignItems = CrossAxisAlignFor(string(s.Align))
 		}
-		if s.FlexDirection != "" {
-			dir = string(s.FlexDirection)
+	}
+	isFlex := s.Gap != 0 || s.JustifyContent != "" || alignItems != "" || s.FlexDirection != ""
+	if isFlex {
+		// inline-flex is the one CSS spelling that keeps both halves when a
+		// Display: inline node is also a flex container: the inline level the
+		// author asked for and the flex layout its container props require.
+		display := "flex"
+		if s.Display == core.DisplayInline {
+			display = "inline-flex"
 		}
-		styles = append(styles, "display:flex", fmt.Sprintf("flex-direction:%s", dir))
+		styles = append(styles, "display:"+display, fmt.Sprintf("flex-direction:%s", dir))
 		if s.Gap != 0 {
 			styles = append(styles, fmt.Sprintf("gap:%gpx", s.Gap))
 		}
 		if s.JustifyContent != "" {
 			styles = append(styles, fmt.Sprintf("justify-content:%s", s.JustifyContent))
 		}
-		if s.AlignItems != "" {
-			styles = append(styles, fmt.Sprintf("align-items:%s", s.AlignItems))
+		if alignItems != "" {
+			styles = append(styles, fmt.Sprintf("align-items:%s", alignItems))
 		}
 	}
-	if s.Display != "" {
+	// Style.Display, resolved against the flex container above rather than
+	// simply emitted last. It used to be emitted last precisely so it would
+	// win the browser's last-declaration-wins parse, on the theory that an
+	// explicit Display is the author's word — but the merge in containerNode
+	// erases who set what, and DefaultTheme's Card style carries Display:
+	// block, so every themed Card's own theme was killing the align-items the
+	// author asked for (explicitly or through the Align fallback). One target
+	// out of four: the natives read Display only to honor "none" (both
+	// Renderer.swift and Renderer.kt bail out before any layout), the WASM
+	// runtime deliberately emits no Display at all (styleFromGrMob explains
+	// why), and this exporter alone let "block" beat the container.
+	//
+	// So on a flex container:
+	//
+	//   - "none" still lands after display:flex and wins: hiding beats layout
+	//     on every target that reads Display at all.
+	//   - "block" is not emitted: a block-level flex container is exactly
+	//     display:flex, so the mode's whole meaning is already stated.
+	//   - "inline" was folded into the container above as inline-flex.
+	//   - "visible"/"hidden" are not CSS display keywords; the browser was
+	//     already dropping them as invalid after the flex declaration, so the
+	//     dead declaration is simply no longer written.
+	//
+	// A node that is not a flex container keeps the verbatim emission this
+	// exporter has always produced.
+	if s.Display != "" && (!isFlex || s.Display == core.DisplayNone) {
 		styles = append(styles, fmt.Sprintf("display:%s", s.Display))
 	}
 	if s.Padding != (core.EdgeInsets{}) {
