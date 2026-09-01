@@ -228,6 +228,30 @@ func TestStyleAttrSerialized(t *testing.T) {
 	}
 }
 
+// FontWeight went unemitted on both DOM targets for the whole life of this
+// exporter — core.Bold rendered as regular text on the web while both natives
+// honored it — and no snapshot happened to carry the field, which is how the
+// gap survived. This test pins the emission (the Weight constants are literal
+// CSS font-weight numbers) and the zero-value silence in one place.
+func TestFontWeightSerialized(t *testing.T) {
+	bold := &core.Node{
+		Type:  "Text",
+		Props: map[string]any{"content": "styled"},
+		Style: &core.Style{FontWeight: core.Bold},
+	}
+	if out := ExportHTML(bold); !strings.Contains(out, "font-weight:700") {
+		t.Fatalf("FontWeight not serialized:\n%s", out)
+	}
+	unset := &core.Node{
+		Type:  "Text",
+		Props: map[string]any{"content": "styled"},
+		Style: &core.Style{FontSize: 15},
+	}
+	if out := ExportHTML(unset); strings.Contains(out, "font-weight") {
+		t.Fatalf("zero FontWeight must emit nothing:\n%s", out)
+	}
+}
+
 // Border needs both halves, matching the native renderers: Compose draws its
 // Modifier.border only when width > 0 and color != null, so a half-specified
 // border must draw nothing here too rather than falling back to CSS's default

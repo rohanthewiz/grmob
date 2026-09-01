@@ -301,6 +301,14 @@ func styleValue(s *core.Style, nodeType string) string {
 	if s.FontSize != 0 {
 		styles = append(styles, fmt.Sprintf("font-size:%gpx", s.FontSize))
 	}
+	// core.Weight's values (Light 200, Normal 400, Bold 700) are literal CSS
+	// font-weight numbers, so the int crosses unconverted. Both natives have
+	// always honored the field; until this line the DOM targets dropped it,
+	// so core.Bold rendered as regular text on the web. The WASM runtime
+	// gained the same emission in styleFromGrMob at the same time.
+	if s.FontWeight != 0 {
+		styles = append(styles, fmt.Sprintf("font-weight:%d", s.FontWeight))
+	}
 	// Emitted verbatim: core's dimension strings ("40px", "45%", "auto") are
 	// already CSS lengths, which is where the format came from. The native
 	// renderers parse the same strings back into Compose modifiers and
