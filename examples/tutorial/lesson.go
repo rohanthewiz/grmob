@@ -34,6 +34,7 @@ type Chapter struct {
 var Chapters = []Chapter{
 	chapter1(),
 	chapter2(),
+	chapter3(),
 }
 
 // lessonEntry is one row of the flattened, ordered lesson index — the
