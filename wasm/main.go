@@ -7,7 +7,10 @@ import (
 	"log"
 
 	"github.com/rohanthewiz/grmob/core"
-	. "github.com/rohanthewiz/grmob/examples/social"
+	// The mounted app. Point this dot-import at any package in examples/
+	// that exports an App root view — examples/social was the previous
+	// occupant — and rebuild to switch what the browser shows.
+	. "github.com/rohanthewiz/grmob/examples/tutorial"
 	"github.com/rohanthewiz/grmob/render"
 	"syscall/js"
 )
