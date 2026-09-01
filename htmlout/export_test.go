@@ -479,6 +479,114 @@ func TestAlignItemsStretchMakesTheContainerFlex(t *testing.T) {
 	}
 }
 
+// --- Display against the flex container --------------------------------------
+//
+// Style.Display used to be emitted after the flex declarations so that an
+// "explicit" Display would win the browser's last-declaration-wins parse. But
+// the style merge erases who set what, and DefaultTheme's Card carries
+// Display: block — so a themed Card's own theme killed the align-items its
+// author asked for, on this exporter alone (the natives read Display only to
+// honor "none"; the WASM runtime emits no Display at all). These pin the
+// resolution: a flex container stays one, "none" alone still wins.
+
+// The bug as a user saw it. The theme premise is asserted rather than assumed,
+// because the test's story — "the Card's OWN theme style fights its
+// alignment" — is only true while the theme actually sets block.
+func TestThemedCardDisplayBlockDoesNotKillItsAlignItems(t *testing.T) {
+	if core.DefaultTheme.Components.Card.Display != core.DisplayBlock {
+		t.Fatalf("premise gone: DefaultTheme's Card no longer sets Display: block; " +
+			"rewrite or retire this test")
+	}
+	// The merged style a core.Card(core.AlignItemsProp(...)) produces:
+	// containerNode starts from the theme's Card style, the prop lands on top.
+	merged := core.DefaultTheme.Components.Card
+	merged.AlignItems = core.AlignItemsCenter
+	n := &core.Node{Type: "Card", Style: &merged}
+
+	out := ExportHTML(n)
+	for _, want := range []string{"display:flex", "align-items:center"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("missing %q:\n%s", want, out)
+		}
+	}
+	if strings.Contains(out, "display:block") {
+		t.Fatalf("the theme's Display: block was emitted after the flex container and kills it:\n%s", out)
+	}
+}
+
+// The same conflict through the Align fallback — the themed Card was the case
+// that surfaced it, and the fallback path computes align-items later than the
+// explicit prop does, so it gets its own pin.
+func TestAlignFallbackSurvivesDisplayBlock(t *testing.T) {
+	n := &core.Node{Type: "Card", Style: &core.Style{
+		Display: core.DisplayBlock,
+		Align:   core.AlignCenter,
+	}}
+	out := ExportHTML(n)
+	for _, want := range []string{"display:flex", "align-items:center"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("missing %q:\n%s", want, out)
+		}
+	}
+	if strings.Contains(out, "display:block") {
+		t.Fatalf("Display: block beat the Align fallback's flex container:\n%s", out)
+	}
+}
+
+// "none" is the one mode that still beats the container: it is the only
+// Display value either native reads (both bail out before layout), so hiding
+// must win over flex here too. Order matters — the browser honors whichever
+// valid declaration comes last — so the test pins the order, not just the
+// presence.
+func TestDisplayNoneStillHidesAFlexContainer(t *testing.T) {
+	n := &core.Node{Type: "Column", Style: &core.Style{
+		Display: core.DisplayNone,
+		Gap:     8,
+	}}
+	out := ExportHTML(n)
+	flex := strings.Index(out, "display:flex")
+	none := strings.Index(out, "display:none")
+	if flex < 0 || none < 0 {
+		t.Fatalf("want both display:flex and display:none, got:\n%s", out)
+	}
+	if none < flex {
+		t.Fatalf("display:none precedes display:flex, so the node is not hidden:\n%s", out)
+	}
+}
+
+// Display: inline on a flex container folds into inline-flex — the one CSS
+// spelling that keeps both the inline level and the flex layout — rather than
+// either declaration overwriting the other.
+func TestDisplayInlineBecomesInlineFlexOnAFlexContainer(t *testing.T) {
+	n := &core.Node{Type: "Row", Style: &core.Style{
+		Display: core.DisplayInline,
+		Gap:     8,
+	}}
+	out := ExportHTML(n)
+	if !strings.Contains(out, "display:inline-flex") {
+		t.Fatalf("missing display:inline-flex:\n%s", out)
+	}
+	// Exactly one display declaration: the fold replaces both candidates, and
+	// a stray second one would reopen the last-declaration-wins fight.
+	if n := strings.Count(out, "display:"); n != 1 {
+		t.Fatalf("want exactly 1 display declaration, got %d:\n%s", n, out)
+	}
+}
+
+// A node the flex block never triggers on keeps the verbatim emission the
+// exporter has always produced — the resolution above is strictly about the
+// conflict, not a new opinion on Display.
+func TestDisplayStaysVerbatimOnNonFlexNodes(t *testing.T) {
+	n := &core.Node{Type: "Column", Style: &core.Style{Display: core.DisplayBlock}}
+	out := ExportHTML(n)
+	if !strings.Contains(out, "display:block") {
+		t.Fatalf("missing display:block:\n%s", out)
+	}
+	if strings.Contains(out, "display:flex") {
+		t.Fatalf("a Display alone must not create a flex container:\n%s", out)
+	}
+}
+
 // core.UseFocusOrder's keyboard action survives the export where the focus
 // *command* does not, and for a reason worth stating: the hint is a standing
 // property of the field ("this key means next"), not a moment in time, and a

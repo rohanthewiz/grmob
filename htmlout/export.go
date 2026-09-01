@@ -322,9 +322,9 @@ func styleValue(s *core.Style, nodeType string) string {
 	if decl := textAlignDecl(string(s.Align)); decl != "" {
 		styles = append(styles, decl)
 	}
-	// Flex container properties, emitted before Display so an explicit Display
-	// (set by the author) lands after and wins the browser's
-	// last-declaration-wins parse.
+	// Flex container properties. How these interact with Style.Display is
+	// resolved where Display is emitted, below; the short version is that a
+	// node these props turn into a flex container stays one.
 	//
 	// The native renderers implement these directly — a Compose Row/Column or
 	// a SwiftUI HStack/VStack is inherently a stack, so Gap becomes
@@ -359,8 +359,16 @@ func styleValue(s *core.Style, nodeType string) string {
 			alignItems = CrossAxisAlignFor(string(s.Align))
 		}
 	}
-	if s.Gap != 0 || s.JustifyContent != "" || alignItems != "" || s.FlexDirection != "" {
-		styles = append(styles, "display:flex", fmt.Sprintf("flex-direction:%s", dir))
+	isFlex := s.Gap != 0 || s.JustifyContent != "" || alignItems != "" || s.FlexDirection != ""
+	if isFlex {
+		// inline-flex is the one CSS spelling that keeps both halves when a
+		// Display: inline node is also a flex container: the inline level the
+		// author asked for and the flex layout its container props require.
+		display := "flex"
+		if s.Display == core.DisplayInline {
+			display = "inline-flex"
+		}
+		styles = append(styles, "display:"+display, fmt.Sprintf("flex-direction:%s", dir))
 		if s.Gap != 0 {
 			styles = append(styles, fmt.Sprintf("gap:%gpx", s.Gap))
 		}
@@ -371,7 +379,32 @@ func styleValue(s *core.Style, nodeType string) string {
 			styles = append(styles, fmt.Sprintf("align-items:%s", alignItems))
 		}
 	}
-	if s.Display != "" {
+	// Style.Display, resolved against the flex container above rather than
+	// simply emitted last. It used to be emitted last precisely so it would
+	// win the browser's last-declaration-wins parse, on the theory that an
+	// explicit Display is the author's word — but the merge in containerNode
+	// erases who set what, and DefaultTheme's Card style carries Display:
+	// block, so every themed Card's own theme was killing the align-items the
+	// author asked for (explicitly or through the Align fallback). One target
+	// out of four: the natives read Display only to honor "none" (both
+	// Renderer.swift and Renderer.kt bail out before any layout), the WASM
+	// runtime deliberately emits no Display at all (styleFromGrMob explains
+	// why), and this exporter alone let "block" beat the container.
+	//
+	// So on a flex container:
+	//
+	//   - "none" still lands after display:flex and wins: hiding beats layout
+	//     on every target that reads Display at all.
+	//   - "block" is not emitted: a block-level flex container is exactly
+	//     display:flex, so the mode's whole meaning is already stated.
+	//   - "inline" was folded into the container above as inline-flex.
+	//   - "visible"/"hidden" are not CSS display keywords; the browser was
+	//     already dropping them as invalid after the flex declaration, so the
+	//     dead declaration is simply no longer written.
+	//
+	// A node that is not a flex container keeps the verbatim emission this
+	// exporter has always produced.
+	if s.Display != "" && (!isFlex || s.Display == core.DisplayNone) {
 		styles = append(styles, fmt.Sprintf("display:%s", s.Display))
 	}
 	if s.Padding != (core.EdgeInsets{}) {

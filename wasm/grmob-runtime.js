@@ -325,11 +325,15 @@ const GrMob = (() => {
             if (alignItems) out.alignItems = alignItems;
         }
         // Display is deliberately NOT emitted. Go's DisplayMode carries values
-        // that are not CSS display keywords ("visible", "hidden"), and unlike
-        // htmlout — where an invalid declaration is dropped and the earlier
-        // display:flex survives — assigning one through el.style would
-        // overwrite the flex display in this object first and then be
-        // rejected by the browser, leaving the container in block flow.
+        // that are not CSS display keywords ("visible", "hidden"), and
+        // assigning one through el.style would overwrite the flex display in
+        // this object first and then be rejected by the browser, leaving the
+        // container in block flow. htmlout hit the sibling problem from the
+        // other side — a valid "block" emitted after the flex declarations
+        // beat them, so a themed Card's own Display: block killed its
+        // align-items — and now resolves Display against its flex container
+        // in styleValue; emitting nothing keeps this runtime out of both
+        // traps.
         // A flex *item* property: how this node behaves inside its parent's
         // layout, so it needs no display:flex of its own.
         if (style.FlexGrow) out.flexGrow = `${style.FlexGrow}`;
