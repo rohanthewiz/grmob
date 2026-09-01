@@ -246,10 +246,20 @@ const GrMob = (() => {
         }
     }
 
-    // The Go node type -> the <input> type attribute, kept in sync with
-    // htmlout's export.go. Only the four types tagForType collapses onto
-    // <input> appear here; every other node has a tag that already says what
-    // it is, and gets no type attribute (which is also what htmlout emits).
+    // The Go node type -> the <input> type attribute. Only the four types
+    // tagForType collapses onto <input> appear here; every other node has a
+    // tag that already says what it is, and gets no type attribute (which is
+    // why the fallback below is "" and not an error).
+    //
+    // Go states this table once, in htmlout/inputtype.go, and this is its
+    // restatement in the language that actually sets the attribute — the
+    // runtime cannot call into Go to ask. The two are not kept in step by
+    // hand: htmlout.InputTypes() is compared against *this literal*, parsed
+    // out of this file, by TestRuntimeInputTypesMatchGo in wasm/verify, which
+    // runs under a plain `go test ./...`. So a change made on either side
+    // fails until it is made on both. That test parses the object literal
+    // textually and checks the `[type]` that follows it, so keep this a flat
+    // literal in a function named inputTypeFor.
     //
     // This is the discriminator the DOM needs and dataset.nodeType cannot
     // supply: nodeType tells *this code* what a node is, the type attribute

@@ -32,6 +32,11 @@ const scenarios = JSON.parse(readFileSync(TRANSCRIPT, "utf8"));
 // (inputTypeFor), and a conformance test that read the runtime's would only
 // prove the runtime agrees with itself. Four Go types share the <input> tag,
 // so this attribute is the only thing that makes a checkbox a checkbox.
+//
+// This copy stays deliberately independent even though the runtime's copy is
+// now pinned to Go's (inputtype_test.go). Pinning it here too would close the
+// loop back onto the implementation and leave the rule with no witness that
+// was written from the contract.
 const INPUT_TYPE = {
     Input: "text",
     InputPassword: "password",

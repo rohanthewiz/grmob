@@ -170,15 +170,15 @@ func renderNode(b *element.Builder, node *core.Node) (x any) {
 
 	switch node.Type {
 	case "Input":
-		b.Input(withLead(attrs, "type", "text",
+		b.Input(withLead(attrs, "type", InputTypeFor(node.Type),
 			"value", getStr(node.Props["value"]),
 			"placeholder", getStr(node.Props["placeholder"]))...).R()
 	case "InputPassword":
-		b.Input(withLead(attrs, "type", "password",
+		b.Input(withLead(attrs, "type", InputTypeFor(node.Type),
 			"value", getStr(node.Props["value"]),
 			"placeholder", getStr(node.Props["placeholder"]))...).R()
 	case "NumericInput":
-		b.Input(withLead(attrs, "type", "number",
+		b.Input(withLead(attrs, "type", InputTypeFor(node.Type),
 			"value", getStr(node.Props["value"]))...).R()
 	case "TextArea":
 		rows := 3
@@ -188,7 +188,7 @@ func renderNode(b *element.Builder, node *core.Node) (x any) {
 		// TE keeps a value containing "</textarea>" from closing the element.
 		b.TextArea(withLead(attrs, "rows", strconv.Itoa(rows))...).TE(getStr(node.Props["value"]))
 	case "Checkbox":
-		lead := []string{"type", "checkbox"}
+		lead := []string{"type", InputTypeFor(node.Type)}
 		if v, ok := node.Props["checked"].(bool); ok && v {
 			// element emits key="value" pairs only; checked="checked" is the
 			// spec-blessed spelling of the bare boolean attribute.

@@ -59,8 +59,8 @@ listens for interactions, reads the ID, and calls `ReceiveEvent` with it.
 ### Form controls
 
 Four Go node types share the `<input>` tag, so the runtime writes a `type`
-attribute to tell them apart — the same table `htmlout` uses, and the only
-thing that makes a checkbox draw as a checkbox rather than a text box:
+attribute to tell them apart — the only thing that makes a checkbox draw as a
+checkbox rather than a text box:
 
 | Node type | Rendered as | State prop |
 |---|---|---|
@@ -69,6 +69,15 @@ thing that makes a checkbox draw as a checkbox rather than a text box:
 | `NumericInput` | `<input type="number">` | `value` |
 | `Checkbox` | `<input type="checkbox">` | `checked` |
 | `TextArea` | `<textarea>` | `value`, `rows` |
+
+Go states that table once, in `htmlout/inputtype.go`; the runtime restates it
+in JavaScript because it is the side that actually sets the attribute and
+cannot call into Go to ask. The two are not kept in step by hand — a Go test
+in `wasm/verify` parses the runtime's literal out of `grmob-runtime.js` and
+compares it against `htmlout.InputTypes()`, so a change to either side fails
+`go test ./...` until it is made to both. (`replay_test.mjs` holds a third
+copy on purpose: a conformance test has to state the rule independently, or
+it only proves the implementation agrees with itself.)
 
 `checked` and `rows` are set as element *properties*, not attributes. A
 `checked` attribute is only the control's default state — the browser stops

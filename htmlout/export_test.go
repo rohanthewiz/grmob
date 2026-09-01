@@ -535,3 +535,24 @@ func TestNoActionExportsNoEnterKeyHint(t *testing.T) {
 		t.Fatalf("a field with no submit action exported a hint:\n%s", out)
 	}
 }
+
+// InputTypes hands out a copy, which matters because the table it copies is a
+// package-level map: an importer that mutated the returned map would
+// otherwise be rewriting what every export renders. The conformance test in
+// wasm/verify is the caller this contract exists for — it deletes entries as
+// it matches them.
+func TestInputTypesReturnsACopy(t *testing.T) {
+	table := InputTypes()
+	if table["Checkbox"] != "checkbox" {
+		t.Fatalf("Checkbox = %q, want checkbox", table["Checkbox"])
+	}
+	delete(table, "Checkbox")
+	table["Input"] = "mutated"
+
+	if got := InputTypeFor("Checkbox"); got != "checkbox" {
+		t.Errorf("after deleting from the copy, InputTypeFor(Checkbox) = %q", got)
+	}
+	if got := InputTypeFor("Input"); got != "text" {
+		t.Errorf("after writing to the copy, InputTypeFor(Input) = %q", got)
+	}
+}
