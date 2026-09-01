@@ -83,32 +83,49 @@ func App(ctx *core.Context) core.View {
 
 	return components.Screen{
 		Scroll: true,
-		Gap:    16,
+		// The form is taller than a phone with the keyboard up, and the
+		// terms row and the button are the parts that go under it. Set here,
+		// the scroll region ends where the keyboard begins, which is what
+		// gives the platform's scroll-the-focused-field-into-view somewhere
+		// visible to put the field. See core.KeyboardAware.
+		KeyboardAware: true,
+		Gap:           16,
 		Children: []core.View{
 			core.Text("Create your account", core.UseStyle(ctx.Theme().Typography.Title)),
 
+			// Required is asked of the form rather than written as true: the
+			// marker is then the same fact as the rule, and dropping
+			// forms.Required from the spec above takes the asterisk with it
+			// instead of leaving a screen that stars a field it will happily
+			// accept empty.
 			components.FormField{
-				Label: "Email",
-				Hint:  "We never share it",
-				Error: form.Error("email"),
-				Input: form.Input("email", "you@example.com"),
+				Label:    "Email",
+				Required: form.Required("email"),
+				Hint:     "We never share it",
+				Error:    form.Error("email"),
+				Input:    form.Input("email", "you@example.com"),
 			},
 			components.FormField{
-				Label: "Password",
-				Hint:  "At least 8 characters",
-				Error: form.Error("password"),
-				Input: form.Password("password", "••••••••"),
+				Label:    "Password",
+				Required: form.Required("password"),
+				Hint:     "At least 8 characters",
+				Error:    form.Error("password"),
+				Input:    form.Password("password", "••••••••"),
 			},
 			components.FormField{
-				Label: "Confirm password",
-				Error: form.Error("confirm"),
-				Input: form.Password("confirm", "••••••••"),
+				Label:    "Confirm password",
+				Required: form.Required("confirm"),
+				Error:    form.Error("confirm"),
+				Input:    form.Password("confirm", "••••••••"),
 			},
 
 			// A checkbox has no error line of its own — but FormField's Input
 			// slot takes any view, so wrapping the row is all it takes to give
 			// one to a control that was never designed for it. No Label here:
-			// the ListRow's title is the label.
+			// the ListRow's title is the label — which is also why Required is
+			// left off, since the marker has nothing to sit beside. (The field
+			// *is* required: Accepted rejects an unticked box, and
+			// form.Required("terms") would say so.)
 			components.FormField{
 				Error: form.Error("terms"),
 				Input: components.ListRow{

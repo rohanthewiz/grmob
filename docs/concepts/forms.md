@@ -305,6 +305,43 @@ re-read from *this pass's* spec, which is also how a form is populated from
 data that arrives late — render the loaded values as `Initial` and reset once
 they land.
 
+## The required marker
+
+`components.FormField` draws an asterisk after the label when its `Required`
+field is set — and the value to set it to comes from the form:
+
+```go
+components.FormField{
+    Label:    "Email",
+    Required: form.Required("email"),
+    Error:    form.Error("email"),
+    Input:    form.Input("email", "you@example.com"),
+}
+```
+
+`form.Required(name)` is **derived**, like the errors: it runs the field's
+rules against `""` and answers whether any of them complains. There is no
+`Field.Required` flag to declare, on purpose — a flag would be a second claim
+about the same field, correct only while someone keeps it in step with the
+rules, and the failures it allows are precisely the ones the marker exists to
+prevent: a starred field that submits empty, an unstarred one that will not.
+
+Three things follow from deriving it:
+
+- **Any rule that speaks about an empty value counts**, not only `Required`.
+  `Accepted` does — an unticked box is `"false"`, never `""` — so a
+  terms-of-service checkbox reads as required, which it is. So does an app's
+  own closure that rejects `""`.
+- **The answer is as live as the rules.** A rule that only applies in some app
+  state takes its marker with it when it goes, with no bookkeeping.
+- **`Spec.Validate` is not consulted.** A cross-field requirement ("confirm is
+  needed once password is set") is not a property of the field, and the probe
+  has no other field's value to hand it. Mark those by hand.
+
+The marker needs a label to sit beside, so a field that borrows its label from
+elsewhere — the checkbox row above, whose title belongs to the `ListRow` —
+has to carry its own.
+
 ## The rest of the surface
 
 | | |
@@ -316,6 +353,7 @@ they land.
 | `form.Error(name)` / `form.Errors()` | what the user should see |
 | `form.Valid()` | would this submit? — reveal-blind |
 | `form.Touched(name)` / `form.Submitted()` | the reveal inputs, readable |
+| `form.Required(name)` | does this field reject an empty value? |
 
 `SetValue` marks the field touched and drops any external error against it —
 both follow from the one fact that the value changed, whoever changed it. It is

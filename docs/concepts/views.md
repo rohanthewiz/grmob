@@ -38,7 +38,11 @@ core.Row(
   thousand-row feed composes only what is on screen. Use `Column` + `Scroll`
   for short content, `List` for long data-driven collections — and give
   every row a stable identity with `Keyed`.
-- `Scroll`, `SafeArea`, `Spacer(px)`, `Divider(height, color)`, `Fragment`.
+- `Scroll` — a vertically scrolling region, taking the same argument list as
+  the other containers (it used to take a bare `...View`; existing calls are
+  unaffected). Like `Box` it has no theme base, so wrapping a screen in one
+  does not inset it.
+- `SafeArea`, `Spacer(px)`, `Divider(height, color)`, `Fragment`.
   (`Divider` force-applies `Margin(8)`; for a rule inside a list use
   `components.Separator`, which leaves spacing to the caller and defaults
   its own hairline tint.)
@@ -46,6 +50,45 @@ core.Row(
 Behavior props (`OnClick`, `OnTouch`, `OnLongPress`, or the generic
 `On(event, fn)`) register their callbacks in argument order, before any child
 renders — a container's callback IDs always precede its children's.
+
+### The software keyboard
+
+`core.KeyboardAware()` is a prop, not a container: the node it is applied to
+ends where the software keyboard begins, for as long as the keyboard is up.
+
+```go
+core.Scroll(core.KeyboardAware(), form)   // the viewport shortens
+```
+
+On a **scrolling** node (`Scroll`, `List`) that shortens the viewport. The
+content does not move by itself — but with the viewport now ending above the
+keyboard, the platform's own scroll-the-focused-field-into-view has somewhere
+visible to put the field, which it cannot do while the viewport still claims
+the rows the keyboard is sitting on. This is the form case, and
+`components.Screen{Scroll: true, KeyboardAware: true}` is the short way to say
+it (`examples/signup`).
+
+On **any other** node it lifts that subtree whole — the case for a screen with
+something docked at the bottom, a chat composer or a checkout bar, which sits
+outside any scrolling region by construction and is the one thing the keyboard
+covers (`examples/chat`).
+
+| | |
+|---|---|
+| Android | `Modifier.imePadding()`, injected at the one funnel every node passes through. Needs the window to have stopped fitting the system windows itself — the demo activity calls `enableEdgeToEdge()` and the manifest sets `windowSoftInputMode="adjustResize"`. Without both, the platform resizes the whole window instead and the prop reads a consumed, zero-height inset. |
+| iOS | SwiftUI treats the keyboard as its own safe-area region and insets a `ScrollView` for it *by itself*, so the shrink is the platform default with or without the flag. What the flag adds is `.scrollDismissesKeyboard(.interactively)` on the two scrolling node types. |
+| HTML / WASM | Nothing — a browser has no software keyboard to inset for. |
+
+That asymmetry is why this is a flag rather than something `Scroll` always
+does, and it is also why `SafeArea` does not carry it: Android's
+`WindowInsets.safeDrawing` bundles the keyboard in with the system bars, so
+applying it there would resize every screen whole *and* consume the inset
+before an inner region could ask for it. The renderer subtracts the IME from
+that set deliberately — the same split SwiftUI makes.
+
+There is still no focus or blur event in the framework, so nothing here
+dismisses the keyboard on a tap outside; the iOS drag-to-dismiss above is the
+platform's own gesture.
 
 ## Leaves
 

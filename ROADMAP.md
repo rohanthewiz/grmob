@@ -74,15 +74,16 @@
       a reveal policy so a form explains itself only once the user claims to
       be done, and server-side errors; `FormField`'s `Error` slot finally has
       a source (`examples/signup`)
+- [x] Keyboard-aware regions (`core.KeyboardAware`,
+      `components.Screen.KeyboardAware`) — a scrolling region shortens its
+      viewport, a fixed one lifts whole, so a docked composer stays reachable
+      (`examples/signup`, `examples/chat`)
 - [x] Camera: `CameraView`, capture event
 - [x] Persistence via `bytdb` (see `examples/todoapp`)
 
 ---
 
 ## 🧩 In Progress
-
-### 🧰 UI DSL
-- [ ] Keyboard-aware scroll area for mobile
 
 ### 📦 Packaging
 - [ ] `grmob build --target=wasm`

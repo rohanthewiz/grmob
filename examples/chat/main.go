@@ -80,6 +80,13 @@ func ChatApp(ctx *core.Context) core.View {
 	// only the thread moves. A scrolling screen would put a scroll view inside
 	// a scroll view, and the two would fight over the same drag natively.
 	return components.Screen{
+		// The other half of KeyboardAware, and the reason it is not tied to
+		// Scroll: there is no scrolling region at this level to shorten, and
+		// the thing the keyboard covers is the composer — docked at the
+		// bottom, outside MessageList's Scroll by construction. With no
+		// Scroll of its own the prop lifts the content column whole, so the
+		// composer rides above the keys and the thread shrinks to fit.
+		KeyboardAware: true,
 		Children: []core.View{
 			ThreadHeader("Ana"),
 			MessageList(thread.Get()),

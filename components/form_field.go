@@ -21,9 +21,30 @@ import "github.com/rohanthewiz/grmob/core"
 //
 // That split is why the dependency runs one way and only in the caller: forms
 // produces the strings and the bound controls, this widget frames them, and
-// neither package imports the other.
+// neither package imports the other. Required follows the same shape — the
+// form knows which fields reject an empty value, the widget only draws the
+// mark:
+//
+//	Required: form.Required("email"),
 type FormField struct {
 	Label string
+
+	// Required draws the conventional marker after the label. It is
+	// annotation only: this widget validates nothing, and setting it does not
+	// make an empty field fail — forms.Required is what does that.
+	//
+	// Which is why it is worth feeding it from forms.Form.Required rather
+	// than from a literal true. A hand-set flag is a second, independent
+	// claim about the same field, and the two drift the first time a rule is
+	// added or dropped: a marked field that submits empty, or an unmarked one
+	// the user cannot get past. The form derives its answer from the rules
+	// themselves, so the mark cannot outlive the rule that justified it.
+	//
+	// Ignored when Label is empty — there is nothing to mark. A control whose
+	// label lives elsewhere (the checkbox row in examples/signup, whose title
+	// belongs to the ListRow) has to carry its own.
+	Required bool
+
 	// Hint is the quiet guidance line under the input. Error replaces it
 	// when non-empty — a field shows one line of feedback, and an error
 	// outranks guidance.
@@ -33,6 +54,12 @@ type FormField struct {
 	// Style is applied to the wrapping column after the field's own layout.
 	Style []core.StyleProp
 }
+
+// requiredMarker is the glyph drawn after a required field's label. An
+// asterisk is the convention every platform's forms already use, and a form
+// wanting different copy ("(required)") can put it in the Label — a knob here
+// would be a theme decision made one widget at a time.
+const requiredMarker = "*"
 
 func (f FormField) Render(ctx *core.Context) *core.Node {
 	t := ctx.Theme()
@@ -50,11 +77,38 @@ func (f FormField) Render(ctx *core.Context) *core.Node {
 	if f.Label != "" {
 		// Caption scale but primary ink and bold: label-sized without
 		// reading as de-emphasized the way a true caption does.
-		items = append(items, core.Text(f.Label,
+		label := core.Text(f.Label,
 			core.UseStyle(t.Typography.Caption),
 			core.TextColor(t.Colors.TextPrimary),
 			core.FontWeight(core.Bold),
-		))
+		)
+		if f.Required {
+			// The marker is a sibling node rather than " *" glued onto the
+			// label string, for two reasons that both need it to be its own
+			// element: it is inked in the error color while the label stays
+			// primary, and it carries an accessibility label so a screen
+			// reader announces "required" instead of spelling out a star.
+			//
+			// The Row is built only on this branch, so an ordinary field
+			// renders exactly the tree it did before this option existed —
+			// one Text, no wrapper for a renderer to lay out.
+			label = core.Row(
+				// Row's theme padding is screen-level (8/16) and would inset
+				// the label away from the input it belongs to; the finest
+				// spacing step is the gap a space would have been.
+				core.Padding(0),
+				core.Gap(float64(t.Spacing.XS)),
+				core.AlignItemsProp(core.AlignItemsCenter),
+				label,
+				core.Text(requiredMarker,
+					core.UseStyle(t.Typography.Caption),
+					core.TextColor(t.Colors.Error),
+					core.FontWeight(core.Bold),
+					core.AccessibilityLabel("required"),
+				),
+			)
+		}
+		items = append(items, label)
 	}
 	if f.Input != nil {
 		items = append(items, f.Input)

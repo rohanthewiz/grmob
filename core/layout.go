@@ -76,13 +76,25 @@ func Spacer(size int) View {
 	})
 }
 
-func Scroll(children ...View) View {
+// Scroll is a vertically scrolling region: its children are laid out at their
+// natural height and the viewport pans over them.
+//
+// It takes the standard container argument list — style props, behavior props
+// and child views in any order — rather than the bare ...View it used to,
+// because both native renderers have always applied a Scroll node's style
+// (Compose boxModifier, SwiftUI grMobBox) and Go had no way to set one. The
+// widening is source-compatible: a View is a PropsAndChildren, so every
+// existing core.Scroll(child) call still compiles and, with no props supplied,
+// still renders the same box.
+//
+// Unlike Column and Row it has no theme base — like Box, it is the
+// unopinionated container, and a scroll region that arrived with the theme
+// Column's screen padding would inset every screen that wraps itself in one.
+//
+// See KeyboardAware for the software-keyboard behavior.
+func Scroll(stylePropsAndChildren ...PropsAndChildren) View {
 	return ComponentFunc(func(ctx *Context) *Node {
-		return &Node{
-			Type:     "Scroll",
-			Props:    map[string]any{},
-			Children: renderAll(ctx, "Scroll", children),
-		}
+		return containerNode(ctx, "Scroll", Style{}, stylePropsAndChildren)
 	})
 }
 

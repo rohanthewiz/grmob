@@ -280,3 +280,32 @@ func TestSuccessfulSubmitAndReset(t *testing.T) {
 	}
 	assertNoConcerns(t)
 }
+
+// The marker is annotation, not validation — but it is fed from the form, so
+// it appears exactly on the labelled fields whose rules reject an empty value
+// and nowhere else. The terms field is required and carries no marker only
+// because it has no label of its own to hang one on.
+func TestRequiredMarkersFollowTheRules(t *testing.T) {
+	mgr := newApp(t)
+
+	markers := 0
+	var walk func(*node)
+	walk = func(n *node) {
+		if n == nil {
+			return
+		}
+		if n.Type == "Text" && n.Props["content"] == "*" {
+			markers++
+		}
+		for _, c := range n.Children {
+			walk(c)
+		}
+	}
+	walk(tree(t, mgr))
+
+	// Email, password, confirm. Not terms (no label) and not the title.
+	if markers != 3 {
+		t.Errorf("found %d required markers, want 3 (email, password, confirm)", markers)
+	}
+	assertNoConcerns(t)
+}

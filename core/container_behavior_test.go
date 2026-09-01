@@ -13,6 +13,9 @@ func TestContainersCarryBehaviorProps(t *testing.T) {
 		"Card":   Card,
 		"Box":    Box,
 		"List":   List,
+		// Scroll joined this contract when it stopped taking a bare ...View:
+		// the renderers had always read a Scroll node's style and props.
+		"Scroll": Scroll,
 	}
 	for name, build := range builders {
 		t.Run(name, func(t *testing.T) {

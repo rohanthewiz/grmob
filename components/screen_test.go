@@ -213,3 +213,78 @@ func toString(v any) string {
 	}
 	return ""
 }
+
+// KeyboardAware rides the Scroll wrapper when there is one.
+func TestScreenKeyboardAwareMarksTheScrollRegion(t *testing.T) {
+	on := renderScreen(t, core.DefaultTheme, Screen{
+		Scroll:        true,
+		KeyboardAware: true,
+		Children:      []core.View{core.Text("hi")},
+	})
+	scroll := findFirst(on, func(n *core.Node) bool { return n.Type == "Scroll" })
+	if scroll == nil {
+		t.Fatal("no Scroll node to carry the prop")
+	}
+	if scroll.Props["keyboardAware"] != true {
+		t.Errorf("Scroll props = %#v, want keyboardAware:true", scroll.Props)
+	}
+
+	// Unset, the wrapper is byte-identical to what it was before the field
+	// existed — the MaybeProp false path leaves no trace in the tree.
+	plain := renderScreen(t, core.DefaultTheme, Screen{Scroll: true, Children: []core.View{core.Text("hi")}})
+	ps := findFirst(plain, func(n *core.Node) bool { return n.Type == "Scroll" })
+	if _, present := ps.Props["keyboardAware"]; present {
+		t.Errorf("a plain scrolling screen should carry no prop, got %#v", ps.Props)
+	}
+}
+
+// With no Scroll to shorten, the column is what lifts — the docked-composer
+// case. What must not happen is the prop landing on the SafeArea: that would
+// pull the whole screen up by the keyboard's height, header included, and on
+// Android it would consume the inset before any inner region could ask for it.
+func TestScreenKeyboardAwareWithoutScrollMarksTheColumn(t *testing.T) {
+	root := renderScreen(t, core.DefaultTheme, Screen{
+		KeyboardAware: true,
+		Children:      []core.View{core.Text("hi")},
+	})
+
+	if root.Type != "SafeArea" {
+		t.Fatalf("want a SafeArea root, got %s", describe(root))
+	}
+	if _, present := root.Props["keyboardAware"]; present {
+		t.Error("the safe area must not carry the prop")
+	}
+	col := column(t, root)
+	if col.Props["keyboardAware"] != true {
+		t.Errorf("content column props = %#v, want keyboardAware:true", col.Props)
+	}
+}
+
+// And with a Scroll, the column must *not* also carry it: two nested nodes
+// both insetting would take the keyboard's height out of the layout twice on
+// any renderer that does not consume insets as Compose does.
+func TestScreenKeyboardAwareLandsOnExactlyOneNode(t *testing.T) {
+	root := renderScreen(t, core.DefaultTheme, Screen{
+		Scroll:        true,
+		KeyboardAware: true,
+		Children:      []core.View{core.Text("hi")},
+	})
+
+	marked := 0
+	var walk func(*core.Node)
+	walk = func(n *core.Node) {
+		if n == nil {
+			return
+		}
+		if n.Props["keyboardAware"] == true {
+			marked++
+		}
+		for _, c := range n.Children {
+			walk(c)
+		}
+	}
+	walk(root)
+	if marked != 1 {
+		t.Errorf("%d nodes carry keyboardAware, want exactly 1", marked)
+	}
+}

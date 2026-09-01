@@ -42,8 +42,9 @@ vertical column that holds the screen's content.
 
 ```
 SafeArea
-  └─ Scroll            (only when Scroll is true)
+  └─ Scroll            (only when Scroll is true; KeyboardAware lands here)
        └─ Column       ← Gap / Fill / Style land here
+                         (and KeyboardAware, when there is no Scroll)
             ├─ Children[0]
             └─ …
 ```
@@ -72,6 +73,7 @@ components.Screen{
 |---|---|
 | `Children` | laid out top to bottom in the column; a `nil` entry is skipped |
 | `Scroll` | wraps the column in `core.Scroll` |
+| `KeyboardAware` | the region yields to the software keyboard instead of being covered |
 | `Gap` | uniform vertical spacing, in points; zero means *unset* |
 | `Fill` | `FlexGrow(1)` on the column — claim the full safe-area height |
 | `Style` | applied to the column **after** `Gap` and `Fill`, so it overrides both |
@@ -90,6 +92,24 @@ scroll view nested in a scroll view fights for the same drag on both natives.
 Of the five app roots in `examples/`, exactly one (`fintechapp`) scrolls as a
 whole; `chat` scrolls its message list and `todoapp` scrolls a virtualized
 `core.List`.
+
+**`KeyboardAware` lands on the scroll region, or on the column when there is
+none** — the two halves of what it means. A scrolling screen wants its
+*viewport* shortened, so the platform's scroll-the-focused-field-into-view has
+somewhere visible to put the field; a fixed screen wants the whole column
+lifted, so whatever is docked at its bottom — a chat composer, a checkout bar,
+the thing the keyboard actually covers — stays reachable. Either way the
+`SafeArea` itself stays put, so a header does not slide off the top. See
+[`core.KeyboardAware`](concepts/views.md#the-software-keyboard) for what each
+platform does with it.
+
+```go
+// A form: the viewport ends where the keyboard begins.
+components.Screen{Scroll: true, KeyboardAware: true, Children: fields}
+
+// A chat: no scroll here, so the column lifts and the composer rides up.
+components.Screen{KeyboardAware: true, Children: []core.View{header, thread, composer}}
+```
 
 **`Fill` is load-bearing wherever a child grows.** A `FlexGrow` child can only
 grow inside a parent that has height to give, so a screen whose list should
@@ -664,12 +684,21 @@ visible:
 
 ```go
 components.FormField{
-    Label: "Email",
-    Hint:  "We never share it",
-    Error: form.Error("email"),
-    Input: form.Input("email", "you@example.com"),
+    Label:    "Email",
+    Required: form.Required("email"),
+    Hint:     "We never share it",
+    Error:    form.Error("email"),
+    Input:    form.Input("email", "you@example.com"),
 }
 ```
+
+`Required` draws the conventional asterisk after the label, inked in the theme's
+Error color and announced to screen readers as "required". It is annotation
+only — the widget still validates nothing — which is why it is worth asking
+[`form.Required(name)`](concepts/forms.md#the-required-marker) rather than
+writing `true`: the form derives its answer from the field's own rules, so the
+marker cannot outlive the rule that justified it. It is ignored when `Label` is
+empty, there being nothing to mark.
 
 Because the `Input` slot takes any view, wrapping is also how a control with
 no error line of its own gets one — a checkbox row, for instance, with the

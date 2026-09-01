@@ -7,7 +7,7 @@ import "github.com/rohanthewiz/grmob/core"
 // holds the screen's content.
 //
 //	SafeArea
-//	  └─ Scroll            (only when Scroll is true)
+//	  └─ Scroll            (only when Scroll is true; KeyboardAware rides here)
 //	       └─ Column       ← Gap / Fill / Style land here
 //	            ├─ Children[0]
 //	            └─ …
@@ -16,8 +16,9 @@ import "github.com/rohanthewiz/grmob/core"
 // subset — one wrapped in Scroll, two set a Gap, one set FlexGrow(1), and no
 // two agreed on the order the props were written in. The shape is not hard to
 // type; the value of naming it is that there is now one place to hang the
-// things a screen root will eventually need (a keyboard-aware scroll area, a
-// pull-to-refresh region, per-platform inset behavior) instead of five.
+// things a screen root will eventually need (a pull-to-refresh region,
+// per-platform inset behavior) instead of five — KeyboardAware below is the
+// first of them to arrive.
 //
 // # The zero value is exactly SafeArea(Column(children...))
 //
@@ -58,6 +59,18 @@ type Screen struct {
 	// natives.
 	Scroll bool
 
+	// KeyboardAware makes that scroll region shrink to sit above the software
+	// keyboard, so a focused field near the bottom of a form is scrolled
+	// somewhere visible rather than under the keys. See core.KeyboardAware
+	// for what each platform does with it and what it deliberately does not
+	// cover.
+	//
+	// Without Scroll it lifts the content column whole instead, which is the
+	// behavior a screen with something docked at its bottom wants — chat's
+	// composer, a checkout bar — since that bar sits outside any scrolling
+	// region and is the one thing the keyboard covers.
+	KeyboardAware bool
+
 	// Gap is the uniform vertical spacing between children, in points. Zero
 	// means "don't set one", not "zero spacing" — the theme's Column base
 	// keeps whatever it had. Use Gap for uniform runs and core.Spacer between
@@ -84,14 +97,20 @@ type Screen struct {
 
 func (s Screen) Render(ctx *core.Context) *core.Node {
 	// Build core.Column's mixed prop/child argument list. Capacity is exact:
-	// the two optional style props, the caller's overrides, and the children.
-	items := make([]core.PropsAndChildren, 0, len(s.Style)+len(s.Children)+2)
+	// the three optional props, the caller's overrides, and the children.
+	items := make([]core.PropsAndChildren, 0, len(s.Style)+len(s.Children)+3)
 
 	if s.Fill {
 		items = append(items, core.FlexGrow(1))
 	}
 	if s.Gap != 0 {
 		items = append(items, core.Gap(s.Gap))
+	}
+	if s.KeyboardAware && !s.Scroll {
+		// No scroll region to shorten, so the column itself is what lifts.
+		// See the comment above the wrapper below for why the two cases land
+		// on different nodes.
+		items = append(items, core.KeyboardAware())
 	}
 	// Caller Style last: containerNode applies style props in argument order,
 	// so anything here wins over the two props above.
@@ -102,9 +121,19 @@ func (s Screen) Render(ctx *core.Context) *core.Node {
 		items = append(items, child)
 	}
 
+	// KeyboardAware lands on the outermost thing below the safe area: the
+	// scroll region when there is one, the content column otherwise. Not a
+	// fallback but the two halves of what the prop means — a scrolling screen
+	// wants its viewport shortened so the focused field can be scrolled
+	// clear, a fixed one wants the whole column lifted so whatever is docked
+	// at its bottom stays reachable. Either way the safe area itself stays
+	// put, so a header does not slide off the top.
 	inner := core.Column(items...)
 	if s.Scroll {
-		inner = core.Scroll(inner)
+		// MaybeProp rather than a second Scroll call: its false path is an
+		// untyped nil, which the container argument loop skips, so a screen
+		// that did not ask carries no prop and renders the tree it used to.
+		inner = core.Scroll(core.MaybeProp(s.KeyboardAware, core.KeyboardAware()), inner)
 	}
 	// SafeArea takes a single child and renders it immediately, so this
 	// returns the fully rendered node rather than another View.

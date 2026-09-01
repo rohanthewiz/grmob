@@ -9,8 +9,15 @@
         android:allowBackup="true"
         android:supportsRtl="true"
         android:theme="@android:style/Theme.Material.Light.NoActionBar">
+        <!-- adjustResize, not the platform's unspecified default: with the
+             activity edge to edge (MainActivity.enableEdgeToEdge) the keyboard
+             has to arrive as a window inset the composition can read, which is
+             what core.KeyboardAware turns into padding on a scroll region.
+             Under adjustPan the platform slides the whole window instead and
+             nothing downstream can tell the keyboard is there. -->
         <activity
             android:name=".MainActivity"
+            android:windowSoftInputMode="adjustResize"
             android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />

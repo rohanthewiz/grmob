@@ -14,13 +14,18 @@ import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.exclude
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.ime
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.safeDrawingPadding
+import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
@@ -109,16 +114,25 @@ fun GrMobRoot(runtime: GrMobRuntime) {
 fun RenderNode(node: GrMobNode, extra: Modifier = Modifier) {
     if (node.style?.display == "none") return // not composed at all; "hidden" keeps space
 
+    // core.KeyboardAware, applied at the one funnel every node passes through
+    // rather than at each container that might want it. It lands between the
+    // parent-scope modifiers and the node's own (boxModifier starts from
+    // `extra`), which is exactly where it has to be for a Scroll: constraints
+    // flow left to right, so an inset written before verticalScroll shrinks
+    // the *viewport*, while one written after would pad the scrolled content
+    // and leave the viewport still claiming the rows the keyboard covers.
+    val mods = extra.keyboardInset(node)
+
     // Opening the disabled scope here, once, rather than inside every control
     // means a container's flag reaches leaves it does not know about — and
     // the provider is skipped when nothing changes, so an enabled tree pays
     // nothing for the mechanism.
     if (node.style?.disabled == true && !LocalGrMobDisabled.current) {
         CompositionLocalProvider(LocalGrMobDisabled provides true) {
-            RenderNodeContent(node, extra)
+            RenderNodeContent(node, mods)
         }
     } else {
-        RenderNodeContent(node, extra)
+        RenderNodeContent(node, mods)
     }
 }
 
@@ -144,7 +158,19 @@ private fun RenderNodeContent(node: GrMobNode, extra: Modifier) {
         "Scroll" -> Column(
             style.boxModifier(extra).verticalScroll(rememberScrollState())
         ) { ColumnChildren(node) }
-        "SafeArea" -> Box(style.boxModifier(extra).safeDrawingPadding()) { RenderChildren(node) }
+
+        // The safe area is the system bars and the display cutout — not the
+        // IME. WindowInsets.safeDrawing bundles the keyboard in with the rest,
+        // which would make every screen resize whole whenever a field is
+        // focused and, worse, consume the IME inset so that a Scroll asking
+        // for it with keyboardInset would receive nothing (nested window-inset
+        // modifiers consume what they apply). Keeping the keyboard out of this
+        // is what leaves it to the region that actually scrolls — the same
+        // split SwiftUI makes, where the keyboard is its own safe-area region.
+        "SafeArea" -> Box(
+            style.boxModifier(extra)
+                .windowInsetsPadding(WindowInsets.safeDrawing.exclude(WindowInsets.ime))
+        ) { RenderChildren(node) }
 
         "TabView" -> GrMobTabView(node, extra)
         "Modal" -> GrMobModal(node)
@@ -222,6 +248,28 @@ private fun animatedStyle(s: GrMobStyle?): GrMobStyle? {
     }
     return s.copy(background = bg.value)
 }
+
+/**
+ * Go's core.KeyboardAware: shrink this node by the software keyboard's height
+ * while the keyboard is showing.
+ *
+ * On a scrolling node that means the viewport ends above the keys, so
+ * Compose's own bring-the-focused-field-into-view has somewhere visible to put
+ * the field. On a non-scrolling one it means the whole subtree lifts — which
+ * is how a screen with a docked composer keeps it reachable.
+ *
+ * It reads WindowInsets.ime, which only reports a height once the window has
+ * stopped fitting the system windows itself:
+ *
+ *   MainActivity          enableEdgeToEdge()   (insets become the app's job)
+ *   AndroidManifest.xml   windowSoftInputMode="adjustResize"
+ *
+ * Both are set. Were they not, the platform would resize the whole window and
+ * deliver the IME inset already consumed, making this a no-op rather than a
+ * conflict — the app would still yield to the keyboard, just wholesale.
+ */
+private fun Modifier.keyboardInset(node: GrMobNode): Modifier =
+    if (node.boolProp("keyboardAware")) this.imePadding() else this
 
 /**
  * Tap/long-press wiring for nodes that don't draw their own control (Button

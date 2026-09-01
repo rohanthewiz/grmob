@@ -249,6 +249,62 @@ func (f *Form) Touched(name string) bool {
 	return f.rec.touched[name]
 }
 
+// Required reports whether the field rejects an empty value — which is what
+// components.FormField.Required wants, so the marker beside a label and the
+// rule that justifies it cannot disagree:
+//
+//	components.FormField{
+//	    Label:    "Email",
+//	    Required: form.Required("email"),
+//	    Error:    form.Error("email"),
+//	    Input:    form.Input("email", "you@example.com"),
+//	}
+//
+// It is *derived*, not declared: the field's rules are run against "" and the
+// answer is whether any of them complains. There is deliberately no
+// Field.Required flag to read instead — a flag would be a second claim about
+// the same field, true only while someone keeps it in step with the rules,
+// and the failure it permits (a starred field that submits empty, an unmarked
+// one that will not) is exactly the disagreement the marker exists to avoid.
+// It is the same reasoning that keeps the error map derived; see the package
+// doc.
+//
+// Three consequences worth knowing:
+//
+//   - Any rule that speaks about an empty value counts, not just Required.
+//     Accepted does — an unticked box is "false", never "" — so a
+//     terms-of-service checkbox reads as required, which is what it is. So
+//     does an app's own closure that rejects "".
+//   - A rule closing over live state makes the answer live too: a field whose
+//     Required is added only in some app state loses its marker on the pass
+//     the rule goes away, with no bookkeeping.
+//   - Spec.Validate is not consulted. A cross-field requirement ("confirm is
+//     needed once password is set") is not a property of the field, and the
+//     probe has no other field's value to give it. Mark those by hand.
+//
+// Unknown names are not required, which is also the answer for a field with
+// no rules at all.
+func (f *Form) Required(name string) bool {
+	// No lock: this reads the spec (this pass's own, never shared) and calls
+	// rules, which for the reasons in derived must not run under the record's
+	// mutex. Duplicate names — a spec bug, not something to special-case —
+	// are unioned by simply not stopping at the first match.
+	for _, fld := range f.spec.Fields {
+		if fld.Name != name {
+			continue
+		}
+		for _, r := range fld.Rules {
+			if r == nil {
+				continue
+			}
+			if r("") != "" {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 // Submitted reports whether Submit has been attempted since mount or Reset —
 // successfully or not. It is what RevealOnSubmit keys on, and it is also the
 // honest test for "has the user asked for this form to be checked yet".

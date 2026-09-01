@@ -675,3 +675,111 @@ func TestFormsOnDistinctSlotsAreIndependent(t *testing.T) {
 		t.Errorf("second app's form value = %q; contexts must be isolated", got)
 	}
 }
+
+func TestRequiredIsDerivedFromTheRules(t *testing.T) {
+	// The probe is "does any rule complain about an empty value", which is
+	// what makes the marker on FormField and the rule that justifies it the
+	// same fact rather than two claims that can drift.
+	ctx := core.NewContext()
+	form := render(ctx, specOf(
+		forms.Field{Name: "email", Rules: []forms.Rule{forms.Required(""), forms.Email("")}},
+		// Every rule but Required and Accepted is silent about "", so a field
+		// carrying only those is optional however many it has.
+		forms.Field{Name: "nickname", Rules: []forms.Rule{forms.MinLen(3, ""), forms.MaxLen(20, "")}},
+		forms.Field{Name: "bio"},
+		// An unticked checkbox is "false", not "", so Accepted speaks about
+		// the empty value too — and a must-tick box is required.
+		forms.Field{Name: "terms", Rules: []forms.Rule{forms.Accepted("")}},
+		// An app's own closure counts for exactly the same reason: nothing
+		// here recognises rule identities, only behaviour.
+		forms.Field{Name: "code", Rules: []forms.Rule{func(v string) string {
+			if v == "" {
+				return "Enter the code we sent you"
+			}
+			return ""
+		}}},
+		// A nil rule is skipped, as everywhere else rules are run.
+		forms.Field{Name: "spare", Rules: []forms.Rule{nil}},
+		// Required-first is the advice, not a constraint: every rule is
+		// probed, so a spec that orders them badly still gets its marker.
+		forms.Field{Name: "billing", Rules: []forms.Rule{forms.Email(""), forms.Required("")}},
+	))
+
+	for name, want := range map[string]bool{
+		"email":    true,
+		"nickname": false,
+		"bio":      false,
+		"terms":    true,
+		"code":     true,
+		"spare":    false,
+		"billing":  true,
+		"unknown":  false,
+	} {
+		if got := form.Required(name); got != want {
+			t.Errorf("Required(%q) = %v, want %v", name, got, want)
+		}
+	}
+}
+
+func TestRequiredIgnoresValidate(t *testing.T) {
+	// A cross-field check is not a property of the field — and the probe has
+	// no other field's value to hand it — so Validate is not consulted, even
+	// when it would reject the empty form.
+	ctx := core.NewContext()
+	form := render(ctx, forms.Spec{
+		Fields: []forms.Field{{Name: "confirm"}},
+		Validate: func(v forms.Values) map[string]string {
+			return map[string]string{"confirm": "Always wrong"}
+		},
+	})
+	if form.Required("confirm") {
+		t.Error("Required must answer from the field's own rules only")
+	}
+}
+
+func TestRequiredFollowsTheLiveSpec(t *testing.T) {
+	// The spec is re-read every pass, so a rule that appears or disappears
+	// with app state moves the marker with it and needs no bookkeeping.
+	ctx := core.NewContext()
+	optional := specOf(forms.Field{Name: "vat"})
+	mandatory := specOf(forms.Field{Name: "vat", Rules: []forms.Rule{forms.Required("")}})
+
+	if render(ctx, optional).Required("vat") {
+		t.Fatal("field with no rules must not be required")
+	}
+	if !render(ctx, mandatory).Required("vat") {
+		t.Fatal("a rule added on a later pass must be seen")
+	}
+	if render(ctx, optional).Required("vat") {
+		t.Error("a rule removed on a later pass must stop being seen")
+	}
+}
+
+func TestRequiredDoesNotDisturbTheForm(t *testing.T) {
+	// The probe runs the rules against "" rather than against the value, so
+	// it must not touch what the user typed, nor mark the field touched —
+	// which under RevealOnTouch would reveal an error nobody asked for.
+	ctx := core.NewContext()
+	form := render(ctx, forms.Spec{
+		Reveal: forms.RevealOnTouch,
+		Fields: []forms.Field{{Name: "email", Initial: "bad", Rules: []forms.Rule{forms.Email("")}}},
+	})
+
+	form.Required("email")
+
+	if got := form.Value("email"); got != "bad" {
+		t.Errorf("value after the probe = %q, want it untouched", got)
+	}
+	if form.Touched("email") {
+		t.Error("probing must not mark the field touched")
+	}
+	if got := form.Error("email"); got != "" {
+		t.Errorf("probing must not reveal anything, got %q", got)
+	}
+
+	// And the answer is about emptiness, not about the value on screen: this
+	// field's current text fails its rule, but nothing here demands content.
+	if form.Required("email") {
+		t.Error("a field whose current value is merely invalid is not required")
+	}
+}

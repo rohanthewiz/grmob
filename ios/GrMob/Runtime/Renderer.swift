@@ -80,7 +80,9 @@ struct RenderNode: View {
             case "Scroll":
                 ScrollView {
                     VStack(alignment: .leading, spacing: 0) { PlainChildren(node: node) }
-                }.grMobBox(node.style, grow: grow)
+                }
+                .grMobKeyboardAware(node.boolProp("keyboardAware"))
+                .grMobBox(node.style, grow: grow)
             case "SafeArea":
                 // SwiftUI already lays out inside the safe area by default, so
                 // this is just a grouping box — the node exists so Go apps can
@@ -422,6 +424,7 @@ private struct GrMobList: View {
             // changes animate under its own Transition via grMobBox.
             .animation(s?.swiftUIAnimation, value: rows.map(\.viewID))
         }
+        .grMobKeyboardAware(node.boolProp("keyboardAware"))
         .grMobBox(s, grow: grow,
                     onTap: node.stringProp("onClick"),
                     onLongPress: node.stringProp("onLongPress"))
@@ -693,6 +696,27 @@ private struct GrMobTextField: View {
 }
 
 extension View {
+    /// Go's core.KeyboardAware, applied to the two scrolling node types.
+    ///
+    /// Only half of what the prop names has to be done here: SwiftUI already
+    /// treats the keyboard as its own safe-area region and insets a ScrollView
+    /// for it, so the shrink that Compose needs Modifier.imePadding() for is
+    /// the platform default and applies whether the flag is set or not. What
+    /// the flag buys on iOS is the dismissal — dragging the region puts the
+    /// keyboard away, which is the behavior every native scrolling form has
+    /// and which SwiftUI does not turn on by itself.
+    ///
+    /// `.interactively` rather than `.immediately`: the keyboard follows the
+    /// drag and comes back if the finger returns, so a scroll that was only
+    /// meant to peek at the field above does not cost the user their keyboard.
+    @ViewBuilder fileprivate func grMobKeyboardAware(_ on: Bool) -> some View {
+        if on {
+            scrollDismissesKeyboard(.interactively)
+        } else {
+            self
+        }
+    }
+
     @ViewBuilder fileprivate func grMobKeyboard(numeric: Bool) -> some View {
         #if os(iOS)
         keyboardType(numeric ? .decimalPad : .default)
