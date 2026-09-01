@@ -30,9 +30,9 @@ import (
 	"path/filepath"
 	"sync"
 
-	"github.com/rohanthewiz/grmob/mobile"
 	"github.com/rohanthewiz/bytdb"
 	bsql "github.com/rohanthewiz/bytdb/sql"
+	"github.com/rohanthewiz/grmob/mobile"
 )
 
 // todoStore wraps one open bytdb engine plus the snapshot read at open.

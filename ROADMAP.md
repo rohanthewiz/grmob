@@ -99,17 +99,13 @@
 
 ---
 
-## 🧩 In Progress
+## 🔜 Planned
 
 ### 📦 Packaging
 - [ ] `grmob build --target=wasm`
 - [ ] `grmob build --target=android`
 - [ ] `grmob build --target=ios`
-
----
-
-## 🔜 Planned
-
+      (today: `android/build.sh`, `ios/build.sh`, and `GOOS=js GOARCH=wasm go build ./wasm`)
 
 ### Native Bridge (Planned for Android/iOS)
 

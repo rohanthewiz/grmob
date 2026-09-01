@@ -16,8 +16,11 @@
 - **Bridge-Free Events** – Events and hardware calls require no manual bridge setup
 - **App Config Injection** – Provide global config for name, author, version, locale
 - **Reactive Runtime** – Smart diffing engine with `patch` and `mount`, dirty flag detection
-- **Timers & Effects** – Hooks like `UseInterval`, `UseTimeout`, and soon `UseEffect`
-- **WebAssembly Support** – Works in browser environments via Go + WASM
+- **Timers & Effects** – `UseInterval`, `UseTimeout`, `UseEffect`, `UseMemo`, `UseReducer`
+- **Forms & Navigation** – Validation rules with reveal policies, and a `Navigator` with modals and toasts
+- **Widget Library** – `components`: buttons, cards, chips, tabs, accordions, form fields and more
+- **Robustness** – Error boundaries, a zero-cost debug mode, and cached subtrees
+- **WebAssembly Support** – The same app runs in the browser via Go + WASM
 
 ---
 
@@ -25,26 +28,29 @@
 
 A **simple social network profile screen**, broken into components:
 
-### `main.go`
+### `register.go`
 ```go
-package main
+package social
 
 import (
-    "fmt"
     "github.com/rohanthewiz/grmob/core"
+    "github.com/rohanthewiz/grmob/mobile"
 )
 
-func main() {
+// Registering the root view is the whole integration contract: the native
+// shells and the WASM host call the mobile bridge, and it drives App.
+func init() {
     ctx := core.NewContext().WithConfig(&core.AppConfig{
-        Name: "LetsBe Social",
-        Author: "Your Name",
+        Name:    "LetsBe Social",
+        Author:  "Your Name",
         Version: "0.1.0",
-        Locale: "en-MZ"
+        Locale:  "en-MZ",
     })
-
-    App(ctx).Render(ctx)
-    
+    mobile.Register(ctx, App)
 }
+
+// AppName gives gomobile a bindable symbol so this package links in.
+func AppName() string { return "LetsBe Social" }
 ```
 
 ### `app.go`
@@ -118,9 +124,9 @@ func Post(content string, tags ...string) core.View {
             core.Text(full),
             core.Spacer(4),
             core.Row(
-                core.Button("Like"),
+                core.Button("Like", func() { /* like it */ }),
                 core.Spacer(4),
-                core.Button("Comment"),
+                core.Button("Comment", func() { /* open composer */ }),
             ),
         ),
     )
@@ -217,57 +223,71 @@ iOS simulator and Android emulator. The finished app is
 
 ## 📐 Architecture
 
-- `core/` – core abstractions: Node, View, Context, State, Style
-- `hooks/` – reactive utilities like `UseInterval`, `UseTimeout`, `UseEffect` (coming soon)
-- `forms/` – form state and validation: rules, cross-field checks, reveal policy
-- `render/` – render manager, patching logic, and JSON tree generation
-- `android/` – native renderer for Android (Kotlin)
-- `ios/` – native renderer for iOS (Swift or Kotlin Multiplatform)
-- `examples/` – declarative UI demos in Go
-- `wasm/` – WebAssembly runtime and JS bridge for testing in browser
+- `core/` – Node, View, Context, State, Style, theming, navigation, focus, error boundaries, debug mode
+- `hooks/` – `UseInterval`, `UseTimeout`, `UseEffect`, `UseMemo`, `UseReducer`
+- `components/` – the widget library built on `core`
+- `forms/` – form state and validation: rules, cross-field checks, reveal policies, server errors
+- `reconcile/` – the diff engine that turns two trees into a patch list
+- `render/` – the render manager: passes, dirty tracking, callback dispatch, patch pumping
+- `mobile/` – the gomobile-bindable bridge the native shells talk to
+- `android/` – the Jetpack Compose shell and renderer (Kotlin)
+- `ios/` – the SwiftUI shell and renderer (Swift)
+- `wasm/` – the WebAssembly host and JS runtime for the browser
+- `htmlout/`, `jsonout/` – exporters for previews, snapshot tests and tooling
+- `examples/` – complete apps, including the interactive tutorial and the todo app
 
 ---
 
 ## 📱 Renderers
 
-Renderers are responsible for turning the abstract `Node` tree into real UI elements.
+Renderers turn the abstract `Node` tree into real UI, and apply the reconciler's
+patches to keep it current.
 
-- Native Android using `FrameLayout`, `TextView`, `Button`, etc.
-- Native iOS via `UIView`, `UILabel`, etc. (coming soon)
-- HTML (optional, for export and dev tools)
+- **Android** – Jetpack Compose (`android/`)
+- **iOS** – SwiftUI (`ios/`)
+- **Browser** – the DOM, via WebAssembly and `wasm/grmob-runtime.js`
+- **HTML export** – `htmlout`, for previews and byte-for-byte snapshot tests
 
-## 🏗 Building the Android Module
+Every renderer has a verify harness that replays the Go engine's own patch
+transcripts against it, so the three targets stay in step.
 
-1. Install `gomobile` and initialize it:
-   ```bash
-   go install golang.org/x/mobile/cmd/gomobile@latest
-   gomobile init
-   ```
-2. Generate the Android library from the Go code:
-   ```bash
-   gomobile bind -target=android -tags grmob -o android/app/libs/grmob.aar ./
-   ```
-3. Open the `android/` folder in Android Studio and run the `app` module on a device or emulator.
+## 🏗 Building for Android and iOS
+
+Both shells take an app package as their argument. Any package whose `init`
+calls `mobile.Register` drops in; the examples all do.
+
+```bash
+go install golang.org/x/mobile/cmd/gomobile@latest golang.org/x/mobile/cmd/gobind@latest
+gomobile init
+
+android/build.sh ./examples/todoapp   # binds mobile + your app into android/app/libs/grmob.aar
+ios/build.sh ./examples/todoapp       # needs full Xcode; produces the xcframework for ios/
+```
+
+Then open `android/` in Android Studio, or the Xcode project under `ios/`, and
+run. The full walkthrough, including the bridge contract the shells implement,
+is in [docs/platforms/native.md](docs/platforms/native.md).
 
 ---
 
 ## 🛠 Dev Experience
 
-- Hot reload (planned)
-- Custom DSLs and style tokens
-- Testing helpers for views and events
-- Code generation for component scaffolds (planned)
-- Smart diff-based rendering with `IsDirty()` loop in JS runtime
-- Patch minimization to avoid unnecessary DOM updates
+- Drive the whole engine from a plain Go test: `render.New` → `RenderInitial` → `DispatchCallback`
+- Snapshot views as HTML with `htmlout` and pin them byte for byte
+- Debug mode flags cursor drift, duplicate keys, unknown items and panics, and costs nothing when off
+- Patch logging and inspection on every render
+- The browser host polls `IsDirty` and applies minimal DOM patches, so nothing re-mounts
 
 ---
 
 ## 🧠 Hooks (State & Side Effects)
 
-- `NewState[T]` – basic reactive state
+- `NewState[T]` – reactive state local to a component
 - `UseInterval(ctx, fn, interval)` – run `fn` on an interval
 - `UseTimeout(ctx, fn, delay)` – run `fn` once after a delay
-- `UseEffect(ctx, fn)` – run once after mount (coming soon)
+- `UseEffect(ctx, fn, deps...)` – run after mount, and again when a dependency changes
+- `UseMemo(ctx, compute, deps...)` – cache a value until a dependency changes
+- `UseReducer(ctx, reducer, initial)` – state driven by dispatched actions
 
 ---
 
