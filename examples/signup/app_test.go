@@ -403,3 +403,57 @@ func TestResetClearsTheBlurMarks(t *testing.T) {
 	}
 	assertNoConcerns(t)
 }
+
+// The server-error path's other half: an error message alone leaves the user
+// to find the field again, since a submit has usually scrolled past it or put
+// the keyboard away. The screen names the email field with a FocusTarget and
+// core.Focus puts the cursor back in it.
+func TestServerErrorPutsTheCursorBackInTheEmailField(t *testing.T) {
+	mgr := newApp(t)
+	fill(t, mgr, "taken@example.com")
+
+	// Before the submit nothing has issued a command, so no field carries a
+	// stamp at all — the property that keeps this feature free for screens
+	// that never use it.
+	email := func() *node {
+		return findNode(tree(t, mgr), func(n *node) bool {
+			return n.Props["placeholder"] == "you@example.com"
+		})
+	}
+	if _, ok := email().Props["focusEpoch"]; ok {
+		t.Fatalf("the email field carries a stamp before any command: %#v", email().Props)
+	}
+
+	tap(t, mgr, "Create account")
+
+	got := email().Props
+	if got["focusAction"] != "focus" {
+		t.Errorf("email focusAction = %v, want focus:\n%#v", got["focusAction"], got)
+	}
+	// The password field is stamped with the same command and nothing to do,
+	// rather than being told to blur — a blur there would race the email
+	// field's focus request on both native platforms.
+	pw := findNode(tree(t, mgr), func(n *node) bool {
+		return n.Props["placeholder"] == "••••••••"
+	})
+	if pw.Props["focusAction"] != "" {
+		t.Errorf("password focusAction = %v, want empty:\n%#v", pw.Props["focusAction"], pw.Props)
+	}
+	assertNoConcerns(t)
+}
+
+// A submit that succeeds must not focus anything: the form is gone, and a
+// stray command would land on whatever the confirmation screen shows.
+func TestSuccessfulSubmitIssuesNoFocusCommand(t *testing.T) {
+	mgr := newApp(t)
+	fill(t, mgr, "fresh@example.com")
+
+	after := tap(t, mgr, "Create account")
+	if !strings.Contains(after, "Account created") {
+		t.Fatalf("expected the confirmation screen:\n%s", after)
+	}
+	if strings.Contains(after, "focusEpoch") {
+		t.Errorf("a successful submit issued a focus command:\n%s", after)
+	}
+	assertNoConcerns(t)
+}

@@ -95,16 +95,19 @@ applying it there would resize every screen whole *and* consume the inset
 before an inner region could ask for it. The renderer subtracts the IME from
 that set deliberately — the same split SwiftUI makes.
 
-There is still no focus or blur event in the framework, so nothing here
-dismisses the keyboard on a tap outside; the iOS drag-to-dismiss above is the
-platform's own gesture.
+Nothing here dismisses the keyboard on a tap outside — that is a separate
+request, [`core.DismissKeyboard`](events.md#setting-focus), and keeping the
+two apart is the point: this prop decides which region yields the space, and
+a chat composer that wants the inset emphatically does not want a stray tap
+closing the keyboard between messages. The iOS drag-to-dismiss above is the
+platform's own gesture, not a handler of ours.
 
 ## Leaves
 
 | Widget | Signature (abridged) |
 |---|---|
 | `Text` | `Text(content, styleProps...)` |
-| `Button` | `Button(label, onClick, styleProps...)` — also `ButtonWithEvent(label, event, fn, ...)` |
+| `Button` | `Button(label, onClick, props...)` — also `ButtonWithEvent(label, event, fn, ...)` |
 | `Input` | `Input(value, placeholder, onChange, ...)` — also `InputWithSubmit`, `InputPassword`, `NumericInput`, `TextArea` |
 | `Checkbox` | `Checkbox(checked, onToggle, ...)` |
 | `Image` | `Image(src, styleProps...)` |

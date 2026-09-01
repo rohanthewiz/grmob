@@ -156,6 +156,47 @@ func TestFocusCallbackAttrsEmitted(t *testing.T) {
 	}
 }
 
+// A focus command exports as autofocus, and only as autofocus. The epoch is a
+// runtime coordination number — it says *when*, which a snapshot cannot ask —
+// so it never reaches the document; what survives is the standing instruction
+// the last command left behind, and HTML already spells that.
+func TestFocusCommandExportsAsAutofocus(t *testing.T) {
+	n := &core.Node{
+		Type: "Input",
+		Props: map[string]any{
+			"value":       "",
+			"focusEpoch":  4,
+			"focusAction": "focus",
+		},
+	}
+	out := ExportHTML(n)
+	if !strings.Contains(out, `autofocus="autofocus"`) {
+		t.Fatalf("missing autofocus attribute:\n%s", out)
+	}
+	if strings.Contains(out, "focusEpoch") || strings.Contains(out, "focusAction") {
+		t.Fatalf("the raw command props leaked into the document:\n%s", out)
+	}
+}
+
+// The two actions that are not an instruction to a freshly loaded page. A
+// blur in particular must not export as anything: there is no focus to
+// release before the user has touched the document.
+func TestNonFocusCommandsExportNothing(t *testing.T) {
+	for _, action := range []string{"blur", ""} {
+		n := &core.Node{
+			Type: "Input",
+			Props: map[string]any{
+				"value":       "",
+				"focusEpoch":  4,
+				"focusAction": action,
+			},
+		}
+		if out := ExportHTML(n); strings.Contains(out, "autofocus") {
+			t.Errorf("action %q exported autofocus:\n%s", action, out)
+		}
+	}
+}
+
 // Attribute order is part of the contract: the mapping is a slice rather than
 // a map precisely so a re-run produces a byte-identical document.
 func TestCallbackAttrOrderIsStable(t *testing.T) {

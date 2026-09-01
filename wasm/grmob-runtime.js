@@ -65,6 +65,14 @@ const GrMob = (() => {
                 else if (key === "contentMode" && node.Type === "Image") {
                     el.style.objectFit = objectFitFor(value);
                 }
+                else if (key === "focusEpoch") {
+                    // Recorded so the update path below can tell a genuinely
+                    // new command from a props patch that merely happened to
+                    // carry the same stamp along (an update-props patch sends
+                    // the whole new map, not just the keys that changed).
+                    el.dataset.focusEpoch = value;
+                    applyFocusCommand(el, value, node.Props.focusAction);
+                }
 
             }
         }
@@ -96,6 +104,36 @@ const GrMob = (() => {
     }
 
     const FORM_CONTROLS = new Set(["button", "input", "textarea", "select"]);
+
+    // Go's focus commands (core.Focus / core.DismissKeyboard) — see
+    // core/focus.go. The epoch says when, the action says what.
+    //
+    // Epoch 0 means no command has ever been issued and Go stamped nothing,
+    // so this is unreachable for an app that never touches focus; it is
+    // checked anyway because the two props always travel together and a 0
+    // must never be read as an instruction.
+    //
+    // Deferred a frame because focus() on an element outside the document is
+    // a silent no-op, and on the initial render createElement builds the tree
+    // detached — mount appends it only once the whole thing is assembled.
+    // The same deferral is harmless on the patch path, where the element is
+    // already live.
+    //
+    // "blur" is guarded on this element actually holding focus: a dismiss
+    // reaches every field on the page and exactly one of them is the one to
+    // release. Only the target is told "focus"; every other field is told ""
+    // and does nothing, because focusing over there already blurs this one.
+    function applyFocusCommand(el, epoch, action) {
+        if (!epoch) return;
+        if (action !== "focus" && action !== "blur") return;
+        requestAnimationFrame(() => {
+            if (action === "focus") {
+                el.focus();
+            } else if (document.activeElement === el) {
+                el.blur();
+            }
+        });
+    }
 
     // core.ContentMode -> CSS object-fit. Kept in sync with htmlout's
     // objectFit(); an unknown or absent mode clears the property so the
@@ -249,6 +287,19 @@ const GrMob = (() => {
                             el.src = v;
                         } else if (k === "contentMode") {
                             el.style.objectFit = objectFitFor(v);
+                        } else if (k === "focusEpoch") {
+                            // The epoch is the whole trigger; focusAction is
+                            // only read once it has moved. An update-props
+                            // patch carries the entire new props map, so a
+                            // field re-rendered for its value would otherwise
+                            // re-run whatever focus command was last issued.
+                            if (String(el.dataset.focusEpoch) === String(v)) continue;
+                            el.dataset.focusEpoch = v;
+                            applyFocusCommand(el, v, p.Changes.focusAction);
+                        } else if (k === "focusAction") {
+                            // Handled with focusEpoch above; on its own it
+                            // says when nothing, only what.
+                            continue;
                         } else if (k.startsWith("on")) {
                             const event = mapEventName(k);
                             el.dataset[`listener_${k}`] = v;

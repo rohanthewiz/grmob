@@ -639,6 +639,10 @@ private struct GrMobTextField: View {
         let onSubmit = node.stringProp("onSubmit")
         let onFocus = node.stringProp("onFocus")
         let onBlur = node.stringProp("onBlur")
+        // The imperative half: core.Focus / core.DismissKeyboard reach the
+        // screen as these two props. See applyFocusCommand and core/focus.go.
+        let focusEpoch = node.intProp("focusEpoch")
+        let focusAction = node.stringProp("focusAction")
         let prompt = Text(node.stringProp("placeholder"))
 
         // While focused the local buffer is authoritative; otherwise render
@@ -684,6 +688,24 @@ private struct GrMobTextField: View {
                     runtime?.click(onBlur)
                 }
             }
+            // Go's focus *commands*, the other direction from the edges
+            // above. Keyed on the epoch alone, never on the action: the
+            // action is what to do, the epoch is when — and a second
+            // core.Focus on the already-focused field has to re-fire, which
+            // only a changed value can express.
+            //
+            // Two modifiers where Compose needs one. onChange(of:) does not
+            // fire for the initial value — the same asymmetry that lets this
+            // renderer skip Compose's seenFocus flag above — so a field that
+            // mounts while it is already the target would never hear its
+            // command without the onAppear. That case is the one worth
+            // supporting: "push a screen and put the cursor in its search
+            // box" issues the command in the handler that navigates, one pass
+            // before the field it names exists.
+            .onAppear { applyFocusCommand(epoch: focusEpoch, action: focusAction) }
+            .onChange(of: focusEpoch) { _, epoch in
+                applyFocusCommand(epoch: epoch, action: focusAction)
+            }
             .onChange(of: upstream) { _, newValue in
                 guard focused else { return }
                 if let echo = pendingEchoes.firstIndex(of: newValue) {
@@ -696,6 +718,27 @@ private struct GrMobTextField: View {
             .textFieldStyle(.plain)
             .grMobTextStyle(node.style)
             .grMobBox(node.style, grow: grow)
+    }
+
+    /// Runs one focus command from Go.
+    ///
+    /// Epoch 0 means no command has ever been issued (Go stamps nothing at
+    /// all), so a screen that never touches focus passes through here on
+    /// every appear and does nothing.
+    ///
+    /// "blur" is guarded on this field actually holding focus: @FocusState is
+    /// per-field, so a dismiss reaches every field on screen and exactly one
+    /// of them is the one to release. Only the target acts on "focus"; every
+    /// other field is told "" and does nothing, because setting focus over
+    /// there already takes it from here — having both sides act would make
+    /// the outcome depend on the order SwiftUI happens to run two closures in.
+    private func applyFocusCommand(epoch: Int, action: String) {
+        guard epoch != 0 else { return }
+        switch action {
+        case "focus": focused = true
+        case "blur": if focused { focused = false }
+        default: break
+        }
     }
 
     @ViewBuilder

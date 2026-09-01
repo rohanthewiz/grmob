@@ -17,7 +17,12 @@ func legacyFilterBar(active int, onSelect func(int)) core.View {
 	return core.Row(
 		core.Gap(8),
 		core.For(filterLabels, func(label string, i int) core.View {
-			styles := []core.StyleProp{
+			// []core.PropsAndChildren, not []core.StyleProp: core.Button's
+			// argument list widened, and Go will not spread the narrower
+			// slice into the wider variadic. The elements are unchanged, so
+			// the markup this builds — which is the whole point of the
+			// comparison below — is byte-for-byte what it always was.
+			styles := []core.PropsAndChildren{
 				core.FontSize(13),
 				core.Transition(200, core.EaseInOut),
 				core.AccessibilityHint("Filters the task list"),

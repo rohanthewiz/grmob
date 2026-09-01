@@ -124,6 +124,22 @@ func renderNode(b *element.Builder, node *core.Node) (x any) {
 	if node.Style != nil && node.Style.Disabled && isFormControl(node.Type) {
 		attrs = append(attrs, "disabled", "disabled")
 	}
+	// core.Focus, rendered the one way a static document can render it.
+	//
+	// The focus command's two props are a runtime coordination pair — the
+	// epoch says *when*, which is a question a snapshot cannot ask — so
+	// neither is exported verbatim. What survives the export is the standing
+	// instruction the last command left behind, and HTML already has a
+	// spelling for it: autofocus puts the cursor in this field when the page
+	// loads, which is exactly what "focus" means to a document with no events
+	// yet. "blur" and "" export as nothing, because a freshly loaded page has
+	// no focus to release.
+	//
+	// Long form to match the disabled and checked attributes above; element
+	// emits key="value" pairs only.
+	if getStr(node.Props["focusAction"]) == "focus" && isFormControl(node.Type) {
+		attrs = append(attrs, "autofocus", "autofocus")
+	}
 
 	switch node.Type {
 	case "Input":

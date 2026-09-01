@@ -188,7 +188,7 @@ func (b Button) Render(ctx *core.Context) *core.Node {
 		onTap = func() {}
 	}
 
-	return core.Button(b.Label, onTap, styles...).Render(ctx)
+	return core.Button(b.Label, onTap, asProps(styles)...).Render(ctx)
 }
 
 // colorProps resolves the two axes into style props, or into nothing at all.
@@ -231,4 +231,27 @@ func (b Button) colorProps(t *core.Theme) []core.StyleProp {
 		core.BackgroundColor(fill),
 		core.TextColor(b.Variant.Ink(t, fill)),
 	}
+}
+
+// asProps converts a collected []core.StyleProp into the []core.PropsAndChildren
+// core.Button now takes.
+//
+// The conversion exists because Go will not spread a []StyleProp into a
+// ...PropsAndChildren even though every element satisfies the wider type —
+// the slice headers are different types, so the copy is unavoidable. It is
+// the one call shape core.Button's widening broke, and the widgets here are
+// the two places in the tree that hit it.
+//
+// The widgets' own Style fields stay []core.StyleProp on purpose rather than
+// widening to match. A Button{} or Chip{} places its styles at a documented
+// point in a treatment order it controls, and it has nowhere sensible to put
+// a behavior prop; accepting one would mean silently deciding whether it
+// lands before or after the variant colors. Callers that need a behavior prop
+// on a button should reach for core.Button directly, which now takes them.
+func asProps(styles []core.StyleProp) []core.PropsAndChildren {
+	out := make([]core.PropsAndChildren, len(styles))
+	for i, s := range styles {
+		out[i] = s
+	}
+	return out
 }

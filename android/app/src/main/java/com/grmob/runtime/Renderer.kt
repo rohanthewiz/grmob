@@ -51,8 +51,11 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -445,7 +448,13 @@ private fun GrMobTextField(
     val onSubmit = node.stringProp("onSubmit")
     val onFocus = node.stringProp("onFocus")
     val onBlur = node.stringProp("onBlur")
+    // The imperative half: core.Focus / core.DismissKeyboard reach the screen
+    // as these two props. See the LaunchedEffect below and core/focus.go.
+    val focusEpoch = node.intProp("focusEpoch")
+    val focusAction = node.stringProp("focusAction")
 
+    val focusRequester = remember { FocusRequester() }
+    val focusManager = LocalFocusManager.current
     val interactions = remember { MutableInteractionSource() }
     val focused by interactions.collectIsFocusedAsState()
     var text by remember { mutableStateOf(upstream) }
@@ -494,8 +503,50 @@ private fun GrMobTextField(
         }
     }
 
+    // Go's focus *commands*, the other direction from the edges above.
+    //
+    // Keyed on the epoch alone, never on the action: the action is what to
+    // do, the epoch is when. Two identical prop maps produce no patch and so
+    // no recomposition, which is exactly why Go bumps a counter rather than
+    // setting a flag — a second core.Focus on the already-focused field has
+    // to re-fire, and only a changed key can express that.
+    //
+    // Epoch 0 means no command has ever been issued (Go stamps nothing at
+    // all), so the effect's mandatory first run does nothing on a screen that
+    // never touches focus.
+    //
+    // Unlike the edge effect above this deliberately has NO mount guard. A
+    // field that mounts while it is already the target takes focus, which is
+    // what makes "push a screen and put the cursor in its search box" work:
+    // the command is issued in the handler that navigates, and the field it
+    // names does not exist until the pass after. The cost is that returning
+    // to a screen re-applies the last command that named its field; issue a
+    // core.DismissKeyboard if that is not wanted.
+    //
+    // "blur" is guarded on this field actually holding focus so that one
+    // dismiss does not have every field on screen calling clearFocus(). Only
+    // the target acts on "focus"; every other field is told "" and does
+    // nothing, because requesting focus over there already takes it from
+    // here — having both sides act would make the outcome depend on the
+    // order Compose happens to run two effects in.
+    LaunchedEffect(focusEpoch) {
+        if (focusEpoch == 0) return@LaunchedEffect
+        when (focusAction) {
+            // requestFocus throws if the requester is not attached to a
+            // placed node yet. A LaunchedEffect already runs after
+            // composition, which covers the ordinary case; the catch covers
+            // the field being composed but not yet placed (inside a lazy
+            // list that has not laid out the row), where the honest outcome
+            // is "the command missed" rather than a crashed screen.
+            "focus" -> runCatching { focusRequester.requestFocus() }
+            "blur" -> if (focused) focusManager.clearFocus()
+        }
+    }
+
     val rows = node.intProp("rows")
-    var modifier = s.boxModifier(extra)
+    // Appended after the box modifier, so the requester sits on the innermost
+    // element — the field itself — rather than on the padding around it.
+    var modifier = s.boxModifier(extra).focusRequester(focusRequester)
     if (multiline && rows > 0) {
         // Approximate a rows-based min height from the line height.
         val line = if (s != null && s.fontSize > 0f) s.fontSize * 1.4f else 24f

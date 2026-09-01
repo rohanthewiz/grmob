@@ -31,6 +31,13 @@ var leafBuilders = map[string]func(...PropsAndChildren) View{
 	"Checkbox": func(p ...PropsAndChildren) View {
 		return Checkbox(true, func(bool) {}, p...)
 	},
+	// Button was the last leaf still taking ...StyleProp, which made it the
+	// one node type that exists to be pressed and could not carry a gesture
+	// prop. It goes through leafNode now, so it belongs in the table that
+	// asserts the argument contract.
+	"Button": func(p ...PropsAndChildren) View {
+		return Button("label", func() {}, p...)
+	},
 }
 
 func TestLeafBuildersCarryFocusProps(t *testing.T) {

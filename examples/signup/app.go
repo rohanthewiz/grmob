@@ -36,6 +36,13 @@ func App(ctx *core.Context) core.View {
 	// The address of the account just created, or "" while the form is up.
 	created := core.NewState(ctx, "")
 
+	// Names the email field so the server-error path below can put the cursor
+	// back in it. A hook, and therefore unconditional and up here with the
+	// others: a ref built inline would be a new pointer every pass, so
+	// FocusTarget would stamp one identity and Focus would compare against
+	// another and the field would never focus.
+	emailField := core.UseFocusRef(ctx)
+
 	form := forms.UseForm(ctx, forms.Spec{
 		// RevealOnBlur: each field explains itself the moment the user is
 		// done with it, and every field's error appears once a submit is
@@ -110,7 +117,7 @@ func App(ctx *core.Context) core.View {
 				Required: form.Required("email"),
 				Hint:     "We never share it",
 				Error:    form.Error("email"),
-				Input:    form.Input("email", "you@example.com"),
+				Input:    form.Input("email", "you@example.com", core.FocusTarget(emailField)),
 			},
 			components.FormField{
 				Label:    "Password",
@@ -150,7 +157,7 @@ func App(ctx *core.Context) core.View {
 				// button is disabled, so the user gets a form that refuses to
 				// work and refuses to say why. Let the submit run and fail —
 				// failing is what turns the explanations on.
-				OnTap: form.OnSubmit(func(v forms.Values) { submit(form, created, v) }),
+				OnTap: form.OnSubmit(func(v forms.Values) { submit(form, created, emailField, v) }),
 			},
 		},
 	}
@@ -172,7 +179,7 @@ func App(ctx *core.Context) core.View {
 //
 // The values handed in are already a private copy, so the goroutine may
 // outlive the render pass that started it.
-func submit(form *forms.Form, created core.State[string], v forms.Values) {
+func submit(form *forms.Form, created core.State[string], emailField *core.FocusRef, v forms.Values) {
 	// Trimmed, not raw: Required trims before deciding a field is empty, so a
 	// value that passed validation may still be padded.
 	email := v.Trimmed("email")
@@ -186,6 +193,17 @@ func submit(form *forms.Form, created core.State[string], v forms.Values) {
 		form.SetErrors(map[string]string{
 			"email": "That address is already registered",
 		})
+		// And put the cursor where the problem is. The submit has almost
+		// certainly scrolled past the email field or closed the keyboard on
+		// it, so an error message alone leaves the user to find the field
+		// again — core.Focus both reopens the keyboard and brings the field
+		// into view, because the platform scrolls to whatever it focuses.
+		//
+		// It is safe to issue from here even though this runs on the native
+		// event thread mid-dispatch: the command only sets state and requests
+		// a render, and the pass the dispatch already schedules carries the
+		// stamp out.
+		core.Focus(emailField)
 		return
 	}
 

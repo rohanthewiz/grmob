@@ -78,6 +78,12 @@
       builders now take behavior props like the containers do, and
       `forms.RevealOnBlur` reveals a field's error when the user leaves it
       rather than on their second keystroke (`examples/signup`)
+- [x] Programmatic focus (`core.Focus`, `core.DismissKeyboard`,
+      `core.UseFocusRef`, `core.FocusTarget`) — a named field can be focused
+      from anywhere and the keyboard dismissed on a tap outside; the commands
+      ride the render tree as an epoch-stamped prop pair rather than a new
+      bridge call. `core.Button` joined the same argument list in the process,
+      so every leaf now takes behavior props (`examples/signup`)
 - [x] Keyboard-aware regions (`core.KeyboardAware`,
       `components.Screen.KeyboardAware`) — a scrolling region shortens its
       viewport, a fixed one lifts whole, so a docked composer stays reachable
@@ -124,8 +130,9 @@
 ### 🧬 Extensions
 - [ ] Router-style navigation for web
 - [ ] Keyboard navigation (the accessibility *labels* are done, and focus is
-      now *observable* via `OnFocus`/`OnBlur`; programmatic focus — moving it,
-      or dismissing the keyboard on a tap outside — is not)
+      now both observable via `OnFocus`/`OnBlur` and settable via
+      `core.Focus`/`core.DismissKeyboard`; what is left is the *traversal*
+      story — a next/previous order, and an IME "next" action that walks it)
 
 ---
 

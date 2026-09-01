@@ -57,5 +57,5 @@ func (c Chip) Render(ctx *core.Context) *core.Node {
 		styles = append(styles, core.AccessibilityLabel(label))
 	}
 
-	return core.Button(c.Label, c.OnTap, styles...).Render(ctx)
+	return core.Button(c.Label, c.OnTap, asProps(styles)...).Render(ctx)
 }

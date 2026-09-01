@@ -87,12 +87,25 @@ core.On("TouchStart", fn)                     // generic form
 A node may carry both `OnClick` and `OnLongPress`: renderers wire them as one
 gesture recognizer, so a long press never also fires the click.
 
-!!! note "The one call shape the input builders' widening broke"
-    `core.Input` and friends used to take `...core.StyleProp`. Passing style
-    props still compiles unchanged, but a wrapper that *collected* them into a
-    `[]core.StyleProp` and spread it does not — Go will not spread a
-    `[]StyleProp` into a `...PropsAndChildren`. Widen the wrapper's own slice
-    to `[]core.PropsAndChildren`.
+`core.Button` takes them too, which makes every leaf uniform — it was the
+last one still restricted to style props, so the one node type that exists to
+be pressed could not carry a gesture:
+
+```go
+core.Button("Delete", onDelete,
+    core.BackgroundColor(theme.Danger),       // style prop
+    core.OnLongPress(confirmDestructive),     // behavior prop
+)
+```
+
+!!! note "The one call shape the widening broke"
+    `core.Input` and friends, and now `core.Button`, used to take
+    `...core.StyleProp`. Passing style props still compiles unchanged, but a
+    wrapper that *collected* them into a `[]core.StyleProp` and spread it does
+    not — Go will not spread a `[]StyleProp` into a `...PropsAndChildren`.
+    Widen the wrapper's own slice to `[]core.PropsAndChildren`, or convert at
+    the call site if the wrapper's public field should stay style-only
+    (`components.Button` and `components.Chip` take the second route).
 
 ## Focus and blur
 
@@ -125,6 +138,93 @@ Three things to know:
 
 For forms, [`RevealOnBlur`](forms.md) consumes this for you — the bound
 builders attach `OnBlur` themselves under that policy.
+
+## Setting focus
+
+`OnFocus`/`OnBlur` make focus observable. `core.Focus` and
+`core.DismissKeyboard` make it settable.
+
+Name a field with a ref, then command it from anywhere:
+
+```go
+func LoginScreen(ctx *core.Context) core.View {
+    password := core.UseFocusRef(ctx)
+
+    return core.Column(
+        core.InputWithSubmit(email.Get(), "you@example.com", email.Set,
+            func() { core.Focus(password) },   // return key advances
+        ),
+        core.InputPassword(pw.Get(), "password", pw.Set,
+            core.FocusTarget(password),
+        ),
+        core.Button("Sign in", submit),
+    )
+}
+```
+
+And put the keyboard away on a tap outside — the thing
+[`KeyboardAware`](views.md) deliberately does not do:
+
+```go
+core.Box(
+    core.OnClick(func() { core.DismissKeyboard(ctx) }),
+    form,
+)
+```
+
+`core.UseFocusRef` is a hook, so it obeys the [hook rules](hooks.md): call it
+unconditionally, at the top. A ref built inline instead is a **new pointer
+every pass**, so `FocusTarget` stamps one identity while `Focus` compares
+against another and the field simply never focuses.
+
+`DismissKeyboard` takes a `*core.Context` where `Focus` takes a ref, because a
+dismiss names no node and so has nothing to carry the app instance.
+
+### How a command actually travels
+
+Go has exactly one channel to a screen: the render tree. So a command is not a
+bridge call — it is props, diffed and patched like everything else.
+
+```
+Focus(ref) / DismissKeyboard(ctx)
+        │  epoch++, target = ref (or nil)
+        ▼
+next render pass: every focusable leaf stamps
+        focusEpoch  : N       ── the command generation
+        focusAction : "focus" │ "blur" │ ""
+        ▼
+reconciler emits update-props for the leaves whose stamp changed
+        ▼
+renderer keys on focusEpoch *changing* and runs focusAction once
+```
+
+The epoch is a counter rather than a flag so a command can repeat: two
+identical prop maps produce no patch, so focusing the already-focused field —
+"try again after a failed submit" — would otherwise do nothing.
+
+Four consequences worth knowing:
+
+- **A field that mounts as the target takes focus.** That is what makes "push
+  a screen and put the cursor in its search box" work, since the command is
+  issued one pass before the field exists. The flip side: returning to that
+  screen re-applies the command. Issue a `DismissKeyboard` if that is not
+  wanted.
+- **Every focusable leaf is re-stamped on every command**, so a dismiss with
+  six fields on screen emits six `update-props` patches. Focus commands are
+  rare and user-initiated, and the alternative — tracking the focused node in
+  Go — would mean wiring `OnFocus` on every field always and waking a render
+  pass on every keyboard change.
+- **Until the first command, nothing is stamped at all.** An app that never
+  touches focus renders exactly the trees it did before.
+- **A `core.Cached` subtree never hears a command.** `Cached` returns the same
+  `*Node` every pass and the reconciler treats pointer equality as proof
+  nothing changed, so the stamp inside never moves. Cache above the fields, or
+  not at all.
+
+`core.Focus` aimed at a `Button` or `Checkbox` does nothing: neither platform
+gives them keyboard focus, so they carry no stamp. The HTML export renders a
+standing `"focus"` command as `autofocus`, which is the only thing a static
+document can say about it.
 
 ## Dispatch paths by host
 

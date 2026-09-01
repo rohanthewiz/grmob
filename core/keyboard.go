@@ -27,9 +27,21 @@ package core
 //
 // # What it deliberately does not do
 //
-// It does not dismiss the keyboard on a tap outside: there is no focus or
-// blur event in the framework yet, so nothing here can observe a field being
-// left. (Dragging a keyboard-aware scroll region does dismiss it on iOS — see
+// It does not dismiss the keyboard on a tap outside — but that is now a thing
+// an app can ask for directly, which it was not when this prop was written:
+//
+//	core.Box(
+//	    core.OnClick(func() { core.DismissKeyboard(ctx) }),
+//	    form,
+//	)
+//
+// Keeping the two separate is the point. This prop is about *layout* — which
+// region yields the space the keyboard takes — and dismissal is about focus.
+// A chat composer wants the inset and emphatically does not want a stray tap
+// closing the keyboard between messages; a settings form wants the opposite.
+// Folding one into the other would take that choice away.
+//
+// (Dragging a keyboard-aware scroll region also dismisses it on iOS — see
 // below — which is the platform's own gesture, not a handler of ours.)
 //
 // # What each platform does with it

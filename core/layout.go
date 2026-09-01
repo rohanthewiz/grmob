@@ -82,8 +82,24 @@ func containerNode(ctx *Context, typ string, base Style, items []PropsAndChildre
 // A View passed here is the one shape containerNode accepts and this cannot:
 // a leaf has nowhere to put a child. It is reported rather than silently
 // dropped, which is the whole point of ConcernUnknownItem.
+//
+// Focus contract: a leaf whose type the platform gives keyboard focus to
+// (focusableLeafTypes) carries the current focus command, so a
+// core.DismissKeyboard can reach the field the *user* tapped into — a field
+// no app code ever named with a FocusTarget. The stamp goes on before the
+// items run, so a FocusTarget in the argument list overwrites the default
+// action with "focus"; it writes the same epoch either way, so the overwrite
+// is a no-op on every node that is not the command's target. Until something
+// issues a focus command the stamp writes nothing at all, which is what keeps
+// an app that never touches focus rendering the exact trees it did before.
 func leafNode(ctx *Context, typ string, base Style, props map[string]any, items []PropsAndChildren) *Node {
 	style := &base
+	if props == nil {
+		props = map[string]any{}
+	}
+	if focusableLeafTypes[typ] {
+		stampFocus(ctx, props, nil)
+	}
 	// The style pointer goes into the node before the props are applied, so a
 	// StyleProp reached later in the loop still lands on the node that is
 	// returned — the same aliasing containerNode relies on.

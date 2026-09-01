@@ -30,6 +30,7 @@ type Context struct {
 	nav           *navigatorState
 	cleanup       *cleanupRegistry
 	dirty         *dirtyFlag
+	focus         *focusState
 
 	children       []*Context
 	childrenCursor int
@@ -109,6 +110,7 @@ func NewContext() *Context {
 		nav:           newNavigatorState(),
 		cleanup:       newCleanupRegistry(),
 		dirty:         newDirtyFlag(),
+		focus:         newFocusState(),
 		scopes:        make(map[string]*Context),
 	}
 }
@@ -123,6 +125,7 @@ func (ctx *Context) NewChildContext() *Context {
 		nav:           ctx.nav,
 		cleanup:       ctx.cleanup,
 		dirty:         ctx.dirty,
+		focus:         ctx.focus,
 		parent:        ctx,
 		scopes:        make(map[string]*Context),
 	}
@@ -179,6 +182,7 @@ func (ctx *Context) WithConfig(cfg *AppConfig) *Context {
 		nav:           ctx.nav,
 		cleanup:       ctx.cleanup,
 		dirty:         ctx.dirty,
+		focus:         ctx.focus,
 		// Share the scope table rather than leaving it nil: this is the same
 		// context wearing a different config, so a scope reached through it
 		// must be the same scope reached through the original. A nil map here
@@ -200,6 +204,7 @@ func (ctx *Context) WithTheme(theme *Theme) *Context {
 		nav:           ctx.nav,
 		cleanup:       ctx.cleanup,
 		dirty:         ctx.dirty,
+		focus:         ctx.focus,
 		// See WithConfig: the scope table is shared, not re-created, so
 		// ctx.Scope works (and resolves to the same scopes) on a themed copy.
 		scopes: ctx.scopes,
