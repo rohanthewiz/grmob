@@ -191,9 +191,22 @@ core.ButtonWithEvent("Hold", "TouchStart", func() {
 
 ---
 
-## 📖 Tutorial
+## 📖 Tutorials
 
-New to GrMob? [Building a Todo App](docs/tutorial-todo.md) is an in-depth,
+New to GrMob? Start with the [interactive tutorial](docs/tutorial-interactive.md)
+— a GrMob app that teaches GrMob. Forty lessons across eight chapters, and
+every lesson is a live screen: the explanation, the code under discussion,
+and a "TRY IT" panel wired to real state and callbacks, from your first
+`Column` through theming, navigation, and error boundaries. It lives in
+[`examples/tutorial`](examples/tutorial) and runs in the browser with two
+commands:
+
+```bash
+GOOS=js GOARCH=wasm go build -o wasm/main.wasm ./wasm
+(cd wasm && python3 -m http.server 8080)
+```
+
+Then [Building a Todo App](docs/tutorial-todo.md) is an in-depth,
 start-to-finish walkthrough: state and the rules of hooks, controlled inputs
 with Enter-to-submit, the virtualized keyed `List`, theming pitfalls,
 accessibility, testing at three levels, and shipping the same Go code to the

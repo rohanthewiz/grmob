@@ -31,15 +31,7 @@ type Chapter struct {
 // Chapters is the whole curriculum in reading order. Each phase of the
 // tutorial's construction appends one entry; content lives in chapterN.go
 // files so a chapter is reviewable as a unit.
-var Chapters = []Chapter{
-	chapter1(),
-	chapter2(),
-	chapter3(),
-	chapter4(),
-	chapter5(),
-	chapter6(),
-	chapter7(),
-}
+var Chapters []Chapter
 
 // lessonEntry is one row of the flattened, ordered lesson index — the
 // structure navigation actually walks. Prev/next is a flat walk (the last
@@ -57,18 +49,35 @@ type lessonEntry struct {
 // flatLessons is built once at package init. Package-level rather than
 // per-App because the curriculum is immutable data, like todoapp's
 // filterLabels.
-var flatLessons = func() []lessonEntry {
-	var out []lessonEntry
+var flatLessons []lessonEntry
+
+// The curriculum is assembled in init rather than in the two variables'
+// initializer expressions because lesson 8.5 reports the curriculum's own
+// size: its Body reads Chapters and flatLessons, and a var initializer that
+// transitively references itself is an initialization cycle to the compiler
+// even when the reference sits inside a closure that only runs at render
+// time. init functions run after all package variables exist, so building
+// here breaks the cycle while keeping both variables immutable-after-init.
+func init() {
+	Chapters = []Chapter{
+		chapter1(),
+		chapter2(),
+		chapter3(),
+		chapter4(),
+		chapter5(),
+		chapter6(),
+		chapter7(),
+		chapter8(),
+	}
 	for ci, ch := range Chapters {
 		for li, l := range ch.Lessons {
-			out = append(out, lessonEntry{
+			flatLessons = append(flatLessons, lessonEntry{
 				Lesson:       l,
 				ID:           fmt.Sprintf("%d.%d", ci+1, li+1),
 				ChapterTitle: ch.Title,
 				ChapterNum:   ci + 1,
-				Index:        len(out),
+				Index:        len(flatLessons),
 			})
 		}
 	}
-	return out
-}()
+}

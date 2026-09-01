@@ -81,6 +81,7 @@ flowchart LR
 | I want to… | Read |
 |---|---|
 | Build and run something in five minutes | [Getting Started](getting-started.md) |
+| Learn by tapping — every concept as a live demo | [Tutorial — Interactive](tutorial-interactive.md) |
 | Learn the framework end to end | [Tutorial — Todo App](tutorial-todo.md) |
 | Understand the render pipeline | [Architecture](concepts/architecture.md) |
 | Manage state correctly | [State & Hooks](concepts/state-and-hooks.md) |

@@ -34,6 +34,7 @@ markdown_extensions:
 nav:
   - Home: index.md
   - Getting Started: getting-started.md
+  - Tutorial — Interactive: tutorial-interactive.md
   - Tutorial — Todo App: tutorial-todo.md
   - Concepts:
       - Architecture: concepts/architecture.md
