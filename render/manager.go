@@ -202,6 +202,11 @@ func (m *Manager) hasInitialRender() bool {
 func (r *Manager) RenderInitial() string {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	return r.renderInitialLocked()
+}
+
+// renderInitialLocked is the mount pass; callers must hold mu.
+func (r *Manager) renderInitialLocked() string {
 	r.context.BeginRenderPass()
 	r.context.Reset()
 
@@ -390,45 +395,23 @@ func renderJSON[T any](v T) string {
 	return string(data)
 }
 
+// RenderAndGetPatches renders one pass and returns whichever payload the host
+// needs: the full tree when nothing is mounted yet, the diff against the
+// mounted tree afterwards. It is the "mount or update, I don't want to know
+// which" entry point for a host driving passes by hand; render.Manager's own
+// callers use RenderInitial and RenderAgain, which say which they mean.
+//
+// It delegates rather than re-implementing the two passes, which is the whole
+// of the fix here. Its own copy had drifted badly: it reset the root cursor
+// with `r.context.Cursor = 0` instead of `Reset()`, so every child scope kept
+// its cursor from the previous pass and its slots grew by one per render; and
+// it never called PurgeUnusedCallbacks or ClearDirty, so handlers for
+// vanished nodes stayed dispatchable and a polling host re-rendered forever.
 func (r *Manager) RenderAndGetPatches() string {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	r.context.BeginRenderPass()
-	r.context.Cursor = 0
-
-	var newTree *core.Node
-	if rerr := core.Guard(func() {
-		newTree = r.renderFunc(r.context).Render(r.context)
-	}); rerr != nil {
-		// Same safety net as renderAgainLocked, and the same reasoning about
-		// what must not run afterwards; see that function's comment. With no
-		// mounted tree yet there is nothing to keep, so a placeholder stands in.
-		logRenderPanic("render pass", rerr)
-		if r.currentTree == nil {
-			r.currentTree = panicPlaceholder()
-			return render(r.currentTree)
-		}
-		return render([]reconcile.Patch{})
-	}
-	r.context.EndRenderPass()
-
 	if r.currentTree == nil {
-		r.currentTree = newTree
-		return render(newTree)
+		return r.renderInitialLocked()
 	}
-
-	patches := reconcile.Diff(r.currentTree, newTree, "root")
-	r.currentTree = newTree
-	if patches == nil {
-		patches = []reconcile.Patch{}
-	}
-	return render(patches)
-}
-
-func render[T any](tree T) string {
-	data, err := json.Marshal(tree)
-	if err != nil {
-		return `{"error":"failed to encode render tree"}`
-	}
-	return string(data)
+	return r.renderAgainLocked()
 }

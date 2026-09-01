@@ -43,7 +43,8 @@ func msgOr(msg, fallback string) string {
 	return fallback
 }
 
-// optional lifts a check into a rule that says nothing about an empty value.
+// optional lifts a check into a rule that says nothing about an empty value,
+// and is also where this package's one whitespace policy is applied.
 //
 // Every rule below except Required and Accepted is wrapped in this, because
 // emptiness is Required's subject and nobody else's. Without it an optional
@@ -52,11 +53,24 @@ func msgOr(msg, fallback string) string {
 // would have two opinions about the same empty string, of which FormField can
 // only show one.
 //
-// The value is tested raw rather than trimmed: a field of nothing but spaces
-// is not empty to MaxLen or Pattern, and Required is the rule that decides
-// whitespace does not count as content.
+// The policy: **rules see the trimmed value, and a value that is nothing but
+// whitespace is empty.** Applying it in one place is the point. It used to be
+// applied rule by rule — Required, Email, Integer and Range trimmed; MinLen,
+// MaxLen, Pattern and OneOf did not — which made pairs of rules on the same
+// field disagree about the same text:
+//
+//	Required + MinLen(3)                 accepted "ab " (two characters)
+//	Pattern(^[0-9]{5}$) + Range(1,99999) split on " 12345"
+//
+// and it disagreed with the values a submit handler actually reads, since
+// apps store Values.Trimmed (see examples/signup).
+//
+// A rule that genuinely cares about surrounding whitespace is still writable
+// — Rule is a plain func, and an inline closure receives the raw value
+// untouched.
 func optional(check func(string) string) Rule {
 	return func(v string) string {
+		v = strings.TrimSpace(v)
 		if v == "" {
 			return ""
 		}
@@ -114,7 +128,9 @@ var emailShape = regexp.MustCompile(`^[^\s@]+@[^\s@]+\.[^\s@]+$`)
 // what this rule does and does not claim.
 func Email(msg string) Rule {
 	return optional(func(v string) string {
-		if !emailShape.MatchString(strings.TrimSpace(v)) {
+		// No TrimSpace here (nor in Integer/Range below): optional has
+		// already applied it, once, for every rule in this file.
+		if !emailShape.MatchString(v) {
 			return msgOr(msg, "Not a valid email address")
 		}
 		return ""
@@ -149,7 +165,7 @@ func Pattern(re *regexp.Regexp, msg string) Rule {
 // can never fire. A validated numeric field is a text field with a rule.
 func Integer(msg string) Rule {
 	return optional(func(v string) string {
-		if _, err := strconv.Atoi(strings.TrimSpace(v)); err != nil {
+		if _, err := strconv.Atoi(v); err != nil {
 			return msgOr(msg, "Must be a whole number")
 		}
 		return ""
@@ -162,7 +178,7 @@ func Integer(msg string) Rule {
 // two messages an unparseable value gets.
 func Range(lo, hi int, msg string) Rule {
 	return optional(func(v string) string {
-		n, err := strconv.Atoi(strings.TrimSpace(v))
+		n, err := strconv.Atoi(v)
 		if err != nil || n < lo || n > hi {
 			return msgOr(msg, fmt.Sprintf("Must be between %d and %d", lo, hi))
 		}

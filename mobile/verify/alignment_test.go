@@ -328,6 +328,18 @@ func TestListStretchFillReadsTheAlignFallback(t *testing.T) {
 			"func crossAxisValue(", `s?.align ?? ""`},
 		{kotlinRenderer, "fun GrMobList(", "isColumnStretch(s)",
 			"fun isColumnStretch(", "ifEmpty { s.align }"},
+
+		// Column has exactly the same shape, and iOS had exactly the same
+		// bug: FlexChildren — the binding that decides whether a child
+		// *accepts* the stretched size GrMobFlexStack proposes — read
+		// alignItems alone, so a Column written Align(AlignStretch) with no
+		// AlignItems laid out stretched and rendered unstretched. Compose's
+		// ColumnChildren had carried the fallback (isColumnStretch) since the
+		// List fix; this row is the pair being held together from now on.
+		{swiftRenderer, "struct FlexChildren", "crossAxisValue(node.style)",
+			"func crossAxisValue(", `s?.align ?? ""`},
+		{kotlinRenderer, "fun ColumnScope.ColumnChildren(", "isColumnStretch(node.style)",
+			"fun isColumnStretch(", "ifEmpty { s.align }"},
 	} {
 		if !strings.Contains(declSource(t, pin.file, pin.list), pin.helperCall) {
 			t.Errorf("%s: %s's fill binding does not read %s — the stretch equality has come apart "+

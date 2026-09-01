@@ -234,7 +234,22 @@ private struct FlexChildren: View {
     let axis: Axis
 
     var body: some View {
-        let stretch = (node.style?.alignItems ?? "") == "stretch"
+        // The same cross-axis read GrMobFlexStack does, and it has to be the
+        // same one: the layout decides where a stretched child is placed and
+        // this decides whether the child accepts the size it is proposed, so
+        // the two disagreeing means the placement promises a fill nothing
+        // applies. This read used to be `alignItems` alone, so a Column
+        // written `Align(AlignStretch)` without AlignItems laid out as
+        // stretched and rendered unstretched. (Compose's isColumnStretch has
+        // carried the fallback for both spellings for a while; this is iOS
+        // catching up.)
+        //
+        // Vertical only, exactly as in GrMobFlexStack: Align is a
+        // text-alignment concept and has never been read for a Row's vertical
+        // cross axis, and honoring it there now would move existing rows.
+        let cross = axis == .vertical ? crossAxisValue(node.style)
+                                      : (node.style?.alignItems ?? "")
+        let stretch = cross == "stretch"
         ForEach(node.children, id: \.viewID) { child in
             let weight = child.style?.flexGrow ?? 0
             RenderNode(node: child, grow: fill(weight: weight, stretch: stretch))
@@ -614,14 +629,31 @@ private struct GrMobButton: View {
     let grow: GrMobGrow
     @Environment(\.grMobRuntime) private var runtime
 
+    /// Set by the long-press gesture so the tap that follows the release is
+    /// swallowed rather than firing onClick as well.
+    ///
+    /// A flag rather than gesture arbitration because the two are not in
+    /// conflict from SwiftUI's point of view: a `simultaneousGesture` is, by
+    /// name, allowed to run alongside the Button's own tap, so a press held
+    /// past the threshold and then released would fire both handlers. One
+    /// gesture must produce one handler call — combinedClickable's
+    /// onClick/onLongClick split gives Android that for free, and the DOM
+    /// runtime does the same thing with a `longPressFired` dataset flag.
+    @State private var longPressFired = false
+
     var body: some View {
         let s = node.style
         let onClick = node.stringProp("onClick")
+        let onLongPress = node.stringProp("onLongPress")
         // Style properties the Go theme owns are fed into the button's own
         // label/background rather than grMobBox: the control draws its own
         // container, so background/radius/padding belong inside the pressable
         // area (and inside the press feedback), with only margin/size outside.
         Button {
+            if longPressFired {
+                longPressFired = false
+                return
+            }
             if !onClick.isEmpty { runtime?.click(onClick) }
         } label: {
             Text(node.stringProp("label"))
@@ -635,6 +667,24 @@ private struct GrMobButton: View {
             background: s?.background ?? .accentColor,
             radius: (s?.borderRadius ?? 0) > 0 ? s!.borderRadius : 8
         ))
+        // core.OnLongPress on a Button. Every other node type gets this from
+        // grMobBox's onLongPress argument, but a Button draws its own control
+        // and hands grMobBox only margin and size, so the gesture has to be
+        // attached here — which is why the prop was documented as wired on
+        // both natives while GrMobButton read nothing but onClick.
+        //
+        // `including:` is how a gesture is conditionally absent in SwiftUI:
+        // `.subviews` scopes it away from this view, leaving a button with no
+        // onLongPress exactly as it was. 0.5s matches
+        // UILongPressGestureRecognizer's default, Android's
+        // ViewConfiguration, and the DOM runtime's LONG_PRESS_MS.
+        .simultaneousGesture(
+            LongPressGesture(minimumDuration: 0.5).onEnded { _ in
+                longPressFired = true
+                runtime?.click(onLongPress)
+            },
+            including: onLongPress.isEmpty ? .subviews : .all
+        )
         .grMobBox(marginAndSizeOnly(s), grow: grow)
     }
 

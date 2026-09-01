@@ -10,10 +10,16 @@ package core
 //	)
 //
 // It was the last leaf that could not carry a behavior prop, which meant
-// OnLongPress — a gesture both native renderers already wire and a button is
-// the most natural home for — was unreachable on the one node type that
-// exists to be pressed. Widening it through leafNode closes that and puts
-// every leaf on one argument contract.
+// OnLongPress — a gesture a button is the most natural home for — was
+// unreachable on the one node type that exists to be pressed. Widening it
+// through leafNode closes that and puts every leaf on one argument contract.
+//
+// The renderers had the matching half of that gap: both natives read the
+// gesture off containers and leaves but not off a Button, because a Button
+// draws its own control and does not go through the generic gesture path.
+// Both now wire it on the button itself (a Surface + combinedClickable on
+// Compose, a simultaneousGesture on SwiftUI), as does the DOM runtime, which
+// synthesizes the gesture from pointer events.
 //
 // The widening is source-compatible for the same reason the inputs' was: a
 // StyleProp is a PropsAndChildren, so every existing core.Button(label, fn,

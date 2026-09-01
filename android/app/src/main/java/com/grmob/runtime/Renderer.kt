@@ -37,6 +37,8 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Checkbox
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
@@ -381,6 +383,21 @@ private fun GrMobButton(node: GrMobNode, extra: Modifier) {
     val runtime = LocalGrMobRuntime.current
     val s = node.style
     val onClick = node.stringProp("onClick")
+    // core.OnLongPress on a Button takes a different control, because
+    // material3's Button has no long-click slot and a combinedClickable put
+    // on its modifier would sit *outside* the Button's own clickable and
+    // never see a pointer event. Every other node type gets the gesture from
+    // gestureModifier; a Button draws its own control, which is why the prop
+    // was documented as wired on both natives while this function read
+    // nothing but onClick.
+    //
+    // Only buttons that actually declare the gesture take the substitute, so
+    // the material3 path — and every existing button's ripple, elevation and
+    // accessibility behavior — is untouched.
+    if (node.stringProp("onLongPress").isNotEmpty()) {
+        GrMobLongPressButton(node, extra)
+        return
+    }
     // Style properties the Go theme owns are fed into material3's slots
     // instead of boxModifier: Button draws its own container, so background/
     // radius/padding must go through its API to keep ripple + a11y correct.
@@ -413,6 +430,61 @@ private fun GrMobButton(node: GrMobNode, extra: Modifier) {
             fontSize = if ((s?.fontSize ?: 0f) > 0f) s!!.fontSize.sp else 17.sp,
             fontWeight = if ((s?.fontWeight ?: 0) > 0) FontWeight(s!!.fontWeight) else null,
         )
+    }
+}
+
+/**
+ * The Button that also carries core.OnLongPress.
+ *
+ * material3's Button is `Surface(onClick = ...)` underneath, and the piece it
+ * does not expose is exactly the one needed here — Surface's clickable
+ * overload takes onClick alone. So this rebuilds the same two layers with
+ * combinedClickable in between: Surface for the container (shape, color,
+ * content color, ripple) and a padded Box for the label.
+ *
+ * combinedClickable also registers the click *and* long-click accessibility
+ * actions, so the gesture is reachable from TalkBack rather than by touch
+ * only — the same property gestureModifier relies on for non-control nodes.
+ *
+ * Disabled behaves as it does on the material3 path: the colors are left
+ * alone (the Go theme owns the palette, and components.Button spends
+ * Surface/TextSecondary on its own disabled look) and only the interaction is
+ * dropped, which also drops the ripple and the accessibility actions.
+ */
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun GrMobLongPressButton(node: GrMobNode, extra: Modifier) {
+    val runtime = LocalGrMobRuntime.current
+    val s = node.style
+    val onClick = node.stringProp("onClick")
+    val onLongPress = node.stringProp("onLongPress")
+
+    Surface(
+        modifier = marginAndSize(s, extra).combinedClickable(
+            enabled = !node.isDisabled(),
+            onClick = { if (onClick.isNotEmpty()) runtime.click(onClick) },
+            onLongClick = { runtime.click(onLongPress) },
+        ),
+        shape = RoundedCornerShape((s?.borderRadius ?: 8f).dp),
+        color = s?.background ?: MaterialTheme.colorScheme.primary,
+        contentColor = s?.textColor ?: MaterialTheme.colorScheme.onPrimary,
+    ) {
+        Box(
+            // The same content padding the material3 path passes as
+            // contentPadding, including its defaults, so the two buttons are
+            // the same size for the same style.
+            modifier = Modifier.padding(
+                start = (s?.padding?.left ?: 16).dp, top = (s?.padding?.top ?: 10).dp,
+                end = (s?.padding?.right ?: 16).dp, bottom = (s?.padding?.bottom ?: 10).dp,
+            ),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(
+                node.stringProp("label"),
+                fontSize = if ((s?.fontSize ?: 0f) > 0f) s!!.fontSize.sp else 17.sp,
+                fontWeight = if ((s?.fontWeight ?: 0) > 0) FontWeight(s!!.fontWeight) else null,
+            )
+        }
     }
 }
 

@@ -60,16 +60,30 @@ export function loadRuntime({ mountId = "app" } = {}) {
         dispatched.push({ id, payload: JSON.parse(JSON.stringify(payload)) });
     };
 
+    // Pending timers, keyed by the id setTimeout handed out, in insertion
+    // order — which is the order drainTimers runs them in.
+    const timers = new Map();
+    let timerID = 0;
+
     const sandbox = {
         document: dom.document,
         window: dom.window,
         requestAnimationFrame: dom.requestAnimationFrame,
-        // A stub that records nothing and schedules nothing. The runtime's
-        // waitForWasm() polls on setTimeout until window.GrMobWASM appears,
-        // which never happens here — the harness drives mount() and patch()
-        // directly rather than through the WASM push loop. A real timer would
-        // spin forever and keep the test process alive.
-        setTimeout: () => 0,
+        // A queue, not a timer, for the same reason requestAnimationFrame is
+        // one (see dom.mjs): a test has to be able to say "now the delay
+        // elapsed" and observe the difference, and a real timer would make
+        // that a race. It also keeps waitForWasm()'s 100ms poll from spinning
+        // the process forever — nothing fires unless a test drains.
+        //
+        // Long press is what needs this: the runtime synthesizes the gesture
+        // from a pointerdown plus a 500ms setTimeout, and both the firing and
+        // the cancelling are behavior worth pinning.
+        setTimeout: (fn, delay = 0) => {
+            const id = ++timerID;
+            timers.set(id, { fn, delay });
+            return id;
+        },
+        clearTimeout: (id) => timers.delete(id),
         console,
         performance,
     };
@@ -94,6 +108,24 @@ export function loadRuntime({ mountId = "app" } = {}) {
         drainFrames: dom.drainFrames,
         pendingFrames: dom.pendingFrames,
         dispatched,
+
+        // drainTimers fires every timer queued *at the moment it is called*
+        // whose delay is at least minDelay, oldest first, and returns how
+        // many ran. The filter exists so a test can fire the long-press timer
+        // (500ms) without also firing waitForWasm's 100ms poll, which would
+        // just re-queue itself; timers a callback queues while draining are
+        // left for the next call rather than run in this one.
+        drainTimers(minDelay = 0) {
+            const batch = [...timers.entries()].filter(([, t]) => t.delay >= minDelay);
+            let ran = 0;
+            for (const [id, t] of batch) {
+                timers.delete(id);
+                t.fn();
+                ran++;
+            }
+            return ran;
+        },
+        pendingTimers: () => timers.size,
     };
 }
 

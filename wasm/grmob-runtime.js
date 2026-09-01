@@ -94,6 +94,13 @@ const GrMob = (() => {
                     // itself — attachModalDismiss guards on the target so a
                     // click inside the content never dismisses.
                     attachModalDismiss(el, value);
+                } else if (key === "onLongPress") {
+                    // Before the generic on* branch for the same reason
+                    // onDismiss is: there is no "longpress" DOM event, so the
+                    // generic path would attach a listener that never fires
+                    // and mark the slot taken so the real wiring could never
+                    // be installed.
+                    attachLongPress(el, value);
                 } else if (key.startsWith("on")) {
                     const event = mapEventName(key);
                     el.dataset[`listener_${key}`] = value;
@@ -101,7 +108,7 @@ const GrMob = (() => {
                         el.dataset[`has_listener_${key}`] = "true";
                         el.addEventListener(event, (e) => {
                             const latestCbId = el.dataset[`listener_${key}`];
-                            if (latestCbId && eventQualifies(key, e)) {
+                            if (latestCbId && eventQualifies(key, e, el)) {
                                 const payload = extractEventPayload(e, node.Type);
                                 window.GoInvokeCallback(latestCbId, payload);
                             }
@@ -208,6 +215,63 @@ const GrMob = (() => {
                     window.GoInvokeCallback(latestCbId, {});
                 }
             });
+        }
+    }
+
+    // How long a press has to be held before it counts as a long press.
+    // 500ms is what Android's ViewConfiguration and UIKit's
+    // UILongPressGestureRecognizer both use by default, so a gesture written
+    // once in Go feels the same on all three targets.
+    const LONG_PRESS_MS = 500;
+
+    // Wires core.OnLongPress, which the DOM has no event for.
+    //
+    // The generic `on*` path cannot express this: it maps one prop to one DOM
+    // event, and mapEventName's fallback derived the nonexistent "longpress",
+    // so an onLongPress prop attached a listener for an event the browser
+    // never fires. This synthesizes the gesture instead — a timer armed on
+    // pointerdown and disarmed by anything that ends the press.
+    //
+    // pointer* rather than touch* or mouse*: one set of events covers finger,
+    // pen and mouse, which is what the native long-press recognizers do.
+    //
+    // The follow-up click is suppressed. A press held past the threshold and
+    // then released still produces a click, and firing both handlers for one
+    // gesture is wrong on every platform — Android's combinedClickable and
+    // SwiftUI's gesture arbitration both pick one. The flag rides the dataset
+    // so the click listener (which is a separate closure, possibly attached
+    // on a different pass) can see it.
+    function attachLongPress(el, cbId) {
+        el.dataset.listener_onLongPress = cbId;
+        if (el.dataset.has_listener_onLongPress) return;
+        el.dataset.has_listener_onLongPress = "true";
+
+        let timer = null;
+        const disarm = () => {
+            if (timer !== null) {
+                clearTimeout(timer);
+                timer = null;
+            }
+        };
+
+        el.addEventListener("pointerdown", () => {
+            disarm();
+            timer = setTimeout(() => {
+                timer = null;
+                // Re-read at fire time, exactly as every other listener here
+                // does: the ID is positional and may have been refreshed —
+                // or pruned — by a pass that landed during the press.
+                const latestCbId = el.dataset.listener_onLongPress;
+                if (!latestCbId) return;
+                el.dataset.longPressFired = "true";
+                window.GoInvokeCallback(latestCbId, {});
+            }, LONG_PRESS_MS);
+        });
+        // Every way a press can stop being a press. pointerleave covers the
+        // finger sliding off the element, which on native cancels the
+        // gesture rather than completing it.
+        for (const ev of ["pointerup", "pointercancel", "pointerleave"]) {
+            el.addEventListener(ev, disarm);
         }
     }
 
@@ -616,7 +680,12 @@ const GrMob = (() => {
             // Enter filter lives in eventQualifies rather than here, because
             // this map only names events — a keydown listener that fired the
             // handler on every keystroke would be a very loud bug.
-            onSubmit: "keydown"
+            onSubmit: "keydown",
+            // core.OnTouch means "the finger went down", which is
+            // pointerdown. The fallback below would have derived "touch",
+            // which is not a DOM event at all — so the prop attached a
+            // listener nothing ever fired.
+            onTouch: "pointerdown"
         }[propKey] || propKey.toLowerCase().replace(/^on/, "");
     }
 
@@ -630,7 +699,15 @@ const GrMob = (() => {
     //
     // Every other event maps one-to-one onto a DOM event and qualifies
     // unconditionally.
-    function eventQualifies(propKey, e) {
+    function eventQualifies(propKey, e, el) {
+        if (propKey === "onClick" && el && el.dataset.longPressFired) {
+            // One gesture, one handler: the press already fired onLongPress
+            // (see attachLongPress), and the browser's synthetic click on
+            // release must not also fire onClick. Cleared here rather than on
+            // pointerup so the flag is still standing when the click arrives.
+            delete el.dataset.longPressFired;
+            return false;
+        }
         if (propKey !== "onSubmit") return true;
         if (e.key !== "Enter" || e.shiftKey) return false;
         // Nothing else should also act on this keypress — inside a <form> the
@@ -803,6 +880,8 @@ const GrMob = (() => {
                             // listener slot taken so the real one could
                             // never be attached.
                             attachModalDismiss(el, v);
+                        } else if (k === "onLongPress") {
+                            attachLongPress(el, v);
                         } else if (k.startsWith("on")) {
                             const event = mapEventName(k);
                             el.dataset[`listener_${k}`] = v;
@@ -810,7 +889,7 @@ const GrMob = (() => {
                                 el.dataset[`has_listener_${k}`] = "true";
                                 el.addEventListener(event, (e) => {
                                     const latestCbId = el.dataset[`listener_${k}`];
-                                    if (latestCbId && eventQualifies(k, e)) {
+                                    if (latestCbId && eventQualifies(k, e, el)) {
                                         // The Go node type, not the tag: see
                                         // extractEventPayload. It was
                                         // recorded on the element at creation

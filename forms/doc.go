@@ -77,6 +77,23 @@
 // where the deps are what get stored; here nothing about the *checking* is
 // stored at all.
 //
+// # Whitespace
+//
+// Every rule in this package validates the *trimmed* value, and a value that
+// is nothing but whitespace is empty. One policy, applied in one place (see
+// optional in rules.go), so that two rules on the same field can never
+// disagree about the same text — Required + MinLen(3) used to accept "ab ",
+// and Pattern + Range used to split on " 12345".
+//
+// It also matches what apps actually persist: a submit handler reads
+// Values.Trimmed, so a rule that measured untrimmed text was measuring
+// something the app was never going to store.
+//
+// Values themselves are kept raw — the form holds exactly what the user
+// typed, and Values.Trimmed is the accessor that applies the same policy on
+// the way out. A check that genuinely cares about surrounding whitespace is
+// written as an inline Rule, which receives the raw value.
+//
 // # Rules of hooks apply
 //
 // UseForm consumes exactly one slot on the context it is given (see

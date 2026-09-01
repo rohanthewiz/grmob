@@ -26,14 +26,33 @@ func OnClick(handler func()) BehaviorProp {
 	return On("Click", handler)
 }
 
+// OnTouch fires the moment a finger (or pen, or mouse button) goes down on
+// the node, before the press has resolved into a tap or a long press. Use it
+// for immediate feedback — a sound, a highlight — not for the action itself:
+// a press that slides off the node still fired this.
+//
+// Web only today. The DOM runtime maps it to pointerdown; neither native
+// renderer reads the prop, so a node carrying it on iOS or Android simply
+// never hears from it. (It used to be worse: the DOM's event-name fallback
+// derived "touch", which is not a DOM event either, so the prop attached a
+// listener nothing could ever fire on any target.)
 func OnTouch(handler func()) BehaviorProp {
 	return On("Touch", handler)
 }
 
-// OnLongPress fires after the platform's long-press timeout (~500ms) without
-// the finger lifting. A node may carry both OnClick and OnLongPress: the
-// renderers wire them as one gesture recognizer (combinedClickable on
-// Android, tap+longPress on iOS), so a long press never also fires the click.
+// OnLongPress fires after 500ms of held press without the finger lifting —
+// the default on all three targets (UILongPressGestureRecognizer,
+// Android's ViewConfiguration, and the DOM runtime's own timer).
+//
+// A node may carry both OnClick and OnLongPress, and one gesture produces
+// exactly one handler call: Compose's combinedClickable splits them natively,
+// while SwiftUI and the DOM each suppress the tap that follows a fired long
+// press. Which handler runs is decided by how long the press was held, never
+// by both running.
+//
+// Wired on all three targets, containers and leaves alike, including Button —
+// which needs its own wiring on both natives, since a Button draws its own
+// control rather than going through the generic gesture path.
 func OnLongPress(handler func()) BehaviorProp {
 	return On("LongPress", handler)
 }

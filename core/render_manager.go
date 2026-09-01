@@ -1,14 +1,24 @@
 package core
 
 import (
-	"fmt"
 	"sync"
 )
 
+// RenderManager is the app's "state changed" notification point: one
+// registered handler (see OnStateChange), invoked whenever anything in the
+// context tree calls RequestRender. One instance per NewContext root, shared
+// by pointer with every derived context.
+//
+// It is keyed by string rather than holding a bare func because it once
+// carried a second, parallel registration API — RegisterRender, which minted
+// "render_N" ids, and SubscribeRender, which called it and threw the id away.
+// Nothing ever triggered those ids: State.Set has always notified the
+// hardcoded "default" key, so every SubscribeRender handler was unreachable
+// while the map grew by one entry per call. Both are gone; OnStateChange is
+// the registration side that actually completes the circuit.
 type RenderManager struct {
-	mu      sync.Mutex
-	subs    map[string]func()
-	counter int
+	mu   sync.Mutex
+	subs map[string]func()
 }
 
 func NewRenderManager() *RenderManager {
@@ -17,15 +27,7 @@ func NewRenderManager() *RenderManager {
 	}
 }
 
-func (r *RenderManager) RegisterRender(fn func()) string {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	id := fmt.Sprintf("render_%d", r.counter)
-	r.counter++
-	r.subs[id] = fn
-	return id
-}
-
+// TriggerRender invokes the handler registered under id, if any.
 func (r *RenderManager) TriggerRender(id string) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -34,11 +36,8 @@ func (r *RenderManager) TriggerRender(id string) {
 	}
 }
 
-// defaultRenderTarget is the subscription key state mutations notify. It was
-// historically hardcoded in State.Set with no matching registration (IDs from
-// RegisterRender are generated as "render_N"), so state-change notifications
-// went nowhere; OnStateChange below is the registration side that completes
-// the circuit.
+// defaultRenderTarget is the subscription key state mutations notify; see
+// RenderManager for the history behind it being a key at all.
 const defaultRenderTarget = "default"
 
 // OnStateChange registers fn to run whenever state anywhere in this context
@@ -64,8 +63,4 @@ func (ctx *Context) OnStateChange(fn func()) {
 func (ctx *Context) RequestRender() {
 	ctx.MarkDirty()
 	ctx.renderManager.TriggerRender(defaultRenderTarget)
-}
-
-func (ctx *Context) SubscribeRender(fn func()) {
-	ctx.renderManager.RegisterRender(fn)
 }

@@ -40,6 +40,16 @@ class TreeStore {
 
     /** Applies one patch batch (the RenderAgain / push payload). */
     fun applyPatches(json: String) {
+        if (!json.trimStart().startsWith("[")) {
+            // Same guard, and the same reason, as mount above: render.renderJSON
+            // returns {"error":"failed to encode JSON"} when a payload will not
+            // marshal (a NaN in Props is enough), and JSONArray() on that throws
+            // out of the main-thread handler and takes the app down — burying the
+            // encode failure that actually caused it. Swift's TreeStore has always
+            // logged and returned here; this matches it.
+            json.chunked(3000).forEach { Log.e("GrMob", it) }
+            return
+        }
         val patches = JSONArray(json)
         for (i in 0 until patches.length()) {
             val p = patches.getJSONObject(i)

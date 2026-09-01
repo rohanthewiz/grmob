@@ -3,6 +3,8 @@ package render_test
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
+	"sync"
 	"testing"
 
 	"github.com/rohanthewiz/grmob/core"
@@ -117,5 +119,60 @@ func TestCallbackIDSurvivesReRenderAndKeepsWorking(t *testing.T) {
 		if got := patches[0].Changes.(map[string]any)["content"]; got != fmt.Sprintf("count: %d", i) {
 			t.Fatalf("click %d: content = %v — stale closure? IDs must dispatch to the latest registration", i, got)
 		}
+	}
+}
+
+// TestRenderAndGetPatchesMountsThenDiffs pins the delegating rewrite.
+//
+// The hand-rolled version reset only the root cursor (`ctx.Cursor = 0` rather
+// than `Reset()`), so every child scope resumed from the previous pass's
+// cursor and appended a fresh slot each render: child state was lost every
+// pass and the slot array grew without bound. It also skipped
+// PurgeUnusedCallbacks and ClearDirty, so handlers for vanished nodes stayed
+// dispatchable and a polling host re-rendered forever.
+func TestRenderAndGetPatchesMountsThenDiffs(t *testing.T) {
+	ctx := core.NewContext()
+
+	// The state lives in a *child* scope, which is where the cursor bug bit:
+	// the root's cursor was zeroed each pass, every scope's was not.
+	var (
+		once sync.Once
+		st   core.State[int]
+	)
+	app := func(ctx *core.Context) core.View {
+		return core.ComponentFunc(func(ctx *core.Context) *core.Node {
+			child := core.UseChildContext(ctx)
+			n := core.NewState(child, 0)
+			once.Do(func() { st = n })
+			return core.Column(core.Text(fmt.Sprintf("n: %d", n.Get()))).Render(ctx)
+		})
+	}
+
+	m := render.New(ctx, app)
+	defer m.Close()
+
+	// First call mounts: a full tree, not a patch list.
+	tree := decodeTree(t, m.RenderAndGetPatches())
+	if tree.Type != "Column" {
+		t.Fatalf("first call returned %q, want the mounted tree", tree.Type)
+	}
+
+	// Later calls diff. Each write must land on the slot the previous pass
+	// used, which is only true if the child scope was reset along with the
+	// root.
+	for pass := 1; pass <= 3; pass++ {
+		st.Set(pass)
+		out := m.RenderAndGetPatches()
+		decodePatches(t, out) // must be a patch list, not a tree
+		want := fmt.Sprintf("n: %d", pass)
+		if !strings.Contains(out, want) {
+			t.Fatalf("pass %d patches = %s, want them to carry %q", pass, out, want)
+		}
+	}
+
+	// ClearDirty ran: nothing has changed since the last pass consumed it, so
+	// a polling host must not be told to render again.
+	if ctx.IsDirty() {
+		t.Error("the tree is still marked dirty after a completed pass")
 	}
 }

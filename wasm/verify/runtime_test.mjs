@@ -687,3 +687,105 @@ test("a field that loses onSubmit outright loses both the listener and the hint"
     at(0).dispatch("keydown", { key: "Enter" });
     assert.deepEqual(rt.dispatched, [], "a field with no onSubmit must not submit");
 });
+
+// --------------------------------------------------------------------------
+// onLongPress: a gesture the DOM has no event for
+// --------------------------------------------------------------------------
+
+const LONG_PRESS = 500;
+
+test("holding a press past the threshold fires onLongPress", () => {
+    const { rt, at } = mount([
+        { Type: "Box", Props: { onLongPress: "cb_0" }, Children: [] },
+    ]);
+
+    at(0).dispatch("pointerdown");
+    assert.deepEqual(rt.dispatched, [], "nothing fires before the threshold");
+
+    rt.drainTimers(LONG_PRESS);
+    assert.deepEqual(rt.dispatched, [{ id: "cb_0", payload: {} }]);
+});
+
+test("a press that ends early fires nothing", () => {
+    // Every way a press stops being a press must disarm the timer, or a tap
+    // would fire the long-press handler a moment after the finger left.
+    for (const ender of ["pointerup", "pointercancel", "pointerleave"]) {
+        const { rt, at } = mount([
+            { Type: "Box", Props: { onLongPress: "cb_0" }, Children: [] },
+        ]);
+
+        at(0).dispatch("pointerdown");
+        at(0).dispatch(ender);
+        rt.drainTimers(LONG_PRESS);
+
+        assert.deepEqual(rt.dispatched, [], `${ender} should cancel the long press`);
+    }
+});
+
+test("a long press does not also fire the click", () => {
+    // One gesture, one handler — what combinedClickable does on Android and
+    // gesture arbitration does on iOS. The browser still delivers a click on
+    // release, so the runtime has to swallow that one.
+    const { rt, at } = mount([
+        { Type: "Box", Props: { onClick: "cb_0", onLongPress: "cb_1" }, Children: [] },
+    ]);
+
+    at(0).dispatch("pointerdown");
+    rt.drainTimers(LONG_PRESS);
+    at(0).dispatch("pointerup");
+    at(0).dispatch("click");
+
+    assert.deepEqual(rt.dispatched, [{ id: "cb_1", payload: {} }]);
+
+    // ...and the next, ordinary tap still clicks: the suppression is one-shot.
+    at(0).dispatch("pointerdown");
+    at(0).dispatch("pointerup");
+    at(0).dispatch("click");
+
+    assert.deepEqual(rt.dispatched, [
+        { id: "cb_1", payload: {} },
+        { id: "cb_0", payload: {} },
+    ]);
+});
+
+test("onLongPress arriving on a later pass is wired", () => {
+    // The gesture goes on through the update-props path too, which needs its
+    // own branch: the generic on* handler would map it to a "longpress" DOM
+    // event that does not exist.
+    const { rt, at } = mount([{ Type: "Box", Props: {}, Children: [] }]);
+
+    rt.GrMob.patch(
+        JSON.stringify([
+            { Type: "update-props", TargetID: "root/0", Changes: { onLongPress: "cb_4" } },
+        ])
+    );
+
+    at(0).dispatch("pointerdown");
+    rt.drainTimers(LONG_PRESS);
+    assert.deepEqual(rt.dispatched, [{ id: "cb_4", payload: {} }]);
+});
+
+test("a node that loses onLongPress stops firing it", () => {
+    const { rt, at } = mount([
+        { Type: "Box", Props: { onLongPress: "cb_0" }, Children: [] },
+    ]);
+
+    rt.GrMob.patch(
+        JSON.stringify([{ Type: "update-props", TargetID: "root/0", Changes: {} }])
+    );
+
+    at(0).dispatch("pointerdown");
+    rt.drainTimers(LONG_PRESS);
+    assert.deepEqual(rt.dispatched, []);
+});
+
+test("onTouch listens on pointerdown", () => {
+    // core.OnTouch used to derive the event name "touch", which is not a DOM
+    // event, so the prop attached a listener nothing ever fired.
+    const { rt, at } = mount([
+        { Type: "Box", Props: { onTouch: "cb_2" }, Children: [] },
+    ]);
+
+    at(0).dispatch("pointerdown");
+    assert.deepEqual(rt.dispatched, [{ id: "cb_2", payload: {} }]);
+});

@@ -136,3 +136,54 @@ func TestDefaultMessagesQuoteTheirBounds(t *testing.T) {
 		t.Errorf("Range default = %q", got)
 	}
 }
+
+// TestRulesAgreeOnTrailingWhitespace pins the single whitespace policy.
+//
+// The rules used to trim individually: Required, Email, Integer and Range did;
+// MinLen, MaxLen, Pattern and OneOf did not. Two rules on one field therefore
+// disagreed about the same text — Required + forms.MinLen(3) accepted "ab ", and
+// forms.Pattern(^[0-9]{5}$) rejected " 12345" that forms.Range(1,99999) accepted — while
+// the submit handler stored Values.Trimmed and got the short value anyway.
+func TestRulesAgreeOnTrailingWhitespace(t *testing.T) {
+	fiveDigits := regexp.MustCompile(`^[0-9]{5}$`)
+
+	cases := []struct {
+		name    string
+		rule    forms.Rule
+		value   string
+		wantErr bool
+	}{
+		// The pair from the report, both directions.
+		{"MinLen sees the trimmed length", forms.MinLen(3, ""), "ab ", true},
+		{"MinLen accepts three real characters", forms.MinLen(3, ""), " abc ", false},
+		{"Required agrees with MinLen", forms.Required(""), "  ", true},
+
+		{"Pattern ignores surrounding space", forms.Pattern(fiveDigits, ""), " 12345", false},
+		{"Range ignores surrounding space", forms.Range(1, 99999, ""), " 12345", false},
+		{"Pattern still rejects a bad body", forms.Pattern(fiveDigits, ""), " 1234a ", true},
+
+		{"MaxLen sees the trimmed length", forms.MaxLen(3, ""), "abc ", false},
+		{"MaxLen still rejects a long body", forms.MaxLen(3, ""), " abcd ", true},
+
+		{"OneOf ignores surrounding space", forms.OneOf("", "card", "bank"), " card ", false},
+		{"OneOf still rejects an unlisted value", forms.OneOf("", "card", "bank"), " cash ", true},
+
+		{"Email ignores surrounding space", forms.Email(""), " a@b.co ", false},
+		{"Integer ignores surrounding space", forms.Integer(""), " 42 ", false},
+
+		// Whitespace-only input is empty to every optional rule; saying so is
+		// Required's job alone.
+		{"MinLen is silent on whitespace only", forms.MinLen(3, ""), "   ", false},
+		{"Pattern is silent on whitespace only", forms.Pattern(fiveDigits, ""), "   ", false},
+		{"OneOf is silent on whitespace only", forms.OneOf("", "card"), "   ", false},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got := c.rule(c.value)
+			if (got != "") != c.wantErr {
+				t.Errorf("rule(%q) = %q, want error: %v", c.value, got, c.wantErr)
+			}
+		})
+	}
+}
