@@ -358,20 +358,32 @@ const GrMob = (() => {
     // same rule htmlout's styleValue uses: a Row stacks horizontally, every
     // other container vertically.
     function styleFromGrMob(style, nodeType) {
+        // Every property this function manages is assigned on every call —
+        // a real value, or "" (which Object.assign turns into removal of the
+        // inline declaration). The wire contract forces totality: an
+        // update-style patch carries the WHOLE new Style (reconcile/patch.go),
+        // so a zero field means "unset now", not "unmentioned" — and because
+        // the patch path reuses the live element, a guarded `if (style.X)`
+        // left the old declaration standing whenever a field returned to
+        // zero. Lesson 7.2's core.BorderRadius(0) is the canonical victim:
+        // the corners stayed rounded because nothing ever cleared them.
         const out = {};
-        if (style.FontSize) out.fontSize = `${style.FontSize}px`;
-        if (style.TextColor) out.color = style.TextColor;
-        // Guarded on style.Align rather than assigned unconditionally, so a
-        // patch whose Changes do not mention Align leaves the property alone —
-        // the same convention every other property in this function follows,
-        // because applyStyle Object.assigns the result over the live style.
-        if (style.Align) out.textAlign = textAlignFor(style.Align);
-        if (style.Background) out.background = style.Background;
-        if (style.Padding) out.padding = edgeToCSS(style.Padding);
-        if (style.Margin) out.margin = edgeToCSS(style.Margin);
-        if (style.BorderRadius) out.borderRadius = `${style.BorderRadius}px`;
-        if (style.Width) out.width = style.Width;
-        if (style.Height) out.height = style.Height;
+        out.fontSize = style.FontSize ? `${style.FontSize}px` : "";
+        // core.Weight's values (200/400/700) are literal CSS font-weight
+        // numbers, so the int crosses as-is.
+        out.fontWeight = style.FontWeight ? `${style.FontWeight}` : "";
+        out.color = style.TextColor || "";
+        // Unconditional on purpose, twice over: textAlignFor answers "" for
+        // an unset or placement-only Align (keeping the totality rule), and
+        // wasm/verify's TestRuntimeStyleAppliesTextAlign pins this exact
+        // call so the text-align table cannot go unread on this target.
+        out.textAlign = textAlignFor(style.Align);
+        out.background = style.Background || "";
+        out.padding = style.Padding ? edgeToCSS(style.Padding) : "";
+        out.margin = style.Margin ? edgeToCSS(style.Margin) : "";
+        out.borderRadius = style.BorderRadius ? `${style.BorderRadius}px` : "";
+        out.width = style.Width || "";
+        out.height = style.Height || "";
         // Flex layout. A plain <div> is block flow and ignores gap,
         // justify-content and align-items entirely, so a node that sets any
         // of them has to be made a flex container first — without this,
@@ -393,13 +405,20 @@ const GrMob = (() => {
         if (!alignItems && dir.startsWith("column") && alignFallbackAxisFor(nodeType)) {
             alignItems = crossAxisAlignFor(style.Align || "");
         }
-        if (style.Gap || style.JustifyContent || alignItems || style.FlexDirection) {
+        // Stack containers are flex whether or not this Style asks for it —
+        // createElement plants the same default for nodes with no Style at
+        // all, and the totality rule above means this function must restate
+        // it here or an update-style patch would clear it.
+        if (style.Gap || style.JustifyContent || alignItems || style.FlexDirection || STACK_CONTAINERS.has(nodeType)) {
             out.display = "flex";
             out.flexDirection = dir;
-            if (style.Gap) out.gap = `${style.Gap}px`;
-            if (style.JustifyContent) out.justifyContent = style.JustifyContent;
-            if (alignItems) out.alignItems = alignItems;
+        } else {
+            out.display = "";
+            out.flexDirection = "";
         }
+        out.gap = style.Gap ? `${style.Gap}px` : "";
+        out.justifyContent = style.JustifyContent || "";
+        out.alignItems = alignItems || "";
         // Display is deliberately NOT emitted. Go's DisplayMode carries values
         // that are not CSS display keywords ("visible", "hidden"), and
         // assigning one through el.style would overwrite the flex display in
@@ -429,14 +448,14 @@ const GrMob = (() => {
         }
         // A flex *item* property: how this node behaves inside its parent's
         // layout, so it needs no display:flex of its own.
-        if (style.FlexGrow) out.flexGrow = `${style.FlexGrow}`;
-        if (style.BorderWidth && style.BorderColor) {
-            out.border = `${style.BorderWidth}px solid ${style.BorderColor}`;
-        }
+        out.flexGrow = style.FlexGrow ? `${style.FlexGrow}` : "";
+        out.border = (style.BorderWidth && style.BorderColor)
+            ? `${style.BorderWidth}px solid ${style.BorderColor}`
+            : "";
         // core.Transition's canonical "<ms>ms <easing>" is valid CSS as-is;
         // the browser drives the frames, same declare-in-Go model as the
         // native renderers.
-        if (style.Transition) out.transition = `all ${style.Transition}`;
+        out.transition = style.Transition ? `all ${style.Transition}` : "";
         return out;
     }
 
