@@ -229,3 +229,62 @@ func TestNavigationStackIsPerContext(t *testing.T) {
 		t.Errorf("app A should be back at its root after Pop, got %v", got)
 	}
 }
+
+// TestReceiveEventPayloadRoutesEveryValueKind pins the envelope dispatcher's
+// type sniff against all four callback kinds.
+//
+// The float64 row is the one that was broken: JSON has a single number type,
+// so a numeric event (onTabChange, a slider index) always arrives as float64.
+// With no float64 case it fell through to the void branch, looked the ID up
+// in the *void* map where an "int_cb_N" never exists, and did nothing — the
+// control was dead with no error on either side of the bridge.
+func TestReceiveEventPayloadRoutesEveryValueKind(t *testing.T) {
+	ctx := NewContext()
+	ctx.BeginRenderPass()
+
+	var (
+		voidRan bool
+		gotText string
+		gotBool bool
+		gotInt  = -1
+	)
+	voidID := ctx.registerCallback(func() { voidRan = true })
+	textID := ctx.registerTextCallback(func(s string) { gotText = s })
+	boolID := ctx.registerBoolCallback(func(b bool) { gotBool = b })
+	intID := ctx.registerIntCallback(func(i int) { gotInt = i })
+
+	ctx.ReceiveEventPayload(map[string]any{"callback": voidID})
+	ctx.ReceiveEventPayload(map[string]any{"callback": textID, "value": "typed"})
+	ctx.ReceiveEventPayload(map[string]any{"callback": boolID, "value": true})
+	// A JSON-decoded number, which is what the host actually sends.
+	ctx.ReceiveEventPayload(map[string]any{"callback": intID, "value": float64(2)})
+
+	if !voidRan {
+		t.Error("a value-less envelope did not reach the void callback")
+	}
+	if gotText != "typed" {
+		t.Errorf("text callback got %q, want \"typed\"", gotText)
+	}
+	if !gotBool {
+		t.Error("bool callback did not receive true")
+	}
+	if gotInt != 2 {
+		t.Errorf("int callback got %d, want 2 — a numeric envelope was not routed", gotInt)
+	}
+}
+
+// TestReceiveEventPayloadAcceptsAGoInt covers the exported-API case:
+// ReceiveEventPayload is public, and a Go caller driving events by hand
+// writes a plain int rather than a JSON float.
+func TestReceiveEventPayloadAcceptsAGoInt(t *testing.T) {
+	ctx := NewContext()
+	ctx.BeginRenderPass()
+
+	got := -1
+	id := ctx.registerIntCallback(func(i int) { got = i })
+	ctx.ReceiveEventPayload(map[string]any{"callback": id, "value": 3})
+
+	if got != 3 {
+		t.Errorf("int callback got %d, want 3", got)
+	}
+}

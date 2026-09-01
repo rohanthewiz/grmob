@@ -318,6 +318,10 @@ func (ctx *Context) ReceiveEventPayload(payload map[string]any) {
 				ctx.TriggerBoolCallback(id, b)
 				return
 			}
+			if f, ok := parsed["value"].(float64); ok {
+				ctx.TriggerIntCallback(id, int(f))
+				return
+			}
 		}
 
 		// Fallback: treat as a plain string value.
@@ -325,6 +329,22 @@ func (ctx *Context) ReceiveEventPayload(payload map[string]any) {
 
 	case bool:
 		ctx.TriggerBoolCallback(id, val)
+
+	case float64:
+		// JSON has one number type, so every numeric event — tab selection
+		// (onTabChange), a slider index, a stepper — arrives here as a
+		// float64 no matter how Go declared the handler. Without this case a
+		// numeric envelope fell through to the void branch below, missed the
+		// int callback map entirely, and did nothing at all: the control was
+		// simply dead, with no error on either side of the bridge.
+		ctx.TriggerIntCallback(id, int(val))
+
+	case int:
+		// Not reachable from a JSON host, but ReceiveEventPayload is exported
+		// and a Go-side caller (a test, an embedder driving events directly)
+		// naturally writes an int.
+		ctx.TriggerIntCallback(id, val)
+
 	case nil:
 		ctx.TriggerCallback(id)
 	default:

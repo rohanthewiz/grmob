@@ -607,3 +607,83 @@ test("a non-positive rows leaves the browser's own default", () => {
     assert.equal(at(0).rows, undefined);
     assert.equal(at(1).rows, undefined);
 });
+
+// --------------------------------------------------------------------------
+// Stale listeners: callback IDs are positional and get reused
+// --------------------------------------------------------------------------
+
+test("a node that loses a handler prop stops firing the ID it used to hold", () => {
+    // Go re-derives callback IDs from a per-pass counter (core/event.go), so
+    // "cb_0" means "the first registration of this pass" and belongs to a
+    // different node the moment the tree's handler set changes. The update
+    // loop only walked the keys present in Changes, so a dropped onClick left
+    // its old ID sitting in the dataset — and the next pass gave that ID to
+    // whichever node now registered first.
+    const { rt, at } = mount([
+        { Type: "Box", Props: { onClick: "cb_0" }, Children: [] },
+        { Type: "Box", Props: {}, Children: [] },
+    ]);
+
+    at(0).dispatch("click");
+    assert.deepEqual(rt.dispatched, [{ id: "cb_0", payload: {} }]);
+
+    // Pass 2: the first box drops its handler, the second picks one up — and
+    // because IDs are positional, the second one is now "cb_0".
+    rt.GrMob.patch(
+        JSON.stringify([
+            { Type: "update-props", TargetID: "root/0", Changes: {} },
+            { Type: "update-props", TargetID: "root/1", Changes: { onClick: "cb_0" } },
+        ])
+    );
+
+    rt.dispatched.length = 0;
+    at(0).dispatch("click");
+    assert.deepEqual(
+        rt.dispatched,
+        [],
+        "clicking the node that lost its handler must dispatch nothing"
+    );
+
+    at(1).dispatch("click");
+    assert.deepEqual(rt.dispatched, [{ id: "cb_0", payload: {} }]);
+});
+
+test("a handler prop that comes back is wired again without stacking listeners", () => {
+    // Pruning drops the ID but keeps the attached listener, so a prop that
+    // returns must dispatch exactly once — not twice.
+    const { rt, at } = mount([{ Type: "Box", Props: { onClick: "cb_0" }, Children: [] }]);
+
+    rt.GrMob.patch(
+        JSON.stringify([{ Type: "update-props", TargetID: "root/0", Changes: {} }])
+    );
+    rt.GrMob.patch(
+        JSON.stringify([
+            { Type: "update-props", TargetID: "root/0", Changes: { onClick: "cb_7" } },
+        ])
+    );
+
+    rt.dispatched.length = 0;
+    at(0).dispatch("click");
+    assert.deepEqual(rt.dispatched, [{ id: "cb_7", payload: {} }]);
+});
+
+test("a field that loses onSubmit outright loses both the listener and the hint", () => {
+    // The narrow version of this (imeAction still present in Changes) was
+    // already covered; this is the case the old `"onSubmit" in p.Changes`
+    // gate missed entirely — neither key survives into the new props map, so
+    // nothing re-ran and the field kept advertising a submit it no longer had.
+    const { rt, at } = mount([input({ value: "", onSubmit: "cb_0", imeAction: "next" })]);
+    assert.equal(at(0).getAttribute("enterkeyhint"), "next");
+
+    rt.GrMob.patch(
+        JSON.stringify([
+            { Type: "update-props", TargetID: "root/0", Changes: { value: "" } },
+        ])
+    );
+
+    assert.equal(at(0).getAttribute("enterkeyhint"), null);
+
+    rt.dispatched.length = 0;
+    at(0).dispatch("keydown", { key: "Enter" });
+    assert.deepEqual(rt.dispatched, [], "a field with no onSubmit must not submit");
+});

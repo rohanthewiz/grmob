@@ -47,6 +47,25 @@ type navigatorState struct {
 	stack  []routeEntry
 	nextID int
 
+	// rooted reports whether the bottom frame of the stack is final — i.e.
+	// whether the Navigator's `initial` route has been accounted for.
+	//
+	// It exists because navigation can legitimately happen *before* the
+	// Navigator's first render: a deep-link handler, a restored session, a
+	// splash timeout. takeTop used to seed `initial` only when the stack was
+	// empty, so a Push in that window became the whole stack — the initial
+	// screen never existed at all, CanPop was false, and the platform Back
+	// gesture exited the app instead of returning to it.
+	//
+	//	Push(detail); Navigator(home)
+	//	  before: [detail]        depth 1, CanPop false, home unreachable
+	//	  after:  [home, detail]  depth 2, CanPop true
+	//
+	// Replace and Reset set it themselves: both are statements about what the
+	// bottom of the stack should be, so `initial` must not be spliced under
+	// their result.
+	rooted bool
+
 	// retired holds the ids of frames that have left the stack since the last
 	// render pass collected them; Navigator drops their scopes and drains this
 	// on the next pass.
@@ -91,17 +110,22 @@ func (n *navigatorState) retireLocked(entries ...routeEntry) {
 	}
 }
 
-// takeTop seeds the stack with initial on first use, then returns the frame to
+// takeTop installs the initial route on first use, then returns the frame to
 // render along with the ids whose scopes the caller must now drop.
 //
 // Seeding lazily (rather than in newNavigatorState) is what lets the initial
 // route be a property of the Navigator view instead of the context: a context
 // is constructed by the host, which has no idea what the app's root screen is.
+//
+// The seed is spliced *beneath* whatever is already on the stack rather than
+// only filling an empty one, so routes pushed before this first render sit on
+// top of the initial screen instead of replacing it — see the `rooted` field.
 func (n *navigatorState) takeTop(initial func(*Context) View) (routeEntry, []int) {
 	n.mu.Lock()
 	defer n.mu.Unlock()
-	if len(n.stack) == 0 {
-		n.stack = append(n.stack, n.newEntryLocked(initial))
+	if !n.rooted {
+		n.rooted = true
+		n.stack = append([]routeEntry{n.newEntryLocked(initial)}, n.stack...)
 	}
 	retired := n.retired
 	n.retired = nil
@@ -193,16 +217,24 @@ func Pop(ctx *Context) {
 func Replace(ctx *Context, route func(*Context) View) {
 	n := ctx.nav
 	n.mu.Lock()
-	replaced := len(n.stack) > 0
-	if replaced {
-		old := n.stack[len(n.stack)-1]
-		n.stack[len(n.stack)-1] = n.newEntryLocked(route)
-		n.retireLocked(old)
-	}
-	n.mu.Unlock()
-	if replaced {
+	if len(n.stack) == 0 {
+		// Before the Navigator's first render there is no top frame to swap,
+		// but the caller's intent is unambiguous: start on this route instead
+		// of the one the Navigator names. Marking the stack rooted is what
+		// carries that out — it stops takeTop from later splicing `initial`
+		// underneath, which would leave a screen the user explicitly replaced
+		// sitting one Back away.
+		n.stack = append(n.stack, n.newEntryLocked(route))
+		n.rooted = true
+		n.mu.Unlock()
 		ctx.RequestRender()
+		return
 	}
+	old := n.stack[len(n.stack)-1]
+	n.stack[len(n.stack)-1] = n.newEntryLocked(route)
+	n.retireLocked(old)
+	n.mu.Unlock()
+	ctx.RequestRender()
 }
 
 // Reset discards the entire stack and starts over with route as the only
@@ -223,6 +255,9 @@ func Reset(ctx *Context, route func(*Context) View) {
 	n.mu.Lock()
 	n.retireLocked(n.stack...)
 	n.stack = []routeEntry{n.newEntryLocked(route)}
+	// Reset states what the bottom of the stack is, so the Navigator must not
+	// splice its `initial` under it on a later first render — see `rooted`.
+	n.rooted = true
 	n.mu.Unlock()
 	ctx.RequestRender()
 }
@@ -256,9 +291,11 @@ func PopToRoot(ctx *Context) bool {
 	return popped
 }
 
-// StackDepth reports how many frames are on the stack. It is 0 before the
-// Navigator's first render, because the stack is seeded lazily at that point,
-// and at least 1 afterwards.
+// StackDepth reports how many frames are on the stack.
+//
+// Before the Navigator's first render it counts only what the app itself
+// pushed — 0 for an app that has not navigated yet, because the initial route
+// is installed lazily by that first render. Afterwards it is at least 1.
 func StackDepth(ctx *Context) int {
 	ctx.nav.mu.Lock()
 	defer ctx.nav.mu.Unlock()

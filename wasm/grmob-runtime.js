@@ -211,6 +211,37 @@ const GrMob = (() => {
         }
     }
 
+    // Drops the callback IDs of handler props this node no longer carries.
+    //
+    // Callback IDs are *positional*: core/event.go re-derives them from a
+    // per-pass counter, so "cb_3" belongs to whichever node happens to be the
+    // fourth registration this pass. A node that stops carrying, say, onClick
+    // must therefore forget the ID it last saw — keep it, and the next pass
+    // hands that same ID to some other node, and clicking this element fires
+    // that node's handler. The failure is silent and looks like a wiring bug
+    // in the app.
+    //
+    // An update-props patch carries the *whole* new props map (reconcile
+    // emits new.Props, never a delta — see reconcile/patch.go), so a
+    // listener_* entry whose prop key is absent from Changes is definitively
+    // gone rather than merely unchanged.
+    //
+    // The DOM listener itself is left attached and simply goes inert: every
+    // listener this runtime installs re-reads its ID from the dataset at
+    // dispatch time and does nothing when it is missing. Keeping the
+    // has_listener_* marker alongside means a prop that comes back on a later
+    // pass re-uses that one listener instead of stacking a second copy.
+    function pruneStaleListeners(el, props) {
+        // Object.keys snapshots, so deleting inside the loop is safe.
+        for (const key of Object.keys(el.dataset)) {
+            if (!key.startsWith("listener_")) continue;
+            const prop = key.slice("listener_".length);
+            if (!(prop in props)) {
+                delete el.dataset[key];
+            }
+        }
+    }
+
     // Go's focus commands (core.Focus / core.DismissKeyboard) — see
     // core/focus.go. The epoch says when, the action says what.
     //
@@ -704,9 +735,13 @@ const GrMob = (() => {
                     // Before the per-key loop, for the same reason
                     // createElement applies it after one: the hint reads two
                     // props at once, and the patch carries the whole new map.
-                    if ("imeAction" in p.Changes || "onSubmit" in p.Changes) {
-                        applyEnterKeyHint(el, p.Changes);
-                    }
+                    //
+                    // Unconditional, exactly as createElement does it. Gating
+                    // this on "imeAction" or "onSubmit" being present meant a
+                    // field that *lost* its onSubmit kept the enterkeyhint it
+                    // was given when it had one, so the keyboard went on
+                    // advertising a submit affordance the field no longer had.
+                    applyEnterKeyHint(el, p.Changes);
                     for (const [k, v] of Object.entries(p.Changes)) {
                         if (k === "value") {
                             if (el.value === v) continue;
@@ -787,6 +822,7 @@ const GrMob = (() => {
                             }
                         }
                     }
+                    pruneStaleListeners(el, p.Changes);
                     break;
 
 

@@ -506,3 +506,99 @@ func TestNavigatorDoesNotRewindSiblingHooks(t *testing.T) {
 		}
 	}
 }
+
+// --- navigation before the Navigator's first render ----------------------
+
+// TestPushBeforeFirstRenderKeepsTheInitialRoute pins the deep-link case. A
+// handler that runs before the first pass (a launch URL, a restored session,
+// a notification tap that opens the app) used to *become* the whole stack:
+// takeTop only seeded `initial` into an empty stack, so the initial screen
+// never existed, CanPop was false, and the platform Back gesture quit the app
+// instead of revealing home.
+func TestPushBeforeFirstRenderKeepsTheInitialRoute(t *testing.T) {
+	ctx := NewContext()
+	app := Navigator(counterRoute("home"))
+
+	Push(ctx, counterRoute("detail"))
+
+	if got := rendered(t, ctx, app); got != "detail:0" {
+		t.Errorf("first render showed %q, want the pushed route", got)
+	}
+	if got := StackDepth(ctx); got != 2 {
+		t.Errorf("stack depth = %d, want 2 (initial beneath the pushed route)", got)
+	}
+	if !CanPop(ctx) {
+		t.Error("CanPop = false: Back would exit the app instead of revealing home")
+	}
+
+	Pop(ctx)
+	if got := rendered(t, ctx, app); got != "home:0" {
+		t.Errorf("after Pop the screen is %q, want the initial route", got)
+	}
+}
+
+// TestMultiplePushesBeforeFirstRenderStayOrdered checks the splice puts the
+// initial route at the *bottom*, not merely somewhere on the stack.
+func TestMultiplePushesBeforeFirstRenderStayOrdered(t *testing.T) {
+	ctx := NewContext()
+	app := Navigator(counterRoute("home"))
+
+	Push(ctx, counterRoute("one"))
+	Push(ctx, counterRoute("two"))
+
+	if got := rendered(t, ctx, app); got != "two:0" {
+		t.Fatalf("first render showed %q, want the last pushed route", got)
+	}
+	if got := StackDepth(ctx); got != 3 {
+		t.Fatalf("stack depth = %d, want 3", got)
+	}
+	Pop(ctx)
+	if got := rendered(t, ctx, app); got != "one:0" {
+		t.Errorf("after one Pop the screen is %q", got)
+	}
+	Pop(ctx)
+	if got := rendered(t, ctx, app); got != "home:0" {
+		t.Errorf("after two Pops the screen is %q, want the initial route", got)
+	}
+	if CanPop(ctx) {
+		t.Error("CanPop = true at the bottom of the stack")
+	}
+}
+
+// TestReplaceBeforeFirstRenderSupersedesTheInitialRoute is the other half of
+// the seeding rule: Replace states what the bottom of the stack should be, so
+// the Navigator's own initial route must not be spliced underneath it. This
+// is the "restore straight into the logged-in screen" shape, where showing a
+// login screen one Back away would be wrong.
+func TestReplaceBeforeFirstRenderSupersedesTheInitialRoute(t *testing.T) {
+	ctx := NewContext()
+	app := Navigator(counterRoute("login"))
+
+	Replace(ctx, counterRoute("session"))
+
+	if got := rendered(t, ctx, app); got != "session:0" {
+		t.Errorf("first render showed %q, want the replacement route", got)
+	}
+	if got := StackDepth(ctx); got != 1 {
+		t.Errorf("stack depth = %d, want 1 — Replace does not change depth", got)
+	}
+	if CanPop(ctx) {
+		t.Error("CanPop = true: the replaced initial route is still reachable")
+	}
+}
+
+// TestResetBeforeFirstRenderSupersedesTheInitialRoute mirrors the Replace case
+// for Reset, which likewise declares the whole stack.
+func TestResetBeforeFirstRenderSupersedesTheInitialRoute(t *testing.T) {
+	ctx := NewContext()
+	app := Navigator(counterRoute("login"))
+
+	Reset(ctx, counterRoute("session"))
+
+	if got := rendered(t, ctx, app); got != "session:0" {
+		t.Errorf("first render showed %q, want the reset route", got)
+	}
+	if got := StackDepth(ctx); got != 1 {
+		t.Errorf("stack depth = %d, want 1", got)
+	}
+}
