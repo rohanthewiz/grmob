@@ -30,6 +30,20 @@ const GrMob = (() => {
         // patches carry only the changed Style — see the patch handler.
         el.dataset.nodeType = node.Type;
 
+        // The <input> variant, which the tag alone cannot express: tagForType
+        // sends four Go node types to <input>, and an <input> with no type
+        // attribute is a text box. Without this a Checkbox drew as a text
+        // field and its state had nowhere to appear at all.
+        //
+        // Set once here and never on the update path, because a node type
+        // cannot change under a patch — the reconciler emits a replace for a
+        // changed type (reconcile/patch.go), so the element that carries a
+        // given type is always one this function built.
+        const inputType = inputTypeFor(node.Type);
+        if (inputType) {
+            el.setAttribute("type", inputType);
+        }
+
         if (node.Style) {
             applyStyle(el, node.Style, node.Type);
         }
@@ -58,6 +72,17 @@ const GrMob = (() => {
                 }
                 else if (key === "label") {
                     el.textContent = value;
+                }
+                else if (key === "checked") {
+                    // The property, not the attribute. A `checked` attribute
+                    // is only the control's *default* state, which the
+                    // browser stops consulting the moment the user touches
+                    // the box; the property is the live state, and the live
+                    // state is what Go is describing.
+                    el.checked = !!value;
+                }
+                else if (key === "rows") {
+                    applyRows(el, value);
                 }
                 else if (key === "src" && node.Type === "Image") {
                     el.src = value;
@@ -221,6 +246,41 @@ const GrMob = (() => {
         }
     }
 
+    // The Go node type -> the <input> type attribute, kept in sync with
+    // htmlout's export.go. Only the four types tagForType collapses onto
+    // <input> appear here; every other node has a tag that already says what
+    // it is, and gets no type attribute (which is also what htmlout emits).
+    //
+    // This is the discriminator the DOM needs and dataset.nodeType cannot
+    // supply: nodeType tells *this code* what a node is, the type attribute
+    // tells the *browser*, and only the latter decides what gets drawn.
+    function inputTypeFor(type) {
+        return {
+            Input: "text",
+            InputPassword: "password",
+            NumericInput: "number",
+            Checkbox: "checkbox",
+        }[type] || "";
+    }
+
+    // The visible height of a TextArea, in lines. A property rather than an
+    // attribute, matching value and placeholder: this is live control state
+    // the runtime keeps in step with Go, not markup written once.
+    //
+    // Guarded on a positive integer because rows is "limited to only positive
+    // numbers" in the DOM — assigning 0 is an error, not a request for a
+    // zero-line box. core.TextArea always supplies a positive count, so the
+    // guard only covers a hand-built core.Node, which then keeps the
+    // browser's own default height. htmlout differs there, defaulting an
+    // absent rows to 3, because it has to emit *some* attribute value where
+    // this path can simply say nothing.
+    function applyRows(el, rows) {
+        const n = Number(rows);
+        if (Number.isInteger(n) && n > 0) {
+            el.rows = n;
+        }
+    }
+
     function mapEventName(propKey) {
         return {
             onClick: "click",
@@ -358,6 +418,14 @@ const GrMob = (() => {
                         } else if (k === "placeholder") {
                             if (el.placeholder === v) continue;
                             el.placeholder = v;
+                        } else if (k === "checked") {
+                            // No echo guard, unlike value above: assigning a
+                            // boolean back onto a checkbox costs nothing,
+                            // where re-assigning a text field's value would
+                            // move the caret to the end mid-typing.
+                            el.checked = !!v;
+                        } else if (k === "rows") {
+                            applyRows(el, v);
                         } else if (k === "src") {
                             if (el.src === v) continue;
                             el.src = v;

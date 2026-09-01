@@ -1,12 +1,13 @@
 // A minimal DOM for the WASM runtime harness.
 //
-// The runtime touches 22 distinct DOM members in total (createElement,
+// The runtime touches 24 distinct DOM members in total (createElement,
 // querySelector, activeElement, dataset, style, textContent, value,
-// placeholder, src, disabled, children, setAttribute, removeAttribute,
-// appendChild, replaceWith, remove, addEventListener, focus, blur, tagName,
-// innerHTML, getElementById). That is small enough to implement rather than
-// approximate, which is why this file exists instead of a jsdom dependency —
-// the same trade ios/verify makes with its hand-written Swift harness.
+// placeholder, src, disabled, checked, rows, children, setAttribute,
+// removeAttribute, appendChild, replaceWith, remove, addEventListener, focus,
+// blur, tagName, innerHTML, getElementById). That is small enough to
+// implement rather than approximate, which is why this file exists instead of
+// a jsdom dependency — the same trade ios/verify makes with its hand-written
+// Swift harness.
 //
 // # What this is and is not
 //
@@ -102,6 +103,13 @@ class Element {
         this.placeholder = undefined;
         this.src = undefined;
         this.disabled = false;
+        // A checkbox's live state and a textarea's height. Both start
+        // undefined rather than at a browser default (false, 2) for the same
+        // reason value does: an element the runtime never wrote to must be
+        // distinguishable from one it wrote a default into, which is exactly
+        // what the conformance replay compares.
+        this.checked = undefined;
+        this.rows = undefined;
         this.dataset = makeDataset(this);
     }
 

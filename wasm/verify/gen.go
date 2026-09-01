@@ -218,6 +218,13 @@ func signupScenario() scenario {
 	}
 	record(&steps, mgr.DispatchCallback(again[0].Props["onClick"].(string)))
 
+	// Leave the terms box ticked, so the final tree the harness compares
+	// against carries a checked Checkbox. Every earlier tick is undone by the
+	// successful submit that resets the form, and a transcript whose only
+	// checkbox is unticked cannot tell a renderer that reads the state from
+	// one that hardcodes false.
+	record(&steps, mgr.DispatchBoolCallback(prop(mgr.RenderInitial(), "Checkbox", 0, "onToggle"), true))
+
 	return scenario{Name: "signup", Initial: initial, Steps: steps, Final: mgr.RenderInitial()}
 }
 

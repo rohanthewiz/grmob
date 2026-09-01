@@ -27,15 +27,21 @@ const TRANSCRIPT =
 
 const scenarios = JSON.parse(readFileSync(TRANSCRIPT, "utf8"));
 
+// The Go node type -> <input type>, restated from the contract for the same
+// reason the prop table below is: the runtime has its own copy of this table
+// (inputTypeFor), and a conformance test that read the runtime's would only
+// prove the runtime agrees with itself. Four Go types share the <input> tag,
+// so this attribute is the only thing that makes a checkbox a checkbox.
+const INPUT_TYPE = {
+    Input: "text",
+    InputPassword: "password",
+    NumericInput: "number",
+    Checkbox: "checkbox",
+};
+
 // The props the runtime maps onto the DOM, restated here from the contract
 // rather than copied from the implementation — two independent statements of
 // one rule is the whole point of a conformance test.
-//
-// Deliberately absent: `checked` and `rows`. The runtime does not apply
-// either (a Checkbox renders as a bare <input> with no type and no state),
-// which is a real gap in the WASM renderer rather than an omission here. It
-// is left uncovered instead of asserted, because a test that pinned the
-// current behavior would make the gap harder to close.
 function describeGoNode(node, path) {
     const props = node.Props || {};
     // Text carries `content`, Button carries `label`; everything else has no
@@ -44,14 +50,30 @@ function describeGoNode(node, path) {
     return {
         path,
         type: node.Type,
+        // The <input> discriminator; null for every node whose tag already
+        // says what it is.
+        inputType: INPUT_TYPE[node.Type] ?? null,
         text: String(text),
         value: props.value === undefined ? undefined : String(props.value),
         placeholder: props.placeholder === undefined ? undefined : String(props.placeholder),
+        // A Checkbox's live state. Normalized to a boolean on both sides: Go
+        // sends a JSON bool and the DOM holds a property, so neither side has
+        // a string to compare.
+        checked: props.checked === undefined ? undefined : !!props.checked,
+        // A TextArea's height in lines. Only a positive count reaches the DOM
+        // — rows is limited to positive numbers there — so anything else
+        // leaves the browser's default and reads back as undefined.
+        rows: positiveRows(props.rows),
         // The keyboard action hint: "next" when the field advertises
         // traversal, "done" when it merely acts on return, absent otherwise.
         enterkeyhint:
             props.imeAction === "next" ? "next" : props.onSubmit ? "done" : null,
     };
+}
+
+function positiveRows(rows) {
+    const n = Number(rows);
+    return Number.isInteger(n) && n > 0 ? n : undefined;
 }
 
 function fromGoTree(node, path = "root", out = []) {
@@ -66,9 +88,12 @@ function fromDOM(el, out = []) {
     out.push({
         path: el.getAttribute("data-node-path"),
         type: el.dataset.nodeType,
+        inputType: el.getAttribute("type"),
         text: el.textContent,
         value: el.value === undefined ? undefined : String(el.value),
         placeholder: el.placeholder === undefined ? undefined : String(el.placeholder),
+        checked: el.checked === undefined ? undefined : !!el.checked,
+        rows: el.rows,
         enterkeyhint: el.getAttribute("enterkeyhint"),
     });
     for (const child of el.children) fromDOM(child, out);

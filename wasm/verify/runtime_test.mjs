@@ -515,3 +515,95 @@ test("mount clears whatever was in its root", () => {
     assert.equal(rt.mountPoint.children.length, 1);
     assert.notEqual(rt.mountPoint.children[0], stale);
 });
+
+// --------------------------------------------------------------------------
+// Checkbox state and TextArea rows: the two props that reached no DOM
+// property at all until the harness existed to notice
+// --------------------------------------------------------------------------
+
+test("each <input> variant carries the type that decides what is drawn", () => {
+    // tagForType sends four Go node types to <input>, and an <input> with no
+    // type attribute is a text box. A Checkbox therefore drew as a text field
+    // — not a wrong state, an entirely wrong control.
+    const { at } = mount([
+        input({ value: "" }),
+        { Type: "InputPassword", Props: { value: "" } },
+        { Type: "NumericInput", Props: { value: "0" } },
+        { Type: "Checkbox", Props: { checked: false } },
+        { Type: "TextArea", Props: { value: "", rows: 3 } },
+        { Type: "Text", Props: { content: "not a control" } },
+    ]);
+
+    assert.equal(at(0).getAttribute("type"), "text");
+    assert.equal(at(1).getAttribute("type"), "password");
+    assert.equal(at(2).getAttribute("type"), "number");
+    assert.equal(at(3).getAttribute("type"), "checkbox");
+    // A tag that already says what it is gets no discriminator, matching what
+    // htmlout emits.
+    assert.equal(at(4).tagName, "TEXTAREA");
+    assert.equal(at(4).getAttribute("type"), null);
+    assert.equal(at(5).getAttribute("type"), null);
+});
+
+test("a checkbox renders the state Go gave it", () => {
+    const { at } = mount([
+        { Type: "Checkbox", Props: { checked: true, onToggle: "bool_cb_0" } },
+        { Type: "Checkbox", Props: { checked: false, onToggle: "bool_cb_1" } },
+    ]);
+
+    // The live property, not the attribute: the attribute is only a default
+    // the browser stops consulting once the user touches the box.
+    assert.equal(at(0).checked, true);
+    assert.equal(at(1).checked, false);
+    assert.equal(at(0).hasAttribute("checked"), false);
+});
+
+test("a checkbox's state follows an update-props patch both ways", () => {
+    // The path that actually carries a toggle: Go owns the state, so the tick
+    // the user sees is the one that came back through a patch, not the one
+    // the browser drew on click.
+    const { rt, at } = mount([
+        { Type: "Checkbox", Props: { checked: false, onToggle: "bool_cb_0" } },
+    ]);
+
+    rt.GrMob.patch(
+        JSON.stringify([
+            { Type: "update-props", TargetID: "root/0", Changes: { checked: true, onToggle: "bool_cb_0" } },
+        ])
+    );
+    assert.equal(at(0).checked, true);
+
+    rt.GrMob.patch(
+        JSON.stringify([
+            { Type: "update-props", TargetID: "root/0", Changes: { checked: false, onToggle: "bool_cb_0" } },
+        ])
+    );
+    assert.equal(at(0).checked, false, "unticking never reached the DOM");
+});
+
+test("a text area's height is the rows Go asked for", () => {
+    const { rt, at } = mount([
+        { Type: "TextArea", Props: { value: "", rows: 5, onChange: "txt_cb_0" } },
+    ]);
+    assert.equal(at(0).rows, 5);
+
+    rt.GrMob.patch(
+        JSON.stringify([
+            { Type: "update-props", TargetID: "root/0", Changes: { value: "", rows: 2, onChange: "txt_cb_0" } },
+        ])
+    );
+    assert.equal(at(0).rows, 2);
+});
+
+test("a non-positive rows leaves the browser's own default", () => {
+    // rows is limited to positive numbers in the DOM — assigning 0 is an
+    // error, not a request for a zero-line box. core.TextArea always supplies
+    // a positive count, so this only covers a hand-built core.Node.
+    const { at } = mount([
+        { Type: "TextArea", Props: { value: "", rows: 0 } },
+        { Type: "TextArea", Props: { value: "" } },
+    ]);
+
+    assert.equal(at(0).rows, undefined);
+    assert.equal(at(1).rows, undefined);
+});

@@ -56,6 +56,27 @@ Event wiring on the DOM side uses the callback-ID attributes the tree
 carries (`data-onclick`, `data-onchange`, `data-ontoggle`): the runtime
 listens for interactions, reads the ID, and calls `ReceiveEvent` with it.
 
+### Form controls
+
+Four Go node types share the `<input>` tag, so the runtime writes a `type`
+attribute to tell them apart — the same table `htmlout` uses, and the only
+thing that makes a checkbox draw as a checkbox rather than a text box:
+
+| Node type | Rendered as | State prop |
+|---|---|---|
+| `Input` | `<input type="text">` | `value` |
+| `InputPassword` | `<input type="password">` | `value` |
+| `NumericInput` | `<input type="number">` | `value` |
+| `Checkbox` | `<input type="checkbox">` | `checked` |
+| `TextArea` | `<textarea>` | `value`, `rows` |
+
+`checked` and `rows` are set as element *properties*, not attributes. A
+`checked` attribute is only the control's default state — the browser stops
+consulting it the moment the user touches the box — and the live property is
+what Go is describing. `rows` is limited to positive numbers in the DOM, so
+a non-positive count leaves the browser's own default rather than being
+assigned; `core.TextArea` always supplies a positive one.
+
 ## Testing without a browser
 
 `wasm/verify/run.sh` is the WASM analog of `ios/verify`, and needs only Go
@@ -68,8 +89,8 @@ final tree; Node then mounts that transcript through the **actual**
 `dom.mjs`), applies the batches, walks the resulting DOM back into a tree and
 compares it with Go's final render. Alongside it, unit tests cover the
 per-element logic no transcript reaches — the return key's Enter filter, the
-void envelope it sends, `enterkeyhint`, and the focus command's frame
-deferral and epoch guard.
+void envelope it sends, `enterkeyhint`, the form-control types and state
+above, and the focus command's frame deferral and epoch guard.
 
 What it cannot answer is anything that needs real rendering: whether
 `enterkeyhint` actually relabels a soft keyboard, whether `focus()` opens
@@ -78,7 +99,7 @@ iOS view layer still needs a simulator.
 
 ```
 $ sh wasm/verify/run.sh
-.............................
+..................................
 ```
 
 ## Permissions
