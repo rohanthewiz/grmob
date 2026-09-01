@@ -637,6 +637,11 @@ private struct GrMobTextField: View {
         let upstream = node.stringProp("value")
         let onChange = node.stringProp("onChange")
         let onSubmit = node.stringProp("onSubmit")
+        // The keyboard's action key, decided in Go from core.UseFocusOrder:
+        // "next" on every field of a declared order but the last. Go also
+        // wired the onSubmit above to advance the focus, so this prop only
+        // chooses the label — the action itself is an ordinary submit.
+        let imeAction = node.stringProp("imeAction")
         let onFocus = node.stringProp("onFocus")
         let onBlur = node.stringProp("onBlur")
         // The imperative half: core.Focus / core.DismissKeyboard reach the
@@ -662,9 +667,21 @@ private struct GrMobTextField: View {
         field(value: value, prompt: prompt)
             .focused($focused)
             // The return key dispatches onSubmit as a plain void event — the
-            // same channel as a Button tap — and advertises itself as "done"
-            // so the keyboard reflects that the field acts on return.
-            .submitLabel(onSubmit.isEmpty ? .return : .done)
+            // same channel as a Button tap — and advertises what it will do:
+            // "next" for a field with somewhere to go (core.UseFocusOrder),
+            // "done" for one that acts on return, and the plain return key
+            // for a field that does neither.
+            //
+            // Next is tested first because it is the more specific claim: Go
+            // only stamps it on a field whose onSubmit it wired itself, so the
+            // label and the action can never disagree.
+            //
+            // Deliberately not a chained @FocusState enum walked by this
+            // renderer: that would make the order SwiftUI's idea of it, which
+            // is derived from layout and differs from Compose's. The order is
+            // declared in Go and stays there — the platform only reports that
+            // the key was pressed.
+            .submitLabel(imeAction == "next" ? .next : (onSubmit.isEmpty ? .return : .done))
             .onSubmit { if !onSubmit.isEmpty { runtime?.click(onSubmit) } }
             // The focus edges. This is also where the local buffer is seeded,
             // and the seeding goes first: a dispatch into Go can land a render

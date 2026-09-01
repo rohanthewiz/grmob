@@ -43,7 +43,7 @@ const GrMob = (() => {
                         el.dataset[`has_listener_${key}`] = "true";
                         el.addEventListener(event, (e) => {
                             const latestCbId = el.dataset[`listener_${key}`];
-                            if (latestCbId) {
+                            if (latestCbId && eventQualifies(key, e)) {
                                 const payload = extractEventPayload(e, node.Type);
                                 window.GoInvokeCallback(latestCbId, payload);
                             }
@@ -75,6 +75,11 @@ const GrMob = (() => {
                 }
 
             }
+            // After the loop, not inside it: the hint is a function of two
+            // props (imeAction and onSubmit) and Object.entries fixes no order
+            // between them, so deciding it per key would depend on which one
+            // the map happened to yield first.
+            applyEnterKeyHint(el, node.Props);
         }
 
         return el;
@@ -229,8 +234,52 @@ const GrMob = (() => {
             // the node that owns the prop — so nothing more is needed, but a
             // future move to delegated listeners would break exactly here.
             onFocus: "focus",
-            onBlur: "blur"
+            onBlur: "blur",
+            // An <input> outside a <form> has no submit event of its own, so
+            // the return key is observed where it actually happens. The
+            // Enter filter lives in eventQualifies rather than here, because
+            // this map only names events — a keydown listener that fired the
+            // handler on every keystroke would be a very loud bug.
+            onSubmit: "keydown"
         }[propKey] || propKey.toLowerCase().replace(/^on/, "");
+    }
+
+    // Filters the raw DOM event before it becomes a Go dispatch.
+    //
+    // Only onSubmit needs this: it listens on keydown (see mapEventName) and
+    // means one particular key. Shift+Enter is excluded so a textarea keeps
+    // its "newline without submitting" convention, which is the same split
+    // the native renderers get for free — Compose gives a multiline field a
+    // newline key rather than an action key.
+    //
+    // Every other event maps one-to-one onto a DOM event and qualifies
+    // unconditionally.
+    function eventQualifies(propKey, e) {
+        if (propKey !== "onSubmit") return true;
+        if (e.key !== "Enter" || e.shiftKey) return false;
+        // Nothing else should also act on this keypress — inside a <form> the
+        // browser would otherwise submit the page out from under the app.
+        e.preventDefault();
+        return true;
+    }
+
+    // The keyboard action hint, the web's thin equivalent of Android's
+    // ImeAction and SwiftUI's submitLabel. A soft keyboard (mobile browsers,
+    // and desktop only in dev tools' device mode) relabels its return key
+    // from it; a hardware keyboard ignores it entirely, which is why the
+    // *behavior* rides onSubmit and never this attribute.
+    //
+    // Removed rather than set to "" when neither prop asks for one: an empty
+    // enterkeyhint is not a valid value, and an update-props patch carries
+    // the whole new map, so a field that loses its submit action has to lose
+    // the attribute with it.
+    function applyEnterKeyHint(el, props) {
+        const hint = props.imeAction === "next" ? "next" : (props.onSubmit ? "done" : "");
+        if (hint) {
+            el.setAttribute("enterkeyhint", hint);
+        } else {
+            el.removeAttribute("enterkeyhint");
+        }
     }
 
     function extractEventPayload(e, type) {
@@ -240,7 +289,11 @@ const GrMob = (() => {
         // <input> would otherwise be sent as {value: "..."}, and Go, seeing a
         // string, would dispatch it to the *text* callback map, where a void
         // ID does not exist. The handler would silently never run.
-        if (e.type === "focus" || e.type === "blur") {
+        // keydown is here for the same reason: it carries onSubmit, which Go
+        // registered as a void callback. Sending {value} would route it into
+        // the *text* callback map, where a void ID does not exist, and the
+        // submit handler would silently never run.
+        if (e.type === "focus" || e.type === "blur" || e.type === "keydown") {
             return {};
         }
         if (["input", "textarea", "numericinput", "inputpassword"].includes(type)) {
@@ -272,6 +325,12 @@ const GrMob = (() => {
 
             switch (p.Type) {
                 case "update-props":
+                    // Before the per-key loop, for the same reason
+                    // createElement applies it after one: the hint reads two
+                    // props at once, and the patch carries the whole new map.
+                    if ("imeAction" in p.Changes || "onSubmit" in p.Changes) {
+                        applyEnterKeyHint(el, p.Changes);
+                    }
                     for (const [k, v] of Object.entries(p.Changes)) {
                         if (k === "value") {
                             if (el.value === v) continue;
@@ -307,7 +366,7 @@ const GrMob = (() => {
                                 el.dataset[`has_listener_${k}`] = "true";
                                 el.addEventListener(event, (e) => {
                                     const latestCbId = el.dataset[`listener_${k}`];
-                                    if (latestCbId) {
+                                    if (latestCbId && eventQualifies(k, e)) {
                                         const payload = extractEventPayload(e, el.tagName.toLowerCase());
                                         window.GoInvokeCallback(latestCbId, payload);
                                     }

@@ -110,6 +110,12 @@ func renderNode(b *element.Builder, node *core.Node) (x any) {
 		// narrowing that.
 		{"onFocus", "data-onfocus"},
 		{"onBlur", "data-onblur"},
+		// The return key's handler, which is also the traversal action: a
+		// field in a core.UseFocusOrder carries an onSubmit that Go wired to
+		// focus the next one. Exported like the rest — the ID, not the
+		// behavior — so a loader that wires the other callbacks gets working
+		// keyboard traversal from the same table.
+		{"onSubmit", "data-onsubmit"},
 	} {
 		if id, ok := node.Props[cb.prop].(string); ok {
 			attrs = append(attrs, cb.attr, id)
@@ -139,6 +145,27 @@ func renderNode(b *element.Builder, node *core.Node) (x any) {
 	// emits key="value" pairs only.
 	if getStr(node.Props["focusAction"]) == "focus" && isFormControl(node.Type) {
 		attrs = append(attrs, "autofocus", "autofocus")
+	}
+	// core.UseFocusOrder's keyboard action, in the spelling HTML has for it.
+	//
+	// Unlike the focus command, this one survives the export intact: the
+	// keyboard hint is a standing property of the field ("this key means
+	// next"), not a moment in time, which is exactly the kind of thing a
+	// static document can carry. A soft keyboard relabels its return key from
+	// it; a hardware keyboard ignores it, so the traversal *behavior* travels
+	// as data-onsubmit above and this attribute only says what the key reads.
+	//
+	// "done" for a field that acts on return and does not advance, mirroring
+	// Android's ImeAction.Done and SwiftUI's .done. Nothing at all for a field
+	// with neither, because enterkeyhint has no empty value — the attribute's
+	// absence is how HTML spells "the browser's default return key".
+	if isFormControl(node.Type) {
+		switch {
+		case getStr(node.Props["imeAction"]) == "next":
+			attrs = append(attrs, "enterkeyhint", "next")
+		case getStr(node.Props["onSubmit"]) != "":
+			attrs = append(attrs, "enterkeyhint", "done")
+		}
 	}
 
 	switch node.Type {

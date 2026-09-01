@@ -478,3 +478,60 @@ func TestAlignItemsStretchMakesTheContainerFlex(t *testing.T) {
 		}
 	}
 }
+
+// core.UseFocusOrder's keyboard action survives the export where the focus
+// *command* does not, and for a reason worth stating: the hint is a standing
+// property of the field ("this key means next"), not a moment in time, and a
+// static document can carry standing properties perfectly well.
+func TestImeActionExportsAsEnterKeyHint(t *testing.T) {
+	n := &core.Node{
+		Type: "Input",
+		Props: map[string]any{
+			"value":     "",
+			"imeAction": "next",
+			"onSubmit":  "cb_7",
+		},
+	}
+	out := ExportHTML(n)
+	if !strings.Contains(out, `enterkeyhint="next"`) {
+		t.Fatalf("missing enterkeyhint attribute:\n%s", out)
+	}
+	// The behavior travels as the callback ID, because a soft keyboard's hint
+	// only relabels the key — a hardware keyboard ignores it entirely.
+	if !strings.Contains(out, `data-onsubmit="cb_7"`) {
+		t.Fatalf("missing data-onsubmit attribute:\n%s", out)
+	}
+	if strings.Contains(out, "imeAction") {
+		t.Fatalf("the raw imeAction prop leaked into the document:\n%s", out)
+	}
+}
+
+// A field that acts on return but does not advance says so as "done",
+// mirroring Android's ImeAction.Done and SwiftUI's .done. This is the shape
+// InputWithSubmit has always had, and the last field of a focus order.
+func TestSubmitWithoutTraversalExportsDone(t *testing.T) {
+	n := &core.Node{
+		Type: "Input",
+		Props: map[string]any{
+			"value":     "",
+			"imeAction": "",
+			"onSubmit":  "cb_2",
+		},
+	}
+	if out := ExportHTML(n); !strings.Contains(out, `enterkeyhint="done"`) {
+		t.Fatalf("a submitting field did not export enterkeyhint=done:\n%s", out)
+	}
+}
+
+// A field with neither exports no hint at all. enterkeyhint has no empty
+// value: the attribute's absence is how HTML spells "the browser's default
+// return key", and writing enterkeyhint="" would be an invalid document.
+func TestNoActionExportsNoEnterKeyHint(t *testing.T) {
+	n := &core.Node{
+		Type:  "Input",
+		Props: map[string]any{"value": "", "imeAction": ""},
+	}
+	if out := ExportHTML(n); strings.Contains(out, "enterkeyhint") {
+		t.Fatalf("a field with no submit action exported a hint:\n%s", out)
+	}
+}

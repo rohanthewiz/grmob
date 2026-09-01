@@ -84,6 +84,12 @@
       ride the render tree as an epoch-stamped prop pair rather than a new
       bridge call. `core.Button` joined the same argument list in the process,
       so every leaf now takes behavior props (`examples/signup`)
+- [x] Focus traversal (`core.UseFocusOrder`, `core.FocusNext`,
+      `core.FocusPrevious`) — a form declares the order its return key walks
+      in one line, and every field but the last advertises the platform's
+      "next" action (`ImeAction.Next`, `.submitLabel(.next)`,
+      `enterkeyhint`). The action rides the existing `onSubmit` channel, so it
+      costs one string prop and no new bridge surface (`examples/signup`)
 - [x] Keyboard-aware regions (`core.KeyboardAware`,
       `components.Screen.KeyboardAware`) — a scrolling region shortens its
       viewport, a fixed one lifts whole, so a docked composer stays reachable
@@ -129,10 +135,6 @@
 
 ### 🧬 Extensions
 - [ ] Router-style navigation for web
-- [ ] Keyboard navigation (the accessibility *labels* are done, and focus is
-      now both observable via `OnFocus`/`OnBlur` and settable via
-      `core.Focus`/`core.DismissKeyboard`; what is left is the *traversal*
-      story — a next/previous order, and an IME "next" action that walks it)
 
 ---
 

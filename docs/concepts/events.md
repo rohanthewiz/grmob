@@ -151,13 +151,12 @@ func LoginScreen(ctx *core.Context) core.View {
     password := core.UseFocusRef(ctx)
 
     return core.Column(
-        core.InputWithSubmit(email.Get(), "you@example.com", email.Set,
-            func() { core.Focus(password) },   // return key advances
-        ),
+        core.Input(email.Get(), "you@example.com", email.Set),
         core.InputPassword(pw.Get(), "password", pw.Set,
             core.FocusTarget(password),
         ),
         core.Button("Sign in", submit),
+        core.Button("Change password", func() { core.Focus(password) }),
     )
 }
 ```
@@ -225,6 +224,98 @@ Four consequences worth knowing:
 gives them keyboard focus, so they carry no stamp. The HTML export renders a
 standing `"focus"` command as `autofocus`, which is the only thing a static
 document can say about it.
+
+## Focus traversal
+
+A form usually wants the return key to walk down it. Declare the order once,
+above the fields it names:
+
+```go
+func SignupScreen(ctx *core.Context) core.View {
+    email    := core.UseFocusRef(ctx)
+    password := core.UseFocusRef(ctx)
+    confirm  := core.UseFocusRef(ctx)
+
+    core.UseFocusOrder(ctx, email, password, confirm)
+
+    return core.Column(
+        core.Input(e.Get(), "you@example.com", e.Set, core.FocusTarget(email)),
+        core.InputPassword(p.Get(), "", p.Set, core.FocusTarget(password)),
+        core.InputPassword(c.Get(), "", c.Set, core.FocusTarget(confirm)),
+        core.Button("Create account", submit),
+    )
+}
+```
+
+That one line is the whole surface. The first two fields now show a **Next**
+key that moves the cursor down the form (`ImeAction.Next` on Android,
+`.submitLabel(.next)` on iOS, `enterkeyhint="next"` on the web); the last has
+no successor, so its key stays whatever its own submit action implies.
+
+Move along the order by hand where a keyboard cannot reach — a toolbar drawn
+above a `KeyboardAware` region, a scan that fills one field:
+
+```go
+core.Button("Next", func() { core.FocusNext(current) })
+core.Button("Back", func() { core.FocusPrevious(current) })
+```
+
+Both take the field to move **from** rather than reading "the focused field",
+because Go does not reliably know which field that is: the framework wires
+`OnFocus` only where an app asked for it, so the field the user tapped into is
+one Go was never told about. An app-drawn toolbar tracks the current field
+with `OnFocus` if it needs one.
+
+### How traversal travels
+
+The Next key is **not** a new bridge call. It is the ordinary `onSubmit`
+dispatch, which every renderer already sends:
+
+```
+UseFocusOrder(ctx, a, b, c)
+        │  each ref records its position
+        ▼
+FocusTarget(a) stamps   imeAction : "next"     ── what the key reads
+                        onSubmit  : cb_N       ── wired to Focus(b)
+        ▼
+renderer labels its action key from imeAction
+        ▼
+user presses it  →  dispatch cb_N  →  Focus(b)  →  a focus command
+```
+
+So advertising a Next key costs one string prop and no new wire surface at
+all. Traversal is decided in Go rather than by the platform — Compose could
+walk its own focus graph with `moveFocus` and SwiftUI could chain
+`@FocusState`, but the order would then be *layout's* idea of it, differing
+between the two and invisible to the code that declared it.
+
+Five things worth knowing:
+
+- **The order is declared, not inferred.** Render order would need no
+  declaration, but a field cannot know while it is being built whether
+  anything comes after it — so the Next key would have to be spelled out per
+  field instead of per form. A declared order also survives a `core.Cached`
+  subtree and a layout whose reading order is not child order.
+- **Declare it above the fields it names.** Membership is read while each
+  field's props are stamped, so a field rendered before the call sees the
+  previous pass's order. Hooks belong at the top anyway.
+- **An explicit `onSubmit` wins.** A field built with `InputWithSubmit` has
+  been told what its return key does; traversal will not silently replace it,
+  and will not advertise a Next it is not going to perform. A keyboard has one
+  action key, so a middle field cannot both submit and advance.
+- **There is no wrap-around.** The last field of a form submits; it does not
+  send the user back to the top.
+- **Until the first `UseFocusOrder`, no `imeAction` is stamped at all** — the
+  same guarantee the focus commands give: an app that never declares an order
+  renders exactly the trees it did before.
+
+`FocusPrevious` has no keyboard action behind it on any platform here: neither
+the Android IME nor the iOS keyboard offers a "previous" key, and SwiftUI
+gives no input-accessory toolbar for free. It is there for the toolbar an app
+draws itself.
+
+A `TextArea` in an order does not advance — a multiline field's return key
+inserts a newline, which is the right call on every platform.
 
 ## Dispatch paths by host
 

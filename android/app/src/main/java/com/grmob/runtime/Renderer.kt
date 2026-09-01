@@ -446,6 +446,11 @@ private fun GrMobTextField(
     val upstream = node.stringProp("value")
     val onChange = node.stringProp("onChange")
     val onSubmit = node.stringProp("onSubmit")
+    // The keyboard's action key, decided in Go from core.UseFocusOrder: "next"
+    // on every field of a declared order but the last. Go also wired the
+    // onSubmit above to advance the focus, so this prop only has to choose the
+    // label — the action itself is an ordinary submit dispatch.
+    val imeAction = node.stringProp("imeAction")
     val onFocus = node.stringProp("onFocus")
     val onBlur = node.stringProp("onBlur")
     // The imperative half: core.Focus / core.DismissKeyboard reach the screen
@@ -579,13 +584,35 @@ private fun GrMobTextField(
                 else -> KeyboardType.Text
             },
             // A submit-carrying field advertises Done so the IME's action key
-            // reads as "act on this", mirroring the iOS submitLabel.
-            imeAction = if (onSubmit.isNotEmpty()) ImeAction.Done else ImeAction.Default,
+            // reads as "act on this", mirroring the iOS submitLabel; a field
+            // with somewhere to go advertises Next instead, so the key reads
+            // "move on" and the platform draws the arrow users expect.
+            //
+            // Next is tested first because it is the more specific claim: Go
+            // only stamps it on a field whose onSubmit it wired itself, so the
+            // two can never disagree about what the key does.
+            imeAction = when {
+                imeAction == "next" -> ImeAction.Next
+                onSubmit.isNotEmpty() -> ImeAction.Done
+                else -> ImeAction.Default
+            },
         ),
         // The IME action dispatches onSubmit as a plain void event — the same
-        // channel as a Button tap.
+        // channel as a Button tap. Both arms dispatch the same ID: Compose
+        // routes the callback by which action the field advertised, so a field
+        // showing Next arrives here as onNext and one showing Done as onDone,
+        // and Go has already decided which handler that ID points at.
+        //
+        // Deliberately NOT LocalFocusManager.moveFocus(FocusDirection.Next):
+        // that would walk Compose's own focus graph, which is derived from
+        // layout and knows nothing about the order the Go code declared.
+        //
+        // A multiline field never gets here — Compose gives a non-singleLine
+        // BasicTextField a return key that inserts a newline, which is the
+        // right call. A TextArea in a focus order simply does not advance.
         keyboardActions = KeyboardActions(
             onDone = { if (onSubmit.isNotEmpty()) runtime.click(onSubmit) },
+            onNext = { if (onSubmit.isNotEmpty()) runtime.click(onSubmit) },
         ),
         decorationBox = { inner ->
             Box {
