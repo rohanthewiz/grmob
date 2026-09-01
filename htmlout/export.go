@@ -101,6 +101,15 @@ func renderNode(b *element.Builder, node *core.Node) (x any) {
 		{"onClick", "data-onclick"},
 		{"onChange", "data-onchange"},
 		{"onToggle", "data-ontoggle"},
+		// Focus and blur are attributes here for the same reason the others
+		// are: the export is a static document, so all it can do is record
+		// which callback ID the edge belongs to and leave the wiring to
+		// whatever loads it. Both are exported for every node type that
+		// carries them — a browser gives focus to more than the natives do
+		// (a link, anything with tabindex), and the export has no business
+		// narrowing that.
+		{"onFocus", "data-onfocus"},
+		{"onBlur", "data-onblur"},
 	} {
 		if id, ok := node.Props[cb.prop].(string); ok {
 			attrs = append(attrs, cb.attr, id)

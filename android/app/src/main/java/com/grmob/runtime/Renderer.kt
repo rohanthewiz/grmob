@@ -443,6 +443,8 @@ private fun GrMobTextField(
     val upstream = node.stringProp("value")
     val onChange = node.stringProp("onChange")
     val onSubmit = node.stringProp("onSubmit")
+    val onFocus = node.stringProp("onFocus")
+    val onBlur = node.stringProp("onBlur")
 
     val interactions = remember { MutableInteractionSource() }
     val focused by interactions.collectIsFocusedAsState()
@@ -466,6 +468,30 @@ private fun GrMobTextField(
         // Go-owned while blurred; any queued echoes died with the focus session.
         pendingEchoes.clear()
         if (text != upstream) text = upstream
+    }
+
+    // The focus edges, dispatched to Go on the void channel like onSubmit.
+    //
+    // In a LaunchedEffect rather than inline in the composition body: sending
+    // an event to Go wakes a render pass, and a composable's body may run any
+    // number of times for one logical change (recomposition, and Compose is
+    // free to re-run it speculatively). The effect keys on `focused`, so it
+    // runs once per actual transition.
+    //
+    // seenFocus is what keeps mount quiet. collectIsFocusedAsState starts at
+    // false, so the effect's first run is an unfocused field that never had
+    // focus to lose; without the flag every text field on screen would fire
+    // onBlur the moment it appeared. SwiftUI's onChange(of:) skips the initial
+    // value for us and needs no equivalent — see the iOS renderer.
+    var seenFocus by remember { mutableStateOf(false) }
+    LaunchedEffect(focused) {
+        if (focused) {
+            seenFocus = true
+            if (onFocus.isNotEmpty()) runtime.click(onFocus)
+        } else if (seenFocus) {
+            seenFocus = false
+            if (onBlur.isNotEmpty()) runtime.click(onBlur)
+        }
     }
 
     val rows = node.intProp("rows")

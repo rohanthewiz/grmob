@@ -47,9 +47,18 @@ core.Row(
   `components.Separator`, which leaves spacing to the caller and defaults
   its own hairline tint.)
 
-Behavior props (`OnClick`, `OnTouch`, `OnLongPress`, or the generic
-`On(event, fn)`) register their callbacks in argument order, before any child
-renders — a container's callback IDs always precede its children's.
+Behavior props (`OnClick`, `OnTouch`, `OnLongPress`, `OnFocus`, `OnBlur`, or
+the generic `On(event, fn)`) register their callbacks in argument order,
+before any child renders — a container's callback IDs always precede its
+children's.
+
+The input family (`Input`, `InputWithSubmit`, `InputPassword`, `NumericInput`,
+`TextArea`, `Checkbox`) takes the same mixed argument list, minus children —
+which is what makes [`OnFocus`/`OnBlur`](events.md) reachable on the nodes
+that actually receive focus. A builder's own callbacks (its `onChange`, an
+`onSubmit`) always take the lower IDs, so no argument a caller writes can move
+them. Passing a `View` to one of these is a [debug-mode](debug-mode.md)
+concern: a leaf has nowhere to put a child.
 
 ### The software keyboard
 

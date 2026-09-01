@@ -783,3 +783,300 @@ func TestRequiredDoesNotDisturbTheForm(t *testing.T) {
 		t.Error("a field whose current value is merely invalid is not required")
 	}
 }
+
+// ---- RevealOnBlur ----
+
+func blurSpec() forms.Spec {
+	return forms.Spec{
+		Reveal: forms.RevealOnBlur,
+		Fields: []forms.Field{
+			{Name: "email", Rules: []forms.Rule{forms.Required("Required")}},
+			{Name: "name", Rules: []forms.Rule{forms.Required("Required")}},
+		},
+	}
+}
+
+func TestRevealOnBlurStaysSilentWhileTyping(t *testing.T) {
+	// The whole point of the policy: an address is not yet an address at its
+	// second character, and RevealOnTouch would already be complaining.
+	ctx := core.NewContext()
+	form := render(ctx, blurSpec())
+
+	form.SetValue("email", "y")
+	form = render(ctx, blurSpec())
+	if got := form.Error("email"); got != "" {
+		t.Fatalf("error while typing = %q, want silence until the field is left", got)
+	}
+	if !form.Touched("email") {
+		t.Error("the field was edited; Touched must still say so")
+	}
+}
+
+func TestRevealOnBlurShowsPerFieldThenEverythingOnSubmit(t *testing.T) {
+	ctx := core.NewContext()
+	form := render(ctx, blurSpec())
+	if form.Error("email") != "" || form.Error("name") != "" {
+		t.Fatal("nothing blurred yet; both fields must be silent")
+	}
+
+	form.MarkBlurred("email")
+	form = render(ctx, blurSpec())
+	if got := form.Error("email"); got != "Required" {
+		t.Errorf("blurred field error = %q, want it revealed", got)
+	}
+	if got := form.Error("name"); got != "" {
+		t.Errorf("un-blurred sibling error = %q, want silence", got)
+	}
+
+	// Cumulative with submit, for the same reason RevealOnTouch is: a form
+	// that refuses to submit while showing no reason is the bug.
+	form.Submit(nil)
+	form = render(ctx, blurSpec())
+	if got := form.Error("name"); got != "Required" {
+		t.Errorf("never-blurred field after submit = %q, want it revealed", got)
+	}
+}
+
+func TestRevealOnBlurStaysLiveAfterTheFix(t *testing.T) {
+	// Reward early, punish late — but once punished, confirm the correction
+	// the instant it lands rather than waiting for another blur.
+	ctx := core.NewContext()
+	form := render(ctx, blurSpec())
+	form.MarkBlurred("email")
+	form = render(ctx, blurSpec())
+	if form.Error("email") == "" {
+		t.Fatal("setup: the error should be revealed")
+	}
+
+	form.SetValue("email", "you@example.com")
+	form = render(ctx, blurSpec())
+	if got := form.Error("email"); got != "" {
+		t.Errorf("error after the fix = %q, want it cleared without a second blur", got)
+	}
+}
+
+func TestBlurDoesNotMarkTouchedAndTouchDoesNotMarkBlurred(t *testing.T) {
+	// The two flags answer different questions, and folding either into the
+	// other would make each policy fire on the other's occasions: a
+	// tab-through would satisfy RevealOnTouch, and a keystroke would satisfy
+	// RevealOnBlur.
+	ctx := core.NewContext()
+	form := render(ctx, blurSpec())
+
+	form.MarkBlurred("email")
+	if form.Touched("email") {
+		t.Error("leaving a field must not count as editing it")
+	}
+
+	form.SetValue("name", "x")
+	if form.Blurred("name") {
+		t.Error("editing a field must not count as leaving it")
+	}
+}
+
+func TestBlurDoesNotClearAnExternalError(t *testing.T) {
+	// SetValue drops the server's verdict because the text it judged is gone.
+	// A blur changes no text, so the verdict still stands.
+	ctx := core.NewContext()
+	form := render(ctx, blurSpec())
+	form.SetErrors(map[string]string{"email": "Already registered"})
+
+	form.MarkBlurred("email")
+	form = render(ctx, blurSpec())
+	if got := form.Error("email"); got != "Already registered" {
+		t.Errorf("error after blur = %q, want the external one intact", got)
+	}
+}
+
+func TestResetClearsBlurred(t *testing.T) {
+	ctx := core.NewContext()
+	form := render(ctx, blurSpec())
+	form.MarkBlurred("email")
+
+	form = render(ctx, blurSpec())
+	form.Reset()
+	form = render(ctx, blurSpec())
+
+	if form.Blurred("email") {
+		t.Error("Reset left the field marked blurred")
+	}
+	if got := form.Error("email"); got != "" {
+		t.Errorf("error after Reset = %q, want a form back at its starting state", got)
+	}
+}
+
+func TestBoundBuildersAttachBlurOnlyUnderRevealOnBlur(t *testing.T) {
+	// The gate. Under any other policy nothing reads the edge, so the field
+	// must not make both native renderers dispatch an event per focus change
+	// — and, more visibly here, must render exactly the node it always did.
+	cases := []struct {
+		name   string
+		reveal forms.Reveal
+		want   bool
+	}{
+		{"OnSubmit", forms.RevealOnSubmit, false},
+		{"OnTouch", forms.RevealOnTouch, false},
+		{"Always", forms.RevealAlways, false},
+		{"OnBlur", forms.RevealOnBlur, true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := core.NewContext()
+			form := render(ctx, forms.Spec{
+				Reveal: tc.reveal,
+				Fields: []forms.Field{{Name: "email"}},
+			})
+			n := form.Input("email", "you@example.com").Render(ctx)
+			_, got := n.Props["onBlur"]
+			if got != tc.want {
+				t.Fatalf("onBlur present = %v, want %v: %#v", got, tc.want, n.Props)
+			}
+		})
+	}
+}
+
+func TestBoundBuildersBlurHandlerMarksTheRightField(t *testing.T) {
+	// The bound builders exist because the unbound spelling names the field
+	// three times; the blur binding is a fourth, and it is the one nobody
+	// writes by hand, so it had better be the same name.
+	//
+	// Every field is exercised, not just the first: a binding that closed
+	// over a constant name rather than the argument would satisfy a test that
+	// only ever blurred the field it happened to hard-code.
+	for _, name := range []string{"email", "name"} {
+		t.Run(name, func(t *testing.T) {
+			ctx := core.NewContext()
+			form := render(ctx, blurSpec())
+
+			n := form.Input(name, "ph").Render(ctx)
+			ctx.TriggerCallback(n.Props["onBlur"].(string))
+
+			if !form.Blurred(name) {
+				t.Errorf("dispatching %s's onBlur did not mark it blurred", name)
+			}
+			for _, other := range []string{"email", "name"} {
+				if other != name && form.Blurred(other) {
+					t.Errorf("blurring %s also marked %s", name, other)
+				}
+			}
+		})
+	}
+}
+
+func TestEveryTextBuilderCarriesTheBlurBinding(t *testing.T) {
+	// A text builder that forgets it is a field whose error never appears
+	// under RevealOnBlur — silent, and invisible in a diff.
+	ctx := core.NewContext()
+	form := render(ctx, forms.Spec{
+		Reveal: forms.RevealOnBlur,
+		Fields: []forms.Field{{Name: "f"}},
+	})
+
+	builders := map[string]core.View{
+		"Input":           form.Input("f", "ph"),
+		"InputWithSubmit": form.InputWithSubmit("f", "ph", nil),
+		"Password":        form.Password("f", "ph"),
+		"TextArea":        form.TextArea("f", 3),
+	}
+	for name, v := range builders {
+		if _, ok := v.Render(ctx).Props["onBlur"]; !ok {
+			t.Errorf("%s carries no blur binding under RevealOnBlur", name)
+		}
+	}
+
+	// The checkbox deliberately does not: a tick is a commit, not a draft.
+	if _, ok := form.Checkbox("f").Render(ctx).Props["onBlur"]; ok {
+		t.Error("Checkbox took a blur binding; a checkbox has no draft state to leave")
+	}
+}
+
+func TestBoundBuilderKeepsCallerPropsAndStyle(t *testing.T) {
+	// withBlur appends, so the caller's props keep the order they were
+	// written in — and it must not have replaced them.
+	ctx := core.NewContext()
+	form := render(ctx, blurSpec())
+
+	n := form.Input("email", "ph", core.Padding(8), core.OnFocus(func() {})).Render(ctx)
+	if n.Style.Padding.Top != 8 {
+		t.Errorf("caller style prop lost: Padding.Top = %v", n.Style.Padding.Top)
+	}
+	if _, ok := n.Props["onFocus"]; !ok {
+		t.Errorf("caller behavior prop lost: %#v", n.Props)
+	}
+	if _, ok := n.Props["onBlur"]; !ok {
+		t.Errorf("blur binding lost: %#v", n.Props)
+	}
+}
+
+func TestFirstBlurRequestsARenderAndRepeatsDoNot(t *testing.T) {
+	// The record hangs off a pointer, so core.State.Set never fires and
+	// nothing else would ask for the repaint — without the explicit request
+	// the revealed error would sit in the record until some unrelated event
+	// happened to trigger a pass.
+	//
+	// The second half is the reason MarkBlurred bothers to check: the
+	// platform dispatches blur on every focus change, including all the ones
+	// a user makes moving back through a form they have already been round,
+	// and re-asserting a flag that is already set can change nothing on
+	// screen.
+	ctx := core.NewContext()
+	form := render(ctx, blurSpec())
+
+	ctx.ClearDirty()
+	form.MarkBlurred("email")
+	if !ctx.IsDirty() {
+		t.Error("the first blur did not request a render")
+	}
+
+	ctx.ClearDirty()
+	form.MarkBlurred("email")
+	if ctx.IsDirty() {
+		t.Error("a repeat blur requested a render that can change nothing")
+	}
+
+	// A different field is a different flag, so it must still ask.
+	ctx.ClearDirty()
+	form.MarkBlurred("name")
+	if !ctx.IsDirty() {
+		t.Error("the first blur of a second field did not request a render")
+	}
+}
+
+func TestBlurredIsFalseWhenNothingReportsIt(t *testing.T) {
+	// Blurred reports what was observed, not what happened. Under a policy
+	// that wires no blur, that is honestly nothing.
+	ctx := core.NewContext()
+	form := render(ctx, forms.Spec{
+		Reveal: forms.RevealOnTouch,
+		Fields: []forms.Field{{Name: "email"}},
+	})
+	form.Input("email", "ph").Render(ctx)
+	if form.Blurred("email") {
+		t.Error("Blurred true with no blur ever dispatched")
+	}
+}
+
+func TestMarkBlurredIsSafeConcurrently(t *testing.T) {
+	// Blur arrives from the platform, off the render goroutine, and both
+	// edges of a focus move can land at once.
+	ctx := core.NewContext()
+	form := render(ctx, blurSpec())
+
+	var wg sync.WaitGroup
+	for i := 0; i < 50; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			if i%2 == 0 {
+				form.MarkBlurred("email")
+			} else {
+				form.MarkBlurred("name")
+			}
+		}(i)
+	}
+	wg.Wait()
+
+	if !form.Blurred("email") || !form.Blurred("name") {
+		t.Error("a concurrent blur was lost")
+	}
+}

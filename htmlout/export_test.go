@@ -134,6 +134,47 @@ func TestCallbackAttrsEmitted(t *testing.T) {
 	}
 }
 
+// The focus edges ride out the same way. They matter more than the others
+// here because they are the only events the export can carry that the native
+// renderers wire on one node type only — a browser focuses far more than a
+// phone does, and the export must not second-guess that.
+func TestFocusCallbackAttrsEmitted(t *testing.T) {
+	n := &core.Node{
+		Type: "Input",
+		Props: map[string]any{
+			"value":   "",
+			"onFocus": "cb_3",
+			"onBlur":  "cb_4",
+		},
+	}
+	out := ExportHTML(n)
+	if !strings.Contains(out, `data-onfocus="cb_3"`) {
+		t.Fatalf("missing data-onfocus attribute:\n%s", out)
+	}
+	if !strings.Contains(out, `data-onblur="cb_4"`) {
+		t.Fatalf("missing data-onblur attribute:\n%s", out)
+	}
+}
+
+// Attribute order is part of the contract: the mapping is a slice rather than
+// a map precisely so a re-run produces a byte-identical document.
+func TestCallbackAttrOrderIsStable(t *testing.T) {
+	n := &core.Node{
+		Type: "Input",
+		Props: map[string]any{
+			"onChange": "txt_cb_0",
+			"onFocus":  "cb_1",
+			"onBlur":   "cb_2",
+		},
+	}
+	first := ExportHTML(n)
+	for i := 0; i < 5; i++ {
+		if got := ExportHTML(n); got != first {
+			t.Fatalf("export is not deterministic:\n%s\nvs\n%s", first, got)
+		}
+	}
+}
+
 func TestStyleAttrSerialized(t *testing.T) {
 	n := &core.Node{
 		Type:  "Text",

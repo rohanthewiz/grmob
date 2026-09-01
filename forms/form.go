@@ -24,10 +24,28 @@ const (
 	// every form.
 	RevealOnSubmit Reveal = iota
 
+	// RevealOnBlur shows a field's error once focus has left that field (and
+	// every field's after a Submit). It is the closest thing to the "reward
+	// early, punish late" rule of thumb that still says something before the
+	// submit: leaving a field is the user's own claim to have finished with
+	// it, so a complaint then is an answer rather than an interruption, and
+	// the correction is still confirmed live because the rules never stop
+	// running.
+	//
+	// It needs the input to report the edge. The bound builders (Form.Input
+	// and friends) attach core.OnBlur themselves under this policy; a control
+	// built by hand out of Value and OnChange must attach Form.OnBlur(name)
+	// or it will reveal nothing until the submit.
+	RevealOnBlur
+
 	// RevealOnTouch shows a field's error once that field has been edited
 	// (and every field's after a Submit). Suited to a field whose format is
 	// unguessable and worth correcting mid-flight — a card number, a
 	// one-time code — where waiting for submit wastes the user's typing.
+	//
+	// Note this fires on the *second keystroke* of an address, not when the
+	// user is done with it; RevealOnBlur is usually the kinder reading of
+	// "do not wait for the submit".
 	RevealOnTouch
 
 	// RevealAlways shows every error from the first render, before the user
@@ -119,6 +137,17 @@ type formRecord struct {
 	// RevealOnTouch.
 	touched map[string]bool
 
+	// blurred marks the fields focus has entered and left. Read only by
+	// RevealOnBlur.
+	//
+	// Separate from touched rather than folded into it: they answer different
+	// questions ("has been edited" versus "has been finished with") and a
+	// field can satisfy either without the other — tabbing straight through
+	// blurs an untouched field, and a field still under the cursor is touched
+	// but not blurred. Merging them would make each policy fire on the
+	// other's occasions.
+	blurred map[string]bool
+
 	// external holds errors this form could not have computed — see
 	// SetErrors. Always revealed, and cleared per field when that field
 	// changes.
@@ -161,6 +190,7 @@ func UseForm(ctx *core.Context, spec Spec) *Form {
 		values:   Values{},
 		seeded:   map[string]bool{},
 		touched:  map[string]bool{},
+		blurred:  map[string]bool{},
 		external: map[string]string{},
 	})
 	rec := slot.Get()
@@ -249,6 +279,60 @@ func (f *Form) Touched(name string) bool {
 	return f.rec.touched[name]
 }
 
+// Blurred reports whether focus has entered and left the field since mount or
+// Reset.
+//
+// It reports what has been *observed*, which is not the same as what has
+// happened: nothing polls the platform, so a field whose control never
+// attaches Form.OnBlur reads as unblurred forever. Under any policy but
+// RevealOnBlur the bound builders do not attach it, so this stays false
+// throughout — that is the honest answer ("no blur was reported"), not a bug.
+func (f *Form) Blurred(name string) bool {
+	f.rec.mu.Lock()
+	defer f.rec.mu.Unlock()
+	return f.rec.blurred[name]
+}
+
+// MarkBlurred records that focus has left the field.
+//
+// Unlike SetValue this deliberately does *not* mark the field touched or drop
+// its external error: leaving a field changes nothing about its value, so a
+// server's verdict on that value still stands, and a field the user tabbed
+// through without typing in has not been edited. Conflating the two would let
+// a tab-through silently satisfy RevealOnTouch.
+//
+// Safe to call from any goroutine.
+func (f *Form) MarkBlurred(name string) {
+	f.rec.mu.Lock()
+	already := f.rec.blurred[name]
+	f.rec.blurred[name] = true
+	f.rec.mu.Unlock()
+
+	// Only the first blur of a field can change what is on screen; every one
+	// after it re-asserts a flag that is already set. Skipping the render
+	// there matters because blur is dispatched by the platform on every focus
+	// change, including the ones a user makes while moving back and forth
+	// through a form they have already been round once.
+	//
+	// Requested explicitly for the reason SetValue spells out: the record
+	// hangs off a pointer, so core.State.Set is never called and nothing else
+	// would ask for the repaint.
+	if !already {
+		f.ctx.RequestRender()
+	}
+}
+
+// OnBlur returns the field's blur handler, ready to hand to core.OnBlur:
+//
+//	core.Input(form.Value("email"), "you@example.com", form.OnChange("email"),
+//	    core.OnBlur(form.OnBlur("email")))
+//
+// The bound builders attach this themselves under RevealOnBlur; this is for a
+// control they do not cover.
+func (f *Form) OnBlur(name string) func() {
+	return func() { f.MarkBlurred(name) }
+}
+
 // Required reports whether the field rejects an empty value — which is what
 // components.FormField.Required wants, so the marker beside a label and the
 // rule that justifies it cannot disagree:
@@ -317,10 +401,16 @@ func (f *Form) Submitted() bool {
 // revealed applies the Spec's policy to one field name.
 //
 // The policies are cumulative rather than exclusive: a submit reveals
-// everything under all three, and RevealOnTouch also honours it, so a field
-// the user skipped entirely still reports its error once they try to submit.
-// A policy where "on touch" hid an untouched field's error after a submit
-// would let a form refuse to submit while showing no reason.
+// everything under all four, and the per-field policies honour it too, so a
+// field the user skipped entirely still reports its error once they try to
+// submit. A policy where "on touch" or "on blur" hid an untouched field's
+// error after a submit would let a form refuse to submit while showing no
+// reason.
+//
+// The switch has no default arm on purpose: RevealOnSubmit is the zero value
+// and its whole answer is the submitted check above, so falling through to
+// false is exactly right for it, and a policy added later without a case here
+// fails closed (nothing shown pre-submit) rather than leaking every error.
 func (f *Form) revealed(name string) bool {
 	if f.spec.Reveal == RevealAlways {
 		return true
@@ -330,7 +420,13 @@ func (f *Form) revealed(name string) bool {
 	if f.rec.submitted {
 		return true
 	}
-	return f.spec.Reveal == RevealOnTouch && f.rec.touched[name]
+	switch f.spec.Reveal {
+	case RevealOnBlur:
+		return f.rec.blurred[name]
+	case RevealOnTouch:
+		return f.rec.touched[name]
+	}
+	return false
 }
 
 // derived computes the rule and cross-field errors from the current values
@@ -553,6 +649,7 @@ func (f *Form) Reset() {
 	f.rec.values = make(Values, len(f.spec.Fields))
 	f.rec.seeded = make(map[string]bool, len(f.spec.Fields))
 	f.rec.touched = map[string]bool{}
+	f.rec.blurred = map[string]bool{}
 	f.rec.external = map[string]string{}
 	f.rec.submitted = false
 	for _, fld := range f.spec.Fields {

@@ -182,11 +182,29 @@ const GrMob = (() => {
         return {
             onClick: "click",
             onChange: "input",
-            onToggle: "change"
+            onToggle: "change",
+            // Listed explicitly even though the fallback below would derive
+            // the same names: these are the two DOM events that do not
+            // bubble, and naming them here is where a reader looks to find
+            // out that the listener has to sit on the element itself. It
+            // does — createElement and the update-props patch both attach on
+            // the node that owns the prop — so nothing more is needed, but a
+            // future move to delegated listeners would break exactly here.
+            onFocus: "focus",
+            onBlur: "blur"
         }[propKey] || propKey.toLowerCase().replace(/^on/, "");
     }
 
     function extractEventPayload(e, type) {
+        // Focus and blur are void events: Go registered them through the
+        // plain callback channel, so the envelope must carry no value at all.
+        // Checked before the type test below on purpose — a focus event on an
+        // <input> would otherwise be sent as {value: "..."}, and Go, seeing a
+        // string, would dispatch it to the *text* callback map, where a void
+        // ID does not exist. The handler would silently never run.
+        if (e.type === "focus" || e.type === "blur") {
+            return {};
+        }
         if (["input", "textarea", "numericinput", "inputpassword"].includes(type)) {
             return { value: e.target.value };
         }

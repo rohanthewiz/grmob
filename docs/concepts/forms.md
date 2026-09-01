@@ -34,7 +34,7 @@ components.Button{
 ```
 
 The complete worked example is `examples/signup` — rules, cross-field checks,
-a checkbox, a server error, and the reset.
+a checkbox, a server error, the reveal-on-blur policy, and the reset.
 
 ## Errors are derived, never stored
 
@@ -92,16 +92,43 @@ confirmed the instant it lands.
 | `Spec.Reveal` | A field's error is visible when |
 |---|---|
 | `RevealOnSubmit` *(zero value)* | the first `Submit` has been attempted |
+| `RevealOnBlur` | focus has left that field — **or** a `Submit` has been attempted |
 | `RevealOnTouch` | that field has been edited — **or** a `Submit` has been attempted |
 | `RevealAlways` | always, from the first render |
 
 The policies are cumulative, not exclusive: a submit reveals everything under
-all three. A policy where "on touch" kept hiding an untouched field's error
-after a submit would produce a form that refuses to submit and shows no reason.
+all four. A policy where "on touch" or "on blur" kept hiding an untouched
+field's error after a submit would produce a form that refuses to submit and
+shows no reason.
 
-`RevealOnTouch` suits a field whose format is unguessable and worth correcting
+`RevealOnBlur` is the closest thing to "reward early, punish late" that still
+says something before the submit. Leaving a field is the user's own claim to
+have finished with it, so a complaint then is an answer rather than an
+interruption — and the correction is still confirmed live, with no second
+blur needed. It is the right default for most multi-field forms; the
+`examples/signup` worked example uses it.
+
+`RevealOnTouch` fires on the *second keystroke*, not when the user is done, so
+reserve it for a field whose format is unguessable and worth correcting
 mid-flight — a card number, a one-time code. `RevealAlways` is mostly for tests
 and for a form being shown *because* it is already wrong.
+
+!!! note "`RevealOnBlur` needs the control to report the edge"
+    The bound builders (`form.Input`, `form.Password`, `form.TextArea`,
+    `form.InputWithSubmit`) attach [`core.OnBlur`](events.md) themselves under
+    this policy — and *only* under it, so no other form pays for an event
+    nothing reads. A control you build by hand out of `Value` and `OnChange`
+    must attach `core.OnBlur(form.OnBlur(name))` or it will stay silent until
+    the submit.
+
+    `form.Checkbox` deliberately takes no blur binding: a tick is a commit,
+    not a draft, so there is no "still working on it" state for leaving it to
+    end. A required-but-unticked box is revealed by the submit, like any field
+    the user never visited.
+
+`Form.Blurred(name)` reports what has been *observed*, not what happened —
+under a policy that wires no blur it stays false, which is the honest answer.
+`Form.MarkBlurred(name)` is the write side, safe to call from any goroutine.
 
 !!! danger "Do not disable the submit button on `!form.Valid()`"
     Under the default policy that is a dead end: nothing explains itself until
@@ -300,7 +327,8 @@ first appears on a later pass — a conditional section, a row added to a
 repeating group — still gets its `Initial` on the pass it appears.
 
 `form.Reset()` returns the form to its declaration: every field back to its
-`Initial`, nothing touched, nothing submitted, no external errors. Initials are
+`Initial`, nothing touched, nothing blurred, nothing submitted, no external
+errors. Initials are
 re-read from *this pass's* spec, which is also how a form is populated from
 data that arrives late — render the loaded values as `Initial` and reset once
 they land.
@@ -348,13 +376,21 @@ has to carry its own.
 |---|---|
 | `form.Value(name)` / `form.SetValue(name, v)` | one field's text |
 | `form.Checked(name)` | one field as a bool |
-| `form.OnChange(name)` / `form.OnToggle(name)` | the handlers, for unbound controls |
+| `form.OnChange(name)` / `form.OnToggle(name)` / `form.OnBlur(name)` | the handlers, for unbound controls |
 | `form.Values()` | an independent copy of every field |
 | `form.Error(name)` / `form.Errors()` | what the user should see |
 | `form.Valid()` | would this submit? — reveal-blind |
-| `form.Touched(name)` / `form.Submitted()` | the reveal inputs, readable |
+| `form.Touched(name)` / `form.Blurred(name)` / `form.Submitted()` | the reveal inputs, readable |
+| `form.MarkBlurred(name)` | record that focus left a field |
 | `form.Required(name)` | does this field reject an empty value? |
 
 `SetValue` marks the field touched and drops any external error against it —
 both follow from the one fact that the value changed, whoever changed it. It is
-safe to call from any goroutine, as are `SetErrors` and `Submit`.
+safe to call from any goroutine, as are `SetErrors`, `Submit` and
+`MarkBlurred`.
+
+`MarkBlurred` does **neither** of those things: leaving a field changes no
+text, so a server's verdict on that text still stands, and a field the user
+tabbed straight through has not been edited. `touched` and `blurred` answer
+different questions and are kept apart on purpose — merging them would make
+each reveal policy fire on the other's occasions.

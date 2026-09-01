@@ -53,6 +53,60 @@ func containerNode(ctx *Context, typ string, base Style, items []PropsAndChildre
 	return n
 }
 
+// leafNode builds a childless node — a text field, a checkbox — from the same
+// mixed argument list the containers take, minus the children.
+//
+// It exists because focus is a leaf event. core.OnFocus/OnBlur are ordinary
+// BehaviorProps, and BehaviorProps only ever reached nodes built by
+// containerNode; the input builders took `...StyleProp`, so there was no way
+// to spell "this field, on blur". Widening them to PropsAndChildren is
+// source-compatible for the same reason Scroll's widening was — a StyleProp
+// is a PropsAndChildren — and it means every future event prop lands on the
+// inputs for free instead of spawning another WithX builder.
+//
+// The one call shape the widening does break is forwarding: a []StyleProp
+// cannot be spread into a ...PropsAndChildren, so a wrapper that collected
+// style props into a slice has to widen its own slice too. forms' bound
+// builders are the only ones in the tree that did, and they now take
+// []core.PropsAndChildren.
+//
+// Ordering contract: props is the builder's own prop map (value, placeholder,
+// its onChange ID), already populated, so a builder's intrinsic callbacks
+// always hold the lower IDs of the pass and no argument a caller writes can
+// move them. The items then register in argument order, as they do in a
+// container.
+//
+// Nil contract: as containerNode's — a nil item is MaybeProp's false path and
+// leaves no trace.
+//
+// A View passed here is the one shape containerNode accepts and this cannot:
+// a leaf has nowhere to put a child. It is reported rather than silently
+// dropped, which is the whole point of ConcernUnknownItem.
+func leafNode(ctx *Context, typ string, base Style, props map[string]any, items []PropsAndChildren) *Node {
+	style := &base
+	// The style pointer goes into the node before the props are applied, so a
+	// StyleProp reached later in the loop still lands on the node that is
+	// returned — the same aliasing containerNode relies on.
+	n := &Node{Type: typ, Props: props, Style: style}
+
+	for _, item := range items {
+		switch v := item.(type) {
+		case StyleProp:
+			v.Apply(style)
+		case BehaviorProp:
+			v.Apply(ctx, n)
+		case nil:
+			// MaybeProp's false path; see containerNode's nil contract.
+		default:
+			if IsDebugMode() {
+				upsertConcern(ConcernUnknownItem,
+					fmt.Sprintf("%s: argument of type %T is not a StyleProp or BehaviorProp and was ignored (a leaf node takes no children)", typ, v))
+			}
+		}
+	}
+	return n
+}
+
 func Row(stylePropsAndChildren ...PropsAndChildren) View {
 	return ComponentFunc(func(ctx *Context) *Node {
 		return containerNode(ctx, "Row", ctx.Theme().Components.Row, stylePropsAndChildren)

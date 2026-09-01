@@ -65,6 +65,26 @@ func typeInto(t *testing.T, mgr *render.Manager, placeholder, value string) {
 	mgr.DispatchTextCallback(n.Props["onChange"].(string), value)
 }
 
+// blur dispatches the field's onBlur, exactly as the platform does when focus
+// leaves it: BasicTextField's interaction source on Android, @FocusState on
+// iOS. Under RevealOnBlur the prop is there because the bound builder put it
+// there, so a missing one is a real failure rather than a test that needs
+// updating — hence the Fatalf rather than a skip.
+func blur(t *testing.T, mgr *render.Manager, placeholder string) string {
+	t.Helper()
+	n := findNode(tree(t, mgr), func(n *node) bool {
+		return n.Props["placeholder"] == placeholder
+	})
+	if n == nil {
+		t.Fatalf("no field with placeholder %q in the current tree", placeholder)
+	}
+	id, ok := n.Props["onBlur"].(string)
+	if !ok {
+		t.Fatalf("field %q carries no onBlur under RevealOnBlur: %#v", placeholder, n.Props)
+	}
+	return mgr.DispatchCallback(id)
+}
+
 func tickTerms(t *testing.T, mgr *render.Manager, on bool) {
 	t.Helper()
 	n := findNode(tree(t, mgr), func(n *node) bool { return n.Type == "Checkbox" })
@@ -137,8 +157,9 @@ func secondPasswordField(t *testing.T, mgr *render.Manager) *node {
 	return found[1]
 }
 
-// The default reveal policy: an empty form is invalid from the first render
-// and says nothing about it. The hints are what the user sees instead.
+// An empty form is invalid from the first render and says nothing about it:
+// nothing has been left and nothing submitted, so RevealOnBlur has no reason
+// to speak yet. The hints are what the user sees instead.
 func TestNothingComplainsBeforeTheFirstSubmit(t *testing.T) {
 	mgr := newApp(t)
 	initial := mgr.RenderInitial()
@@ -306,6 +327,79 @@ func TestRequiredMarkersFollowTheRules(t *testing.T) {
 	// Email, password, confirm. Not terms (no label) and not the title.
 	if markers != 3 {
 		t.Errorf("found %d required markers, want 3 (email, password, confirm)", markers)
+	}
+	assertNoConcerns(t)
+}
+
+// The reveal policy end to end: the field says nothing while it is being
+// typed into, explains itself the moment focus leaves, and confirms the fix
+// live — all through the same callback IDs a native shell would dispatch.
+func TestLeavingAFieldRevealsOnlyThatFieldsError(t *testing.T) {
+	mgr := newApp(t)
+
+	// Two characters in, RevealOnTouch would already be calling this an
+	// invalid address. RevealOnBlur says nothing: the user is not done.
+	typeInto(t, mgr, "you@example.com", "yo")
+	mid := mgr.RenderInitial()
+	if strings.Contains(mid, "Not a valid email address") {
+		t.Errorf("the form complained mid-typing:\n%s", mid)
+	}
+	if !strings.Contains(mid, "We never share it") {
+		t.Error("the hint should still be showing while the field is being edited")
+	}
+
+	// Leaving it is the user's claim to have finished.
+	after := blur(t, mgr, "you@example.com")
+	if !strings.Contains(after, "Not a valid email address") {
+		t.Errorf("blur did not reveal the address error:\n%s", after)
+	}
+	// And only that field: the untouched password must stay quiet.
+	if strings.Contains(after, "Use at least 8 characters") {
+		t.Errorf("blur revealed a sibling field's error:\n%s", after)
+	}
+
+	// Live from then on, with no second blur.
+	typeInto(t, mgr, "you@example.com", "you@example.com")
+	fixed := mgr.RenderInitial()
+	if strings.Contains(fixed, "Not a valid email address") {
+		t.Errorf("the error should clear the instant it is fixed:\n%s", fixed)
+	}
+	if !strings.Contains(fixed, "We never share it") {
+		t.Error("the hint should return once the field is valid")
+	}
+	assertNoConcerns(t)
+}
+
+// Tabbing through a field without typing in it is still leaving it, so an
+// empty required field reports itself. This is the case RevealOnTouch cannot
+// see at all — nothing was edited.
+func TestTabbingThroughAnEmptyFieldRevealsRequired(t *testing.T) {
+	mgr := newApp(t)
+
+	after := blur(t, mgr, "you@example.com")
+	if !strings.Contains(after, "We need an address to reach you") {
+		t.Errorf("an empty field left behind said nothing:\n%s", after)
+	}
+	assertNoConcerns(t)
+}
+
+// Reset clears the blur marks with everything else, so the second visit opens
+// as quiet as the first.
+func TestResetClearsTheBlurMarks(t *testing.T) {
+	mgr := newApp(t)
+
+	blur(t, mgr, "you@example.com")
+	fill(t, mgr, "new@example.com")
+	tap(t, mgr, "Create account")
+
+	after := tap(t, mgr, "Create another")
+	for _, msg := range []string{
+		"We need an address to reach you",
+		"Please accept the terms to continue",
+	} {
+		if strings.Contains(after, msg) {
+			t.Errorf("the second visit inherited a complaint: %q\n%s", msg, after)
+		}
 	}
 	assertNoConcerns(t)
 }

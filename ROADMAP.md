@@ -71,9 +71,13 @@
 - [x] Navigation (`Navigator`, `Push`, `Pop`, `Replace`, `PopToRoot`, `Reset`,
       per-frame state) and `core.Modal` / toasts
 - [x] Forms with validation (`forms`) — a rule vocabulary, cross-field checks,
-      a reveal policy so a form explains itself only once the user claims to
-      be done, and server-side errors; `FormField`'s `Error` slot finally has
-      a source (`examples/signup`)
+      four reveal policies so a form explains itself only once the user claims
+      to be done, and server-side errors; `FormField`'s `Error` slot finally
+      has a source (`examples/signup`)
+- [x] Focus and blur events (`core.OnFocus`, `core.OnBlur`) — the input
+      builders now take behavior props like the containers do, and
+      `forms.RevealOnBlur` reveals a field's error when the user leaves it
+      rather than on their second keystroke (`examples/signup`)
 - [x] Keyboard-aware regions (`core.KeyboardAware`,
       `components.Screen.KeyboardAware`) — a scrolling region shortens its
       viewport, a fixed one lifts whole, so a docked composer stays reachable
@@ -119,8 +123,9 @@
 
 ### 🧬 Extensions
 - [ ] Router-style navigation for web
-- [ ] Keyboard navigation (the accessibility *labels* are done; focus
-      traversal is not)
+- [ ] Keyboard navigation (the accessibility *labels* are done, and focus is
+      now *observable* via `OnFocus`/`OnBlur`; programmatic focus — moving it,
+      or dismissing the keyboard on a tap outside — is not)
 
 ---
 

@@ -637,6 +637,8 @@ private struct GrMobTextField: View {
         let upstream = node.stringProp("value")
         let onChange = node.stringProp("onChange")
         let onSubmit = node.stringProp("onSubmit")
+        let onFocus = node.stringProp("onFocus")
+        let onBlur = node.stringProp("onBlur")
         let prompt = Text(node.stringProp("placeholder"))
 
         // While focused the local buffer is authoritative; otherwise render
@@ -660,10 +662,26 @@ private struct GrMobTextField: View {
             // so the keyboard reflects that the field acts on return.
             .submitLabel(onSubmit.isEmpty ? .return : .done)
             .onSubmit { if !onSubmit.isEmpty { runtime?.click(onSubmit) } }
+            // The focus edges. This is also where the local buffer is seeded,
+            // and the seeding goes first: a dispatch into Go can land a render
+            // before this closure returns, and the buffer must already agree
+            // with upstream when it does.
+            //
+            // Both edges ride the void channel, like onSubmit above.
+            //
+            // No blur is dispatched at mount: onChange(of:) fires on a
+            // *change*, not on the initial value, so the field's starting
+            // unfocused state is never reported as having lost focus. The
+            // Compose side has to arrange that explicitly — see the seenFocus
+            // flag in GrMobTextField — because collectIsFocusedAsState emits
+            // its initial false.
             .onChange(of: focused) { _, isFocused in
                 if isFocused {
                     text = node.stringProp("value")
                     pendingEchoes.removeAll()
+                    if !onFocus.isEmpty { runtime?.click(onFocus) }
+                } else if !onBlur.isEmpty {
+                    runtime?.click(onBlur)
                 }
             }
             .onChange(of: upstream) { _, newValue in

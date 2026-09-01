@@ -60,7 +60,7 @@ expected traffic, not an error.
 
 ## Attaching handlers
 
-Leaf widgets take handlers as arguments:
+Leaf widgets take their primary handler as an argument:
 
 ```go
 core.Button("Save", save)
@@ -68,7 +68,8 @@ core.Input(v, "placeholder", onChange)
 core.Checkbox(done, onToggle)
 ```
 
-Containers (and any node) take **behavior props**:
+Containers **and the input family** take **behavior props**, in any order,
+mixed with style props:
 
 ```go
 core.Row(
@@ -76,11 +77,54 @@ core.Row(
     core.OnLongPress(func() { preview(item) }),
     ...,
 )
+core.Input(v, "placeholder", onChange,
+    core.Padding(8),                          // style prop
+    core.OnBlur(func() { check(v) }),         // behavior prop
+)
 core.On("TouchStart", fn)                     // generic form
 ```
 
 A node may carry both `OnClick` and `OnLongPress`: renderers wire them as one
 gesture recognizer, so a long press never also fires the click.
+
+!!! note "The one call shape the input builders' widening broke"
+    `core.Input` and friends used to take `...core.StyleProp`. Passing style
+    props still compiles unchanged, but a wrapper that *collected* them into a
+    `[]core.StyleProp` and spread it does not — Go will not spread a
+    `[]StyleProp` into a `...PropsAndChildren`. Widen the wrapper's own slice
+    to `[]core.PropsAndChildren`.
+
+## Focus and blur
+
+`core.OnFocus` and `core.OnBlur` report the input focus arriving at and
+leaving a node. Both are plain void handlers — the edge itself is the whole
+payload:
+
+```go
+core.Input(v, "you@example.com", onChange,
+    core.OnFocus(func() { hintShown.Set(true) }),
+    core.OnBlur(func() { validate(v) }),
+)
+```
+
+Two props rather than one `func(bool)` because the two edges are almost never
+handled together, and a node should carry only the one it cares about.
+
+Three things to know:
+
+- **They are wired on the text inputs.** Those are the only nodes a phone
+  gives focus to. The props are attachable anywhere (`BehaviorProp` is
+  uniform) and the HTML export carries them for every node, but a `Row` with
+  `OnFocus` will never hear from Android or iOS.
+- **Neither edge fires at mount.** A field appearing on screen has not gained
+  or lost anything.
+- **The two edges of one focus move are not ordered.** Android and iOS
+  disagree on whether the blur on the field being left arrives before the
+  focus on the field being entered, so a handler must read the field it
+  belongs to rather than asking what is focused *now*.
+
+For forms, [`RevealOnBlur`](forms.md) consumes this for you — the bound
+builders attach `OnBlur` themselves under that policy.
 
 ## Dispatch paths by host
 

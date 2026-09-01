@@ -3,7 +3,7 @@
 //
 //	rules            Required / Email / MinLen / Accepted, one message each
 //	cross-field      the confirmation must match the password
-//	reveal policy    nothing complains until the first submit, then live
+//	reveal policy    each field complains when the user leaves it, then live
 //	server errors    a uniqueness check only the back end can make
 //	the widget       components.FormField, whose Error slot has been waiting
 //	                 for something to fill it since it was written
@@ -37,10 +37,17 @@ func App(ctx *core.Context) core.View {
 	created := core.NewState(ctx, "")
 
 	form := forms.UseForm(ctx, forms.Spec{
-		// Reveal is left at its zero value, RevealOnSubmit: the form says
-		// nothing until the user claims to be done, then explains itself live
-		// as each field is fixed. Validating as they type would mean telling
-		// someone their address is invalid two characters in.
+		// RevealOnBlur: each field explains itself the moment the user is
+		// done with it, and every field's error appears once a submit is
+		// attempted. Leaving a field is the user's own claim to have
+		// finished it, so a complaint then is an answer rather than an
+		// interruption — where RevealOnTouch would say "not a valid address"
+		// two characters in, and the default RevealOnSubmit would make the
+		// user fill in four fields before hearing about the first.
+		//
+		// It costs nothing at the call sites: the bound builders below attach
+		// core.OnBlur themselves under this policy.
+		Reveal: forms.RevealOnBlur,
 		Fields: []forms.Field{
 			{Name: "email", Rules: []forms.Rule{
 				// Required first, always: it is the only rule with an opinion
@@ -74,8 +81,8 @@ func App(ctx *core.Context) core.View {
 	if addr := created.Get(); addr != "" {
 		return confirmation(addr, func() {
 			// Reset puts the form back to its declaration — values, touched,
-			// submitted, external errors — so the second visit opens quiet
-			// rather than still showing the first one's complaints.
+			// blurred, submitted, external errors — so the second visit opens
+			// quiet rather than still showing the first one's complaints.
 			form.Reset()
 			created.Set("")
 		})
