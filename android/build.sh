@@ -30,6 +30,12 @@ mkdir -p android/app/libs
 # pass another package path to ship a different app in the same shell.
 APP_PKG="${1:-./examples/mobileapp}"
 
+# LDFLAGS is handed to the Go linker unchanged, which is how an app bakes in
+# build-time configuration (a server URL, a build tag) via -X without needing
+# a config file in the APK. Empty means no -ldflags argument at all: gomobile
+# rejects an empty string there.
+#   LDFLAGS="-X example.com/app/internal/api.DefaultBaseURL=http://localhost:8000" android/build.sh ./app
 gomobile bind -target=android -androidapi 24 \
   -o android/app/libs/grmob.aar \
+  ${LDFLAGS:+-ldflags "$LDFLAGS"} \
   ./mobile "$APP_PKG"
