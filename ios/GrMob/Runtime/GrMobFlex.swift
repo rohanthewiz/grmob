@@ -35,6 +35,17 @@ struct GrMobFlexSolver {
         var gap: CGFloat
     }
 
+    /// A proposal's extent as an offer the layout can lay out against, or
+    /// nil when there is none. SwiftUI proposes nil to ask for an ideal size
+    /// and infinity to probe for a maximum; neither is a width to wrap text
+    /// at or to fill, so both come back as "no offer". The one rule, shared by
+    /// the flex and wrap layouts so they cannot drift on what counts as a
+    /// definite offer.
+    static func definite(_ offered: CGFloat?) -> CGFloat? {
+        guard let offered, offered.isFinite else { return nil }
+        return offered
+    }
+
     /// The size the run of children wants with no growing or shrinking.
     func natural(bases: [CGFloat]) -> CGFloat {
         bases.reduce(0, +) + spacing * CGFloat(max(bases.count - 1, 0))

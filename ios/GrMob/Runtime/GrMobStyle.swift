@@ -270,11 +270,16 @@ extension View {
     ///
     /// `onTap`/`onLongPress` are the node's gesture callback IDs (empty when
     /// absent); see GrMobGestures for where they sit in the layer order.
+    ///
+    /// `axis` is set by the flex containers (Row: horizontal, Column and
+    /// List: vertical) and nil for everything else; it only decides how the
+    /// node's alignment styles map onto its fill frames (grMobFrameAlignment).
     func grMobBox(
         _ s: GrMobStyle?, grow: GrMobGrow = .none,
-        onTap: String = "", onLongPress: String = ""
+        onTap: String = "", onLongPress: String = "", axis: Axis? = nil
     ) -> some View {
         let shape = RoundedCornerShapeIfAny(radius: s?.borderRadius ?? 0)
+        let alignment = grMobFrameAlignment(s, axis: axis)
         return self
             .padding((s?.padding ?? .zero).insets)
             .background(s?.background ?? .clear)
@@ -283,10 +288,10 @@ extension View {
             .grMobClip(shape)
             .grMobBorder(shape, color: s?.borderColor, width: s?.borderWidth ?? 0)
             .grMobShadow(s?.shadow ?? 0)
-            .grMobDimension(s?.width ?? "", axis: .horizontal)
-            .grMobDimension(s?.height ?? "", axis: .vertical)
+            .grMobDimension(s?.width ?? "", axis: .horizontal, alignment: alignment)
+            .grMobDimension(s?.height ?? "", axis: .vertical, alignment: alignment)
             .padding((s?.margin ?? .zero).insets)
-            .grMobGrow(grow)
+            .grMobGrow(grow, alignment: alignment)
             // "hidden" keeps the node's space but not its pixels ("none" is
             // handled earlier by not rendering the node at all — see RenderNode).
             .opacity(s?.display == "hidden" ? 0 : 1)
@@ -386,13 +391,15 @@ extension View {
     /// (fraction of the nearest container — an approximation of
     /// fraction-of-parent, which SwiftUI cannot express without a
     /// GeometryReader), and ""/"auto" (intrinsic size, no frame).
-    @ViewBuilder fileprivate func grMobDimension(_ value: String, axis: Axis) -> some View {
+    @ViewBuilder fileprivate func grMobDimension(
+        _ value: String, axis: Axis, alignment: Alignment = .topLeading
+    ) -> some View {
         if value.isEmpty || value == "auto" {
             self
         } else if value == "100%" {
             switch axis {
-            case .horizontal: frame(maxWidth: .infinity)
-            case .vertical: frame(maxHeight: .infinity)
+            case .horizontal: frame(maxWidth: .infinity, alignment: alignment)
+            case .vertical: frame(maxHeight: .infinity, alignment: alignment)
             }
         } else if value.hasSuffix("%"), let pct = Double(value.dropLast()) {
             containerRelativeFrame(axis == .horizontal ? .horizontal : .vertical) { length, _ in
@@ -411,14 +418,81 @@ extension View {
     /// Kept strictly conditional: the no-fill case must add no frame at all,
     /// or every leaf in the tree would gain a layout container that changes
     /// how it reports its own ideal size.
-    @ViewBuilder func grMobGrow(_ grow: GrMobGrow) -> some View {
+    ///
+    /// `alignment` is where the content sits when the frame is bigger than
+    /// it, which for a fill frame is the usual case; see grMobFrameAlignment
+    /// for why that is not left to SwiftUI's default.
+    @ViewBuilder func grMobGrow(_ grow: GrMobGrow, alignment: Alignment = .topLeading) -> some View {
         if grow == .none {
             self
         } else {
             frame(maxWidth: grow.fillWidth ? .infinity : nil,
-                  maxHeight: grow.fillHeight ? .infinity : nil)
+                  maxHeight: grow.fillHeight ? .infinity : nil,
+                  alignment: alignment)
         }
     }
+}
+
+/// Where a node's content sits inside a frame larger than the content — the
+/// flexible frames grMobGrow and grMobDimension("100%") add.
+///
+/// SwiftUI's `frame` centres by default, which is the wrong default for a
+/// box model: a FlexGrow(1) title box in a header row put its text in the
+/// middle of the row, and the FlexGrow(1) content box of a screen floated
+/// short content to the vertical middle of the window. Compose's equivalents
+/// (fillMaxWidth on a Box, weight on a Column child) keep content at the
+/// top-start, so top-leading is the default here.
+///
+/// The exceptions follow the node's own alignment styles, because the flex
+/// layouts hug their children (GrMobFlexSolver.containerMain and the cross
+/// size in GrMobFlexLayout): a `Column(AlignItems(center), Width("100%"))`
+/// is a content-wide layout inside a screen-wide frame, and its children are
+/// centred within the layout, so the frame has to centre the layout or the
+/// AlignItems is invisible. Compose has the same two steps (fillMaxWidth on
+/// the Column, horizontalAlignment for the children) and they agree by
+/// construction; here the frame is told what the layout was told.
+///
+///   - Column/List (vertical): horizontal from AlignItems, with Align as the
+///     fallback exactly as the layout reads it (see crossAxisValue in
+///     Renderer.swift); vertical is top.
+///   - Row (horizontal): vertical from AlignItems, the Row's cross axis;
+///     horizontal from Align, which is the leading edge unless the app set
+///     one — a hugging Row is packed to the start, as flex-start is.
+///   - Everything else: horizontal from Align, the DSL's text/content
+///     alignment, which keeps `Text(.., Width("100%"), Align(AlignCenter))`
+///     centred as it is on every other target; vertical is top.
+///
+/// "stretch" is not a placement and maps to leading/top: a stretched node
+/// already fills the extent there is to place it in.
+func grMobFrameAlignment(_ s: GrMobStyle?, axis: Axis? = nil) -> Alignment {
+    let align = s?.align ?? ""
+    let items = s?.alignItems ?? ""
+    let horizontal: String
+    let vertical: String
+    switch axis {
+    case .vertical:
+        horizontal = items.isEmpty ? align : items
+        vertical = ""
+    case .horizontal:
+        horizontal = align
+        vertical = items
+    case nil:
+        horizontal = align
+        vertical = ""
+    }
+    let h: HorizontalAlignment
+    switch horizontal {
+    case "center": h = .center
+    case "end", "flex-end": h = .trailing
+    default: h = .leading
+    }
+    let v: VerticalAlignment
+    switch vertical {
+    case "center": v = .center
+    case "end", "flex-end": v = .bottom
+    default: v = .top
+    }
+    return Alignment(horizontal: h, vertical: v)
 }
 
 private func RoundedCornerShapeIfAny(radius: CGFloat) -> RoundedRectangle? {

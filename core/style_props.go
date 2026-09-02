@@ -192,6 +192,21 @@ func AlignItemsProp(a AlignItems) StyleProp {
 	})
 }
 
+// The three named flex-container types are StyleProps in their own right, so
+// the spelling that mirrors core.Align(...) and core.Justify(...) works too:
+//
+//	core.Column(core.AlignItems(core.AlignItemsCenter), ...)
+//
+// Without these methods that expression is a type conversion producing a bare
+// string value, which containerNode's PropsAndChildren dispatch cannot
+// recognize and drops — silently outside debug mode. It was the most natural
+// thing to write and it compiled, so an app shipped with every one of its
+// AlignItems lost and its columns left-packed on both natives. Making the
+// value itself apply removes the trap rather than documenting it.
+func (a AlignItems) Apply(s *Style)     { s.AlignItems = a }
+func (j JustifyContent) Apply(s *Style) { s.JustifyContent = j }
+func (d FlexDirection) Apply(s *Style)  { s.FlexDirection = d }
+
 func Bottom(v string) StyleProp {
 	return styleFunc(func(s *Style) {
 		s.Bottom = v

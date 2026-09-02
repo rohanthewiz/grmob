@@ -210,14 +210,16 @@ private struct GrMobRow: View {
             }
             .grMobBox(s, grow: grow,
                         onTap: node.stringProp("onClick"),
-                        onLongPress: node.stringProp("onLongPress"))
+                        onLongPress: node.stringProp("onLongPress"),
+                        axis: .horizontal)
         } else {
             GrMobFlexStack(axis: .horizontal, style: s) {
                 FlexChildren(node: node, axis: .horizontal)
             }
             .grMobBox(s, grow: grow,
                         onTap: node.stringProp("onClick"),
-                        onLongPress: node.stringProp("onLongPress"))
+                        onLongPress: node.stringProp("onLongPress"),
+                        axis: .horizontal)
         }
     }
 }
@@ -250,7 +252,7 @@ private struct GrMobWrapLayout: Layout {
         let widths = sizes.map(\.width)
         // An infinite proposal is SwiftUI probing for a maximum, not an offer
         // to wrap against; treat it like no offer at all.
-        let available = proposal.width.flatMap { $0.isFinite ? $0 : nil }
+        let available = GrMobFlexSolver.definite(proposal.width)
         let lines = solver.lines(widths: widths, available: available)
         let natural = solver.natural(widths: widths)
         let width: CGFloat
@@ -299,7 +301,8 @@ private struct GrMobColumn: View {
         }
         .grMobBox(s, grow: grow,
                     onTap: node.stringProp("onClick"),
-                    onLongPress: node.stringProp("onLongPress"))
+                    onLongPress: node.stringProp("onLongPress"),
+                    axis: .vertical)
     }
 }
 
@@ -418,9 +421,12 @@ private struct GrMobFlexLayout: Layout {
 
     func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
         guard !subviews.isEmpty else { return .zero }
-        let bases = baseMains(subviews)
+        // The cross extent on offer is handed to every child as a bound (see
+        // baseMains); nil when the parent is asking for an ideal size.
+        let crossBound = GrMobFlexSolver.definite(crossOf(proposal))
+        let bases = baseMains(subviews, crossBound: crossBound)
         let weights = subviews.map { $0[GrMobFlexWeight.self] }
-        let offered = axis == .horizontal ? proposal.width : proposal.height
+        let offered = mainOf(proposal)
         let main = solver.containerMain(offered: offered, bases: bases, weights: weights)
         let resolved = solver.resolve(main: main, bases: bases, weights: weights)
 
@@ -428,7 +434,7 @@ private struct GrMobFlexLayout: Layout {
         // that had to shrink wraps to more lines, and asking it before the
         // main axis was settled would under-report its height.
         let cross = zip(subviews, resolved.mains)
-            .map { crossOf($0.sizeThatFits(mainProposal($1))) }
+            .map { crossOf($0.sizeThatFits(proposed(main: $1, cross: crossBound))) }
             .max() ?? 0
         return size(main: main, cross: cross)
     }
@@ -438,20 +444,21 @@ private struct GrMobFlexLayout: Layout {
         // Resolved against `bounds`, not `proposal`: the parent is free to
         // hand over a different size than the one sizeThatFits asked for, and
         // bounds is the size that is actually being drawn into.
-        let bases = baseMains(subviews)
-        let weights = subviews.map { $0[GrMobFlexWeight.self] }
         let containerCross = crossOf(bounds.size)
+        let bases = baseMains(subviews, crossBound: containerCross)
+        let weights = subviews.map { $0[GrMobFlexWeight.self] }
         let resolved = solver.resolve(main: mainOf(bounds.size), bases: bases, weights: weights)
         let stretch = crossAlign == "stretch"
 
         var offset = resolved.leading
         for (i, subview) in subviews.enumerated() {
             let childMain = resolved.mains[i]
-            // A stretched child is proposed the full cross extent; otherwise
-            // it is proposed nothing on that axis and keeps its ideal size.
-            let childProposal = stretch
-                ? proposedSize(main: childMain, cross: containerCross)
-                : mainProposal(childMain)
+            // Every child is proposed the container's cross extent, as a
+            // bound (see baseMains). Stretch and non-stretch differ in what
+            // the child does with it, not in what it is told: a stretched
+            // child carries a flexible frame from FlexChildren and accepts
+            // the whole extent, an unstretched one takes what it needs.
+            let childProposal = proposed(main: childMain, cross: containerCross)
             let childCross = stretch
                 ? containerCross
                 : crossOf(subview.sizeThatFits(childProposal))
@@ -470,10 +477,28 @@ private struct GrMobFlexLayout: Layout {
     }
 
     /// Each child's content size along the main axis (CSS `flex-basis: auto`).
-    /// Measured with a fully unspecified proposal so the child reports its
-    /// ideal size rather than accepting whatever the container was offered.
-    private func baseMains(_ subviews: Subviews) -> [CGFloat] {
-        subviews.map { mainOf($0.sizeThatFits(.unspecified)) }
+    ///
+    /// Unspecified on the main axis so the child reports its ideal size
+    /// rather than accepting whatever the container was offered — but bounded
+    /// on the cross axis by what the container itself was offered. That bound
+    /// is the difference between a Column and a stack of single-line labels:
+    /// a Text proposed no width reports the width of its longest line and
+    /// never wraps, so a Column of paragraphs measured with a fully
+    /// unspecified proposal came out wider than the screen, and the overflow
+    /// was centred by the root frame — every screen edge sat a few points
+    /// off the window. This is also what Compose does: a Column measures each
+    /// child with its own incoming maxWidth as the child's maxWidth, and the
+    /// child is free to be narrower. A Row with FlexGrow children fills that
+    /// bound (GrMobFlexSolver.containerMain), a paragraph wraps to it, and a
+    /// short label ignores it.
+    ///
+    /// ```
+    ///   Column proposed (W, H)
+    ///     child base:   sizeThatFits(width: W,  height: nil)   <- wraps at W
+    ///     child final:  place(width: W, height: resolved)      <- same bound
+    /// ```
+    private func baseMains(_ subviews: Subviews, crossBound: CGFloat?) -> [CGFloat] {
+        subviews.map { mainOf($0.sizeThatFits(proposed(main: nil, cross: crossBound))) }
     }
 
     // -- axis-agnostic helpers ---------------------------------------------
@@ -482,18 +507,16 @@ private struct GrMobFlexLayout: Layout {
     private func crossOf(_ s: CGSize) -> CGFloat { axis == .horizontal ? s.height : s.width }
     private func mainOf(_ p: CGPoint) -> CGFloat { axis == .horizontal ? p.x : p.y }
     private func crossOf(_ p: CGPoint) -> CGFloat { axis == .horizontal ? p.y : p.x }
+    private func mainOf(_ p: ProposedViewSize) -> CGFloat? { axis == .horizontal ? p.width : p.height }
+    private func crossOf(_ p: ProposedViewSize) -> CGFloat? { axis == .horizontal ? p.height : p.width }
 
     private func size(main: CGFloat, cross: CGFloat) -> CGSize {
         axis == .horizontal ? CGSize(width: main, height: cross)
                             : CGSize(width: cross, height: main)
     }
 
-    private func mainProposal(_ main: CGFloat) -> ProposedViewSize {
-        axis == .horizontal ? ProposedViewSize(width: main, height: nil)
-                            : ProposedViewSize(width: nil, height: main)
-    }
-
-    private func proposedSize(main: CGFloat, cross: CGFloat) -> ProposedViewSize {
+    /// A proposal built per axis; nil on either axis means "unspecified".
+    private func proposed(main: CGFloat?, cross: CGFloat?) -> ProposedViewSize {
         axis == .horizontal ? ProposedViewSize(width: main, height: cross)
                             : ProposedViewSize(width: cross, height: main)
     }
@@ -551,7 +574,8 @@ private struct GrMobList: View {
         .grMobKeyboardAware(node.boolProp("keyboardAware"))
         .grMobBox(s, grow: grow,
                     onTap: node.stringProp("onClick"),
-                    onLongPress: node.stringProp("onLongPress"))
+                    onLongPress: node.stringProp("onLongPress"),
+                    axis: .vertical)
     }
 }
 
