@@ -22,7 +22,12 @@ class MainActivity : ComponentActivity() {
         // channel; after that the composition tracks the TreeStore on its own.
         // Recreation (rotation, process restore) simply remounts from Go's
         // current state — the Go side is a process-wide singleton.
-        val runtime = GrMobRuntime(GomobileBridge(filesDir.absolutePath))
+        val bridge = GomobileBridge(filesDir.absolutePath)
+        // System events (toasts, external URLs) are wired before start() so
+        // an event emitted during the very first render pass has a sink;
+        // without a listener Go drops them silently. See SystemEvents.kt.
+        SystemEvents.attach(this, bridge)
+        val runtime = GrMobRuntime(bridge)
         runtime.start()
         setContent { GrMobRoot(runtime) }
     }

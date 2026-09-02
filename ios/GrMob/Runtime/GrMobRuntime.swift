@@ -21,6 +21,16 @@ protocol GrMobBridge: Sendable {
 
     /// Registers the Go→native push target; called from a Go goroutine.
     func setListener(_ listener: @escaping (String) -> Void)
+
+    /// Registers the sink for app→host system events: the transient chrome
+    /// and OS hand-offs that are deliberately not part of the view tree —
+    /// `core.ShowToast` and `core.OpenURL` today. See mobile/sysevents.go;
+    /// `name` is the event kind and `payload` its data as a JSON object.
+    ///
+    /// Called from whichever Go goroutine emitted the event, so an
+    /// implementation must hop to the main actor before touching UIKit — the
+    /// same contract `setListener` carries.
+    func setSystemEventListener(_ listener: @escaping (String, String) -> Void)
 }
 
 /// Wires the bridge to a TreeStore and owns the threading model.

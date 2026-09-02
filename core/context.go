@@ -351,8 +351,30 @@ func (ctx *Context) Reset() {
 	}
 }
 
+// Scope returns a stable child context under key, creating it on first use.
+// The child owns its own hook slots, which is what lets a subtree be rendered
+// conditionally — a tab that is only drawn when selected, a navigation frame —
+// without shifting the positional slots of everything around it.
+//
+// # Theme and config are re-inherited on every call
+//
+// A child copies its parent's theme and config when it is built, and a scope
+// is then cached for the life of the app. So a theme that changes *after* the
+// scope's first render — the common shape for an app whose palette arrives
+// from the network — would otherwise never reach anything inside it, while
+// everything outside repainted. Nothing in the tree could explain the
+// difference, because the scope is invisible at the call site.
+//
+// Refreshing here is cheap (two pointer assignments) and safe: Scope is called
+// during a render pass, which render.Manager serializes, and the theme is only
+// ever read during a pass.
+//
+// It is also the correct semantics. theme and config are *inherited* state, not
+// state the scope owns; hook slots are what the scope owns, and those are
+// deliberately left alone.
 func (ctx *Context) Scope(key string) *Context {
 	if child, ok := ctx.scopes[key]; ok {
+		child.theme, child.config = ctx.theme, ctx.config
 		return child
 	}
 	child := ctx.NewChildContext()
@@ -372,6 +394,10 @@ func (ctx *Context) Scope(key string) *Context {
 // everything that lives as long as the app does.
 func (ctx *Context) disposableScope(key string) *Context {
 	if child, ok := ctx.scopes[key]; ok {
+		// Re-inherit theme and config, for the reason Scope documents: a
+		// navigation frame is created once and rendered for as long as it is
+		// on the stack, so a later theme change has to reach it.
+		child.theme, child.config = ctx.theme, ctx.config
 		return child
 	}
 	child := ctx.NewChildContext()

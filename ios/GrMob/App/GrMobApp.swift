@@ -12,7 +12,12 @@ struct GrMobApp: App {
         // MainActor-isolated), satisfying GrMobRuntime.start's contract.
         // start() before the first body evaluation so the initial tree is
         // there on the very first frame — no empty-flash-then-mount.
-        let runtime = GrMobRuntime(bridge: GomobileBridge())
+        let bridge = GomobileBridge()
+        // System events (toasts, external URLs) are wired before start() so
+        // an event emitted during the very first render pass has a sink;
+        // without a listener Go drops them silently. See SystemEvents.swift.
+        SystemEvents.attach(bridge)
+        let runtime = GrMobRuntime(bridge: bridge)
         runtime.start()
         self.runtime = runtime
     }

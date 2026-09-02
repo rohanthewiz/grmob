@@ -105,6 +105,12 @@
       (`examples/signup`, `examples/chat`)
 - [x] Camera: `CameraView`, capture event
 - [x] Persistence via `bytdb` (see `examples/todoapp`)
+- [x] System events on every host — `mobile.SetSystemEventListener` plus the
+      Kotlin and Swift sinks behind it. Toasts previously reached only the
+      browser: the natives had no sink at all, so `core.ShowToast` on a device
+      emitted into a nil handler and vanished
+- [x] `core.OpenURL` — hand a URL to the platform's own browser, dialer or mail
+      composer (Intent ACTION_VIEW / UIApplication.open / window.open)
 
 ---
 
@@ -118,7 +124,10 @@
 
 ### Native Bridge (Planned for Android/iOS)
 
-- [ ] Keystore (Secure): `Keystore.Save()`, `Keystore.Get()`
+- [ ] Keystore (Secure): `Keystore.Save()`, `Keystore.Get()` — the church app
+      keeps its bearer token in bytdb for want of this; see its README
+- [ ] Audio playback with a media session (background + lock-screen controls)
+- [ ] Clipboard: read/write
 - [ ] Device Storage (Plain): `DeviceStorage.Set()`, `DeviceStorage.Get()`
 - [ ] Bluetooth: `Scan`, `Connect`, `Send`
 - [ ] Location / GPS

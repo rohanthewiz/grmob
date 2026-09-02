@@ -22,6 +22,8 @@ final class GomobileBridge: GrMobBridge, @unchecked Sendable {
     // strong reference too so the Swift object's lifetime never depends on
     // the bridge's internal ref-counting.
     private let retained = Locked<Listener?>(nil)
+    // Same rationale as `retained`, for the system-event sink.
+    private let retainedSystem = Locked<SystemListener?>(nil)
 
     init() {
         // Register the writable directory before anything renders — Go-side
@@ -60,6 +62,17 @@ final class GomobileBridge: GrMobBridge, @unchecked Sendable {
         MobileSetListener(l)
     }
 
+    // System events (toasts, external URLs) ride their own single-method
+    // interface for the same reason patches do: gobind cannot bind a Go func
+    // parameter, so a callback crosses the FFI as a protocol or not at all.
+    // See mobile/sysevents.go for the payload contract and SystemEvents.swift
+    // for what this shell does with each event.
+    func setSystemEventListener(_ listener: @escaping (String, String) -> Void) {
+        let l = SystemListener(listener)
+        retainedSystem.set(l)
+        MobileSetSystemEventListener(l)
+    }
+
     private final class Listener: NSObject, MobilePatchListenerProtocol {
         private let deliver: (String) -> Void
 
@@ -70,6 +83,23 @@ final class GomobileBridge: GrMobBridge, @unchecked Sendable {
         // Called from a Go goroutine; GrMobRuntime hops to the main thread.
         func applyPatches(_ patches: String?) {
             deliver(patches ?? "")
+        }
+    }
+}
+
+extension GomobileBridge {
+    /// Bridges the bound Go interface onto a plain Swift closure. Mirrors
+    /// `Listener` above; gobind hands both parameters across as optionals.
+    fileprivate final class SystemListener: NSObject, MobileSystemEventListenerProtocol {
+        private let deliver: (String, String) -> Void
+
+        init(_ deliver: @escaping (String, String) -> Void) {
+            self.deliver = deliver
+        }
+
+        // Called from a Go goroutine; SystemEvents hops to the main actor.
+        func onSystemEvent(_ name: String?, payload: String?) {
+            deliver(name ?? "", payload ?? "")
         }
     }
 }

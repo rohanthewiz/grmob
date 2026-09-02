@@ -133,3 +133,53 @@ func TestSuccessIsNotAnAliasForSecondary(t *testing.T) {
 			"slot, Success carries meaning")
 	}
 }
+
+// A theme installed after a scope's first render must reach inside it.
+//
+// This is the shape an app whose palette arrives from the network has: the
+// first frame renders with the default theme, the config lands, and every
+// later frame is themed. Before Scope re-inherited theme and config, the
+// cached child kept the theme it was built with, so everything inside a
+// navigation frame (which is a scope by construction) stayed unthemed forever
+// while everything outside it repainted.
+func TestScopeReInheritsALaterTheme(t *testing.T) {
+	root := NewContext()
+	branded := &Theme{Colors: ColorPalette{Primary: "#1B5E20"}}
+
+	// First render: no theme installed, so the scope is built with none and
+	// falls back to the default.
+	first := root.Scope("frame")
+	if got := first.Theme().Colors.Primary; got != DefaultTheme.Colors.Primary {
+		t.Fatalf("unthemed scope primary = %q, want the default", got)
+	}
+
+	// Second render, now under a themed parent — as core.WithTheme produces.
+	themed := root.WithTheme(branded)
+	second := themed.Scope("frame")
+
+	if second != first {
+		t.Fatal("Scope returned a different context, losing the subtree's hook slots")
+	}
+	if got := second.Theme().Colors.Primary; got != "#1B5E20" {
+		t.Errorf("scope primary = %q, want the theme installed since it was created", got)
+	}
+}
+
+// The hook slots a scope owns are its own and must survive the re-inheritance
+// above — that is the whole reason a scope exists.
+func TestScopeKeepsItsHookSlotsAcrossAThemeChange(t *testing.T) {
+	root := NewContext()
+
+	scope := root.Scope("frame")
+	counter := NewState(scope, 7)
+	counter.Set(42)
+
+	themed := root.WithTheme(&Theme{Colors: ColorPalette{Primary: "#1B5E20"}})
+	again := themed.Scope("frame")
+	again.Reset() // what a render pass does before re-reading the slots
+
+	restored := NewState(again, 7)
+	if got := restored.Get(); got != 42 {
+		t.Errorf("scope state = %d after a theme change, want the 42 it held", got)
+	}
+}

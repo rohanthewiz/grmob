@@ -21,6 +21,19 @@ interface GrMobBridge {
 
     /** Registers the Go→native push target; called from a Go goroutine. */
     fun setListener(listener: (String) -> Unit)
+
+    /**
+     * Registers the sink for app→host system events: the transient chrome and
+     * OS hand-offs that are deliberately not part of the view tree —
+     * `core.ShowToast` and `core.OpenURL` today. See mobile/sysevents.go;
+     * `name` is the event kind and `payload` its data as a JSON object.
+     *
+     * The callback arrives on whichever Go goroutine emitted the event — a
+     * tap handler, a timer, a network response — never reliably the Android
+     * main thread, so an implementation must post to it before touching UI.
+     * The same contract [setListener] carries.
+     */
+    fun setSystemEventListener(listener: (String, String) -> Unit)
 }
 
 /**

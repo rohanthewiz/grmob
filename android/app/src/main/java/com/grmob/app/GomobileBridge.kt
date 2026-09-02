@@ -3,6 +3,7 @@ package com.grmob.app
 import com.grmob.runtime.GrMobBridge
 import mobile.Mobile
 import mobile.PatchListener
+import mobile.SystemEventListener
 
 /**
  * GrMobBridge implementation over the gomobile-generated classes.
@@ -45,6 +46,18 @@ class GomobileBridge(dataDir: String) : GrMobBridge {
     override fun setListener(listener: (String) -> Unit) {
         Mobile.setListener(object : PatchListener {
             override fun applyPatches(patches: String) = listener(patches)
+        })
+    }
+
+    // System events (toasts, external URLs) ride their own single-method
+    // interface for the same reason patches do: gobind cannot bind a Go func
+    // parameter, so a callback crosses the FFI as an interface or not at all.
+    // See mobile/sysevents.go for the payload contract and SystemEvents.kt
+    // for what this shell does with each event.
+    override fun setSystemEventListener(listener: (String, String) -> Unit) {
+        Mobile.setSystemEventListener(object : SystemEventListener {
+            override fun onSystemEvent(name: String, payload: String) =
+                listener(name, payload)
         })
     }
 }
