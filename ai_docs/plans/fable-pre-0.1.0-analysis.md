@@ -454,7 +454,7 @@ a legacy builder through the same exporter rather than pinning a literal.
 | 14 | `docs/concepts/architecture.md:43`, `docs/index.md:56` | Hook list omits `UseMemo`, `UseReducer` |
 | 15 | `docs/platforms/wasm.md:32-38` | `GrMobApplyPatches` "optional … pages without it keep polling" — the shipped runtime always defines it (js:917) |
 | 16 | `README.md:278`, `ROADMAP.md:38` | "Patch logging and inspection on every render" — no such logging exists |
-| 17 | `CHANGELOG.md:9-11,62-63` | "First tagged release", links `v0.1.0` — no tag exists yet |
+| 17 | ~~`CHANGELOG.md:9-11,62-63`~~ | "First tagged release", links `v0.1.0` — no tag exists yet. Fixed in 6.1, then made moot: `CHANGELOG.md` is deleted (see 6.3) |
 | 18 | `docs/tutorial-todo.md:526` | "the build in section 6" — it is section 7 |
 | 19 | `docs/components.md:92-94` | "Of the five app roots, exactly one (`fintechapp`) scrolls as a whole" — nine roots; `signup`, tutorial `home`, `lesson_screen` all `Scroll: true` |
 | 20 | `wasm/main.go:33` | Comment "examples/social's root view"; import is `examples/tutorial` |
@@ -485,7 +485,7 @@ a legacy builder through the same exporter rather than pinning a literal.
   (`render/manager.go:210`). The newer files (focus, navigation, cleanup,
   error_boundary) are the opposite extreme; aim for a consistent middle.
 - **Never named anywhere in docs:** toasts (`ShowToast`/`Duration`/
-  `UseToastStyle`, though claimed in README/CHANGELOG/ROADMAP),
+  `UseToastStyle`, though claimed in README/ROADMAP),
   `Responsive`/`ResponsiveStyle` (ROADMAP Done), `SendSystemEvent`/
   `SetSystemEventHandler`, `ModalContent`, TabView props, camera props,
   `Display*`, `Position*`, `Overflow`, `MaxHeight`/`MinHeight`,
@@ -509,19 +509,22 @@ a legacy builder through the same exporter rather than pinning a literal.
   build scripts look for `gomobile` on PATH and never run `go tool gomobile`,
   so the pin is inert for every documented workflow. Either switch the
   scripts to `go tool gomobile` or document why not.
-- `CHANGELOG.md` 0.1.0 omits vs `git log`: accessibility props (1c0d1fd),
-  `core.MaybeProp` (d4f90dc), `CameraView`/`TabView` (b09590d, fdbf82a),
-  `Responsive`, `ImageWithMode` by name, htmlout rebuilt on `element` with
-  the HTML-escaping fix (6b04a80), the `UseStyle` fix (a1acc1c), the
-  `mobile/verify` source-reading tests. `[Unreleased]` compare link presumes
-  the missing tag.
+- **The project keeps no changelog.** `CHANGELOG.md` was deleted on
+  2026-09-01; the commit log and `ai_docs/claude_sessions/` are the history
+  of record. This retires the audit that stood here (0.1.0 omitted
+  accessibility props, `core.MaybeProp`, `CameraView`/`TabView`, and more
+  against `git log`) along with the `[Unreleased]` compare link that presumed
+  the untagged `v0.1.0`. Nothing outside `ai_docs/` ever linked the file, so
+  no README, docs page or `mkdocs.yml` nav entry needed changing. Any future
+  release notes are written from `git log` at tag time.
 - `docs/concepts/events.md:57-59`, `architecture.md:131-133`,
   `reconciliation.md:69-74`: identity-based node IDs / move patches called
   "planned" but absent from ROADMAP Planned. Add them or drop the claim.
 - `docs/concepts/styling-and-theming.md:136-140,188`: dated "Before
   2026-08-31" / "added on 2026-08-31" changelog prose in a reference page;
-  `docs/concepts/forms.md:3` "until now nothing ever filled it". Move to
-  CHANGELOG.
+  `docs/concepts/forms.md:3` "until now nothing ever filled it". Rewrite as
+  timeless prose describing current behavior — with no CHANGELOG there is
+  nowhere to move it to, and a reference page should not date itself.
 - `ROADMAP.md:143-146` "Join the discussion or check the GitHub repo" has no
   link.
 
@@ -561,8 +564,9 @@ a legacy builder through the same exporter rather than pinning a literal.
 
 ## Phase 7 — Repo hygiene
 
-- **Tag `v0.1.0`** once Phase 1 lands (`git tag -a v0.1.0 && git push --tags`);
-  the CHANGELOG already links it.
+- **Tag `v0.1.0`** once Phase 1 lands (`git tag -a v0.1.0 && git push --tags`).
+  Nothing in the repo has to be edited to match the tag; write the release
+  notes from `git log` if GitHub wants a body.
 - **Add CI** (`.github/workflows/ci.yml`): gofmt check, `go vet`,
   `go test -race ./...`, `GOOS=js GOARCH=wasm go build ./wasm`,
   `wasm/verify/run.sh` (needs node), `ios/verify/run.sh` on a macOS runner.
@@ -581,8 +585,8 @@ a legacy builder through the same exporter rather than pinning a literal.
 
 1. Phase 1 items 1.1–1.9 plus their pins (one PR each or grouped by
    package), then 1.10–1.14. Re-run the full baseline after each.
-2. Phase 6.1 (wrong docs) and 6.3 CHANGELOG additions — these are cheap and
-   the tag depends on the CHANGELOG being honest.
+2. Phase 6.1 (wrong docs) and the rest of 6.3 — cheap, and the tag reads
+   better against docs that are not contradicting the code.
 3. Tag `v0.1.0`. Add CI.
 4. Phase 3 renderer parity, DOM/htmlout first (pure CSS additions), then the
    two native gaps (`Gap`+`Justify` on Compose, `Modal backdrop`).
