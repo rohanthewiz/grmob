@@ -19,6 +19,7 @@
         android:label="GrMob"
         android:allowBackup="true"
         android:supportsRtl="true"
+        android:networkSecurityConfig="@xml/network_security_config"
         android:theme="@android:style/Theme.Material.Light.NoActionBar">
         <!-- adjustResize, not the platform's unspecified default: with the
              activity edge to edge (MainActivity.enableEdgeToEdge) the keyboard
