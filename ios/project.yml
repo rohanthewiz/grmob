@@ -27,6 +27,12 @@ targets:
         # stream stops the moment the app leaves the foreground, whatever
         # the audio session category says. See App/AudioPlayer.swift.
         UIBackgroundModes: [audio]
+        # Development only: lets the simulator talk to a server on the Mac
+        # over plain http (the church app's API_BASE=http://localhost:8088
+        # build, and AVPlayer streaming its /sermon-audio URLs). ATS still
+        # requires TLS for every non-local host.
+        NSAppTransportSecurity:
+          NSAllowsLocalNetworking: true
     settings:
       PRODUCT_BUNDLE_IDENTIFIER: com.grmob.demo
       # gomobile's generated glue is Objective-C; the app is Swift-only, but
