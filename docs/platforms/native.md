@@ -48,7 +48,7 @@ consistent. Patch semantics — positional paths, ordering rules — are in
 | Bridge function | Purpose |
 |---|---|
 | `Register(ctx, root)` | Install the app (from Go `init`). Re-registering closes the previous manager |
-| `SetDataDir(path)` | Writable sandbox dir for Go-side persistence (`Documents` on iOS, `filesDir` on Android). Call before `RenderInitial` |
+| `SetDataDir(path)` | Writable sandbox dir for Go-side persistence (Application Support on iOS, `filesDir` on Android). Call before `RenderInitial` |
 | `SetListener(l)` | Attach the async push target (`ApplyPatches(string)`) |
 | `RenderInitial()` | Full tree JSON for the first mount |
 | `TriggerCallback(id)` / `TriggerTextCallback` / `TriggerBoolCallback` / `TriggerIntCallback` | Event dispatch; returns the resulting patches |

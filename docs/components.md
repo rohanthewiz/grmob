@@ -89,9 +89,11 @@ thing — the absence of a gap, not the imposition of one.
 **`Scroll` is for screens with no scrolling region inside them.** Leave it
 false when the screen already contains a `core.List` or its own `Scroll` — a
 scroll view nested in a scroll view fights for the same drag on both natives.
-Of the five app roots in `examples/`, exactly one (`fintechapp`) scrolls as a
-whole; `chat` scrolls its message list and `todoapp` scrolls a virtualized
-`core.List`.
+Of the nine app packages in `examples/`, two scroll at the root
+(`fintechapp`, `signup`), and every screen the `tutorial`'s navigator pushes
+(`home`, `lesson_screen`, chapter 6) scrolls as a whole. The rest do not:
+`chat` scrolls its message list, `todoapp` scrolls a virtualized `core.List`,
+and `mobileapp` and `layout` are short enough to need neither.
 
 **`KeyboardAware` lands on the scroll region, or on the column when there is
 none** — the two halves of what it means. A scrolling screen wants its
@@ -574,10 +576,18 @@ components.Separator{Thickness: 0.5}     // sub-pixel hairline on a 2x display
 - `Inset` is applied as left/right **margin**, not `EdgeInsets.Horizontal`:
   the HTML exporter reads only the four per-side fields.
 
-**Horizontal only, deliberately.** A vertical rule has to stretch to its
-row's height, and neither renderer maps `AlignItems: "stretch"` (Compose
-falls through to `Alignment.Top`, SwiftUI to `.top`), so it would collapse
-to zero height on both. The field can land with the renderer support.
+**Horizontal only, for now.** A vertical rule has to stretch to its row's
+height, which is cross-axis stretch, and that used to be the blocker: neither
+renderer mapped `AlignItems: "stretch"`, so the rule would have collapsed to
+zero height on both. Both map it today — Compose pins a stretched `Row` to
+`IntrinsicSize.Max` and gives each child `fillMaxHeight()`, and SwiftUI's
+`GrMobFlexStack` proposes the full cross extent to a stretched child — so
+adding a `Vertical` field is now a widget change rather than a renderer one.
+It has simply not been added. Note the one asymmetry if you hand-roll it
+meanwhile: a `Row` reads `AlignItems` only, never the simpler `Align`
+fallback (`Align` is a text-alignment concept and has never applied to a
+row's vertical axis), so the containing row needs `AlignItems: "stretch"`
+spelled out.
 
 The default tint is the theme's `Border` role, read through
 `ColorPalette.BorderColor()` rather than off the field, so a theme written
@@ -622,8 +632,11 @@ text that already names the person, and unlabeled it is announced as
 "image" or read out as its URL.
 
 *Non-square images letterbox* inside the circle — the renderers scale with
-`.scaledToFit` / Compose's Fit default. Filling needs a `ContentMode` prop
-on `Image`, which is a two-renderer pass of its own.
+`.scaledToFit` / Compose's Fit default. `Avatar` does not expose a way to
+change that, though the underlying prop now exists:
+`core.ImageWithMode(src, core.ContentModeFill, ...)` covers the four modes
+(`Fit`, `Fill`, `Stretch`, `Center`) on every renderer. Threading it through
+`Avatar` is a widget change waiting for a caller that wants it.
 
 ## ProgressBar
 
@@ -645,12 +658,12 @@ components.ProgressBar{Value: done / total, Thickness: 10, Color: "#34C759"}
   insert/remove, which is also what lets a `Transition` animate it.
 
 **Why a percentage width and not two flex weights.** The obvious build is
-two boxes weighted `FlexGrow(v)` / `FlexGrow(1-v)`. That is exact on
+two boxes weighted `FlexGrow(v)` / `FlexGrow(1-v)`. That was exact on
 Android, where `FlexGrow` maps onto Compose's `Modifier.weight`, and
-silently wrong on iOS, where it maps onto `frame(maxWidth: .infinity)`:
+silently wrong on iOS, where it mapped onto `frame(maxWidth: .infinity)`:
 SwiftUI stacks have no weight, so two growers split free space *equally
-regardless of their values*. Every bar would sit at 50% on iOS. A percentage
-width is proportional on all three targets instead:
+regardless of their values*. Every bar would have sat at 50% on iOS. A
+percentage width is proportional on all three targets instead:
 
 | target | mapping | accuracy |
 |---|---|---|
@@ -658,8 +671,12 @@ width is proportional on all three targets instead:
 | HTML | `width:<pct>%` | exact |
 | iOS | `containerRelativeFrame` | proportional; measured against the nearest *container*, so a bar that spans its container is exact and one inset in a narrow card reads wide |
 
-When proportional weights land on iOS (a custom `Layout`), this can move to
-flex.
+Proportional weights have since landed on iOS: `GrMobFlexStack` is that
+custom `Layout`, and `GrMobFlexSolver` resolves `FlexGrow` by value on all
+three targets. The bar has not been migrated, so the caveat above still
+describes what it does today — but the blocker is gone, and moving it to flex
+would remove the caveat, since a flex child is measured against its immediate
+parent rather than the nearest container.
 
 ## FormField
 

@@ -35,7 +35,9 @@
 
 ### 🧠 Developer Experience
 - [x] Internal path-based rendering IDs for patches (`reconcile.Patch.TargetID`)
-- [x] Logging and inspection of patches
+- [x] Inspectable patch sets — `reconcile.Diff` returns plain `[]Patch`
+      values, and `RenderAgain`/`TriggerCallback` hand the same set back as
+      JSON for a test or a host to read
 - [x] Debug mode: cursor-drift, duplicate-key, unknown-item, render-panic
       and handler-panic concerns
 - [x] `htmlout` HTML export for tests and tooling
@@ -122,6 +124,7 @@
 
 ### 🛠️ DevTools
 - [ ] State inspector overlay (similar to React DevTools)
+- [ ] Patch logging — a debug-mode trace of what each pass emitted
 - [ ] Visual patch viewer
 - [ ] Hot module replacement
 

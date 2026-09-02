@@ -30,9 +30,9 @@ func renderInitial(this js.Value, args []js.Value) any {
 	if manager != nil {
 		manager.Close()
 	}
-	// App is examples/social's root view (reached through the dot-import
-	// above). The app tree belongs to the example package; this file is host
-	// wiring only — JS bindings, the manager, and the event bridge.
+	// App is the dot-imported example's root view — examples/tutorial, per the
+	// import above. The app tree belongs to the example package; this file is
+	// host wiring only — JS bindings, the manager, and the event bridge.
 	manager = render.New(ctx, App)
 	// Push channel: if the host page defines GrMobApplyPatches, async state
 	// changes (timers, goroutines) are pushed to it as patch JSON instead of

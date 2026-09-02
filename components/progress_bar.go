@@ -15,12 +15,12 @@ import (
 // # Why the fill is a percentage width and not a pair of flex weights
 //
 // The obvious construction is two boxes weighted FlexGrow(v) and
-// FlexGrow(1-v), letting the flex algorithm split the track. That is exact on
+// FlexGrow(1-v), letting the flex algorithm split the track. That was exact on
 // Android, where FlexGrow maps onto Compose's Modifier.weight — and silently
-// wrong on iOS, where it maps onto frame(maxWidth: .infinity). SwiftUI stacks
-// have no weight, so two growers split the free space *equally regardless of
-// their values*: every bar would render at 50% on iOS, at every value, with
-// nothing in the tree to suggest a bug.
+// wrong on iOS, where it mapped onto frame(maxWidth: .infinity). SwiftUI
+// stacks have no weight, so two growers split the free space *equally
+// regardless of their values*: every bar would have rendered at 50% on iOS, at
+// every value, with nothing in the tree to suggest a bug.
 //
 // A percentage width is proportional on all three targets instead:
 //
@@ -33,8 +33,14 @@ import (
 // spans its container — the common case, a full-width bar in a screen column
 // — is therefore exact; one inset inside a narrow card reads wider than it
 // should. That is an over-long fill in an uncommon layout, against a
-// permanently-half-full bar everywhere. Proportional weights on iOS need a
-// custom SwiftUI Layout, and when that lands this widget can move to flex.
+// permanently-half-full bar everywhere.
+//
+// That custom SwiftUI Layout has since landed: GrMobFlexStack, with the
+// arithmetic in GrMobFlexSolver, resolves FlexGrow by value on all three
+// targets. This widget has not been migrated, so the caveat above is still
+// what it does today — but the blocker is gone, and moving to flex would
+// remove the caveat, since a flex child is measured against its immediate
+// parent rather than the nearest container.
 //
 // # The fill is always rendered
 //

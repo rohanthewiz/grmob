@@ -255,7 +255,7 @@ func AccessibilityHidden() StyleProp {
 //
 // It takes the value rather than being a no-arg flag (unlike
 // AccessibilityHidden) because the caller almost always has a bool in hand —
-// `core.Disabled(form.Submitting)` — and because passing false is the only way
+// `core.Disabled(sending.Get())` — and because passing false is the only way
 // to force a node back to enabled: UseStyle's "a zero value means unset" rule
 // means a Style{Disabled: false} cannot clear a flag already on the target.
 func Disabled(disabled bool) StyleProp {

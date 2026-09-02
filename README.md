@@ -164,7 +164,7 @@ core.IfElse(isLoading.Get(),
 core.Match(status.Get(),
     core.Case("success", core.Text("✅ Success")),
     core.Case("error", core.Text("❌ Error")),
-    core.Default(core.Text("ℹ️ Idle")),
+    core.Default[string](core.Text("ℹ️ Idle")),
 )
 ```
 
@@ -275,7 +275,9 @@ is in [docs/platforms/native.md](docs/platforms/native.md).
 - Drive the whole engine from a plain Go test: `render.New` → `RenderInitial` → `DispatchCallback`
 - Snapshot views as HTML with `htmlout` and pin them byte for byte
 - Debug mode flags cursor drift, duplicate keys, unknown items and panics, and costs nothing when off
-- Patch logging and inspection on every render
+- Inspect any render's patch set directly: `reconcile.Diff` returns plain
+  `[]Patch` values, and `RenderAgain` / `TriggerCallback` hand the same set
+  back as JSON
 - The browser host polls `IsDirty` and applies minimal DOM patches, so nothing re-mounts
 
 ---

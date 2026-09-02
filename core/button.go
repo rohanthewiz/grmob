@@ -5,7 +5,7 @@ package core
 // originally:
 //
 //	core.Button("Delete", onDelete,
-//	    core.BackgroundColor(theme.Danger),
+//	    core.BackgroundColor(ctx.Theme().Colors.Error),
 //	    core.OnLongPress(confirmDestructive),
 //	)
 //

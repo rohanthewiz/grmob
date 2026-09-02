@@ -93,8 +93,8 @@ be pressed could not carry a gesture:
 
 ```go
 core.Button("Delete", onDelete,
-    core.BackgroundColor(theme.Danger),       // style prop
-    core.OnLongPress(confirmDestructive),     // behavior prop
+    core.BackgroundColor(ctx.Theme().Colors.Error),  // style prop
+    core.OnLongPress(confirmDestructive),            // behavior prop
 )
 ```
 
@@ -171,7 +171,8 @@ core.Box(
 )
 ```
 
-`core.UseFocusRef` is a hook, so it obeys the [hook rules](hooks.md): call it
+`core.UseFocusRef` is a hook, so it obeys the
+[hook rules](state-and-hooks.md#the-rules-of-hooks): call it
 unconditionally, at the top. A ref built inline instead is a **new pointer
 every pass**, so `FocusTarget` stamps one identity while `Focus` compares
 against another and the field simply never focuses.

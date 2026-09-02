@@ -29,13 +29,23 @@ The Go side registers a `GrMobWASM` global with four functions:
 | `GrMobWASM.RenderAgain()` | Re-renders and returns the diff — the polling path |
 | `GrMobWASM.IsDirty()` | Whether state changed since the last render — poll this to know when `RenderAgain` is worth calling |
 
-And it looks for one optional global the page can provide:
+And it looks for one global the page provides:
 
 - **`GrMobApplyPatches(patchesJSON)`** — if defined as a function at mount
   time, async state changes (timers, goroutines) are **pushed** to it as
-  patch JSON, and the page never needs the `IsDirty` polling loop. Pages
-  without it keep polling — the manager never consumes a diff unless a
-  listener is attached, so nothing is lost either way.
+  patch JSON, on the state write's own schedule.
+
+  The shipped `wasm/grmob-runtime.js` always defines it (at page level,
+  before the module is instantiated, so the host's startup check finds it),
+  so every page on the shipped runtime is on the push path. It is optional
+  only in the *protocol* sense: a hand-rolled host may omit it and fall back
+  to the `IsDirty` poll, and nothing is lost either way — the manager never
+  consumes a diff unless a listener is attached.
+
+  The fallback is a genuine downgrade, not just extra work. The poll rides
+  `requestAnimationFrame`, which is fully suspended in a hidden tab, so a
+  `UseInterval` clock freezes the moment the tab loses visibility even
+  though the Go ticker keeps running. The push channel does not.
 
 ```mermaid
 flowchart LR

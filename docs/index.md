@@ -54,7 +54,8 @@ flowchart LR
   helpers (`If`, `IfElse`, `Match`, `For`, `MaybeProp`) that keep render logic reading
   like prose.
 - **Hook-based state** — `NewState`, `hooks.UseEffect`, `hooks.UseInterval`,
-  `hooks.UseTimeout`; state changes mark the tree dirty and re-render
+  `hooks.UseTimeout`, `hooks.UseMemo`, `hooks.UseReducer`; state changes mark
+  the tree dirty and re-render
   automatically, including from timers and background goroutines.
 - **Minimal updates** — a reconciler diffs retained `Node` trees and emits
   positional patches, so an unchanged screen costs nothing and a one-field

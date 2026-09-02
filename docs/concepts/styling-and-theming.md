@@ -76,7 +76,7 @@ rather than emulating one:
 
 ```go
 core.Button("Send", submit, core.Disabled(draft == ""))
-core.Input(v, "Email", onChange, core.Disabled(form.Submitting))
+core.Input(v, "Email", onChange, core.Disabled(sending.Get()))
 ```
 
 | target | what it becomes |

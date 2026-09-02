@@ -20,9 +20,11 @@ uses [Semantic Versioning](https://semver.org/) once tagged.
 - Debug APK shrank from 19.3 MB to 16.1 MB: AGP 9 strips `libgojni.so`, which
   AGP 8.1 reported it could not do.
 
-## [0.1.0] — 2026-09-01
+## [0.1.0] — unreleased
 
-First tagged release. Everything below was in place at the cut.
+The first release cut, staged but **not yet tagged**. Everything below is in
+place on `master`; the `v0.1.0` tag and the compare links that depend on it
+land together with the release.
 
 ### Core engine
 - Declarative views as Go functions (`View`, `ComponentFunc`), with `If`,
@@ -73,5 +75,7 @@ First tagged release. Everything below was in place at the cut.
 - An interactive tutorial (40 lessons, 8 chapters) that is itself a GrMob
   app, and a start-to-finish todo-app tutorial with `bytdb` persistence.
 
-[Unreleased]: https://github.com/rohanthewiz/grmob/compare/v0.1.0...HEAD
-[0.1.0]: https://github.com/rohanthewiz/grmob/releases/tag/v0.1.0
+<!-- Link definitions are deliberately absent until v0.1.0 is tagged: a
+     compare link against a tag that does not exist 404s. On tagging, add:
+       [Unreleased]: https://github.com/rohanthewiz/grmob/compare/v0.1.0...HEAD
+       [0.1.0]: https://github.com/rohanthewiz/grmob/releases/tag/v0.1.0 -->

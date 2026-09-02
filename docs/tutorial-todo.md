@@ -11,11 +11,11 @@ framework surface. Each feature maps to a concept:
 
 | App feature | Framework concept |
 |---|---|
-| The entry field | Controlled inputs, `InputWithSubmit`, the echo/rewrite contract |
+| The entry field | Controlled inputs, `components.InputRow`, the echo/rewrite contract |
 | Add / toggle / delete | State via `NewState`, the rules of hooks, immutable updates |
 | The task list | Virtualized `List`, `For`, `Keyed`, reconciler semantics |
 | Filter chips | Derived state, style-driven selection, `Transition` |
-| Delete / clear buttons | Theme base styles and when to override them |
+| Delete / clear buttons | Theme roles via `Variant`, and when to override a base style |
 | Todos survive relaunch | Persistence: an embedded bytdb database behind the mutation choke point |
 | Everything | Accessibility props, the mobile bridge, three levels of testing |
 
@@ -85,6 +85,11 @@ func init() {
 // native library, leaving the bridge with a nil manager.
 func AppName() string { return "GrMob Todo" }
 ```
+
+That is the minimum. The real file also imports `fmt`, `strings` and
+`github.com/rohanthewiz/grmob/components`, which is where the widgets in
+section 4 come from — `core` is the vocabulary, `components` is the
+struct-configured widget library built on top of it.
 
 The `init` is the whole integration: gomobile runs package inits when the
 native library loads, so by the time the Swift or Kotlin shell asks for the
@@ -186,11 +191,10 @@ render passes are cheap; drifted state is not.
 ### Layout and styling
 
 ```go
-	return core.SafeArea(
-		core.Column(
-			core.FlexGrow(1),
-			core.Gap(12),
-
+	return components.Screen{
+		Fill: true,
+		Gap:  12,
+		Children: []core.View{
 			core.Text("Todos", core.UseStyle(core.Style{
 				FontSize:   28,
 				FontWeight: core.Bold,
@@ -198,11 +202,30 @@ render passes are cheap; drifted state is not.
 			...
 ```
 
-Containers (`Column`, `Row`, `Card`, `Box`, `List`) take style props, behavior
-props, and children interleaved in any order. Styles come in two equivalent
-forms — modifier functions (`core.Gap(12)`) and the struct form
-(`core.UseStyle(core.Style{...})`, merging non-zero fields) — use whichever
-reads better at the call site.
+`components.Screen` is the root scaffold — the safe-area inset, an optional
+scroll region, and the vertical column that holds the content:
+
+```
+SafeArea
+  └─ Scroll          (only when Scroll is true)
+       └─ Column     ← Gap / Fill / Style land here
+            ├─ Children[0]
+            └─ …
+```
+
+Its zero value is exactly `SafeArea(Column(children...))`; each field only
+speaks when you set one. `Fill` is `core.FlexGrow(1)` on that column, and it
+is load-bearing here rather than decoration: the `List` further down asks to
+grow into the leftover space, and a flex child can only grow inside a parent
+that has height to give. `Scroll` stays false because the `List` is
+virtualized and scrolls itself — a scroll view nested in a scroll view fights
+for the same drag on both natives.
+
+Underneath, containers (`Column`, `Row`, `Card`, `Box`, `Scroll`, `List`) take
+style props, behavior props, and children interleaved in any order. Styles
+come in two equivalent forms — modifier functions (`core.Gap(12)`) and the
+struct form (`core.UseStyle(core.Style{...})`, merging non-zero fields) — use
+whichever reads better at the call site.
 
 Two theme facts to know early:
 
@@ -210,31 +233,39 @@ Two theme facts to know early:
   (`ctx.Theme().Components.Button`, etc.) and your props are applied *on
   top*. This is usually what you want, and occasionally what bites you —
   see the destructive buttons below.
-- `Box` is the only container with no theme base; `Column` and `Row` carry
-  default padding.
+- `Column`, `Row` and `Card` carry a theme base (`Column` and `Row` bring
+  default padding), and `List` shares `Column`'s. `Box` and `Scroll` have
+  none — they are the unopinionated containers, which is the point: a scroll
+  region that arrived with the theme `Column`'s screen padding would inset
+  every screen that wraps itself in one.
 
 ### The entry row: controlled input with a submit action
 
 ```go
-			core.Row(
-				core.Gap(8),
-				core.InputWithSubmit(draft.Get(), "What needs doing?",
-					func(v string) { draft.Set(v) },
-					addTodo,
-					core.FlexGrow(1),
-				),
-				core.Button("Add", addTodo,
-					core.AccessibilityHint("Adds the task typed in the field"),
-				),
-			),
+			components.InputRow{
+				Value:       draft.Get(),
+				Placeholder: "What needs doing?",
+				OnChange:    func(v string) { draft.Set(v) },
+				OnSubmit:    addTodo,
+				Button: components.Button{
+					Label:             "Add",
+					AccessibilityHint: "Adds the task typed in the field",
+				},
+			},
 ```
 
 Inputs are **fully controlled**: the value always comes from Go, every
 keystroke goes up as a text event, and the patched value comes back down.
-`InputWithSubmit` adds a second handler dispatched when the user presses the
-keyboard's return key (iOS) or the IME done action (Android) — it rides the
-same void-callback channel as a button tap, so `addTodo` serves both commit
-paths unchanged.
+`OnChange` is what keeps `Value` in step with what the user typed — without
+it the field is read-only in practice, because the next render paints `Value`
+back over the keystrokes.
+
+`OnSubmit` is the commit action: the keyboard's return key (iOS) or the IME
+done action (Android). It rides the same void-callback channel as a button
+tap, so `addTodo` serves both commit paths — and the trailing `Button` needs
+no handler of its own, since a `Button` with a `Label` and no `OnTap`
+inherits `OnSubmit`. `Gap` is unset, so the row takes the theme's SM step
+rather than spelling out an 8 that the widget already knows.
 
 `addTodo` shows the whole state discipline in six lines:
 
@@ -242,13 +273,18 @@ paths unchanged.
 	addTodo := func() {
 		title := strings.TrimSpace(draft.Get())
 		if title == "" {
-			return
+			return // ignore blank submissions rather than surfacing an error state
 		}
-		todos.Set(append(append([]Todo{}, todos.Get()...), Todo{ID: nextID.Get(), Title: title}))
+		created := Todo{ID: nextID.Get(), Title: title}
+		todos.Set(append(append([]Todo{}, todos.Get()...), created))
 		nextID.Set(nextID.Get() + 1)
-		draft.Set("")
+		draft.Set("") // clear the input so consecutive adds need no manual erase
+		st.add(created)
 	}
 ```
+
+(`created` is bound rather than inlined so the same value goes into state and
+into the store — `st.add` is the persistence write, section 5.)
 
 That final `draft.Set("")` is more interesting than it looks. The native text
 field is locally-owned *while focused* — keystrokes echo instantly without
@@ -263,32 +299,32 @@ and the contract holds. (If you're curious, the mechanism lives in
 `GrMobTextField` in both `ios/GrMob/Runtime/Renderer.swift` and
 `android/.../Renderer.kt`.)
 
-### The filter bar: selection as style, driven by one loop
+### The filter bar: selection as style
 
 ```go
 func filterBar(active int, onSelect func(int)) core.View {
-	return core.Row(
-		core.Gap(8),
-		core.For(filterLabels, func(label string, i int) core.View {
-			styles := []core.StyleProp{
+	return components.SegmentedControl{
+		Labels:    filterLabels,
+		Selected:  active,
+		OnSelect:  onSelect,
+		KeyPrefix: "filter-",
+		// The template: everything every chip shares. Label, Selected and
+		// OnTap are the control's to fill in.
+		Segment: components.Chip{
+			Style: []core.StyleProp{
 				core.FontSize(13),
 				core.Transition(200, core.EaseInOut),
-				core.AccessibilityHint("Filters the task list"),
-			}
-			accLabel := "Show " + strings.ToLower(label) + " tasks"
-			if i == active {
-				styles = append(styles,
-					core.BackgroundColor(colorAccent),
-					core.TextColor(colorAccentInk),
-				)
-				accLabel += ", selected"
-			}
-			styles = append(styles, core.AccessibilityLabel(accLabel))
-			return core.Keyed("filter-"+label,
-				core.Button(label, func() { onSelect(i) }, styles...),
-			)
-		}),
-	)
+			},
+			SelectedStyle: []core.StyleProp{
+				core.BackgroundColor(colorAccent),
+				core.TextColor(colorAccentInk),
+			},
+			AccessibilityHint: "Filters the task list",
+		},
+		SegmentLabel: func(label string, _ int) string {
+			return "Show " + strings.ToLower(label) + " tasks"
+		},
+	}
 }
 ```
 
@@ -298,13 +334,22 @@ Three ideas at work:
   filters patches two background colors instead of rebuilding the row, and
   `Transition(200, core.EaseInOut)` makes the highlight animate *natively* —
   Compose and SwiftUI drive the frames; no patches flow during the animation.
-- **`For` + closures.** The render function's parameters are per-iteration,
-  so `func() { onSelect(i) }` captures the right index without the classic
-  loop-variable trap.
+- **The widget owns the loop.** `SegmentedControl` runs the `core.For` over
+  `Labels`, keys each chip from `KeyPrefix`, and compares `Selected` against
+  the index to decide which one is lit. What is left here is what is actually
+  this app's: the palette override and the sentence a screen reader reads.
+  The filter constants *are* indices into `filterLabels`, so the app's enum is
+  the control's `Selected` value with no mapping in between.
 - **Contrast is your job when you override half a pair.** The theme's button
   base paints a white label; put a pale background under it and the label
-  vanishes. The selected chip overrides background *and* text color together.
+  vanishes. `SelectedStyle` overrides background *and* text color together.
   (This screenshot-verified lesson repeats with the delete buttons.)
+
+Between the bar and the list sits `components.Separator{}` — the hairline
+rule. The zero value is the whole call: the widget owns the thickness, takes
+its tint from the theme's `Border` role (so the rule retints with a theme
+swap instead of staying pinned to a local constant), and hides itself from
+assistive technology, since a rule carries nothing a screen reader can use.
 
 ### The list: virtualization, keys, and what the reconciler does
 
@@ -332,29 +377,41 @@ Each row is keyed by identity:
 
 ```go
 func todoRow(t Todo, setDone func(int, bool), remove func(int)) core.View {
-	...
+	titleColor := "#000000"
+	if t.Done {
+		titleColor = colorDim
+	}
 	id := t.ID
 
-	return core.Keyed(fmt.Sprintf("todo-%d", t.ID), core.Row(
-		core.Padding(8),
-		core.Gap(10),
-		core.Transition(200, core.EaseInOut),
-		core.AccessibilityLabel(rowAccessibilityLabel(t)),
-
-		core.Checkbox(t.Done, func(v bool) { setDone(id, v) }),
-		core.Text(t.Title, core.UseStyle(core.Style{
+	return core.Keyed(fmt.Sprintf("todo-%d", t.ID), components.ListRow{
+		Leading: core.Checkbox(t.Done, func(v bool) { setDone(id, v) }),
+		Content: core.Text(t.Title, core.UseStyle(core.Style{
 			FontSize:  16,
 			TextColor: titleColor,
-		}), core.FlexGrow(1)),
-		core.Button("✕", func() { remove(id) },
-			core.FontSize(13),
-			core.TextColor("#FFFFFF"),
-			core.BackgroundColor(colorDanger),
-			core.AccessibilityLabel("Delete "+t.Title),
-		),
-	))
+		})),
+		Trailing: components.Button{
+			Label:              "✕",
+			OnTap:              func() { remove(id) },
+			Variant:            components.VariantError,
+			Style:              []core.StyleProp{core.FontSize(13)},
+			AccessibilityLabel: "Delete " + t.Title,
+		},
+		Style: []core.StyleProp{
+			core.Padding(8),
+			core.Gap(10),
+			core.Transition(200, core.EaseInOut),
+		},
+		AccessibilityLabel: rowAccessibilityLabel(t),
+	})
 }
 ```
+
+`components.ListRow` is the leading / content / trailing shape: it owns the
+`FlexGrow(1)` that pins the ✕ to the trailing edge and the vertical centring
+of a checkbox against a text line. The title goes in `Content` rather than
+`Title` because it is *conditionally styled* — `Title` takes the theme's Body
+role verbatim, and this one has to dim when the todo is done. `Content` is
+the escape hatch for exactly that: an arbitrary view in the growing slot.
 
 What keys buy you: the reconciler matches children **by index**, and when the
 nodes at an index carry different keys it replaces that slot outright. So on
@@ -369,19 +426,25 @@ they still hit the right one after the `visible` slice is rebuilt under a
 different filter. Deleting "Walk dog" while the Active filter is on must
 delete it from `todos`, not from position 0 of whatever is visible.
 
-Also note what the row does *not* contain: gesture props. Leaf widgets
-(`Text`, `Button`, `Input`) take only style props; if you need a tappable
-region that isn't a button, put `core.OnClick(...)` / `core.OnLongPress(...)`
-on a container (`Row`, `Box`) — see the feed tab in `examples/mobileapp` for
-that pattern.
+Also note what the row does *not* contain: gesture props. It does not need
+them — the checkbox and the ✕ carry their own handlers — but it *could*.
+Behavior props are not a container privilege: leaves take them too, so
+`core.Button("Delete", onDelete, core.OnLongPress(confirm))` and
+`core.Input(v, "Email", onChange, core.OnBlur(check))` are both legal, and a
+node may carry `OnClick` and `OnLongPress` together (the renderers wire them
+as one recognizer, so a long press never also fires the click). What
+containers give you is a tappable *region* that is not a widget — put
+`core.OnClick(...)` on a `Row` or `Box` to make the whole row a target; see
+the feed tab in `examples/mobileapp` for that pattern, and
+[`docs/concepts/events.md`](concepts/events.md) for the full prop list.
 
 ### Destructive actions and the theme base
 
 ```go
-		core.Button("✕", func() { remove(id) },
-			core.FontSize(13),
-			core.TextColor("#FFFFFF"),
-			core.BackgroundColor(colorDanger),
+		Trailing: components.Button{
+			Label:   "✕",
+			OnTap:   func() { remove(id) },
+			Variant: components.VariantError,
 			...
 ```
 
@@ -389,8 +452,28 @@ First drafts of this app styled the ✕ as a red glyph and left the background
 alone — which produced a red-on-blue button, because the default theme's
 button base is a medium blue. The rule of thumb: **when a widget's meaning
 departs from the theme's default (a destructive action on a primary-styled
-base), override the full color pair, not one half.** The footer's
-"Clear completed" button gets the identical treatment.
+base), override the full color pair, not one half.**
+
+`Variant` is that rule packaged. `components.VariantError` names the *intent*
+and lets the widget resolve both halves — the fill from the theme's `Error`
+role and an ink picked for legibility against it. That is why this app has no
+`colorDanger` constant: the destructive red is now the same red an error
+`Badge` would use, and it retints with a theme swap. The footer's
+"Clear completed" button is literally the same declaration:
+
+```go
+		clearButton = components.Button{
+			Label:   "Clear completed",
+			OnTap:   clearDone,
+			Variant: components.VariantError,
+			Style:   []core.StyleProp{core.FontSize(13)},
+		}
+```
+
+It is declared as a bare `core.View`, left nil when `doneCount` is zero, and
+handed to the footer `ListRow`'s `Trailing` slot. A nil slot puts *no node*
+in the tree for the absent button, where a `core.If` would emit a real (empty)
+child for the reconciler to diff on every pass.
 
 ### Accessibility is part of the tree
 
@@ -401,8 +484,10 @@ pipeline as everything else:
   (`"Buy milk, completed"`), on icon buttons it replaces the glyph
   (`"Delete Buy milk"` instead of "✕").
 - `AccessibilityHint` describes the consequence of activating.
-- `AccessibilityHidden()` removes decoration — the hairline divider — from
-  the screen-reader tree.
+- `AccessibilityHidden()` removes decoration from the screen-reader tree.
+  The hairline never needs it here: `components.Separator` applies it itself,
+  because a rule is always decoration and announcing one between every pair
+  of rows turns a 20-row feed into 39 utterances.
 
 The XCUITest below addresses rows by these labels, so element lookup in the
 test suite doubles as proof the accessibility wiring works.
@@ -523,7 +608,7 @@ what `ios/GrMobUITests/TodoAppUITests.swift` does:
                       "input not cleared after add, still shows: \(after)")
 ```
 
-Run it (after the build in section 6) with:
+Run it (after the build in section 7) with:
 
 ```sh
 cd ios && xcodebuild test -project GrMobApp.xcodeproj -scheme GrMobApp \
@@ -595,6 +680,9 @@ The todo app deliberately leaves framework surface unexplored:
 - **Theming** — a custom `core.Theme` injected with `WithThemeOpt`, and
   components reading tokens via `ctx.Theme()` (`examples/fintechapp`).
 
-For the internals referenced throughout: [`docs/reconciliation.md`](reconciliation.md)
-covers the diffing engine, and [`docs/ui-architecture.md`](ui-architecture.md)
-covers the styling and theme system.
+For the internals referenced throughout:
+[`docs/concepts/reconciliation.md`](concepts/reconciliation.md) covers the
+diffing engine, [`docs/concepts/styling-and-theming.md`](concepts/styling-and-theming.md)
+covers the styling and theme system, and
+[`docs/components.md`](components.md) documents the `components` widgets this
+app is built from.

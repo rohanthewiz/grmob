@@ -28,12 +28,19 @@ import (
 //
 // # Horizontal only
 //
-// There is deliberately no Vertical field. A vertical rule has to stretch to
-// its row's height, which means cross-axis stretch — and neither renderer maps
-// AlignItems "stretch" (Compose falls through to Alignment.Top, SwiftUI to
-// .top). A vertical separator would therefore collapse to zero height on both
-// platforms. Adding the field would be advertising something that does not
-// work; it can land with the renderer support.
+// There is no Vertical field yet. A vertical rule has to stretch to its row's
+// height, which means cross-axis stretch, and that used to be the blocker:
+// neither renderer mapped AlignItems "stretch", so the field would have
+// advertised something that collapsed to zero height on both platforms.
+//
+// Both renderers map it today — Compose pins a stretched Row to
+// IntrinsicSize.Max and gives each child fillMaxHeight(), and SwiftUI's
+// GrMobFlexStack proposes the full cross extent to a stretched child — so the
+// field is now a widget change rather than a renderer one, waiting on a caller
+// that wants it. One asymmetry to know when it lands: a Row reads alignItems
+// alone and never the simpler Align fallback (Align is a text-alignment
+// concept and has never applied to a row's vertical axis), so the containing
+// row has to spell out AlignItems "stretch".
 type Separator struct {
 	// Color overrides the hairline tint. Empty takes the theme's Border role.
 	Color string
