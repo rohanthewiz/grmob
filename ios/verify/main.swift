@@ -46,7 +46,7 @@ func run() -> Int32 {
     // The flex arithmetic is independent of the transcript, so it is checked
     // first: a layout regression should be reported even if the bridge
     // transcript cannot be read at all.
-    let flexProblems = checkFlexSolver()
+    let flexProblems = checkFlexSolver() + checkWrapSolver()
     if flexProblems.isEmpty {
         print("OK: flex solver matches the CSS rules")
     } else {

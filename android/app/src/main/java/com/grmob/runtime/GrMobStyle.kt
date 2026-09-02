@@ -55,6 +55,8 @@ data class GrMobStyle(
     val justifyContent: String,
     val alignItems: String,
     val flexGrow: Float,
+    /** core.FlexWrap: "wrap" or "nowrap" (empty when unset). Read by GrMobRow only. */
+    val flexWrap: String,
     val lineHeight: Int,
     val accessibilityLabel: String,
     val accessibilityHint: String,
@@ -92,6 +94,7 @@ data class GrMobStyle(
                 justifyContent = obj.optString("JustifyContent"),
                 alignItems = obj.optString("AlignItems"),
                 flexGrow = obj.optDouble("FlexGrow", 0.0).toFloat(),
+                flexWrap = obj.optString("FlexWrap"),
                 lineHeight = obj.optInt("LineHeight", 0),
                 accessibilityLabel = obj.optString("AccessibilityLabel"),
                 accessibilityHint = obj.optString("AccessibilityHint"),

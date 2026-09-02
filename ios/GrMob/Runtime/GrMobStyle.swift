@@ -40,6 +40,8 @@ struct GrMobStyle: Equatable {
     var justifyContent: String = ""
     var alignItems: String = ""
     var flexGrow: CGFloat = 0
+    /// core.FlexWrap: "wrap" or "nowrap" (empty when unset). Read by GrMobRow only.
+    var flexWrap: String = ""
     var lineHeight: Int = 0
     var accessibilityLabel: String = ""
     var accessibilityHint: String = ""
@@ -102,6 +104,7 @@ struct GrMobStyle: Equatable {
         s.justifyContent = str("JustifyContent")
         s.alignItems = str("AlignItems")
         s.flexGrow = num("FlexGrow")
+        s.flexWrap = str("FlexWrap")
         s.lineHeight = int("LineHeight")
         s.accessibilityLabel = str("AccessibilityLabel")
         s.accessibilityHint = str("AccessibilityHint")

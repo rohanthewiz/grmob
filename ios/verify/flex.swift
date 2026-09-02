@@ -178,3 +178,36 @@ func checkFlexSolver() -> [String] {
 
     return problems
 }
+
+// Checks for GrMobWrapSolver — the line breaking behind a Row with
+// core.FlexWrap(true). Expected values follow CSS flex-line collection with
+// flex-shrink: 0, which is also what the Android FlowRow and the browser's
+// flex-wrap produce.
+func checkWrapSolver() -> [String] {
+    var problems: [String] = []
+    let solver = GrMobWrapSolver(spacing: 8)
+
+    func check(_ name: String, _ got: [[Int]], _ want: [[Int]]) {
+        if got != want { problems.append("\(name): got \(got), want \(want)") }
+    }
+
+    // Three 100pt chips with 8pt gaps need 316pt on one line.
+    let three: [CGFloat] = [100, 100, 100]
+    check("fits on one line", solver.lines(widths: three, available: 316), [[0, 1, 2]])
+    check("one pt short breaks the last", solver.lines(widths: three, available: 315), [[0, 1], [2]])
+    check("two per line", solver.lines(widths: three, available: 250), [[0, 1], [2]])
+    check("one per line", solver.lines(widths: three, available: 100), [[0], [1], [2]])
+    // A child wider than the line is neither shrunk nor dropped: it takes a
+    // line of its own and the next child starts fresh.
+    check("oversized child overflows its own line",
+          solver.lines(widths: [300, 50, 50], available: 250), [[0], [1, 2]])
+    // No definite width means nothing to wrap against.
+    check("no offer -> single line", solver.lines(widths: three, available: nil), [[0, 1, 2]])
+    check("infinite offer -> single line", solver.lines(widths: three, available: .infinity), [[0, 1, 2]])
+    check("empty", solver.lines(widths: [], available: 100), [])
+
+    if solver.natural(widths: three) != 316 {
+        problems.append("natural: got \(solver.natural(widths: three)), want 316")
+    }
+    return problems
+}

@@ -196,12 +196,95 @@ private struct GrMobRow: View {
 
     var body: some View {
         let s = node.style
-        GrMobFlexStack(axis: .horizontal, style: s) {
-            FlexChildren(node: node, axis: .horizontal)
+        // core.FlexWrap(true) asks for CSS flex-wrap: children that do not fit
+        // continue on the next line instead of being shrunk onto one. The
+        // flex stack cannot do that — it is a single-line algorithm that
+        // shrinks proportionally, so a row of chips wider than the screen
+        // squeezed every chip's label until it broke mid-word. The wrap
+        // layout keeps each child at its ideal size and breaks lines instead;
+        // Gap serves as both the in-line and the between-line spacing, as it
+        // does in CSS and in the Android FlowRow.
+        if s?.flexWrap == "wrap" {
+            GrMobWrapLayout(spacing: s?.gap ?? 0) {
+                FlexChildren(node: node, axis: .horizontal)
+            }
+            .grMobBox(s, grow: grow,
+                        onTap: node.stringProp("onClick"),
+                        onLongPress: node.stringProp("onLongPress"))
+        } else {
+            GrMobFlexStack(axis: .horizontal, style: s) {
+                FlexChildren(node: node, axis: .horizontal)
+            }
+            .grMobBox(s, grow: grow,
+                        onTap: node.stringProp("onClick"),
+                        onLongPress: node.stringProp("onLongPress"))
         }
-        .grMobBox(s, grow: grow,
-                    onTap: node.stringProp("onClick"),
-                    onLongPress: node.stringProp("onLongPress"))
+    }
+}
+
+/// The Layout behind a wrapping Row. Line breaking is GrMobWrapSolver's
+/// (GrMobFlex.swift); this only measures, asks where the breaks fall, and
+/// places. Children are measured with an unspecified proposal so each reports
+/// its ideal size — a chip is as wide as its label, never as wide as the line.
+///
+/// Width: when the offer is definite and more than one line results, the
+/// layout takes the whole offer, since its lines are laid out against it.
+/// When everything fits on one line it hugs, the way a non-wrapping Row does,
+/// so switching FlexWrap on does not move a row that never needed to wrap.
+private struct GrMobWrapLayout: Layout {
+    let spacing: CGFloat
+
+    private var solver: GrMobWrapSolver { GrMobWrapSolver(spacing: spacing) }
+
+    private func ideal(_ subviews: Subviews) -> [CGSize] {
+        subviews.map { $0.sizeThatFits(.unspecified) }
+    }
+
+    private func lineHeight(_ line: [Int], _ sizes: [CGSize]) -> CGFloat {
+        line.map { sizes[$0].height }.max() ?? 0
+    }
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        guard !subviews.isEmpty else { return .zero }
+        let sizes = ideal(subviews)
+        let widths = sizes.map(\.width)
+        // An infinite proposal is SwiftUI probing for a maximum, not an offer
+        // to wrap against; treat it like no offer at all.
+        let available = proposal.width.flatMap { $0.isFinite ? $0 : nil }
+        let lines = solver.lines(widths: widths, available: available)
+        let natural = solver.natural(widths: widths)
+        let width: CGFloat
+        if let available, lines.count > 1 {
+            width = available
+        } else if let available {
+            width = min(natural, available)
+        } else {
+            width = natural
+        }
+        // Two statements rather than one expression: the closure-plus-operator
+        // chain is exactly the shape the Swift type checker times out on.
+        let contentHeight: CGFloat = lines.map { lineHeight($0, sizes) }.reduce(0, +)
+        let lineGaps: CGFloat = spacing * CGFloat(max(lines.count - 1, 0))
+        let height = contentHeight + lineGaps
+        return CGSize(width: width, height: height)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        guard !subviews.isEmpty else { return }
+        let sizes = ideal(subviews)
+        // Broken against `bounds`, not `proposal`: bounds is the width
+        // actually being drawn into, which the parent may have changed.
+        let lines = solver.lines(widths: sizes.map(\.width), available: bounds.width)
+        var y = bounds.minY
+        for line in lines {
+            var x = bounds.minX
+            for i in line {
+                subviews[i].place(at: CGPoint(x: x, y: y), anchor: .topLeading,
+                                  proposal: ProposedViewSize(sizes[i]))
+                x += sizes[i].width + spacing
+            }
+            y += lineHeight(line, sizes) + spacing
+        }
     }
 }
 

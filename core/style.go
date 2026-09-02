@@ -354,9 +354,22 @@ func PaddingTop(px int) StyleProp {
 	})
 }
 
+// PaddingHorizontal sets the left and right insets.
+//
+// It writes the explicit Left/Right sides as well as the Horizontal shorthand.
+// The renderers resolve a side as "the explicit value if non-zero, otherwise
+// the axis shorthand" (see htmlout.EdgeCSS), so a prop that wrote only the
+// shorthand could never override a side that was already set: a theme Column
+// carries Left/Right 16, and PaddingHorizontal(0) after it used to leave the
+// 16 in place — and PaddingHorizontal(24) used to render as 16. Writing the
+// sides too gives this prop the same last-one-wins ordering every other
+// StyleProp has, and a zero clears the theme value in all four renderers
+// without any of them changing their resolution rule.
 func PaddingHorizontal(px int) StyleProp {
 	return styleFunc(func(s *Style) {
 		s.Padding.Horizontal = px
+		s.Padding.Left = px
+		s.Padding.Right = px
 	})
 }
 

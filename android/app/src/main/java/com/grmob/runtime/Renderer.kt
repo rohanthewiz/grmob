@@ -9,6 +9,8 @@ import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
@@ -729,9 +731,29 @@ private fun GrMobTextField(
 // Flex containers
 // ---------------------------------------------------------------------------
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun GrMobRow(node: GrMobNode, extra: Modifier) {
     val s = animatedStyle(node.style)
+    // core.FlexWrap(true) asks for CSS flex-wrap behavior: children that do
+    // not fit the width continue on the next line instead of being squeezed.
+    // A plain Row cannot do that — it measures each child against whatever
+    // width is left, so the first chip that no longer fits has its label
+    // broken mid-word and everything after it gets zero width. FlowRow is
+    // Compose's wrapping row. Its scope extends RowScope, so RowChildren and
+    // the weight modifier it applies work unchanged; Gap becomes both the
+    // in-line spacing (via horizontalArrangement) and the spacing between
+    // wrapped lines. Cross-axis alignment within a line is not applied here:
+    // FlowRow at this foundation version has no verticalAlignment slot, and
+    // wrapped chip rows are single-height in practice.
+    if (s?.flexWrap == "wrap") {
+        FlowRow(
+            modifier = s.boxModifier(extra, gestureModifier(node)),
+            horizontalArrangement = horizontalArrangement(s),
+            verticalArrangement = packedVertically(s),
+        ) { RowChildren(node) }
+        return
+    }
     Row(
         modifier = s.boxModifier(extra.then(stretchRowHeight(s)), gestureModifier(node)),
         horizontalArrangement = horizontalArrangement(s),

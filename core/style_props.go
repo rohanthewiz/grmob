@@ -216,9 +216,13 @@ func ZIndex(v int) StyleProp {
 	})
 }
 
+// PaddingVertical sets the top and bottom insets. Writes the explicit sides
+// as well as the shorthand, for the reason given on PaddingHorizontal.
 func PaddingVertical(px int) StyleProp {
 	return styleFunc(func(s *Style) {
 		s.Padding.Vertical = px
+		s.Padding.Top = px
+		s.Padding.Bottom = px
 	})
 }
 

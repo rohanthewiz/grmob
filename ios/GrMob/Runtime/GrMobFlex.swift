@@ -184,3 +184,60 @@ struct GrMobFlexSolver {
         }
     }
 }
+
+/// Line breaking for a Row with core.FlexWrap(true) — CSS `flex-wrap: wrap`
+/// on the horizontal axis, as pure arithmetic for the same reason
+/// GrMobFlexSolver is: the SwiftUI Layout that uses it (GrMobWrapLayout in
+/// Renderer.swift) can only run in a view hierarchy, while the part that is
+/// easy to get wrong — where the breaks fall — is a function from numbers to
+/// numbers that ios/verify checks on a plain macOS host.
+///
+/// The model is CSS flex-line collection with `flex-shrink: 0` on every item:
+///
+/// ```
+/// a child joins the current line if  used + spacing + width <= available
+/// otherwise it starts a new line
+/// a child wider than `available` gets a line to itself — never shrunk,
+///   never dropped, exactly as CSS overflows it
+/// no definite width offered -> everything on one line (nothing to wrap
+///   against; matches a non-wrapping Row's hug behavior)
+/// ```
+///
+/// Growing is deliberately absent: FlexGrow on a wrapped child would have to
+/// distribute each line's leftover, which no caller needs yet and which CSS
+/// itself only does per line. Children keep their ideal widths.
+struct GrMobWrapSolver {
+    let spacing: CGFloat
+
+    /// The width the run of children wants on a single line.
+    func natural(widths: [CGFloat]) -> CGFloat {
+        widths.reduce(0, +) + spacing * CGFloat(max(widths.count - 1, 0))
+    }
+
+    /// Child indices grouped into lines, in order. Every index appears exactly
+    /// once; an empty input yields no lines.
+    func lines(widths: [CGFloat], available: CGFloat?) -> [[Int]] {
+        guard !widths.isEmpty else { return [] }
+        guard let available, available.isFinite else { return [Array(widths.indices)] }
+
+        var lines: [[Int]] = []
+        var current: [Int] = []
+        var used: CGFloat = 0
+        for (i, w) in widths.enumerated() {
+            let needed = current.isEmpty ? w : used + spacing + w
+            // The epsilon absorbs the float noise a chain of dp-to-pt
+            // conversions leaves behind, so a line that fits exactly is not
+            // broken by a rounding error.
+            if !current.isEmpty && needed > available + 0.0001 {
+                lines.append(current)
+                current = [i]
+                used = w
+            } else {
+                current.append(i)
+                used = needed
+            }
+        }
+        lines.append(current)
+        return lines
+    }
+}
