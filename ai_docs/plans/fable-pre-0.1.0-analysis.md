@@ -567,9 +567,14 @@ a legacy builder through the same exporter rather than pinning a literal.
 - **Tag `v0.1.0`** once Phase 1 lands (`git tag -a v0.1.0 && git push --tags`).
   Nothing in the repo has to be edited to match the tag; write the release
   notes from `git log` if GitHub wants a body.
-- **Add CI** (`.github/workflows/ci.yml`): gofmt check, `go vet`,
-  `go test -race ./...`, `GOOS=js GOARCH=wasm go build ./wasm`,
-  `wasm/verify/run.sh` (needs node), `ios/verify/run.sh` on a macOS runner.
+- ~~**Add CI**~~ — **done.** `.github/workflows/ci.yml` runs the six checks
+  above plus an Android job, in three parallel jobs (ubuntu Go+Node, macOS
+  Swift, ubuntu JDK+SDK/NDK). Two things the list did not anticipate:
+  `go build ./wasm` needs `-o` because the package path is also a directory,
+  and the Android job has to bind the AAR first since `app/libs/grmob.aar` is
+  not tracked. That bind is the one place the `tool` pin is actually honored
+  (see the gomobile item in 6.3): `go tool gomobile` fails with "gobind was
+  not found" unless the pinned `gobind` is built onto `PATH` first.
 - **Root module dependency footprint:** `go.mod` requires `bytdb` (+
   `btypedb`, `serr`, `btype`) though only `examples/todoapp` imports it, so
   every consumer inherits it. Options: move examples to a nested module, or

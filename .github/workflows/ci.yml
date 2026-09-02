@@ -1,0 +1,171 @@
+# Continuous integration for GrMob.
+#
+# The repo's release gate has always been a fixed list of checks run by hand
+# before a tag (see ai_docs/plans/fable-pre-0.1.0-analysis.md, Phase 7). This
+# workflow is that list, unchanged, split across three runners by what each
+# check actually needs:
+#
+#   go       ubuntu   Go toolchain + Node        formatting, vet, tests, WASM
+#   ios      macOS    Go + Swift (arm64 host)    ios/verify/run.sh
+#   android  ubuntu   Go + JDK 17 + SDK/NDK      gomobile bind, then Gradle
+#
+# The three are independent and run in parallel; a red iOS job does not hide a
+# red Go job. The Go job is the fast one and is what a contributor watches.
+name: CI
+
+on:
+  push:
+    branches: [master]
+    tags: ['v*']
+  pull_request:
+    branches: [master]
+  workflow_dispatch:
+
+# Least privilege: nothing here writes to the repo, comments on PRs or
+# publishes anything.
+permissions:
+  contents: read
+
+# A second push to the same branch supersedes the first. Tags are excluded
+# from cancellation by including the ref in the group: a release build should
+# never be cancelled by a subsequent branch push.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  go:
+    name: Go, WASM and the JS runtime
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          # Reads 1.26.1 from the `go` line rather than repeating it here, so
+          # the toolchain bump happens in one place. setup-go caches the
+          # module and build caches by default.
+          go-version-file: go.mod
+
+      - uses: actions/setup-node@v4
+        with:
+          # wasm/verify needs only `node --test`; no npm install, no
+          # node_modules, no lockfile. 22 is the current LTS line.
+          node-version: '22'
+
+      - name: gofmt
+        # `gofmt -l` reports unformatted files on stdout and still exits 0, so
+        # the exit status has to be derived from whether it printed anything.
+        run: |
+          unformatted=$(gofmt -l .)
+          if [ -n "$unformatted" ]; then
+            echo "These files are not gofmt-clean:"
+            echo "$unformatted"
+            exit 1
+          fi
+          echo "gofmt: clean"
+
+      - name: go vet
+        run: go vet ./...
+
+      - name: go test -race
+        # The race build runs the same tests as a plain `go test ./...` and
+        # additionally instruments them, so it is run alone rather than after
+        # a duplicate non-race pass. The engine dispatches callbacks and timer
+        # pushes from different goroutines, which is exactly what -race is for.
+        run: go test -race ./...
+
+      - name: Build the WASM target
+        # -o is mandatory: the package path ./wasm is also a directory named
+        # `wasm`, and without -o the compiler refuses to overwrite a directory
+        # with its build output. RUNNER_TEMP keeps the artifact out of the
+        # working tree, where wasm/main.wasm is gitignored anyway.
+        run: GOOS=js GOARCH=wasm go build -o "$RUNNER_TEMP/main.wasm" ./wasm
+
+      - name: Verify the JS runtime against Go's patch transcripts
+        # Go generates transcripts from real example apps, Node replays them
+        # through the shipped wasm/grmob-runtime.js against a minimal DOM and
+        # compares with Go's final render, then runs the event/focus unit tests.
+        run: ./wasm/verify/run.sh
+
+  ios:
+    name: iOS runtime conformance
+    # The harness compiles for arm64-apple-macos14.0, so it needs an
+    # Apple-silicon runner carrying at least the macOS 14 SDK. Every current
+    # GitHub macOS image qualifies; `latest` avoids a hardcoded image label
+    # going out of support.
+    runs-on: macos-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Verify the Swift runtime and type-check the view layer
+        # Two checks in one script: the data layer (TreeStore/parser) replays
+        # Go's bridge transcript and is compared tree-for-tree, and the SwiftUI
+        # view layer is type-checked. The latter matters on its own because
+        # Renderer.swift carries a hand-written Layout and a deep opaque-type
+        # modifier chain, which fail at compile time in ways no data-layer test
+        # would catch. Neither needs a simulator.
+        run: ./ios/verify/run.sh
+
+  android:
+    name: Android AAR and Compose renderer
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - uses: actions/setup-java@v4
+        with:
+          # AGP 9 and the Kotlin 2.x compiler run on 17; the module also
+          # compiles its Java/Kotlin to 17 bytecode (app/build.gradle).
+          java-version: '17'
+          distribution: temurin
+          cache: gradle
+
+      - name: Install the compile SDK
+        # compileSdk/targetSdk are 34. The hosted image ships several
+        # platforms, but which ones is not contractual, and AGP does not
+        # auto-download missing components. This is a no-op when present.
+        run: |
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" \
+            "platforms;android-34" "build-tools;34.0.0" > /dev/null
+
+      - name: Build the AAR with the pinned gomobile
+        # go.mod pins gomobile/gobind in a `tool` block, but `go tool gomobile`
+        # alone is not enough: gomobile shells out to a *gobind executable* and
+        # fails with "gobind was not found, please run gomobile init" when one
+        # is not on PATH. Building the pinned gobind into a temp dir and
+        # prepending it satisfies that without a `go install ...@latest`, which
+        # would silently ignore the pin and fetch a different version.
+        #
+        # android/build.sh is deliberately not used here: it resolves gomobile
+        # from GOPATH/bin and defaults ANDROID_HOME to a macOS path.
+        run: |
+          mkdir -p "$RUNNER_TEMP/bin"
+          go build -o "$RUNNER_TEMP/bin/gobind" golang.org/x/mobile/cmd/gobind
+          export PATH="$RUNNER_TEMP/bin:$PATH"
+          # ANDROID_NDK_LATEST_HOME is set by the hosted image; the fallback
+          # picks the highest installed NDK the way build.sh does.
+          export ANDROID_NDK_HOME="${ANDROID_NDK_LATEST_HOME:-$(ls -d "$ANDROID_HOME"/ndk/* | sort -V | tail -1)}"
+          mkdir -p android/app/libs
+          go tool gomobile bind -target=android -androidapi 24 \
+            -o android/app/libs/grmob.aar \
+            ./mobile ./examples/mobileapp
+
+      - name: Assemble the debug APK
+        # Compiles the Compose renderer against the freshly bound AAR. This is
+        # the only guard on the Kotlin runtime — Renderer.kt, TreeStore.kt and
+        # GrMobStyle.kt have no unit tests, so a compile failure here is the
+        # first signal that a Go-side bridge change broke the native side.
+        working-directory: android
+        run: ./gradlew assembleDebug --no-daemon
