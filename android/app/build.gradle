@@ -1,18 +1,22 @@
 plugins {
     id 'com.android.application'
-    id 'kotlin-android'
+    // No 'kotlin-android' here: AGP 9 has built-in Kotlin support and fails the
+    // build if the standalone plugin is also applied. See kotl.in/gradle/agp-built-in-kotlin.
+    id 'org.jetbrains.kotlin.plugin.compose'
 }
 
 android {
-    namespace 'com.grmob.app'
-    compileSdk 34
+    // Properties are assigned with '=' throughout. The Groovy space-assignment
+    // form ('namespace "x"') is deprecated and removed in Gradle 10.
+    namespace = 'com.grmob.app'
+    compileSdk = 34
 
     defaultConfig {
-        applicationId "com.grmob.app"
-        minSdk 24
-        targetSdk 34
-        versionCode 1
-        versionName "0.1"
+        applicationId = "com.grmob.app"
+        minSdk = 24
+        targetSdk = 34
+        versionCode = 1
+        versionName = "0.1"
         ndk {
             abiFilters 'armeabi-v7a', 'arm64-v8a', 'x86_64'
         }
@@ -20,25 +24,25 @@ android {
 
     buildTypes {
         release {
-            minifyEnabled false
+            minifyEnabled = false
         }
     }
 
     compileOptions {
-        sourceCompatibility JavaVersion.VERSION_17
-        targetCompatibility JavaVersion.VERSION_17
-    }
-    kotlinOptions {
-        jvmTarget = '17'
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
     }
 
     buildFeatures {
-        compose true
+        compose = true
     }
-    composeOptions {
-        // Must match the Kotlin version pinned in the root build.gradle
-        // (compose-compiler 1.5.14 <-> Kotlin 1.9.24).
-        kotlinCompilerExtensionVersion '1.5.14'
+}
+
+// Replaces the old android.kotlinOptions block, which Kotlin 2.x deprecated in
+// favour of the typed compilerOptions DSL on the kotlin extension.
+kotlin {
+    compilerOptions {
+        jvmTarget = org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17
     }
 }
 

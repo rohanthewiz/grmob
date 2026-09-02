@@ -571,7 +571,7 @@ xcrun simctl launch booted com.grmob.demo
 
 ```sh
 android/build.sh ./examples/todoapp    # gomobile bind → app/libs/grmob.aar
-cd android && gradle assembleDebug
+cd android && ./gradlew assembleDebug
 adb install -r app/build/outputs/apk/debug/app-debug.apk
 adb shell am start -n com.grmob.app/.MainActivity
 ```

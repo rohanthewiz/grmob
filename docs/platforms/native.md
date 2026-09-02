@@ -75,6 +75,14 @@ The script binds `./mobile` plus your app package into
 `android/` in Android Studio and run the `app` module — the Kotlin shell in
 `android/app/src` implements the renderer against the bridge contract above.
 
+From the command line, use the committed Gradle wrapper (it downloads its own
+pinned Gradle, so no system install is required):
+
+```bash
+cd android && ./gradlew assembleDebug
+adb install -r app/build/outputs/apk/debug/app-debug.apk
+```
+
 ## Building — iOS
 
 Requires **full Xcode** (not just Command Line Tools) — gomobile drives

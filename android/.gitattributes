@@ -1,0 +1,7 @@
+# The Gradle wrapper ships a Windows batch script alongside the POSIX one.
+# Without this, Git normalises gradlew.bat to LF on commit and checks it out
+# with LF on Windows, where cmd.exe then mis-parses it. Pin the line endings
+# each script actually needs, and keep the wrapper jar out of text handling.
+gradlew        text eol=lf
+gradlew.bat    text eol=crlf
+*.jar          binary

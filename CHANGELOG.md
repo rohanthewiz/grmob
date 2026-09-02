@@ -6,6 +6,20 @@ uses [Semantic Versioning](https://semver.org/) once tagged.
 
 ## [Unreleased]
 
+### Build
+- Android toolchain moved to Gradle 9.7.1, AGP 9.4.0 and Kotlin 2.4.10.
+  AGP 8.x cannot run on Gradle 9.6+ (it uses `InternalProblems`, which Gradle
+  removed there), so the AGP major bump was the only way off the 8 line.
+  Kotlin 2.x also replaces `composeOptions`/`kotlinCompilerExtensionVersion`
+  with the `org.jetbrains.kotlin.plugin.compose` plugin, and AGP 9 supplies
+  Kotlin itself, so the `kotlin-android` plugin is gone. The build is now free
+  of Gradle deprecation warnings.
+- Added a committed Gradle wrapper (`android/gradlew`, pinned to 9.7.1 with a
+  distribution checksum). Building no longer requires a system Gradle install;
+  `cd android && ./gradlew assembleDebug` works from a clean clone.
+- Debug APK shrank from 19.3 MB to 16.1 MB: AGP 9 strips `libgojni.so`, which
+  AGP 8.1 reported it could not do.
+
 ## [0.1.0] — 2026-09-01
 
 First tagged release. Everything below was in place at the cut.
