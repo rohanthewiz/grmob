@@ -127,6 +127,25 @@ func TestCheckboxChecked(t *testing.T) {
 	}
 }
 
+// A Slider is a range input whose bounds ride as attributes, in the shortest
+// form that round-trips (no "30.000000").
+func TestSliderExportsRangeAttributes(t *testing.T) {
+	n := &core.Node{Type: "Slider", Props: map[string]any{"value": 12.5, "min": 0.0, "max": 30.0}}
+	out := ExportHTML(n)
+	for _, want := range []string{`type="range"`, `min="0"`, `max="30"`, `value="12.5"`} {
+		if !strings.Contains(out, want) {
+			t.Errorf("slider export lacks %s:\n%s", want, out)
+		}
+	}
+	if strings.Contains(out, "step=") {
+		t.Errorf("unset step was exported:\n%s", out)
+	}
+	n.Props["step"] = 0.5
+	if out := ExportHTML(n); !strings.Contains(out, `step="0.5"`) {
+		t.Errorf("step not exported:\n%s", out)
+	}
+}
+
 // Callback IDs ride out as data attributes; the WASM runtime dispatches on
 // them, so their names are a contract.
 func TestCallbackAttrsEmitted(t *testing.T) {
@@ -448,7 +467,7 @@ func TestContentModeJoinsTheExistingStyleAttribute(t *testing.T) {
 }
 
 func TestDisabledFormControlsGetTheAttribute(t *testing.T) {
-	for _, nodeType := range []string{"Button", "Input", "InputPassword", "NumericInput", "TextArea", "Checkbox"} {
+	for _, nodeType := range []string{"Button", "Input", "InputPassword", "NumericInput", "TextArea", "Checkbox", "Slider"} {
 		t.Run(nodeType, func(t *testing.T) {
 			n := &core.Node{
 				Type:  nodeType,

@@ -66,7 +66,8 @@
 ### 📱 Native Runtime Bridges
 - [x] **Android Runtime** (Go → JSON → Jetpack Compose renderer)
 - [x] **iOS Runtime** (Go → JSON → SwiftUI renderer)
-- [x] gomobile bridge with a four-channel event surface (`mobile/bridge.go`)
+- [x] gomobile bridge with a four-channel event surface (`mobile/bridge.go`),
+      plus system events out and host events in
 
 ### 🧩 Widget Library (`components`)
 - [x] `Screen`, `Button`, `InputRow`, `SegmentedControl`, `Card`, `ListRow`
@@ -111,6 +112,17 @@
       emitted into a nil handler and vanished
 - [x] `core.OpenURL` — hand a URL to the platform's own browser, dialer or mail
       composer (Intent ACTION_VIEW / UIApplication.open / window.open)
+- [x] Audio playback with a media session — `core.AudioLoad/Play/Pause/Seek/
+      Skip/SetRate/Stop`, `hooks.UseAudio`, one player per process behind
+      Media3 + `MediaSessionService` (Android), `AVPlayer` + Now Playing +
+      remote commands (iOS), `HTMLAudioElement` + the Media Session API
+      (browser); background playback and lock-screen controls on both natives
+- [x] Host events — the reverse of system events: `core.ReceiveHostEvent` /
+      `core.OnHostEvent`, `mobile.ReportHostEvent`, `GrMobWASM.HostEvent`.
+      Audio status is the first traffic; keystore results, location fixes and
+      lifecycle transitions have their channel ready
+- [x] `core.Slider` — a range control on all four targets, with a separate
+      end-of-drag callback so a seek bar acts once
 
 ---
 
@@ -126,7 +138,6 @@
 
 - [ ] Keystore (Secure): `Keystore.Save()`, `Keystore.Get()` — the church app
       keeps its bearer token in bytdb for want of this; see its README
-- [ ] Audio playback with a media session (background + lock-screen controls)
 - [ ] Clipboard: read/write
 - [ ] Device Storage (Plain): `DeviceStorage.Set()`, `DeviceStorage.Get()`
 - [ ] Bluetooth: `Scan`, `Connect`, `Send`

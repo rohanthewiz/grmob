@@ -110,6 +110,7 @@ platform's own gesture, not a handler of ours.
 | `Button` | `Button(label, onClick, props...)` — also `ButtonWithEvent(label, event, fn, ...)` |
 | `Input` | `Input(value, placeholder, onChange, ...)` — also `InputWithSubmit`, `InputPassword`, `NumericInput`, `TextArea` |
 | `Checkbox` | `Checkbox(checked, onToggle, ...)` |
+| `Slider` | `Slider(value, min, max, onChange, ...)` with `OnSliderChangeEnd(fn)` (fires once on release — the one a seek bar acts on) and `SliderStep(s)` |
 | `Image` | `Image(src, styleProps...)` |
 | `CameraView` | `CameraView(props...)` with `OnCapture`, `WithOverlay`, `SetFacing`, ... |
 | `Modal` | `Modal(Visible(b), OnDismiss(fn), Backdrop(color), ...)` |

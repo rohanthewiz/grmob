@@ -3,7 +3,7 @@ package htmlout
 // inputTypes is the one authoritative statement of the node type -> HTML
 // <input> type table.
 //
-// Four Go node types share the <input> tag, and an <input> with no type
+// Five Go node types share the <input> tag, and an <input> with no type
 // attribute is a text box, so this attribute is the only thing that makes a
 // checkbox a checkbox rather than a text field. Every renderer that targets
 // the DOM therefore needs the same table:
@@ -29,6 +29,7 @@ var inputTypes = map[string]string{
 	"InputPassword": "password",
 	"NumericInput":  "number",
 	"Checkbox":      "checkbox",
+	"Slider":        "range",
 }
 
 // InputTypeFor returns the HTML <input> type attribute a node type renders as,

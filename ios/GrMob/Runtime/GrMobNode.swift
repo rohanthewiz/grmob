@@ -41,6 +41,7 @@ final class GrMobNode {
     func stringProp(_ name: String) -> String { props[name] as? String ?? "" }
     func boolProp(_ name: String) -> Bool { props[name] as? Bool ?? false }
     func intProp(_ name: String) -> Int { (props[name] as? NSNumber)?.intValue ?? 0 }
+    func doubleProp(_ name: String) -> Double { (props[name] as? NSNumber)?.doubleValue ?? 0 }
 
     /// Decodes a Go core.Node JSON object (keys are the Go field names,
     /// as produced by JSONSerialization).

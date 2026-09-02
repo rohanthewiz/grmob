@@ -361,6 +361,28 @@ func (m *Manager) DispatchIntCallback(id string, value int) string {
 	return m.renderAgainLocked()
 }
 
+// Dispatch runs fn under the render mutex — the same serialization the
+// callback dispatches above get — then renders and returns the resulting
+// patches. It is the event path for host events (mobile.ReportHostEvent):
+// traffic that reaches Go from the shell without a callback ID, such as the
+// audio player's status ticks. label names the work in the panic log.
+//
+// Before the initial mount there is no tree to diff against, so fn runs and
+// the state it wrote is simply part of the RenderInitial that follows; the
+// "[]" tells the host nothing needs applying. That case is rare (a status
+// tick cannot precede the Load that caused it, and Load needs a rendered
+// button) but a host that sent it would otherwise receive a diff against
+// nothing, which no renderer can apply.
+func (m *Manager) Dispatch(label string, fn func()) string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.guardHandler(label, fn)
+	if m.currentTree == nil {
+		return "[]"
+	}
+	return m.renderAgainLocked()
+}
+
 // guardHandler runs one event handler under a panic guard.
 //
 // core.ErrorBoundary covers render; this covers the other half. A handler runs

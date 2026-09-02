@@ -13,11 +13,13 @@ struct GrMobApp: App {
         // start() before the first body evaluation so the initial tree is
         // there on the very first frame — no empty-flash-then-mount.
         let bridge = GomobileBridge()
-        // System events (toasts, external URLs) are wired before start() so
-        // an event emitted during the very first render pass has a sink;
-        // without a listener Go drops them silently. See SystemEvents.swift.
-        SystemEvents.attach(bridge)
         let runtime = GrMobRuntime(bridge: bridge)
+        // System events (toasts, external URLs, audio) are wired before
+        // start() so an event emitted during the very first render pass has
+        // a sink; without a listener Go drops them silently. The runtime is
+        // built first because the audio player reports back through it, but
+        // nothing renders until start(). See SystemEvents.swift.
+        SystemEvents.attach(bridge, runtime: runtime)
         runtime.start()
         self.runtime = runtime
     }

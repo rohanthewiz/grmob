@@ -66,6 +66,16 @@ Event wiring on the DOM side uses the callback-ID attributes the tree
 carries (`data-onclick`, `data-onchange`, `data-ontoggle`): the runtime
 listens for interactions, reads the ID, and calls `ReceiveEvent` with it.
 
+
+**Host events.** The runtime reports host→app traffic that answers no
+callback — the audio player's status ticks — through `GrMobWASM.HostEvent(name,
+payloadJSON)`, which `wasm/main.go` installs beside `ReceiveEvent`. A page
+that copies the runtime needs nothing more: the `"audio"` system event is
+handled inside `grmob-runtime.js` (`GrMob.audio`, an `HTMLAudioElement` plus
+the Media Session API), and consumers' state writes reach the screen through
+the push channel. See [Native — Audio](native.md#audio) for the command and
+status shapes.
+
 ### Node types and tags
 
 Which element a node becomes is one table, stated once in Go

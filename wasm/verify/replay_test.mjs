@@ -30,7 +30,7 @@ const scenarios = JSON.parse(readFileSync(TRANSCRIPT, "utf8"));
 // The Go node type -> <input type>, restated from the contract for the same
 // reason the prop table below is: the runtime has its own copy of this table
 // (inputTypeFor), and a conformance test that read the runtime's would only
-// prove the runtime agrees with itself. Four Go types share the <input> tag,
+// prove the runtime agrees with itself. Five Go types share the <input> tag,
 // so this attribute is the only thing that makes a checkbox a checkbox.
 //
 // This copy stays deliberately independent even though the runtime's copy is
@@ -42,6 +42,7 @@ const INPUT_TYPE = {
     InputPassword: "password",
     NumericInput: "number",
     Checkbox: "checkbox",
+    Slider: "range",
 };
 
 // The props the runtime maps onto the DOM, restated here from the contract

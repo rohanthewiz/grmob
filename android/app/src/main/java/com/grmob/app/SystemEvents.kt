@@ -9,6 +9,7 @@ import android.os.Looper
 import android.util.Log
 import android.widget.Toast
 import com.grmob.runtime.GrMobBridge
+import com.grmob.runtime.GrMobRuntime
 import org.json.JSONObject
 
 /**
@@ -18,6 +19,7 @@ import org.json.JSONObject
  *
  *   core.ShowToast  ──▶ "toast"     ──▶ android.widget.Toast
  *   core.OpenURL    ──▶ "open_url"  ──▶ Intent(ACTION_VIEW)
+ *   core.Audio*     ──▶ "audio"     ──▶ AudioPlayer (Media3, in GrMobAudioService)
  *
  * Before this existed the events were emitted into a nil Go handler and
  * vanished on both natives — only the WASM host had a sink — so an app
@@ -34,17 +36,21 @@ object SystemEvents {
     /**
      * Wires Go's event stream to this process's UI.
      *
-     * Call before [com.grmob.runtime.GrMobRuntime.start] so an event emitted
-     * during the very first render pass has somewhere to land.
+     * Call before [GrMobRuntime.start] so an event emitted during the very
+     * first render pass has somewhere to land.
      *
+     * @param runtime the audio player reports its status back through
+     *   [GrMobRuntime.hostEvent], which is the host→app return channel for
+     *   events that answer no callback ID (see mobile/hostevents.go).
      * @param context any Context; only its application context is retained,
      *   so an Activity passed here is not leaked past its own lifetime. The
      *   consequence is that [Intent.FLAG_ACTIVITY_NEW_TASK] is mandatory
      *   below — an application context has no task of its own to launch into.
      */
-    fun attach(context: Context, bridge: GrMobBridge) {
+    fun attach(context: Context, bridge: GrMobBridge, runtime: GrMobRuntime) {
         val appContext = context.applicationContext
         val main = Handler(Looper.getMainLooper())
+        AudioPlayer.attach(appContext, runtime::hostEvent)
         // The callback runs on the Go goroutine that emitted the event. Both
         // actions below touch the UI (a Toast must be shown from a Looper
         // thread; startActivity from an arbitrary thread is unreliable), so
@@ -66,6 +72,7 @@ object SystemEvents {
         when (name) {
             "toast" -> showToast(context, data)
             "open_url" -> openUrl(context, data)
+            "audio" -> AudioPlayer.handle(data)
         }
     }
 

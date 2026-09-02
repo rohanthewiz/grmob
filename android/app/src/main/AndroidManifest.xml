@@ -4,6 +4,17 @@
     <!-- Image nodes load remote sources via Coil. -->
     <uses-permission android:name="android.permission.INTERNET" />
 
+    <!-- core's audio service (GrMobAudioService): a foreground service of
+         the mediaPlayback type is what keeps a stream playing with the app
+         in the background and puts the player on the lock screen; Android
+         14 rejects startForeground without the typed permission. WAKE_LOCK
+         lets ExoPlayer hold the CPU and radio while playing with the screen
+         off. No POST_NOTIFICATIONS: a MediaSession's notification is exempt
+         from the Android 13 notification permission. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+
     <application
         android:label="GrMob"
         android:allowBackup="true"
@@ -24,6 +35,19 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!-- The audio player's host. The intent filter is how a
+             MediaController locates the session (AudioPlayer connects by
+             SessionToken); exported so the system's media controls — the
+             lock screen, a headset, Android Auto — can bind to it too. -->
+        <service
+            android:name=".GrMobAudioService"
+            android:foregroundServiceType="mediaPlayback"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="androidx.media3.session.MediaSessionService" />
+            </intent-filter>
+        </service>
     </application>
 
 </manifest>

@@ -68,11 +68,13 @@ func tabs(tab core.State[int]) core.View {
 			core.Tab("Counter", ""),
 			core.Tab("Form", ""),
 			core.Tab("Feed", ""),
+			core.Tab("Audio", ""),
 		),
 		core.Content(
 			counterTab(),
 			formTab(),
 			feedTab(),
+			audioTab(),
 		),
 	)
 }
@@ -214,4 +216,121 @@ func formTab() core.View {
 			},
 		).Render(ctx)
 	})
+}
+
+// demoTrack is a freely licensed sample stream (SoundHelix's test songs are
+// published for exactly this purpose). Any HTTP(S) URL that serves ranges
+// works — seeking needs Range requests.
+var demoTrack = core.AudioTrack{
+	URL:    "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3",
+	Title:  "SoundHelix Song 1",
+	Artist: "SoundHelix",
+	Album:  "GrMob Demo",
+}
+
+// audioTab exercises core's audio service end to end on each native shell:
+// load, play/pause, seek by slider, skip, speed, stop — with the status
+// ticks arriving over the host-event channel (mobile.ReportHostEvent) and
+// re-rendering through hooks.UseAudio. Background the app while it plays to
+// see the lock-screen controls.
+func audioTab() core.View {
+	return core.ComponentFunc(func(ctx *core.Context) *core.Node {
+		status := hooks.UseAudio(ctx)
+		// The slider's own value while the thumb is down, or -1. Kept in
+		// state so the time label follows the drag; the seek itself happens
+		// once, on release.
+		scrub := core.NewState(ctx, -1.0)
+
+		mine := status.Track.URL == demoTrack.URL
+		position := status.Position
+		if scrub.Get() >= 0 {
+			position = scrub.Get()
+		}
+
+		line := "Nothing loaded"
+		if mine {
+			line = string(status.State)
+			if status.State == core.AudioError {
+				line += ": " + status.Error
+			}
+		}
+
+		playLabel := "Play"
+		if mine && status.State == core.AudioPlaying {
+			playLabel = "Pause"
+		}
+		onPlay := func() {
+			if mine {
+				core.AudioToggle()
+			} else {
+				core.AudioLoad(demoTrack)
+			}
+		}
+
+		muted := core.UseStyle(core.Style{FontSize: 13, TextColor: "#3C3C4399"})
+		return core.Column(
+			core.Gap(8),
+			core.Text(demoTrack.Title, core.UseStyle(core.Style{FontSize: 17, FontWeight: core.Bold})),
+			core.Text(line, muted),
+			core.Slider(position, 0, status.Duration,
+				func(v float64) { scrub.Set(v) },
+				core.OnSliderChangeEnd(func(v float64) {
+					scrub.Set(-1)
+					core.AudioSeek(v)
+				}),
+				core.Width("100%"),
+				core.Disabled(!mine || status.Duration <= 0),
+			),
+			core.Row(
+				// Full width, or the Row hugs its two labels and
+				// space-between has nothing to distribute.
+				core.Width("100%"),
+				core.Justify(core.JustifyBetween),
+				core.Text(clock(position), muted),
+				core.Text(clock(status.Duration), muted),
+			),
+			core.Row(
+				core.Gap(8),
+				core.Button("−15s", func() { core.AudioSkip(-15) }, core.Disabled(!mine)),
+				core.Button(playLabel, onPlay),
+				core.Button("+15s", func() { core.AudioSkip(15) }, core.Disabled(!mine)),
+			),
+			core.Row(
+				core.Gap(8),
+				core.Button(fmt.Sprintf("Speed %gx", status.Rate), func() {
+					core.AudioSetRate(nextRate(status.Rate))
+				}, core.Disabled(!mine)),
+				core.Button("Stop", core.AudioStop, core.Disabled(!mine)),
+			),
+		).Render(ctx)
+	})
+}
+
+// nextRate cycles 1 → 1.25 → 1.5 → 2 → 0.75 → 1.
+func nextRate(r float64) float64 {
+	switch {
+	case r < 1:
+		return 1
+	case r < 1.25:
+		return 1.25
+	case r < 1.5:
+		return 1.5
+	case r < 2:
+		return 2
+	default:
+		return 0.75
+	}
+}
+
+// clock formats seconds as m:ss (or h:mm:ss past an hour).
+func clock(seconds float64) string {
+	if seconds < 0 {
+		seconds = 0
+	}
+	s := int(seconds + 0.5)
+	h, m, sec := s/3600, (s%3600)/60, s%60
+	if h > 0 {
+		return fmt.Sprintf("%d:%02d:%02d", h, m, sec)
+	}
+	return fmt.Sprintf("%d:%02d", m, sec)
 }

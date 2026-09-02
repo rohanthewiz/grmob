@@ -53,6 +53,8 @@ consistent. Patch semantics — positional paths, ordering rules — are in
 | `RenderInitial()` | Full tree JSON for the first mount |
 | `TriggerCallback(id)` / `TriggerTextCallback` / `TriggerBoolCallback` / `TriggerIntCallback` | Event dispatch; returns the resulting patches |
 | `RenderAgain()` | Escape hatch for shells that drive rendering themselves |
+| `SetSystemEventListener(l)` | Sink for app→host system events (`toast`, `open_url`, `audio`); `OnSystemEvent(name, payloadJSON)` |
+| `ReportHostEvent(name, payloadJSON)` | Host→app events that answer no callback (`audio_status`); returns the resulting patches like `Trigger*` |
 
 ## Building — Android
 
@@ -102,6 +104,48 @@ Both build scripts take the app package as their first argument. Any Go
 package whose `init` calls `mobile.Register` (and exports one bindable
 symbol) drops into the same shells — that is the whole integration contract,
 and it's why the examples are structured as packages, not mains.
+
+## Audio
+
+`core.AudioLoad`, `AudioPlay`, `AudioPause`, `AudioToggle`, `AudioSeek`,
+`AudioSkip`, `AudioSetRate` and `AudioStop` drive one player per process,
+behind the platform's own media session — so background playback, the
+lock-screen card, headset buttons and CarPlay/Android Auto come from the OS
+rather than from the app. A screen reads the player with `hooks.UseAudio`,
+which re-renders it on every status tick:
+
+```go
+status := hooks.UseAudio(ctx)
+core.Slider(status.Position, 0, status.Duration, nil,
+    core.OnSliderChangeEnd(core.AudioSeek))
+core.Button(map[bool]string{true: "Pause", false: "Play"}[status.State == core.AudioPlaying],
+    core.AudioToggle)
+```
+
+Two channels carry it:
+
+```
+app ──SendSystemEvent("audio", {command: load|play|pause|seek|skip|rate|stop})──▶ shell
+app ◀──ReportHostEvent("audio_status", {url, state, position, duration, rate, error})── shell
+```
+
+The second is new with this feature and generic: `core.ReceiveHostEvent`
+fans any named host→app event out to `core.OnHostEvent` subscribers after
+core's own consumers, and `mobile.ReportHostEvent` is its one bridge entry
+point (`GrMobWASM.HostEvent` in the browser). Shells dispatch it on the same
+serial executor as `Trigger*` calls and apply the returned patches the same
+way.
+
+| Shell | Player | Session | Background |
+|---|---|---|---|
+| Android | Media3 ExoPlayer in `GrMobAudioService` (a `MediaSessionService`), driven through a `MediaController` from `AudioPlayer.kt` | Media3's own notification | `FOREGROUND_SERVICE_MEDIA_PLAYBACK` + `WAKE_LOCK`; the service is declared in the manifest |
+| iOS | `AVPlayer` in `AudioPlayer.swift` | `MPNowPlayingInfoCenter` + `MPRemoteCommandCenter` | `UIBackgroundModes: [audio]` (project.yml) and a `.playback` audio session |
+| Browser | `HTMLAudioElement` in `grmob-runtime.js` | the Media Session API | the tab |
+
+Status arrives twice a second while playing. `AudioLoad` and `AudioStop`
+update `core.CurrentAudioStatus` optimistically (loading / idle) so the very
+next render already shows the right track; everything else is the shell's
+word. `examples/mobileapp`'s Audio tab exercises the whole surface.
 
 ## Persistence on device
 

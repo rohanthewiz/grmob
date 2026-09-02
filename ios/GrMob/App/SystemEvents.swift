@@ -6,6 +6,7 @@ import UIKit
 ///
 ///     core.ShowToast  ──▶ "toast"     ──▶ a transient overlay label
 ///     core.OpenURL    ──▶ "open_url"  ──▶ UIApplication.open
+///     core.Audio*     ──▶ "audio"     ──▶ AudioPlayer (AVPlayer + the lock screen)
 ///
 /// Before this existed the events were emitted into a nil Go handler and
 /// vanished on both natives — only the WASM host had a sink — so an app
@@ -19,8 +20,13 @@ enum SystemEvents {
     /// Wires Go's event stream to this process's UI.
     ///
     /// Call before `GrMobRuntime.start()` so an event emitted during the very
-    /// first render pass has somewhere to land.
-    static func attach(_ bridge: GrMobBridge) {
+    /// first render pass has somewhere to land. The runtime is the audio
+    /// player's return path: status ticks go back through
+    /// `GrMobRuntime.hostEvent`, the host→app channel for events that answer
+    /// no callback ID (see mobile/hostevents.go).
+    @MainActor
+    static func attach(_ bridge: GrMobBridge, runtime: GrMobRuntime) {
+        AudioPlayer.shared.report = { name, payload in runtime.hostEvent(name, payload) }
         bridge.setSystemEventListener { name, payload in
             // The callback runs on the Go goroutine that emitted the event.
             // Everything below is UIKit, which is main-actor only, so every
@@ -44,6 +50,7 @@ enum SystemEvents {
         switch name {
         case "toast": showToast(object)
         case "open_url": openURL(object)
+        case "audio": AudioPlayer.shared.handle(object)
         default: break
         }
     }

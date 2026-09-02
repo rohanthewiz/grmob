@@ -63,4 +63,12 @@ dependencies {
 
     // Image node rendering (remote/local sources).
     implementation 'io.coil-kt:coil-compose:2.6.0'
+
+    // core's audio service: ExoPlayer does the playing, media3-session
+    // wraps it in a MediaSession + MediaSessionService (GrMobAudioService)
+    // for the lock screen and background playback, and hands the app a
+    // MediaController to drive it with (AudioPlayer). 1.4.x is the last
+    // line that compiles against compileSdk 34; 1.5+ wants 35.
+    implementation 'androidx.media3:media3-exoplayer:1.4.1'
+    implementation 'androidx.media3:media3-session:1.4.1'
 }

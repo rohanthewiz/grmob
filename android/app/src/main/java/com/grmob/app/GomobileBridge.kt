@@ -54,6 +54,11 @@ class GomobileBridge(dataDir: String) : GrMobBridge {
     // parameter, so a callback crosses the FFI as an interface or not at all.
     // See mobile/sysevents.go for the payload contract and SystemEvents.kt
     // for what this shell does with each event.
+    // Host events are the reverse direction and need no interface: a plain
+    // call into Go that returns patches, like the Trigger* functions.
+    override fun reportHostEvent(name: String, payload: String): String =
+        Mobile.reportHostEvent(name, payload)
+
     override fun setSystemEventListener(listener: (String, String) -> Unit) {
         Mobile.setSystemEventListener(object : SystemEventListener {
             override fun onSystemEvent(name: String, payload: String) =

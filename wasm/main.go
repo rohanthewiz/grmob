@@ -111,12 +111,37 @@ func receiveEvent(this js.Value, args []js.Value) any {
 	return nil
 }
 
+// hostEvent is the page's entry point for host→app traffic that answers no
+// registered callback — the audio player's status ticks (core/audio.go).
+// The runtime calls it as HostEvent(name, JSON.stringify(payload)); core
+// fans the event out (core.ReceiveHostEvent), and whatever state the
+// consumers write reaches the screen through the push channel, so nothing
+// here renders. Guarded like receiveEvent: a panicking consumer must not
+// unwind into the js.Func callback and abort the Go runtime.
+func hostEvent(this js.Value, args []js.Value) any {
+	if len(args) < 2 || args[0].Type() != js.TypeString || args[1].Type() != js.TypeString {
+		log.Printf("grmob: dropping a host event with %d arguments", len(args))
+		return nil
+	}
+	name := args[0].String()
+	var payload map[string]any
+	if err := json.Unmarshal([]byte(args[1].String()), &payload); err != nil {
+		log.Printf("grmob: dropping malformed host event %q: %v", name, err)
+		return nil
+	}
+	if rerr := core.Guard(func() { core.ReceiveHostEvent(name, payload) }); rerr != nil {
+		log.Printf("grmob: recovered panic in host event %s: %v\n%s", name, rerr.Value, rerr.Stack)
+	}
+	return nil
+}
+
 func registerCallbacks() {
 	js.Global().Set("GrMobWASM", map[string]any{
 		"RenderInitial": js.FuncOf(renderInitial),
 		"RenderAgain":   js.FuncOf(renderAgain),
 		"ReceiveEvent":  js.FuncOf(receiveEvent),
 		"IsDirty":       js.FuncOf(isDirty),
+		"HostEvent":     js.FuncOf(hostEvent),
 	})
 }
 

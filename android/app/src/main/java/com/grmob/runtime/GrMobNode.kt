@@ -43,6 +43,7 @@ class GrMobNode(
     fun stringProp(name: String): String = props[name] as? String ?: ""
     fun boolProp(name: String): Boolean = props[name] as? Boolean ?: false
     fun intProp(name: String): Int = (props[name] as? Number)?.toInt() ?: 0
+    fun doubleProp(name: String): Double = (props[name] as? Number)?.toDouble() ?: 0.0
 
     companion object {
         /** Decodes a Go core.Node JSON object (keys are the Go field names). */

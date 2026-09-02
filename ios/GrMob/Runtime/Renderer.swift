@@ -68,6 +68,7 @@ struct RenderNode: View {
             case "NumericInput": GrMobTextField(node: node, grow: grow, numeric: true)
             case "TextArea": GrMobTextField(node: node, grow: grow, multiline: true)
             case "Checkbox": GrMobCheckbox(node: node, grow: grow)
+            case "Slider": GrMobSlider(node: node, grow: grow)
 
             case "Row": GrMobRow(node: node, grow: grow)
             case "Column", "Card": GrMobColumn(node: node, grow: grow) // Card = Column whose Go theme style carries the card look
@@ -845,6 +846,58 @@ private struct GrMobCheckbox: View {
         )) { EmptyView() }
             .labelsHidden()
             .grMobBox(marginAndSizeOnly(node.style), grow: grow)
+    }
+}
+
+/// A core.Slider: SwiftUI's Slider over Go's [min, max]. Controlled with the
+/// same compromise the text fields make — Go's value is shown except while
+/// the thumb is being dragged, when the finger's value is, so a status tick
+/// arriving mid-drag (a seek bar fed by the audio player) cannot snap the
+/// thumb back. onChange goes up on every move; onChangeEnd once, on release,
+/// with the final value (core.OnSliderChangeEnd). Both are text callbacks
+/// carrying the number; Go parses Swift's String(Double).
+private struct GrMobSlider: View {
+    let node: GrMobNode
+    let grow: GrMobGrow
+    @Environment(\.grMobRuntime) private var runtime
+    @State private var local: Double = 0
+    @State private var editing = false
+
+    private var bounds: ClosedRange<Double> {
+        let lower = node.doubleProp("min")
+        let upper = node.doubleProp("max")
+        return lower...(upper > lower ? upper : lower + 1)
+    }
+
+    var body: some View {
+        let range = bounds
+        let upstream = min(max(node.doubleProp("value"), range.lowerBound), range.upperBound)
+        let step = node.doubleProp("step")
+        let onChange = node.stringProp("onChange")
+        let onChangeEnd = node.stringProp("onChangeEnd")
+        let value = Binding<Double>(
+            get: { editing ? local : upstream },
+            set: { v in
+                local = v
+                if !onChange.isEmpty { runtime?.textChanged(onChange, String(v)) }
+            })
+        let edited: (Bool) -> Void = { began in
+            if began {
+                local = upstream
+                editing = true
+            } else {
+                editing = false
+                if !onChangeEnd.isEmpty { runtime?.textChanged(onChangeEnd, String(local)) }
+            }
+        }
+        Group {
+            if step > 0 {
+                Slider(value: value, in: range, step: step, onEditingChanged: edited)
+            } else {
+                Slider(value: value, in: range, onEditingChanged: edited)
+            }
+        }
+        .grMobBox(marginAndSizeOnly(node.style), grow: grow)
     }
 }
 

@@ -23,11 +23,13 @@ class MainActivity : ComponentActivity() {
         // Recreation (rotation, process restore) simply remounts from Go's
         // current state — the Go side is a process-wide singleton.
         val bridge = GomobileBridge(filesDir.absolutePath)
-        // System events (toasts, external URLs) are wired before start() so
-        // an event emitted during the very first render pass has a sink;
-        // without a listener Go drops them silently. See SystemEvents.kt.
-        SystemEvents.attach(this, bridge)
         val runtime = GrMobRuntime(bridge)
+        // System events (toasts, external URLs, audio) are wired before
+        // start() so an event emitted during the very first render pass has
+        // a sink; without a listener Go drops them silently. The runtime is
+        // constructed first because the audio player reports back through
+        // it, but nothing renders until start(). See SystemEvents.kt.
+        SystemEvents.attach(this, bridge, runtime)
         runtime.start()
         setContent { GrMobRoot(runtime) }
     }

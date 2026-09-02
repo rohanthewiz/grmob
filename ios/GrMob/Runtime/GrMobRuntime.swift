@@ -31,6 +31,13 @@ protocol GrMobBridge: Sendable {
     /// implementation must hop to the main actor before touching UIKit — the
     /// same contract `setListener` carries.
     func setSystemEventListener(_ listener: @escaping (String, String) -> Void)
+
+    /// Reports a host→app event that answers no registered callback — the
+    /// audio player's status ticks today (see mobile/hostevents.go) — and
+    /// returns the patches of the render it caused, exactly like the
+    /// Trigger* calls. `name` is the event kind, `payload` its data as a
+    /// JSON object.
+    func reportHostEvent(_ name: String, _ payload: String) -> String
 }
 
 /// Wires the bridge to a TreeStore and owns the threading model.
@@ -91,6 +98,13 @@ final class GrMobRuntime {
 
     func intChanged(_ callbackID: String, _ value: Int) {
         dispatch { $0.triggerIntCallback(callbackID, value) }
+    }
+
+    /// Delivers a host event (a player status tick, say) to Go on the same
+    /// serial queue as UI events, so it can never interleave with one, and
+    /// applies the patches it produced the same way.
+    func hostEvent(_ name: String, _ payload: String) {
+        dispatch { $0.reportHostEvent(name, payload) }
     }
 
     private func dispatch(_ call: @escaping (GrMobBridge) -> String) {

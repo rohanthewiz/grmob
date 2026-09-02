@@ -205,6 +205,21 @@ func renderNode(b *element.Builder, node *core.Node) (x any) {
 			lead = append(lead, "checked", "checked")
 		}
 		b.Input(withLead(attrs, lead...)...).R()
+	case "Slider":
+		// A range input carries its bounds as attributes. The numbers are
+		// formatted with the shortest round-trip form ('g', -1) so 0.5 stays
+		// "0.5" and 30 stays "30" rather than "30.000000"; step is omitted
+		// when unset, which leaves the browser's own default (1) — the same
+		// as the runtime's continuous default only for integer ranges, but a
+		// static export has no drag to be continuous about.
+		lead := []string{"type", InputTypeFor(node.Type),
+			"min", formatNumber(node.Props["min"]),
+			"max", formatNumber(node.Props["max"]),
+			"value", formatNumber(node.Props["value"])}
+		if step := formatNumber(node.Props["step"]); step != "" && step != "0" {
+			lead = append(lead, "step", step)
+		}
+		b.Input(withLead(attrs, lead...)...).R()
 	case "Image":
 		if src, ok := node.Props["src"].(string); ok {
 			b.Img(withLead(attrs, "src", src)...).R()
@@ -341,7 +356,7 @@ func accessibilityAttrs(s *core.Style) []string {
 // disabled is not a valid attribute and would simply be ignored.
 func isFormControl(nodeType string) bool {
 	switch nodeType {
-	case "Button", "Input", "InputPassword", "NumericInput", "TextArea", "Checkbox":
+	case "Button", "Input", "InputPassword", "NumericInput", "TextArea", "Checkbox", "Slider":
 		return true
 	}
 	return false
@@ -713,4 +728,19 @@ func isCSSDisplay(m core.DisplayMode) bool {
 		return true
 	}
 	return false
+}
+
+// formatNumber renders a numeric prop for an attribute value: "" when the
+// prop is absent or not a number. Both float64 (what core writes) and int
+// (what a hand-built node might carry) are accepted.
+func formatNumber(v any) string {
+	switch n := v.(type) {
+	case float64:
+		return strconv.FormatFloat(n, 'g', -1, 64)
+	case float32:
+		return strconv.FormatFloat(float64(n), 'g', -1, 32)
+	case int:
+		return strconv.Itoa(n)
+	}
+	return ""
 }

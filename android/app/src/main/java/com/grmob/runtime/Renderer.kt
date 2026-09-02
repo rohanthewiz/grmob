@@ -39,6 +39,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Checkbox
+import androidx.compose.material3.Slider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Tab
@@ -50,6 +51,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -156,6 +158,7 @@ private fun RenderNodeContent(node: GrMobNode, extra: Modifier) {
         "NumericInput" -> GrMobTextField(node, extra, numeric = true)
         "TextArea" -> GrMobTextField(node, extra, multiline = true)
         "Checkbox" -> GrMobCheckbox(node, extra)
+        "Slider" -> GrMobSlider(node, extra)
 
         "Row" -> GrMobRow(node, extra)
         "Column", "Card" -> GrMobColumn(node, extra) // Card = Column whose Go theme style carries the card look
@@ -509,6 +512,52 @@ private fun GrMobCheckbox(node: GrMobNode, extra: Modifier) {
     Checkbox(
         checked = node.boolProp("checked"),
         onCheckedChange = { if (cb.isNotEmpty()) runtime.toggled(cb, it) },
+        modifier = marginAndSize(node.style, extra),
+        enabled = !node.isDisabled(),
+    )
+}
+
+/**
+ * A core.Slider: Material 3's Slider over Go's [min, max]. Controlled with
+ * the same compromise the text fields make — Go's value is shown except
+ * while the thumb is being dragged, when the finger's value is, so a status
+ * tick arriving mid-drag (a seek bar fed by the audio player) cannot snap
+ * the thumb back. onChange goes up on every move; onChangeEnd once, on
+ * release, with the final value (core.OnSliderChangeEnd). Both are text
+ * callbacks carrying the number; Go parses Kotlin's Float.toString.
+ *
+ * Compose's `steps` is the number of *intermediate* notches, so a step of
+ * 0.25 over 0..1 is 3 notches — hence the -1. A step wider than the range
+ * clamps to 0, which is continuous, the same as no step.
+ */
+@Composable
+private fun GrMobSlider(node: GrMobNode, extra: Modifier) {
+    val runtime = LocalGrMobRuntime.current
+    val min = node.doubleProp("min").toFloat()
+    val rawMax = node.doubleProp("max").toFloat()
+    val max = if (rawMax > min) rawMax else min + 1f
+    val step = node.doubleProp("step").toFloat()
+    val upstream = node.doubleProp("value").toFloat().coerceIn(min, max)
+    val onChange = node.stringProp("onChange")
+    val onChangeEnd = node.stringProp("onChangeEnd")
+
+    var dragging by remember { mutableStateOf(false) }
+    var local by remember { mutableFloatStateOf(upstream) }
+    val shown = if (dragging) local else upstream
+
+    Slider(
+        value = shown,
+        onValueChange = {
+            dragging = true
+            local = it
+            if (onChange.isNotEmpty()) runtime.textChanged(onChange, it.toString())
+        },
+        onValueChangeFinished = {
+            dragging = false
+            if (onChangeEnd.isNotEmpty()) runtime.textChanged(onChangeEnd, local.toString())
+        },
+        valueRange = min..max,
+        steps = if (step > 0f) (((max - min) / step).toInt() - 1).coerceAtLeast(0) else 0,
         modifier = marginAndSize(node.style, extra),
         enabled = !node.isDisabled(),
     )

@@ -67,6 +67,12 @@ final class GomobileBridge: GrMobBridge, @unchecked Sendable {
     // parameter, so a callback crosses the FFI as a protocol or not at all.
     // See mobile/sysevents.go for the payload contract and SystemEvents.swift
     // for what this shell does with each event.
+    // Host events are the reverse direction and need no protocol: a plain
+    // call into Go that returns patches, like the Trigger* functions.
+    func reportHostEvent(_ name: String, _ payload: String) -> String {
+        MobileReportHostEvent(name, payload)
+    }
+
     func setSystemEventListener(_ listener: @escaping (String, String) -> Void) {
         let l = SystemListener(listener)
         retainedSystem.set(l)

@@ -23,6 +23,10 @@ targets:
       path: GrMob/Info.plist
       properties:
         UILaunchScreen: {} # system default launch screen; without it iOS letterboxes the app
+        # core's audio service: without the audio background mode the
+        # stream stops the moment the app leaves the foreground, whatever
+        # the audio session category says. See App/AudioPlayer.swift.
+        UIBackgroundModes: [audio]
     settings:
       PRODUCT_BUNDLE_IDENTIFIER: com.grmob.demo
       # gomobile's generated glue is Objective-C; the app is Swift-only, but

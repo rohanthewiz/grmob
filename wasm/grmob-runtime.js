@@ -116,6 +116,8 @@ const GrMob = (() => {
                     }
                 } else if (key === "value") {
                     el.value = value;
+                } else if (key === "min" || key === "max" || key === "step") {
+                    applySliderBound(el, key, value, node.Props.value);
                 } else if (key === "placeholder") {
                     el.placeholder = value;
                 } else if (key === "content") {
@@ -365,6 +367,22 @@ const GrMob = (() => {
     // dispatch time and does nothing when it is missing. Keeping the
     // has_listener_* marker alongside means a prop that comes back on a later
     // pass re-uses that one listener instead of stacking a second copy.
+    // A range input's bounds. The attribute is the API here (there is no
+    // .min property on a generic element), and the value is re-applied
+    // afterwards because the browser clamps it to the bounds *at assignment
+    // time*: Go's props arrive in key order (max, min, ..., value) on the
+    // create path, but an update-props patch may carry a widened max after
+    // the value was already clamped to the old one.
+    function applySliderBound(el, key, bound, value) {
+        if (el.type !== "range") return;
+        if (bound === undefined || bound === null || bound === "") {
+            el.removeAttribute(key);
+        } else {
+            el.setAttribute(key, String(bound));
+        }
+        if (value !== undefined && el.value != value) el.value = value;
+    }
+
     function pruneStaleListeners(el, props) {
         // Object.keys snapshots, so deleting inside the loop is safe.
         for (const key of Object.keys(el.dataset)) {
@@ -775,6 +793,7 @@ const GrMob = (() => {
             InputPassword: "input",
             NumericInput: "input",
             Checkbox: "input",
+            Slider: "input",
 
             Box: "div",
             Card: "div",
@@ -831,6 +850,7 @@ const GrMob = (() => {
             InputPassword: "password",
             NumericInput: "number",
             Checkbox: "checkbox",
+            Slider: "range",
         }[type] || "";
     }
 
@@ -857,6 +877,11 @@ const GrMob = (() => {
             onClick: "click",
             onChange: "input",
             onToggle: "change",
+            // A Slider's end-of-drag event: "change" fires once when the
+            // thumb is released, where "input" (onChange) fires on every
+            // pixel of the drag. Same DOM event as onToggle, different prop,
+            // so a slider can carry both.
+            onChangeEnd: "change",
             // Listed explicitly even though the fallback below would derive
             // the same names: these are the two DOM events that do not
             // bubble, and naming them here is where a reader looks to find
@@ -957,7 +982,7 @@ const GrMob = (() => {
             return {};
         }
         const goType = String(type || "").toLowerCase();
-        if (["input", "textarea", "numericinput", "inputpassword"].includes(goType)) {
+        if (["input", "textarea", "numericinput", "inputpassword", "slider"].includes(goType)) {
             return { value: e.target.value };
         }
         if (goType === "checkbox") {
@@ -1012,8 +1037,14 @@ const GrMob = (() => {
                     applyEnterKeyHint(el, p.Changes);
                     for (const [k, v] of Object.entries(p.Changes)) {
                         if (k === "value") {
-                            if (el.value === v) continue;
+                            // Loose equality on purpose: a range input's
+                            // value reads back as a string ("12.5") while Go
+                            // sends a number, and a strict compare would
+                            // re-assign on every status tick.
+                            if (el.value == v) continue;
                             el.value = v;
+                        } else if (k === "min" || k === "max" || k === "step") {
+                            applySliderBound(el, k, v, p.Changes.value);
                         } else if (k === "content") {
                             if (el.textContent === v) continue;
                             el.textContent = v;
@@ -1224,10 +1255,209 @@ const GrMob = (() => {
         }, duration);
     }
 
+    // ---- Audio ----------------------------------------------------------
+    //
+    // The browser half of core's audio service (core/audio.go): one
+    // HTMLAudioElement for the page, driven by the "audio" system event's
+    // commands, reporting back through the "audio_status" host event. The
+    // Media Session API is wired too, so the OS media keys, the lock screen
+    // on a phone browser, and Chrome's media hub all show the track and can
+    // drive it — the same affordances the native shells get from their
+    // media sessions, which is the point of the feature.
+    //
+    // Status leaves through window.GrMobWASM.HostEvent, which the Go host
+    // installs (wasm/main.go). It is looked up per call rather than captured,
+    // because the runtime loads before the wasm module does. Reports are
+    // driven by the element's own events (playing, pause, timeupdate, ...),
+    // never synchronously from inside a command: a command arrives from
+    // inside a Go handler (the tap that called AudioLoad), and re-entering
+    // Go from there is legal on wasm but pointless — the element will fire
+    // "loadstart" a tick later anyway.
+    const audio = (() => {
+        let el = null;
+        let track = {};      // the last load's metadata, for the media session
+        let phase = "idle";  // an AudioState value
+        let errorText = "";
+        let lastTick = 0;    // throttles timeupdate, which fires ~4Hz
+
+        function element() {
+            if (el) return el;
+            el = new Audio();
+            el.preload = "auto";
+            el.addEventListener("loadstart", () => setPhase("loading"));
+            el.addEventListener("waiting", () => setPhase("loading"));
+            el.addEventListener("playing", () => setPhase("playing"));
+            el.addEventListener("pause", () => { if (!el.ended) setPhase("paused"); });
+            el.addEventListener("ended", () => setPhase("ended"));
+            el.addEventListener("durationchange", report);
+            el.addEventListener("ratechange", report);
+            el.addEventListener("seeked", report);
+            el.addEventListener("error", () => {
+                const e = el.error;
+                errorText = e ? (e.message || `media error ${e.code}`) : "unknown error";
+                setPhase("error");
+            });
+            el.addEventListener("timeupdate", () => {
+                const now = Date.now();
+                if (now - lastTick < 500) return;
+                lastTick = now;
+                report();
+                positionState();
+            });
+            return el;
+        }
+
+        function setPhase(next) {
+            phase = next;
+            report();
+            if ("mediaSession" in navigator) {
+                navigator.mediaSession.playbackState =
+                    next === "playing" ? "playing" : next === "paused" ? "paused" : "none";
+            }
+        }
+
+        function status() {
+            const a = el;
+            return {
+                url: track.url || "",
+                state: track.url ? phase : "idle",
+                position: a ? (a.currentTime || 0) : 0,
+                duration: a && Number.isFinite(a.duration) ? a.duration : 0,
+                rate: a ? a.playbackRate : 1,
+                error: errorText,
+            };
+        }
+
+        function report() {
+            const host = window.GrMobWASM;
+            if (!host || typeof host.HostEvent !== "function") return;
+            host.HostEvent("audio_status", JSON.stringify(status()));
+        }
+
+        // The lock-screen scrubber's notion of where playback is; a
+        // best-effort call because setPositionState throws on a NaN
+        // duration and on some older browsers.
+        function positionState() {
+            if (!("mediaSession" in navigator) || !el) return;
+            try {
+                if (Number.isFinite(el.duration)) {
+                    navigator.mediaSession.setPositionState({
+                        duration: el.duration,
+                        playbackRate: el.playbackRate,
+                        position: Math.min(el.currentTime, el.duration),
+                    });
+                }
+            } catch (_) { /* unsupported here; the controls still work */ }
+        }
+
+        function installMediaSession() {
+            if (!("mediaSession" in navigator)) return;
+            const ms = navigator.mediaSession;
+            ms.metadata = new MediaMetadata({
+                title: track.title || "",
+                artist: track.artist || "",
+                album: track.album || "",
+                artwork: track.artwork ? [{ src: track.artwork }] : [],
+            });
+            const set = (action, fn) => { try { ms.setActionHandler(action, fn); } catch (_) { } };
+            set("play", () => play());
+            set("pause", () => pause());
+            set("stop", () => stop());
+            set("seekbackward", (d) => skip(-(d.seekOffset || 15)));
+            set("seekforward", (d) => skip(d.seekOffset || 15));
+            set("seekto", (d) => { if (d.seekTime !== undefined) seek(d.seekTime); });
+        }
+
+        function clearMediaSession() {
+            if (!("mediaSession" in navigator)) return;
+            navigator.mediaSession.metadata = null;
+            navigator.mediaSession.playbackState = "none";
+        }
+
+        function load(cmd) {
+            if (!cmd.url) return;
+            const a = element();
+            track = cmd;
+            errorText = "";
+            phase = "loading";
+            a.src = cmd.url;
+            a.playbackRate = cmd.rate > 0 ? cmd.rate : 1;
+            a.defaultPlaybackRate = a.playbackRate;
+            if (cmd.start > 0) a.currentTime = cmd.start;
+            a.load();
+            installMediaSession();
+            if (cmd.autoplay !== false) play();
+        }
+
+        function play() {
+            if (!el || !track.url) return;
+            // play() returns a promise that rejects when the browser's
+            // autoplay policy refuses — which it will if this did not come
+            // from a user gesture. Surfaced as an error state rather than a
+            // silent stall so the app can show a play button.
+            const p = el.play();
+            if (p && p.catch) {
+                p.catch((err) => {
+                    errorText = err && err.message ? err.message : "playback was blocked";
+                    setPhase("error");
+                });
+            }
+        }
+
+        function pause() { if (el) el.pause(); }
+
+        function seek(seconds) {
+            if (!el) return;
+            const max = Number.isFinite(el.duration) ? el.duration : Infinity;
+            el.currentTime = Math.max(0, Math.min(seconds, max));
+            if (phase === "ended" && el.currentTime < max) phase = "paused";
+        }
+
+        function skip(delta) { if (el) seek(el.currentTime + delta); }
+
+        function rate(r) {
+            if (!el || !(r > 0)) return;
+            el.playbackRate = r;
+            el.defaultPlaybackRate = r;
+        }
+
+        function stop() {
+            if (el) {
+                el.pause();
+                el.removeAttribute("src");
+                el.load();
+                el.playbackRate = 1; // Go's record resets to 1 on stop
+                el.defaultPlaybackRate = 1;
+            }
+            track = {};
+            errorText = "";
+            phase = "idle";
+            clearMediaSession();
+            report();
+        }
+
+        // The "audio" system event's dispatcher. Unknown commands are
+        // dropped, matching every host's contract for unknown events.
+        function handle(cmd) {
+            switch (cmd.command) {
+                case "load": load(cmd); break;
+                case "play": play(); break;
+                case "pause": pause(); break;
+                case "seek": seek(Number(cmd.position) || 0); break;
+                case "skip": skip(Number(cmd.delta) || 0); break;
+                case "rate": rate(Number(cmd.rate)); break;
+                case "stop": stop(); break;
+            }
+        }
+
+        return { handle, status };
+    })();
+
     return {
         mount,
         patch,
         showToast,
+        audio,
     };
 })();
 
@@ -1239,6 +1469,12 @@ const GrMob = (() => {
 window.GrMobSystemEvent = function (name, payloadJSON) {
     if (name === "toast") {
         GrMob.showToast(JSON.parse(payloadJSON));
+        return;
+    }
+    if (name === "audio") {
+        // core's audio service (core/audio.go): the page owns the one
+        // player, and reports back over GrMobWASM.HostEvent.
+        GrMob.audio.handle(JSON.parse(payloadJSON));
         return;
     }
     if (name === "open_url") {

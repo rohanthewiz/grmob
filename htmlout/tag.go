@@ -36,11 +36,12 @@ var tags = map[string]string{
 	"Image":    "img",
 	"TextArea": "textarea",
 
-	// The four that share one tag and are told apart by inputTypes.
+	// The five that share one tag and are told apart by inputTypes.
 	"Input":         "input",
 	"InputPassword": "input",
 	"NumericInput":  "input",
 	"Checkbox":      "input",
+	"Slider":        "input",
 
 	// Containers and boxes. A <div> is the honest answer for all of them:
 	// what distinguishes a Row from a Column in HTML is the flex declarations
