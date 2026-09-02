@@ -4,6 +4,7 @@ import androidx.compose.animation.Animatable
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.foundation.layout.Arrangement
@@ -62,13 +63,19 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
@@ -159,6 +166,10 @@ private fun RenderNodeContent(node: GrMobNode, extra: Modifier) {
         "TextArea" -> GrMobTextField(node, extra, multiline = true)
         "Checkbox" -> GrMobCheckbox(node, extra)
         "Slider" -> GrMobSlider(node, extra)
+        "TextGrid" -> GrMobTextGrid(node, extra)
+        // A row reached on its own (never from core.TextGrid, which draws
+        // its rows itself) still renders as a line of runs.
+        "GridRow" -> GrMobGridRow(node, TextStyle.Default)
 
         "Row" -> GrMobRow(node, extra)
         "Column", "Card" -> GrMobColumn(node, extra) // Card = Column whose Go theme style carries the card look
@@ -218,6 +229,74 @@ private fun RenderChildren(node: GrMobNode) {
     node.children.forEachIndexed { i, child ->
         key(child.key.ifEmpty { i }) { RenderNode(child) }
     }
+}
+
+/**
+ * A core.TextGrid: a column of monospace rows, each an AnnotatedString built
+ * from the row's runs. The grid's own text style (size, colour) is the base
+ * every run inherits; a run's fg/bg and attribute bits override it as
+ * SpanStyles. Rows never wrap — a terminal row is exactly as wide as its
+ * cells — so a grid wider than the screen scrolls sideways instead.
+ *
+ * Rows are keyed by index rather than read through RenderNode: the Go
+ * reconciler pairs them by index too, and an update-props on one row
+ * mutates that GrMobNode's props alone, which recomposes only that row's
+ * Text. That per-row invalidation is the whole reason the grid is a
+ * container of rows rather than one prop.
+ */
+@Composable
+private fun GrMobTextGrid(node: GrMobNode, extra: Modifier) {
+    val s = animatedStyle(node.style)
+    val base = textStyle(s)
+    Column(
+        s.boxModifier(extra, gestureModifier(node))
+            .horizontalScroll(rememberScrollState())
+    ) {
+        node.children.forEachIndexed { i, row ->
+            key(i) { GrMobGridRow(row, base) }
+        }
+    }
+}
+
+/**
+ * One row of a core.TextGrid. The runs prop is a list of maps with the
+ * short keys core.GridRun's json tags declare: t (text), fg, bg (CSS hex
+ * colours, absent to inherit) and a (the Grid* attribute bits: 1 bold,
+ * 2 dim, 4 italic, 8 underline, 16 strike). Dim is the one bit Compose
+ * has no direct spelling for; it is drawn by fading the run's colour, which
+ * needs a colour to fade, so a dim run with no colour of its own fades the
+ * grid's text colour when that is set and is otherwise left at full weight.
+ */
+@Composable
+private fun GrMobGridRow(node: GrMobNode, base: TextStyle) {
+    val runs = node.props["runs"] as? List<*> ?: emptyList<Any?>()
+    val text = buildAnnotatedString {
+        for (raw in runs) {
+            val run = raw as? Map<*, *> ?: continue
+            val a = (run["a"] as? Number)?.toInt() ?: 0
+            var fg = GrMobStyle.parseColor(run["fg"] as? String)
+            if (a and 2 != 0) {
+                val dimmed = fg ?: base.color.takeIf { it != Color.Unspecified }
+                if (dimmed != null) fg = dimmed.copy(alpha = dimmed.alpha * 0.6f)
+            }
+            val decorations = mutableListOf<TextDecoration>()
+            if (a and 8 != 0) decorations.add(TextDecoration.Underline)
+            if (a and 16 != 0) decorations.add(TextDecoration.LineThrough)
+            withStyle(SpanStyle(
+                color = fg ?: Color.Unspecified,
+                background = GrMobStyle.parseColor(run["bg"] as? String) ?: Color.Unspecified,
+                fontWeight = if (a and 1 != 0) FontWeight.Bold else null,
+                fontStyle = if (a and 4 != 0) FontStyle.Italic else null,
+                textDecoration = if (decorations.isEmpty()) null else TextDecoration.combine(decorations),
+            )) { append(run["t"] as? String ?: "") }
+        }
+    }
+    Text(
+        text = text,
+        style = base.copy(fontFamily = FontFamily.Monospace),
+        softWrap = false,
+        maxLines = 1,
+    )
 }
 
 /**

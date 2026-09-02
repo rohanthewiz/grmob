@@ -272,3 +272,11 @@ use — pass boundaries, callback purging, and [debug mode](../concepts/debug-mo
 all behave identically. An app that runs clean in the browser preview is
 running the same Go code it will run on the phone; only the renderer
 differs.
+
+## Text grids
+
+`core.TextGrid` is a `<pre>` of row `<div>`s, each holding one `<span>` per
+run. A row's spans are rebuilt whole from its `runs` prop on every patch to
+that row and live outside the node tree (no `data-node-path`), so replacing
+them never disturbs positional addressing. Dim has no CSS spelling and is
+drawn as `opacity:0.6`; the same rules produce htmlout's export.

@@ -48,6 +48,15 @@ const GrMob = (() => {
             });
         }
 
+        // A grid or row built without a Style still needs its chassis, which
+        // lives in styleFromGrMob (keyed on the node type) so that an
+        // update-style patch re-applies it rather than clearing it. Nodes
+        // core.TextGrid builds always carry a Style and take the applyStyle
+        // path below; this covers a hand-assembled one.
+        if ((node.Type === "TextGrid" || node.Type === "GridRow") && !node.Style) {
+            applyStyle(el, {}, node.Type);
+        }
+
         // The <input> variant, which the tag alone cannot express: tagForType
         // sends four Go node types to <input>, and an <input> with no type
         // attribute is a text box. Without this a Checkbox drew as a text
@@ -136,6 +145,9 @@ const GrMob = (() => {
                 }
                 else if (key === "rows") {
                     applyRows(el, value);
+                }
+                else if (key === "runs") {
+                    applyGridRuns(el, value);
                 }
                 else if (key === "src" && node.Type === "Image") {
                     el.src = value;
@@ -381,6 +393,37 @@ const GrMob = (() => {
             el.setAttribute(key, String(bound));
         }
         if (value !== undefined && el.value != value) el.value = value;
+    }
+
+    // One row of a core.TextGrid: its runs, each a <span> carrying only the
+    // declarations its run set. The row is rebuilt whole on every runs prop
+    // — the reconciler already decided this row changed, and a row is a few
+    // dozen spans at most, so diffing spans against spans would cost more
+    // than it saved. Rebuilding also keeps the row's spans out of the node
+    // tree: they carry no data-node-path and no patch is ever addressed to
+    // one, which is what lets a row be replaced without disturbing the
+    // positional addressing of everything around it.
+    //
+    // The attribute bits are core's Grid* constants. Dim has no CSS
+    // spelling, so it is opacity, as in htmlout's gridRunStyle.
+    function applyGridRuns(el, runs) {
+        el.innerHTML = "";
+        if (!Array.isArray(runs)) return;
+        for (const run of runs) {
+            const span = document.createElement("span");
+            span.textContent = run.t ?? "";
+            if (run.fg) span.style.color = run.fg;
+            if (run.bg) span.style.background = run.bg;
+            const a = Number(run.a) || 0;
+            if (a & 1) span.style.fontWeight = "700";
+            if (a & 2) span.style.opacity = "0.6";
+            if (a & 4) span.style.fontStyle = "italic";
+            const lines = [];
+            if (a & 8) lines.push("underline");
+            if (a & 16) lines.push("line-through");
+            if (lines.length) span.style.textDecoration = lines.join(" ");
+            el.appendChild(span);
+        }
     }
 
     function pruneStaleListeners(el, props) {
@@ -712,6 +755,26 @@ const GrMob = (() => {
         out.maxHeight = style.MaxHeight || "";
         out.overflow = style.Overflow || "";
         out.whiteSpace = style.WhiteSpace || "";
+
+        // The grid chassis (core.TextGrid): the fixed rules of a grid and its
+        // rows, applied here rather than once at creation because every
+        // property above is reassigned on every update-style patch, and a
+        // chassis set only at creation would be wiped by the first one. The
+        // author's own values win where they set one. A <pre> is already
+        // fixed-pitch and unwrapped; this pins the margin a <pre> carries by
+        // default, a line height the rows are sized against, and sideways
+        // scrolling for a grid wider than the screen. Each row keeps one line
+        // even when it has no runs, so the rows below it stay on the cell
+        // grid. Same rules as htmlout's textGridChassis / gridRowChassis.
+        if (nodeType === "TextGrid") {
+            out.margin = out.margin || "0";
+            out.lineHeight = out.lineHeight || "1.2";
+            out.whiteSpace = out.whiteSpace || "pre";
+            out.overflowX = out.overflow ? "" : "auto";
+        }
+        if (nodeType === "GridRow") {
+            out.minHeight = out.minHeight || "1.2em";
+        }
         // Out-of-flow placement. The offsets are assigned whether or not
         // Position is set, matching CSS itself: they are inert on a static box
         // rather than an error, and a node can sit in a positioned ancestor's
@@ -794,6 +857,11 @@ const GrMob = (() => {
             NumericInput: "input",
             Checkbox: "input",
             Slider: "input",
+
+            // A monospace grid and its rows (core.TextGrid); see
+            // applyGridRuns for the spans inside a row.
+            TextGrid: "pre",
+            GridRow: "div",
 
             Box: "div",
             Card: "div",
@@ -1068,6 +1136,8 @@ const GrMob = (() => {
                             el.checked = !!v;
                         } else if (k === "rows") {
                             applyRows(el, v);
+                        } else if (k === "runs") {
+                            applyGridRuns(el, v);
                         } else if (k === "size" && el.dataset.nodeType === "Spacer") {
                             // The update half of the Spacer sizing in
                             // renderNode. Without it a Spacer whose size

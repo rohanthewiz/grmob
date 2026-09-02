@@ -36,6 +36,13 @@ var tags = map[string]string{
 	"Image":    "img",
 	"TextArea": "textarea",
 
+	// A monospace grid and its rows (core.TextGrid). <pre> is the one element
+	// whose default styling already says "fixed pitch, no wrapping"; each row
+	// is a block inside it and each run a <span>, so a row's runs can carry
+	// their own colours without the grid being anything but text.
+	"TextGrid": "pre",
+	"GridRow":  "div",
+
 	// The five that share one tag and are told apart by inputTypes.
 	"Input":         "input",
 	"InputPassword": "input",

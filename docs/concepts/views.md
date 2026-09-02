@@ -112,6 +112,7 @@ platform's own gesture, not a handler of ours.
 | `Checkbox` | `Checkbox(checked, onToggle, ...)` |
 | `Slider` | `Slider(value, min, max, onChange, ...)` with `OnSliderChangeEnd(fn)` (fires once on release — the one a seek bar acts on) and `SliderStep(s)` |
 | `Image` | `Image(src, styleProps...)` |
+| `TextGrid` | `TextGrid(rows []GridRow, props...)` — a monospace grid of styled runs (a terminal pane, a log tail); each `GridRun` has `Text`, `Fg`, `Bg` and `Attr` bits (`GridBold`, `GridDim`, `GridItalic`, `GridUnderline`, `GridStrike`). Rows are children, so a changed row is one patch |
 | `CameraView` | `CameraView(props...)` with `OnCapture`, `WithOverlay`, `SetFacing`, ... |
 | `Modal` | `Modal(Visible(b), OnDismiss(fn), Backdrop(color), ...)` |
 | `TabView` | native tab bar — prefer the [`components.Tabs`](../components.md#tabs) facade |

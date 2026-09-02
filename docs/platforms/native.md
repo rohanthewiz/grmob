@@ -105,6 +105,15 @@ package whose `init` calls `mobile.Register` (and exports one bindable
 symbol) drops into the same shells — that is the whole integration contract,
 and it's why the examples are structured as packages, not mains.
 
+## Text grids
+
+`core.TextGrid` renders one monospace `Text` per row: Compose builds an
+`AnnotatedString` of `SpanStyle` runs in `FontFamily.Monospace`, SwiftUI an
+`AttributedString` in the `.monospaced` design. Rows never wrap; a grid wider
+than the screen scrolls horizontally. Both natives draw a dim run by fading
+its colour, so a dim run with no colour of its own (and no grid `TextColor`)
+renders at full weight.
+
 ## Audio
 
 `core.AudioLoad`, `AudioPlay`, `AudioPause`, `AudioToggle`, `AudioSeek`,

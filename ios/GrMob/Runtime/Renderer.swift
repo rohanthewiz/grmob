@@ -69,6 +69,10 @@ struct RenderNode: View {
             case "TextArea": GrMobTextField(node: node, grow: grow, multiline: true)
             case "Checkbox": GrMobCheckbox(node: node, grow: grow)
             case "Slider": GrMobSlider(node: node, grow: grow)
+            case "TextGrid": GrMobTextGrid(node: node, grow: grow)
+            // A row reached on its own (never from core.TextGrid, which draws
+            // its rows itself) still renders as a line of runs.
+            case "GridRow": GrMobGridRow(node: node, base: nil)
 
             case "Row": GrMobRow(node: node, grow: grow)
             case "Column", "Card": GrMobColumn(node: node, grow: grow) // Card = Column whose Go theme style carries the card look
@@ -898,6 +902,79 @@ private struct GrMobSlider: View {
             }
         }
         .grMobBox(marginAndSizeOnly(node.style), grow: grow)
+    }
+}
+
+/// A core.TextGrid: a vertical stack of monospace rows, each an
+/// AttributedString built from the row's runs. The grid's own style (size,
+/// colour) is the base every run inherits; a run's fg/bg and attribute bits
+/// override it per run. Rows never wrap — a terminal row is exactly as wide
+/// as its cells — so a grid wider than the screen scrolls sideways instead.
+///
+/// Rows are read straight off the children rather than through RenderNode.
+/// The Go reconciler pairs them by index and an update-props on one row
+/// mutates that GrMobNode's props alone; with @Observable tracking, only the
+/// Text that read those props re-evaluates. That per-row invalidation is the
+/// whole reason the grid is a container of rows rather than one prop.
+private struct GrMobTextGrid: View {
+    let node: GrMobNode
+    let grow: GrMobGrow
+
+    var body: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            VStack(alignment: .leading, spacing: 0) {
+                ForEach(node.children, id: \.viewID) { row in
+                    GrMobGridRow(node: row, base: node.style)
+                }
+            }
+        }
+        .grMobBox(node.style, grow: grow,
+                  onTap: node.stringProp("onClick"),
+                  onLongPress: node.stringProp("onLongPress"))
+    }
+}
+
+/// One row of a core.TextGrid. The runs prop is an array of dictionaries
+/// with the short keys core.GridRun's json tags declare: t (text), fg, bg
+/// (CSS hex colours, absent to inherit) and a (the Grid* attribute bits:
+/// 1 bold, 2 dim, 4 italic, 8 underline, 16 strike). Dim has no direct
+/// spelling here either; it fades the run's colour, or the grid's text
+/// colour when the run has none, and leaves a run with neither alone.
+private struct GrMobGridRow: View {
+    let node: GrMobNode
+    let base: GrMobStyle?
+
+    var body: some View {
+        let size = (base?.fontSize ?? 0) > 0 ? base!.fontSize : 13
+        let baseFont = Font.system(size: size, design: .monospaced)
+        var text = AttributedString()
+        let runs = node.props["runs"] as? [[String: Any]] ?? []
+        for run in runs {
+            var piece = AttributedString(run["t"] as? String ?? "")
+            let a = (run["a"] as? NSNumber)?.intValue ?? 0
+            var font = baseFont
+            if a & 1 != 0 { font = font.bold() }
+            if a & 4 != 0 { font = font.italic() }
+            piece.font = font
+            var fg = GrMobStyle.parseColor(run["fg"] as? String) ?? base?.textColor
+            if a & 2 != 0, let c = fg { fg = c.opacity(0.6) }
+            if let fg { piece.foregroundColor = fg }
+            if let bg = GrMobStyle.parseColor(run["bg"] as? String) { piece.backgroundColor = bg }
+            if a & 8 != 0 { piece.underlineStyle = .single }
+            if a & 16 != 0 { piece.strikethroughStyle = .single }
+            text.append(piece)
+        }
+        // An empty row still takes one line, so the rows below it stay on
+        // the cell grid: a space in the base font has the line's height and
+        // draws nothing.
+        if runs.isEmpty {
+            var blank = AttributedString(" ")
+            blank.font = baseFont
+            text.append(blank)
+        }
+        return Text(text)
+            .lineLimit(1)
+            .fixedSize(horizontal: true, vertical: false)
     }
 }
 

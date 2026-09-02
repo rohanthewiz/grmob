@@ -123,6 +123,8 @@
       lifecycle transitions have their channel ready
 - [x] `core.Slider` — a range control on all four targets, with a separate
       end-of-drag callback so a seek bar acts once
+- [x] `core.TextGrid` — a monospace grid of styled runs on all four targets,
+      rows as children so a terminal diff patches one row, not the grid
 
 ---
 
@@ -138,7 +140,12 @@
 
 - [ ] Keystore (Secure): `Keystore.Save()`, `Keystore.Get()` — the church app
       keeps its bearer token in bytdb for want of this; see its README
-- [ ] Clipboard: read/write
+- [ ] Clipboard: read/write — cats-mobile wants paste into its composer
+- [ ] URL-scheme deep links (`cats://pair` from a QR lands in the app)
+- [ ] Haptics (cats-mobile: a buzz when an agent blocks)
+- [ ] Local notifications
+- [ ] App lifecycle events (foreground/background, so a client can reconnect
+      on resume) — the host-event channel is ready for them
 - [ ] Device Storage (Plain): `DeviceStorage.Set()`, `DeviceStorage.Get()`
 - [ ] Bluetooth: `Scan`, `Connect`, `Send`
 - [ ] Location / GPS

@@ -92,6 +92,17 @@ func renderNode(b *element.Builder, node *core.Node) (x any) {
 	if node.Type == "Modal" {
 		sv = addDecl(modalChassis(node.Props), sv)
 	}
+	// The grid chassis, ahead of the author's style for the same reason as
+	// Modal's. A <pre> already has a monospace font and no wrapping; the
+	// declarations here pin the two things a browser default leaves open
+	// (the margin a <pre> carries, and a line height the rows can be sized
+	// against) and let a wide grid scroll sideways rather than overflow.
+	if node.Type == "TextGrid" {
+		sv = addDecl(textGridChassis, sv)
+	}
+	if node.Type == "GridRow" {
+		sv = addDecl(gridRowChassis, sv)
+	}
 	if node.Style != nil && node.Style.Disabled && !isFormControl(node.Type) {
 		// HTML's disabled attribute is only valid on form controls, so a
 		// disabled container gets the ARIA state plus the one declaration
@@ -230,6 +241,8 @@ func renderNode(b *element.Builder, node *core.Node) (x any) {
 		renderContainer(b, node, attrs)
 	case "Text":
 		b.Span(attrs...).TE(getStr(node.Props["content"]))
+	case "GridRow":
+		renderGridRow(b, node, attrs)
 	case "Button":
 		b.Button(attrs...).TE(getStr(node.Props["label"]))
 	case "CameraView":
@@ -257,6 +270,66 @@ func renderContainer(b *element.Builder, node *core.Node, attrs []string) {
 		renderNode(b, child)
 	}
 	e.R()
+}
+
+// textGridChassis and gridRowChassis are the fixed rules of a core.TextGrid
+// and its rows; see renderNode. The line height is explicit so an empty row
+// (a GridRow with no runs, which a <div> would collapse to nothing) still
+// takes one line, keeping every row on the cell grid it belongs to.
+const (
+	textGridChassis = "margin:0; line-height:1.2; white-space:pre; overflow-x:auto"
+	gridRowChassis  = "min-height:1.2em"
+)
+
+// renderGridRow writes one row of a core.TextGrid: a <div> of <span> runs,
+// each span carrying only the declarations its run set, so the common case
+// (a run in the grid's own colours) is a bare span. The runs are the typed
+// slice core.TextGrid built; a hand-assembled node with some other shape
+// exports as an empty row rather than a guess.
+func renderGridRow(b *element.Builder, node *core.Node, attrs []string) {
+	runs, _ := node.Props["runs"].(core.GridRow)
+	e := b.Div(attrs...)
+	for _, run := range runs {
+		if decl := gridRunStyle(run); decl != "" {
+			b.Span("style", decl).TE(run.Text)
+		} else {
+			b.Span().TE(run.Text)
+		}
+	}
+	e.R()
+}
+
+// gridRunStyle is a run's own declarations. The Grid* attributes map onto
+// CSS where CSS has a spelling and onto opacity for dim, which it does not;
+// underline and strike share text-decoration and are emitted together.
+func gridRunStyle(run core.GridRun) string {
+	var decl string
+	if run.Fg != "" {
+		decl = addDecl(decl, "color:"+run.Fg)
+	}
+	if run.Bg != "" {
+		decl = addDecl(decl, "background:"+run.Bg)
+	}
+	if run.Attr&core.GridBold != 0 {
+		decl = addDecl(decl, "font-weight:700")
+	}
+	if run.Attr&core.GridDim != 0 {
+		decl = addDecl(decl, "opacity:0.6")
+	}
+	if run.Attr&core.GridItalic != 0 {
+		decl = addDecl(decl, "font-style:italic")
+	}
+	var lines []string
+	if run.Attr&core.GridUnderline != 0 {
+		lines = append(lines, "underline")
+	}
+	if run.Attr&core.GridStrike != 0 {
+		lines = append(lines, "line-through")
+	}
+	if len(lines) > 0 {
+		decl = addDecl(decl, "text-decoration:"+strings.Join(lines, " "))
+	}
+	return decl
 }
 
 // withLead prepends type-specific attribute pairs (type, value, src, ...) ahead
