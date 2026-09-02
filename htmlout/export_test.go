@@ -104,11 +104,18 @@ func TestContainerWrapsChildren(t *testing.T) {
 	}
 }
 
-func TestSpacerRendersHeight(t *testing.T) {
+// A Spacer is a square void on both natives (Compose Spacer(Modifier.size),
+// SwiftUI Color.clear.frame(width:height:)), so both axes have to be sized
+// here. Height alone — what this emitted for the whole life of the exporter —
+// made a Spacer inside a Row a zero-width box, invisible on the web and n
+// points wide on device.
+func TestSpacerSizesBothAxes(t *testing.T) {
 	n := &core.Node{Type: "Spacer", Props: map[string]any{"size": 20}}
 	out := ExportHTML(n)
-	if !strings.Contains(out, "height:20px") {
-		t.Fatalf("spacer missing height style:\n%s", out)
+	for _, want := range []string{"width:20px", "height:20px", "flex-shrink:0"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("spacer missing %q:\n%s", want, out)
+		}
 	}
 }
 
@@ -686,5 +693,244 @@ func TestInputTypesReturnsACopy(t *testing.T) {
 	}
 	if got := InputTypeFor("Input"); got != "text" {
 		t.Errorf("after writing to the copy, InputTypeFor(Input) = %q", got)
+	}
+}
+
+// --- Phase 3 parity: Style fields the natives read and the web pair did not ---
+//
+// Every test below covers a field that was declared in Go, honored by Compose
+// and SwiftUI, and silently dropped by this exporter. They are grouped rather
+// than scattered because they share one failure mode: the field applies
+// cleanly, the export succeeds, and the only symptom is that the web target
+// disagrees with the device.
+
+// The shorthand rule, stated once here from the contract rather than read off
+// EdgeCSS: an explicit side wins, an unset (zero) side takes its axis's
+// shorthand. Both natives resolve it this way (parseEdges in GrMobStyle.swift
+// and GrMobStyle.kt); until EdgeCSS existed this exporter read the four
+// per-side fields only, so core.PaddingHorizontal(16) rendered as 16px of
+// padding on device and as nothing in the browser.
+func TestEdgeShorthandFillsUnsetSides(t *testing.T) {
+	cases := []struct {
+		name string
+		in   core.EdgeInsets
+		want string
+	}{
+		{"per-side only", core.EdgeInsets{Top: 1, Right: 2, Bottom: 3, Left: 4}, "1px 2px 3px 4px"},
+		{"horizontal only", core.EdgeInsets{Horizontal: 8}, "0px 8px 0px 8px"},
+		{"vertical only", core.EdgeInsets{Vertical: 6}, "6px 0px 6px 0px"},
+		{"both shorthands", core.EdgeInsets{Horizontal: 8, Vertical: 6}, "6px 8px 6px 8px"},
+		// The explicit side wins over the shorthand for its own axis and
+		// leaves the opposite side on the shorthand.
+		{"explicit beats shorthand", core.EdgeInsets{Horizontal: 8, Left: 20}, "0px 8px 0px 20px"},
+		{"empty", core.EdgeInsets{}, "0px 0px 0px 0px"},
+	}
+	for _, c := range cases {
+		if got := EdgeCSS(c.in); got != c.want {
+			t.Errorf("%s: EdgeCSS(%+v) = %q, want %q", c.name, c.in, got, c.want)
+		}
+	}
+}
+
+func TestPaddingAndMarginShorthandReachTheStyleAttribute(t *testing.T) {
+	n := &core.Node{
+		Type: "Box",
+		Style: &core.Style{
+			Padding: core.EdgeInsets{Horizontal: 16},
+			Margin:  core.EdgeInsets{Vertical: 8},
+		},
+	}
+	out := ExportHTML(n)
+	if !strings.Contains(out, "padding:0px 16px 0px 16px") {
+		t.Fatalf("PaddingHorizontal not resolved:\n%s", out)
+	}
+	if !strings.Contains(out, "margin:8px 0px 8px 0px") {
+		t.Fatalf("MarginVertical not resolved:\n%s", out)
+	}
+}
+
+// The elevation-to-box-shadow arithmetic is SwiftUI's mapping restated (blur =
+// elevation/2, y offset = elevation/3), so one core.Shadow(6) draws a
+// comparable shadow on the three targets that draw one at all.
+func TestShadowBecomesBoxShadow(t *testing.T) {
+	n := &core.Node{Type: "Card", Style: &core.Style{Shadow: 6}}
+	if out := ExportHTML(n); !strings.Contains(out, "box-shadow:0 2px 3px rgba(0,0,0,0.33)") {
+		t.Fatalf("Shadow not serialized:\n%s", out)
+	}
+	// An elevation that does not divide evenly is rounded to the precision a
+	// device pixel is meaningful at, not printed at full float width
+	// (4/3 = 1.3333333333333333). The WASM runtime rounds identically.
+	odd := &core.Node{Type: "Card", Style: &core.Style{Shadow: 4}}
+	if out := ExportHTML(odd); !strings.Contains(out, "box-shadow:0 1.33px 2px rgba(0,0,0,0.33)") {
+		t.Fatalf("Shadow not rounded:\n%s", out)
+	}
+	if out := ExportHTML(&core.Node{Type: "Card", Style: &core.Style{}}); strings.Contains(out, "box-shadow") {
+		t.Fatalf("zero Shadow must emit nothing:\n%s", out)
+	}
+}
+
+// px, not CSS's unitless multiplier: the field is an absolute line box height
+// on both natives (Compose lineHeight = n.sp, SwiftUI a lineSpacing derived
+// from n), and a bare number here would mean "n times the font size" instead.
+func TestLineHeightIsAbsolute(t *testing.T) {
+	n := &core.Node{Type: "Text", Style: &core.Style{LineHeight: 24}}
+	if out := ExportHTML(n); !strings.Contains(out, "line-height:24px") {
+		t.Fatalf("LineHeight not serialized as px:\n%s", out)
+	}
+}
+
+// "hidden" and "visible" are not CSS display keywords. Emitting them there —
+// which is what this did — produced a declaration the browser discarded, so
+// the mode was stated in Go, written into the document, and had no effect
+// anywhere. visibility keeps the node's space and drops its pixels, which is
+// what the natives do with the same mode (SwiftUI .opacity(0), Compose alpha 0).
+func TestDisplayHiddenBecomesVisibility(t *testing.T) {
+	hidden := &core.Node{Type: "Box", Style: &core.Style{Display: core.DisplayHidden}}
+	out := ExportHTML(hidden)
+	if !strings.Contains(out, "visibility:hidden") {
+		t.Fatalf("DisplayHidden must become visibility:hidden:\n%s", out)
+	}
+	if strings.Contains(out, "display:hidden") {
+		t.Fatalf("display:hidden is not valid CSS and must not be emitted:\n%s", out)
+	}
+
+	visible := &core.Node{Type: "Box", Style: &core.Style{Display: core.DisplayVisible}}
+	out = ExportHTML(visible)
+	if !strings.Contains(out, "visibility:visible") {
+		t.Fatalf("DisplayVisible must become visibility:visible:\n%s", out)
+	}
+	if strings.Contains(out, "display:visible") {
+		t.Fatalf("display:visible is not valid CSS and must not be emitted:\n%s", out)
+	}
+}
+
+// The three semantics fields both natives have always read. aria-hidden wins
+// alone, matching Compose's clearAndSetSemantics and SwiftUI's
+// accessibilityHidden: a name on a pruned subtree is contradictory, not
+// additive.
+func TestAccessibilityFieldsBecomeAria(t *testing.T) {
+	labelled := &core.Node{
+		Type:  "Box",
+		Style: &core.Style{AccessibilityLabel: "Close", AccessibilityHint: "Dismisses the sheet"},
+	}
+	out := ExportHTML(labelled)
+	if !strings.Contains(out, `aria-label="Close"`) {
+		t.Fatalf("AccessibilityLabel not exported:\n%s", out)
+	}
+	if !strings.Contains(out, `aria-description="Dismisses the sheet"`) {
+		t.Fatalf("AccessibilityHint not exported:\n%s", out)
+	}
+
+	hidden := &core.Node{
+		Type:  "Box",
+		Style: &core.Style{AccessibilityHidden: true, AccessibilityLabel: "Close"},
+	}
+	out = ExportHTML(hidden)
+	if !strings.Contains(out, `aria-hidden="true"`) {
+		t.Fatalf("AccessibilityHidden not exported:\n%s", out)
+	}
+	if strings.Contains(out, "aria-label") {
+		t.Fatalf("aria-hidden prunes the subtree; a name alongside it is contradictory:\n%s", out)
+	}
+}
+
+// A label is user-originated (it reaches the DSL from app state like any other
+// string), so it goes out through the same escaping every other attribute value
+// does. A raw double quote is the attribute-breakout character.
+func TestAccessibilityLabelCannotInjectAttributes(t *testing.T) {
+	n := &core.Node{
+		Type:  "Box",
+		Style: &core.Style{AccessibilityLabel: `" onclick="steal()`},
+	}
+	if out := ExportHTML(n); strings.Contains(out, `onclick="steal()"`) {
+		t.Fatalf("accessibility label broke out of its attribute:\n%s", out)
+	}
+}
+
+// The fields that had a StyleProp constructor in Go and no reader on any of
+// the four targets. They are one CSS property each here; the native gap is
+// documented rather than faked.
+func TestPreviouslyUnreadStyleFieldsAreEmitted(t *testing.T) {
+	n := &core.Node{
+		Type: "Box",
+		Style: &core.Style{
+			MinWidth: "10px", MinHeight: "11px",
+			MaxWidth: "12px", MaxHeight: "13px",
+			Overflow: "hidden", WhiteSpace: "nowrap",
+			Position: core.PositionAbsolute,
+			Top:      "1px", Right: "2px", Bottom: "3px", Left: "4px",
+			ZIndex:   5,
+			FlexWrap: "wrap", RowGap: 6, ColumnGap: 7,
+			AlignSelf: core.AlignItemsEnd, FlexBasis: "50%", FlexShrink: 2,
+			Animation: "bounce 2s infinite",
+		},
+	}
+	out := ExportHTML(n)
+	for _, want := range []string{
+		"min-width:10px", "min-height:11px", "max-width:12px", "max-height:13px",
+		"overflow:hidden", "white-space:nowrap",
+		"position:absolute", "top:1px", "right:2px", "bottom:3px", "left:4px",
+		"z-index:5",
+		"flex-wrap:wrap", "row-gap:6px", "column-gap:7px",
+		"align-self:flex-end", "flex-basis:50%", "flex-shrink:2",
+		"animation:bounce 2s infinite",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("missing %q:\n%s", want, out)
+		}
+	}
+}
+
+// None of the properties above turns a block-flow box into a flex container on
+// its own — flex-wrap and the axis gaps only mean anything once the box already
+// is one — so promoting a box for them alone would change its layout to no
+// purpose. Only Gap, JustifyContent, AlignItems and FlexDirection do that.
+func TestSecondaryFlexPropsDoNotCreateAFlexContainer(t *testing.T) {
+	n := &core.Node{Type: "Box", Style: &core.Style{FlexWrap: "wrap", RowGap: 4}}
+	if out := ExportHTML(n); strings.Contains(out, "display:flex") {
+		t.Fatalf("flex-wrap/row-gap alone must not promote a box:\n%s", out)
+	}
+}
+
+// --- Modal ------------------------------------------------------------------
+
+// Every other target honors Visible — Renderer.swift and Renderer.kt bail out
+// before laying the node out, the WASM runtime toggles display — and this one
+// rendered the content inline regardless, so the export showed a screen with a
+// closed dialog's body spliced into the middle of it.
+func TestModalHonorsVisible(t *testing.T) {
+	closed := &core.Node{
+		Type:     "Modal",
+		Props:    map[string]any{"visible": false, "backdrop": "#00000088"},
+		Children: []*core.Node{textNode("dialog body")},
+	}
+	out := ExportHTML(closed)
+	if !strings.Contains(out, "display:none") {
+		t.Fatalf("a closed modal must not be laid out:\n%s", out)
+	}
+	// The content stays in the document: a Modal hides, it does not unmount
+	// (see core.ModalContent), which is what lets its state survive a close.
+	if !strings.Contains(out, "dialog body") {
+		t.Fatalf("modal content must stay mounted:\n%s", out)
+	}
+
+	open := &core.Node{
+		Type:     "Modal",
+		Props:    map[string]any{"visible": true, "backdrop": "#00000088"},
+		Children: []*core.Node{textNode("dialog body")},
+	}
+	out = ExportHTML(open)
+	if !strings.Contains(out, "display:flex") {
+		t.Fatalf("an open modal must be laid out:\n%s", out)
+	}
+	if !strings.Contains(out, "background:#00000088") {
+		t.Fatalf("the backdrop is the scrim; it must be emitted:\n%s", out)
+	}
+	// The chassis: a fixed inset-0 overlay above the app and below the toast
+	// layer, the same rules the WASM runtime assigns in createElement.
+	for _, want := range []string{"position:fixed", "z-index:1000", "justify-content:center"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("modal chassis missing %q:\n%s", want, out)
+		}
 	}
 }

@@ -789,3 +789,238 @@ test("onTouch listens on pointerdown", () => {
     at(0).dispatch("pointerdown");
     assert.deepEqual(rt.dispatched, [{ id: "cb_2", payload: {} }]);
 });
+
+// --------------------------------------------------------------------------
+// Phase 3 parity: Style fields the natives read and this runtime did not
+// --------------------------------------------------------------------------
+//
+// Each of these covers a field that was declared in Go, honored by Compose and
+// SwiftUI, and silently dropped here. They share one failure mode — the style
+// applies cleanly, the render succeeds, and the only symptom is that the web
+// disagrees with the device — which is why none of them was caught by the
+// conformance replay: it compares structure and props, not CSS.
+
+// The shorthand rule stated from the contract rather than read off the
+// implementation: an explicit side wins, an unset (zero) side takes its axis's
+// shorthand. Both natives resolve core.EdgeInsets this way (parseEdges in
+// GrMobStyle.swift and GrMobStyle.kt) and Go states it in htmlout/edges.go.
+test("Padding/Margin resolve the Horizontal and Vertical shorthands", () => {
+    const { at } = mount([
+        { Type: "Box", Props: {}, Style: { Padding: { Horizontal: 16 } } },
+        { Type: "Box", Props: {}, Style: { Margin: { Vertical: 6 } } },
+        // The explicit side wins for its own axis and leaves the opposite side
+        // on the shorthand.
+        { Type: "Box", Props: {}, Style: { Padding: { Horizontal: 8, Left: 20 } } },
+        { Type: "Box", Props: {}, Style: { Padding: { Top: 1, Right: 2, Bottom: 3, Left: 4 } } },
+    ]);
+
+    assert.equal(at(0).style.padding, "0px 16px 0px 16px");
+    assert.equal(at(1).style.margin, "6px 0px 6px 0px");
+    assert.equal(at(2).style.padding, "0px 8px 0px 20px");
+    assert.equal(at(3).style.padding, "1px 2px 3px 4px");
+});
+
+// One elevation number on every target against a CSS property that wants
+// offsets, a blur and a color. The arithmetic is SwiftUI's grMobShadow
+// restated (blur = elevation/2, y = elevation/3).
+test("Shadow becomes a box-shadow, and zero clears it", () => {
+    const { rt, at } = mount([
+        { Type: "Card", Props: {}, Style: { Shadow: 6 } },
+        { Type: "Card", Props: {}, Style: { Shadow: 4 } },
+    ]);
+
+    assert.equal(at(0).style.boxShadow, "0 2px 3px rgba(0,0,0,0.33)");
+    // An elevation that does not divide evenly is rounded to the precision a
+    // device pixel is meaningful at (4/3 = 1.3333333333333333). htmlout rounds
+    // identically, so the two web targets emit the same declaration.
+    assert.equal(at(1).style.boxShadow, "0 1.33px 2px rgba(0,0,0,0.33)");
+
+    // Totality: an update-style patch carries the whole new Style, so a field
+    // back at zero means "unset now" and the declaration has to go.
+    rt.GrMob.patch(
+        JSON.stringify([{ Type: "update-style", TargetID: "root/0", Changes: {} }])
+    );
+    assert.equal(at(0).style.boxShadow, "");
+});
+
+// px, not CSS's unitless multiplier: the field is an absolute line box height
+// on both natives, and a bare number would mean "n times the font size".
+test("LineHeight is an absolute px height", () => {
+    const { at } = mount([{ Type: "Text", Props: { content: "x" }, Style: { LineHeight: 24 } }]);
+    assert.equal(at(0).style.lineHeight, "24px");
+});
+
+// "none" is the one Display value that has to beat the flex declaration this
+// runtime plants on every container; before this it emitted nothing at all, so
+// core.Display(core.DisplayNone) hid a node on the natives and on htmlout and
+// did nothing here.
+test("Display none hides a node even though every container is flex", () => {
+    const { rt, at } = mount([{ Type: "Column", Props: {}, Style: { Display: "none" } }]);
+
+    assert.equal(at(0).style.display, "none");
+
+    rt.GrMob.patch(
+        JSON.stringify([{ Type: "update-style", TargetID: "root/0", Changes: {} }])
+    );
+    // Back to the stacking default a Column always carries.
+    assert.equal(at(0).style.display, "flex");
+});
+
+// "hidden" and "visible" are not display keywords. Assigning one through
+// el.style overwrote the flex display and was then rejected by the browser,
+// which is why this runtime used to emit no Display at all. visibility keeps
+// the node's space and drops its pixels — what SwiftUI's .opacity(0) and
+// Compose's alpha 0 do with the same mode.
+test("Display hidden becomes visibility, not display", () => {
+    const { rt, at } = mount([{ Type: "Column", Props: {}, Style: { Display: "hidden" } }]);
+
+    assert.equal(at(0).style.visibility, "hidden");
+    // The container must still be a flex stack underneath.
+    assert.equal(at(0).style.display, "flex");
+
+    rt.GrMob.patch(
+        JSON.stringify([
+            { Type: "update-style", TargetID: "root/0", Changes: { Display: "visible" } },
+        ])
+    );
+    assert.equal(at(0).style.visibility, "visible");
+
+    rt.GrMob.patch(
+        JSON.stringify([{ Type: "update-style", TargetID: "root/0", Changes: {} }])
+    );
+    assert.equal(at(0).style.visibility, "");
+});
+
+// The three semantics fields both natives have always read. aria-hidden wins
+// alone, matching Compose's clearAndSetSemantics and SwiftUI's
+// accessibilityHidden: a name on a pruned subtree is contradictory.
+test("the accessibility fields become ARIA attributes", () => {
+    const { rt, at } = mount([
+        {
+            Type: "Box", Props: {},
+            Style: { AccessibilityLabel: "Close", AccessibilityHint: "Dismisses the sheet" },
+        },
+        {
+            Type: "Box", Props: {},
+            Style: { AccessibilityHidden: true, AccessibilityLabel: "Close" },
+        },
+    ]);
+
+    assert.equal(at(0).getAttribute("aria-label"), "Close");
+    assert.equal(at(0).getAttribute("aria-description"), "Dismisses the sheet");
+    assert.equal(at(1).getAttribute("aria-hidden"), "true");
+    assert.equal(at(1).getAttribute("aria-label"), null);
+
+    // Totality again, and the reason the attributes are removed rather than
+    // set to "": there is no empty attribute value that reads as absent.
+    rt.GrMob.patch(
+        JSON.stringify([{ Type: "update-style", TargetID: "root/0", Changes: {} }])
+    );
+    assert.equal(at(0).getAttribute("aria-label"), null);
+    assert.equal(at(0).getAttribute("aria-description"), null);
+});
+
+// Fields that had a StyleProp constructor in Go and no reader on any of the
+// four targets. One CSS property each here.
+test("the previously unread Style fields reach the element", () => {
+    const { at } = mount([
+        {
+            Type: "Box", Props: {},
+            Style: {
+                MinWidth: "10px", MinHeight: "11px",
+                MaxWidth: "12px", MaxHeight: "13px",
+                Overflow: "hidden", WhiteSpace: "nowrap",
+                Position: "absolute",
+                Top: "1px", Right: "2px", Bottom: "3px", Left: "4px",
+                ZIndex: 5,
+                FlexWrap: "wrap", RowGap: 6, ColumnGap: 7,
+                AlignSelf: "flex-end", FlexBasis: "50%", FlexShrink: 2,
+                Animation: "bounce 2s infinite",
+            },
+        },
+    ]);
+
+    const s = at(0).style;
+    assert.equal(s.minWidth, "10px");
+    assert.equal(s.minHeight, "11px");
+    assert.equal(s.maxWidth, "12px");
+    assert.equal(s.maxHeight, "13px");
+    assert.equal(s.overflow, "hidden");
+    assert.equal(s.whiteSpace, "nowrap");
+    assert.equal(s.position, "absolute");
+    assert.equal(s.top, "1px");
+    assert.equal(s.right, "2px");
+    assert.equal(s.bottom, "3px");
+    assert.equal(s.left, "4px");
+    assert.equal(s.zIndex, "5");
+    assert.equal(s.flexWrap, "wrap");
+    assert.equal(s.rowGap, "6px");
+    assert.equal(s.columnGap, "7px");
+    assert.equal(s.alignSelf, "flex-end");
+    assert.equal(s.flexBasis, "50%");
+    assert.equal(s.flexShrink, "2");
+    assert.equal(s.animation, "bounce 2s infinite");
+});
+
+// None of those promotes a plain Box to a flex container: flex-wrap and the
+// axis gaps only mean anything once the box already is one, so promoting it
+// for them alone would change the layout to no purpose.
+test("flex-wrap and the axis gaps do not create a flex container", () => {
+    const { at } = mount([{ Type: "Text", Props: { content: "x" }, Style: { FlexWrap: "wrap", RowGap: 4 } }]);
+    assert.equal(at(0).style.display, "");
+});
+
+// core.Spacer(n) is n x n on both natives (Compose Spacer(Modifier.size),
+// SwiftUI Color.clear.frame(width:height:)). Height alone made a Spacer inside
+// a Row a zero-width box: n points of gap on device, nothing in the browser.
+test("a Spacer is sized on both axes and refuses to shrink", () => {
+    const { at } = mount([{ Type: "Spacer", Props: { size: 20 } }]);
+
+    assert.equal(at(0).style.width, "20px");
+    assert.equal(at(0).style.height, "20px");
+    // Every container here is a flex container and a flex item shrinks by
+    // default; a gap whose job is a fixed distance must not be what gives way.
+    assert.equal(at(0).style.flexShrink, "0");
+});
+
+// The size lives in Props, so a change arrives as an update-props patch — and
+// nothing on that path read the key, so a resized Spacer kept its first gap
+// forever.
+test("a Spacer resizes on the patch path", () => {
+    const { rt, at } = mount([{ Type: "Spacer", Props: { size: 20 } }]);
+
+    rt.GrMob.patch(
+        JSON.stringify([{ Type: "update-props", TargetID: "root/0", Changes: { size: 40 } }])
+    );
+
+    assert.equal(at(0).style.width, "40px");
+    assert.equal(at(0).style.height, "40px");
+});
+
+// --------------------------------------------------------------------------
+// Toasts
+// --------------------------------------------------------------------------
+
+// A toast is host chrome, not app tree: it is built once with a default look
+// and never reconciled or patched. styleFromGrMob is total by design — it
+// returns "" for every unset property so an update-style patch clears what a
+// live element no longer carries — and applying that total map straight onto a
+// toast erased the defaults instead. A style setting one field wiped the rest
+// of the look.
+test("a styled toast keeps the defaults it does not override", () => {
+    const rt = loadRuntime();
+
+    rt.GrMob.showToast({ message: "saved", style: { Background: "#FF0000" } });
+
+    // The toast layer is appended to the body; the toast is its only child.
+    const layer = rt.document.body.children[rt.document.body.children.length - 1];
+    const toast = layer.children[0];
+
+    assert.equal(toast.textContent, "saved");
+    assert.equal(toast.style.background, "#FF0000");
+    // Untouched by the style, and therefore still the default look.
+    assert.equal(toast.style.padding, "10px 18px");
+    assert.equal(toast.style.borderRadius, "8px");
+    assert.equal(toast.style.boxShadow, "0 4px 12px rgba(0,0,0,0.25)");
+    assert.equal(toast.style.maxWidth, "80vw");
+});

@@ -6,6 +6,7 @@ package htmlout
 
 import (
 	"fmt"
+	"math"
 	"strconv"
 	"strings"
 
@@ -42,10 +43,22 @@ func renderNode(b *element.Builder, node *core.Node) (x any) {
 		return
 	}
 
-	// Spacer is pure layout: a fixed-height gap, no children, no other props.
+	// Spacer is pure layout: a fixed square void, no children, no other props.
+	//
+	// Both axes, not just height. core.Spacer(n) is size x size on both
+	// natives (Compose Spacer(Modifier.size(n.dp)), SwiftUI Color.clear
+	// .frame(width:height:)), so a Spacer inside a Row separated its siblings
+	// by n points on device and by nothing at all in the browser, where a
+	// zero-width box between two flex items is invisible.
+	//
+	// flex-shrink:0 is the other half: a flex item's default is to shrink
+	// under pressure, and a gap whose whole job is to hold a fixed distance
+	// must not be the thing that gives way. The natives have fixed frames and
+	// no equivalent to shrink, so this is what reproduces their behavior
+	// rather than adding to it.
 	if node.Type == "Spacer" {
 		if size, ok := node.Props["size"].(int); ok {
-			b.Div("style", fmt.Sprintf("height:%dpx", size)).R()
+			b.Div("style", fmt.Sprintf("width:%dpx; height:%dpx; flex-shrink:0", size, size)).R()
 			return
 		}
 	}
@@ -72,6 +85,13 @@ func renderNode(b *element.Builder, node *core.Node) (x any) {
 	if node.Type == "Image" {
 		sv = addDecl(sv, objectFitDecl(getStr(node.Props["contentMode"])))
 	}
+	// The Modal overlay chassis, ahead of any style the node carries so an
+	// author's style still wins. core.ModalNode carries no Style of its own —
+	// its whole look is these fixed rules plus the backdrop prop — which is
+	// why the declarations are authored here rather than in core.
+	if node.Type == "Modal" {
+		sv = addDecl(modalChassis(node.Props), sv)
+	}
 	if node.Style != nil && node.Style.Disabled && !isFormControl(node.Type) {
 		// HTML's disabled attribute is only valid on form controls, so a
 		// disabled container gets the ARIA state plus the one declaration
@@ -84,6 +104,7 @@ func renderNode(b *element.Builder, node *core.Node) (x any) {
 	if sv != "" {
 		attrs = append(attrs, "style", sv)
 	}
+	attrs = append(attrs, accessibilityAttrs(node.Style)...)
 	// A slice, not a map: map iteration order would make attribute order (and
 	// therefore the exported document) nondeterministic across runs.
 	for _, cb := range [...]struct{ prop, attr string }{
@@ -237,6 +258,84 @@ func getStr(v any) string {
 	return ""
 }
 
+// modalChassis is the fixed-overlay look and the visible/backdrop state of a
+// Modal node, as one CSS declaration list.
+//
+// Until this existed the exporter rendered a Modal as a plain div and ignored
+// both props, so a *closed* dialog's content was laid out inline in the
+// document — the export showed a screen no user would ever see, with the
+// modal's body spliced into the middle of it. Every other target honors
+// Visible (Renderer.swift and Renderer.kt gate on it, the WASM runtime toggles
+// display), which made this the one renderer out of four that disagreed about
+// what was on screen.
+//
+// The declarations are the WASM runtime's chassis restated (createElement's
+// Modal branch in grmob-runtime.js): the same fixed inset-0 box, the same
+// centered flex column, and the same z-index of 1000, chosen to sit under the
+// toast layer's 2000 so a toast confirming a dialog's action is not drawn
+// behind the dialog.
+//
+// display, not visibility: a closed modal must take no space and swallow no
+// clicks, which is display:none's meaning and not visibility:hidden's. That is
+// the same split styleValue makes for DisplayNone against DisplayHidden.
+func modalChassis(props map[string]any) string {
+	display := "none"
+	if v, ok := props["visible"].(bool); ok && v {
+		// flex, not block: the overlay centers its content.
+		display = "flex"
+	}
+	decls := "position:fixed; top:0; left:0; right:0; bottom:0; " +
+		"display:" + display + "; flex-direction:column; " +
+		"align-items:center; justify-content:center; z-index:1000"
+	// The scrim. Absent rather than transparent when the prop is missing: a
+	// hand-built ModalNode may omit it, and core.Modal always supplies one.
+	if backdrop := getStr(props["backdrop"]); backdrop != "" {
+		decls = addDecl(decls, "background:"+backdrop)
+	}
+	return decls
+}
+
+// accessibilityAttrs maps core.Style's three semantics fields onto the ARIA
+// attributes that mean the same thing, as name/value pairs ready to append to
+// an attribute slice.
+//
+// Both natives have read these since they existed (Compose contentDescription
+// / clearAndSetSemantics, SwiftUI accessibilityLabel / accessibilityHint /
+// accessibilityHidden), and the two web targets read none of them — so a
+// components.Separator marked AccessibilityHidden was correctly skipped by
+// TalkBack and VoiceOver and announced as a stray element by every screen
+// reader on the web.
+//
+// aria-hidden wins alone. It prunes the element and its subtree from the
+// accessibility tree, which makes a name or a description on the same node
+// contradictory rather than additive; Compose's clearAndSetSemantics branch
+// and SwiftUI's accessibilityHidden branch make the same exclusive choice.
+//
+// The hint maps to aria-description rather than aria-describedby: the latter
+// takes an ID reference, and a static export has no stable IDs to point at
+// (nor a place to hang the referenced text). aria-description is the
+// attribute form of the same idea. Its support is thinner than the rest of
+// ARIA — it is the newest of the three — so it is the one place here where
+// the export states the intent ahead of universal support, on the same
+// reasoning as enterkeyhint above: the alternative is dropping the author's
+// hint entirely.
+func accessibilityAttrs(s *core.Style) []string {
+	if s == nil {
+		return nil
+	}
+	if s.AccessibilityHidden {
+		return []string{"aria-hidden", "true"}
+	}
+	attrs := make([]string, 0, 4)
+	if s.AccessibilityLabel != "" {
+		attrs = append(attrs, "aria-label", s.AccessibilityLabel)
+	}
+	if s.AccessibilityHint != "" {
+		attrs = append(attrs, "aria-description", s.AccessibilityHint)
+	}
+	return attrs
+}
+
 // isFormControl reports whether the node exports as an HTML element that
 // accepts the disabled attribute. Everything else is a div or a span, where
 // disabled is not a valid attribute and would simply be ignored.
@@ -308,6 +407,14 @@ func styleValue(s *core.Style, nodeType string) string {
 	// gained the same emission in styleFromGrMob at the same time.
 	if s.FontWeight != 0 {
 		styles = append(styles, fmt.Sprintf("font-weight:%d", s.FontWeight))
+	}
+	// LineHeight is an absolute line box height in px, not a CSS unitless
+	// multiplier — that is what the field means on the natives (Compose takes
+	// `lineHeight = n.sp`, SwiftUI derives a lineSpacing of n minus the font
+	// size), so the unit has to be written or the same number would mean
+	// "n times the font size" here and "n points" there.
+	if s.LineHeight != 0 {
+		styles = append(styles, fmt.Sprintf("line-height:%dpx", s.LineHeight))
 	}
 	// Emitted verbatim: core's dimension strings ("40px", "45%", "auto") are
 	// already CSS lengths, which is where the format came from. The native
@@ -412,14 +519,40 @@ func styleValue(s *core.Style, nodeType string) string {
 	//
 	// A node that is not a flex container keeps the verbatim emission this
 	// exporter has always produced.
-	if s.Display != "" && (!isFlex || s.Display == core.DisplayNone) {
+	//
+	// "visible" and "hidden" have been split off entirely (see below): they
+	// are not CSS display keywords, so emitting them here produced a
+	// declaration the browser discarded — the mode was stated in Go, written
+	// into the document, and had no effect anywhere.
+	if isCSSDisplay(s.Display) && (!isFlex || s.Display == core.DisplayNone) {
 		styles = append(styles, fmt.Sprintf("display:%s", s.Display))
 	}
+	// DisplayHidden / DisplayVisible, in the CSS property that actually means
+	// what they say. Both natives read the mode this way — Renderer.swift
+	// applies .opacity(0) and Renderer.kt an alpha of 0, keeping the node's
+	// space and dropping its pixels — and `visibility` is that behavior's CSS
+	// spelling. `display:none`, the mode above, is the other one: no pixels
+	// AND no space, which is why the two cannot share a property.
+	//
+	// "visible" is emitted rather than dropped as a no-op: it is the CSS
+	// default, but a node nested inside a hidden ancestor inherits hidden, and
+	// an explicit DisplayVisible is the only way an author can say "not that
+	// one". The natives get this for free (opacity does not inherit).
+	switch s.Display {
+	case core.DisplayHidden:
+		styles = append(styles, "visibility:hidden")
+	case core.DisplayVisible:
+		styles = append(styles, "visibility:visible")
+	}
+	// EdgeCSS, not four field reads: core.EdgeInsets also carries the
+	// Horizontal/Vertical shorthand pair, which both natives resolve into the
+	// unset sides and which this exporter used to drop on the floor. See
+	// htmlout/edges.go for the rule and for what it silently cost.
 	if s.Padding != (core.EdgeInsets{}) {
-		styles = append(styles, fmt.Sprintf("padding:%dpx %dpx %dpx %dpx", s.Padding.Top, s.Padding.Right, s.Padding.Bottom, s.Padding.Left))
+		styles = append(styles, "padding:"+EdgeCSS(s.Padding))
 	}
 	if s.Margin != (core.EdgeInsets{}) {
-		styles = append(styles, fmt.Sprintf("margin:%dpx %dpx %dpx %dpx", s.Margin.Top, s.Margin.Right, s.Margin.Bottom, s.Margin.Left))
+		styles = append(styles, "margin:"+EdgeCSS(s.Margin))
 	}
 	// Flex *item* properties, as opposed to the container properties above:
 	// they describe how this node behaves inside its parent's flex layout, so
@@ -429,6 +562,26 @@ func styleValue(s *core.Style, nodeType string) string {
 	}
 	if s.BorderRadius != 0 {
 		styles = append(styles, fmt.Sprintf("border-radius:%gpx", s.BorderRadius))
+	}
+	// Shadow is a single elevation number on every target — Compose's
+	// Modifier.shadow(elevation) and SwiftUI's .shadow(radius:y:) both take
+	// one — and CSS box-shadow wants offsets, a blur and a color. The
+	// arithmetic here is the SwiftUI mapping restated (grMobShadow in
+	// GrMobStyle.swift: blur = elevation/2, y offset = elevation/3), so the
+	// three targets that draw a shadow at all draw comparable ones from the
+	// same core.Shadow(4).
+	//
+	// The color is SwiftUI's default shadow black at a third alpha; CSS has no
+	// default, so it has to be spelled. Elevation is in px like every other
+	// dimension core emits.
+	//
+	// Rounded to two decimals rather than printed at full float precision: an
+	// elevation of 4 divides into 1.3333333333333333, which is noise in a
+	// declaration measured in device pixels. The WASM runtime rounds the same
+	// way, so the two targets emit the same string for the same elevation.
+	if s.Shadow != 0 {
+		styles = append(styles, fmt.Sprintf("box-shadow:0 %gpx %gpx rgba(0,0,0,0.33)",
+			round2(s.Shadow/3), round2(s.Shadow/2)))
 	}
 	// Both natives already honor BorderColor/BorderWidth — Compose applies a
 	// Modifier.border, SwiftUI a .grMobBorder overlay — so a widget that draws
@@ -448,5 +601,116 @@ func styleValue(s *core.Style, nodeType string) string {
 		// renderers' behavior.
 		styles = append(styles, fmt.Sprintf("transition:all %s", s.Transition))
 	}
+	// Style.Animation is a CSS animation shorthand ("bounce 2s infinite"). It
+	// is emitted verbatim, and it is the one property here that needs
+	// something this exporter does not produce: a matching @keyframes rule.
+	// The export writes no stylesheet at all, so the declaration is inert
+	// until the document is embedded in a page that defines the keyframes by
+	// name. That is still strictly better than dropping it — the name is the
+	// author's, and a target that can honor it now receives it. Neither native
+	// reads the field.
+	if s.Animation != "" {
+		styles = append(styles, "animation:"+s.Animation)
+	}
+	// The remaining CSS-shaped fields of core.Style. Every one of them existed
+	// on the struct with a StyleProp constructor and no reader on any of the
+	// four targets — declared in Go, dropped everywhere. They are cheap here
+	// (a direct property each) and expensive on the natives (Compose and
+	// SwiftUI have no direct equivalent for most), so the web pair honors them
+	// and the native gap is documented rather than faked.
+	//
+	// Emitted verbatim for the same reason Width and Height are: core's
+	// dimension strings ("40px", "45%", "auto") are already CSS lengths, and
+	// the enums (Position, AlignItems, FlexWrap, Overflow, WhiteSpace) hold
+	// the CSS keywords themselves.
+	if s.MinWidth != "" {
+		styles = append(styles, "min-width:"+s.MinWidth)
+	}
+	if s.MinHeight != "" {
+		styles = append(styles, "min-height:"+s.MinHeight)
+	}
+	if s.MaxWidth != "" {
+		styles = append(styles, "max-width:"+s.MaxWidth)
+	}
+	if s.MaxHeight != "" {
+		styles = append(styles, "max-height:"+s.MaxHeight)
+	}
+	if s.Overflow != "" {
+		styles = append(styles, "overflow:"+s.Overflow)
+	}
+	if s.WhiteSpace != "" {
+		styles = append(styles, "white-space:"+s.WhiteSpace)
+	}
+	// Out-of-flow placement. The offsets are emitted whether or not Position
+	// is set, matching how CSS itself treats them: they are inert on a static
+	// box rather than an error, and a node can inherit a positioned ancestor's
+	// containing block without restating its own Position.
+	if s.Position != "" {
+		styles = append(styles, "position:"+string(s.Position))
+	}
+	if s.Top != "" {
+		styles = append(styles, "top:"+s.Top)
+	}
+	if s.Right != "" {
+		styles = append(styles, "right:"+s.Right)
+	}
+	if s.Bottom != "" {
+		styles = append(styles, "bottom:"+s.Bottom)
+	}
+	if s.Left != "" {
+		styles = append(styles, "left:"+s.Left)
+	}
+	if s.ZIndex != 0 {
+		styles = append(styles, "z-index:"+strconv.Itoa(s.ZIndex))
+	}
+	// Flex container properties that are not part of the isFlex decision
+	// above. They are deliberately not in it: unlike Gap/JustifyContent/
+	// AlignItems, none of these turns a block-flow box into something
+	// meaningfully different on its own — flex-wrap and the axis gaps only
+	// have an effect once the box is already a flex container, so promoting a
+	// box for them alone would change its layout to no purpose.
+	if s.FlexWrap != "" {
+		styles = append(styles, "flex-wrap:"+s.FlexWrap)
+	}
+	if s.RowGap != 0 {
+		styles = append(styles, fmt.Sprintf("row-gap:%gpx", s.RowGap))
+	}
+	if s.ColumnGap != 0 {
+		styles = append(styles, fmt.Sprintf("column-gap:%gpx", s.ColumnGap))
+	}
+	// Flex *item* properties, joining FlexGrow above: they describe how this
+	// node behaves inside its parent's layout, so they need no display:flex of
+	// their own.
+	if s.AlignSelf != "" {
+		styles = append(styles, "align-self:"+string(s.AlignSelf))
+	}
+	if s.FlexBasis != "" {
+		styles = append(styles, "flex-basis:"+s.FlexBasis)
+	}
+	if s.FlexShrink != 0 {
+		styles = append(styles, fmt.Sprintf("flex-shrink:%g", s.FlexShrink))
+	}
 	return strings.Join(styles, "; ")
+}
+
+// round2 rounds to two decimal places, the precision a CSS length measured in
+// device pixels is meaningful at.
+func round2(v float64) float64 {
+	return math.Round(v*100) / 100
+}
+
+// isCSSDisplay reports whether a DisplayMode names an actual CSS display
+// keyword. Three of the five do; "visible" and "hidden" name a visibility,
+// which styleValue emits through that property instead.
+//
+// A census rather than a "not those two" test, for the same reason tagForType
+// spells out its plain-div rows: a mode added to core.DisplayMode and not
+// taught to this exporter shows up as a missing case here rather than as an
+// invalid declaration in the output.
+func isCSSDisplay(m core.DisplayMode) bool {
+	switch m {
+	case core.DisplayNone, core.DisplayBlock, core.DisplayInline:
+		return true
+	}
+	return false
 }

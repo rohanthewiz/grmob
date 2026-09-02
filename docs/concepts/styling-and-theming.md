@@ -39,6 +39,36 @@ along it, which both native renderers now implement (Compose has no stretch
 alignment, so the children carry a fill modifier; SwiftUI's flex layout
 proposes the cross extent directly).
 
+### What each target honors
+
+Most of `Style` means the same thing everywhere. Three groups do not, and the
+difference is structural rather than an oversight:
+
+| group | Android | iOS | WASM DOM | `htmlout` |
+|---|---|---|---|---|
+| typography, color, box model, borders, `Shadow`, `Gap`, `Justify`, `AlignItems`, `Transition`, accessibility, `Disabled` | yes | yes | yes | yes |
+| `Position` + `Top`/`Right`/`Bottom`/`Left`/`ZIndex`, `MinWidth`/`MaxWidth`/`MinHeight`/`MaxHeight`, `Overflow`, `WhiteSpace`, `FlexWrap`, `AlignSelf`, `FlexBasis`, `FlexShrink`, `RowGap`/`ColumnGap`, `FlexDirection` | — | — | yes | yes |
+| `HoverStyle`, `FocusStyle`, `PseudoStates` | — | — | — | — |
+
+The second row is CSS the natives have no direct equivalent for — Compose and
+SwiftUI take a stack's axis from the node type and have no out-of-flow
+placement model — so a layout that leans on it will not look the same on
+device. The third row merges correctly on `Style` and is read by nothing: an
+inline style cannot express a pseudo-state, so the web targets need a
+generated stylesheet, not another declaration.
+
+`Padding` and `Margin` carry a `Horizontal`/`Vertical` pair alongside the four
+sides (`core.PaddingHorizontal(16)`). A side left at zero takes its axis's
+shorthand; an explicit side wins. All four targets resolve it the same way,
+including the one edge the rule cannot express — a zero value carries no "was
+it set?" bit, so `PaddingHorizontal(16)` plus `PaddingLeft(0)` cannot ask for a
+zero left inset.
+
+`Display` splits across two CSS properties on the web, matching what the
+natives do with it: `DisplayNone` removes the node entirely (no pixels, no
+space), while `DisplayHidden` keeps its space and drops its pixels — SwiftUI's
+`.opacity(0)`, Compose's alpha 0, and CSS's `visibility: hidden`.
+
 `Align` is the odd one, because it carries two roles. On a `Text` it is the
 text alignment; on a container it is the cross-axis fallback consulted when
 `AlignItems` is unset. `AlignStart`, `AlignCenter` and `AlignEnd` mean
@@ -65,8 +95,13 @@ core.Box(hairline, core.AccessibilityHidden())   // decorative — skip in scree
 core.AccessibilityHint("Filters the task list")  // describes the result of activating
 ```
 
-Renderers map them to `contentDescription` (Android) and
-`accessibilityLabel` / `accessibilityHint` / `accessibilityHidden` (iOS).
+Renderers map them to `contentDescription` (Android),
+`accessibilityLabel` / `accessibilityHint` / `accessibilityHidden` (iOS), and
+`aria-label` / `aria-description` / `aria-hidden` (WASM DOM and `htmlout`).
+
+`AccessibilityHidden` wins alone on every target: it prunes the node and its
+subtree from the accessibility tree, which makes a label on the same node
+contradictory rather than additive, so the label is dropped.
 
 ### `Disabled`
 

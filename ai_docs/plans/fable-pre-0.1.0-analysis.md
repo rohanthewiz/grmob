@@ -311,24 +311,39 @@ The Go side emits more than the DOM/htmlout pair honors. Consolidated table
 (Compose / SwiftUI / DOM / htmlout); every "missing" is a small,
 table-shaped addition.
 
+**The style half is done.** Every row struck through below was closed in one
+pass: `htmlout/edges.go` + `styleValue` and `styleFromGrMob` + `applyStyle` in
+`grmob-runtime.js`, with tests in `htmlout/export_test.go` and
+`wasm/verify/runtime_test.mjs`. What remains is the behavioral half — `TabView`,
+`CameraView` — plus the two native-side rows.
+
 | Item | Compose | SwiftUI | DOM (wasm) | htmlout | Action |
 |---|---|---|---|---|---|
-| Padding/Margin `Horizontal`/`Vertical` shorthand | yes | yes | missing (`edgeToCSS` reads four sides only, js:462) | missing | fill unset sides from shorthand in both; drop the hand workaround in `components/separator.go:48-50` |
-| `Shadow` | yes | yes | missing | missing | `box-shadow` |
-| `Display none` | yes | yes | missing (deliberately dropped, js:412-422) | yes | emit `display:none` after the flex block |
-| `Display hidden` | alpha 0 | opacity 0 | missing | **broken**: emits `display:hidden` (invalid CSS); same for `visible` | `visibility:hidden` in both |
-| `LineHeight` | yes | approx | missing | missing | `line-height` |
-| `AccessibilityLabel/Hint/Hidden` | yes | yes | missing | missing | `aria-label`, `aria-description`, `aria-hidden` |
-| `Spacer` axis | size×size | size×size | height only (js:12-14) | height only | set width and height, `flex-shrink:0` |
+| ~~Padding/Margin `Horizontal`/`Vertical` shorthand~~ | yes | yes | ~~missing~~ | ~~missing~~ | **done.** `htmlout.EdgeCSS` / `edgeToCSS`; `components/separator.go` now uses the shorthand |
+| ~~`Shadow`~~ | yes | yes | ~~missing~~ | ~~missing~~ | **done.** `box-shadow`, arithmetic restated from SwiftUI's `grMobShadow` |
+| ~~`Display none`~~ | yes | yes | ~~missing~~ | yes | **done.** assigned after the flex block so it wins |
+| ~~`Display hidden`~~ | alpha 0 | opacity 0 | ~~missing~~ | ~~broken~~ | **done.** `visibility` in both; `visible` too |
+| ~~`LineHeight`~~ | yes | approx | ~~missing~~ | ~~missing~~ | **done.** `line-height` in px, not a unitless multiplier |
+| ~~`AccessibilityLabel/Hint/Hidden`~~ | yes | yes | ~~missing~~ | ~~missing~~ | **done.** `aria-label` / `aria-description` / `aria-hidden`; hidden wins alone |
+| ~~`Spacer` axis~~ | size×size | size×size | ~~height only~~ | ~~height only~~ | **done.** both axes + `flex-shrink:0` |
 | `TabView` | yes | yes | bare div, all children shown | missing | tab bar + selected child; emit `onTabChange` (unblocks 1.9) |
-| `Modal visible` | yes | yes | yes | missing (always rendered) | honor `visible` |
-| `Modal backdrop` | ignored | ignored | yes | ignored | natives: scrim toggle |
-| `onLongPress` on containers/Text/Image | yes | yes | missing (`mapEventName` → nonexistent `longpress`) | n/a | `pointerdown` + 500 ms timer, cancel on `pointerup`/`pointerleave` |
-| `Spacer size` in update-props | yes | yes | missing | n/a | add branch |
-| `FlexDirection` | missing (Row/Column fixed-axis) | missing | yes | yes | low priority; document |
+| ~~`Modal visible`~~ | yes | yes | yes | ~~missing~~ | **done.** `modalChassis` in `htmlout/export.go`, restating the runtime's overlay |
+| `Modal backdrop` | ignored | ignored | yes | yes | natives: scrim toggle |
+| ~~`onLongPress` on containers/Text/Image~~ | yes | yes | ~~missing~~ | n/a | **done earlier** (Phase 1.10) — `attachLongPress` was already in the runtime when Phase 3 started |
+| ~~`Spacer size` in update-props~~ | yes | yes | ~~missing~~ | n/a | **done.** `applySpacerSize` on both paths |
+| `FlexDirection` | missing (Row/Column fixed-axis) | missing | yes | yes | low priority; **documented** in `docs/concepts/styling-and-theming.md` and ROADMAP |
 | `Gap` with non-start `JustifyContent` | **dropped** (Renderer.kt:913-922) | yes | yes | yes | `Arrangement.spacedBy(gap, alignment)` |
-| `MinWidth/MinHeight/MaxWidth/Overflow/WhiteSpace/Position/Top/Left/Right/Bottom/ZIndex/FlexWrap/AlignSelf/FlexBasis/FlexShrink/RowGap/ColumnGap/Animation/HoverStyle/FocusStyle/PseudoStates` | missing | missing | missing | missing | these exist on `Style` but no target reads them; either implement on DOM/htmlout (cheap: direct CSS) and document the native gap, or prune the ROADMAP claim (`PositionSticky, Absolute, Relative` is listed as Done) |
+| ~~`MinWidth/.../ColumnGap`, `Animation`~~ | missing | missing | ~~missing~~ | ~~missing~~ | **done** on the web pair; the native gap is documented (styling doc's per-target table, ROADMAP) rather than faked |
+| `HoverStyle`/`FocusStyle`/`PseudoStates` | missing | missing | missing | missing | **not** cheap CSS: an inline style cannot express a pseudo-state, so the web targets need a generated stylesheet and class names. Moved to the ROADMAP's styling-gaps list |
 | `CameraView` | placeholder | placeholder | plain div (`camera.js` never instantiated) | `[Camera View]` | wire `camera.js` or mark experimental in docs |
+
+One thing found while doing this that was not on the list: `showToast` applied
+`styleFromGrMob`'s **total** declaration map onto a toast that had already been
+given its default look, so a `core.UseToastStyle` setting one field blanked the
+padding, radius and drop shadow. Totality is right for the patch path (a reused
+element must lose what the new Style dropped) and wrong for a throwaway element
+layered over defaults; `definedDecls` now strips the `""` entries there. The bug
+predated this pass and would have widened with `boxShadow` and `maxWidth`.
 
 ---
 

@@ -21,10 +21,17 @@
 - [x] WASM runtime (`grmob-runtime.js`) with event bridge
 
 ### 🧪 Layout & Styling
-- [x] `Row`, `Column`, `Gap`, `Align`, `Justify`, `ZIndex`
-- [x] `PositionSticky`, `Absolute`, `Relative`, etc.
+- [x] `Row`, `Column`, `Gap`, `Align`, `Justify`
+- [x] `Position` (`Sticky`/`Absolute`/`Relative`/`Fixed`) with `Top`/`Right`/
+      `Bottom`/`Left`/`ZIndex`, plus `MinWidth`/`MaxWidth`/`MinHeight`/
+      `MaxHeight`, `Overflow`, `WhiteSpace`, `FlexWrap`, `AlignSelf`,
+      `FlexBasis`, `FlexShrink`, `RowGap`/`ColumnGap` — **web targets only**
+      (WASM DOM and `htmlout`). Compose and SwiftUI have no direct equivalent
+      for out-of-flow placement; a layout that depends on these will not look
+      the same on device.
+- [x] `Padding`/`Margin` `Horizontal`/`Vertical` shorthands on all four targets
 - [x] Responsive layouts via style merging
-- [x] Shadow, border, radius, hover styles
+- [x] `Shadow`, border, radius on all four targets
 - [x] Proportional flex weights on every target — `GrMobFlexStack`, a custom
       SwiftUI `Layout`, brought iOS in line with Compose's `Modifier.weight`
       (and made `justify-content` exact rather than Spacer-emulated)
@@ -134,6 +141,17 @@
 
 ### 🧬 Extensions
 - [ ] Router-style navigation for web
+
+### 🎨 Styling gaps
+- [ ] `HoverStyle`, `FocusStyle` and `PseudoStates` — the fields exist on
+      `core.Style` and merge correctly, but no renderer reads them. Inline
+      styles cannot express a pseudo-state, so the web targets need a
+      generated stylesheet and class names, not another declaration.
+- [ ] `Animation` (`"bounce 2s infinite"`) is emitted by both web targets and
+      is inert until the hosting page defines the matching `@keyframes`;
+      neither native reads it.
+- [ ] `FlexDirection` on the natives — Compose and SwiftUI take the axis from
+      the node type (`Row`/`Column`), so an explicit direction is web-only.
 
 ---
 

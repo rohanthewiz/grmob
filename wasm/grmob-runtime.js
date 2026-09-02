@@ -9,8 +9,8 @@ const GrMob = (() => {
         el.setAttribute("data-node-path", path);
 
 
-        if (node.Type === "Spacer" && node.Props && node.Props.size) {
-            el.style.height = `${node.Props.size}px`;
+        if (node.Type === "Spacer" && node.Props) {
+            applySpacerSize(el, node.Props.size);
         }
 
         if (node.Children) {
@@ -161,6 +161,30 @@ const GrMob = (() => {
         return el;
     }
 
+    // The size of a Spacer, on both axes.
+    //
+    // core.Spacer(n) is n x n on both natives — Compose
+    // Spacer(Modifier.size(n.dp)), SwiftUI Color.clear.frame(width:height:) —
+    // and this used to set the height alone, so a Spacer between two items of
+    // a Row held them 0px apart in the browser and n points apart on device.
+    //
+    // flex-shrink:0 is the other half. Every container this runtime draws is a
+    // flex container (see STACK_CONTAINERS), a flex item's default is to
+    // shrink under pressure, and a gap whose whole job is to hold a fixed
+    // distance must not be the thing that gives way. The natives have fixed
+    // frames and no equivalent to shrink, so this reproduces their behavior
+    // rather than adding to it.
+    //
+    // A missing or zero size clears all three, which is what makes this safe
+    // to call from the update path: a Spacer whose size prop goes away falls
+    // back to nothing rather than keeping the last size it was handed.
+    function applySpacerSize(el, size) {
+        const px = Number(size) > 0 ? `${Number(size)}px` : "";
+        el.style.width = px;
+        el.style.height = px;
+        el.style.flexShrink = px ? "0" : "";
+    }
+
     // Applies a Go Style to a live element. Split from styleFromGrMob because
     // one Go field does not map to CSS at all: Disabled is an element
     // *property* on form controls (which is what makes the browser refuse to
@@ -170,6 +194,7 @@ const GrMob = (() => {
     // mid-session actually stops responding.
     function applyStyle(el, style, nodeType) {
         Object.assign(el.style, styleFromGrMob(style, nodeType));
+        applyAccessibility(el, style);
 
         const disabled = !!style.Disabled;
         if (FORM_CONTROLS.has(el.tagName.toLowerCase())) {
@@ -181,6 +206,51 @@ const GrMob = (() => {
                 el.removeAttribute("aria-disabled");
             }
             el.style.pointerEvents = disabled ? "none" : "";
+        }
+    }
+
+    // core.Style's three accessibility fields -> the ARIA attributes that mean
+    // the same thing. Attributes rather than style properties, which is why
+    // this is here and not in styleFromGrMob — the same split Disabled makes.
+    //
+    // Both natives have read these since they existed (Compose
+    // contentDescription / clearAndSetSemantics, SwiftUI accessibilityLabel /
+    // accessibilityHint / accessibilityHidden); the two web targets read none
+    // of them, so a decorative node marked AccessibilityHidden was correctly
+    // skipped by TalkBack and VoiceOver and announced by every screen reader
+    // on the web.
+    //
+    // aria-hidden wins alone: it prunes the element and its subtree from the
+    // accessibility tree, which makes a name or description on the same node
+    // contradictory rather than additive. Compose's clearAndSetSemantics
+    // branch and SwiftUI's accessibilityHidden branch make the same exclusive
+    // choice.
+    //
+    // The hint becomes aria-description, not aria-describedby: the latter
+    // takes an ID reference and there is no second element here to point at.
+    // Support for aria-description is thinner than the rest of ARIA — it is
+    // the newest of the three — and the alternative is dropping the author's
+    // hint entirely.
+    //
+    // Every attribute is set or removed on every call, the same totality rule
+    // styleFromGrMob follows and for the same reason: an update-style patch
+    // carries the whole new Style, so a field back at its zero value means
+    // "unset now", and a guarded write would leave the old attribute standing.
+    function applyAccessibility(el, style) {
+        const hidden = !!style.AccessibilityHidden;
+        setOrRemove(el, "aria-hidden", hidden ? "true" : "");
+        setOrRemove(el, "aria-label", hidden ? "" : (style.AccessibilityLabel || ""));
+        setOrRemove(el, "aria-description", hidden ? "" : (style.AccessibilityHint || ""));
+    }
+
+    // Sets an attribute to a non-empty value, or removes it. There is no empty
+    // string that means "absent" for an attribute the way there is for a style
+    // property, so the removal has to be spelled.
+    function setOrRemove(el, name, value) {
+        if (value) {
+            el.setAttribute(name, value);
+        } else {
+            el.removeAttribute(name);
         }
     }
 
@@ -477,6 +547,28 @@ const GrMob = (() => {
         out.padding = style.Padding ? edgeToCSS(style.Padding) : "";
         out.margin = style.Margin ? edgeToCSS(style.Margin) : "";
         out.borderRadius = style.BorderRadius ? `${style.BorderRadius}px` : "";
+        // A single elevation number on every target (Compose's
+        // Modifier.shadow(elevation), SwiftUI's .shadow(radius:y:)) against a
+        // CSS property that wants offsets, a blur and a color. The arithmetic
+        // is the SwiftUI mapping restated — grMobShadow in GrMobStyle.swift
+        // uses blur = elevation/2 and a y offset of elevation/3 — so one
+        // core.Shadow(4) draws a comparable shadow on all three targets that
+        // draw one at all. The color is SwiftUI's default black at a third
+        // alpha, spelled out because CSS has no default.
+        //
+        // Rounded to two decimals rather than emitted at full float precision:
+        // an elevation of 4 divides into 1.3333333333333333, which is noise in
+        // a declaration measured in device pixels. htmlout rounds the same way,
+        // so the two web targets emit the same string for the same elevation.
+        out.boxShadow = style.Shadow
+            ? `0 ${round2(style.Shadow / 3)}px ${round2(style.Shadow / 2)}px rgba(0,0,0,0.33)`
+            : "";
+        // An absolute line box height in px, not CSS's unitless multiplier:
+        // that is what the field means on the natives (Compose takes
+        // `lineHeight = n.sp`, SwiftUI derives a lineSpacing from n minus the
+        // font size), so the unit has to be written or the same number would
+        // mean two different things.
+        out.lineHeight = style.LineHeight ? `${style.LineHeight}px` : "";
         out.width = style.Width || "";
         out.height = style.Height || "";
         // Flex layout. A plain <div> is block flow and ignores gap,
@@ -514,17 +606,45 @@ const GrMob = (() => {
         out.gap = style.Gap ? `${style.Gap}px` : "";
         out.justifyContent = style.JustifyContent || "";
         out.alignItems = alignItems || "";
-        // Display is deliberately NOT emitted. Go's DisplayMode carries values
-        // that are not CSS display keywords ("visible", "hidden"), and
-        // assigning one through el.style would overwrite the flex display in
-        // this object first and then be rejected by the browser, leaving the
-        // container in block flow. htmlout hit the sibling problem from the
-        // other side — a valid "block" emitted after the flex declarations
-        // beat them, so a themed Card's own Display: block killed its
-        // align-items — and now resolves Display against its flex container
-        // in styleValue; emitting nothing keeps this runtime out of both
-        // traps.
-        // One reading of Display survives, translated rather than emitted:
+        // Style.Display, resolved against the flex block above rather than
+        // emitted verbatim. Go's DisplayMode carries five values and only
+        // three of them are CSS display keywords, so a blanket assignment
+        // would overwrite the flex display in this object with a string the
+        // browser then rejects, leaving the container in block flow. That is
+        // why this used to emit nothing at all — and the cost of emitting
+        // nothing was that core.Display(core.DisplayNone) hid a node on both
+        // natives (Renderer.swift and Renderer.kt bail out before any layout)
+        // and on htmlout, and did nothing here. Each value now gets the
+        // treatment it actually needs:
+        //
+        //   - "none" is assigned last and wins over the flex display, on the
+        //     same principle htmlout's styleValue applies: hiding beats
+        //     layout on every target that reads Display at all.
+        //   - "hidden" is not a display at all; it becomes visibility below.
+        //   - "visible" likewise.
+        //   - "block" stays unemitted: a block-level flex container is
+        //     exactly display:flex, and outside a flex container the div is
+        //     block already, so the mode is a no-op either way here.
+        //   - "inline" is translated rather than emitted, just below.
+        if (style.Display === "none") {
+            out.display = "none";
+        }
+        // DisplayHidden / DisplayVisible in the property that means what they
+        // say: keep the node's space, drop its pixels. Both natives read the
+        // mode exactly this way (SwiftUI .opacity(0), Compose alpha 0), and
+        // visibility is its CSS spelling — display:none above is the other
+        // one, no pixels AND no space, which is why the two cannot share a
+        // property. Total like everything else here, so a node that stops
+        // being hidden becomes visible again on a patch.
+        //
+        // "visible" is assigned rather than treated as a no-op default: a node
+        // nested inside a hidden ancestor inherits hidden, and an explicit
+        // DisplayVisible is the only way an author can override that. The
+        // natives get this for free, since opacity does not inherit.
+        out.visibility = (style.Display === "hidden" || style.Display === "visible")
+            ? style.Display
+            : "";
+        // One more reading of Display, translated rather than emitted:
         // an inline display is the themes' way of saying "hug your content"
         // (components.Button documents FullWidth as block display + width
         // precisely because the bundled themes give Button an inline one).
@@ -551,11 +671,82 @@ const GrMob = (() => {
         // the browser drives the frames, same declare-in-Go model as the
         // native renderers.
         out.transition = style.Transition ? `all ${style.Transition}` : "";
+        // Style.Animation is a CSS animation shorthand ("bounce 2s infinite").
+        // Emitted verbatim, and it is the one property here that depends on
+        // something the runtime does not supply: a matching @keyframes rule,
+        // which has to come from the hosting page's stylesheet. The
+        // declaration is inert until it does. Neither native reads the field.
+        out.animation = style.Animation || "";
+        // The remaining CSS-shaped fields of core.Style. Every one of them had
+        // a StyleProp constructor in Go and no reader on any of the four
+        // targets — declared and dropped. They are one property each here and
+        // have no direct Compose/SwiftUI equivalent, so the web pair honors
+        // them and the native gap is documented rather than faked. htmlout's
+        // styleValue emits the same set.
+        //
+        // Verbatim for the same reason width and height are: core's dimension
+        // strings ("40px", "45%", "auto") are already CSS lengths, and the
+        // enums (Position, AlignItems, FlexWrap, Overflow, WhiteSpace) hold
+        // the CSS keywords themselves.
+        out.minWidth = style.MinWidth || "";
+        out.minHeight = style.MinHeight || "";
+        out.maxWidth = style.MaxWidth || "";
+        out.maxHeight = style.MaxHeight || "";
+        out.overflow = style.Overflow || "";
+        out.whiteSpace = style.WhiteSpace || "";
+        // Out-of-flow placement. The offsets are assigned whether or not
+        // Position is set, matching CSS itself: they are inert on a static box
+        // rather than an error, and a node can sit in a positioned ancestor's
+        // containing block without restating its own Position.
+        out.position = style.Position || "";
+        out.top = style.Top || "";
+        out.right = style.Right || "";
+        out.bottom = style.Bottom || "";
+        out.left = style.Left || "";
+        out.zIndex = style.ZIndex ? `${style.ZIndex}` : "";
+        // Flex container properties that are deliberately NOT part of the
+        // display:flex decision above. Unlike Gap/JustifyContent/AlignItems,
+        // none of these does anything on its own — flex-wrap and the axis gaps
+        // only have meaning once the box is already a flex container — so
+        // promoting a box for them alone would change its layout to no
+        // purpose.
+        out.flexWrap = style.FlexWrap || "";
+        out.rowGap = style.RowGap ? `${style.RowGap}px` : "";
+        out.columnGap = style.ColumnGap ? `${style.ColumnGap}px` : "";
+        // Flex *item* properties, joining flexGrow above.
+        out.alignSelf = style.AlignSelf || "";
+        out.flexBasis = style.FlexBasis || "";
+        out.flexShrink = style.FlexShrink ? `${style.FlexShrink}` : "";
         return out;
     }
 
+    // A Go core.EdgeInsets -> the four-value CSS shorthand, resolving the
+    // Horizontal/Vertical fields into the sides that were not set explicitly.
+    //
+    // EdgeInsets carries six fields, not four: the per-side values plus a
+    // shorthand pair that core.PaddingHorizontal / core.PaddingVertical write.
+    // Reading only the four sides — which is what this function used to do —
+    // meant PaddingHorizontal(16) applied cleanly in Go, rendered as 16px on
+    // both natives, and as nothing at all here.
+    //
+    // "Set explicitly" means non-zero, so PaddingHorizontal(16) plus
+    // PaddingLeft(0) cannot ask for a zero left inset. Both natives are lossy
+    // in exactly the same way for the same reason (a Go zero value carries no
+    // "was it set?" bit), and matching them is the point. Go states the rule
+    // in htmlout/edges.go; the two are independent statements of one contract,
+    // each with its own tests, the same arrangement the conformance replay
+    // makes for the prop table.
+    // Two decimal places, the precision a CSS length measured in device pixels
+    // is meaningful at. Go's copy is round2 in htmlout/export.go.
+    function round2(v) {
+        return Math.round(v * 100) / 100;
+    }
+
     function edgeToCSS(edge) {
-        return `${edge.Top}px ${edge.Right}px ${edge.Bottom}px ${edge.Left}px`;
+        const side = (explicit, shorthand) => (explicit || 0) || (shorthand || 0);
+        const h = edge.Horizontal, v = edge.Vertical;
+        return `${side(edge.Top, v)}px ${side(edge.Right, h)}px `
+            + `${side(edge.Bottom, v)}px ${side(edge.Left, h)}px`;
     }
 
     // The Go node type -> the HTML tag. Go states this table once, in
@@ -846,6 +1037,16 @@ const GrMob = (() => {
                             el.checked = !!v;
                         } else if (k === "rows") {
                             applyRows(el, v);
+                        } else if (k === "size" && el.dataset.nodeType === "Spacer") {
+                            // The update half of the Spacer sizing in
+                            // renderNode. Without it a Spacer whose size
+                            // changed kept its original gap: the size lives in
+                            // Props, so the change arrives as an update-props
+                            // patch and nothing here read the key. Gated on
+                            // the node type because "size" is a plausible prop
+                            // name for a future node that means something else
+                            // by it.
+                            applySpacerSize(el, v);
                         } else if (k === "src") {
                             if (el.src === v) continue;
                             el.src = v;
@@ -968,6 +1169,18 @@ const GrMob = (() => {
         return toastLayer;
     }
 
+    // Drops the "" entries from a styleFromGrMob result, turning a total
+    // declaration map into an overlay that only states what the Style set.
+    // Used where a style is layered onto defaults rather than applied to an
+    // element the runtime owns outright — see showToast.
+    function definedDecls(decls) {
+        const out = {};
+        for (const [k, v] of Object.entries(decls)) {
+            if (v !== "") out[k] = v;
+        }
+        return out;
+    }
+
     function showToast(payload) {
         const el = document.createElement("div");
         el.textContent = payload.message || "";
@@ -984,9 +1197,19 @@ const GrMob = (() => {
             transition: "opacity 150ms ease",
         });
         if (payload.style) {
-            // The style crosses as a Go core.Style (capitalized fields), so
-            // it goes through the same mapping every node style does.
-            Object.assign(el.style, styleFromGrMob(payload.style, "Toast"));
+            // The style crosses as a Go core.Style (capitalized fields), so it
+            // goes through the same mapping every node style does — but only
+            // the declarations it actually sets are applied.
+            //
+            // styleFromGrMob is *total*: it returns every property it manages
+            // on every call, with "" for the unset ones, so that an
+            // update-style patch reusing a live element clears what the new
+            // Style no longer carries. A toast has no patch path — each one is
+            // a throwaway element rendered once — and the "" entries would
+            // instead erase the defaults assigned just above, which is what a
+            // core.UseToastStyle setting only a background used to do to the
+            // padding, the radius, and the drop shadow.
+            Object.assign(el.style, definedDecls(styleFromGrMob(payload.style, "Toast")));
         }
         ensureToastLayer().appendChild(el);
         // Two frames, not one: the element must be painted at opacity 0
@@ -1016,6 +1239,23 @@ const GrMob = (() => {
 window.GrMobSystemEvent = function (name, payloadJSON) {
     if (name === "toast") {
         GrMob.showToast(JSON.parse(payloadJSON));
+        return;
+    }
+    if (name === "open_url") {
+        // A new browsing context is the web's nearest equivalent of handing a
+        // URL to the OS: the app's own page keeps its state and its wasm
+        // instance, which navigating in place would destroy. "noopener"
+        // severs window.opener so the opened page cannot reach back into this
+        // one, and "noreferrer" keeps the app's URL out of the destination's
+        // logs — the links apps hand to core.OpenURL are third-party by
+        // definition.
+        //
+        // A popup blocker can refuse this (window.open returns null) when the
+        // call is not attributable to a user gesture. Nothing is reported:
+        // core.OpenURL is fire-and-forget by contract, and a system event has
+        // no return channel to report it over.
+        const { url } = JSON.parse(payloadJSON);
+        if (url) window.open(url, "_blank", "noopener,noreferrer");
     }
 };
 

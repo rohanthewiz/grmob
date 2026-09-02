@@ -53,9 +53,10 @@ type Separator struct {
 	// Inset indents the rule from both ends, in px. This is the list idiom
 	// where the rule starts under the text rather than under the leading
 	// avatar or checkbox, so the leading column reads as one continuous
-	// stripe. It is applied as left/right margin rather than
-	// EdgeInsets.Horizontal because the HTML exporter only reads the
-	// per-side fields.
+	// stripe. It is applied as EdgeInsets.Horizontal, which every renderer now
+	// resolves into the unset left and right sides; the field used to be
+	// spelled out as a Left/Right pair because the two web targets read the
+	// per-side fields only and dropped the shorthand.
 	Inset int
 
 	// Style is applied last, so every default above is overridable.
@@ -83,7 +84,7 @@ func (s Separator) Render(ctx *core.Context) *core.Node {
 	)
 	if s.Inset != 0 {
 		items = append(items, core.UseStyle(core.Style{
-			Margin: core.EdgeInsets{Left: s.Inset, Right: s.Inset},
+			Margin: core.EdgeInsets{Horizontal: s.Inset},
 		}))
 	}
 	for _, sp := range s.Style {

@@ -55,9 +55,11 @@ func TestSeparatorThicknessAndInset(t *testing.T) {
 	if n.Style.Background != "#FF0000" {
 		t.Errorf("Background = %q, want the override", n.Style.Background)
 	}
-	// Per-side, not EdgeInsets.Horizontal: the HTML exporter reads only the
-	// four sides, so Horizontal would vanish from that target.
-	want := core.EdgeInsets{Left: 16, Right: 16}
+	// EdgeInsets.Horizontal, which says what the field means rather than
+	// spelling it out per side. It used to be a Left/Right pair because the
+	// two web targets read the per-side fields only; both resolve the
+	// shorthand now (htmlout.EdgeCSS, edgeToCSS in the WASM runtime).
+	want := core.EdgeInsets{Horizontal: 16}
 	if n.Style.Margin != want {
 		t.Errorf("Margin = %+v, want %+v", n.Style.Margin, want)
 	}
