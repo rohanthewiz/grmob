@@ -82,18 +82,22 @@ struct RenderNode: View {
                             onTap: node.stringProp("onClick"),
                             onLongPress: node.stringProp("onLongPress"))
             case "Spacer": Color.clear.frame(width: CGFloat(node.intProp("size")), height: CGFloat(node.intProp("size")))
-            case "Scroll":
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 0) { PlainChildren(node: node) }
-                }
-                .grMobKeyboardAware(node.boolProp("keyboardAware"))
-                .grMobBox(node.style, grow: grow)
+            case "Scroll": GrMobScroll(node: node, grow: grow)
             case "SafeArea":
                 // SwiftUI already lays out inside the safe area by default, so
-                // this is just a grouping box — the node exists so Go apps can
-                // be explicit about it and so an ignoresSafeArea escape hatch
-                // has a home later.
-                ZStack(alignment: .topLeading) { PlainChildren(node: node) }.grMobBox(node.style, grow: grow)
+                // this is a grouping box — the node exists so Go apps can be
+                // explicit about it and so an ignoresSafeArea escape hatch has
+                // a home later. One thing does reach past the inset: the
+                // node's background, painted edge to edge so a screen that
+                // colours its safe area (components.Screen forwards its
+                // background here) has no light strip under the status bar.
+                // The box's own background is painted by grMobBox as well,
+                // inside the inset; the two are the same colour, so the
+                // second coat is invisible and keeps the box's clip/border
+                // layering exactly as every other node has it.
+                ZStack(alignment: .topLeading) { PlainChildren(node: node) }
+                    .grMobBox(node.style, grow: grow)
+                    .background((node.style?.background ?? Color.clear).ignoresSafeArea())
 
             case "TabView": GrMobTabView(node: node, grow: grow)
             case "Modal": GrMobModal(node: node)
@@ -340,11 +344,18 @@ private struct FlexChildren: View {
         // cross axis, and honoring it there now would move existing rows.
         let cross = axis == .vertical ? crossAxisValue(node.style)
                                       : (node.style?.alignItems ?? "")
-        let stretch = cross == "stretch"
+        let stretch = axis == .vertical ? columnStretches(cross) : cross == "stretch"
         ForEach(node.children, id: \.viewID) { child in
             let weight = child.style?.flexGrow ?? 0
-            RenderNode(node: child, grow: fill(weight: weight, stretch: stretch))
+            // A child that keeps its own width opts out of the stretch on
+            // both channels: the layout must not propose it the full cross
+            // extent (GrMobFlexHugs), and it must not accept one (no
+            // fillWidth). Vertical only, since that is the only axis with
+            // a stretch default — see hugsContent.
+            let hugs = axis == .vertical && hugsContent(child.style)
+            RenderNode(node: child, grow: fill(weight: weight, stretch: stretch && !hugs))
                 .layoutValue(key: GrMobFlexWeight.self, value: weight)
+                .layoutValue(key: GrMobFlexHugs.self, value: hugs)
         }
     }
 
@@ -368,6 +379,14 @@ private struct FlexChildren: View {
 /// mis-align the moment SwiftUI flattened a Group or dropped an empty view.
 private struct GrMobFlexWeight: LayoutValueKey {
     static let defaultValue: CGFloat = 0
+}
+
+/// Whether a child of a stretched Column keeps its own width (see
+/// hugsContent). Carried the same way as the weight, for the same reason:
+/// the layout sees subviews, not nodes, and this is a per-child decision it
+/// has to make when it proposes the cross size.
+private struct GrMobFlexHugs: LayoutValueKey {
+    static let defaultValue = false
 }
 
 /// The flex containers' layout: a SwiftUI `Layout` running the CSS algorithm.
@@ -453,7 +472,10 @@ private struct GrMobFlexLayout: Layout {
         let bases = baseMains(subviews, crossBound: containerCross)
         let weights = subviews.map { $0[GrMobFlexWeight.self] }
         let resolved = solver.resolve(main: mainOf(bounds.size), bases: bases, weights: weights)
-        let stretch = crossAlign == "stretch"
+        // The same read FlexChildren makes, and it has to be the same one:
+        // an unset value stretches on the vertical axis (the CSS default the
+        // DOM targets have always drawn) and packs on the horizontal one.
+        let stretch = axis == .vertical ? columnStretches(crossAlign) : crossAlign == "stretch"
 
         var offset = resolved.leading
         for (i, subview) in subviews.enumerated() {
@@ -462,9 +484,10 @@ private struct GrMobFlexLayout: Layout {
             // bound (see baseMains). Stretch and non-stretch differ in what
             // the child does with it, not in what it is told: a stretched
             // child carries a flexible frame from FlexChildren and accepts
-            // the whole extent, an unstretched one takes what it needs.
+            // the whole extent, an unstretched one — or one that hugs its
+            // content by its own style — takes what it needs.
             let childProposal = proposed(main: childMain, cross: containerCross)
-            let childCross = stretch
+            let childCross = stretch && !subview[GrMobFlexHugs.self]
                 ? containerCross
                 : crossOf(subview.sizeThatFits(childProposal))
 
@@ -527,6 +550,62 @@ private struct GrMobFlexLayout: Layout {
     }
 }
 
+/// core.Scroll: a vertically scrolling column.
+///
+/// A ScrollView proposes its content no height at all, so a FlexGrow child
+/// inside one has nothing to grow into and wraps its content — which is why
+/// components.Screen{Fill, Scroll}, the ordinary form-shaped screen, stopped
+/// short of the bottom on iOS: the column's background ended where its last
+/// field did. Compose had the same collapse (worse: a weight under an
+/// unbounded constraint resolves to zero) and fixed it by measuring the
+/// viewport first; this is the SwiftUI spelling of the same fix. The scroll
+/// view's own frame is read through a preference — the frame *is* the
+/// viewport, and reading it off a background GeometryReader leaves the
+/// ScrollView's sizing untouched, where wrapping the whole thing in a
+/// GeometryReader would make it greedy on both axes — and a grow child is
+/// given that height as a floor (GrMobGrow.minHeight): it fills the screen
+/// when the content is short, so its background covers the viewport, and
+/// grows past it, scrolling, when the content is tall. That is what the DOM
+/// gives `flex-grow` under `overflow: auto` too.
+///
+/// Cross-axis stretch applies as in any vertical container: the Scroll is a
+/// flex column on the web, so its children fill its width unless they hug.
+private struct GrMobScroll: View {
+    let node: GrMobNode
+    let grow: GrMobGrow
+    @State private var viewport: CGFloat = 0
+
+    var body: some View {
+        let stretch = columnStretches(crossAxisValue(node.style))
+        ScrollView {
+            VStack(alignment: .leading, spacing: 0) {
+                ForEach(node.children, id: \.viewID) { child in
+                    let grows = (child.style?.flexGrow ?? 0) > 0
+                    RenderNode(node: child, grow: GrMobGrow(
+                        fillWidth: stretch && !hugsContent(child.style),
+                        minHeight: grows ? viewport : 0))
+                }
+            }
+        }
+        .background(GeometryReader { geo in
+            Color.clear.preference(key: GrMobViewportHeight.self, value: geo.size.height)
+        })
+        .onPreferenceChange(GrMobViewportHeight.self) { viewport = $0 }
+        .grMobKeyboardAware(node.boolProp("keyboardAware"))
+        .grMobBox(node.style, grow: grow)
+    }
+}
+
+/// The scroll viewport's height, carried up from the GeometryReader in
+/// GrMobScroll's background. One value per scroll view, so reduce keeps the
+/// latest.
+private struct GrMobViewportHeight: PreferenceKey {
+    static let defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = nextValue()
+    }
+}
+
 /// The virtualized sibling of GrMobColumn: LazyVStack materializes only the
 /// rows near the viewport as the ScrollView scrolls, so Go can hand over a
 /// thousand-row feed as plain data. (SwiftUI's List is deliberately not used:
@@ -563,9 +642,9 @@ private struct GrMobList: View {
                 // whose comment promises this frame does the filling, and
                 // then no frame was applied. See crossAxisValue for the pin
                 // that keeps the two reads together.
-                let stretch = crossAxisValue(s) == "stretch"
+                let stretch = columnStretches(crossAxisValue(s))
                 ForEach(rows, id: \.viewID) { row in
-                    RenderNode(node: row, grow: stretch ? .horizontal : .none)
+                    RenderNode(node: row, grow: stretch && !hugsContent(row.style) ? .horizontal : .none)
                 }
             }
             // A Transition declared on the List itself animates row
@@ -620,6 +699,44 @@ private func flattenFragments(_ children: [GrMobNode]) -> [GrMobNode] {
 private func crossAxisValue(_ s: GrMobStyle?) -> String {
     let items = s?.alignItems ?? ""
     return items.isEmpty ? (s?.align ?? "") : items
+}
+
+/// Whether a vertical container's effective cross-axis value stretches its
+/// children. An unset value does: that is the CSS default (`align-items:
+/// stretch`) and therefore what the two DOM targets have always drawn — an
+/// Input in a Column runs the full width of the screen in the browser, and
+/// on a phone it used to hug its placeholder because the flex stack packed
+/// unaligned children at the leading edge. Reading "unset" as stretch brings
+/// iOS to the picture the web already shows; an explicit "flex-start" still
+/// packs. Rows keep packing: the same CSS rule applies to them in principle,
+/// but Compose cannot stretch a Row without an intrinsic-height measurement
+/// that has real costs inside a List, and the natives move together.
+private func columnStretches(_ cross: String) -> Bool {
+    cross.isEmpty || cross == "stretch"
+}
+
+/// Whether a child of a stretched Column keeps its own width instead.
+///
+/// Two things exempt a child, and both come from the DOM targets, which are
+/// the reference for what the default should look like:
+///
+///  - An explicit Width. CSS never stretches an item with a definite cross
+///    size; here the flexible frame grMobGrow adds would sit outside the
+///    fixed one grMobDimension adds and win, so the child has to skip the
+///    stretch rather than override it.
+///  - An inline Display. The bundled themes give Button (and Badge) an
+///    inline display as their way of saying "hug your content", and
+///    grmob-runtime.js turns that into `width: fit-content` for exactly this
+///    case — a flex column would otherwise spread every button across the
+///    screen. components.Button's FullWidth is the documented way to ask
+///    for the stretch back (it sets both Width and a block display).
+///
+/// Text is not exempt: a stretched Text is the same picture as a hugging
+/// one (its alignment is a text property), and stretching it is what lets
+/// Align(AlignCenter) on a Column child centre its lines.
+private func hugsContent(_ s: GrMobStyle?) -> Bool {
+    guard let s else { return false }
+    return !s.width.isEmpty || s.display == "inline" || s.display == "inline-block"
 }
 
 /// AlignItems governs cross-axis placement; the DSL's simpler Align
@@ -1168,6 +1285,16 @@ extension View {
         }
     }
 
+    /// The Modal sheet's background, when the app has painted its own
+    /// surface (see GrMobModal); unchanged otherwise.
+    @ViewBuilder fileprivate func grMobPresentationSurface(_ color: Color?) -> some View {
+        if let color {
+            presentationBackground(color)
+        } else {
+            self
+        }
+    }
+
     @ViewBuilder fileprivate func grMobKeyboard(numeric: Bool) -> some View {
         #if os(iOS)
         keyboardType(numeric ? .decimalPad : .default)
@@ -1248,11 +1375,21 @@ private struct GrMobModal: View {
                     if !shown, !onDismiss.isEmpty { runtime?.click(onDismiss) }
                 }
             )) {
+                // The sheet's own surface is the system's — light in light
+                // mode — and the DOM targets draw a Modal as the backdrop
+                // and nothing else, so an app that gave its dialog column a
+                // dark background has already drawn the card and the
+                // system surface showed around it as a frame. When a direct
+                // child paints a background, the sheet takes that colour as
+                // its own so the app's surface is the dialog's edge on every
+                // target; unstyled content keeps the system surface.
+                let surface = node.children.compactMap { $0.style?.background }.first
                 VStack(alignment: .leading, spacing: 0) {
                     PlainChildren(node: node)
                 }
                 .padding(16)
                 .presentationDetents([.medium, .large])
+                .grMobPresentationSurface(surface)
             }
     }
 }

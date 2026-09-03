@@ -168,13 +168,27 @@ func Scroll(stylePropsAndChildren ...PropsAndChildren) View {
 	})
 }
 
-func SafeArea(child View) View {
+// SafeArea insets its content from the system bars and the display cutout.
+// It is the root of every screen (components.Screen builds one) and takes
+// the same mixed argument list as the other containers, so a style can land
+// on the inset box itself.
+//
+// The one style worth putting there is a background. The inset is padding
+// on this node, so a background here paints under the status bar while the
+// content stays clear of it — whereas a background on the content column
+// stops at the inset and leaves the strip behind the bar in the window's
+// own colour, which on a dark screen is a light band along the top. Each
+// native renderer paints this node's background edge to edge (Compose
+// orders the background before the inset padding; SwiftUI extends it with
+// ignoresSafeArea); the DOM targets have no system bars and treat it as any
+// other container. Padding and margin here are honoured too but rarely
+// wanted, since they inset the whole screen a second time.
+//
+// Like Scroll it has no theme base: the theme Column's screen padding would
+// otherwise inset the content twice.
+func SafeArea(stylePropsAndChildren ...PropsAndChildren) View {
 	return ComponentFunc(func(ctx *Context) *Node {
-		return &Node{
-			Type:     "SafeArea",
-			Props:    map[string]any{},
-			Children: []*Node{child.Render(ctx)},
-		}
+		return containerNode(ctx, "SafeArea", Style{}, stylePropsAndChildren)
 	})
 }
 

@@ -207,6 +207,20 @@ start/center/end and nothing else.
 Both renderers apply it to lazy lists too, where it is the only flex property
 that means anything (a scrolling axis has no leftover space to divide).
 
+**Stretch is the default on the vertical containers.** A `Column`, `List` or
+`Scroll` with no `AlignItems` and no `Align` stretches its children, on both
+natives, because that is the CSS default (`align-items: stretch`) and
+therefore what the two DOM targets have always drawn: an `Input` in a Column
+runs the full width in the browser, and on a phone it used to hug its
+placeholder. Two kinds of child keep their own width, exactly as on the web:
+one with an explicit `Width`, and one whose `Display` is inline — which is
+how the bundled themes make `Button` and `Badge` hug their content (the web
+runtime turns that into `width: fit-content`); `components.Button{FullWidth:
+true}` asks for the stretch back. An explicit `AlignItems(AlignFlexStart)`
+still packs. Rows keep their top-aligned default: the intrinsic-height
+measurement above has real costs inside a List, so nothing turns it on
+unasked.
+
 ### `ContentMode` on `Image`
 
 ```go

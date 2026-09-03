@@ -984,7 +984,7 @@ private fun ColumnScope.ColumnChildren(node: GrMobNode, growMinHeight: Dp? = nul
                 growMinHeight != null -> Modifier.heightIn(min = growMinHeight)
                 else -> Modifier.weight(grow)
             }
-            if (stretch) m = m.fillMaxWidth()
+            if (stretch && !hugsContent(child.style)) m = m.fillMaxWidth()
             RenderNode(child, m)
         }
     }
@@ -1018,6 +1018,17 @@ private fun GrMobScroll(node: GrMobNode, extra: Modifier) {
 /**
  * Whether a container stretches its children across the cross axis.
  *
+ * A Column with no cross-axis alignment at all stretches. That is the CSS
+ * default (`align-items: stretch`) and therefore what the two DOM targets
+ * have always drawn: an Input in a Column runs the full width of the
+ * screen in the browser, and on a phone it used to hug its placeholder
+ * because Compose's Column places children at Start unless told otherwise.
+ * Reading "unset" as stretch here brings the natives to the picture the
+ * web already shows; an explicit "flex-start" still packs. Rows keep their
+ * Top default: the same CSS rule applies to them in principle, but a
+ * stretched Row needs an intrinsic-height measurement (stretchRowHeight)
+ * with real costs inside a List, so nothing turns it on by default.
+ *
  * Two spellings, because the Style.Align fallback is axis-dependent and this
  * is where Android used to disagree with iOS. GrMobFlexStack in Renderer.swift
  * reads Align as the cross-axis value only when the stack's axis is vertical —
@@ -1042,7 +1053,31 @@ private fun GrMobScroll(node: GrMobNode, extra: Modifier) {
 private fun isStretch(s: GrMobStyle?): Boolean = s?.alignItems == "stretch"
 
 private fun isColumnStretch(s: GrMobStyle?): Boolean =
-    s?.alignItems?.ifEmpty { s.align } == "stretch"
+    (s?.alignItems?.ifEmpty { s.align }).let { it.isNullOrEmpty() || it == "stretch" }
+
+/**
+ * Whether a child of a stretched Column keeps its own width instead.
+ *
+ * Two things exempt a child from the fill, and both come from the DOM
+ * targets, which are the reference for what the default should look like:
+ *
+ *  - An explicit Width. CSS never stretches an item with a definite cross
+ *    size, and Compose would agree only by accident — fillMaxWidth ahead of
+ *    width() fixes the incoming constraints and the width is silently
+ *    ignored, so the child has to skip the fill rather than override it.
+ *  - An inline Display. The bundled themes give Button (and Badge) an inline
+ *    display as their way of saying "hug your content", and grmob-runtime.js
+ *    turns that into `width: fit-content` for exactly this case — a flex
+ *    column would otherwise spread every button across the screen.
+ *    components.Button's FullWidth is the documented way to ask for the
+ *    stretch back (it sets both Width and a block display).
+ *
+ * Text is not exempt: a stretched Text is the same picture as a hugging one
+ * (its alignment is a text property), and stretching it is what lets
+ * Align(AlignCenter) on a Column child centre its lines.
+ */
+private fun hugsContent(s: GrMobStyle?): Boolean =
+    s != null && (s.width.isNotEmpty() || s.display == "inline" || s.display == "inline-block")
 
 /**
  * The container half of a stretched Row.
@@ -1133,7 +1168,7 @@ private fun GrMobList(node: GrMobNode, extra: Modifier) {
             // promises this modifier fills the row, and then nothing filled
             // it. A lazy item has no weight to combine the fill with, since
             // a lazy list's main axis is scrollable and therefore unbounded.
-            if (isColumnStretch(s)) m = m.fillMaxWidth()
+            if (isColumnStretch(s) && !hugsContent(row.style)) m = m.fillMaxWidth()
             RenderNode(row, m)
         }
     }
@@ -1255,12 +1290,30 @@ private fun GrMobModal(node: GrMobNode) {
     ) {
         // The dialog window already scrims with the backdrop; the content gets
         // a card-like surface unless the app styled its children explicitly.
+        //
+        // "Explicitly" is read as: a direct child carries a background. The
+        // DOM targets draw a Modal as the backdrop and nothing else — the
+        // app's content paints its own surface — so an app that gave its
+        // dialog column a dark background has already drawn the card, and
+        // the white one here used to show around it as a frame. When the
+        // app has painted, this layer paints nothing and pads nothing, so
+        // the app's surface is the dialog's edge on every target; when it
+        // has not, the default card keeps unstyled content legible over the
+        // scrim. The 8dp outer margin stays in both cases: it is the gap to
+        // the window edge, not part of the surface.
+        val styled = node.children.any { it.style?.background != null }
+        val surface = if (styled) {
+            Modifier
+        } else {
+            Modifier
+                .background(Color.White, RoundedCornerShape(12.dp))
+                .padding(16.dp)
+        }
         Column(
             Modifier
                 .fillMaxWidth()
                 .padding(8.dp)
-                .background(Color.White, RoundedCornerShape(12.dp))
-                .padding(16.dp)
+                .then(surface)
         ) { ColumnChildren(node) }
     }
 }

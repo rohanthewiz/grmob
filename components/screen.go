@@ -135,7 +135,25 @@ func (s Screen) Render(ctx *core.Context) *core.Node {
 		// that did not ask carries no prop and renders the tree it used to.
 		inner = core.Scroll(core.MaybeProp(s.KeyboardAware, core.KeyboardAware()), inner)
 	}
-	// SafeArea takes a single child and renders it immediately, so this
-	// returns the fully rendered node rather than another View.
-	return core.SafeArea(inner).Render(ctx)
+	// The screen's background is painted on the safe area as well as on the
+	// column. The column's own background stops at the inset, and on both
+	// natives the strip under the status bar then shows the window's colour
+	// — a light band across the top of a dark screen. Painting the same
+	// colour on the inset box, which sits behind the bars, is what makes the
+	// screen read as one surface (see core.SafeArea). Only the background
+	// travels: the caller's padding, gap and everything else belong to the
+	// column alone, so the props are applied to a scratch Style and the one
+	// field is read back. A screen with no background leaves the safe area
+	// untouched, which keeps the zero value byte-identical to a hand-spelled
+	// SafeArea(Column(...)).
+	var probe core.Style
+	for _, sp := range s.Style {
+		sp.Apply(&probe)
+	}
+	// SafeArea renders its child immediately, so this returns the fully
+	// rendered node rather than another View.
+	return core.SafeArea(
+		core.MaybeProp(probe.Background != "", core.BackgroundColor(probe.Background)),
+		inner,
+	).Render(ctx)
 }

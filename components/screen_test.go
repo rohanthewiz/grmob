@@ -288,3 +288,38 @@ func TestScreenKeyboardAwareLandsOnExactlyOneNode(t *testing.T) {
 		t.Errorf("%d nodes carry keyboardAware, want exactly 1", marked)
 	}
 }
+
+// The background travels to the safe area and nothing else does. A screen
+// that paints its column dark but leaves the inset box alone shows a light
+// strip under the status bar on both natives; the scaffold closes that by
+// painting the same colour behind the bars. Padding must stay on the column
+// only, or the screen would be inset twice.
+func TestScreenPaintsItsBackgroundOnTheSafeArea(t *testing.T) {
+	root := renderScreen(t, core.DefaultTheme, Screen{
+		Style:    []core.StyleProp{core.Padding(20), core.BackgroundColor("#101010")},
+		Children: []core.View{core.Text("x")},
+	})
+	if root.Type != "SafeArea" || root.Style == nil {
+		t.Fatalf("want a styled SafeArea root, got %s", describe(root))
+	}
+	if root.Style.Background != "#101010" {
+		t.Errorf("SafeArea background = %q, want the screen's", root.Style.Background)
+	}
+	if root.Style.Padding != (core.EdgeInsets{}) {
+		t.Errorf("SafeArea took the column's padding: %+v", root.Style.Padding)
+	}
+	if col := column(t, root); col.Style.Background != "#101010" || col.Style.Padding.Top != 20 {
+		t.Errorf("column lost its own style: %+v", col.Style)
+	}
+
+	// With no background set, the safe area carries no style at all — the
+	// zero-value equivalence TestScreenZeroValueIsExactlySafeAreaColumn pins
+	// must survive a screen that sets only padding.
+	plain := renderScreen(t, core.DefaultTheme, Screen{
+		Style:    []core.StyleProp{core.Padding(20)},
+		Children: []core.View{core.Text("x")},
+	})
+	if plain.Style != nil && !reflect.DeepEqual(*plain.Style, core.Style{}) {
+		t.Errorf("a screen without a background styled its SafeArea: %+v", plain.Style)
+	}
+}

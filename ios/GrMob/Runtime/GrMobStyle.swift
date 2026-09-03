@@ -175,6 +175,14 @@ struct GrMobStyle: Equatable {
 struct GrMobGrow: Equatable {
     var fillWidth = false
     var fillHeight = false
+    /// A floor rather than a fill: the child is at least this tall and may
+    /// be taller. Zero means no floor. It exists for one parent, Scroll,
+    /// whose main axis is unbounded — there is no leftover space for
+    /// FlexGrow to claim, so a grow child inside it is given the viewport
+    /// height as a minimum instead (see GrMobScroll), the same thing the
+    /// DOM does for `flex-grow` under `overflow: auto` and Compose does
+    /// with heightIn(min = viewport).
+    var minHeight: CGFloat = 0
 
     static let none = GrMobGrow()
     static let horizontal = GrMobGrow(fillWidth: true)
@@ -184,7 +192,8 @@ struct GrMobGrow: Equatable {
     /// main-axis growth with its own cross-axis stretch.
     func union(_ other: GrMobGrow) -> GrMobGrow {
         GrMobGrow(fillWidth: fillWidth || other.fillWidth,
-                  fillHeight: fillHeight || other.fillHeight)
+                  fillHeight: fillHeight || other.fillHeight,
+                  minHeight: max(minHeight, other.minHeight))
     }
 }
 
@@ -427,6 +436,7 @@ extension View {
             self
         } else {
             frame(maxWidth: grow.fillWidth ? .infinity : nil,
+                  minHeight: grow.minHeight > 0 ? grow.minHeight : nil,
                   maxHeight: grow.fillHeight ? .infinity : nil,
                   alignment: alignment)
         }
