@@ -720,10 +720,13 @@ private func columnStretches(_ cross: String) -> Bool {
 /// Two things exempt a child, and both come from the DOM targets, which are
 /// the reference for what the default should look like:
 ///
-///  - An explicit Width. CSS never stretches an item with a definite cross
-///    size; here the flexible frame grMobGrow adds would sit outside the
-///    fixed one grMobDimension adds and win, so the child has to skip the
-///    stretch rather than override it.
+///  - A fixed Width, in points. CSS never stretches an item with a definite
+///    cross size; here the flexible frame grMobGrow adds would sit outside
+///    the fixed one grMobDimension adds and win, so the child has to skip
+///    the stretch rather than override it. A percentage is not fixed: it is
+///    relative to the parent's extent, so the child must be *proposed* that
+///    extent (Width("100%") is how components.Button spells FullWidth, and
+///    a button proposed only its label's width had nothing to fill).
 ///  - An inline Display. The bundled themes give Button (and Badge) an
 ///    inline display as their way of saying "hug your content", and
 ///    grmob-runtime.js turns that into `width: fit-content` for exactly this
@@ -736,7 +739,8 @@ private func columnStretches(_ cross: String) -> Bool {
 /// Align(AlignCenter) on a Column child centre its lines.
 private func hugsContent(_ s: GrMobStyle?) -> Bool {
     guard let s else { return false }
-    return !s.width.isEmpty || s.display == "inline" || s.display == "inline-block"
+    let fixedWidth = !s.width.isEmpty && !s.width.hasSuffix("%")
+    return fixedWidth || s.display == "inline" || s.display == "inline-block"
 }
 
 /// AlignItems governs cross-axis placement; the DSL's simpler Align

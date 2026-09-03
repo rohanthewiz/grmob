@@ -63,7 +63,14 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import android.app.Activity
+import android.content.Context
+import android.content.ContextWrapper
+import androidx.compose.runtime.SideEffect
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalView
+import androidx.core.view.WindowCompat
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.buildAnnotatedString
@@ -188,10 +195,13 @@ private fun RenderNodeContent(node: GrMobNode, extra: Modifier) {
         // modifiers consume what they apply). Keeping the keyboard out of this
         // is what leaves it to the region that actually scrolls — the same
         // split SwiftUI makes, where the keyboard is its own safe-area region.
-        "SafeArea" -> Box(
-            style.boxModifier(extra)
-                .windowInsetsPadding(WindowInsets.safeDrawing.exclude(WindowInsets.ime))
-        ) { RenderChildren(node) }
+        "SafeArea" -> {
+            style?.background?.let { SystemBarIcons(it) }
+            Box(
+                style.boxModifier(extra)
+                    .windowInsetsPadding(WindowInsets.safeDrawing.exclude(WindowInsets.ime))
+            ) { RenderChildren(node) }
+        }
 
         "TabView" -> GrMobTabView(node, extra)
         "Modal" -> GrMobModal(node)
@@ -224,6 +234,44 @@ private fun RenderNodeContent(node: GrMobNode, extra: Modifier) {
 }
 
 /** Children of a non-flex container; keyed so reorder/replace keeps sibling state. */
+/**
+ * Status-bar and navigation-bar icon colour, chosen from the SafeArea's own
+ * background.
+ *
+ * enableEdgeToEdge picks the icon style from the *system* theme (light
+ * icons in dark mode, dark icons otherwise), which has nothing to do with
+ * what the app paints under the bars. A SafeArea with a dark background on
+ * a phone in light mode therefore drew dark icons on a dark strip — the
+ * clock and battery vanished the moment the strip stopped being light. The
+ * one thing that knows the colour under the bars is this node, so it sets
+ * the appearance: light icons over a dark background, dark over a light one,
+ * by the same relative-luminance threshold the platform's own helpers use.
+ *
+ * SideEffect rather than LaunchedEffect: the window flag is not Compose
+ * state and must follow every successful composition, including the first,
+ * with no frame of the wrong colour in between. Cheap to repeat — the
+ * controller only touches the window when the value changes.
+ */
+@Composable
+private fun SystemBarIcons(background: Color) {
+    val view = LocalView.current
+    if (view.isInEditMode) return
+    val light = background.luminance() > 0.5f
+    SideEffect {
+        val window = view.context.findActivity()?.window ?: return@SideEffect
+        val controller = WindowCompat.getInsetsController(window, view)
+        controller.isAppearanceLightStatusBars = light
+        controller.isAppearanceLightNavigationBars = light
+    }
+}
+
+/** The Activity behind a Compose view's context, which may be wrapped. */
+private tailrec fun Context.findActivity(): Activity? = when (this) {
+    is Activity -> this
+    is ContextWrapper -> baseContext.findActivity()
+    else -> null
+}
+
 @Composable
 private fun RenderChildren(node: GrMobNode) {
     node.children.forEachIndexed { i, child ->
