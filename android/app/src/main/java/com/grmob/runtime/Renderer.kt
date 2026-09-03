@@ -9,6 +9,7 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
@@ -76,6 +77,7 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.withStyle
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
@@ -176,9 +178,7 @@ private fun RenderNodeContent(node: GrMobNode, extra: Modifier) {
         "List" -> GrMobList(node, extra)
         "Box" -> Box(animatedStyle(style).boxModifier(extra, gestureModifier(node))) { RenderChildren(node) }
         "Spacer" -> Spacer(Modifier.size(node.intProp("size").dp))
-        "Scroll" -> Column(
-            style.boxModifier(extra).verticalScroll(rememberScrollState())
-        ) { ColumnChildren(node) }
+        "Scroll" -> GrMobScroll(node, extra)
 
         // The safe area is the system bars and the display cutout — not the
         // IME. WindowInsets.safeDrawing bundles the keyboard in with the rest,
@@ -961,15 +961,56 @@ private fun RowScope.RowChildren(node: GrMobNode) {
     }
 }
 
+/**
+ * @param growMinHeight set by GrMobScroll to its viewport height. Inside a
+ * scroll region the Column measures its children with unbounded height, and
+ * Compose resolves Modifier.weight against an unbounded constraint to zero:
+ * the child, and everything inside it, disappears. A FlexGrow child there
+ * therefore gets a minimum height of the viewport instead of a weight, which
+ * is what the DOM and SwiftUI already give it — it fills the screen when the
+ * content is short (so its background covers the whole viewport) and grows
+ * past it, scrolling, when the content is tall. Null everywhere else, where
+ * weight is right and the two would fight (weight is a share of the *bounded*
+ * remainder; a min-height in a bounded Column would only overflow it).
+ */
 @Composable
-private fun ColumnScope.ColumnChildren(node: GrMobNode) {
+private fun ColumnScope.ColumnChildren(node: GrMobNode, growMinHeight: Dp? = null) {
     val stretch = isColumnStretch(node.style)
     node.children.forEachIndexed { i, child ->
         key(child.key.ifEmpty { i }) {
             val grow = child.style?.flexGrow ?: 0f
-            var m: Modifier = if (grow > 0f) Modifier.weight(grow) else Modifier
+            var m: Modifier = when {
+                grow <= 0f -> Modifier
+                growMinHeight != null -> Modifier.heightIn(min = growMinHeight)
+                else -> Modifier.weight(grow)
+            }
             if (stretch) m = m.fillMaxWidth()
             RenderNode(child, m)
+        }
+    }
+}
+
+/**
+ * core.Scroll: a vertically scrolling Column.
+ *
+ * BoxWithConstraints exists to learn the viewport height before the scroll
+ * makes it unbounded, so ColumnChildren can hand a FlexGrow child a real
+ * minimum height (see its growMinHeight parameter for why weight cannot be
+ * used there). components.Screen{Fill, Scroll} — the ordinary form-shaped
+ * screen — is exactly that shape, SafeArea → Scroll → Column(FlexGrow 1), and
+ * rendered as a blank page until this. The Box carries the node's own
+ * modifiers (the parent's weight/fill, background, padding, the keyboard
+ * inset from RenderNode) so the measured height is the region the content
+ * can actually occupy; the Column inside carries only the scroll. When the
+ * Scroll is itself unbounded (a Scroll nested in a Scroll, say) there is no
+ * viewport to fill and grow children keep wrapping their content.
+ */
+@Composable
+private fun GrMobScroll(node: GrMobNode, extra: Modifier) {
+    BoxWithConstraints(node.style.boxModifier(extra)) {
+        val viewport = if (constraints.hasBoundedHeight) maxHeight else null
+        Column(Modifier.verticalScroll(rememberScrollState())) {
+            ColumnChildren(node, growMinHeight = viewport)
         }
     }
 }
