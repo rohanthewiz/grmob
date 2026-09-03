@@ -16,10 +16,11 @@ import (
 //	app ──SendSystemEvent("audio", {command: "play"})──▶ host
 //	app ◀──ReceiveHostEvent("audio_status", {...})────── host
 //
-// The channel is generic on purpose. Audio status is its first traffic, but
-// the shape — a name and a JSON-ish payload, delivered to whoever asked for
-// that name — is the same one every later platform bridge on the roadmap
-// needs (a keystore result, a location fix, a lifecycle transition), and
+// The channel is generic on purpose. Audio status was its first traffic and
+// the app lifecycle (lifecycle.go) its second, but the shape — a name and a
+// JSON-ish payload, delivered to whoever asked for that name — is the same
+// one every later platform bridge on the roadmap needs (a keystore result,
+// a location fix), and
 // adding a bridge function per feature would grow the gomobile surface for
 // no gain. Each host therefore exposes exactly one entry point
 // (mobile.ReportHostEvent on the natives, GrMobWASM.HostEvent in the
@@ -27,7 +28,9 @@ import (
 //
 // Dispatch order is fixed: names core owns are consumed here first (the
 // audio status feeds core's own status record, which apps read through
-// CurrentAudioStatus and hooks.UseAudio), and then every app subscriber for
+// CurrentAudioStatus and hooks.UseAudio; the lifecycle state likewise
+// through CurrentLifecycle and hooks.UseLifecycle), and then every app
+// subscriber for
 // the name runs. That lets an app observe a core event without core having
 // to expose its internals, and lets an app define entirely private event
 // names for a shell it has extended itself.
@@ -96,6 +99,9 @@ func ReceiveHostEvent(name string, data map[string]any) {
 	case hostEventAudioStatus:
 		receiveAudioStatus(data)
 		consumed = true
+	case hostEventLifecycle:
+		receiveLifecycle(data)
+		consumed = true
 	}
 
 	hostEventsMu.RLock()
@@ -114,8 +120,8 @@ func ReceiveHostEvent(name string, data map[string]any) {
 	}
 }
 
-// hostEventAudioStatus is the one host event core consumes itself; see
-// audio.go for the payload.
+// hostEventAudioStatus is the first of the host events core consumes itself;
+// see audio.go for the payload, and lifecycle.go for the other one.
 const hostEventAudioStatus = "audio_status"
 
 // numberProp reads a JSON number out of a decoded payload. JSON has one

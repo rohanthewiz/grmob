@@ -119,8 +119,12 @@
       (browser); background playback and lock-screen controls on both natives
 - [x] Host events — the reverse of system events: `core.ReceiveHostEvent` /
       `core.OnHostEvent`, `mobile.ReportHostEvent`, `GrMobWASM.HostEvent`.
-      Audio status is the first traffic; keystore results, location fixes and
-      lifecycle transitions have their channel ready
+      Audio status was the first traffic and the app lifecycle the second;
+      keystore results and location fixes have their channel ready
+- [x] App lifecycle events — `core.CurrentLifecycle` / `core.OnLifecycle` /
+      `hooks.UseLifecycle` over the `"lifecycle"` host event; active /
+      inactive / background from `ProcessLifecycleOwner`, `scenePhase` and
+      the Page Visibility API, so a client can reconnect on resume
 - [x] `core.Slider` — a range control on all four targets, with a separate
       end-of-drag callback so a seek bar acts once
 - [x] `core.TextGrid` — a monospace grid of styled runs on all four targets,
@@ -144,8 +148,6 @@
 - [ ] URL-scheme deep links (`cats://pair` from a QR lands in the app)
 - [ ] Haptics (cats-mobile: a buzz when an agent blocks)
 - [ ] Local notifications
-- [ ] App lifecycle events (foreground/background, so a client can reconnect
-      on resume) — the host-event channel is ready for them
 - [ ] Device Storage (Plain): `DeviceStorage.Set()`, `DeviceStorage.Get()`
 - [ ] Bluetooth: `Scan`, `Connect`, `Send`
 - [ ] Location / GPS

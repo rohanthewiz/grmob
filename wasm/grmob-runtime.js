@@ -1523,6 +1523,33 @@ const GrMob = (() => {
         return { handle, status };
     })();
 
+    // The browser half of core's lifecycle event (core/lifecycle.go): is
+    // the app on screen. The Page Visibility API is the one signal a page
+    // gets that means what a phone's foreground/background means — a
+    // switched tab, a minimized window, a phone browser sent to the home
+    // screen all report hidden — so it is the source, and it can only tell
+    // two states apart: visible is "active", hidden is "background". The
+    // natives report "inactive" between the two; a page never does.
+    //
+    // Reported through the same window.GrMobWASM.HostEvent the audio
+    // status uses, looked up per call for the same reason: the runtime
+    // loads before the wasm module does, and a visibility change that
+    // arrives before Go is up has nothing to tell and nobody to tell it.
+    // Go dedupes a repeat of the current state (browsers fire the event
+    // twice on some tab switches), so this reports every change verbatim.
+    // Guarded so the runtime still loads where there is no document with
+    // events — the verify harness's minimal DOM, say.
+    (() => {
+        if (typeof document === "undefined" || typeof document.addEventListener !== "function") return;
+        document.addEventListener("visibilitychange", () => {
+            const host = window.GrMobWASM;
+            if (!host || typeof host.HostEvent !== "function") return;
+            host.HostEvent("lifecycle", JSON.stringify({
+                state: document.hidden ? "background" : "active",
+            }));
+        });
+    })();
+
     return {
         mount,
         patch,

@@ -54,7 +54,7 @@ consistent. Patch semantics — positional paths, ordering rules — are in
 | `TriggerCallback(id)` / `TriggerTextCallback` / `TriggerBoolCallback` / `TriggerIntCallback` | Event dispatch; returns the resulting patches |
 | `RenderAgain()` | Escape hatch for shells that drive rendering themselves |
 | `SetSystemEventListener(l)` | Sink for app→host system events (`toast`, `open_url`, `audio`); `OnSystemEvent(name, payloadJSON)` |
-| `ReportHostEvent(name, payloadJSON)` | Host→app events that answer no callback (`audio_status`); returns the resulting patches like `Trigger*` |
+| `ReportHostEvent(name, payloadJSON)` | Host→app events that answer no callback (`audio_status`, `lifecycle`); returns the resulting patches like `Trigger*` |
 
 ## Building — Android
 
@@ -143,7 +143,7 @@ fans any named host→app event out to `core.OnHostEvent` subscribers after
 core's own consumers, and `mobile.ReportHostEvent` is its one bridge entry
 point (`GrMobWASM.HostEvent` in the browser). Shells dispatch it on the same
 serial executor as `Trigger*` calls and apply the returned patches the same
-way.
+way. The app lifecycle rides the same channel; see [Lifecycle](#lifecycle).
 
 | Shell | Player | Session | Background |
 |---|---|---|---|
@@ -155,6 +155,46 @@ Status arrives twice a second while playing. `AudioLoad` and `AudioStop`
 update `core.CurrentAudioStatus` optimistically (loading / idle) so the very
 next render already shows the right track; everything else is the shell's
 word. `examples/mobileapp`'s Audio tab exercises the whole surface.
+
+## Lifecycle
+
+`core.CurrentLifecycle()` reports whether the app is on screen —
+`LifecycleActive`, `LifecycleInactive` or `LifecycleBackground` —
+`core.OnLifecycle` subscribes to transitions, and `hooks.UseLifecycle`
+re-renders a component on each one. The case that put it on the roadmap is
+a client reconnecting on resume: a phone that spent an hour in the
+background comes back with a dead socket, and without this the app learns
+that from its first failed write rather than from the foregrounding itself.
+
+```go
+// Wherever the connection lives, outside the tree:
+core.OnLifecycle(func(s core.LifecycleState) {
+    if s == core.LifecycleActive { conn.Resume() }
+})
+```
+
+The vocabulary is SwiftUI's `ScenePhase`, the most finely divided of the
+three hosts; the others map onto it:
+
+| Shell | Source | active | inactive | background |
+|---|---|---|---|---|
+| iOS | `scenePhase`, read at the `App` (`AppLifecycle.swift`) | `.active` | `.inactive` | `.background` |
+| Android | `ProcessLifecycleOwner` (`AppLifecycle.kt`) | `ON_RESUME` | `ON_PAUSE` | `ON_STOP` |
+| Browser | Page Visibility API (`grmob-runtime.js`) | visible | — | hidden |
+
+Android deliberately observes the *process*, not the Activity: an Activity
+is torn down and rebuilt on every rotation, and an app subscribed to
+reconnect on resume would redial every time the phone turned. The process
+owner delays `ON_PAUSE`/`ON_STOP` by a short grace period and cancels them
+when another Activity of the app takes over, so they mean "the user left".
+
+It travels as the `"lifecycle"` host event with one key, `state`; core
+consumes it into the record before app subscribers to the raw event run,
+the same ordering `audio_status` has, and drops a repeat of the current
+state, so subscribers hear transitions only. The initial state is active —
+an app that has just started is on screen — and a shell that disagrees says
+so with its first report. `mobile/verify` holds the three shells' spellings
+of the event and its states to core's.
 
 ## Persistence on device
 

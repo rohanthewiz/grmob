@@ -30,6 +30,14 @@ class MainActivity : ComponentActivity() {
         // constructed first because the audio player reports back through
         // it, but nothing renders until start(). See SystemEvents.kt.
         SystemEvents.attach(this, bridge, runtime)
+        // Foreground/background transitions, reported through the same
+        // host-event channel the audio player uses. Attached after start()
+        // on purpose: the process observer fires ON_RESUME shortly after
+        // this Activity resumes, and that report is only meaningful once
+        // the tree exists to render whatever the app does with it. See
+        // AppLifecycle.kt for why the process lifecycle and not this
+        // Activity's.
+        AppLifecycle.attach(runtime)
         runtime.start()
         setContent { GrMobRoot(runtime) }
     }

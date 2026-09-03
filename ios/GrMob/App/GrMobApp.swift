@@ -6,6 +6,10 @@ import SwiftUI
 @main
 struct GrMobApp: App {
     private let runtime: GrMobRuntime
+    // Foreground/background, reported to Go as the "lifecycle" host event.
+    // Read here, at the App, so it is the aggregate over every scene; see
+    // AppLifecycle.swift.
+    @Environment(\.scenePhase) private var scenePhase
 
     init() {
         // App.init runs on the main thread (SwiftUI's App protocol is
@@ -27,6 +31,9 @@ struct GrMobApp: App {
     var body: some Scene {
         WindowGroup {
             GrMobRoot(runtime: runtime)
+        }
+        .onChange(of: scenePhase) { _, phase in
+            AppLifecycle.report(phase, to: runtime)
         }
     }
 }
