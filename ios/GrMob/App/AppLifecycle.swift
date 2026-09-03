@@ -20,6 +20,10 @@ import SwiftUI
 /// current state, so a phase that re-reports itself (which SwiftUI does on
 /// occasion around a scene connecting) costs nothing downstream.
 enum AppLifecycle {
+    /// Main-actor because `GrMobRuntime.hostEvent` is, and because the
+    /// caller — the App's `onChange(of: scenePhase)` closure — already runs
+    /// there; the hop to the runtime's event queue happens inside hostEvent.
+    @MainActor
     static func report(_ phase: ScenePhase, to runtime: GrMobRuntime) {
         let state: String
         switch phase {
