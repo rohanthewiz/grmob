@@ -147,6 +147,11 @@ quietly misled the next reader:
   all 43 SafeArea nodes change how their *child sizes*, not just how two
   children would overlap. That is a real rendering change across every screen
   and deserves its own pass with its own before/after, not a rider on this one.
+
+  **Done next, same session** — see `2026-0904-0830-safearea-stacking.md`. The
+  sizing change turned out to be the same correction `isColumnStretch` already
+  documents for Column, which is what settled it. `mobile/verify/box_test.go`
+  was replaced by `stacking_test.go`, covering both node types under one rule.
 - **`htmlout` renders every stack container as block flow.** Carried over from
   the gap-audit session. The WASM runtime plants `display:flex` on every
   `STACK_CONTAINERS` type whether or not the Style asks; htmlout has no such

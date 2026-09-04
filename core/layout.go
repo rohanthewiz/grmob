@@ -186,6 +186,12 @@ func Scroll(stylePropsAndChildren ...PropsAndChildren) View {
 //
 // Like Scroll it has no theme base: the theme Column's screen padding would
 // otherwise inset the content twice.
+//
+// Below the inset it is a Column, on every target: children stack and, with
+// no cross-axis alignment set, stretch to its width. Both natives used to
+// draw it as an overlay (a Compose Box, a SwiftUI ZStack), which stacked two
+// children on top of each other and let a lone one — a screen's whole content
+// column, usually — hug its widest child instead of filling the screen.
 func SafeArea(stylePropsAndChildren ...PropsAndChildren) View {
 	return ComponentFunc(func(ctx *Context) *Node {
 		return containerNode(ctx, "SafeArea", Style{}, stylePropsAndChildren)

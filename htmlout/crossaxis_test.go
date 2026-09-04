@@ -70,24 +70,26 @@ func TestCrossAxisAlignsOmitTheTextOnlyAndUnansweredAlignments(t *testing.T) {
 // The gate is exactly the containers the natives read the fallback for. This
 // is a pin on a decision, not a census — there is no core list of
 // "vertical-stacking container types" to hold it to — so the expected set is
-// spelled here once, beside the reasoning: Column, Card and Box route to
-// GrMobColumn on both natives, List to GrMobList, and all four read the
-// fallback; Row deliberately declines it on every target, and leaf types were
-// never containers. Growing the set is legitimate (a new vertical container
-// would belong in it); the test makes the growth a visible decision on both
-// DOM targets at once, via the wasm conformance test that compares the
-// runtime's copy to the same table.
+// spelled here once, beside the reasoning: Column, Card, Box and SafeArea
+// route to GrMobColumn on both natives, List to GrMobList, and all five read
+// the fallback; Row deliberately declines it on every target, and leaf types
+// were never containers. Growing the set is legitimate (a new vertical
+// container would belong in it); the test makes the growth a visible decision
+// on both DOM targets at once, via the wasm conformance test that compares
+// the runtime's copy to the same table.
 //
-// Box is the growth this mechanism was built to catch, and it arrived from
-// the other direction than expected: the type did not change, the natives
-// did. Box used to draw as a Compose Box / SwiftUI ZStack — an overlay, which
-// has no cross axis to fall back on — and now routes through the same
-// GrMobColumn as Column and Card, so it reads the fallback exactly as they
-// do. mobile/verify's TestNativeBoxIsAVerticalStackNotAnOverlay is the pin on
-// that half.
+// Box and SafeArea are the growth this mechanism was built to catch, and it
+// arrived from the other direction than expected: the types did not change,
+// the natives did. Both used to draw as a Compose Box / SwiftUI ZStack — an
+// overlay, which has no cross axis to fall back on — and now route through
+// the same GrMobColumn as Column and Card, so they read the fallback exactly
+// as those do. mobile/verify's
+// TestNativeContainersStackTheirChildrenAndDoNotOverlay is the pin on that
+// half.
 func TestAlignFallbackGateMatchesTheNativeContainers(t *testing.T) {
 	want := map[string]string{
-		"Column": "column", "Card": "column", "Box": "column", "List": "column",
+		"Column": "column", "Card": "column", "Box": "column",
+		"SafeArea": "column", "List": "column",
 	}
 	got := AlignFallbackAxes()
 	for typ, axis := range want {

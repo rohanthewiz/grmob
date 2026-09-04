@@ -9,7 +9,9 @@ import (
 // readNative reads a whole native source file. declSource's narrower cut is
 // the right tool for a check aimed at one declaration; the parser checks
 // below are about the file as a unit — a parse function is one long literal
-// and the keys could legitimately move within it.
+// and the keys could legitimately move within it. stacking_test.go's
+// dispatchArm builds its own bound on top of this for the mirror-image
+// reason: a dispatch arm is not a declaration either.
 func readNative(t *testing.T, file string) string {
 	t.Helper()
 	raw, err := os.ReadFile(file)

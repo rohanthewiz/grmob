@@ -47,7 +47,12 @@ core.Row(
   the other containers (it used to take a bare `...View`; existing calls are
   unaffected). Like `Box` it has no theme base, so wrapping a screen in one
   does not inset it.
-- `SafeArea`, `Spacer(px)`, `Divider(height, color)`, `Fragment`.
+- `SafeArea` — insets its content from the system bars and the display
+  cutout, and is a `Column` below that inset: children stack and stretch to
+  its width on all four targets. (Like `Box`, it drew as an overlay on the
+  natives until that was fixed, which also left a screen's content column
+  hugging its widest child rather than filling the screen.)
+- `Spacer(px)`, `Divider(height, color)`, `Fragment`.
   (`Divider` force-applies `Margin(8)`; for a rule inside a list use
   `components.Separator`, which leaves spacing to the caller and defaults
   its own hairline tint.)

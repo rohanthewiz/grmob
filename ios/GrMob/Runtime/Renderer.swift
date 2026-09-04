@@ -100,8 +100,21 @@ struct RenderNode: View {
                 // inside the inset; the two are the same colour, so the
                 // second coat is invisible and keeps the box's clip/border
                 // layering exactly as every other node has it.
-                ZStack(alignment: .topLeading) { PlainChildren(node: node) }
-                    .grMobBox(node.style, grow: grow)
+                //
+                // A vertical stack, not a ZStack, for the reason the Box arm
+                // above gives: a SafeArea is a flex column on both DOM
+                // targets (the WASM runtime lists it in STACK_CONTAINERS), so
+                // two children stacked in a browser and drew on top of each
+                // other here. The single-child case moved too, and in the
+                // same direction: a ZStack sizes to its children, so a
+                // screen's content column hugged its widest child instead of
+                // filling the width `align-items: stretch` gives it on the
+                // web. GrMobColumn's flex stack supplies that, and honors a
+                // FlexGrow on the content column while it is there.
+                //
+                // The background still rides outside GrMobColumn's own box,
+                // where ignoresSafeArea can carry it under the bars.
+                GrMobColumn(node: node, grow: grow)
                     .background((node.style?.background ?? Color.clear).ignoresSafeArea())
 
             case "TabView": GrMobTabView(node: node, grow: grow)

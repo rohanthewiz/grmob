@@ -202,12 +202,26 @@ private fun RenderNodeContent(node: GrMobNode, extra: Modifier) {
         // modifiers consume what they apply). Keeping the keyboard out of this
         // is what leaves it to the region that actually scrolls — the same
         // split SwiftUI makes, where the keyboard is its own safe-area region.
+        // A vertical stack, not a Box, for the reason the Box arm above gives:
+        // a SafeArea is a flex column on both DOM targets (it is in the WASM
+        // runtime's STACK_CONTAINERS), so two children stacked in a browser
+        // and drew on top of each other here. The single-child case moved
+        // too, and in the same direction: a Compose Box lets its child size
+        // to its own content, so a screen's content column hugged its widest
+        // child instead of filling the width the way `align-items: stretch`
+        // gives it on the web. GrMobColumn's stretch default is what supplies
+        // that — the same correction isColumnStretch describes for Column.
+        //
+        // Routing through GrMobColumn also wires the gesture props, which a
+        // SafeArea never had here and both DOM targets have always honored.
         "SafeArea" -> {
             style?.background?.let { SystemBarIcons(it) }
-            Box(
-                style.boxModifier(extra)
-                    .windowInsetsPadding(WindowInsets.safeDrawing.exclude(WindowInsets.ime))
-            ) { RenderChildren(node) }
+            GrMobColumn(
+                node, extra,
+                outer = Modifier.windowInsetsPadding(
+                    WindowInsets.safeDrawing.exclude(WindowInsets.ime)
+                ),
+            )
         }
 
         "TabView" -> GrMobTabView(node, extra)
@@ -965,11 +979,20 @@ private fun GrMobRow(node: GrMobNode, extra: Modifier) {
     ) { RowChildren(node) }
 }
 
+/**
+ * `outer` is appended *after* boxModifier rather than folded into `extra`,
+ * and the difference is load-bearing for its one caller. boxModifier puts
+ * `extra` at the head of the chain, ahead of the background, so an inset
+ * passed that way would shrink the box before it is painted; passed here it
+ * insets only the content and the background still reaches the edges. That is
+ * exactly what a SafeArea needs — see the dispatch arm — and nothing else
+ * passes it.
+ */
 @Composable
-private fun GrMobColumn(node: GrMobNode, extra: Modifier) {
+private fun GrMobColumn(node: GrMobNode, extra: Modifier, outer: Modifier = Modifier) {
     val s = animatedStyle(node.style)
     Column(
-        modifier = s.boxModifier(extra, gestureModifier(node)),
+        modifier = s.boxModifier(extra, gestureModifier(node)).then(outer),
         verticalArrangement = verticalArrangement(s),
         // AlignItems governs cross-axis placement; the DSL's simpler Align
         // ("start"/"center"/"end") acts as a fallback when AlignItems is unset,
