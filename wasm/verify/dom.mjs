@@ -1,10 +1,11 @@
 // A minimal DOM for the WASM runtime harness.
 //
-// The runtime touches 24 distinct DOM members in total (createElement,
+// The runtime touches 26 distinct DOM members in total (createElement,
 // querySelector, activeElement, dataset, style, textContent, value,
-// placeholder, src, disabled, checked, rows, children, setAttribute,
-// removeAttribute, appendChild, replaceWith, remove, addEventListener, focus,
-// blur, tagName, innerHTML, getElementById). That is small enough to
+// placeholder, src, disabled, checked, rows, children, parentNode,
+// setAttribute, removeAttribute, appendChild, insertBefore, replaceWith,
+// remove, addEventListener, focus, blur, tagName, innerHTML,
+// getElementById). That is small enough to
 // implement rather than approximate, which is why this file exists instead of
 // a jsdom dependency — the same trade ios/verify makes with its hand-written
 // Swift harness.
@@ -145,6 +146,24 @@ class Element {
         if (child.parentNode) child.parentNode.removeChild(child);
         child.parentNode = this;
         this.children.push(child);
+        return child;
+    }
+
+    // insertBefore(child, ref): ref null appends, exactly as the DOM does.
+    //
+    // Modelled rather than approximated with appendChild because both callers
+    // depend on the position: the "add" patch fills the slot a path names, and
+    // a TabView's bar has to land ahead of its pages or every chrome offset
+    // downstream of it is wrong.
+    insertBefore(child, ref) {
+        if (child.parentNode) child.parentNode.removeChild(child);
+        child.parentNode = this;
+        const at = ref ? this.children.indexOf(ref) : -1;
+        if (at < 0) {
+            this.children.push(child);
+        } else {
+            this.children.splice(at, 0, child);
+        }
         return child;
     }
 

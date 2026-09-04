@@ -27,11 +27,19 @@ indented HTML. Properties worth relying on:
 - **Deterministic output**: stable attribute order and formatting, which is
   what makes string comparison between exports meaningful.
 - **Containers are stacks.** A `Row`, `Column`, `Card`, `Box`, `Scroll`,
-  `SafeArea` or `List` exports as a flex container along its own axis, whether
-  or not its `Style` asks — the same default the WASM runtime plants, from the
-  same table (`htmlout/stack.go`). Without it a container carrying nothing but
-  padding exported as a block-flow `<div>`, so its children ran down the page
-  here and across it on every other target.
+  `SafeArea`, `List` or `TabView` exports as a flex container along its own
+  axis, whether or not its `Style` asks — the same default the WASM runtime
+  plants, from the same table (`htmlout/stack.go`). Without it a container
+  carrying nothing but padding exported as a block-flow `<div>`, so its
+  children ran down the page here and across it on every other target.
+- **A `TabView` gets its bar and its selection.** The `tabs` prop becomes a
+  `role="tablist"` strip of `role="tab"` buttons ahead of the pages, carrying
+  `data-ontabchange` and a `data-tab-index` per tab in the same spirit as the
+  `data-onclick` family — the ID and the argument, with the wiring left to
+  whatever loads the document. Pages other than the selected one are hidden
+  with `display:none` rather than dropped, so the export still holds every
+  screen. See `htmlout/tabview.go` and
+  [WASM — Tab views](wasm.md#tab-views), which draws the same chrome live.
 
 ### Testing with htmlout
 

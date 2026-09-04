@@ -143,16 +143,90 @@ two. Block flow runs inline children together on one line (`Text` is a
 
 `htmlout/stack.go` is the authority. `stackAxisFor` answers both halves of the
 question at once — whether a type stacks, and along which axis — so `Row` maps
-to `row` and `Column`, `Card`, `Box`, `Scroll`, `SafeArea` and `List` to
-`column`. A type outside the table becomes a flex container only if its own
-`Style` asks, which is what keeps a `Text` carrying `Align` in its ordinary
-text role from being turned into a container by its own alignment.
+to `row` and `Column`, `Card`, `Box`, `Scroll`, `SafeArea`, `List` and
+`TabView` to `column`. A type outside the table becomes a flex container only
+if its own `Style` asks, which is what keeps a `Text` carrying `Align` in its
+ordinary text role from being turned into a container by its own alignment.
 
-`Modal`, `Spacer` and `TabView` are absent on purpose: `Modal` carries a
-fixed-overlay chassis that sets `display` itself and toggles it through the
-`visible` prop, `Spacer` is a sized void with no children, and `TabView` has
-never defaulted to flex on either web target — leaving it out keeps the two
-agreeing about it.
+`Modal` and `Spacer` are absent on purpose: `Modal` carries a fixed-overlay
+chassis that sets `display` itself and toggles it through the `visible` prop,
+and `Spacer` is a sized void with no children.
+
+`TabView` was absent too, on the weaker grounds that neither web target had
+ever defaulted it to flex and leaving it out kept the two agreeing — but they
+were agreeing on the wrong layout, since both natives build it from a vertical
+stack (a Compose `Column` around a `TabRow`, a SwiftUI `VStack` around a
+hand-rolled bar). Its row states that axis, and `mobile/verify`'s
+`TestNativeTabViewIsAColumnStack` holds the claim against the two renderers.
+What goes *inside* that stack is the next section.
+
+### Tab views
+
+`core.TabView`'s wire contract is four things: a `tabs` prop (label/icon
+pairs), a controlled `selectedIndex`, an optional `onTabChange` callback ID,
+and one child per page. Both natives consume all four — `Renderer.kt` draws a
+Material `TabRow` above the selected page, `Renderer.swift` a hand-rolled bar
+above the same. The two DOM targets read *none* of them until recently: a
+`TabView` was a bare box holding every page at once, with no bar and no way to
+switch, so an app whose navigation is a `TabView` had no navigation at all on
+the web and its screens stacked one under the other.
+
+Both now draw the bar and hide the unselected pages. `buildTabBar` and
+`syncTabView` are this runtime's half; `htmlout/tabview.go` is the exporter's,
+and carries the shared reasoning. The chrome is authored twice rather than
+shared, exactly as the `Modal` chassis is — a declaration list is a Go string
+on one side and a property object on the other — with
+`TestRuntimeDrawsTheSameTabChrome` pinning the half that is a contract rather
+than a look: the roles, the ARIA state and the `data-` attributes.
+
+```html
+<div data-node-type="TabView" data-node-path="root/1" style="display:flex; flex-direction:column">
+  <div data-grmob-chrome="tabbar" role="tablist" data-ontabchange="int_cb_0">
+    <button type="button" role="tab" aria-selected="true"  data-tab-index="0">Home</button>
+    <button type="button" role="tab" aria-selected="false" data-tab-index="1">Search</button>
+  </div>
+  <div data-node-path="root/1/0">…</div>                       <!-- the selected page -->
+  <div data-node-path="root/1/1" style="…; display:none">…</div>
+</div>
+```
+
+**The bar is chrome, not a node.** It carries no `data-node-path`, no patch is
+ever addressed to it, and it is marked `data-grmob-chrome` so the two places
+that turn a *node* child index into a *DOM* child index can skip it
+(`chromeOffset`, read by the `add` and `add-child` patches). Chrome always
+precedes the node children, which keeps that conversion a fixed offset rather
+than a search — and is the order a screen reader wants anyway. It is the same
+trick a `TextGrid` row's runs use, one step harder: those spans sit under a
+node with no children of its own, so nothing ever had to count past them.
+
+**The pages are hidden, not dropped**, which is where the two DOM targets both
+differ from the natives. This runtime cannot drop a page: `TargetID`s are
+positional, so its DOM has to stay isomorphic to the node tree. `htmlout`
+could — it is a static snapshot with no patches to address — but an export
+that silently lost every screen but one would be a worse document, and a
+divergence between the two web targets for no gain.
+
+**The selection is derived state.** `syncTabView` recomputes it, and `patch()`
+calls it once per batch for every `TabView` the batch could have disturbed,
+rather than teaching each patch case about tabs. Three different patches
+invalidate it: an `update-props` carrying a new `selectedIndex` (which is what
+a tab switch *is* — `core.SelectedIndex` is controlled state, so the switch
+arrives as a prop patch and never as a rebuilt subtree), an `update-style` on a
+page (`styleFromGrMob` is total, so it assigns a `display` on every pass and
+overwrites the hiding), and
+an `add`/`remove`/`replace` that changes which children there are. Nothing
+paints in between: a batch is one synchronous run. Restoring a page means
+putting back the `display` the style pass computed, not clearing the
+declaration — hence `data-base-display`, recorded wherever this runtime decides
+one; a `Column` page cleared to `""` would come back in block flow.
+
+Two things are deliberately not done. The **icon** half of a `core.TabItem` is
+drawn by no target (Compose's `Tab` is built with `text = { Text(label) }`, the
+SwiftUI bar with a `Text` of the label), so drawing it here would make the web
+the outlier rather than close a gap. And an **out-of-range `selectedIndex`** is
+not clamped: it selects no tab and shows no page, which is what
+`children.indices.contains` in Swift and `getOrNull` in Kotlin do for the page,
+and what the Swift bar's plain `i == selected` does for the indicator.
 
 Both DOM renderers read the table twice, and the second read is the
 non-obvious one. The first plants the default on the element as it is built

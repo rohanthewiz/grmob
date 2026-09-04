@@ -775,6 +775,14 @@ core — this struct only supplies the field names. All pages are children of
 the node; the native side shows the selected one. With no `OnChange`, no
 callback is registered, keeping static tab strips diff-stable.
 
+All four targets draw a bar above the selected page. The two DOM ones hide the
+other pages rather than dropping them (see
+[WASM — Tab views](platforms/wasm.md#tab-views)); the natives compose only the
+selected one, and give it a fresh identity on each switch, so per-tab view state
+is dropped there. `Selected` is controlled state on every target: a switch
+arrives as a prop change, never as a rebuilt subtree. The `Icon` of a
+`core.TabItem` is drawn by no target.
+
 ## Writing your own
 
 The package doc (`components/doc.go`) is the reference for the idiom. In

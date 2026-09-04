@@ -90,6 +90,26 @@ function fromGoTree(node, path = "root", out = []) {
     return out;
 }
 
+// Chrome — an element the runtime draws that no node asked for, currently a
+// TabView's bar (buildTabBar). It is skipped whole, subtree and all, because
+// Go's tree has nothing to compare it against.
+//
+// Skipped on the marker *and* checked for a path, rather than skipped on
+// "has no data-node-path": the second test would also swallow a real node
+// whose path attribute went missing, which is one of the exact failures this
+// replay exists to catch (a replace losing its data-node-path). Marked chrome
+// carrying a path is a contradiction and fails loudly instead.
+function isChrome(el) {
+    if (el.dataset.grmobChrome === undefined) return false;
+    assert.equal(
+        el.getAttribute("data-node-path"),
+        null,
+        `chrome element <${el.tagName.toLowerCase()}> carries a data-node-path; ` +
+            `it is not a node and no patch may be addressed to it`
+    );
+    return true;
+}
+
 function fromDOM(el, out = []) {
     out.push({
         path: el.getAttribute("data-node-path"),
@@ -102,7 +122,10 @@ function fromDOM(el, out = []) {
         rows: el.rows,
         enterkeyhint: el.getAttribute("enterkeyhint"),
     });
-    for (const child of el.children) fromDOM(child, out);
+    for (const child of el.children) {
+        if (isChrome(child)) continue;
+        fromDOM(child, out);
+    }
     return out;
 }
 

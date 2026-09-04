@@ -20,6 +20,14 @@ const GrMob = (() => {
             });
         }
 
+        // After the children, not in createElement: the selection decides
+        // which page is visible, so it has nothing to act on until the pages
+        // exist. createElement built the bar (a function of the props alone);
+        // this is the half that needs the subtree.
+        if (node.Type === "TabView") {
+            syncTabView(el);
+        }
+
         return el;
     }
 
@@ -84,6 +92,13 @@ const GrMob = (() => {
         if (stackAxis) {
             el.style.display = "flex";
             el.style.flexDirection = stackAxis;
+            // What this element's display is when nothing is hiding it. Only a
+            // tab page ever reads it back (syncTabView), and only a container
+            // with no Style at all reaches this line without applyStyle
+            // recording the same thing a moment later — but that container is
+            // exactly the case a "" default would get wrong, by restoring an
+            // unhidden page to block flow.
+            el.dataset.baseDisplay = "flex";
         }
 
         if (node.Style) {
@@ -103,6 +118,21 @@ const GrMob = (() => {
                     // itself — attachModalDismiss guards on the target so a
                     // click inside the content never dismisses.
                     attachModalDismiss(el, value);
+                } else if (key === "onTabChange" && node.Type === "TabView") {
+                    // Before the generic on* branch, for the reason onDismiss
+                    // and onLongPress are: there is no "tabchange" DOM event,
+                    // so that branch attached a listener nothing could ever
+                    // fire and marked the slot taken so the real wiring could
+                    // never be installed. The real trigger is a click on one
+                    // of the bar's buttons, which reads this ID back off the
+                    // dataset at fire time (buildTabBar).
+                    el.dataset.listener_onTabChange = value;
+                } else if (key === "selectedIndex" && node.Type === "TabView") {
+                    // Recorded rather than acted on here: the selection needs
+                    // the pages, which do not exist yet — renderNode syncs it
+                    // once they do, and every later read (syncTabView) takes
+                    // it from the element.
+                    el.dataset.tabSelected = value;
                 } else if (key === "onLongPress") {
                     // Before the generic on* branch for the same reason
                     // onDismiss is: there is no "longpress" DOM event, so the
@@ -170,9 +200,232 @@ const GrMob = (() => {
             // between them, so deciding it per key would depend on which one
             // the map happened to yield first.
             applyEnterKeyHint(el, node.Props);
+            // After the loop for the same reason: the bar reads tabs,
+            // selectedIndex and onTabChange together, and Object.entries fixes
+            // no order between them.
+            if (node.Type === "TabView") {
+                buildTabBar(el, node.Props);
+            }
         }
 
         return el;
+    }
+
+    // --- TabView chrome ------------------------------------------------------
+    //
+    // core.TabView's wire contract is a tabs prop, a controlled selectedIndex,
+    // an optional onTabChange callback ID and one child per page. Both natives
+    // consume all four — Renderer.kt draws a Material TabRow above the selected
+    // page, Renderer.swift a hand-rolled bar above the same — and this runtime
+    // read none of them: a TabView was a bare box holding every page at once,
+    // with no bar and no way to switch, so an app whose navigation *is* a
+    // TabView had no navigation at all here.
+    //
+    // htmlout/tabview.go is the other half of this pass and carries the shared
+    // reasoning: what the chrome is, why the pages are hidden rather than
+    // dropped, and why the icon is not drawn. The two are authored twice rather
+    // than shared, exactly as the Modal chassis is — a declaration list is a
+    // string there and a property object here — with
+    // TestRuntimeDrawsTheSameTabChrome pinning the part that is a contract
+    // rather than a look: the roles, the ARIA state and the data attributes.
+    //
+    // # The bar is not a node
+    //
+    // It carries no data-node-path, no patch is ever addressed to it, and it is
+    // marked data-grmob-chrome so the two places that convert a *node* child
+    // index into a *DOM* child index can skip it (chromeOffset). Chrome always
+    // precedes the node children, which is what keeps that conversion a fixed
+    // offset instead of a search — and is the order a screen reader wants
+    // anyway. It is the same trick a TextGrid row's runs use, one step harder:
+    // those spans sit under a node with no children of its own, so nothing ever
+    // had to count past them.
+    const TAB_BAR_STYLE = {
+        display: "flex",
+        flexDirection: "row",
+        alignItems: "stretch",
+        flexShrink: "0",
+        borderBottom: "1px solid rgba(128,128,128,0.35)",
+    };
+
+    // One tab: equal width (Android's TabRow, SwiftUI's .frame(maxWidth:
+    // .infinity)) and a <button> talked out of looking like one. color/font
+    // inherit is what makes the bar theme-neutral — the tabs take the app's own
+    // ink and face, so the bar reads correctly on a surface this code knows
+    // nothing about.
+    const TAB_STYLE = {
+        flex: "1 1 0",
+        padding: "12px 8px 10px",
+        border: "none",
+        borderBottom: "2px solid transparent",
+        background: "none",
+        color: "inherit",
+        font: "inherit",
+        textAlign: "center",
+        cursor: "pointer",
+        opacity: "0.6",
+    };
+
+    // The two selection states, each stating every property the other does.
+    // Object.assign only ever sets, so a tab that stops being selected has to
+    // be given the unselected value of all three — the same totality rule
+    // styleFromGrMob lives by, for the same reason: this pair is re-applied on
+    // every sync, and a property left out is a property left standing.
+    const TAB_SELECTED_STYLE = {
+        opacity: "1",
+        fontWeight: "600",
+        borderBottomColor: "currentColor",
+    };
+    const TAB_UNSELECTED_STYLE = {
+        opacity: "0.6",
+        fontWeight: "",
+        borderBottomColor: "transparent",
+    };
+
+    // How many leading children of this element are chrome rather than nodes.
+    //
+    // Counted rather than derived from the node type, because a TabView with no
+    // tabs prop has no bar: "TabView" alone would answer 1 for an element whose
+    // first child is really its first page, and every add patch aimed at that
+    // TabView would then land one slot late.
+    function chromeOffset(el) {
+        let n = 0;
+        while (n < el.children.length && el.children[n].dataset.grmobChrome !== undefined) {
+            n++;
+        }
+        return n;
+    }
+
+    // Builds (or refreshes) a TabView's bar. Called after the props loop on
+    // both the create and the update path, because the bar is a function of the
+    // whole props map and Object.entries fixes no order between tabs,
+    // selectedIndex and onTabChange — the same reason applyEnterKeyHint is
+    // called after its loop rather than inside it.
+    //
+    // Rebuilt only when the tab strip itself changed, which is what the
+    // signature is for. selectedIndex changes on every switch, and a switch is
+    // exactly when a keyboard user has one of these buttons focused; rebuilding
+    // unconditionally would throw that focus away on every tab press. The
+    // selection is applied by syncTabView instead, which mutates the buttons in
+    // place.
+    //
+    // props is the whole new props map on both paths — reconcile emits
+    // new.Props and never a delta — so an absent tabs key means "no tabs now",
+    // and removing the bar is the right reading of it rather than a lost
+    // update.
+    function buildTabBar(el, props) {
+        const tabs = Array.isArray(props.tabs) ? props.tabs : [];
+        const signature = JSON.stringify(tabs.map(t => (t && t.label) || ""));
+
+        const first = el.children[0];
+        const existing = first && first.dataset.grmobChrome === "tabbar" ? first : null;
+        if (existing && existing.dataset.tabSignature === signature) return;
+        if (existing) existing.remove();
+        if (!tabs.length) return;
+
+        const bar = document.createElement("div");
+        bar.dataset.grmobChrome = "tabbar";
+        bar.dataset.tabSignature = signature;
+        bar.setAttribute("role", "tablist");
+        Object.assign(bar.style, TAB_BAR_STYLE);
+
+        tabs.forEach((tab, i) => {
+            const button = document.createElement("button");
+            // type="button" so a bar inside a <form> cannot submit it.
+            button.setAttribute("type", "button");
+            button.setAttribute("role", "tab");
+            button.dataset.tabIndex = i;
+            Object.assign(button.style, TAB_STYLE);
+            button.textContent = (tab && tab.label) || "";
+            button.addEventListener("click", () => {
+                // Re-read at fire time, exactly as every other listener in this
+                // file does: callback IDs are positional and a later pass may
+                // have refreshed or pruned this one. The ID lives on the
+                // TabView, not on the button — one handler serves every tab and
+                // the index is what distinguishes them, which is the shape
+                // core.OnTabChange has.
+                const latestCbId = el.dataset.listener_onTabChange;
+                if (!latestCbId) return;
+                // A number, so ReceiveEventPayload's float64 case routes it to
+                // the *int* callback map. Sending the index as a string would
+                // land it in the text map, where an int ID does not exist, and
+                // the tap would silently do nothing.
+                window.GoInvokeCallback(latestCbId, { value: i });
+            });
+            bar.appendChild(button);
+        });
+
+        el.insertBefore(bar, el.children[0] || null);
+    }
+
+    // Applies a TabView's selection: which tab reads as selected, and which
+    // page is visible.
+    //
+    // Separate from buildTabBar because this is the part that runs constantly —
+    // see the end of patch(), which recomputes it for every TabView a batch
+    // could have disturbed. It is idempotent and reads only the element, so it
+    // is safe to call more often than strictly needed, and that is the whole
+    // design: no individual patch case has to know about tabs.
+    //
+    // An out-of-range index selects no tab and shows no page, deliberately
+    // unclamped — Renderer.swift compares `i == selected` for the indicator and
+    // guards the page with `children.indices.contains`, and Renderer.kt guards
+    // the page with getOrNull. See tabSelectedIndex in htmlout/tabview.go.
+    function syncTabView(el) {
+        const selected = Number(el.dataset.tabSelected || 0);
+        const offset = chromeOffset(el);
+
+        if (offset) {
+            const bar = el.children[0];
+            // The callback ID mirrored onto the bar, so the live DOM carries
+            // the same data-ontabchange the export writes. The listener above
+            // is what actually dispatches; this is the record of it.
+            const cbId = el.dataset.listener_onTabChange;
+            if (cbId) {
+                bar.setAttribute("data-ontabchange", cbId);
+            } else {
+                bar.removeAttribute("data-ontabchange");
+            }
+            for (let i = 0; i < bar.children.length; i++) {
+                const tab = bar.children[i];
+                const on = i === selected;
+                tab.setAttribute("aria-selected", on ? "true" : "false");
+                Object.assign(tab.style, on ? TAB_SELECTED_STYLE : TAB_UNSELECTED_STYLE);
+            }
+        }
+
+        for (let i = offset; i < el.children.length; i++) {
+            const page = el.children[i];
+            // baseDisplay is the display this page would have with nothing
+            // hiding it, recorded wherever this runtime decides one (the stack
+            // default in createElement, and applyStyle). Restoring it rather
+            // than clearing the declaration is the point: a Column page cleared
+            // to "" would lose the display:flex every stack container gets, and
+            // come back as block flow.
+            page.style.display = (i - offset) === selected ? (page.dataset.baseDisplay || "") : "none";
+        }
+    }
+
+    // Recomputes the selection of every TabView at or above the elements a
+    // patch batch touched.
+    //
+    // The selection is derived state — a function of the TabView's props and of
+    // its children — and a batch can invalidate it three different ways: an
+    // update-props carrying a new selectedIndex, an update-style on a page
+    // (styleFromGrMob is total, so it assigns a display on every pass and
+    // overwrites the hiding), or an add/remove/replace that changes which
+    // children there are. Recomputing once at the end is what keeps those three
+    // cases from each having to know about tabs. Nothing paints in between: a
+    // batch is one synchronous run.
+    function syncTouchedTabViews(touched) {
+        const done = new Set();
+        for (const start of touched) {
+            for (let el = start; el; el = el.parentNode) {
+                if (el.dataset && el.dataset.nodeType === "TabView" && !done.has(el)) {
+                    done.add(el);
+                    syncTabView(el);
+                }
+            }
+        }
     }
 
     // The size of a Spacer, on both axes.
@@ -207,7 +460,15 @@ const GrMob = (() => {
     // update-style patch go through here so a control that becomes disabled
     // mid-session actually stops responding.
     function applyStyle(el, style, nodeType) {
-        Object.assign(el.style, styleFromGrMob(style, nodeType));
+        const css = styleFromGrMob(style, nodeType);
+        Object.assign(el.style, css);
+        // The display this element would have with nothing hiding it, kept
+        // because hiding a tab page overwrites el.style.display and putting the
+        // page back means restoring what the style pass computed — not clearing
+        // the declaration, which would drop a Column page into block flow. This
+        // function is total, so the record is refreshed on every style patch
+        // and can never go stale.
+        el.dataset.baseDisplay = css.display;
         applyAccessibility(el, style);
 
         const disabled = !!style.Disabled;
@@ -585,7 +846,8 @@ const GrMob = (() => {
     // clear the display the element was built with).
     //
     // Go's copy is stackAxes in htmlout/stack.go, which carries the reasoning
-    // — including why Modal, Spacer and TabView are absent. The two are
+    // — including why Modal and Spacer are absent, and what TabView's row does
+    // and does not fix (the axis, not the missing tab bar). The two are
     // compared by TestRuntimeStackAxesMatchGo, so keep the flat-literal shape.
     //
     // Fragment and Theme are this runtime's own rows: it boxes both in real
@@ -603,6 +865,7 @@ const GrMob = (() => {
             Scroll: "column",
             SafeArea: "column",
             List: "column",
+            TabView: "column",
             Fragment: "column",
             Theme: "column",
         }[nodeType] || "";
@@ -691,9 +954,10 @@ const GrMob = (() => {
         // styleValue reads the same table for the same reason.
         // RowGap/ColumnGap promote a box exactly as Gap does — `gap` IS the
         // two of them, so a node setting one has asked for the same spacing
-        // by another name. Only reachable for a node type outside
-        // the stack table (a TabView, say), which is already flex here;
-        // htmlout's styleValue makes the same call for every type.
+        // by another name. Only ever the deciding term for a node type
+        // outside the stack table, since a stack container is promoted by the
+        // table's own term anyway; htmlout's styleValue makes the same call
+        // for every type.
         if (style.Gap || style.RowGap || style.ColumnGap || style.JustifyContent ||
             alignItems || style.FlexDirection || stackAxisFor(nodeType)) {
             out.display = "flex";
@@ -1135,6 +1399,12 @@ const GrMob = (() => {
     function patch(patchList) {
         const patches = typeof patchList === "string" ? JSON.parse(patchList) : patchList;
 
+        // Every element this batch reached, plus its parent — the input to the
+        // TabView pass at the end. The parent is collected too because a
+        // "remove" detaches its element before the pass runs, and a detached
+        // node has no ancestors left to walk.
+        const touched = [];
+
         patches.forEach(p => {
             // "add" fills a slot that was nil in the old tree, so its
             // TargetID does not exist in the DOM yet — resolve the parent
@@ -1146,7 +1416,14 @@ const GrMob = (() => {
                 if (!parent) return;
                 const index = Number(p.TargetID.slice(slash + 1));
                 const added = renderNode(p.Changes, p.TargetID);
-                parent.insertBefore(added, parent.children[index] || null);
+                // The slot index is a *node* index; the DOM child list may
+                // carry chrome ahead of the node children (a TabView's bar), so
+                // it is shifted past that chrome. Without the shift a page
+                // added to a TabView would land in front of the bar, and every
+                // page after it would be one slot out of step with the path it
+                // answers to.
+                parent.insertBefore(added, parent.children[index + chromeOffset(parent)] || null);
+                touched.push(parent);
                 return;
             }
 
@@ -1154,6 +1431,8 @@ const GrMob = (() => {
             if (!el) {
                 return;
             }
+            touched.push(el);
+            if (el.parentNode) touched.push(el.parentNode);
 
             switch (p.Type) {
                 case "update-props":
@@ -1246,6 +1525,21 @@ const GrMob = (() => {
                             // listener slot taken so the real one could
                             // never be attached.
                             attachModalDismiss(el, v);
+                        } else if (k === "onTabChange" && el.dataset.nodeType === "TabView") {
+                            // Before the generic on* branch, exactly as on the
+                            // create path: "tabchange" is not a DOM event. The
+                            // bar's buttons read this ID back at click time,
+                            // and pruneStaleListeners drops it — leaving the
+                            // bar inert — when a pass stops carrying it.
+                            el.dataset.listener_onTabChange = v;
+                        } else if (k === "selectedIndex" && el.dataset.nodeType === "TabView") {
+                            // This IS the tab-switch path: core.SelectedIndex
+                            // is controlled state, so a switch reaches the page
+                            // as a prop patch on the TabView and never as a
+                            // subtree replacement — the pages are never rebuilt,
+                            // only re-hidden. syncTouchedTabViews acts on it
+                            // once the batch has landed.
+                            el.dataset.tabSelected = v;
                         } else if (k === "onLongPress") {
                             attachLongPress(el, v);
                         } else if (k.startsWith("on")) {
@@ -1267,6 +1561,12 @@ const GrMob = (() => {
                             }
                         }
                     }
+                    // After the per-key loop, beside applyEnterKeyHint's
+                    // reason for being before it: the bar is a function of
+                    // tabs, selectedIndex and onTabChange together.
+                    if (el.dataset.nodeType === "TabView") {
+                        buildTabBar(el, p.Changes);
+                    }
                     pruneStaleListeners(el, p.Changes);
                     break;
 
@@ -1281,6 +1581,10 @@ const GrMob = (() => {
                 case "replace":
                     const newEl = renderNode(p.Changes, p.TargetID);
                     el.replaceWith(newEl);
+                    // The element collected above is detached now; the one
+                    // that took its place is what the TabView pass has to be
+                    // able to walk up from.
+                    touched.push(newEl);
                     break;
 
                 // "remove-child" is the Go diff's shrink patch: the new tree
@@ -1296,12 +1600,19 @@ const GrMob = (() => {
                     break;
 
                 case "add-child":
-                    const index = el.children.length;
+                    // The new child's *node* index, which is the DOM child
+                    // count minus whatever chrome sits ahead of the pages —
+                    // see the "add" case above. A TabView with a bar would
+                    // otherwise name its first page "…/1" and leave nothing
+                    // answering to "…/0".
+                    const index = el.children.length - chromeOffset(el);
                     const newChild = renderNode(p.Changes, `${p.TargetID}/${index}`);
                     el.appendChild(newChild);
                     break;
             }
         });
+
+        syncTouchedTabViews(touched);
     }
 
     // --- Toast overlay -------------------------------------------------------

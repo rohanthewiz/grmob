@@ -27,7 +27,7 @@ func ExportHTML(node *core.Node) string {
 	// b.Html writes the <!DOCTYPE html> declaration itself.
 	b.Html("lang", "en").R(
 		b.Body().R(
-			renderNode(b, node),
+			renderNode(b, node, ""),
 		),
 	)
 	// Pretty re-indents the compact single-pass output for human readers.
@@ -38,7 +38,17 @@ func ExportHTML(node *core.Node) string {
 // renderNode writes one node (and, for containers, its subtree) into the
 // builder. The return value exists only so calls can sit inline as R()
 // arguments, which is how element establishes evaluation order; it is ignored.
-func renderNode(b *element.Builder, node *core.Node) (x any) {
+//
+// extraDecl is a CSS declaration list the *parent* imposes on this node,
+// appended after everything the node itself declares so it wins the browser's
+// last-one-wins parse. Exactly one caller passes a non-empty one — renderTabView
+// hiding the pages that are not selected — and it has to arrive this way
+// because the decision belongs to the parent while the style attribute is
+// assembled here. It is forwarded through the transparent branch below for
+// the same reason: a Fragment used as a tab page has no box of its own, so
+// what the parent meant for the page has to reach the children that are
+// standing in for it.
+func renderNode(b *element.Builder, node *core.Node, extraDecl string) (x any) {
 	if node == nil {
 		return
 	}
@@ -58,7 +68,11 @@ func renderNode(b *element.Builder, node *core.Node) (x any) {
 	// rather than adding to it.
 	if node.Type == "Spacer" {
 		if size, ok := node.Props["size"].(int); ok {
-			b.Div("style", fmt.Sprintf("width:%dpx; height:%dpx; flex-shrink:0", size, size)).R()
+			// extraDecl still applies: this branch returns before the shared
+			// attribute assembly below, so a Spacer used as a tab page would
+			// otherwise be the one node type the parent could not hide.
+			decls := fmt.Sprintf("width:%dpx; height:%dpx; flex-shrink:0", size, size)
+			b.Div("style", addDecl(decls, extraDecl)).R()
 			return
 		}
 	}
@@ -69,7 +83,7 @@ func renderNode(b *element.Builder, node *core.Node) (x any) {
 	// renderer that cannot do this, are all in transparentTypes (tag.go).
 	if IsTransparent(node.Type) {
 		for _, child := range node.Children {
-			renderNode(b, child)
+			renderNode(b, child, extraDecl)
 		}
 		return
 	}
@@ -112,6 +126,10 @@ func renderNode(b *element.Builder, node *core.Node) (x any) {
 		sv = addDecl(sv, "pointer-events:none")
 		attrs = append(attrs, "aria-disabled", "true")
 	}
+	// Last, so it outranks the node's own declarations — including the
+	// display:flex a stack container is given unconditionally, which is
+	// exactly what a hidden tab page has to be talked out of.
+	sv = addDecl(sv, extraDecl)
 	if sv != "" {
 		attrs = append(attrs, "style", sv)
 	}
@@ -247,6 +265,10 @@ func renderNode(b *element.Builder, node *core.Node) (x any) {
 		b.Button(attrs...).TE(getStr(node.Props["label"]))
 	case "CameraView":
 		b.Div(attrs...).T("[Camera View]") // placeholder text authored here, not user data
+	case "TabView":
+		// A box like any other container, plus the bar and the page
+		// selection the wire contract asks for; see tabview.go.
+		renderTabView(b, node, attrs)
 	default:
 		renderContainer(b, node, attrs)
 	}
@@ -267,7 +289,7 @@ func renderContainer(b *element.Builder, node *core.Node, attrs []string) {
 	// directly rather than a box.
 	e := b.Ele(TagFor(node.Type), attrs...)
 	for _, child := range node.Children {
-		renderNode(b, child)
+		renderNode(b, child, "")
 	}
 	e.R()
 }

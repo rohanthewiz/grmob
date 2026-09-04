@@ -41,17 +41,45 @@ import (
 // a Row is a stack *because* it stacks horizontally — so the table states it
 // once and both renderers read the axis from here.
 //
+// # TabView, and the part of its divergence this row does not close
+//
+// TabView is a column stack on both natives: Renderer.kt builds a Compose
+// Column holding a TabRow and the selected page, Renderer.swift a SwiftUI
+// VStack holding a hand-rolled tab bar and the same page. It was the last
+// type that stacked there and ran in block flow here, and it was held out of
+// this table's first cut on the grounds that the two DOM targets at least
+// agreed with each other about it. Agreeing on the wrong layout is still the
+// wrong layout, so it is in now, on the axis both natives use.
+// mobile/verify's TestNativeTabViewIsAColumnStack holds that claim against
+// the two renderers rather than leaving it as prose here.
+//
+// The row closes the axis and nothing else, and the rest of the gap is worth
+// naming because this table is where a reader will come looking for it:
+// neither DOM target draws a tab bar or reads selectedIndex at all. Both
+// render every page of the TabView as a visible child, where the natives draw
+// the bar and the one selected page. That is a missing feature rather than a
+// layout default — the runtime would have to turn the tabs prop into real
+// elements and wire their clicks back through onTabChange, and it would have
+// to hide the unselected pages with display:none rather than by dropping
+// them, since patches are addressed positionally and its DOM has to stay
+// isomorphic to the node tree. Until that pass, this row at least has the
+// pages stack down the page as they do on device instead of running together
+// on one line, and makes the container's own gap, justify-content and
+// align-items work.
+//
+// TabView is deliberately *not* in alignFallbackAxes next door. That gate is
+// the types whose native stack reads Style.Align for cross-axis placement,
+// and neither TabView composite does — Compose's Column is given no
+// horizontalAlignment and SwiftUI's VStack no alignment argument. Scroll is
+// the standing precedent for a type that stacks here and reads no fallback:
+// the two tables answer different questions and are not required to agree.
+//
 // # The types that are deliberately absent
 //
 //   - Modal carries its own fixed-overlay chassis on both DOM targets, and
 //     that chassis already sets display and flex-direction (and toggles
 //     display through the visible prop, which a default here would fight).
 //   - Spacer is a sized void, not a container: it has no children to stack.
-//   - TabView draws a tab bar plus one selected child. It is a stack on the
-//     natives, but neither DOM target has ever defaulted it to flex, so it is
-//     left as it is rather than changed as a rider on this table — the two
-//     web targets agree about it today, which is the property this file
-//     exists to protect.
 //   - Fragment and Theme are the known divergence: they stack in the runtime,
 //     which must box them to keep its positional patch addressing valid, and
 //     this exporter emits their children with no box at all (transparentTypes
@@ -65,6 +93,7 @@ var stackAxes = map[string]string{
 	"Scroll":   "column",
 	"SafeArea": "column",
 	"List":     "column",
+	"TabView":  "column",
 }
 
 // StackAxisFor returns the flex axis a node type stacks its children along,

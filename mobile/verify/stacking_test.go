@@ -18,8 +18,21 @@ var (
 	kotlinArmStart = regexp.MustCompile(`(?m)^\s*"[A-Za-z]+"(?:, "[A-Za-z]+")* ->`)
 )
 
-// dispatchArm returns the *code* of one arm of a renderer's node-type
-// dispatch: from its marker up to the next arm, with line comments removed.
+// The start of the *next* top-level composite, for the checks below that read
+// one of the composite views rather than a dispatch arm. A composite is not
+// bounded by the arm regexps above — it holds no `case`/`->` labels of its own
+// — and switchlabels_test.go's declStart stops only at a function, which walks
+// straight through a Swift `struct`.
+var (
+	swiftCompositeStart  = regexp.MustCompile(`(?m)^private struct `)
+	kotlinCompositeStart = regexp.MustCompile(`(?m)^private fun `)
+)
+
+// dispatchArm returns the *code* between a marker and the next match of next,
+// with line comments removed. Its first use is one arm of a renderer's
+// node-type dispatch — marker is the arm's label, next the start of any arm —
+// and it bounds a whole composite declaration on the same terms, with next
+// spelling the start of the following declaration instead.
 //
 // Stripping the comments is not tidiness. These arms are checked for the
 // absence of a construct, and the arms now carry comments explaining which
@@ -38,7 +51,7 @@ func dispatchArm(t *testing.T, file, marker string, next *regexp.Regexp) string 
 	src := readNative(t, file)
 	at := strings.Index(src, marker)
 	if at < 0 {
-		t.Fatalf("%s: no %s arm — if the dispatch was restructured, update this test", file, marker)
+		t.Fatalf("%s: no %s — if it was renamed or restructured, update this test", file, marker)
 	}
 	rest := src[at+len(marker):]
 	if end := next.FindStringIndex(rest); end != nil {
@@ -110,6 +123,53 @@ func TestNativeContainersStackTheirChildrenAndDoNotOverlay(t *testing.T) {
 			t.Errorf("%s: the %s arm builds a %s — its children draw on top of each other, "+
 				"and a lone child sizes to its content instead of filling the width, "+
 				"while both DOM targets stack and stretch", pin.file, pin.marker, pin.overlay)
+		}
+	}
+}
+
+// TabView is a column stack on both natives, which is the claim htmlout's
+// stackAxes row for it rests on — and the last of the four targets' stacking
+// disagreements: TabView stacked here and ran in block flow on the two DOM
+// targets, where a <div>'s inline children share a line. The row was held out
+// of that table's first cut because the two web targets at least agreed with
+// each other; this pin is what lets it go in on evidence rather than on the
+// prose in stack.go.
+//
+// Positional rather than merely present, because both composites hold a
+// horizontal stack — the tab bar — inside the vertical one. "Builds a VStack"
+// would pass just as well on a renderer that had the two the wrong way round,
+// and that renderer would be laying the bar out beside the page instead of
+// above it. Comparing the offsets is what says which one is the outer box,
+// and that box's axis is what the table row states.
+//
+// The tab bar is located by its own construct rather than by a second VStack
+// or Column, so that a missing bar fails as a missing bar instead of quietly
+// leaving the ordering check with nothing to compare against.
+func TestNativeTabViewIsAColumnStack(t *testing.T) {
+	for _, pin := range []struct {
+		file, marker string
+		next         *regexp.Regexp
+		// outer is the vertical stack the composite must be built from;
+		// bar is the horizontal one it must contain, not be contained by.
+		outer, bar string
+	}{
+		{swiftRenderer, "private struct GrMobTabView", swiftCompositeStart, "VStack(", "HStack("},
+		{kotlinRenderer, "private fun GrMobTabView", kotlinCompositeStart, "Column(", "TabRow("},
+	} {
+		body := dispatchArm(t, pin.file, pin.marker, pin.next)
+		outer := strings.Index(body, pin.outer)
+		bar := strings.Index(body, pin.bar)
+		switch {
+		case outer < 0:
+			t.Errorf("%s: %s builds no %s — htmlout/stack.go stacks TabView along the column "+
+				"axis on the strength of this renderer doing so", pin.file, pin.marker, pin.outer)
+		case bar < 0:
+			t.Errorf("%s: %s builds no %s — the tab bar this check locates is gone, so the "+
+				"ordering below would compare against nothing", pin.file, pin.marker, pin.bar)
+		case outer > bar:
+			t.Errorf("%s: %s opens with %s, not %s — the tab bar is the outer box, so the "+
+				"composite stacks along the row axis and the DOM targets' column row is wrong",
+				pin.file, pin.marker, pin.bar, pin.outer)
 		}
 	}
 }

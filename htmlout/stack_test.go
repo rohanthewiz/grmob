@@ -60,7 +60,6 @@ func TestNonStackTypesStayInBlockFlow(t *testing.T) {
 		{Type: "Image", Props: map[string]any{"src": "a.png"}},
 		{Type: "Spacer", Props: map[string]any{"size": 8}},
 		{Type: "Modal", Props: map[string]any{"visible": false}},
-		{Type: "TabView"},
 	}
 	for _, n := range cases {
 		if out := ExportHTML(n); strings.Contains(out, "display:flex") {
