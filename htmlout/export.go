@@ -27,7 +27,15 @@ func ExportHTML(node *core.Node) string {
 	// b.Html writes the <!DOCTYPE html> declaration itself.
 	b.Html("lang", "en").R(
 		b.Body().R(
-			renderNode(b, node, ""),
+			// "root" is the node path of the tree's root, the same name Go's
+			// reconciler gives it (reconcile.Patch's TargetIDs are "root/1/0")
+			// and the same one the WASM runtime mounts with. Nothing in the
+			// exported document carries the path itself — this is a static
+			// snapshot with no patches to address — but the TabView chrome
+			// derives its element ids from it, and deriving them from the same
+			// name on both web targets is what makes those ids identical
+			// rather than merely well-formed. See tabScope in tabview.go.
+			renderNode(b, node, imposed{}, "root"),
 		),
 	)
 	// Pretty re-indents the compact single-pass output for human readers.
@@ -35,20 +43,46 @@ func ExportHTML(node *core.Node) string {
 	return b.Pretty()
 }
 
+// imposed is what a *parent* puts on the element standing in for one of its
+// children — the two channels through which a decision that belongs to the
+// parent reaches markup that is assembled in the child.
+//
+// Exactly one caller fills it in: renderTabView, which hides the pages that
+// are not selected (decl) and names each page as the panel its tab controls
+// (attrs). Both have to arrive this way because a page does not know it is a
+// page; only the TabView above it does.
+//
+//	decl   a CSS declaration list, appended after everything the node itself
+//	       declares so it wins the browser's last-one-wins parse — which is
+//	       what lets display:none outrank the display:flex a stack container
+//	       is given unconditionally
+//	attrs  element-style key/value pairs, appended to the node's own attribute
+//	       list. Nothing here ever collides with an attribute the node writes
+//	       for itself: the panel wiring is id/role/aria-labelledby, and no
+//	       core.Style field maps onto any of the three.
+type imposed struct {
+	decl  string
+	attrs []string
+}
+
 // renderNode writes one node (and, for containers, its subtree) into the
 // builder. The return value exists only so calls can sit inline as R()
 // arguments, which is how element establishes evaluation order; it is ignored.
 //
-// extraDecl is a CSS declaration list the *parent* imposes on this node,
-// appended after everything the node itself declares so it wins the browser's
-// last-one-wins parse. Exactly one caller passes a non-empty one — renderTabView
-// hiding the pages that are not selected — and it has to arrive this way
-// because the decision belongs to the parent while the style attribute is
-// assembled here. It is forwarded through the transparent branch below for
-// the same reason: a Fragment used as a tab page has no box of its own, so
-// what the parent meant for the page has to reach the children that are
-// standing in for it.
-func renderNode(b *element.Builder, node *core.Node, extraDecl string) (x any) {
+// from is what the parent imposes on this node; see imposed. It is forwarded
+// whole through the transparent branch below, because a Fragment used as a tab
+// page has no box of its own, so what the parent meant for the page has to
+// reach the children that are standing in for it.
+//
+// path is this node's address in the node tree ("root", "root/1", "root/1/0"),
+// walked by child index exactly as reconcile.Patch builds its TargetIDs and as
+// the WASM runtime writes its data-node-path attributes. It is not emitted:
+// a static document has no patches to address. It exists so that a TabView can
+// derive document-unique element ids for the tab/panel wiring, and derive them
+// the same way the runtime does — see tabScope in tabview.go. Transparency
+// does not disturb it: a Fragment has no element, but it is still a node, and
+// its children are still its children by index on every target.
+func renderNode(b *element.Builder, node *core.Node, from imposed, path string) (x any) {
 	if node == nil {
 		return
 	}
@@ -68,11 +102,12 @@ func renderNode(b *element.Builder, node *core.Node, extraDecl string) (x any) {
 	// rather than adding to it.
 	if node.Type == "Spacer" {
 		if size, ok := node.Props["size"].(int); ok {
-			// extraDecl still applies: this branch returns before the shared
-			// attribute assembly below, so a Spacer used as a tab page would
-			// otherwise be the one node type the parent could not hide.
+			// What the parent imposed still applies: this branch returns
+			// before the shared attribute assembly below, so a Spacer used as
+			// a tab page would otherwise be the one node type that could
+			// neither be hidden nor named as a panel.
 			decls := fmt.Sprintf("width:%dpx; height:%dpx; flex-shrink:0", size, size)
-			b.Div("style", addDecl(decls, extraDecl)).R()
+			b.Div(append([]string{"style", addDecl(decls, from.decl)}, from.attrs...)...).R()
 			return
 		}
 	}
@@ -82,8 +117,8 @@ func renderNode(b *element.Builder, node *core.Node, extraDecl string) (x any) {
 	// than a redundant element, and why the WASM runtime is the one DOM
 	// renderer that cannot do this, are all in transparentTypes (tag.go).
 	if IsTransparent(node.Type) {
-		for _, child := range node.Children {
-			renderNode(b, child, extraDecl)
+		for i, child := range node.Children {
+			renderNode(b, child, from, childPath(path, i))
 		}
 		return
 	}
@@ -129,11 +164,16 @@ func renderNode(b *element.Builder, node *core.Node, extraDecl string) (x any) {
 	// Last, so it outranks the node's own declarations — including the
 	// display:flex a stack container is given unconditionally, which is
 	// exactly what a hidden tab page has to be talked out of.
-	sv = addDecl(sv, extraDecl)
+	sv = addDecl(sv, from.decl)
 	if sv != "" {
 		attrs = append(attrs, "style", sv)
 	}
 	attrs = append(attrs, accessibilityAttrs(node.Style)...)
+	// The parent's attributes, after the node's own. Order is presentational
+	// only — an attribute list is a set, not a cascade — but keeping the
+	// node's own first means a reader of the markup sees what the node said
+	// about itself before what its container said about it.
+	attrs = append(attrs, from.attrs...)
 	// A slice, not a map: map iteration order would make attribute order (and
 	// therefore the exported document) nondeterministic across runs.
 	for _, cb := range [...]struct{ prop, attr string }{
@@ -256,7 +296,7 @@ func renderNode(b *element.Builder, node *core.Node, extraDecl string) (x any) {
 		}
 		// No src: fall through to the default container rendering, matching
 		// how unknown/underspecified nodes degrade to a plain div.
-		renderContainer(b, node, attrs)
+		renderContainer(b, node, attrs, path)
 	case "Text":
 		b.Span(attrs...).TE(getStr(node.Props["content"]))
 	case "GridRow":
@@ -268,9 +308,9 @@ func renderNode(b *element.Builder, node *core.Node, extraDecl string) (x any) {
 	case "TabView":
 		// A box like any other container, plus the bar and the page
 		// selection the wire contract asks for; see tabview.go.
-		renderTabView(b, node, attrs)
+		renderTabView(b, node, attrs, path)
 	default:
-		renderContainer(b, node, attrs)
+		renderContainer(b, node, attrs, path)
 	}
 	return
 }
@@ -278,7 +318,7 @@ func renderNode(b *element.Builder, node *core.Node, extraDecl string) (x any) {
 // renderContainer renders a generic container tag with the node's children.
 // element writes the opening tag when Ele() is called and the closing tag when
 // R() runs, so the children rendered in between land inside the element.
-func renderContainer(b *element.Builder, node *core.Node, attrs []string) {
+func renderContainer(b *element.Builder, node *core.Node, attrs []string, path string) {
 	// The tag comes from the shared table rather than a switch here, so the
 	// WASM runtime's copy has something to be checked against. The typed
 	// element calls in renderNode above (b.Span, b.Button, b.Img, ...) still
@@ -288,10 +328,18 @@ func renderContainer(b *element.Builder, node *core.Node, attrs []string) {
 	// Fragment and Theme never reach here — renderNode emits their children
 	// directly rather than a box.
 	e := b.Ele(TagFor(node.Type), attrs...)
-	for _, child := range node.Children {
-		renderNode(b, child, "")
+	for i, child := range node.Children {
+		renderNode(b, child, imposed{}, childPath(path, i))
 	}
 	e.R()
+}
+
+// childPath is the node path of child i of the node at path — the one place
+// the path shape is spelled, so that this exporter, reconcile.Patch's
+// TargetIDs and the runtime's data-node-path attributes stay one convention
+// rather than three that happen to agree.
+func childPath(path string, i int) string {
+	return path + "/" + strconv.Itoa(i)
 }
 
 // textGridChassis and gridRowChassis are the fixed rules of a core.TextGrid

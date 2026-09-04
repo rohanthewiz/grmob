@@ -103,6 +103,53 @@ func Tags() map[string]string {
 	return out
 }
 
+// genericTags are the tags in the table above whose implicit ARIA role is
+// `generic` — that is, the ones that name nothing to a screen reader on their
+// own, so writing a role= attribute onto them adds meaning instead of
+// destroying it.
+//
+// The distinction has one caller today, the TabView panel wiring: a tab's
+// aria-controls has to name an element carrying role="tabpanel", and the page
+// it points at is whatever node type the app put there. Stamping the role onto
+// a <button>, an <img> or an <input> page would replace the role the browser
+// already gives it, which is a worse outcome than leaving that page unwired —
+// the whole point of the wiring is accessibility, so it must not cost any.
+//
+// A whitelist rather than a blacklist of the roled tags, because the safe
+// direction for a tag nobody has considered yet is "not eligible": a new row
+// in the table above joins this set deliberately or not at all.
+//
+// The WASM runtime restates it as GENERIC_TAGS in grmob-runtime.js, and
+// TestRuntimeGenericTagsMatchGo in wasm/verify compares the two under a plain
+// `go test ./...` — the same treatment tags and inputTypes get, and for the
+// same reason: a copy that cannot drift silently is a restatement rather than
+// a second source.
+var genericTags = map[string]bool{
+	"div":  true,
+	"span": true,
+	"pre":  true,
+}
+
+// IsGenericTag reports whether a tag's implicit ARIA role is `generic`, and so
+// whether a role= attribute may be written onto it. See genericTags.
+func IsGenericTag(tag string) bool {
+	return genericTags[tag]
+}
+
+// GenericTags returns the role-free tags, sorted so that a test looping over
+// them reports in a stable order. Exported for the reason Tags and
+// TransparentTypes are: the WASM conformance test has to compare set against
+// set, and a hand-written list there would be exactly the untracked second
+// copy this file exists to remove.
+func GenericTags() []string {
+	out := make([]string, 0, len(genericTags))
+	for t := range genericTags {
+		out = append(out, t)
+	}
+	sort.Strings(out)
+	return out
+}
+
 // transparentTypes are the grouping nodes that have no visual box of their
 // own: core.For wraps its generated children in a Fragment, and core.WithTheme
 // wraps a subtree in a Theme. Neither ever carries a Style (core/conditionals.go,

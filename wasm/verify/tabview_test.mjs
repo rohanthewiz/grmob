@@ -314,3 +314,220 @@ test("a TabView with no tabs numbers its pages from zero", () => {
 
     assert.equal(root.children[1].getAttribute("data-node-path"), "root/1");
 });
+
+// --------------------------------------------------------------------------
+// The tab/panel wiring
+// --------------------------------------------------------------------------
+//
+// A well-formed tablist still says nothing about which region each tab
+// governs. That relationship needs ids, and the ids are derived from the node
+// path so they are the same strings htmlout writes — TestTabsAndPanelsPointAtEachOther
+// in htmlout/tabview_test.go asserts these exact literals for the same tree.
+
+test("a tab and its page point at each other", () => {
+    const { root, bar, pageAt } = mountTabs();
+
+    for (let i = 0; i < 2; i++) {
+        const tab = bar().children[i];
+        assert.equal(tab.getAttribute("id"), `grmob-root-tab-${i}`);
+        assert.equal(tab.getAttribute("aria-controls"), `grmob-root-panel-${i}`);
+
+        const page = pageAt(i);
+        assert.equal(page.getAttribute("id"), `grmob-root-panel-${i}`);
+        assert.equal(page.getAttribute("role"), "tabpanel");
+        assert.equal(page.getAttribute("aria-labelledby"), `grmob-root-tab-${i}`);
+    }
+    // Every reference resolves inside the tree, which is the property the ids
+    // exist for: a dangling IDREF reads as a region that is not there.
+    for (const tab of bar().children) {
+        const target = root.findAll((el) => el.getAttribute("id") === tab.getAttribute("aria-controls"));
+        assert.equal(target.length, 1, `aria-controls of ${tab.textContent} names no single element`);
+    }
+});
+
+// Ids are document-global. The scope is the node path, so a nested TabView
+// cannot collide with the one above it — and does not need a counter to avoid
+// it, which is what keeps these ids equal to the exporter's.
+test("a nested TabView gets its own id scope", () => {
+    const rt = loadRuntime();
+    rt.GrMob.mount(
+        JSON.stringify({
+            Type: "Column",
+            Children: [
+                { Type: "TabView", Props: { selectedIndex: 0, tabs: TABS }, Children: [page("a"), page("b")] },
+                { Type: "TabView", Props: { selectedIndex: 0, tabs: TABS }, Children: [page("c"), page("d")] },
+            ],
+        })
+    );
+    rt.drainFrames();
+    const root = rt.mountPoint.children[0];
+
+    const ids = root.findAll((el) => el.getAttribute("id") !== null).map((el) => el.getAttribute("id"));
+    assert.equal(new Set(ids).size, ids.length, `duplicate ids: ${ids}`);
+    assert.ok(ids.includes("grmob-root-0-panel-0"), `scope is not the node path: ${ids}`);
+    assert.ok(ids.includes("grmob-root-1-panel-0"), `scope is not the node path: ${ids}`);
+});
+
+// role="tabpanel" would replace the role the browser already gives a <button>,
+// an <img> or an <input>, so those pages are left alone — and the tab must not
+// point at one, since aria-controls naming a non-panel is a lie about the
+// document. GENERIC_TAGS is the set, pinned to Go's by
+// TestRuntimeGenericTagsMatchGo.
+test("a page whose element already has a role is not made a panel", () => {
+    const rt = loadRuntime();
+    rt.GrMob.mount(
+        JSON.stringify({
+            Type: "TabView",
+            Props: { selectedIndex: 0, tabs: TABS },
+            Children: [page("home"), { Type: "Button", Props: { label: "press" } }],
+        })
+    );
+    rt.drainFrames();
+    const root = rt.mountPoint.children[0];
+    const bar = root.children[0];
+
+    assert.equal(root.children[2].getAttribute("role"), null, "a <button> page was given the panel role");
+    assert.equal(root.children[2].getAttribute("id"), null);
+    assert.equal(bar.children[1].getAttribute("aria-controls"), null, "its tab still claims to control it");
+    // The eligible page beside it keeps its wiring: one page opting out is not
+    // the tab set opting out.
+    assert.equal(bar.children[0].getAttribute("aria-controls"), "grmob-root-panel-0");
+});
+
+// The author took the page out of the accessibility tree on purpose. Read off
+// the element rather than out of the Style, because that is where
+// applyAccessibility put it and this runs long after.
+test("an aria-hidden page is not made a panel", () => {
+    const { rt, root, pageAt } = mountTabs();
+
+    rt.GrMob.patch(
+        JSON.stringify([
+            { Type: "update-style", TargetID: "root/1", Changes: { AccessibilityHidden: true } },
+        ])
+    );
+
+    assert.equal(pageAt(1).getAttribute("aria-hidden"), "true");
+    assert.equal(pageAt(1).getAttribute("role"), null);
+    assert.equal(root.children[0].children[1].getAttribute("aria-controls"), null);
+});
+
+// The wiring is derived state like the selection, so it has to survive the
+// same three ways a batch can invalidate it. Here: a page becomes eligible
+// again after having been ruled out, which a guarded write would never undo.
+test("a page that becomes eligible again is rewired", () => {
+    const { rt, root, pageAt } = mountTabs();
+
+    const hide = (v) =>
+        rt.GrMob.patch(
+            JSON.stringify([
+                { Type: "update-style", TargetID: "root/1", Changes: { AccessibilityHidden: v } },
+            ])
+        );
+    hide(true);
+    assert.equal(pageAt(1).getAttribute("role"), null);
+
+    hide(false);
+    assert.equal(pageAt(1).getAttribute("role"), "tabpanel");
+    assert.equal(pageAt(1).getAttribute("id"), "grmob-root-panel-1");
+    assert.equal(root.children[0].children[1].getAttribute("aria-controls"), "grmob-root-panel-1");
+});
+
+// aria-labelledby wins over aria-label in the accessible-name calculation, so
+// writing it unconditionally would discard the name the app author chose. The
+// tab still points at the panel; only the naming is left alone.
+test("a page that names itself keeps its name", () => {
+    const { rt, root, pageAt } = mountTabs();
+
+    rt.GrMob.patch(
+        JSON.stringify([
+            { Type: "update-style", TargetID: "root/0", Changes: { AccessibilityLabel: "Your home feed" } },
+        ])
+    );
+
+    assert.equal(pageAt(0).getAttribute("aria-label"), "Your home feed");
+    assert.equal(pageAt(0).getAttribute("aria-labelledby"), null, "the tab's name overrode the author's");
+    assert.equal(pageAt(0).getAttribute("role"), "tabpanel", "the page stopped being a panel because it had a name");
+    assert.equal(root.children[0].children[0].getAttribute("aria-controls"), "grmob-root-panel-0");
+});
+
+// A page no tab names is not part of a tab set. The count comes from the bar,
+// so a tabs prop that shrinks takes the surplus page's wiring with it.
+test("a page with no tab of its own is not a panel", () => {
+    const { rt, root, pageAt } = mountTabs();
+
+    rt.GrMob.patch(
+        JSON.stringify([
+            {
+                Type: "update-props",
+                TargetID: "root",
+                Changes: { selectedIndex: 0, tabs: [{ label: "Home" }], onTabChange: "cb_tab" },
+            },
+        ])
+    );
+
+    assert.equal(root.children[0].children.length, 1, "the bar was not rebuilt from the new strip");
+    assert.equal(pageAt(0).getAttribute("role"), "tabpanel");
+    assert.equal(pageAt(1).getAttribute("role"), null, "a page no tab names was left wired");
+    assert.equal(pageAt(1).getAttribute("id"), null);
+});
+
+// No bar, no tab set, nothing to wire — and no ids to collide with a real
+// TabView's elsewhere in the document.
+test("a TabView with no tabs wires no panels", () => {
+    const rt = loadRuntime();
+    rt.GrMob.mount(
+        JSON.stringify({ Type: "TabView", Props: { selectedIndex: 0 }, Children: [page("only")] })
+    );
+    rt.drainFrames();
+    const root = rt.mountPoint.children[0];
+
+    assert.equal(root.children[0].getAttribute("role"), null);
+    assert.equal(root.children[0].getAttribute("id"), null);
+});
+
+// The hidden pages are wired too: the relationship is a property of the
+// document's structure, not of the current selection, so a switch moves the
+// indicator and the visibility and leaves the wiring exactly where it was.
+test("a switch leaves the wiring alone", () => {
+    const { rt, pageAt } = mountTabs({ selectedIndex: 0 });
+
+    rt.GrMob.patch(
+        JSON.stringify([
+            {
+                Type: "update-props",
+                TargetID: "root",
+                Changes: { selectedIndex: 1, tabs: TABS, onTabChange: "cb_tab" },
+            },
+        ])
+    );
+
+    for (let i = 0; i < 2; i++) {
+        assert.equal(pageAt(i).getAttribute("role"), "tabpanel");
+        assert.equal(pageAt(i).getAttribute("aria-labelledby"), `grmob-root-tab-${i}`);
+    }
+});
+
+// A page added by a patch arrives already wired, because the wiring rides on
+// the same end-of-batch pass the selection does.
+test("a page added by a patch is wired like the rest", () => {
+    const { rt, root } = mountTabs();
+
+    rt.GrMob.patch(
+        JSON.stringify([
+            {
+                Type: "update-props",
+                TargetID: "root",
+                Changes: {
+                    selectedIndex: 0,
+                    tabs: [...TABS, { label: "Me" }],
+                    onTabChange: "cb_tab",
+                },
+            },
+            { Type: "add-child", TargetID: "root", Changes: page("third") },
+        ])
+    );
+
+    assert.equal(root.children[3].getAttribute("role"), "tabpanel");
+    assert.equal(root.children[3].getAttribute("id"), "grmob-root-panel-2");
+    assert.equal(root.children[0].children[2].getAttribute("aria-controls"), "grmob-root-panel-2");
+});

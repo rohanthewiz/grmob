@@ -38,8 +38,15 @@ indented HTML. Properties worth relying on:
   `data-onclick` family — the ID and the argument, with the wiring left to
   whatever loads the document. Pages other than the selected one are hidden
   with `display:none` rather than dropped, so the export still holds every
-  screen. See `htmlout/tabview.go` and
-  [WASM — Tab views](wasm.md#tab-views), which draws the same chrome live.
+  screen. Each tab also carries an `id` and an `aria-controls` naming the page
+  it governs, and that page a matching `role="tabpanel"` and `aria-labelledby`
+  — the ids derived from the node path (`grmob-root-1-tab-0`), so they are the
+  *same strings* the WASM runtime writes for the same tree rather than merely
+  the same shape. A page whose element already has a role (`<button>`, `<img>`,
+  an input), one no tab names, or one marked `AccessibilityHidden` is left
+  unwired, and its tab drops the `aria-controls` with it. See
+  `htmlout/tabview.go` and [WASM — Tab views](wasm.md#tab-views), which draws
+  the same chrome live and states the reasoning for the pair.
 
 ### Testing with htmlout
 

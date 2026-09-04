@@ -174,6 +174,23 @@ for (const scenario of scenarios) {
         );
         // Then order and content, node for node.
         assert.deepEqual(got, want);
+
+        // And the one document-global invariant this replay is in a position
+        // to check. The tab/panel wiring writes ids, and an id that is not
+        // unique makes both of its ARIA references ambiguous — aria-controls
+        // resolves to whichever element the browser found first. The ids are
+        // derived from data-node-path rather than from a counter, so this is
+        // really the addressing scheme's own uniqueness being asserted at the
+        // end of a whole transcript of patches, which nothing else here does.
+        //
+        // Vacuous for a scenario with no TabView in it — signup has no ids at
+        // all — and load-bearing for demo, which ends with eight. That is the
+        // honest shape of a document-global invariant: it says nothing about a
+        // document that has nothing to say.
+        const ids = root
+            .findAll((el) => el.getAttribute("id") !== null)
+            .map((el) => el.getAttribute("id"));
+        assert.equal(new Set(ids).size, ids.length, `duplicate element ids: ${ids}`);
     });
 }
 

@@ -182,13 +182,56 @@ than a look: the roles, the ARIA state and the `data-` attributes.
 ```html
 <div data-node-type="TabView" data-node-path="root/1" style="display:flex; flex-direction:column">
   <div data-grmob-chrome="tabbar" role="tablist" data-ontabchange="int_cb_0">
-    <button type="button" role="tab" aria-selected="true"  data-tab-index="0">Home</button>
-    <button type="button" role="tab" aria-selected="false" data-tab-index="1">Search</button>
+    <button type="button" id="grmob-root-1-tab-0" role="tab" aria-selected="true"
+            data-tab-index="0" aria-controls="grmob-root-1-panel-0">Home</button>
+    <button type="button" id="grmob-root-1-tab-1" role="tab" aria-selected="false"
+            data-tab-index="1" aria-controls="grmob-root-1-panel-1">Search</button>
   </div>
-  <div data-node-path="root/1/0">…</div>                       <!-- the selected page -->
-  <div data-node-path="root/1/1" style="…; display:none">…</div>
+  <div data-node-path="root/1/0" id="grmob-root-1-panel-0"
+       role="tabpanel" aria-labelledby="grmob-root-1-tab-0">…</div>   <!-- the selected page -->
+  <div data-node-path="root/1/1" id="grmob-root-1-panel-1"
+       role="tabpanel" aria-labelledby="grmob-root-1-tab-1" style="…; display:none">…</div>
 </div>
 ```
+
+**The tabs and the pages point at each other.** A `role="tablist"` of
+`role="tab"`s is a well-formed strip on its own, but it says nothing about
+*which region of the screen* each tab governs. That relationship is
+`aria-controls` and `aria-labelledby`, both of which are IDREFs, so the wiring
+cannot be expressed without ids — and ids are document-global, so two
+`TabView`s on one page must not both call their first tab `tab-0`.
+
+The scope is therefore derived from the node path, the identity that is already
+unique per element here: a `TabView` at `root/1` names its first tab
+`grmob-root-1-tab-0` and its first page `grmob-root-1-panel-0`. The uniqueness
+is exactly the uniqueness this runtime's addressing already rests on — if two
+live elements could share a `data-node-path`, every patch aimed at either is
+already going to the wrong one. Deriving it this way also makes the ids the
+*same strings* `htmlout` writes rather than merely the same shape, so the
+contract the two web targets share is the literal id.
+
+A page opts out of being a panel three ways, each a case where wiring it would
+say something false:
+
+| The page… | Why it is left alone |
+|---|---|
+| has no tab at its index | a `tabpanel` outside a tab set, with nothing for the `aria-controls` to sit on |
+| renders as an element that already has a role (`<button>`, `<img>`, `<input>`) | `role="tabpanel"` would *replace* the role the browser gave it — see `GENERIC_TAGS`, pinned to Go's `genericTags` by `TestRuntimeGenericTagsMatchGo` |
+| is `AccessibilityHidden` | the author severed the relationship on purpose |
+
+In each case the tab drops its `aria-controls` too: a dangling IDREF — a tab
+announcing a region that is not there — is worse than a tab that has simply not
+said what it governs. And `aria-labelledby` is omitted from a page carrying its
+own `AccessibilityLabel`, because the reference wins over `aria-label` in the
+accessible-name calculation and would silently discard the name the app author
+chose.
+
+`htmlout` applies the same three rules and asks one more question this runtime
+does not have to: *which* element stands in for the page. It drops the box for
+a `Fragment` or a `Theme` (see the tag table's exemption below), so a page that
+is one of those is wired on the single element standing in for it, or not at
+all when there are several. Here page *i* is always exactly the element in
+child slot *i*.
 
 **The bar is chrome, not a node.** It carries no `data-node-path`, no patch is
 ever addressed to it, and it is marked `data-grmob-chrome` so the two places
@@ -206,7 +249,8 @@ could — it is a static snapshot with no patches to address — but an export
 that silently lost every screen but one would be a worse document, and a
 divergence between the two web targets for no gain.
 
-**The selection is derived state.** `syncTabView` recomputes it, and `patch()`
+**The selection is derived state**, and so is the wiring. `syncTabView`
+recomputes both, and `patch()`
 calls it once per batch for every `TabView` the batch could have disturbed,
 rather than teaching each patch case about tabs. Three different patches
 invalidate it: an `update-props` carrying a new `selectedIndex` (which is what
@@ -214,13 +258,24 @@ a tab switch *is* — `core.SelectedIndex` is controlled state, so the switch
 arrives as a prop patch and never as a rebuilt subtree), an `update-style` on a
 page (`styleFromGrMob` is total, so it assigns a `display` on every pass and
 overwrites the hiding), and
-an `add`/`remove`/`replace` that changes which children there are. Nothing
-paints in between: a batch is one synchronous run. Restoring a page means
+an `add`/`remove`/`replace` that changes which children there are. Every one of
+those can invalidate the panel wiring as well — a style patch can set
+`AccessibilityHidden`, a props patch can shrink the `tabs` strip out from under
+a page, a `replace` can swap a `<div>` page for a `<button>` — which is why the
+wiring rides on the same pass rather than growing a mechanism of its own. It is
+written *or removed* on every sync, for the reason `styleFromGrMob` is total: a
+guarded write would leave a role and a dangling reference standing after the
+reason for them was gone. Nothing paints in between: a batch is one synchronous
+run. Restoring a page means
 putting back the `display` the style pass computed, not clearing the
 declaration — hence `data-base-display`, recorded wherever this runtime decides
 one; a `Column` page cleared to `""` would come back in block flow.
 
-Two things are deliberately not done. The **icon** half of a `core.TabItem` is
+Three things are deliberately not done. A panel is not given a **`tabindex`**,
+which the ARIA authoring practices suggest for a panel containing nothing
+focusable: `tabindex` changes the page's real tab order, which is a behavioral
+change to an app author's node rather than a statement about it, and this pass
+is deliberately semantic only. The **icon** half of a `core.TabItem` is
 drawn by no target (Compose's `Tab` is built with `text = { Text(label) }`, the
 SwiftUI bar with a `Text` of the label), so drawing it here would make the web
 the outlier rather than close a gap. And an **out-of-range `selectedIndex`** is

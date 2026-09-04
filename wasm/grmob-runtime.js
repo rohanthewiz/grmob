@@ -281,6 +281,90 @@ const GrMob = (() => {
         borderBottomColor: "transparent",
     };
 
+    // The tags whose implicit ARIA role is `generic` — the ones that name
+    // nothing to a screen reader on their own, so a role= attribute written
+    // onto them adds meaning instead of replacing it.
+    //
+    // The one caller is the tab panel wiring below. A tab's aria-controls has
+    // to name an element carrying role="tabpanel", and the page it points at is
+    // whatever node type the app put there; stamping the role onto a <button>,
+    // an <img> or an <input> page would take away the role the browser already
+    // gives it, which is a worse outcome than leaving that page unwired. The
+    // whole point of the wiring is accessibility, so it must not cost any.
+    //
+    // Go states this set once, in genericTags (htmlout/tag.go), and
+    // TestRuntimeGenericTagsMatchGo in wasm/verify compares the two under a
+    // plain `go test ./...`. That test reads this literal out of the source
+    // textually, so keep it a flat array of string literals on one line.
+    const GENERIC_TAGS = new Set(["div", "pre", "span"]);
+
+    // The id prefix every element id inside one TabView is built from.
+    //
+    // aria-controls and aria-labelledby are IDREFs, so the wiring cannot be
+    // expressed without ids, and ids are document-global: two TabViews on one
+    // page must not both call their first tab "tab-0". The node path is the
+    // identity that is already unique per element here — it is what every patch
+    // is resolved against — so the uniqueness of these ids is exactly the
+    // uniqueness this runtime's addressing already rests on.
+    //
+    // It is also what makes the ids the *same* strings htmlout writes rather
+    // than merely the same shape: that exporter walks the identical path (see
+    // tabScope in htmlout/tabview.go), so a TabView at "root/1" is
+    // "grmob-root-1-tab-0" on both web targets. The slashes become dashes so an
+    // id is usable as a CSS selector fragment without escaping; a path is
+    // "root" followed by digits, so no two paths can collapse onto one scope.
+    function tabScope(el) {
+        return "grmob-" + (el.getAttribute("data-node-path") || "").replace(/\//g, "-");
+    }
+
+    // The two ids one tab/page pair uses to point at each other.
+    const tabId = (scope, i) => `${scope}-tab-${i}`;
+    const panelId = (scope, i) => `${scope}-panel-${i}`;
+
+    // Whether a page element can carry the panel half of the wiring.
+    //
+    // Two of the three rules htmlout states in tabPanelBoxes; the third — "the
+    // page renders as exactly one element" — is a question only that exporter
+    // has to ask, because it drops the box for a Fragment or a Theme while this
+    // runtime boxes both (see transparentTypes in htmlout/tag.go). Here page i
+    // is always exactly the element in child slot i, so there is always exactly
+    // one element to name.
+    //
+    // aria-hidden is read back off the element rather than out of the Style,
+    // because that is where applyAccessibility put it and this function runs
+    // long after: an author who took a page out of the accessibility tree on
+    // purpose should not have it named as a panel, which would assert a
+    // relationship they severed.
+    function canBeTabPanel(page) {
+        return (
+            GENERIC_TAGS.has(page.tagName.toLowerCase()) &&
+            page.getAttribute("aria-hidden") !== "true"
+        );
+    }
+
+    // The panel half of the wiring, applied to one page element.
+    //
+    // Total, like everything else syncTabView does: every attribute is written
+    // or removed on every call. A page can stop being eligible without being
+    // replaced — an update-style can set AccessibilityHidden on it, and a
+    // shrinking tabs prop can leave it with no tab — and a guarded write would
+    // leave a role and a dangling reference standing after the reason for them
+    // was gone.
+    //
+    // aria-labelledby is dropped when the page names itself. A panel is
+    // normally named by its tab, which is the whole point of the reference, but
+    // core.Style.AccessibilityLabel is an explicit act by the app author and
+    // aria-labelledby wins over aria-label in the accessible-name calculation —
+    // so writing it unconditionally would silently discard the name they chose.
+    // The tab still points *at* the panel either way; only the naming is left
+    // to the author.
+    function wireTabPanel(page, scope, i, wired) {
+        setOrRemove(page, "id", wired ? panelId(scope, i) : "");
+        setOrRemove(page, "role", wired ? "tabpanel" : "");
+        const named = !!page.getAttribute("aria-label");
+        setOrRemove(page, "aria-labelledby", wired && !named ? tabId(scope, i) : "");
+    }
+
     // How many leading children of this element are chrome rather than nodes.
     //
     // Counted rather than derived from the node type, because a TabView with no
@@ -373,9 +457,15 @@ const GrMob = (() => {
     function syncTabView(el) {
         const selected = Number(el.dataset.tabSelected || 0);
         const offset = chromeOffset(el);
+        const bar = offset ? el.children[0] : null;
+        // How many tabs there are, which is what decides whether page i is part
+        // of a tab set at all. A TabView with no tabs prop draws no bar and so
+        // wires no panels; one with fewer tabs than pages wires only the pages
+        // a tab can point at.
+        const tabCount = bar ? bar.children.length : 0;
+        const scope = tabScope(el);
 
-        if (offset) {
-            const bar = el.children[0];
+        if (bar) {
             // The callback ID mirrored onto the bar, so the live DOM carries
             // the same data-ontabchange the export writes. The listener above
             // is what actually dispatches; this is the record of it.
@@ -385,23 +475,43 @@ const GrMob = (() => {
             } else {
                 bar.removeAttribute("data-ontabchange");
             }
-            for (let i = 0; i < bar.children.length; i++) {
+            for (let i = 0; i < tabCount; i++) {
                 const tab = bar.children[i];
                 const on = i === selected;
                 tab.setAttribute("aria-selected", on ? "true" : "false");
                 Object.assign(tab.style, on ? TAB_SELECTED_STYLE : TAB_UNSELECTED_STYLE);
+                // The id goes on every tab whether or not it controls a panel:
+                // it costs nothing, an id names nothing on its own, and it lets
+                // the panel point back here without the two halves of the
+                // wiring having to agree twice about which tabs are eligible.
+                tab.setAttribute("id", tabId(scope, i));
+                // aria-controls only where there is a panel to control. A
+                // dangling IDREF is worse than an absent one: a screen reader
+                // announcing a tab that controls a region, and finding no such
+                // region, is a lie about the document — whereas a tab with no
+                // aria-controls is merely one that has not said what it governs.
+                const page = el.children[offset + i];
+                setOrRemove(tab, "aria-controls",
+                    page && canBeTabPanel(page) ? panelId(scope, i) : "");
             }
         }
 
         for (let i = offset; i < el.children.length; i++) {
             const page = el.children[i];
+            const index = i - offset;
             // baseDisplay is the display this page would have with nothing
             // hiding it, recorded wherever this runtime decides one (the stack
             // default in createElement, and applyStyle). Restoring it rather
             // than clearing the declaration is the point: a Column page cleared
             // to "" would lose the display:flex every stack container gets, and
             // come back as block flow.
-            page.style.display = (i - offset) === selected ? (page.dataset.baseDisplay || "") : "none";
+            page.style.display = index === selected ? (page.dataset.baseDisplay || "") : "none";
+            // The panel half. It rides on the same pass as the hiding for the
+            // reason the hiding is here at all: both are functions of the
+            // TabView's props *and* of which children it currently has, and
+            // recomputing them together at the end of a batch is what keeps
+            // every individual patch case from having to know about tabs.
+            wireTabPanel(page, scope, index, index < tabCount && canBeTabPanel(page));
         }
     }
 

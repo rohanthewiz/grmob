@@ -776,7 +776,9 @@ the node; the native side shows the selected one. With no `OnChange`, no
 callback is registered, keeping static tab strips diff-stable.
 
 All four targets draw a bar above the selected page. The two DOM ones hide the
-other pages rather than dropping them (see
+other pages rather than dropping them, and wire each tab to its page as an ARIA
+tab set — `role="tabpanel"`, `aria-controls`, `aria-labelledby` — so a screen
+reader on the web knows which region each tab governs (see
 [WASM — Tab views](platforms/wasm.md#tab-views)); the natives compose only the
 selected one, and give it a fresh identity on each switch, so per-tab view state
 is dropped there. `Selected` is controlled state on every target: a switch
