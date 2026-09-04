@@ -1,0 +1,74 @@
+# Publishes the interactive tutorial (examples/tutorial, built for the
+# browser) to GitHub Pages: https://rohanthewiz.github.io/grmob/
+#
+# The gate before deploying is the tutorial's own test suite plus the JS
+# runtime's transcript replay — the two checks that can break the site
+# specifically. The full release gate (gofmt, vet, -race across every package,
+# both natives) stays in ci.yml; duplicating it here would only slow the
+# deploy without guarding anything the site depends on.
+#
+# Requires Pages to be enabled with source = "GitHub Actions"
+# (Settings → Pages → Build and deployment).
+name: site
+
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# One deploy at a time, and a newer push supersedes an in-flight one.
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      # Every lesson's demo is tapped headless through render.Manager with
+      # debug mode on; a demo that breaks fails here, before it goes live.
+      - name: Test the tutorial
+        run: go test ./examples/tutorial/...
+      # The shipped grmob-runtime.js replayed against Go's patch transcripts.
+      - name: Verify the JS runtime
+        run: ./wasm/verify/run.sh
+
+  deploy:
+    needs: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Build wasm
+        run: ./build.sh
+      # Only the host page and what it loads. wasm/verify (the test harness)
+      # and wasm/main.go are not site files.
+      - name: Stage site
+        run: |
+          mkdir -p _site
+          cp wasm/index.html wasm/grmob-runtime.js wasm/camera.js \
+             wasm/wasm_exec.js wasm/main.wasm _site/
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+      - id: deployment
+        uses: actions/deploy-pages@v4

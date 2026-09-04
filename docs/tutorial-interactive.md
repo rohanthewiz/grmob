@@ -17,17 +17,23 @@ simulators.
 
 ## Running it
 
-The tutorial is the app the WASM host currently mounts, so the browser route
-is two commands from the repository root:
+**Live: <https://rohanthewiz.github.io/grmob/>** — the tutorial is published
+to GitHub Pages on every push to `master`, built by
+[`.github/workflows/site.yml`](../.github/workflows/site.yml). The page
+shows the app in a phone-sized frame on a wide screen and full-bleed on an
+actual phone; nothing is installed and nothing leaves your browser.
+
+Locally it is two commands from the repository root:
 
 ```bash
-GOOS=js GOARCH=wasm go build -o wasm/main.wasm ./wasm
-(cd wasm && python3 -m http.server 8080)
+./build.sh          # wasm/main.wasm + a matching wasm/wasm_exec.js
+go run ./serve      # http://localhost:8080, serving wasm/
 ```
 
-Open <http://localhost:8080>. (The `wasm` package mounts whichever app its
-dot-import names — see [WebAssembly](platforms/wasm.md) for the host-page
-contract and how to switch apps.)
+`build.sh` is exactly what the site workflow runs, so a local build and the
+deployed one are the same recipe. (The `wasm` package mounts whichever app
+its dot-import names — see [WebAssembly](platforms/wasm.md) for the
+host-page contract and how to switch apps.)
 
 It also ships natively: the package registers itself with the mobile bridge
 (`init` + `AppName`, the same contract as `examples/todoapp`), so the

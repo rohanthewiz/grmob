@@ -1,12 +1,141 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-    <meta charset="utf-8">
-    <title>GrMob WASM</title>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>GrMob · Interactive Tutorial</title>
+<meta name="description" content="Learn GrMob — native mobile apps in pure Go — by tapping it: 40 live lessons running in your browser via WebAssembly.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%232b6cb0'/%3E%3Ctext x='16' y='22' font-family='monospace' font-size='15' font-weight='bold' text-anchor='middle' fill='%23ffffff'%3Egm%3C/text%3E%3C/svg%3E">
+<style>
+  /* The page is a frame around the app, not part of it: the app paints its
+     own surface (core.DefaultTheme) inside #app, so everything here is the
+     chrome a visitor sees around a phone-sized screen — header, the bezel,
+     the loading state. Same token names and palette as go-learn so the two
+     sites read as siblings. */
+  :root {
+    --bg: #14161a; --panel: #1c1f26; --edge: #2c313c;
+    --fg: #d8dde6; --dim: #8b93a3; --accent: #63b3ed;
+    --err-bg: #3b1f24; --err-edge: #a33c4b; --err-fg: #ffb4bd;
+    --bezel: #0b0c0f;
+  }
+  @media (prefers-color-scheme: light) {
+    :root {
+      --bg: #f5f6f8; --panel: #ffffff; --edge: #d7dbe2;
+      --fg: #22262e; --dim: #667085; --accent: #2b6cb0;
+      --err-bg: #fdeef0; --err-edge: #d3546a; --err-fg: #9b1c32;
+      --bezel: #1c1f26;
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    margin: 0; background: var(--bg); color: var(--fg);
+    font: 14px/1.45 system-ui, sans-serif;
+    display: flex; flex-direction: column;
+  }
+
+  /* --- header --------------------------------------------------------------- */
+  header {
+    flex: none; display: flex; align-items: center; gap: 1rem; flex-wrap: wrap;
+    padding: .55rem .9rem; border-bottom: 1px solid var(--edge);
+    background: var(--panel);
+  }
+  header h1 { font-size: 1rem; margin: 0; font-weight: 600; }
+  header h1 span { color: var(--accent); }
+  header .meta { color: var(--dim); font-size: .8rem; }
+  header .spacer { flex: 1; }
+  header a { color: var(--accent); text-decoration: none; font-size: .85rem; }
+  header a:hover { text-decoration: underline; }
+
+  /* --- stage: the app centred in a phone bezel ------------------------------
+     A phone-width, phone-height viewport is what the tutorial was designed
+     for, and what the natives give it; showing it in a bezel on a wide
+     screen keeps the lessons' layouts honest (a Row that fits 400px, not
+     1400px). Under 520px the bezel goes away and the app takes the whole
+     viewport — on an actual phone, that *is* the phone. */
+  main {
+    flex: 1; min-height: 0; display: flex;
+    align-items: center; justify-content: center; padding: 1.2rem;
+  }
+  .phone {
+    position: relative; display: flex; flex-direction: column;
+    width: 100%; max-width: 430px; height: 100%; max-height: 900px;
+    background: var(--bezel); border-radius: 34px; padding: 12px;
+    box-shadow: 0 20px 50px rgba(0,0,0,.35), 0 0 0 1px var(--edge);
+  }
+  .screen {
+    flex: 1; min-height: 0; position: relative;
+    background: #ffffff; border-radius: 24px; overflow: hidden;
+  }
+  @media (max-width: 520px) {
+    main { padding: 0; }
+    .phone { max-width: none; max-height: none; border-radius: 0; padding: 0; box-shadow: none; }
+    .screen { border-radius: 0; }
+  }
+
+  /* #app is the mount point grmob-runtime.js fills (GrMob.mount). The root
+     view must fill the screen for FlexGrow slack (the lesson scaffold's
+     bottom-pinned tag) to have anything to grow into, so the root child is
+     stretched to the screen's height and told it may shrink below its
+     content — the app's own Scroll then does the scrolling, as on device. */
+  #app { position: absolute; inset: 0; display: flex; flex-direction: column; }
+  #app > * { flex: 1; min-height: 0; }
+  /* The runtime gives Scroll its flex chassis but no overflow: on the bare
+     page it used to ship on, the *document* scrolled, so a Scroll never
+     needed to. Inside a fixed-height screen it does — this is the one rule
+     that turns the node into the viewport the natives make of it (Scroll
+     grows to the space its parent leaves and scrolls its content), and it
+     lives here rather than in grmob-runtime.js because it is a property of
+     the host page's box, not of the node. */
+  #app [data-node-type="Scroll"] {
+    flex: 1 1 0; min-height: 0; overflow-y: auto; overscroll-behavior: contain;
+  }
+
+  /* --- loading / error state ---------------------------------------------------
+     main.wasm is a few MB; the first paint is this, then the app replaces it
+     (mount clears #app's innerHTML). */
+  .boot {
+    position: absolute; inset: 0; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; gap: .8rem;
+    color: #667085; background: #ffffff; font-size: .9rem; padding: 1.5rem; text-align: center;
+  }
+  .boot .spin {
+    width: 28px; height: 28px; border-radius: 50%;
+    border: 3px solid #d7dbe2; border-top-color: #2b6cb0;
+    animation: spin .9s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .boot.err {
+    color: var(--err-fg); background: var(--err-bg);
+    border: 1px solid var(--err-edge); border-radius: 24px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: .8rem;
+    white-space: pre-wrap; align-items: flex-start; text-align: left; justify-content: flex-start;
+  }
+</style>
 </head>
 <body>
-<div id="app"></div>
 
+<header>
+  <h1><span>GrMob</span> · Interactive Tutorial</h1>
+  <span class="meta">40 lessons · 8 chapters · every demo is live Go, running in your browser</span>
+  <span class="spacer"></span>
+  <a href="https://github.com/rohanthewiz/grmob/tree/master/docs" target="_blank" rel="noopener">Docs</a>
+  <a href="https://github.com/rohanthewiz/grmob/tree/master/examples/tutorial" target="_blank" rel="noopener">Source</a>
+  <a href="https://github.com/rohanthewiz/grmob" target="_blank" rel="noopener">GitHub</a>
+</header>
+
+<main>
+  <div class="phone">
+    <div class="screen">
+      <div id="app">
+        <div class="boot" id="boot">
+          <div class="spin"></div>
+          <div>Loading the tutorial…</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</main>
 
 <script src="wasm_exec.js"></script>
 
@@ -16,23 +145,41 @@
 
 <!-- Init WASM -->
 <script>
+    // Host wiring: instantiate the module, mount the initial tree, and route
+    // DOM events back into Go. See docs/platforms/wasm.md for the contract
+    // (GrMobWASM.* on the Go side; GrMobApplyPatches / GrMobSystemEvent on
+    // this side, both defined by grmob-runtime.js).
+    const boot = document.getElementById("boot");
+    function fail(msg) {
+        boot.className = "boot err";
+        boot.textContent = "The tutorial failed to start.\n\n" + msg;
+    }
+
     const go = new Go();
-    fetch("main.wasm").then(response =>
-        response.arrayBuffer()
-    ).then(buffer =>
-        WebAssembly.instantiate(buffer, go.importObject)
-    ).then(result => {
+    // instantiateStreaming needs the server to send application/wasm; fall
+    // back to a buffered instantiate where it does not (a bare file:// open,
+    // some ad-hoc servers) rather than showing an error for a MIME type.
+    const source = fetch("main.wasm").then(r => {
+        if (!r.ok) throw new Error(`main.wasm: HTTP ${r.status} (run ./build.sh first?)`);
+        return r;
+    });
+    const instantiate = ("instantiateStreaming" in WebAssembly)
+        ? WebAssembly.instantiateStreaming(source, go.importObject)
+            .catch(() => source.then(r => r.arrayBuffer()).then(b => WebAssembly.instantiate(b, go.importObject)))
+        : source.then(r => r.arrayBuffer()).then(b => WebAssembly.instantiate(b, go.importObject));
+
+    instantiate.then(result => {
         go.run(result.instance);
         const patch = window.GrMobWASM.RenderInitial();
-        console.log("Initial Render:", patch);
         GrMob.mount(patch);
+    }).catch(err => {
+        console.error(err);
+        fail(err && err.message ? err.message : String(err));
     });
 
     window.GoInvokeCallback = (id, payload) => {
-        console.log("Triggering:", id, payload);
         window.GrMobWASM.ReceiveEvent(id, JSON.stringify(payload));
         const patch = window.GrMobWASM.RenderAgain();
-        console.log("found patch:", patch);
         GrMob.patch(patch);
     };
 </script>

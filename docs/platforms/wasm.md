@@ -18,6 +18,22 @@ GOOS=js GOARCH=wasm go build -o main.wasm ./wasm
 Serve `main.wasm` alongside Go's `wasm_exec.js` (from
 `$(go env GOROOT)/lib/wasm/`) and a host page.
 
+The repository's own route does both: `./build.sh` writes `wasm/main.wasm`
+with `-trimpath -ldflags='-s -w'` and refreshes `wasm/wasm_exec.js` from the
+toolchain, and `go run ./serve` hosts `wasm/` on port 8080. Those are the
+files the site workflow publishes to
+<https://rohanthewiz.github.io/grmob/>, so the local page and the live one
+are the same bytes.
+
+The shipped host page (`wasm/index.html`) frames the app in a phone-sized
+screen rather than letting it fill the browser window. That changes one
+thing for the runtime: a `Scroll` node on a bare page never had to scroll —
+the document did — so `grmob-runtime.js` gives it no `overflow`. Inside a
+fixed-height screen the page adds the rule itself
+(`#app [data-node-type="Scroll"] { flex: 1 1 0; min-height: 0; overflow-y:
+auto }`), which is what makes the node the viewport the natives make of it.
+A hand-rolled host that constrains the app's height needs the same rule.
+
 ## The host-page contract
 
 The Go side registers a `GrMobWASM` global with four functions:
