@@ -2,7 +2,7 @@
 
 GrMob ships a second tutorial that is not a document at all: an app.
 [`examples/tutorial`](../examples/tutorial) is a GrMob app that teaches GrMob
-— 40 lessons across 8 chapters, and every lesson is a live screen with three
+— 41 lessons across 8 chapters, and every lesson is a live screen with three
 parts: an explanation, the code under discussion, and a bordered **TRY IT**
 panel wired to real state and real callbacks. You learn `NewState` by tapping
 a counter it drives, keyed reconciliation by shuffling a list that breaks

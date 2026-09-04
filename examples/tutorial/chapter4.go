@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"maps"
 	"strings"
+	"time"
 
 	"github.com/rohanthewiz/grmob/components"
 	"github.com/rohanthewiz/grmob/core"
@@ -22,13 +23,14 @@ func chapter4() Chapter {
 	return Chapter{
 		Title:   "The Widget Library",
 		Icon:    "🧩",
-		Summary: "Buttons, pills, rows, accordions, tabs — the components package and its controlled-widget contract.",
+		Summary: "Buttons, pills, rows, accordions, tabs, tables — the components package and its controlled-widget contract.",
 		Lessons: []Lesson{
 			lessonButtons(),
 			lessonPills(),
 			lessonListRow(),
 			lessonAccordion(),
 			lessonTabs(),
+			lessonCollections(),
 		},
 	}
 }
@@ -536,6 +538,183 @@ func lessonTabs() Lesson {
 					"All pages are children of the node; the native side draws the strip and shows Selected. Selection is controlled: Selected in, OnChange out.",
 					"The web host doesn't render TabView yet — compose the contract there: SegmentedControl for the strip, Match for the pages.",
 					"Keep page-independent state above the switch: pages come and go with the selection; hook slots must not.",
+				),
+			)
+		},
+	}
+}
+
+// --- 4.6 -----------------------------------------------------------------
+
+// archiveEntry is the 4.6 fixture: the shape of an archive row — a sermon,
+// a transaction, a ticket — with a date to group by and two text columns to
+// sort by. Newest first, as an archive feed arrives.
+type archiveEntry struct {
+	id      int
+	title   string
+	speaker string
+	date    time.Time
+}
+
+var archive = []archiveEntry{
+	{1, "The Narrow Gate", "M. Adeyemi", time.Date(2026, 3, 22, 0, 0, 0, 0, time.UTC)},
+	{2, "Salt and Light", "R. Okafor", time.Date(2026, 3, 15, 0, 0, 0, 0, time.UTC)},
+	{3, "Ask, Seek, Knock", "M. Adeyemi", time.Date(2026, 3, 1, 0, 0, 0, 0, time.UTC)},
+	{4, "The Two Houses", "L. Mensah", time.Date(2026, 2, 22, 0, 0, 0, 0, time.UTC)},
+	{5, "Treasures in Heaven", "R. Okafor", time.Date(2026, 2, 8, 0, 0, 0, 0, time.UTC)},
+	{6, "Blessed Are the Meek", "M. Adeyemi", time.Date(2026, 1, 25, 0, 0, 0, 0, time.UTC)},
+	{7, "A Lamp on a Stand", "L. Mensah", time.Date(2026, 1, 18, 0, 0, 0, 0, time.UTC)},
+	{8, "Wise and Foolish Builders", "R. Okafor", time.Date(2026, 1, 4, 0, 0, 0, 0, time.UTC)},
+	{9, "The Golden Rule", "M. Adeyemi", time.Date(2025, 12, 28, 0, 0, 0, 0, time.UTC)},
+}
+
+// archiveKey is the reconciler key for an entry. Prefixed by kind, so a
+// screen mixing this list with another keyed by integer id cannot collide.
+func archiveKey(e archiveEntry) string { return fmt.Sprintf("entry:%d", e.id) }
+
+// archiveMonth groups an entry by calendar month. Key is the sortable form,
+// Label the readable one.
+func archiveMonth(e archiveEntry) components.Group {
+	return components.Group{Key: e.date.Format("2006-01"), Label: e.date.Format("January 2006")}
+}
+
+// loadMorePageSize is how many rows each "Load more" tap reveals in the
+// grouped-list demo, standing in for one page from a server.
+const loadMorePageSize = 3
+
+func lessonCollections() Lesson {
+	return Lesson{
+		Title:   "Collections: GroupedList & DataTable",
+		Summary: "Keyed, grouped, paged rows over core.List — the sort, the page and the group all controlled by you.",
+		Body: func(ctx *core.Context) core.View {
+			// The table's three controls, each a state the widget reads and
+			// reports back to. A nil sort means "the caller's order".
+			sortBy := core.NewState[*components.Sort](ctx, nil)
+			page := core.NewState(ctx, 0)
+			compact := core.NewState(ctx, false)
+
+			// The grouped list's pager: how many rows have "arrived". A real
+			// screen keeps the accumulated rows themselves; here the fixture
+			// is already in memory and the count stands in for the offset.
+			shown := core.NewState(ctx, loadMorePageSize)
+			loaded := archive
+			if shown.Get() < len(loaded) {
+				loaded = loaded[:shown.Get()]
+			}
+
+			table := components.DataTable[archiveEntry]{
+				Columns: []components.Column[archiveEntry]{
+					{Title: "Title", Weight: 2,
+						Text: func(e archiveEntry) string { return e.title },
+						Less: func(a, b archiveEntry) bool { return a.title < b.title }},
+					{Title: "Speaker", Weight: 1, Narrow: true,
+						Text: func(e archiveEntry) string { return e.speaker },
+						Less: func(a, b archiveEntry) bool { return a.speaker < b.speaker }},
+					{Title: "Date", Align: core.JustifyEnd,
+						Text: func(e archiveEntry) string { return e.date.Format("Jan 2") },
+						Less: func(a, b archiveEntry) bool { return a.date.Before(b.date) }},
+				},
+				Rows:     archive,
+				Key:      archiveKey,
+				Sort:     sortBy.Get(),
+				OnSort:   func(s components.Sort) { sortBy.Set(&s) },
+				Compact:  compact.Get(),
+				Dividers: true,
+				Pagination: &components.Pagination{
+					Page:     page.Get(),
+					PageSize: 4,
+					OnChange: page.Set,
+					// Archive-flavored steppers. Also keeps the demo's Next
+					// distinct from the lesson screen's own "Next ›" below it.
+					PrevLabel: "‹ Newer",
+					NextLabel: "Older ›",
+				},
+			}
+
+			grouped := components.GroupedList[archiveEntry]{
+				Items:   loaded,
+				Key:     archiveKey,
+				GroupBy: archiveMonth,
+				Row: func(e archiveEntry) core.View {
+					return components.ListRow{
+						Title:    e.title,
+						Subtitle: e.speaker,
+						Trailing: caption(e.date.Format("Jan 2")),
+					}
+				},
+				Footer: components.LoadMore{
+					HasMore:    shown.Get() < len(archive),
+					OnLoadMore: func() { shown.Set(shown.Get() + loadMorePageSize) },
+				},
+			}
+
+			return core.Column(
+				core.Gap(14),
+				prose("An archive screen is always the same assembly: a keyed row per item over "+
+					"core.List so a thousand rows compose lazily, a header wherever the month "+
+					"changes, and a pager at the tail. GroupedList and DataTable own that assembly. "+
+					"They hold no state and call no hook — the sort, the page and the compact "+
+					"switch are yours, read from your state and reported back through callbacks, "+
+					"exactly as Chip and ListRow report a tap."),
+				codeBlock(`components.DataTable[Entry]{
+    Columns: []components.Column[Entry]{
+        {Title: "Title", Weight: 2, Text: title, Less: byTitle},
+        {Title: "Speaker", Narrow: true, Text: speaker},
+        {Title: "Date", Align: core.JustifyEnd, Text: day},
+    },
+    Rows:    entries,
+    Key:     entryKey,
+    Sort:    sortBy.Get(),
+    OnSort:  func(s components.Sort) { sortBy.Set(&s) },
+    Compact: compact.Get(),
+    Pagination: &components.Pagination{
+        Page: page.Get(), PageSize: 4, OnChange: page.Set,
+        PrevLabel: "‹ Newer", NextLabel: "Older ›"},
+}`),
+				prose("Rows are sorted, then paged, then grouped. A column with Less is sorted here, "+
+					"on a copy — your slice is never reordered under you; a column marked Sortable "+
+					"without Less only reports the tap, for a table whose server does the sorting. "+
+					"A Pagination with a PageSize and no PageCount is sliced here too, and the "+
+					"footer's \"of N\" is derived from the rows. Compact drops the Narrow columns "+
+					"while the sort keeps addressing your column list, so toggling it never "+
+					"re-points the active sort."),
+				demoPanel("Tap a header to sort, again to flip. Page with the footer. Compact hides the Speaker column.",
+					core.Row(core.Gap(8), core.Padding(0),
+						components.Chip{Label: "Compact", Selected: compact.Get(),
+							OnTap: func() { compact.Set(!compact.Get()) }},
+						core.If(sortBy.Get() != nil, components.Chip{Label: "Clear sort",
+							OnTap: func() { sortBy.Set(nil) }}),
+					),
+					table,
+				),
+				prose("GroupedList is the same body without columns: your Row draws each item, "+
+					"GroupBy names its group, and the Footer slot takes the pager. Grouping is "+
+					"run-length over the order you hand it — a header is emitted wherever the key "+
+					"changes — so a feed that arrives sorted by date gets its month headers for "+
+					"free, and an offset pager that appends a page can only ever grow the last "+
+					"group: nothing above the fold moves on Load more."),
+				codeBlock(`components.GroupedList[Entry]{
+    Items:   pager.Items,
+    Key:     entryKey,
+    GroupBy: func(e Entry) components.Group {
+        return components.Group{
+            Key:   e.Date.Format("2006-01"),
+            Label: e.Date.Format("January 2006")}
+    },
+    Row:    func(e Entry) core.View { return entryRow(e) },
+    Footer: components.LoadMore{
+        HasMore: pager.HasMore, Loading: pager.Loading,
+        Err: pager.Err, OnLoadMore: pager.LoadMore},
+}`),
+				demoPanel("Load more reveals three rows at a time; the tail disappears when the archive is complete.",
+					grouped,
+				),
+				keyPoints(
+					"Both widgets are hook-free and fully controlled: Sort, Page and Compact live in your state; OnSort and OnChange report intent.",
+					"Sort, then page, then group — a client-side page's headers agree with its rows, and group runs follow the sort.",
+					"Grouping is by run, not by bucket: sorted input yields one header per group; an append-only pager never moves an earlier header.",
+					"LoadMore is the four-state tail every paged screen hand-rolls: nothing, Load more, Loading…, or the error with Retry — Loading wins over Err, Err over HasMore.",
+					"Key must be unique across the list and stable across renders; core.List keeps row state attached to it through reorders.",
 				),
 			)
 		},

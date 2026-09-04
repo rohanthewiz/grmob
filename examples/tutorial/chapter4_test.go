@@ -215,3 +215,75 @@ func TestTabsDemoSwitchesPagesAndKeepsState(t *testing.T) {
 	}
 	assertNoConcerns(t)
 }
+
+// --- 4.6 Collections --------------------------------------------------------
+
+func TestCollectionsDemoSortsPagesAndLoadsMore(t *testing.T) {
+	mgr := newApp(t)
+	openLesson(t, mgr, "Collections: GroupedList & DataTable")
+
+	cur := tree(t, mgr)
+	// Client-side paging: nine rows, four per page, count derived.
+	if !hasText(cur, "Page 1 of 3") {
+		t.Fatal("the table should open on page 1 of 3")
+	}
+	if !hasText(cur, "The Narrow Gate") || hasText(cur, "Treasures in Heaven") {
+		t.Fatal("page 1 shows the first four rows only")
+	}
+	tap(t, mgr, "Older ›")
+	cur = tree(t, mgr)
+	if !hasText(cur, "Page 2 of 3") || !hasText(cur, "Treasures in Heaven") {
+		t.Fatal("Next should move to page 2")
+	}
+
+	// Sorting is controlled: the header tap lands in the lesson's state and
+	// the glyph reflects it; a second tap flips direction.
+	tapRow(t, mgr, "Title")
+	if !hasText(tree(t, mgr), "Title ▲") {
+		t.Fatal("tapping the Title header should sort ascending")
+	}
+	tapRow(t, mgr, "Title ▲")
+	cur = tree(t, mgr)
+	if !hasText(cur, "Title ▼") {
+		t.Fatal("tapping the active header should flip to descending")
+	}
+	// Descending by title, page 2 (rows 5-8 of Wise, Two, Treasures,
+	// Salt, Narrow, Lamp, Golden, Blessed, Ask) starts at "The Narrow Gate".
+	if !hasText(cur, "The Narrow Gate") || hasText(cur, "Wise and Foolish Builders") {
+		t.Fatal("the page should show the sorted window")
+	}
+	tap(t, mgr, "Clear sort")
+	if hasTextContaining(tree(t, mgr), "Title ▼") {
+		t.Fatal("clearing the sort should drop the glyph")
+	}
+
+	// Compact drops the Narrow Speaker column from header and body alike.
+	if !hasText(cur, "Speaker") {
+		t.Fatal("the Speaker column should be visible before Compact")
+	}
+	tap(t, mgr, "Compact")
+	if hasText(tree(t, mgr), "Speaker") {
+		t.Fatal("Compact should hide the Narrow Speaker column")
+	}
+
+	// The grouped list starts with one page and grows by Load more until the
+	// archive is complete, at which point the tail is gone.
+	cur = tree(t, mgr)
+	if !hasText(cur, "March 2026") || hasText(cur, "The Two Houses") {
+		t.Fatal("the grouped list should open with the first three rows under March")
+	}
+	tap(t, mgr, "Load more")
+	cur = tree(t, mgr)
+	if !hasText(cur, "February 2026") || !hasText(cur, "The Two Houses") {
+		t.Fatal("Load more should reveal the next three rows and their month header")
+	}
+	tap(t, mgr, "Load more")
+	cur = tree(t, mgr)
+	if !hasText(cur, "December 2025") {
+		t.Fatal("the whole archive should be loaded")
+	}
+	if findNode(cur, func(n *node) bool { return n.Type == "Button" && n.Props["label"] == "Load more" }) != nil {
+		t.Fatal("a complete list has no Load more tail")
+	}
+	assertNoConcerns(t)
+}

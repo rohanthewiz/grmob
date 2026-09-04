@@ -1,0 +1,237 @@
+package components
+
+import (
+	"strings"
+	"testing"
+
+	"github.com/rohanthewiz/grmob/core"
+	"github.com/rohanthewiz/grmob/htmlout"
+)
+
+var sermonColumns = []Column[sermon]{
+	{Title: "Title", Text: func(s sermon) string { return s.Title }, Weight: 2,
+		Less: func(a, b sermon) bool { return a.Title < b.Title }},
+	{Title: "Month", Text: func(s sermon) string { return s.Month }, Narrow: true},
+	{Title: "ID", Cell: func(s sermon) core.View { return Badge{Text: itoa(s.ID)} },
+		Align: core.JustifyEnd, Sortable: true},
+}
+
+// tableParts splits a rendered DataTable into its header row and body list.
+func tableParts(t *testing.T, n *core.Node) (header, body *core.Node) {
+	t.Helper()
+	if n.Type != "Column" || len(n.Children) < 2 {
+		t.Fatalf("DataTable should be a Column of header + body, got %q with %d children", n.Type, len(n.Children))
+	}
+	header, body = n.Children[0], n.Children[1]
+	if header.Type != "Row" || body.Type != "List" {
+		t.Fatalf("want Row header and List body, got %q and %q", header.Type, body.Type)
+	}
+	return header, body
+}
+
+func TestDataTableHeaderCellsAndBodyRows(t *testing.T) {
+	ctx := core.NewContext()
+	ctx.BeginRenderPass()
+	n := DataTable[sermon]{Columns: sermonColumns, Rows: sermons, Key: sermonKey}.Render(ctx)
+	header, body := tableParts(t, n)
+
+	if len(header.Children) != 3 {
+		t.Fatalf("header should have one cell per column, got %d", len(header.Children))
+	}
+	// Weight becomes FlexGrow; a weightless column hugs its content; Align
+	// becomes flex justification on the cell.
+	if header.Children[0].Style.FlexGrow != 2 || header.Children[1].Style.FlexGrow != 0 {
+		t.Errorf("cell FlexGrow = %v, %v; want 2, 0", header.Children[0].Style.FlexGrow, header.Children[1].Style.FlexGrow)
+	}
+	if header.Children[2].Style.JustifyContent != core.JustifyEnd {
+		t.Errorf("Align should set the cell's justification, got %q", header.Children[2].Style.JustifyContent)
+	}
+
+	if got := strings.Join(childKeys(body), " "); got != "sermon:1 sermon:2 sermon:3 sermon:4 sermon:5" {
+		t.Errorf("body keys = %q", got)
+	}
+	row := body.Children[0]
+	if len(row.Children) != 3 || findText(row, "Grace") == nil || findText(row, "1") == nil {
+		t.Error("a body row should carry one cell per column with Text and Cell content")
+	}
+}
+
+func TestDataTableSortIsControlledAndToggles(t *testing.T) {
+	ctx := core.NewContext()
+	ctx.BeginRenderPass()
+	var asked Sort
+	n := DataTable[sermon]{
+		Columns: sermonColumns, Rows: sermons, Key: sermonKey,
+		Sort:   &Sort{Column: 0},
+		OnSort: func(s Sort) { asked = s },
+	}.Render(ctx)
+	header, body := tableParts(t, n)
+
+	// Client-side sort on the column with a comparator, ascending.
+	if got := strings.Join(childKeys(body), " "); got != "sermon:1 sermon:4 sermon:5 sermon:2 sermon:3" {
+		t.Errorf("rows should be sorted by title ascending, got %q", got)
+	}
+	if findText(header, "Title ▲") == nil {
+		t.Error("active column shows the ascending glyph")
+	}
+
+	// Month has neither Less nor Sortable: no handler. Title and ID do.
+	if _, ok := header.Children[1].Props["onClick"]; ok {
+		t.Error("an unsortable column must not register a handler")
+	}
+	ctx.TriggerCallback(header.Children[0].Props["onClick"].(string))
+	if asked != (Sort{Column: 0, Desc: true}) {
+		t.Errorf("tapping the active column toggles direction, got %+v", asked)
+	}
+	ctx.TriggerCallback(header.Children[2].Props["onClick"].(string))
+	if asked != (Sort{Column: 2}) {
+		t.Errorf("tapping another column starts ascending, got %+v", asked)
+	}
+
+	// Descending, and the caller's slice is untouched by the sort.
+	ctx.BeginRenderPass()
+	n = DataTable[sermon]{Columns: sermonColumns, Rows: sermons, Key: sermonKey,
+		Sort: &Sort{Column: 0, Desc: true}, OnSort: func(Sort) {}}.Render(ctx)
+	_, body = tableParts(t, n)
+	if got := strings.Join(childKeys(body), " "); got != "sermon:3 sermon:2 sermon:5 sermon:4 sermon:1" {
+		t.Errorf("descending order = %q", got)
+	}
+	if sermons[0].ID != 1 || sermons[4].ID != 5 {
+		t.Error("sorting must not reorder the caller's Rows")
+	}
+}
+
+func TestDataTableSortableWithoutComparatorReportsOnly(t *testing.T) {
+	ctx := core.NewContext()
+	ctx.BeginRenderPass()
+	n := DataTable[sermon]{Columns: sermonColumns, Rows: sermons, Key: sermonKey,
+		Sort: &Sort{Column: 2, Desc: true}, OnSort: func(Sort) {}}.Render(ctx)
+	header, body := tableParts(t, n)
+	if findText(header, "ID ▼") == nil {
+		t.Error("a server-sorted column still shows its glyph")
+	}
+	if got := strings.Join(childKeys(body), " "); got != "sermon:1 sermon:2 sermon:3 sermon:4 sermon:5" {
+		t.Errorf("without Less the rows keep the caller's order, got %q", got)
+	}
+}
+
+func TestDataTableCompactDropsNarrowColumnsButKeepsIndices(t *testing.T) {
+	ctx := core.NewContext()
+	ctx.BeginRenderPass()
+	var asked Sort
+	n := DataTable[sermon]{Columns: sermonColumns, Rows: sermons[:1], Key: sermonKey,
+		Compact: true, Sort: &Sort{Column: 2}, OnSort: func(s Sort) { asked = s }}.Render(ctx)
+	header, body := tableParts(t, n)
+	if len(header.Children) != 2 || findText(header, "Month") != nil {
+		t.Fatalf("compact header should drop the Narrow column, got %d cells", len(header.Children))
+	}
+	if len(body.Children[0].Children) != 2 {
+		t.Error("body rows must drop the same column as the header")
+	}
+	// ID is the caller's column 2 even though it is the second visible cell.
+	if findText(header, "ID ▲") == nil {
+		t.Error("Sort.Column addresses the caller's column list, not the visible one")
+	}
+	ctx.TriggerCallback(header.Children[1].Props["onClick"].(string))
+	if asked.Column != 2 {
+		t.Errorf("OnSort reports the caller's column index, got %d", asked.Column)
+	}
+}
+
+func TestDataTableClientSidePaging(t *testing.T) {
+	ctx := core.NewContext()
+	ctx.BeginRenderPass()
+	n := DataTable[sermon]{Columns: sermonColumns, Rows: sermons, Key: sermonKey,
+		Pagination: &Pagination{Page: 1, PageSize: 2, OnChange: func(int) {}}}.Render(ctx)
+	_, body := tableParts(t, n)
+	if got := strings.Join(childKeys(body), " "); got != "sermon:3 sermon:4" {
+		t.Errorf("page 1 of size 2 = %q", got)
+	}
+	if findText(n, "Page 2 of 3") == nil {
+		t.Error("the footer should derive the page count from the rows")
+	}
+
+	// A stale page past the end lands on the last page.
+	ctx.BeginRenderPass()
+	n = DataTable[sermon]{Columns: sermonColumns, Rows: sermons, Key: sermonKey,
+		Pagination: &Pagination{Page: 9, PageSize: 2}}.Render(ctx)
+	_, body = tableParts(t, n)
+	if got := strings.Join(childKeys(body), " "); got != "sermon:5" {
+		t.Errorf("clamped last page = %q", got)
+	}
+	if findText(n, "Page 3 of 3") == nil {
+		t.Error("clamped footer should read Page 3 of 3")
+	}
+}
+
+func TestDataTableServerSidePagingLeavesRowsAlone(t *testing.T) {
+	ctx := core.NewContext()
+	ctx.BeginRenderPass()
+	n := DataTable[sermon]{Columns: sermonColumns, Rows: sermons[:2], Key: sermonKey,
+		Pagination: &Pagination{Page: 3, PageSize: 2, PageCount: 10}}.Render(ctx)
+	_, body := tableParts(t, n)
+	if len(body.Children) != 2 || findText(n, "Page 4 of 10") == nil {
+		t.Error("with PageCount set the caller owns paging: rows and label pass through")
+	}
+}
+
+func TestDataTableRowTapSelectionGroupingAndStates(t *testing.T) {
+	ctx := core.NewContext()
+	ctx.BeginRenderPass()
+	var tapped sermon
+	n := DataTable[sermon]{
+		Columns: sermonColumns, Rows: sermons, Key: sermonKey,
+		GroupBy:  byMonth,
+		OnRowTap: func(s sermon) { tapped = s },
+		Selected: func(s sermon) bool { return s.ID == 3 },
+		Dividers: true,
+	}.Render(ctx)
+	_, body := tableParts(t, n)
+	got := strings.Join(childKeys(body), " ")
+	want := "group:2026-01 sermon:1 sep:sermon:1 sermon:2 group:2025-12 sermon:3 group:2025-11 sermon:4 sep:sermon:4 sermon:5"
+	if got != want {
+		t.Errorf("grouped body keys\n got %q\nwant %q", got, want)
+	}
+	row3 := findFirst(body, func(n *core.Node) bool { return n.Key == "sermon:3" })
+	if row3.Style.Background != core.DefaultTheme.Colors.Surface {
+		t.Errorf("selected row should take the Surface tint, got %q", row3.Style.Background)
+	}
+	ctx.TriggerCallback(row3.Props["onClick"].(string))
+	if tapped.ID != 3 {
+		t.Errorf("OnRowTap should receive the row, got %+v", tapped)
+	}
+
+	ctx.BeginRenderPass()
+	n = DataTable[sermon]{Columns: sermonColumns, Rows: sermons, Key: sermonKey,
+		Loading: core.Text("busy")}.Render(ctx)
+	_, body = tableParts(t, n)
+	if len(body.Children) != 1 || findText(body, "busy") == nil {
+		t.Error("Loading replaces the body rows and keeps the header")
+	}
+
+	ctx.BeginRenderPass()
+	n = DataTable[sermon]{Columns: sermonColumns, Key: sermonKey, Empty: core.Text("none")}.Render(ctx)
+	_, body = tableParts(t, n)
+	if findText(body, "none") == nil {
+		t.Error("Empty renders in the body when there are no rows")
+	}
+	if _, ok := body.Children[0].Props["onClick"]; ok {
+		t.Error("a presentational table registers no row handlers")
+	}
+}
+
+func TestDataTableExportsHTML(t *testing.T) {
+	ctx := core.NewContext()
+	ctx.BeginRenderPass()
+	n := DataTable[sermon]{Columns: sermonColumns, Rows: sermons, Key: sermonKey,
+		Pagination: &Pagination{PageSize: 3}}.Render(ctx)
+	html := htmlout.ExportHTML(n)
+	for _, want := range []string{"Title", "Grace", "Vine", "Page 1 of 2"} {
+		if !strings.Contains(html, want) {
+			t.Errorf("exported HTML should contain %q", want)
+		}
+	}
+	if strings.Contains(html, "Light") {
+		t.Error("rows beyond the page must not be exported")
+	}
+}

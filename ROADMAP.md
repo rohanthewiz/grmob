@@ -76,6 +76,10 @@
 - [x] `Badge`, `Chip`, `Separator`, `Avatar`, `ProgressBar`
 - [x] `FormField`, `Accordion`, `Tabs`
 - [x] `Variant` × `Emphasis` color axes with contrast-picked ink
+- [x] `GroupedList` and `DataTable` — keyed, virtualized collections over
+      `core.List` with run-length group headers, controlled sort, compact
+      mode and client- or server-side paging; `Pagination` and `LoadMore`
+      footers (tutorial lesson 4.6; plan in `ai_docs/plans/components-datatable-compass-map.md`)
 
 ### 🧬 Extensions
 - [x] Animations & transitions (`Transition`, easing curves)
