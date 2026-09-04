@@ -54,6 +54,14 @@ const (
 //     the browser. Leading spaces are swapped for non-breaking spaces
 //     (U+00A0), which every target honors, and a blank line becomes a single
 //     NBSP so the line still occupies height.
+//
+// Lines do not wrap. A phone screen is narrower than most of these snippets,
+// and a wrap restarts the overflow at column zero — which reads as a new
+// statement at the outermost indent level, so the very structure the NBSP
+// work above exists to preserve is what a wrap destroys. The block scrolls
+// sideways instead, leaving the line being read as one line. Overflow sits on
+// the Column because that is the scroll container; nowrap sits on each Text
+// because the lines are what must refuse to break.
 func codeBlock(code string) core.View {
 	lines := strings.Split(strings.Trim(code, "\n"), "\n")
 	items := []core.PropsAndChildren{
@@ -61,6 +69,7 @@ func codeBlock(code string) core.View {
 		core.Padding(14),
 		core.BorderRadius(10),
 		core.Gap(2),
+		core.Overflow("auto"),
 	}
 	for _, line := range lines {
 		display := line
@@ -73,6 +82,7 @@ func codeBlock(code string) core.View {
 		items = append(items, core.Text(display,
 			core.FontSize(13),
 			core.TextColor(codeInk),
+			core.WhiteSpace("nowrap"),
 		))
 	}
 	return core.Column(items...)
@@ -155,6 +165,22 @@ const (
 	boxTeal = "#1F8A70"
 	boxPlum = "#8E4A9E"
 )
+
+// segWrap is the Style every SegmentedControl in the tutorial carries.
+//
+// Several of these controls spell out four longish captions — "Start /
+// Center / Between / Evenly", "Default / Filled / Outlined / Ghost" — and a
+// row of four does not fit a phone. Without wrapping the last segment sat
+// past the right edge of the screen, reachable only by dragging the page
+// sideways, on a control whose entire job is to show the available choices at
+// a glance.
+//
+// It is set here per call site rather than inside components.SegmentedControl
+// because that component is held to byte-for-byte parity with the hand-rolled
+// bar it replaced (examples/todoapp's TestFilterBarMatchesLegacyMarkup), and
+// a default flex-wrap would change the markup of every app using it to fix a
+// problem only long captions have. Wrapping is inert while the segments fit.
+var segWrap = []core.StyleProp{core.FlexWrap(true)}
 
 // stepper is the −/+ control the demos use for numeric knobs (gap, font
 // size, radius). Controlled like every GrMob input: it renders value and

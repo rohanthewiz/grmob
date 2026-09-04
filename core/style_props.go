@@ -59,6 +59,25 @@ func Overflow(value string) StyleProp {
 	})
 }
 
+// WhiteSpace controls how runs of spaces and line breaks in a Text are
+// treated: "nowrap" keeps a line whole and lets the container scroll or clip
+// it, "pre" additionally preserves the literal spacing, "normal" is the
+// default wrapping behavior.
+//
+// Style.WhiteSpace has been carried to both web targets since it was added,
+// but nothing could set it — this is the missing constructor, not a new
+// capability. It matters most for text whose columns mean something (code
+// listings, tabular output), where wrapping restarts the continuation at
+// column zero and makes the indentation actively misleading.
+//
+// It is a no-op on the natives, which have no equivalent knob: SwiftUI and
+// Compose wrap by line-break policy rather than by a CSS-style property.
+func WhiteSpace(value string) StyleProp {
+	return styleFunc(func(s *Style) {
+		s.WhiteSpace = value // "normal", "nowrap", "pre", "pre-line"
+	})
+}
+
 // Responsive registers a style variant under a named key in PseudoStates
 // (":hover", ":focus", or a breakpoint name).
 //

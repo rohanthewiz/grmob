@@ -664,7 +664,22 @@ const GrMob = (() => {
             out.display = "";
             out.flexDirection = "";
         }
-        out.gap = style.Gap ? `${style.Gap}px` : "";
+        // Gap is resolved into the two axis longhands rather than written as
+        // the `gap` shorthand, because this function is *total*: it restates
+        // every property it manages on every pass so an update-style patch
+        // clears whatever the new Style dropped. `gap` IS row-gap plus
+        // column-gap, so assigning the shorthand here and then the longhands
+        // below — to "" whenever RowGap/ColumnGap are unset, which is almost
+        // always — erased the gap that had just been set, and every
+        // core.Gap() in every app silently rendered as no spacing at all.
+        // Writing only the longhands says the same thing with no shorthand
+        // left to clobber, and keeps the axis values winning over the
+        // isotropic one, which is the order htmlout's declaration list
+        // already produces via the CSS cascade.
+        const rowGap = style.RowGap || style.Gap;
+        const columnGap = style.ColumnGap || style.Gap;
+        out.rowGap = rowGap ? `${rowGap}px` : "";
+        out.columnGap = columnGap ? `${columnGap}px` : "";
         out.justifyContent = style.JustifyContent || "";
         out.alignItems = alignItems || "";
         // Style.Display, resolved against the flex block above rather than
@@ -792,8 +807,8 @@ const GrMob = (() => {
         // promoting a box for them alone would change its layout to no
         // purpose.
         out.flexWrap = style.FlexWrap || "";
-        out.rowGap = style.RowGap ? `${style.RowGap}px` : "";
-        out.columnGap = style.ColumnGap ? `${style.ColumnGap}px` : "";
+        // RowGap/ColumnGap are written with Gap above, where the three are
+        // reconciled; only flex-wrap is left of that original group here.
         // Flex *item* properties, joining flexGrow above.
         out.alignSelf = style.AlignSelf || "";
         out.flexBasis = style.FlexBasis || "";
@@ -1252,21 +1267,53 @@ const GrMob = (() => {
 
     let toastLayer = null;
 
+    // The layer lands in the app's own box when the host gives the app a
+    // positioned one, and falls back to the document otherwise.
+    //
+    // A toast is the app's chrome, so it belongs over the app's screen. On a
+    // page where the app fills the window the two are the same rectangle and
+    // this changes nothing — but a host that frames the app in a smaller box
+    // (the tutorial site draws it inside a phone bezel) had its toasts
+    // stretched across the whole browser window, detached from the app that
+    // raised them. The box is only usable as an anchor if it establishes a
+    // containing block, hence the `static` test: an unpositioned parent would
+    // send an absolute child to the initial containing block, which is worse
+    // than the fixed-to-viewport behavior it replaced.
+    //
+    // Sibling of the app root rather than child: mount() clears the mount
+    // point's innerHTML, so a layer inside it would be silently detached by
+    // the next RenderInitial and every toast after that would go nowhere.
+    // The typeof guard keeps this working on a DOM without the full CSSOM —
+    // wasm/verify's shim has no getComputedStyle — where the answer is simply
+    // the document, exactly as it was before the app box became an option.
+    function toastLayerHost() {
+        const parent = rootElement && rootElement.parentElement;
+        if (parent && parent !== document.body &&
+            typeof getComputedStyle === "function" &&
+            getComputedStyle(parent).position !== "static") {
+            return { parent, position: "absolute" };
+        }
+        return { parent: document.body, position: "fixed" };
+    }
+
     function ensureToastLayer() {
-        if (toastLayer) return toastLayer;
+        // isConnected, not a plain null test: a re-mount can take the layer
+        // out of the document, and a detached node would swallow every toast.
+        if (toastLayer && toastLayer.isConnected) return toastLayer;
+        const host = toastLayerHost();
         toastLayer = document.createElement("div");
         Object.assign(toastLayer.style, {
-            position: "fixed",
+            position: host.position,
             bottom: "24px",
             left: 0, right: 0,
             display: "flex",
             flexDirection: "column",
             alignItems: "center",
-            gap: "8px",
+            rowGap: "8px",
             zIndex: 2000,
             pointerEvents: "none",
         });
-        document.body.appendChild(toastLayer);
+        host.parent.appendChild(toastLayer);
         return toastLayer;
     }
 

@@ -308,6 +308,7 @@ core.Input(form.Value("email"), "you@example.com",
 					"failing is the event that turns the explanations on."),
 				demoPanel("Pick a policy, type an unfinished address, leave the field, submit — watch when it speaks.",
 					components.SegmentedControl{
+						Style:     segWrap,
 						Labels:    revealNames,
 						Selected:  policy.Get(),
 						OnSelect:  func(i int) { policy.Set(i) },

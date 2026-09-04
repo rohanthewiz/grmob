@@ -188,6 +188,7 @@ core.Text("Read me", core.UseStyle(ctx.Theme().Typography.Title))`),
 						checkRow("Bold", bold),
 					),
 					components.SegmentedControl{
+						Style:     segWrap,
 						Labels:    inkRoles,
 						Selected:  colorIdx.Get(),
 						OnSelect:  func(i int) { colorIdx.Set(i) },
@@ -252,6 +253,7 @@ core.Column(
 					"a fixed empty block between two specific siblings."),
 				demoPanel("Flip the axis and stretch the gap.",
 					components.SegmentedControl{
+						Style:     segWrap,
 						Labels:    []string{"Row", "Column"},
 						Selected:  axis.Get(),
 						OnSelect:  func(i int) { axis.Set(i) },
@@ -327,6 +329,7 @@ func lessonAlignment() Lesson {
 						core.Gap(6),
 						caption("Justify — main axis"),
 						components.SegmentedControl{
+							Style:     segWrap,
 							Labels:    justifyLabels,
 							Selected:  justifyIdx.Get(),
 							OnSelect:  func(i int) { justifyIdx.Set(i) },
@@ -337,6 +340,7 @@ func lessonAlignment() Lesson {
 						core.Gap(6),
 						caption("AlignItems — cross axis"),
 						components.SegmentedControl{
+							Style:     segWrap,
 							Labels:    alignLabels,
 							Selected:  alignIdx.Get(),
 							OnSelect:  func(i int) { alignIdx.Set(i) },

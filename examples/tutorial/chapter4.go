@@ -117,6 +117,7 @@ components.Button{Label: "Cancel", OnTap: back,
 				demoPanel("Every knob re-renders one struct — and prints the literal that would build it.",
 					caption("Variant — what the action means:"),
 					components.SegmentedControl{
+						Style:     segWrap,
 						Labels:    variantNames,
 						Selected:  variant.Get(),
 						OnSelect:  func(i int) { variant.Set(i) },
@@ -124,6 +125,7 @@ components.Button{Label: "Cancel", OnTap: back,
 					},
 					caption("Emphasis — how loudly it says it:"),
 					components.SegmentedControl{
+						Style:     segWrap,
 						Labels:    emphasisNames,
 						Selected:  emphasis.Get(),
 						OnSelect:  func(i int) { emphasis.Set(i) },
@@ -202,7 +204,12 @@ func lessonPills() Lesson {
 				}
 			}
 
-			chips := []core.PropsAndChildren{core.Gap(8)}
+			// FlexWrap for the same reason segWrap exists on this chapter's
+			// segmented controls: four topic captions are wider than a phone,
+			// and without wrapping the last chip ("testing") sat off the right
+			// edge of the screen — invisible in a multi-select group whose
+			// point is that you can see what you picked.
+			chips := []core.PropsAndChildren{core.Gap(8), core.FlexWrap(true)}
 			for _, topic := range pillTopics {
 				chips = append(chips, core.Keyed("topic-"+topic, components.Chip{
 					Label:             topic,
@@ -228,6 +235,7 @@ components.Chip{
 }
 
 components.SegmentedControl{
+	Style:     segWrap,
     Labels:   []string{"Draft", "Live", "Expiring", "Failed"},
     Selected: status.Get(),
     OnSelect: func(i int) { status.Set(i) },
@@ -241,6 +249,7 @@ components.SegmentedControl{
 				demoPanel("A badge fed by a segmented control, and a chip group over one map.",
 					caption("Pick a status — the Badge takes its variant from the same index:"),
 					components.SegmentedControl{
+						Style:     segWrap,
 						Labels:    pillStatusLabels,
 						Selected:  status.Get(),
 						OnSelect:  func(i int) { status.Set(i) },
@@ -487,6 +496,7 @@ func lessonTabs() Lesson {
 					"pair for the Tabs above and change nothing else."),
 				demoPanel("The strip writes an int; Match reads it — the tab contract, hand-assembled.",
 					components.SegmentedControl{
+						Style:     segWrap,
 						Labels:    tabPageLabels,
 						Selected:  page.Get(),
 						OnSelect:  func(i int) { page.Set(i) },

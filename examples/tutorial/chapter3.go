@@ -230,6 +230,7 @@ hooks.UseEffect(ctx, func() {
 					"gopher re-renders without re-fetching, because the dep didn't change."),
 				demoPanel("The selection is sync state; the profile arrives async, from the effect.",
 					components.SegmentedControl{
+						Style:     segWrap,
 						Labels:    gopherNames,
 						Selected:  sel.Get(),
 						OnSelect:  func(i int) { sel.Set(i) },

@@ -1024,3 +1024,49 @@ test("a styled toast keeps the defaults it does not override", () => {
     assert.equal(toast.style.boxShadow, "0 4px 12px rgba(0,0,0,0.25)");
     assert.equal(toast.style.maxWidth, "80vw");
 });
+
+// --------------------------------------------------------------------------
+// Gap
+// --------------------------------------------------------------------------
+
+// core.Gap renders through row-gap and column-gap, never through the `gap`
+// shorthand. The distinction is invisible in this file's plain-object style
+// (dom.mjs), and that is exactly why it is pinned here: in a real CSSOM `gap`
+// IS row-gap plus column-gap, so the runtime writing the shorthand and then
+// assigning the two longhands — which it does unconditionally, because
+// styleFromGrMob is total and states "" for whatever the Style left unset —
+// erased the gap it had just set. Every core.Gap() in every app rendered as no
+// spacing at all on the web, while both natives and htmlout honored it.
+//
+// Asserting "the shorthand is absent" rather than "the longhands are right"
+// alone is the point: the longhands were always right, and the bug was the
+// shorthand sitting in front of them.
+test("Gap is written as the two axis longhands, not the gap shorthand", () => {
+    const { at } = mount([{ Type: "Row", Style: { Gap: 8 } }]);
+
+    assert.equal(at(0).style.rowGap, "8px");
+    assert.equal(at(0).style.columnGap, "8px");
+    assert.equal(at(0).style.gap, undefined);
+});
+
+test("an axis gap overrides the isotropic one on its own axis", () => {
+    const { at } = mount([{ Type: "Row", Style: { Gap: 8, ColumnGap: 20 } }]);
+
+    assert.equal(at(0).style.rowGap, "8px");
+    assert.equal(at(0).style.columnGap, "20px");
+});
+
+test("an update-style patch that drops Gap clears both longhands", () => {
+    // The totality rule: an update-style patch carries the whole new Style, so
+    // a Gap the new Style no longer states has to be actively cleared or the
+    // element keeps spacing Go has stopped asking for.
+    const { rt, at } = mount([{ Type: "Row", Style: { Gap: 8 } }]);
+    assert.equal(at(0).style.rowGap, "8px");
+
+    rt.GrMob.patch(JSON.stringify([
+        { Type: "update-style", TargetID: "root/0", Changes: { MinWidth: "10px" } },
+    ]));
+
+    assert.equal(at(0).style.rowGap, "");
+    assert.equal(at(0).style.columnGap, "");
+});

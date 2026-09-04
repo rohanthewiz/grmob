@@ -253,6 +253,7 @@ core.Match(status,                 // a switch over the tree
 					"condition the views, never the NewState calls, or slots shift between passes."),
 				demoPanel("One Match over a status value; the checkbox drives a separate If.",
 					components.SegmentedControl{
+						Style:     segWrap,
 						Labels:    statusLabels,
 						Selected:  status.Get(),
 						OnSelect:  func(i int) { status.Set(i) },

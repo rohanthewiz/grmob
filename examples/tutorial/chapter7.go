@@ -302,6 +302,7 @@ core.BorderColor(t.Colors.BorderColor()) // late roles resolve through methods`)
 					"genuinely no styling."),
 				demoPanel("Pick a bundled theme and read its data — nothing is installed here; installing is the next lesson.",
 					components.SegmentedControl{
+						Style:     segWrap,
 						Labels:    []string{"Default", "Material"},
 						Selected:  inspect.Get(),
 						OnSelect:  func(i int) { inspect.Set(i) },
@@ -418,6 +419,7 @@ core.WithTheme(installed[pick.Get()], preview)`),
 					"reason: a literal is a promise the theme can't touch."),
 				demoPanel("Flip the card between themes — then notice the chips you're tapping don't change.",
 					components.SegmentedControl{
+						Style:     segWrap,
 						Labels:    []string{"Default", "Material"},
 						Selected:  pick.Get(),
 						OnSelect:  func(i int) { pick.Set(i) },
@@ -507,6 +509,7 @@ func lessonTransitions() Lesson {
 							OnTap: func() { alert.Set(!alert.Get()) },
 						},
 						components.SegmentedControl{
+							Style:     segWrap,
 							Labels:    []string{"Snap", "250 ms", "800 ms"},
 							Selected:  pace.Get(),
 							OnSelect:  func(i int) { pace.Set(i) },
