@@ -657,7 +657,13 @@ const GrMob = (() => {
         // createElement plants the same default for nodes with no Style at
         // all, and the totality rule above means this function must restate
         // it here or an update-style patch would clear it.
-        if (style.Gap || style.JustifyContent || alignItems || style.FlexDirection || STACK_CONTAINERS.has(nodeType)) {
+        // RowGap/ColumnGap promote a box exactly as Gap does — `gap` IS the
+        // two of them, so a node setting one has asked for the same spacing
+        // by another name. Only reachable for a node type outside
+        // STACK_CONTAINERS (a TabView, say), which is already flex here;
+        // htmlout's styleValue makes the same call for every type.
+        if (style.Gap || style.RowGap || style.ColumnGap || style.JustifyContent ||
+            alignItems || style.FlexDirection || STACK_CONTAINERS.has(nodeType)) {
             out.display = "flex";
             out.flexDirection = dir;
         } else {

@@ -962,12 +962,30 @@ test("the previously unread Style fields reach the element", () => {
     assert.equal(s.animation, "bounce 2s infinite");
 });
 
-// None of those promotes a plain Box to a flex container: flex-wrap and the
-// axis gaps only mean anything once the box already is one, so promoting it
-// for them alone would change the layout to no purpose.
-test("flex-wrap and the axis gaps do not create a flex container", () => {
-    const { at } = mount([{ Type: "Text", Props: { content: "x" }, Style: { FlexWrap: "wrap", RowGap: 4 } }]);
+// flex-wrap does not promote a non-container to a flex container: it means
+// nothing until the box already is one, so promoting it for that alone would
+// change the layout to no purpose.
+test("flex-wrap does not create a flex container", () => {
+    const { at } = mount([{ Type: "Text", Props: { content: "x" }, Style: { FlexWrap: "wrap" } }]);
     assert.equal(at(0).style.display, "");
+});
+
+// The axis gaps do promote, because `gap` IS `row-gap` plus `column-gap`: a
+// node that sets one of them has asked for the same spacing Gap asks for, by
+// another name, and needs the same flex container to get it. Every
+// STACK_CONTAINERS type is flex here already, so this is only reachable on a
+// node outside that set — but htmlout's styleValue has no such default and
+// makes the same call for every type, so the rule is stated in one place and
+// pinned on both.
+test("an axis gap creates a flex container", () => {
+    const { at } = mount([
+        { Type: "Text", Props: { content: "x" }, Style: { RowGap: 4 } },
+        { Type: "Text", Props: { content: "y" }, Style: { ColumnGap: 4 } },
+    ]);
+    assert.equal(at(0).style.display, "flex");
+    assert.equal(at(0).style.rowGap, "4px");
+    assert.equal(at(1).style.display, "flex");
+    assert.equal(at(1).style.columnGap, "4px");
 });
 
 // core.Spacer(n) is n x n on both natives (Compose Spacer(Modifier.size),

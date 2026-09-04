@@ -46,8 +46,8 @@ difference is structural rather than an oversight:
 
 | group | Android | iOS | WASM DOM | `htmlout` |
 |---|---|---|---|---|
-| typography, color, box model, borders, `Shadow`, `Gap`, `Justify`, `AlignItems`, `Transition`, accessibility, `Disabled` | yes | yes | yes | yes |
-| `Position` + `Top`/`Right`/`Bottom`/`Left`/`ZIndex`, `MinWidth`/`MaxWidth`/`MinHeight`/`MaxHeight`, `Overflow`, `WhiteSpace`, `FlexWrap`, `AlignSelf`, `FlexBasis`, `FlexShrink`, `RowGap`/`ColumnGap`, `FlexDirection` | — | — | yes | yes |
+| typography, color, box model, borders, `Shadow`, `Gap`, `RowGap`/`ColumnGap`, `Justify`, `AlignItems`, `FlexWrap`, `Transition`, accessibility, `Disabled` | yes | yes | yes | yes |
+| `Position` + `Top`/`Right`/`Bottom`/`Left`/`ZIndex`, `MinWidth`/`MaxWidth`/`MinHeight`/`MaxHeight`, `Overflow`, `WhiteSpace`, `AlignSelf`, `FlexBasis`, `FlexShrink`, `FlexDirection` | — | — | yes | yes |
 | `HoverStyle`, `FocusStyle`, `PseudoStates` | — | — | — | — |
 
 The second row is CSS the natives have no direct equivalent for — Compose and
@@ -56,6 +56,15 @@ placement model — so a layout that leans on it will not look the same on
 device. The third row merges correctly on `Style` and is read by nothing: an
 inline style cannot express a pseudo-state, so the web targets need a
 generated stylesheet, not another declaration.
+
+`RowGap` and `ColumnGap` moved up into the first row once the natives learned
+to read them, and `FlexWrap` with them: both are things a stack can express
+(a Compose `Arrangement.spacedBy`, a SwiftUI stack `spacing`, a `FlowRow` /
+wrapping `Layout`), unlike the out-of-flow placement the rest of the second
+row asks for. They mean on every target what they mean in CSS — the axis
+longhand wins over the isotropic `Gap`, and `row-gap` is the space *between
+rows*, so it is a vertical stack's spacing and a wrapping row's line
+spacing.
 
 `Padding` and `Margin` carry a `Horizontal`/`Vertical` pair alongside the four
 sides (`core.PaddingHorizontal(16)`). A side left at zero takes its axis's

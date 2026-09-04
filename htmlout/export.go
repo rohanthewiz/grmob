@@ -562,7 +562,15 @@ func styleValue(s *core.Style, nodeType string) string {
 			alignItems = CrossAxisAlignFor(string(s.Align))
 		}
 	}
-	isFlex := s.Gap != 0 || s.JustifyContent != "" || alignItems != "" || s.FlexDirection != ""
+	// The two gap longhands promote a box exactly as Gap does: `gap` IS
+	// `row-gap` plus `column-gap`, so a node that sets one of them has asked
+	// for the same spacing by another name and needs the same flex container
+	// to get it. They were left out while both were web-only decorations;
+	// once the natives learned to read them as their stacks' spacing,
+	// omitting them here meant core.RowGap(8) on a Column spaced the children
+	// on a phone and emitted an inert `row-gap` into a block-flow div.
+	isFlex := s.Gap != 0 || s.RowGap != 0 || s.ColumnGap != 0 ||
+		s.JustifyContent != "" || alignItems != "" || s.FlexDirection != ""
 	if isFlex {
 		// inline-flex is the one CSS spelling that keeps both halves when a
 		// Display: inline node is also a flex container: the inline level the
@@ -751,15 +759,19 @@ func styleValue(s *core.Style, nodeType string) string {
 	if s.ZIndex != 0 {
 		styles = append(styles, "z-index:"+strconv.Itoa(s.ZIndex))
 	}
-	// Flex container properties that are not part of the isFlex decision
-	// above. They are deliberately not in it: unlike Gap/JustifyContent/
-	// AlignItems, none of these turns a block-flow box into something
-	// meaningfully different on its own — flex-wrap and the axis gaps only
-	// have an effect once the box is already a flex container, so promoting a
-	// box for them alone would change its layout to no purpose.
+	// FlexWrap is not part of the isFlex decision above, and is deliberately
+	// not in it: unlike Gap and its two longhands, it asks for nothing on its
+	// own — flex-wrap only has an effect once the box is already a flex
+	// container, so promoting a box for it alone would change that box's
+	// layout to no purpose.
 	if s.FlexWrap != "" {
 		styles = append(styles, "flex-wrap:"+s.FlexWrap)
 	}
+	// The axis gaps, emitted after the `gap` shorthand the isFlex block
+	// writes so the cascade lets an axis value win over the isotropic one.
+	// (grmob-runtime.js reaches the same result the other way round: the
+	// CSSOM has no cascade within one assignment pass, so it resolves the two
+	// axes in JS and writes only the longhands.)
 	if s.RowGap != 0 {
 		styles = append(styles, fmt.Sprintf("row-gap:%gpx", s.RowGap))
 	}

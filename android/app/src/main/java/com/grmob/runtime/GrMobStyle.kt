@@ -52,6 +52,16 @@ data class GrMobStyle(
     val borderColor: Color?,
     val borderWidth: Float,
     val gap: Float,
+    /**
+     * core.RowGap / core.ColumnGap: the per-axis spacings. CSS `gap` IS
+     * `row-gap` plus `column-gap`, so these are not extra properties beside
+     * Gap but the two halves of it, and an axis value set explicitly wins
+     * over the isotropic one. Read through verticalGap/horizontalGap below
+     * rather than directly — a container knows its own axis and should ask
+     * for that axis's spacing, not pick between three fields itself.
+     */
+    val rowGap: Float,
+    val columnGap: Float,
     val justifyContent: String,
     val alignItems: String,
     val flexGrow: Float,
@@ -72,6 +82,25 @@ data class GrMobStyle(
     /** This node's property-change animation spec (callers gate on transitionMs > 0). */
     fun <T> transitionTween() = tween<T>(transitionMs, easing = transitionEasing)
 
+    /**
+     * The spacing between items stacked along one axis, resolving the CSS
+     * shorthand the way a browser does: the axis longhand when it is set,
+     * the isotropic Gap otherwise.
+     *
+     *   Column / List / Scroll  ── stack vertically ──▶ verticalGap   (RowGap)
+     *   Row                     ── stack horizontally ▶ horizontalGap (ColumnGap)
+     *   FlowRow (wrapping Row)  ── both: items along horizontalGap,
+     *                              wrapped lines apart by verticalGap
+     *
+     * Named for the axis they space along rather than for the CSS property
+     * they come from, because `row-gap` spaces items *vertically* (it is the
+     * gap between rows) and reading the field name as the direction is the
+     * mistake this pair exists to make impossible.
+     */
+    val verticalGap: Float get() = if (rowGap != 0f) rowGap else gap
+
+    val horizontalGap: Float get() = if (columnGap != 0f) columnGap else gap
+
     companion object {
         fun parse(obj: JSONObject?): GrMobStyle? {
             if (obj == null) return null
@@ -91,6 +120,8 @@ data class GrMobStyle(
                 borderColor = parseColor(obj.optString("BorderColor")),
                 borderWidth = obj.optDouble("BorderWidth", 0.0).toFloat(),
                 gap = obj.optDouble("Gap", 0.0).toFloat(),
+                rowGap = obj.optDouble("RowGap", 0.0).toFloat(),
+                columnGap = obj.optDouble("ColumnGap", 0.0).toFloat(),
                 justifyContent = obj.optString("JustifyContent"),
                 alignItems = obj.optString("AlignItems"),
                 flexGrow = obj.optDouble("FlexGrow", 0.0).toFloat(),

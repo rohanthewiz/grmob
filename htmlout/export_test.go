@@ -900,14 +900,59 @@ func TestPreviouslyUnreadStyleFieldsAreEmitted(t *testing.T) {
 	}
 }
 
-// None of the properties above turns a block-flow box into a flex container on
-// its own — flex-wrap and the axis gaps only mean anything once the box already
-// is one — so promoting a box for them alone would change its layout to no
-// purpose. Only Gap, JustifyContent, AlignItems and FlexDirection do that.
-func TestSecondaryFlexPropsDoNotCreateAFlexContainer(t *testing.T) {
-	n := &core.Node{Type: "Box", Style: &core.Style{FlexWrap: "wrap", RowGap: 4}}
+// FlexWrap does not turn a block-flow box into a flex container on its own —
+// it means nothing until the box already is one — so promoting a box for it
+// alone would change that box's layout to no purpose.
+func TestFlexWrapAloneDoesNotCreateAFlexContainer(t *testing.T) {
+	n := &core.Node{Type: "Box", Style: &core.Style{FlexWrap: "wrap"}}
 	if out := ExportHTML(n); strings.Contains(out, "display:flex") {
-		t.Fatalf("flex-wrap/row-gap alone must not promote a box:\n%s", out)
+		t.Fatalf("flex-wrap alone must not promote a box:\n%s", out)
+	}
+}
+
+// The two axis gaps do promote, because `gap` IS `row-gap` plus `column-gap`:
+// a node that sets one of them has asked for the same spacing Gap asks for,
+// by another name, and needs the same flex container to get it.
+//
+// This used to be grouped with FlexWrap above and pinned the other way. What
+// changed is not the CSS but the other targets: both natives now read the
+// longhands as their stacks' spacing (GrMobStyle's verticalGap/horizontalGap),
+// so a Column carrying RowGap alone spaced its children on a phone while this
+// exporter emitted an inert `row-gap` into a block-flow div.
+func TestAxisGapsCreateAFlexContainer(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		s    core.Style
+		want string
+	}{
+		{"row-gap", core.Style{RowGap: 4}, "row-gap:4px"},
+		{"column-gap", core.Style{ColumnGap: 4}, "column-gap:4px"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			style := tc.s
+			out := ExportHTML(&core.Node{Type: "Column", Style: &style})
+			if !strings.Contains(out, "display:flex") {
+				t.Errorf("%s alone must promote the box, or the declaration is inert:\n%s", tc.name, out)
+			}
+			if !strings.Contains(out, tc.want) {
+				t.Errorf("missing %q:\n%s", tc.want, out)
+			}
+		})
+	}
+}
+
+// An axis gap set alongside Gap wins, which the cascade delivers as long as
+// the longhands are written after the shorthand. Order is the whole content
+// of this check — both declarations are present either way.
+func TestAxisGapIsWrittenAfterTheGapShorthand(t *testing.T) {
+	n := &core.Node{Type: "Column", Style: &core.Style{Gap: 10, RowGap: 4}}
+	out := ExportHTML(n)
+	gap, row := strings.Index(out, "gap:10px"), strings.Index(out, "row-gap:4px")
+	if gap < 0 || row < 0 {
+		t.Fatalf("expected both gap:10px and row-gap:4px:\n%s", out)
+	}
+	if row < gap {
+		t.Errorf("row-gap is declared before gap, so the shorthand overrides it:\n%s", out)
 	}
 }
 

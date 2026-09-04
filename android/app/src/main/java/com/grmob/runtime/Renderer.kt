@@ -917,9 +917,11 @@ private fun GrMobRow(node: GrMobNode, extra: Modifier) {
     // width is left, so the first chip that no longer fits has its label
     // broken mid-word and everything after it gets zero width. FlowRow is
     // Compose's wrapping row. Its scope extends RowScope, so RowChildren and
-    // the weight modifier it applies work unchanged; Gap becomes both the
-    // in-line spacing (via horizontalArrangement) and the spacing between
-    // wrapped lines. Cross-axis alignment within a line is not applied here:
+    // the weight modifier it applies work unchanged; the gap spaces both
+    // axes — items along the line (via horizontalArrangement, so
+    // ColumnGap-then-Gap) and the wrapped lines apart (verticalArrangement,
+    // so RowGap-then-Gap), which is what CSS gap does on a wrapping flex
+    // container. Cross-axis alignment within a line is not applied here:
     // FlowRow at this foundation version has no verticalAlignment slot, and
     // wrapped chip rows are single-height in practice.
     if (s?.flexWrap == "wrap") {
@@ -1057,7 +1059,16 @@ private fun ColumnScope.ColumnChildren(node: GrMobNode, growMinHeight: Dp? = nul
 private fun GrMobScroll(node: GrMobNode, extra: Modifier) {
     BoxWithConstraints(node.style.boxModifier(extra)) {
         val viewport = if (constraints.hasBoundedHeight) maxHeight else null
-        Column(Modifier.verticalScroll(rememberScrollState())) {
+        // packedVertically, not a bare Column: a Scroll is a flex column on
+        // both web targets (it is in the runtime's STACK_CONTAINERS and
+        // htmlout emits gap for it), so core.Gap on a Scroll spaced its
+        // children in the browser and silently did nothing here. No
+        // justify-content dispatch, because a scrolling axis has no leftover
+        // space to distribute — the content defines the length.
+        Column(
+            Modifier.verticalScroll(rememberScrollState()),
+            verticalArrangement = packedVertically(node.style),
+        ) {
             ColumnChildren(node, growMinHeight = viewport)
         }
     }
@@ -1247,7 +1258,8 @@ private fun flattenFragments(children: List<GrMobNode>): List<GrMobNode> {
  * to the start, which is a rendering and not an abstention.
  *
  * Known divergence, deliberately left alone: the five distributing
- * arrangements drop Style.Gap. CSS treats gap as a minimum that
+ * arrangements drop the container's gap (Style.Gap and its RowGap/ColumnGap
+ * longhands alike). CSS treats gap as a minimum that
  * justify-content then adds to, and the iOS solver does the same (it carries
  * `spacing` separately from `justify`), but Compose's Arrangement.Center and
  * friends take no spacing argument, so a Row with both a Gap and a
@@ -1289,10 +1301,10 @@ private fun verticalArrangement(s: GrMobStyle?): Arrangement.Vertical =
  * change only one of them.
  */
 private fun packedHorizontally(s: GrMobStyle?): Arrangement.Horizontal =
-    if ((s?.gap ?: 0f) > 0f) Arrangement.spacedBy(s!!.gap.dp) else Arrangement.Start
+    if ((s?.horizontalGap ?: 0f) > 0f) Arrangement.spacedBy(s!!.horizontalGap.dp) else Arrangement.Start
 
 private fun packedVertically(s: GrMobStyle?): Arrangement.Vertical =
-    if ((s?.gap ?: 0f) > 0f) Arrangement.spacedBy(s!!.gap.dp) else Arrangement.Top
+    if ((s?.verticalGap ?: 0f) > 0f) Arrangement.spacedBy(s!!.verticalGap.dp) else Arrangement.Top
 
 // ---------------------------------------------------------------------------
 // Composite components

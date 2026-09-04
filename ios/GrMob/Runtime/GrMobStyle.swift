@@ -37,6 +37,14 @@ struct GrMobStyle: Equatable {
     var borderColor: Color?
     var borderWidth: CGFloat = 0
     var gap: CGFloat = 0
+    /// core.RowGap / core.ColumnGap: the per-axis spacings. CSS `gap` IS
+    /// `row-gap` plus `column-gap`, so these are not extra properties beside
+    /// Gap but the two halves of it, and an axis value set explicitly wins
+    /// over the isotropic one. Read through verticalGap/horizontalGap below
+    /// rather than directly — a container knows its own axis and should ask
+    /// for that axis's spacing, not pick between three fields itself.
+    var rowGap: CGFloat = 0
+    var columnGap: CGFloat = 0
     var justifyContent: String = ""
     var alignItems: String = ""
     var flexGrow: CGFloat = 0
@@ -49,6 +57,23 @@ struct GrMobStyle: Equatable {
     /// Platform disabled state; see Go's core.Style.Disabled.
     var disabled: Bool = false
     var transition: String = ""
+
+    /// The spacing between items stacked along one axis, resolving the CSS
+    /// shorthand the way a browser does: the axis longhand when it is set,
+    /// the isotropic Gap otherwise.
+    ///
+    ///     Column / List / Scroll  ── stack vertically ──▶ verticalGap   (RowGap)
+    ///     Row                     ── stack horizontally ▶ horizontalGap (ColumnGap)
+    ///     wrapping Row            ── both: items along horizontalGap,
+    ///                                wrapped lines apart by verticalGap
+    ///
+    /// Named for the axis they space along rather than for the CSS property
+    /// they come from, because `row-gap` spaces items *vertically* (it is the
+    /// gap between rows) and reading the field name as the direction is the
+    /// mistake this pair exists to make impossible.
+    var verticalGap: CGFloat { rowGap != 0 ? rowGap : gap }
+
+    var horizontalGap: CGFloat { columnGap != 0 ? columnGap : gap }
 
     /// The Go Transition declaration as a SwiftUI Animation, or nil when the
     /// node doesn't animate. Canonical Go form is "<ms>ms <easing>"
@@ -101,6 +126,8 @@ struct GrMobStyle: Equatable {
         s.borderColor = parseColor(str("BorderColor"))
         s.borderWidth = num("BorderWidth")
         s.gap = num("Gap")
+        s.rowGap = num("RowGap")
+        s.columnGap = num("ColumnGap")
         s.justifyContent = str("JustifyContent")
         s.alignItems = str("AlignItems")
         s.flexGrow = num("FlexGrow")

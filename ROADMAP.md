@@ -21,11 +21,13 @@
 - [x] WASM runtime (`grmob-runtime.js`) with event bridge
 
 ### 🧪 Layout & Styling
-- [x] `Row`, `Column`, `Gap`, `Align`, `Justify`
+- [x] `Row`, `Column`, `Gap`, `RowGap`/`ColumnGap`, `FlexWrap`, `Align`,
+      `Justify` — all four targets. The two gap longhands are the axis halves
+      of `Gap` and win over it where set, exactly as in CSS.
 - [x] `Position` (`Sticky`/`Absolute`/`Relative`/`Fixed`) with `Top`/`Right`/
       `Bottom`/`Left`/`ZIndex`, plus `MinWidth`/`MaxWidth`/`MinHeight`/
-      `MaxHeight`, `Overflow`, `WhiteSpace`, `FlexWrap`, `AlignSelf`,
-      `FlexBasis`, `FlexShrink`, `RowGap`/`ColumnGap` — **web targets only**
+      `MaxHeight`, `Overflow`, `WhiteSpace`, `AlignSelf`,
+      `FlexBasis`, `FlexShrink` — **web targets only**
       (WASM DOM and `htmlout`). Compose and SwiftUI have no direct equivalent
       for out-of-flow placement; a layout that depends on these will not look
       the same on device.

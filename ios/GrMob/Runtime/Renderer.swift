@@ -211,10 +211,13 @@ private struct GrMobRow: View {
         // shrinks proportionally, so a row of chips wider than the screen
         // squeezed every chip's label until it broke mid-word. The wrap
         // layout keeps each child at its ideal size and breaks lines instead;
-        // Gap serves as both the in-line and the between-line spacing, as it
-        // does in CSS and in the Android FlowRow.
+        // the gap spaces both axes — chips along a line by horizontalGap
+        // (ColumnGap, else Gap) and the lines apart by verticalGap (RowGap,
+        // else Gap), as CSS gap does on a wrapping flex container and as the
+        // Android FlowRow does with its two arrangements.
         if s?.flexWrap == "wrap" {
-            GrMobWrapLayout(spacing: s?.gap ?? 0) {
+            GrMobWrapLayout(spacing: s?.horizontalGap ?? 0,
+                            lineSpacing: s?.verticalGap ?? 0) {
                 FlexChildren(node: node, axis: .horizontal)
             }
             .grMobBox(s, grow: grow,
@@ -243,7 +246,12 @@ private struct GrMobRow: View {
 /// When everything fits on one line it hugs, the way a non-wrapping Row does,
 /// so switching FlexWrap on does not move a row that never needed to wrap.
 private struct GrMobWrapLayout: Layout {
+    /// Between two children on the same line. This is the only spacing the
+    /// solver sees, because it is the only one line breaking depends on.
     let spacing: CGFloat
+    /// Between two lines. Never reaches the solver — it changes the height
+    /// the lines occupy, not where they break.
+    let lineSpacing: CGFloat
 
     private var solver: GrMobWrapSolver { GrMobWrapSolver(spacing: spacing) }
 
@@ -275,7 +283,7 @@ private struct GrMobWrapLayout: Layout {
         // Two statements rather than one expression: the closure-plus-operator
         // chain is exactly the shape the Swift type checker times out on.
         let contentHeight: CGFloat = lines.map { lineHeight($0, sizes) }.reduce(0, +)
-        let lineGaps: CGFloat = spacing * CGFloat(max(lines.count - 1, 0))
+        let lineGaps: CGFloat = lineSpacing * CGFloat(max(lines.count - 1, 0))
         let height = contentHeight + lineGaps
         return CGSize(width: width, height: height)
     }
@@ -294,7 +302,7 @@ private struct GrMobWrapLayout: Layout {
                                   proposal: ProposedViewSize(sizes[i]))
                 x += sizes[i].width + spacing
             }
-            y += lineHeight(line, sizes) + spacing
+            y += lineHeight(line, sizes) + lineSpacing
         }
     }
 }
@@ -417,7 +425,12 @@ struct GrMobFlexStack<Content: View>: View {
     var body: some View {
         GrMobFlexLayout(
             axis: axis,
-            spacing: style?.gap ?? 0,
+            // The spacing along this stack's own axis: a vertical stack is
+            // spaced by RowGap (the gap *between rows*), a horizontal one by
+            // ColumnGap, each falling back to the isotropic Gap. See
+            // GrMobStyle.verticalGap.
+            spacing: axis == .vertical ? (style?.verticalGap ?? 0)
+                                       : (style?.horizontalGap ?? 0),
             justify: style?.justifyContent ?? "",
             // AlignItems governs cross-axis placement; crossAxisValue folds
             // in the DSL's simpler Align ("center"/"end") as the fallback,
@@ -578,7 +591,11 @@ private struct GrMobScroll: View {
     var body: some View {
         let stretch = columnStretches(crossAxisValue(node.style))
         ScrollView {
-            VStack(alignment: .leading, spacing: 0) {
+            // spacing, not a hard 0: a Scroll is a flex column on both web
+            // targets (the WASM runtime lists it in STACK_CONTAINERS and
+            // htmlout emits gap for it), so core.Gap on a Scroll spaced its
+            // children in the browser and was silently dropped here.
+            VStack(alignment: .leading, spacing: node.style?.verticalGap ?? 0) {
                 ForEach(node.children, id: \.viewID) { child in
                     let grows = (child.style?.flexGrow ?? 0) > 0
                     RenderNode(node: child, grow: GrMobGrow(
@@ -624,7 +641,7 @@ private struct GrMobList: View {
         let s = node.style
         let rows = flattenFragments(node.children)
         ScrollView {
-            LazyVStack(alignment: crossAlignmentH(s), spacing: CGFloat(s?.gap ?? 0)) {
+            LazyVStack(alignment: crossAlignmentH(s), spacing: s?.verticalGap ?? 0) {
                 // Cross-axis stretch, the same contract GrMobFlexStack
                 // implements for Row/Column. A lazy stack cannot be replaced
                 // by a custom Layout — laziness is the whole point of using
