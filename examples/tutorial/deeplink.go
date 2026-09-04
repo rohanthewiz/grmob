@@ -32,7 +32,9 @@ import (
 // which fires no hashchange. So a shared link resolves in one hop.
 
 // routeEvent is the name on both channels. The payload is one string field,
-// "lesson", carrying a lesson ID ("2.3") or "" for the contents screen.
+// "lesson", carrying a lesson ID ("2.3"), a chapter number ("2", which opens
+// the chapter's first lesson) or "" for the contents screen. Outbound it is
+// always a lesson ID: the app reports what is on screen, never a shorthand.
 const routeEvent = "route"
 
 // routeRecord is the hook-slot memory of useDeepLinks: whether this app's
@@ -89,16 +91,20 @@ func (t *tutorial) useDeepLinks(ctx *core.Context) {
 // lesson already on screen — a hashchange that changes nothing must not
 // discard the demo state of the lesson being read.
 func (t *tutorial) goTo(ctx *core.Context, id string) {
-	if id == t.current.Get() {
-		return
-	}
 	if id == "" {
-		t.current.Set("")
-		core.PopToRoot(ctx)
+		if t.current.Get() != "" {
+			t.current.Set("")
+			core.PopToRoot(ctx)
+		}
 		return
 	}
-	e, ok := lessonByID(id)
+	e, ok := resolveRoute(id)
 	if !ok {
+		return
+	}
+	// Compared after resolving, so that "3" while 3.1 is showing is the
+	// no-op it should be, not a rebuild of the frame being read.
+	if e.ID == t.current.Get() {
 		return
 	}
 	t.markVisited(e.ID)
@@ -143,13 +149,42 @@ func reportRoute(id string) {
 	core.SendSystemEvent(routeEvent, map[string]any{"lesson": id})
 }
 
-// lessonByID resolves a route's lesson ID against the flat index. Linear:
-// there are forty lessons and this runs once per link.
-func lessonByID(id string) (lessonEntry, bool) {
+// resolveRoute turns what a link names into a lesson. Two spellings are
+// accepted: a lesson ID ("2.3"), and a bare chapter number ("2"), which is
+// the chapter's first lesson — a link to a chapter is a link to where
+// reading it starts, and the tutorial has no chapter screen to land on
+// instead. Anything else (a chapter or lesson past the end, a stray string)
+// resolves to nothing and the caller ignores it.
+//
+// Linear scans: there are forty lessons and this runs once per link.
+func resolveRoute(id string) (lessonEntry, bool) {
 	for _, e := range flatLessons {
 		if e.ID == id {
 			return e, true
 		}
 	}
+	for _, e := range flatLessons {
+		if e.ChapterNum == chapterNumber(id) {
+			return e, true // the flat index is in reading order, so this is lesson N.1
+		}
+	}
 	return lessonEntry{}, false
+}
+
+// chapterNumber parses a bare chapter route ("3") as a 1-based chapter
+// number, or 0 for anything that is not one. Hand-rolled rather than
+// strconv.Atoi because Atoi accepts "+3", " 3" and "03", none of which is
+// an address the app ever reports, and a link should round-trip exactly.
+func chapterNumber(id string) int {
+	if id == "" || id[0] == '0' {
+		return 0
+	}
+	n := 0
+	for _, r := range id {
+		if r < '0' || r > '9' {
+			return 0
+		}
+		n = n*10 + int(r-'0')
+	}
+	return n
 }

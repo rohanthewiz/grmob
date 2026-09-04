@@ -59,7 +59,9 @@ have opened, and **Next** walks the whole curriculum in order.
 
 On the web, every lesson has an address: the page's hash is the lesson ID,
 so <https://rohanthewiz.github.io/grmob/#3.1> opens straight onto the
-`UseInterval` lesson, and the address bar follows you as you tap **Next**,
+`UseInterval` lesson. A bare chapter number works too —
+<https://rohanthewiz.github.io/grmob/#3> opens where chapter 3 starts. The
+address bar follows you as you tap **Next**,
 **Prev** and **‹ Contents** — the **Copy link** button in the header copies
 the current one. The app itself knows nothing about URLs. It speaks two
 generic channels (`examples/tutorial/deeplink.go`): a `"route"` host event

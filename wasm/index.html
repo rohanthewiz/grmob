@@ -176,7 +176,8 @@
         : source.then(r => r.arrayBuffer()).then(b => WebAssembly.instantiate(b, go.importObject));
 
     // --- Deep links -----------------------------------------------------------
-    // The URL's hash names a lesson: #2.3. The app knows nothing about URLs;
+    // The URL's hash names a lesson (#2.3) or a chapter (#3, which the app
+    // resolves to that chapter's first lesson). The app knows nothing about URLs;
     // it speaks two generic channels (examples/tutorial/deeplink.go) and this
     // page translates. Inbound, the hash goes to Go as a "route" host event —
     // at boot, once the app is mounted, and again on every hashchange (the
@@ -188,7 +189,7 @@
     // and doubling it in the browser history would make Back take two
     // presses per lesson.
     const lessonFromHash = () => {
-        const m = /^#(\d+\.\d+)$/.exec(location.hash);
+        const m = /^#(\d+(?:\.\d+)?)$/.exec(location.hash);
         return m ? m[1] : "";
     };
     const copy = document.getElementById("copylink");

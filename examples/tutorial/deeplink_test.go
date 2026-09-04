@@ -163,6 +163,37 @@ func TestRouteIgnoresUnknownAndCurrent(t *testing.T) {
 	assertNoConcerns(t)
 }
 
+// A chapter link is its first lesson (deeplink.go, resolveRoute).
+func TestChapterRouteOpensFirstLesson(t *testing.T) {
+	mgr, ctx := newAppWithContext(t)
+	tree(t, mgr)
+
+	route("3")
+	if !hasTextContaining(tree(t, mgr), "3.1  ") {
+		t.Fatal("route 3 should open lesson 3.1")
+	}
+	if d := core.StackDepth(ctx); d != 2 {
+		t.Fatalf("expected depth 2, got %d", d)
+	}
+
+	// The chapter spelling of the lesson already showing is a no-op: the
+	// demo's state survives.
+	toggleCheckbox(t, mgr, 0, true) // "Pause the count"
+	route("3")
+	if !hasTextContaining(tree(t, mgr), "Paused —") {
+		t.Fatal("re-routing to the current chapter must keep the lesson's state")
+	}
+
+	// Past the end, and the malformed spellings Atoi would have accepted.
+	for _, bad := range []string{"9", "0", "03", "+3", " 3", "3."} {
+		route(bad)
+		if !hasTextContaining(tree(t, mgr), "3.1  ") {
+			t.Fatalf("route %q should be ignored", bad)
+		}
+	}
+	assertNoConcerns(t)
+}
+
 // Subscriptions are process-wide; a closed app must let go of the channel
 // so the next app (a browser re-mount, the next test) is the only listener.
 func TestClosedAppStopsListening(t *testing.T) {
