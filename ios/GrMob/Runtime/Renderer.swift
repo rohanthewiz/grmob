@@ -75,12 +75,17 @@ struct RenderNode: View {
             case "GridRow": GrMobGridRow(node: node, base: nil)
 
             case "Row": GrMobRow(node: node, grow: grow)
-            case "Column", "Card": GrMobColumn(node: node, grow: grow) // Card = Column whose Go theme style carries the card look
+            // Card = Column whose Go theme style carries the card look. Box =
+            // Column with no theme base at all: core.Box is documented as one
+            // of the flex-style containers ("Row, Column, Card, Box, List
+            // share one argument contract"), differing from Column only in
+            // carrying no theme style, and both DOM targets stack its
+            // children — the WASM runtime lists it in STACK_CONTAINERS. This
+            // was a ZStack: two children drew on top of each other on device
+            // and side by side down the page in the browser. GrMobColumn
+            // attaches the tap and long-press gestures itself.
+            case "Column", "Card", "Box": GrMobColumn(node: node, grow: grow)
             case "List": GrMobList(node: node, grow: grow)
-            case "Box": ZStack(alignment: .topLeading) { PlainChildren(node: node) }
-                .grMobBox(node.style, grow: grow,
-                            onTap: node.stringProp("onClick"),
-                            onLongPress: node.stringProp("onLongPress"))
             case "Spacer": Color.clear.frame(width: CGFloat(node.intProp("size")), height: CGFloat(node.intProp("size")))
             case "Scroll": GrMobScroll(node: node, grow: grow)
             case "SafeArea":

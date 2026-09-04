@@ -133,9 +133,11 @@ func (p ProgressBar) Render(ctx *core.Context) *core.Node {
 		items = append(items, sp)
 	}
 
-	// The fill carries its own Height because a Compose Box and a SwiftUI
-	// ZStack both size to their content, and this one has none: without an
-	// explicit height it would be a zero-pixel line inside a correct track.
+	// The fill carries its own Height because a stack sizes to its content on
+	// both natives, and this one has none: without an explicit height it
+	// would be a zero-pixel line inside a correct track. (True of the Compose
+	// Box and SwiftUI ZStack a core.Box used to draw as, and equally true of
+	// the Column and flex stack it draws as now.)
 	items = append(items, core.Box(
 		core.Width(width),
 		core.Height(height),

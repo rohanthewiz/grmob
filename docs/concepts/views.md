@@ -32,7 +32,12 @@ core.Row(
 
 - `Row` / `Column` — horizontal / vertical flex stacks, themed base padding.
 - `Card` — a themed surface (background, radius, shadow).
-- `Box` — the unopinionated container: no theme base by design.
+- `Box` — the unopinionated container: a `Column` with no theme base. It
+  stacks its children vertically like one, on all four targets; it is not an
+  overlay. (It drew as a Compose `Box` / SwiftUI `ZStack` on the natives until
+  that was fixed, so two children landed on top of each other on device and
+  down the page in a browser.) Reach for it when you want a styled container
+  and none of the theme's opinions.
 - `List` — the virtualized sibling of `Column`: children are laid out lazily
   by the native renderer (Compose `LazyColumn`, SwiftUI `LazyVStack`), so a
   thousand-row feed composes only what is on screen. Use `Column` + `Scroll`

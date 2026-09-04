@@ -210,9 +210,19 @@ func Column(stylePropsAndChildren ...PropsAndChildren) View {
 	})
 }
 
+// Box is the unopinionated container: a Column with no theme base. It stacks
+// its children vertically, honors Gap/JustifyContent/AlignItems on the same
+// axes a Column does, and reads the Align cross-axis fallback the same way —
+// the only difference is that no theme style arrives with it, so nothing
+// insets or paints the box but the caller.
+//
+// It is not an overlay, on any target. Both natives used to draw it as one (a
+// Compose Box, a SwiftUI ZStack, each pinned to the top-start corner) while
+// the DOM targets stacked its children, so a Box with two children rendered
+// two different pictures. mobile/verify's
+// TestNativeBoxIsAVerticalStackNotAnOverlay pins the agreement.
 func Box(stylePropsAndChildren ...PropsAndChildren) View {
 	return ComponentFunc(func(ctx *Context) *Node {
-		// Box has no theme base by design: it is the unopinionated container.
 		return containerNode(ctx, "Box", Style{}, stylePropsAndChildren)
 	})
 }

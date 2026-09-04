@@ -184,6 +184,11 @@ stash), then `git stash pop`.
   `core.Box(Gap(4), Text, Text)` — so those two labels currently draw on top
   of each other on a phone. A container-semantics divergence rather than a gap
   bug; picking a side is a design call.
+
+  **Resolved later the same session** — see
+  `2026-0904-0822-box-overlay-divergence.md`. Box stacks vertically on all
+  four targets now: it shares Column's dispatch arm on both natives and joined
+  the align-fallback gate on both DOM targets.
 - **Android's five distributing arrangements still drop the gap.** Documented
   as deliberate, 0 live sites.
 - **`SafeArea` / `TabView` / `Modal` / `TextGrid` drop Gap on the natives.**

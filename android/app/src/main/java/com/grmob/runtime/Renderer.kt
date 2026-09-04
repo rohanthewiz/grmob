@@ -181,9 +181,16 @@ private fun RenderNodeContent(node: GrMobNode, extra: Modifier) {
         "GridRow" -> GrMobGridRow(node, TextStyle.Default)
 
         "Row" -> GrMobRow(node, extra)
-        "Column", "Card" -> GrMobColumn(node, extra) // Card = Column whose Go theme style carries the card look
+        // Card = Column whose Go theme style carries the card look. Box =
+        // Column with no theme base at all: core.Box is documented as one of
+        // the flex-style containers ("Row, Column, Card, Box, List share one
+        // argument contract"), differing from Column only in carrying no
+        // theme style, and both DOM targets stack its children — the WASM
+        // runtime lists it in STACK_CONTAINERS. This was a Compose Box, which
+        // is a ZStack: two children drew on top of each other on device and
+        // side by side down the page in the browser. See GrMobColumn.
+        "Column", "Card", "Box" -> GrMobColumn(node, extra)
         "List" -> GrMobList(node, extra)
-        "Box" -> Box(animatedStyle(style).boxModifier(extra, gestureModifier(node))) { RenderChildren(node) }
         "Spacer" -> Spacer(Modifier.size(node.intProp("size").dp))
         "Scroll" -> GrMobScroll(node, extra)
 

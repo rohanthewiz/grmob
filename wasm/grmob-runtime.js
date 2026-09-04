@@ -576,6 +576,7 @@ const GrMob = (() => {
         return {
             Column: "column",
             Card: "column",
+            Box: "column",
             List: "column",
         }[nodeType] || "";
     }

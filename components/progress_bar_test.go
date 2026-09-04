@@ -43,7 +43,7 @@ func TestProgressBarStructureAndDefaults(t *testing.T) {
 	if f.Style.Width != "45%" {
 		t.Errorf("fill Width = %q, want %q", f.Style.Width, "45%")
 	}
-	// A Compose Box and a SwiftUI ZStack both size to content, and the fill
+	// A stack sizes to its content on both natives, and the fill
 	// has none: without its own height it is a zero-pixel line in a good track.
 	if f.Style.Height != "6px" {
 		t.Errorf("fill Height = %q, want to match the track", f.Style.Height)

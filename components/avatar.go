@@ -130,12 +130,17 @@ func (a Avatar) Render(ctx *core.Context) *core.Node {
 		ink = t.Colors.Background
 	}
 
-	// Row rather than Box for the disc: Box is a ZStack pinned to .topLeading
-	// on iOS and a Compose Box pinned to TopStart, neither of which centers a
-	// child. Row honors JustifyContent on the main axis and AlignItems on the
-	// cross axis on both platforms, which is what puts the initials in the
-	// middle. Padding(0) undoes the theme Row's screen-level padding, which
-	// would otherwise inflate the disc past Size.
+	// Row rather than Box for the disc. Originally forced: Box drew as a
+	// SwiftUI ZStack pinned to .topLeading and a Compose Box pinned to
+	// TopStart, neither of which centers a child. Box is a vertical stack on
+	// every target now, so it could centre one too — but a Row centres on the
+	// same two props with no theme padding to think about, and the markup is
+	// pinned by TestAvatarFallbackDisc, so the choice stands on its own merits
+	// rather than being rewritten for a constraint that no longer exists.
+	// Row honors JustifyContent on the main axis and AlignItems on the cross
+	// axis on both platforms, which is what puts the initials in the middle.
+	// Padding(0) undoes the theme Row's screen-level padding, which would
+	// otherwise inflate the disc past Size.
 	items := make([]core.PropsAndChildren, 0, len(shared)+5)
 	items = append(items,
 		core.Padding(0),

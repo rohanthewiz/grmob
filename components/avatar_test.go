@@ -50,8 +50,8 @@ func TestAvatarFallbackDisc(t *testing.T) {
 	n := Avatar{Name: "Ada Lovelace"}.Render(ctx)
 
 	if n.Type != "Row" {
-		t.Fatalf("root type = %q — the disc must be a Row: Box is pinned to the top-leading "+
-			"corner on both platforms and cannot centre its child", n.Type)
+		t.Fatalf("root type = %q — the disc must be a Row, which centres its child on both "+
+			"axes through Justify and AlignItems with no theme padding to undo", n.Type)
 	}
 	if n.Style.JustifyContent != core.JustifyCenter || n.Style.AlignItems != core.AlignItemsCenter {
 		t.Errorf("initials must be centred on both axes; got justify=%q align=%q",

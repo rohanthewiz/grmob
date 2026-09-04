@@ -89,10 +89,13 @@ func CrossAxisAligns() map[string]string {
 // alignFallbackAxes says which node types read the fallback at all, by naming
 // the flex axis each one stacks along. The set is exactly the containers the
 // natives read it for — Column, Card (a Column whose Go theme style carries
-// the card look, on every renderer) and List — and the value is *why* each is
-// in the set: stacking along the column axis is what makes the cross axis
-// horizontal, and the fallback has only ever applied to a horizontal cross
-// axis. Row is absent on purpose, everywhere: Align is a text-alignment
+// the card look, on every renderer), Box (the same, minus the theme style)
+// and List — and the value is *why* each is in the set: stacking along the
+// column axis is what makes the cross axis horizontal, and the fallback has
+// only ever applied to a horizontal cross axis. Box joined when the natives
+// stopped drawing it as an overlay (a Compose Box, a SwiftUI ZStack) and
+// started routing it through their Column path, which is where they read the
+// fallback. Row is absent on purpose, everywhere: Align is a text-alignment
 // concept and has never been read for a Row's vertical axis, on any target
 // (GrMobFlexStack consults it only when its axis is vertical, GrMobRow's
 // dispatch reads alignItems alone, and the two DOM renderers now decline it
@@ -110,6 +113,7 @@ func CrossAxisAligns() map[string]string {
 var alignFallbackAxes = map[string]string{
 	"Column": "column",
 	"Card":   "column",
+	"Box":    "column",
 	"List":   "column",
 }
 
