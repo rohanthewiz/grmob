@@ -164,7 +164,9 @@
 - [ ] State inspector overlay (similar to React DevTools)
 - [ ] Patch logging — a debug-mode trace of what each pass emitted
 - [ ] Visual patch viewer
-- [ ] Hot module replacement
+- [x] Hot module replacement — WASM only (`go run ./serve -dev`: watch,
+      rebuild, swap the module in place; the lesson and scroll survive, Go
+      state does not). Native has no equivalent; see docs/platforms/wasm.md
 
 ### 🧪 Testing & Perf
 - [ ] Benchmark diff/patch engine

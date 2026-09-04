@@ -173,24 +173,11 @@
     // DOM events back into Go. See docs/platforms/wasm.md for the contract
     // (GrMobWASM.* on the Go side; GrMobApplyPatches / GrMobSystemEvent on
     // this side, both defined by grmob-runtime.js).
-    const boot = document.getElementById("boot");
+    const bootEl = document.getElementById("boot");
     function fail(msg) {
-        boot.className = "boot err";
-        boot.textContent = "The tutorial failed to start.\n\n" + msg;
+        bootEl.className = "boot err";
+        bootEl.textContent = "The tutorial failed to start.\n\n" + msg;
     }
-
-    const go = new Go();
-    // instantiateStreaming needs the server to send application/wasm; fall
-    // back to a buffered instantiate where it does not (a bare file:// open,
-    // some ad-hoc servers) rather than showing an error for a MIME type.
-    const source = fetch("main.wasm").then(r => {
-        if (!r.ok) throw new Error(`main.wasm: HTTP ${r.status} (run ./build.sh first?)`);
-        return r;
-    });
-    const instantiate = ("instantiateStreaming" in WebAssembly)
-        ? WebAssembly.instantiateStreaming(source, go.importObject)
-            .catch(() => source.then(r => r.arrayBuffer()).then(b => WebAssembly.instantiate(b, go.importObject)))
-        : source.then(r => r.arrayBuffer()).then(b => WebAssembly.instantiate(b, go.importObject));
 
     // --- Deep links -----------------------------------------------------------
     // The URL's hash names a lesson (#2.3) or a chapter (#3, which the app
@@ -246,14 +233,46 @@
         }).catch(() => { /* clipboard blocked: the address bar still has the link */ });
     });
 
-    instantiate.then(result => {
-        go.run(result.instance);
+    // --- Boot ---------------------------------------------------------------
+    // One function rather than a run-once script, because it runs more than
+    // once: the dev server's hot reload (serve -dev) calls GrMobHost.boot again
+    // after stopping the previous module, and everything a fresh module needs
+    // — a fresh Go instance, the fetch, the mount, the route replay — is the
+    // same as at page load. It resolves to a handle on the running instance:
+    // `go` is the wasm_exec.js object driving it, `exited` the promise go.run
+    // returned, which settles when the module's main returns
+    // (GrMobWASM.Shutdown). Nothing in this page reads the handle; it exists
+    // for the hot-reload client, which has to know when the old module has
+    // actually stopped before it starts the next.
+    async function boot() {
+        const go = new Go();
+        // instantiateStreaming needs the server to send application/wasm; fall
+        // back to a buffered instantiate where it does not (a bare file:// open,
+        // some ad-hoc servers) rather than showing an error for a MIME type.
+        const source = fetch("main.wasm").then(r => {
+            if (!r.ok) throw new Error(`main.wasm: HTTP ${r.status} (run ./build.sh first?)`);
+            return r;
+        });
+        const result = await (("instantiateStreaming" in WebAssembly)
+            ? WebAssembly.instantiateStreaming(source, go.importObject)
+                .catch(() => source.then(r => r.arrayBuffer()).then(b => WebAssembly.instantiate(b, go.importObject)))
+            : source.then(r => r.arrayBuffer()).then(b => WebAssembly.instantiate(b, go.importObject)));
+        // Not awaited: the promise settles only when main returns, which for
+        // a module that is never hot-reloaded is never.
+        const exited = go.run(result.instance);
         const patch = window.GrMobWASM.RenderInitial();
         GrMob.mount(patch);
         // The app has just mounted on the contents; a hash present at boot
         // pushes the lesson on top of it, exactly as a row tap would.
         if (lessonFromHash()) sendRoute();
-    }).catch(err => {
+        return { go, exited };
+    }
+    // The handle the hot-reload client picks up: `running` is the handle
+    // promise of whichever boot is current. The client replaces it as it swaps
+    // modules; this page only ever starts the first.
+    window.GrMobHost = { boot, running: null };
+    window.GrMobHost.running = boot();
+    window.GrMobHost.running.catch(err => {
         console.error(err);
         fail(err && err.message ? err.message : String(err));
     });

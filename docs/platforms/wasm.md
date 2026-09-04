@@ -45,7 +45,7 @@ instantiated and turns into `history.replaceState`. Neither name is known to
 
 ## The host-page contract
 
-The Go side registers a `GrMobWASM` global with four functions:
+The Go side registers a `GrMobWASM` global with these functions:
 
 | Function | Purpose |
 |---|---|
@@ -53,6 +53,7 @@ The Go side registers a `GrMobWASM` global with four functions:
 | `GrMobWASM.ReceiveEvent(id, payloadJSON)` | Delivers a user event: `payloadJSON` is `{"value": ...}` and the value's type picks the callback kind |
 | `GrMobWASM.RenderAgain()` | Re-renders and returns the diff — the polling path |
 | `GrMobWASM.IsDirty()` | Whether state changed since the last render — poll this to know when `RenderAgain` is worth calling |
+| `GrMobWASM.Shutdown()` | Closes the manager (stopping every hook-owned timer) and lets `main` return, so the module exits and `go.run`'s promise settles. The hot-reload hook — see [Hot reload](#hot-reload) |
 
 And it looks for one global the page provides:
 
@@ -456,6 +457,84 @@ iOS view layer still needs a simulator.
 $ sh wasm/verify/run.sh
 ..................................
 ```
+
+## Hot reload
+
+`go run ./serve -dev` is the edit loop with the manual steps removed. It runs
+`./build.sh` at startup and again whenever a Go file in `./wasm`'s build graph
+changes, then swaps the new `main.wasm` into every open page **without a page
+load**. A compile error appears as an overlay on top of the still-running
+previous build and clears on the next good one. An edit to the host files
+(`index.html`, the runtime JS) is a plain page reload, because the runtime
+cannot be swapped under a mounted tree.
+
+```
+editor saves a .go file
+   │
+   ▼  (poll, 250 ms; the file set is `go list -deps ./wasm`, re-read after every build)
+serve -dev ──▶ ./build.sh ──▶ wasm/main.wasm
+   │                 │
+   │                 └─ error ──▶ SSE "buildfail" ──▶ overlay on the page
+   ▼
+SSE "reload" ──▶ page: GrMobWASM.Shutdown()     stop the old module, let it exit
+                       GrMobHost.boot()         fetch + instantiate the new one
+                       route + scroll replay    same lesson, same place
+```
+
+The pieces, and where each lives:
+
+| Piece | Where | Role |
+|---|---|---|
+| `GrMobWASM.Shutdown` | `wasm/main.go` | closes the `render.Manager` (which closes the context tree and every ticker on it) and releases `main`, so the runtime calls `wasmExit` and the old instance can be collected |
+| `GrMobHost.boot` | `wasm/index.html` | the page's own boot, made re-callable; resolves to `{go, exited}` so a caller can await the old module's actual exit before starting the next |
+| the watcher, the build, the event stream | `serve/dev.go` | zero dependencies — polling stats, `sh build.sh`, server-sent events |
+| the client | `serve/devclient.js` | injected at `</body>` only in dev; the shipped page never carries it |
+
+**What survives a swap is decided by where the state lives.** Go-side state —
+every `NewState` slot, the navigation stack, a half-typed input — is heap
+memory of the module being discarded, and a WebAssembly heap cannot be
+carried across two instances. What survives is state with a representation
+*outside* the module: the lesson, because the tutorial reports it to the page
+as a `"route"` system event and accepts it back as a host event
+([deep links](#the-host-page-contract) above), and the scroll offsets, because
+the client reads them off the `Scroll` nodes by path before the swap and
+writes them back after. An app that wants more of itself to survive a reload
+has exactly that tool, and nothing framework-specific: report it, accept it.
+
+**Why hook slots are not replayed.** The obvious next step — snapshot every
+context's slots as JSON before the swap and re-seed them positionally after —
+is the mechanism React Fast Refresh and Flutter's hot reload rest on, and it
+is deliberately not done here. Slots are addressed by position in call order;
+the edit that prompted the reload is precisely the kind of change that
+reorders, adds or retypes them, and a stale value landing in the wrong slot
+is the same class of failure debug mode's cursor-drift check exists to catch
+— an `interface conversion` panic, or worse, a wrong value that renders
+plausibly. Flutter can do it because it keeps the heap and patches code; React
+can because it re-runs hooks against a preserved fiber and resets on any
+signature change. Neither condition holds for a fresh WASM instance. A safe
+version would need each hook kind to declare a serializable form, a typed
+guard on restore, and a reset on any shape mismatch, which is a design in its
+own right; the route/host-event pair covers the case that matters for the
+tutorial today.
+
+**Why only WASM.** The natives are a `gomobile bind` product — a `.aar` or
+`.xcframework` linked into a host app. Replacing Go code in a running process
+would mean loading a second Go runtime into it (the c-shared build cannot be
+unloaded, and two runtimes in one process is unsupported), and iOS forbids
+loading code at all outside the simulator. The realistic native loop is
+rebuild-and-relaunch, and the framework's answer to "see the change now" is
+this target: the same `render.Manager`, the same app, in a browser. That is
+what the [same engine, same rules](#same-engine-same-rules) claim below is for.
+
+Two details of the swap are worth knowing if you copy the page. `wasm_exec.js`
+leaves the runtime's pending scheduler wake-up armed after exit, and when it
+fires on an exited program it throws into the console; the client disarms it
+(a private field, guarded, so a rename costs one console line per reload and
+nothing else). And `Shutdown` runs to completion inside the call that delivered
+it — on js/wasm goroutines are scheduled cooperatively inside `resume()`, so
+`main` has returned before the call comes back — but the client awaits
+`go.run`'s promise rather than relying on that, because it is a property of the
+scheduler, not of the contract.
 
 ## Permissions
 

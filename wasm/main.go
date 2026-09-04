@@ -5,6 +5,7 @@ package main
 import (
 	"encoding/json"
 	"log"
+	"sync"
 
 	"github.com/rohanthewiz/grmob/core"
 	// The mounted app. Point this dot-import at any package in examples/
@@ -20,6 +21,13 @@ var (
 )
 
 var manager *render.Manager
+
+// done holds main open for the life of the module. It is package-level, not a
+// local of main, because shutdown (below) is the one thing that closes it.
+var (
+	done     = make(chan struct{})
+	doneOnce sync.Once
+)
 
 func renderInitial(this js.Value, args []js.Value) any {
 	// Re-initialization (the page calling RenderInitial again): close the
@@ -135,6 +143,39 @@ func hostEvent(this js.Value, args []js.Value) any {
 	return nil
 }
 
+// shutdown is the hot-reload hook: the page calls it just before it
+// instantiates a newer main.wasm in the same document (serve -dev, see
+// docs/platforms/wasm.md "Hot reload"). Two things have to happen, in order.
+//
+// First the manager is closed, which closes the app's context tree and with
+// it every hook-owned resource — interval tickers, pending timeouts, the
+// tutorial's host-event subscription. Without this the old module's timers
+// would keep firing State.Set into a tree nothing is mounted on, and its
+// push listener would keep calling GrMobApplyPatches against the *new*
+// module's DOM with patch paths from a tree that no longer exists.
+//
+// Then main is released. Returning from main is how a Go program exits on
+// js/wasm: the runtime calls wasm_exec.js's wasmExit, which drops the
+// instance's memory and value tables and resolves the promise go.run
+// returned, so the page can await a clean stop and let the old instance be
+// garbage-collected. Simply overwriting the GrMobWASM global would have left
+// the old runtime parked in memory forever — every reload another ~20 MB.
+//
+// The whole sequence is synchronous from the page's point of view: on
+// js/wasm goroutines are scheduled cooperatively inside the resume() export
+// that delivered this call, so the main goroutine is run to its return before
+// the call comes back. The page still awaits go.run's promise rather than
+// relying on that, because it is a property of the scheduler, not of the
+// contract.
+func shutdown(this js.Value, args []js.Value) any {
+	if manager != nil {
+		manager.Close()
+		manager = nil
+	}
+	doneOnce.Do(func() { close(done) })
+	return nil
+}
+
 func registerCallbacks() {
 	js.Global().Set("GrMobWASM", map[string]any{
 		"RenderInitial": js.FuncOf(renderInitial),
@@ -142,6 +183,7 @@ func registerCallbacks() {
 		"ReceiveEvent":  js.FuncOf(receiveEvent),
 		"IsDirty":       js.FuncOf(isDirty),
 		"HostEvent":     js.FuncOf(hostEvent),
+		"Shutdown":      js.FuncOf(shutdown),
 	})
 }
 
@@ -172,11 +214,12 @@ func registerSystemEvents() {
 }
 
 func main() {
-	c := make(chan struct{})
 	registerCallbacks()
 	registerSystemEvents()
 	println("GrMob WASM ready.")
-	<-c
+	// Parked until Shutdown; see the note there on why returning matters.
+	<-done
+	println("GrMob WASM stopped.")
 }
 
 func TabsComponent(ctx *core.Context, activeTab core.State[string]) core.View {

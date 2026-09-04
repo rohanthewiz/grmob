@@ -30,8 +30,17 @@ Locally it is two commands from the repository root:
 go run ./serve      # http://localhost:8080, serving wasm/
 ```
 
+Or, while editing lessons, one:
+
+```bash
+go run ./serve -dev   # builds, serves, rebuilds on every save, hot-swaps the page
+```
+
 `build.sh` is exactly what the site workflow runs, so a local build and the
-deployed one are the same recipe. (The `wasm` package mounts whichever app
+deployed one are the same recipe (`-dev` runs the same script). Hot reload
+keeps the lesson you are on and its scroll position across a rebuild; see
+[WebAssembly — Hot reload](platforms/wasm.md#hot-reload) for what survives a
+swap and why. (The `wasm` package mounts whichever app
 its dot-import names — see [WebAssembly](platforms/wasm.md) for the
 host-page contract and how to switch apps.)
 
