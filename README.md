@@ -206,13 +206,17 @@ New to GrMob? Start with the [interactive tutorial](docs/tutorial-interactive.md
 every lesson is a live screen: the explanation, the code under discussion,
 and a "TRY IT" panel wired to real state and callbacks, from your first
 `Column` through theming, navigation, and error boundaries. It lives in
-[`examples/tutorial`](examples/tutorial) and runs in the browser with two
-commands:
+[`examples/tutorial`](examples/tutorial) and runs in the browser with one
+command:
 
 ```bash
-GOOS=js GOARCH=wasm go build -o wasm/main.wasm ./wasm
-(cd wasm && python3 -m http.server 8080)
+go run ./serve -dev   # builds, serves on :8080, rebuilds on every save, hot-swaps the page
 ```
+
+Edit a lesson and the browser swaps the new build in without a page load,
+keeping the lesson and scroll position; a compile error shows as an overlay
+until the next good build. (`./build.sh` then `go run ./serve` is the plain
+route, and exactly what the site workflow deploys.)
 
 Then [Building a Todo App](docs/tutorial-todo.md) is an in-depth,
 start-to-finish walkthrough: state and the rules of hooks, controlled inputs
@@ -280,7 +284,9 @@ is in [docs/platforms/native.md](docs/platforms/native.md).
 - Inspect any render's patch set directly: `reconcile.Diff` returns plain
   `[]Patch` values, and `RenderAgain` / `TriggerCallback` hand the same set
   back as JSON
-- The browser host polls `IsDirty` and applies minimal DOM patches, so nothing re-mounts
+- The browser host applies minimal DOM patches pushed from Go, so nothing re-mounts
+- Hot reload in the browser: `go run ./serve -dev` rebuilds on save and swaps
+  the module in place — see [docs/platforms/wasm.md](docs/platforms/wasm.md#hot-reload)
 
 ---
 
