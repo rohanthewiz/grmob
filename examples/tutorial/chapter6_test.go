@@ -236,7 +236,11 @@ func TestToastEmitsSystemEvents(t *testing.T) {
 	}
 	var events []event
 	core.SetSystemEventHandler(func(name string, data map[string]any) {
-		events = append(events, event{name, data})
+		// Toasts only: opening the lesson also reports a "route" event for
+		// the address bar (deeplink.go), which deeplink_test.go pins.
+		if name == "toast" {
+			events = append(events, event{name, data})
+		}
 	})
 	t.Cleanup(func() { core.SetSystemEventHandler(nil) })
 

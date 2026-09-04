@@ -55,6 +55,19 @@ It also ships natively: the package registers itself with the mobile bridge
 Progress is tracked in-app: the contents screen shows how many lessons you
 have opened, and **Next** walks the whole curriculum in order.
 
+## Deep links
+
+On the web, every lesson has an address: the page's hash is the lesson ID,
+so <https://rohanthewiz.github.io/grmob/#3.1> opens straight onto the
+`UseInterval` lesson, and the address bar follows you as you tap **Next**,
+**Prev** and **‹ Contents** — the **Copy link** button in the header copies
+the current one. The app itself knows nothing about URLs. It speaks two
+generic channels (`examples/tutorial/deeplink.go`): a `"route"` host event
+in, sent by the page at boot and on every `hashchange`, and a `"route"`
+system event out, sent on every navigation, which the page turns into
+`history.replaceState`. The natives drop the unknown system event and never
+send the host event, so the same package ships there untouched.
+
 ## How it stays honest
 
 Being an ordinary app in `examples/` is the design. The same package runs in

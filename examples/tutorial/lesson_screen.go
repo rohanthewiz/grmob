@@ -10,7 +10,7 @@ import (
 // lessonRoute builds the Navigator route for one lesson: the scaffold (top
 // bar, title, prev/next) around the lesson's own Body.
 //
-// Prev/next use core.Replace rather than Push: the reader walking a chapter
+// Prev/next open with replace=true (core.Replace rather than Push): the reader walking a chapter
 // should not build a back-stack ten lessons deep — the stack stays
 // [contents, current lesson], and the system back gesture always means
 // "back to contents". Replace also swaps the stack frame, and since a frame
@@ -41,7 +41,7 @@ func (t *tutorial) lessonTopBar(ctx *core.Context, e lessonEntry) core.View {
 		core.AlignItemsProp(core.AlignItemsCenter),
 		components.Button{
 			Label:    "‹ Contents",
-			OnTap:    func() { core.Pop(ctx) },
+			OnTap:    func() { t.toContents(ctx) },
 			Emphasis: components.EmphasisGhost,
 		},
 		core.Box(core.FlexGrow(1)), // slack, so the tag pins right
@@ -64,9 +64,9 @@ func lessonHeader(e lessonEntry) core.View {
 }
 
 // lessonNav is the footer: Prev when there is one, then Next — or, on the
-// last lesson, Finish, which pops back to the contents. Next marks the
-// destination visited exactly as a contents-row tap would, so progress is
-// identical whichever door a lesson is entered through.
+// last lesson, Finish, which pops back to the contents. Next goes through
+// the same open as a contents-row tap, so progress and the reported route
+// are identical whichever door a lesson is entered through.
 //
 // The absent Prev on the first lesson is a plain Go nil, not core.If: a
 // false If still leaves an empty Fragment child for the row to space
@@ -80,10 +80,7 @@ func (t *tutorial) lessonNav(ctx *core.Context, e lessonEntry) core.View {
 		prev = components.Button{
 			Label:    "‹ Prev",
 			Emphasis: components.EmphasisOutlined,
-			OnTap: func() {
-				t.markVisited(target.ID)
-				core.Replace(ctx, t.lessonRoute(target.Index))
-			},
+			OnTap:    func() { t.open(ctx, target.Index, true) },
 		}
 	}
 
@@ -92,16 +89,13 @@ func (t *tutorial) lessonNav(ctx *core.Context, e lessonEntry) core.View {
 		target := flatLessons[e.Index+1]
 		next = components.Button{
 			Label: "Next ›",
-			OnTap: func() {
-				t.markVisited(target.ID)
-				core.Replace(ctx, t.lessonRoute(target.Index))
-			},
+			OnTap: func() { t.open(ctx, target.Index, true) },
 		}
 	} else {
 		next = components.Button{
 			Label:   "Finish ✓",
 			Variant: components.VariantSuccess,
-			OnTap:   func() { core.Pop(ctx) },
+			OnTap:   func() { t.toContents(ctx) },
 		}
 	}
 

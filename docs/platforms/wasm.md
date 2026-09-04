@@ -34,6 +34,15 @@ fixed-height screen the page adds the rule itself
 auto }`), which is what makes the node the viewport the natives make of it.
 A hand-rolled host that constrains the app's height needs the same rule.
 
+The same page shows how an app and its host can share vocabulary the
+framework does not define: the tutorial's deep links are a `"route"` host
+event in (`GrMobWASM.HostEvent("route", {"lesson": "2.3"})`, sent at boot
+and on `hashchange`) and a `"route"` system event out, which the page
+catches by wrapping the runtime's `GrMobSystemEvent` before the module is
+instantiated and turns into `history.replaceState`. Neither name is known to
+`grmob-runtime.js` or to the natives, which is the point — see
+`examples/tutorial/deeplink.go`.
+
 ## The host-page contract
 
 The Go side registers a `GrMobWASM` global with four functions:

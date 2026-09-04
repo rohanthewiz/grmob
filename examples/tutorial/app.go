@@ -49,6 +49,13 @@ type tutorial struct {
 	// "completed" is deliberate for now: there is nothing to grade, and a
 	// completion quiz is a later phase's concern.
 	visited core.State[map[string]bool]
+	// current is the lesson ID on screen, or "" on the contents. It exists
+	// for deep links (deeplink.go): the inbound route handler needs to know
+	// whether to Push or Replace, and whether the link names the lesson
+	// already showing. Written only by the navigation doors — open,
+	// toContents, goTo — so it is always the stack's top frame by another
+	// name.
+	current core.State[string]
 }
 
 // App is the root view: a Navigator whose initial route is the table of
@@ -65,7 +72,11 @@ func App(ctx *core.Context) core.View {
 	sctx := ctx.Scope("tutorial-session")
 	t := &tutorial{
 		visited: core.NewState(sctx, map[string]bool{}),
+		current: core.NewState(sctx, ""),
 	}
+	// Same scope, for the same reason: the route handler moves frames, so
+	// it must outlive them.
+	t.useDeepLinks(sctx)
 	return core.Navigator(t.Home)
 }
 

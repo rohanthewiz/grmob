@@ -16,14 +16,14 @@
     --bg: #14161a; --panel: #1c1f26; --edge: #2c313c;
     --fg: #d8dde6; --dim: #8b93a3; --accent: #63b3ed;
     --err-bg: #3b1f24; --err-edge: #a33c4b; --err-fg: #ffb4bd;
-    --bezel: #0b0c0f;
+    --ok: #7ec699; --bezel: #0b0c0f;
   }
   @media (prefers-color-scheme: light) {
     :root {
       --bg: #f5f6f8; --panel: #ffffff; --edge: #d7dbe2;
       --fg: #22262e; --dim: #667085; --accent: #2b6cb0;
       --err-bg: #fdeef0; --err-edge: #d3546a; --err-fg: #9b1c32;
-      --bezel: #1c1f26;
+      --ok: #2f855a; --bezel: #1c1f26;
     }
   }
   * { box-sizing: border-box; }
@@ -46,6 +46,12 @@
   header .spacer { flex: 1; }
   header a { color: var(--accent); text-decoration: none; font-size: .85rem; }
   header a:hover { text-decoration: underline; }
+  header .copylink {
+    font: inherit; font-size: .8rem; cursor: pointer; color: var(--accent);
+    background: var(--bg); border: 1px solid var(--edge); border-radius: 6px; padding: .2rem .6rem;
+  }
+  header .copylink:hover { border-color: var(--accent); }
+  header .copylink.done { color: var(--ok); border-color: var(--ok); }
 
   /* --- stage: the app centred in a phone bezel ------------------------------
      A phone-width, phone-height viewport is what the tutorial was designed
@@ -119,6 +125,7 @@
   <h1><span>GrMob</span> · Interactive Tutorial</h1>
   <span class="meta">40 lessons · 8 chapters · every demo is live Go, running in your browser</span>
   <span class="spacer"></span>
+  <button id="copylink" class="copylink" type="button" title="Copy a link to this lesson" hidden>🔗 Copy link</button>
   <a href="https://github.com/rohanthewiz/grmob/tree/master/docs" target="_blank" rel="noopener">Docs</a>
   <a href="https://github.com/rohanthewiz/grmob/tree/master/examples/tutorial" target="_blank" rel="noopener">Source</a>
   <a href="https://github.com/rohanthewiz/grmob" target="_blank" rel="noopener">GitHub</a>
@@ -168,10 +175,66 @@
             .catch(() => source.then(r => r.arrayBuffer()).then(b => WebAssembly.instantiate(b, go.importObject)))
         : source.then(r => r.arrayBuffer()).then(b => WebAssembly.instantiate(b, go.importObject));
 
+    // --- Deep links -----------------------------------------------------------
+    // The URL's hash names a lesson: #2.3. The app knows nothing about URLs;
+    // it speaks two generic channels (examples/tutorial/deeplink.go) and this
+    // page translates. Inbound, the hash goes to Go as a "route" host event —
+    // at boot, once the app is mounted, and again on every hashchange (the
+    // back button, a pasted link, an edited address bar). Outbound, every
+    // navigation in the app arrives here as a "route" system event and the
+    // hash is rewritten with replaceState, which fires no hashchange, so the
+    // two directions never echo each other. Navigations are replaced rather
+    // than pushed on purpose: the app owns its own back stack (‹ Contents),
+    // and doubling it in the browser history would make Back take two
+    // presses per lesson.
+    const lessonFromHash = () => {
+        const m = /^#(\d+\.\d+)$/.exec(location.hash);
+        return m ? m[1] : "";
+    };
+    const copy = document.getElementById("copylink");
+    // The inbound hop is not echoed by the app (see deeplink.go), so the
+    // page updates its own chrome from the hash it is about to send.
+    const sendRoute = () => {
+        const host = window.GrMobWASM;
+        if (!host || typeof host.HostEvent !== "function") return;
+        const lesson = lessonFromHash();
+        showRoute(lesson);
+        host.HostEvent("route", JSON.stringify({ lesson }));
+    };
+    window.addEventListener("hashchange", sendRoute);
+
+    const showRoute = (lesson) => {
+        const url = location.pathname + location.search + (lesson ? "#" + lesson : "");
+        if (location.hash !== (lesson ? "#" + lesson : "")) history.replaceState(null, "", url);
+        copy.hidden = !lesson;
+        copy.textContent = "🔗 Copy link";
+        copy.classList.remove("done");
+    };
+    // Wrap, rather than edit, the runtime's sink: "route" is this page's
+    // vocabulary, not the runtime's; everything else flows through as before.
+    const runtimeSink = window.GrMobSystemEvent;
+    window.GrMobSystemEvent = (name, payloadJSON) => {
+        if (name === "route") {
+            showRoute(JSON.parse(payloadJSON).lesson || "");
+            return;
+        }
+        runtimeSink(name, payloadJSON);
+    };
+    copy.addEventListener("click", () => {
+        navigator.clipboard.writeText(location.href).then(() => {
+            copy.textContent = "✓ Copied";
+            copy.classList.add("done");
+            setTimeout(() => { copy.textContent = "🔗 Copy link"; copy.classList.remove("done"); }, 1500);
+        }).catch(() => { /* clipboard blocked: the address bar still has the link */ });
+    });
+
     instantiate.then(result => {
         go.run(result.instance);
         const patch = window.GrMobWASM.RenderInitial();
         GrMob.mount(patch);
+        // The app has just mounted on the contents; a hash present at boot
+        // pushes the lesson on top of it, exactly as a row tap would.
+        if (lessonFromHash()) sendRoute();
     }).catch(err => {
         console.error(err);
         fail(err && err.message ? err.message : String(err));

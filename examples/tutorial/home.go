@@ -120,12 +120,10 @@ func (t *tutorial) lessonRow(ctx *core.Context, e lessonEntry) core.View {
 		Subtitle: entry.Summary,
 		Trailing: trailing,
 		// Opening is what "visited" means, so the tap both records progress
-		// and navigates. Both happen in the handler — state writes never
-		// belong in render.
-		OnTap: func() {
-			t.markVisited(entry.ID)
-			core.Push(ctx, t.lessonRoute(entry.Index))
-		},
+		// and navigates (open does both, and reports the route to the host
+		// for the address bar). All of it happens in the handler — state
+		// writes never belong in render.
+		OnTap:              func() { t.open(ctx, entry.Index, false) },
 		AccessibilityLabel: fmt.Sprintf("Lesson %s, %s", entry.ID, entry.Title),
 		AccessibilityHint:  "Opens the lesson",
 	})
