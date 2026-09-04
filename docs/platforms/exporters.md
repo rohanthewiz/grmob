@@ -26,6 +26,12 @@ indented HTML. Properties worth relying on:
   so exported HTML also documents the event surface of a tree.
 - **Deterministic output**: stable attribute order and formatting, which is
   what makes string comparison between exports meaningful.
+- **Containers are stacks.** A `Row`, `Column`, `Card`, `Box`, `Scroll`,
+  `SafeArea` or `List` exports as a flex container along its own axis, whether
+  or not its `Style` asks — the same default the WASM runtime plants, from the
+  same table (`htmlout/stack.go`). Without it a container carrying nothing but
+  padding exported as a block-flow `<div>`, so its children ran down the page
+  here and across it on every other target.
 
 ### Testing with htmlout
 

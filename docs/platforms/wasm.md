@@ -132,6 +132,44 @@ means teaching the addressing scheme about nodes with no element. The
 divergence is named in `htmlout/tag.go` and pinned by the same test, so it
 reads as a decision rather than as drift.
 
+### Stack containers
+
+A `<div>` is block flow. Both natives have no such mode — a Compose
+`Row`/`Column` and a SwiftUI `HStack`/`VStack` are stacks by construction, and
+`Box`, `Card`, `Scroll`, `SafeArea` and `List` all route through one of them —
+so a DOM target either opts into the same default or diverges from the other
+two. Block flow runs inline children together on one line (`Text` is a
+`<span>`) and ignores `gap`, `justify-content` and `align-items` outright.
+
+`htmlout/stack.go` is the authority. `stackAxisFor` answers both halves of the
+question at once — whether a type stacks, and along which axis — so `Row` maps
+to `row` and `Column`, `Card`, `Box`, `Scroll`, `SafeArea` and `List` to
+`column`. A type outside the table becomes a flex container only if its own
+`Style` asks, which is what keeps a `Text` carrying `Align` in its ordinary
+text role from being turned into a container by its own alignment.
+
+`Modal`, `Spacer` and `TabView` are absent on purpose: `Modal` carries a
+fixed-overlay chassis that sets `display` itself and toggles it through the
+`visible` prop, `Spacer` is a sized void with no children, and `TabView` has
+never defaulted to flex on either web target — leaving it out keeps the two
+agreeing about it.
+
+Both DOM renderers read the table twice, and the second read is the
+non-obvious one. The first plants the default on the element as it is built
+(`createElement`, `renderNode`). The second restates it while serializing the
+`Style` (`styleFromGrMob`, `styleValue`), because those functions are *total*:
+an update-style patch carries the whole new `Style`, so a `display` they do
+not write is a `display` they erase. A runtime that read the table only when
+building would stack a container until its first style patch and then drop it
+into block flow. `TestRuntimeStackAxesMatchGo` compares the tables and
+`TestRuntimeAppliesTheStackDefault` pins both reads.
+
+`Fragment` and `Theme` are the one exemption, the same one the tag table
+makes: this runtime boxes them in real `<div>`s to keep positional patch
+addressing valid, and a box that were not a stack would swallow its parent's
+layout like any other block-flow div. `htmlout` emits no element for them at
+all, so its table has no such rows.
+
 ### Form controls
 
 Four Go node types share the `<input>` tag, so the runtime writes a `type`
@@ -230,8 +268,9 @@ neither can be wrong about a value it never interprets.
 
 `Style.Align`'s second role has a pair of tables of its own, and they closed
 the last alignment behavior the DOM pair did not share with the natives. When
-`AlignItems` is unset on a vertical-stacking container — `Column`, `Card`, or
-`List` — both natives fall back to `Align` for cross-axis placement
+`AlignItems` is unset on a vertical-stacking container — `Column`, `Card`,
+`Box`, `SafeArea` or `List` — both natives fall back to `Align` for
+cross-axis placement
 (`crossAxisValue` in `Renderer.swift`, the `alignItems.ifEmpty { align }`
 reads in `Renderer.kt`), and until these tables existed neither DOM target
 did: `Align: "center"` centered the children on device and only the *text* on
@@ -243,9 +282,11 @@ maps the four cross-axis `Alignment`s onto the `AlignItems` spellings
 (`start` → `flex-start`, and so on), because the fallback means "behave as if
 that `AlignItems` had been set" — its census holds the values to exactly
 `core.AlignItemsValues()`. `alignFallbackAxisFor` is the gate saying which
-node types consult the fallback at all: exactly the three containers the
-natives read it for, and pointedly not `Row`, whose vertical cross axis
-`Align` has never applied to on any target. `TestRuntimeCrossAxisAlignsMatchGo`
+node types consult the fallback at all: exactly the containers the natives
+read it for, and pointedly not `Row`, whose vertical cross axis `Align` has
+never applied to on any target. `Box` and `SafeArea` joined the gate when the
+natives stopped drawing them as overlays and started routing them through
+their `Column` path, which is where the fallback is read. `TestRuntimeCrossAxisAlignsMatchGo`
 and `TestRuntimeAlignFallbackAxesMatchGo` pin the runtime's copies, and a
 source pin holds `styleFromGrMob` to actually reading them, with `AlignItems`
 taking precedence.
@@ -308,3 +349,20 @@ run. A row's spans are rebuilt whole from its `runs` prop on every patch to
 that row and live outside the node tree (no `data-node-path`), so replacing
 them never disturbs positional addressing. Dim has no CSS spelling and is
 drawn as `opacity:0.6`; the same rules produce htmlout's export.
+
+White space is handled at three levels, and each says something different:
+
+| level | declaration | why |
+| --- | --- | --- |
+| grid | `white-space: normal` | overrides the `<pre>` default, so the newlines and indentation *between* row elements are formatting, not content |
+| row | `white-space: nowrap` | a code line or a terminal row is one line, and must not break between two runs |
+| run | `white-space: pre` | a run's own spaces are the only white space in a grid that means anything |
+
+Pushing the significance down to the run is what makes a grid indifferent to
+how the markup around it is laid out. `htmlout` re-indents its output for
+human readers, and a `white-space: pre` grid read that indentation as text —
+every row gained a trailing line break and the grid gained a blank line
+between each pair of rows. The exporter has one further wrinkle this runtime
+does not: its formatter discards text nodes that are entirely white space, so
+a run made only of spaces (an indent, the gap between two coloured tokens, a
+terminal's blank cells) is written as `&#32;` character references.

@@ -626,8 +626,15 @@ func TestDisplayInlineBecomesInlineFlexOnAFlexContainer(t *testing.T) {
 // A node the flex block never triggers on keeps the verbatim emission the
 // exporter has always produced — the resolution above is strictly about the
 // conflict, not a new opinion on Display.
+//
+// A Text and not a Column, as this used to be: every stack container is a
+// flex container now whether or not its Style asks (stackAxes), so a Column
+// can no longer be a non-flex node. Which makes the type the case needs one
+// outside that table — and Text is the honest choice anyway, since a node
+// carrying nothing but Display is not a container in spirit either.
 func TestDisplayStaysVerbatimOnNonFlexNodes(t *testing.T) {
-	n := &core.Node{Type: "Column", Style: &core.Style{Display: core.DisplayBlock}}
+	n := &core.Node{Type: "Text", Props: map[string]any{"content": "hi"},
+		Style: &core.Style{Display: core.DisplayBlock}}
 	out := ExportHTML(n)
 	if !strings.Contains(out, "display:block") {
 		t.Fatalf("missing display:block:\n%s", out)
@@ -903,8 +910,13 @@ func TestPreviouslyUnreadStyleFieldsAreEmitted(t *testing.T) {
 // FlexWrap does not turn a block-flow box into a flex container on its own —
 // it means nothing until the box already is one — so promoting a box for it
 // alone would change that box's layout to no purpose.
+//
+// A Text and not a Box: a Box is a stack container and so is flex before this
+// Style is read at all (stackAxes). The runtime's twin of this test uses a
+// Text for the same reason.
 func TestFlexWrapAloneDoesNotCreateAFlexContainer(t *testing.T) {
-	n := &core.Node{Type: "Box", Style: &core.Style{FlexWrap: "wrap"}}
+	n := &core.Node{Type: "Text", Props: map[string]any{"content": "hi"},
+		Style: &core.Style{FlexWrap: "wrap"}}
 	if out := ExportHTML(n); strings.Contains(out, "display:flex") {
 		t.Fatalf("flex-wrap alone must not promote a box:\n%s", out)
 	}

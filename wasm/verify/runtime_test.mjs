@@ -972,11 +972,9 @@ test("flex-wrap does not create a flex container", () => {
 
 // The axis gaps do promote, because `gap` IS `row-gap` plus `column-gap`: a
 // node that sets one of them has asked for the same spacing Gap asks for, by
-// another name, and needs the same flex container to get it. Every
-// STACK_CONTAINERS type is flex here already, so this is only reachable on a
-// node outside that set — but htmlout's styleValue has no such default and
-// makes the same call for every type, so the rule is stated in one place and
-// pinned on both.
+// another name, and needs the same flex container to get it. Every stack
+// container (stackAxisFor) is flex already on both DOM targets, so the rule
+// is only reachable on a node outside that table — a Text, as here.
 test("an axis gap creates a flex container", () => {
     const { at } = mount([
         { Type: "Text", Props: { content: "x" }, Style: { RowGap: 4 } },

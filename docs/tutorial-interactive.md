@@ -55,6 +55,34 @@ It also ships natively: the package registers itself with the mobile bridge
 Progress is tracked in-app: the contents screen shows how many lessons you
 have opened, and **Next** walks the whole curriculum in order.
 
+## Code blocks
+
+Every snippet in the tutorial is syntax-highlighted in
+[Darcula](https://plugins.jetbrains.com/plugin/12102-darcula-theme), so the
+colours match what a reader already sees in GoLand or IntelliJ.
+
+The lexer is `go/scanner` from the standard library
+(`examples/tutorial/highlight.go`) rather than a set of regular expressions:
+the snippets are real Go, so the only tokenizer guaranteed to agree with the
+reader's editor is the compiler's, and string literals, rune literals and
+block comments stop being special cases — a `//` inside a string is a string,
+and the scanner knows that without being told. It is lexical only, so it
+colours what a token *is* and never what it means; package qualifiers, struct
+field names and user-defined type names stay in the default ink, because a
+scanner cannot tell them from any other identifier.
+
+A snippet that does not lex cleanly is rendered unhighlighted rather than
+half-coloured — misleading colour is worse than none in a document teaching
+the syntax — and a test holds every snippet the tutorial ships to the clean
+path, so that fallback is proven unreached rather than merely believed to be.
+
+The block itself is a [`core.TextGrid`](concepts/views.md), the node type
+built for rows of styled runs. That is also what makes it fixed-pitch on every
+target, keeps a line from wrapping (a wrapped code line restarts at column
+zero, which reads as a new statement at the outermost indent), and preserves
+indentation without the non-breaking-space substitution a `Column` of `Text`
+needed.
+
 ## Deep links
 
 On the web, every lesson has an address: the page's hash is the lesson ID,

@@ -16,8 +16,9 @@
 // Structure: lesson.go defines the Lesson/Chapter model and the flattened
 // lesson index; home.go is the table of contents; lesson_screen.go is the
 // scaffold every lesson renders inside; widgets.go holds the tutorial's own
-// building blocks (prose, code blocks, demo panels); chapterN.go files hold
-// the content. Later chapters append to Chapters in lesson.go.
+// building blocks (prose, code blocks, demo panels) and highlight.go the
+// go/scanner-based syntax highlighting the code blocks use; chapterN.go files
+// hold the content. Later chapters append to Chapters in lesson.go.
 package tutorial
 
 import (

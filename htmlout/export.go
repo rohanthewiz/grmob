@@ -276,34 +276,93 @@ func renderContainer(b *element.Builder, node *core.Node, attrs []string) {
 // and its rows; see renderNode. The line height is explicit so an empty row
 // (a GridRow with no runs, which a <div> would collapse to nothing) still
 // takes one line, keeping every row on the cell grid it belongs to.
+//
+// # Where the white space is significant, and where it must not be
+//
+// The three levels each say something different, and the split is what makes
+// a grid survive being pretty-printed:
+//
+//	grid  white-space:normal   the <pre>'s own default is `pre`, and this
+//	                           overrides it, so the newlines and indentation
+//	                           the exporter puts *between* the row elements
+//	                           are formatting rather than content
+//	row   white-space:nowrap   a code line or a terminal row is one line; the
+//	                           row must not break between two runs. nowrap
+//	                           still collapses, so the line break the
+//	                           exporter leaves before each </div> disappears
+//	run   white-space:pre      (gridRunStyle) the run's own spaces are the
+//	                           only white space in a grid that means anything
+//
+// Written this way rather than left as one `white-space: pre` on the <pre>
+// because ExportHTML re-indents its output for human readers, and inside a
+// `white-space: pre` element that indentation is text: every row gained a
+// trailing line break and the grid gained a blank line between each pair of
+// rows. Confining the significance to the runs makes the grid indifferent to
+// how the markup around it is laid out — a property worth having whatever the
+// formatter does.
+//
+// The WASM runtime states the same three rules (its grid chassis in
+// styleFromGrMob, and applyGridRuns for the run), so the two DOM targets draw
+// a grid identically. It has no formatter of its own, so it does not need
+// them; it carries them so that it does not *differ*.
 const (
-	textGridChassis = "margin:0; line-height:1.2; white-space:pre; overflow-x:auto"
-	gridRowChassis  = "min-height:1.2em"
+	textGridChassis = "margin:0; line-height:1.2; white-space:normal; overflow-x:auto"
+	gridRowChassis  = "min-height:1.2em; white-space:nowrap"
 )
 
 // renderGridRow writes one row of a core.TextGrid: a <div> of <span> runs,
-// each span carrying only the declarations its run set, so the common case
-// (a run in the grid's own colours) is a bare span. The runs are the typed
-// slice core.TextGrid built; a hand-assembled node with some other shape
-// exports as an empty row rather than a guess.
+// each span carrying the run's white-space rule plus only the declarations
+// its run actually set, so a run in the grid's own colours is a span with one
+// declaration. The runs are the typed slice core.TextGrid built; a
+// hand-assembled node with some other shape exports as an empty row rather
+// than a guess.
 func renderGridRow(b *element.Builder, node *core.Node, attrs []string) {
 	runs, _ := node.Props["runs"].(core.GridRow)
 	e := b.Div(attrs...)
 	for _, run := range runs {
-		if decl := gridRunStyle(run); decl != "" {
-			b.Span("style", decl).TE(run.Text)
-		} else {
-			b.Span().TE(run.Text)
+		span := b.Span("style", gridRunStyle(run))
+		// A run made only of white space — an indent, the gap between two
+		// coloured tokens, a terminal's blank cells — has to be written as
+		// character references. The pretty-printer discards any text node
+		// that is nothing but white space (it cannot tell a run's spaces from
+		// its own indentation), and a `&#32;` is not white space to it while
+		// being exactly a space to the browser.
+		//
+		// Safe to write unescaped, and only here: the branch is entered only
+		// when every rune is white space, and spaceRefs emits nothing but
+		// digits inside `&#...;`, so no character that could open a tag or an
+		// entity can reach the output through it. Every run with a glyph in
+		// it still goes through TE.
+		if strings.TrimSpace(run.Text) == "" {
+			span.T(spaceRefs(run.Text))
+			continue
 		}
+		span.TE(run.Text)
 	}
 	e.R()
 }
 
-// gridRunStyle is a run's own declarations. The Grid* attributes map onto
+// spaceRefs rewrites a white-space-only string as numeric character
+// references, one per rune. Called only from renderGridRow, on text it has
+// already established is entirely white space.
+func spaceRefs(text string) string {
+	var b strings.Builder
+	for _, r := range text {
+		fmt.Fprintf(&b, "&#%d;", r)
+	}
+	return b.String()
+}
+
+// gridRunStyle is a run's declarations: the white-space rule every run
+// carries, then its own colours and attributes. The Grid* attributes map onto
 // CSS where CSS has a spelling and onto opacity for dim, which it does not;
 // underline and strike share text-decoration and are emitted together.
+//
+// white-space:pre is unconditional because the run is the only level of a
+// grid whose spaces are content — see textGridChassis for the other two, and
+// for why the significance is pushed down this far.
 func gridRunStyle(run core.GridRun) string {
-	var decl string
+	decl := "white-space:pre"
 	if run.Fg != "" {
 		decl = addDecl(decl, "color:"+run.Fg)
 	}
@@ -470,13 +529,19 @@ func addDecl(list, decl string) string {
 // a CSS declaration list ("" when nothing is set). The caller places it in a
 // style attribute; element handles the attribute-value escaping.
 //
-// nodeType is needed for Gap: CSS gap only has meaning on a flex/grid
-// container, and the main axis it spaces along is the node's own stacking
-// direction (Row lays out horizontally, every other container vertically) —
-// information that lives in the node type, not in Style.
+// nodeType is needed for two things Style alone cannot answer: which axis Gap
+// spaces along (CSS gap only has meaning on a flex/grid container, and the
+// main axis is the node's own stacking direction), and whether the node is a
+// stack container at all — see stackAxes.
+//
+// A nil Style is treated as an empty one rather than short-circuited, because
+// a stack container has a declaration list even with no Style: the whole
+// point of stackAxes is that the stacking is not something the author has to
+// ask for. Every other branch below reads the zero value and emits nothing,
+// so a non-container with no Style still returns "".
 func styleValue(s *core.Style, nodeType string) string {
 	if s == nil {
-		return ""
+		s = &core.Style{}
 	}
 	styles := []string{}
 	if s.TextColor != "" {
@@ -536,14 +601,21 @@ func styleValue(s *core.Style, nodeType string) string {
 	// ignores gap, justify-content and align-items entirely, so the container
 	// must be made flex for any of them to do anything.
 	//
-	// Only nodes that actually set one of these become flex containers;
-	// everything else keeps the block-flow output this exporter has always
-	// produced. The main axis defaults to the node's own stacking direction
-	// (Row horizontal, every other container vertical) and an explicit
-	// FlexDirection overrides it.
-	dir := "column"
-	if nodeType == "Row" {
-		dir = "row"
+	// A stack container is flex whether or not this Style asks for it, and
+	// every other node type becomes one only by setting one of these props.
+	// stackAxes is the table that draws that line, along with the axis each
+	// stack uses; the "" it returns for a non-container is what leaves a Text
+	// or a Button carrying a stray container prop in block flow unless it
+	// really asked otherwise.
+	//
+	// The axis: the node's own stacking direction, overridden by an explicit
+	// FlexDirection. "column" is the fallback for a non-container, which is
+	// reachable — a node outside the table that sets Gap still needs an axis
+	// to space along, and vertical is what this exporter has always used.
+	stackAxis := StackAxisFor(nodeType)
+	dir := stackAxis
+	if dir == "" {
+		dir = "column"
 	}
 	if s.FlexDirection != "" {
 		dir = string(s.FlexDirection)
@@ -569,7 +641,8 @@ func styleValue(s *core.Style, nodeType string) string {
 	// once the natives learned to read them as their stacks' spacing,
 	// omitting them here meant core.RowGap(8) on a Column spaced the children
 	// on a phone and emitted an inert `row-gap` into a block-flow div.
-	isFlex := s.Gap != 0 || s.RowGap != 0 || s.ColumnGap != 0 ||
+	isFlex := stackAxis != "" ||
+		s.Gap != 0 || s.RowGap != 0 || s.ColumnGap != 0 ||
 		s.JustifyContent != "" || alignItems != "" || s.FlexDirection != ""
 	if isFlex {
 		// inline-flex is the one CSS spelling that keeps both halves when a

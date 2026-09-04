@@ -155,6 +155,12 @@ independently).
   inline. Affects SafeArea no more than the rest — and note that both
   containers fixed here are now *more* consistent with the WASM runtime than
   htmlout is.
+
+  **Done next, same session** — see
+  `2026-0904-0903-block-flow-and-syntax-highlighting.md`. The axis and the
+  membership turned out to be one fact, so the fix is a sixth shared table
+  (`htmlout/stack.go`) rather than a flag, and the runtime's bare Set became a
+  pinnable lookup in the process.
 - **CameraView stays an overlay** on both natives, which is what it is for.
   Modal is one on Android for the same reason. Both are why the new pin checks
   the dispatch arm rather than the file.

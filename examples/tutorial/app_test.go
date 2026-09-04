@@ -68,11 +68,51 @@ func hasText(n *node, content string) bool {
 // hasTextContaining matches on substring — for labels assembled with
 // Sprintf, where pinning the whole string would make every wording tweak a
 // test edit.
+//
+// It reads the tutorial's two ways of putting words on a screen: a Text
+// node's content, and one row of a code block. Code blocks became
+// core.TextGrids when they gained syntax highlighting, so the text of a line
+// is no longer one string in one node — it is the row's runs concatenated,
+// and where the run boundaries fall depends on how Go tokenizes the line.
+// Several lessons print a live literal into their code block and assert on it
+// (chapter 4's button demo names the variant it built), and every one of
+// those assertions would otherwise have gone quietly vacuous: the substring
+// would simply stop being found, which is a passing negative check and a
+// failing positive one.
 func hasTextContaining(n *node, sub string) bool {
 	return findNode(n, func(n *node) bool {
-		s, ok := n.Props["content"].(string)
-		return ok && n.Type == "Text" && strings.Contains(s, sub)
+		if s, ok := n.Props["content"].(string); ok && n.Type == "Text" {
+			return strings.Contains(s, sub)
+		}
+		return n.Type == "GridRow" && strings.Contains(gridRowText(n), sub)
 	}) != nil
+}
+
+// gridRowText reassembles one core.TextGrid row from its runs.
+//
+// The runs arrive as they crossed the wire — core.GridRun's json tags, so the
+// glyphs are under "t" — because these tests read the marshalled tree a native
+// shell would receive rather than the Go nodes. A row whose props are some
+// other shape yields "", which is the same answer the renderers give it.
+//
+// Only within one row: a match spanning a line break is not a match, exactly
+// as it would not be for a Text node's content.
+func gridRowText(n *node) string {
+	runs, ok := n.Props["runs"].([]any)
+	if !ok {
+		return ""
+	}
+	var b strings.Builder
+	for _, raw := range runs {
+		run, ok := raw.(map[string]any)
+		if !ok {
+			continue
+		}
+		if t, ok := run["t"].(string); ok {
+			b.WriteString(t)
+		}
+	}
+	return b.String()
 }
 
 // tree re-renders and parses the current tree. Callback IDs are per-pass

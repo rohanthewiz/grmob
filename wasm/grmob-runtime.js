@@ -78,12 +78,12 @@ const GrMob = (() => {
         // is exactly what a bare Column of texts looked like before this.
         // Assigned before applyStyle so a style-driven flex block (which
         // carries the axis and alignment logic in styleFromGrMob) still wins.
-        // Modal is excluded: its fixed-overlay chassis above already sets
-        // flex and toggles display through the visible prop. Spacer is
-        // excluded because it is a sized void, not a stack.
-        if (STACK_CONTAINERS.has(node.Type)) {
+        // Which types stack, and why Modal and Spacer are not among them, is
+        // stackAxisFor's table.
+        const stackAxis = stackAxisFor(node.Type);
+        if (stackAxis) {
             el.style.display = "flex";
-            el.style.flexDirection = node.Type === "Row" ? "row" : "column";
+            el.style.flexDirection = stackAxis;
         }
 
         if (node.Style) {
@@ -183,7 +183,7 @@ const GrMob = (() => {
     // a Row held them 0px apart in the browser and n points apart on device.
     //
     // flex-shrink:0 is the other half. Every container this runtime draws is a
-    // flex container (see STACK_CONTAINERS), a flex item's default is to
+    // flex container (see stackAxisFor), a flex item's default is to
     // shrink under pressure, and a gap whose whole job is to hold a fixed
     // distance must not be the thing that gives way. The natives have fixed
     // frames and no equivalent to shrink, so this reproduces their behavior
@@ -269,16 +269,6 @@ const GrMob = (() => {
     }
 
     const FORM_CONTROLS = new Set(["button", "input", "textarea", "select"]);
-
-    // The container types that stack their children (Row horizontally,
-    // everything else vertically) — the same axis rule styleFromGrMob and
-    // htmlout's styleValue apply when a node opts into flex explicitly.
-    // Fragment and Theme are grouping nodes, but this runtime draws them as
-    // real divs (see tagForType), so they need the stacking default too.
-    const STACK_CONTAINERS = new Set([
-        "Row", "Column", "Card", "Box", "Scroll", "SafeArea", "List",
-        "Fragment", "Theme",
-    ]);
 
     // Wires a Modal's backdrop tap to Go's OnDismiss. Same latest-ID dataset
     // discipline as the generic listener path: callback IDs are per-pass, so
@@ -412,6 +402,11 @@ const GrMob = (() => {
         for (const run of runs) {
             const span = document.createElement("span");
             span.textContent = run.t ?? "";
+            // The run is the level of a grid whose spaces are content — an
+            // indent, the gap between two coloured tokens, a terminal's blank
+            // cells. See the grid chassis in styleFromGrMob for the other two
+            // levels and why the significance sits down here.
+            span.style.whiteSpace = "pre";
             if (run.fg) span.style.color = run.fg;
             if (run.bg) span.style.background = run.bg;
             const a = Number(run.a) || 0;
@@ -582,6 +577,37 @@ const GrMob = (() => {
         }[nodeType] || "";
     }
 
+    // Which node types are stacks — containers that lay their children out
+    // along an axis whether or not the Style asks — and the axis each uses.
+    // Both this runtime and htmlout consult it in two places: createElement /
+    // renderNode plants the default, and styleFromGrMob / styleValue restates
+    // it (this function is total, so an update-style patch would otherwise
+    // clear the display the element was built with).
+    //
+    // Go's copy is stackAxes in htmlout/stack.go, which carries the reasoning
+    // — including why Modal, Spacer and TabView are absent. The two are
+    // compared by TestRuntimeStackAxesMatchGo, so keep the flat-literal shape.
+    //
+    // Fragment and Theme are this runtime's own rows: it boxes both in real
+    // divs to keep positional patch addressing valid (see tagForType), and a
+    // box that is not a stack would swallow its parent's layout the way any
+    // other block-flow div does. htmlout emits no element for them at all, so
+    // its table has no such rows — the one exemption the conformance test
+    // makes, narrowed to these two types.
+    function stackAxisFor(nodeType) {
+        return {
+            Row: "row",
+            Column: "column",
+            Card: "column",
+            Box: "column",
+            Scroll: "column",
+            SafeArea: "column",
+            List: "column",
+            Fragment: "column",
+            Theme: "column",
+        }[nodeType] || "";
+    }
+
     // The Style -> CSS mapping. nodeType decides the default flex axis, the
     // same rule htmlout's styleValue uses: a Row stacks horizontally, every
     // other container vertically.
@@ -650,7 +676,10 @@ const GrMob = (() => {
         // (reconcile/patch.go), so an absent AlignItems here means unset, not
         // unmentioned. The prefix test admits "column-reverse", whose cross
         // axis is horizontal all the same.
-        const dir = style.FlexDirection || (nodeType === "Row" ? "row" : "column");
+        // "column" last: a node type outside the stack table that sets Gap
+        // still needs an axis to space along, and vertical is what both DOM
+        // targets have always used there.
+        const dir = style.FlexDirection || stackAxisFor(nodeType) || "column";
         let alignItems = style.AlignItems || "";
         if (!alignItems && dir.startsWith("column") && alignFallbackAxisFor(nodeType)) {
             alignItems = crossAxisAlignFor(style.Align || "");
@@ -658,14 +687,15 @@ const GrMob = (() => {
         // Stack containers are flex whether or not this Style asks for it —
         // createElement plants the same default for nodes with no Style at
         // all, and the totality rule above means this function must restate
-        // it here or an update-style patch would clear it.
+        // it here or an update-style patch would clear it. htmlout's
+        // styleValue reads the same table for the same reason.
         // RowGap/ColumnGap promote a box exactly as Gap does — `gap` IS the
         // two of them, so a node setting one has asked for the same spacing
         // by another name. Only reachable for a node type outside
-        // STACK_CONTAINERS (a TabView, say), which is already flex here;
+        // the stack table (a TabView, say), which is already flex here;
         // htmlout's styleValue makes the same call for every type.
         if (style.Gap || style.RowGap || style.ColumnGap || style.JustifyContent ||
-            alignItems || style.FlexDirection || STACK_CONTAINERS.has(nodeType)) {
+            alignItems || style.FlexDirection || stackAxisFor(nodeType)) {
             out.display = "flex";
             out.flexDirection = dir;
         } else {
@@ -784,19 +814,30 @@ const GrMob = (() => {
         // property above is reassigned on every update-style patch, and a
         // chassis set only at creation would be wiped by the first one. The
         // author's own values win where they set one. A <pre> is already
-        // fixed-pitch and unwrapped; this pins the margin a <pre> carries by
-        // default, a line height the rows are sized against, and sideways
-        // scrolling for a grid wider than the screen. Each row keeps one line
-        // even when it has no runs, so the rows below it stay on the cell
-        // grid. Same rules as htmlout's textGridChassis / gridRowChassis.
+        // fixed-pitch; this pins the margin a <pre> carries by default, a
+        // line height the rows are sized against, and sideways scrolling for
+        // a grid wider than the screen. Each row keeps one line even when it
+        // has no runs, so the rows below it stay on the cell grid.
+        //
+        // The white-space rules are three levels deep and each says something
+        // different: `normal` on the grid because the only white space
+        // *between* rows is markup formatting, `nowrap` on the row because a
+        // terminal row or a code line is one line and must not break between
+        // two runs, and `pre` on each run (applyGridRuns) because a run's own
+        // spaces are the one kind of white space in a grid that is content.
+        // Same rules as htmlout's textGridChassis / gridRowChassis /
+        // gridRunStyle — this runtime has no formatter that could disturb a
+        // grid, and carries the rules so that it does not *differ* from the
+        // exporter that does.
         if (nodeType === "TextGrid") {
             out.margin = out.margin || "0";
             out.lineHeight = out.lineHeight || "1.2";
-            out.whiteSpace = out.whiteSpace || "pre";
+            out.whiteSpace = out.whiteSpace || "normal";
             out.overflowX = out.overflow ? "" : "auto";
         }
         if (nodeType === "GridRow") {
             out.minHeight = out.minHeight || "1.2em";
+            out.whiteSpace = out.whiteSpace || "nowrap";
         }
         // Out-of-flow placement. The offsets are assigned whether or not
         // Position is set, matching CSS itself: they are inert on a static box

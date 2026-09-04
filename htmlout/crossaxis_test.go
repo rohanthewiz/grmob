@@ -163,7 +163,11 @@ func TestAlignItemsWinsOverTheAlignFallback(t *testing.T) {
 //   - Column flipped to a row by FlexDirection: the node still becomes flex
 //     (FlexDirection alone triggers that), but its cross axis is vertical
 //     now, so the fallback stays out of it.
-//   - Column with a text-only Align: no cross-axis value, no flex container.
+//   - Column with a text-only Align: no cross-axis value, so no align-items.
+//     This case used to assert "no flex container" as well; a Column is one
+//     unconditionally now (stackAxes), so what is left to check is the part
+//     that was always the point — AlignJustify names no cross-axis placement,
+//     so the fallback must yield nothing rather than guess.
 func TestAlignFallbackDeclines(t *testing.T) {
 	cases := []struct {
 		name string
@@ -178,7 +182,7 @@ func TestAlignFallbackDeclines(t *testing.T) {
 		{"flipped Column", &core.Node{Type: "Column", Style: &core.Style{
 			Align: core.AlignCenter, FlexDirection: "row"}}, "align-items"},
 		{"Column with justify", &core.Node{Type: "Column", Style: &core.Style{
-			Align: core.AlignJustify}}, "display:flex"},
+			Align: core.AlignJustify}}, "align-items"},
 	}
 	for _, c := range cases {
 		if out := ExportHTML(c.node); strings.Contains(out, c.forbidden) {

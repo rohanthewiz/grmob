@@ -10,8 +10,6 @@
 package tutorial
 
 import (
-	"strings"
-
 	"github.com/rohanthewiz/grmob/components"
 	"github.com/rohanthewiz/grmob/core"
 )
@@ -36,56 +34,52 @@ func caption(text string) core.View {
 
 // Code blocks keep their own fixed dark palette instead of theme roles: an
 // editor-dark surface reads as "this is code" under any app theme, and the
-// palette has no role for it. These are the only hard-coded colors in the
-// tutorial chrome.
+// palette has no role for it. These two are the surface and its default ink;
+// the syntax colours layered on top are in highlight.go. Together they are
+// the only hard-coded colors in the tutorial chrome.
+//
+// The pair is Darcula's own editor background and default foreground, so the
+// surface and the token colours come from one scheme rather than from two
+// that happen to both be dark.
 const (
-	codeBg  = "#22272E" // GitHub dark-dimmed editor background
-	codeInk = "#ADBAC7"
+	codeBg  = "#2B2B2B" // Darcula editor background
+	codeInk = "#A9B7C6" // Darcula default foreground
 )
 
-// codeBlock renders a Go snippet. Two renderer realities shape it:
+// codeBlock renders a Go snippet, syntax-highlighted.
 //
-//   - There is no font-family style prop yet, so it cannot be truly
-//     monospaced; the dark surface and tighter size carry the "code" reading
-//     instead.
-//   - It renders one Text per line inside a Column rather than one Text with
-//     embedded newlines, because HTML collapses both newlines and leading
-//     runs of spaces — the indentation that makes Go readable would vanish in
-//     the browser. Leading spaces are swapped for non-breaking spaces
-//     (U+00A0), which every target honors, and a blank line becomes a single
-//     NBSP so the line still occupies height.
+// It is a core.TextGrid — the node type built for "rows of styled runs" —
+// because that is the shape highlighting needs: a code line is several
+// colours, so the unit carrying a colour has to be smaller than a line. The
+// grid's Style is the surface and the default ink; every run that is not
+// default ink comes from highlightGo, which lexes the snippet with
+// go/scanner.
 //
-// Lines do not wrap. A phone screen is narrower than most of these snippets,
-// and a wrap restarts the overflow at column zero — which reads as a new
-// statement at the outermost indent level, so the very structure the NBSP
-// work above exists to preserve is what a wrap destroys. The block scrolls
-// sideways instead, leaving the line being read as one line. Overflow sits on
-// the Column because that is the scroll container; nowrap sits on each Text
-// because the lines are what must refuse to break.
+// Three things this used to do by hand come free with the grid, and are worth
+// naming because their absence here is not an oversight:
+//
+//   - Monospace. Style still has no font-family prop, and a TextGrid does not
+//     need one: it is fixed-pitch on every target by construction. The old
+//     block's own comment recorded this as a limitation it was living with.
+//   - No wrapping, and sideways scrolling when a snippet is wider than the
+//     phone. A wrapped code line restarts at column zero, which reads as a
+//     new statement at the outermost indent — so wrapping destroys exactly
+//     the structure indentation exists to show. The grid's rows are
+//     single-line and its chassis scrolls horizontally, which is what the old
+//     block spelled out per-line with WhiteSpace("nowrap") plus an Overflow.
+//   - Indentation, and blank lines that keep their height. A <span> in
+//     ordinary flow collapses leading spaces, which is why the old block
+//     substituted non-breaking spaces and padded empty lines with one of
+//     them; a grid row preserves its spaces and an empty row still takes a
+//     line.
 func codeBlock(code string) core.View {
-	lines := strings.Split(strings.Trim(code, "\n"), "\n")
-	items := []core.PropsAndChildren{
+	return core.TextGrid(highlightGo(code),
 		core.BackgroundColor(codeBg),
 		core.Padding(14),
 		core.BorderRadius(10),
-		core.Gap(2),
-		core.Overflow("auto"),
-	}
-	for _, line := range lines {
-		display := line
-		if trimmed := strings.TrimLeft(line, " "); len(trimmed) < len(line) {
-			display = strings.Repeat(" ", len(line)-len(trimmed)) + trimmed
-		}
-		if display == "" {
-			display = " "
-		}
-		items = append(items, core.Text(display,
-			core.FontSize(13),
-			core.TextColor(codeInk),
-			core.WhiteSpace("nowrap"),
-		))
-	}
-	return core.Column(items...)
+		core.FontSize(13),
+		core.TextColor(codeInk),
+	)
 }
 
 // demoPanel frames a live demo: a "TRY IT" badge and caption on top, then the
