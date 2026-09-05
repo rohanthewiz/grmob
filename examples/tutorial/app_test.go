@@ -49,6 +49,15 @@ type nodeStyle struct {
 	FlexDirection string
 	Overflow      string
 	Position      string
+
+	// Chapter 4's calendar lesson asserts on these three. A day cell is a
+	// tappable Box rather than a Button — it stacks a numeral over a mark —
+	// so its spoken name is the only thing that identifies it, its ring is a
+	// border rather than a fill, and whether it is inert is a style flag
+	// rather than a missing handler.
+	AccessibilityLabel string
+	BorderWidth        float64
+	Disabled           bool
 }
 
 func findNode(n *node, pred func(*node) bool) *node {

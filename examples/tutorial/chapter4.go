@@ -35,6 +35,7 @@ func chapter4() Chapter {
 			lessonCollections(),
 			lessonScreenFurniture(),
 			lessonEndlessFeeds(),
+			lessonCalendars(),
 		},
 	}
 }
@@ -1157,6 +1158,162 @@ core.List(
 					"Keep the LoadMore footer — it carries the loading and error states, and it is the fallback where no edge can be reported.",
 					"ChipStrip.Scrollable is one line that pans; the default still wraps, which is right for a set the reader should see all of.",
 					"Sticky bands only pin inside a List: both natives implement pinning in their lazy container, so the same marker on a Column child is web-only.",
+				),
+			)
+		},
+	}
+}
+
+// --- 4.9 -----------------------------------------------------------------
+
+// tutorialToday is the demo's "today". Pinned rather than read from the clock
+// for the reason components.Calendar makes Today a field in the first place:
+// a page whose picture changes at midnight cannot be snapshot-tested, and a
+// lesson about not consulting the clock should not consult the clock.
+var tutorialToday = time.Date(2026, time.March, 11, 12, 0, 0, 0, time.UTC)
+
+// The bounds of the demo's calendar: the span the 4.6 archive fixture covers.
+// They make the arrows disable at the ends, which is the visible half of
+// Min/Max.
+var (
+	tutorialCalMin = time.Date(2025, time.December, 1, 12, 0, 0, 0, time.UTC)
+	tutorialCalMax = time.Date(2026, time.March, 31, 12, 0, 0, 0, time.UTC)
+)
+
+// archiveOn finds the entry falling on a calendar day, which is what the
+// calendar's Marked and the caption under it both ask. Compared by the Y/M/D
+// triple rather than by instant: the widget hands out midday and the fixture
+// is stamped at midnight, and they are the same day.
+func archiveOn(d time.Time) (archiveEntry, bool) {
+	for _, e := range archive {
+		ey, em, ed := e.date.Date()
+		dy, dm, dd := d.Date()
+		if ey == dy && em == dm && ed == dd {
+			return e, true
+		}
+	}
+	return archiveEntry{}, false
+}
+
+func lessonCalendars() Lesson {
+	return Lesson{
+		Title:   "Calendars: a month grid and a date field",
+		Summary: "components.Calendar and components.DatePicker — a controlled month, a today you supply, and cells built at midday for a reason.",
+		Body: func(ctx *core.Context) core.View {
+			// Which month is on screen, and which day is chosen. Both belong
+			// to the caller: this demo drives one calendar and one date field
+			// from the same selection, which it could not do if the widget
+			// owned either.
+			month := core.NewState(ctx, tutorialToday)
+			picked := core.NewState(ctx, time.Time{})
+
+			marked := func(d time.Time) bool {
+				_, ok := archiveOn(d)
+				return ok
+			}
+
+			// What the chosen day has on it — the reason a calendar is worth
+			// more than a text field.
+			note := "Tap a dotted day: those are the ones with a sermon."
+			if p := picked.Get(); !p.IsZero() {
+				if e, ok := archiveOn(p); ok {
+					note = fmt.Sprintf("%s — %s, %s", e.title, e.speaker, p.Format("Monday 2 January 2006"))
+				} else {
+					note = fmt.Sprintf("Nothing on %s.", p.Format("Monday 2 January 2006"))
+				}
+			}
+
+			return core.Column(
+				core.Gap(14),
+				prose("A calendar is a grid of buttons over a little date arithmetic, and both are the "+
+					"kind of thing every app rewrites slightly differently. components.Calendar draws "+
+					"the month; you own what it shows. The month on screen, the selected day and the "+
+					"day that counts as today are three separate fields, because a screen that opens "+
+					"on the month of its next event needs to say so."),
+				codeBlock(`month  := core.NewState(ctx, someDate)
+picked := core.NewState(ctx, time.Time{})
+
+components.Calendar{
+    Month:         month.Get(),   OnMonthChange: month.Set,
+    Selected:      picked.Get(),  OnSelect:      picked.Set,
+    Today:         today,                       // a field, not a clock read
+    Min:           season.Start, Max: season.End,
+    Marked:        func(d time.Time) bool { return hasEvent(d) },
+}`),
+				demoPanel("The dots are the 4.6 archive. The ring is \"today\"; the fill is your selection; the arrows die at the ends of the range.",
+					components.Calendar{
+						Month:         month.Get(),
+						OnMonthChange: month.Set,
+						Selected:      picked.Get(),
+						OnSelect:      picked.Set,
+						Today:         tutorialToday,
+						Min:           tutorialCalMin,
+						Max:           tutorialCalMax,
+						Marked:        marked,
+					},
+					caption(note),
+					components.FormField{
+						Label: "Same selection, as a field",
+						Hint:  "DatePicker is the grid behind a summary, with the two view states it needs of its own.",
+						Input: components.DatePicker{
+							Selected:    picked.Get(),
+							OnSelect:    picked.Set,
+							OnClear:     func() { picked.Set(time.Time{}) },
+							Placeholder: "Choose a date",
+							Title:       "Service date",
+							Calendar: components.Calendar{
+								Today:  tutorialToday,
+								Min:    tutorialCalMin,
+								Max:    tutorialCalMax,
+								Marked: marked,
+							},
+						},
+					},
+				),
+				prose("Today is a field and not a time.Now(). A render that reads the clock is not a "+
+					"function of its inputs, so the same grid would snapshot differently after "+
+					"midnight; and \"today\" is a question about a time zone that the widget cannot "+
+					"answer and the caller can. A zero Today draws no ring, which is the honest "+
+					"picture of a calendar nobody has told what day it is."),
+				prose("The grid is always six rows, padded at both ends with the neighbouring months' "+
+					"days. A grid that sized itself to its month would change height between "+
+					"February and August and shove everything below it up and down on every arrow "+
+					"tap. It also means changing month patches 42 numbers and no structure. Those "+
+					"padding days are dimmed and inert — a controlled calendar cannot move its own "+
+					"month, so a tap on them would either select a day the grid no longer highlights "+
+					"or fire two callbacks in an order the caller has to guess."),
+				prose("Every cell is built at midday, and the value OnSelect hands back is midday too. "+
+					"That is not fussiness: midnight does not exist on every calendar day. Chile "+
+					"springs forward at 24:00, so 2026-09-06 in Santiago starts at 01:00 and Go "+
+					"resolves a request for its midnight to 2026-09-05 23:00 — the day before. A "+
+					"grid built at midnight emits two cells that both read as the 5th, and the 6th "+
+					"can never be picked, in exactly the zones nobody testing in UTC will ever look "+
+					"at. Midday is skipped by no transition in the tz database."),
+				codeBlock(`components.FormField{
+    Label: "Event date",
+    Input: components.DatePicker{
+        Selected: date.Get(),
+        OnSelect: date.Set,
+        OnClear:  func() { date.Set(time.Time{}) },
+        Calendar: components.Calendar{Today: today, Min: today},  // the template
+    },
+}`),
+				prose("DatePicker is the packaging, not a second calendar. It owns the two states no "+
+					"application ever wants — is the sheet open, which month is being browsed — and "+
+					"is therefore the second widget in the package with hook obligations, after "+
+					"Accordion: render it unconditionally, every pass. Everything else it hands "+
+					"through to a Calendar template, the way SegmentedControl hands its Segment "+
+					"through to a Chip. There is no label or error line on it, because FormField "+
+					"already has both and any input drops into its slot."),
+				keyPoints(
+					"Month, Selected and Today are three separate fields: the month on screen is view state a screen often wants to drive itself.",
+					"The widget never calls time.Now(); Today is a field, so the grid is a pure function of its inputs and a zero Today simply draws no ring.",
+					"Six rows always — a grid that resized itself would move everything under it on every arrow tap, and a fixed shape makes a month change a pure prop patch.",
+					"Cells are built at midday, because midnight is a local time that does not exist on every day in every zone.",
+					"Min and Max are compared by calendar day, so a Max stamped at 15:04 still includes its own day; an arrow whose whole target month is out of range is disabled.",
+					"Marked is called 42 times a render, adjacent months included — make it a lookup, not a query.",
+					"MonthLabel, WeekdayLabel and DayLabel are the localization seams: Go's time package speaks English only.",
+					"DatePicker owns two view states and takes a Calendar as a template; wrap it in FormField for the label, hint and error.",
 				),
 			)
 		},

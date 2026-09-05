@@ -100,6 +100,13 @@
       the row count at the last fire, so a slow fetch cannot double-load),
       wired through `GroupedList.OnEndReached`; `StickyHeaders` on
       `GroupedList` and `DataTable`, and `ChipStrip.Scrollable`
+- [x] `Calendar` and `DatePicker` — a controlled month grid (fixed six rows,
+      dimmed inert adjacent days, a `Today` the caller supplies rather than a
+      `time.Now()` the widget reads, `Min`/`Max` by calendar day, `Marked`
+      dots) and the field that opens one in a sheet, owning only the two view
+      states no application wants. Cells are built at *midday*, because
+      midnight is a local time that does not exist on every day in every zone
+      (tutorial lesson 4.9)
 
 ### 🧬 Extensions
 - [x] Animations & transitions (`Transition`, easing curves)

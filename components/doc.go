@@ -34,8 +34,17 @@
 // # Hooks inside widgets
 //
 // A widget's Render receives the caller's Context, so the hook rules apply
-// exactly as they do to any component: a widget that calls NewState (only
-// Accordion, currently) consumes a positional slot on the caller's context
-// and must therefore be rendered unconditionally, every pass, like any other
-// hook user. core.SetDebugMode flags violations as cursor-drift concerns.
+// exactly as they do to any component: a widget that calls NewState consumes
+// a positional slot on the caller's context and must therefore be rendered
+// unconditionally, every pass, like any other hook user. core.SetDebugMode
+// flags violations as cursor-drift concerns.
+//
+// Two widgets do: Accordion (expanded or collapsed) and DatePicker (is the
+// sheet open, which month is being browsed). Both own state that is purely
+// about the widget's own presentation, which is the bar — anything an
+// application might want to read, drive or persist stays with the caller.
+// Calendar is the counter-example worth keeping in view: the month on screen
+// looks like private view state and is not, because a screen opening on the
+// month of its next event has to be able to say so, so Calendar takes no
+// hooks and DatePicker is where that state gets packaged for the form case.
 package components

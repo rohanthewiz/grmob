@@ -575,3 +575,126 @@ func feedCaption(t *testing.T, n *node) string {
 	}
 	return found.Props["content"].(string)
 }
+
+// --- 4.9 Calendars ---------------------------------------------------------
+
+// The demo's whole claim is that one selection drives two widgets: tap a day
+// in the grid and the field under it reports the same date, because neither
+// widget owns it.
+func TestCalendarDemoSharesOneSelectionWithTheField(t *testing.T) {
+	mgr := newApp(t)
+	openLesson(t, mgr, "Calendars: a month grid and a date field")
+
+	cur := tree(t, mgr)
+	if !hasTextContaining(cur, "March 2026") {
+		t.Fatal("the demo should open on the month its pinned today falls in")
+	}
+	if !hasTextContaining(cur, "Tap a dotted day") {
+		t.Fatal("with nothing selected the caption should be the prompt")
+	}
+
+	// March 15 2026 carries "Salt and Light" in the 4.6 archive, so it is one
+	// of the dotted days. A day cell is a tappable Box holding a numeral, not
+	// a Button holding a caption, so the tap is addressed by the cell's spoken
+	// name — which is also the only unambiguous handle on it, since the
+	// numeral "15" appears in the field's sheet as well as in the grid.
+	cell := findNode(cur, func(n *node) bool {
+		_, clickable := n.Props["onClick"].(string)
+		return clickable && n.Style != nil && n.Style.AccessibilityLabel == "Sunday, March 15, 2026"
+	})
+	if cell == nil {
+		t.Fatal("no day cell named \"Sunday, March 15, 2026\" — the grid should name its cells for screen readers")
+	}
+	mgr.DispatchCallback(cell.Props["onClick"].(string))
+
+	cur = tree(t, mgr)
+	if !hasTextContaining(cur, "Salt and Light") {
+		t.Fatal("selecting a dotted day should surface what is on it")
+	}
+	// The same state reaches the DatePicker's trigger, in its own layout.
+	if !hasTextContaining(cur, "Mar 15, 2026") {
+		t.Fatal("the date field should summarize the selection the grid just made")
+	}
+
+	assertNoConcerns(t)
+}
+
+// Today is a field, and the range bounds the arrows. Both are checked through
+// the tree because both are invisible to a caption.
+func TestCalendarDemoRingsItsPinnedTodayAndStopsAtTheRange(t *testing.T) {
+	mgr := newApp(t)
+	openLesson(t, mgr, "Calendars: a month grid and a date field")
+	cur := tree(t, mgr)
+
+	today := findNode(cur, func(n *node) bool {
+		return n.Style != nil && n.Style.AccessibilityLabel == "Wednesday, March 11, 2026, today"
+	})
+	if today == nil {
+		t.Fatal("the pinned today should be announced as today")
+	}
+	if today.Style.BorderWidth != 1 {
+		t.Errorf("today is drawn without its ring: border width %v", today.Style.BorderWidth)
+	}
+
+	// March 2026 is the demo's Max month, so the forward arrow has nowhere to
+	// go and says so rather than paging into an empty April.
+	fwd := findNode(cur, func(n *node) bool {
+		return n.Type == "Button" && n.Style != nil && n.Style.AccessibilityLabel == "Next month"
+	})
+	if fwd == nil {
+		t.Fatal("the header should carry a next-month arrow")
+	}
+	if !fwd.Style.Disabled {
+		t.Error("the forward arrow should be dead at the top of the range")
+	}
+	back := findNode(cur, func(n *node) bool {
+		return n.Type == "Button" && n.Style != nil && n.Style.AccessibilityLabel == "Previous month"
+	})
+	if back == nil || back.Style.Disabled {
+		t.Error("February is inside the range, so the back arrow should be live")
+	}
+
+	assertNoConcerns(t)
+}
+
+// The picker's own two states: the sheet opens on the trigger and closes on
+// the tap that picks, with no Done button in between.
+func TestCalendarDemoDatePickerOpensAndPicksInOneTap(t *testing.T) {
+	mgr := newApp(t)
+	openLesson(t, mgr, "Calendars: a month grid and a date field")
+
+	modal := func() *node {
+		return findNode(tree(t, mgr), func(n *node) bool { return n.Type == "Modal" })
+	}
+	if m := modal(); m == nil || m.Props["visible"] != false {
+		t.Fatal("the picker's sheet should start closed")
+	}
+
+	tapRow(t, mgr, "Choose a date")
+	if modal().Props["visible"] != true {
+		t.Fatal("tapping the trigger should open the sheet")
+	}
+
+	// The sheet's grid follows the same selection, so it opens on March too.
+	// Searched inside the Modal, not the page: the lesson renders two
+	// calendars over one selection, and the inline one carries a cell with
+	// this very name.
+	cell := findNode(modal(), func(n *node) bool {
+		_, clickable := n.Props["onClick"].(string)
+		return clickable && n.Style != nil && n.Style.AccessibilityLabel == "Sunday, March 22, 2026"
+	})
+	if cell == nil {
+		t.Fatal("the sheet should open on the month the field is showing")
+	}
+	mgr.DispatchCallback(cell.Props["onClick"].(string))
+
+	cur := tree(t, mgr)
+	if findNode(cur, func(n *node) bool { return n.Type == "Modal" }).Props["visible"] != false {
+		t.Error("picking a day should close the sheet — there is nothing left to confirm")
+	}
+	if !hasTextContaining(cur, "The Narrow Gate") {
+		t.Error("the picker's selection is the demo's one selection and should reach the caption")
+	}
+
+	assertNoConcerns(t)
+}

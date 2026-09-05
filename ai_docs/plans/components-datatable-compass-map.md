@@ -7,7 +7,10 @@ sermons screen has adopted it. A2 landed 2026-09-04 as all seven widgets —
 `chip_strip.go`, `skeleton.go`, `stat_tile.go`, tutorial lesson 4.7 — plus
 `hooks/debounce.go`, which the plan's "debounced OnChange via UseTimeout" line
 turned out to require: `UseTimeout` arms once per mount and stays fired, so it
-cannot debounce. Everything from A3 on remains proposed.
+cannot debounce. B1–B3 landed 2026-09-05 across the four renderers and were
+adopted downstream the same day. A3 landed 2026-09-05 as `components/calendar.go`
+and `components/date_picker.go` plus tutorial lesson 4.9. Everything from Tier C
+on remains proposed.
 **Date:** 2026-09-04
 **Driver:** `../church/church_mobile` (sermons list wants grouping + paging; events want
 a "where" affordance), plus general widget-library gaps.
@@ -164,6 +167,48 @@ Month grid built from `time`: 7-column header, 6 `core.Row`s of day cells, contr
 `Selected time.Time` + `OnSelect`, `Min/Max`, `Marked func(time.Time) bool` for event
 dots. The events screen wants this; a range variant is a later field, not a new widget.
 
+**Landed 2026-09-05.** The sketch survived; four things it did not say turned
+out to carry the design:
+
+- **The grid is always six rows**, padded with the adjacent months' days drawn
+  dimmed and *inert*. A grid that sized itself to its month changes height
+  between February and August and shoves the screen below it about on every
+  arrow tap; the fixed shape also makes a month change a pure prop patch over
+  42 cells rather than an add/remove of whole rows. The adjacent days are
+  inert because a controlled calendar cannot move its own month — a tap on
+  one would either select a day the grid no longer highlights or fire two
+  callbacks in an order the caller has to guess.
+- **Cells are built at midday, and midday is what `OnSelect` hands back.**
+  Midnight is a local time that does not exist on every calendar day: Chile
+  springs forward at 24:00, so `time.Date(2026, 9, 6, 0,0,0,0, Santiago)`
+  resolves to *2026-09-05 23:00*, and a midnight grid emits two cells reading
+  as the 5th while the 6th becomes unselectable — in exactly the zones nobody
+  testing in UTC ever looks at. `calendar_test.go` pins the case.
+- **`Today` is a field, not a `time.Now()`.** A render that reads the clock is
+  not a function of its inputs (the snapshot drifts every midnight), and
+  "today" is a time-zone question the widget cannot answer and the caller can.
+  There is no `time.Now()` anywhere in `components`, `core` or `hooks`, and
+  this widget was the first one with a reason to want one.
+- **`DatePicker` is the packaging, not a second calendar.** It owns exactly the
+  two states no application wants — is the sheet open, which month is being
+  browsed — which makes it the package's second stateful widget after
+  Accordion, and it takes a `Calendar` as a *template* the way
+  `SegmentedControl` takes a `Chip`. It carries no label, hint or error,
+  because `FormField` already owns all three and any input drops into its slot.
+  The browsed month is held as a zero `time.Time` rather than seeded from the
+  selection, since zero is exactly what `Calendar`'s anchor fallback reads as
+  "follow Selected, then Today" — so a selection set from elsewhere between two
+  openings is followed instead of going stale.
+
+Found while building it, not fixed here: a `<button>` keeps the user agent's
+default border in both DOM renderers (`htmlout/export.go` and
+`wasm/grmob-runtime.js` emit `border` only when `BorderWidth > 0 &&
+BorderColor != ""`), while Compose and SwiftUI draw none. So `EmphasisGhost` —
+documented as "outlined without the rule" — draws a rule on the web and not on
+the natives, and there is no style-level workaround, since `BorderWidth(0)`
+emits nothing either. It is a two-line renderer fix with wide golden churn
+behind it: every button on both web targets changes.
+
 ---
 
 ## Tier B — small core additions (4 renderers each, all one-prop changes)
@@ -246,7 +291,7 @@ Covers "where is the church / this event". Half a session.
 3. **B1 + B2 + B3** in one renderer pass (horizontal scroll, end-reached, sticky headers)
    — three small props, one trip through four renderers; then flip `LoadMore` to
    auto-load and the chip strip to horizontal.
-4. **A3** Calendar/DatePicker.
+4. **A3** Calendar/DatePicker. *(landed 2026-09-05)*
 5. **C** heading plumbing + `Rotate` + Compass.
 6. **D0** StaticMap for the church events screen.
 7. **B4/B5** and **D1** as demand appears.
