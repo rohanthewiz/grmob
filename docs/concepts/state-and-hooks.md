@@ -140,6 +140,36 @@ ticker stops when the context closes.
 Runs `fn` once after `delay`; does not re-arm on re-render; cancelled by
 context close.
 
+### `hooks.UseDebounce(ctx, delay)`
+
+Returns a `*Debouncer` whose `Call(fn)` cancels whatever was pending and
+re-arms the delay, so only the last call in a burst actually fires. Unlike
+`UseInterval` the delay is re-read every render, so a duration driven by
+state takes effect on the next `Call`. `Cancel()` drops a pending call;
+`Pending()` reports whether one is scheduled.
+
+```go
+d := hooks.UseDebounce(ctx, 250*time.Millisecond)
+
+components.SearchField{
+    Value: query.Get(),
+    OnChange: func(s string) {
+        query.Set(s)                      // now: the field is controlled
+        d.Call(func() { runSearch(s) })   // in 250ms, if the typing stopped
+    },
+    OnSubmit: func() { d.Cancel(); runSearch(query.Get()) },
+}
+```
+
+It is a separate hook from `UseTimeout` rather than a flag on it because the
+two differ in exactly the thing they are about: `UseTimeout` arms once per
+mount and stays fired, deliberately; a debounce is *defined* by re-arming.
+
+A delay of zero or less runs `fn` synchronously, so a caller can turn the
+debounce off from state without a second code path. `Cancel` promises no
+*further* call, not an undo: `time.Timer.Stop` reports false once the timer
+has fired, and by then `fn` may already be running.
+
 ### `hooks.UseMemo(ctx, compute, deps...)`
 
 Returns the result of `compute`, recomputing only when `deps` change
