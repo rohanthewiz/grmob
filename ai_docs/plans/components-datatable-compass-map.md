@@ -1,8 +1,13 @@
 # Next components: DataTable, a widget bundle, Compass, Map
 
 **Status:** A1 landed 2026-09-04 (`components/grouping.go`, `paging.go`,
-`grouped_list.go`, `data_table.go`, tutorial lesson 4.6). The church sermons
-switch and everything from A2 on remain proposed.
+`grouped_list.go`, `data_table.go`, tutorial lesson 4.6), and the church
+sermons screen has adopted it. A2 landed 2026-09-04 as all seven widgets —
+`app_bar.go`, `banner.go`, `empty_state.go`, `search_field.go`,
+`chip_strip.go`, `skeleton.go`, `stat_tile.go`, tutorial lesson 4.7 — plus
+`hooks/debounce.go`, which the plan's "debounced OnChange via UseTimeout" line
+turned out to require: `UseTimeout` arms once per mount and stays fired, so it
+cannot debounce. Everything from A3 on remains proposed.
 **Date:** 2026-09-04
 **Driver:** `../church/church_mobile` (sermons list wants grouping + paging; events want
 a "where" affordance), plus general widget-library gaps.
@@ -130,6 +135,28 @@ follow-up worth doing alongside.
 | `StatTile` | social/fintech examples | value + label + delta |
 
 Half a session each; do them as one batch with snapshot tests.
+
+**Landed 2026-09-04.** Departures from the sketch above, each recorded where
+it matters:
+
+- `SearchField` is *stateless* and does not debounce itself. A controlled
+  field cannot: the value has to reach state on the keystroke or the
+  characters do not appear. The debounce moved to the caller as
+  `hooks.UseDebounce` (a re-arming `*Debouncer` with `Call`/`Cancel`/`Pending`),
+  which is a new hook rather than a flag on `UseTimeout` — the two differ in
+  exactly the thing they are about. Keeping the widget hook-free also keeps it
+  usable in a header that appears and disappears.
+- `Banner` spends its variant on the border and glyph, not on the fill. A
+  saturated role color across the width of a screen is too loud, and the
+  palette has no muted container tone; the side effect is that a banner's
+  contrast is the same whatever it is saying.
+- `EmptyState` absorbed `busyNote` and `errorRetry` as well as `emptyNote` —
+  three states, one shape.
+- `StatTile` has no frame (the card is the caller's) and its delta's zero
+  variant is neutral rather than Primary, because whether a number going up is
+  good is the caller's domain.
+- `ChipStrip` takes `[]Chip` rather than a parallel labels/selection
+  vocabulary, and ships no `Scrollable` field waiting on B1.
 
 ### A3. `Calendar` / `DatePicker` (pure Go, medium)
 

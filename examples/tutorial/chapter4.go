@@ -3,11 +3,13 @@ package tutorial
 import (
 	"fmt"
 	"maps"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/rohanthewiz/grmob/components"
 	"github.com/rohanthewiz/grmob/core"
+	"github.com/rohanthewiz/grmob/hooks"
 )
 
 // chapter4 — The Widget Library: a tour of the components package and the
@@ -23,7 +25,7 @@ func chapter4() Chapter {
 	return Chapter{
 		Title:   "The Widget Library",
 		Icon:    "🧩",
-		Summary: "Buttons, pills, rows, accordions, tabs, tables — the components package and its controlled-widget contract.",
+		Summary: "Buttons, pills, rows, accordions, tabs, tables and the screen furniture around them — the components package and its controlled-widget contract.",
 		Lessons: []Lesson{
 			lessonButtons(),
 			lessonPills(),
@@ -31,6 +33,7 @@ func chapter4() Chapter {
 			lessonAccordion(),
 			lessonTabs(),
 			lessonCollections(),
+			lessonScreenFurniture(),
 		},
 	}
 }
@@ -738,4 +741,257 @@ func lessonCollections() Lesson {
 			)
 		},
 	}
+}
+
+// --- 4.7 -----------------------------------------------------------------
+
+// furnitureDebounce is how long 4.7's search waits after the last keystroke
+// before the query it feeds actually moves. Short enough that the demo feels
+// immediate, long enough that the gap between the field and the results is
+// visible — which is the whole point of showing it.
+const furnitureDebounce = 250 * time.Millisecond
+
+// archiveSpeakers is the chip strip's filter set: "" is the "All" chip, so a
+// single string of state covers "no filter" and "this one" without a second
+// flag.
+var archiveSpeakers = []string{"", "M. Adeyemi", "R. Okafor", "L. Mensah"}
+
+// matchesArchive is the demo's filter: a speaker chip, and a case-insensitive
+// substring over the two text fields. Both empty means everything.
+func matchesArchive(e archiveEntry, query, speaker string) bool {
+	if speaker != "" && e.speaker != speaker {
+		return false
+	}
+	if query == "" {
+		return true
+	}
+	q := strings.ToLower(query)
+	return strings.Contains(strings.ToLower(e.title), q) ||
+		strings.Contains(strings.ToLower(e.speaker), q)
+}
+
+func lessonScreenFurniture() Lesson {
+	return Lesson{
+		Title:   "Screen furniture: bars, banners & placeholders",
+		Summary: "AppBar, Banner, SearchField, ChipStrip, StatTile, Skeleton and EmptyState — the seven pieces every screen assembles around its content.",
+		Body: func(ctx *core.Context) core.View {
+			// Hooks first and unconditionally, as in every lesson: the demo
+			// below branches on state, and a hook inside a branch would drift
+			// the cursor.
+			query := core.NewState(ctx, "")   // what the field shows, per keystroke
+			applied := core.NewState(ctx, "") // what the list filters by, debounced
+			speaker := core.NewState(ctx, "")
+			loading := core.NewState(ctx, false)
+			offline := core.NewState(ctx, false)
+			backNote := core.NewState(ctx, false)
+			search := hooks.UseDebounce(ctx, furnitureDebounce)
+
+			matches := make([]archiveEntry, 0, len(archive))
+			for _, e := range archive {
+				if matchesArchive(e, applied.Get(), speaker.Get()) {
+					matches = append(matches, e)
+				}
+			}
+
+			// The three-way body switch every fetching screen has. Skeleton
+			// while the shape is known and the data is not, EmptyState when
+			// the answer is legitimately nothing, the rows otherwise.
+			var body core.View
+			switch {
+			case loading.Get():
+				body = components.Skeleton{Lines: 3, AccessibilityLabel: "Loading the archive"}
+			case len(matches) == 0:
+				body = components.EmptyState{
+					Glyph: "🔎",
+					Title: "Nothing matches that",
+					Hint:  "Try a shorter word, or tap All.",
+					// Outlined, and it clears both filters at once — an empty
+					// state's action is the way out of the state that produced
+					// it.
+					ActionLabel: "Clear filters",
+					OnAction: func() {
+						query.Set("")
+						applied.Set("")
+						speaker.Set("")
+						search.Cancel()
+					},
+				}
+			default:
+				rows := make([]core.PropsAndChildren, 0, len(matches))
+				for _, e := range matches {
+					rows = append(rows, components.ListRow{
+						Title:    e.title,
+						Subtitle: e.speaker,
+						Trailing: caption(e.date.Format("Jan 2")),
+					})
+				}
+				body = core.Column(append([]core.PropsAndChildren{
+					core.Gap(0), core.Padding(0),
+				}, rows...)...)
+			}
+
+			chips := make([]components.Chip, 0, len(archiveSpeakers))
+			for _, s := range archiveSpeakers {
+				label, value := s, s
+				if s == "" {
+					label = "All"
+				}
+				chips = append(chips, components.Chip{
+					Label:    label,
+					Selected: speaker.Get() == value,
+					OnTap:    func() { speaker.Set(value) },
+				})
+			}
+
+			return core.Column(
+				core.Gap(14),
+				prose("Every screen in an app is the same furniture around different content: a bar "+
+					"naming where you are, a strip when something needs saying, a field to narrow "+
+					"the list, a placeholder for the three moments the list has nothing to show. "+
+					"Seven widgets cover it, and none of them holds state — each renders what you "+
+					"pass and reports intent, exactly like Chip and DataTable."),
+				codeBlock(`components.AppBar{Title: "Archive", Subtitle: "9 sermons",
+    Actions: []core.View{refreshButton}}
+
+components.Banner{Text: "Reconnecting…",
+    Variant: components.VariantWarning,
+    ActionLabel: "Retry now", OnAction: retry}
+
+components.EmptyState{Glyph: "🔎", Title: "Nothing matches that",
+    Hint: "Try a shorter word.", ActionLabel: "Clear filters",
+    OnAction: clear}`),
+				prose("AppBar draws its back arrow exactly when core.CanPop says there is a screen "+
+					"underneath — so a tab root gets none without asking and a pushed screen gets "+
+					"one without wiring. The arrow in the demo below is real, and it is there "+
+					"because this lesson *is* a pushed screen; it is harmless only because the "+
+					"demo sets OnBack, which replaces core.Pop rather than running before it. The "+
+					"title takes the theme's Subtitle size with the primary ink and a bold weight: "+
+					"Typography.Title is the screen's large heading — 28 points here — and does "+
+					"not fit in a bar."),
+				prose("Banner spends its variant on the edges, not on the fill: a hairline border "+
+					"and the leading glyph take the role color while the strip keeps the theme's "+
+					"Surface and the primary ink. A saturated red running the width of the screen "+
+					"reads as a failure of the app rather than of one fetch, and the palette "+
+					"carries no muted container tone to fill with instead. It also means the "+
+					"banner's contrast does not depend on which variant it is."),
+				demoPanel("Type to search — the list moves a moment after you stop. Toggle the two simulations; tap ‹ to see OnBack replace Pop.",
+					components.AppBar{
+						Title:    "Archive",
+						Subtitle: fmt.Sprintf("%d of %d sermons", len(matches), len(archive)),
+						OnBack:   func() { backNote.Set(true) },
+						Actions: []core.View{components.Button{
+							Label:              "↻",
+							Emphasis:           components.EmphasisGhost,
+							AccessibilityLabel: "Refresh",
+							OnTap:              func() { loading.Set(!loading.Get()) },
+						}},
+					},
+					core.If(backNote.Get(), caption("Back tapped — OnBack ran instead of core.Pop, so you are still here.")),
+					core.If(offline.Get(), components.Banner{
+						Text:        "Offline. Showing a saved copy.",
+						Variant:     components.VariantWarning,
+						ActionLabel: "Reconnect",
+						OnAction:    func() { offline.Set(false) },
+						OnDismiss:   func() { offline.Set(false) },
+					}),
+					components.SearchField{
+						Value:       query.Get(),
+						Placeholder: "Search the archive",
+						OnChange: func(s string) {
+							// The field is controlled, so the keystroke has to
+							// land now or the characters do not appear; the
+							// *reaction* is what waits.
+							query.Set(s)
+							search.Call(func() { applied.Set(s) })
+						},
+						// Enter means "now": cancel the pending call, then act.
+						OnSubmit: func() {
+							search.Cancel()
+							applied.Set(query.Get())
+						},
+						OnClear: func() {
+							search.Cancel()
+							query.Set("")
+							applied.Set("")
+						},
+					},
+					components.ChipStrip{Chips: chips},
+					core.Row(
+						core.Gap(16), core.Padding(0),
+						components.StatTile{
+							Label: "Showing", Value: itoaLen(len(matches)), Fill: true,
+							Delta:        fmt.Sprintf("of %d", len(archive)),
+							DeltaVariant: components.VariantDefault,
+						},
+						components.StatTile{
+							Label: "Filter", Value: chipValueLabel(speaker.Get()), Fill: true,
+						},
+					),
+					body,
+					core.Row(
+						core.Gap(8), core.Padding(0),
+						components.Chip{Label: "Simulate offline", Selected: offline.Get(),
+							OnTap: func() { offline.Set(!offline.Get()) }},
+						components.Chip{Label: "Simulate loading", Selected: loading.Get(),
+							OnTap: func() { loading.Set(!loading.Get()) }},
+					),
+				),
+				prose("SearchField holds no text of its own, which is what lets it live in a header "+
+					"that appears and disappears — a hook-slot consumer could not. That also means "+
+					"it cannot debounce its own OnChange: the value has to reach state on the "+
+					"keystroke or typing looks broken. hooks.UseDebounce is the other half — Call "+
+					"re-arms the delay, Cancel drops what is pending, and the demo above uses both "+
+					"(Enter and the ✕ cancel, then act)."),
+				codeBlock(`d := hooks.UseDebounce(ctx, 250*time.Millisecond)
+
+components.SearchField{
+    Value: query.Get(),
+    OnChange: func(s string) {
+        query.Set(s)                      // now: the field is controlled
+        d.Call(func() { applied.Set(s) }) // in 250ms, if typing stopped
+    },
+    OnSubmit: func() { d.Cancel(); applied.Set(query.Get()) },
+}`),
+				prose("Skeleton and EmptyState answer different questions. A skeleton says content "+
+					"is coming and will look roughly like this, which is worth saying when the "+
+					"layout is known; an empty state says there is nothing here and why. Its bars "+
+					"take the palette's Border role rather than Surface — Surface is a panel's "+
+					"fill, so a Surface bar inside a card disappears, the same trap Separator "+
+					"documents. They do not shimmer: a moving highlight is a repeating keyframe "+
+					"animation, and core.Transition animates a property between two declared "+
+					"values. Looping it from Go would push a render pass and a bridge patch per "+
+					"frame of a decoration."),
+				prose("StatTile is the one place in the package where the zero Variant is not the "+
+					"theme's Primary: its delta defaults to the secondary ink, because whether a "+
+					"number going up is good is your domain, not a widget's. Attendance up is a "+
+					"success, spend up is not, latency up is an incident — so the default says "+
+					"nothing and you say the rest. Fill sets FlexGrow *and* a zero FlexBasis, "+
+					"which is what makes the four targets agree: Compose and SwiftUI divide the "+
+					"whole axis by weight, CSS divides only the leftover space."),
+				keyPoints(
+					"All seven are stateless and controlled — no hooks, so any of them may be rendered conditionally.",
+					"AppBar's back arrow follows core.CanPop; Leading replaces it, HideBack suppresses it, OnBack replaces core.Pop rather than running before it.",
+					"Banner tints its border and glyph, never its fill: contrast stays the same whatever the variant, and the text still has to carry the meaning.",
+					"EmptyState covers empty, busy and failed — one shape, so three states cannot drift apart in wording or spacing. Its Width 100% is load-bearing: a column hugs its widest child on both natives.",
+					"A controlled field cannot debounce its own OnChange; debounce the reaction with hooks.UseDebounce, and Cancel before acting on Enter.",
+					"Every glyph in these widgets is decoration and is hidden from assistive tech — the text beside it is what gets announced.",
+					"ChipStrip wraps rather than scrolls until core.Scroll grows a horizontal mode; there is deliberately no field standing by that does nothing.",
+				),
+			)
+		},
+	}
+}
+
+// itoaLen is the row count as a string. It exists so the demo's StatTile takes
+// a pre-formatted Value, which is the contract: the widget does no number
+// formatting, because grouping and locale are the caller's.
+func itoaLen(n int) string { return strconv.Itoa(n) }
+
+// chipValueLabel renders the speaker filter for the StatTile: the empty
+// sentinel is the "All" chip, and it has to read the same in both places.
+func chipValueLabel(speaker string) string {
+	if speaker == "" {
+		return "All"
+	}
+	return speaker
 }

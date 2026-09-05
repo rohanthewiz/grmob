@@ -785,6 +785,243 @@ is dropped there. `Selected` is controlled state on every target: a switch
 arrives as a prop change, never as a rebuilt subtree. The `Icon` of a
 `core.TabItem` is drawn by no target.
 
+## Collections — GroupedList & DataTable
+
+Keyed, lazily-composed collections over `core.List`, with run-length group
+headers, controlled sort, compact mode and client- or server-side paging.
+`Pagination` (numbered pages) and `LoadMore` (the four-state tail: nothing /
+Load more / Loading… / error + Retry) are the footers.
+
+```go
+components.DataTable[Entry]{
+    Columns: []components.Column[Entry]{
+        {Title: "Title", Weight: 2, Text: title, Less: byTitle},
+        {Title: "Speaker", Narrow: true, Text: speaker},
+    },
+    Rows: entries, Key: entryKey,
+    Sort: sortBy.Get(), OnSort: func(s components.Sort) { sortBy.Set(&s) },
+    Pagination: &components.Pagination{Page: page.Get(), PageSize: 20, OnChange: page.Set},
+}
+```
+
+Both are hook-free and fully controlled. Rows are sorted, then paged, then
+grouped. Give a column `Less` only when `Rows` is the whole set: `Less` sorts
+all of `Rows` and only `Rows`, so sorting an accumulated window yields the
+first rows *of the window* under a header claiming the first rows of the
+table. When the server pages, set `Sortable` without `Less` and put the sort
+in the query — [debug mode](concepts/debug-mode.md) reports the detectable
+half of that as a `partial-sort` concern. `HideTrailingCount` suppresses the
+last group's badge while a pager still has pages to fetch, since a closed
+group's count is final and an open one's is about to change.
+
+See lesson 4.6 of the [interactive tutorial](tutorial-interactive.md) and the
+godoc for the full field list.
+
+## AppBar
+
+The title strip at the top of a screen: an optional back affordance, the
+screen's name, and trailing actions.
+
+```go
+components.AppBar{
+    Title:    "Sermon",
+    Subtitle: "22 March 2026",
+    Actions:  []core.View{shareButton},
+}
+```
+
+- **The back control appears only when there is somewhere to go.** With no
+  `Leading` and no `HideBack`, the arrow is drawn exactly when
+  `core.CanPop(ctx)` is true — so a tab root gets none without asking and a
+  pushed screen gets one without wiring. `OnBack` *replaces* `core.Pop`
+  rather than running before it, which is what makes a confirm-before-leaving
+  handler possible.
+- `Leading` replaces the automatic control entirely — a close button on a
+  modally presented screen, where `CanPop` is false. `Content` replaces the
+  Title/Subtitle stack.
+- The title takes the theme's **Subtitle** size with the primary ink and a
+  bold weight. `Typography.Title` is the screen's large heading (28pt under
+  `DefaultTheme`) and does not fit in a bar.
+- A hairline rule is drawn under the bar unless `HideSeparator` is set,
+  because an unstyled bar sits on the same Background as the content below it.
+
+It is an ordinary `Row`, not a platform navigation bar: nothing floats,
+collapses on scroll, or claims the status bar. `Screen`'s `SafeArea` is what
+keeps it clear of the notch.
+
+## Banner
+
+The inline strip that tells the user something about the screen they are on:
+a failed refresh over content that is still good, an offline notice, a
+"Reconnecting…".
+
+```go
+components.Banner{
+    Text:        "Could not refresh. Showing a saved copy.",
+    Variant:     components.VariantWarning,
+    ActionLabel: "Retry", OnAction: reload,
+    OnDismiss:   func() { notice.Set(false) },
+}
+```
+
+**The variant is a tint, not a fill.** A hairline border and the leading
+glyph take the role color; the strip keeps the theme's Surface and the primary
+ink. A saturated Error red across the width of a screen reads as a failure of
+the app rather than of one fetch, and the palette carries no muted container
+tone to fill with instead. The upshot is that a banner's contrast does not
+depend on which variant it is.
+
+Default glyphs are `ⓘ ✓ ⚠ ⊗` for the four roles, overridable with `Glyph` and
+droppable with `NoGlyph`. They are **decoration** and are hidden from
+assistive technology, so `Text` has to carry the meaning — "Could not
+refresh", not "Something went wrong" beside a red edge.
+
+It is not a toast: `core.ShowToast` disappears on a timer, a Banner stays
+until the state that produced it changes. For an edge-to-edge strip with no
+frame, pass `core.BorderWidth(0)` and `core.BorderRadius(0)` in `Style`.
+
+## EmptyState
+
+The centered placeholder for content a screen does not have — and for the
+other two moments with the same shape:
+
+```go
+empty   components.EmptyState{Glyph: "📭", Title: "No messages yet"}
+busy    components.EmptyState{Title: "Loading sermons…"}
+failed  components.EmptyState{Glyph: "☁", Title: "Could not reach the server.",
+            ActionLabel: "Retry", OnAction: reload}
+```
+
+Three states, one widget, so their wording and spacing cannot drift apart.
+The busy case is a line of text rather than a spinner because core has no
+indeterminate progress node — and naming what is loading is more useful than
+an animation anyway.
+
+The column sets `Width: 100%`, which looks redundant and is not: on both
+natives a column hugs its widest child, so without it the block sits at the
+leading edge with its children centered inside a box only as wide as the
+longest line. The DOM targets fill the line already, so the bug is invisible
+on the target you are most likely to be looking at.
+
+The built action is **outlined**, not filled: an empty state is a dead end,
+and a solid Primary button in the middle of an empty screen is the loudest
+thing on it.
+
+## SearchField
+
+A text field dressed as a search box: a leading magnifier, a flexible input,
+and a clear button that appears once there is something to clear.
+
+```go
+d := hooks.UseDebounce(ctx, 250*time.Millisecond)
+
+components.SearchField{
+    Value: query.Get(),
+    OnChange: func(s string) {
+        query.Set(s)                      // now: the field is controlled
+        d.Call(func() { runSearch(s) })   // in 250ms, if the typing stopped
+    },
+    OnSubmit: func() { d.Cancel(); runSearch(query.Get()) },
+}
+```
+
+**It holds no state and calls no hook**, which is what lets a search box live
+in a header that appears and disappears — a hook-slot consumer could not.
+That is also why it cannot debounce its own `OnChange`: a controlled field's
+value has to reach state on the keystroke or the characters do not appear.
+What wants delaying is the *reaction*, and that lives in the caller — see
+[`hooks.UseDebounce`](concepts/state-and-hooks.md#hooksusedebouncectx-delay).
+
+The row paints the theme's Surface at the theme's own field radius and the
+input inside it is flattened (transparent, no radius, no padding), so there is
+one box rather than two. `AccessibilityLabel` falls back to the resolved
+placeholder, because a placeholder is not a label on any platform — it
+vanishes on the first keystroke.
+
+## ChipStrip
+
+A run of `Chip`s that wraps onto as many lines as it needs — a filter bar,
+tags on an article, quick amounts on a form.
+
+```go
+components.ChipStrip{Chips: []components.Chip{
+    {Label: "All",      Selected: f == "",        OnTap: func() { filter.Set("") }},
+    {Label: "Sermons",  Selected: f == "sermon",  OnTap: func() { filter.Set("sermon") }},
+}}
+```
+
+The field is `[]Chip` rather than a parallel vocabulary of labels and
+callbacks, so a chip in a strip is configured exactly like a chip anywhere
+else. `Children` is the escape hatch for a strip mixing chips with something
+else.
+
+**ChipStrip is not SegmentedControl.** The segmented control is one-of-N: a
+fixed, exhaustive set drawn as one joined control. ChipStrip is the loose
+case — any number selected including none, a set that comes from data.
+
+It wraps rather than scrolls, because `core.Scroll` is vertical only today;
+horizontal scrolling arrives with `core.Horizontal`. There is deliberately no
+`Scrollable` field standing by, since a prop that does nothing is worse than
+one that does not exist.
+
+## Skeleton
+
+The grey placeholder that holds a screen's shape while its content loads.
+
+```go
+components.Skeleton{}                                        // one line
+components.Skeleton{Lines: 3}                                // a paragraph
+components.Skeleton{Width: "44px", Height: 44, Radius: 999}  // an avatar
+```
+
+A stack's last bar is short (`LastLineWidth`, 60% by default), which is what
+makes it read as a paragraph — applied only when `Lines` is 2 or more, since
+on a single bar the last line is the only line.
+
+The bars take the palette's **Border** role, not Surface: Surface is a
+*panel's* fill, so a Surface bar inside a card disappears — the same trap
+`Separator` documents. They are hidden from assistive technology and the
+container carries the label (`"Loading"` by default).
+
+**No shimmer.** A moving highlight is a repeating keyframe animation, and
+`core.Transition` animates a property between two declared values. Looping it
+from Go would push a render pass and a bridge patch per frame of a
+decoration, which is the one thing the "declare in Go, animate natively" model
+exists to avoid.
+
+Skeleton and EmptyState answer different questions: a skeleton says content is
+coming and will look roughly like this (worth saying when the layout is
+known); an empty state says there is nothing here and why.
+
+## StatTile
+
+One figure with its name and, optionally, its movement.
+
+```go
+core.Row(core.Gap(12),
+    components.StatTile{Label: "Attendance", Value: "412", Fill: true,
+        Delta: "+18 vs last week", DeltaVariant: components.VariantSuccess},
+    components.StatTile{Label: "Giving", Value: "MZN 42,750", Fill: true},
+)
+```
+
+**It has no frame.** "Tile" names the content, not a card: the widget paints
+and insets nothing, which is what lets three tiles share one `core.Card` or
+take one each, rather than a `Framed` bool that is wrong half the time.
+
+**The delta's zero variant is neutral, not Primary** — the one place in this
+package where `VariantDefault` is not the theme's brand color. A delta is a
+measurement, and whether a number going up is good is the caller's domain:
+attendance up is a success, spend up is not, latency up is an incident. So
+the default says nothing. The [outlined-Button contrast caveat](#contrast-and-what-the-widget-can-promise)
+applies to a colored delta as well — under `DefaultTheme`, Success is 2.22:1
+and Warning 2.20:1 against the Background.
+
+`Fill` sets `FlexGrow` **and** a zero `FlexBasis`, which is what makes the
+four targets agree: Compose and SwiftUI divide the whole axis by weight, CSS
+divides only the leftover space. The natives ignore `FlexBasis`, so the prop
+that is inert on two targets is exactly the one that converges the other two.
+
 ## Writing your own
 
 The package doc (`components/doc.go`) is the reference for the idiom. In

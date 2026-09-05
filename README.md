@@ -1,6 +1,6 @@
 # GrMob
 
-**Live tutorial: https://rohanthewiz.github.io/grmob/** — 41 lessons, every demo running as real Go in your browser.
+**Live tutorial: https://rohanthewiz.github.io/grmob/** — 42 lessons, every demo running as real Go in your browser.
 
 **GrMob** is a fully idiomatic Go framework for building native mobile apps using a declarative, functional DSL. Designed entirely in Go — GrMob offers a new approach to mobile development where UI, logic, and state management are written in pure Go, and rendered natively on Android and iOS.
 

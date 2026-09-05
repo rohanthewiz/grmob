@@ -80,6 +80,12 @@
       `core.List` with run-length group headers, controlled sort, compact
       mode and client- or server-side paging; `Pagination` and `LoadMore`
       footers (tutorial lesson 4.6; plan in `ai_docs/plans/components-datatable-compass-map.md`)
+- [x] Screen furniture — `AppBar` (automatic back off `core.CanPop`),
+      `Banner` (variant on the edges, never the fill), `EmptyState` (empty,
+      busy and failed in one shape), `SearchField`, `ChipStrip`, `Skeleton`
+      and `StatTile`, all stateless and controlled; plus `hooks.UseDebounce`,
+      the re-arming timer `UseTimeout` deliberately is not (tutorial lesson
+      4.7)
 
 ### 🧬 Extensions
 - [x] Animations & transitions (`Transition`, easing curves)

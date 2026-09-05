@@ -287,3 +287,162 @@ func TestCollectionsDemoSortsPagesAndLoadsMore(t *testing.T) {
 	}
 	assertNoConcerns(t)
 }
+
+// --- 4.7 Screen furniture -------------------------------------------------
+
+// countNodes is findNode's counting twin — the furniture demo asserts on how
+// many placeholder bars a Skeleton drew, which is a number rather than a
+// presence.
+func countNodes(n *node, pred func(*node) bool) int {
+	if n == nil {
+		return 0
+	}
+	count := 0
+	if pred(n) {
+		count++
+	}
+	for _, c := range n.Children {
+		count += countNodes(c, pred)
+	}
+	return count
+}
+
+// skeletonBars counts the demo's placeholder bars. A Skeleton bar is the only
+// thing on this screen that is a filled Box with the widget's 4pt radius, and
+// the wire tree carries both fields — which is why the count is addressed this
+// way rather than by the accessibility label the widget also sets (nodeStyle
+// decodes no accessibility fields).
+func skeletonBars(n *node) int {
+	return countNodes(n, func(n *node) bool {
+		return n.Type == "Box" && n.Style != nil &&
+			n.Style.BorderRadius == 4 && n.Style.Background != ""
+	})
+}
+
+func TestScreenFurnitureDemoSearchesFiltersAndSwitchesStates(t *testing.T) {
+	mgr := newApp(t)
+	openLesson(t, mgr, "Screen furniture: bars, banners & placeholders")
+
+	cur := tree(t, mgr)
+	if !hasTextContaining(cur, "9 of 9 sermons") {
+		t.Fatal("the bar's subtitle should open with the whole archive")
+	}
+	// The lesson is a pushed screen, so CanPop is true and the automatic back
+	// control is real — that is the demo's point, and it is also why the demo
+	// sets OnBack.
+	back := findNode(cur, func(n *node) bool { return n.Type == "Button" && n.Props["label"] == "‹" })
+	if back == nil {
+		t.Fatal("a pushed lesson should give the demo AppBar its automatic back control")
+	}
+	mgr.DispatchCallback(back.Props["onClick"].(string))
+	cur = tree(t, mgr)
+	if !hasTextContaining(cur, "OnBack ran instead of core.Pop") {
+		t.Fatal("OnBack should have run")
+	}
+	// And it must have *replaced* Pop, not preceded it: the lesson is still on
+	// screen.
+	if !hasTextContaining(cur, "9 of 9 sermons") {
+		t.Fatal("tapping back popped the lesson — OnBack should replace core.Pop")
+	}
+
+	// The field is controlled, so the keystroke lands immediately whatever the
+	// debounce is doing. (Whether the *list* has moved yet is a race by
+	// construction, so the assertions below go through the paths that are
+	// synchronous: OnSubmit, which cancels and applies, and awaitText.)
+	typeInto(t, mgr, "salt")
+	if findNode(tree(t, mgr), func(n *node) bool {
+		return n.Type == "Input" && n.Props["value"] == "salt"
+	}) == nil {
+		t.Fatal("the field should show the keystroke immediately")
+	}
+	awaitText(t, mgr, "1 of 9 sermons")
+	cur = tree(t, mgr)
+	if !hasText(cur, "Salt and Light") || hasText(cur, "The Narrow Gate") {
+		t.Fatal("the debounced query should have narrowed the list")
+	}
+
+	// Enter means now: Cancel drops the pending call, then the caller acts.
+	typeInto(t, mgr, "meek")
+	submit := findNode(tree(t, mgr), func(n *node) bool { return n.Type == "Input" })
+	mgr.DispatchCallback(submit.Props["onSubmit"].(string))
+	cur = tree(t, mgr)
+	if !hasText(cur, "Blessed Are the Meek") || hasText(cur, "Salt and Light") {
+		t.Fatal("OnSubmit should apply the query synchronously")
+	}
+
+	// Nothing matches: the empty state, and its action as the way out of the
+	// state that produced it.
+	typeInto(t, mgr, "zzz")
+	mgr.DispatchCallback(findNode(tree(t, mgr), func(n *node) bool { return n.Type == "Input" }).Props["onSubmit"].(string))
+	cur = tree(t, mgr)
+	if !hasText(cur, "Nothing matches that") {
+		t.Fatal("a query with no matches should show the EmptyState")
+	}
+	tap(t, mgr, "Clear filters")
+	cur = tree(t, mgr)
+	if !hasTextContaining(cur, "9 of 9 sermons") || !hasText(cur, "The Narrow Gate") {
+		t.Fatal("Clear filters should restore the whole archive")
+	}
+
+	// The chip strip is a second, independent filter, and the StatTile reads
+	// the same sentinel the "All" chip does.
+	tap(t, mgr, "R. Okafor")
+	cur = tree(t, mgr)
+	if !hasTextContaining(cur, "3 of 9 sermons") {
+		t.Fatal("the speaker chip should narrow the list")
+	}
+	if !hasText(cur, "R. Okafor") || hasText(cur, "The Narrow Gate") {
+		t.Fatal("only that speaker's sermons should remain")
+	}
+	tap(t, mgr, "All")
+	if !hasTextContaining(tree(t, mgr), "9 of 9 sermons") {
+		t.Fatal("the All chip should clear the speaker filter")
+	}
+
+	assertNoConcerns(t)
+}
+
+func TestScreenFurnitureDemoBannerAndSkeleton(t *testing.T) {
+	mgr := newApp(t)
+	openLesson(t, mgr, "Screen furniture: bars, banners & placeholders")
+
+	if n := skeletonBars(tree(t, mgr)); n != 0 {
+		t.Fatalf("a loaded list should draw no placeholder bars, got %d", n)
+	}
+
+	// The bar's own refresh action drives the loading state, so the demo shows
+	// an AppBar action doing something rather than a decorative glyph.
+	tap(t, mgr, "↻")
+	cur := tree(t, mgr)
+	if n := skeletonBars(cur); n != 3 {
+		t.Fatalf("the loading state should draw 3 placeholder bars, got %d", n)
+	}
+	if hasText(cur, "The Narrow Gate") {
+		t.Fatal("the skeleton should stand in for the rows, not sit beside them")
+	}
+	tap(t, mgr, "↻")
+	if !hasText(tree(t, mgr), "The Narrow Gate") {
+		t.Fatal("the rows should come back")
+	}
+
+	// The banner is conditional, so it costs no node when there is nothing to
+	// say — the idiom core.If exists for.
+	if hasTextContaining(tree(t, mgr), "Showing a saved copy") {
+		t.Fatal("no banner before anything has gone wrong")
+	}
+	tap(t, mgr, "Simulate offline")
+	cur = tree(t, mgr)
+	if !hasTextContaining(cur, "Showing a saved copy") {
+		t.Fatal("the offline simulation should raise the banner")
+	}
+	// Warning's glyph, and the action that clears the condition.
+	if !hasText(cur, "⚠") {
+		t.Fatal("a warning banner should carry the warning glyph")
+	}
+	tap(t, mgr, "Reconnect")
+	if hasTextContaining(tree(t, mgr), "Showing a saved copy") {
+		t.Fatal("the action should have cleared the banner")
+	}
+
+	assertNoConcerns(t)
+}
