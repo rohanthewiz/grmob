@@ -368,7 +368,7 @@ private fun dimensionModifier(value: String, horizontal: Boolean): Modifier {
  * Maps one core.Role onto Compose semantics, inside the semantics lambda that
  * is already open for the label, the hint and the disabled marker.
  *
- * Five of the fifteen roles land on something here; the other ten are named
+ * Five of the sixteen roles land on something here; the other eleven are named
  * anyway. Compose has no landmark vocabulary at all — TalkBack navigates by
  * heading, not by banner — and its tabular semantics are collectionInfo, which
  * describes counts and indices this prop does not carry, so a `role="table"`
@@ -401,6 +401,10 @@ fun SemanticsPropertyReceiver.grMobRole(kind: String) {
         "table", "rowgroup", "row", "cell" -> {}
         "list", "listitem" -> {}
         "banner", "navigation", "search", "toolbar" -> {}
+        // Compose's Role has Button, Checkbox, Switch, RadioButton, Tab,
+        // Image and DropdownList, and no Link — the one place SwiftUI's
+        // vocabulary is the richer of the two.
+        "link" -> {}
         else -> {}
     }
 }

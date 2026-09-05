@@ -111,7 +111,7 @@
 ### 🧬 Extensions
 - [x] Animations & transitions (`Transition`, easing curves)
 - [x] Accessibility labels, hints and announced selection state
-- [x] Accessibility *roles* (`core.AccessibilityRole`, fifteen ARIA-spelled
+- [x] Accessibility *roles* (`core.AccessibilityRole`, sixteen ARIA-spelled
       values) — `role=` on both web targets, traits on SwiftUI and semantics
       on Compose where those vocabularies reach, and an explicit no-op arm
       where they do not; pinned in both natives by `mobile/verify/role_test.go`.

@@ -61,7 +61,7 @@ type Style struct {
 	// AccessibilityRole is what the node *is* — a heading, a table cell, a
 	// search landmark — as opposed to what it is called and what tapping it
 	// does. See role.go for the vocabulary, what each of the four renderers
-	// makes of it, and why nine of the fifteen values do nothing on either
+	// makes of it, and why nine of the sixteen values do nothing on either
 	// native.
 	//
 	// It sits with the three fields above and travels the same way: on Style

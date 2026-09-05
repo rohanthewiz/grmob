@@ -934,7 +934,7 @@ const ROLES = [
     "list", "listitem",
     "banner", "navigation", "search", "toolbar",
     "status", "alert",
-    "heading", "button",
+    "heading", "button", "link",
 ];
 
 test("every accessibility role becomes the role attribute", () => {

@@ -349,3 +349,31 @@ func TestGroupedListWithoutOnEndReachedCarriesNoProp(t *testing.T) {
 		t.Error("a list with no OnEndReached still advertises the edge")
 	}
 }
+
+// A band titles a run of rows, so its label is a heading — the thing a reader
+// navigating a long banded feed by heading moves between once the screen's own
+// title has scrolled away.
+//
+// The role is on the label and not on the band, so the heading's name is
+// "Month 2026-01" and not "Month 2026-01, 2". The count is still there, as the
+// separate thing it is.
+func TestGroupHeaderLabelIsAHeading(t *testing.T) {
+	ctx := core.NewContext()
+	ctx.BeginRenderPass()
+	n := GroupedList[sermon]{
+		Items: sermons, Key: sermonKey, Row: sermonRow, GroupBy: byMonth,
+	}.Render(ctx)
+
+	label := findText(n, "Month 2026-01")
+	if label == nil {
+		t.Fatal("no band label in the rendered list")
+	}
+	if label.Style.AccessibilityRole != core.RoleHeading {
+		t.Errorf("band label = %q, want heading", label.Style.AccessibilityRole)
+	}
+	band := n.Children[0]
+	if band.Style.AccessibilityRole != core.RoleNone {
+		t.Errorf("the band itself = %q; the role belongs on the label, so the count "+
+			"badge stays out of the heading's name", band.Style.AccessibilityRole)
+	}
+}

@@ -399,9 +399,9 @@ this repo cannot build.
 `core.AccessibilityRole(role)` becomes traits on iOS and semantics properties
 on Android, and on both it is a partial mapping by design: `heading` and
 `columnheader` become `.isHeader` / `heading()`, `button` becomes `.isButton`
-/ `Role.Button`, `search` becomes `.isSearchField` (no Compose analog), and
-`status` / `alert` become Compose live regions (no SwiftUI analog). The
-remaining nine — the tabular set, the collection pair and the landmarks —
+/ `Role.Button`, `link` and `search` become `.isLink` and `.isSearchField`
+(no Compose analog for either — its `Role` has no Link), and `status` /
+`alert` become Compose live regions (no SwiftUI analog). The remaining nine — the tabular set, the collection pair and the landmarks —
 have no vocabulary on either platform and do nothing there while working on
 both web targets.
 

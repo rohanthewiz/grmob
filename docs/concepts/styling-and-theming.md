@@ -130,15 +130,22 @@ targets emit them verbatim as `role=`:
 | collections | `RoleList` `RoleListItem` |
 | landmarks | `RoleBanner` `RoleNavigation` `RoleSearch` `RoleToolbar` |
 | live regions | `RoleStatus` `RoleAlert` |
-| content | `RoleHeading` `RoleButton` |
+| content | `RoleHeading` `RoleButton` `RoleLink` |
 
 The two natives map what their vocabularies can express — `heading` and
 `columnheader` become a header trait / `heading()`, `button` becomes
-`.isButton` / `Role.Button`, `search` becomes `.isSearchField`, and `status` /
-`alert` become Compose live regions — and name the rest as explicit no-ops, so
+`.isButton` / `Role.Button`, `link` becomes `.isLink` (the one place SwiftUI's
+vocabulary is the richer of the two), `search` becomes `.isSearchField`, and
+`status` / `alert` become Compose live regions — and name the rest as explicit no-ops, so
 a role that does nothing there is a decision on record rather than an
 oversight. See `core/role.go` for the full table and
 `mobile/verify/role_test.go` for the check that holds both natives to it.
+
+`RoleButton` and `RoleLink` are a real distinction, not a synonym: a button
+does something *here*, a link goes somewhere else, and nothing in the tree
+carries the difference on its own — `core.OpenURL` is a callback like any
+other, so a row that dials a number and a row that files a form are the same
+tappable `Box` until one of them says which it is.
 
 Roles are never inferred: a `Box` with an `OnTap` is a button only if it says
 so, because a widget that wraps a tappable row in a tappable card would

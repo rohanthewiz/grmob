@@ -31,6 +31,7 @@ package core
 //	heading       | role="heading"  | .isHeader      | heading()
 //	columnheader  | role=…          | .isHeader      | heading()
 //	button        | role="button"   | .isButton      | role = Role.Button
+//	link          | role="link"     | .isLink        | —
 //	search        | role="search"   | .isSearchField | —
 //	status        | role="status"   | —              | liveRegion = Polite
 //	alert         | role="alert"    | —              | liveRegion = Assertive
@@ -40,7 +41,7 @@ package core
 // navigation and toolbar — the tabular set, the collection pair, and the
 // landmarks.
 //
-// Nine of the fifteen do nothing on either native, and that is the
+// Nine of the sixteen do nothing on either native, and that is the
 // honest state of those platforms rather than a gap to be filled later:
 // neither has a tabular semantics vocabulary a role can be mapped onto (Compose
 // has collectionInfo, which describes counts and indices this prop does not
@@ -121,9 +122,17 @@ const (
 // every renderer draws as inert scenery and every screen reader announces as
 // text. A core.Button needs none of this; it is already a <button> on the web
 // and a real control on both natives.
+//
+// RoleLink is the other half of that pair, and the distinction is not
+// cosmetic: a button does something *here* and a link goes somewhere else. A
+// reader deciding whether to follow a control needs to know which, and the
+// framework has no node type that carries the difference — core.OpenURL is a
+// callback like any other, so a row that dials a phone number and a row that
+// files a form are the same tappable Box until one of them says otherwise.
 const (
 	RoleHeading Role = "heading"
 	RoleButton  Role = "button"
+	RoleLink    Role = "link"
 )
 
 // Roles returns every declared Role except RoleNone, in declaration order.
@@ -132,10 +141,10 @@ const (
 // them: it is the field's zero value, no renderer has an arm for it, and a
 // coverage check that demanded one would be asking each renderer to implement
 // "unset". Everything downstream that iterates roles — the native dispatch
-// pins, the DOM export test — wants the fifteen that do something.
+// pins, the DOM export test — wants the sixteen that do something.
 //
 // A fresh slice per call rather than a package-level var, which any importer
-// could write to. Fifteen elements are cheaper to build than to defend.
+// could write to. Sixteen elements are cheaper to build than to defend.
 //
 // Pinned to the const blocks above by role_enum_test.go, which reads this
 // file's syntax tree: adding a constant without adding it here should fail
@@ -147,6 +156,6 @@ func Roles() []Role {
 		RoleList, RoleListItem,
 		RoleBanner, RoleNavigation, RoleSearch, RoleToolbar,
 		RoleStatus, RoleAlert,
-		RoleHeading, RoleButton,
+		RoleHeading, RoleButton, RoleLink,
 	}
 }

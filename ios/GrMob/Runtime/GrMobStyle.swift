@@ -574,7 +574,7 @@ private func RoundedCornerShapeIfAny(radius: CGFloat) -> RoundedRectangle? {
 
 /// Maps one core.Role onto SwiftUI accessibility traits.
 ///
-/// Four of the fifteen roles land on a trait; the other eleven are spelled out
+/// Five of the sixteen roles land on a trait; the other eleven are spelled out
 /// anyway. SwiftUI's AccessibilityTraits is a small set about *controls* —
 /// button, link, image, search field, header — and has no landmarks at all
 /// (VoiceOver's rotor navigates by heading, not by banner) and no tabular
@@ -596,6 +596,9 @@ private func grMobTraitsFor(_ role: String) -> AccessibilityTraits {
     switch role {
     case "heading", "columnheader": .isHeader
     case "button": .isButton
+    // The one platform of the four that distinguishes a link from a button in
+    // its own vocabulary, which is the argument for core.RoleLink existing.
+    case "link": .isLink
     case "search": .isSearchField
     // No SwiftUI trait names these.
     case "table", "rowgroup", "row", "cell": []

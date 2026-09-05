@@ -107,7 +107,17 @@ func (h GroupHeader) Render(ctx *core.Context) *core.Node {
 		core.Text(h.Group.Label,
 			core.UseStyle(t.Typography.Caption),
 			core.FontWeight(core.Bold),
-			core.TextColor(t.Colors.TextSecondary)),
+			core.TextColor(t.Colors.TextSecondary),
+			// A band titles a run of rows, which is what a heading is — and
+			// on a long banded feed it is the thing a reader navigating by
+			// heading wants to move between, since the screen's own title
+			// scrolled away several pages ago.
+			//
+			// On the label rather than on the band: the band also holds the
+			// count badge, and a heading whose name is "March 12" reads worse
+			// than one whose name is "March". The count is still announced,
+			// as the separate thing it is.
+			core.AccessibilityRole(core.RoleHeading)),
 	))
 	if !h.HideCount {
 		items = append(items, Badge{Text: itoa(h.Group.Count)})
