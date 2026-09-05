@@ -31,7 +31,9 @@ import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.LazyItemScope
+import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
@@ -56,6 +58,7 @@ import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -1087,6 +1090,27 @@ private fun ColumnScope.ColumnChildren(node: GrMobNode, growMinHeight: Dp? = nul
  */
 @Composable
 private fun GrMobScroll(node: GrMobNode, extra: Modifier) {
+    // core.Horizontal() turns the region on its side. It arrives as
+    // Style.FlexDirection because that is the property both DOM targets
+    // already implement it with (see core/layout.go's Horizontal), so this is
+    // the whole of the Compose half: a Row on a horizontal scroll state
+    // instead of a Column on a vertical one.
+    //
+    // No BoxWithConstraints on this branch, and no growMinHeight: the
+    // measurement it exists to take is the *viewport height* a FlexGrow child
+    // needs when the vertical axis is the unbounded one. Here the unbounded
+    // axis is horizontal, the height is whatever the parent proposes, and a
+    // grow child in a horizontal strip has no cross-axis meaning to grow
+    // into — the same reason GrMobList has no main-axis FlexGrow either.
+    if (node.style?.flexDirection == "row") {
+        Row(
+            node.style.boxModifier(extra).horizontalScroll(rememberScrollState()),
+            horizontalArrangement = packedHorizontally(node.style),
+        ) {
+            RowChildren(node)
+        }
+        return
+    }
     BoxWithConstraints(node.style.boxModifier(extra)) {
         val viewport = if (constraints.hasBoundedHeight) maxHeight else null
         // packedVertically, not a bare Column: a Scroll is a flex column on
@@ -1215,7 +1239,10 @@ private fun GrMobList(node: GrMobNode, extra: Modifier) {
     // Reading node.children in composition subscribes this scope to the
     // SnapshotStateList, so structural patches recompose the list.
     val rows = flattenFragments(node.children)
+    val listState = rememberLazyListState()
+    EndReachedReporter(node, listState, rows.size)
     LazyColumn(
+        state = listState,
         modifier = s.boxModifier(extra, gestureModifier(node)),
         verticalArrangement = verticalArrangement(s),
         // The lazy sibling of GrMobColumn's dispatch, with the same contract
@@ -1231,35 +1258,117 @@ private fun GrMobList(node: GrMobNode, extra: Modifier) {
             else -> Alignment.Start
         },
     ) {
-        itemsIndexed(
-            rows,
-            key = { i, row -> row.key.ifEmpty { i } },
-            contentType = { _, row -> row.type },
-        ) { _, row ->
-            // A Transition declared on the List itself animates row
-            // *placement*: keyed rows slide to their new positions on
-            // reorder/insert/removal instead of teleporting. (A Transition
-            // on a row animates that row's own property changes — two
-            // declarations, two scopes.) Built here because
-            // animateItemPlacement only exists inside LazyItemScope.
-            var m: Modifier = if ((s?.transitionMs ?: 0) > 0) {
-                Modifier.animateItemPlacement(s!!.transitionTween())
+        // A hand-written loop rather than itemsIndexed, because the two kinds
+        // of row are declared with two different DSL calls: core.StickyHeader
+        // marks a child as a group band, and a band is emitted through
+        // stickyHeader {} so the lazy list pins it while its run scrolls
+        // underneath. Everything else is an ordinary item {}. itemsIndexed
+        // can only emit one kind, so it cannot express a list that has both.
+        //
+        // The key and contentType arguments are the same values itemsIndexed
+        // was deriving — row key falling back to position, node type — so row
+        // identity and view recycling are unchanged for a list with no
+        // headers in it.
+
+        // Cross-axis stretch, in the same spelling ColumnChildren uses: a
+        // List's cross axis is horizontal like a Column's, so it takes the
+        // column helper — the one that reads the Style.Align fallback. This
+        // used to call isStretch, the Row spelling that tests alignItems
+        // alone, while the placement dispatch above read the fallback:
+        // Align(AlignStretch) with AlignItems unset took the "stretch" arm,
+        // whose comment promises this modifier fills the row, and then
+        // nothing filled it. A lazy item has no weight to combine the fill
+        // with, since a lazy list's main axis is scrollable and therefore
+        // unbounded.
+        //
+        // Read here, in GrMobList itself, rather than in a helper beside
+        // rowPlacement: this is what mobile/verify's
+        // TestListStretchFillReadsTheAlignFallback anchors on, and a helper
+        // the test cannot see would hide the next drift as well as the first
+        // one hid itself.
+        val stretch = isColumnStretch(s)
+        rows.forEachIndexed { i, row ->
+            val key = row.key.ifEmpty { i }
+            val fill = if (stretch && !hugsContent(row.style)) {
+                Modifier.fillMaxWidth()
             } else {
                 Modifier
             }
-            // Same cross-axis stretch as ColumnChildren, down to the
-            // spelling: a List's cross axis is horizontal like a Column's,
-            // so it takes the column helper — the one that reads the
-            // Style.Align fallback. This used to call isStretch, the Row
-            // spelling that tests alignItems alone, while the placement
-            // dispatch above read the fallback: Align(AlignStretch) with
-            // AlignItems unset took the "stretch" arm, whose comment
-            // promises this modifier fills the row, and then nothing filled
-            // it. A lazy item has no weight to combine the fill with, since
-            // a lazy list's main axis is scrollable and therefore unbounded.
-            if (isColumnStretch(s) && !hugsContent(row.style)) m = m.fillMaxWidth()
-            RenderNode(row, m)
+            if (isStickyHeader(row)) {
+                stickyHeader(key = key, contentType = row.type) {
+                    // No placement animation on a pinned header: while it is
+                    // stuck, the lazy list is positioning it itself every
+                    // frame, and an animation competing for the same offset
+                    // makes it drift. Its rows still animate.
+                    RenderNode(row, fill)
+                }
+            } else {
+                item(key = key, contentType = row.type) {
+                    RenderNode(row, rowPlacement(s).then(fill))
+                }
+            }
         }
+    }
+}
+
+/** Whether a List child asked to be pinned; see core.StickyHeader. */
+private fun isStickyHeader(row: GrMobNode): Boolean = row.style?.position == "sticky"
+
+/**
+ * A Transition declared on the List itself animates row *placement*: keyed
+ * rows slide to their new positions on reorder/insert/removal instead of
+ * teleporting. (A Transition on a row animates that row's own property
+ * changes — two declarations, two scopes.) An extension on LazyItemScope
+ * because animateItemPlacement exists nowhere else.
+ */
+@OptIn(ExperimentalFoundationApi::class)
+private fun LazyItemScope.rowPlacement(s: GrMobStyle?): Modifier =
+    if ((s?.transitionMs ?: 0) > 0) {
+        Modifier.animateItemPlacement(s!!.transitionTween())
+    } else {
+        Modifier
+    }
+
+/** How close to the last row counts as "the end" — see EndReachedReporter. */
+private const val END_REACHED_SLACK = 3
+
+/**
+ * core.OnEndReached: reports that the reader has scrolled within
+ * END_REACHED_SLACK rows of the bottom, so Go can fetch the next page.
+ *
+ * snapshotFlow over the last *visible* index rather than a scroll listener:
+ * the lazy list already maintains layoutInfo, the flow emits only when the
+ * value actually changes, and it costs nothing at all while the list sits
+ * still. The three-row slack is what makes the fetch overlap the scroll
+ * instead of following it — by the time the last row is on screen the page
+ * is already in flight.
+ *
+ * Composed unconditionally, and inert without the prop, because a composable
+ * that is called only sometimes changes the composition's shape from one pass
+ * to the next. Keyed on rows.size so the comparison re-arms against the new
+ * length after a page lands; keyed on the callback ID because it is
+ * positional and a pass can hand this list a different one.
+ *
+ * An empty list never reports the edge — there is no last row to have reached
+ * — which matches the other three renderers, where "no rows" means "no
+ * observation target" and "nothing to appear" for free. The first page is the
+ * app's to ask for; this only ever asks for the next one.
+ *
+ * Firing more than once for the same bottom is expected and is not guarded
+ * here: core.OnEndReached debounces on the Go side by remembering the row
+ * count at the last fire, which is where all four renderers' different
+ * notions of "again" are reconciled.
+ */
+@Composable
+private fun EndReachedReporter(node: GrMobNode, listState: LazyListState, rowCount: Int) {
+    val callbackId = node.stringProp("onEndReached")
+    val runtime = LocalGrMobRuntime.current
+    LaunchedEffect(listState, callbackId, rowCount) {
+        if (callbackId.isEmpty() || rowCount == 0) return@LaunchedEffect
+        snapshotFlow { listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1 }
+            .collect { last ->
+                if (last >= rowCount - END_REACHED_SLACK) runtime.click(callbackId)
+            }
     }
 }
 

@@ -149,6 +149,16 @@ type DataTable[T any] struct {
 	Header            func(Group) core.View
 	HideTrailingCount bool
 
+	// StickyHeaders pins each group band while its run scrolls under it, as
+	// in GroupedList.
+	//
+	// It pins the *group* bands, not the column header. The column header is
+	// a sibling of the body list rather than a row inside it — that is what
+	// keeps it from scrolling away in the first place — and both natives
+	// implement pinning inside their lazy container only, so there is nothing
+	// there for the marker to mean.
+	StickyHeaders bool
+
 	// Sort is the active sort, nil for none. OnSort receives the requested
 	// sort when a sortable header is tapped: the same column toggles
 	// direction, a different column starts ascending.
@@ -228,7 +238,7 @@ func (d DataTable[T]) Render(ctx *core.Context) *core.Node {
 	default:
 		body = appendRows(ctx, body, rows, d.Key,
 			func(row T) core.View { return d.cellRow(t, cols, row) },
-			d.GroupBy, d.Header, d.HideTrailingCount, d.Dividers, d.wrapRow)
+			d.GroupBy, d.Header, d.HideTrailingCount, d.StickyHeaders, d.Dividers, d.wrapRow)
 	}
 	items = append(items, core.List(body...))
 

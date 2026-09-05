@@ -265,3 +265,68 @@ func renderAll(ctx *Context, parentType string, views []View) []*Node {
 	}
 	return out
 }
+
+// Horizontal turns a Scroll on its side: its children lay out in a row and
+// the viewport pans across them instead of down them.
+//
+//	core.Scroll(
+//	    core.Horizontal(),
+//	    core.Gap(8),
+//	    chips...,
+//	)
+//
+// It is the chip strip, the tab strip and the card carousel — a short,
+// wider-than-the-screen row that must not wrap and must not be clipped.
+//
+// # Why a StyleProp and not a Props flag
+//
+// "Sideways" is spelled entirely in properties Style already carries, and
+// CSS is the spelling both DOM targets already implement:
+//
+//	flex-direction: row      <- Style.FlexDirection
+//	overflow: auto           <- Style.Overflow
+//
+// So the two web renderers need no change at all to honour this — htmlout's
+// styleValue lets an explicit FlexDirection override the node's stacking
+// axis, and grmob-runtime.js's styleFromGrMob does the same. That matters
+// more than it looks: the runtime's style path is *total* (an update-style
+// patch carries the whole new Style and every managed property is
+// reassigned), so a flag living in Props would have had to be mirrored onto
+// the element and re-read on every style patch, or the first unrelated
+// re-render would have quietly stood the strip back up on end. A Style field
+// rides the patch channel that was built for exactly this.
+//
+// The natives, which have no CSS to inherit, read Style.FlexDirection in
+// their Scroll composite and nowhere else — the same narrow contract
+// Style.FlexWrap already has, where only the Row composite reads it.
+//
+// # Overflow is supplied, not forced
+//
+// A vertical Scroll emits no overflow on the web at all: the page scrolls,
+// and the region is just a column. A horizontal one has no such fallback —
+// with no overflow the row is simply clipped or squashed — so this supplies
+// `auto` when the caller has not said otherwise. An explicit core.Overflow
+// wins in either argument order, because the value is only defaulted when it
+// is still empty.
+//
+// (`overflow: auto` covers both axes rather than overflow-x alone. CSS
+// forces the other axis to auto anyway the moment one of them is not
+// `visible`, so the shorthand says what the browser was going to do; a strip
+// whose children fit its height never shows the vertical bar.)
+//
+// # What it is not
+//
+// It is not a horizontal List. core.List's laziness, its cross-axis stretch
+// and its FlexGrow contract are all written for a vertical main axis on both
+// natives, and nothing yet asks for a lazily-materialized carousel. A strip
+// of chips or a handful of cards is short by construction, which is what
+// Scroll is for.
+func Horizontal() StyleProp {
+	return styleFunc(func(s *Style) {
+		s.FlexDirection = FlexRow
+		// Defaulted, not assigned: see "Overflow is supplied, not forced".
+		if s.Overflow == "" {
+			s.Overflow = "auto"
+		}
+	})
+}

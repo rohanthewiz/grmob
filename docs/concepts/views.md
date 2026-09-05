@@ -112,6 +112,69 @@ a chat composer that wants the inset emphatically does not want a stray tap
 closing the keyboard between messages. The iOS drag-to-dismiss above is the
 platform's own gesture, not a handler of ours.
 
+### Scrolling sideways
+
+`core.Horizontal()` turns a `Scroll` on its side: children lay out in a row
+and the viewport pans across them. It is the chip strip, the tab strip and the
+card carousel — a short, wider-than-the-screen row that must not wrap and must
+not be clipped.
+
+```go
+core.Scroll(core.Horizontal(), core.Gap(8), chips...)
+```
+
+It is a `StyleProp`, not a props flag, because "sideways" is already spelled
+in fields `Style` carries: `FlexDirection: row` plus `Overflow: auto`. Both
+web targets therefore honour it with no code of their own, and the two natives
+read the axis in their scroll composite (`Modifier.horizontalScroll`,
+`ScrollView(.horizontal)`) and nowhere else. The overflow is *supplied* rather
+than forced — an explicit `core.Overflow` wins in either argument order.
+
+It is deliberately not a horizontal `List`: the lazy containers' cross-axis
+and `FlexGrow` contracts are written for a vertical main axis on both natives,
+and a strip of chips is short by construction, which is what `Scroll` is for.
+
+### List: sticky headers and the end of the list
+
+`core.StickyHeader()` pins a `List` child to the top of the viewport while the
+rows it introduces scroll past underneath it. `core.OnEndReached(fn)` fires
+when the reader gets within a few rows of the bottom.
+
+```go
+core.List(
+    core.OnEndReached(pager.LoadNext),
+    core.Keyed("group:2026-01", core.Row(core.StickyHeader(), monthLabel)),
+    core.Keyed("s1", row), core.Keyed("s2", row),
+)
+```
+
+| | `StickyHeader` | `OnEndReached` |
+|---|---|---|
+| Android | `LazyColumn { stickyHeader {} }` | last visible index ≥ n−3, off `LazyListState` |
+| iOS | `LazyVStack(pinnedViews: .sectionHeaders)` + `Section(header:)` | `.onAppear` on the last row |
+| WASM DOM | `position: sticky` | `IntersectionObserver` on the last child |
+| `htmlout` | `position: sticky` | the callback ID as `data-onendreached`; a static document has no observer |
+
+`StickyHeader` is `Position: sticky` — the value `core.Style` has always
+carried and the web has always emitted — plus a `Top` and a `ZIndex`, without
+which a sticky box silently never sticks or is painted over by the rows
+sliding under it. Both are supplied only when unset. It does something *in a
+`List`*: both natives implement pinning inside their lazy container, so the
+same marker on a `Column` child is web-only.
+
+`OnEndReached` is debounced in Go rather than in four renderers. Every
+platform reports the same bottom more than once — an observer re-fires on
+resize, `.onAppear` re-fires on recycle, a snapshot flow emits per
+visible-index change — so the prop remembers how many rows the list held when
+its handler last ran and refuses to run again until that number changes. A
+page that appends rows unlocks the next fire; a page that returns nothing
+leaves the guard shut, so a feed that has reached its end goes quiet instead
+of re-asking forever. An empty list never reports the edge at all: the first
+page is the app's to ask for.
+
+`components.GroupedList` wraps both (`StickyHeaders`, `OnEndReached`) and
+`components.ChipStrip{Scrollable: true}` wraps the horizontal scroll.
+
 ## Leaves
 
 | Widget | Signature (abridged) |

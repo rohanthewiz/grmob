@@ -30,14 +30,22 @@ import "github.com/rohanthewiz/grmob/core"
 // segmented control when the options are a closed choice, this when they are
 // a collection.
 //
-// # Wrapping, for now
+// # Wrapping or scrolling
 //
-// The strip wraps rather than scrolling, because core.Scroll is vertical only
-// today. Horizontal scrolling is the natural behavior for a long filter bar
-// and arrives with core.Horizontal (roadmap item B1); until then a strip with
-// more chips than fit takes a second line, which is correct on every target
-// and costs no renderer work. There is deliberately no Scrollable field
-// standing by: a prop that does nothing is worse than one that does not exist.
+// The default is to wrap: a strip with more chips than fit takes a second
+// line. That is the right shape for a set the reader should see all of —
+// the tags on an article, the scripture references on a sermon — and it
+// costs the layout nothing.
+//
+// Scrollable is the other shape. A long filter bar reads better as one line
+// that pans sideways, because a bar that grows to three lines pushes the
+// content it filters off the screen, and the chips past the fold are a hint
+// that there is more rather than a queue demanding to be read.
+//
+//	components.ChipStrip{Scrollable: true, Chips: years}
+//
+// The two are exclusive by construction — a scrolling strip is one line, so
+// there is nothing to wrap — and Scrollable wins when both are asked for.
 type ChipStrip struct {
 	// Chips are the strip's contents, in order.
 	Chips []Chip
@@ -51,6 +59,18 @@ type ChipStrip struct {
 	// Gap is the spacing between chips, both across and between lines. Zero
 	// takes the theme's SM step.
 	Gap float64
+
+	// Scrollable makes the strip one line that pans sideways instead of a
+	// block that wraps; see the type comment for when each is right.
+	//
+	// It is a core.Scroll carrying core.Horizontal, not a Row with an
+	// overflow: the natives have no CSS to fall back on and implement
+	// sideways panning in their scroll composites alone (Compose
+	// horizontalScroll, SwiftUI ScrollView(.horizontal)), so the node type
+	// has to change, not just a style. Style still lands on the strip
+	// itself either way — the Scroll *is* the strip when this is set, so
+	// there is no extra box to configure.
+	Scrollable bool
 
 	// Style is applied after the widget's own defaults, so the wrap, the gap
 	// and the (removed) row padding are all overridable.
@@ -66,9 +86,16 @@ func (c ChipStrip) Render(ctx *core.Context) *core.Node {
 	}
 
 	items := make([]core.PropsAndChildren, 0, len(c.Chips)+len(c.Children)+len(c.Style)+3)
+	if c.Scrollable {
+		// core.Horizontal supplies the row axis and the overflow; the wrap is
+		// deliberately absent, since a strip that pans has one line by
+		// definition and `flex-wrap: wrap` inside a horizontal scroller is a
+		// contradiction the browser resolves by wrapping, not by scrolling.
+		items = append(items, core.Horizontal(), core.Gap(gap))
+	} else {
+		items = append(items, core.FlexWrap(true), core.Gap(gap))
+	}
 	items = append(items,
-		core.FlexWrap(true),
-		core.Gap(gap),
 		// Assigns over the theme's Row inset rather than merging with it. A
 		// strip of chips is a run of content inside a screen that is already
 		// padded, not a row with margins of its own; leaving the base padding
@@ -91,5 +118,12 @@ func (c ChipStrip) Render(ctx *core.Context) *core.Node {
 		}
 	}
 
+	// A Scroll carries no theme base, so the Padding(0) above is a no-op on
+	// that branch rather than a correction — kept unconditional because it is
+	// the same statement about the strip either way, and a reader comparing
+	// the two branches should find only the axis differing between them.
+	if c.Scrollable {
+		return core.Scroll(items...).Render(ctx)
+	}
 	return core.Row(items...).Render(ctx)
 }

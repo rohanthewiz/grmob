@@ -814,8 +814,41 @@ half of that as a `partial-sort` concern. `HideTrailingCount` suppresses the
 last group's badge while a pager still has pages to fetch, since a closed
 group's count is final and an open one's is about to change.
 
-See lesson 4.6 of the [interactive tutorial](tutorial-interactive.md) and the
-godoc for the full field list.
+### Sticky bands and infinite feeds
+
+`StickyHeaders` pins each group band to the top of the viewport while its run
+scrolls underneath (both widgets); `OnEndReached` fires when the reader gets
+within a few rows of the bottom, so the next page arrives without a tap
+(`GroupedList`).
+
+```go
+components.GroupedList[Entry]{
+    Items:         pager.Items,
+    GroupBy:       byMonth,
+    StickyHeaders: true,
+    OnEndReached:  pager.LoadNext,   // the scroll
+    Footer: components.LoadMore{     // and the tap, and the states
+        HasMore: pager.HasMore, Loading: pager.Loading,
+        Err: pager.Err, OnLoadMore: pager.LoadNext},
+}
+```
+
+**Keep the footer.** Auto-loading replaces the tap, not the tail: `LoadMore`
+is still where "Loading…" and a failed page's Retry live, and it is the
+manual fallback wherever the edge cannot be reported (a static export, a
+browser with no `IntersectionObserver`). Handing the same load function to
+both is the intended shape — `core.OnEndReached` will not re-ask until the row
+count changes, so a tap and a scroll cannot double-load.
+
+`StickyHeaders` pins the *default* `GroupHeader`. A `Header` override builds
+its own view, which the widget cannot reach into; such a header pins itself
+with `core.StickyHeader()` in its own `Style`. On `DataTable` the flag pins
+the group bands and not the column header — the column header is a sibling of
+the body list rather than a row inside it, which is what keeps it on screen in
+the first place.
+
+See lessons 4.6 and 4.8 of the [interactive tutorial](tutorial-interactive.md)
+and the godoc for the full field list.
 
 ## AppBar
 
@@ -959,10 +992,24 @@ else.
 fixed, exhaustive set drawn as one joined control. ChipStrip is the loose
 case — any number selected including none, a set that comes from data.
 
-It wraps rather than scrolls, because `core.Scroll` is vertical only today;
-horizontal scrolling arrives with `core.Horizontal`. There is deliberately no
-`Scrollable` field standing by, since a prop that does nothing is worse than
-one that does not exist.
+`Scrollable` makes the strip one line that pans sideways instead of a block
+that wraps:
+
+```go
+components.ChipStrip{Scrollable: true, Chips: years}
+```
+
+Wrapping is right for a set the reader should see all of — the tags on an
+article, the references on a sermon. Panning is right for a long filter bar,
+where a strip growing to three lines pushes the content it filters off the
+screen and the chips past the fold read as "there is more" rather than as a
+queue. The two are exclusive: a scrolling strip is one line, so there is
+nothing to wrap.
+
+Under the hood it becomes a `core.Scroll` carrying `core.Horizontal()`, not a
+`Row` with an overflow — the natives implement sideways panning in their
+scroll composites alone, so the node type has to change. `Style` still lands
+on the strip itself either way.
 
 ## Skeleton
 

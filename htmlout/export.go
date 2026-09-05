@@ -195,6 +195,13 @@ func renderNode(b *element.Builder, node *core.Node, from imposed, path string) 
 		// behavior — so a loader that wires the other callbacks gets working
 		// keyboard traversal from the same table.
 		{"onSubmit", "data-onsubmit"},
+		// core.OnEndReached. Recorded, not wired, like every other ID here:
+		// the edge is a scroll position and a static document has no
+		// observer to report one. What the attribute buys is that a loader
+		// which does have one — grmob-runtime.js, or anything reading this
+		// table — knows which callback the bottom of this list belongs to
+		// without re-deriving it from the tree.
+		{"onEndReached", "data-onendreached"},
 	} {
 		if id, ok := node.Props[cb.prop].(string); ok {
 			attrs = append(attrs, cb.attr, id)

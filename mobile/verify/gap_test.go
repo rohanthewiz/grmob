@@ -85,7 +85,15 @@ func TestNativeContainersSpaceAlongTheirOwnAxis(t *testing.T) {
 		{file: swiftRenderer, decl: "struct GrMobFlexStack", want: "verticalGap"},
 		{file: swiftRenderer, decl: "struct GrMobFlexStack", want: "horizontalGap"},
 		{file: swiftRenderer, decl: "private struct GrMobList", want: "verticalGap", reject: "horizontalGap"},
-		{file: swiftRenderer, decl: "private struct GrMobScroll", want: "verticalGap", reject: "horizontalGap"},
+		// A Scroll has both axes since core.Horizontal (roadmap B1): the
+		// default region stacks down and spaces by verticalGap, and a
+		// horizontal one stacks across and spaces by horizontalGap. So it
+		// joins GrMobFlexStack and GrMobRow as a container that must mention
+		// both and can reject neither — the rows below are the whole check
+		// for it, and a Scroll that dropped one axis's accessor fails on the
+		// missing `want` rather than on a stale `reject`.
+		{file: swiftRenderer, decl: "private struct GrMobScroll", want: "verticalGap"},
+		{file: swiftRenderer, decl: "private struct GrMobScroll", want: "horizontalGap"},
 		// The wrapping Row spaces both axes: chips along a line, lines apart.
 		{file: swiftRenderer, decl: "private struct GrMobRow", want: "horizontalGap"},
 		{file: swiftRenderer, decl: "private struct GrMobRow", want: "verticalGap"},

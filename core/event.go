@@ -186,6 +186,16 @@ func (r *callbackRegistry) lookupInt(id string) (func(int), bool) {
 	return fn, ok
 }
 
+// hasVoid reports whether a void callback ID is still registered. Its one
+// caller is endReachedState.purge, which needs the registry's answer rather
+// than a second liveness rule of its own.
+func (r *callbackRegistry) hasVoid(id string) bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	_, ok := r.voidCBs[id]
+	return ok
+}
+
 // purge drops every callback not marked live since the last beginPass. Called
 // after each diff so IDs the pass did not re-register — nodes that left the
 // tree — become silent no-ops instead of firing handlers for dead UI.
@@ -260,8 +270,14 @@ func (ctx *Context) BeginRenderPass() {
 
 // PurgeUnusedCallbacks drops handlers not re-registered in the current pass;
 // see callbackRegistry.purge.
+//
+// OnEndReached's debounce ledger is trimmed in the same breath and against
+// the registry's own survivors, so the two can never disagree about which
+// lists are still on screen — a guard outliving its handler would silently
+// suppress the first page fetch of whatever list next inherits the ID.
 func (ctx *Context) PurgeUnusedCallbacks() {
 	ctx.registry.purge()
+	ctx.endReached.purge(ctx.registry.hasVoid)
 }
 
 // TriggerCallback dispatches a void event (e.g. a button tap) by callback ID.

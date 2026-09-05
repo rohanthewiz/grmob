@@ -607,8 +607,46 @@ private struct GrMobScroll: View {
     @State private var viewport: CGFloat = 0
 
     var body: some View {
+        // core.Horizontal() turns the region on its side. It arrives as
+        // Style.FlexDirection because that is the property both DOM targets
+        // already implement it with (see core/layout.go's Horizontal), so the
+        // SwiftUI half is just the sideways spelling of the same two views.
+        if node.style?.flexDirection == "row" {
+            horizontal
+        } else {
+            vertical
+        }
+    }
+
+    /// The sideways strip: chips, tabs, a card carousel.
+    ///
+    /// No viewport preference and no minHeight, unlike the vertical body
+    /// below: that measurement exists to give a FlexGrow child a floor on the
+    /// axis the scroll made unbounded, and here the unbounded axis is the
+    /// horizontal one — a strip's height is whatever its parent proposes, and
+    /// growing sideways inside a region that already scrolls sideways has no
+    /// meaning. Compose's GrMobScroll skips its BoxWithConstraints on this
+    /// branch for the same reason.
+    ///
+    /// Cross-axis alignment is .top rather than the vertical body's .leading
+    /// stretch: a Row's cross axis is vertical, and neither native stretches a
+    /// row's children unless AlignItems says "stretch" outright — the
+    /// Style.Align fallback is a vertical-container rule (see crossAxisValue).
+    private var horizontal: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(alignment: .top, spacing: node.style?.horizontalGap ?? 0) {
+                ForEach(node.children, id: \.viewID) { child in
+                    RenderNode(node: child, grow: .none)
+                }
+            }
+        }
+        .grMobKeyboardAware(node.boolProp("keyboardAware"))
+        .grMobBox(node.style, grow: grow)
+    }
+
+    private var vertical: some View {
         let stretch = columnStretches(crossAxisValue(node.style))
-        ScrollView {
+        return ScrollView {
             // spacing, not a hard 0: a Scroll is a flex column on both web
             // targets (the WASM runtime lists it in STACK_CONTAINERS and
             // htmlout emits gap for it), so core.Gap on a Scroll spaced its
@@ -654,41 +692,61 @@ private struct GrMobViewportHeight: PreferenceKey {
 private struct GrMobList: View {
     let node: GrMobNode
     let grow: GrMobGrow
+    @Environment(\.grMobDispatch) private var dispatch
 
     var body: some View {
         let s = node.style
         let rows = flattenFragments(node.children)
+        // Read here rather than inside rowView so the equality stays in the
+        // declaration mobile/verify's TestListStretchFillReadsTheAlignFallback
+        // anchors on — the pin exists because this read and crossAlignmentH's
+        // once came apart, and a helper it cannot see would hide the next
+        // drift exactly as effectively.
+        let stretch = columnStretches(crossAxisValue(s))
         ScrollView {
-            LazyVStack(alignment: crossAlignmentH(s), spacing: s?.verticalGap ?? 0) {
-                // Cross-axis stretch, the same contract GrMobFlexStack
-                // implements for Row/Column. A lazy stack cannot be replaced
-                // by a custom Layout — laziness is the whole point of using
-                // it — so stretch is expressed the only way it can be here:
-                // a flexible frame on each row. There is no main-axis
-                // counterpart because a scrolling axis has no leftover space
-                // for FlexGrow to divide.
-                //
-                // Read through crossAxisValue — the same read the stack's
-                // alignment makes — so the Style.Align fallback reaches this
-                // binding too. It used to test alignItems alone while
-                // crossAlignmentH read the fallback, and the two answers
-                // disagreed exactly when it mattered: Align: stretch with
-                // AlignItems unset took crossAlignmentH's "stretch" arm,
-                // whose comment promises this frame does the filling, and
-                // then no frame was applied. See crossAxisValue for the pin
-                // that keeps the two reads together.
-                let stretch = columnStretches(crossAxisValue(s))
-                ForEach(rows, id: \.viewID) { row in
-                    RenderNode(node: row, grow: stretch && !hugsContent(row.style) ? .horizontal : .none)
-                }
-            }
+            // Two stacks rather than one taking an empty pinnedViews, because
+            // a Section is not free of consequence: it changes what the lazy
+            // stack's items *are*, and every List that predates
+            // core.StickyHeader should compose exactly as it did. Sections
+            // exist here only when a child actually asked to be pinned, which
+            // is what listSections returning nil says.
+            //
             // A Transition declared on the List itself animates row
             // *placement*: keyed rows slide/fade on reorder, insertion, and
             // removal instead of teleporting — the Android renderer's
             // animateItemPlacement analog. Scoped by the row-identity array
             // so only structural changes trigger it; a row's own property
-            // changes animate under its own Transition via grMobBox.
-            .animation(s?.swiftUIAnimation, value: rows.map(\.viewID))
+            // changes animate under its own Transition via grMobBox. Written
+            // on both branches rather than on a wrapper, so neither stack
+            // gains a view between itself and the scroll.
+            if let sections = listSections(rows) {
+                LazyVStack(alignment: crossAlignmentH(s),
+                           spacing: s?.verticalGap ?? 0,
+                           pinnedViews: [.sectionHeaders]) {
+                    ForEach(sections) { group in
+                        Section {
+                            ForEach(group.rows, id: \.viewID) { child in
+                                rowView(child, stretch: stretch, last: rows.last)
+                            }
+                        } header: {
+                            // An EmptyView header is what the leading run
+                            // gets: the rows above the first band, which
+                            // belong to no group and must not be pinned.
+                            if let header = group.header {
+                                rowView(header, stretch: stretch, last: rows.last)
+                            }
+                        }
+                    }
+                }
+                .animation(s?.swiftUIAnimation, value: rows.map(\.viewID))
+            } else {
+                LazyVStack(alignment: crossAlignmentH(s), spacing: s?.verticalGap ?? 0) {
+                    ForEach(rows, id: \.viewID) { child in
+                        rowView(child, stretch: stretch, last: rows.last)
+                    }
+                }
+                .animation(s?.swiftUIAnimation, value: rows.map(\.viewID))
+            }
         }
         .grMobKeyboardAware(node.boolProp("keyboardAware"))
         .grMobBox(s, grow: grow,
@@ -696,6 +754,95 @@ private struct GrMobList: View {
                     onLongPress: node.stringProp("onLongPress"),
                     axis: .vertical)
     }
+
+    /// One row, plus the end-reached trip wire on the last of them.
+    ///
+    /// Cross-axis stretch, the same contract GrMobFlexStack implements for
+    /// Row/Column. A lazy stack cannot be replaced by a custom Layout —
+    /// laziness is the whole point of using it — so stretch is expressed the
+    /// only way it can be here: a flexible frame on each row. There is no
+    /// main-axis counterpart because a scrolling axis has no leftover space
+    /// for FlexGrow to divide.
+    ///
+    /// Read through crossAxisValue — the same read the stack's alignment
+    /// makes — so the Style.Align fallback reaches this binding too. It used
+    /// to test alignItems alone while crossAlignmentH read the fallback, and
+    /// the two answers disagreed exactly when it mattered: Align: stretch
+    /// with AlignItems unset took crossAlignmentH's "stretch" arm, whose
+    /// comment promises this frame does the filling, and then no frame was
+    /// applied. See crossAxisValue for the pin that keeps the two reads
+    /// together.
+    ///
+    /// core.OnEndReached rides the last row's .onAppear. A LazyVStack
+    /// materializes a row shortly before it scrolls into view, so "appeared"
+    /// is already a little ahead of "seen" — which is the same head start
+    /// Compose buys with its three-row slack and the runtime with its
+    /// rootMargin. The identity test is against the row the *whole list* ends
+    /// with, not the section's, so a pinned-header list arms the wire once
+    /// rather than once per group.
+    ///
+    /// .onAppear fires again every time the row is recycled back into view,
+    /// which is expected and deliberately not guarded here: core.OnEndReached
+    /// debounces on the Go side by remembering the row count at the last
+    /// fire, which is where all four renderers' different notions of "again"
+    /// are reconciled. An empty list has no last row and so never reports the
+    /// edge — the first page is the app's to ask for.
+    private func rowView(_ child: GrMobNode, stretch: Bool, last: GrMobNode?) -> some View {
+        let endReached = node.stringProp("onEndReached")
+        return RenderNode(node: child,
+                          grow: stretch && !hugsContent(child.style) ? .horizontal : .none)
+            .onAppear {
+                guard !endReached.isEmpty, child === last else { return }
+                dispatch?(endReached)
+            }
+    }
+}
+
+/// A run of List rows, optionally introduced by a pinned band.
+///
+/// Identified by the header's view identity when there is one and by the
+/// first row's otherwise, so a ForEach over these groups is as stable as a
+/// ForEach over the rows was: both are derived from the same keys the
+/// reconciler assigned.
+private struct GrMobListGroup: Identifiable {
+    let id: AnyHashable
+    let header: GrMobNode?
+    let rows: [GrMobNode]
+}
+
+/// Splits a List's children into sticky-header sections.
+///
+/// A child carrying core.StickyHeader (Style.Position == "sticky") opens a
+/// new section and becomes its header; everything after it, up to the next
+/// such child, is that section's content. Rows before the first header — a
+/// search box above the bands, a list with no headers at all — form one
+/// leading section with no header, which SwiftUI renders as a plain run.
+///
+///     rows:     [search] [Jan] a b [Feb] c
+///     sections: (nil: search) (Jan: a b) (Feb: c)
+///
+/// nil when no child asked for a band — an ordinary list, which the caller
+/// renders as the flat lazy stack it has always been. The distinction is the
+/// whole reason this returns an optional rather than a one-group array: an
+/// unsectioned list must not acquire a Section it never asked for.
+private func listSections(_ rows: [GrMobNode]) -> [GrMobListGroup]? {
+    guard rows.contains(where: { $0.style?.position == "sticky" }) else { return nil }
+
+    var groups: [GrMobListGroup] = []
+    for row in rows {
+        if row.style?.position == "sticky" {
+            groups.append(GrMobListGroup(id: row.viewID, header: row, rows: []))
+            continue
+        }
+        guard let open = groups.last else {
+            // No section open yet: these are the rows above the first band.
+            groups.append(GrMobListGroup(id: row.viewID, header: nil, rows: [row]))
+            continue
+        }
+        groups[groups.count - 1] = GrMobListGroup(
+            id: open.id, header: open.header, rows: open.rows + [row])
+    }
+    return groups
 }
 
 /// Inlines Fragment/Theme grouping nodes so their children become list rows.

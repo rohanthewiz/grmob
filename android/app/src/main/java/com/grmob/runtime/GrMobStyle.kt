@@ -31,10 +31,17 @@ import org.json.JSONObject
  * Field names in the JSON are the Go struct's exported names verbatim
  * ("FontSize", "TextColor", ...) because core.Style carries no json tags.
  * Only the subset the Go DSL can actually produce today is mapped; the
- * web-oriented fields (Position, ZIndex, Animation, pseudo states) have no
+ * remaining web-oriented fields (ZIndex, Animation, pseudo states) have no
  * Compose analog at this layer and are intentionally ignored rather than
  * half-implemented. Transition IS mapped: Go declares it, Compose drives
  * the frames (see transitionMs/transitionEasing and boxModifier below).
+ *
+ * Position is mapped for exactly one of its four values. `relative`,
+ * `absolute` and `fixed` still have no analog here — Compose has no
+ * out-of-flow placement at this layer — but `sticky` does: a pinned
+ * LazyColumn header is what CSS sticky positioning means inside a scrolling
+ * list, and core.StickyHeader is the Go spelling that produces it. The field
+ * is carried verbatim and read by GrMobList alone.
  */
 data class GrMobStyle(
     val fontSize: Float,
@@ -67,6 +74,19 @@ data class GrMobStyle(
     val flexGrow: Float,
     /** core.FlexWrap: "wrap" or "nowrap" (empty when unset). Read by GrMobRow only. */
     val flexWrap: String,
+    /**
+     * core.FlexDirection: "row" or "column" (empty when unset). Read by
+     * GrMobScroll only — every other container here has its axis fixed by
+     * construction (a Compose Row is a Row), so the field would say nothing
+     * they do not already know. A Scroll is the one type that has both
+     * spellings, and core.Horizontal() is how Go asks for the sideways one.
+     */
+    val flexDirection: String,
+    /**
+     * core.Style.Position, carried for its "sticky" value alone; see the
+     * class comment. Read by GrMobList only.
+     */
+    val position: String,
     val lineHeight: Int,
     val accessibilityLabel: String,
     val accessibilityHint: String,
@@ -126,6 +146,8 @@ data class GrMobStyle(
                 alignItems = obj.optString("AlignItems"),
                 flexGrow = obj.optDouble("FlexGrow", 0.0).toFloat(),
                 flexWrap = obj.optString("FlexWrap"),
+                flexDirection = obj.optString("FlexDirection"),
+                position = obj.optString("Position"),
                 lineHeight = obj.optInt("LineHeight", 0),
                 accessibilityLabel = obj.optString("AccessibilityLabel"),
                 accessibilityHint = obj.optString("AccessibilityHint"),

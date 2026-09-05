@@ -65,6 +65,11 @@ export function loadRuntime({ mountId = "app" } = {}) {
     const timers = new Map();
     let timerID = 0;
 
+    // Every IntersectionObserver the runtime has constructed, in order. It
+    // makes at most one per list, and never releases it while the list lives,
+    // so a test drives the whole feature through this array.
+    const observers = [];
+
     const sandbox = {
         document: dom.document,
         window: dom.window,
@@ -86,6 +91,28 @@ export function loadRuntime({ mountId = "app" } = {}) {
         clearTimeout: (id) => timers.delete(id),
         console,
         performance,
+        // A controllable IntersectionObserver, for the same reason
+        // setTimeout and requestAnimationFrame are queues: the runtime uses
+        // one to report core.OnEndReached, and a test has to be able to say
+        // "the last row came into view" and observe the dispatch. There is no
+        // layout here to intersect with, so "visible" is something a test
+        // declares rather than something the shim could compute.
+        //
+        // The observer models the two behaviours the runtime depends on:
+        // observe() records a target, and disconnect() forgets every target
+        // — which is how syncEndReached re-points the observation when a page
+        // appends rows.
+        IntersectionObserver: class {
+            constructor(callback, options) {
+                this.callback = callback;
+                this.options = options;
+                this.targets = new Set();
+                observers.push(this);
+            }
+            observe(target) { this.targets.add(target); }
+            unobserve(target) { this.targets.delete(target); }
+            disconnect() { this.targets.clear(); }
+        },
     };
     // The page's own `window.window === window` identity, which the runtime
     // does not rely on but any future code reading window.document would.
@@ -126,6 +153,33 @@ export function loadRuntime({ mountId = "app" } = {}) {
             return ran;
         },
         pendingTimers: () => timers.size,
+
+        // observedBy returns the elements el's observer is currently watching
+        // — the runtime's own bookkeeping, read back. An element with no
+        // observer returns an empty array rather than throwing, so a test can
+        // assert that a list which lost its prop was torn down.
+        observedBy(el) {
+            const found = observers.filter((o) => o.targets.size);
+            for (const o of found) {
+                if (o === el.__grmobEndObserver) return [...o.targets];
+            }
+            return [];
+        },
+
+        // intersect declares that el has come into view and runs whatever
+        // observer is watching it, with the entry shape the runtime reads.
+        // Returns whether any observer was actually watching, so a test that
+        // aims at the wrong element fails on the aim rather than on a silent
+        // absence of dispatches.
+        intersect(el) {
+            let fired = false;
+            for (const o of observers) {
+                if (!o.targets.has(el)) continue;
+                fired = true;
+                o.callback([{ target: el, isIntersecting: true }], o);
+            }
+            return fired;
+        },
     };
 }
 

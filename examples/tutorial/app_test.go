@@ -41,6 +41,14 @@ type nodeStyle struct {
 	FontWeight   int
 	BorderRadius float64
 	Transition   string
+
+	// The three layout fields chapter 4's endless-feed lesson asserts on.
+	// core.Horizontal and core.StickyHeader are StyleProps rather than props,
+	// which is the whole point of how they are built — so the only place a
+	// test can see them is here, in the style the renderers receive.
+	FlexDirection string
+	Overflow      string
+	Position      string
 }
 
 func findNode(n *node, pred func(*node) bool) *node {

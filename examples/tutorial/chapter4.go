@@ -34,6 +34,7 @@ func chapter4() Chapter {
 			lessonTabs(),
 			lessonCollections(),
 			lessonScreenFurniture(),
+			lessonEndlessFeeds(),
 		},
 	}
 }
@@ -975,7 +976,7 @@ components.SearchField{
 					"EmptyState covers empty, busy and failed — one shape, so three states cannot drift apart in wording or spacing. Its Width 100% is load-bearing: a column hugs its widest child on both natives.",
 					"A controlled field cannot debounce its own OnChange; debounce the reaction with hooks.UseDebounce, and Cancel before acting on Enter.",
 					"Every glyph in these widgets is decoration and is hidden from assistive tech — the text beside it is what gets announced.",
-					"ChipStrip wraps rather than scrolls until core.Scroll grows a horizontal mode; there is deliberately no field standing by that does nothing.",
+					"ChipStrip wraps by default and pans with Scrollable — wrapping for a set the reader should see all of, panning for a filter bar that would otherwise push the content off screen (4.8).",
 				),
 			)
 		},
@@ -994,4 +995,170 @@ func chipValueLabel(speaker string) string {
 		return "All"
 	}
 	return speaker
+}
+
+// --- 4.8 -----------------------------------------------------------------
+
+// endlessPageSize is how many rows each end-reached report reveals in 4.8,
+// standing in for one page from a server. Smaller than loadMorePageSize so
+// the demo's short fixture takes several scrolls to exhaust.
+const endlessPageSize = 2
+
+// endlessViewport is the height the demo's list is boxed into. A sticky band
+// pins to its nearest scrolling ancestor, and the tutorial page itself is
+// that ancestor unless something closer says otherwise — which would pin the
+// band to the top of the browser window, halfway up an unrelated lesson. On a
+// phone the List owns the screen and needs no such box.
+const endlessViewport = "260px"
+
+func lessonEndlessFeeds() Lesson {
+	return Lesson{
+		Title:   "Endless feeds: sticky bands & sideways strips",
+		Summary: "core.Horizontal, core.OnEndReached and core.StickyHeader — the three props that turn a paged list into a feed, on all four targets.",
+		Body: func(ctx *core.Context) core.View {
+			// How many rows have "arrived". A real screen keeps the
+			// accumulated rows; the fixture is fixed, so a count is enough.
+			loaded := core.NewState(ctx, endlessPageSize)
+			// How many times the edge has been reported. Shown in the demo
+			// because the debounce is the interesting part and it is
+			// invisible otherwise: without it this number would run away.
+			fetches := core.NewState(ctx, 0)
+			speaker := core.NewState(ctx, "")
+
+			rows := make([]archiveEntry, 0, loaded.Get())
+			for _, e := range archive {
+				if speaker.Get() != "" && e.speaker != speaker.Get() {
+					continue
+				}
+				rows = append(rows, e)
+			}
+			// total is the filtered set's size — what "of N" should say once a
+			// speaker chip has narrowed the feed. len(archive) would be the
+			// unfiltered count and would read as rows that never arrive.
+			total := len(rows)
+			hasMore := loaded.Get() < total
+			if hasMore {
+				rows = rows[:loaded.Get()]
+			}
+
+			loadNext := func() {
+				fetches.Set(fetches.Get() + 1)
+				loaded.Set(loaded.Get() + endlessPageSize)
+			}
+
+			chips := make([]components.Chip, 0, len(archiveSpeakers))
+			for _, s := range archiveSpeakers {
+				label, value := s, s
+				if s == "" {
+					label = "Everyone"
+				}
+				chips = append(chips, components.Chip{
+					Label:    label,
+					Selected: speaker.Get() == value,
+					OnTap: func() {
+						speaker.Set(value)
+						loaded.Set(endlessPageSize)
+					},
+				})
+			}
+
+			return core.Column(
+				core.Gap(14),
+				prose("A paged list becomes a feed with three props, and none of them is a new "+
+					"widget: a strip that pans sideways instead of wrapping, a band that stays put "+
+					"while its rows scroll under it, and an edge that fires when the bottom is "+
+					"near. Each is one field on something you already have, and each works on all "+
+					"four targets."),
+				codeBlock(`core.Scroll(core.Horizontal(), chips...)   // the sideways strip
+
+core.List(
+    core.OnEndReached(pager.LoadNext),                 // near the bottom
+    core.Keyed("group:2026-03",
+        core.Row(core.StickyHeader(), monthLabel)),    // the pinned band
+    rows...,
+)`),
+				prose("core.Horizontal spells itself entirely in style — flex-direction row plus an "+
+					"overflow — which is why both web targets already drew it the day it was "+
+					"written and only the two natives needed code. Compose reads the axis and "+
+					"builds a Row on a horizontal scroll state; SwiftUI builds a "+
+					"ScrollView(.horizontal). core.StickyHeader is the same trick: it is "+
+					"Position: sticky, a value core.Style has always carried and the browser has "+
+					"always honoured, and the natives now answer it with the one thing that means "+
+					"the same — a pinned header inside their lazy list."),
+				prose("core.OnEndReached is the one with real work behind it. Every platform "+
+					"reports the bottom more than once for the same bottom — an observer re-fires "+
+					"on resize, .onAppear re-fires when a row is recycled, a snapshot flow emits "+
+					"per visible-index change — so the prop remembers how many rows the list held "+
+					"when it last ran and refuses to run again until that number changes. One "+
+					"debounce in Go, rather than four different notions of \"again\" in four "+
+					"renderers."),
+				demoPanel("Scroll the box: the month band pins, and the next two rows arrive before you reach the end. The strip pans sideways.",
+					components.ChipStrip{Scrollable: true, Chips: chips},
+					core.Box(
+						core.Height(endlessViewport),
+						core.Overflow("auto"),
+						core.BorderRadius(8),
+						components.GroupedList[archiveEntry]{
+							Items:             rows,
+							Key:               archiveKey,
+							GroupBy:           archiveMonth,
+							StickyHeaders:     true,
+							HideTrailingCount: hasMore,
+							Row: func(e archiveEntry) core.View {
+								return components.ListRow{
+									Title:    e.title,
+									Subtitle: e.speaker,
+									Trailing: caption(e.date.Format("Jan 2")),
+								}
+							},
+							OnEndReached: loadNext,
+							// The footer stays. Auto-loading replaces the tap,
+							// not the tail: this is still where "Loading…" and
+							// a failed page's Retry live, and it is the manual
+							// fallback wherever the edge cannot be reported.
+							Footer: components.LoadMore{
+								HasMore:    hasMore,
+								OnLoadMore: loadNext,
+							},
+						},
+					),
+					caption(fmt.Sprintf("%d of %d rows, %d fetches", len(rows), total, fetches.Get())),
+					core.Row(core.Gap(8), core.Padding(0),
+						components.Chip{Label: "Start over", OnTap: func() {
+							loaded.Set(endlessPageSize)
+							fetches.Set(0)
+						}},
+					),
+				),
+				prose("Keep the footer. A screen that drops its LoadMore for OnEndReached gains a "+
+					"feed that stops silently at whatever page failed, and loses the one control "+
+					"that still works on a static export or in a browser with no "+
+					"IntersectionObserver. Handing the same load function to both is the intended "+
+					"shape: the debounce means a tap and a scroll cannot double-load, because "+
+					"neither can fire while the row count is unchanged."),
+				codeBlock(`components.GroupedList[Entry]{
+    Items:         pager.Items,
+    StickyHeaders: true,
+    OnEndReached:  pager.LoadNext,   // the scroll
+    Footer: components.LoadMore{     // and the tap, and the states
+        HasMore: pager.HasMore, Loading: pager.Loading,
+        Err: pager.Err, OnLoadMore: pager.LoadNext},
+}`),
+				prose("The demo boxes its list in a fixed height because a sticky band pins to its "+
+					"nearest scrolling ancestor, and on this page that would otherwise be the "+
+					"browser window — the band would stick to the top of the screen, above "+
+					"lessons it has nothing to do with. A real screen hands the List the screen "+
+					"and the question does not arise."),
+				keyPoints(
+					"core.Horizontal() is a StyleProp: flex-direction plus overflow, so the web targets needed no code and the natives read the axis in their Scroll composite alone.",
+					"core.StickyHeader() reuses Position: sticky rather than inventing a marker — and supplies Top and ZIndex, without which a sticky box silently never sticks or is painted over.",
+					"core.OnEndReached fires at most once per row count, so a slow fetch cannot double-load and an exhausted feed goes quiet instead of re-asking forever.",
+					"An empty list never reports the edge: the first page is yours to ask for, the next one is the scroll's.",
+					"Keep the LoadMore footer — it carries the loading and error states, and it is the fallback where no edge can be reported.",
+					"ChipStrip.Scrollable is one line that pans; the default still wraps, which is right for a set the reader should see all of.",
+					"Sticky bands only pin inside a List: both natives implement pinning in their lazy container, so the same marker on a Column child is web-only.",
+				),
+			)
+		},
+	}
 }

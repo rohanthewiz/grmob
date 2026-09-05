@@ -222,3 +222,130 @@ func TestGroupedListExportsHTML(t *testing.T) {
 		}
 	}
 }
+
+// --- roadmap tier B, seen from the widget ------------------------------------
+
+// StickyHeaders puts core.StickyHeader on each default band. The marker has
+// to land on the band node itself — the child the List actually sees — since
+// a wrapper would put a plain Box there with the sticky row hidden inside it,
+// where no renderer looks.
+func TestGroupedListStickyHeadersPinTheBands(t *testing.T) {
+	ctx := core.NewContext()
+	ctx.BeginRenderPass()
+
+	n := GroupedList[string]{
+		Items:         []string{"a", "b", "c"},
+		Key:           func(s string) string { return s },
+		Row:           func(s string) core.View { return core.Text(s) },
+		GroupBy:       func(s string) Group { return Group{Key: "g" + s, Label: s} },
+		StickyHeaders: true,
+	}.Render(ctx)
+
+	bands := 0
+	for _, child := range n.Children {
+		if !strings.HasPrefix(child.Key, "group:") {
+			continue
+		}
+		bands++
+		if child.Style == nil || child.Style.Position != core.PositionSticky {
+			t.Errorf("band %q is not sticky: %+v", child.Key, child.Style)
+		}
+	}
+	if bands != 3 {
+		t.Fatalf("found %d bands, want 3", bands)
+	}
+	// Rows are not pinned — only the bands.
+	for _, child := range n.Children {
+		if strings.HasPrefix(child.Key, "group:") {
+			continue
+		}
+		if child.Style != nil && child.Style.Position == core.PositionSticky {
+			t.Errorf("row %q was pinned along with the bands", child.Key)
+		}
+	}
+}
+
+// Off by default, so every list that predates the option renders exactly as
+// it did.
+func TestGroupedListBandsAreNotStickyByDefault(t *testing.T) {
+	ctx := core.NewContext()
+	ctx.BeginRenderPass()
+
+	n := GroupedList[string]{
+		Items:   []string{"a"},
+		Row:     func(s string) core.View { return core.Text(s) },
+		GroupBy: func(s string) Group { return Group{Key: "g", Label: "G"} },
+	}.Render(ctx)
+
+	band := findFirst(n, func(c *core.Node) bool { return strings.HasPrefix(c.Key, "group:") })
+	if band == nil {
+		t.Fatal("no band rendered")
+	}
+	if band.Style != nil && band.Style.Position != "" {
+		t.Errorf("band is positioned without StickyHeaders: %q", band.Style.Position)
+	}
+}
+
+// A Header override is handed the Group and builds its own view, which the
+// widget cannot reach into — the same division HideTrailingCount draws. Such
+// a header pins itself by putting core.StickyHeader() in its own Style, and
+// the flag must not silently half-apply.
+func TestGroupedListStickyHeadersLeavesAnOverrideAlone(t *testing.T) {
+	ctx := core.NewContext()
+	ctx.BeginRenderPass()
+
+	n := GroupedList[string]{
+		Items:         []string{"a"},
+		Row:           func(s string) core.View { return core.Text(s) },
+		GroupBy:       func(s string) Group { return Group{Key: "g", Label: "G"} },
+		Header:        func(g Group) core.View { return core.Row(core.Text(g.Label)) },
+		StickyHeaders: true,
+	}.Render(ctx)
+
+	band := findFirst(n, func(c *core.Node) bool { return strings.HasPrefix(c.Key, "group:") })
+	if band == nil {
+		t.Fatal("no band rendered")
+	}
+	if band.Style != nil && band.Style.Position == core.PositionSticky {
+		t.Error("the widget pinned a caller's own header view — an override owns its own Style")
+	}
+}
+
+// OnEndReached puts core.OnEndReached on the List, which is what turns the
+// footer's "Load more" button into an infinite feed.
+func TestGroupedListOnEndReachedReachesTheList(t *testing.T) {
+	ctx := core.NewContext()
+	ctx.BeginRenderPass()
+
+	var loaded int
+	n := GroupedList[string]{
+		Items:        []string{"a", "b"},
+		Row:          func(s string) core.View { return core.Text(s) },
+		OnEndReached: func() { loaded++ },
+	}.Render(ctx)
+
+	id, _ := n.Props["onEndReached"].(string)
+	if id == "" {
+		t.Fatalf("the List carries no onEndReached prop: %#v", n.Props)
+	}
+	ctx.TriggerCallback(id)
+	if loaded != 1 {
+		t.Fatalf("handler ran %d times, want 1", loaded)
+	}
+}
+
+// Nil leaves the list exactly as it was: a manual pager driven by its footer,
+// with no edge reported and no prop on the node.
+func TestGroupedListWithoutOnEndReachedCarriesNoProp(t *testing.T) {
+	ctx := core.NewContext()
+	ctx.BeginRenderPass()
+
+	n := GroupedList[string]{
+		Items: []string{"a"},
+		Row:   func(s string) core.View { return core.Text(s) },
+	}.Render(ctx)
+
+	if _, ok := n.Props["onEndReached"]; ok {
+		t.Error("a list with no OnEndReached still advertises the edge")
+	}
+}

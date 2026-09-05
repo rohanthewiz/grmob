@@ -28,6 +28,14 @@ const GrMob = (() => {
             syncTabView(el);
         }
 
+        // Same slot, same reason: the observer watches the last child, and
+        // createElement ran before there were any. Gated on the prop so the
+        // other several hundred nodes of a tree do not each pay an attribute
+        // read to be told they are not lists.
+        if (node.Props && node.Props.onEndReached) {
+            syncEndReached(el);
+        }
+
         return el;
     }
 
@@ -140,6 +148,13 @@ const GrMob = (() => {
                     // and mark the slot taken so the real wiring could never
                     // be installed.
                     attachLongPress(el, value);
+                } else if (key === "onEndReached") {
+                    // Before the generic on* branch, for the third time and
+                    // the same reason: "endreached" is not a DOM event. The
+                    // trigger is an IntersectionObserver over the list's last
+                    // child, pointed at it by syncEndReached once renderNode
+                    // has built the children.
+                    attachEndReached(el, value);
                 } else if (key.startsWith("on")) {
                     const event = mapEventName(key);
                     el.dataset[`listener_${key}`] = value;
@@ -717,6 +732,121 @@ const GrMob = (() => {
         // gesture rather than completing it.
         for (const ev of ["pointerup", "pointercancel", "pointerleave"]) {
             el.addEventListener(ev, disarm);
+        }
+    }
+
+    // --- End reached (core.OnEndReached) -------------------------------------
+    //
+    // The DOM has no "you are near the bottom of this list" event, so this is
+    // synthesized the way the platform makes cheapest: an IntersectionObserver
+    // watching the list's *last* child, with a rootMargin that fires it a
+    // screenful early so the next page is already in flight by the time the
+    // reader gets there.
+    //
+    // # The last child, not a sentinel
+    //
+    // The obvious implementation appends an invisible sentinel row and watches
+    // that. This runtime cannot: patches are addressed positionally
+    // (data-node-path, and add-child derives the new index from
+    // el.children.length), so an extra element inside a list would shift every
+    // sibling index after it and misdirect every later patch. The TabView bar
+    // is the one piece of chrome allowed inside a node's box, and it pays for
+    // the privilege with chromeOffset. A list does not need to: its last child
+    // is exactly as good an observation target and costs the tree nothing.
+    //
+    // The cost is that the target *moves* — every appended page makes a new
+    // last child — so the observation has to be re-pointed whenever the
+    // subtree changes. syncEndReached is that re-pointing, and it is called
+    // from the same two places syncTabView is: after renderNode builds the
+    // children, and after a patch batch lands (syncTouchedEndReached).
+    //
+    // # Firing more than once is expected
+    //
+    // The observer fires on entry, and again on any resize or scroll that
+    // re-enters the margin, and again as soon as a new last child is observed
+    // while still near the bottom. None of that is de-duplicated here on
+    // purpose: core.OnEndReached debounces on the Go side by remembering the
+    // row count at the last fire, which is the one place all four renderers'
+    // different notions of "again" collapse into one answer.
+    //
+    // # No observer, no feature
+    //
+    // IntersectionObserver is guarded rather than assumed, the same way
+    // getComputedStyle is in toastLayerHost: a host without it (an older
+    // embedder, a minimal test DOM) renders the list correctly and simply
+    // never reports the edge, which leaves a components.LoadMore button as the
+    // manual fallback it was designed to be.
+    const END_REACHED_MARGIN = "200px";
+
+    // The observer and its current target hang off the element as plain
+    // properties rather than dataset entries: neither is a string, and neither
+    // is anything a patch, a serializer or a reader of the markup should see.
+    const END_OBSERVER = "__grmobEndObserver";
+    const END_TARGET = "__grmobEndTarget";
+
+    // Records the callback ID. The observation itself waits for
+    // syncEndReached, because on the create path this runs from inside
+    // createElement, before the children this needs to watch exist at all.
+    function attachEndReached(el, cbId) {
+        el.dataset.listener_onEndReached = cbId;
+    }
+
+    // Points the element's observer at whatever its last child is now,
+    // creating the observer on first need and tearing it down when the list
+    // stops carrying the prop (pruneStaleListeners drops the dataset entry;
+    // this is what notices).
+    function syncEndReached(el) {
+        const cbId = el.dataset.listener_onEndReached;
+        const last = el.children.length ? el.children[el.children.length - 1] : null;
+        if (!cbId || !last || typeof IntersectionObserver !== "function") {
+            if (el[END_OBSERVER]) {
+                el[END_OBSERVER].disconnect();
+                el[END_OBSERVER] = null;
+                el[END_TARGET] = null;
+            }
+            return;
+        }
+        // Already watching this exact element: re-observing would be harmless
+        // but would also re-fire the entry callback for a target that never
+        // left the viewport, turning every unrelated patch into an
+        // end-reached report.
+        if (el[END_TARGET] === last) return;
+        if (!el[END_OBSERVER]) {
+            el[END_OBSERVER] = new IntersectionObserver((entries) => {
+                if (!entries.some((entry) => entry.isIntersecting)) return;
+                // Re-read at fire time, as every listener here does: the ID is
+                // positional and a pass landing mid-scroll may have refreshed
+                // or pruned it.
+                const latestCbId = el.dataset.listener_onEndReached;
+                // {} rather than a value: Go registered this through the void
+                // callback channel, and an envelope carrying a value would be
+                // routed to the text or int map, where the ID does not exist.
+                if (latestCbId) window.GoInvokeCallback(latestCbId, {});
+            }, { rootMargin: END_REACHED_MARGIN });
+        }
+        el[END_OBSERVER].disconnect();
+        el[END_TARGET] = last;
+        el[END_OBSERVER].observe(last);
+    }
+
+    // The post-batch pass, sibling of syncTouchedTabViews and walking the same
+    // ancestor chains for the same reason: a patch addressed to a *row* (or to
+    // a cell inside one) is still a change to the list's last child, and the
+    // list is the element that has to re-point its observer.
+    //
+    // The observer property is tested alongside the dataset entry so a list
+    // that just *lost* its onEndReached — pruneStaleListeners having already
+    // deleted the entry — is still visited, and torn down.
+    function syncTouchedEndReached(touched) {
+        const done = new Set();
+        for (const start of touched) {
+            for (let el = start; el; el = el.parentNode) {
+                if (!el.dataset || done.has(el)) continue;
+                if (el.dataset.listener_onEndReached || el[END_OBSERVER]) {
+                    done.add(el);
+                    syncEndReached(el);
+                }
+            }
         }
     }
 
@@ -1652,6 +1782,13 @@ const GrMob = (() => {
                             el.dataset.tabSelected = v;
                         } else if (k === "onLongPress") {
                             attachLongPress(el, v);
+                        } else if (k === "onEndReached") {
+                            // Before the generic on* branch, as on the create
+                            // path. Only the ID is refreshed here; whether the
+                            // observation still points at the right row is
+                            // syncTouchedEndReached's question, once the whole
+                            // batch has landed and the children have settled.
+                            attachEndReached(el, v);
                         } else if (k.startsWith("on")) {
                             const event = mapEventName(k);
                             el.dataset[`listener_${k}`] = v;
@@ -1723,6 +1860,10 @@ const GrMob = (() => {
         });
 
         syncTouchedTabViews(touched);
+        // After the tab pass, and after every add-child/remove has landed:
+        // the observation target is the list's last child, and this batch is
+        // exactly what may have replaced it.
+        syncTouchedEndReached(touched);
     }
 
     // --- Toast overlay -------------------------------------------------------

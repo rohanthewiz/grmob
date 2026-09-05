@@ -31,6 +31,9 @@ type Context struct {
 	cleanup       *cleanupRegistry
 	dirty         *dirtyFlag
 	focus         *focusState
+	// endReached is OnEndReached's debounce ledger; see endReachedState in
+	// list.go for why it is per-tree rather than a package global.
+	endReached *endReachedState
 
 	// hooks is set only on the lightweight copies produced by WithTheme and
 	// WithConfig, and points at the context that actually owns the hook
@@ -134,6 +137,7 @@ func NewContext() *Context {
 		cleanup:       newCleanupRegistry(),
 		dirty:         newDirtyFlag(),
 		focus:         newFocusState(),
+		endReached:    newEndReachedState(),
 		scopes:        make(map[string]*Context),
 	}
 }
@@ -149,6 +153,7 @@ func (ctx *Context) NewChildContext() *Context {
 		cleanup:       ctx.cleanup,
 		dirty:         ctx.dirty,
 		focus:         ctx.focus,
+		endReached:    ctx.endReached,
 		parent:        ctx,
 		scopes:        make(map[string]*Context),
 	}
@@ -224,6 +229,7 @@ func (ctx *Context) WithConfig(cfg *AppConfig) *Context {
 		cleanup:       ctx.cleanup,
 		dirty:         ctx.dirty,
 		focus:         ctx.focus,
+		endReached:    ctx.endReached,
 		// Share the scope table rather than leaving it nil: this is the same
 		// context wearing a different config, so a scope reached through it
 		// must be the same scope reached through the original. A nil map here
@@ -246,6 +252,7 @@ func (ctx *Context) WithTheme(theme *Theme) *Context {
 		cleanup:       ctx.cleanup,
 		dirty:         ctx.dirty,
 		focus:         ctx.focus,
+		endReached:    ctx.endReached,
 		// See WithConfig: the scope table is shared, not re-created, so
 		// ctx.Scope works (and resolves to the same scopes) on a themed copy.
 		scopes: ctx.scopes,

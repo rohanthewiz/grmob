@@ -30,7 +30,9 @@
       `FlexBasis`, `FlexShrink` — **web targets only**
       (WASM DOM and `htmlout`). Compose and SwiftUI have no direct equivalent
       for out-of-flow placement; a layout that depends on these will not look
-      the same on device.
+      the same on device. The one exception is `Position: sticky` on a `List`
+      child, which both natives now honour as a pinned header — see
+      `core.StickyHeader()` below.
 - [x] `Padding`/`Margin` `Horizontal`/`Vertical` shorthands on all four targets
 - [x] Responsive layouts via style merging
 - [x] `Shadow`, border, radius on all four targets
@@ -41,6 +43,14 @@
 - [x] A `ContentMode` prop on `Image` (`Fit` / `Fill` / `Stretch` / `Center`)
 - [x] A native disabled state — `core.Disabled` maps onto the platform's own,
       subtree-propagating, and announced by the screen reader
+- [x] `core.Horizontal()` on `Scroll` — the sideways strip (chips, tabs, a
+      card carousel) on all four targets. It spells itself in `FlexDirection`
+      + `Overflow`, so both web targets already drew it and the natives learnt
+      to read the axis (`horizontalScroll`, `ScrollView(.horizontal)`)
+- [x] `core.StickyHeader()` on a `List` child — pinned group bands on all four
+      targets. The marker is `Position: sticky`, which the web has always
+      emitted; the natives now honour it with `stickyHeader {}` and
+      `pinnedViews: .sectionHeaders`
 
 ### 🧠 Developer Experience
 - [x] Internal path-based rendering IDs for patches (`reconcile.Patch.TargetID`)
@@ -86,6 +96,10 @@
       and `StatTile`, all stateless and controlled; plus `hooks.UseDebounce`,
       the re-arming timer `UseTimeout` deliberately is not (tutorial lesson
       4.7)
+- [x] Infinite feeds — `core.OnEndReached` on `core.List` (debounced in Go by
+      the row count at the last fire, so a slow fetch cannot double-load),
+      wired through `GroupedList.OnEndReached`; `StickyHeaders` on
+      `GroupedList` and `DataTable`, and `ChipStrip.Scrollable`
 
 ### 🧬 Extensions
 - [x] Animations & transitions (`Transition`, easing curves)
@@ -194,7 +208,9 @@
       is inert until the hosting page defines the matching `@keyframes`;
       neither native reads it.
 - [ ] `FlexDirection` on the natives — Compose and SwiftUI take the axis from
-      the node type (`Row`/`Column`), so an explicit direction is web-only.
+      the node type (`Row`/`Column`), so an explicit direction is still
+      web-only everywhere except `Scroll`, which reads it to choose between a
+      vertical and a horizontal scrolling region (`core.Horizontal()`).
 
 ---
 

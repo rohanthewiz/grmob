@@ -50,6 +50,18 @@ struct GrMobStyle: Equatable {
     var flexGrow: CGFloat = 0
     /// core.FlexWrap: "wrap" or "nowrap" (empty when unset). Read by GrMobRow only.
     var flexWrap: String = ""
+    /// core.FlexDirection: "row" or "column" (empty when unset). Read by
+    /// GrMobScroll only — every other container here has its axis fixed by
+    /// construction (an HStack is an HStack), so the field would tell them
+    /// nothing they do not already know. A Scroll is the one type with both
+    /// spellings, and core.Horizontal() is how Go asks for the sideways one.
+    var flexDirection: String = ""
+    /// core.Style.Position, carried for its "sticky" value alone. The other
+    /// three (relative/absolute/fixed) still have no analog at this layer;
+    /// sticky does — a pinned Section header inside a LazyVStack is exactly
+    /// what CSS sticky positioning means in a scrolling list. Read by
+    /// GrMobList only; core.StickyHeader is the Go spelling.
+    var position: String = ""
     var lineHeight: Int = 0
     var accessibilityLabel: String = ""
     var accessibilityHint: String = ""
@@ -132,6 +144,8 @@ struct GrMobStyle: Equatable {
         s.alignItems = str("AlignItems")
         s.flexGrow = num("FlexGrow")
         s.flexWrap = str("FlexWrap")
+        s.flexDirection = str("FlexDirection")
+        s.position = str("Position")
         s.lineHeight = int("LineHeight")
         s.accessibilityLabel = str("AccessibilityLabel")
         s.accessibilityHint = str("AccessibilityHint")

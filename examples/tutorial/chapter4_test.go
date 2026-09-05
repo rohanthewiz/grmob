@@ -1,6 +1,7 @@
 package tutorial
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/rohanthewiz/grmob/render"
@@ -445,4 +446,132 @@ func TestScreenFurnitureDemoBannerAndSkeleton(t *testing.T) {
 	}
 
 	assertNoConcerns(t)
+}
+
+// --- 4.8 Endless feeds -----------------------------------------------------
+
+// The three props of the lesson, seen through the wire tree the renderers
+// actually receive. None of them can be driven here the way a tap can —
+// scrolling is the trigger for two of them and there is no viewport in a test
+// — so what is checked is that each one reaches the tree in the shape the
+// four renderers were written to read, and that the callback behind the edge
+// does what the demo says when it is fired.
+func TestEndlessFeedDemoCarriesTheThreeCollectionProps(t *testing.T) {
+	mgr := newApp(t)
+	openLesson(t, mgr, "Endless feeds: sticky bands & sideways strips")
+
+	cur := tree(t, mgr)
+
+	// B1: the chip strip is a Scroll on the row axis, not a wrapping Row.
+	strip := findNode(cur, func(n *node) bool {
+		return n.Type == "Scroll" && n.Style != nil && n.Style.FlexDirection == "row"
+	})
+	if strip == nil {
+		t.Fatal("ChipStrip{Scrollable: true} should render a Scroll on the row axis")
+	}
+	if strip.Style.Overflow != "auto" {
+		t.Fatalf("the strip's overflow is %q — without it the browser clips the row "+
+			"instead of panning it", strip.Style.Overflow)
+	}
+
+	// B3: every group band carries the sticky marker, and the rows do not.
+	list := findNode(cur, func(n *node) bool { return n.Type == "List" })
+	if list == nil {
+		t.Fatal("the demo should render a List")
+	}
+	bands := 0
+	for _, child := range list.Children {
+		sticky := child.Style != nil && child.Style.Position == "sticky"
+		if strings.HasPrefix(child.Key, "group:") {
+			bands++
+			if !sticky {
+				t.Errorf("band %q is not pinned", child.Key)
+			}
+			continue
+		}
+		if sticky {
+			t.Errorf("row %q was pinned along with the bands", child.Key)
+		}
+	}
+	if bands == 0 {
+		t.Fatal("no group bands rendered — StickyHeaders has nothing to pin without GroupBy")
+	}
+
+	// B2: the edge is advertised on the List itself.
+	if _, ok := list.Props["onEndReached"].(string); !ok {
+		t.Fatalf("the List carries no onEndReached prop: %#v", list.Props)
+	}
+
+	assertNoConcerns(t)
+}
+
+// The debounce, seen from the one angle a test without a viewport can reach.
+//
+// Each report here is followed by a real render, so consecutive reports are
+// genuinely different bottoms and each one legitimately loads a page — that
+// is the feature working, not the guard failing. What the guard is for is the
+// case where a report changes nothing: once the archive is exhausted, a page
+// adds no rows, and every further report of that same bottom must be refused.
+// A feed that re-asked forever at the end of itself is exactly the bug
+// core.OnEndReached's row-count ledger exists to prevent.
+func TestEndlessFeedStopsAskingOnceTheArchiveIsExhausted(t *testing.T) {
+	mgr := newApp(t)
+	openLesson(t, mgr, "Endless feeds: sticky bands & sideways strips")
+
+	edge := func() string {
+		list := findNode(tree(t, mgr), func(n *node) bool { return n.Type == "List" })
+		if list == nil {
+			t.Fatal("the demo should render a List")
+		}
+		id, _ := list.Props["onEndReached"].(string)
+		if id == "" {
+			t.Fatal("the List carries no onEndReached prop")
+		}
+		return id
+	}
+
+	if !hasTextContaining(tree(t, mgr), "2 of 9 rows, 0 fetches") {
+		t.Fatal("the demo should open with one page loaded and nothing fetched")
+	}
+
+	// One report, one page: the ordinary case.
+	mgr.DispatchCallback(edge())
+	if !hasTextContaining(tree(t, mgr), "4 of 9 rows, 1 fetches") {
+		t.Fatal("reaching the end should have loaded the next page")
+	}
+
+	// Read to the bottom of the fixture. Generous enough to exhaust it
+	// whatever the page size is, which is the point: the loop is not what is
+	// under test.
+	for range 10 {
+		mgr.DispatchCallback(edge())
+	}
+	settled := feedCaption(t, tree(t, mgr))
+	if !strings.HasPrefix(settled, "9 of 9 rows") {
+		t.Fatalf("the archive should be exhausted by now, caption reads %q", settled)
+	}
+
+	// Now the reports that must go nowhere: the bottom is the same bottom,
+	// because the last page added no rows.
+	mgr.DispatchCallback(edge())
+	mgr.DispatchCallback(edge())
+	if got := feedCaption(t, tree(t, mgr)); got != settled {
+		t.Fatalf("the feed kept fetching at the end of itself: %q became %q", settled, got)
+	}
+
+	assertNoConcerns(t)
+}
+
+// feedCaption returns the demo's "N of M rows, K fetches" line, which is the
+// only place the fetch count is observable from outside.
+func feedCaption(t *testing.T, n *node) string {
+	t.Helper()
+	found := findNode(n, func(n *node) bool {
+		content, ok := n.Props["content"].(string)
+		return n.Type == "Text" && ok && strings.Contains(content, "fetches")
+	})
+	if found == nil {
+		t.Fatal("the demo should show a row/fetch caption")
+	}
+	return found.Props["content"].(string)
 }

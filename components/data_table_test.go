@@ -346,3 +346,49 @@ func TestDataTableExportsHTML(t *testing.T) {
 		t.Error("rows beyond the page must not be exported")
 	}
 }
+
+// StickyHeaders pins the *group* bands, as in GroupedList. The column header
+// is deliberately not among them: it is a sibling of the body list rather
+// than a row inside it — which is what keeps it from scrolling away in the
+// first place — and both natives implement pinning inside their lazy
+// container only.
+func TestDataTableStickyHeadersPinTheGroupBandsOnly(t *testing.T) {
+	ctx := core.NewContext()
+	ctx.BeginRenderPass()
+
+	n := DataTable[sermon]{
+		Rows:          sermons,
+		Key:           sermonKey,
+		Columns:       []Column[sermon]{{Title: "Title", Text: func(s sermon) string { return s.Title }}},
+		GroupBy:       byMonth,
+		StickyHeaders: true,
+	}.Render(ctx)
+
+	body := findFirst(n, func(c *core.Node) bool { return c.Type == "List" })
+	if body == nil {
+		t.Fatal("no body List rendered")
+	}
+	bands := 0
+	for _, child := range body.Children {
+		if !strings.HasPrefix(child.Key, "group:") {
+			continue
+		}
+		bands++
+		if child.Style == nil || child.Style.Position != core.PositionSticky {
+			t.Errorf("band %q is not sticky: %+v", child.Key, child.Style)
+		}
+	}
+	if bands == 0 {
+		t.Fatal("no group bands rendered")
+	}
+	// The column header sits outside the list, so nothing there is pinned.
+	for _, child := range n.Children {
+		if child.Type == "List" {
+			continue
+		}
+		if child.Style != nil && child.Style.Position == core.PositionSticky {
+			t.Error("the column header was pinned — no native renderer can honor that, " +
+				"so it would be a web-only behavior sold as a cross-platform one")
+		}
+	}
+}

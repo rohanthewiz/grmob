@@ -15,8 +15,8 @@ func TestChipStripWrapsAndSpaces(t *testing.T) {
 		{Label: "All"}, {Label: "Sermons"}, {Label: "Articles"},
 	}}.Render(ctx)
 
-	// Wrapping, not scrolling: core.Scroll is vertical only today, so a long
-	// strip takes a second line rather than advertising a scroll it cannot do.
+	// Wrapping is the default: a strip whose whole set the reader should see
+	// takes a second line rather than hiding entries past a fold.
 	if n.Style.FlexWrap != "wrap" {
 		t.Errorf("flexWrap = %q, want %q", n.Style.FlexWrap, "wrap")
 	}
@@ -122,5 +122,63 @@ func TestChipStripStyleOverridesTheDefaults(t *testing.T) {
 	}
 	if n.Style.Padding.Top != 12 {
 		t.Errorf("padding = %+v, want the caller's override", n.Style.Padding)
+	}
+}
+
+// Scrollable is the other shape: one line that pans sideways, for a filter
+// bar long enough that wrapping would push the content it filters off screen.
+//
+// The node *type* changes, not just the style — the natives implement
+// sideways panning in their scroll composites alone, so a Row carrying an
+// overflow would pan in a browser and wrap on a phone.
+func TestScrollableChipStripIsAHorizontalScroll(t *testing.T) {
+	ctx := core.NewContext()
+	ctx.BeginRenderPass()
+	theme := core.DefaultTheme
+
+	n := ChipStrip{Scrollable: true, Chips: []Chip{
+		{Label: "2026"}, {Label: "2025"}, {Label: "2024"}, {Label: "2023"},
+	}}.Render(ctx)
+
+	if n.Type != "Scroll" {
+		t.Fatalf("node type = %q, want \"Scroll\"", n.Type)
+	}
+	if n.Style.FlexDirection != core.FlexRow {
+		t.Errorf("flexDirection = %q, want %q", n.Style.FlexDirection, core.FlexRow)
+	}
+	if n.Style.Overflow != "auto" {
+		t.Errorf("overflow = %q, want \"auto\"", n.Style.Overflow)
+	}
+	// No wrap: a strip that pans has one line by definition, and `flex-wrap:
+	// wrap` inside a horizontal scroller is a contradiction the browser
+	// resolves by wrapping — which is the behavior this option exists to
+	// replace.
+	if n.Style.FlexWrap != "" {
+		t.Errorf("flexWrap = %q, want unset on a scrolling strip", n.Style.FlexWrap)
+	}
+	if n.Style.Gap != float64(theme.Spacing.SM) {
+		t.Errorf("gap = %v, want the theme SM step %v", n.Style.Gap, theme.Spacing.SM)
+	}
+	if len(n.Children) != 4 {
+		t.Fatalf("children = %d, want 4", len(n.Children))
+	}
+}
+
+// Style still lands on the strip itself on either branch: the Scroll *is* the
+// strip when Scrollable is set, so there is no extra box to configure and no
+// second place a caller has to think about.
+func TestScrollableChipStripStillTakesStyle(t *testing.T) {
+	ctx := core.NewContext()
+	ctx.BeginRenderPass()
+
+	n := ChipStrip{
+		Scrollable: true,
+		Chips:      []Chip{{Label: "All"}},
+		Style:      []core.StyleProp{core.PaddingVertical(6)},
+	}.Render(ctx)
+
+	if n.Style.Padding.Vertical != 6 {
+		t.Errorf("padding.Vertical = %d, want 6 — Style did not reach the scrolling strip",
+			n.Style.Padding.Vertical)
 	}
 }
