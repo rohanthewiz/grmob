@@ -127,6 +127,18 @@
       the Modal chassis on both DOM targets, which the SwiftUI sheet and the
       Compose `Dialog` already provide on device; deliberately not a
       `RoleDialog` an author has to set
+- [x] Accessibility *nesting levels* (`core.AccessibilityNestingLevel`) —
+      `aria-level`'s other two roles, `listitem` and `row`, on both web
+      targets; neither native has a nesting-depth property and both say so. A
+      second field rather than a widened heading one, because a heading's tier
+      stops at 6 and a depth has no ceiling, and one exporter switch on the
+      role keeps the two from ever contending for the attribute
+- [x] `components.Button`'s border means the same thing on all four targets —
+      both natives now feed `BorderColor`/`BorderWidth` into the platform
+      control's own slot (they were stripped with the rest of the box-drawing
+      fields and never fed back, so outlined buttons had no rule on device),
+      and both DOM renderers write `border:none` for the tags a browser draws
+      one on (so ghost buttons no longer keep the user agent's)
 - [x] Navigation (`Navigator`, `Push`, `Pop`, `Replace`, `PopToRoot`, `Reset`,
       per-frame state) and `core.Modal` / toasts
 - [x] Forms with validation (`forms`) — a rule vocabulary, cross-field checks,

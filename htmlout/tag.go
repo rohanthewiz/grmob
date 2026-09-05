@@ -216,3 +216,64 @@ func TransparentTypes() []string {
 func CarriesOwnRole(nodeType string) bool {
 	return nodeType == "Modal"
 }
+
+// borderResetTags are the tags whose *user-agent* stylesheet draws a border of
+// its own, and which therefore have to be told not to when the Go style asks
+// for no border.
+//
+// # The divergence this closes
+//
+// Every other target draws a border only when asked. Compose applies a
+// Modifier.border and SwiftUI a .grMobBorder overlay, both guarded on
+// `BorderWidth > 0 && BorderColor != ""`, and the two DOM renderers emit their
+// `border` declaration under the same guard — so "no border in the style" means
+// "no border on screen" on three targets and, on the web, means "whatever the
+// browser draws". A <button> is the one tag in the table above where the
+// browser draws something: 2px outset ButtonBorder, which no style can turn
+// off, since core.BorderWidth(0) emits nothing and nothing is exactly what left
+// the user agent in charge.
+//
+// The visible cost was components.Button's EmphasisGhost, documented as
+// "EmphasisOutlined without the rule" and drawing a rule on both web targets
+// and none on both phones. There was no call-site workaround.
+//
+// # Why <input> and <textarea> are not here
+//
+// They have a user-agent border too, and the same argument would remove it.
+// The reason not to is that neither bundled theme gives Components.Input a
+// BorderColor, so the reset would leave every text field on the web as an
+// unmarked rectangle — the browser's border is currently the only thing
+// drawing the control at all. The natives already have that problem (Compose
+// uses a bare BasicTextField, SwiftUI a .plain textFieldStyle, and both draw
+// only what the Go style asks for), so the honest fix is a border in the
+// themes' Input style, which is a palette decision and not this one. Until
+// then the web is the target that happens to be right, and taking its border
+// away would be levelling down.
+//
+// A set rather than a `tag == "button"`, because the question it answers is
+// per-tag and the answer will change when the theme question above is settled.
+// The WASM runtime restates it as BORDER_RESET_TAGS in grmob-runtime.js, and
+// TestRuntimeBorderResetTagsMatchGo in wasm/verify compares the two under a
+// plain `go test ./...` — the same treatment tags, inputTypes and genericTags
+// get, and for the same reason.
+var borderResetTags = map[string]bool{
+	"button": true,
+}
+
+// ResetsUABorder reports whether a tag needs an explicit "no border" written
+// for it when the style declares none. See borderResetTags.
+func ResetsUABorder(tag string) bool {
+	return borderResetTags[tag]
+}
+
+// BorderResetTags returns those tags, sorted so that a test looping over them
+// reports in a stable order. Exported for the reason GenericTags is: the WASM
+// conformance test has to compare set against set.
+func BorderResetTags() []string {
+	out := make([]string, 0, len(borderResetTags))
+	for t := range borderResetTags {
+		out = append(out, t)
+	}
+	sort.Strings(out)
+	return out
+}

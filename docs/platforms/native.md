@@ -426,6 +426,39 @@ looks exactly like one nobody had heard of.
 level through all three links, and that Kotlin's note has not outlived the
 limitation.
 
+### `AccessibilityNestingLevel`
+
+The other two roles `aria-level` serves — `listitem` and `row` — map to nothing
+on either platform. SwiftUI has no nesting-depth property at all, and Compose's
+nearest one, `collectionItemInfo`, states an item's index and span within *one*
+collection rather than its depth within nested ones; filling it from this field
+would tell TalkBack something the app never said. So unlike the heading tier,
+which splits the two platforms, this field is inert on both and lives on the
+web alone.
+
+Neither renderer parses the key, and both say why — `GrMobStyle.kt` beside the
+role dispatch, `GrMobStyle.swift` beside `grMobHeadingLevel`, which is where a
+reader who has just seen the heading third mapped will ask about the other two.
+`mobile/verify/nesting_level_test.go` pins the notes and their absence of a
+parse together.
+
+### A `core.Button`'s border
+
+A Button draws its own container on both platforms, so each renderer hands it a
+style with the box-drawing fields stripped (`marginAndSize` on Android,
+`marginAndSizeOnly` on iOS) and feeds them back through the platform control's
+own slots — Compose's `Button(colors:, shape:, contentPadding:)`, SwiftUI's
+`GrMobButtonStyle`. The border was the one field stripped and never fed back,
+so `core.BorderColor`/`BorderWidth` were silently dropped on Buttons alone and
+`components.Button`'s outlined emphasis had no rule on device.
+
+Both now carry it: a `BorderStroke` into material3's `border` slot (and into
+the `Surface` the long-press path rebuilds the button out of), and a
+`strokeBorder` overlay on the same rounded rectangle the fill is clipped to.
+The guard is the same on every target — a width **and** a color — so half a
+border is no border everywhere. `mobile/verify/button_border_test.go` pins both
+renderers.
+
 ### `core.Modal` and the dialog role
 
 Nothing to do here, and that is the point. iOS presents a Modal as a sheet and

@@ -443,6 +443,52 @@ what Go is describing. `rows` is limited to positive numbers in the DOM, so
 a non-positive count leaves the browser's own default rather than being
 assigned; `core.TextArea` always supplies a positive one.
 
+### The user-agent border, and the third value totality needs
+
+`styleFromGrMob` assigns every property it manages on every call, so a field
+back at its zero value clears the declaration an earlier patch left behind. For
+almost every property "cleared" is the empty string, which drops the inline
+declaration and lets the cascade decide.
+
+`border` is the exception, and it is where the two DOM renderers used to
+disagree with both natives. Compose and SwiftUI draw a border only when the
+style carries a width **and** a color; the web guard was the same, but its
+negative arm handed the element back to the user-agent stylesheet — and a
+`<button>` has a 2px outset rule there. No `core.BorderWidth(0)` could remove
+it, because emitting nothing is exactly what left the browser in charge. The
+visible cost was `components.Button`'s ghost emphasis, documented as "outlined
+without the rule" and drawing one on both web targets.
+
+So the property has three values rather than two: the styled border, `""` for
+an element the browser draws nothing on, and `"none"` for one it does.
+`BORDER_RESET_TAGS` is the set — pinned to Go's `borderResetTags` by
+`TestRuntimeBorderResetTagsMatchGo` — and it holds `button` alone. `<input>`
+and `<textarea>` are deliberately excluded: neither bundled theme gives
+`Components.Input` a border, so resetting theirs would leave every web text
+field unmarked, and the honest fix for that is a border in the themes.
+
+Keeping the reset inside the same expression rather than in a guard of its own
+is what preserves totality — a guarded write would leave the old border
+standing on a button that stopped having one.
+
+### One attribute, two level fields
+
+`aria-level` is defined for `heading`, `listitem` and `row`.
+`core.Style` carries a heading's tier and a nested item's depth as two ints,
+because their ranges differ, and `ariaLevel` is where they meet at the one
+attribute both become. It switches on the role, which makes the two mutually
+exclusive by construction: a node has one role, the arms are disjoint, and no
+arrangement of the two fields can produce two values for one slot. Setting both
+is not an error — whichever the role does not name is not read.
+
+Both arms drop rather than clamp, and they drop different things: a heading
+above 6 has no spelling on any target that can express a tier, while a nesting
+depth has no ARIA ceiling at all, so capping it would flatten a legitimate
+tree. `TestRuntimeGuardsTheLevelsTheSameWay` pins the dispatch and both ranges;
+`a11y_test.mjs` covers the live half, including the case a static export cannot
+have — an item that keeps both fields and changes only its role has to swap
+which one is written.
+
 ## Testing without a browser
 
 `wasm/verify/run.sh` is the WASM analog of `ios/verify`, and needs only Go

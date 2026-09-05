@@ -321,6 +321,28 @@ const GrMob = (() => {
     // textually, so keep it a flat array of string literals on one line.
     const GENERIC_TAGS = new Set(["div", "pre", "span"]);
 
+    // The tags whose user-agent stylesheet draws a border of its own, and which
+    // therefore need one written back to nothing when the Go style asks for no
+    // border.
+    //
+    // Compose, SwiftUI and htmlout all draw a border only when
+    // BorderWidth > 0 && BorderColor != "". The guard alone gets the negative
+    // case wrong on the web: a <button> with no border in its style keeps the
+    // browser's own 2px outset rule, which no core.BorderWidth(0) can remove
+    // because emitting nothing is exactly what leaves the user agent in charge.
+    // components.Button's EmphasisGhost — "outlined without the rule" — is what
+    // made that visible, drawing a rule on both web targets and none on either
+    // phone.
+    //
+    // <input> and <textarea> are deliberately absent; borderResetTags in
+    // htmlout/tag.go carries the reason.
+    //
+    // Go states this set once, in borderResetTags (htmlout/tag.go), and
+    // TestRuntimeBorderResetTagsMatchGo in wasm/verify compares the two under a
+    // plain `go test ./...`. That test reads this literal out of the source
+    // textually, so keep it a flat array of string literals on one line.
+    const BORDER_RESET_TAGS = new Set(["button"]);
+
     // The id prefix every element id inside one TabView is built from.
     //
     // aria-controls and aria-labelledby are IDREFs, so the wiring cannot be
@@ -686,22 +708,40 @@ const GrMob = (() => {
         setOrRemove(el, "aria-description", hidden ? "" : (style.AccessibilityHint || ""));
         setOrRemove(el, "role", role);
         setOrRemove(el, "aria-modal", dialog ? "true" : "");
-        setOrRemove(el, "aria-level", hidden ? "" : headingLevel(style));
+        setOrRemove(el, "aria-level", hidden ? "" : ariaLevel(style));
     }
 
-    // Style.AccessibilityHeadingLevel as an aria-level value, or "" when there
-    // is nothing valid to write. The htmlout twin of this is headingLevel in
-    // export.go and the two must agree; the reasoning for both guards lives
-    // there and in core.Style.
+    // Whichever of core.Style's two level fields the node's role calls for, as
+    // an aria-level value, or "" when there is nothing valid to write. The
+    // htmlout twin of this is ariaLevel in export.go and the two must agree;
+    // the reasoning for every guard here lives there and in core.Style.
     //
-    // The role guard is ARIA's own scoping — aria-level is defined for heading,
-    // listitem and row, and means nothing anywhere else. The range guard drops
-    // rather than clamps: a 7 has no spelling on any target, and rewriting it
-    // to a 6 would assert a structure nobody described.
-    function headingLevel(style) {
-        if (style.AccessibilityRole !== "heading") return "";
-        const level = style.AccessibilityHeadingLevel || 0;
-        return level >= 1 && level <= 6 ? String(level) : "";
+    // The switch is the point, not a tidier if-chain. ARIA defines aria-level
+    // for exactly three roles, core carries a heading's tier and a collection
+    // item's depth as separate ints (they are validated differently), and this
+    // is where the two meet at the one attribute both become. Dispatching on
+    // the role makes them mutually exclusive by construction: a node has one
+    // role, so no arrangement of the two fields can produce two values for one
+    // attribute.
+    //
+    // Both arms drop rather than clamp, and they drop different things. A
+    // heading stops at 6 — that is as far as h1-h6 and SwiftUI's .h1-.h6 go —
+    // and a nesting depth has no ARIA ceiling at all, so capping it would
+    // flatten a legitimately deep tree.
+    function ariaLevel(style) {
+        switch (style.AccessibilityRole) {
+            case "heading": {
+                const level = style.AccessibilityHeadingLevel || 0;
+                return level >= 1 && level <= 6 ? String(level) : "";
+            }
+            case "listitem":
+            case "row": {
+                const level = style.AccessibilityNestingLevel || 0;
+                return level >= 1 ? String(level) : "";
+            }
+            default:
+                return "";
+        }
     }
 
     // Sets an attribute to a non-empty value, or removes it. There is no empty
@@ -1343,9 +1383,15 @@ const GrMob = (() => {
         // A flex *item* property: how this node behaves inside its parent's
         // layout, so it needs no display:flex of its own.
         out.flexGrow = style.FlexGrow ? `${style.FlexGrow}` : "";
+        // The false arm is "none", not "", for the tags the browser draws a
+        // border on unasked: clearing the inline declaration hands the element
+        // back to the user-agent stylesheet, which is the bug rather than the
+        // fix. It stays "" everywhere else, so totality is unaffected — every
+        // element still gets exactly one of the three values on every call.
+        // See BORDER_RESET_TAGS above.
         out.border = (style.BorderWidth && style.BorderColor)
             ? `${style.BorderWidth}px solid ${style.BorderColor}`
-            : "";
+            : (BORDER_RESET_TAGS.has(tagForType(nodeType)) ? "none" : "");
         // core.Transition's canonical "<ms>ms <easing>" is valid CSS as-is;
         // the browser drives the frames, same declare-in-Go model as the
         // native renderers.

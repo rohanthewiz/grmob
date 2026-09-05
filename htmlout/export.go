@@ -583,7 +583,7 @@ func accessibilityAttrs(s *core.Style, nodeType string) []string {
 	} else if s.AccessibilityRole != core.RoleNone {
 		attrs = append(attrs, "role", string(s.AccessibilityRole))
 	}
-	if level := headingLevel(s); level != "" {
+	if level := ariaLevel(s); level != "" {
 		attrs = append(attrs, "aria-level", level)
 	}
 	if s.AccessibilityLabel != "" {
@@ -625,27 +625,52 @@ func modalSemantics(authored core.Role) []string {
 	return []string{"role", role, "aria-modal", "true"}
 }
 
-// headingLevel renders Style.AccessibilityHeadingLevel as an aria-level value,
-// or "" when there is nothing valid to write.
+// ariaLevel renders whichever of core.Style's two level fields the node's role
+// calls for, or "" when there is nothing valid to write.
 //
-// Two guards, and neither is arbitrary. The role check is ARIA's own scoping:
-// aria-level is defined for heading, listitem and row, and a level on anything
-// else describes the depth of something that has no depth. Only headings can
-// currently reach it — core.Style has one level field, named for the role it
-// belongs to — so this is the whole of the mapping rather than the first case
-// of a table.
+// # One attribute, two fields, and why the switch is the point
 //
-// The range check drops rather than clamps, which is the rule
-// Style.AccessibilityHeadingLevel states: a 7 has no spelling anywhere, and
-// rewriting it to a 6 would export a structure the caller never described.
-func headingLevel(s *core.Style) string {
-	if s.AccessibilityRole != core.RoleHeading {
-		return ""
+// ARIA defines aria-level for exactly three roles — heading, listitem and row
+// — and core carries the tier of a heading and the depth of a collection item
+// as separate ints, because the two are validated differently (see
+// Style.AccessibilityNestingLevel for the argument). They meet again here, at
+// the single attribute both become.
+//
+// Writing that as two functions, each guarding on its own roles, would leave
+// the caller holding an attribute slot two writers could reach. A switch on
+// the role makes the exclusion structural instead: a node has one role, the
+// arms are disjoint, and there is no arrangement of the two fields that
+// produces two values for one attribute. Setting both fields is not an error
+// and needs no rule of its own — whichever the role does not name is simply
+// not read.
+//
+// The role guard itself is ARIA's own scoping. A level on any other role
+// describes the depth of something that has no depth, which is why a
+// DataTable's column headers take the role and no level: columnheader is
+// pointedly not among the three.
+//
+// # Both ranges drop rather than clamp
+//
+// A heading stops at 6 because that is as far as HTML's h1-h6 and SwiftUI's
+// .h1-.h6 go; rewriting a 7 into a 6 would export a structure the caller never
+// described. A nesting depth has no upper bound in ARIA ("an integer greater
+// than or equal to 1") and none here, so only the zero value and negatives are
+// dropped — capping it would flatten a legitimately deep tree, which is the
+// same lie in the other direction.
+func ariaLevel(s *core.Style) string {
+	switch s.AccessibilityRole {
+	case core.RoleHeading:
+		if s.AccessibilityHeadingLevel < 1 || s.AccessibilityHeadingLevel > 6 {
+			return ""
+		}
+		return strconv.Itoa(s.AccessibilityHeadingLevel)
+	case core.RoleListItem, core.RoleRow:
+		if s.AccessibilityNestingLevel < 1 {
+			return ""
+		}
+		return strconv.Itoa(s.AccessibilityNestingLevel)
 	}
-	if s.AccessibilityHeadingLevel < 1 || s.AccessibilityHeadingLevel > 6 {
-		return ""
-	}
-	return strconv.Itoa(s.AccessibilityHeadingLevel)
+	return ""
 }
 
 // isFormControl reports whether the node exports as an HTML element that
@@ -926,8 +951,19 @@ func styleValue(s *core.Style, nodeType string) string {
 	// Both halves are required, matching the natives: Compose skips the border
 	// unless borderWidth > 0 && borderColor != null, so a color with no width
 	// or a width with no color draws nothing there and must draw nothing here.
+	//
+	// The else arm is the other half of the same agreement, and it is the one
+	// the guard alone got wrong: on three targets "no border in the style"
+	// means no border on screen, and on the web it meant "whatever the user
+	// agent draws" — which for a <button> is a 2px outset rule that no
+	// core.BorderWidth(0) could turn off, because emitting nothing is exactly
+	// what leaves the browser in charge. See borderResetTags in tag.go for the
+	// tags this applies to and for why <input> and <textarea> are not among
+	// them.
 	if s.BorderWidth != 0 && s.BorderColor != "" {
 		styles = append(styles, fmt.Sprintf("border:%gpx solid %s", s.BorderWidth, s.BorderColor))
+	} else if ResetsUABorder(TagFor(nodeType)) {
+		styles = append(styles, "border:none")
 	}
 	if s.Transition != "" {
 		// core.Transition's canonical "<ms>ms <easing>" is valid CSS as-is;

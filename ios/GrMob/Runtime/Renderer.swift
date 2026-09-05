@@ -1080,7 +1080,14 @@ private struct GrMobButton: View {
         }
         .buttonStyle(GrMobButtonStyle(
             background: s?.background ?? .accentColor,
-            radius: (s?.borderRadius ?? 0) > 0 ? s!.borderRadius : 8
+            radius: (s?.borderRadius ?? 0) > 0 ? s!.borderRadius : 8,
+            // The border travels with the other container fields rather than
+            // through grMobBox, which this view is handed a stripped style for
+            // (marginAndSizeOnly). Without it core.BorderColor/BorderWidth were
+            // the one pair a Button silently dropped, so an outlined button had
+            // its rule on the web and none on device.
+            borderColor: s?.borderColor,
+            borderWidth: s?.borderWidth ?? 0
         ))
         // core.OnLongPress on a Button. Every other node type gets this from
         // grMobBox's onLongPress argument, but a Button draws its own control
@@ -1113,11 +1120,21 @@ private struct GrMobButton: View {
 private struct GrMobButtonStyle: ButtonStyle {
     let background: Color
     let radius: CGFloat
+    /// nil / 0 mean "no border", which is grMobBorder's identity case and the
+    /// state every button was in before this pair was carried.
+    let borderColor: Color?
+    let borderWidth: CGFloat
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .background(background)
             .clipShape(RoundedRectangle(cornerRadius: radius))
+            // After the clip and on the same shape, so the stroke lands exactly
+            // on the edge the fill was cut to. strokeBorder insets it inward
+            // rather than straddling the edge, which is the placement
+            // Modifier.border gives it on Compose and the one grMobBox already
+            // uses for every other node.
+            .grMobBorder(RoundedRectangle(cornerRadius: radius), color: borderColor, width: borderWidth)
             // The platform has no ripple; dimming on press is the SwiftUI idiom.
             .opacity(configuration.isPressed ? 0.65 : 1)
     }

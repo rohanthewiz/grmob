@@ -115,6 +115,53 @@ type Style struct {
 	// not describe.
 	AccessibilityHeadingLevel int
 
+	// AccessibilityNestingLevel is how deep an item sits inside a nested
+	// collection — 1 for a top-level item, 2 for one inside it, and so on with
+	// no ceiling.
+	//
+	// It is read only when AccessibilityRole is RoleListItem or RoleRow.
+	// That is the rest of ARIA's own scoping for aria-level, whose three roles
+	// are heading, listitem and row; the heading third is
+	// AccessibilityHeadingLevel above, and the two fields are mutually
+	// exclusive by construction because a node has exactly one role.
+	//
+	// # Why a second field rather than a wider first one
+	//
+	// Both become the same attribute, so one field named AccessibilityLevel
+	// reading all three roles was the obvious alternative. What it cannot
+	// carry is that the two levels are validated differently, and not by
+	// accident:
+	//
+	//	heading   1-6      HTML has h1-h6 and SwiftUI's
+	//	                   AccessibilityHeadingLevel has .h1-.h6; a 7 has no
+	//	                   spelling on any target that can express a tier
+	//	nesting   1 and up ARIA requires only "an integer greater than or
+	//	                   equal to 1", and a deeply nested tree is not
+	//	                   malformed at depth 7
+	//
+	// One field would need one rule, and either rule is wrong for the other
+	// half: capping nesting at 6 would flatten a legitimate tree, and lifting
+	// the heading cap would export an aria-level no target can honor. The
+	// names are the other half of it — a caller reaching for "the level" on a
+	// list item should not have to read a doc to learn that the field is
+	// spelled for headings.
+	//
+	// # What each target does with it
+	//
+	// The web emits aria-level. Neither native does anything: SwiftUI has no
+	// nesting-depth property at all, and Compose's nearest thing —
+	// collectionItemInfo — describes an item's index and span within one
+	// collection rather than its depth within nested ones, so mapping onto it
+	// would state something the field does not mean. This is the same honest
+	// gap nine of the sixteen roles have, and it is written down in
+	// GrMobStyle.kt and GrMobStyle.swift beside the role dispatch rather than
+	// left for the next person to rediscover.
+	//
+	// Values below 1 are dropped, as they are for a heading: 0 is the zero
+	// value and means "an item, depth unstated", which is what every list item
+	// in every tree is unless something says otherwise.
+	AccessibilityNestingLevel int
+
 	// Disabled marks the node inert: the renderers hand it to the platform's
 	// own disabled state rather than emulating one, so the control stops
 	// accepting input, loses focus eligibility, and — the part an emulation
@@ -346,6 +393,14 @@ func (s Style) applyTo(target *Style) {
 	// pair only has to agree at export time.
 	if s.AccessibilityHeadingLevel != 0 {
 		target.AccessibilityHeadingLevel = s.AccessibilityHeadingLevel
+	}
+	// Independently of the role and of each other. The two levels are never
+	// both read — a node has one role, and the two fields answer to disjoint
+	// sets of them — but merging is not the layer that knows that, and a
+	// merge that dropped one because the other was set would make the result
+	// depend on which Style in the chain happened to name the role.
+	if s.AccessibilityNestingLevel != 0 {
+		target.AccessibilityNestingLevel = s.AccessibilityNestingLevel
 	}
 	if s.Disabled {
 		target.Disabled = true

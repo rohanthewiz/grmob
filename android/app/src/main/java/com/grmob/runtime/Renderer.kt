@@ -1,6 +1,7 @@
 package com.grmob.runtime
 
 import androidx.compose.animation.Animatable
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
@@ -564,6 +565,15 @@ private fun GrMobButton(node: GrMobNode, extra: Modifier) {
         // ripple, and marks the node disabled for TalkBack.
         enabled = !node.isDisabled(),
         shape = RoundedCornerShape((s?.borderRadius ?: 8f).dp),
+        // The border goes through material3's own slot for the same reason
+        // background and padding do: marginAndSize strips the box-drawing
+        // fields, so boxModifier's Modifier.border never runs for a Button and
+        // core.BorderWidth/BorderColor were silently dropped here. That is what
+        // made components.Button's EmphasisOutlined — documented as "a 1px rule
+        // in the variant's color" — draw its rule on the web and nothing on
+        // device. material3 insets the stroke inside `shape`, which is the same
+        // placement Modifier.border and SwiftUI's strokeBorder give it.
+        border = borderStroke(s),
         colors = ButtonDefaults.buttonColors(
             containerColor = s?.background ?: Color.Unspecified,
             contentColor = s?.textColor ?: Color.Unspecified,
@@ -624,6 +634,11 @@ private fun GrMobLongPressButton(node: GrMobNode, extra: Modifier) {
         shape = RoundedCornerShape((s?.borderRadius ?: 8f).dp),
         color = s?.background ?: MaterialTheme.colorScheme.primary,
         contentColor = s?.textColor ?: MaterialTheme.colorScheme.onPrimary,
+        // The same border the material3 path takes, through Surface's own slot
+        // — this branch rebuilds that button by hand, so every style field it
+        // honors has to be honored here too or an outlined button would lose
+        // its rule the moment it grew an OnLongPress.
+        border = borderStroke(s),
     ) {
         Box(
             // The same content padding the material3 path passes as
@@ -642,6 +657,24 @@ private fun GrMobLongPressButton(node: GrMobNode, extra: Modifier) {
             )
         }
     }
+}
+
+/**
+ * core.BorderWidth/BorderColor as a material3 border slot, or null for "no
+ * border" — which is what the slot's own default means, so an unstyled button
+ * is untouched.
+ *
+ * The guard is boxModifier's, restated rather than shared because the value is
+ * a different type: `borderWidth > 0f && borderColor != null`. Both halves are
+ * required on every target — a width with no color and a color with no width
+ * each draw nothing on all four — so a Button must not be the one place where
+ * half a border is enough.
+ */
+private fun borderStroke(s: GrMobStyle?): BorderStroke? {
+    if (s == null) return null
+    val color = s.borderColor ?: return null
+    if (s.borderWidth <= 0f) return null
+    return BorderStroke(s.borderWidth.dp, color)
 }
 
 /** Margin + explicit dimensions only — for components that draw their own box. */

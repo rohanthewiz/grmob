@@ -452,7 +452,13 @@ extension View {
         if let shape { clipShape(shape) } else { self }
     }
 
-    @ViewBuilder fileprivate func grMobBorder(_ shape: RoundedRectangle?, color: Color?, width: CGFloat) -> some View {
+    /// Internal rather than fileprivate: GrMobButtonStyle in Renderer.swift
+    /// needs the same stroke. A Button draws its own container, so it is handed
+    /// a style stripped of the box-drawing fields (marginAndSizeOnly) and never
+    /// reaches grMobBox — which is how core.BorderWidth/BorderColor came to be
+    /// dropped on Buttons alone, and why the rule components.Button's
+    /// EmphasisOutlined documents drew on the web and not on device.
+    @ViewBuilder func grMobBorder(_ shape: RoundedRectangle?, color: Color?, width: CGFloat) -> some View {
         if let color, width > 0 {
             // strokeBorder insets the stroke fully inside the shape — the
             // Compose Modifier.border behavior — where a plain stroke would
@@ -614,12 +620,24 @@ private func RoundedCornerShapeIfAny(radius: CGFloat) -> RoundedRectangle? {
 /// Compose's `heading()` takes no argument — so the level reaches VoiceOver's
 /// heading rotor here and is documented as inert in GrMobStyle.kt.
 ///
-/// Two guards, matching the web exporters line for line (htmlout's
-/// headingLevel and the WASM runtime's). The role guard is ARIA's scoping,
-/// which Go's field doc adopts: a level belongs to a heading, and a
+/// Two guards, matching the heading arm of the web exporters line for line
+/// (htmlout's ariaLevel and the WASM runtime's). The role guard is ARIA's
+/// scoping, which Go's field doc adopts: a level belongs to a heading, and a
 /// columnheader takes the header trait without one. The range guard drops
 /// rather than clamps — `.unspecified` is what a 0 or a 7 means, and inventing
 /// an `.h6` for a 7 would state a structure the app never described.
+///
+/// # The other two roles aria-level serves have no mapping here
+///
+/// ARIA defines aria-level for listitem and row as well, which Go carries as
+/// core.Style.AccessibilityNestingLevel — how deep an item sits inside a
+/// nested collection. SwiftUI has no nesting-depth property of any kind, and
+/// Compose's nearest one describes an item's index within a single collection
+/// rather than its depth within nested ones, so that field is inert on both
+/// natives and lives on the web alone. The key is deliberately not parsed
+/// into GrMobStyle, for the reason the heading gap is written down in
+/// GrMobStyle.kt: a field silently ignored is indistinguishable from one
+/// nobody had heard of. mobile/verify/nesting_level_test.go pins both halves.
 private func grMobHeadingLevel(_ s: GrMobStyle) -> AccessibilityHeadingLevel {
     guard s.accessibilityRole == "heading" else { return .unspecified }
     switch s.accessibilityHeadingLevel {

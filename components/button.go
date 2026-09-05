@@ -44,6 +44,28 @@ const (
 	// tertiary action, a toolbar glyph, or a tab that must not look like a
 	// pill.
 	EmphasisGhost Emphasis = "ghost"
+
+	// # The rule, and the two targets that used to disagree about it
+	//
+	// The distinction between these two is the border, so it is the one place
+	// where a renderer that quietly drops core.BorderWidth/BorderColor turns
+	// two documented looks into one. Both ends of that were broken, in
+	// opposite directions, and both are now closed:
+	//
+	//   - Neither native drew the outlined rule. A Button draws its own
+	//     container, so each renderer hands it a style stripped of the
+	//     box-drawing fields and feeds them back through the platform
+	//     control's own slots; the border was the one field stripped and not
+	//     fed back. Compose now passes a BorderStroke and SwiftUI a
+	//     strokeBorder overlay (mobile/verify/button_border_test.go).
+	//   - Both web targets drew a ghost rule. A <button> carries the user
+	//     agent's own border, and emitting no declaration is exactly what
+	//     leaves it in charge, so core.BorderWidth(0) could not remove it.
+	//     Both DOM renderers now write border:none for the tags the browser
+	//     draws on (borderResetTags in htmlout/tag.go).
+	//
+	// So the same guard — a width *and* a color — decides the border on all
+	// four targets, and half a border is no border everywhere.
 )
 
 // Button is a themed action button with two orthogonal color axes and no

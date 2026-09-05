@@ -29,6 +29,11 @@ const heading = (level) => ({
     Style: { AccessibilityRole: "heading", AccessibilityHeadingLevel: level },
 });
 
+const nested = (role, level) => ({
+    Type: "Box",
+    Style: { AccessibilityRole: role, AccessibilityNestingLevel: level },
+});
+
 // --------------------------------------------------------------------------
 // aria-level
 // --------------------------------------------------------------------------
@@ -167,4 +172,113 @@ test("nothing else gets a dialog role", () => {
 
     assert.equal(at(0).getAttribute("role"), null);
     assert.equal(at(1).getAttribute("aria-modal"), null);
+});
+
+// --------------------------------------------------------------------------
+// The nesting level: aria-level's other two roles
+// --------------------------------------------------------------------------
+//
+// ARIA defines aria-level for heading, listitem and row. core carries a
+// heading's tier and a collection item's depth as two fields with two ranges,
+// and ariaLevel is where they meet at the one attribute both become. The
+// static exporter is tested on the ranges; what matters here is the live half
+// — that the attribute still comes and goes with the field, and that the two
+// fields cannot both reach the slot.
+
+test("a nested item's depth becomes aria-level", () => {
+    const { at } = mount([nested("listitem", 2), nested("row", 3)]);
+    assert.equal(at(0).getAttribute("aria-level"), "2");
+    assert.equal(at(1).getAttribute("aria-level"), "3");
+});
+
+test("a nesting depth has no ceiling", () => {
+    // 7 is what the heading arm drops. Here it is a perfectly ordinary depth,
+    // which is the whole reason the two levels are separate fields rather than
+    // one with a single range rule.
+    const { at } = mount([nested("listitem", 7)]);
+    assert.equal(at(0).getAttribute("aria-level"), "7");
+});
+
+test("a depth on a role aria-level does not serve is dropped", () => {
+    // A list is not a listitem and a cell is not a row: the nearest misses,
+    // and the ones a caller reaching for the prop would most plausibly land on.
+    const { at } = mount([nested("list", 2), nested("cell", 2), nested("", 2)]);
+    for (const i of [0, 1, 2]) {
+        assert.equal(at(i).getAttribute("aria-level"), null);
+    }
+});
+
+test("the role decides which level is read", () => {
+    // Both fields set, one role. The switch in ariaLevel is what makes this
+    // structural rather than a precedence rule somebody has to remember.
+    const both = (role) => ({
+        Type: "Box",
+        Style: {
+            AccessibilityRole: role,
+            AccessibilityHeadingLevel: 2,
+            AccessibilityNestingLevel: 5,
+        },
+    });
+    const { at } = mount([both("heading"), both("listitem")]);
+    assert.equal(at(0).getAttribute("aria-level"), "2");
+    assert.equal(at(1).getAttribute("aria-level"), "5");
+});
+
+test("a depth that goes away takes its attribute with it", () => {
+    // The totality rule again, on the second field to reach this attribute. A
+    // guarded write would leave the old depth standing and the tree would
+    // report a shape it no longer has.
+    const { rt, at } = mount([nested("listitem", 2)]);
+    assert.equal(at(0).getAttribute("aria-level"), "2");
+
+    rt.GrMob.patch(JSON.stringify([{
+        Type: "update-style",
+        TargetID: "root/0",
+        Changes: { AccessibilityRole: "listitem" },
+    }]));
+    rt.drainFrames();
+
+    assert.equal(at(0).getAttribute("aria-level"), null);
+    assert.equal(at(0).getAttribute("role"), "listitem");
+});
+
+test("a role change re-reads the level from the other field", () => {
+    // The sharpest case the switch has to survive: an item that keeps both
+    // levels and changes only its role must swap which one is written, not
+    // keep the value the previous role selected.
+    const { rt, at } = mount([{
+        Type: "Box",
+        Style: {
+            AccessibilityRole: "heading",
+            AccessibilityHeadingLevel: 2,
+            AccessibilityNestingLevel: 5,
+        },
+    }]);
+    assert.equal(at(0).getAttribute("aria-level"), "2");
+
+    rt.GrMob.patch(JSON.stringify([{
+        Type: "update-style",
+        TargetID: "root/0",
+        Changes: {
+            AccessibilityRole: "listitem",
+            AccessibilityHeadingLevel: 2,
+            AccessibilityNestingLevel: 5,
+        },
+    }]));
+    rt.drainFrames();
+
+    assert.equal(at(0).getAttribute("aria-level"), "5");
+});
+
+test("aria-hidden beats a nesting depth too", () => {
+    const { at } = mount([{
+        Type: "Box",
+        Style: {
+            AccessibilityHidden: true,
+            AccessibilityRole: "listitem",
+            AccessibilityNestingLevel: 2,
+        },
+    }]);
+    assert.equal(at(0).getAttribute("aria-level"), null);
+    assert.equal(at(0).getAttribute("role"), null);
 });

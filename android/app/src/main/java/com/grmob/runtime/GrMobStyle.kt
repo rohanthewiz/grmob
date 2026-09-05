@@ -401,6 +401,19 @@ private fun dimensionModifier(value: String, horizontal: Boolean): Modifier {
  * had heard of, and the next person to look would have to re-derive that
  * Compose cannot say it. mobile/verify/heading_level_test.go pins this
  * paragraph so the note cannot quietly outlive the limitation.
+ *
+ * # AccessibilityNestingLevel is not read here either
+ *
+ * The other half of ARIA's aria-level: how deep a listitem or a row sits
+ * inside a nested collection. Compose's nearest property is
+ * `collectionItemInfo`, which states an item's index and span *within one
+ * collection* rather than its depth *within nested ones* — a different claim,
+ * and filling it from this field would tell TalkBack something the app never
+ * said. SwiftUI has nothing for it at all, so unlike the heading tier this one
+ * is inert on both natives and lives only on the web.
+ *
+ * Same treatment as above: the key is deliberately not parsed, and
+ * mobile/verify/nesting_level_test.go pins both halves.
  */
 fun SemanticsPropertyReceiver.grMobRole(kind: String) {
     when (kind) {

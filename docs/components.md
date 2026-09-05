@@ -163,6 +163,16 @@ by construction. `Emphasis` says **how much** of it:
     destructive button — the ordinary shape of a "Delete" confirmation —
     without a fifth value, and then a ghost destructive needs a sixth.
 
+The rule in the last column is the only thing separating outlined from ghost,
+and for a while it was the one property no target agreed on. Neither native
+drew the outlined rule — a Button draws its own container, so each renderer
+hands it a style with the box-drawing fields stripped, and the border was the
+one of them never fed back through the platform control's own slot. Both web
+targets drew a ghost rule — a `<button>` carries the user agent's border, and
+emitting no declaration is what leaves it in charge, so `core.BorderWidth(0)`
+could not remove it. Both halves are fixed: the same guard (a width **and** a
+color) now decides the border on all four targets.
+
 **The zero value applies nothing.** `Button{Label: l, OnTap: f}` renders
 exactly `core.Button(l, f)` — the theme's own `Components.Button` carries the
 look through untouched, rather than being re-derived from the palette. A theme

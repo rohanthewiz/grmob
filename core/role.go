@@ -172,6 +172,14 @@ const (
 	RoleListItem Role = "listitem"
 )
 
+// RoleListItem and RoleRow are the two values with a depth question attached:
+// how far inside a nested collection the item sits. That is
+// Style.AccessibilityNestingLevel, which is a *second* int rather than a
+// widening of the heading one — ARIA's aria-level serves all three roles, but
+// a heading's tier stops at 6 (that is all HTML and SwiftUI can spell) and a
+// nesting depth has no ceiling, so one field would have to pick a rule that is
+// wrong for one of them. See that field's doc for the rest of the argument.
+
 // Landmarks: the regions of a screen a reader jumps between rather than reads
 // through. AppBar is a banner, a tab strip is navigation, SearchField is a
 // search, ChipStrip is a toolbar.

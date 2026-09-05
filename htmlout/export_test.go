@@ -1191,3 +1191,167 @@ func TestCarriesOwnRoleAgreesWithTheExport(t *testing.T) {
 		}
 	}
 }
+
+// --- The user-agent border reset -------------------------------------------
+//
+// Three of the four renderers draw a border only when the style asks for one.
+// The fourth pair — the DOM targets — used the same guard and got the negative
+// case wrong: emitting nothing leaves the user-agent stylesheet in charge, and
+// for a <button> that stylesheet draws a 2px outset rule. See borderResetTags
+// in tag.go, and components.Button's EmphasisGhost, which is documented as
+// "EmphasisOutlined without the rule" and had one on the web.
+
+func TestButtonWithNoBorderIsTalkedOutOfTheBrowsers(t *testing.T) {
+	// EmphasisGhost's shape: a transparent fill and a colored label, with
+	// nothing said about a border.
+	n := &core.Node{
+		Type:  "Button",
+		Props: map[string]any{"label": "Skip"},
+		Style: &core.Style{Background: "#00000000", TextColor: "#007AFF"},
+	}
+	if out := ExportHTML(n); !strings.Contains(out, "border:none") {
+		t.Errorf("a borderless <button> did not reset the user agent's border:\n%s", out)
+	}
+}
+
+func TestBorderResetDoesNotSwallowARealBorder(t *testing.T) {
+	// EmphasisOutlined's shape. The reset is the *else* of the emission, so a
+	// button that states a border must still get exactly that one and no
+	// second declaration to argue with it.
+	n := &core.Node{
+		Type:  "Button",
+		Props: map[string]any{"label": "Cancel"},
+		Style: &core.Style{BorderWidth: 1, BorderColor: "#007AFF"},
+	}
+	out := ExportHTML(n)
+	if !strings.Contains(out, "border:1px solid #007AFF") {
+		t.Errorf("the authored border is missing:\n%s", out)
+	}
+	if strings.Contains(out, "border:none") {
+		t.Errorf("the reset was written alongside a real border:\n%s", out)
+	}
+}
+
+func TestHalfABorderStillResets(t *testing.T) {
+	// Both halves are required on every target — Compose skips its
+	// Modifier.border unless width and color are both set, and SwiftUI's
+	// grMobBorder guards the same way — so a half-stated border is no border,
+	// and no border on a <button> is "none".
+	for _, s := range []*core.Style{
+		{BorderWidth: 1},
+		{BorderColor: "#007AFF"},
+	} {
+		n := &core.Node{Type: "Button", Props: map[string]any{"label": "x"}, Style: s}
+		out := ExportHTML(n)
+		if !strings.Contains(out, "border:none") {
+			t.Errorf("half a border (%+v) did not reach the reset:\n%s", s, out)
+		}
+		if strings.Contains(out, "solid") {
+			t.Errorf("half a border (%+v) emitted a declaration:\n%s", s, out)
+		}
+	}
+}
+
+func TestOnlyTheTagsTheBrowserDrawsOnAreReset(t *testing.T) {
+	// The reset is scoped by tag, not applied to everything with no border. A
+	// <div> has no user-agent border, so "none" there would be a declaration
+	// that says nothing and that an author's own stylesheet would have to
+	// fight. This walks the whole tag table so a new row joins the set
+	// deliberately rather than by being forgotten.
+	for nodeType, tag := range tags {
+		n := &core.Node{Type: nodeType, Props: map[string]any{"visible": true}}
+		reset := strings.Contains(ExportHTML(n), "border:none")
+		if want := ResetsUABorder(tag); reset != want {
+			t.Errorf("%s (<%s>): exported a border reset = %v, ResetsUABorder = %v",
+				nodeType, tag, reset, want)
+		}
+	}
+}
+
+// --- The nesting level, aria-level's other two roles -------------------------
+//
+// ARIA defines aria-level for heading, listitem and row. core carries the
+// heading tier and the collection depth as two fields, because their ranges
+// differ (see core.Style.AccessibilityNestingLevel), and ariaLevel is where
+// they meet at the single attribute both become.
+
+func TestNestingLevelBecomesAriaLevel(t *testing.T) {
+	// No ceiling: ARIA asks only for an integer of 1 or more, so a deep tree
+	// is exported as deep as it is. 7 is the value the heading arm drops, and
+	// it is here to prove the two arms really do have different ranges rather
+	// than one rule applied twice.
+	for _, role := range []core.Role{core.RoleListItem, core.RoleRow} {
+		for _, level := range []int{1, 2, 7, 42} {
+			n := &core.Node{Type: "Box", Style: &core.Style{
+				AccessibilityRole:         role,
+				AccessibilityNestingLevel: level,
+			}}
+			want := `aria-level="` + strconv.Itoa(level) + `"`
+			if out := ExportHTML(n); !strings.Contains(out, want) {
+				t.Errorf("%s depth %d not exported as %s:\n%s", role, level, want, out)
+			}
+		}
+	}
+
+	for _, tc := range []struct {
+		name  string
+		style core.Style
+	}{
+		{"unset", core.Style{AccessibilityRole: core.RoleListItem}},
+		{"below range", core.Style{AccessibilityRole: core.RoleListItem, AccessibilityNestingLevel: -1}},
+		// The roles aria-level is *not* defined for, including the two nearest
+		// misses: a list is not a listitem, and a cell is not a row.
+		{"list", core.Style{AccessibilityRole: core.RoleList, AccessibilityNestingLevel: 2}},
+		{"cell", core.Style{AccessibilityRole: core.RoleCell, AccessibilityNestingLevel: 2}},
+		{"columnheader", core.Style{AccessibilityRole: core.RoleColumnHeader, AccessibilityNestingLevel: 2}},
+		{"no role at all", core.Style{AccessibilityNestingLevel: 2}},
+	} {
+		s := tc.style
+		if out := ExportHTML(&core.Node{Type: "Box", Style: &s}); strings.Contains(out, "aria-level") {
+			t.Errorf("%s: wrote an aria-level it should have dropped:\n%s", tc.name, out)
+		}
+	}
+}
+
+// The two fields cannot contend for the one attribute, because the role picks
+// the arm and a node has one role. Set both and state a heading: the tier is
+// written and the depth is simply not read — no second attribute, and no
+// argument about which wins.
+func TestTheRoleDecidesWhichLevelIsRead(t *testing.T) {
+	for _, tc := range []struct {
+		role core.Role
+		want string
+	}{
+		{core.RoleHeading, `aria-level="2"`},
+		{core.RoleListItem, `aria-level="5"`},
+		{core.RoleRow, `aria-level="5"`},
+	} {
+		n := &core.Node{Type: "Box", Style: &core.Style{
+			AccessibilityRole:         tc.role,
+			AccessibilityHeadingLevel: 2,
+			AccessibilityNestingLevel: 5,
+		}}
+		out := ExportHTML(n)
+		if !strings.Contains(out, tc.want) {
+			t.Errorf("%s: want %s:\n%s", tc.role, tc.want, out)
+		}
+		if n := strings.Count(out, "aria-level"); n != 1 {
+			t.Errorf("%s: wrote aria-level %d times; one attribute has one slot:\n%s",
+				tc.role, n, out)
+		}
+	}
+}
+
+// aria-hidden prunes the subtree, so a depth on the same node describes the
+// position of an item no reader can reach — the same reason it beats the
+// heading tier, the name and the role.
+func TestHiddenBeatsNestingLevel(t *testing.T) {
+	n := &core.Node{Type: "Box", Style: &core.Style{
+		AccessibilityHidden:       true,
+		AccessibilityRole:         core.RoleListItem,
+		AccessibilityNestingLevel: 2,
+	}}
+	if out := ExportHTML(n); strings.Contains(out, "aria-level") {
+		t.Errorf("aria-hidden should win alone:\n%s", out)
+	}
+}

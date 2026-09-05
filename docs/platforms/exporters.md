@@ -62,6 +62,17 @@ indented HTML. Properties worth relying on:
   `role="heading"` and only for 1–6 — ARIA's own scoping, and a drop rather
   than a clamp. See
   [Styling & Theming](../concepts/styling-and-theming.md#accessibilityheadinglevel).
+- **A nested item's depth is `aria-level` too,** written alongside
+  `role="listitem"` or `role="row"` and with no ceiling. One exporter function
+  (`ariaLevel`) switches on the role, so the two `core.Style` level fields are
+  mutually exclusive by construction rather than by a precedence rule. See
+  [Styling & Theming](../concepts/styling-and-theming.md#accessibilitynestinglevel).
+- **A `<button>` is told it has no border** when the style declares none. The
+  border guard is "a width *and* a color" on all four targets; emitting nothing
+  on the web left the user agent's own rule standing, which is what gave
+  `components.Button`'s ghost emphasis an outline the natives never drew.
+  `htmlout.ResetsUABorder` is the tag set, and `<input>`/`<textarea>` are
+  deliberately excluded.
 
 ### Testing with htmlout
 

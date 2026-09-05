@@ -66,6 +66,20 @@ longhand wins over the isotropic `Gap`, and `row-gap` is the space *between
 rows*, so it is a vertical stack's spacing and a wrapping row's line
 spacing.
 
+`BorderColor`/`BorderWidth` are drawn only when **both** are set — a width
+with no color and a color with no width each draw nothing, on every target.
+Two node-specific escapes from that rule are closed rather than documented as
+quirks. A `core.Button` draws its own container on both natives, so it is
+handed a style with the box-drawing fields stripped and each one fed back
+through the platform control's own slot; the border used to be stripped and
+not fed back, which is why `components.Button`'s outlined emphasis had no rule
+on device. And on the web a `<button>` carries the *user agent's* border, which
+no `BorderWidth(0)` could remove, because emitting no declaration is exactly
+what leaves the browser in charge — so both DOM renderers now write
+`border:none` for the tags a browser draws on. `<input>` and `<textarea>` are
+deliberately left alone; neither bundled theme gives `Components.Input` a
+border, so resetting theirs would leave every web text field unmarked.
+
 `Padding` and `Margin` carry a `Horizontal`/`Vertical` pair alongside the four
 sides (`core.PaddingHorizontal(16)`). A side left at zero takes its axis's
 shorthand; an explicit side wins. All four targets resolve it the same way,
@@ -104,6 +118,7 @@ core.Box(hairline, core.AccessibilityHidden())   // decorative — skip in scree
 core.AccessibilityHint("Filters the task list")  // describes the result of activating
 core.AccessibilityRole(core.RoleHeading)         // says what the node *is*
 core.AccessibilityHeadingLevel(2)                // and how deep it sits
+core.AccessibilityNestingLevel(2)                // the same question for a nested list item
 ```
 
 Renderers map them to `contentDescription` (Android),
@@ -221,6 +236,46 @@ decisive reason: `core.Role`'s values are ARIA's spellings, and there is no
 mapping table the vocabulary was chosen to avoid — plus twelve native arms that
 would all land on the heading primitive the plain `heading` arm already
 reaches.
+
+#### `AccessibilityNestingLevel`
+
+`aria-level` serves three roles, not one. The other two are `listitem` and
+`row`, where it means depth inside a nested collection rather than a tier in an
+outline, and that is this field:
+
+```go
+core.Box(
+    core.AccessibilityRole(core.RoleListItem),
+    core.AccessibilityNestingLevel(2),
+    core.Text("Compline"))
+```
+
+Without it, a correctly roled nested list still announces flat — "list, twelve
+items" for something the eye reads as three groups of four.
+
+| target | what it becomes |
+|---|---|
+| HTML / WASM | `aria-level` |
+| iOS | nothing — SwiftUI has no nesting-depth property |
+| Android | nothing — Compose's `collectionItemInfo` states an item's index within *one* collection, not its depth within nested ones |
+
+**Why a second field and not a wider first one.** Both become the same
+attribute, so one `AccessibilityLevel` reading all three roles was the obvious
+alternative. It cannot carry the fact that the two are validated differently:
+a heading stops at 6 because that is as far as `h1`–`h6` and SwiftUI's
+`.h1`–`.h6` go, while ARIA asks a nesting depth only to be an integer of 1 or
+more. One field needs one rule, and either rule is wrong for the other half —
+capping a depth at 6 flattens a legitimate tree, and lifting the heading cap
+exports a tier nothing can honor.
+
+The two can never contend for the attribute, because the exporters dispatch on
+the role and a node has exactly one. Set both fields and the role decides which
+is read; the other is simply not looked at.
+
+Nothing in the framework sets one. Unlike the heading pair — which `AppBar` and
+`GroupedList` supply for every app — no bundled widget nests a collection
+inside itself, so this is a prop an application reaches for when it builds the
+nesting itself.
 
 #### Roles a node type carries for itself
 

@@ -330,6 +330,43 @@ func AccessibilityHeadingLevel(level int) StyleProp {
 	})
 }
 
+// AccessibilityNestingLevel says how deep an item sits inside a nested
+// collection — 1 for a top-level item, 2 for one inside it, upward with no
+// ceiling.
+//
+//	core.Box(
+//		core.AccessibilityRole(core.RoleListItem),
+//		core.AccessibilityNestingLevel(2),
+//		core.Text("Compline"),
+//	)
+//
+// Paired with RoleListItem or RoleRow, never alone, and never with
+// RoleHeading — the depth of a heading is AccessibilityHeadingLevel, which is
+// a different question with a different range. Both become aria-level on the
+// web, and which one is read is decided entirely by the role, so the two can
+// never contend for the attribute.
+//
+// What a depth buys is the shape of the tree. A flattened nested list — every
+// item a sibling of every other — is what a reader gets from a run of divs,
+// and it is also what it gets from a correctly roled list whose items do not
+// say how deep they are: "list, twelve items" for something the eye reads as
+// three groups of four.
+//
+// Nothing in the framework sets one. Neither DataTable's rows (a flat table)
+// nor any bundled widget nests a collection inside itself, so unlike the
+// heading pair — which components.AppBar and components.GroupedList set for
+// every app without a call site — this is a prop an application reaches for
+// when it builds the nesting itself.
+//
+// See Style.AccessibilityNestingLevel for why this is a second field rather
+// than a widened first one, and for the two natives that cannot express a
+// depth at all.
+func AccessibilityNestingLevel(level int) StyleProp {
+	return styleFunc(func(s *Style) {
+		s.AccessibilityNestingLevel = level
+	})
+}
+
 // AccessibilityHidden removes the element (and its subtree) from the
 // accessibility tree — for decorative content a screen reader should skip.
 func AccessibilityHidden() StyleProp {

@@ -25,8 +25,9 @@ func TestRuntimeWritesTheSameAccessibilityAttributes(t *testing.T) {
 		{`(dialog ? "dialog" : "")`,
 			`the dialog role, defaulted after the author's own core.Role so a hand-built ` +
 				`Modal that states one still wins`},
-		{`setOrRemove(el, "aria-level", hidden ? "" : headingLevel(style))`,
-			"the heading tier, and aria-hidden winning over it as it does over the role"},
+		{`setOrRemove(el, "aria-level", hidden ? "" : ariaLevel(style))`,
+			"the level — a heading's tier or a nested item's depth, whichever the role calls " +
+				"for — and aria-hidden winning over it as it does over the role"},
 	} {
 		if !strings.Contains(src, want.expr) {
 			t.Errorf("grmob-runtime.js: %q not found — %s. htmlout writes it, so the two web "+
@@ -35,25 +36,40 @@ func TestRuntimeWritesTheSameAccessibilityAttributes(t *testing.T) {
 	}
 }
 
-// The level's two guards, which htmlout's headingLevel applies as well. Both
-// are decisions rather than defensive coding, so both are worth holding:
+// The level's guards, which htmlout's ariaLevel applies as well. None of them
+// is defensive coding, so all of them are worth holding:
 //
-//   - the role guard is ARIA's own scoping. aria-level is defined for heading,
-//     listitem and row and for nothing else, which is why a DataTable's column
-//     headers take the role and no tier.
-//   - the range check drops rather than clamps. Rewriting a 7 into a 6 would
-//     put a structure in the document that the app never described.
-func TestRuntimeGuardsTheHeadingLevelTheSameWay(t *testing.T) {
+//   - the role dispatch is ARIA's own scoping. aria-level is defined for
+//     heading, listitem and row and for nothing else, which is why a
+//     DataTable's column headers take the role and no level. Writing it as a
+//     switch is also what makes core's two level fields mutually exclusive:
+//     one attribute, one role, one arm.
+//   - both range checks drop rather than clamp, and they drop different
+//     things. Rewriting a heading's 7 into a 6 would put a structure in the
+//     document the app never described; capping a nesting depth at 6 would
+//     flatten a tree ARIA considers perfectly well-formed.
+func TestRuntimeGuardsTheLevelsTheSameWay(t *testing.T) {
 	src := runtimeSource(t)
 	for _, want := range []struct{ expr, why string }{
-		{`if (style.AccessibilityRole !== "heading") return "";`,
-			"the role guard — a level on anything else describes the depth of something " +
-				"that has no depth"},
+		{`switch (style.AccessibilityRole) {`,
+			"the role dispatch — a level on any other role describes the depth of something " +
+				"that has no depth, and the switch is what keeps the two level fields from " +
+				"contending for one attribute"},
+		{`case "heading": {`, "the heading arm"},
+		{`case "listitem":`, "the listitem arm"},
+		{`case "row": {`, "the row arm, which shares the nesting depth with listitem"},
 		{`level >= 1 && level <= 6 ? String(level) : ""`,
-			"the range guard, which drops rather than clamps"},
+			"the heading range, which drops rather than clamps"},
+		{`level >= 1 ? String(level) : ""`,
+			"the nesting range, which has no ceiling — ARIA asks only for an integer of 1 " +
+				"or more, and a cap would flatten a deep tree"},
+		{`default:
+                return "";`,
+			"the catch-all. A role with no arm must write no level rather than falling " +
+				"through to one"},
 	} {
 		if !strings.Contains(src, want.expr) {
-			t.Errorf("grmob-runtime.js: headingLevel is missing %q — %s", want.expr, want.why)
+			t.Errorf("grmob-runtime.js: ariaLevel is missing %q — %s", want.expr, want.why)
 		}
 	}
 }
