@@ -1,6 +1,7 @@
 package components
 
 import (
+	"fmt"
 	"sort"
 
 	"github.com/rohanthewiz/grmob/core"
@@ -35,6 +36,10 @@ type Column[T any] struct {
 	// also makes the header tappable. Sortable makes the header tappable
 	// without a comparator, for a table whose caller sorts server-side and
 	// only needs to hear which column was asked for.
+	//
+	// Which of the two to set is not a matter of convenience: it depends on
+	// whether DataTable.Rows is the whole set or a window of it. See the
+	// "Sorting sorts the rows you hand it" section on DataTable.
 	Less     func(a, b T) bool
 	Sortable bool
 }
@@ -45,6 +50,18 @@ type Sort struct {
 	Column int
 	Desc   bool
 }
+
+// ConcernPartialSort: a DataTable sorted client-side (the active Sort names
+// a column with a Less) while its Pagination declares a PageCount — which is
+// the caller saying the server chooses which rows arrive. The table can only
+// order the window it was handed, so the header claims an ordering over the
+// whole table and delivers one over one page of it. The fix is to drop the
+// column's Less and keep Sortable, letting OnSort go into the query.
+//
+// Reported through core.ReportConcern rather than detected in core: this is
+// a widget-level contract, and core has no business knowing what a DataTable
+// is. Debug mode only, like every other concern.
+const ConcernPartialSort = "partial-sort"
 
 // DataTable is a header row over a virtualized, keyed body of cell rows,
 // with controlled sorting, optional grouping, optional pagination and a
@@ -71,6 +88,33 @@ type Sort struct {
 // rows, and sorting first is what makes group runs follow the sort (a table
 // sorted by teacher and grouped by month shows a month once per teacher run
 // — the honest rendering; see groupRuns).
+//
+// # Sorting sorts the rows you hand it
+//
+// A column with Less is sorted by the table, over Rows — all of Rows, and
+// only Rows. That is right whenever Rows is the whole set: a slice the
+// caller holds, or a fetch that completed, including the client-paged case
+// where Pagination slices rows the table already has.
+//
+// It is wrong when Rows is a window somebody else chose. An offset pager's
+// "the three pages loaded so far", or a server-paged table declaring
+// PageCount, is a subset selected under some other ordering. Sorting that
+// yields the alphabetically-first of the rows that happen to be loaded, and
+// puts it under a header claiming to be the alphabetically-first rows. The
+// result carries no sign of which it is, which is exactly what makes the
+// mistake worth naming: a partial sort looks like a working one, and the
+// rows that disprove it are the ones not fetched.
+//
+// For that table set Sortable instead of Less. The header still taps and
+// OnSort still fires; the sort goes into the next query, and the server
+// returns a window of the ordering the reader actually asked for.
+//
+// One shape of this is detectable and is reported as a debug concern: Sort
+// active on a Less column while Pagination declares a PageCount, since a
+// declared PageCount is the caller saying the server does the paging. See
+// ConcernPartialSort. The append-style case has no such signal — a slice of
+// accumulated pages is indistinguishable from a complete one — so that half
+// is left to this documentation.
 //
 // # Who owns what
 //
@@ -108,6 +152,10 @@ type DataTable[T any] struct {
 	// Sort is the active sort, nil for none. OnSort receives the requested
 	// sort when a sortable header is tapped: the same column toggles
 	// direction, a different column starts ascending.
+	//
+	// Whether the table then does the sorting depends on the column: see
+	// "Sorting sorts the rows you hand it" above before giving a column a
+	// Less on a table whose Rows come a page at a time.
 	Sort   *Sort
 	OnSort func(Sort)
 
@@ -145,6 +193,10 @@ type DataTable[T any] struct {
 func (d DataTable[T]) Render(ctx *core.Context) *core.Node {
 	t := ctx.Theme()
 	cols := d.visibleColumns()
+
+	if core.IsDebugMode() {
+		d.checkPartialSort()
+	}
 
 	rows := d.sorted()
 	pager := d.Pagination
@@ -207,6 +259,29 @@ func (d DataTable[T]) visibleColumns() []visibleColumn[T] {
 		out = append(out, visibleColumn[T]{Column: c, index: i})
 	}
 	return out
+}
+
+// checkPartialSort reports the one shape of a partial sort the table can see:
+// sorting here, over rows the caller has said the server pages. See
+// ConcernPartialSort.
+//
+// Gated by the caller on IsDebugMode, per ReportConcern's contract — the
+// detail string costs a Sprintf and a release build should not pay for one.
+// The concern collector deduplicates on kind+detail, so a table that renders
+// every frame occupies one entry with a rising count.
+func (d DataTable[T]) checkPartialSort() {
+	if d.Sort == nil || d.Pagination == nil || d.Pagination.PageCount <= 0 {
+		return
+	}
+	col := d.Sort.Column
+	if col < 0 || col >= len(d.Columns) || d.Columns[col].Less == nil {
+		return
+	}
+	core.ReportConcern(ConcernPartialSort, fmt.Sprintf(
+		"column %q has a Less, so it is sorted over the %d rows given, but "+
+			"Pagination.PageCount is %d: the server chose those rows. Use "+
+			"Sortable without Less and sort in the query.",
+		d.Columns[col].Title, len(d.Rows), d.Pagination.PageCount))
 }
 
 // sorted returns Rows ordered by the active sort when that column has a

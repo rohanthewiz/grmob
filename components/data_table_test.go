@@ -175,6 +175,82 @@ func TestDataTableServerSidePagingLeavesRowsAlone(t *testing.T) {
 	}
 }
 
+// The partial-sort concern: sorting here, over rows the caller has said the
+// server pages, is the one shape of the mistake the table can detect.
+//
+// The three negative cases matter as much as the positive one — a concern
+// that fires on a correct table is worse than no concern at all, since the
+// list it lands in is meant to be read as "these are bugs".
+func TestDataTableReportsSortingOverAServerPagedWindow(t *testing.T) {
+	core.SetDebugMode(true)
+	defer core.SetDebugMode(false)
+
+	// PageCount declared by the caller: the server picked these rows, and
+	// the Title column carries a Less, so the table sorts a window.
+	core.ClearConcerns()
+	ctx := core.NewContext()
+	ctx.BeginRenderPass()
+	DataTable[sermon]{
+		Columns: sermonColumns, Rows: sermons, Key: sermonKey,
+		Sort:       &Sort{Column: 0},
+		Pagination: &Pagination{Page: 0, PageCount: 9, OnChange: func(int) {}},
+	}.Render(ctx)
+	if !hasConcern(ConcernPartialSort) {
+		t.Error("sorting client-side under a server-declared PageCount should be reported")
+	}
+
+	// Every arrangement that is actually correct, each differing from the
+	// case above in one thing only.
+	fine := []struct {
+		name  string
+		table DataTable[sermon]
+	}{
+		{"client-side paging: the table holds every row and slices them itself",
+			DataTable[sermon]{Columns: sermonColumns, Rows: sermons, Key: sermonKey,
+				Sort:       &Sort{Column: 0},
+				Pagination: &Pagination{Page: 0, PageSize: 2, OnChange: func(int) {}}}},
+		{"server paging with Sortable, not Less: the tap goes to the query",
+			DataTable[sermon]{Columns: sermonColumns, Rows: sermons, Key: sermonKey,
+				Sort:       &Sort{Column: 2}, // the ID column: Sortable, no Less
+				Pagination: &Pagination{Page: 0, PageCount: 9, OnChange: func(int) {}}}},
+		{"server paging with no active sort at all",
+			DataTable[sermon]{Columns: sermonColumns, Rows: sermons, Key: sermonKey,
+				Pagination: &Pagination{Page: 0, PageCount: 9, OnChange: func(int) {}}}},
+	}
+	for _, c := range fine {
+		core.ClearConcerns()
+		ctx.BeginRenderPass()
+		c.table.Render(ctx)
+		if hasConcern(ConcernPartialSort) {
+			t.Errorf("false positive — %s", c.name)
+		}
+	}
+
+	// Off in a release build: the check is behind IsDebugMode, so nothing is
+	// recorded and nothing is built to record.
+	core.SetDebugMode(false)
+	core.ClearConcerns()
+	ctx.BeginRenderPass()
+	DataTable[sermon]{
+		Columns: sermonColumns, Rows: sermons, Key: sermonKey,
+		Sort:       &Sort{Column: 0},
+		Pagination: &Pagination{Page: 0, PageCount: 9, OnChange: func(int) {}},
+	}.Render(ctx)
+	if hasConcern(ConcernPartialSort) {
+		t.Error("the check should cost nothing and record nothing with debug off")
+	}
+}
+
+// hasConcern reports whether the collector holds a concern of this kind.
+func hasConcern(kind string) bool {
+	for _, c := range core.Concerns() {
+		if c.Kind == kind {
+			return true
+		}
+	}
+	return false
+}
+
 // The trailing group's count is suppressed here for the same reason as in
 // GroupedList: a table fed by an append-style pager holds only the rows
 // loaded so far, so its last run is still open. Pinned separately because

@@ -679,6 +679,11 @@ func lessonCollections() Lesson {
 				prose("Rows are sorted, then paged, then grouped. A column with Less is sorted here, "+
 					"on a copy — your slice is never reordered under you; a column marked Sortable "+
 					"without Less only reports the tap, for a table whose server does the sorting. "+
+					"Which one you want follows from where the rows came from: Less sorts all of "+
+					"Rows and only Rows, so it is right when that is the whole set and wrong when "+
+					"it is a page someone else chose — sorting a window gives you the first rows "+
+					"of the window under a header claiming the first rows of the table. Debug mode "+
+					"reports the detectable half of that as a partial-sort concern. "+
 					"A Pagination with a PageSize and no PageCount is sliced here too, and the "+
 					"footer's \"of N\" is derived from the rows. Compact drops the Narrow columns "+
 					"while the sort keeps addressing your column list, so toggling it never "+
@@ -723,6 +728,7 @@ func lessonCollections() Lesson {
 				),
 				keyPoints(
 					"Both widgets are hook-free and fully controlled: Sort, Page and Compact live in your state; OnSort and OnChange report intent.",
+					"Give a column Less only when Rows is the whole set; when the server pages, use Sortable and put the sort in the query — a client-side sort of one page is a partial sort wearing a total one's header.",
 					"Sort, then page, then group — a client-side page's headers agree with its rows, and group runs follow the sort.",
 					"Grouping is by run, not by bucket: sorted input yields one header per group; an append-only pager never moves an earlier header.",
 					"HideTrailingCount hides the last group's badge while a pager has more to fetch: a closed group's count is final, an open one's is a number about to change.",
