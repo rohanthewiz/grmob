@@ -152,6 +152,34 @@ so, because a widget that wraps a tappable row in a tappable card would
 otherwise announce two nested buttons. `AccessibilityHidden` wins over a role
 for the same reason it wins over a label.
 
+**A structural role owns what is inside it.** The tabular five and the
+collection pair are not labels on a container — they are claims about what it
+holds. `role="list"` says its children are listitems; `role="table"` says its
+children are rows, or rowgroups holding rows. A reader acts on that claim: it
+announces a count, it offers item-by-item navigation, it reads structure rather
+than text.
+
+Two things break the claim, and both are worse than no role:
+
+- **A gap in the chain** — an unroled element between the container and its
+  items. `role="table"` around a plain `div` around the rows reports a table
+  with *no rows*. That is what `RoleRowGroup` exists to close.
+- **A foreign child** — a footer, a section heading, a spinner sharing the
+  container with the items. ARIA specifies the children a role requires and not
+  what to do with any others, so the odd child's fate is an implementation's
+  choice rather than a promise.
+
+So **a container that mixes items with chrome cannot take a structural role**.
+Move the chrome outside the container, or leave the container roleless — its
+contents are then announced as the text they are, which is what they were
+before roles existed. A paged list whose "Load more" footer sits inside the
+`core.List` is the common shape: it is not a list, whatever it looks like.
+
+The landmarks, live regions and content roles carry no such promise. A banner
+or a navigation region owns whatever it likes, and `RoleHeading` / `RoleButton`
+/ `RoleLink` describe the node itself. Only the tabular and collection rows of
+the table above make a claim about their children.
+
 ### `Disabled`
 
 `core.Disabled(bool)` rides `Style` for the same reason — one prop, every

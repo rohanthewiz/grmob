@@ -53,6 +53,53 @@ package core
 // and a role that is right on one platform and inert on two is strictly better
 // than a div.
 //
+// # A structural role owns what is inside it
+//
+// The tabular five and the collection pair are not labels on a container —
+// they are claims about what the container holds. role="list" says its
+// children are listitems; role="table" says its children are rows, or
+// rowgroups holding rows. A reader acts on the claim rather than re-deriving
+// it: it announces the count ("list, five items"), it offers item-by-item
+// navigation, and it reads the structure instead of the text.
+//
+// A container can fail that claim in two directions, and both produce
+// something worse than no role at all.
+//
+// *A gap in the chain.* An unroled element between the container and its items
+// breaks the ownership: role="table" wrapping a plain div wrapping the rows
+// reports a table with no rows. This is what RoleRowGroup exists to close, and
+// its comment below has the detail.
+//
+// *A foreign child.* A container that holds something which is not an item — a
+// footer, a heading, a spinner — is claiming a structure it does not have.
+// ARIA specifies the children a role requires and not what to do with any
+// others, so what a reader makes of the odd child is an implementation's
+// choice rather than a promise: it may be counted, skipped, or announced as
+// the item it is not.
+//
+// So: **a container that mixes items with chrome cannot take a structural
+// role.** Either the chrome moves outside the container, or the container
+// stays roleless — in which case its contents are announced as the text they
+// are, which is what everything was before this type existed and is not a
+// regression. Reaching for the role anyway is the one move that makes the
+// screen worse.
+//
+// The rule is easy to meet by accident, because the shapes that hit it are the
+// ordinary ones. DataTable meets it three times in one widget: it puts a
+// rowgroup on its body list to close a gap, *withholds* that rowgroup when the
+// list holds a placeholder instead of rows, and documents a grouped table's
+// band headings — foreign children it cannot move — as a limit it cannot close
+// from where it sits. A paged list in the first app to adopt these roles met it
+// a fourth time without having read any of that: its "Load more" footer sits
+// inside the core.List, so the list cannot be a list.
+//
+// The landmarks, the live regions and the content roles carry no such promise
+// and are not subject to this. A banner or a navigation region owns whatever
+// it likes; RoleHeading, RoleButton and RoleLink describe the node itself.
+// Only the two structural const blocks below — the tabular set and the
+// collection pair — make a claim about their children, which is where to look
+// rather than here if a role is ever added to either.
+//
 // # Every renderer names every role
 //
 // Both natives dispatch on the string, arm by arm, so a role with no arm falls
@@ -89,6 +136,13 @@ const (
 
 // Collections. The looser cousin of the table pair, for a run of items that is
 // a list rather than a grid — GroupedList's bands, a strip of cards.
+//
+// RoleList makes the same claim about its children that RoleTable does, and
+// loses it to chrome just as easily — the rule is structural, not tabular: a container holding items *and* a "Load
+// more" footer, a section heading or a spinner is not a list, whatever it
+// looks like. See "A structural role owns what is inside it" above — that is
+// the section to read before putting one of these on a container that was not
+// built to hold items alone.
 const (
 	RoleList     Role = "list"
 	RoleListItem Role = "listitem"

@@ -230,7 +230,9 @@ func (d DataTable[T]) Render(ctx *core.Context) *core.Node {
 		// header row's cells. The rowgroup is the one that looks like padding
 		// and is not: the body is a core.List, and an unroled element between
 		// a table and its rows breaks the ownership that makes them its rows
-		// (see core.RoleRowGroup).
+		// (see core.RoleRowGroup, and "A structural role owns what is inside
+		// it" on core.Role for the general rule this and the two limits below
+		// are all instances of).
 		//
 		// One limit worth stating: a grouped table's band headings sit inside
 		// that rowgroup and are not rows, which ARIA has no reading for. They
@@ -255,6 +257,12 @@ func (d DataTable[T]) Render(ctx *core.Context) *core.Node {
 		// rowgroup owning one paragraph is a claim about a structure that is
 		// not there — "table, no rows" is the truth, and it is what the
 		// absent rowgroup already says.
+		//
+		// This is the foreign-child half of the ownership rule, met by
+		// withholding the role rather than by moving the child: a container
+		// that mixes items with chrome cannot take a structural role, and
+		// dropping the role is always available where relocating the chrome
+		// is not.
 		body = append(body, core.AccessibilityRole(core.RoleRowGroup))
 	}
 	switch {
