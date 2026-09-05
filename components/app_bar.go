@@ -113,6 +113,17 @@ func (a AppBar) Render(ctx *core.Context) *core.Node {
 		core.AlignItemsProp(core.AlignItemsCenter),
 		core.Gap(float64(t.Spacing.SM)),
 	)
+	// The banner landmark: the region a reader jumps to for "where am I and
+	// what can I do from here". It goes on the row rather than on the Box the
+	// separator case wraps around it, so that it lands on the same element in
+	// both shapes — the alternative moves the role between two elements
+	// depending on a cosmetic flag, and only one of them is what Style
+	// reaches. What the row leaves out is the hairline, which is decoration.
+	//
+	// Before Style, so a caller can override it: a second bar on a screen that
+	// already has a banner, or a bar that is really a section header, says so
+	// with core.AccessibilityRole in Style.
+	items = append(items, core.AccessibilityRole(core.RoleBanner))
 	for _, sp := range a.Style {
 		items = append(items, sp)
 	}
@@ -199,6 +210,12 @@ func (a AppBar) middle(t *core.Theme) core.View {
 			core.UseStyle(t.Typography.Subtitle),
 			core.FontWeight(core.Bold),
 			core.TextColor(t.Colors.TextPrimary),
+			// The screen's name is the screen's heading — the thing a reader
+			// navigating by heading expects to land on first, and the one
+			// role in this widget that is true on all four targets rather
+			// than on the web alone. Only the Title takes it: a Subtitle is a
+			// supporting line, and a Content slot is the caller's to describe.
+			core.AccessibilityRole(core.RoleHeading),
 		))
 	}
 	if a.Subtitle != "" {

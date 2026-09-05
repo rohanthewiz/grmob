@@ -52,11 +52,11 @@ func TestChipStripChipsKeepTheirOwnConfiguration(t *testing.T) {
 	}}.Render(ctx)
 
 	theme := core.DefaultTheme
-	if n.Children[0].Style.Background != theme.Colors.Surface {
-		t.Error("the selected chip should carry Chip's selected look")
+	if n.Children[0].Style.Background != theme.Components.Button.Background {
+		t.Error("the selected chip should carry Chip's selected look — the theme Button base")
 	}
-	if n.Children[1].Style.Background != theme.Components.Button.Background {
-		t.Error("the unselected chip should carry the theme Button base")
+	if n.Children[1].Style.Background != theme.Colors.Surface {
+		t.Error("the unselected chip should carry Chip's quiet look — a Surface fill")
 	}
 	ctx.TriggerCallback(n.Children[1].Props["onClick"].(string))
 	if tapped != "Sermons" {

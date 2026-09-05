@@ -199,3 +199,43 @@ func TestBannerMessageTakesTheSlack(t *testing.T) {
 		t.Error("the message should be inside the growing slot")
 	}
 }
+
+// A banner turns up because something changed, usually while the reader is
+// somewhere else on the screen — so the strip is a live region, and how rudely
+// it interrupts follows the variant it is already tinted by. Error cuts in;
+// everything else waits for a pause, because "Saved" arriving mid-sentence is
+// how a live region becomes a thing people switch off.
+func TestBannerAnnouncesItselfByVariant(t *testing.T) {
+	for _, tc := range []struct {
+		variant Variant
+		want    core.Role
+	}{
+		{VariantDefault, core.RoleStatus},
+		{VariantSuccess, core.RoleStatus},
+		{VariantWarning, core.RoleStatus},
+		{VariantError, core.RoleAlert},
+	} {
+		ctx := core.NewContext()
+		ctx.BeginRenderPass()
+		n := Banner{Text: "Could not refresh", Variant: tc.variant}.Render(ctx)
+		if n.Style.AccessibilityRole != tc.want {
+			t.Errorf("variant %q = %q, want %q", tc.variant, n.Style.AccessibilityRole, tc.want)
+		}
+	}
+}
+
+// The role is a default, not a fixture: Style is applied after the widget's
+// own props, so a caller who knows better — a banner that is really a static
+// notice, or one already inside another live region — overrides it.
+func TestBannerStyleCanOverrideTheLiveRegion(t *testing.T) {
+	ctx := core.NewContext()
+	ctx.BeginRenderPass()
+	n := Banner{
+		Text:  "Offline",
+		Style: []core.StyleProp{core.AccessibilityRole(core.RoleNone)},
+	}.Render(ctx)
+
+	if n.Style.AccessibilityRole != core.RoleNone {
+		t.Errorf("Style should win over the widget default, got %q", n.Style.AccessibilityRole)
+	}
+}

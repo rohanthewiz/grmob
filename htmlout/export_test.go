@@ -860,6 +860,43 @@ func TestAccessibilityFieldsBecomeAria(t *testing.T) {
 	}
 }
 
+// The fourth semantics field. core.Role's values are ARIA's own spellings, so
+// the export is the value verbatim — that is the whole reason the vocabulary
+// is spelled the way it is (see core/role.go).
+//
+// Every declared Role is exercised rather than a sample of them: this is the
+// target where a role costs nothing to support, so "supported except for the
+// two nobody tried" is a failure mode worth closing by construction.
+func TestEveryRoleBecomesTheRoleAttribute(t *testing.T) {
+	for _, role := range core.Roles() {
+		n := &core.Node{Type: "Box", Style: &core.Style{AccessibilityRole: role}}
+		want := `role="` + string(role) + `"`
+		if out := ExportHTML(n); !strings.Contains(out, want) {
+			t.Errorf("%s not exported as %s:\n%s", role, want, out)
+		}
+	}
+
+	// The zero value writes nothing at all — an unset role is the state every
+	// node in every existing golden is in.
+	bare := &core.Node{Type: "Box", Style: &core.Style{AccessibilityLabel: "Close"}}
+	if out := ExportHTML(bare); strings.Contains(out, "role=") {
+		t.Errorf("RoleNone wrote a role attribute:\n%s", out)
+	}
+}
+
+// aria-hidden prunes the subtree, so a role on the same node is contradictory
+// for the same reason a name is — the element the role describes is not in the
+// tree to describe.
+func TestHiddenBeatsRole(t *testing.T) {
+	n := &core.Node{
+		Type:  "Box",
+		Style: &core.Style{AccessibilityHidden: true, AccessibilityRole: core.RoleTable},
+	}
+	if out := ExportHTML(n); strings.Contains(out, `role="table"`) {
+		t.Errorf("aria-hidden should win alone:\n%s", out)
+	}
+}
+
 // A label is user-originated (it reaches the DSL from app state like any other
 // string), so it goes out through the same escaping every other attribute value
 // does. A raw double quote is the attribute-breakout character.

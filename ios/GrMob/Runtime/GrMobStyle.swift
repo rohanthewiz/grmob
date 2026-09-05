@@ -66,6 +66,8 @@ struct GrMobStyle: Equatable {
     var accessibilityLabel: String = ""
     var accessibilityHint: String = ""
     var accessibilityHidden: Bool = false
+    /// Go's core.Role, verbatim; mapped to traits by grMobTraitsFor below.
+    var accessibilityRole: String = ""
     /// Platform disabled state; see Go's core.Style.Disabled.
     var disabled: Bool = false
     var transition: String = ""
@@ -150,6 +152,7 @@ struct GrMobStyle: Equatable {
         s.accessibilityLabel = str("AccessibilityLabel")
         s.accessibilityHint = str("AccessibilityHint")
         s.accessibilityHidden = obj["AccessibilityHidden"] as? Bool ?? false
+        s.accessibilityRole = str("AccessibilityRole")
         s.disabled = obj["Disabled"] as? Bool ?? false
         s.transition = str("Transition")
         return s
@@ -357,6 +360,7 @@ extension View {
             // chain (see grMobTransition for what that costs).
             .disabled(s?.disabled ?? false)
             .grMobAccessibility(s)
+            .grMobRole(s)
             .grMobTransition(s)
     }
 
@@ -400,6 +404,24 @@ extension View {
 
     @ViewBuilder fileprivate func grMobA11yHint(_ hint: String) -> some View {
         if hint.isEmpty { self } else { accessibilityHint(hint) }
+    }
+
+    /// The role half of the semantics, as traits.
+    ///
+    /// A separate step in the chain rather than another branch inside
+    /// grMobAccessibility, and applied unconditionally: an empty
+    /// AccessibilityTraits is the identity case, so this costs nothing on the
+    /// several hundred nodes of a tree that have no role, and one more
+    /// _ConditionalContent layer on grMobBox's opaque-type tower is a real
+    /// cost (see grMobTransition, which is written the way it is for exactly
+    /// that reason).
+    ///
+    /// Hidden still wins: a pruned subtree has no element for a trait to
+    /// describe, which is the same exclusive choice grMobAccessibility and
+    /// Compose's clearAndSetSemantics make.
+    fileprivate func grMobRole(_ s: GrMobStyle?) -> some View {
+        guard let s, !s.accessibilityHidden else { return accessibilityAddTraits([]) }
+        return accessibilityAddTraits(grMobTraitsFor(s.accessibilityRole))
     }
 
     /// Conditional label for the Image "alt" fallback (internal because the
@@ -548,4 +570,41 @@ func grMobFrameAlignment(_ s: GrMobStyle?, axis: Axis? = nil) -> Alignment {
 
 private func RoundedCornerShapeIfAny(radius: CGFloat) -> RoundedRectangle? {
     radius > 0 ? RoundedRectangle(cornerRadius: radius) : nil
+}
+
+/// Maps one core.Role onto SwiftUI accessibility traits.
+///
+/// Four of the fifteen roles land on a trait; the other eleven are spelled out
+/// anyway. SwiftUI's AccessibilityTraits is a small set about *controls* —
+/// button, link, image, search field, header — and has no landmarks at all
+/// (VoiceOver's rotor navigates by heading, not by banner) and no tabular
+/// vocabulary, so nine of those eleven have nothing here to be mapped onto;
+/// the remaining two are the live regions, which SwiftUI states imperatively
+/// rather than as a property of the view (see the arm below).
+/// Listing them is what keeps that a decision rather than an oversight: a
+/// `default:` that swallowed them would look exactly like a role nobody had
+/// taught this renderer about, which is the failure grMobScaled's ContentMode
+/// arms already exist to prevent.
+///
+/// A column header is announced as a header, which is the nearest true thing
+/// this platform can say about it — VoiceOver has one notion of heading.
+///
+/// One arm per line, string literals first, `default:` last: mobile/verify's
+/// TestSwiftTraitsCoverEveryRole reads these arms out of the source and holds
+/// them against core.Roles().
+private func grMobTraitsFor(_ role: String) -> AccessibilityTraits {
+    switch role {
+    case "heading", "columnheader": .isHeader
+    case "button": .isButton
+    case "search": .isSearchField
+    // No SwiftUI trait names these.
+    case "table", "rowgroup", "row", "cell": []
+    case "list", "listitem": []
+    case "banner", "navigation", "toolbar": []
+    // Nor these: SwiftUI announces a change through
+    // AccessibilityNotification, which is an imperative call at the moment of
+    // the change and not a property of the view that changed.
+    case "status", "alert": []
+    default: []
+    }
 }

@@ -522,3 +522,32 @@ func TestSameDayComparesInTheCellsLocation(t *testing.T) {
 		t.Error("2026-09-12 23:00 UTC is the 13th in +14 and must not match the 12th")
 	}
 }
+
+// Forty-two tappable Boxes are forty-two paragraphs to a screen reader unless
+// something says otherwise: the label names the day and nothing said it could
+// be activated. The role is set on every cell including the inert ones — a
+// disabled button is still a button, and the renderers announce the disabled
+// state separately, so dropping the role out of range would make the cell
+// change kind as the reader pages.
+func TestCalendarDayCellsAreButtons(t *testing.T) {
+	// A Min part-way through the month, so the grid holds both kinds of cell.
+	n := renderCalendar(t, Calendar{
+		Month:    sep2026,
+		Min:      time.Date(2026, time.September, 10, 0, 0, 0, 0, time.UTC),
+		OnSelect: func(time.Time) {},
+	})
+
+	inert := 0
+	for i, cell := range dayCells(t, n) {
+		if cell.Style.AccessibilityRole != core.RoleButton {
+			t.Fatalf("cell %d (%s) = %q, want button", i, dayNumber(t, cell), cell.Style.AccessibilityRole)
+		}
+		if cell.Style.Disabled {
+			inert++
+		}
+	}
+	if inert == 0 {
+		t.Error("the fixture should include out-of-range cells; they keep the role and carry " +
+			"Disabled rather than losing the role")
+	}
+}

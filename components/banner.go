@@ -43,6 +43,28 @@ import "github.com/rohanthewiz/grmob/core"
 // border has no voice. Text must therefore carry the meaning on its own —
 // "Could not refresh", not "Something went wrong" next to a red edge. Same
 // rule Badge documents, and the same WCAG 1.4.1 behind it.
+//
+// # It announces itself when it appears
+//
+// A banner is a live region: it turns up because something changed, usually
+// while the reader is somewhere else on the screen, and a message nobody is
+// looking at is a message nobody gets. So the strip carries
+// core.RoleAlert when its variant is Error and core.RoleStatus otherwise —
+// the same split the variant already draws visually, in the one vocabulary
+// that has a word for "interrupt" and a word for "mention at the next pause".
+//
+// Error interrupts because a failed action is the case where continuing is
+// the wrong thing to do; everything else waits, because "Saved" arriving
+// mid-sentence is how a live region becomes a thing users switch off.
+//
+// The role is on the strip rather than on the message so that an appearing
+// banner is announced whole — the text, and the label of any action beside
+// it, which is the part the reader needs in order to know what to do about
+// it.
+//
+// It is a default, not a fixture. Style is applied after the widget's own
+// props, so a caller can name a different role, or core.RoleNone for a strip
+// that is really static content and should not interrupt anything.
 type Banner struct {
 	// Text is the message. Content is the escape hatch for the growing middle
 	// — an arbitrary view in its place, taking precedence when set.
@@ -102,6 +124,7 @@ func (b Banner) Render(ctx *core.Context) *core.Node {
 		core.BorderRadius(t.Components.Card.BorderRadius),
 		core.AlignItemsProp(core.AlignItemsCenter),
 		core.Gap(float64(t.Spacing.SM)),
+		core.AccessibilityRole(b.liveRegion()),
 	)
 	for _, sp := range b.Style {
 		items = append(items, sp)
@@ -181,4 +204,13 @@ func (b Banner) glyph() string {
 	default:
 		return "ⓘ"
 	}
+}
+
+// liveRegion is how loudly this banner interrupts, from the variant it is
+// already tinted by. See the type comment for why Error alone cuts in.
+func (b Banner) liveRegion() core.Role {
+	if b.Variant == VariantError {
+		return core.RoleAlert
+	}
+	return core.RoleStatus
 }

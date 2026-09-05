@@ -392,3 +392,67 @@ func TestDataTableStickyHeadersPinTheGroupBandsOnly(t *testing.T) {
 		}
 	}
 }
+
+// The table semantics, which is what a screen reader needs in order to say
+// "Month, March" on the third cell of the fourth row rather than "March".
+//
+// The chain is checked whole — table > rowgroup > row > cell, with
+// columnheader on the header cells — because it is only a chain: ARIA takes
+// the rows a table *owns*, so a link missing in the middle does not degrade
+// the structure, it deletes it. The rowgroup on the body list is the link that
+// looks like an accident and is not.
+func TestDataTableCarriesTheTableSemantics(t *testing.T) {
+	ctx := core.NewContext()
+	ctx.BeginRenderPass()
+	n := DataTable[sermon]{Columns: sermonColumns, Rows: sermons, Key: sermonKey}.Render(ctx)
+	header, body := tableParts(t, n)
+
+	if n.Style.AccessibilityRole != core.RoleTable {
+		t.Errorf("the table itself = %q, want table", n.Style.AccessibilityRole)
+	}
+	if body.Style.AccessibilityRole != core.RoleRowGroup {
+		t.Errorf("the body list = %q, want rowgroup — without it the rows are not the "+
+			"table's rows", body.Style.AccessibilityRole)
+	}
+	if header.Style.AccessibilityRole != core.RoleRow {
+		t.Errorf("the header row = %q, want row", header.Style.AccessibilityRole)
+	}
+	for i, cell := range header.Children {
+		if cell.Style.AccessibilityRole != core.RoleColumnHeader {
+			t.Errorf("header cell %d = %q, want columnheader", i, cell.Style.AccessibilityRole)
+		}
+	}
+
+	row := body.Children[0]
+	if row.Style.AccessibilityRole != core.RoleRow {
+		t.Errorf("a body row = %q, want row", row.Style.AccessibilityRole)
+	}
+	for i, cell := range row.Children {
+		if cell.Style.AccessibilityRole != core.RoleCell {
+			t.Errorf("body cell %d = %q, want cell", i, cell.Style.AccessibilityRole)
+		}
+	}
+}
+
+// The rowgroup is a claim that this container holds the table's rows, so it
+// is withheld when it does not: a busy or empty table puts one placeholder
+// view in the body list, and "table, no rows" — which an absent rowgroup
+// already says — beats a rowgroup owning a paragraph.
+func TestDataTableWithoutRowsClaimsNoRowGroup(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		table DataTable[sermon]
+	}{
+		{"empty", DataTable[sermon]{Columns: sermonColumns, Key: sermonKey,
+			Empty: EmptyState{Title: "No sermons"}}},
+		{"busy", DataTable[sermon]{Columns: sermonColumns, Rows: sermons, Key: sermonKey,
+			Loading: Skeleton{Lines: 3}}},
+	} {
+		ctx := core.NewContext()
+		ctx.BeginRenderPass()
+		_, body := tableParts(t, tc.table.Render(ctx))
+		if body.Style.AccessibilityRole != core.RoleNone {
+			t.Errorf("%s table: body list = %q, want no rowgroup", tc.name, body.Style.AccessibilityRole)
+		}
+	}
+}

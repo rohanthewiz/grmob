@@ -111,6 +111,13 @@
 ### 🧬 Extensions
 - [x] Animations & transitions (`Transition`, easing curves)
 - [x] Accessibility labels, hints and announced selection state
+- [x] Accessibility *roles* (`core.AccessibilityRole`, fifteen ARIA-spelled
+      values) — `role=` on both web targets, traits on SwiftUI and semantics
+      on Compose where those vocabularies reach, and an explicit no-op arm
+      where they do not; pinned in both natives by `mobile/verify/role_test.go`.
+      Adopted by `DataTable` (table/rowgroup/row/columnheader/cell), `AppBar`
+      (banner + heading), `Banner` (status/alert by variant), `SearchField`
+      (search) and `Calendar`'s day cells (button)
 - [x] Navigation (`Navigator`, `Push`, `Pop`, `Replace`, `PopToRoot`, `Reset`,
       per-frame state) and `core.Modal` / toasts
 - [x] Forms with validation (`forms`) — a rule vocabulary, cross-field checks,

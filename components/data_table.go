@@ -219,7 +219,28 @@ func (d DataTable[T]) Render(ctx *core.Context) *core.Node {
 	}
 
 	items := make([]core.PropsAndChildren, 0, len(d.Style)+6)
-	items = append(items, core.Padding(0), core.Gap(0))
+	items = append(items, core.Padding(0), core.Gap(0),
+		// The table semantics, which until core grew a role prop this widget
+		// could only draw and not say: every container here is a Row or a
+		// Column and exports as a div, so a screen reader met a run of text
+		// laid out in columns and had no way to know that the third cell of
+		// row four belongs under the third header.
+		//
+		// The set is table > rowgroup > row > cell, with columnheader on the
+		// header row's cells. The rowgroup is the one that looks like padding
+		// and is not: the body is a core.List, and an unroled element between
+		// a table and its rows breaks the ownership that makes them its rows
+		// (see core.RoleRowGroup).
+		//
+		// One limit worth stating: a grouped table's band headings sit inside
+		// that rowgroup and are not rows, which ARIA has no reading for. They
+		// are announced as the text they are, out of the table's structure.
+		// Making each band its own rowgroup is the fix, and it needs the
+		// grouping engine to hand back bands rather than a flat run of
+		// children — a change to appendRows that GroupedList shares, and so
+		// not one to make on the way past.
+		core.AccessibilityRole(core.RoleTable),
+	)
 	for _, sp := range d.Style {
 		items = append(items, sp)
 	}
@@ -228,6 +249,14 @@ func (d DataTable[T]) Render(ctx *core.Context) *core.Node {
 
 	body := make([]core.PropsAndChildren, 0, 2*len(rows)+4)
 	body = append(body, core.Padding(0), core.Gap(0), core.FlexGrow(1))
+	if d.Loading == nil && len(rows) > 0 {
+		// The rowgroup only when the list actually holds rows. A busy or
+		// empty table puts a single placeholder view in here instead, and a
+		// rowgroup owning one paragraph is a claim about a structure that is
+		// not there — "table, no rows" is the truth, and it is what the
+		// absent rowgroup already says.
+		body = append(body, core.AccessibilityRole(core.RoleRowGroup))
+	}
 	switch {
 	case d.Loading != nil:
 		body = append(body, d.Loading)
@@ -353,6 +382,9 @@ func (d DataTable[T]) headerRow(ctx *core.Context, cols []visibleColumn[T]) core
 		core.BackgroundColor(t.Colors.Surface),
 		core.BorderColor(t.Colors.BorderColor()),
 		core.BorderWidth(1),
+		// A row of the table, directly owned by it — no rowgroup here,
+		// because there is no container between this and the Column.
+		core.AccessibilityRole(core.RoleRow),
 	)
 	for _, sp := range d.HeaderStyle {
 		items = append(items, sp)
@@ -389,7 +421,7 @@ func (d DataTable[T]) headerRow(ctx *core.Context, cols []visibleColumn[T]) core
 				core.AccessibilityHint("Sorts by "+c.Title),
 			)
 		}
-		items = append(items, d.cell(t, c.Column, cell...))
+		items = append(items, d.cell(t, c.Column, core.RoleColumnHeader, cell...))
 	}
 	return core.Row(items...)
 }
@@ -401,6 +433,7 @@ func (d DataTable[T]) cellRow(t *core.Theme, cols []visibleColumn[T], row T) cor
 		core.Padding(0),
 		core.Gap(0),
 		core.AlignItemsProp(core.AlignItemsCenter),
+		core.AccessibilityRole(core.RoleRow),
 	)
 	for _, sp := range d.RowStyle {
 		items = append(items, sp)
@@ -415,7 +448,7 @@ func (d DataTable[T]) cellRow(t *core.Theme, cols []visibleColumn[T], row T) cor
 		default:
 			content = core.Fragment()
 		}
-		items = append(items, d.cell(t, c.Column, content))
+		items = append(items, d.cell(t, c.Column, core.RoleCell, content))
 	}
 	return core.Row(items...)
 }
@@ -423,13 +456,20 @@ func (d DataTable[T]) cellRow(t *core.Theme, cols []visibleColumn[T], row T) cor
 // cell is the sized, padded box every header and body cell sits in. A Row
 // rather than a Box so Align can use flex justification, which every target
 // implements, rather than text alignment, which only text nodes have.
-func (d DataTable[T]) cell(t *core.Theme, c Column[T], content ...core.PropsAndChildren) core.View {
+//
+// The role is a parameter rather than a constant because this one function
+// builds both kinds: a header cell is a columnheader, which is what lets a
+// reader on row four be told the column's title along with the value, and a
+// body cell is a cell. Passing it keeps the two callers from each rebuilding
+// the padding and the weight to differ in one attribute.
+func (d DataTable[T]) cell(t *core.Theme, c Column[T], role core.Role, content ...core.PropsAndChildren) core.View {
 	items := make([]core.PropsAndChildren, 0, len(content)+6)
 	items = append(items,
 		core.Padding(0),
 		core.PaddingHorizontal(t.Spacing.SM),
 		core.PaddingVertical(t.Spacing.SM),
 		core.AlignItemsProp(core.AlignItemsCenter),
+		core.AccessibilityRole(role),
 	)
 	if c.Weight > 0 {
 		items = append(items, core.FlexGrow(c.Weight))

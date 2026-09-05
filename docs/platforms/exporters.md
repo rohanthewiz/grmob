@@ -42,9 +42,11 @@ indented HTML. Properties worth relying on:
   it governs, and that page a matching `role="tabpanel"` and `aria-labelledby`
   — the ids derived from the node path (`grmob-root-1-tab-0`), so they are the
   *same strings* the WASM runtime writes for the same tree rather than merely
-  the same shape. A page whose element already has a role (`<button>`, `<img>`,
-  an input), one no tab names, or one marked `AccessibilityHidden` is left
-  unwired, and its tab drops the `aria-controls` with it. See
+  the same shape. A page whose element already has a role — from the browser
+  (`<button>`, `<img>`, an input) or from the author's own
+  `core.AccessibilityRole` — one no tab names, or one marked
+  `AccessibilityHidden` is left unwired, and its tab drops the `aria-controls`
+  with it. See
   `htmlout/tabview.go` and [WASM — Tab views](wasm.md#tab-views), which draws
   the same chrome live and states the reasoning for the pair.
 
@@ -67,8 +69,9 @@ if got, want := render(newImpl), render(oldImpl); got != want {
 }
 ```
 
-`examples/todoapp/chip_migration_test.go` uses exactly this to prove the
-filter bar's extraction into `components.Chip` was byte-identical.
+`examples/todoapp/chip_migration_test.go` uses exactly this: it proved the
+filter bar's extraction into `components.Chip` was byte-identical, and now
+holds the widget's output against the same bar written by hand.
 
 ## jsonout — JSON export
 

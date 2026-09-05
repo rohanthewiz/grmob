@@ -350,10 +350,22 @@ const GrMob = (() => {
     // long after: an author who took a page out of the accessibility tree on
     // purpose should not have it named as a panel, which would assert a
     // relationship they severed.
+    //
+    // A role is read back the same way and for the same reason, with one extra
+    // step: the attribute has two writers now — the author's
+    // core.AccessibilityRole and this wiring's own "tabpanel" — so a bare
+    // "has a role" test would read the panel this function wired last time as
+    // an author's role and unwire it on the next sync, then rewire it on the
+    // one after. What tells them apart is that "tabpanel" is not a core.Role:
+    // the vocabulary has no such value, so an element carrying it can only
+    // have got it from here. TestNoRoleCollidesWithTheTabPanelWiring in
+    // htmlout keeps that true.
     function canBeTabPanel(page) {
+        const role = page.getAttribute("role");
         return (
             GENERIC_TAGS.has(page.tagName.toLowerCase()) &&
-            page.getAttribute("aria-hidden") !== "true"
+            page.getAttribute("aria-hidden") !== "true" &&
+            (role === null || role === "tabpanel")
         );
     }
 
@@ -375,7 +387,16 @@ const GrMob = (() => {
     // to the author.
     function wireTabPanel(page, scope, i, wired) {
         setOrRemove(page, "id", wired ? panelId(scope, i) : "");
-        setOrRemove(page, "role", wired ? "tabpanel" : "");
+        // The role is the one attribute here this function does not own
+        // outright: applyAccessibility writes the author's core.Role into the
+        // same slot. So the unwired case clears only the wiring's own value
+        // and leaves anything else standing — total in the sense that matters
+        // (no stale "tabpanel" survives) without reaching past its own mark.
+        if (wired) {
+            page.setAttribute("role", "tabpanel");
+        } else if (page.getAttribute("role") === "tabpanel") {
+            page.removeAttribute("role");
+        }
         const named = !!page.getAttribute("aria-label");
         setOrRemove(page, "aria-labelledby", wired && !named ? tabId(scope, i) : "");
     }
@@ -609,7 +630,7 @@ const GrMob = (() => {
         }
     }
 
-    // core.Style's three accessibility fields -> the ARIA attributes that mean
+    // core.Style's four accessibility fields -> the ARIA attributes that mean
     // the same thing. Attributes rather than style properties, which is why
     // this is here and not in styleFromGrMob — the same split Disabled makes.
     //
@@ -626,6 +647,13 @@ const GrMob = (() => {
     // branch and SwiftUI's accessibilityHidden branch make the same exclusive
     // choice.
     //
+    // The role becomes the `role` attribute and that is the whole mapping:
+    // core.Role's values are ARIA's own spellings, chosen so neither DOM
+    // target needs a table (see core/role.go). Emitted verbatim even when the
+    // tag already implies it — suppressing the redundant case would mean this
+    // knowing tagForType's table, and a redundant role is inert where a
+    // missing one is not.
+    //
     // The hint becomes aria-description, not aria-describedby: the latter
     // takes an ID reference and there is no second element here to point at.
     // Support for aria-description is thinner than the rest of ARIA — it is
@@ -641,6 +669,7 @@ const GrMob = (() => {
         setOrRemove(el, "aria-hidden", hidden ? "true" : "");
         setOrRemove(el, "aria-label", hidden ? "" : (style.AccessibilityLabel || ""));
         setOrRemove(el, "aria-description", hidden ? "" : (style.AccessibilityHint || ""));
+        setOrRemove(el, "role", hidden ? "" : (style.AccessibilityRole || ""));
     }
 
     // Sets an attribute to a non-empty value, or removes it. There is no empty

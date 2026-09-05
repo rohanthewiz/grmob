@@ -485,6 +485,8 @@ pipeline as everything else:
   (`"Delete Buy milk"` instead of "✕").
 - `AccessibilityHint` describes the consequence of activating.
 - `AccessibilityHidden()` removes decoration from the screen-reader tree.
+- `AccessibilityRole(core.RoleHeading)` says what a node *is* — the question
+  a label and a hint between them never answer.
   The hairline never needs it here: `components.Separator` applies it itself,
   because a rule is always decoration and announcing one between every pair
   of rows turns a 20-row feed into 39 utterances.

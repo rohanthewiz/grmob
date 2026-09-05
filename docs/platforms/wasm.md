@@ -211,14 +211,21 @@ already going to the wrong one. Deriving it this way also makes the ids the
 *same strings* `htmlout` writes rather than merely the same shape, so the
 contract the two web targets share is the literal id.
 
-A page opts out of being a panel three ways, each a case where wiring it would
+A page opts out of being a panel four ways, each a case where wiring it would
 say something false:
 
 | The page… | Why it is left alone |
 |---|---|
 | has no tab at its index | a `tabpanel` outside a tab set, with nothing for the `aria-controls` to sit on |
 | renders as an element that already has a role (`<button>`, `<img>`, `<input>`) | `role="tabpanel"` would *replace* the role the browser gave it — see `GENERIC_TAGS`, pinned to Go's `genericTags` by `TestRuntimeGenericTagsMatchGo` |
+| carries a `core.AccessibilityRole` | the author already said what it is, and the same theft applies |
 | is `AccessibilityHidden` | the author severed the relationship on purpose |
+
+The role case shares one attribute between two writers, so the runtime tells
+them apart by value: `tabpanel` is not one of `core.Role`'s spellings, so an
+element carrying it got it from the wiring and no other role ever did. That is
+what lets the sync clear its own mark without clearing the author's, and it is
+pinned by `TestNoRoleCollidesWithTheTabPanelWiring`.
 
 In each case the tab drops its `aria-controls` too: a dangling IDREF — a tab
 announcing a region that is not there — is worse than a tab that has simply not

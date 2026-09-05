@@ -448,6 +448,17 @@ func (c Calendar) dayCell(ctx *core.Context, day time.Time, month time.Month) co
 	}
 	items = append(items,
 		core.AccessibilityLabel(c.dayLabel(day, selected, isToday)),
+		// A day cell is a Box with a tap handler, which every renderer draws
+		// as scenery and every screen reader announces as text — the label
+		// above names it and nothing said it could be activated. The role is
+		// what makes forty-two of them controls rather than a paragraph.
+		//
+		// Set on every cell, including the unselectable ones: a disabled
+		// button is still a button, and the renderers announce the disabled
+		// state separately (core.Disabled, applied just above). A cell that
+		// dropped the role when it went out of range would change kind as the
+		// reader paged, which is stranger than a dimmed control.
+		core.AccessibilityRole(core.RoleButton),
 	)
 
 	items = append(items, core.Text(itoa(dayNum),

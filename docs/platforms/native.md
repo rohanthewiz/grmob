@@ -394,6 +394,23 @@ nothing expresses gap-plus-distribution for the `space-*` three without a custom
 `Arrangement`. Not attempted, because it is a rendering change on the one target
 this repo cannot build.
 
+### `AccessibilityRole`
+
+`core.AccessibilityRole(role)` becomes traits on iOS and semantics properties
+on Android, and on both it is a partial mapping by design: `heading` and
+`columnheader` become `.isHeader` / `heading()`, `button` becomes `.isButton`
+/ `Role.Button`, `search` becomes `.isSearchField` (no Compose analog), and
+`status` / `alert` become Compose live regions (no SwiftUI analog). The
+remaining nine — the tabular set, the collection pair and the landmarks —
+have no vocabulary on either platform and do nothing there while working on
+both web targets.
+
+Both renderers *name* every role anyway, in a `switch`/`when` with explicit
+empty arms, so a role that does nothing is on record rather than lost in a
+catch-all — and `mobile/verify/role_test.go` holds both dispatches against
+`core.Roles()` under a plain `go test ./...`. See
+[Styling & Theming](../concepts/styling-and-theming.md#accessibilityrole).
+
 ### `Disabled`
 
 `core.Disabled(bool)` becomes the platform's own inert state — `enabled =

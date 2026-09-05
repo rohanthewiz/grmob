@@ -90,8 +90,12 @@ func TestRuntimeWiresTabsToPanels(t *testing.T) {
 			"the id scope, derived from the node path so the ids match htmlout's character for character"},
 		{"`${scope}-tab-${i}`", "a tab's id, which its panel's aria-labelledby names"},
 		{"`${scope}-panel-${i}`", "a page's id, which its tab's aria-controls names"},
-		{`setOrRemove(page, "role", wired ? "tabpanel" : "")`,
-			"the panel role, written or removed on every sync because eligibility can change under a patch"},
+		{`page.setAttribute("role", "tabpanel")`,
+			"the panel role, written on every sync because eligibility can change under a patch"},
+		{`page.getAttribute("role") === "tabpanel"`,
+			"and removed on every sync — but only when the standing value is the wiring's own, " +
+				"since core.AccessibilityRole writes the same attribute and its value is the " +
+				"author's (see canBeTabPanel)"},
 		{`setOrRemove(tab, "aria-controls",`,
 			"the tab -> panel reference, omitted rather than left dangling when the page is not a panel"},
 		{`setOrRemove(page, "aria-labelledby", wired && !named ? tabId(scope, i) : "")`,

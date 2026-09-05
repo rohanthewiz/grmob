@@ -466,14 +466,26 @@ components.Chip{
 }
 ```
 
-- Unselected: the theme Button base. Selected: `SelectedStyle` if given,
-  else the theme default (Surface background, Primary ink).
+- Selected is the loud state: the theme's Button base, untouched (plus a ring
+  painted in the fill, so both states hold the same box). Unselected is the
+  quiet one: Surface fill, `TextPrimary` ink, a hairline rule.
+- `SelectedStyle` and `UnselectedStyle` replace their state's default. Both
+  read `nil` as "use the default" and an allocated-but-empty slice as "apply
+  nothing", which is how you drop a default instead of overriding it.
+- `Style` applies to both states and the state wins where they collide —
+  otherwise one `Style` shared across a strip would flatten the distinction
+  the strip is drawing.
 - When selected, `", selected"` is appended to the accessibility label so
   screen readers announce state with the name.
 
+The two state defaults used to be the other way round — the selected chip was
+the quiet one — which read as an inverted filter row and is the one thing that
+has changed here. `SelectedStyle: {Surface fill, Primary ink}` plus
+`UnselectedStyle: []core.StyleProp{}` restores it.
+
 The todoapp filter bar is built on Chip; `examples/todoapp/chip_migration_test.go`
-pins its rendered HTML to the pre-extraction hand-rolled markup byte for
-byte — the pattern to copy when extracting your own widgets.
+pins its rendered HTML against the same bar written out by hand — the pattern
+to copy when extracting your own widgets.
 
 ## SegmentedControl
 
@@ -847,6 +859,14 @@ the group bands and not the column header — the column header is a sibling of
 the body list rather than a row inside it, which is what keeps it on screen in
 the first place.
 
+`DataTable` states its structure as well as drawing it:
+`RoleTable` on the table, `RoleRowGroup` on the body list, `RoleRow` on the
+header and body rows, `RoleColumnHeader` and `RoleCell` on their cells. The
+rowgroup is load-bearing rather than decorative — ARIA reads the rows a table
+*owns*, and the body list is a container between the two, so without it the
+other four describe a table with no rows. A busy or empty table withholds the
+rowgroup, since what the body holds then is one placeholder and not rows.
+
 See lessons 4.6 and 4.8 of the [interactive tutorial](tutorial-interactive.md)
 and the godoc for the full field list.
 
@@ -878,6 +898,12 @@ components.AppBar{
 - A hairline rule is drawn under the bar unless `HideSeparator` is set,
   because an unstyled bar sits on the same Background as the content below it.
 
+The bar carries `RoleBanner` and its `Title` carries `RoleHeading`, so a
+reader navigating by landmark or by heading lands where they expect. The
+banner sits on the bar row (not on the box the separator adds around it) so
+`Style` can override it — a second bar on a screen that already has a banner
+should say something else.
+
 It is an ordinary `Row`, not a platform navigation bar: nothing floats,
 collapses on scroll, or claims the status bar. `Screen`'s `SafeArea` is what
 keeps it clear of the notch.
@@ -908,6 +934,12 @@ Default glyphs are `ⓘ ✓ ⚠ ⊗` for the four roles, overridable with `Glyph
 droppable with `NoGlyph`. They are **decoration** and are hidden from
 assistive technology, so `Text` has to carry the meaning — "Could not
 refresh", not "Something went wrong" beside a red edge.
+
+**It announces itself when it appears.** A banner shows up because something
+changed, usually while the reader is elsewhere on the screen, so the strip is
+a live region: `RoleAlert` when the variant is Error, `RoleStatus` otherwise —
+error interrupts, everything else waits for a pause. Override it through
+`Style` for a strip that is really static content.
 
 It is not a toast: `core.ShowToast` disappears on a timer, a Banner stays
 until the state that produced it changes. For an edge-to-edge strip with no
@@ -971,6 +1003,11 @@ one box rather than two. `AccessibilityLabel` falls back to the resolved
 placeholder, because a placeholder is not a label on any platform — it
 vanishes on the first keystroke.
 
+The row carries `RoleSearch` — the landmark is the whole region, so a reader
+jumping to it arrives before the clear button rather than past it. The input
+keeps its own name; a role says what a region is and a label says what a
+control is called.
+
 ## ChipStrip
 
 A run of `Chip`s that wraps onto as many lines as it needs — a filter bar,
@@ -1010,6 +1047,11 @@ Under the hood it becomes a `core.Scroll` carrying `core.Horizontal()`, not a
 `Row` with an overflow — the natives implement sideways panning in their
 scroll composites alone, so the node type has to change. `Style` still lands
 on the strip itself either way.
+
+The strip claims **no** role of its own. A filter bar is a toolbar and can say
+so with `Style: []core.StyleProp{core.AccessibilityRole(core.RoleToolbar)}`,
+but the tags on an article are not one, and the widget cannot tell them
+apart — nor does it implement the roving focus a toolbar implies.
 
 ## Skeleton
 

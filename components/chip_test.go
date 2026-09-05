@@ -24,24 +24,106 @@ func TestChipRendersAsButton(t *testing.T) {
 	if !tapped {
 		t.Error("tapping the chip should invoke OnTap")
 	}
-	// Unselected: nothing but the theme Button base.
+	// Unselected is the quiet state: a Surface fill and TextPrimary ink over
+	// the theme's Button base, with a hairline rule.
 	theme := core.DefaultTheme
-	if n.Style.Background != theme.Components.Button.Background {
-		t.Errorf("unselected chip background = %q, want the Button base %q", n.Style.Background, theme.Components.Button.Background)
+	if n.Style.Background != theme.Colors.Surface {
+		t.Errorf("unselected chip background = %q, want theme Surface %q", n.Style.Background, theme.Colors.Surface)
+	}
+	if n.Style.TextColor != theme.Colors.TextPrimary {
+		t.Errorf("unselected chip ink = %q, want theme TextPrimary %q", n.Style.TextColor, theme.Colors.TextPrimary)
+	}
+	if n.Style.BorderWidth != 1 || n.Style.BorderColor != theme.Colors.BorderColor() {
+		t.Errorf("unselected chip rule = %vpx %q, want 1px %q",
+			n.Style.BorderWidth, n.Style.BorderColor, theme.Colors.BorderColor())
 	}
 }
 
+// The selected chip is the loud one, and it is loud by *not* painting: the
+// theme's Components.Button carries the fill and the ink through untouched,
+// so a theme whose buttons are not primary-coloured keeps its own look. The
+// only thing the default contributes is the ring, and the ring is the fill,
+// so it cannot be seen — it is there to hold the same box as the unselected
+// chip's visible rule.
 func TestChipSelectedThemeDefault(t *testing.T) {
 	ctx := core.NewContext()
 	ctx.BeginRenderPass()
 	n := Chip{Label: "Done", Selected: true, OnTap: func() {}}.Render(ctx)
 
 	theme := core.DefaultTheme
-	if n.Style.Background != theme.Colors.Surface {
-		t.Errorf("selected default background = %q, want theme Surface %q", n.Style.Background, theme.Colors.Surface)
+	base := theme.Components.Button
+	if n.Style.Background != base.Background {
+		t.Errorf("selected default background = %q, want the Button base %q", n.Style.Background, base.Background)
 	}
-	if n.Style.TextColor != theme.Colors.Primary {
-		t.Errorf("selected default ink = %q, want theme Primary %q", n.Style.TextColor, theme.Colors.Primary)
+	if n.Style.TextColor != base.TextColor {
+		t.Errorf("selected default ink = %q, want the Button base %q", n.Style.TextColor, base.TextColor)
+	}
+	if n.Style.BorderWidth != 1 || n.Style.BorderColor != base.Background {
+		t.Errorf("selected ring = %vpx %q, want 1px of the fill %q",
+			n.Style.BorderWidth, n.Style.BorderColor, base.Background)
+	}
+}
+
+// A theme whose Button base has no fill of its own has nothing for the ring
+// to hide against, so the ring goes transparent rather than being guessed at
+// — it still holds the pixel, which is all it is for.
+func TestChipSelectedRingIsTransparentWithoutAButtonFill(t *testing.T) {
+	fillless := &core.Theme{Colors: core.DefaultTheme.Colors}
+	ctx := core.NewContext().WithTheme(fillless)
+	ctx.BeginRenderPass()
+	n := Chip{Label: "Done", Selected: true}.Render(ctx)
+
+	if n.Style.BorderWidth != 1 || n.Style.BorderColor != ColorTransparent {
+		t.Errorf("ring = %vpx %q, want 1px %q", n.Style.BorderWidth, n.Style.BorderColor, ColorTransparent)
+	}
+}
+
+// UnselectedStyle is the other half of the pair, and it distinguishes nil
+// from empty: nil takes the default, an allocated empty slice drops it, which
+// is how a caller gets the pre-inversion look back.
+func TestChipUnselectedStyleOverride(t *testing.T) {
+	ctx := core.NewContext()
+	ctx.BeginRenderPass()
+
+	custom := Chip{Label: "All", UnselectedStyle: []core.StyleProp{core.BackgroundColor("#FFF8E1")}}.Render(ctx)
+	if custom.Style.Background != "#FFF8E1" {
+		t.Errorf("UnselectedStyle should replace the default: %q", custom.Style.Background)
+	}
+	if custom.Style.BorderWidth != 0 {
+		t.Error("an override replaces the whole default, the rule included")
+	}
+
+	bare := Chip{Label: "All", UnselectedStyle: []core.StyleProp{}}.Render(ctx)
+	if bare.Style.Background != core.DefaultTheme.Components.Button.Background {
+		t.Errorf("an empty (non-nil) UnselectedStyle should apply nothing, leaving the "+
+			"Button base: %q", bare.Style.Background)
+	}
+}
+
+// Style is shared across both states and the state wins where they collide —
+// otherwise one Style handed to a whole strip would flatten the distinction
+// the strip exists to draw.
+func TestChipStateStyleBeatsSharedStyle(t *testing.T) {
+	ctx := core.NewContext()
+	ctx.BeginRenderPass()
+
+	c := Chip{
+		Label: "All",
+		Style: []core.StyleProp{core.BackgroundColor("#123456"), core.FontSize(13)},
+	}
+	unselected := c.Render(ctx)
+	c.Selected = true
+	selected := c.Render(ctx)
+
+	if unselected.Style.Background != core.DefaultTheme.Colors.Surface {
+		t.Errorf("unselected background = %q, want the state default to win", unselected.Style.Background)
+	}
+	if selected.Style.Background != core.DefaultTheme.Components.Button.Background {
+		t.Errorf("selected background = %q, want the Button base to win", selected.Style.Background)
+	}
+	// The fields the state says nothing about still come through.
+	if unselected.Style.FontSize != 13 || selected.Style.FontSize != 13 {
+		t.Error("Style's non-colliding fields should survive in both states")
 	}
 }
 

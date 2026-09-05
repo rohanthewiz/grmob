@@ -18,9 +18,15 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.SemanticsPropertyReceiver
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.disabled
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import org.json.JSONObject
@@ -91,6 +97,8 @@ data class GrMobStyle(
     val accessibilityLabel: String,
     val accessibilityHint: String,
     val accessibilityHidden: Boolean,
+    /** Go's core.Role, verbatim; mapped by grMobRole below. */
+    val accessibilityRole: String,
     /** Platform disabled state; see Go's core.Style.Disabled. */
     val disabled: Boolean,
     /** Parsed Transition duration; 0 means "no transition, snap changes". */
@@ -152,6 +160,7 @@ data class GrMobStyle(
                 accessibilityLabel = obj.optString("AccessibilityLabel"),
                 accessibilityHint = obj.optString("AccessibilityHint"),
                 accessibilityHidden = obj.optBoolean("AccessibilityHidden", false),
+                accessibilityRole = obj.optString("AccessibilityRole"),
                 disabled = obj.optBoolean("Disabled", false),
                 transitionMs = parseTransitionMs(obj.optString("Transition")),
                 transitionEasing = parseTransitionEasing(obj.optString("Transition")),
@@ -278,9 +287,12 @@ fun GrMobStyle?.boxModifier(extra: Modifier = Modifier, gestures: Modifier = Mod
     // the SemanticsPropertyReceiver's own disabled() marker rather than this
     // style's flag.
     val isDisabled = disabled
+    val kind = accessibilityRole
     if (accessibilityHidden) {
         m = m.clearAndSetSemantics { }
-    } else if (accessibilityLabel.isNotEmpty() || accessibilityHint.isNotEmpty() || isDisabled) {
+    } else if (accessibilityLabel.isNotEmpty() || accessibilityHint.isNotEmpty() ||
+        isDisabled || kind.isNotEmpty()
+    ) {
         val description = listOf(accessibilityLabel, accessibilityHint)
             .filter { it.isNotEmpty() }.joinToString(". ")
         m = m.semantics {
@@ -292,6 +304,7 @@ fun GrMobStyle?.boxModifier(extra: Modifier = Modifier, gestures: Modifier = Mod
             // whose gesture modifier is dropped in Renderer.kt when disabled
             // and which would otherwise still look activatable to TalkBack.
             if (isDisabled) disabled()
+            grMobRole(kind)
         }
     }
 
@@ -349,4 +362,45 @@ private fun dimensionModifier(value: String, horizontal: Boolean): Modifier {
     }
     val number = value.removeSuffix("px").toFloatOrNull() ?: return Modifier
     return if (horizontal) Modifier.width(number.dp) else Modifier.height(number.dp)
+}
+
+/**
+ * Maps one core.Role onto Compose semantics, inside the semantics lambda that
+ * is already open for the label, the hint and the disabled marker.
+ *
+ * Five of the fifteen roles land on something here; the other ten are named
+ * anyway. Compose has no landmark vocabulary at all — TalkBack navigates by
+ * heading, not by banner — and its tabular semantics are collectionInfo, which
+ * describes counts and indices this prop does not carry, so a `role="table"`
+ * has nothing to be mapped onto that would not be a lie about the shape of the
+ * data. Listing them is what keeps that a decision rather than an omission:
+ * an `else ->` that swallowed them would look exactly the same as a role
+ * nobody had heard of, which is the failure this file's ContentScale mapping
+ * already learned about the hard way.
+ *
+ * The parameter is `kind` and not `role` because `role` inside a
+ * SemanticsPropertyReceiver is the semantics property being assigned two lines
+ * down; a parameter of that name would shadow it and the assignment would stop
+ * compiling.
+ *
+ * One arm per line, string literals first, `else ->` last: mobile/verify's
+ * TestKotlinRoleCoversEveryRole reads these arms out of the source and holds
+ * them against core.Roles().
+ */
+fun SemanticsPropertyReceiver.grMobRole(kind: String) {
+    when (kind) {
+        // A column header is a heading over its column; TalkBack has one
+        // notion of heading and this is the nearest true thing to say.
+        "heading", "columnheader" -> heading()
+        "button" -> role = Role.Button
+        // The two live regions differ in how rudely they interrupt: polite
+        // waits for a pause, assertive cuts in.
+        "status" -> liveRegion = LiveRegionMode.Polite
+        "alert" -> liveRegion = LiveRegionMode.Assertive
+        // No Compose analog. See the note above on why they are spelled out.
+        "table", "rowgroup", "row", "cell" -> {}
+        "list", "listitem" -> {}
+        "banner", "navigation", "search", "toolbar" -> {}
+        else -> {}
+    }
 }

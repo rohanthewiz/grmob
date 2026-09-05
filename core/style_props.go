@@ -278,6 +278,27 @@ func AccessibilityHint(hint string) StyleProp {
 	})
 }
 
+// AccessibilityRole says what the element is: a heading, a table cell, a
+// search landmark, a tappable Box that is really a button.
+//
+//	core.Box(core.AccessibilityRole(core.RoleHeading), core.Text("Sermons"))
+//
+// It is the third question a screen reader asks, after the name
+// (AccessibilityLabel) and the effect (AccessibilityHint), and the one nothing
+// here could answer until it existed — every container exports as a <div> and
+// announces as text. See core.Role for the vocabulary and for which of the
+// four renderers honors which value.
+//
+// Roles are not synthesized from node type or from props: a Box with an OnTap
+// is a button only if it says so. Guessing would mean a widget that wraps a
+// tappable row in a tappable card announcing two nested buttons, and the
+// widget is the only layer that knows which one is the control.
+func AccessibilityRole(role Role) StyleProp {
+	return styleFunc(func(s *Style) {
+		s.AccessibilityRole = role
+	})
+}
+
 // AccessibilityHidden removes the element (and its subtree) from the
 // accessibility tree — for decorative content a screen reader should skip.
 func AccessibilityHidden() StyleProp {

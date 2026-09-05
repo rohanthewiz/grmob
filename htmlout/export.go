@@ -535,6 +535,14 @@ func modalChassis(props map[string]any) string {
 // contradictory rather than additive; Compose's clearAndSetSemantics branch
 // and SwiftUI's accessibilityHidden branch make the same exclusive choice.
 //
+// The role maps to the `role` attribute, which is the whole of the mapping:
+// core.Role's values are ARIA's own spellings, chosen so that the two DOM
+// targets need no table (see core/role.go). It is emitted verbatim even where
+// the element already implies it — a Button carrying core.RoleButton exports
+// as <button role="button"> — because suppressing the redundant case would
+// mean this function knowing the tag table, and a redundant role is inert
+// while a missing one is not.
+//
 // The hint maps to aria-description rather than aria-describedby: the latter
 // takes an ID reference, and a static export has no stable IDs to point at
 // (nor a place to hang the referenced text). aria-description is the
@@ -550,7 +558,10 @@ func accessibilityAttrs(s *core.Style) []string {
 	if s.AccessibilityHidden {
 		return []string{"aria-hidden", "true"}
 	}
-	attrs := make([]string, 0, 4)
+	attrs := make([]string, 0, 6)
+	if s.AccessibilityRole != core.RoleNone {
+		attrs = append(attrs, "role", string(s.AccessibilityRole))
+	}
 	if s.AccessibilityLabel != "" {
 		attrs = append(attrs, "aria-label", s.AccessibilityLabel)
 	}

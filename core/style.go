@@ -58,6 +58,17 @@ type Style struct {
 	AccessibilityHint   string
 	AccessibilityHidden bool
 
+	// AccessibilityRole is what the node *is* — a heading, a table cell, a
+	// search landmark — as opposed to what it is called and what tapping it
+	// does. See role.go for the vocabulary, what each of the four renderers
+	// makes of it, and why nine of the fifteen values do nothing on either
+	// native.
+	//
+	// It sits with the three fields above and travels the same way: on Style
+	// rather than in Props, so every builder supports it without a signature
+	// change and a change to it patches like any other style property.
+	AccessibilityRole Role
+
 	// Disabled marks the node inert: the renderers hand it to the platform's
 	// own disabled state rather than emulating one, so the control stops
 	// accepting input, loses focus eligibility, and — the part an emulation
@@ -280,6 +291,9 @@ func (s Style) applyTo(target *Style) {
 	}
 	if s.AccessibilityHidden {
 		target.AccessibilityHidden = true
+	}
+	if s.AccessibilityRole != RoleNone {
+		target.AccessibilityRole = s.AccessibilityRole
 	}
 	if s.Disabled {
 		target.Disabled = true

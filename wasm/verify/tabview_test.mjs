@@ -432,6 +432,51 @@ test("a page that becomes eligible again is rewired", () => {
     assert.equal(root.children[0].children[1].getAttribute("aria-controls"), "grmob-root-panel-1");
 });
 
+// The panel wiring and core.AccessibilityRole write the same attribute, and
+// the author's value wins — the same call the wiring already makes for a
+// <button> page. The two writers are told apart by the value: no core.Role
+// spells "tabpanel", which htmlout's TestNoRoleCollidesWithTheTabPanelWiring
+// keeps true.
+test("a page with its own role is not made a panel", () => {
+    const { rt, root, pageAt } = mountTabs();
+
+    rt.GrMob.patch(
+        JSON.stringify([
+            { Type: "update-style", TargetID: "root/1", Changes: { AccessibilityRole: "search" } },
+        ])
+    );
+
+    assert.equal(pageAt(1).getAttribute("role"), "search", "the wiring took the author's role");
+    assert.equal(pageAt(1).getAttribute("id"), null);
+    assert.equal(root.children[0].children[1].getAttribute("aria-controls"), null);
+    // The page beside it is untouched: one page opting out is not the tab set
+    // opting out.
+    assert.equal(pageAt(0).getAttribute("role"), "tabpanel");
+});
+
+// The mirror image, and the one a guarded write would get wrong in both
+// directions: a role dropped again leaves the page eligible, and the wiring
+// that was withdrawn has to come back. Nothing else clears the attribute, so
+// this is also the check that the wiring's own "tabpanel" is what it removed
+// and not the author's value.
+test("a page that gives up its role is rewired", () => {
+    const { rt, root, pageAt } = mountTabs();
+
+    const role = (v) =>
+        rt.GrMob.patch(
+            JSON.stringify([
+                { Type: "update-style", TargetID: "root/1", Changes: { AccessibilityRole: v } },
+            ])
+        );
+    role("search");
+    assert.equal(pageAt(1).getAttribute("id"), null);
+
+    role("");
+    assert.equal(pageAt(1).getAttribute("role"), "tabpanel");
+    assert.equal(pageAt(1).getAttribute("id"), "grmob-root-panel-1");
+    assert.equal(root.children[0].children[1].getAttribute("aria-controls"), "grmob-root-panel-1");
+});
+
 // aria-labelledby wins over aria-label in the accessible-name calculation, so
 // writing it unconditionally would discard the name the app author chose. The
 // tab still points at the panel; only the naming is left alone.

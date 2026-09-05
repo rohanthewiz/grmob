@@ -920,6 +920,49 @@ test("the accessibility fields become ARIA attributes", () => {
     assert.equal(at(0).getAttribute("aria-description"), null);
 });
 
+// The fourth semantics field. core.Role's values are ARIA's own spellings, so
+// the mapping is the value verbatim on both web targets — the reason the
+// vocabulary is spelled that way at all.
+//
+// The list is restated here rather than imported: this file cannot see Go, and
+// two independent statements of one contract is the point of a conformance
+// test. htmlout's TestEveryRoleBecomesTheRoleAttribute holds the same list
+// against core.Roles(), so a role added to core and forgotten here shows up
+// there as the pair disagreeing.
+const ROLES = [
+    "table", "rowgroup", "row", "columnheader", "cell",
+    "list", "listitem",
+    "banner", "navigation", "search", "toolbar",
+    "status", "alert",
+    "heading", "button",
+];
+
+test("every accessibility role becomes the role attribute", () => {
+    const { rt, at } = mount(ROLES.map((role) => ({ Type: "Box", Props: {}, Style: { AccessibilityRole: role } })));
+
+    ROLES.forEach((role, i) => {
+        assert.equal(at(i).getAttribute("role"), role, `role ${role} did not reach the element`);
+    });
+
+    // Totality, as for the other three: a role dropped from the Style is a
+    // role removed from the element, not one left standing.
+    rt.GrMob.patch(
+        JSON.stringify([{ Type: "update-style", TargetID: "root/0", Changes: {} }])
+    );
+    assert.equal(at(0).getAttribute("role"), null);
+});
+
+// aria-hidden prunes the subtree, so it wins over the role for the same reason
+// it wins over the name: there is no element left in the tree for the role to
+// describe.
+test("aria-hidden wins over the role", () => {
+    const { at } = mount([
+        { Type: "Box", Props: {}, Style: { AccessibilityHidden: true, AccessibilityRole: "table" } },
+    ]);
+    assert.equal(at(0).getAttribute("aria-hidden"), "true");
+    assert.equal(at(0).getAttribute("role"), null);
+});
+
 // Fields that had a StyleProp constructor in Go and no reader on any of the
 // four targets. One CSS property each here.
 test("the previously unread Style fields reach the element", () => {

@@ -120,6 +120,17 @@ func (s SearchField) Render(ctx *core.Context) *core.Node {
 		core.AlignItemsProp(core.AlignItemsCenter),
 		core.Gap(float64(t.Spacing.SM)),
 		core.PaddingVertical(t.Spacing.XS),
+		// The search landmark. It goes on the row — the glyph, the field and
+		// the clear button together — because the landmark is the *region a
+		// reader jumps to*, and jumping to the field alone would land them
+		// past the affordance that empties it.
+		//
+		// The role names the region; the field inside it is still named by
+		// its own label, and neither substitutes for the other. On the two
+		// natives this currently does nothing at all (VoiceOver's rotor
+		// navigates by heading, TalkBack has no landmarks), which is stated
+		// in core.Role's table rather than hidden here.
+		core.AccessibilityRole(core.RoleSearch),
 	)
 	for _, sp := range s.Style {
 		items = append(items, sp)

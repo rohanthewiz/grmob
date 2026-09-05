@@ -201,3 +201,29 @@ func TestSearchFieldConsumesNoHookSlot(t *testing.T) {
 		t.Errorf("cursor moved from %d to %d — SearchField must consume no hook slot", before, ctx.Cursor)
 	}
 }
+
+// The search landmark goes on the row rather than on the input: the landmark
+// is the region a reader jumps to, and landing on the field alone would put
+// them past the clear button. The field keeps its own name either way — a role
+// says what a region is, a label says what a control is called, and neither
+// substitutes for the other.
+func TestSearchFieldIsASearchLandmark(t *testing.T) {
+	ctx := core.NewContext()
+	ctx.BeginRenderPass()
+	n := SearchField{Value: "grace", OnChange: func(string) {}}.Render(ctx)
+
+	if n.Style.AccessibilityRole != core.RoleSearch {
+		t.Errorf("the strip = %q, want search", n.Style.AccessibilityRole)
+	}
+	input := findFirst(n, func(n *core.Node) bool { return n.Type == "Input" })
+	if input == nil {
+		t.Fatal("no input in the search field")
+	}
+	if input.Style.AccessibilityLabel == "" {
+		t.Error("the field should still be named by its own label")
+	}
+	if input.Style.AccessibilityRole != core.RoleNone {
+		t.Errorf("the input is a control inside the region, not the region: %q",
+			input.Style.AccessibilityRole)
+	}
+}

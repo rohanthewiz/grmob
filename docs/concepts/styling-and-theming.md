@@ -102,6 +102,7 @@ core.Button("✕", del,
     core.AccessibilityLabel("Delete "+t.Title))
 core.Box(hairline, core.AccessibilityHidden())   // decorative — skip in screen readers
 core.AccessibilityHint("Filters the task list")  // describes the result of activating
+core.AccessibilityRole(core.RoleHeading)         // says what the node *is*
 ```
 
 Renderers map them to `contentDescription` (Android),
@@ -111,6 +112,38 @@ Renderers map them to `contentDescription` (Android),
 `AccessibilityHidden` wins alone on every target: it prunes the node and its
 subtree from the accessibility tree, which makes a label on the same node
 contradictory rather than additive, so the label is dropped.
+
+#### `AccessibilityRole`
+
+A label says what a node is *called* and a hint says what activating it
+*does*; the role says what it **is**. Without one, every container is a `div`
+on the web and a plain view on both natives, so a carefully labelled screen
+still reads as a flat run of text — a tappable `Box` is not announced as a
+control, a section title is not a heading, and a grid of cells is not a table.
+
+`core.Role`'s values are ARIA's own spellings, which is what lets both web
+targets emit them verbatim as `role=`:
+
+| | |
+|---|---|
+| tabular | `RoleTable` `RoleRowGroup` `RoleRow` `RoleColumnHeader` `RoleCell` |
+| collections | `RoleList` `RoleListItem` |
+| landmarks | `RoleBanner` `RoleNavigation` `RoleSearch` `RoleToolbar` |
+| live regions | `RoleStatus` `RoleAlert` |
+| content | `RoleHeading` `RoleButton` |
+
+The two natives map what their vocabularies can express — `heading` and
+`columnheader` become a header trait / `heading()`, `button` becomes
+`.isButton` / `Role.Button`, `search` becomes `.isSearchField`, and `status` /
+`alert` become Compose live regions — and name the rest as explicit no-ops, so
+a role that does nothing there is a decision on record rather than an
+oversight. See `core/role.go` for the full table and
+`mobile/verify/role_test.go` for the check that holds both natives to it.
+
+Roles are never inferred: a `Box` with an `OnTap` is a button only if it says
+so, because a widget that wraps a tappable row in a tappable card would
+otherwise announce two nested buttons. `AccessibilityHidden` wins over a role
+for the same reason it wins over a label.
 
 ### `Disabled`
 

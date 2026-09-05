@@ -187,6 +187,12 @@ func panelID(scope string, i int) string { return scope + "-panel-" + strconv.It
 //	                      the element rather than adding to it, so a Button,
 //	                      an Image or an input page is left as it is — see
 //	                      genericTags in tag.go.
+//	an authored role      the page already says what it is
+//	                      (core.AccessibilityRole), and replacing that is the
+//	                      same theft as replacing the browser's — the author's
+//	                      word beats the wiring's, which is the call
+//	                      aria-labelledby already makes against
+//	                      AccessibilityLabel below.
 //	AccessibilityHidden   the author took the page out of the accessibility
 //	                      tree on purpose; naming it as a panel would assert a
 //	                      relationship they severed.
@@ -226,6 +232,8 @@ func tabPanelBox(page *core.Node) *core.Node {
 		}
 		return tabPanelBox(page.Children[0])
 	case page.Style != nil && page.Style.AccessibilityHidden:
+		return nil
+	case page.Style != nil && page.Style.AccessibilityRole != core.RoleNone:
 		return nil
 	case !IsGenericTag(TagFor(page.Type)):
 		return nil

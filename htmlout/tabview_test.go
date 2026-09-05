@@ -566,3 +566,43 @@ func TestASpacerPageIsStillWired(t *testing.T) {
 		t.Errorf("the Spacer page lost either its size or its role:\n%s", page)
 	}
 }
+
+// The panel wiring and core.AccessibilityRole write the same attribute, and
+// the author's value wins: a page that says what it is keeps saying it, and
+// the tab beside it stops claiming to control a panel that is not one. Same
+// judgment the wiring already makes for a <button> page, whose role comes from
+// the browser rather than from the app.
+func TestAPageWithAnAuthoredRoleIsNotAPanel(t *testing.T) {
+	n := tabViewNode(0, "")
+	n.Children[1].Style = &core.Style{AccessibilityRole: core.RoleSearch}
+	out := ExportHTML(n)
+
+	if strings.Contains(out, "grmob-root-panel-1") {
+		t.Errorf("a page with its own role was wired as a panel:\n%s", out)
+	}
+	if !strings.Contains(out, `role="search"`) {
+		t.Errorf("the author's role was replaced by the wiring:\n%s", out)
+	}
+	if strings.Count(out, `role="tabpanel"`) != 1 {
+		t.Errorf("want only the first page wired:\n%s", out)
+	}
+}
+
+// The runtime cannot make the check above by reading the Style — it runs long
+// after the style was applied — so it reads the role back off the element and
+// tells the two writers apart by the value: "tabpanel" can only have come from
+// the wiring, because no core.Role spells it. That is only true while nobody
+// adds one, which is what this pins.
+//
+// The tab and tablist roles are not at risk in the same way (they go on
+// chrome, which is never a node), so this is deliberately about the one value
+// that lands on an app's own element.
+func TestNoRoleCollidesWithTheTabPanelWiring(t *testing.T) {
+	for _, role := range core.Roles() {
+		if string(role) == "tabpanel" {
+			t.Errorf("core.Role %q collides with the tab-panel wiring: the runtime's "+
+				"canBeTabPanel reads this attribute back and would take a wired panel "+
+				"for an authored role, unwiring and rewiring it on alternate syncs", role)
+		}
+	}
+}

@@ -248,3 +248,45 @@ func TestAppBarExportsHTML(t *testing.T) {
 		}
 	}
 }
+
+// The two roles the bar can honestly claim: it is the screen's banner, and
+// its Title is the screen's heading. The heading is the one that means
+// something on all four targets — SwiftUI and Compose both have a header
+// notion and neither has landmarks — which is also why only the Title takes
+// it, and not the Subtitle, which is a supporting line.
+func TestAppBarNamesItselfAndItsTitle(t *testing.T) {
+	ctx := core.NewContext()
+	ctx.BeginRenderPass()
+	n := AppBar{Title: "Sermons", Subtitle: "42 recordings"}.Render(ctx)
+
+	bar := findFirst(n, func(n *core.Node) bool { return n.Type == "Row" })
+	if bar == nil || bar.Style.AccessibilityRole != core.RoleBanner {
+		t.Fatalf("the bar row should carry the banner landmark, got %+v", bar)
+	}
+	if title := findText(n, "Sermons"); title == nil || title.Style.AccessibilityRole != core.RoleHeading {
+		t.Errorf("the title should be a heading, got %+v", title)
+	}
+	if sub := findText(n, "42 recordings"); sub == nil || sub.Style.AccessibilityRole != core.RoleNone {
+		t.Errorf("the subtitle is a supporting line, not a second heading: %+v", sub)
+	}
+}
+
+// The banner lands on the same element in both shapes. With the rule hidden
+// the row is the outermost node; with it, a Box wraps the row and the rule —
+// and the role stays on the row, because that is the element Style reaches and
+// a role that moved with a cosmetic flag could not be overridden in one place.
+func TestAppBarBannerSitsOnTheRowInBothShapes(t *testing.T) {
+	for _, hide := range []bool{false, true} {
+		ctx := core.NewContext()
+		ctx.BeginRenderPass()
+		n := AppBar{Title: "Sermons", HideSeparator: hide}.Render(ctx)
+
+		row := findFirst(n, func(n *core.Node) bool { return n.Type == "Row" })
+		if row == nil || row.Style.AccessibilityRole != core.RoleBanner {
+			t.Errorf("HideSeparator=%v: the row lost the banner role", hide)
+		}
+		if !hide && n.Style.AccessibilityRole != core.RoleNone {
+			t.Errorf("the separator Box should not be a second banner, got %q", n.Style.AccessibilityRole)
+		}
+	}
+}
