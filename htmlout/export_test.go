@@ -1,6 +1,7 @@
 package htmlout
 
 import (
+	"strconv"
 	"strings"
 	"testing"
 
@@ -1044,6 +1045,149 @@ func TestModalHonorsVisible(t *testing.T) {
 	for _, want := range []string{"position:fixed", "z-index:1000", "justify-content:center"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("modal chassis missing %q:\n%s", want, out)
+		}
+	}
+}
+
+// --- Heading level ----------------------------------------------------------
+
+// aria-level, and the two guards that decide whether it is written at all.
+//
+// The role guard is ARIA's own scoping and the range guard drops rather than
+// clamps — see core.Style.AccessibilityHeadingLevel for why an out-of-range
+// value is not quietly rewritten into the nearest legal one.
+func TestHeadingLevelBecomesAriaLevel(t *testing.T) {
+	for level := 1; level <= 6; level++ {
+		n := &core.Node{Type: "Box", Style: &core.Style{
+			AccessibilityRole:         core.RoleHeading,
+			AccessibilityHeadingLevel: level,
+		}}
+		want := `aria-level="` + strconv.Itoa(level) + `"`
+		if out := ExportHTML(n); !strings.Contains(out, want) {
+			t.Errorf("level %d not exported as %s:\n%s", level, want, out)
+		}
+	}
+
+	for _, tc := range []struct {
+		name  string
+		style core.Style
+	}{
+		{"unset", core.Style{AccessibilityRole: core.RoleHeading}},
+		{"below range", core.Style{AccessibilityRole: core.RoleHeading, AccessibilityHeadingLevel: -1}},
+		{"above range", core.Style{AccessibilityRole: core.RoleHeading, AccessibilityHeadingLevel: 7}},
+		// aria-level is not defined for columnheader, which is why DataTable's
+		// column headers take the role and no tier.
+		{"columnheader", core.Style{AccessibilityRole: core.RoleColumnHeader, AccessibilityHeadingLevel: 2}},
+		{"no role at all", core.Style{AccessibilityHeadingLevel: 2}},
+	} {
+		s := tc.style
+		if out := ExportHTML(&core.Node{Type: "Box", Style: &s}); strings.Contains(out, "aria-level") {
+			t.Errorf("%s: wrote an aria-level it should have dropped:\n%s", tc.name, out)
+		}
+	}
+}
+
+// aria-hidden prunes the subtree, so a level on the same node describes the
+// depth of a heading no reader can reach — the same reason a name and a role
+// are dropped there.
+func TestHiddenBeatsHeadingLevel(t *testing.T) {
+	n := &core.Node{Type: "Box", Style: &core.Style{
+		AccessibilityHidden:       true,
+		AccessibilityRole:         core.RoleHeading,
+		AccessibilityHeadingLevel: 2,
+	}}
+	if out := ExportHTML(n); strings.Contains(out, "aria-level") {
+		t.Errorf("aria-hidden should win alone:\n%s", out)
+	}
+}
+
+// --- Modal semantics --------------------------------------------------------
+
+// A Modal is a dialog by virtue of being a Modal. core.ModalNode carries no
+// Style, so there is nothing for a core.Role to ride on — which is exactly why
+// the two DOM renderers were the only targets where an overlay announced as an
+// unnamed group while both natives got it from their platform dialog.
+func TestModalIsADialog(t *testing.T) {
+	open := &core.Node{
+		Type:     "Modal",
+		Props:    map[string]any{"visible": true, "backdrop": "#00000088"},
+		Children: []*core.Node{textNode("dialog body")},
+	}
+	out := ExportHTML(open)
+	if !strings.Contains(out, `role="dialog"`) {
+		t.Errorf("a Modal must announce as a dialog:\n%s", out)
+	}
+	if !strings.Contains(out, `aria-modal="true"`) {
+		t.Errorf("a Modal must say the rest of the screen is inert behind it:\n%s", out)
+	}
+
+	// A closed one keeps both, and needs no special case: modalChassis gives
+	// it display:none, which takes the element and its subtree out of the
+	// accessibility tree, so there is no reader for the claim to mislead.
+	closed := &core.Node{
+		Type:  "Modal",
+		Props: map[string]any{"visible": false},
+	}
+	if out := ExportHTML(closed); !strings.Contains(out, "display:none") {
+		t.Errorf("a closed modal must not be laid out:\n%s", out)
+	}
+}
+
+// The author's word beats the framework's, the same precedent modalChassis
+// sets for style: its declarations go first so the node's own style outranks
+// them. A hand-built Modal that states its own role means it.
+func TestAnAuthoredRoleBeatsTheModalDefault(t *testing.T) {
+	n := &core.Node{
+		Type:  "Modal",
+		Props: map[string]any{"visible": true},
+		Style: &core.Style{AccessibilityRole: core.RoleAlert},
+	}
+	out := ExportHTML(n)
+	if strings.Contains(out, `role="dialog"`) {
+		t.Errorf("the widget's default overrode the author's role:\n%s", out)
+	}
+	if !strings.Contains(out, `role="alert"`) {
+		t.Errorf("the authored role was dropped:\n%s", out)
+	}
+	// aria-modal is not expressible through core.Role at all, so it is not the
+	// author's to replace — it survives whatever role they chose.
+	if !strings.Contains(out, `aria-modal="true"`) {
+		t.Errorf("aria-modal should not depend on the role:\n%s", out)
+	}
+}
+
+// Hidden wins over the node type too. An overlay pruned from the accessibility
+// tree has no element for role="dialog" to describe, and aria-modal on it would
+// claim the document behind it is inert for something a reader cannot reach.
+func TestHiddenBeatsTheModalSemantics(t *testing.T) {
+	n := &core.Node{
+		Type:  "Modal",
+		Props: map[string]any{"visible": true},
+		Style: &core.Style{AccessibilityHidden: true},
+	}
+	out := ExportHTML(n)
+	if strings.Contains(out, "role=") || strings.Contains(out, "aria-modal") {
+		t.Errorf("aria-hidden should win alone:\n%s", out)
+	}
+}
+
+// CarriesOwnRole is the TabView wiring's view of the same fact the exporter
+// acts on, and the two live in different files. Pinned by construction rather
+// than by listing "Modal" twice: for every node type the tag table knows, a
+// bare node of that type either exports a role attribute or does not, and
+// CarriesOwnRole has to agree.
+//
+// The failure this closes is a duplicate role attribute — a self-roling page
+// inside a TabView getting role="tabpanel" written on top of the role its type
+// already gave it.
+func TestCarriesOwnRoleAgreesWithTheExport(t *testing.T) {
+	for nodeType := range tags {
+		n := &core.Node{Type: nodeType, Props: map[string]any{"visible": true}}
+		exported := strings.Contains(ExportHTML(n), "role=")
+		if got := CarriesOwnRole(nodeType); got != exported {
+			t.Errorf("%s: CarriesOwnRole = %v but a bare node exports a role = %v — the "+
+				"TabView wiring and the exporter disagree about who owns the attribute",
+				nodeType, got, exported)
 		}
 	}
 }

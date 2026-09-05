@@ -411,6 +411,30 @@ catch-all — and `mobile/verify/role_test.go` holds both dispatches against
 `core.Roles()` under a plain `go test ./...`. See
 [Styling & Theming](../concepts/styling-and-theming.md#accessibilityrole).
 
+### `AccessibilityHeadingLevel`
+
+The tier that goes with `RoleHeading` splits the two platforms rather than
+mapping partially to both. iOS has `.accessibilityHeading(.h1 … .h6)`, so the
+level reaches VoiceOver's heading rotor; Compose's `heading()` takes no
+argument and its semantics package has no level property, so the Android
+renderer deliberately never parses the JSON key.
+
+That silence is written down beside the role dispatch in `GrMobStyle.kt`, for
+the same reason the empty role arms are: a field a renderer simply ignored
+looks exactly like one nobody had heard of.
+`mobile/verify/heading_level_test.go` pins both halves — that Swift carries the
+level through all three links, and that Kotlin's note has not outlived the
+limitation.
+
+### `core.Modal` and the dialog role
+
+Nothing to do here, and that is the point. iOS presents a Modal as a sheet and
+Android as a Compose `Dialog`; both announce themselves as modal and confine
+exploration to their own content, so the `role="dialog"` / `aria-modal` pair
+the two DOM renderers write by hand comes free on device. That asymmetry is why
+`core.Role` has no `RoleDialog` for an author to set — see
+[Styling & Theming](../concepts/styling-and-theming.md#roles-a-node-type-carries-for-itself).
+
 ### `Disabled`
 
 `core.Disabled(bool)` becomes the platform's own inert state — `enabled =

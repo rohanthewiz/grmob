@@ -201,3 +201,18 @@ func TransparentTypes() []string {
 	sort.Strings(out)
 	return out
 }
+
+// CarriesOwnRole reports whether a node type states its own ARIA role, with no
+// core.Style involved.
+//
+// Modal is the only one: core.ModalNode has no Style field at all, and the
+// overlay is a dialog by virtue of being an overlay — see modalSemantics in
+// export.go, and core/role.go's "Roles a node type carries for itself" for why
+// this is not a value in the Role vocabulary.
+//
+// Exported because the TabView wiring has to know: the role attribute has one
+// slot per element, and a page whose type already filled it must not be given
+// role="tabpanel" on top.
+func CarriesOwnRole(nodeType string) bool {
+	return nodeType == "Modal"
+}

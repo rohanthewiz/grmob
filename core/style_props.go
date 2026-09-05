@@ -299,6 +299,37 @@ func AccessibilityRole(role Role) StyleProp {
 	})
 }
 
+// AccessibilityHeadingLevel says how deep a heading sits — 1 for the screen's
+// name, 2 for a section inside it, down to 6.
+//
+//	core.Box(
+//		core.AccessibilityRole(core.RoleHeading),
+//		core.AccessibilityHeadingLevel(2),
+//		core.Text("March"),
+//	)
+//
+// Paired with RoleHeading, never alone: the role says the node is a heading
+// and this says which tier, so a level with no role describes the depth of
+// something that is not a heading and every renderer drops it. The two are
+// separate props rather than one because the tier is genuinely optional —
+// every heading written before this existed is still a correct heading, it
+// just does not say where it sits.
+//
+// What a level buys is the outline. Without one, a screen with a bar title
+// over a run of section bands announces a flat list of peers, and a reader
+// navigating by heading cannot tell the screen's name from the band inside
+// it. components.AppBar and components.GroupedList set 1 and 2 for exactly
+// that pair, so the common case needs no call site at all.
+//
+// See Style.AccessibilityHeadingLevel for the range rule (out-of-range is
+// dropped, not clamped) and for which of the four renderers can express a
+// level — Compose cannot, and that is stated rather than faked.
+func AccessibilityHeadingLevel(level int) StyleProp {
+	return styleFunc(func(s *Style) {
+		s.AccessibilityHeadingLevel = level
+	})
+}
+
 // AccessibilityHidden removes the element (and its subtree) from the
 // accessibility tree — for decorative content a screen reader should skip.
 func AccessibilityHidden() StyleProp {

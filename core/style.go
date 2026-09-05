@@ -69,6 +69,52 @@ type Style struct {
 	// change and a change to it patches like any other style property.
 	AccessibilityRole Role
 
+	// AccessibilityHeadingLevel is the tier of a heading — 1 for the screen's
+	// own name, 2 for a section within it, and so on to 6.
+	//
+	// It is read only when AccessibilityRole is RoleHeading. A level is a
+	// property *of* a heading, and ARIA scopes aria-level the same way (the
+	// attribute is defined for heading, listitem and row, and notably not for
+	// columnheader, which is why a DataTable's column headers take the role
+	// and no level).
+	//
+	// # Why a field and not RoleHeading2
+	//
+	// The obvious alternative was six more Role constants. Three things are
+	// wrong with it, and the first is decisive: core.Role's values are ARIA's
+	// own spellings, which is the entire reason the two DOM renderers need no
+	// mapping table (see role.go). There is no `role="heading2"`, so the
+	// moment the enum carries one, both web targets need the table the
+	// vocabulary was chosen to avoid.
+	//
+	// The second is that "every renderer names every role" would then cost
+	// twelve new arms — six on each native — every one of which would map to
+	// the heading primitive the plain `heading` arm already maps to. The
+	// coverage checks would be pinning six spellings of one fact.
+	//
+	// The third is that level and role are genuinely independent questions. A
+	// reader asks "what is this" once and "where does it sit" separately, and
+	// a caller that wants a heading without committing to a tier — which is
+	// every caller that existed before this field — should be able to say so
+	// by leaving a field alone rather than by picking from a lettered set.
+	//
+	// # What each target does with it
+	//
+	// The web emits aria-level. SwiftUI has accessibilityHeading, whose
+	// AccessibilityHeadingLevel is the same 1-6 idea, so the level survives to
+	// VoiceOver's heading rotor. Compose's heading() takes no argument and has
+	// no level at all, so this is inert on Android — the same honest gap nine
+	// of the sixteen roles have, documented in GrMobStyle.kt beside the role
+	// dispatch rather than left for the next person to rediscover.
+	//
+	// Out-of-range values are dropped rather than clamped. 0 is the zero value
+	// and means "a heading, tier unstated", which is what every heading in
+	// every tree was before this field existed; anything above 6 has no
+	// spelling on any of the three targets that can express a level, and
+	// silently rewriting a 7 to a 6 would invent a structure the caller did
+	// not describe.
+	AccessibilityHeadingLevel int
+
 	// Disabled marks the node inert: the renderers hand it to the platform's
 	// own disabled state rather than emulating one, so the control stops
 	// accepting input, loses focus eligibility, and — the part an emulation
@@ -294,6 +340,12 @@ func (s Style) applyTo(target *Style) {
 	}
 	if s.AccessibilityRole != RoleNone {
 		target.AccessibilityRole = s.AccessibilityRole
+	}
+	// Merged independently of the role, not alongside it: a theme's Style can
+	// carry the tier a widget's own Style then names the role for, and the
+	// pair only has to agree at export time.
+	if s.AccessibilityHeadingLevel != 0 {
+		target.AccessibilityHeadingLevel = s.AccessibilityHeadingLevel
 	}
 	if s.Disabled {
 		target.Disabled = true

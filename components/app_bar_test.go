@@ -269,6 +269,19 @@ func TestAppBarNamesItselfAndItsTitle(t *testing.T) {
 	if sub := findText(n, "42 recordings"); sub == nil || sub.Style.AccessibilityRole != core.RoleNone {
 		t.Errorf("the subtitle is a supporting line, not a second heading: %+v", sub)
 	}
+
+	// Level 1, because an AppBar is the screen's own bar: there is nothing
+	// above it for it to be a section of. The tier is what keeps it from
+	// announcing as a peer of the section headings below it — see
+	// TestGroupHeaderLabelIsASecondLevelHeading for the other half of the pair.
+	if title := findText(n, "Sermons"); title == nil || title.Style.AccessibilityHeadingLevel != 1 {
+		t.Errorf("the title should be a level-1 heading, got %+v", title)
+	}
+	// The subtitle has no role, so a level on it would describe the depth of
+	// something that is not a heading.
+	if sub := findText(n, "42 recordings"); sub == nil || sub.Style.AccessibilityHeadingLevel != 0 {
+		t.Errorf("the subtitle should carry no heading level: %+v", sub)
+	}
 }
 
 // The banner lands on the same element in both shapes. With the rule hidden

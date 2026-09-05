@@ -193,6 +193,8 @@ func panelID(scope string, i int) string { return scope + "-panel-" + strconv.It
 //	                      word beats the wiring's, which is the call
 //	                      aria-labelledby already makes against
 //	                      AccessibilityLabel below.
+//	a self-roling type    a Modal is a dialog by virtue of being a Modal, with
+//	                      no Style to say so; the same theft, one layer down.
 //	AccessibilityHidden   the author took the page out of the accessibility
 //	                      tree on purpose; naming it as a panel would assert a
 //	                      relationship they severed.
@@ -234,6 +236,14 @@ func tabPanelBox(page *core.Node) *core.Node {
 	case page.Style != nil && page.Style.AccessibilityHidden:
 		return nil
 	case page.Style != nil && page.Style.AccessibilityRole != core.RoleNone:
+		return nil
+	// A node type that states its own role, the way a Modal is a dialog (see
+	// modalSemantics). The tag is generic and the Style is nil, so neither
+	// guard above catches it, and wiring it would write a second role
+	// attribute onto the same element. The runtime's canBeTabPanel gets this
+	// for free: it reads the role back off the live element, where the
+	// chassis already put it.
+	case CarriesOwnRole(page.Type):
 		return nil
 	case !IsGenericTag(TagFor(page.Type)):
 		return nil

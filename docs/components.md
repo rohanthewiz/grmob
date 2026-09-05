@@ -898,6 +898,13 @@ the group bands and not the column header — the column header is a sibling of
 the body list rather than a row inside it, which is what keeps it on screen in
 the first place.
 
+A band's label is a `RoleHeading` at **level 2** — a section of the screen
+whose name `AppBar`'s title carries at level 1. Without the tier the two
+announce as peers and a reader navigating by heading cannot tell the screen
+from the month inside it. The role sits on the label rather than on the band,
+so the heading's name is "March" and not "March, 12"; the count badge is still
+announced, as the separate thing it is.
+
 `DataTable` states its structure as well as drawing it:
 `RoleTable` on the table, `RoleRowGroup` on the body list, `RoleRow` on the
 header and body rows, `RoleColumnHeader` and `RoleCell` on their cells. The
@@ -937,11 +944,13 @@ components.AppBar{
 - A hairline rule is drawn under the bar unless `HideSeparator` is set,
   because an unstyled bar sits on the same Background as the content below it.
 
-The bar carries `RoleBanner` and its `Title` carries `RoleHeading`, so a
-reader navigating by landmark or by heading lands where they expect. The
-banner sits on the bar row (not on the box the separator adds around it) so
-`Style` can override it — a second bar on a screen that already has a banner
-should say something else.
+The bar carries `RoleBanner` and its `Title` carries `RoleHeading` at **level
+1**, so a reader navigating by landmark or by heading lands where they expect.
+Level 1 because an `AppBar` is the screen's own bar: there is nothing above it
+for it to be a section of, and the tier is what keeps it from announcing as a
+peer of `GroupedList`'s band labels, which take 2. The banner sits on the bar
+row (not on the box the separator adds around it) so `Style` can override it —
+a second bar on a screen that already has a banner should say something else.
 
 It is an ordinary `Row`, not a platform navigation bar: nothing floats,
 collapses on scroll, or claims the status bar. `Screen`'s `SafeArea` is what

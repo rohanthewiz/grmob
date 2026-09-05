@@ -117,7 +117,15 @@ func (h GroupHeader) Render(ctx *core.Context) *core.Node {
 			// count badge, and a heading whose name is "March 12" reads worse
 			// than one whose name is "March". The count is still announced,
 			// as the separate thing it is.
-			core.AccessibilityRole(core.RoleHeading)),
+			core.AccessibilityRole(core.RoleHeading),
+			// Level 2: a band is a section *of* the screen whose name the
+			// AppBar's title already carries at level 1, which is the two-tier
+			// outline core.Style.AccessibilityHeadingLevel exists for. A
+			// banded feed with no bar starts at 2 with no 1 above it — a soft
+			// lint on the web and nothing at all to either native — which is
+			// the lesser of the two wrongs against announcing a screen's name
+			// and its March band as peers.
+			core.AccessibilityHeadingLevel(2)),
 	))
 	if !h.HideCount {
 		items = append(items, Badge{Text: itoa(h.Group.Count)})

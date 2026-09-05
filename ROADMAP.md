@@ -118,6 +118,15 @@
       Adopted by `DataTable` (table/rowgroup/row/columnheader/cell), `AppBar`
       (banner + heading), `Banner` (status/alert by variant), `SearchField`
       (search) and `Calendar`'s day cells (button)
+- [x] Accessibility *heading levels* (`core.AccessibilityHeadingLevel`) —
+      `aria-level` on both web targets and `.accessibilityHeading` on SwiftUI;
+      Compose has no level to map onto and says so. `AppBar`'s title takes 1
+      and `GroupedList`'s band labels 2, so a banded screen has an outline
+      instead of a flat run of peer headings
+- [x] `core.Modal` announces as a dialog — `role="dialog"` + `aria-modal` from
+      the Modal chassis on both DOM targets, which the SwiftUI sheet and the
+      Compose `Dialog` already provide on device; deliberately not a
+      `RoleDialog` an author has to set
 - [x] Navigation (`Navigator`, `Push`, `Pop`, `Replace`, `PopToRoot`, `Reset`,
       per-frame state) and `core.Modal` / toasts
 - [x] Forms with validation (`forms`) — a rule vocabulary, cross-field checks,

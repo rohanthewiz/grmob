@@ -49,6 +49,19 @@ indented HTML. Properties worth relying on:
   with it. See
   `htmlout/tabview.go` and [WASM — Tab views](wasm.md#tab-views), which draws
   the same chrome live and states the reasoning for the pair.
+- **A `Modal` is a dialog.** The overlay carries `role="dialog"` and
+  `aria-modal="true"` alongside its fixed-position chassis, because
+  `core.ModalNode` has no `Style` for a `core.AccessibilityRole` to ride on and
+  both natives get the same semantics free from their platform dialog. A closed
+  modal is `display:none`, so the claim never reaches a reader it could
+  mislead; an author's own role on a hand-built Modal node wins, the way their
+  style already outranks the chassis. `htmlout.CarriesOwnRole` is how the tab
+  wiring knows to leave such a page alone rather than writing a second `role`
+  onto it.
+- **A heading's tier is `aria-level`,** written only alongside
+  `role="heading"` and only for 1–6 — ARIA's own scoping, and a drop rather
+  than a clamp. See
+  [Styling & Theming](../concepts/styling-and-theming.md#accessibilityheadinglevel).
 
 ### Testing with htmlout
 

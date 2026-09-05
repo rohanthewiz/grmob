@@ -211,7 +211,7 @@ already going to the wrong one. Deriving it this way also makes the ids the
 *same strings* `htmlout` writes rather than merely the same shape, so the
 contract the two web targets share is the literal id.
 
-A page opts out of being a panel four ways, each a case where wiring it would
+A page opts out of being a panel five ways, each a case where wiring it would
 say something false:
 
 | The page… | Why it is left alone |
@@ -219,11 +219,14 @@ say something false:
 | has no tab at its index | a `tabpanel` outside a tab set, with nothing for the `aria-controls` to sit on |
 | renders as an element that already has a role (`<button>`, `<img>`, `<input>`) | `role="tabpanel"` would *replace* the role the browser gave it — see `GENERIC_TAGS`, pinned to Go's `genericTags` by `TestRuntimeGenericTagsMatchGo` |
 | carries a `core.AccessibilityRole` | the author already said what it is, and the same theft applies |
+| is a node type that states its own role (a `Modal` is a `dialog`) | the same theft, one layer down — and the attribute has one slot |
 | is `AccessibilityHidden` | the author severed the relationship on purpose |
 
-The role case shares one attribute between two writers, so the runtime tells
-them apart by value: `tabpanel` is not one of `core.Role`'s spellings, so an
-element carrying it got it from the wiring and no other role ever did. That is
+The role case shares one attribute between several writers — the author's
+`core.AccessibilityRole`, a `Modal`'s own chassis, and this wiring — so the
+runtime tells them apart by value: `tabpanel` is not one of `core.Role`'s
+spellings and is not a chassis role, so an element carrying it got it from the
+wiring and nothing else ever did. That is
 what lets the sync clear its own mark without clearing the author's, and it is
 pinned by `TestNoRoleCollidesWithTheTabPanelWiring`.
 

@@ -100,6 +100,30 @@ package core
 // collection pair — make a claim about their children, which is where to look
 // rather than here if a role is ever added to either.
 //
+// # Roles a node type carries for itself
+//
+// Some semantics are not the author's to state, because the node type already
+// knows them. core.Button exports as a <button> and builds a real control on
+// both natives, so nobody has to say `button` — RoleButton exists for the
+// *other* case, a Box or a Row with an OnTap, which every renderer draws as
+// inert scenery.
+//
+// core.Modal is the same shape and has no vocabulary entry at all. The two
+// natives already present it through a platform dialog (a SwiftUI sheet, a
+// Compose Dialog), each of which announces itself; the two DOM renderers drew
+// a plain div, so the overlay was the one target where a dialog was not a
+// dialog. Both now write role="dialog" and aria-modal="true" as part of the
+// Modal chassis, next to the fixed-overlay rules — semantics the node type
+// owns, not a value a caller passes.
+//
+// So there is deliberately no RoleDialog. Adding one would put the burden back
+// on the author for something three of the four targets already do
+// unasked, and would cost two more native arms that could only be empty —
+// which in this vocabulary means "this platform cannot say it", the opposite
+// of the truth here. An author who overrides a Modal's role with a
+// core.AccessibilityRole still wins, on the same principle the chassis follows
+// for style: the framework's default goes first.
+//
 // # Every renderer names every role
 //
 // Both natives dispatch on the string, arm by arm, so a role with no arm falls
@@ -183,6 +207,11 @@ const (
 // framework has no node type that carries the difference — core.OpenURL is a
 // callback like any other, so a row that dials a phone number and a row that
 // files a form are the same tappable Box until one of them says otherwise.
+// RoleHeading is the one value here with a second question attached: how deep
+// the heading sits. That is Style.AccessibilityHeadingLevel, a separate int
+// rather than a lettered set of constants — see its doc for why six more
+// spellings of "heading" would cost both DOM renderers the mapping table this
+// vocabulary exists to avoid.
 const (
 	RoleHeading Role = "heading"
 	RoleButton  Role = "button"

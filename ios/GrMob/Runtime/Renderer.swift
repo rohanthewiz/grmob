@@ -1547,6 +1547,12 @@ private struct GrMobTabView: View {
 /// Dialog. Visibility is a controlled bool: presenting and dismissing both go
 /// through Go (the binding's set only reports the dismiss gesture upstream;
 /// the sheet actually closes when Go flips `visible` and the patch lands).
+///
+/// The sheet is also what makes this target need no dialog role. VoiceOver
+/// announces a presented sheet as a modal in its own right and traps focus
+/// inside it, so the semantics the two DOM renderers now write by hand
+/// (role="dialog" plus aria-modal — see htmlout's modalSemantics) come free
+/// here. That is why core.Role has no RoleDialog for an author to set.
 private struct GrMobModal: View {
     let node: GrMobNode
     @Environment(\.grMobRuntime) private var runtime

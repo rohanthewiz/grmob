@@ -103,6 +103,7 @@ core.Button("✕", del,
 core.Box(hairline, core.AccessibilityHidden())   // decorative — skip in screen readers
 core.AccessibilityHint("Filters the task list")  // describes the result of activating
 core.AccessibilityRole(core.RoleHeading)         // says what the node *is*
+core.AccessibilityHeadingLevel(2)                // and how deep it sits
 ```
 
 Renderers map them to `contentDescription` (Android),
@@ -179,6 +180,68 @@ The landmarks, live regions and content roles carry no such promise. A banner
 or a navigation region owns whatever it likes, and `RoleHeading` / `RoleButton`
 / `RoleLink` describe the node itself. Only the tabular and collection rows of
 the table above make a claim about their children.
+
+#### `AccessibilityHeadingLevel`
+
+`RoleHeading` says a node *is* a heading; the level says where it sits — 1 for
+the screen's own name, 2 for a section inside it, down to 6.
+
+```go
+core.Text("March",
+    core.AccessibilityRole(core.RoleHeading),
+    core.AccessibilityHeadingLevel(2))
+```
+
+Without a level, a screen with a bar title above a run of section bands
+announces a flat list of peers, and a reader navigating by heading cannot tell
+the screen's name from a band inside it. `components.AppBar` sets 1 on its
+title and `components.GroupedList` sets 2 on its band labels, so the common
+two-tier screen needs no call site at all.
+
+| target | what it becomes |
+|---|---|
+| HTML / WASM | `aria-level` |
+| iOS | `.accessibilityHeading(.h1 … .h6)` |
+| Android | nothing — Compose's `heading()` takes no argument and the semantics package has no level property |
+
+Two rules, and neither is defensive coding:
+
+- **It is read only alongside `RoleHeading`.** That is ARIA's own scoping —
+  `aria-level` is defined for `heading`, `listitem` and `row`, and notably not
+  for `columnheader`, which is why a `DataTable`'s column headers take the role
+  and no tier.
+- **Out-of-range values are dropped, not clamped.** `0` is the zero value and
+  means "a heading, tier unstated" — what every heading was before the field
+  existed. A `7` has no spelling on any target that can express a level, and
+  rewriting it to a `6` would assert a structure the caller never described.
+
+It is a separate `int` rather than a `RoleHeading2` … `RoleHeading6` set for a
+decisive reason: `core.Role`'s values are ARIA's spellings, and there is no
+`role="heading2"`, so lettered constants would cost both web targets the
+mapping table the vocabulary was chosen to avoid — plus twelve native arms that
+would all land on the heading primitive the plain `heading` arm already
+reaches.
+
+#### Roles a node type carries for itself
+
+Some semantics are not the author's to state. `core.Button` is a `<button>` and
+a real control on both natives, so nobody has to say `button` — `RoleButton`
+exists for the *other* case, a `Box` or `Row` with an `OnTap`.
+
+`core.Modal` is the same shape, and has no vocabulary entry at all. Both
+natives present it through a platform dialog (a SwiftUI sheet, a Compose
+`Dialog`) that announces itself; the two DOM renderers drew a plain `div`, so
+the overlay was the one target where a dialog was not a dialog. Both now write
+`role="dialog"` and `aria-modal="true"` as part of the Modal chassis, beside
+the fixed-overlay rules. A closed modal needs no special case — it is
+`display:none`, which takes it out of the accessibility tree entirely.
+
+There is deliberately no `RoleDialog`. Adding one would hand the author work
+that three of the four targets already do unasked, and would cost two native
+arms that could only be empty — which in this vocabulary means "this platform
+cannot say it", the opposite of the truth here. An author who sets
+`AccessibilityRole` on a hand-built Modal node still wins, on the same
+principle the chassis follows for style: the framework's default goes first.
 
 ### `Disabled`
 

@@ -62,6 +62,14 @@ const GrMob = (() => {
                 justifyContent: "center",
                 zIndex: 1000,
             });
+            // The accessibility half of the same chassis: role="dialog" plus
+            // aria-modal. Written here as well as in applyStyle because a
+            // Modal core built has no Style at all, so the applyStyle path
+            // below never runs for it — while a hand-assembled Modal node that
+            // *does* carry one needs the attributes to survive every later
+            // update-style patch, which is applyAccessibility's job. Both
+            // routes end in the same function, so they cannot drift.
+            applyAccessibility(el, node.Style || {}, "Modal");
         }
 
         // A grid or row built without a Style still needs its chassis, which
@@ -615,7 +623,7 @@ const GrMob = (() => {
         // function is total, so the record is refreshed on every style patch
         // and can never go stale.
         el.dataset.baseDisplay = css.display;
-        applyAccessibility(el, style);
+        applyAccessibility(el, style, nodeType);
 
         const disabled = !!style.Disabled;
         if (FORM_CONTROLS.has(el.tagName.toLowerCase())) {
@@ -664,12 +672,36 @@ const GrMob = (() => {
     // styleFromGrMob follows and for the same reason: an update-style patch
     // carries the whole new Style, so a field back at its zero value means
     // "unset now", and a guarded write would leave the old attribute standing.
-    function applyAccessibility(el, style) {
+    function applyAccessibility(el, style, nodeType) {
         const hidden = !!style.AccessibilityHidden;
+        // A Modal's semantics come from its node type, not from a Style:
+        // core.ModalNode has no Style field, so there is nothing for a role to
+        // ride on. Hidden still wins over both — an overlay pruned from the
+        // accessibility tree has no element for role="dialog" to describe, and
+        // aria-modal would claim the document behind it is inert.
+        const dialog = nodeType === "Modal" && !hidden;
+        const role = hidden ? "" : (style.AccessibilityRole || (dialog ? "dialog" : ""));
         setOrRemove(el, "aria-hidden", hidden ? "true" : "");
         setOrRemove(el, "aria-label", hidden ? "" : (style.AccessibilityLabel || ""));
         setOrRemove(el, "aria-description", hidden ? "" : (style.AccessibilityHint || ""));
-        setOrRemove(el, "role", hidden ? "" : (style.AccessibilityRole || ""));
+        setOrRemove(el, "role", role);
+        setOrRemove(el, "aria-modal", dialog ? "true" : "");
+        setOrRemove(el, "aria-level", hidden ? "" : headingLevel(style));
+    }
+
+    // Style.AccessibilityHeadingLevel as an aria-level value, or "" when there
+    // is nothing valid to write. The htmlout twin of this is headingLevel in
+    // export.go and the two must agree; the reasoning for both guards lives
+    // there and in core.Style.
+    //
+    // The role guard is ARIA's own scoping — aria-level is defined for heading,
+    // listitem and row, and means nothing anywhere else. The range guard drops
+    // rather than clamps: a 7 has no spelling on any target, and rewriting it
+    // to a 6 would assert a structure nobody described.
+    function headingLevel(style) {
+        if (style.AccessibilityRole !== "heading") return "";
+        const level = style.AccessibilityHeadingLevel || 0;
+        return level >= 1 && level <= 6 ? String(level) : "";
     }
 
     // Sets an attribute to a non-empty value, or removes it. There is no empty

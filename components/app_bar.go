@@ -216,6 +216,15 @@ func (a AppBar) middle(t *core.Theme) core.View {
 			// than on the web alone. Only the Title takes it: a Subtitle is a
 			// supporting line, and a Content slot is the caller's to describe.
 			core.AccessibilityRole(core.RoleHeading),
+			// Level 1, because a bar title is the top of the screen's outline
+			// by construction: an AppBar is the screen's own bar, so there is
+			// nothing above it for it to be a section of. This and
+			// GroupedList's bands (level 2) are the pair that made the field
+			// worth having — without a tier the two announce as peers, and a
+			// reader navigating by heading cannot tell the screen's name from
+			// a band inside it. Set by the widget rather than asked for,
+			// exactly like the role it accompanies.
+			core.AccessibilityHeadingLevel(1),
 		))
 	}
 	if a.Subtitle != "" {

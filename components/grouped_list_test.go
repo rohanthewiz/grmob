@@ -376,4 +376,13 @@ func TestGroupHeaderLabelIsAHeading(t *testing.T) {
 		t.Errorf("the band itself = %q; the role belongs on the label, so the count "+
 			"badge stays out of the heading's name", band.Style.AccessibilityRole)
 	}
+
+	// Level 2: a band titles a section *of* the screen whose name AppBar's
+	// title carries at level 1. Without the tier the two announce as peers and
+	// a reader navigating by heading cannot tell a screen from a month inside
+	// it, which is the flat outline the level field was added to fix.
+	if label.Style.AccessibilityHeadingLevel != 2 {
+		t.Errorf("band label level = %d, want 2 (AppBar's title is 1)",
+			label.Style.AccessibilityHeadingLevel)
+	}
 }

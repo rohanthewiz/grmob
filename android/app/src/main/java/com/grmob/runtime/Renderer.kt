@@ -1479,6 +1479,17 @@ private fun GrMobTabView(node: GrMobNode, extra: Modifier) {
     }
 }
 
+/**
+ * Modal as a Compose Dialog — the Android idiom for what iOS presents as a
+ * sheet.
+ *
+ * The Dialog window is what makes this target need no dialog role: it is a
+ * separate window, so TalkBack announces it as a dialog and confines
+ * exploration to it. The two DOM renderers have no such window and write
+ * role="dialog" plus aria-modal onto the overlay div instead (htmlout's
+ * modalSemantics), which is why core.Role has no RoleDialog for an author to
+ * set — see core/role.go, "Roles a node type carries for itself".
+ */
 @Composable
 private fun GrMobModal(node: GrMobNode) {
     if (!node.boolProp("visible")) return

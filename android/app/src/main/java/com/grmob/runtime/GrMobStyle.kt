@@ -386,6 +386,21 @@ private fun dimensionModifier(value: String, horizontal: Boolean): Modifier {
  * One arm per line, string literals first, `else ->` last: mobile/verify's
  * TestKotlinRoleCoversEveryRole reads these arms out of the source and holds
  * them against core.Roles().
+ *
+ * # AccessibilityHeadingLevel is not read here, and cannot be
+ *
+ * Go's core.Style carries a heading tier beside the role — 1 for a screen's
+ * name, 2 for a section inside it — which the two web targets emit as
+ * aria-level and SwiftUI applies through accessibilityHeading. Compose's
+ * `heading()` takes no argument and the semantics package has no level
+ * property, so there is nothing here for the field to become and this renderer
+ * deliberately does not parse the JSON key.
+ *
+ * Written down for the same reason the eleven unmapped roles are written down:
+ * a field this file simply ignored would be indistinguishable from one nobody
+ * had heard of, and the next person to look would have to re-derive that
+ * Compose cannot say it. mobile/verify/heading_level_test.go pins this
+ * paragraph so the note cannot quietly outlive the limitation.
  */
 fun SemanticsPropertyReceiver.grMobRole(kind: String) {
     when (kind) {

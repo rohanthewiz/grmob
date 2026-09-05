@@ -68,6 +68,10 @@ struct GrMobStyle: Equatable {
     var accessibilityHidden: Bool = false
     /// Go's core.Role, verbatim; mapped to traits by grMobTraitsFor below.
     var accessibilityRole: String = ""
+    /// Go's core.Style.AccessibilityHeadingLevel: 1-6, or 0 for a heading that
+    /// does not state its tier. Read only when the role is "heading"; see
+    /// grMobHeadingLevel below.
+    var accessibilityHeadingLevel: Int = 0
     /// Platform disabled state; see Go's core.Style.Disabled.
     var disabled: Bool = false
     var transition: String = ""
@@ -153,6 +157,7 @@ struct GrMobStyle: Equatable {
         s.accessibilityHint = str("AccessibilityHint")
         s.accessibilityHidden = obj["AccessibilityHidden"] as? Bool ?? false
         s.accessibilityRole = str("AccessibilityRole")
+        s.accessibilityHeadingLevel = int("AccessibilityHeadingLevel")
         s.disabled = obj["Disabled"] as? Bool ?? false
         s.transition = str("Transition")
         return s
@@ -419,9 +424,20 @@ extension View {
     /// Hidden still wins: a pruned subtree has no element for a trait to
     /// describe, which is the same exclusive choice grMobAccessibility and
     /// Compose's clearAndSetSemantics make.
+    ///
+    /// The heading *level* rides along here rather than in a step of its own,
+    /// and unconditionally, for the reason stated above and in
+    /// grMobTransition: `.unspecified` is AccessibilityHeadingLevel's own
+    /// default, so applying it to the several hundred non-heading nodes of a
+    /// tree changes nothing, where a @ViewBuilder branch would add another
+    /// _ConditionalContent layer to grMobBox's opaque-type tower. Both arms of
+    /// the guard below take the same two modifiers so the return types match.
     fileprivate func grMobRole(_ s: GrMobStyle?) -> some View {
-        guard let s, !s.accessibilityHidden else { return accessibilityAddTraits([]) }
+        guard let s, !s.accessibilityHidden else {
+            return accessibilityAddTraits([]).accessibilityHeading(.unspecified)
+        }
         return accessibilityAddTraits(grMobTraitsFor(s.accessibilityRole))
+            .accessibilityHeading(grMobHeadingLevel(s))
     }
 
     /// Conditional label for the Image "alt" fallback (internal because the
@@ -592,6 +608,31 @@ private func RoundedCornerShapeIfAny(radius: CGFloat) -> RoundedRectangle? {
 /// One arm per line, string literals first, `default:` last: mobile/verify's
 /// TestSwiftTraitsCoverEveryRole reads these arms out of the source and holds
 /// them against core.Roles().
+/// Go's core.Style.AccessibilityHeadingLevel as a SwiftUI heading level.
+///
+/// SwiftUI is the one native of the two that can express this at all —
+/// Compose's `heading()` takes no argument — so the level reaches VoiceOver's
+/// heading rotor here and is documented as inert in GrMobStyle.kt.
+///
+/// Two guards, matching the web exporters line for line (htmlout's
+/// headingLevel and the WASM runtime's). The role guard is ARIA's scoping,
+/// which Go's field doc adopts: a level belongs to a heading, and a
+/// columnheader takes the header trait without one. The range guard drops
+/// rather than clamps — `.unspecified` is what a 0 or a 7 means, and inventing
+/// an `.h6` for a 7 would state a structure the app never described.
+private func grMobHeadingLevel(_ s: GrMobStyle) -> AccessibilityHeadingLevel {
+    guard s.accessibilityRole == "heading" else { return .unspecified }
+    switch s.accessibilityHeadingLevel {
+    case 1: return .h1
+    case 2: return .h2
+    case 3: return .h3
+    case 4: return .h4
+    case 5: return .h5
+    case 6: return .h6
+    default: return .unspecified
+    }
+}
+
 private func grMobTraitsFor(_ role: String) -> AccessibilityTraits {
     switch role {
     case "heading", "columnheader": .isHeader

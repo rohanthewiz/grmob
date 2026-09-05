@@ -168,7 +168,7 @@ func renderNode(b *element.Builder, node *core.Node, from imposed, path string) 
 	if sv != "" {
 		attrs = append(attrs, "style", sv)
 	}
-	attrs = append(attrs, accessibilityAttrs(node.Style)...)
+	attrs = append(attrs, accessibilityAttrs(node.Style, node.Type)...)
 	// The parent's attributes, after the node's own. Order is presentational
 	// only — an attribute list is a set, not a cascade — but keeping the
 	// node's own first means a reader of the markup sees what the node said
@@ -519,7 +519,7 @@ func modalChassis(props map[string]any) string {
 	return decls
 }
 
-// accessibilityAttrs maps core.Style's three semantics fields onto the ARIA
+// accessibilityAttrs maps core.Style's semantics fields onto the ARIA
 // attributes that mean the same thing, as name/value pairs ready to append to
 // an attribute slice.
 //
@@ -543,6 +543,13 @@ func modalChassis(props map[string]any) string {
 // mean this function knowing the tag table, and a redundant role is inert
 // while a missing one is not.
 //
+// A heading's level maps to aria-level, which is the attribute form of the
+// same question and is scoped to the roles ARIA defines it for — see
+// headingLevel below.
+//
+// A Modal gets role="dialog" and aria-modal="true" from its node type rather
+// than from a Style, which is modalSemantics' subject.
+//
 // The hint maps to aria-description rather than aria-describedby: the latter
 // takes an ID reference, and a static export has no stable IDs to point at
 // (nor a place to hang the referenced text). aria-description is the
@@ -551,16 +558,33 @@ func modalChassis(props map[string]any) string {
 // the export states the intent ahead of universal support, on the same
 // reasoning as enterkeyhint above: the alternative is dropping the author's
 // hint entirely.
-func accessibilityAttrs(s *core.Style) []string {
+func accessibilityAttrs(s *core.Style, nodeType string) []string {
+	// A Modal is the one node type whose semantics do not come from a Style at
+	// all: core.ModalNode has no Style field, so `s` is nil for every dialog
+	// core.Modal builds, and the role would have nowhere to come from if this
+	// function only read styles.
+	dialog := nodeType == "Modal"
 	if s == nil {
+		if dialog {
+			return modalSemantics(core.RoleNone)
+		}
 		return nil
 	}
 	if s.AccessibilityHidden {
+		// Hidden wins over the Modal semantics too. An overlay pruned from the
+		// accessibility tree has no element for role="dialog" to describe, and
+		// aria-modal on a hidden node would claim the rest of the document is
+		// inert behind something a reader cannot reach.
 		return []string{"aria-hidden", "true"}
 	}
-	attrs := make([]string, 0, 6)
-	if s.AccessibilityRole != core.RoleNone {
+	attrs := make([]string, 0, 8)
+	if dialog {
+		attrs = append(attrs, modalSemantics(s.AccessibilityRole)...)
+	} else if s.AccessibilityRole != core.RoleNone {
 		attrs = append(attrs, "role", string(s.AccessibilityRole))
+	}
+	if level := headingLevel(s); level != "" {
+		attrs = append(attrs, "aria-level", level)
 	}
 	if s.AccessibilityLabel != "" {
 		attrs = append(attrs, "aria-label", s.AccessibilityLabel)
@@ -569,6 +593,59 @@ func accessibilityAttrs(s *core.Style) []string {
 		attrs = append(attrs, "aria-description", s.AccessibilityHint)
 	}
 	return attrs
+}
+
+// modalSemantics is the accessibility half of the Modal chassis: the pair of
+// attributes that turn a fixed-position div into a dialog.
+//
+// It is emitted by node type rather than asked for, the way modalChassis's CSS
+// is, and for the same reason — core.ModalNode has no Style to carry either
+// one. The natives need no equivalent: a SwiftUI sheet and a Compose Dialog
+// are dialogs to VoiceOver and TalkBack already, which left the two DOM
+// targets as the only ones where an overlay announced as an unnamed group.
+// See core/role.go's "Roles a node type carries for itself" for why this is
+// not a RoleDialog constant.
+//
+// aria-modal is unconditional because it is not expressible through core.Role
+// at all — it is a second attribute, and a Modal is the only node in the
+// framework that knows the rest of the screen is inert behind it. A *closed*
+// modal never reaches a reader to be wrong about: modalChassis gives it
+// display:none, which takes it and its subtree out of the accessibility tree.
+//
+// An author's own role wins, on the same precedent the chassis sets for style
+// (its declarations go first so the node's own style outranks them): a
+// hand-built Modal node that says role="alertdialog" — a value core.Role does
+// not carry but a caller's Style could still be given via some future
+// vocabulary — means it, and this has no business overruling it.
+func modalSemantics(authored core.Role) []string {
+	role := string(authored)
+	if role == "" {
+		role = "dialog"
+	}
+	return []string{"role", role, "aria-modal", "true"}
+}
+
+// headingLevel renders Style.AccessibilityHeadingLevel as an aria-level value,
+// or "" when there is nothing valid to write.
+//
+// Two guards, and neither is arbitrary. The role check is ARIA's own scoping:
+// aria-level is defined for heading, listitem and row, and a level on anything
+// else describes the depth of something that has no depth. Only headings can
+// currently reach it — core.Style has one level field, named for the role it
+// belongs to — so this is the whole of the mapping rather than the first case
+// of a table.
+//
+// The range check drops rather than clamps, which is the rule
+// Style.AccessibilityHeadingLevel states: a 7 has no spelling anywhere, and
+// rewriting it to a 6 would export a structure the caller never described.
+func headingLevel(s *core.Style) string {
+	if s.AccessibilityRole != core.RoleHeading {
+		return ""
+	}
+	if s.AccessibilityHeadingLevel < 1 || s.AccessibilityHeadingLevel > 6 {
+		return ""
+	}
+	return strconv.Itoa(s.AccessibilityHeadingLevel)
 }
 
 // isFormControl reports whether the node exports as an HTML element that
