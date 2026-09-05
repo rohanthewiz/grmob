@@ -9,7 +9,7 @@ Date: 2026-09-05 (follows "chip-inversion-and-role-prop", same session)
 `core.AccessibilityRole`, immediately after they landed here.
 
 Most of the diff is in `../church/church_mobile` (branch `roh/use-grmob`,
-commits `ee21dcc` + `b5e864e`, 22 files, +347/−164), whose own doc
+commits `ee21dcc`, `b5e864e`, then `bbb877c` for the postscript below), whose own doc
 `ai_docs/claude_sessions/2026-0905-1303-adopt-chip-look-and-roles.md` carries
 the detail. What belongs here is the two things the adoption sent *back*, and
 what the widget looked like from the other side.
@@ -75,6 +75,44 @@ what the widget looked like from the other side.
   by the tutorial — but it does mean the *landmarks* are the half a screen
   actually reaches for, and the half whose natives do nothing.
 
+## The postscript: one Chip look is not enough
+
+After the adoption landed, the giving screen's suggested amounts were made
+loud again (`bbb877c` downstream) — outlined in the site's colour rather than
+filled with Surface — and that is a finding about this widget, not about that
+app.
+
+Chip has *one* unselected look, and the two rows that use it want different
+things:
+
+    the sermons year filter   a set of options, most of them not chosen.
+                              Quiet is right: the row is chrome above a list,
+                              and a loud row of years competes with the
+                              archive it filters.
+
+    the giving suggestions    four ways to answer the screen's only question.
+                              Quiet is wrong: grey pills over an empty amount
+                              field do not read as "tap one of these", and this
+                              is the fast path most gifts take.
+
+Material draws exactly this distinction — a *filter* chip against a
+*suggestion* chip — with different default prominence for each. grmob's Chip
+collapses them, and `UnselectedStyle` is what a consumer reaches for to
+un-collapse it, which is fine as an escape hatch and is not a default anyone
+gets right by accident.
+
+Worth noting this is *not* an argument against the inversion. Both rows are
+better than they were, and the failure the inversion fixed — the chosen chip
+being quieter than its neighbours — is present in neither. It is an argument
+that "how loud is an unselected chip" has two right answers and the widget
+offers one, which is a smaller and more tractable problem than the one it
+replaced.
+
+The shape of a fix, if a second consumer asks: a `Prominence` field (quiet |
+loud) sitting beside `Selected`, resolving to the two treatments the two rows
+now spell by hand, on the model of Button's `Emphasis` — which is the axis
+this is, arriving at the widget one level down.
+
 ## Friction found (downstream, recorded here because it is grmob's)
 
 - **No `tab` / `tablist`.** The app's nav bar is a hand-rolled tab set and got
@@ -111,12 +149,14 @@ chip inversion, nothing else moved.
 
 1. `core.Role` doc: state the container-mixes-items-with-chrome rule once,
    where both `DataTable` and a hand-written list can find it.
-2. Decide the heading-level question before a consumer invents one.
-3. `core.Modal` could carry `dialog` itself, the way Button carries `button`.
-4. The `<button>` user-agent border divergence on the two DOM renderers
+2. `Chip.Prominence` (quiet | loud) — see the postscript. Wanted by two rows in
+   the first app that adopted it, both of which now spell it by hand.
+3. Decide the heading-level question before a consumer invents one.
+4. `core.Modal` could carry `dialog` itself, the way Button carries `button`.
+5. The `<button>` user-agent border divergence on the two DOM renderers
    (`EmphasisGhost` draws a rule on the web and not on the natives) — visible
    downstream, since every header action is a ghost button.
-5. `Calendar.Deselectable` and a counted `Marked` (carried over).
-6. Small: "emit `OnEndReached` before the children" in its doc (carried over).
-7. Small: the mid-list busy case in `EmptyState`'s doc (carried over).
-8. Then Tier C: heading plumbing + `Rotate` + Compass.
+6. `Calendar.Deselectable` and a counted `Marked` (carried over).
+7. Small: "emit `OnEndReached` before the children" in its doc (carried over).
+8. Small: the mid-list busy case in `EmptyState`'s doc (carried over).
+9. Then Tier C: heading plumbing + `Rotate` + Compass.
