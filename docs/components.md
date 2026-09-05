@@ -469,6 +469,7 @@ components.Chip{
 - Selected is the loud state: the theme's Button base, untouched (plus a ring
   painted in the fill, so both states hold the same box). Unselected is the
   quiet one: Surface fill, `TextPrimary` ink, a hairline rule.
+- `Prominence` tunes *how* quiet the unselected state is — see below.
 - `SelectedStyle` and `UnselectedStyle` replace their state's default. Both
   read `nil` as "use the default" and an allocated-but-empty slice as "apply
   nothing", which is how you drop a default instead of overriding it.
@@ -482,6 +483,44 @@ The two state defaults used to be the other way round — the selected chip was
 the quiet one — which read as an inverted filter row and is the one thing that
 has changed here. `SelectedStyle: {Surface fill, Primary ink}` plus
 `UnselectedStyle: []core.StyleProp{}` restores it.
+
+### Prominence: quiet or loud
+
+Which state is louder is settled — the selected one — and that is not what
+this field touches. *How much* quieter the other one is has two right answers:
+
+| | |
+|---|---|
+| `ProminenceQuiet` (zero) | Surface fill, `TextPrimary` ink, hairline rule. Right for a **filter** row, which is chrome above the content it filters: a loud row of years competes with the archive it is filtering. |
+| `ProminenceLoud` | The chip's accent as ink and as a 1px rule over a transparent fill — the outlined treatment. Right for a row of **suggestions** the reader is meant to reach into: grey pills over an empty amount field do not read as "tap one of these". |
+
+```go
+components.Chip{Label: "$25", Prominence: components.ProminenceLoud,
+    Selected: cents == 2500, OnTap: func() { set(2500) }}
+```
+
+Material draws the same distinction (filter chip vs. suggestion chip) with a
+different default prominence for each.
+
+Loud is **not** the pre-inversion look. That one gave every unselected chip a
+solid fill and left the chosen one pale; here the fill is transparent, so the
+selected chip is still the only solid pill in the row.
+
+The accent is the theme's own `Components.Button` background — the fill the
+selected chip paints — so the outline and what it becomes when tapped are the
+same hue on any theme. A theme with no Button fill falls back to
+`Colors.Primary`. Legibility over a transparent fill is the palette's, exactly
+as it is for an outlined [`Button`](#button) — and the numbers are that
+widget's `default` row, since it is the same colour on the same backdrop:
+**4.02:1** under `DefaultTheme` (`#007AFF` on white), **7.63:1** under
+`MaterialTheme`. Only the second clears WCAG AA at the theme's Button font
+size, so a screen leaning on loud chips under a `DefaultTheme`-like palette
+should override `TextColor` through `UnselectedStyle`.
+
+`UnselectedStyle` wins where both are set — it replaces the treatment,
+`Prominence` picks between them. And because `SegmentedControl.Segment` is a
+whole `Chip`, `Segment: components.Chip{Prominence: components.ProminenceLoud}`
+carries it to every segment.
 
 The todoapp filter bar is built on Chip; `examples/todoapp/chip_migration_test.go`
 pins its rendered HTML against the same bar written out by hand — the pattern

@@ -182,3 +182,127 @@ func TestChipNilOnTapDoesNotPanic(t *testing.T) {
 		t.Fatalf("tapping a chip with no OnTap panicked: %v", err.Value)
 	}
 }
+
+// ProminenceLoud draws the unselected chip as an outline in the chip's own
+// accent — the fill the selected state paints — rather than in a Surface grey.
+//
+// The half worth pinning is that it is *not* a return to the pre-inversion
+// look: that one painted every unselected chip a solid fill and left the
+// chosen one pale. Here the fill is transparent, so the selected chip is still
+// the only solid pill in the row, and a row of suggestions is exactly the
+// shape that would hide a quiet slide back.
+func TestChipProminenceLoudIsAnOutlineNotAFill(t *testing.T) {
+	ctx := core.NewContext()
+	ctx.BeginRenderPass()
+
+	theme := core.DefaultTheme
+	accent := theme.Components.Button.Background
+
+	c := Chip{Label: "$25", Prominence: ProminenceLoud, OnTap: func() {}}
+	unselected := c.Render(ctx)
+	c.Selected = true
+	selected := c.Render(ctx)
+
+	if unselected.Style.Background != ColorTransparent {
+		t.Errorf("loud unselected fill = %q, want the transparent hole %q",
+			unselected.Style.Background, ColorTransparent)
+	}
+	if unselected.Style.TextColor != accent || unselected.Style.BorderColor != accent {
+		t.Errorf("loud unselected ink/rule = %q/%q, want the chip's accent %q",
+			unselected.Style.TextColor, unselected.Style.BorderColor, accent)
+	}
+	if unselected.Style.BorderWidth != 1 {
+		t.Errorf("loud unselected rule width = %v, want 1", unselected.Style.BorderWidth)
+	}
+
+	// The selected chip is untouched by the field: it is the theme's Button
+	// base in both prominences, and it has to stay the loudest thing here.
+	if selected.Style.Background != accent {
+		t.Errorf("loud selected background = %q, want the Button base %q — Prominence "+
+			"must not reach the selected state", selected.Style.Background, accent)
+	}
+	if selected.Style.TextColor != theme.Components.Button.TextColor {
+		t.Errorf("loud selected ink = %q, want the Button base %q",
+			selected.Style.TextColor, theme.Components.Button.TextColor)
+	}
+}
+
+// The zero value is the quiet state, so adding the field restyles nothing that
+// already exists. Pinned against the quiet chip rendered beside it rather than
+// against a copy of the palette, so the two can only agree.
+func TestChipProminenceZeroValueIsTheQuietDefault(t *testing.T) {
+	ctx := core.NewContext()
+	ctx.BeginRenderPass()
+
+	implicit := Chip{Label: "2024"}.Render(ctx)
+	explicit := Chip{Label: "2024", Prominence: ProminenceQuiet}.Render(ctx)
+
+	if implicit.Style.Background != explicit.Style.Background ||
+		implicit.Style.TextColor != explicit.Style.TextColor ||
+		implicit.Style.BorderColor != explicit.Style.BorderColor {
+		t.Errorf("the zero Prominence should be the quiet default: %+v vs %+v",
+			implicit.Style, explicit.Style)
+	}
+	if implicit.Style.Background != core.DefaultTheme.Colors.Surface {
+		t.Errorf("quiet fill = %q, want theme Surface", implicit.Style.Background)
+	}
+}
+
+// UnselectedStyle is the more specific of the two knobs and is reached first;
+// otherwise a caller who set both would find the override unreachable.
+func TestChipUnselectedStyleBeatsProminence(t *testing.T) {
+	ctx := core.NewContext()
+	ctx.BeginRenderPass()
+
+	n := Chip{
+		Label:           "$25",
+		Prominence:      ProminenceLoud,
+		UnselectedStyle: []core.StyleProp{core.BackgroundColor("#FFF8E1")},
+	}.Render(ctx)
+
+	if n.Style.Background != "#FFF8E1" {
+		t.Errorf("background = %q, want the explicit override to win over Prominence",
+			n.Style.Background)
+	}
+	if n.Style.BorderWidth != 0 {
+		t.Error("an override replaces the whole treatment, the loud rule included")
+	}
+}
+
+// A theme whose Button base carries no fill has no accent to read, and the
+// fallback here is the palette's Primary rather than chipRing's transparent:
+// this colour is ink and a visible rule, and transparent ink is an invisible
+// chip.
+func TestChipProminenceLoudFallsBackToPrimaryWithoutAButtonFill(t *testing.T) {
+	fillless := &core.Theme{Colors: core.DefaultTheme.Colors}
+	ctx := core.NewContext().WithTheme(fillless)
+	ctx.BeginRenderPass()
+
+	n := Chip{Label: "$25", Prominence: ProminenceLoud}.Render(ctx)
+
+	want := fillless.Colors.Primary
+	if n.Style.TextColor != want || n.Style.BorderColor != want {
+		t.Errorf("ink/rule = %q/%q, want the palette's Primary %q",
+			n.Style.TextColor, n.Style.BorderColor, want)
+	}
+}
+
+// Style still applies to both states and still loses to the treatment, loud
+// included — the rule the widget already holds for the quiet default.
+func TestChipLoudTreatmentBeatsSharedStyle(t *testing.T) {
+	ctx := core.NewContext()
+	ctx.BeginRenderPass()
+
+	n := Chip{
+		Label:      "$25",
+		Prominence: ProminenceLoud,
+		Style:      []core.StyleProp{core.BackgroundColor("#123456"), core.FontSize(13)},
+	}.Render(ctx)
+
+	if n.Style.Background != ColorTransparent {
+		t.Errorf("background = %q, want the loud treatment to win over Style", n.Style.Background)
+	}
+	if n.Style.FontSize != 13 {
+		t.Error("Style's non-colliding fields should still survive")
+	}
+}

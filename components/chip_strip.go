@@ -21,6 +21,12 @@ import "github.com/rohanthewiz/grmob/core"
 // chip configured here is configured exactly as a chip configured anywhere,
 // and a caller who needs one of Chip's knobs already has it.
 //
+// That rule is also why there is no strip-level Prominence, tempting though a
+// loud strip is to ask for: it would be a second place to configure a chip,
+// and every field added there is one Chip and ChipStrip then have to keep in
+// step. A strip whose chips are all loud sets the field where the chips are
+// built, which is the same loop that already sets Label and Selected.
+//
 // # ChipStrip is not SegmentedControl
 //
 // SegmentedControl is one-of-N: a fixed, exhaustive set where exactly one
