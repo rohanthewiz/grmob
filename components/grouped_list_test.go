@@ -131,6 +131,71 @@ func TestGroupedListEmptyStateKeepsFooter(t *testing.T) {
 	}
 }
 
+// The counts on an append-paged list: every closed group carries one, the
+// open one at the tail does not.
+//
+// This is the case a server-paged feed hits on every render — the trailing
+// run is only as long as the pages loaded so far — so it is worth pinning
+// that the badge disappears from exactly one header and that the rest are
+// untouched.
+func TestGroupedListHidesOnlyTheTrailingCountWhenMoreMayFollow(t *testing.T) {
+	ctx := core.NewContext()
+	ctx.BeginRenderPass()
+	list := GroupedList[sermon]{
+		Items: sermons, Key: sermonKey, Row: sermonRow, GroupBy: byMonth,
+		HideTrailingCount: true,
+	}
+	n := list.Render(ctx)
+
+	// Headers are children 0, 3 and 5 (see the key sequence above): counts 2,
+	// 1 and 2. The last group is open, so its badge is gone and its label
+	// stands alone.
+	headers := []struct {
+		child int
+		count string
+	}{{0, "2"}, {3, "1"}}
+	for _, h := range headers {
+		if findText(n.Children[h.child], h.count) == nil {
+			t.Errorf("closed group header %d lost its count badge %q", h.child, h.count)
+		}
+	}
+	trailing := n.Children[5]
+	if findText(trailing, "Month 2025-11") == nil {
+		t.Fatalf("child 5 is not the trailing header: %+v", trailing)
+	}
+	if findText(trailing, "2") != nil {
+		t.Error("the open trailing group published a count the next page can invalidate")
+	}
+
+	// The flag off is the complete-list case: every group counts, including
+	// the last.
+	ctx.EndRenderPass()
+	ctx.BeginRenderPass()
+	list.HideTrailingCount = false
+	if findText(list.Render(ctx).Children[5], "2") == nil {
+		t.Error("with nothing more to load the trailing group should carry its count")
+	}
+}
+
+// A Header override is handed the Group untouched, trailing or not: the
+// widget cannot reach inside a view the caller built, so the caller owns the
+// decision. Pinned because the alternative — zeroing Count for the trailing
+// run — would silently make an override print "0".
+func TestGroupedListTrailingCountLeavesAHeaderOverrideAlone(t *testing.T) {
+	ctx := core.NewContext()
+	ctx.BeginRenderPass()
+	n := GroupedList[sermon]{
+		Items: sermons, Key: sermonKey, Row: sermonRow, GroupBy: byMonth,
+		HideTrailingCount: true,
+		Header: func(g Group) core.View {
+			return core.Text(g.Label + " has " + itoa(g.Count))
+		},
+	}.Render(ctx)
+	if findText(n, "Month 2025-11 has 2") == nil {
+		t.Error("an override should still see the trailing group's real Count")
+	}
+}
+
 func TestGroupedListHeaderOverride(t *testing.T) {
 	ctx := core.NewContext()
 	ctx.BeginRenderPass()

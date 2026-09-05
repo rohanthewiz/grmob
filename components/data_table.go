@@ -94,10 +94,16 @@ type DataTable[T any] struct {
 	// keys (see GroupedList for the trade-off).
 	Key func(T) string
 
-	// GroupBy and Header work as in GroupedList; a group header spans the
-	// full row.
-	GroupBy func(T) Group
-	Header  func(Group) core.View
+	// GroupBy, Header and HideTrailingCount work as in GroupedList; a group
+	// header spans the full row.
+	//
+	// HideTrailingCount is for the same case there and here: a table fed by
+	// an append-style pager, whose last group can still grow. It has no work
+	// to do for a table that paginates through Pagination, where every page
+	// shows a complete slice of rows the table already holds.
+	GroupBy           func(T) Group
+	Header            func(Group) core.View
+	HideTrailingCount bool
 
 	// Sort is the active sort, nil for none. OnSort receives the requested
 	// sort when a sortable header is tapped: the same column toggles
@@ -170,7 +176,7 @@ func (d DataTable[T]) Render(ctx *core.Context) *core.Node {
 	default:
 		body = appendRows(ctx, body, rows, d.Key,
 			func(row T) core.View { return d.cellRow(t, cols, row) },
-			d.GroupBy, d.Header, d.Dividers, d.wrapRow)
+			d.GroupBy, d.Header, d.HideTrailingCount, d.Dividers, d.wrapRow)
 	}
 	items = append(items, core.List(body...))
 

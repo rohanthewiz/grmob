@@ -175,6 +175,41 @@ func TestDataTableServerSidePagingLeavesRowsAlone(t *testing.T) {
 	}
 }
 
+// The trailing group's count is suppressed here for the same reason as in
+// GroupedList: a table fed by an append-style pager holds only the rows
+// loaded so far, so its last run is still open. Pinned separately because
+// DataTable reaches appendRows down a different path (its own cell renderer
+// and row wrapper), and a dropped argument there would go unnoticed.
+func TestDataTableHidesTheTrailingCountWhenMoreMayFollow(t *testing.T) {
+	ctx := core.NewContext()
+	ctx.BeginRenderPass()
+	table := DataTable[sermon]{
+		Columns: sermonColumns, Rows: sermons, Key: sermonKey, GroupBy: byMonth,
+		HideTrailingCount: true,
+	}
+	_, body := tableParts(t, table.Render(ctx))
+
+	// Body children: header, 2 rows, header, 1 row, header, 2 rows.
+	if findText(body.Children[0], "2") == nil {
+		t.Error("a closed group header lost its count badge")
+	}
+	trailing := body.Children[5]
+	if findText(trailing, "Month 2025-11") == nil {
+		t.Fatalf("child 5 is not the trailing header: %+v", trailing)
+	}
+	if findText(trailing, "2") != nil {
+		t.Error("the open trailing group published a count the next page can invalidate")
+	}
+
+	ctx.EndRenderPass()
+	ctx.BeginRenderPass()
+	table.HideTrailingCount = false
+	_, body = tableParts(t, table.Render(ctx))
+	if findText(body.Children[5], "2") == nil {
+		t.Error("with nothing more to load the trailing group should carry its count")
+	}
+}
+
 func TestDataTableRowTapSelectionGroupingAndStates(t *testing.T) {
 	ctx := core.NewContext()
 	ctx.BeginRenderPass()

@@ -60,6 +60,30 @@ type GroupedList[T any] struct {
 	// Header overrides the default GroupHeader for each group.
 	Header func(Group) core.View
 
+	// HideTrailingCount drops the count badge from the *last* group's
+	// header. Set it from a pager's "there is more" flag.
+	//
+	// A group's Count counts the rows the list was handed, which under an
+	// append-style pager means "the rows loaded so far". Every group but the
+	// last is closed — the next group's first row ended it — so its count is
+	// final. The last one is still open: the next page can extend it, and a
+	// header that says "June 2026 (1)" above a run about to become four is
+	// not a stale number, it is a wrong one, and it changes under the reader
+	// on a tap they did not think was a question about June.
+	//
+	//	HideTrailingCount: pager.HasMore
+	//
+	// So the trailing header shows its label alone until the feed is
+	// exhausted, at which point the flag goes false and the count appears.
+	// The header keeps its key across that, so the reconciler patches the
+	// badge in rather than replacing the band.
+	//
+	// This is only about the default GroupHeader. A Header override is handed
+	// the Group unchanged — its Count included — and owns the decision
+	// itself; there is no way for the widget to reach inside a view the
+	// caller built.
+	HideTrailingCount bool
+
 	// Dividers inserts a theme hairline between consecutive rows of a group
 	// (not after the last row, where the next header or the footer follows).
 	Dividers bool
@@ -93,7 +117,8 @@ func (g GroupedList[T]) Render(ctx *core.Context) *core.Node {
 			items = append(items, g.Empty)
 		}
 	} else {
-		items = appendRows(ctx, items, g.Items, g.Key, g.Row, g.GroupBy, g.Header, g.Dividers, nil)
+		items = appendRows(ctx, items, g.Items, g.Key, g.Row,
+			g.GroupBy, g.Header, g.HideTrailingCount, g.Dividers, nil)
 	}
 
 	if g.Footer != nil {
@@ -108,6 +133,8 @@ func (g GroupedList[T]) Render(ctx *core.Context) *core.Node {
 // takes the row renderer as a function and an optional group-header
 // override. wrap, when non-nil, decorates each rendered row (DataTable uses
 // it for tap handling and selection tint); a nil wrap emits the row as-is.
+// hideTrailingCount suppresses the last run's count badge; see
+// GroupedList.HideTrailingCount for why an open run must not publish one.
 func appendRows[T any](
 	ctx *core.Context,
 	items []core.PropsAndChildren,
@@ -116,6 +143,7 @@ func appendRows[T any](
 	row func(T) core.View,
 	groupBy func(T) Group,
 	header func(Group) core.View,
+	hideTrailingCount bool,
 	dividers bool,
 	wrap func(T, core.View) core.View,
 ) []core.PropsAndChildren {
@@ -144,12 +172,18 @@ func appendRows[T any](
 		}
 		return items
 	}
-	for _, run := range runs {
+	// ri, not i: the row loop below indexes rows and would shadow it.
+	for ri, run := range runs {
 		var h core.View
 		if header != nil {
+			// An override owns its own counting: the Group goes through
+			// untouched, trailing or not.
 			h = header(run.Group)
 		} else {
-			h = GroupHeader{Group: run.Group}
+			h = GroupHeader{
+				Group:     run.Group,
+				HideCount: hideTrailingCount && ri == len(runs)-1,
+			}
 		}
 		items = append(items, core.Keyed(groupHeaderKey(run.Group), h))
 		for i := run.Start; i < run.End; i++ {

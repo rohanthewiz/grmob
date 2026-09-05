@@ -642,6 +642,11 @@ func lessonCollections() Lesson {
 						Trailing: caption(e.date.Format("Jan 2")),
 					}
 				},
+				// The last month on screen is only as long as the pages
+				// loaded so far, so its count stays hidden until the archive
+				// is complete. Tap Load more and watch the number appear on
+				// the band that was open.
+				HideTrailingCount: shown.Get() < len(archive),
 				Footer: components.LoadMore{
 					HasMore:    shown.Get() < len(archive),
 					OnLoadMore: func() { shown.Set(shown.Get() + loadMorePageSize) },
@@ -702,10 +707,17 @@ func lessonCollections() Lesson {
             Label: e.Date.Format("January 2006")}
     },
     Row:    func(e Entry) core.View { return entryRow(e) },
+    HideTrailingCount: pager.HasMore,
     Footer: components.LoadMore{
         HasMore: pager.HasMore, Loading: pager.Loading,
         Err: pager.Err, OnLoadMore: pager.LoadMore},
 }`),
+				prose("The header's count counts the rows the widget was handed. Under a pager "+
+					"that is \"the rows loaded so far\", and every group but the last is closed — "+
+					"the next group's first row ended it — so only the last one's number is "+
+					"provisional. HideTrailingCount suppresses that one badge while more pages "+
+					"exist, so no count on screen is ever wrong; the header keeps its key across "+
+					"the change, so the badge is patched in rather than the band replaced."),
 				demoPanel("Load more reveals three rows at a time; the tail disappears when the archive is complete.",
 					grouped,
 				),
@@ -713,6 +725,7 @@ func lessonCollections() Lesson {
 					"Both widgets are hook-free and fully controlled: Sort, Page and Compact live in your state; OnSort and OnChange report intent.",
 					"Sort, then page, then group — a client-side page's headers agree with its rows, and group runs follow the sort.",
 					"Grouping is by run, not by bucket: sorted input yields one header per group; an append-only pager never moves an earlier header.",
+					"HideTrailingCount hides the last group's badge while a pager has more to fetch: a closed group's count is final, an open one's is a number about to change.",
 					"LoadMore is the four-state tail every paged screen hand-rolls: nothing, Load more, Loading…, or the error with Retry — Loading wins over Err, Err over HasMore.",
 					"Key must be unique across the list and stable across renders; core.List keeps row state attached to it through reorders.",
 				),
