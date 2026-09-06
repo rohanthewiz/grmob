@@ -81,6 +81,14 @@ func TestFormFieldRequiredMarker(t *testing.T) {
 	if marker.Style.AccessibilityLabel != "required" {
 		t.Errorf("marker accessibility label = %q, want %q", marker.Style.AccessibilityLabel, "required")
 	}
+	// `img`, not the `group` a named node is otherwise given: the marker is a
+	// glyph standing in for a word, so the label has to be announced *instead
+	// of* the asterisk rather than alongside it.
+	if marker.Style.AccessibilityRole != core.RoleImg {
+		t.Errorf("marker role = %q, want %q — a `group` invites a reader to "+
+			"announce the label and then the character it was replacing",
+			marker.Style.AccessibilityRole, core.RoleImg)
+	}
 
 	// The label keeps its own ink — the marker is the only thing in the error
 	// color, since a required field is not a field in error.

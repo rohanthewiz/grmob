@@ -76,19 +76,19 @@ func TestRuntimeCompositeRolesMatchCore(t *testing.T) {
 		}
 	}
 
-	// The default-orientation table has to name the same containers, or a
-	// composite whose axis nothing set falls through to `undefined` and takes
-	// the horizontal arrows whatever it is.
-	orient := regexp.MustCompile(`const COMPOSITE_DEFAULT_VERTICAL = \{([^}]*)\};`)
-	om := orient.FindStringSubmatch(src)
-	if om == nil {
-		t.Fatal("grmob-runtime.js: no COMPOSITE_DEFAULT_VERTICAL object literal")
-	}
+	// Every composite must also be an *oriented* role, because that is where
+	// the arrow pair now comes from: compositeIsVertical reads aria-orientation
+	// off the container and falls back to ARIA_ORIENTATIONS, so a container
+	// role missing from that table would take the horizontal arrows by accident
+	// rather than by decision. The table's own contents are held against Go by
+	// TestRuntimeOrientationTableMatchesGo in orientation_test.go; what is
+	// checked here is only that the two tables cover the same containers.
 	for _, want := range compositeRoles {
-		if !strings.Contains(om[1], string(want.container)+":") {
-			t.Errorf("COMPOSITE_DEFAULT_VERTICAL has no row for %q — a container of "+
-				"that role whose axis nothing set gets the horizontal arrows by "+
-				"accident rather than by decision", want.container)
+		if _, ok := htmlout.AriaOrientationDefaults()[string(want.container)]; !ok {
+			t.Errorf("core.Role %q has a keyboard pattern but no aria-orientation "+
+				"default — a container of that role whose axis nothing set would "+
+				"take the horizontal arrows by accident, and would announce nothing",
+				want.container)
 		}
 	}
 }
@@ -132,5 +132,71 @@ func TestTheStaticExportWritesNoRovingTabindex(t *testing.T) {
 				t.Errorf("htmlout dropped %s from a %s:\n%s", want, pair.container, out)
 			}
 		}
+	}
+}
+
+// Typeahead: the half of ARIA's listbox keyboard that makes a long one usable,
+// and the one piece of state this whole section owns.
+//
+// keynav_test.mjs holds the behaviour. What is pinned from Go is the two things
+// that are decisions rather than mechanics, because both are silent when
+// undone: which composites have a search at all, and that the buffer is not
+// held by a timer.
+func TestTheTypeaheadIsScopedAndUntimered(t *testing.T) {
+	src := runtimeSource(t)
+	for _, want := range []struct{ expr, why string }{
+		{`const COMPOSITE_TYPEAHEAD = new Set(["listbox"]);`,
+			"a listbox and not a tablist, which is ARIA's own division: type-to-jump is " +
+				"part of the listbox pattern because a listbox can be a hundred options " +
+				"long, and is not part of the tab pattern because a strip's members are " +
+				"all on screen"},
+		{`const typeahead = { container: null, text: "", at: 0 };`,
+			"one buffer, not one per widget. Only one thing has focus at a time, so a " +
+				"second widget's buffer could never be the live one — and the container " +
+				"is recorded beside the text so a keystroke elsewhere starts over"},
+		{`now - typeahead.at > TYPEAHEAD_RESET_MS`,
+			"expiry checked on the next keystroke rather than driven by a timer. A " +
+				"setTimeout would need cancelling on unmount, and a widget removed by a " +
+				"patch has no unmount hook to cancel it from"},
+		{`const repeated = /^(.)\1*$/.test(typeahead.text);`,
+			`ARIA's two search modes, which are one rule: "sss" is the third press of s ` +
+				`and cycles, where "seq" is a query that refines`},
+	} {
+		if !strings.Contains(src, want.expr) {
+			t.Errorf("grmob-runtime.js: %q not found — %s", want.expr, want.why)
+		}
+	}
+
+	// The name walk descends to the leaves rather than reading textContent at
+	// each level, and this is pinned from Go because keynav_test.mjs *cannot*
+	// tell the two apart: dom.mjs stores textContent on leaves only, so a
+	// container answers "" and a per-level read adds nothing there. In a
+	// browser it concatenates every descendant's text, and the same code would
+	// count a member's words once per ancestor — so "Sermons" inside two
+	// wrappers matches "sermons sermons sermons" and nothing else.
+	//
+	// This is item-22 shaped: the shim models enough for everything the roving
+	// tabindex does and is not a browser, and where the difference matters the
+	// check has to be a pin rather than a behaviour.
+	if !strings.Contains(src, `        if (el.children.length === 0) {
+            if (el.textContent) out.push(el.textContent);
+            return out;
+        }`) {
+		t.Error("memberText no longer descends to the leaves. Reading textContent at " +
+			"each level is the obvious rewrite and is wrong in a browser, where it " +
+			"concatenates every descendant — the harness DOM cannot tell, which is " +
+			"why this is asserted here rather than in keynav_test.mjs")
+	}
+
+	// A timer would be the natural implementation and is the thing this must
+	// not become, so the absence is asserted rather than left to the comment.
+	// The search is bounded to the typeahead's own source, since the runtime
+	// uses setTimeout legitimately elsewhere (the long-press timer).
+	body := src[strings.Index(src, "function compositeTypeahead("):]
+	body = body[:strings.Index(body, "\n    }")]
+	if strings.Contains(body, "setTimeout") {
+		t.Error("compositeTypeahead has grown a timer. Expiry is checked on the next " +
+			"keystroke because that is the only moment it can matter, and because a " +
+			"timer outlives the widget that started it")
 	}
 }

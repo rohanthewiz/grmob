@@ -22,6 +22,16 @@ struct GrMobStyle: Equatable {
         }
     }
 
+    /// Go's core.ValueRange: where a valued control sits inside its range.
+    ///
+    /// The three numbers are carried as the strings they arrive as, unparsed,
+    /// and that is the shape of what this platform can do with them rather
+    /// than laziness — see grMobValueText for the whole argument. `text` is
+    /// the member with somewhere to go.
+    struct ValueRange: Equatable {
+        var now = "", min = "", max = "", text = ""
+    }
+
     var fontSize: CGFloat = 0
     var fontWeight: Int = 0
     var textColor: Color?
@@ -86,6 +96,10 @@ struct GrMobStyle: Equatable {
     /// Go's core.SelectedState, verbatim: "true", "false", or "" for a node
     /// that makes no claim. Mapped to a trait by grMobSelectedTrait below.
     var accessibilitySelected: String = ""
+    /// Go's core.ValueRange, verbatim: where a valued control sits inside its
+    /// range. Only `text` is read — see grMobValueText below and the note on
+    /// the three numbers this platform cannot say.
+    var accessibilityValue: ValueRange = ValueRange()
     /// Platform disabled state; see Go's core.Style.Disabled.
     var disabled: Bool = false
     var transition: String = ""
@@ -175,9 +189,20 @@ struct GrMobStyle: Equatable {
         s.accessibilityRole = str("AccessibilityRole")
         s.accessibilityHeadingLevel = int("AccessibilityHeadingLevel")
         s.accessibilitySelected = str("AccessibilitySelected")
+        s.accessibilityValue = parseValueRange(obj["AccessibilityValue"] as? [String: Any])
         s.disabled = obj["Disabled"] as? Bool ?? false
         s.transition = str("Transition")
         return s
+    }
+
+    /// Go's core.ValueRange. Absent and all-empty both mean "not a valued
+    /// control": the first is a Style that never set one, the second is one
+    /// whose range went back to its zero value.
+    private static func parseValueRange(_ obj: [String: Any]?) -> ValueRange {
+        guard let obj else { return ValueRange() }
+        func str(_ key: String) -> String { obj[key] as? String ?? "" }
+        return ValueRange(now: str("Now"), min: str("Min"),
+                          max: str("Max"), text: str("Text"))
     }
 
     /// Go's EdgeInsets carries per-side values plus Horizontal/Vertical
@@ -395,6 +420,7 @@ extension View {
             .disabled(s?.disabled ?? false)
             .grMobAccessibility(s)
             .grMobRole(s)
+            .grMobValueText(s)
             .grMobTransition(s)
     }
 
@@ -473,6 +499,51 @@ extension View {
             .union(grMobSelectedTrait(s.accessibilitySelected))
         return accessibilityAddTraits(traits)
             .accessibilityHeading(grMobHeadingLevel(s))
+    }
+
+    /// The spoken form of a valued control's position, as the accessibility
+    /// value.
+    ///
+    /// # The one member of core.ValueRange this platform can say
+    ///
+    /// Go carries four: three numbers and the words. SwiftUI has no numeric
+    /// accessibility value — `accessibilityValue` takes a Text and nothing
+    /// else, and there is no trait, no ProgressBarRangeInfo, no equivalent of
+    /// the range Compose gets — so `now`, `min` and `max` cross the bridge,
+    /// are parsed into the struct so a reader of GrMobStyle can see they
+    /// arrived, and reach no view modifier. mobile/verify/value_test.go pins
+    /// that they do not.
+    ///
+    /// Turning them into a string here is the move this file has already
+    /// turned down twice, for AccessibilityExpanded and for the `, selected`
+    /// suffix components.Chip used to append: a renderer that emits "45
+    /// percent" is inventing English for every app in every locale, and the
+    /// value slot belongs to the app besides.
+    ///
+    /// `text` is different in exactly that respect and that is why it is here.
+    /// The words are the app's own — the same channel accessibilityLabel and
+    /// accessibilityHint already ride — so passing them through invents
+    /// nothing. It is also, incidentally, the value slot the
+    /// AccessibilityExpanded note below says the framework has no room for: an
+    /// app that wants VoiceOver to hear "expanded" can now say so in its own
+    /// words, in its own language, which is a different thing from this
+    /// renderer deciding to.
+    ///
+    /// # Unguarded by the role, as the selection is
+    ///
+    /// VoiceOver announces an accessibility value on any element, so scoping
+    /// this to `progressbar` the way the two web exporters must would drop a
+    /// value this platform would otherwise have spoken. ARIA is the strict one
+    /// here; the framework is not stricter than the platform it is addressing.
+    ///
+    /// Hidden wins, as it does over the role and the traits: a pruned subtree
+    /// has no element for a value to belong to. Applied unconditionally
+    /// because an empty string is the identity case — accessibilityValue("")
+    /// leaves the announcement alone — which keeps this off grMobBox's
+    /// opaque-type tower, the same reason grMobRole is written the way it is.
+    fileprivate func grMobValueText(_ s: GrMobStyle?) -> some View {
+        let text = (s?.accessibilityHidden ?? true) ? "" : s?.accessibilityValue.text ?? ""
+        return accessibilityValue(Text(text))
     }
 
     /// Conditional label for the Image "alt" fallback (internal because the
@@ -646,7 +717,7 @@ private func RoundedCornerShapeIfAny(radius: CGFloat) -> RoundedRectangle? {
 
 /// Maps one core.Role onto SwiftUI accessibility traits.
 ///
-/// Seven of the twenty roles land on a trait; the other thirteen are spelled out
+/// Seven of the twenty-five roles land on a trait; the other eighteen are spelled out
 /// anyway. SwiftUI's AccessibilityTraits is a small set about *controls* —
 /// button, link, image, search field, header — and has no landmarks at all
 /// (VoiceOver's rotor navigates by heading, not by banner) and no tabular
@@ -762,6 +833,13 @@ private func grMobTraitsFor(_ role: String) -> AccessibilityTraits {
     // grMobSelectedTrait adds — which is the part of "tab 2 of 3" VoiceOver
     // can actually be told here.
     case "tab": []
+    // The region a tab shows. No trait, and little lost: what makes a tabpanel
+    // announce as one on the web is being pointed at by an aria-controls, and
+    // VoiceOver moves by swiping to the next element rather than by following
+    // a reference — the same reason the IDREF pair above is unparsed. A
+    // core.TabView announces correctly here regardless, through the bar
+    // Renderer.swift draws.
+    case "tabpanel": []
     // No SwiftUI trait names these.
     case "table", "rowgroup", "row", "cell": []
     case "list", "listitem": []
@@ -772,6 +850,13 @@ private func grMobTraitsFor(_ role: String) -> AccessibilityTraits {
     // word for what the choice is among — which VoiceOver, navigating by
     // swipe rather than by arrow key, does not use the way a browser does.
     case "listbox", "option": []
+    // A progress bar. No trait names one, and — unlike `tab` above, whose
+    // state VoiceOver can at least be told — there is nothing this platform
+    // can be told about the position either: `accessibilityValue` takes a
+    // string and SwiftUI has no numeric equivalent of Compose's
+    // ProgressBarRangeInfo. So the whole announcement here is whatever words
+    // the app put in core.ValueRange.Text; see grMobValueText.
+    case "progressbar": []
     case "banner", "navigation", "toolbar": []
     // Nor these: SwiftUI announces a change through
     // AccessibilityNotification, which is an imperative call at the moment of

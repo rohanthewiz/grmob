@@ -605,3 +605,209 @@ test("an id and an aria-controls cross verbatim, in both directions", () => {
     assert.equal(at(0).getAttribute("id"), null);
     assert.equal(at(0).getAttribute("aria-controls"), null);
 });
+
+// --------------------------------------------------------------------------
+// aria-orientation
+// --------------------------------------------------------------------------
+//
+// The one attribute here whose absence was a *behavioural* divergence rather
+// than a silence. The runtime read a composite's flex axis to pick its arrow
+// pair and wrote nothing down, so a tablist laid out as a Column took Up/Down
+// while a reader in browse mode was told — by ARIA's horizontal default for a
+// tablist — that it ran the other way. Writing it is also what lets
+// compositeIsVertical read the answer back instead of deriving it a second
+// time; keynav_test.mjs holds the keyboard half.
+
+test("a composite announces the axis it is laid out along", () => {
+    const { at } = mount([
+        { Type: "Row", Style: { AccessibilityRole: "tablist" } },
+        { Type: "Column", Style: { AccessibilityRole: "tablist" } },
+        { Type: "Column", Style: { AccessibilityRole: "listbox" } },
+        { Type: "Row", Style: { AccessibilityRole: "listbox" } },
+    ]);
+
+    assert.equal(at(0).getAttribute("aria-orientation"), "horizontal");
+    // The two that used to be silently wrong: each is laid out against its
+    // role's ARIA default, which is exactly when the attribute earns its place.
+    assert.equal(at(1).getAttribute("aria-orientation"), "vertical");
+    assert.equal(at(2).getAttribute("aria-orientation"), "vertical");
+    assert.equal(at(3).getAttribute("aria-orientation"), "horizontal");
+});
+
+test("an explicit direction beats the node type's own axis", () => {
+    // The same resolution styleFromGrMob uses for the CSS declaration, which
+    // is what keeps the attribute from ever contradicting the layout.
+    const { at } = mount([{
+        Type: "Row",
+        Style: { AccessibilityRole: "tablist", FlexDirection: "column-reverse" },
+    }]);
+
+    assert.equal(at(0).getAttribute("aria-orientation"), "vertical");
+    assert.equal(at(0).style.flexDirection, "column-reverse");
+});
+
+test("a role on a node type that is not a stack falls back to ARIA's default", () => {
+    // The one shape with no axis to read. A Text is not a flex container, so
+    // stackAxisFor answers "" and the role's own default is the honest answer.
+    const { at } = mount([
+        { Type: "Text", Props: { content: "x" }, Style: { AccessibilityRole: "listbox" } },
+        { Type: "Text", Props: { content: "x" }, Style: { AccessibilityRole: "tablist" } },
+    ]);
+
+    assert.equal(at(0).getAttribute("aria-orientation"), "vertical");
+    assert.equal(at(1).getAttribute("aria-orientation"), "horizontal");
+});
+
+test("a toolbar takes the announcement and no keyboard", () => {
+    // ARIA defines aria-orientation for toolbar, and the runtime's
+    // COMPOSITE_MEMBERS deliberately does not carry it — a toolbar's members
+    // are not named by its role the way an option and a tab are. So the axis
+    // is announced and no tab stop moves.
+    const { at } = mount([{
+        Type: "Column",
+        Style: { AccessibilityRole: "toolbar" },
+        Children: [{ Type: "Box", Style: { AccessibilityRole: "button" } }],
+    }]);
+
+    assert.equal(at(0).getAttribute("aria-orientation"), "vertical");
+    assert.equal(at(0).children[0].getAttribute("tabindex"), null);
+});
+
+test("a role that is not oriented writes nothing", () => {
+    // ARIA scopes the attribute, and a `list` or a `group` claiming an axis
+    // would be describing something that has none.
+    const { at } = mount([
+        { Type: "Column", Style: { AccessibilityRole: "list" } },
+        { Type: "Row", Style: { AccessibilityRole: "group", AccessibilityLabel: "Filters" } },
+        { Type: "Column", Style: {} },
+    ]);
+
+    assert.equal(at(0).getAttribute("aria-orientation"), null);
+    assert.equal(at(1).getAttribute("aria-orientation"), null);
+    assert.equal(at(2).getAttribute("aria-orientation"), null);
+});
+
+test("an orientation that stops applying takes its attribute with it", () => {
+    // Total, like every attribute in applyAccessibility: a role that goes away
+    // must not leave an axis claim standing on a plain div.
+    const { rt, at } = mount([{
+        Type: "Column",
+        Style: { AccessibilityRole: "listbox" },
+    }]);
+    assert.equal(at(0).getAttribute("aria-orientation"), "vertical");
+
+    rt.GrMob.patch(JSON.stringify([{
+        Type: "update-style",
+        TargetID: "root/0",
+        Changes: { AccessibilityRole: "list" },
+    }]));
+    rt.drainFrames();
+
+    assert.equal(at(0).getAttribute("aria-orientation"), null);
+});
+
+test("aria-hidden beats the orientation too", () => {
+    const { at } = mount([{
+        Type: "Column",
+        Style: { AccessibilityRole: "listbox", AccessibilityHidden: true },
+    }]);
+
+    assert.equal(at(0).getAttribute("aria-orientation"), null);
+    assert.equal(at(0).getAttribute("aria-hidden"), "true");
+});
+
+// --------------------------------------------------------------------------
+// aria-value*
+// --------------------------------------------------------------------------
+//
+// core.ValueRange, the fourth accessibility state and the first that is four
+// attributes at once. What it closes: components.ProgressBar had nowhere to put
+// its percentage but the accessible *name*, so a bar ticking from 44 to 45
+// re-announced "Upload, 45 percent" whole rather than the part that changed.
+
+const bar = (value, extra = {}) => ({
+    Type: "Row",
+    Style: { AccessibilityRole: "progressbar", AccessibilityValue: value, ...extra },
+});
+
+test("a range becomes the four value attributes", () => {
+    const { at } = mount([bar({ Now: "45", Min: "0", Max: "100", Text: "45 percent" })]);
+
+    assert.equal(at(0).getAttribute("aria-valuenow"), "45");
+    assert.equal(at(0).getAttribute("aria-valuemin"), "0");
+    assert.equal(at(0).getAttribute("aria-valuemax"), "100");
+    assert.equal(at(0).getAttribute("aria-valuetext"), "45 percent");
+});
+
+test("an unstated position is ARIA's indeterminate bar, not a zero", () => {
+    // The role is the whole of an indeterminate bar. Supplying a 0 would pin
+    // every one of them at the start, which is a different claim.
+    const { at } = mount([
+        { Type: "Row", Style: { AccessibilityRole: "progressbar" } },
+        bar({ Now: "45" }),
+    ]);
+
+    assert.equal(at(0).getAttribute("role"), "progressbar");
+    assert.equal(at(0).getAttribute("aria-valuenow"), null);
+    // Each member independently, so a bare position reads as a percentage over
+    // ARIA's own implicit 0..100.
+    assert.equal(at(1).getAttribute("aria-valuenow"), "45");
+    assert.equal(at(1).getAttribute("aria-valuemin"), null);
+    assert.equal(at(1).getAttribute("aria-valuemax"), null);
+});
+
+test("a value on a role that cannot carry one is dropped", () => {
+    // ARIA's own scoping. A `group` or a `status` stating a range would be
+    // describing something that has no position.
+    const { at } = mount([
+        { Type: "Row", Style: { AccessibilityRole: "group", AccessibilityLabel: "Upload",
+            AccessibilityValue: { Now: "45", Max: "100" } } },
+        { Type: "Row", Style: { AccessibilityValue: { Now: "45", Max: "100" } } },
+    ]);
+
+    assert.equal(at(0).getAttribute("aria-valuenow"), null);
+    assert.equal(at(1).getAttribute("aria-valuenow"), null);
+});
+
+test("a bar that stops being one loses its whole range", () => {
+    // Total across all four, for the reason both selection attributes are
+    // written on every call: the role can change between passes, and a guarded
+    // write would leave a range standing on something that is not a bar.
+    const { rt, at } = mount([bar({ Now: "45", Min: "0", Max: "100", Text: "45 percent" })]);
+    assert.equal(at(0).getAttribute("aria-valuenow"), "45");
+
+    rt.GrMob.patch(JSON.stringify([{
+        Type: "update-style",
+        TargetID: "root/0",
+        Changes: { AccessibilityRole: "group", AccessibilityLabel: "Upload" },
+    }]));
+    rt.drainFrames();
+
+    for (const attr of ["aria-valuenow", "aria-valuemin", "aria-valuemax", "aria-valuetext"]) {
+        assert.equal(at(0).getAttribute(attr), null, `${attr} outlived the role`);
+    }
+});
+
+test("a bar that moves rewrites only the position", () => {
+    const { rt, at } = mount([bar({ Now: "45", Min: "0", Max: "100" })]);
+
+    rt.GrMob.patch(JSON.stringify([{
+        Type: "update-style",
+        TargetID: "root/0",
+        Changes: {
+            AccessibilityRole: "progressbar",
+            AccessibilityValue: { Now: "46", Min: "0", Max: "100" },
+        },
+    }]));
+    rt.drainFrames();
+
+    assert.equal(at(0).getAttribute("aria-valuenow"), "46");
+    assert.equal(at(0).getAttribute("aria-valuemax"), "100");
+});
+
+test("aria-hidden beats the value too", () => {
+    const { at } = mount([bar({ Now: "45", Min: "0", Max: "100" }, { AccessibilityHidden: true })]);
+
+    assert.equal(at(0).getAttribute("aria-valuenow"), null);
+    assert.equal(at(0).getAttribute("aria-hidden"), "true");
+});

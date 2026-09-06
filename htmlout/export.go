@@ -794,12 +794,22 @@ func accessibilityAttrs(s *core.Style, nodeType string, roleImposed bool) []stri
 	if level := ariaLevel(s); level != "" {
 		attrs = append(attrs, "aria-level", level)
 	}
+	// Which way a composite runs, for the three roles ARIA defines the
+	// attribute on. Read off the author's own role rather than the effective
+	// one above: the two values this function can supply where the author
+	// stated nothing — `group` from ariaRole and `dialog` from modalSemantics
+	// — are not oriented roles, so there is nothing the fallback could add
+	// here. See AriaOrientationFor for why the axis is the answer.
+	if o := AriaOrientationFor(s.AccessibilityRole, nodeType, s.FlexDirection); o != "" {
+		attrs = append(attrs, "aria-orientation", o)
+	}
 	if name, value := ariaSelected(s, nodeType); name != "" {
 		attrs = append(attrs, name, value)
 	}
 	if expanded := ariaExpanded(s, nodeType); expanded != "" {
 		attrs = append(attrs, "aria-expanded", expanded)
 	}
+	attrs = append(attrs, ariaValue(s)...)
 	if s.AccessibilityID != "" {
 		attrs = append(attrs, "id", s.AccessibilityID)
 	}
@@ -1562,4 +1572,75 @@ func formatNumber(v any) string {
 		return strconv.Itoa(n)
 	}
 	return ""
+}
+
+// ariaValue renders core.Style.AccessibilityValue as the aria-value* family,
+// as name/value pairs, or nothing when there is nothing valid to write.
+//
+// # The fourth state field, and the narrowest guard of the four
+//
+// ariaLevel resolves two Go fields onto one attribute, ariaSelected one field
+// onto two, ariaExpanded one onto one. This is one field onto *four*
+// attributes, and the reason they travel together rather than as four fields is
+// in core.ValueRange: Now, Min and Max are one fact in three parts, and "45" is
+// 45% out of ARIA's implicit 0..100 and is step 45 out of 1..50 — the same
+// digits describing two different bars.
+//
+// The role list is ARIA's own scoping and is the shortest one here.
+// aria-valuenow, -valuemin and -valuemax are defined for meter, progressbar,
+// scrollbar, slider, spinbutton and a focusable separator; core.Role carries
+// progressbar and nothing else on that list, so there is one arm. The near miss
+// worth naming, because it looks like it belongs:
+//
+//	Slider     is a node type, not a role. It exports as <input type="range">,
+//	           which states value/min/max as real attributes the browser reads
+//	           — so an ARIA range on top would be a second claim about one
+//	           fact, and the two would disagree the moment either moved.
+//
+// A stated role with an unstated range is not an omission and is not corrected:
+// ARIA spells an *indeterminate* progress bar by leaving aria-valuenow off, so
+// a bar that is running with no idea how far is exactly this role and this zero
+// value. Which is also why each of the four is written only when it is stated,
+// rather than defaulted — supplying a 0 would turn every indeterminate bar into
+// one pinned at the start.
+//
+// # aria-valuetext is guarded with them and reaches further than they do
+//
+// It is scoped to the same roles, so it is written under the same guard. But
+// unlike the numbers it has a mapping on both phones — Compose's
+// stateDescription, SwiftUI's accessibilityValue — neither of which asks what
+// the node is. That asymmetry is the one a selection already has, and it is
+// ARIA's strictness rather than the framework's: each platform says the truest
+// thing it can.
+//
+// grmob-runtime.js restates this as ariaValue and the two must agree;
+// TestRuntimeGuardsTheValueTheSameWay holds them together.
+func ariaValue(s *core.Style) []string {
+	if !s.AccessibilityValue.Stated() {
+		return nil
+	}
+	// A switch with one arm rather than an equality test, for the shape the
+	// three functions above have: the guard is a role list, it happens to have
+	// one member today, and a second range role arrives as an arm rather than
+	// as a rewrite.
+	switch s.AccessibilityRole {
+	case core.RoleProgressBar:
+	default:
+		return nil
+	}
+	v := s.AccessibilityValue
+	attrs := make([]string, 0, 8)
+	// Each written only when stated. An unstated bound is ARIA's own default
+	// (0 and 100), which is what makes a bare Now announce as a percentage.
+	for _, pair := range []struct{ name, value string }{
+		{"aria-valuenow", v.Now},
+		{"aria-valuemin", v.Min},
+		{"aria-valuemax", v.Max},
+		{"aria-valuetext", v.Text},
+	} {
+		if pair.value != "" {
+			attrs = append(attrs, pair.name, pair.value)
+		}
+	}
+	return attrs
 }

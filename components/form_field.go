@@ -104,6 +104,20 @@ func (f FormField) Render(ctx *core.Context) *core.Node {
 					core.UseStyle(t.Typography.Caption),
 					core.TextColor(t.Colors.Error),
 					core.FontWeight(core.Bold),
+					// A glyph standing in for a word, which is what
+					// core.RoleImg means: the node's meaning is carried by
+					// what it looks like rather than by the text inside it,
+					// and one alternative replaces the whole thing. An
+					// asterisk read as an asterisk is the failure the label
+					// exists to prevent, and `img` is what tells a reader to
+					// take the label *instead of* the character — where the
+					// `group` a named container is otherwise given says the
+					// two belong together, so a reader may announce both.
+					//
+					// It also makes the marker announce on the two natives as
+					// an image rather than as a stray label, which is the half
+					// of RoleImg that is not a web-only rescue.
+					core.AccessibilityRole(core.RoleImg),
 					core.AccessibilityLabel("required"),
 				),
 			)

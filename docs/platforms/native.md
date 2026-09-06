@@ -558,6 +558,12 @@ each file, which is where a reader looking for the mapping arrives.
 `mobile/verify/idref_test.go` pins the notes and the absence of a parse
 together, as the two level tests do.
 
+`core.RoleTabPanel` joins them for the same reason and gets an empty arm in both
+dispatches: what makes a tab panel announce as one is being *pointed at*, and
+neither reader follows a reference. A `core.TabView` still announces correctly
+on both phones, because each hands the whole strip to the platform's own tab
+container.
+
 It also pins one thing they do not, because this field has a near miss the
 levels never had: `accessibilityIdentifier` on iOS and `testTag` on Compose.
 Both look like the obvious mapping for `AccessibilityID` and both are *test*
@@ -606,6 +612,52 @@ note beside `grMobTraitsFor` naming `accessibilityValue` and saying why.
 against `core.ExpandedStates()`, and the state/action pairing as one string so
 a transposition fails; and iOS's absence of a parse plus both halves of the
 note.
+
+### `AccessibilityValue`
+
+The value of a valued control splits the two platforms too, and along a
+different seam from the disclosure above: here they disagree about *which half*
+of the field they can say.
+
+**Compose takes the numbers.** `progressBarRangeInfo` is one of the better
+mappings in this framework — TalkBack turns a position and its bounds into a
+percentage it localizes itself, so a bar reports "45 percent" in the user's own
+language with no string ever crossing the bridge. That is exactly what
+`components.ProgressBar` could not do while its value lived in the accessible
+name. A range with bounds and no position becomes
+`ProgressBarRangeInfo.Indeterminate`, which is ARIA's indeterminate bar said in
+Compose's words; a range that states nothing numeric leaves the property alone,
+because a `Text` on an ordinary node must not turn it into a progress bar.
+
+**SwiftUI takes only the words.** There is no numeric accessibility value on the
+platform — `accessibilityValue` takes a `Text` and there is no equivalent of
+`ProgressBarRangeInfo` — so the three numbers arrive, are visible in
+`GrMobStyle`, and reach no view modifier. Formatting them into a string here is
+the tempting fix and is the same move the disclosure note above turns down: a
+renderer that spells a number out loud is choosing a language for every app that
+uses it.
+
+`ValueRange.Text` is the half both platforms take, through `stateDescription`
+and `accessibilityValue`, and the difference that makes it safe is whose words
+they are — the app's own, on the channel `AccessibilityLabel` and
+`AccessibilityHint` already ride. It is, incidentally, the value slot the
+`AccessibilityExpanded` note says the framework has no room for: an app that
+wants VoiceOver to hear "expanded" can now say so in its own language, which is
+a different thing from this renderer deciding to.
+
+Neither renderer consults the role, for the reason neither consults it for a
+selection: both honour these properties on any node, and ARIA is the strict one.
+`mobile/verify/value_test.go` pins Compose like a mapping — parsed, dispatched,
+reaching both primitives, invoked from the semantics lambda — and SwiftUI in
+both directions: the words reaching a modifier, and the numbers reaching
+nothing.
+
+The one detail worth knowing about the wire: the numbers cross as **strings**,
+because 0 is a bar at the start of an upload and is also the zero value of a Go
+float, and `core.Style` merges on "non-zero wins". Kotlin keeps the distinction
+after parsing — nullable `Float`s rather than a `0f` default — or it would
+reintroduce the same bug one layer down and could not tell an indeterminate bar
+from one that has not started.
 
 ### The field with a widget spending it
 

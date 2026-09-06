@@ -327,6 +327,69 @@
       key: no such relationship exists in their vocabularies, and the near miss
       (`accessibilityIdentifier` / `testTag`) is a test selector rather than an
       accessibility property
+- [x] **A composite announces the way it runs** (`aria-orientation`, both web
+      targets) — the runtime read a container's resolved `flex-direction` to
+      pick the arrow pair and nothing wrote the answer down, so a
+      `role="tablist"` laid out as a `Column` took Up/Down while telling a
+      reader in browse mode that it ran the other way (ARIA's default for a
+      tablist is horizontal; a `listbox` had the same gap in mirror). Both
+      targets now write the attribute from the node's own layout axis, resolved
+      exactly as the CSS declaration is, and the runtime's keyboard *reads it
+      back* — so which way a widget runs is one statement rather than a
+      behaviour and an announcement free to drift. `toolbar` takes the
+      announcement and no keyboard, since ARIA does not say what a toolbar owns
+- [x] **A progress bar is a progress bar** (`core.RoleProgressBar` +
+      `core.ValueRange`) — the fourth accessibility state vocabulary, and the
+      first that is four attributes at once. `components.ProgressBar` had
+      nowhere to put its percentage but the accessible *name* ("Upload, 45
+      percent"), which is the channel `Chip`'s `", selected"` suffix was
+      deleted from and for the same reason: a name is meant to be stable, so a
+      bar ticking from 44 to 45 re-announced the whole string. The three
+      numbers are one field because they are one fact in three parts, and they
+      are *strings* because a bar at the start of an upload is a stated `0`
+      that a float field could not tell from an unstated one. Compose gets the
+      better half — `progressBarRangeInfo`, which TalkBack localizes itself —
+      and SwiftUI, which has no numeric value slot at all, gets the words if
+      the app supplies any. `Skeleton` took `status` and `FormField`'s required
+      marker took `img` in the same pass, both of them `group`s until now
+- [x] **A hand-built tab strip can name its panels** (`core.RoleTabPanel`) —
+      the last piece the reference pair was missing, and it had been blocked by
+      its own absence: the WASM runtime told a panel it wired from one an
+      author roled by the *value*, since `"tabpanel"` was a string no
+      `core.Role` spelled. A `data-grmob-panel` marker both web targets write
+      says the same thing about the element rather than about the vocabulary,
+      in the channel `data-grmob-chrome` already uses. It also closed a bug the
+      old shape hid: the unwire path cleared the panel id unconditionally, so a
+      page carrying its own `AccessibilityID` — exactly the page the wiring
+      stands down for — was stood down for by having that id deleted
+- [x] **A listbox answers the keyboard by name** (type-to-jump) — the other
+      half of ARIA's listbox pattern, and the half that makes a long one usable
+      at all. A repeated character cycles and a growing string refines, which is
+      one rule rather than two. It is the only *state* the keyboard section
+      owns; everything else there is derived from the DOM on demand, which is
+      what makes the rest survive every patch for nothing. One buffer rather
+      than one per widget (only one thing has focus), and a timestamp rather
+      than a timer (a widget removed by a patch has no unmount hook to cancel
+      one from)
+- [x] **The failures nothing could see are reported** (`core.SetDebugMode`) — a
+      walk of the finished tree flags a duplicate `AccessibilityID`, an
+      `AccessibilityControls` nothing answers to, an id that is not a usable
+      HTML id or that lands in the reserved `grmob-` namespace, and an
+      `AccessibilityExpanded` on a node with no handler. Every one of them is
+      invisible on all four targets, and none is catchable where it is written:
+      an export is one document with no index of itself and a patch is one
+      element with none at all — a finished *tree*, though, can be walked, which
+      is what the cursor audit and the duplicate-key check already do
+- [x] **Every ARIA claim is checkable** (`aria/verify`) — the role lists were
+      hand-checked prose in a dozen files, which agreed with each other because
+      somebody had read them all. A Next-list entry once asserted that `group`
+      supports `aria-expanded`; it survived three re-sorts and was false, and no
+      test in the suite could have said so. One fixture now states each role's
+      attributes, its ARIA default orientation and its required children, and
+      the four state guards, the orientation table and the composite keyboard
+      table are all held to it. It is transcribed rather than generated, which
+      is the weaker half — what it buys regardless is that the fact is stated
+      *once*
 - [x] A widget can say **this disclosure is open** (`core.AccessibilityExpanded`)
       — `aria-expanded` on both web targets, scoped to a *third* ARIA role list
       that is neither `aria-level`'s nor `aria-selected`'s: it drops `option`

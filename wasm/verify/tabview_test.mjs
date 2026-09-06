@@ -434,9 +434,12 @@ test("a page that becomes eligible again is rewired", () => {
 
 // The panel wiring and core.AccessibilityRole write the same attribute, and
 // the author's value wins — the same call the wiring already makes for a
-// <button> page. The two writers are told apart by the value: no core.Role
-// spells "tabpanel", which htmlout's TestNoRoleCollidesWithTheTabPanelWiring
-// keeps true.
+// <button> page. The two writers are told apart by data-grmob-panel, the
+// marker this wiring stamps on what it wrote. It used to be told apart by the
+// *value*: "tabpanel" was a string no core.Role spelled, so an element carrying
+// it could only have come from here — which worked, and which is why there was
+// no core.RoleTabPanel for five sessions and a hand-built tab strip could never
+// name its own regions.
 test("a page with its own role is not made a panel", () => {
     const { rt, root, pageAt } = mountTabs();
 
@@ -575,4 +578,56 @@ test("a page added by a patch is wired like the rest", () => {
     assert.equal(root.children[3].getAttribute("role"), "tabpanel");
     assert.equal(root.children[3].getAttribute("id"), "grmob-root-panel-2");
     assert.equal(root.children[0].children[2].getAttribute("aria-controls"), "grmob-root-panel-2");
+});
+
+// The case the marker alone could not decide, and the reason applyAccessibility
+// clears it when the Style states a role: an author writing core.RoleTabPanel
+// puts the wiring's own value in the slot, so "is this role mine" cannot be
+// answered by looking at the element at all. Reading the Style is what the
+// static exporter does (tabPanelBox), and this is the only place this target
+// has the Style in hand.
+test("a page that roles itself a tabpanel is still not wired", () => {
+    const { rt, root, pageAt } = mountTabs();
+    assert.equal(pageAt(1).getAttribute("id"), "grmob-root-panel-1");
+
+    rt.GrMob.patch(
+        JSON.stringify([
+            { Type: "update-style", TargetID: "root/1", Changes: { AccessibilityRole: "tabpanel" } },
+        ])
+    );
+
+    // The role stands — it is the author's now, and it says the same thing.
+    assert.equal(pageAt(1).getAttribute("role"), "tabpanel");
+    // But the wiring has stood down, so the region is not pointed at and does
+    // not claim to be named by a tab. Which is what htmlout does with the same
+    // tree; the two targets have to agree about which pages are panels.
+    assert.equal(pageAt(1).getAttribute("id"), null);
+    assert.equal(pageAt(1).getAttribute("aria-labelledby"), null);
+    assert.equal(root.children[0].children[1].getAttribute("aria-controls"), null);
+    // And the page beside it is untouched.
+    assert.equal(pageAt(0).getAttribute("id"), "grmob-root-panel-0");
+});
+
+// A page carrying its own core.Style.AccessibilityID is left unwired, because
+// something else on the page is pointing at that string. It was being left
+// unwired by having the string deleted, which is the opposite of leaving it
+// alone — the unwire path cleared the id unconditionally, so the very act of
+// standing down destroyed what it was standing down for.
+//
+// The static export never had this: it decides once and writes nothing it did
+// not decide. The marker is what lets the live target do the same.
+test("a page keeps an id of its own when the wiring stands down", () => {
+    const { rt, root, pageAt } = mountTabs();
+
+    rt.GrMob.patch(
+        JSON.stringify([
+            { Type: "update-style", TargetID: "root/1", Changes: { AccessibilityID: "mine" } },
+        ])
+    );
+
+    assert.equal(pageAt(1).getAttribute("id"), "mine");
+    assert.equal(root.children[0].children[1].getAttribute("aria-controls"), null,
+        "a tab must not point at a page it does not own the id of");
+    // The wiring's own leftovers did come off.
+    assert.equal(pageAt(1).getAttribute("aria-labelledby"), null);
 });

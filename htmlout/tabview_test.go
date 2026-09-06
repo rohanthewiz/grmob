@@ -606,13 +606,73 @@ func TestAPageWithAnAuthoredRoleIsNotAPanel(t *testing.T) {
 // RoleTab and RoleTabList are not at risk in the same way: those two land on
 // the bar and its buttons, which are chrome the runtime builds rather than
 // nodes an app can style, so neither value can arrive on a page element.
-func TestNoRoleCollidesWithTheTabPanelWiring(t *testing.T) {
-	for _, role := range core.Roles() {
-		if string(role) == "tabpanel" {
-			t.Errorf("core.Role %q collides with the tab-panel wiring: the runtime's "+
-				"canBeTabPanel reads this attribute back and would take a wired panel "+
-				"for an authored role, unwiring and rewiring it on alternate syncs", role)
-		}
+// The wiring marks what it wrote, and that is what the runtime tells its own
+// panels by.
+//
+// This test used to say the opposite thing: that no core.Role may spell
+// "tabpanel", because the runtime's canBeTabPanel discriminated on the *value*
+// — a string no vocabulary entry produced could only have come from
+// wireTabPanel. That worked, and it made the absence of core.RoleTabPanel
+// load-bearing, so a hand-built tab strip could wire its panels with
+// AccessibilityID and AccessibilityControls and still not name them.
+//
+// data-grmob-panel says the same thing about the element rather than about the
+// vocabulary, in the channel data-grmob-chrome already uses. The static export
+// has no reader for it — nothing here syncs anything twice — and writes it so
+// the two web targets emit one document; the runtime is where it does work.
+func TestAWiredPanelIsMarkedAsTheFrameworksOwn(t *testing.T) {
+	n := &core.Node{
+		Type: "TabView",
+		Props: map[string]any{"selectedIndex": 0, "tabs": []map[string]string{
+			{"label": "A"},
+		}},
+		Children: []*core.Node{{Type: "Box"}},
+	}
+	out := ExportHTML(n)
+	if !strings.Contains(out, `role="tabpanel" data-grmob-panel=""`) {
+		t.Errorf("a wired panel carries no marker:\n%s\n\nWithout it the runtime "+
+			"cannot tell a panel it wrote from one an author roled, and would unwire "+
+			"and rewire the same element on alternate syncs", out)
+	}
+
+	// An author's own tabpanel is not marked, which is the whole point of the
+	// marker being a marker: the role is now a value anyone can write.
+	authored := &core.Node{Type: "Box", Style: &core.Style{
+		AccessibilityRole: core.RoleTabPanel,
+		AccessibilityID:   "app-panel",
+	}}
+	out = ExportHTML(authored)
+	if !strings.Contains(out, `role="tabpanel"`) {
+		t.Errorf("an authored tabpanel lost its role:\n%s", out)
+	}
+	if strings.Contains(out, "data-grmob-panel") {
+		t.Errorf("an authored tabpanel was marked as the framework's:\n%s\n\n"+
+			"The runtime would then take the element back on the next sync", out)
+	}
+}
+
+// A page that roles itself is left alone, core.RoleTabPanel included — the
+// author has taken the slot, and a page with a role and no id is a panel
+// nothing points at, which is a worse document than an unwired one.
+func TestAPageThatRolesItselfATabPanelIsStillNotWired(t *testing.T) {
+	n := &core.Node{
+		Type: "TabView",
+		Props: map[string]any{"selectedIndex": 0, "tabs": []map[string]string{
+			{"label": "A"},
+		}},
+		Children: []*core.Node{{Type: "Box", Style: &core.Style{
+			AccessibilityRole: core.RoleTabPanel,
+		}}},
+	}
+	out := ExportHTML(n)
+	if strings.Contains(out, "grmob-root-panel-0") {
+		t.Errorf("a self-roled page was wired anyway:\n%s", out)
+	}
+	if strings.Contains(out, "data-grmob-panel") {
+		t.Errorf("a self-roled page was marked as the framework's:\n%s", out)
+	}
+	if !strings.Contains(out, `role="tabpanel"`) {
+		t.Errorf("the author's role was dropped:\n%s", out)
 	}
 }
 
@@ -649,7 +709,7 @@ func TestThePanelWiringAndTheNodesOwnSemanticsShareOneSlot(t *testing.T) {
 
 	// Three tabs and two panels, and no element carrying two roles: 3 tabs +
 	// 1 tablist + 2 tabpanels.
-	if got := strings.Count(out, "role="); got != 6 {
+	if got := strings.Count(out, " role="); got != 6 {
 		t.Errorf("expected 6 role attributes (tablist, 3 tabs, 2 panels), got %d:\n%s",
 			got, out)
 	}
@@ -660,9 +720,11 @@ func TestThePanelWiringAndTheNodesOwnSemanticsShareOneSlot(t *testing.T) {
 	for _, want := range []string{
 		// The named page is a panel and keeps the name the author chose;
 		// aria-labelledby is withheld because the reference would win over it.
-		`aria-label="Page A" id="grmob-root-panel-0" role="tabpanel"`,
-		// The authored group was replaced, and the wiring named it from its tab.
-		`id="grmob-root-panel-2" role="tabpanel" aria-labelledby="grmob-root-tab-2"`,
+		`aria-label="Page A" id="grmob-root-panel-0" role="tabpanel" data-grmob-panel=""`,
+		// The authored group was replaced, and the wiring named it from its
+		// tab. The marker rides along on both, which is what tells the runtime
+		// these two roles are its own to take back.
+		`id="grmob-root-panel-2" role="tabpanel" data-grmob-panel="" aria-labelledby="grmob-root-tab-2"`,
 		// Both wired tabs point at their page.
 		`aria-controls="grmob-root-panel-0"`,
 		`aria-controls="grmob-root-panel-2"`,

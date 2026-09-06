@@ -39,11 +39,22 @@ package core
 //	status        | role="status"   | —              | liveRegion = Polite
 //	alert         | role="alert"    | —              | liveRegion = Assertive
 //	log           | role="log"      | —              | liveRegion = Polite
-//	the other 12  | role=…          | —              | —
+//	progressbar   | role=…          | —              | — (but see below)
+//	the other 13  | role=…          | —              | —
 //
-// The other twelve are table, rowgroup, row, cell, list, listitem, listbox,
-// option, banner, navigation, toolbar and group — the tabular set, both
-// collection pairs, the landmarks, and the naming role.
+// The other thirteen are table, rowgroup, row, cell, list, listitem, listbox,
+// option, tabpanel, banner, navigation, toolbar and group — the tabular set,
+// both collection pairs, the region a tab shows, the landmarks, and the naming
+// role.
+//
+// progressbar has a row of its own because its dashes mean less than the
+// others'. The *role* maps to nothing on either phone — neither has a word for
+// what a progress bar is — while the value beside it maps to Compose's
+// progressBarRangeInfo, which is one of the better mappings in this framework:
+// TalkBack turns the numbers into a percentage it localizes itself. So the
+// thing a reader most wants to hear does arrive on one native; it arrives
+// through Style.AccessibilityValue rather than through this field. See
+// core.ValueRange.
 //
 // The tab pair is the one row of that table where the two natives disagree
 // about *which half* they can say, and it is a useful illustration of why the
@@ -53,7 +64,7 @@ package core
 // supplied the pair, and a caller marking up a tab strip sets both and gets
 // whichever half each platform knows.
 //
-// Twelve of the twenty-three do nothing on either native, and that is the
+// Fourteen of the twenty-five do nothing on either native, and that is the
 // honest state of those platforms rather than a gap to be filled later:
 // neither has a tabular semantics vocabulary a role can be mapped onto (Compose
 // has collectionInfo, which describes counts and indices this prop does not
@@ -62,8 +73,8 @@ package core
 // them nothing to leave out — see RoleListBox), and neither has landmarks at
 // all — VoiceOver's rotor navigates by heading, not by banner.
 //
-// RoleGroup is the one empty pair in that twelve that is empty for the
-// opposite reason, and it is worth telling apart. The other eleven are silent
+// RoleGroup is the one empty pair in that fourteen that is empty for the
+// opposite reason, and it is worth telling apart. The other thirteen are silent
 // because the platform has no way to say the thing; `group` is silent because
 // neither platform *needs* it — both honour an accessibility label on any node
 // at all, and making that label legal is the whole of what the role does. See
@@ -148,37 +159,42 @@ package core
 // core.AccessibilityRole still wins, on the same principle the chassis follows
 // for style: the framework's default goes first.
 //
-// There is deliberately no RoleTabPanel either, and it is the third case of
-// the same shape rather than an oversight beside RoleTab and RoleTabList.
+// RoleTabPanel is *not* a third case of that shape, and for five sessions it
+// was recorded as one. The argument that kept it out was that a tab panel is
+// not really a role but one end of a *relationship* — the announcement a
+// reader gives ("tab 2 of 3, Sermons, tab panel") comes from aria-controls and
+// aria-labelledby pointing between two elements, and both are IDREFs, which
+// Style does not carry. That was true when it was written and stopped being
+// true the moment AccessibilityControls landed: the pointing half exists now,
+// and the constant was the only piece still missing from a hand-built strip.
 //
-// A tab panel is not really a role: it is one end of a *relationship*. The
-// announcement a reader gives ("tab 2 of 3, Sermons, tab panel") comes from
-// aria-controls and aria-labelledby pointing between the two elements, and
-// both of those are IDREFs. Style carries values, not references — the same
-// reason accessibilityAttrs spells a hint as aria-description rather than
-// aria-describedby — so a RoleTabPanel would hand an author the half of the
-// wiring that says the least and no way at all to write the half that says
-// the most.
+// So the division is not "does the node type know it" but "can an author say
+// it". core.TabView still owns its own wiring end to end — it mints the ids,
+// writes this role, and keeps aria-selected in step — exactly as core.Modal
+// owns its dialog role; the difference from RoleDialog is that a hand-built
+// tab strip is a shape people actually build, and a hand-built modal is not.
+// examples/social's bottom bar is one, and until this constant its regions
+// were `group`s that three tabs claimed to control.
 //
-// core.TabView already owns that relationship end to end. Both DOM renderers
-// mint the ids, write role="tabpanel" on the page, wire aria-controls and
-// aria-labelledby across, and keep aria-selected in step with the selection;
-// both natives hand the whole strip to the platform's own tab container,
-// which announces itself. It is exactly Modal's shape: semantics the node
-// type owns because it is the only thing that can see both halves.
+// # What used to block it, and what replaced the block
 //
-// The absence is load-bearing in one more place, which is worth knowing
-// before anyone adds the constant "for symmetry". The WASM runtime tells the
-// wiring's own role apart from an author's by the value — an element carrying
-// "tabpanel" can only have got it from wireTabPanel, because no core.Role
-// spells it — and uses that to avoid unwiring and rewiring a panel on
-// alternate syncs. htmlout's TestNoRoleCollidesWithTheTabPanelWiring holds
-// the vocabulary to it.
+// The WASM runtime has to tell a panel it wired itself from a role an author
+// wrote, or it unwires and rewires the same element on alternate syncs. It did
+// that by the value — "tabpanel" could only have come from wireTabPanel,
+// because no core.Role spelled it — which made the *absence of this constant*
+// load-bearing, and which is why the entry sat.
 //
-// RoleTab and RoleTabList are not in the same position and are therefore
+// The discriminator is now a data-grmob-panel marker that both web targets
+// write, in the channel data-grmob-chrome already uses for the same kind of
+// fact: this element is something the framework put here. That is a better
+// answer than the old one even setting the constant aside, because it says
+// what it means — the old test asked "is this value one no author could have
+// written", which is a fact about the vocabulary standing in for a fact about
+// the element.
+//
+// RoleTab and RoleTabList were never in the same position and were always
 // present: they say what a control and a strip *are*, which is a claim about
-// one element, and a hand-built strip of chips that switches a screen's
-// content has no node type to say it for them.
+// one element.
 //
 // # Every renderer names every role
 //
@@ -328,6 +344,38 @@ const (
 	RoleTabList Role = "tablist"
 )
 
+// The region a tab shows: the third member of the tab family, and the one that
+// only makes sense with a reference beside it.
+//
+// A tabpanel on its own says almost nothing — it is a section of a page — and
+// what makes it announce as "tab panel, Sermons" is being pointed at. So this
+// is the one role in the vocabulary that is not much use without
+// Style.AccessibilityID and a tab's Style.AccessibilityControls, and the two
+// arrived in the opposite order: the pointing existed for a session before the
+// thing it points at could say what it was.
+//
+//	// the strip
+//	core.Row(core.AccessibilityRole(core.RoleTabList),
+//	    Chip{Label: "Home", Style: []core.StyleProp{
+//	        core.AccessibilityRole(core.RoleTab),
+//	        core.AccessibilitySelected(core.SelectedWhen(tab == "home")),
+//	        core.AccessibilityControls("app-panel"),
+//	    }},
+//	)
+//	// the region it switches
+//	core.Box(core.AccessibilityRole(core.RoleTabPanel),
+//	    core.AccessibilityID("app-panel"), core.AccessibilityLabel("Home"), …)
+//
+// It makes no claim about its children, unlike the tablist half — a panel
+// holds whatever a screen holds — so it is not subject to the structural rule
+// above and can go on any container.
+//
+// core.TabView writes it from the node type and needs no author to. See "Roles
+// a node type carries for itself" for why that is not a reason to leave the
+// constant out, and for the marker that lets the runtime tell its own writes
+// from an author's.
+const RoleTabPanel Role = "tabpanel"
+
 // RoleListItem and RoleRow are the two values with a depth question attached:
 // how far inside a nested collection the item sits. That is
 // Style.AccessibilityNestingLevel, which is a *second* int rather than a
@@ -426,6 +474,43 @@ const (
 	RoleImg     Role = "img"
 )
 
+// The one valued role: a control that is somewhere between two ends.
+//
+// It is the only value in this vocabulary that reads Style.AccessibilityValue,
+// and that pairing is ARIA's own scoping rather than a shortlist. aria-valuenow
+// and its two bounds are defined for meter, progressbar, scrollbar, slider,
+// spinbutton and a focusable separator; of those, this is the only one core has
+// a role for, and the absences are all the same absence — no widget here is a
+// meter, a scrollbar or a spinbutton, and core.Slider is a node type that
+// exports as <input type="range">, which carries the whole range natively and
+// would have a second, contradicting claim written onto it by an ARIA one.
+//
+// # What it closes
+//
+// components.ProgressBar had no way to say it was a progress bar or how far
+// along it was, so it said both into its accessible *name*: "Upload, 45
+// percent". That is the move Chip's ", selected" suffix was deleted for — a
+// name is meant to be stable, so a bar ticking from 44 to 45 re-announced the
+// whole thing, and nothing could act on a number buried in a string. With the
+// role and the range, a reader announces the name once and the value as it
+// moves.
+//
+// # A determinate bar and an indeterminate one are the same role
+//
+// ARIA spells the difference by *omitting* aria-valuenow: a progressbar with a
+// range is a bar with a known position, and one without is a spinner that is
+// running. So an indeterminate bar is this role and a zero ValueRange, which
+// falls out of the vocabulary rather than needing a value of its own.
+//
+// # Both natives
+//
+// Compose has progressBarRangeInfo, which takes the numbers and announces a
+// percentage TalkBack localizes — one of the better-mapped values here, and the
+// reason grMobValue exists beside grMobRole. SwiftUI has no numeric equivalent
+// at all; it takes the ValueRange's Text through accessibilityValue and nothing
+// else, which is the honest half. See core.ValueRange.
+const RoleProgressBar Role = "progressbar"
+
 // The naming role: the least a container can be, and the only thing that makes
 // an accessible name on one legal at all.
 //
@@ -503,10 +588,10 @@ const RoleGroup Role = "group"
 // them: it is the field's zero value, no renderer has an arm for it, and a
 // coverage check that demanded one would be asking each renderer to implement
 // "unset". Everything downstream that iterates roles — the native dispatch
-// pins, the DOM export test — wants the twenty-three that do something.
+// pins, the DOM export test — wants the twenty-five that do something.
 //
 // A fresh slice per call rather than a package-level var, which any importer
-// could write to. Twenty-three elements are cheaper to build than to defend.
+// could write to. Twenty-five elements are cheaper to build than to defend.
 //
 // Pinned to the const blocks above by role_enum_test.go, which reads this
 // file's syntax tree: adding a constant without adding it here should fail
@@ -517,10 +602,11 @@ func Roles() []Role {
 		RoleTable, RoleRowGroup, RoleRow, RoleColumnHeader, RoleCell,
 		RoleList, RoleListItem,
 		RoleListBox, RoleOption,
-		RoleTab, RoleTabList,
+		RoleTab, RoleTabList, RoleTabPanel,
 		RoleBanner, RoleNavigation, RoleSearch, RoleToolbar,
 		RoleStatus, RoleAlert, RoleLog,
 		RoleHeading, RoleButton, RoleLink, RoleImg,
+		RoleProgressBar,
 		RoleGroup,
 	}
 }

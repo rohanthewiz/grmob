@@ -228,6 +228,12 @@ func (r *Manager) renderInitialLocked() string {
 	// the initial pass records each context's baseline hook count for the
 	// cursor-drift check on later passes.
 	r.context.EndRenderPass()
+	// And the accessibility audit over the tree that pass produced —
+	// duplicate ids, dangling aria-controls, ids that are not ids, and
+	// disclosures nothing can open. It runs here rather than in an exporter
+	// because every one of those is a fact about the whole document, which
+	// neither web target can see from the element it is writing.
+	core.AuditTree(r.currentTree)
 	return renderJSON(r.currentTree)
 }
 
@@ -304,8 +310,14 @@ func (r *Manager) renderAgainLocked() string {
 	}
 
 	// Debug-mode audit of the pass that just finished (cursor drift across
-	// the context tree); a no-op when debug mode is off.
+	// the context tree, then the accessibility checks over the new tree); a
+	// no-op when debug mode is off.
+	//
+	// Before the diff rather than after, so the audit sees the tree it was
+	// asked about even though nothing between them touches it: the two debug
+	// passes belong together and both describe the render, not the patch.
 	r.context.EndRenderPass()
+	core.AuditTree(newTree)
 	patches := reconcile.Diff(r.currentTree, newTree, "root")
 	r.currentTree = newTree
 	r.context.ClearDirty()

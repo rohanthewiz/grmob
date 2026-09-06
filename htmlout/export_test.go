@@ -1791,3 +1791,222 @@ func TestNegativeAndUnwrappedRotateSurviveTheExport(t *testing.T) {
 		}
 	}
 }
+
+// aria-orientation on the static export.
+//
+// The attribute is pure semantics, which is why it is one of the places the
+// two web targets have to agree: an export of a vertical tab strip describes
+// it exactly as wrongly as the live one did before it existed. The runtime's
+// half — including the fact that its keyboard now reads the attribute back
+// rather than deriving the axis a second time — is held in wasm/verify.
+func TestACompositeAnnouncesTheAxisItIsLaidOutAlong(t *testing.T) {
+	for _, tc := range []struct {
+		name          string
+		node          *core.Node
+		wantOrientate string
+	}{
+		{
+			"a tab strip is a Row, which is ARIA's own default",
+			&core.Node{Type: "Row", Style: &core.Style{AccessibilityRole: core.RoleTabList}},
+			"horizontal",
+		},
+		{
+			// The case the attribute exists for: laid out against the role's
+			// ARIA default, so a reader in browse mode was told the opposite
+			// of what the widget does.
+			"a sidebar tab strip",
+			&core.Node{Type: "Column", Style: &core.Style{AccessibilityRole: core.RoleTabList}},
+			"vertical",
+		},
+		{
+			"a listbox is usually a Column, which is ARIA's default for it",
+			&core.Node{Type: "Column", Style: &core.Style{AccessibilityRole: core.RoleListBox}},
+			"vertical",
+		},
+		{
+			"and the mirror of the tablist case",
+			&core.Node{Type: "Row", Style: &core.Style{AccessibilityRole: core.RoleListBox}},
+			"horizontal",
+		},
+		{
+			"an explicit direction beats the node type's own axis",
+			&core.Node{Type: "Row", Style: &core.Style{
+				AccessibilityRole: core.RoleTabList,
+				FlexDirection:     core.FlexColumn,
+			}},
+			"vertical",
+		},
+		{
+			"a toolbar takes the announcement, though no target gives it a keyboard",
+			&core.Node{Type: "Column", Style: &core.Style{AccessibilityRole: core.RoleToolbar}},
+			"vertical",
+		},
+		{
+			// The one shape with no axis to read: a role on a node type that
+			// is not a stack container.
+			"a role on a Text falls back to ARIA's default",
+			&core.Node{Type: "Text", Props: map[string]any{"content": "x"},
+				Style: &core.Style{AccessibilityRole: core.RoleListBox}},
+			"vertical",
+		},
+	} {
+		out := ExportHTML(tc.node)
+		want := `aria-orientation="` + tc.wantOrientate + `"`
+		if !strings.Contains(out, want) {
+			t.Errorf("%s: %s missing:\n%s", tc.name, want, out)
+		}
+	}
+}
+
+// ARIA scopes the attribute, and this is the other half of the scoping. A
+// `list` or a supplied `group` claiming an axis would be describing a shape
+// that has none, which is the same standard every other guard in
+// accessibilityAttrs is held to.
+func TestAnUnorientedRoleAnnouncesNoAxis(t *testing.T) {
+	oriented := AriaOrientationDefaults()
+	for _, role := range append(core.Roles(), core.RoleNone) {
+		if _, ok := oriented[string(role)]; ok {
+			continue
+		}
+		n := &core.Node{Type: "Column", Style: &core.Style{
+			AccessibilityRole:  role,
+			AccessibilityLabel: "Filters",
+		}}
+		if out := ExportHTML(n); strings.Contains(out, "aria-orientation") {
+			t.Errorf("role %q wrote an aria-orientation:\n%s\n\nARIA defines the "+
+				"attribute for %d roles and this is not one of them", role, out, len(oriented))
+		}
+	}
+}
+
+// aria-hidden wins, as it does over every other attribute in the set: an
+// element pruned from the accessibility tree has no axis for a reader to run
+// along.
+func TestHiddenBeatsTheOrientation(t *testing.T) {
+	n := &core.Node{Type: "Column", Style: &core.Style{
+		AccessibilityRole:   core.RoleListBox,
+		AccessibilityHidden: true,
+	}}
+	out := ExportHTML(n)
+	if strings.Contains(out, "aria-orientation") {
+		t.Errorf("a hidden listbox announced an axis:\n%s", out)
+	}
+	if !strings.Contains(out, `aria-hidden="true"`) {
+		t.Errorf("aria-hidden missing:\n%s", out)
+	}
+}
+
+// The value family, which is the fourth accessibility state mapping and the
+// narrowest-guarded of the four. See ariaValue.
+func TestTheValueRangeBecomesTheAriaValueFamily(t *testing.T) {
+	n := &core.Node{Type: "Row", Style: &core.Style{
+		AccessibilityRole:  core.RoleProgressBar,
+		AccessibilityLabel: "Upload",
+		AccessibilityValue: core.ValueOf(45, 0, 100).WithText("45 percent"),
+	}}
+	out := ExportHTML(n)
+	for _, want := range []string{
+		`role="progressbar"`,
+		`aria-valuenow="45"`,
+		`aria-valuemin="0"`,
+		`aria-valuemax="100"`,
+		`aria-valuetext="45 percent"`,
+		`aria-label="Upload"`,
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("%s missing:\n%s", want, out)
+		}
+	}
+}
+
+// ARIA spells an *indeterminate* progress bar by leaving aria-valuenow off, so
+// a stated role with an unstated range is a real state rather than an omission
+// — and defaulting a 0 in would pin every one of them at the start.
+func TestAnUnstatedRangeIsAnIndeterminateBar(t *testing.T) {
+	n := &core.Node{Type: "Row", Style: &core.Style{
+		AccessibilityRole:  core.RoleProgressBar,
+		AccessibilityLabel: "Upload",
+	}}
+	out := ExportHTML(n)
+	if !strings.Contains(out, `role="progressbar"`) {
+		t.Errorf("the role is the whole of an indeterminate bar and it is missing:\n%s", out)
+	}
+	if strings.Contains(out, "aria-value") {
+		t.Errorf("an unstated range wrote a value:\n%s", out)
+	}
+
+	// Each member is written only when stated, so a bare position reads as a
+	// percentage over ARIA's own implicit 0..100.
+	bare := &core.Node{Type: "Row", Style: &core.Style{
+		AccessibilityRole:  core.RoleProgressBar,
+		AccessibilityValue: core.ValueRange{Now: "45"},
+	}}
+	out = ExportHTML(bare)
+	if !strings.Contains(out, `aria-valuenow="45"`) {
+		t.Errorf("aria-valuenow missing:\n%s", out)
+	}
+	if strings.Contains(out, "aria-valuemin") || strings.Contains(out, "aria-valuemax") {
+		t.Errorf("an unstated bound was supplied:\n%s", out)
+	}
+
+	// And the shape the indeterminate case actually takes in the wild: a bar
+	// that knows its range and not its position. This is the one the
+	// "unstated" test above cannot reach — a range with *nothing* stated
+	// returns before the per-member writes, so a position defaulted to 0
+	// inside them would pass everything else here and pin every running
+	// spinner at the start of its track.
+	ranged := &core.Node{Type: "Row", Style: &core.Style{
+		AccessibilityRole:  core.RoleProgressBar,
+		AccessibilityValue: core.ValueRange{Min: "0", Max: "100"},
+	}}
+	out = ExportHTML(ranged)
+	if !strings.Contains(out, `aria-valuemax="100"`) {
+		t.Errorf("aria-valuemax missing:\n%s", out)
+	}
+	if strings.Contains(out, "aria-valuenow") {
+		t.Errorf("a bar with bounds and no position was given one:\n%s\n\n"+
+			"ARIA spells an indeterminate bar by leaving aria-valuenow off", out)
+	}
+}
+
+// The guard is ARIA's own scoping, and it is the shortest of the four state
+// guards: aria-valuenow is defined for meter, progressbar, scrollbar, slider,
+// spinbutton and a focusable separator, and core.Role carries one of them.
+func TestAValueOnARoleThatCannotCarryOneIsDropped(t *testing.T) {
+	for _, role := range append(core.Roles(), core.RoleNone) {
+		if role == core.RoleProgressBar {
+			continue
+		}
+		n := &core.Node{Type: "Box", Style: &core.Style{
+			AccessibilityRole:  role,
+			AccessibilityValue: core.ValueOf(45, 0, 100).WithText("45 percent"),
+		}}
+		if out := ExportHTML(n); strings.Contains(out, "aria-value") {
+			t.Errorf("role %q carried a value:\n%s\n\nARIA does not define the "+
+				"family there, so a browser drops it and the document is wrong "+
+				"about what the node is", role, out)
+		}
+	}
+
+	// core.Slider is the near miss, and it is outside deliberately: it exports
+	// as <input type="range">, which states value/min/max as real attributes,
+	// so an ARIA range on top would be a second claim free to contradict the
+	// first.
+	slider := &core.Node{Type: "Slider", Style: &core.Style{
+		AccessibilityValue: core.ValueOf(45, 0, 100),
+	}}
+	if out := ExportHTML(slider); strings.Contains(out, "aria-value") {
+		t.Errorf("a Slider was given an ARIA range beside its native one:\n%s", out)
+	}
+}
+
+func TestHiddenBeatsTheValue(t *testing.T) {
+	n := &core.Node{Type: "Row", Style: &core.Style{
+		AccessibilityRole:   core.RoleProgressBar,
+		AccessibilityValue:  core.ValueOf(45, 0, 100),
+		AccessibilityHidden: true,
+	}}
+	if out := ExportHTML(n); strings.Contains(out, "aria-value") {
+		t.Errorf("a hidden bar stated a range:\n%s", out)
+	}
+}

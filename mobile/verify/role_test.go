@@ -101,7 +101,7 @@ func TestKotlinRoleCoversEveryRole(t *testing.T) {
 // Both directions matter and they fail for different reasons:
 //
 //   - A role with no arm falls into the catch-all, where it is inert. That is
-//     the same rendering nine of the twenty roles get on purpose, which is
+//     the same rendering fourteen of the twenty-five roles get on purpose, which is
 //     precisely why the omission has to be caught here: on this platform there
 //     is no visible difference between "deliberately does nothing" and
 //     "nobody has heard of it", and the difference is the whole of what the

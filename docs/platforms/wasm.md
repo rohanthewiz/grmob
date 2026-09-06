@@ -690,7 +690,7 @@ already on the wire:
 |---|---|
 | which nodes are members of which widget | `role="listbox"`/`"option"`, `role="tablist"`/`"tab"` — a structural role owns what is inside it |
 | which member is chosen | `aria-selected`, which a strip already sets on every member and not only the live one |
-| which arrow pair moves | the container's own resolved `flex-direction` — this runtime planted it from the stack table |
+| which arrow pair moves | `aria-orientation`, which `applyAccessibility` derives from the container's own layout axis |
 | what activation means | the `onClick` the author already wired |
 
 What the runtime does with that:
@@ -702,6 +702,15 @@ What the runtime does with that:
 | `Home` / `End` | first and last member |
 | `Enter` / `Space` | runs the member's own `onClick` — but only for a member that is not already a control the browser activates for itself, since a `<button>` fires a real click on both keys and a synthesized one would run the handler twice |
 | anything else, `Tab` included | untouched. A listbox that swallowed `Tab` would trap a keyboard user inside it. |
+
+The arrow pair was, for a while, read straight off the container's resolved
+`flex-direction` — correct, and unannounced. ARIA's default for a `tablist` is
+horizontal, so a strip laid out as a `Column` took Up/Down while telling a
+reader in browse mode that it ran the other way; a `listbox` has the same gap in
+mirror, since its default is vertical. Both targets now write
+`aria-orientation` from the axis (see below), and this reads it back, so the
+behaviour and the announcement are one string rather than two derivations of one
+fact.
 
 The tab stop follows two rules, and both were bugs in the version that only
 read `aria-selected`: while focus is inside the widget it stays on the member
@@ -730,9 +739,75 @@ would go from three tab stops to one tab stop and two unreachable rows.
 `wasm/verify/keynav_test.go` holds that line from Go; `keynav_test.mjs` covers
 the live half.
 
+A `listbox` also answers a printable key by jumping to the next member whose
+name starts with it, which is what makes a long one usable at all — the arrows
+are fine for three options and useless for a hundred. A repeated character
+cycles through the matches and a growing string refines the search, which is
+ARIA's own rule and falls out of one line: the query is the first character when
+every character is the same and the whole buffer otherwise. A `tablist` has no
+typeahead, which is also ARIA's division rather than a shortcut — a strip's
+members are all on screen.
+
+That search buffer is the one piece of *state* this section owns. Everything
+else is derived from the DOM on demand, which is what makes the rest survive
+every patch for nothing; a typed string cannot be derived from anything. It is
+kept as small as it can be: one buffer rather than one per widget, since only
+one thing has focus at a time, and a timestamp rather than a timer, since a
+`setTimeout` would need cancelling on unmount and a widget removed by a patch
+has no unmount hook to cancel it from.
+
 Both phones lose nothing and have no arm to add: VoiceOver and TalkBack
 navigate a collection by swipe, and neither native has a listbox in its
 semantics vocabulary at all.
+
+### Which way a composite runs
+
+`aria-orientation` is written for the three roles ARIA defines it on that
+`core.Role` carries — `listbox`, `tablist` and `toolbar` — and its value is the
+node's own layout axis: an explicit `FlexDirection` over the node type's own
+stacking direction, resolved exactly as `styleFromGrMob` resolves it for the CSS
+declaration. So the attribute cannot disagree with the layout, and ARIA's
+per-role default covers the one shape that has no axis to read: a role placed on
+a node type that is not a stack.
+
+It belongs on **both** web targets, because it is pure semantics — an export of
+a vertical tab strip describes it exactly as wrongly as the live one did. What
+is particular to this target is that the keyboard now reads the attribute rather
+than deriving the axis a second time, which is what closed the divergence
+described above. `htmlout/orientation.go` is the Go authority and
+`TestRuntimeOrientationTableMatchesGo` holds the two tables together.
+
+`toolbar` takes the announcement and no keyboard: a toolbar's members are not
+named by its role the way an `option` and a `tab` are — ARIA lets one hold
+buttons, groups, separators and inputs — so there is nothing for an arrow key to
+move between without a second claim about the container's contents.
+
+### The value of a valued control
+
+`core.ValueRange` is the fourth accessibility state and the first that is four
+attributes at once: `aria-valuenow`, `aria-valuemin`, `aria-valuemax` and
+`aria-valuetext`. They travel as one Go field because they are one fact in three
+parts — `45` is 45% out of ARIA's implicit `0..100` and step 45 out of `1..50`,
+and two `Style`s each merging half a range would state something neither of them
+said.
+
+The guard is the narrowest of the four: `aria-valuenow` is defined for `meter`,
+`progressbar`, `scrollbar`, `slider`, `spinbutton` and a focusable `separator`,
+and `core.Role` carries one of them. `core.Slider` is the near miss and is
+deliberately outside it — it exports as `<input type="range">`, which states its
+own range natively, so an ARIA one on top would be a second claim free to
+contradict the first.
+
+All four are written on every call, for the reason both selection attributes
+are: a bar that stops being a `progressbar` must not keep a range. And a stated
+role with an unstated range is not corrected — ARIA spells an *indeterminate*
+bar by leaving `aria-valuenow` off, so defaulting a `0` in would pin every one
+of them at the start.
+
+What it closed: `components.ProgressBar` had nowhere to put its percentage but
+the accessible *name*, so a bar ticking from 44 to 45 re-announced "Upload, 45
+percent" whole rather than the part that changed, and nothing could act on a
+number buried in a string.
 
 ## Testing without a browser
 

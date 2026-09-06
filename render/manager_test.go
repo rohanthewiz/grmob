@@ -176,3 +176,49 @@ func TestRenderAndGetPatchesMountsThenDiffs(t *testing.T) {
 		t.Error("the tree is still marked dirty after a completed pass")
 	}
 }
+
+// The accessibility audit reaches the tree through the Manager, on both passes.
+//
+// This is the link that is invisible when it breaks: core.AuditTree can be
+// perfectly correct and never called, and every test of the checks themselves
+// would still pass while an app in debug mode reported nothing. The same pair
+// EndRenderPass has — a check and the driver that runs it — held the same way.
+func TestTheManagerRunsTheAccessibilityAuditOnBothPasses(t *testing.T) {
+	core.SetDebugMode(true)
+	defer core.SetDebugMode(false)
+
+	// Two elements claiming one id: invalid HTML, and every aria-controls
+	// pointing there resolves to whichever the browser saw first. Nothing in
+	// either exporter can see it — an export has no index of its document and
+	// a patch is one element — so the walk is the only thing that can.
+	app := func(ctx *core.Context) core.View {
+		return core.Column(
+			core.Box(core.AccessibilityID("panel")),
+			core.Box(core.AccessibilityID("panel")),
+		)
+	}
+	mgr := render.New(core.NewContext(), app)
+	defer mgr.Close()
+
+	core.ClearConcerns()
+	mgr.RenderInitial()
+	if !hasConcern(core.Concerns(), core.ConcernDuplicateAccessibilityID) {
+		t.Errorf("the mount pass ran no accessibility audit:\n%s", core.DumpConcerns())
+	}
+
+	core.ClearConcerns()
+	mgr.RenderAgain()
+	if !hasConcern(core.Concerns(), core.ConcernDuplicateAccessibilityID) {
+		t.Errorf("a re-render ran no accessibility audit:\n%s", core.DumpConcerns())
+	}
+	core.ClearConcerns()
+}
+
+func hasConcern(found []core.Concern, kind string) bool {
+	for _, c := range found {
+		if c.Kind == kind {
+			return true
+		}
+	}
+	return false
+}

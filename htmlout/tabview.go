@@ -192,7 +192,11 @@ func panelID(scope string, i int) string { return scope + "-panel-" + strconv.It
 //	                      same theft as replacing the browser's — the author's
 //	                      word beats the wiring's, which is the call
 //	                      aria-labelledby already makes against
-//	                      AccessibilityLabel below.
+//	                      AccessibilityLabel below. core.RoleTabPanel is not
+//	                      an exception: an author who roles a page themselves
+//	                      has taken the slot, and the page then has a role and
+//	                      no id, which is a panel nothing points at. Saying
+//	                      so is better than half-wiring it.
 //	a self-roling type    a Modal is a dialog by virtue of being a Modal, with
 //	                      no Style to say so; the same theft, one layer down.
 //	AccessibilityHidden   the author took the page out of the accessibility
@@ -284,7 +288,20 @@ func tabPanelBox(page *core.Node) *core.Node {
 func tabPanelAttrs(box *core.Node, scope string, i int) []string {
 	attrs := []string{
 		"id", panelID(scope, i),
-		"role", "tabpanel",
+		"role", string(core.RoleTabPanel),
+		// The marker that says this role is the framework's and not the
+		// author's. It has no reader in a static export — nothing here syncs
+		// anything twice — and it is written all the same, for the reason
+		// data-grmob-chrome is: the two web targets emit the same document,
+		// and a marker that appeared in one and not the other would be a
+		// difference a tool reading either output has to know about.
+		//
+		// The runtime is where it earns its place. Until core.RoleTabPanel
+		// existed, that target told its own writes from an author's by the
+		// value — "tabpanel" was a string no core.Role spelled — which made
+		// the absence of a constant load-bearing and kept a hand-built strip
+		// from ever naming its panels. See canBeTabPanel in grmob-runtime.js.
+		"data-grmob-panel", "",
 	}
 	if box.Style == nil || box.Style.AccessibilityLabel == "" {
 		attrs = append(attrs, "aria-labelledby", tabID(scope, i))

@@ -104,11 +104,25 @@ func TestProgressBarValueClamping(t *testing.T) {
 func TestProgressBarAccessibility(t *testing.T) {
 	ctx := core.NewContext()
 
-	// No renderer has a progress semantic, so the value has to travel in the
-	// label or it is never announced.
+	// The name says what is progressing and stops there. It used to carry the
+	// percentage too ("Upload, 46 percent"), because no renderer had a
+	// progress semantic to put the number in; three of the four do now, and a
+	// name was the wrong channel for a value that changes — the same reason
+	// Chip's ", selected" suffix was deleted.
 	n := ProgressBar{Value: 0.456, AccessibilityLabel: "Upload"}.Render(ctx)
-	if n.Style.AccessibilityLabel != "Upload, 46 percent" {
-		t.Errorf("label = %q, want the rounded percentage appended", n.Style.AccessibilityLabel)
+	if n.Style.AccessibilityLabel != "Upload" {
+		t.Errorf("label = %q, want the name alone — the value travels in the range now",
+			n.Style.AccessibilityLabel)
+	}
+	if n.Style.AccessibilityRole != core.RoleProgressBar {
+		t.Errorf("role = %q, want %q — without it the bar is a named container, "+
+			"which both web targets rescue with `group`, and a group can carry no value",
+			n.Style.AccessibilityRole, core.RoleProgressBar)
+	}
+	// 0..100 rather than 0..1, because those are ARIA's own implicit bounds:
+	// a bare position then announces as a percentage without units.
+	if got, want := n.Style.AccessibilityValue, core.ValueOf(46, 0, 100); got != want {
+		t.Errorf("value = %#v, want %#v", got, want)
 	}
 	if n.Style.AccessibilityHidden {
 		t.Error("a labelled bar must not also be hidden")
@@ -121,6 +135,37 @@ func TestProgressBarAccessibility(t *testing.T) {
 	bare := ProgressBar{Value: 0.5}.Render(ctx)
 	if !bare.Style.AccessibilityHidden {
 		t.Error("an unlabeled bar announces a number with nothing to attach it to; hide it")
+	}
+	if bare.Style.AccessibilityValue.Stated() {
+		t.Error("a hidden bar states a range no reader can reach")
+	}
+}
+
+// ValueText is off by default, and that is the decision rather than an
+// oversight: ARIA and Compose both announce it *instead of* the number, so
+// supplying English here would cost three targets their own localization to
+// help the one — iOS — that has no numeric value slot at all.
+func TestProgressBarValueTextIsOptOut(t *testing.T) {
+	ctx := core.NewContext()
+
+	quiet := ProgressBar{Value: 0.5, AccessibilityLabel: "Upload"}.Render(ctx)
+	if quiet.Style.AccessibilityValue.Text != "" {
+		t.Errorf("ValueText = %q by default; the number should be left to each "+
+			"platform to say in its own words", quiet.Style.AccessibilityValue.Text)
+	}
+
+	spoken := ProgressBar{
+		Value:              0.5,
+		AccessibilityLabel: "Upload",
+		ValueText:          "halfway",
+	}.Render(ctx)
+	if got := spoken.Style.AccessibilityValue.Text; got != "halfway" {
+		t.Errorf("ValueText = %q, want %q", got, "halfway")
+	}
+	// And the number is still there underneath it, so a platform that has no
+	// value slot is not the only one served.
+	if got := spoken.Style.AccessibilityValue.Now; got != "50" {
+		t.Errorf("Now = %q, want %q — the words replace the announcement, not the range", got, "50")
 	}
 }
 

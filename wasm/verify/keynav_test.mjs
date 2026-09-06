@@ -694,3 +694,244 @@ test("a TabView's stop follows a selection the app changed", () => {
     const bar = rt.mountPoint.children[0].children[0];
     assert.deepEqual(bar.children.map((b) => b.getAttribute("tabindex")), ["-1", "0"]);
 });
+
+// --------------------------------------------------------------------------
+// Typeahead
+// --------------------------------------------------------------------------
+//
+// The other half of ARIA's listbox keyboard, and the half that makes a long one
+// usable at all: the arrows are fine for three options and useless for a
+// hundred. examples/mobileapp's article list is the shape that asked.
+//
+// It is also the one piece of *state* this section owns. Everything else is
+// derived from the DOM on demand, which is what makes the rest survive every
+// patch for free; a search string cannot be derived from anything, so there is
+// a buffer, and these tests are mostly about the buffer being small and
+// expiring correctly.
+
+// A listbox of named options. The name comes from the member's own text, which
+// is what a reader would compute — collected leaf by leaf rather than through
+// textContent, so it means the same thing here and in a browser.
+function namedListbox(names, { selected = 0, labelled = false } = {}) {
+    const members = names.map((name, i) => {
+        const m = member("option", { selected: i === selected });
+        if (labelled) {
+            m.Style.AccessibilityLabel = name;
+            return m;
+        }
+        return { ...m, Children: [{ Type: "Text", Props: { content: name } }] };
+    });
+    return mountTree(composite("listbox", members));
+}
+
+const type = (el, key) => el.dispatch("keydown", { key });
+
+test("a printable key jumps to the next member starting with it", () => {
+    const lb = namedListbox(["Advent", "Sermons", "Compline"]);
+    const items = lb.root.children;
+    items[0].focus();
+
+    type(items[0], "s");
+    assert.equal(lb.focused(), items[1]);
+    // And the tab stop moves with the focus, as it does for the arrows: they
+    // are two statements of one fact.
+    assert.equal(items[1].getAttribute("tabindex"), "0");
+    assert.equal(items[0].getAttribute("tabindex"), "-1");
+});
+
+test("the search reads an aria-label ahead of the text", () => {
+    // A member that names itself has said what it is called, and the text
+    // inside it may be an icon or a count.
+    const lb = namedListbox(["Advent", "Sermons"], { labelled: true });
+    const items = lb.root.children;
+    items[0].focus();
+
+    type(items[0], "s");
+    assert.equal(lb.focused(), items[1]);
+});
+
+test("a repeated character cycles through the matches", () => {
+    // ARIA's own rule: "sss" is not a search for a member called "sss", it is
+    // the third press of s. Without it, a listbox with four Sermons entries
+    // would be reachable only at its first.
+    const lb = namedListbox(["Advent", "Sermons", "Sequence", "Compline"]);
+    const items = lb.root.children;
+    items[0].focus();
+
+    type(items[0], "s");
+    assert.equal(lb.focused(), items[1]);
+    type(items[1], "s");
+    assert.equal(lb.focused(), items[2]);
+    // And round, because there is nothing at either end a stop would protect —
+    // the same reason the arrows wrap.
+    type(items[2], "s");
+    assert.equal(lb.focused(), items[1]);
+});
+
+test("a growing string refines rather than cycles", () => {
+    const lb = namedListbox(["Advent", "Sermons", "Sequence"]);
+    const items = lb.root.children;
+    items[0].focus();
+
+    type(items[0], "s");
+    assert.equal(lb.focused(), items[1], "s finds Sermons");
+    // "se" is a different query from "s" twice: it searches from the current
+    // member rather than after it, so a member that still matches stays put.
+    type(items[1], "e");
+    assert.equal(lb.focused(), items[1], "se still matches Sermons");
+    type(items[1], "q");
+    assert.equal(lb.focused(), items[2], "seq is Sequence");
+});
+
+test("a key that matches nothing is left to the page", () => {
+    // The same rule the arrows of the other axis follow. A widget that
+    // swallowed every keystroke would break browser shortcuts for a search
+    // that found nothing.
+    const lb = namedListbox(["Advent", "Sermons"]);
+    const items = lb.root.children;
+    items[0].focus();
+
+    const e = type(items[0], "z");
+    assert.equal(lb.focused(), items[0]);
+    assert.equal(e.defaultPrevented, false);
+});
+
+test("a modified key belongs to the browser", () => {
+    // ctrl-f is find and cmd-l is the address bar. A listbox that consumed
+    // either would be worse than one with no typeahead at all.
+    const lb = namedListbox(["Advent", "Sermons"]);
+    const items = lb.root.children;
+    items[0].focus();
+
+    for (const mod of [{ ctrlKey: true }, { metaKey: true }, { altKey: true }]) {
+        const e = items[0].dispatch("keydown", { key: "s", ...mod });
+        assert.equal(lb.focused(), items[0]);
+        assert.equal(e.defaultPrevented, false);
+    }
+});
+
+test("space stays activation and does not start a search", () => {
+    // Handled before the typeahead is reached, which is why a listbox whose
+    // options begin with a space is not a shape anyone can type toward.
+    const lb = mountTree(composite("listbox", [
+        member("option", { selected: true, onClick: "cb_0" }),
+        member("option", { onClick: "cb_1" }),
+    ]));
+    const items = lb.root.children;
+    items[0].focus();
+
+    const e = type(items[0], " ");
+    assert.equal(lb.focused(), items[0], "space must not move the focus");
+    assert.equal(e.defaultPrevented, true, "space is consumed as activation");
+    assert.deepEqual(lb.rt.dispatched, [{ id: "cb_0", payload: {} }]);
+});
+
+test("a tablist has no typeahead", () => {
+    // ARIA's division, not a shortcut: type-to-jump is part of the listbox
+    // pattern because a listbox can be a hundred long, and is not part of the
+    // tab pattern because a strip's members are all on screen.
+    const tl = mountTree(composite("tablist", [
+        { ...member("tab", { selected: true }), Children: [{ Type: "Text", Props: { content: "Advent" } }] },
+        { ...member("tab"), Children: [{ Type: "Text", Props: { content: "Sermons" } }] },
+    ]));
+    const tabs = tl.root.children;
+    tabs[0].focus();
+
+    const e = type(tabs[0], "s");
+    assert.equal(tl.focused(), tabs[0]);
+    assert.equal(e.defaultPrevented, false);
+});
+
+test("an aria-hidden part of a member is not part of its name", () => {
+    // It is pruned from the accessibility tree, so it is not in any name a
+    // reader announces — and typing toward it would jump for a reason the user
+    // cannot perceive.
+    const lb = mountTree(composite("listbox", [
+        {
+            ...member("option", { selected: true }),
+            Children: [{ Type: "Text", Props: { content: "Advent" } }],
+        },
+        {
+            ...member("option"),
+            Children: [
+                {
+                    Type: "Text",
+                    Props: { content: "zzz" },
+                    Style: { AccessibilityHidden: true },
+                },
+                { Type: "Text", Props: { content: "Sermons" } },
+            ],
+        },
+    ]));
+    const items = lb.root.children;
+    items[0].focus();
+
+    // The visible half of the name is what the search sees...
+    type(items[0], "s");
+    assert.equal(lb.focused(), items[1]);
+});
+
+test("and a hidden decoration cannot be typed toward", () => {
+    // ...and the hidden half is not there at all. A separate mount because the
+    // buffer accumulates within its window: typing z then s in one widget is a
+    // search for "zs", not two searches, which is the behaviour the growing
+    // string test above is about.
+    const lb = mountTree(composite("listbox", [
+        {
+            ...member("option", { selected: true }),
+            Children: [{ Type: "Text", Props: { content: "Advent" } }],
+        },
+        {
+            ...member("option"),
+            Children: [
+                {
+                    Type: "Text",
+                    Props: { content: "zzz" },
+                    Style: { AccessibilityHidden: true },
+                },
+                { Type: "Text", Props: { content: "Sermons" } },
+            ],
+        },
+    ]));
+    const items = lb.root.children;
+    items[0].focus();
+
+    const e = type(items[0], "z");
+    assert.equal(lb.focused(), items[0]);
+    assert.equal(e.defaultPrevented, false);
+});
+
+test("a search in another widget starts over", () => {
+    // The buffer records which container it belongs to, so one listbox cannot
+    // continue another's search. There is one buffer because only one thing has
+    // focus at a time.
+    const rt = loadRuntime();
+    rt.GrMob.mount(JSON.stringify({
+        Type: "Column",
+        Children: [
+            composite("listbox", [
+                { ...member("option", { selected: true }), Children: [{ Type: "Text", Props: { content: "Sermons" } }] },
+                { ...member("option"), Children: [{ Type: "Text", Props: { content: "Sequence" } }] },
+            ]),
+            composite("listbox", [
+                { ...member("option", { selected: true }), Children: [{ Type: "Text", Props: { content: "Advent" } }] },
+                { ...member("option"), Children: [{ Type: "Text", Props: { content: "Easter" } }] },
+            ]),
+        ],
+    }));
+    rt.drainFrames();
+    const first = nodeAt(rt.document, "root/0").children;
+    const second = nodeAt(rt.document, "root/1").children;
+
+    first[0].focus();
+    type(first[0], "s");
+    // On the member that now holds focus, which is where a browser delivers
+    // the next key — the same reason handleCompositeKey reads currentTarget.
+    type(first[1], "e");
+    assert.equal(rt.document.activeElement, first[1], "se is Sequence");
+
+    // "e" here is a fresh search, not the third character of "see".
+    second[0].focus();
+    type(second[0], "e");
+    assert.equal(rt.document.activeElement, second[1], "Easter, not a continued search");
+});

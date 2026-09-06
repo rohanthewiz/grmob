@@ -115,7 +115,7 @@ type Style struct {
 	// AccessibilityRole is what the node *is* — a heading, a table cell, a
 	// search landmark — as opposed to what it is called and what tapping it
 	// does. See role.go for the vocabulary, what each of the four renderers
-	// makes of it, and why nine of the twenty values do nothing on either
+	// makes of it, and why fourteen of the twenty-five values do nothing on either
 	// native.
 	//
 	// It sits with the three fields above and travels the same way: on Style
@@ -157,8 +157,8 @@ type Style struct {
 	// The web emits aria-level. SwiftUI has accessibilityHeading, whose
 	// AccessibilityHeadingLevel is the same 1-6 idea, so the level survives to
 	// VoiceOver's heading rotor. Compose's heading() takes no argument and has
-	// no level at all, so this is inert on Android — the same honest gap nine
-	// of the twenty roles have, documented in GrMobStyle.kt beside the role
+	// no level at all, so this is inert on Android — the same honest gap fourteen
+	// of the twenty-five roles have, documented in GrMobStyle.kt beside the role
 	// dispatch rather than left for the next person to rediscover.
 	//
 	// Out-of-range values are dropped rather than clamped. 0 is the zero value
@@ -207,7 +207,7 @@ type Style struct {
 	// collectionItemInfo — describes an item's index and span within one
 	// collection rather than its depth within nested ones, so mapping onto it
 	// would state something the field does not mean. This is the same honest
-	// gap nine of the twenty roles have, and it is written down in
+	// gap fourteen of the twenty-five roles have, and it is written down in
 	// GrMobStyle.kt and GrMobStyle.swift beside the role dispatch rather than
 	// left for the next person to rediscover.
 	//
@@ -348,6 +348,50 @@ type Style struct {
 	// key crosses the bridge, is deliberately not parsed, and the note in
 	// GrMobStyle.swift says which property it is turning down.
 	AccessibilityExpanded ExpandedState
+
+	// AccessibilityValue is where a valued control sits inside its range —
+	// how far an upload has got, which step a wizard is on. See ValueRange
+	// for the vocabulary, for why the numbers are strings, and for why the
+	// three of them are one field where the two levels are two.
+	//
+	// # The role guard, and the one role
+	//
+	// ARIA defines aria-valuenow and its two bounds for meter, progressbar,
+	// scrollbar, slider, spinbutton and a focusable separator. core.Role
+	// carries exactly one of those, so the guard in both web exporters is a
+	// single arm — which is thin, and is ARIA's own scoping rather than a
+	// shortlist. The absences are the same absence in every case: no widget
+	// here is a meter, a scrollbar or a spinbutton. core.Slider is the near
+	// miss and is deliberately outside it, because it exports as
+	// <input type="range">, which carries value/min/max natively; an ARIA
+	// range written on top would be a second claim about the same fact, free
+	// to contradict the first.
+	//
+	// This is the fourth accessibility state field and it guards like the
+	// other three and unlike them:
+	//
+	//	aria-level        heading, listitem, row     — two fields, one attribute
+	//	aria-selected     option, tab, row, columnheader
+	//	aria-pressed      button
+	//	aria-expanded     button, link, listbox, row, columnheader, tab
+	//	aria-value*       progressbar
+	//
+	// No two of those lists are the same list, which is the argument for each
+	// of these being a type of its own rather than one reused.
+	//
+	// # Text is the exception, and it is the more useful half on the phones
+	//
+	// The three numbers are web-only and Compose-only: the DOM writes them
+	// verbatim, Compose has progressBarRangeInfo, and SwiftUI has no numeric
+	// value property at all. ValueRange.Text is what all four can say — it
+	// becomes aria-valuetext, Compose's stateDescription and SwiftUI's
+	// accessibilityValue — which makes it the value channel GrMobStyle.swift's
+	// AccessibilityExpanded note says the framework has no room for.
+	//
+	// Both natives honour their equivalent on any node and so do not scope it,
+	// the same asymmetry a selection has: the web is strict because ARIA is,
+	// not because the framework is.
+	AccessibilityValue ValueRange
 
 	// AccessibilityID names this element so another one can point at it, and
 	// AccessibilityControls is the pointing. Both are web-only, and they are
@@ -716,6 +760,15 @@ func (s Style) applyTo(target *Style) {
 	// had opened. Only ExpandedUnset leaves the target alone.
 	if s.AccessibilityExpanded != ExpandedUnset {
 		target.AccessibilityExpanded = s.AccessibilityExpanded
+	}
+	// As a unit, which is the one place this block departs from the
+	// field-at-a-time rule around it. The two levels merge independently
+	// because they answer disjoint questions; Now, Min and Max are one fact in
+	// three parts, and two Styles each contributing half a range would produce
+	// a claim neither of them made — "45" out of 1..5 rather than out of
+	// 0..100. A stated range replaces a stated range whole. See ValueRange.
+	if s.AccessibilityValue.Stated() {
+		target.AccessibilityValue = s.AccessibilityValue
 	}
 	if s.Disabled {
 		target.Disabled = true

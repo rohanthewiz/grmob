@@ -81,11 +81,28 @@ type Skeleton struct {
 	//
 	// The individual bars are always hidden — a reader walking six unlabeled
 	// boxes is worse than silence — and the label goes on the container
-	// instead. Be aware of the limit: a labelled container with no role is
-	// announced by the natives but not reliably by the DOM targets, so a
-	// screen where the wait genuinely needs announcing should say so in text
-	// (EmptyState{Title: "Loading sermons…"}) rather than rely on this. For
-	// no announcement at all, pass core.AccessibilityHidden() in Style.
+	// instead, which takes core.RoleStatus.
+	//
+	// # Why `status` and not the `group` it used to get
+	//
+	// Both web exporters supply RoleGroup to a named container that says
+	// nothing about what it is, which made the name legal and stopped there:
+	// `group` says "these things belong together and this is what they are
+	// called", so a reader announced "Loading" only if the user happened to
+	// walk onto the block. A skeleton is not a group of things — the bars
+	// stand in for content that is not here yet — and what it is is ARIA's
+	// definition of `status`: one advisory that is *replaced*. The wait
+	// announces itself when it starts, and the content replaces it when it
+	// arrives, which is exactly the region's contract.
+	//
+	// It is a live region, so it is announced without the reader looking at
+	// it, which is what the old note here said a screen could not rely on and
+	// had to put in text instead. That caveat is closed on the two web targets
+	// and on Android (Compose's polite live region); SwiftUI has no live
+	// region property, so on iOS this is still a labelled container, which
+	// VoiceOver announces on arrival but does not interrupt for.
+	//
+	// For no announcement at all, pass core.AccessibilityHidden() in Style.
 	AccessibilityLabel string
 
 	// Style is applied to the container after the widget's own defaults.
@@ -133,6 +150,10 @@ func (s Skeleton) Render(ctx *core.Context) *core.Node {
 	items := make([]core.PropsAndChildren, 0, lines+len(s.Style)+2)
 	items = append(items,
 		core.Gap(gap),
+		// Before the caller's Style, like every other default here, so a
+		// screen that wants the block silent or wants a different role can
+		// still say so.
+		core.AccessibilityRole(core.RoleStatus),
 		core.AccessibilityLabel(label),
 	)
 	for _, sp := range s.Style {

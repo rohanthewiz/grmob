@@ -72,7 +72,15 @@ indented HTML. Properties worth relying on:
   tab drops the `aria-controls` with it. `core.RoleGroup` is the one authored
   role that is *not* theft to replace, since a `tabpanel` says everything a
   group says and one thing more — and it has to be, because the exporter
-  supplies a group to any named page whether the author asked or not. See
+  supplies a group to any named page whether the author asked or not.
+  `core.RoleTabPanel` is *not* an exception to the authored-role rule: a page
+  that roles itself has taken the slot, and a page with a role and no id is a
+  panel nothing points at. A wired panel also carries `data-grmob-panel`, the
+  marker that says the role is the framework's rather than the author's; it has
+  no reader here, and is written so the two web targets emit one document —
+  the runtime is where it does work, since until `core.RoleTabPanel` existed
+  that target told its own writes from an author's by the *value*, which made
+  the absence of the constant load-bearing. See
   `htmlout/tabview.go` and [WASM — Tab views](wasm.md#tab-views), which draws
   the same chrome live and states the reasoning for the pair.
 - **A `Modal` is a dialog.** The overlay carries `role="dialog"` and
@@ -95,8 +103,13 @@ indented HTML. Properties worth relying on:
   `core.Style.AccessibilityControls`, verbatim in both directions, and nothing
   checks that the target of one exists — an export is a snapshot of one tree
   and has no index of the document it lands in. A dangling IDREF is inert, the
-  same trade `aria-description` makes. They are what lets a hand-built tab
-  strip say which region each tab governs; see
+  same trade `aria-description` makes — and it is now *reported* rather than
+  merely tolerated: `core.SetDebugMode` walks the finished tree, which is the
+  one place a whole document is visible, and flags a reference nothing answers
+  to, an id claimed twice, and an id that is not a usable HTML id. See
+  [State & Hooks](../concepts/state-and-hooks.md#debug-mode). They are what
+  lets a hand-built tab strip say which region each tab governs, together with
+  `core.RoleTabPanel` on the region itself; see
   [Styling & Theming](../concepts/styling-and-theming.md#accessibilityid-and-accessibilitycontrols).
 - **A heading's tier is `aria-level`,** written only alongside
   `role="heading"` and only for 1–6 — ARIA's own scoping, and a drop rather
@@ -118,6 +131,23 @@ indented HTML. Properties worth relying on:
   disclosure. There is no `role="group"`-shaped rescue for either state, and
   that asymmetry with the name is deliberate. See
   [Styling & Theming](../concepts/styling-and-theming.md#accessibilityexpanded).
+- **A composite's axis is `aria-orientation`,** written for the three roles
+  ARIA defines it on that `core.Role` carries — `listbox`, `tablist` and
+  `toolbar` — with the node's own layout axis as its value and ARIA's per-role
+  default as the fallback for a role on something that is not a stack. It is
+  pure semantics and so belongs on both web targets equally: an export of a
+  vertical tab strip described it exactly as wrongly as the live one did, since
+  ARIA's default for a `tablist` is horizontal. `htmlout/orientation.go` is the
+  Go authority both targets read. See
+  [WASM — Which way a composite runs](wasm.md#which-way-a-composite-runs).
+- **A valued control's position is the `aria-value*` family,** written only
+  alongside `role="progressbar"` — the one role of the six ARIA scopes it to
+  that this vocabulary carries. Each of the four is written only when stated,
+  so a bare position reads as a percentage over ARIA's implicit `0..100`, and a
+  role with no range at all is ARIA's own spelling of an *indeterminate* bar
+  rather than an omission to be defaulted away. `core.Slider` is deliberately
+  outside: it exports as `<input type="range">` and states its own range. See
+  [WASM — The value of a valued control](wasm.md#the-value-of-a-valued-control).
 - **A form control is told it has no border** when the style declares none.
   The border guard is "a width *and* a color" on all four targets; emitting
   nothing on the web left the user agent's own rule standing, which is what

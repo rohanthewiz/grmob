@@ -364,14 +364,83 @@ The WASM runtime supplies that from what these roles already say — plus
 `AccessibilitySelected` for where a keyboard enters, and the container's own
 layout axis for which arrow pair moves — so a hand-built listbox or tab strip
 becomes keyboard-operable by declaring what it is, with no extra prop and no
-handler of the author's. Both phones never needed it (VoiceOver and TalkBack
-navigate a collection by swipe) and a static `htmlout` export deliberately
-writes no tab stops. See
+handler of the author's. A `RoleListBox` also answers a printable key by
+jumping to the next option whose name starts with it, which is what makes a
+long one usable at all; `RoleTabList` does not, which is ARIA's division rather
+than a shortcut — a strip's members are all on screen. Both phones never needed
+any of it (VoiceOver and TalkBack navigate a collection by swipe) and a static
+`htmlout` export deliberately writes no tab stops. See
 [WASM — Composite widgets are operable](../platforms/wasm.md#composite-widgets-are-operable).
 
 The role has to be on the *container*, which is the same rule the structural
 claim above states: an `option` in an unroled Box is an option with nothing to
 be an option of, and gets no keyboard.
+
+The axis is announced as well as obeyed. Both web targets write
+`aria-orientation` on a `RoleListBox`, a `RoleTabList` or a `RoleToolbar`, from
+that container's own layout direction, and the runtime's arrow keys read the
+attribute back — so which way a widget runs is one statement rather than a
+behaviour and an announcement free to disagree. They did disagree: ARIA's
+default for a `tablist` is horizontal, so a strip laid out as a `Column` took
+Up/Down while telling a reader in browse mode the opposite, and a `listbox` had
+the same gap in mirror.
+
+#### `RoleTabPanel`, and what a hand-built strip needs
+
+`RoleTab` and `RoleTabList` say what a control and a strip are; `RoleTabPanel`
+says what the region a tab shows is, and it is the one role in the vocabulary
+that says almost nothing without a reference beside it. A panel announces as
+"tab panel, Sermons" because a tab is pointing at it, so it arrives with
+`AccessibilityID` and `AccessibilityControls` rather than alone:
+
+```go
+// the strip
+core.Row(core.AccessibilityRole(core.RoleTabList),
+    Chip{Label: "Home", Style: []core.StyleProp{
+        core.AccessibilityRole(core.RoleTab),
+        core.AccessibilitySelected(core.SelectedWhen(tab == "home")),
+        core.AccessibilityControls("app-panel"),
+    }},
+)
+// the region it switches
+core.Box(core.AccessibilityRole(core.RoleTabPanel),
+    core.AccessibilityID("app-panel"), core.AccessibilityLabel("Home"), …)
+```
+
+`core.TabView` writes all of this from the node type and needs no author to.
+The constant exists for the strips people build by hand, which is a shape that
+turns up whenever the bundled bar is the wrong look.
+
+#### `AccessibilityValue`
+
+`core.ValueRange` says where a valued control sits inside its range, and it is
+read alongside exactly one role — `RoleProgressBar`, the only one of ARIA's six
+range roles this vocabulary carries.
+
+```go
+core.Row(core.AccessibilityRole(core.RoleProgressBar),
+    core.AccessibilityLabel("Upload"),
+    core.AccessibilityValue(core.ValueOf(45, 0, 100)))
+```
+
+The three numbers are one field rather than three, because they are one fact in
+three parts: `45` is 45% out of ARIA's implicit `0..100` and step 45 out of
+`1..50`, so two `Style`s each merging half a range would state something neither
+of them said. They are *strings* for a reason worth knowing before reaching for
+a float: `Style` merges on "non-zero wins", and a bar at the start of an upload
+is a stated `0` that a float field could not tell from an unstated one.
+`core.ValueOf` is the constructor that keeps a caller from having to think about
+either.
+
+Leaving the range unset beside the role is not an omission — it is ARIA's own
+spelling of an *indeterminate* bar, one that is running with no idea how far.
+
+`ValueRange.Text` (`core.ValueOf(3, 1, 5).WithText("step 3 of 5")`) is the half
+that is not web-only: it reaches Compose's `stateDescription` and SwiftUI's
+`accessibilityValue`, neither of which asks what the node is. Leave it empty
+where the number speaks for itself, because ARIA and Compose both announce it
+*instead of* the number — and the number is localized by the platform where the
+words would not be.
 
 #### `AccessibilityHeadingLevel`
 

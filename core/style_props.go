@@ -431,6 +431,38 @@ func AccessibilityExpanded(state ExpandedState) StyleProp {
 	})
 }
 
+// AccessibilityValue says where a valued control sits inside its range — how
+// far an upload has got, which step a wizard is on.
+//
+//	core.Row(
+//		core.AccessibilityRole(core.RoleProgressBar),
+//		core.AccessibilityLabel("Upload"),
+//		core.AccessibilityValue(core.ValueOf(45, 0, 100)),
+//		…
+//	)
+//
+// Use core.ValueOf to convert the numbers the widget is already holding, and
+// .WithText when the digits are not what a listener wants to hear ("step 3 of
+// 5"). Leaving it unset beside RoleProgressBar is not an omission — it is
+// ARIA's own spelling of an *indeterminate* bar, one that is running with no
+// idea how far.
+//
+// Paired with a role that can carry it, as the level, the selection and the
+// disclosure all are, and with the narrowest list of the four: aria-valuenow
+// and its bounds are defined for six roles and core carries one of them,
+// progressbar. core.Slider is the near miss and is deliberately outside —
+// it exports as <input type="range">, which states its own range natively.
+//
+// ValueRange.Text is the half that is not web-only: it reaches Compose's
+// stateDescription and SwiftUI's accessibilityValue, neither of which asks
+// what the node is. See Style.AccessibilityValue for the guard table and
+// core.ValueRange for why the numbers are strings.
+func AccessibilityValue(v ValueRange) StyleProp {
+	return styleFunc(func(s *Style) {
+		s.AccessibilityValue = v
+	})
+}
+
 // AccessibilityID gives this element a document-global name that another
 // element can point at with AccessibilityControls. It becomes the `id`
 // attribute on both web targets and is deliberately unread on both natives.

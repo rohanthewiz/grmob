@@ -42,6 +42,10 @@ grmob debug: 2 concern(s)
 | `unknown-container-item` | An argument to `Row`/`Column`/`Card`/`Box`/`List` that is neither a `StyleProp`, a `BehaviorProp` nor a `View` | `PropsAndChildren` is `any`, so a bare `core.Style` where `core.UseStyle(style)` was meant compiles and is silently dropped — a style that never took effect. A `nil` is exempt: that is [`MaybeProp`](views.md#one-optional-item-maybeprop)'s false path |
 | `render-panic` | An [`ErrorBoundary`](error-boundaries.md) caught a panic and swapped in its fallback | The app kept running, which is the problem: a boundary high in the tree can hide a component that has been dead for weeks behind a plausible "unavailable" panel |
 | `handler-panic` | An event handler panicked and `render.Manager` recovered it | Same silence, different phase — and a worse blast radius, since the handler was abandoned partway and app state may be half-updated |
+| `duplicate-accessibility-id` | Two elements in one tree with the same `AccessibilityID` | Ids are document-global and nothing rewrites them, so the document is invalid and every `aria-controls` pointing there resolves to whichever the browser parsed first — a tab strip switching the wrong region, with nothing anywhere reporting it |
+| `dangling-aria-reference` | An `AccessibilityControls` naming an id no element claims | Both exporters write the attribute anyway (an export has no index of its document; a patch is one element), so a reader following it announces a control that governs nothing — which sounds exactly like a control |
+| `invalid-accessibility-id` | An `AccessibilityID` containing whitespace, or starting with the reserved `grmob-` prefix | An id is a single HTML token, so `"app panel"` is written verbatim into an invalid document that no `#id` selector or `getElementById` can find; and the prefix is where `core.TabView` mints its own tab and panel ids, so a collision breaks a wiring the app never wrote and never mentions |
+| `inert-disclosure` | An `AccessibilityExpanded` on a node carrying neither `OnClick` nor `OnLongPress` | Compose says a disclosure with `expand()`/`collapse()` **actions**, which need a handler to perform, so the state is announced on both web targets and is silently nothing on Android. That is deliberate — an action nothing can perform is worse than none — and this is what says so at the call site |
 | `partial-sort` | A `components.DataTable` sorting client-side (its active `Sort` names a column with a `Less`) while its `Pagination` declares a `PageCount` — the caller saying the server chose the rows | The table can only order the window it holds, so a header claiming an ordering over the table delivers one over a page of it. A partial sort looks exactly like a working sort; the rows that disprove it are the ones not fetched. Set `Sortable` without `Less` and put the sort in the query |
 
 ### Cursor drift, precisely
@@ -93,6 +97,26 @@ The usual causes are a bare `core.Style` in place of `core.UseStyle(style)`, a
 An untyped `nil` is deliberately **not** reported: that is
 [`core.MaybeProp`](views.md#one-optional-item-maybeprop)'s false path, and
 dropping it is the point.
+
+### The accessibility audit
+
+The four accessibility kinds come from one walk of the **finished tree**, run by
+`render.Manager` beside the cursor audit (`core.AuditTree`, which a hand-rolled
+pass loop should call with the tree it just rendered).
+
+A walk, rather than a guard in the exporters, because three of the four are
+facts about *relationships between elements* and no renderer can see one:
+`htmlout` writes an id as it walks past the node carrying it and has no index of
+the document it is building, and the WASM runtime applies a patch to one element
+and has no index at all. Both say so in their own comments — "a dangling IDREF
+is inert" — and both are right that they cannot do better from where they sit.
+
+The line for what belongs here is "would a reader be told something false, with
+nothing anywhere saying so". Everything else in ARIA that this vocabulary can
+express is already caught where it is written: a state on a role that cannot
+carry it is dropped by both exporters *by design* and documented at each guard,
+and a structural role over foreign children is a judgement about content that no
+walk can make.
 
 ### Cached bypass
 

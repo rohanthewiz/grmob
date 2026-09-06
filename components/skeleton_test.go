@@ -107,6 +107,14 @@ func TestSkeletonAccessibility(t *testing.T) {
 	if n.Style.AccessibilityLabel != "Loading" {
 		t.Errorf("container label = %q, want the default %q", n.Style.AccessibilityLabel, "Loading")
 	}
+	// `status`, not the `group` a named container is otherwise given. A group
+	// says these things belong together and is announced only if the user
+	// walks onto it; a status is a live region, so the wait announces itself
+	// and is replaced by the content when it arrives — which is exactly what a
+	// skeleton is for.
+	if n.Style.AccessibilityRole != core.RoleStatus {
+		t.Errorf("container role = %q, want %q", n.Style.AccessibilityRole, core.RoleStatus)
+	}
 	// A reader walking four unlabeled boxes is worse than silence.
 	for i, bar := range n.Children {
 		if !bar.Style.AccessibilityHidden {

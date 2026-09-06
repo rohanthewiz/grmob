@@ -258,17 +258,75 @@ func TestRuntimeSuppliesTheGroupRole(t *testing.T) {
 func TestRuntimeSharesTheRoleAndIDSlotsWithTheTabWiring(t *testing.T) {
 	src := runtimeSource(t)
 	for _, want := range []struct{ expr, why string }{
-		{`(role === null || role === "tabpanel" || role === "group")`,
-			"the group exemption, which htmlout states in tabPanelBox"},
+		{`(role === null || role === "group" || (role === "tabpanel" && mine))`,
+			"the group exemption, which htmlout states in tabPanelBox, and the marker " +
+				"that stands in for the value test the wiring used to make. `mine` is " +
+				"data-grmob-panel: until core.RoleTabPanel existed, an element carrying " +
+				`"tabpanel" could only have got it from wireTabPanel, which made the ` +
+				"absence of that constant load-bearing and kept a hand-built strip from " +
+				"ever naming its own panels"},
+		{`const mine = page.dataset.grmobPanel !== undefined;`,
+			"where the marker is read. htmlout writes it too, so the two web targets " +
+				"emit one document even though only this one syncs twice"},
+		{`if (style.AccessibilityRole) {
+            delete el.dataset.grmobPanel;
+        }`,
+			"an authored role voiding the wiring's claim on the slot. It is the one case " +
+				"the marker alone cannot decide — an author who writes core.RoleTabPanel " +
+				"puts the wiring's own value in the slot — and applyAccessibility is the " +
+				"only place this target has the Style in hand, which is where htmlout's " +
+				"tabPanelBox reads it from"},
 		{`(id === null || id === panelId(scope, i))`,
 			"a page carrying its own AccessibilityID is left unwired rather than having the " +
 				"id taken from under an aria-controls that points at it"},
 		{`setOrRemove(page, "role", named ? "group" : "");`,
 			"unwiring restores what applyAccessibility would have left — a named page keeps " +
 				"the group that makes its name audible instead of falling back into silence"},
+		{`delete page.dataset.grmobPanel;`,
+			"the marker going with the role it vouched for. Left standing, it would make " +
+				"the next sync treat an author's own element as this wiring's"},
 	} {
 		if !strings.Contains(src, want.expr) {
 			t.Errorf("grmob-runtime.js: %q not found — %s", want.expr, want.why)
+		}
+	}
+}
+
+// The value family's guards, which htmlout's ariaValue applies as well.
+//
+// This is the fourth state mapping in applyAccessibility and the one with the
+// narrowest role list: aria-valuenow and its bounds are defined for six roles
+// and core.Role carries one of them, progressbar. The near miss worth pinning
+// is core.Slider, which is a node *type* rather than a role — it exports as
+// <input type="range"> and states its own value, so an ARIA range on top would
+// be a second claim about one fact.
+//
+// The other pin here is that all four attributes are written on every call. The
+// role can change between passes, and a bar that stops being a progressbar must
+// not keep a range — the same totality the selection pair is held to, one
+// attribute wider.
+func TestRuntimeGuardsTheValueTheSameWay(t *testing.T) {
+	src := runtimeSource(t)
+	for _, want := range []struct{ expr, why string }{
+		{`function ariaValue(style) {`,
+			"the function htmlout's ariaValue mirrors"},
+		{`case "progressbar":`,
+			"the one role ARIA's value family and core.Role have in common"},
+		{`const value = hidden ? EMPTY_VALUE : ariaValue(style);`,
+			"aria-hidden winning over the range, as it does over every other attribute here"},
+		{`setOrRemove(el, "aria-valuenow", value.Now);`, "the position"},
+		{`setOrRemove(el, "aria-valuemin", value.Min);`, "the lower bound"},
+		{`setOrRemove(el, "aria-valuemax", value.Max);`, "the upper bound"},
+		{`setOrRemove(el, "aria-valuetext", value.Text);`,
+			"the spoken form, which a reader announces instead of the number"},
+		{`default:
+                return EMPTY_VALUE;`,
+			"the catch-all. A role with no arm must write no value rather than falling " +
+				"through to one"},
+	} {
+		if !strings.Contains(src, want.expr) {
+			t.Errorf("grmob-runtime.js: ariaValue is missing %q — %s. htmlout writes it, "+
+				"so the two web targets no longer describe the same bar", want.expr, want.why)
 		}
 	}
 }

@@ -68,13 +68,44 @@ type ProgressBar struct {
 	// margins and corner are all overridable.
 	Style []core.StyleProp
 
-	// AccessibilityLabel names what is progressing ("Upload"). The percentage
-	// is appended by the widget, since no renderer has a progress semantic to
-	// carry the value natively — the announcement has to be in the label or
-	// it does not exist. When empty the bar is hidden from assistive tech: an
+	// AccessibilityLabel names what is progressing ("Upload"), and nothing
+	// else — the value is announced separately, through the role and the
+	// range below. When empty the bar is hidden from assistive tech: an
 	// unlabeled bar announces a bare number with nothing to attach it to, and
 	// a bar beside its own "Uploading, 45%" caption should stay silent.
+	//
+	// It used to carry the percentage as well ("Upload, 45 percent"), because
+	// no renderer had a progress semantic to put the number in. Three of the
+	// four do now, and a name was the wrong channel for it in the way
+	// components.Chip's old ", selected" suffix was: a name is meant to be
+	// stable, so a bar ticking from 44 to 45 re-announced the whole string
+	// rather than the part that changed, and nothing could act on a number
+	// buried in it.
 	AccessibilityLabel string
+
+	// ValueText is the spoken form of the value, for a caller who wants
+	// particular words ("almost done", "3 of 5 uploaded"). Empty is the
+	// normal case and means "let each platform say the number in its own
+	// words", which is the better answer on three of the four targets:
+	//
+	//	web ×2    aria-valuenow over an implicit 0..100, which a browser
+	//	          announces as a localized percentage
+	//	Compose   ProgressBarRangeInfo, which TalkBack localizes the same way
+	//	SwiftUI   nothing. There is no numeric accessibility value on this
+	//	          platform — accessibilityValue takes a string — so an
+	//	          unaccompanied bar announces its name alone.
+	//
+	// That last row is why the field exists rather than being left out: iOS is
+	// the one target where the value genuinely has nowhere to go, and an app
+	// that would rather have English than silence there can say so. It costs
+	// the localization on the other three, which is why it is not the default
+	// — ARIA and Compose both announce this text *instead of* the number.
+	//
+	// The renderers deliberately do not supply it themselves. A framework
+	// emitting "45 percent" would be inventing English for every app in every
+	// locale, which is the same move GrMobStyle.swift turns down for
+	// AccessibilityExpanded; these are the caller's own words.
+	ValueText string
 }
 
 func (p ProgressBar) Render(ctx *core.Context) *core.Node {
@@ -123,9 +154,21 @@ func (p ProgressBar) Render(ctx *core.Context) *core.Node {
 		core.BorderRadius(radius),
 	)
 	if label := p.AccessibilityLabel; label != "" {
-		// Rounded for the announcement only; the fill keeps the exact value.
-		items = append(items, core.AccessibilityLabel(
-			fmt.Sprintf("%s, %d percent", label, int(math.Round(value*100)))))
+		// The role is what makes the rest legible. Without it the bar was a
+		// named container, which both web targets rescue with `group` — a role
+		// that says "these things belong together" and can carry no value at
+		// all, so the percentage had nowhere to go but the name.
+		//
+		// The range is 0..100 rather than 0..1 because those are ARIA's own
+		// implicit bounds, so a reader announces a percentage without being
+		// told the units. Rounded for the announcement only; the fill keeps the
+		// exact value, which is why a 45.4% bar draws at 45.4% and says 45%.
+		items = append(items,
+			core.AccessibilityRole(core.RoleProgressBar),
+			core.AccessibilityLabel(label),
+			core.AccessibilityValue(
+				core.ValueOf(math.Round(value*100), 0, 100).WithText(p.ValueText)),
+		)
 	} else {
 		items = append(items, core.AccessibilityHidden())
 	}

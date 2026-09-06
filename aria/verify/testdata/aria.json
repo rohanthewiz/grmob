@@ -1,0 +1,155 @@
+{
+  "_about": [
+    "ARIA 1.2 role definitions, scoped to the attributes this framework can write.",
+    "See doc.go for what this file is, what it is not, and how to extend it."
+  ],
+  "nameProhibited": ["generic", "caption", "code", "deletion", "emphasis", "insertion", "paragraph", "presentation", "none", "strong", "subscript", "superscript", "term", "time"],
+  "roles": {
+    "table": {
+      "attributes": [],
+      "requiredOwned": ["row", "rowgroup"]
+    },
+    "rowgroup": {
+      "attributes": [],
+      "requiredOwned": ["row"]
+    },
+    "row": {
+      "attributes": ["aria-level", "aria-selected", "aria-expanded"],
+      "requiredOwned": ["cell", "columnheader", "gridcell", "rowheader"]
+    },
+    "columnheader": {
+      "attributes": ["aria-selected", "aria-expanded"]
+    },
+    "cell": {
+      "attributes": []
+    },
+    "list": {
+      "attributes": [],
+      "requiredOwned": ["listitem", "group"]
+    },
+    "listitem": {
+      "attributes": ["aria-level"]
+    },
+    "listbox": {
+      "attributes": ["aria-expanded", "aria-orientation"],
+      "orientation": "vertical",
+      "requiredOwned": ["option", "group"]
+    },
+    "option": {
+      "attributes": ["aria-selected"]
+    },
+    "tab": {
+      "attributes": ["aria-selected", "aria-expanded"]
+    },
+    "tablist": {
+      "attributes": ["aria-orientation"],
+      "orientation": "horizontal",
+      "requiredOwned": ["tab"]
+    },
+    "tabpanel": {
+      "attributes": []
+    },
+    "banner": {
+      "attributes": []
+    },
+    "navigation": {
+      "attributes": []
+    },
+    "search": {
+      "attributes": []
+    },
+    "toolbar": {
+      "attributes": ["aria-orientation"],
+      "orientation": "horizontal"
+    },
+    "status": {
+      "attributes": []
+    },
+    "alert": {
+      "attributes": []
+    },
+    "log": {
+      "attributes": []
+    },
+    "heading": {
+      "attributes": ["aria-level"]
+    },
+    "button": {
+      "attributes": ["aria-pressed", "aria-expanded"]
+    },
+    "link": {
+      "attributes": ["aria-expanded"]
+    },
+    "img": {
+      "attributes": []
+    },
+    "progressbar": {
+      "attributes": ["aria-valuenow", "aria-valuemin", "aria-valuemax", "aria-valuetext"]
+    },
+    "group": {
+      "attributes": []
+    },
+    "generic": {
+      "attributes": []
+    },
+    "dialog": {
+      "attributes": []
+    },
+    "gridcell": {
+      "attributes": ["aria-selected", "aria-expanded"]
+    },
+    "meter": {
+      "attributes": ["aria-valuenow", "aria-valuemin", "aria-valuemax", "aria-valuetext"]
+    },
+    "scrollbar": {
+      "attributes": ["aria-valuenow", "aria-valuemin", "aria-valuemax", "aria-valuetext", "aria-orientation"],
+      "orientation": "vertical"
+    },
+    "slider": {
+      "attributes": ["aria-valuenow", "aria-valuemin", "aria-valuemax", "aria-valuetext", "aria-orientation"],
+      "orientation": "horizontal"
+    },
+    "spinbutton": {
+      "attributes": ["aria-valuenow", "aria-valuemin", "aria-valuemax", "aria-valuetext"]
+    },
+    "menu": {
+      "attributes": ["aria-orientation"],
+      "orientation": "vertical",
+      "requiredOwned": ["menuitem", "menuitemcheckbox", "menuitemradio", "group"]
+    },
+    "menubar": {
+      "attributes": ["aria-orientation"],
+      "orientation": "horizontal"
+    },
+    "radiogroup": {
+      "attributes": ["aria-orientation"],
+      "orientation": "horizontal"
+    },
+    "separator": {
+      "attributes": ["aria-orientation", "aria-valuenow", "aria-valuemin", "aria-valuemax", "aria-valuetext"],
+      "orientation": "horizontal"
+    },
+    "tree": {
+      "attributes": ["aria-orientation"],
+      "orientation": "vertical",
+      "requiredOwned": ["treeitem", "group"]
+    },
+    "treegrid": {
+      "attributes": ["aria-orientation"],
+      "orientation": "vertical"
+    },
+    "treeitem": {
+      "attributes": ["aria-level", "aria-selected", "aria-expanded"]
+    },
+    "rowheader": {
+      "attributes": ["aria-selected", "aria-expanded"]
+    },
+    "combobox": {
+      "attributes": ["aria-expanded"]
+    },
+    "grid": {
+      "attributes": [],
+      "requiredOwned": ["row", "rowgroup"]
+    }
+  }
+}

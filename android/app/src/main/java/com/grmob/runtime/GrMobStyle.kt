@@ -20,6 +20,7 @@ import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.ProgressBarRangeInfo
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.SemanticsPropertyReceiver
 import androidx.compose.ui.semantics.clearAndSetSemantics
@@ -27,9 +28,11 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.disabled
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.progressBarRangeInfo
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.unit.dp
 import org.json.JSONObject
 
@@ -131,6 +134,19 @@ data class GrMobStyle(
      * see grMobDisclosure there.
      */
     val accessibilityExpanded: String,
+    /**
+     * Go's core.ValueRange, verbatim: where a valued control sits inside its
+     * range, as the four strings ARIA spells them with. Mapped by grMobValue
+     * below, which is a separate function from grMobRole for the reason the
+     * selection has one — the role says a node *is* a progress bar and this
+     * says how far along it is, and Compose needs both in one call.
+     *
+     * The numbers are strings on the wire because a stated 0 and an unstated
+     * one are different facts and Go's Style merges on "non-zero wins"; see
+     * core.ValueRange. They are parsed here rather than carried as text
+     * because ProgressBarRangeInfo takes floats.
+     */
+    val accessibilityValue: ValueRange,
     /** Platform disabled state; see Go's core.Style.Disabled. */
     val disabled: Boolean,
     /** Parsed Transition duration; 0 means "no transition, snap changes". */
@@ -138,6 +154,29 @@ data class GrMobStyle(
     val transitionEasing: Easing,
 ) {
     data class Edges(val top: Int, val right: Int, val bottom: Int, val left: Int)
+
+    /**
+     * Go's core.ValueRange: where a valued control sits inside its range.
+     *
+     * The three numbers are nullable Floats rather than a Float with a
+     * sentinel, and the reason is the same one that makes them strings on the
+     * wire: 0 is a bar at the start of an upload, so "unstated" cannot be
+     * spelled as a number. ARIA says an unstated `now` is an *indeterminate*
+     * bar — one that is running with no idea how far — which is a real state
+     * this platform can describe and must not be given a false 0 instead.
+     *
+     * `text` is the one member with a mapping outside the range roles: it
+     * becomes stateDescription, which TalkBack announces on any node.
+     */
+    data class ValueRange(
+        val now: Float?,
+        val min: Float?,
+        val max: Float?,
+        val text: String,
+    ) {
+        /** Whether this range says anything at all; Go's ValueRange.Stated. */
+        fun stated(): Boolean = now != null || min != null || max != null || text.isNotEmpty()
+    }
 
     /** This node's property-change animation spec (callers gate on transitionMs > 0). */
     fun <T> transitionTween() = tween<T>(transitionMs, easing = transitionEasing)
@@ -197,6 +236,7 @@ data class GrMobStyle(
                 accessibilityRole = obj.optString("AccessibilityRole"),
                 accessibilitySelected = obj.optString("AccessibilitySelected"),
                 accessibilityExpanded = obj.optString("AccessibilityExpanded"),
+                accessibilityValue = parseValueRange(obj.optJSONObject("AccessibilityValue")),
                 disabled = obj.optBoolean("Disabled", false),
                 transitionMs = parseTransitionMs(obj.optString("Transition")),
                 transitionEasing = parseTransitionEasing(obj.optString("Transition")),
@@ -238,6 +278,30 @@ data class GrMobStyle(
 
         private val easingNames =
             setOf("linear", "ease", "ease-in", "ease-out", "ease-in-out")
+
+        /**
+         * Go's core.ValueRange. An absent object and an object of empty
+         * strings both mean "not a valued control" — the first is a Style that
+         * never set one, the second is one whose range went back to its zero
+         * value, and Go emits whichever the encoder happens to produce.
+         *
+         * Each number is parsed independently and independently nullable,
+         * because ARIA lets a bar state its position without its bounds (they
+         * default to 0 and 100) and lets it state bounds without a position
+         * (an indeterminate bar inside a known range). toFloatOrNull rather
+         * than a 0f default for the same reason the field is nullable: a value
+         * that failed to parse must not read as a bar at the start.
+         */
+        private fun parseValueRange(obj: JSONObject?): ValueRange {
+            if (obj == null) return ValueRange(null, null, null, "")
+            fun num(name: String): Float? = obj.optString(name).toFloatOrNull()
+            return ValueRange(
+                now = num("Now"),
+                min = num("Min"),
+                max = num("Max"),
+                text = obj.optString("Text"),
+            )
+        }
 
         /**
          * Go's EdgeInsets carries per-side values plus Horizontal/Vertical
@@ -328,10 +392,14 @@ fun GrMobStyle?.boxModifier(extra: Modifier = Modifier, gestures: Modifier = Mod
     // `selected` is the SemanticsPropertyReceiver's own property being
     // assigned rather than this style's field.
     val selectedState = accessibilitySelected
+    // And again: inside the lambda `value` would be nothing in particular, but
+    // the range has to be read off `this` before the receiver changes.
+    val valueRange = accessibilityValue
     if (accessibilityHidden) {
         m = m.clearAndSetSemantics { }
     } else if (accessibilityLabel.isNotEmpty() || accessibilityHint.isNotEmpty() ||
-        isDisabled || kind.isNotEmpty() || selectedState.isNotEmpty()
+        isDisabled || kind.isNotEmpty() || selectedState.isNotEmpty() ||
+        valueRange.stated()
     ) {
         val description = listOf(accessibilityLabel, accessibilityHint)
             .filter { it.isNotEmpty() }.joinToString(". ")
@@ -346,6 +414,7 @@ fun GrMobStyle?.boxModifier(extra: Modifier = Modifier, gestures: Modifier = Mod
             if (isDisabled) disabled()
             grMobRole(kind)
             grMobSelected(selectedState)
+            grMobValue(valueRange)
         }
     }
 
@@ -434,7 +503,7 @@ private fun dimensionModifier(value: String, horizontal: Boolean): Modifier {
  * Maps one core.Role onto Compose semantics, inside the semantics lambda that
  * is already open for the label, the hint and the disabled marker.
  *
- * Eight of the twenty roles land on something here; the other twelve are named
+ * Eight of the twenty-five roles land on something here; the other seventeen are named
  * anyway. Compose has no landmark vocabulary at all — TalkBack navigates by
  * heading, not by banner — and its tabular semantics are collectionInfo, which
  * describes counts and indices this prop does not carry, so a `role="table"`
@@ -516,6 +585,14 @@ fun SemanticsPropertyReceiver.grMobRole(kind: String) {
         // The strip. No Compose analog: a Role is a property of a control,
         // and there is no container semantics for "these are tabs".
         "tablist" -> {}
+        // The region a tab shows. No analog either, and the loss is smaller
+        // than on the web: a tabpanel's whole job there is to be the far end
+        // of an aria-controls, and TalkBack navigates by swiping to the next
+        // element rather than by following a reference — which is the same
+        // reason core.Style.AccessibilityControls is deliberately unparsed
+        // here. A core.TabView still announces correctly on this platform
+        // because it hands the whole strip to a Material TabRow.
+        "tabpanel" -> {}
         // The three live regions. The first two differ in how rudely they
         // interrupt: polite waits for a pause, assertive cuts in.
         "status" -> liveRegion = LiveRegionMode.Polite
@@ -539,6 +616,15 @@ fun SemanticsPropertyReceiver.grMobRole(kind: String) {
         // which TalkBack, navigating by swipe rather than by arrow key, does
         // not use the way a browser does.
         "listbox", "option" -> {}
+        // A determinate or indeterminate progress bar. The *role* has no
+        // Compose member — Role has Button, Checkbox, Switch, RadioButton,
+        // Tab, Image and DropdownList — but unlike the empty arms around it
+        // this platform is not silent about a progress bar: what it says is
+        // the range, through progressBarRangeInfo, and grMobValue below is
+        // where that lands. A bar with no range says nothing here, which is
+        // the honest rendering of ARIA's indeterminate bar on a platform whose
+        // only vocabulary for one is a number.
+        "progressbar" -> {}
         "banner", "navigation", "search", "toolbar" -> {}
         // Compose's Role has Button, Checkbox, Switch, RadioButton, Tab,
         // Image and DropdownList, and no Link — the one place SwiftUI's
@@ -552,6 +638,64 @@ fun SemanticsPropertyReceiver.grMobRole(kind: String) {
         // core/role.go's RoleGroup.
         "group" -> {}
         else -> {}
+    }
+}
+
+/**
+ * Maps one core.ValueRange onto Compose semantics, inside the same lambda
+ * grMobRole and grMobSelected write into.
+ *
+ * # Two properties, because the range and the words are different claims
+ *
+ * `progressBarRangeInfo` is the numeric one, and it is one of the better
+ * mappings in this file: TalkBack turns it into a percentage it localizes
+ * itself, so a bar reports "45 percent" in the user's own language with no
+ * string crossing the bridge. That is exactly what Go's ProgressBar could not
+ * do while its value lived in the accessible name.
+ *
+ * `stateDescription` is the words. It is what an app supplies when the digits
+ * are not what a listener wants to hear — "step 3 of 5" — and, unlike the
+ * range, TalkBack honours it on any node at all.
+ *
+ * # The role is deliberately not consulted, for the reason grMobSelected's is
+ * not
+ *
+ * Compose honours both of these on any node, so guarding them the way the two
+ * web exporters do would drop a value this platform would otherwise have
+ * announced. ARIA scopes aria-valuenow to six roles because ARIA scopes
+ * things; Compose does not, and the framework is not stricter than the
+ * platform it is talking to.
+ *
+ * # The three-way branch on the numbers is ARIA's indeterminate bar
+ *
+ * A bar with bounds and no position is *running with no idea how far*, which
+ * is a state Compose can only spell as `ProgressBarRangeInfo.Indeterminate`.
+ * A bar with a position takes the real range, its bounds defaulting to ARIA's
+ * own 0 and 100 so that a bare percentage reads as one. A range that states
+ * nothing numeric at all leaves the property alone — a `text` on an ordinary
+ * node must not turn it into a progress bar.
+ *
+ * The parameter is `range` and not `value` for the reason grMobRole's is
+ * `kind`: the surrounding lambda is a SemanticsPropertyReceiver, and a name
+ * that shadows one of its properties stops the assignment compiling.
+ */
+fun SemanticsPropertyReceiver.grMobValue(range: GrMobStyle.ValueRange) {
+    if (range.text.isNotEmpty()) stateDescription = range.text
+    val now = range.now
+    if (now != null) {
+        // ARIA's own defaults for an unstated bound, which is what makes a
+        // bare position announce as a percentage on every target.
+        val min = range.min ?: 0f
+        val max = range.max ?: 100f
+        // Compose requires a non-empty range; a caller that inverted the two
+        // (or stated one bound equal to the other) would otherwise crash the
+        // render rather than mis-announce it, which is the wrong trade for an
+        // accessibility annotation.
+        if (max > min) {
+            progressBarRangeInfo = ProgressBarRangeInfo(now.coerceIn(min, max), min..max)
+        }
+    } else if (range.min != null || range.max != null) {
+        progressBarRangeInfo = ProgressBarRangeInfo.Indeterminate
     }
 }
 

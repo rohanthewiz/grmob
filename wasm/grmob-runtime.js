@@ -438,14 +438,23 @@ const GrMob = (() => {
     // relationship they severed.
     //
     // A role is read back the same way and for the same reason, with one extra
-    // step: the attribute has two writers now — the author's
+    // step: the attribute has two writers — the author's
     // core.AccessibilityRole and this wiring's own "tabpanel" — so a bare
     // "has a role" test would read the panel this function wired last time as
     // an author's role and unwire it on the next sync, then rewire it on the
-    // one after. What tells them apart is that "tabpanel" is not a core.Role:
-    // the vocabulary has no such value, so an element carrying it can only
-    // have got it from here. TestNoRoleCollidesWithTheTabPanelWiring in
-    // htmlout keeps that true.
+    // one after.
+    //
+    // What tells them apart is data-grmob-panel, a marker this wiring stamps
+    // on every panel it writes, in the same channel data-grmob-chrome uses for
+    // the same kind of fact: this is something the framework put here.
+    //
+    // It used to be the *value*. "tabpanel" was a string no core.Role spelled,
+    // so an element carrying it could only have got it from here — which
+    // worked, and which made the absence of a core.RoleTabPanel constant
+    // load-bearing, so a hand-built tab strip could never name its own panels
+    // however precisely it wired them. The marker says the thing the value was
+    // standing in for, and it says it about *this element* rather than about
+    // the vocabulary.
     //
     // "group" is the one core.Role that is *also* accepted, and it is the one
     // value it is not theft to replace. A group says these things belong
@@ -466,10 +475,11 @@ const GrMob = (() => {
     function canBeTabPanel(page, scope, i) {
         const role = page.getAttribute("role");
         const id = page.getAttribute("id");
+        const mine = page.dataset.grmobPanel !== undefined;
         return (
             GENERIC_TAGS.has(page.tagName.toLowerCase()) &&
             page.getAttribute("aria-hidden") !== "true" &&
-            (role === null || role === "tabpanel" || role === "group") &&
+            (role === null || role === "group" || (role === "tabpanel" && mine)) &&
             (id === null || id === panelId(scope, i))
         );
     }
@@ -491,8 +501,41 @@ const GrMob = (() => {
     // The tab still points *at* the panel either way; only the naming is left
     // to the author.
     function wireTabPanel(page, scope, i, wired) {
-        setOrRemove(page, "id", wired ? panelId(scope, i) : "");
         const named = !!page.getAttribute("aria-label");
+        const mine = page.dataset.grmobPanel !== undefined;
+        if (wired) {
+            page.setAttribute("id", panelId(scope, i));
+            page.setAttribute("role", "tabpanel");
+            page.dataset.grmobPanel = "";
+            setOrRemove(page, "aria-labelledby", named ? "" : tabId(scope, i));
+            return;
+        }
+        // Not wired. aria-labelledby comes off whatever the reason, because
+        // this wiring is its only writer — no core.Style field maps onto it —
+        // so an unwired page carrying one is claiming to be named by a tab
+        // that is not pointing back.
+        setOrRemove(page, "aria-labelledby", "");
+        // The other two slots are shared with core.Style, and only what this
+        // function wrote comes off them. The marker is what makes that
+        // distinction possible, and the id half of it is a bug the old
+        // unconditional `setOrRemove(page, "id", "")` had: a page carrying its
+        // own core.Style.AccessibilityID is exactly the page this wiring stands
+        // down for, and it was being stood down for by having that id deleted.
+        // The static export never had the bug, because it decides once and
+        // writes nothing it did not decide.
+        if (!mine) {
+            return;
+        }
+        delete page.dataset.grmobPanel;
+        // By prefix rather than by equality, because a page can move: a tab
+        // reorder leaves page i holding the id this wiring minted for slot j,
+        // which is still this wiring's to clear. The "grmob-" prefix is
+        // reserved for exactly this (see core.Style.AccessibilityID), so a
+        // string that matches cannot be an author's.
+        const id = page.getAttribute("id");
+        if (id !== null && id.startsWith(scope + "-panel-")) {
+            page.removeAttribute("id");
+        }
         // The role is the one attribute here this function does not own
         // outright: applyAccessibility writes the author's core.Role — or the
         // group it supplies to a named container — into the same slot. So the
@@ -509,12 +552,9 @@ const GrMob = (() => {
         // page with no name, which comes back as no role. Nothing is lost that
         // a reader could hear: an unnamed group adds no node to the
         // accessibility tree.
-        if (wired) {
-            page.setAttribute("role", "tabpanel");
-        } else if (page.getAttribute("role") === "tabpanel") {
+        if (page.getAttribute("role") === "tabpanel") {
             setOrRemove(page, "role", named ? "group" : "");
         }
-        setOrRemove(page, "aria-labelledby", wired && !named ? tabId(scope, i) : "");
     }
 
     // How many leading children of this element are chrome rather than nodes.
@@ -816,15 +856,55 @@ const GrMob = (() => {
     // has no roles for yet.
     const COMPOSITE_MEMBERS = { listbox: "option", tablist: "tab" };
 
-    // Which arrow pair moves within a container, when its own axis cannot say.
-    // ARIA's defaults: a tablist is horizontal unless it says otherwise, a
-    // listbox is vertical.
-    const COMPOSITE_DEFAULT_VERTICAL = { listbox: true, tablist: false };
-
     // Elements the browser already activates from the keyboard. A <button>
     // fires a real click on both Enter and Space and an <a href> on Enter, so
     // synthesizing one here would run the author's handler twice.
     const NATIVELY_ACTIVATED = new Set(["BUTTON", "A", "INPUT", "SELECT", "TEXTAREA"]);
+
+    // The composites that answer a printable key by jumping to a member whose
+    // name starts with it.
+    //
+    // A listbox and not a tablist, which is ARIA's own division rather than a
+    // shortcut: type-to-jump is part of the listbox pattern because a listbox
+    // can be a hundred options long and the arrows are useless at that size,
+    // and it is not part of the tab pattern because a tab strip has three
+    // members and they are all on screen. examples/mobileapp's article list is
+    // the shape that asked.
+    const COMPOSITE_TYPEAHEAD = new Set(["listbox"]);
+
+    // How long a typed string stays live. ARIA's authoring practices suggest
+    // "roughly 500ms" and every implementation picks a number in that
+    // neighbourhood; the exact value matters less than there being one, since
+    // it is what separates "se" meaning Sermons from an s and an e typed a
+    // minute apart.
+    const TYPEAHEAD_RESET_MS = 500;
+
+    // The one piece of *state* this whole section owns.
+    //
+    // Everything else here is derived from the DOM on demand — which member
+    // holds the stop, which container a member belongs to, which way the arrows
+    // go — and that is what makes the rest survive every patch for free: there
+    // is nothing to invalidate. A search string cannot be derived from
+    // anything, so it is held, and the holding is kept as small as it can be:
+    //
+    //	one buffer, not one per widget   only one thing has focus at a time, so
+    //	                                 a second widget's buffer could never be
+    //	                                 the live one. The container is recorded
+    //	                                 beside the text so a keystroke in a
+    //	                                 different widget starts over rather
+    //	                                 than continuing someone else's search.
+    //	a timestamp, not a timer         setTimeout would need cancelling on
+    //	                                 every unmount, and a widget removed by
+    //	                                 a patch has no unmount hook to cancel
+    //	                                 it from. Expiry is checked on the next
+    //	                                 keystroke instead, which is the only
+    //	                                 moment it can matter.
+    //
+    // The container reference is dropped the next time anyone types anywhere.
+    // A widget removed by a patch while its buffer is live is therefore held
+    // by this object until then — one element, replaced by the next keystroke
+    // — which is the cost of not owning a timer.
+    const typeahead = { container: null, text: "", at: 0 };
 
     function compositeMemberRole(el) {
         if (!el || !el.getAttribute) return "";
@@ -949,17 +1029,25 @@ const GrMob = (() => {
 
     // Whether this container's arrows run down the page.
     //
-    // The container's own resolved flex-direction is the honest answer: every
-    // container this runtime draws is a flex container (stackAxisFor), and an
-    // author who turned a tab strip on its side with FlexDirection said which
-    // way its arrows go by doing so. ARIA's per-role default is the fallback
-    // for a container whose direction nothing set — which on this target means
-    // a role placed on a node type that is not a stack.
+    // Read off aria-orientation rather than re-derived from the element's
+    // flex-direction, and that is the whole point of the attribute existing.
+    // The behaviour and the announcement used to be two derivations of one
+    // fact — this function read the axis, and nothing wrote it down — so a
+    // vertical tab strip took the Up/Down arrows while telling a reader in
+    // browse mode that it was horizontal. applyAccessibility now writes the
+    // orientation from the same Style this would have read (ariaOrientation,
+    // which is htmlout's AriaOrientationFor), and this reads it back: the two
+    // statements are the same string, and a drift between them is no longer
+    // something that can be written.
+    //
+    // The fallback is for a container that has not been through
+    // applyAccessibility with a role yet — nothing on the live paths, since
+    // the style pass precedes both the create walk and the patch batch, but a
+    // missing attribute must not silently mean "horizontal" for a listbox.
     function compositeIsVertical(container) {
-        const dir = (container.style && container.style.flexDirection) || "";
-        if (dir.startsWith("column")) return true;
-        if (dir.startsWith("row")) return false;
-        return !!COMPOSITE_DEFAULT_VERTICAL[container.getAttribute("role")];
+        const stated = container.getAttribute("aria-orientation");
+        if (stated) return stated === "vertical";
+        return ARIA_ORIENTATIONS[container.getAttribute("role")] === "vertical";
     }
 
     // Moves the tab stop to one member and puts focus on it.
@@ -992,6 +1080,95 @@ const GrMob = (() => {
         // form; a member that is about to act on the key owns it.
         e.preventDefault();
         window.GoInvokeCallback(cbId, {});
+    }
+
+    // A member's name, lowercased, for matching a typed string against.
+    //
+    // aria-label first, because a member that names itself has said what it is
+    // called and the text inside it may be an icon or a count. Otherwise the
+    // member's own text, which is what a screen reader would compute.
+    //
+    // This is an approximation of the accessible name and is deliberately not
+    // the whole calculation: aria-labelledby is not in this framework's
+    // vocabulary, and the parts of the algorithm that involve CSS content and
+    // title attributes describe documents this runtime does not build.
+    function compositeMemberName(member) {
+        const label = member.getAttribute("aria-label");
+        const text = label || memberText(member).join(" ");
+        return text.trim().toLowerCase();
+    }
+
+    // The text under an element, collected leaf by leaf.
+    //
+    // Not `el.textContent`, which would be the obvious call and is wrong twice.
+    // In a browser it concatenates every descendant's text, so reading it at
+    // each level of a walk would count the same words once per ancestor; in
+    // wasm/verify's DOM shim it is a stored string set on leaves only, so
+    // reading it on a container answers "" (dom.mjs says so, and guards
+    // against the case where the two would diverge). Descending to the leaves
+    // is the one reading that means the same thing in both.
+    //
+    // An aria-hidden subtree is skipped: it is pruned from the accessibility
+    // tree, so it is not part of any name a reader would announce, and typing
+    // toward it would jump to a member for a reason the user cannot perceive.
+    function memberText(el, out = []) {
+        if (el.getAttribute && el.getAttribute("aria-hidden") === "true") return out;
+        if (el.children.length === 0) {
+            if (el.textContent) out.push(el.textContent);
+            return out;
+        }
+        for (const child of el.children) memberText(child, out);
+        return out;
+    }
+
+    // Type-to-jump. Returns whether the key was consumed.
+    //
+    // # The two search modes, which are one rule
+    //
+    // ARIA's own: a buffer of one repeated character ("aaa") searches for that
+    // character and *cycles*, while a growing string ("se") searches for the
+    // string and stays put if the current member still matches. Both fall out
+    // of one line — the query is the first character when every character is
+    // the same, the whole buffer otherwise — and the start of the search
+    // follows from it: a one-character query begins after the active member so
+    // repeated presses walk the matches, and a longer one begins at it so
+    // refining a search does not skip the item it was already on.
+    //
+    // # What is not typeahead
+    //
+    // Space is activation and is handled before this is reached, so a listbox
+    // whose options begin with a space is not a shape anyone can type toward.
+    // A modified key belongs to the browser: ctrl-f is find, cmd-l is the
+    // address bar, and a widget that swallowed either would be worse than one
+    // with no typeahead at all.
+    //
+    // A key that matches nothing is *not* consumed, so it reaches the page —
+    // the same rule the arrows of the other axis follow. The buffer still
+    // takes it, which is what lets a mistyped character be corrected by
+    // finishing the word rather than by waiting out the timeout.
+    function compositeTypeahead(container, members, at, e) {
+        if (!COMPOSITE_TYPEAHEAD.has(container.getAttribute("role"))) return false;
+        if (e.key.length !== 1 || e.ctrlKey || e.metaKey || e.altKey) return false;
+
+        const now = Date.now();
+        if (typeahead.container !== container || now - typeahead.at > TYPEAHEAD_RESET_MS) {
+            typeahead.text = "";
+        }
+        typeahead.container = container;
+        typeahead.at = now;
+        typeahead.text += e.key.toLowerCase();
+
+        const repeated = /^(.)\1*$/.test(typeahead.text);
+        const query = repeated ? typeahead.text[0] : typeahead.text;
+        const from = repeated ? at + 1 : at;
+        for (let i = 0; i < members.length; i++) {
+            const idx = (from + i) % members.length;
+            if (compositeMemberName(members[idx]).startsWith(query)) {
+                moveCompositeFocus(members, idx);
+                return true;
+            }
+        }
+        return false;
     }
 
     // One member's keydown.
@@ -1033,8 +1210,12 @@ const GrMob = (() => {
                 activateCompositeMember(member, e);
                 return;
             default:
-                // Every other key belongs to the page: a listbox that
+                // A printable key is a search in the widgets that have one.
+                // Everything else belongs to the page: a listbox that
                 // swallowed Tab would trap a keyboard user inside it.
+                if (compositeTypeahead(container, members, at, e)) {
+                    e.preventDefault();
+                }
                 return;
         }
         // Before the move, not after: the arrow keys scroll a page and Home
@@ -1224,10 +1405,29 @@ const GrMob = (() => {
         setOrRemove(el, "aria-label", hidden ? "" : (style.AccessibilityLabel || ""));
         setOrRemove(el, "aria-description", hidden ? "" : (style.AccessibilityHint || ""));
         setOrRemove(el, "role", role);
+        // An authored role voids the tab-panel wiring's claim on this slot,
+        // core.RoleTabPanel included — which is now a value an author can
+        // write, and which is the one case the marker alone could not tell
+        // from the wiring's own. This is the only place the runtime has the
+        // Style in hand, so it is the only place that decision can be made;
+        // htmlout makes the same one in tabPanelBox by reading the Style
+        // directly, which is what keeps the two targets agreeing about which
+        // pages are panels.
+        //
+        // RoleGroup needs no exemption even though the wiring may replace it:
+        // the claim is dropped here and re-earned a moment later, because
+        // canBeTabPanel accepts `group` on its own terms.
+        if (style.AccessibilityRole) {
+            delete el.dataset.grmobPanel;
+        }
         setOrRemove(el, "id", hidden ? "" : (style.AccessibilityID || ""));
         setOrRemove(el, "aria-controls", hidden ? "" : (style.AccessibilityControls || ""));
         setOrRemove(el, "aria-modal", dialog ? "true" : "");
         setOrRemove(el, "aria-level", hidden ? "" : ariaLevel(style));
+        // Which way a composite runs. Written here rather than derived where
+        // it is used, so the keyboard and the announcement are one statement —
+        // compositeIsVertical reads this attribute back. See ariaOrientation.
+        setOrRemove(el, "aria-orientation", hidden ? "" : ariaOrientation(style, nodeType));
         // Both selection attributes are written on every call, not just the
         // one this role calls for. The role can change between passes — a
         // patch can turn a tab into a button — and the totality rule has to
@@ -1238,6 +1438,50 @@ const GrMob = (() => {
         setOrRemove(el, "aria-selected", selected[0]);
         setOrRemove(el, "aria-pressed", selected[1]);
         setOrRemove(el, "aria-expanded", hidden ? "" : ariaExpanded(style, nodeType));
+        // All four of the value family on every call, for the reason both
+        // selection attributes are written: the role can change between passes,
+        // and a bar that stops being a progressbar must not keep a range.
+        const value = hidden ? EMPTY_VALUE : ariaValue(style);
+        setOrRemove(el, "aria-valuenow", value.Now);
+        setOrRemove(el, "aria-valuemin", value.Min);
+        setOrRemove(el, "aria-valuemax", value.Max);
+        setOrRemove(el, "aria-valuetext", value.Text);
+    }
+
+    // The empty range, for the aria-hidden path and for every role the value
+    // family is not defined on. A shared frozen object rather than a fresh
+    // literal per call: applyAccessibility runs for every node of every tree
+    // and all but the progress bars take this branch.
+    const EMPTY_VALUE = Object.freeze({ Now: "", Min: "", Max: "", Text: "" });
+
+    // core.Style.AccessibilityValue as the four aria-value* values. The htmlout
+    // twin of this is ariaValue in export.go and the two must agree; the whole
+    // argument lives there and in core.ValueRange.
+    //
+    // The short version: this is the fourth state mapping and the narrowest.
+    // ariaLevel resolves two Go fields onto one attribute, ariaSelected one
+    // onto two, ariaExpanded one onto one; this resolves one onto four, because
+    // Now, Min and Max are one fact in three parts — "45" is 45% out of ARIA's
+    // implicit 0..100 and step 45 out of 1..50.
+    //
+    // A stated role with no range is not corrected to zero. ARIA spells an
+    // *indeterminate* progress bar by leaving aria-valuenow off, so a bar that
+    // is running with no idea how far is exactly this role and an unstated
+    // range — and defaulting a 0 in would pin every one of them at the start.
+    function ariaValue(style) {
+        const v = style.AccessibilityValue;
+        if (!v) return EMPTY_VALUE;
+        switch (style.AccessibilityRole) {
+            case "progressbar":
+                return {
+                    Now: v.Now || "",
+                    Min: v.Min || "",
+                    Max: v.Max || "",
+                    Text: v.Text || "",
+                };
+            default:
+                return EMPTY_VALUE;
+        }
     }
 
     // The value of the role attribute for one element: what the author said,
@@ -1344,6 +1588,45 @@ const GrMob = (() => {
             default:
                 return "";
         }
+    }
+
+    // Which way a composite runs, per role, when its own axis cannot say.
+    // ARIA's own defaults: a tablist and a toolbar are horizontal, a listbox is
+    // vertical. The Go authority is ariaOrientations in htmlout/orientation.go,
+    // where the argument for the whole attribute lives;
+    // TestRuntimeOrientationTableMatchesGo holds the two together, and reads
+    // this literal out of the source textually, so keep it a flat object of
+    // string values.
+    //
+    // It is also the table compositeIsVertical falls back to, which is why
+    // there is one table here and not two: the keyboard's default and the
+    // announcement's default were always the same fact.
+    const ARIA_ORIENTATIONS = { listbox: "vertical", tablist: "horizontal", toolbar: "horizontal" };
+
+    // core.Style's role and layout axis as the aria-orientation value, or ""
+    // for a role the attribute is not defined on. The htmlout twin of this is
+    // AriaOrientationFor in orientation.go and the two must agree; the whole
+    // argument lives there.
+    //
+    // The short version: the runtime reads a composite's axis to pick the arrow
+    // pair, and nothing announced it — so a vertical tab strip behaved one way
+    // and, through ARIA's horizontal default for a tablist, said the other. The
+    // axis resolves exactly as styleFromGrMob resolves it for the CSS
+    // declaration (an explicit FlexDirection over the node type's own stacking
+    // direction), so the attribute cannot disagree with the layout; ARIA's
+    // per-role default covers the one shape that has no axis, a role on a node
+    // type that is not a stack.
+    //
+    // The author's own role, not the effective one: the two values
+    // applyAccessibility can supply where the style stated none — `group` from
+    // ariaRole and `dialog` for a Modal — are not oriented roles.
+    function ariaOrientation(style, nodeType) {
+        const def = ARIA_ORIENTATIONS[style.AccessibilityRole || ""];
+        if (!def) return "";
+        const axis = style.FlexDirection || stackAxisFor(nodeType);
+        if (axis.startsWith("column")) return "vertical";
+        if (axis.startsWith("row")) return "horizontal";
+        return def;
     }
 
     // Whichever of core.Style's two level fields the node's role calls for, as

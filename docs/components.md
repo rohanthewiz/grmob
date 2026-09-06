@@ -884,10 +884,22 @@ components.ProgressBar{Value: done / total, Thickness: 10, Color: "#34C759"}
 
 - `Value` is clamped to 0–1 rather than rejected (NaN reads as 0): a bar fed
   a live ratio should pin at full and keep rendering.
-- The percentage is appended to the accessibility label, because no renderer
-  has a progress semantic to carry the value natively. With no label the bar
-  is hidden — an unlabeled bar announces a bare number with nothing to
-  attach it to.
+- The bar takes `core.RoleProgressBar` and states its position through
+  `core.AccessibilityValue`, so the name is "Upload" and the value is
+  announced separately as it moves. With no label the bar is hidden entirely
+  — an unlabeled bar announces a bare number with nothing to attach it to.
+- `ValueText` is the spoken form of the value, and is empty by default on
+  purpose. Both web targets and Compose localize the percentage themselves
+  from the numbers; SwiftUI has no numeric accessibility value at all, so an
+  iOS bar announces its name alone unless an app supplies words. Supplying
+  them costs the other three their localization, because ARIA and Compose
+  announce the text *instead of* the number.
+- The percentage used to be appended to the accessible label, because no
+  renderer had a progress semantic to carry it. Three of the four do now, and
+  a name was the wrong channel for a value that changes: a name is meant to be
+  stable, so a bar ticking from 44 to 45 re-announced the whole string rather
+  than the part that changed — the same reason `Chip`'s old `", selected"`
+  suffix was deleted.
 - The fill renders at every value, zero-width included. A constant child
   count keeps advancing progress a *style patch* on one node instead of an
   insert/remove, which is also what lets a `Transition` animate it.
@@ -945,7 +957,12 @@ components.FormField{
 ```
 
 `Required` draws the conventional asterisk after the label, inked in the theme's
-Error color and announced to screen readers as "required". It is annotation
+Error color and announced to screen readers as "required" — the marker takes
+`core.RoleImg`, which is what says the label replaces the glyph rather than
+sitting beside it. (`img` is the role for a node whose meaning is carried by
+what it looks like; the `group` a named node is otherwise given invites a reader
+to announce the label *and* the asterisk it was standing in for.) It is
+annotation
 only — the widget still validates nothing — which is why it is worth asking
 [`form.Required(name)`](concepts/forms.md#the-required-marker) rather than
 writing `true`: the form derives its answer from the field's own rules, so the
@@ -1380,7 +1397,17 @@ on a single bar the last line is the only line.
 The bars take the palette's **Border** role, not Surface: Surface is a
 *panel's* fill, so a Surface bar inside a card disappears — the same trap
 `Separator` documents. They are hidden from assistive technology and the
-container carries the label (`"Loading"` by default).
+container carries the label (`"Loading"` by default) under `core.RoleStatus`.
+
+That role is what makes the wait *announce*. A named container with no role is
+given `group` by both web targets, which makes the name legal and stops there:
+a reader says "Loading" only if the user happens to walk onto the block. A
+skeleton is not a group of things — the bars stand in for content that is not
+here yet — and `status` is ARIA's word for one advisory that is replaced, which
+is the region's whole contract. It is a live region on the two web targets and
+on Android (Compose's polite live region); SwiftUI has no live-region property,
+so on iOS this is still a labelled container that VoiceOver reads on arrival
+without interrupting for.
 
 **No shimmer.** A moving highlight is a repeating keyframe animation, and
 `core.Transition` animates a property between two declared values. Looping it
