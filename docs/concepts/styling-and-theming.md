@@ -73,13 +73,13 @@ quirks. A `core.Button` draws its own container on both natives, so it is
 handed a style with the box-drawing fields stripped and each one fed back
 through the platform control's own slot; the border used to be stripped and
 not fed back, which is why `components.Button`'s outlined emphasis had no rule
-on device. And on the web a `<button>`, an `<input>` and a `<textarea>` carry the *user
-agent's* border, which no `BorderWidth(0)` could remove, because emitting no
-declaration is exactly what leaves the browser in charge — so both DOM
-renderers now write `border:none` for the node types a browser draws a frame
-on. The set is keyed by node type because five of them share `<input>` and
-only three want it: a `Checkbox` and a `Slider` are drawn in their entirety by
-the browser, and their border is the control rather than chrome the Go style
+on device. And on the web a `<button>`, an `<input>`, a `<textarea>` and a `<select>` carry
+the *user agent's* border, which no `BorderWidth(0)` could remove, because
+emitting no declaration is exactly what leaves the browser in charge — so both
+DOM renderers now write `border:none` for the node types a browser draws a
+frame on. The set is keyed by node type because five of them share `<input>`
+and only three want it: a `Checkbox` and a `Slider` are drawn in their entirety
+by the browser, and their border is the control rather than chrome the Go style
 owns.
 
 The text fields joined that set only once both bundled themes gave
@@ -91,6 +91,16 @@ that identifies a control may not, since WCAG 1.4.11 puts a 3:1 floor under it.
 `components.DatePicker`'s trigger inherits the whole frame off the same
 `Components.Input` base, so a picker between two text fields wears what they
 wear.
+
+`core.Select` joins on the same test, and the deciding fact is what the *other*
+three targets do. Neither native builds it from a platform picker control —
+SwiftUI's `.pickerStyle(.menu)` and Material's `ExposedDropdownMenuBox` each
+draw a frame and an indicator that no Go style can remove — so each draws the
+style's own box and hangs a menu off it. The frame is the theme's on three
+targets out of four, and the web was again the one place a second one was being
+drawn underneath. Only the frame is reset: a `<select>`'s drop-down indicator
+is the thing that says the control is a picker, `border` does not touch it, and
+it stays.
 
 `Padding` and `Margin` carry a `Horizontal`/`Vertical` pair alongside the four
 sides (`core.PaddingHorizontal(16)`). A side left at zero takes its axis's
@@ -598,8 +608,9 @@ A palette role is one hex, and one hex cannot do both jobs a role is asked to
 do:
 
 - **As a fill**, with an ink chosen over it, a mid-tone works.
-  `components.Variant.Ink` picks the more legible of the theme's two ink roles,
-  and a filled `Badge` or `Button` clears WCAG AA on both bundled themes.
+  `components.Variant.Ink` resolves that ink (see
+  [the ink over a fill](#the-ink-over-a-fill) below), and a filled `Badge` or
+  `Button` clears WCAG AA on both bundled themes.
 - **As ink itself** — an outlined button's label and rule, a loud chip's
   outline, a banner's leading glyph — the backdrop is whatever the widget was
   placed on, which the widget cannot see, and a mid-tone loses.
@@ -641,6 +652,51 @@ themes. A dark theme's role colors are usually already legible on its dark
 ground, so it leaves these empty and the fallback does the right thing — which
 is why these are four extra fields rather than a second palette every theme has
 to fill in twice.
+
+#### The ink over a fill
+
+The other half of the same problem: a widget that *paints* a role needs a label
+colour to go over it, and the palette names none. `components.Variant.Ink`
+answers, in two steps and in this order.
+
+**Ask the theme.** `Components.Button` is the one place a palette states a fill
+and an ink *together* — a filled button is the control a theme cannot describe
+without answering the question — so a fill that matches `Button.Background`
+takes `Button.TextColor`. It is a reverse lookup, like `Colors.OnLight` one
+property over, and it is why `components.Chip` reads its accent off the Button
+base rather than off `Colors.Primary`: a theme whose buttons are not
+primary-coloured has said something, and the button is where it said it.
+
+**Otherwise measure.** For a colour the theme has paired nothing with — a
+status role, an explicit `Badge.Color` — the more legible of the theme's two
+ink roles wins on WCAG contrast. That is what keeps white off `DefaultTheme`'s
+`Success` (2.22:1) and `Warning` (2.20:1), where a fixed pairing would have
+shipped a badge nobody can read.
+
+Measurement alone is the wrong rule for a role the theme has an opinion about,
+and `DefaultTheme`'s `Primary` is the case that shows it: against `#007AFF`
+white measures 4.02:1 and black 5.23:1, so a pure contrast rule picks **black**
+— while every filled `components.Button` in the framework paints white, because
+that is the pair the theme declares. `components.Calendar` used to compute its
+selected day's ink and so drew a black numeral on iOS system blue. No third ink
+role was added to settle it, and the reason is arithmetic rather than taste:
+nothing a theme could name would outscore black on a mid-tone, so any fix
+expressed as another *candidate* would have lost the same comparison. The
+question had to change.
+
+The honest cost is that white on `#007AFF` is below AA for body text. That is
+not a regression being waved through — it is the number every filled button has
+always painted. Raising it is the theme's move (a darker `Button` base, or
+Apple's accessible blue `#0040DD`, which this palette already carries as
+`PrimaryOnLight`), and it would lift the buttons and the calendar together. One
+widget quietly disagreeing with the theme fixed nothing and hid the question.
+
+!!! note "A theme with no `Components.Button` has declared no pairing"
+    Its fills are measured like any other colour, including for the default
+    variant, which used to be exempt and return `Colors.Background` whatever it
+    was given. Two things changed with the exemption: `Badge{Color: "#FFF9C4"}`
+    with no variant now gets dark ink on pale yellow instead of white, which is
+    what `Badge`'s own documentation always promised.
 
 !!! warning "`ComponentDefaults` has no resolvers either — and *can* be missing"
     The same reasoning does not extend to `Theme.Components`. It is a plain

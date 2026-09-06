@@ -47,10 +47,14 @@ func ExportHTML(node *core.Node) string {
 // children — the two channels through which a decision that belongs to the
 // parent reaches markup that is assembled in the child.
 //
-// Exactly one caller fills it in: renderTabView, which hides the pages that
-// are not selected (decl) and names each page as the panel its tab controls
-// (attrs). Both have to arrive this way because a page does not know it is a
-// page; only the TabView above it does.
+// Two callers fill it in, and both for the same underlying reason — the fact
+// being expressed is the parent's and the markup is the child's:
+//
+//	renderTabView     hides the pages that are not selected (decl) and names
+//	                  each page as the panel its tab controls (attrs). A page
+//	                  does not know it is a page; only the TabView does.
+//	renderContainer   places every child of a core.ZStack in the overlay's one
+//	                  grid cell (decl). A layer does not know it is a layer.
 //
 //	decl   a CSS declaration list, appended after everything the node itself
 //	       declares so it wins the browser's last-one-wins parse — which is
@@ -296,6 +300,8 @@ func renderNode(b *element.Builder, node *core.Node, from imposed, path string) 
 			lead = append(lead, "step", step)
 		}
 		b.Input(withLead(attrs, lead...)...).R()
+	case "Select":
+		renderSelect(b, node, attrs)
 	case "Image":
 		if src, ok := node.Props["src"].(string); ok {
 			b.Img(withLead(attrs, "src", src)...).R()
@@ -335,8 +341,23 @@ func renderContainer(b *element.Builder, node *core.Node, attrs []string, path s
 	// Fragment and Theme never reach here — renderNode emits their children
 	// directly rather than a box.
 	e := b.Ele(TagFor(node.Type), attrs...)
-	for i, child := range node.Children {
-		renderNode(b, child, imposed{}, childPath(path, i))
+	// What this container imposes on each of its children. An overlay is the
+	// second caller of the imposed channel after the TabView pages, and it is
+	// there for the same reason they are: a child has no idea it is a layer,
+	// and only the container above it knows that every child belongs in the
+	// same grid cell. See OverlayChildDecl.
+	//
+	// A Fragment child forwards the declaration to its own children rather
+	// than absorbing it (renderNode's transparent branch passes `from`
+	// through), which is exactly right — a Fragment has no box, so the layers
+	// are its children, and a core.For inside a ZStack overlays what it
+	// generated instead of stacking it.
+	child := imposed{}
+	if IsOverlay(node.Type) {
+		child.decl = OverlayChildDecl
+	}
+	for i, c := range node.Children {
+		renderNode(b, c, child, childPath(path, i))
 	}
 	e.R()
 }
@@ -393,6 +414,44 @@ const (
 // declaration. The runs are the typed slice core.TextGrid built; a
 // hand-assembled node with some other shape exports as an empty row rather
 // than a guess.
+// renderSelect writes a picker and its options.
+//
+// The options come from the props rather than from node.Children, which is
+// core.Select's contract and the reason this needs a case of its own: every
+// other leaf in the switch above is childless in the markup too.
+//
+// The chosen option is marked with `selected` rather than the element being
+// given a value attribute, because <select> has no value attribute — the
+// selection lives on the options. This is also why an unmatched value degrades
+// the way a browser would anyway: nothing is marked, and the browser shows the
+// first option, which is what a live <select> does with an out-of-list value.
+//
+// element escapes both halves: the value goes through the attribute path
+// (quote-escaped) and the label through TE (entity-escaped), so an option
+// carrying markup cannot re-enter the document as markup. Options are as
+// user-originated as any other content here — a country list read from a
+// server is the normal case.
+func renderSelect(b *element.Builder, node *core.Node, attrs []string) {
+	value := getStr(node.Props["value"])
+	e := b.Ele("select", attrs...)
+	// The wire shape core.Select flattens to; see its doc. A hand-built node
+	// carrying something else renders as an empty picker rather than panicking,
+	// which is the same degradation an Image with no src gets.
+	if opts, ok := node.Props["options"].([]map[string]string); ok {
+		for _, o := range opts {
+			lead := []string{"value", o["value"]}
+			if o["value"] == value {
+				// element emits key="value" pairs only; selected="selected" is
+				// the spec-blessed spelling of the bare boolean attribute, as
+				// checked="checked" is on a Checkbox.
+				lead = append(lead, "selected", "selected")
+			}
+			b.Ele("option", lead...).TE(o["label"])
+		}
+	}
+	e.R()
+}
+
 func renderGridRow(b *element.Builder, node *core.Node, attrs []string) {
 	runs, _ := node.Props["runs"].(core.GridRow)
 	e := b.Div(attrs...)
@@ -747,7 +806,7 @@ func ariaSelected(s *core.Style, nodeType string) (string, string) {
 // disabled is not a valid attribute and would simply be ignored.
 func isFormControl(nodeType string) bool {
 	switch nodeType {
-	case "Button", "Input", "InputPassword", "NumericInput", "TextArea", "Checkbox", "Slider":
+	case "Button", "Input", "InputPassword", "NumericInput", "TextArea", "Checkbox", "Slider", "Select":
 		return true
 	}
 	return false
@@ -900,10 +959,28 @@ func styleValue(s *core.Style, nodeType string) string {
 	// once the natives learned to read them as their stacks' spacing,
 	// omitting them here meant core.RowGap(8) on a Column spaced the children
 	// on a phone and emitted an inert `row-gap` into a block-flow div.
-	isFlex := stackAxis != "" ||
-		s.Gap != 0 || s.RowGap != 0 || s.ColumnGap != 0 ||
-		s.JustifyContent != "" || alignItems != "" || s.FlexDirection != ""
-	if isFlex {
+	// The z-stack is a container too, and not a flex one. It short-circuits
+	// the whole block below rather than sitting beside it: a ZStack that
+	// carried a Gap or an AlignItems would otherwise be turned into a flex
+	// container by the test underneath and stop overlaying its children
+	// entirely, which is a silent and total loss of the thing the node type
+	// exists for. The props are simply inert on an overlay, as they are on a
+	// Text — there is one cell and nothing to space along.
+	isOverlay := IsOverlay(nodeType)
+	isFlex := !isOverlay &&
+		(stackAxis != "" ||
+			s.Gap != 0 || s.RowGap != 0 || s.ColumnGap != 0 ||
+			s.JustifyContent != "" || alignItems != "" || s.FlexDirection != "")
+	if isOverlay {
+		// inline-grid for the same reason the flex branch writes inline-flex:
+		// an inline-level node that is also a grid needs both halves, and
+		// "display" has one slot.
+		if s.Display == core.DisplayInline {
+			styles = append(styles, strings.Replace(OverlayChassis, "display:grid", "display:inline-grid", 1))
+		} else {
+			styles = append(styles, OverlayChassis)
+		}
+	} else if isFlex {
 		// inline-flex is the one CSS spelling that keeps both halves when a
 		// Display: inline node is also a flex container: the inline level the
 		// author asked for and the flex layout its container props require.
@@ -945,6 +1022,11 @@ func styleValue(s *core.Style, nodeType string) string {
 	//     already dropping them as invalid after the flex declaration, so the
 	//     dead declaration is simply no longer written.
 	//
+	// A z-stack is gated identically and for identical reasons — "none" still
+	// wins, "block" is already said by display:grid, "inline" was folded into
+	// inline-grid — which is why the two containers share one condition rather
+	// than growing a second copy of this paragraph.
+	//
 	// A node that is not a flex container keeps the verbatim emission this
 	// exporter has always produced.
 	//
@@ -952,7 +1034,7 @@ func styleValue(s *core.Style, nodeType string) string {
 	// are not CSS display keywords, so emitting them here produced a
 	// declaration the browser discarded — the mode was stated in Go, written
 	// into the document, and had no effect anywhere.
-	if isCSSDisplay(s.Display) && (!isFlex || s.Display == core.DisplayNone) {
+	if isCSSDisplay(s.Display) && ((!isFlex && !isOverlay) || s.Display == core.DisplayNone) {
 		styles = append(styles, fmt.Sprintf("display:%s", s.Display))
 	}
 	// DisplayHidden / DisplayVisible, in the CSS property that actually means

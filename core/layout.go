@@ -227,11 +227,72 @@ func Column(stylePropsAndChildren ...PropsAndChildren) View {
 // the DOM targets stacked its children, so a Box with two children rendered
 // two different pictures. mobile/verify's
 // TestNativeBoxIsAVerticalStackNotAnOverlay pins the agreement.
+//
+// ZStack, below, is the container that does overlay — and it exists because
+// this one stopped. The two are the same argument from both ends: one shape
+// per node type, stated once, rather than a container whose meaning depended
+// on which renderer was reading it.
 func Box(stylePropsAndChildren ...PropsAndChildren) View {
 	return ComponentFunc(func(ctx *Context) *Node {
 		return containerNode(ctx, "Box", Style{}, stylePropsAndChildren)
 	})
 }
+
+// ZStack overlays its children: every child is drawn in the same box, in tree
+// order, so the last one written is the one on top. It is the framework's only
+// z-axis container, and the one thing Box deliberately is not.
+//
+//	core.ZStack(
+//	    core.Width("160px"), core.Height("160px"),
+//	    rose,          // painted first, underneath
+//	    indexMark,     // painted second, over it
+//	)
+//
+// # Why this is a node type and not a style
+//
+// core.Style already carries Position, Top/Right/Bottom/Left and ZIndex, and
+// they are CSS spellings that only the two DOM targets read — Renderer.swift
+// and Renderer.kt consult none of the five. So anything built out of them is a
+// web-only widget wearing a portable name, which is exactly why
+// components.Compass parked its index mark *above* the rose instead of over
+// it. An overlay has a first-class construct on each of the other three
+// targets (a SwiftUI ZStack, a Compose Box, a single-cell CSS grid), and
+// naming the container is what lets each renderer reach for its own.
+//
+// # The alignment contract: centred, and only centred
+//
+// Every child is centred on both axes and keeps its own size. That is the one
+// arrangement all three constructs agree on without argument — SwiftUI's
+// ZStack already defaults to .center, Compose's Box is told to (its own
+// default is TopStart), and the grid cell is given align-items/justify-items
+// centre — and agreeing exactly is worth more here than a knob, because an
+// overlay that drifted a few points between targets is a bug nobody sees until
+// they hold two phones side by side.
+//
+// A child that wants to sit somewhere else says so *with its own box* rather
+// than with a per-child alignment prop: give it the stack's dimensions and lay
+// its content out inside itself. components.Compass does exactly that — the
+// index mark is a full-height Column that justifies its glyph to the start, so
+// the mark lands at top centre while the Column itself is centred like
+// everything else. Should a second consumer want the prop, this is where it
+// goes; one consumer is not a vocabulary.
+//
+// # What the stack sizes to
+//
+// The largest child, on every target. A ZStack with no size of its own is as
+// big as the biggest thing in it, which is why the example above states the
+// rose's dimensions on the stack: pinning the box is what keeps a smaller
+// overlay from deciding the size.
+//
+// Like Box and Scroll it carries no theme base — a theme Column's screen inset
+// applied to an overlay would offset every layer by 16px and change nothing
+// about their relationship.
+func ZStack(stylePropsAndChildren ...PropsAndChildren) View {
+	return ComponentFunc(func(ctx *Context) *Node {
+		return containerNode(ctx, "ZStack", Style{}, stylePropsAndChildren)
+	})
+}
+
 func Divider(height int, color string) View {
 	return Box(
 		Height(fmt.Sprintf("%dpx", height)),

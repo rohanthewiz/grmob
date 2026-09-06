@@ -141,11 +141,17 @@ func TestCalendarSelectionFillsAndPicksItsInk(t *testing.T) {
 	if sel.Style.Background != theme.Colors.Primary {
 		t.Errorf("selected background = %q, want Primary %q", sel.Style.Background, theme.Colors.Primary)
 	}
-	// The ink is chosen against the fill rather than assumed: Primary is a
-	// light blue in one bundled theme and a dark indigo in another.
-	want := contrastInk(theme.Colors.Primary, theme.Colors.Background, theme.Colors.TextPrimary)
-	if got := sel.Children[0].Style.TextColor; got != want {
-		t.Errorf("selected ink = %q, want the contrast-picked %q", got, want)
+	// A literal, not a re-derivation. Asserting against inkOn(...) here would
+	// pass whatever inkOn returned, including the black this test exists to
+	// keep out — the earlier version did exactly that against contrastInk and
+	// so agreed with the bug for as long as it stood.
+	//
+	// #FFFFFF is the ink DefaultTheme's Button base declares over #007AFF, and
+	// therefore what every filled components.Button on the same screen paints.
+	// Black is the higher ratio (5.23:1 against white's 4.02:1) and is what a
+	// pure contrast rule picks; see inkOn.
+	if got := sel.Children[0].Style.TextColor; got != "#FFFFFF" {
+		t.Errorf("selected ink = %q, want the theme's declared #FFFFFF over Primary", got)
 	}
 	// Any instant during the day selects it — 18:00 above, midday in the grid.
 	if dayNumber(t, sel) != "12" {

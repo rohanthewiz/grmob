@@ -89,6 +89,14 @@ func App(ctx *core.Context) core.View {
 			{Name: "terms", Rules: []forms.Rule{
 				forms.Accepted("Please accept the terms to continue"),
 			}},
+			// The picker, declared with an Initial rather than a Required
+			// rule. Both shapes are legitimate and they are different forms:
+			// a picker with no sensible default opens empty and complains
+			// when the user submits without choosing, while this one opens on
+			// the answer most people want and the user changes it or does
+			// not. A signup that made someone pick a plan before it would let
+			// them in is the worse of the two.
+			{Name: "plan", Initial: "free"},
 		},
 		// The one check no single field can make, because it needs to see
 		// another field's value. Its message fills in only where the field's
@@ -148,6 +156,24 @@ func App(ctx *core.Context) core.View {
 				Required: form.Required("confirm"),
 				Error:    form.Error("confirm"),
 				Input:    form.Password("confirm", "••••••••", core.FocusTarget(confirmField)),
+			},
+
+			// The picker. Not in the focus order above and deliberately: the
+			// order is the return key's path through the *text* fields, and a
+			// picker takes no keyboard focus on either phone — a fourth entry
+			// would advertise a Next that lands nowhere, which is the same
+			// reason the terms checkbox is left out.
+			components.FormField{
+				Label: "Plan",
+				Hint:  "You can change this later",
+				Error: form.Error("plan"),
+				Input: form.Select("plan", []core.SelectOption{
+					{Value: "free", Label: "Free"},
+					{Value: "pro", Label: "Pro — $9/month"},
+					// No label: the value is what a reader would want to see
+					// anyway, and core.Select fills it in.
+					{Value: "Team"},
+				}),
 			},
 
 			// A checkbox has no error line of its own — but FormField's Input

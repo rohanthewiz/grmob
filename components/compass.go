@@ -13,8 +13,7 @@ import (
 //	h := hooks.UseHeading(ctx)
 //	components.Compass{Heading: h.Magnetic, ShowDegrees: true}
 //
-//	         ▼            index mark — fixed, reads against the rose
-//	      ┌──────┐
+//	      ┌──▼───┐        index mark — fixed, over the rose's rim
 //	      │   N  │        the rose turns by -Heading, so N stays
 //	      │ W   E│        pointing at north while the device turns
 //	      │   S  │
@@ -35,18 +34,29 @@ import (
 // clockwise increases the heading, and the rose must turn counter-clockwise by
 // the same amount to keep pointing at the same piece of the world.
 //
-// # Why the index mark sits above the rose and not on it
+// # Where the index mark sits, and where it used to
 //
-// It would be nicer inside the circle, over the rose, as a needle. It cannot
-// be: core has no z-stacking primitive. Box stacks its children vertically on
-// all four targets (settled deliberately — see the "Box overlay divergence"
-// note in core.Box), and CSS absolute positioning is a declared web-only prop
-// that neither native renderer reads. Anything drawn *over* the rose today
-// would be a web-only widget wearing a portable name.
+// On the rose's rim, at twelve o'clock, drawn over it — which is where a
+// compass index belongs and where this one could not go for as long as core
+// had no z-axis container. Box stacks its children vertically on all four
+// targets (settled deliberately — see the "Box overlay divergence" note in
+// core.Box), and CSS absolute positioning is a declared web-only prop neither
+// native renderer reads, so anything drawn *over* the rose would have been a
+// web-only widget wearing a portable name. The mark was parked in the row
+// above instead, costing a glyph of height and reading as a separate thing
+// pointing at the dial rather than as part of it.
 //
-// Stacking the mark above the rose costs one glyph of height and works
-// identically everywhere, which is the trade this package makes every time.
-// If a ZStack node type ever lands, this is the widget that wants it first.
+// core.ZStack is that container, and this is its first consumer. The dial is
+// a stack of two layers — the rose, then a full-height column that justifies
+// the mark to the top — because a ZStack centres every layer and a layer that
+// wants to be somewhere else says so with its own box. See core.ZStack for
+// why the alignment is a fixed centre rather than a prop.
+//
+// The rose's inset went from half a letter to a whole one to make room. The
+// mark's glyph is three quarters of a letter tall, so a ring that deep is what
+// keeps N clear of it at heading zero — the one bearing where the two
+// deliberately coincide, since an index pointing at N is exactly what facing
+// north looks like.
 //
 // # A float, not a core.Heading
 //
@@ -160,7 +170,10 @@ func (c Compass) Render(ctx *core.Context) *core.Node {
 		core.BackgroundColor(bg),
 		core.BorderWidth(1),
 		core.BorderColor(t.Colors.BorderColor()),
-		core.Padding(int(letter/2)),
+		// A whole letter, not half of one: the index mark is drawn over this
+		// box's rim now (see the type doc), and the ring is what keeps N out
+		// from under it.
+		core.Padding(int(letter)),
 		core.Justify(core.JustifyBetween),
 		core.AlignItemsProp(core.AlignItemsCenter),
 		// Minus the heading: see "Which half turns" on the type.
@@ -181,7 +194,39 @@ func (c Compass) Render(ctx *core.Context) *core.Node {
 		roseRow(core.Text("S", core.FontSize(letter), core.TextColor(ink))),
 	)
 
-	// The outer column: index mark, rose, optional readout.
+	// The dial: the rose with the index mark laid over it.
+	//
+	// "▼" rather than a drawn triangle: core has no shape primitive, and a CSS
+	// border trick would be web-only. The glyph is in every system font on all
+	// four targets. Sized below the letters so it reads as a mark against the
+	// rose rather than a fifth cardinal point.
+	//
+	// The mark is wrapped in a full-height column rather than laid in the
+	// stack bare, because a ZStack centres its layers: a bare glyph would sit
+	// in the middle of the rose. The column is as tall as the rose and
+	// justifies its one child to the start, which puts the mark on the rim —
+	// the escape core.ZStack documents in place of a per-child alignment prop.
+	dial := core.ZStack(
+		core.Width(fmt.Sprintf("%gpx", size)),
+		core.Height(fmt.Sprintf("%gpx", size)),
+		// Hidden as a whole. Both layers are decorative — the container
+		// speaks for the widget — and hiding the stack takes the subtree with
+		// it rather than relying on each layer to hide itself.
+		core.AccessibilityHidden(),
+		rose,
+		core.Column(
+			core.Padding(0),
+			core.Height(fmt.Sprintf("%gpx", size)),
+			core.Justify(core.JustifyStart),
+			core.AlignItemsProp(core.AlignItemsCenter),
+			core.Text("▼",
+				core.FontSize(letter*0.75),
+				core.TextColor(north),
+			),
+		),
+	)
+
+	// The outer column: dial, optional readout.
 	items := make([]core.PropsAndChildren, 0, 8+len(c.Style))
 	items = append(items,
 		core.Padding(0),
@@ -196,16 +241,7 @@ func (c Compass) Render(ctx *core.Context) *core.Node {
 		items = append(items, sp)
 	}
 
-	// "▼" rather than a drawn triangle: core has no shape primitive, and a
-	// CSS border trick would be web-only. The glyph is in every system font on
-	// all four targets. Sized below the letters so it reads as a mark against
-	// the rose rather than a fifth cardinal point.
-	items = append(items, core.Text("▼",
-		core.FontSize(letter*0.75),
-		core.TextColor(north),
-		core.AccessibilityHidden(),
-	))
-	items = append(items, rose)
+	items = append(items, dial)
 
 	if c.ShowDegrees {
 		// Rounded to whole degrees. A magnetometer's accuracy is measured in

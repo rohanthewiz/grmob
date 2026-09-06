@@ -484,6 +484,58 @@ a browser draws its own border on an `<input>`. Both themes now state a control
 boundary at WCAG 1.4.11's 3:1, all four targets draw it from the same field, and
 `borderResetTypes` could finally take the browser's away.
 
+### A picker's frame, and why it is not a platform picker
+
+`core.Select` is drawn on both natives as an ordinary styled box with a menu
+hung off it — a SwiftUI `Menu`, a Compose `Box` anchored to a `DropdownMenu` —
+and **not** from either platform's own picker control. That is a deliberate
+cost: `.pickerStyle(.menu)` and Material's `ExposedDropdownMenuBox` are the
+idiomatic controls and each draws a frame, a container colour and an indicator
+of its own that no Go style can remove.
+
+Taking them would have made the picker the one control in the vocabulary whose
+edge came from the platform on two targets and from the theme on the other two
+— the exact divergence `borderResetTypes` was extended to prevent, since the
+web's `<select>` reset rests on the frame being the theme's everywhere. So each
+native draws the style's own box (`grMobBox` / `boxModifier`, like every other
+node) and the platform supplies only the behaviour.
+`mobile/verify/select_test.go` pins both halves: that the arm draws through the
+style's box, and that neither forbidden construct appears in it.
+
+Whether the menu is **open** is the renderer's own state and nothing else's.
+There is no prop for it and no patch describes it; the *selection* stays
+controlled like every other input's value. A picker that closed on every
+unrelated re-render would be unusable, which is what putting the flag in the
+tree would cause.
+
+A picker takes no keyboard focus stamp either (`focusableLeafTypes` in
+`core/focus.go`). It looks like a field and reads a field's theme base, so the
+omission reads as an oversight — but the set is about the *keyboard*, and a
+menu is not a keyboard target on either phone. The web is the outlier: a
+browser focuses a `<select>` happily, and `htmlout` exports the `autofocus`
+for it, because focus there is a document concept rather than a keyboard one.
+
+### An overlay on device
+
+`core.ZStack` is a SwiftUI `ZStack` and a Compose `Box` — the two constructs
+the node type was named for — and both are told to centre their content
+explicitly. On SwiftUI that restates a default; on Compose it overrides one,
+since a `Box` places its children at the top-start corner. Stating it in both
+is what keeps the alignment comparable from the other renderer, and
+`mobile/verify`'s `TestNativeZStackOverlaysItsChildren` reads both.
+
+The layers are rendered through each renderer's *plain* children loop rather
+than its flex one: an overlay divides no leftover space along an axis, so there
+is no `FlexGrow` weight to hand a layer and no cross-axis stretch to apply. A
+layer that wants the stack's full extent states its own dimensions, which is
+what `core.ZStack`'s alignment contract asks of it in place of a per-child
+alignment prop.
+
+This is the counterpart to the `Box` fix: `Box` and `SafeArea` used to be built
+from these same two constructs and were moved onto the column implementations,
+because both DOM targets stack them. `ZStack` is the node type that gives the
+behaviour a name.
+
 ### `core.Modal` and the dialog role
 
 Nothing to do here, and that is the point. iOS presents a Modal as a sheet and

@@ -127,6 +127,65 @@ func TestNativeContainersStackTheirChildrenAndDoNotOverlay(t *testing.T) {
 	}
 }
 
+// The one container that *is* an overlay, and the counterpart to the check
+// above: core.ZStack exists precisely because Box stopped being one.
+//
+// Positive and negative halves, as the container check has. The positive half
+// is the construct — a SwiftUI ZStack and a Compose Box are what the node type
+// was named for on each side. The negative half is the *centring*, which is
+// the part a renderer diverges on silently: a Compose Box defaults to TopStart
+// while a SwiftUI ZStack and a CSS grid cell both centre, so an arm that built
+// the right construct and said nothing about alignment would draw the same
+// tree three different ways on four targets. Both are therefore stated in each
+// renderer, and both are read here.
+//
+// The alignment substrings are the renderers' own spellings rather than a
+// shared token, because there is no shared token to have: SwiftUI names an
+// argument and Compose names a parameter, and pretending otherwise would mean
+// checking neither.
+func TestNativeZStackOverlaysItsChildren(t *testing.T) {
+	for _, pin := range []struct {
+		file, marker string
+		next         *regexp.Regexp
+		// overlay is the construct the arm must be built from, and align the
+		// centring it must state.
+		overlay, align string
+	}{
+		{swiftRenderer, "private struct GrMobZStack", swiftCompositeStart, "ZStack(", "alignment: .center"},
+		{kotlinRenderer, "private fun GrMobZStack", kotlinCompositeStart, "Box(", "contentAlignment = Alignment.Center"},
+	} {
+		body := dispatchArm(t, pin.file, pin.marker, pin.next)
+		if !strings.Contains(body, pin.overlay) {
+			t.Errorf("%s: %s builds no %s — a core.ZStack lays its layers out along an axis "+
+				"here while both DOM targets draw them on top of each other",
+				pin.file, pin.marker, pin.overlay)
+		}
+		if !strings.Contains(body, pin.align) {
+			t.Errorf("%s: %s does not state %q — core.ZStack's alignment contract is a fixed "+
+				"centre, and a renderer that leaves it to its own default is the one that drifts",
+				pin.file, pin.marker, pin.align)
+		}
+	}
+}
+
+// The dispatch has to reach the composite above. A composite nothing routes to
+// is dead code that every check in this file would still pass.
+func TestNativeZStackIsDispatched(t *testing.T) {
+	for _, pin := range []struct {
+		file, marker string
+		next         *regexp.Regexp
+	}{
+		{swiftRenderer, `case "ZStack":`, swiftArmStart},
+		{kotlinRenderer, `"ZStack" ->`, kotlinArmStart},
+	} {
+		arm := dispatchArm(t, pin.file, pin.marker, pin.next)
+		if !strings.Contains(arm, "GrMobZStack(") {
+			t.Errorf("%s: the %s arm does not route to GrMobZStack — a ZStack falls through to "+
+				"the renderer's default arm, which is a vertical stack", pin.file, pin.marker)
+		}
+	}
+}
+
 // TabView is a column stack on both natives, which is the claim htmlout's
 // stackAxes row for it rests on — and the last of the four targets' stacking
 // disagreements: TabView stacked here and ran in block flow on the two DOM

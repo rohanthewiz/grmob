@@ -167,6 +167,62 @@ func hiddenOrInsideHidden(n *core.Node, underHidden bool) bool {
 	return true
 }
 
+// The index mark is drawn *over* the rose, not stacked above it. This is the
+// claim the widget spent three sessions unable to make, so it is pinned as a
+// structure rather than as a rendered pixel: both must be layers of one
+// core.ZStack, and the rose must come first, since a ZStack paints in tree
+// order and the mark is meant to be on top.
+//
+// Indices rather than mere membership. "Both are children of the stack" would
+// pass just as well on a compass that drew the rose over the mark and hid it
+// completely.
+func TestTheIndexMarkIsALayerOverTheRose(t *testing.T) {
+	n := renderCompass(t, Compass{Heading: 312})
+
+	stack := findFirst(n, func(n *core.Node) bool { return n.Type == "ZStack" })
+	if stack == nil {
+		t.Fatal("no ZStack in the compass — the index mark is back above the rose, " +
+			"which is the layout core.ZStack was added to replace")
+	}
+	if len(stack.Children) != 2 {
+		t.Fatalf("the dial has %d layers, want 2 (the rose and the mark)", len(stack.Children))
+	}
+	if stack.Children[0].Style == nil || stack.Children[0].Style.Rotate == 0 {
+		t.Error("the first layer is not the rotating rose; the mark would be painted underneath it")
+	}
+	if !strings.Contains(dumpText(stack.Children[1]), "▼") {
+		t.Errorf("the second layer holds %q, want the index mark", dumpText(stack.Children[1]))
+	}
+	// The mark's layer is as tall as the stack and justifies to the start.
+	// Without both, a ZStack centres it and the mark sits in the middle of the
+	// rose — see core.ZStack on why a layer places itself.
+	mark := stack.Children[1]
+	if mark.Style == nil || mark.Style.Height != stack.Style.Height {
+		t.Errorf("the mark's layer is %q tall, want the stack's own %q — a layer that does not "+
+			"fill the stack cannot place itself against its edge",
+			mark.Style.Height, stack.Style.Height)
+	}
+	if mark.Style.JustifyContent != core.JustifyStart {
+		t.Errorf("the mark's layer justifies %q, want %q so the mark lands on the rim",
+			mark.Style.JustifyContent, core.JustifyStart)
+	}
+}
+
+// The rose's inset has to clear the mark, or N sits under it at heading zero —
+// the one bearing where the two coincide, and the one a screenshot is most
+// likely to be taken at. The mark is 0.75 of a letter tall and the inset is a
+// whole one; the relation is what matters, not the constants.
+func TestTheRoseIsInsetClearOfTheMark(t *testing.T) {
+	const size = 160.0
+	letter := size / 8
+
+	r := rose(t, renderCompass(t, Compass{Size: size}))
+	if got := float64(r.Style.Padding.Top); got < letter*0.75 {
+		t.Errorf("rose inset = %g, want at least the mark's %g so the lettering clears it",
+			got, letter*0.75)
+	}
+}
+
 // dumpText collects every Text node's content, for readable failures.
 func dumpText(n *core.Node) string {
 	var b strings.Builder

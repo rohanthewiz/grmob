@@ -36,8 +36,9 @@ core.Row(
   stacks its children vertically like one, on all four targets; it is not an
   overlay. (It drew as a Compose `Box` / SwiftUI `ZStack` on the natives until
   that was fixed, so two children landed on top of each other on device and
-  down the page in a browser.) Reach for it when you want a styled container
-  and none of the theme's opinions.
+  down the page in a browser. `ZStack` below is where that behaviour went, as
+  a node type of its own.) Reach for it when you want a styled container and
+  none of the theme's opinions.
 - `List` — the virtualized sibling of `Column`: children are laid out lazily
   by the native renderer (Compose `LazyColumn`, SwiftUI `LazyVStack`), so a
   thousand-row feed composes only what is on screen. Use `Column` + `Scroll`
@@ -52,6 +53,36 @@ core.Row(
   its width on all four targets. (Like `Box`, it drew as an overlay on the
   natives until that was fixed, which also left a screen's content column
   hugging its widest child rather than filling the screen.)
+- `ZStack` — the overlay, and the one thing `Box` deliberately is not: every
+  child is drawn in the same box, in tree order, so the last one written is on
+  top. A SwiftUI `ZStack`, a Compose `Box` and a single-cell CSS grid, all told
+  to **centre** rather than left to their own defaults (Compose's is the
+  top-left corner, the other two centre). Like `Box` it carries no theme base,
+  and it sizes to its largest child.
+
+  There is no per-child alignment prop. A layer that wants to sit somewhere
+  else says so with its own box — give it the stack's dimensions and lay its
+  content out inside it:
+
+  ```go
+  core.ZStack(
+      core.Width("160px"), core.Height("160px"),
+      rose,                              // painted first, underneath
+      core.Column(                       // the mark, in a box as tall as the stack
+          core.Height("160px"),
+          core.Justify(core.JustifyStart),
+          core.AlignItemsProp(core.AlignItemsCenter),
+          core.Text("▼"),
+      ),
+  )
+  ```
+
+  `Gap`, `JustifyContent`, `AlignItems` and `FlexDirection` are inert on a
+  `ZStack`: there is one cell and nothing to space along. They do not promote
+  it to a flex container, which would silently cost it the overlay.
+  `components.Compass` is the widget this was added for — its index mark spent
+  three releases stacked *above* the rose because nothing portable could draw
+  it over.
 - `Spacer(px)`, `Divider(height, color)`, `Fragment`.
   (`Divider` force-applies `Margin(8)`; for a rule inside a list use
   `components.Separator`, which leaves spacing to the caller and defaults
@@ -63,7 +94,7 @@ before any child renders — a container's callback IDs always precede its
 children's.
 
 The input family (`Input`, `InputWithSubmit`, `InputPassword`, `NumericInput`,
-`TextArea`, `Checkbox`) takes the same mixed argument list, minus children —
+`TextArea`, `Checkbox`, `Select`) takes the same mixed argument list, minus children —
 which is what makes [`OnFocus`/`OnBlur`](events.md) reachable on the nodes
 that actually receive focus. A builder's own callbacks (its `onChange`, an
 `onSubmit`) always take the lower IDs, so no argument a caller writes can move
@@ -194,6 +225,7 @@ something else held last pass, and the double-load comes back.
 | `Button` | `Button(label, onClick, props...)` — also `ButtonWithEvent(label, event, fn, ...)` |
 | `Input` | `Input(value, placeholder, onChange, ...)` — also `InputWithSubmit`, `InputPassword`, `NumericInput`, `TextArea` |
 | `Checkbox` | `Checkbox(checked, onToggle, ...)` |
+| `Select` | `Select(value, []SelectOption{{Value, Label}}, onChange, ...)` — the picker. `onChange` carries the option's **Value**, never its label or index; an empty `Label` falls back to the value. Reads the theme's `Components.Input` base, so it matches the text fields beside it |
 | `Slider` | `Slider(value, min, max, onChange, ...)` with `OnSliderChangeEnd(fn)` (fires once on release — the one a seek bar acts on) and `SliderStep(s)` |
 | `Image` | `Image(src, styleProps...)` |
 | `TextGrid` | `TextGrid(rows []GridRow, props...)` — a monospace grid of styled runs (a terminal pane, a log tail); each `GridRun` has `Text`, `Fg`, `Bg` and `Attr` bits (`GridBold`, `GridDim`, `GridItalic`, `GridUnderline`, `GridStrike`). Rows are children, so a changed row is one patch |

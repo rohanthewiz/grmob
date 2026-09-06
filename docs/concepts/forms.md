@@ -121,10 +121,10 @@ and for a form being shown *because* it is already wrong.
     must attach `core.OnBlur(form.OnBlur(name))` or it will stay silent until
     the submit.
 
-    `form.Checkbox` deliberately takes no blur binding: a tick is a commit,
-    not a draft, so there is no "still working on it" state for leaving it to
-    end. A required-but-unticked box is revealed by the submit, like any field
-    the user never visited.
+    `form.Checkbox` and `form.Select` deliberately take no blur binding: a tick
+    and a choice are commits, not drafts, so there is no "still working on it"
+    state for leaving one to end. A required-but-unticked box or an unchosen
+    picker is revealed by the submit, like any field the user never visited.
 
 `Form.Blurred(name)` reports what has been *observed*, not what happened —
 under a policy that wires no blur it stays false, which is the honest answer.
@@ -311,12 +311,21 @@ form.InputWithSubmit("code", "Promo code", applyCode)   // return key submits
 form.Password("password", "••••••••")
 form.TextArea("bio", 4)
 form.Checkbox("terms")
+form.Select("plan", []core.SelectOption{{Value: "free", Label: "Free"}, {Value: "pro", Label: "Pro"}})
 ```
 
 They forward their style props to the core builder, so a bound control is the
 core control, not a restricted version of it. A control with no binding — a
-picker, a slider, `core.NumericInput` — is still built by hand out of
-`form.Value` and `form.OnChange`, which stay exported for exactly that.
+slider, `core.NumericInput` — is still built by hand out of `form.Value` and
+`form.OnChange`, which stay exported for exactly that.
+
+`form.Select` stores the chosen option's **Value** as the field's text, so
+every rule that reads a string reads it unchanged and `forms.Required` rejects
+an unchosen picker exactly as it rejects an empty field. A picker with a
+sensible default is declared with `Field{Name: "plan", Initial: "free"}` and no
+rule; one without is declared with a leading empty option and a `Required`
+rule. Those are two different forms, and the widget takes no position on which
+is meant.
 
 ## Prefilling and resetting
 

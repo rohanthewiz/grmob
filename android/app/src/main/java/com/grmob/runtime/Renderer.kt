@@ -43,7 +43,10 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.foundation.clickable
 import androidx.compose.material3.Checkbox
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Slider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -177,6 +180,7 @@ private fun RenderNodeContent(node: GrMobNode, extra: Modifier) {
         "InputPassword" -> GrMobTextField(node, extra, password = true)
         "NumericInput" -> GrMobTextField(node, extra, numeric = true)
         "TextArea" -> GrMobTextField(node, extra, multiline = true)
+        "Select" -> GrMobSelect(node, extra)
         "Checkbox" -> GrMobCheckbox(node, extra)
         "Slider" -> GrMobSlider(node, extra)
         "TextGrid" -> GrMobTextGrid(node, extra)
@@ -194,6 +198,11 @@ private fun RenderNodeContent(node: GrMobNode, extra: Modifier) {
         // is a ZStack: two children drew on top of each other on device and
         // side by side down the page in the browser. See GrMobColumn.
         "Column", "Card", "Box" -> GrMobColumn(node, extra)
+        // The one container in the vocabulary that *is* an overlay, which is
+        // what the arm above stopped being. A Compose Box is the construct
+        // core.ZStack was named for on this side; mobile/verify's
+        // TestNativeZStackOverlaysItsChildren pins the arm to it.
+        "ZStack" -> GrMobZStack(node, extra)
         "List" -> GrMobList(node, extra)
         "Spacer" -> Spacer(Modifier.size(node.intProp("size").dp))
         "Scroll" -> GrMobScroll(node, extra)
@@ -689,6 +698,62 @@ private fun marginAndSize(s: GrMobStyle?, extra: Modifier): Modifier {
     return trimmed.boxModifier(extra)
 }
 
+/**
+ * A core.Select: the chosen option's label in the style's own box, with the
+ * list hung off it as a dropdown.
+ *
+ * # Why a Box and a DropdownMenu rather than ExposedDropdownMenuBox
+ *
+ * Material's exposed dropdown is built on an OutlinedTextField, which draws a
+ * frame, a container colour and a trailing icon of its own that no Go style
+ * can remove. That would make the picker the one control in the vocabulary
+ * whose edge came from the platform here and from the theme everywhere else —
+ * exactly the divergence htmlout's borderResetTypes was extended to prevent,
+ * since the <select> row in that set rests on this arm drawing nothing but
+ * what the style asks for.
+ *
+ * So the box is boxModifier's, like every other node's, and the menu supplies
+ * only the behavior.
+ *
+ * # The open state is local, and is the only state this renderer owns
+ *
+ * Whether the list is showing is not something Go knows or should: there is no
+ * prop for it, no patch describes it, and a menu that closed on every
+ * unrelated re-render would be unusable. The *selection* stays controlled, as
+ * every other input's value is — the label shown is whichever option matches
+ * Go's value, and a tap goes up as the option's value, never its index.
+ *
+ * An unmatched value falls back to showing the raw string rather than an empty
+ * box, which is the same degradation the web target makes and the honest one
+ * for a state the app has put the widget in.
+ */
+@Composable
+private fun GrMobSelect(node: GrMobNode, extra: Modifier) {
+    val runtime = LocalGrMobRuntime.current
+    val s = animatedStyle(node.style)
+    val cb = node.stringProp("onChange")
+    val value = node.stringProp("value")
+    val options = node.props["options"] as? List<Map<String, Any?>> ?: emptyList()
+    val chosen = options.firstOrNull { it["value"] as? String == value }
+    var open by remember { mutableStateOf(false) }
+    val enabled = !node.isDisabled()
+
+    Box(modifier = s.boxModifier(extra).clickable(enabled = enabled) { open = true }) {
+        Text(text = chosen?.get("label") as? String ?: value, style = textStyle(s))
+        DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+            options.forEach { option ->
+                DropdownMenuItem(
+                    text = { Text(option["label"] as? String ?: "") },
+                    onClick = {
+                        open = false
+                        if (cb.isNotEmpty()) runtime.textChanged(cb, option["value"] as? String ?: "")
+                    },
+                )
+            }
+        }
+    }
+}
+
 @Composable
 private fun GrMobCheckbox(node: GrMobNode, extra: Modifier) {
     val runtime = LocalGrMobRuntime.current
@@ -1013,6 +1078,29 @@ private fun GrMobRow(node: GrMobNode, extra: Modifier) {
             else -> Alignment.Top
         },
     ) { RowChildren(node) }
+}
+
+/**
+ * core.ZStack: every child drawn in the same box, in tree order, so the last
+ * one written is on top.
+ *
+ * `Alignment.Center` is stated rather than left to the default, and here it
+ * has to be: a Compose Box defaults to TopStart, while a SwiftUI ZStack and a
+ * CSS grid cell both centre. Centre is the arrangement core.ZStack documents
+ * as its contract, so this is the renderer that would have diverged silently.
+ *
+ * RenderChildren, not ColumnChildren: an overlay divides no leftover space
+ * along an axis, so there is no weight to hand a layer and no cross-axis
+ * stretch to apply. A layer that wants the stack's full extent states its own
+ * dimensions, which is what core.ZStack's alignment contract asks of it.
+ */
+@Composable
+private fun GrMobZStack(node: GrMobNode, extra: Modifier) {
+    val s = animatedStyle(node.style)
+    Box(
+        modifier = s.boxModifier(extra, gestureModifier(node)),
+        contentAlignment = Alignment.Center,
+    ) { RenderChildren(node) }
 }
 
 /**

@@ -3,6 +3,7 @@ package tutorial
 import (
 	"testing"
 
+	"github.com/rohanthewiz/grmob/core"
 	"github.com/rohanthewiz/grmob/render"
 )
 
@@ -432,4 +433,94 @@ func TestValuesInitialsAndReset(t *testing.T) {
 		t.Fatal("Reset should re-tick the gift box from its Initial")
 	}
 	assertNoConcerns(t)
+}
+
+// --- 5.6 Pickers ------------------------------------------------------------
+
+// selectByValue returns the current node of the picker showing this value.
+// Two pickers on the screen and neither carries a placeholder, so the value is
+// what tells them apart — which also means every lookup has to happen after
+// the dispatch that changed it, not before.
+func selectByValue(t *testing.T, mgr *render.Manager, value string) *node {
+	t.Helper()
+	n := findNode(tree(t, mgr), func(n *node) bool {
+		return n.Type == "Select" && n.Props["value"] == value
+	})
+	if n == nil {
+		t.Fatalf("no picker showing %q in the current tree", value)
+	}
+	return n
+}
+
+func TestPickerStoresTheValueAndIsRequiredWhenEmpty(t *testing.T) {
+	mgr := newApp(t)
+	openLesson(t, mgr, "Pickers: one value from a list")
+
+	// The two declarations, side by side: the cabin picker opens on its
+	// Initial and the seat picker opens empty.
+	cur := tree(t, mgr)
+	if !hasTextContaining(cur, `class = "economy"   seat = ""`) {
+		t.Fatal("the pickers should open on their declarations — an Initial and an empty")
+	}
+	// One required marker, on the seat field. The cabin field has no rule, so
+	// form.Required reports false and FormField draws nothing.
+	if n := countMarkers(cur); n != 1 {
+		t.Fatalf("%d required markers, want 1 — only the seat picker has a rule", n)
+	}
+
+	// A picker carries no onBlur even under RevealOnBlur: a choice is a
+	// commit, not a draft, so there is nothing for leaving one to signal. This
+	// is the assertion that fails if forms.Select ever grows a blur binding by
+	// being copied from Input.
+	if _, bound := selectByValue(t, mgr, "").Props["onBlur"]; bound {
+		t.Error("a picker attached a blur binding; a choice is a commit and has no draft state")
+	}
+
+	// Submitting without a seat reveals the rule, and the value the picker
+	// stores is the option's value rather than its label.
+	tap(t, mgr, "Book it")
+	cur = tree(t, mgr)
+	if !hasTextContaining(cur, "Pick a seat before we can book it") {
+		t.Fatal("an unchosen picker should fail Required on submit")
+	}
+	if hasTextContaining(cur, "✓ ") {
+		t.Fatal("an invalid form must not book anything")
+	}
+
+	mgr.DispatchTextCallback(selectByValue(t, mgr, "").Props["onChange"].(string), "window")
+	mgr.DispatchTextCallback(selectByValue(t, mgr, "economy").Props["onChange"].(string), "business")
+	cur = tree(t, mgr)
+	if !hasTextContaining(cur, `class = "business"   seat = "window"`) {
+		t.Fatal("a choice should store the option's value")
+	}
+
+	tap(t, mgr, "Book it")
+	if !hasTextContaining(tree(t, mgr), "✓ business, window seat") {
+		t.Fatal("a complete form should book, carrying both picked values")
+	}
+}
+
+// The picker wears the theme's field style, which is what makes it match the
+// text inputs beside it — and, on the web, what the <select> border reset is
+// resetting *to*. Checked live rather than in isolation because the claim is
+// about two widgets on one screen agreeing.
+func TestPickerAndTextFieldWearTheSameFrame(t *testing.T) {
+	mgr := newApp(t)
+	openLesson(t, mgr, "Pickers: one value from a list")
+
+	picker := selectByValue(t, mgr, "economy")
+	if picker.Style == nil || picker.Style.BorderWidth == 0 || picker.Style.BorderColor == "" {
+		t.Fatalf("the picker carries no frame: %#v", picker.Style)
+	}
+
+	// The control comes from another lesson's screen, so the comparison is
+	// against the theme rather than against a sibling node.
+	base := core.DefaultTheme.Components.Input
+	if picker.Style.BorderColor != base.BorderColor || picker.Style.BorderWidth != base.BorderWidth {
+		t.Errorf("picker frame = %gpx %q, want the theme's field frame %gpx %q",
+			picker.Style.BorderWidth, picker.Style.BorderColor, base.BorderWidth, base.BorderColor)
+	}
+	if picker.Style.BorderRadius != base.BorderRadius {
+		t.Errorf("picker radius = %g, want the field's %g", picker.Style.BorderRadius, base.BorderRadius)
+	}
 }

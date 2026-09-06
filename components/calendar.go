@@ -489,11 +489,20 @@ func (c Calendar) dayCell(ctx *core.Context, day time.Time, month time.Month) co
 	dot := t.Colors.Primary
 	switch {
 	case selected:
-		// The fill is the strongest thing in the grid, so the ink is picked
-		// against it rather than assumed — Primary is a light blue in one
-		// bundled theme and a dark indigo in another, and a hard-coded white
-		// is unreadable on the first.
-		ink = contrastInk(t.Colors.Primary, t.Colors.Background, t.Colors.TextPrimary)
+		// The fill is the strongest thing in the grid, so the ink is resolved
+		// against it rather than hard-coded — Primary is a light blue in one
+		// bundled theme and a dark indigo in another, and one literal cannot
+		// be read on both.
+		//
+		// Resolved, not measured. This used to call contrastInk directly and
+		// so returned the higher ratio, which on DefaultTheme's #007AFF is
+		// *black* — a black numeral on iOS system blue, disagreeing with every
+		// filled components.Button on the same screen, which paints the white
+		// the theme's own Button base declares. inkOn reads that declaration
+		// first and falls back to the measurement for a fill the theme has
+		// said nothing about; see its doc for why a third ink role could not
+		// have settled this.
+		ink = inkOn(t, t.Colors.Primary)
 		dot = ink
 		items = append(items, core.BackgroundColor(t.Colors.Primary))
 	case isToday:

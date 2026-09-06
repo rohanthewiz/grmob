@@ -1599,11 +1599,28 @@ func lessonCompass() Lesson {
 					"and that is read off the top. So the rose rotates by minus the heading: turn the "+
 					"device clockwise and the rose must turn counter-clockwise by the same amount to "+
 					"keep pointing at the same piece of the world."),
-				prose("The mark sits above the rose rather than on it, and that is a framework limit "+
-					"showing through rather than a preference. core has no z-stacking primitive — Box "+
-					"stacks vertically on all four targets, and absolute positioning is web-only — so "+
-					"a needle drawn over the rose would be a web-only widget wearing a portable name. "+
-					"Stacking the mark above costs one glyph of height and works everywhere."),
+				prose("The mark sits on the rose's rim, drawn over it, and for a long time it could "+
+					"not: Box stacks vertically on all four targets and absolute positioning is "+
+					"web-only, so a mark drawn over the rose would have been a web-only widget "+
+					"wearing a portable name. core.ZStack is the container that fixed it — every "+
+					"child in the same box, in tree order, so the last one written is on top."),
+				codeBlock(`core.ZStack(
+    core.Width("160px"), core.Height("160px"),
+    rose,                             // painted first, underneath
+    core.Column(                      // the mark, in a box as tall as the stack
+        core.Height("160px"),
+        core.Justify(core.JustifyStart),
+        core.AlignItemsProp(core.AlignItemsCenter),
+        core.Text("▼"),
+    ),
+)`),
+				prose("A ZStack centres every layer, on all four targets — a SwiftUI ZStack, a Compose "+
+					"Box and a single-cell CSS grid, all told to centre rather than left to their own "+
+					"defaults, because Compose's is the top-left corner and the others' is the middle. "+
+					"There is no per-child alignment prop. A layer that wants to be somewhere else "+
+					"says so with its own box, which is what the Column above is: as tall as the "+
+					"stack, justifying its one glyph to the start, so the mark lands on the rim while "+
+					"the Column itself is centred like everything else."),
 				codeBlock(`h := hooks.UseHeading(ctx)          // starts the sensor, releases it on unmount
 
 switch {

@@ -291,6 +291,17 @@ func DismissKeyboard(ctx *Context) {
 // for the same reason — a phone does not focus a button — despite Button now
 // going through leafNode too.
 //
+// Select is absent on the same test, and it is worth naming because a picker
+// looks like a field and reads the same theme base as one. What this set is
+// about is the *keyboard*: a text field takes focus and a soft keyboard comes
+// up, which is why DismissKeyboard has anything to dismiss. A picker opens a
+// menu instead — a SwiftUI Menu and a Compose DropdownMenu, neither of which
+// is a keyboard target — so a focus command aimed at one would travel to two
+// renderers that have nowhere to put it. The web is the outlier, as the doc
+// above says: a browser focuses a <select> happily, and htmlout exports the
+// autofocus for it, because focus there is a document concept rather than a
+// keyboard one.
+//
 // An app that really wants the stamp on one of those can still apply
 // FocusTarget explicitly; this set only decides what is stamped by default.
 var focusableLeafTypes = map[string]bool{

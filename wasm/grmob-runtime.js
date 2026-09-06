@@ -28,6 +28,12 @@ const GrMob = (() => {
             syncTabView(el);
         }
 
+        // Likewise: the cell an overlay puts its layers in is a property of
+        // the children, and there were none a moment ago.
+        if (OVERLAY_TYPES.has(node.Type)) {
+            syncOverlay(el);
+        }
+
         // Same slot, same reason: the observer watches the last child, and
         // createElement ran before there were any. Gated on the prop so the
         // other several hundred nodes of a tree do not each pay an attribute
@@ -115,6 +121,20 @@ const GrMob = (() => {
             // exactly the case a "" default would get wrong, by restoring an
             // unhidden page to block flow.
             el.dataset.baseDisplay = "flex";
+        }
+
+        // The overlay's own half of the same default, and planted here for
+        // the same reason: a core.ZStack carries no theme base, so a stack
+        // written with children and no style props reaches this function with
+        // Style null and never sees applyStyle at all — and a box that is not
+        // a grid runs its layers down the page instead of over each other.
+        // styleFromGrMob restates it for every node that does have a Style,
+        // because that function is total.
+        if (OVERLAY_TYPES.has(node.Type)) {
+            el.style.display = "grid";
+            el.style.alignItems = "center";
+            el.style.justifyItems = "center";
+            el.dataset.baseDisplay = "grid";
         }
 
         if (node.Style) {
@@ -228,6 +248,14 @@ const GrMob = (() => {
             // no order between them.
             if (node.Type === "TabView") {
                 buildTabBar(el, node.Props);
+            }
+            // And after it for a third reason of the same shape: a picker's
+            // options and its value are one fact, and the value has to be
+            // assigned once the options it names exist. The `value` branch in
+            // the loop above already ran and did nothing, which is exactly
+            // what a <select> does with a value it has no option for.
+            if (node.Type === "Select") {
+                applySelectOptions(el, node.Props.options, node.Props.value);
             }
         }
 
@@ -346,7 +374,31 @@ const GrMob = (() => {
     // TestRuntimeBorderResetTypesMatchGo in wasm/verify compares the two under
     // a plain `go test ./...`. That test reads this literal out of the source
     // textually, so keep it a flat array of string literals on one line.
-    const BORDER_RESET_TYPES = new Set(["Button", "Input", "InputPassword", "NumericInput", "TextArea"]);
+    const BORDER_RESET_TYPES = new Set(["Button", "Input", "InputPassword", "NumericInput", "TextArea", "Select"]);
+
+    // The node types whose children are drawn on top of one another rather
+    // than along an axis — core.ZStack, the framework's one z-axis container.
+    //
+    // A single-cell CSS grid rather than absolute positioning, because an
+    // absolutely positioned child is out of flow and contributes nothing to
+    // its parent's size: an unsized overlay would collapse here while a
+    // SwiftUI ZStack and a Compose Box both size to their largest child. Every
+    // child is put in row 1, column 1 (OVERLAY_CHILD_AREA below), so the track
+    // sizes to the biggest of them and the rest are drawn in the same cell.
+    //
+    // Go states this set once, in overlayTypes (htmlout/stack.go), and
+    // TestRuntimeOverlayTypesMatchGo in wasm/verify compares the two under a
+    // plain `go test ./...`. That test reads this literal out of the source
+    // textually, so keep it a flat array of string literals on one line.
+    const OVERLAY_TYPES = new Set(["ZStack"]);
+
+    // The cell every layer of an overlay occupies. Assigned to the *children*
+    // of an overlay, which is why it is a lone constant rather than part of
+    // styleFromGrMob's output: a layer has no idea it is a layer, so the
+    // container stamps it (syncOverlay). htmlout imposes the same declaration
+    // through its `imposed` channel; the two are pinned together by
+    // TestRuntimeOverlayChildAreaMatchesGo.
+    const OVERLAY_CHILD_AREA = "1/1";
 
     // The id prefix every element id inside one TabView is built from.
     //
@@ -597,6 +649,45 @@ const GrMob = (() => {
     // children there are. Recomputing once at the end is what keeps those three
     // cases from each having to know about tabs. Nothing paints in between: a
     // batch is one synchronous run.
+    // Puts every child of an overlay in the stack's one grid cell.
+    //
+    // The declaration belongs on the children and the knowledge belongs to the
+    // parent, which is the whole reason this is a pass rather than a line in
+    // styleFromGrMob: a layer has no idea it is a layer. htmlout says the same
+    // thing through its `imposed` channel, where the parent likewise writes a
+    // declaration into markup the child assembles.
+    //
+    // Idempotent, and re-run rather than tracked: assigning the same string to
+    // the same property is free, and the alternative — remembering which
+    // children have been stamped — is state that can be wrong.
+    //
+    // Nothing clears the property on a child that leaves an overlay, because
+    // nothing can: a node type change is a replace (reconcile/patch.go), which
+    // discards the element and everything on it. A child that merely moves
+    // between overlays is stamped identically by both.
+    function syncOverlay(el) {
+        for (const child of el.children) {
+            child.style.gridArea = OVERLAY_CHILD_AREA;
+        }
+    }
+
+    // The overlay half of syncTouchedTabViews, and it walks upward for the
+    // same reason: a patch names the element it changed, and what needs
+    // re-stamping is the overlay somewhere above it. An "add" lands a brand
+    // new child under a ZStack that was itself untouched, so a pass over the
+    // touched elements alone would leave exactly the new layer unplaced.
+    function syncTouchedOverlays(touched) {
+        const done = new Set();
+        for (const start of touched) {
+            for (let el = start; el; el = el.parentNode) {
+                if (el.dataset && OVERLAY_TYPES.has(el.dataset.nodeType) && !done.has(el)) {
+                    done.add(el);
+                    syncOverlay(el);
+                }
+            }
+        }
+    }
+
     function syncTouchedTabViews(touched) {
         const done = new Set();
         for (const start of touched) {
@@ -1356,7 +1447,22 @@ const GrMob = (() => {
         // outside the stack table, since a stack container is promoted by the
         // table's own term anyway; htmlout's styleValue makes the same call
         // for every type.
-        if (style.Gap || style.RowGap || style.ColumnGap || style.JustifyContent ||
+        //
+        // An overlay is a container and not a flex one, so it takes the branch
+        // before the flex test rather than beside it: a ZStack that carried a
+        // Gap or an AlignItems would otherwise be promoted to a flex container
+        // and stop overlaying its children altogether — a silent, total loss
+        // of the thing the node type exists for. htmlout's styleValue orders
+        // the same two branches the same way.
+        const overlay = OVERLAY_TYPES.has(nodeType);
+        if (overlay) {
+            // "inline-grid" is the same translation htmlout makes, and for
+            // the same reason the flex path writes inline-flex: an
+            // inline-level node that is also a grid needs both halves and
+            // `display` has one slot.
+            out.display = style.Display === "inline" ? "inline-grid" : "grid";
+            out.flexDirection = "";
+        } else if (style.Gap || style.RowGap || style.ColumnGap || style.JustifyContent ||
             alignItems || style.FlexDirection || stackAxisFor(nodeType)) {
             out.display = "flex";
             out.flexDirection = dir;
@@ -1381,7 +1487,16 @@ const GrMob = (() => {
         out.rowGap = rowGap ? `${rowGap}px` : "";
         out.columnGap = columnGap ? `${columnGap}px` : "";
         out.justifyContent = style.JustifyContent || "";
-        out.alignItems = alignItems || "";
+        // Centre on both axes is core.ZStack's whole alignment contract — the
+        // one arrangement a SwiftUI ZStack, a Compose Box and a grid cell all
+        // agree on. On a grid these are the *items* properties: justifyContent
+        // would place the single track inside the container, which on an
+        // auto-sized container does nothing at all.
+        out.alignItems = overlay ? "center" : (alignItems || "");
+        // Written on every pass like everything else here, so a node that
+        // stops being an overlay (only ever via a replace, but totality is not
+        // a case analysis) does not keep the centring.
+        out.justifyItems = overlay ? "center" : "";
         // Style.Display, resolved against the flex block above rather than
         // emitted verbatim. Go's DisplayMode carries five values and only
         // three of them are CSS display keywords, so a blanket assignment
@@ -1434,7 +1549,10 @@ const GrMob = (() => {
         // a button inside an AlignItemsCenter Row). An explicit Width — the
         // other half of the FullWidth contract — wins over it above, hence
         // the guard.
-        if (!style.Width && (style.Display === "inline" || style.Display === "inline-block")) {
+        // Not on an overlay: the branch above already translated an inline
+        // display into inline-grid, which hugs on its own, and a fit-content
+        // width on top of it would be a second answer to one question.
+        if (!overlay && !style.Width && (style.Display === "inline" || style.Display === "inline-block")) {
             out.width = "fit-content";
         }
         // A flex *item* property: how this node behaves inside its parent's
@@ -1583,6 +1701,12 @@ const GrMob = (() => {
             Image: "img",
             TextArea: "textarea",
 
+            // The picker (core.Select). Its <option> elements are built from
+            // the options prop by applySelectOptions, not from child nodes,
+            // so they carry no data-node-path and no patch is addressed to
+            // one.
+            Select: "select",
+
             // Told apart from each other by inputTypeFor, below.
             Input: "input",
             InputPassword: "input",
@@ -1606,6 +1730,11 @@ const GrMob = (() => {
             TabView: "div",
             Spacer: "div",
             CameraView: "div",
+
+            // The z-stack. A div like the rest — what makes it an overlay is
+            // the single-cell grid styleFromGrMob gives it and the grid-area
+            // syncOverlay stamps on its children, not the element.
+            ZStack: "div",
 
             // Grouping nodes, and the one place this runtime deliberately
             // disagrees with htmlout, which emits their children with no box
@@ -1669,6 +1798,54 @@ const GrMob = (() => {
         const n = Number(rows);
         if (Number.isInteger(n) && n > 0) {
             el.rows = n;
+        }
+    }
+
+    // A picker's options (core.Select). The list is a prop rather than child
+    // nodes, so the <option> elements are this runtime's to build — the same
+    // arrangement a TabView's bar has, one step simpler because a Select has
+    // no node children for the chrome to be counted past.
+    //
+    // # Rebuilt only when the list itself changed
+    //
+    // buildTabBar's reason, and a sharper version of it: rebuilding the
+    // options on every props patch would close an open drop-down mid-choice,
+    // because replacing the <option> elements resets the control. The
+    // signature is the list as JSON — cheap for the handful of entries a
+    // picker holds, and exact, where comparing lengths would miss a relabel.
+    //
+    // The value is assigned on every call regardless, because it is the half
+    // that changes on every selection. Assigning it *after* the options is
+    // required rather than tidy: a <select> silently ignores a value that
+    // matches none of its current options, so setting it before they exist
+    // leaves the picker showing its first entry.
+    function applySelectOptions(el, options, value) {
+        if (el.tagName.toLowerCase() !== "select") return;
+        const list = Array.isArray(options) ? options : [];
+        const signature = JSON.stringify(list);
+        if (el.dataset.selectOptions !== signature) {
+            el.dataset.selectOptions = signature;
+            el.innerHTML = "";
+            for (const o of list) {
+                const opt = document.createElement("option");
+                // Chrome, like a TabView's bar: an element the runtime draws
+                // that no node asked for. It carries no data-node-path, no
+                // patch is ever addressed to it, and the marker is what keeps
+                // the conformance replay from comparing it against a Go node
+                // that does not exist. Unlike the bar it is not counted by
+                // chromeOffset — nothing needs to be, since a Select has no
+                // node children for an option to sit ahead of.
+                opt.dataset.grmobChrome = "option";
+                opt.setAttribute("value", o.value ?? "");
+                // textContent, not innerHTML: an option's label is content and
+                // is as user-originated as anything else here. htmlout escapes
+                // the same string through element's TE.
+                opt.textContent = o.label ?? o.value ?? "";
+                el.appendChild(opt);
+            }
+        }
+        if (value !== undefined && el.value !== value) {
+            el.value = value;
         }
     }
 
@@ -1782,7 +1959,12 @@ const GrMob = (() => {
             return {};
         }
         const goType = String(type || "").toLowerCase();
-        if (["input", "textarea", "numericinput", "inputpassword", "slider"].includes(goType)) {
+        // A <select>'s value is its chosen option's value, read off the
+        // element exactly as a text field's is — which is why it joins this
+        // list rather than needing an arm of its own. Go registered the
+        // handler through the text callback channel (core.Select takes a
+        // func(string)), so the string envelope is the right one.
+        if (["input", "textarea", "numericinput", "inputpassword", "slider", "select"].includes(goType)) {
             return { value: e.target.value };
         }
         if (goType === "checkbox") {
@@ -1978,6 +2160,15 @@ const GrMob = (() => {
                     if (el.dataset.nodeType === "TabView") {
                         buildTabBar(el, p.Changes);
                     }
+                    // The picker's options and value, likewise together. This
+                    // IS the selection path: core.Select is controlled, so a
+                    // choice reaches the element as a props patch carrying the
+                    // new value and the same list — which the signature check
+                    // in applySelectOptions turns into a value assignment and
+                    // no rebuild.
+                    if (el.dataset.nodeType === "Select") {
+                        applySelectOptions(el, p.Changes.options, p.Changes.value);
+                    }
                     pruneStaleListeners(el, p.Changes);
                     break;
 
@@ -2024,6 +2215,7 @@ const GrMob = (() => {
         });
 
         syncTouchedTabViews(touched);
+        syncTouchedOverlays(touched);
         // After the tab pass, and after every add-child/remove has landed:
         // the observation target is the list's last child, and this batch is
         // exactly what may have replaced it.

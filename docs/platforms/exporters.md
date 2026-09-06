@@ -32,6 +32,20 @@ indented HTML. Properties worth relying on:
   plants, from the same table (`htmlout/stack.go`). Without it a container
   carrying nothing but padding exported as a block-flow `<div>`, so its
   children ran down the page here and across it on every other target.
+- **A `ZStack` is an overlay,** and the one container that is not a flex one:
+  a single-cell grid, centred on both axes, with every child imposed into row
+  1 / column 1. A grid rather than absolute positioning because an
+  out-of-flow child contributes nothing to its parent's size, and both natives
+  size an overlay to its largest child. The container props that promote any
+  other box to flex (`Gap`, `JustifyContent`, `AlignItems`, `FlexDirection`)
+  are inert here and deliberately do not promote it — that would cost it the
+  overlay outright. See [WASM — The overlay](wasm.md#the-overlay).
+- **A `Select` builds its own options.** They come from the `options` prop
+  rather than from child nodes, the chosen one carrying `selected="selected"`
+  — `<select>` has no value attribute, so the selection lives on the options.
+  A value matching nothing marks nothing, which is what a live `<select>` does
+  with an out-of-list value. Both halves of every option are escaped: the
+  value through the attribute path, the label through the text one.
 - **A `TabView` gets its bar and its selection.** The `tabs` prop becomes a
   `role="tablist"` strip of `role="tab"` buttons ahead of the pages, carrying
   `data-ontabchange` and a `data-tab-index` per tab in the same spirit as the
@@ -67,12 +81,16 @@ indented HTML. Properties worth relying on:
   (`ariaLevel`) switches on the role, so the two `core.Style` level fields are
   mutually exclusive by construction rather than by a precedence rule. See
   [Styling & Theming](../concepts/styling-and-theming.md#accessibilitynestinglevel).
-- **A `<button>` is told it has no border** when the style declares none. The
-  border guard is "a width *and* a color" on all four targets; emitting nothing
-  on the web left the user agent's own rule standing, which is what gave
-  `components.Button`'s ghost emphasis an outline the natives never drew.
-  `htmlout.ResetsUABorder` is the tag set, and `<input>`/`<textarea>` are
-  deliberately excluded.
+- **A form control is told it has no border** when the style declares none.
+  The border guard is "a width *and* a color" on all four targets; emitting
+  nothing on the web left the user agent's own rule standing, which is what
+  gave `components.Button`'s ghost emphasis an outline the natives never drew.
+  `htmlout.ResetsUABorder` is the set, keyed by **node type** rather than by
+  tag: `Button`, the three text inputs, `TextArea` and `Select` are in, and
+  `Checkbox` and `Slider` — which share `<input>` with the text fields — are
+  pointedly out, because the browser draws those controls in their entirety
+  and their border *is* the control. See
+  [WASM — The user-agent border](wasm.md#the-user-agent-border-and-the-third-value-totality-needs).
 
 ### Testing with htmlout
 

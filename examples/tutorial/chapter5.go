@@ -28,6 +28,7 @@ func chapter5() Chapter {
 			lessonReveal(),
 			lessonCrossField(),
 			lessonValuesReset(),
+			lessonPicker(),
 		},
 	}
 }
@@ -585,6 +586,114 @@ form.Reset()  // back to the declaration: values, touched, submitted, errors`),
 					"A validated number is core.Input plus a rule; NumericInput drops unparseable events before the form ever sees them.",
 					"Initial seeds once per name (and again after Reset); a cleared field stays cleared while the spec still names its default.",
 					"Reset returns the form to this pass's declaration — which is also how late-arriving data prefills a form.",
+				),
+			)
+		},
+	}
+}
+
+// --- 5.6 -----------------------------------------------------------------
+
+func lessonPicker() Lesson {
+	return Lesson{
+		Title:   "Pickers: one value from a list",
+		Summary: "core.Select stores the option's value, wears the theme's field style, and draws its own frame on every target.",
+		Body: func(ctx *core.Context) core.View {
+			// The confirmed booking, "" until a valid submit — lesson state,
+			// as everywhere else in this chapter.
+			booked := core.NewState(ctx, "")
+
+			form := forms.UseForm(ctx, forms.Spec{
+				Reveal: forms.RevealOnBlur,
+				Fields: []forms.Field{
+					// Two pickers, declared the two different ways, which is
+					// the lesson's whole point. The class opens on a default
+					// and needs no rule; the seat opens empty and is required,
+					// which is what the leading blank option is for.
+					{Name: "class", Initial: "economy"},
+					{Name: "seat", Rules: []forms.Rule{
+						forms.Required("Pick a seat before we can book it"),
+					}},
+				},
+			})
+
+			return core.Column(
+				core.Gap(14),
+				prose("core.Select is the picker: one value chosen from a fixed list. It stores the "+
+					"option's Value, never its label or its index — the index is the one identity "+
+					"that changes when a list is reordered, and a label is written to be read. So "+
+					"every rule that reads a string reads it unchanged, and forms.Required rejects "+
+					"an unchosen picker exactly as it rejects an empty field."),
+				codeBlock(`form.Select("class", []core.SelectOption{
+    {Value: "economy", Label: "Economy"},
+    {Value: "business", Label: "Business"},
+    {Value: "First"},                 // no label: the value is the label
+})
+
+{Name: "class", Initial: "economy"}   // opens on a default, no rule needed
+{Name: "seat", Rules: []forms.Rule{forms.Required("")}}  // opens empty`),
+				prose("A picker with a sensible default is declared with Field.Initial and no rule; "+
+					"one without is declared with a leading empty option and a Required rule. Those "+
+					"are two different forms and the widget takes no position on which is meant — "+
+					"asking someone to choose a shipping speed before you will let them in is a "+
+					"choice, and so is opening on the cheapest one."),
+				demoPanel("Leave the seat picker without choosing: under RevealOnBlur a text field would complain, and this one does not.",
+					components.FormField{
+						Label: "Cabin",
+						Hint:  "Opens on its Initial",
+						Error: form.Error("class"),
+						Input: form.Select("class", []core.SelectOption{
+							{Value: "economy", Label: "Economy"},
+							{Value: "business", Label: "Business"},
+							{Value: "First"},
+						}),
+					},
+					components.FormField{
+						Label:    "Seat",
+						Required: form.Required("seat"),
+						Error:    form.Error("seat"),
+						Input: form.Select("seat", []core.SelectOption{
+							{Value: "", Label: "Choose a seat…"},
+							{Value: "aisle", Label: "Aisle"},
+							{Value: "window", Label: "Window"},
+						}),
+					},
+					caption(fmt.Sprintf("class = %q   seat = %q",
+						form.Values()["class"], form.Values()["seat"])),
+					components.Button{
+						Label: "Book it",
+						OnTap: form.OnSubmit(func(v forms.Values) {
+							booked.Set(fmt.Sprintf("%s, %s seat", v["class"], v["seat"]))
+						}),
+					},
+					core.IfElse(booked.Get() == "",
+						caption("Nothing booked yet."),
+						caption("✓ "+booked.Get()),
+					),
+				),
+				prose("A picker is a field, so it reads the theme's Components.Input base and matches "+
+					"the text inputs beside it — the frame, the radius, the fill and the padding all "+
+					"arrive from there. That inheritance is load-bearing rather than cosmetic: on the "+
+					"web the browser draws a <select> a frame of its own, and the framework writes "+
+					"border:none over it precisely because the theme has one to put there. The same "+
+					"reset a text field gets, for the same reason."),
+				prose("Neither phone builds this from its platform picker. SwiftUI's .pickerStyle(.menu) "+
+					"and Material's ExposedDropdownMenuBox each draw a frame and an indicator no Go "+
+					"style can remove, which would leave one control in the vocabulary whose edge came "+
+					"from the platform on two targets and from the theme on the other two. So each "+
+					"native draws the style's own box and hangs a menu off it — a SwiftUI Menu, a "+
+					"Compose DropdownMenu — and the only thing the platform supplies is the behaviour."),
+				prose("Whether the list is showing is not something Go knows, and should not be: there "+
+					"is no prop for it and no patch describes it. The selection stays controlled like "+
+					"every other input's value; the open state belongs to whichever renderer is "+
+					"drawing the menu. A picker that closed on every unrelated re-render would be "+
+					"unusable, and that is exactly what putting the flag in the tree would cause."),
+				keyPoints(
+					"core.Select stores the option's Value — not its label, and never its index.",
+					"A default is Field.Initial with no rule; no default is a leading empty option plus Required.",
+					"The picker reads the theme's Input base, which is what makes it match the fields around it.",
+					"The Go style owns the frame on all four targets, which is why the web's own <select> border is reset away.",
+					"The value is controlled; whether the menu is open is the renderer's, and Go never hears about it.",
 				),
 			)
 		},

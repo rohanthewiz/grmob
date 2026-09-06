@@ -1331,10 +1331,17 @@ off the top. So the rose is drawn with `core.Rotate(-Heading)`: turning the
 device clockwise must turn the rose counter-clockwise by the same amount for
 it to keep pointing at the same piece of the world.
 
-**The mark sits above the rose, not on it.** That is a framework limit rather
-than a preference: core has no z-stacking primitive — `Box` stacks vertically
-on all four targets and absolute positioning is web-only — so a needle drawn
-*over* the rose would be a web-only widget wearing a portable name.
+**The mark sits on the rose's rim, drawn over it.** For a long time it could
+not: `Box` stacks vertically on all four targets and absolute positioning is
+web-only, so a mark drawn *over* the rose would have been a web-only widget
+wearing a portable name, and it was parked in the row above instead.
+[`core.ZStack`](concepts/views.md#containers) is the container that fixed it,
+and this is the widget it was added for. The dial is two layers — the rose,
+then a full-height column that justifies the mark to the top — because a
+`ZStack` centres every layer and a layer that wants to be somewhere else says
+so with its own box. The rose's inset grew from half a letter to a whole one to
+make room; at heading zero the mark and the N deliberately coincide, since an
+index pointing at N is what facing north looks like.
 
 **`Heading` is a float, not a `core.Heading`.** The widget draws any bearing:
 the direction of a route leg, a wind reading, the way a photograph was taken.

@@ -121,3 +121,22 @@ func (f *Form) TextArea(name string, rows int, props ...core.PropsAndChildren) c
 func (f *Form) Checkbox(name string, props ...core.PropsAndChildren) core.View {
 	return core.Checkbox(f.Checked(name), f.OnToggle(name), props...)
 }
+
+// Select is a picker bound to name, storing the chosen option's Value as the
+// field's text — so every rule that reads a string reads it unchanged, and
+// forms.Required rejects an unchosen picker exactly as it rejects an empty
+// field.
+//
+// A picker with no natural default is declared with a leading empty option and
+// a Required rule; one that has a default is declared with Field{Name: "plan",
+// Initial: "free"}. The two are genuinely different forms and the widget takes
+// no position on which is meant.
+//
+// No blur binding, for the reason Checkbox has none: a choice is a commit
+// rather than a draft, so there is no moment where the user is "still working
+// on" a picker and nothing for leaving it to signal. Under RevealOnBlur an
+// unchosen picker therefore says nothing until the submit reveals it, which is
+// the same treatment an untouched field gets.
+func (f *Form) Select(name string, options []core.SelectOption, props ...core.PropsAndChildren) core.View {
+	return core.Select(f.Value(name), options, f.OnChange(name), props...)
+}

@@ -104,24 +104,106 @@ func TestVariantInkFlipsDirectionBetweenThemes(t *testing.T) {
 	}
 }
 
-// VariantDefault is exempt from the contrast rule on purpose: it keeps the
-// Primary/Background pairing the themes chose and Button uses, so the zero
-// value stays a no-op for every badge that already exists.
+// The default variant keeps the Primary/Background pairing the themes chose
+// and Button paints, so the zero value stays a no-op for every badge that
+// already exists — but it reaches it by reading the theme's declaration rather
+// than by exempting itself from the rule. Both bundled themes state
+// Components.Button.TextColor "#FFFFFF" over a Primary background, which is
+// also their Colors.Background, so the two routes land on one hex.
 //
-// The exemption is observable under DefaultTheme, which is what makes this
-// worth a test: on Primary (#007AFF) white is 4.02:1 and black 5.23:1, so the
-// contrast rule *would* flip the ink to black if it applied here.
+// The declaration is observable under DefaultTheme, which is what makes this
+// worth a test: on Primary (#007AFF) white is 4.02:1 and black 5.23:1, so a
+// pure contrast rule picks black.
 func TestVariantDefaultKeepsTheThemePairing(t *testing.T) {
+	for name, theme := range map[string]*core.Theme{
+		"DefaultTheme":  core.DefaultTheme,
+		"MaterialTheme": core.MaterialTheme,
+	} {
+		bg := VariantDefault.Color(theme)
+		if got := VariantDefault.Ink(theme, bg); got != theme.Colors.Background {
+			t.Errorf("%s: VariantDefault ink = %q, want the theme's Background %q",
+				name, got, theme.Colors.Background)
+		}
+	}
+	// Prove the declaration is doing work rather than agreeing by luck. Only
+	// DefaultTheme's blue splits the two rules; MaterialTheme's indigo is dark
+	// enough that measurement picks white too.
 	theme := core.DefaultTheme
 	bg := VariantDefault.Color(theme)
-
-	if got := VariantDefault.Ink(theme, bg); got != theme.Colors.Background {
-		t.Errorf("VariantDefault ink = %q, want the theme's Background %q", got, theme.Colors.Background)
-	}
-	// Prove the exemption is doing work rather than agreeing by luck.
 	if contrastInk(bg, theme.Colors.Background, theme.Colors.TextPrimary) == theme.Colors.Background {
 		t.Error("the contrast rule now agrees with the theme pairing on Primary; this test " +
-			"no longer proves VariantDefault is exempt")
+			"no longer proves the declaration is consulted")
+	}
+}
+
+// The declaration is keyed on the *fill*, not on the variant, which is what
+// makes the rule one rule. A colour the theme has paired nothing with — an
+// explicit Badge.Color, a status role — is measured, and a fill that matches
+// the button base is read even when it arrives through a variant.
+func TestInkOnReadsTheThemeDeclarationAndMeasuresEverythingElse(t *testing.T) {
+	theme := core.DefaultTheme
+
+	// The declared pair, spelled in the other case: a theme is hand-written
+	// and "#007aff" is the same blue to every renderer.
+	if got := inkOn(theme, "#007aff"); got != theme.Components.Button.TextColor {
+		t.Errorf("inkOn on a lower-case Primary = %q, want the declared %q",
+			got, theme.Components.Button.TextColor)
+	}
+	// A pale fill nobody declared anything about. This is the case the old
+	// VariantDefault arm got wrong: it returned white on pale yellow because
+	// it never looked at bg at all.
+	if got := VariantDefault.Ink(theme, "#FFF9C4"); got != theme.Colors.TextPrimary {
+		t.Errorf("ink on an undeclared pale fill = %q, want the dark %q", got, theme.Colors.TextPrimary)
+	}
+	// A status fill is undeclared too, and stays measured.
+	if got := inkOn(theme, theme.Colors.SuccessColor()); got != theme.Colors.TextPrimary {
+		t.Errorf("ink on Success = %q, want the measured %q", got, theme.Colors.TextPrimary)
+	}
+}
+
+// A theme that declares no pair has nothing to read, and must not be handed an
+// empty ink. Half a declaration is not a declaration: a background with no
+// text colour would otherwise return "", which paints an invisible label.
+func TestDeclaredInkNeedsBothHalves(t *testing.T) {
+	for name, base := range map[string]core.Style{
+		"no Components.Button at all": {},
+		"a fill and no ink":           {Background: "#007AFF"},
+		"an ink and no fill":          {TextColor: "#FFFFFF"},
+	} {
+		theme := &core.Theme{
+			Colors:     core.ColorPalette{Background: "#FFFFFF", TextPrimary: "#000000", Primary: "#007AFF"},
+			Components: core.ComponentDefaults{Button: base},
+		}
+		if got := declaredInk(theme, "#007AFF"); got != "" {
+			t.Errorf("%s: declaredInk = %q, want no declaration", name, got)
+		}
+		// And the fallback is the measurement, not the empty string.
+		if got := inkOn(theme, "#007AFF"); got != "#000000" {
+			t.Errorf("%s: inkOn = %q, want the measured #000000", name, got)
+		}
+	}
+}
+
+// A theme whose buttons are not primary-coloured has declared a pair for that
+// other colour and nothing for Primary. Both halves of that are checked here,
+// because reading the base as "the ink for Primary" rather than "the ink for
+// the base's own fill" would pass the first and fail the second.
+func TestDeclarationFollowsTheButtonFillNotTheRole(t *testing.T) {
+	theme := &core.Theme{
+		Colors: core.ColorPalette{
+			Primary:     "#FFFFFF", // a white brand colour, deliberately absurd
+			Background:  "#FFFFFF",
+			TextPrimary: "#111111",
+		},
+		Components: core.ComponentDefaults{
+			Button: core.Style{Background: "#101820", TextColor: "#F2AA4C"},
+		},
+	}
+	if got := inkOn(theme, "#101820"); got != "#F2AA4C" {
+		t.Errorf("ink on the declared button fill = %q, want %q", got, "#F2AA4C")
+	}
+	if got := inkOn(theme, theme.Colors.Primary); got != "#111111" {
+		t.Errorf("ink on the undeclared Primary = %q, want the measured %q", got, "#111111")
 	}
 }
 

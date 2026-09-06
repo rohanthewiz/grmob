@@ -67,6 +67,7 @@ struct RenderNode: View {
             case "InputPassword": GrMobTextField(node: node, grow: grow, password: true)
             case "NumericInput": GrMobTextField(node: node, grow: grow, numeric: true)
             case "TextArea": GrMobTextField(node: node, grow: grow, multiline: true)
+            case "Select": GrMobSelect(node: node, grow: grow)
             case "Checkbox": GrMobCheckbox(node: node, grow: grow)
             case "Slider": GrMobSlider(node: node, grow: grow)
             case "TextGrid": GrMobTextGrid(node: node, grow: grow)
@@ -85,6 +86,11 @@ struct RenderNode: View {
             // and side by side down the page in the browser. GrMobColumn
             // attaches the tap and long-press gestures itself.
             case "Column", "Card", "Box": GrMobColumn(node: node, grow: grow)
+            // The one container in the vocabulary that *is* an overlay, which
+            // is what the arm above stopped being. A SwiftUI ZStack is the
+            // construct core.ZStack was named for; mobile/verify's
+            // TestNativeZStackOverlaysItsChildren pins the arm to it.
+            case "ZStack": GrMobZStack(node: node, grow: grow)
             case "List": GrMobList(node: node, grow: grow)
             case "Spacer": Color.clear.frame(width: CGFloat(node.intProp("size")), height: CGFloat(node.intProp("size")))
             case "Scroll": GrMobScroll(node: node, grow: grow)
@@ -338,6 +344,35 @@ private struct GrMobColumn: View {
                     onTap: node.stringProp("onClick"),
                     onLongPress: node.stringProp("onLongPress"),
                     axis: .vertical)
+    }
+}
+
+/// core.ZStack: every child drawn in the same box, in tree order, so the last
+/// one written is on top.
+///
+/// `.center` is stated rather than left to the default even though SwiftUI's
+/// ZStack already centres. The alignment is a cross-target contract — a
+/// Compose Box defaults to TopStart and has to be told, and the DOM targets
+/// centre a single grid cell — so the value is written on all three, where a
+/// reader can compare them. An inherited default is invisible from the other
+/// two renderers.
+///
+/// PlainChildren, not FlexChildren: an overlay divides no leftover space along
+/// an axis, so there is no flex weight to hand a layer and no cross-axis
+/// stretch to apply. A layer that wants the stack's full extent states its own
+/// dimensions, which is the contract core.ZStack documents.
+private struct GrMobZStack: View {
+    let node: GrMobNode
+    let grow: GrMobGrow
+
+    var body: some View {
+        let s = node.style
+        ZStack(alignment: .center) {
+            PlainChildren(node: node)
+        }
+        .grMobBox(s, grow: grow,
+                    onTap: node.stringProp("onClick"),
+                    onLongPress: node.stringProp("onLongPress"))
     }
 }
 
@@ -1152,6 +1187,63 @@ private func marginAndSizeOnly(_ s: GrMobStyle?) -> GrMobStyle? {
     t.shadow = 0
     t.padding = .zero
     return t
+}
+
+/// A core.Select: the chosen option's label, with the list hung off it as a
+/// menu.
+///
+/// # Why a Menu and not a Picker
+///
+/// SwiftUI has a picker control — `Picker(...).pickerStyle(.menu)` — and it
+/// draws a frame, a chevron and an inset of its own that no Go style can
+/// remove. That would make the picker the one control in the vocabulary whose
+/// edge came from the platform here and from the theme everywhere else, which
+/// is exactly the divergence htmlout's borderResetTypes was extended to
+/// prevent: the <select> row in that set rests on this arm drawing nothing but
+/// what the style asks for.
+///
+/// So the box is grMobBox's, like every other node's, and the Menu supplies
+/// only the behavior. The label takes the style's font and ink the way
+/// GrMobButton's does, for the same reason — the theme's Input base is what
+/// core.Select reads, and a menu label rendered in the system default would
+/// not match the text fields beside it.
+///
+/// Controlled, like every other input: the label shown is whichever option
+/// matches Go's value, and a choice goes up as the option's *value*. An
+/// unmatched value falls back to showing the raw string rather than an empty
+/// box — the same degradation a <select> makes, and the honest one for a state
+/// the app has put the widget in.
+private struct GrMobSelect: View {
+    let node: GrMobNode
+    let grow: GrMobGrow
+    @Environment(\.grMobRuntime) private var runtime
+
+    var body: some View {
+        let s = node.style
+        let options = node.props["options"] as? [[String: Any]] ?? []
+        let value = node.stringProp("value")
+        let cb = node.stringProp("onChange")
+        let chosen = options.first { ($0["value"] as? String) == value }
+
+        Menu {
+            // Indices rather than the dictionaries themselves: a [String: Any]
+            // is not Hashable, so it cannot identify a ForEach row.
+            ForEach(options.indices, id: \.self) { i in
+                Button(options[i]["label"] as? String ?? "") {
+                    if !cb.isEmpty {
+                        runtime?.textChanged(cb, options[i]["value"] as? String ?? "")
+                    }
+                }
+            }
+        } label: {
+            Text(chosen?["label"] as? String ?? value)
+                .font(.system(size: (s?.fontSize ?? 0) > 0 ? s!.fontSize : 17,
+                              weight: grMobFontWeight(s?.fontWeight ?? 0)))
+                .foregroundStyle(s?.textColor ?? .primary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .grMobBox(s, grow: grow)
+    }
 }
 
 private struct GrMobCheckbox: View {

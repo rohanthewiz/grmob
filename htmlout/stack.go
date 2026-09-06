@@ -132,3 +132,78 @@ func StackTypes() []string {
 	sort.Strings(out)
 	return out
 }
+
+// overlayTypes are the node types whose children are drawn *on top of each
+// other* rather than along an axis — the z-stack, as opposed to the six
+// tables' worth of flex stacks above.
+//
+//	htmlout (this package)      queries it through IsOverlay
+//	wasm/grmob-runtime.js       restates it as OVERLAY_TYPES
+//
+// Pinned to the runtime's copy by TestRuntimeOverlayTypesMatchGo in
+// wasm/verify, the same arrangement stackAxes and the tag table get.
+//
+// # Why a table for one node type
+//
+// Because the runtime cannot read this one. The membership question is asked
+// on both DOM targets and answered in two languages, which is the whole
+// criterion these tables are built on — borderResetTypes held a single member
+// for the same reason, and grew to five. A `nodeType == "ZStack"` here and
+// another in JavaScript would be the untracked second copy.
+//
+// # Why a single-cell grid and not absolute positioning
+//
+// The obvious HTML overlay is `position: relative` on the parent and
+// `position: absolute` on each child, and it costs the layout the one thing an
+// overlay still needs: an absolutely positioned child is out of flow, so it
+// contributes nothing to its parent's size and the stack collapses to nothing
+// unless the author states dimensions. Both natives size an overlay to its
+// largest child (a SwiftUI ZStack and a Compose Box each do), so the DOM
+// targets would have disagreed with them on every unsized stack.
+//
+// Placing every child in row 1, column 1 of a grid keeps them in flow: the
+// track sizes to the widest and tallest child, the rest are drawn in the same
+// cell, and the parent ends up the size both phones give it. The centring
+// comes from the same declaration block — see overlayChassis.
+var overlayTypes = map[string]bool{
+	"ZStack": true,
+}
+
+// IsOverlay reports whether a node type draws its children on top of one
+// another. See overlayTypes.
+func IsOverlay(nodeType string) bool {
+	return overlayTypes[nodeType]
+}
+
+// OverlayTypes returns those node types, sorted so a test looping over them
+// reports in a stable order — the service StackTypes and BorderResetTypes
+// provide, for the reason they give.
+func OverlayTypes() []string {
+	out := make([]string, 0, len(overlayTypes))
+	for t := range overlayTypes {
+		out = append(out, t)
+	}
+	sort.Strings(out)
+	return out
+}
+
+// The two halves of the overlay's CSS, named here rather than written into
+// styleValue so the WASM runtime has something to be compared against and so
+// the pair reads as one decision.
+//
+// OverlayChassis goes on the stack itself. `align-items` and `justify-items`
+// are the grid spellings of "where does an item sit inside its cell", and
+// centre on both axes is the alignment contract core.ZStack documents — the
+// one arrangement a SwiftUI ZStack, a Compose Box and a grid cell all agree on.
+// They are the *items* properties, not the *content* ones: `justify-content`
+// would place the single track inside the container, which on an auto-sized
+// container is a no-op, and that difference is easy to write and impossible to
+// see.
+//
+// OverlayChildDecl goes on every child, imposed by the parent (see imposed in
+// export.go) because a child has no idea it is a layer. `grid-area: 1/1` is
+// the whole of it: row 1, column 1, on all of them.
+const (
+	OverlayChassis   = "display:grid; align-items:center; justify-items:center"
+	OverlayChildDecl = "grid-area:1/1"
+)

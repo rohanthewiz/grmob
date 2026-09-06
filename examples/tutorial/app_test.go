@@ -82,6 +82,11 @@ type nodeStyle struct {
 	// argument one role over: the rows are indented in pixels and siblings in
 	// the tree, so this number is the only place their nesting exists.
 	AccessibilityNestingLevel int
+
+	// The field frame, for chapter 5's picker lesson. The claim there is that
+	// a picker and a text field wear the same edge, and the edge is a style
+	// field on both — there is nothing in the props to compare.
+	BorderColor string
 }
 
 func findNode(n *node, pred func(*node) bool) *node {

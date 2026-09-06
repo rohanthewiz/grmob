@@ -110,10 +110,10 @@ for the shapes.
 Which element a node becomes is one table, stated once in Go
 (`htmlout/tag.go`) and restated in `grmob-runtime.js` because the runtime is
 the side that calls `createElement`. `Text` is a `<span>`, `Button` a
-`<button>`, `Image` an `<img>`, `TextArea` a `<textarea>`, the four form
-inputs an `<input>`, and every container — `Row`, `Column`, `Card`, `Box`,
-`Scroll`, `SafeArea`, `List`, `Modal`, `TabView`, `Spacer`, `CameraView` — a
-`<div>`. What distinguishes a `Row` from a `Column` is the flex declarations,
+`<button>`, `Image` an `<img>`, `TextArea` a `<textarea>`, `Select` a
+`<select>`, the four form inputs an `<input>`, and every container — `Row`,
+`Column`, `Card`, `Box`, `ZStack`, `Scroll`, `SafeArea`, `List`, `Modal`,
+`TabView`, `Spacer`, `CameraView` — a `<div>`. What distinguishes a `Row` from a `Column` is the flex declarations,
 not the element, which is why the runtime keeps the Go type in
 `data-node-type` instead of reading it back off the tag.
 
@@ -152,6 +152,41 @@ ordinary text role from being turned into a container by its own alignment.
 `Modal` and `Spacer` are absent on purpose: `Modal` carries a fixed-overlay
 chassis that sets `display` itself and toggles it through the `visible` prop,
 and `Spacer` is a sized void with no children.
+
+`ZStack` is absent for a different reason: it is a container, and not a flex
+one. See the next section.
+
+### The overlay
+
+`core.ZStack` draws its children on top of one another, and `overlayTypes` in
+`htmlout/stack.go` is the table that says so — restated as `OVERLAY_TYPES` in
+the runtime and compared by `TestRuntimeOverlayTypesMatchGo`. A one-member
+table rather than a `nodeType === "ZStack"` in each renderer, for the reason
+every other table here exists: the question is asked on both DOM targets and
+answered in two languages.
+
+It is a **single-cell CSS grid**, not `position: absolute`. An absolutely
+positioned child is out of flow and contributes nothing to its parent's size,
+so an unsized overlay would collapse to nothing here while a SwiftUI `ZStack`
+and a Compose `Box` both size to their largest child. Placing every child in
+row 1, column 1 keeps them in flow: the track sizes to the widest and tallest
+of them, the rest are drawn in the same cell.
+
+That declaration goes on the **children**, which is the interesting half — a
+layer has no idea it is a layer, so the container has to stamp it. `htmlout`
+imposes it through the same `imposed` channel that hides a TabView's unselected
+pages; the runtime runs `syncOverlay` after the children exist, and
+`syncTouchedOverlays` after every patch batch, walking up from each touched
+element the way the TabView and end-reached passes do. Without that second
+pass a layer arriving in an `add` patch would be auto-placed into its own
+implicit grid row — below the stack rather than on it, which reads as a layout
+quirk rather than a missing declaration.
+
+The stack is centred on both axes (`align-items` and `justify-items`, the
+*items* properties — the content pair would place the single track inside the
+container, which on an auto-sized container does nothing). And the flex
+promotion test is skipped for it entirely: a `ZStack` carrying a `Gap` must not
+become a flex container, which would silently cost it the overlay.
 
 `TabView` was absent too, on the weaker grounds that neither web target had
 ever defaulted it to flex and leaving it out kept the two agreeing — but they
@@ -463,7 +498,7 @@ So the property has three values rather than two: the styled border, `""` for
 an element the browser draws nothing on, and `"none"` for one it does.
 `BORDER_RESET_TYPES` is the set — pinned to Go's `borderResetTypes` by
 `TestRuntimeBorderResetTypesMatchGo` — and it holds `Button`, `Input`,
-`InputPassword`, `NumericInput` and `TextArea`.
+`InputPassword`, `NumericInput`, `TextArea` and `Select`.
 
 It is keyed by **node type**, not by tag, and the text fields are why. Five
 node types share `<input>` and only three of them want the reset: a checkbox's
@@ -479,6 +514,34 @@ always did on both phones.
 Keeping the reset inside the same expression rather than in a guard of its own
 is what preserves totality — a guarded write would leave the old border
 standing on a button that stopped having one.
+
+`Select` joined last, and it is the row this set was left holding an open
+question about long before there was a picker to ask it of. It joins because
+neither native builds `core.Select` from a platform picker control — SwiftUI's
+`.pickerStyle(.menu)` and Material's `ExposedDropdownMenuBox` each draw a frame
+no Go style can remove — so the frame comes from the theme's
+`Components.Input` base on three targets out of four, and the web was drawing a
+second one underneath. The drop-down indicator is untouched: `border` does not
+reach it, and it is what says the control is a picker.
+
+### Pickers and their options
+
+A `<select>`'s `<option>` elements are built from the `options` prop, not from
+child nodes — `core.Select` sends the list flattened, exactly as `core.TabView`
+sends its tabs. They are **chrome**: they carry no `data-node-path`, no patch
+is ever addressed to one, and they are marked `data-grmob-chrome` so the
+conformance replay skips them rather than comparing them against Go nodes that
+do not exist. Unlike a TabView's bar they are not counted by `chromeOffset`,
+because a `Select` has no node children for an option to sit ahead of.
+
+`applySelectOptions` rebuilds the list only when the list itself changed,
+keyed on a JSON signature — a length comparison would miss a relabel. That is
+not a performance note: replacing a `<select>`'s options resets the control, so
+rebuilding on every props patch would close an open drop-down mid-choice, and a
+controlled picker gets a props patch on exactly the pass where someone has just
+opened it. The value is assigned on every call regardless, and always *after*
+the options, because a `<select>` silently ignores a value that matches none of
+its current options.
 
 ### One attribute, two level fields
 

@@ -1381,12 +1381,12 @@ func TestOnlyTheNodeTypesTheBrowserDrawsOnAreReset(t *testing.T) {
 // removing one is a visible edit to a claim rather than an invisible edit to a
 // lookup.
 func TestTheBorderResetSetIsExactly(t *testing.T) {
-	want := []string{"Button", "Input", "InputPassword", "NumericInput", "TextArea"}
+	want := []string{"Button", "Input", "InputPassword", "NumericInput", "Select", "TextArea"}
 	got := BorderResetTypes()
 	if !reflect.DeepEqual(got, want) {
-		t.Errorf("borderResetTypes = %v, want %v — <button>, <input> and <textarea> are the "+
-			"three tags whose user-agent stylesheet draws a frame the Go style is meant to "+
-			"own, and Checkbox and Slider share <input> without sharing that", got, want)
+		t.Errorf("borderResetTypes = %v, want %v — <button>, <input>, <textarea> and <select> "+
+			"are the four tags whose user-agent stylesheet draws a frame the Go style is meant "+
+			"to own, and Checkbox and Slider share <input> without sharing that", got, want)
 	}
 }
 

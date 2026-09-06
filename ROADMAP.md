@@ -24,6 +24,15 @@
 - [x] `Row`, `Column`, `Gap`, `RowGap`/`ColumnGap`, `FlexWrap`, `Align`,
       `Justify` — all four targets. The two gap longhands are the axis halves
       of `Gap` and win over it where set, exactly as in CSS.
+- [x] `core.ZStack` — the z-axis container, and the one thing `Box`
+      deliberately is not: every child drawn in the same box, in tree order,
+      last on top. A SwiftUI `ZStack`, a Compose `Box` and a single-cell CSS
+      grid, all told to *centre* rather than left to their own defaults. Not
+      built from `Position`/`ZIndex` below, which only two of the four targets
+      read — naming the container is what lets each renderer reach for its own
+      construct. Sizes to its largest child; a layer that wants to sit
+      elsewhere states its own box rather than reaching for a per-child
+      alignment prop that does not exist. First consumer: `Compass`
 - [x] `Position` (`Sticky`/`Absolute`/`Relative`/`Fixed`) with `Top`/`Right`/
       `Bottom`/`Left`/`ZIndex`, plus `MinWidth`/`MaxWidth`/`MinHeight`/
       `MaxHeight`, `Overflow`, `WhiteSpace`, `AlignSelf`,
@@ -86,6 +95,17 @@
       hairline and glyph, and `StatTile`'s delta — every one of which
       previously documented the gap it could not close from where it sat
 
+- [x] The **ink over a fill**, resolved by asking the theme before measuring
+      (`components.Variant.Ink`). `Components.Button` is the one place a
+      palette states a fill and an ink together, so a fill matching it takes
+      the ink it was declared with; everything else falls to the higher WCAG
+      contrast of the theme's two ink roles. Pure measurement picks *black* on
+      `DefaultTheme`'s `#007AFF` (5.23:1 against white's 4.02:1), which is how
+      `Calendar` came to draw a black numeral on iOS system blue while every
+      filled `Button` beside it painted white. No third ink role could have
+      fixed it — nothing outscores black on a mid-tone — so the question
+      changed rather than the candidate list
+
 ### 📱 Native Runtime Bridges
 - [x] **Android Runtime** (Go → JSON → Jetpack Compose renderer)
 - [x] **iOS Runtime** (Go → JSON → SwiftUI renderer)
@@ -127,11 +147,11 @@
       it, so a grid used as a filter clears itself. Off by default and forced
       off by `DatePicker`: a form's date setter must not receive a clear it
       cannot tell from a pick
-- [x] `Compass` — a bearing as a rose that turns under a fixed mark, built
-      from flex alone (core has no z-stacking primitive, so the mark sits
-      above the circle rather than on it) and announcing itself as one spoken
-      sentence because four letters whose positions carry the meaning are
-      exactly what a screen reader cannot convey (tutorial lesson 4.10)
+- [x] `Compass` — a bearing as a rose that turns under a fixed index mark,
+      drawn over the rim on a `core.ZStack` (it sat in the row *above* the
+      circle until core had a z-axis container) and announcing itself as one
+      spoken sentence because four letters whose positions carry the meaning
+      are exactly what a screen reader cannot convey (tutorial lesson 4.10)
 
 ### 🧬 Extensions
 - [x] Animations & transitions (`Transition`, easing curves)
@@ -220,7 +240,9 @@
       `<input>` and `<textarea>` join the user-agent border reset. That set is
       keyed by node type now rather than by tag, because five node types share
       `<input>` and a `Checkbox` and a `Slider` are drawn by the browser in
-      their entirety. `Colors.Border` keeps the dividers and no longer names
+      their entirety. `core.Select` joined the set on the same test once it
+      existed, and its drop-down indicator is untouched for the checkbox's own
+      reason: it is the thing that says the control is a picker. `Colors.Border` keeps the dividers and no longer names
       field edges; `DatePicker`'s trigger inherits the whole frame off the
       `Input` base instead of restating a paler one
 - [x] Navigation (`Navigator`, `Push`, `Pop`, `Replace`, `PopToRoot`, `Reset`,
@@ -270,6 +292,16 @@
       `hooks.UseLifecycle` over the `"lifecycle"` host event; active /
       inactive / background from `ProcessLifecycleOwner`, `scenePhase` and
       the Page Visibility API, so a client can reconnect on resume
+- [x] `core.Select` — the picker, on all four targets: a `<select>` whose
+      options are built from a prop, a SwiftUI `Menu`, a Compose
+      `DropdownMenu`. `onChange` carries the option's *value*, never its label
+      or its index, so a rule reads it unchanged and `forms.Required` rejects
+      an unchosen one; `form.Select` is the bound builder. Deliberately not
+      built from either platform's own picker control — `.pickerStyle(.menu)`
+      and `ExposedDropdownMenuBox` each draw a frame no Go style can remove —
+      so the frame is the theme's `Components.Input` base everywhere, which is
+      also what lets `<select>` join the user-agent border reset above
+      (tutorial lesson 5.6, `examples/signup`)
 - [x] `core.Slider` — a range control on all four targets, with a separate
       end-of-drag callback so a seek bar acts once
 - [x] `core.TextGrid` — a monospace grid of styled runs on all four targets,

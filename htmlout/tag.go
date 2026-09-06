@@ -20,8 +20,11 @@ import "sort"
 // reason: a copy that cannot drift silently is a restatement, not a second
 // source.
 //
-// The table is a census, not a list of exceptions: the fourteen node types
-// that become a plain <div> are spelled out alongside the ones that do not.
+// The table is a census, not a list of exceptions: the node types that become
+// a plain <div> are spelled out alongside the ones that do not. (It said
+// "fourteen" of them for a while and was wrong by two, which is the argument
+// against counting them here at all — the list is the census, and a number
+// beside it is a second copy that goes stale on its own.)
 // The default below still exists for a node type nobody has taught either
 // renderer about, but a type that is merely *ordinary* should appear here, so
 // that adding a node type to core and forgetting the renderers shows up as a
@@ -35,6 +38,12 @@ var tags = map[string]string{
 	"Button":   "button",
 	"Image":    "img",
 	"TextArea": "textarea",
+
+	// The picker (core.Select). Its <option> elements are built from the
+	// options prop rather than from child nodes, so they are not in this
+	// table: no patch is ever addressed to one and none of them carries a
+	// style. See core.Select on why the list travels as a prop.
+	"Select": "select",
 
 	// A monospace grid and its rows (core.TextGrid). <pre> is the one element
 	// whose default styling already says "fixed pitch, no wrapping"; each row
@@ -65,6 +74,11 @@ var tags = map[string]string{
 	"Modal":    "div",
 	"TabView":  "div",
 	"Spacer":   "div",
+
+	// The z-stack. A <div> like the rest — what makes it an overlay is the
+	// single-cell grid styleValue gives it and the grid-area it imposes on
+	// its children, not the element. See overlayTypes in stack.go.
+	"ZStack": "div",
 
 	// A placeholder box in both DOM renderers; neither opens a camera.
 	"CameraView": "div",
@@ -246,6 +260,7 @@ func CarriesOwnRole(nodeType string) bool {
 //
 //	Input, InputPassword, NumericInput   a frame the style should own
 //	TextArea                             the same, one tag over
+//	Select                               the same, a third tag over
 //	Checkbox, Slider                     the user agent draws the *control*
 //
 // A checkbox's border is not chrome around the control, it is the box; a range
@@ -255,6 +270,28 @@ func CarriesOwnRole(nodeType string) bool {
 // for appearance:none. The question the set answers is "does this element draw
 // a frame the Go style is meant to own", which is per-control, so the map is
 // per-node-type and the tag lookup drops out of the call.
+//
+// # The <select> row, and how it was decided
+//
+// A picker was the open question this set was left holding: the answer was
+// written down ("join if the style is meant to own the frame, stay out if the
+// browser draws the control") a good while before core.Select existed to be
+// asked about. It joins, and the deciding fact is what the *other three*
+// targets do rather than anything about the tag.
+//
+// core.Select is drawn on both natives as an ordinary styled box with a menu
+// hung off it — a SwiftUI Menu, a Compose DropdownMenu — deliberately not as a
+// platform picker control, because SwiftUI's .pickerStyle(.menu) and Material's
+// ExposedDropdownMenuBox each draw a frame of their own that no Go style could
+// remove. So on three targets out of four the frame is the theme's, from the
+// Components.Input base the widget reads, and the web is again the one place a
+// user agent was drawing a second one on top.
+//
+// Only the frame is reset. A <select>'s drop-down indicator is not chrome
+// around the control, it is the thing that says the control is a picker — the
+// checkbox's own argument, one row down — and `border` does not touch it. It
+// stays, on every browser, and it is the one part of the control the theme
+// does not own.
 //
 // # Why the text fields could not join until the themes moved
 //
@@ -283,6 +320,7 @@ var borderResetTypes = map[string]bool{
 	"InputPassword": true,
 	"NumericInput":  true,
 	"TextArea":      true,
+	"Select":        true,
 }
 
 // ResetsUABorder reports whether a node type needs an explicit "no border"

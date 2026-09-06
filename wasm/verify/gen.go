@@ -225,6 +225,18 @@ func signupScenario() scenario {
 	// one that hardcodes false.
 	record(&steps, mgr.DispatchBoolCallback(prop(mgr.RenderInitial(), "Checkbox", 0, "onToggle"), true))
 
+	// And move the picker off its initial value, for the same reason: a
+	// transcript whose picker never leaves "free" cannot tell a runtime that
+	// applies the value from one that renders the first option and stops.
+	//
+	// What this step covers is that the value lands through a patch, and that
+	// the <option> elements stay invisible to the tree comparison — they are
+	// chrome, and an unmarked one would show up here as three extra nodes Go
+	// never rendered. That the same-list case is answered *without* rebuilding
+	// the options is a property no final tree can see (the rebuilt options
+	// would be identical), so it is pinned in select_test.mjs instead.
+	record(&steps, mgr.DispatchTextCallback(prop(mgr.RenderInitial(), "Select", 0, "onChange"), "pro"))
+
 	return scenario{Name: "signup", Initial: initial, Steps: steps, Final: mgr.RenderInitial()}
 }
 
