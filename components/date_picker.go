@@ -92,7 +92,9 @@ type DatePicker struct {
 	// SegmentedControl.Segment is the template for its chips. Today, Min,
 	// Max, Marked, WeekStart, the three label functions, Header and Style all
 	// apply; Month, OnMonthChange, Selected and OnSelect are overwritten,
-	// since those four are what the picker is for.
+	// since those four are what the picker is for, and Deselectable is forced
+	// off — clearing a field is OnClear's job here, for the reason given
+	// where the sheet sets it.
 	Calendar Calendar
 
 	// Title names the sheet. Empty leaves the heading row to the buttons
@@ -241,6 +243,13 @@ func (p DatePicker) sheet(ctx *core.Context, open core.State[bool], month core.S
 	cal.Month = month.Get()
 	cal.OnMonthChange = month.Set
 	cal.Selected = p.Selected
+	// Forced off rather than passed through. A form hands OnSelect to whatever
+	// holds its date, and a second tap that fed that same setter the zero time
+	// would empty the field through the callback whose whole job is to fill
+	// it — a clear the form never opted into and cannot tell apart from a
+	// pick. Emptying is OnClear's, and whether a field may be emptied at all
+	// is the form's question, which is why OnClear is nil-able.
+	cal.Deselectable = false
 	if p.OnSelect != nil && !p.Disabled {
 		cal.OnSelect = func(d time.Time) {
 			p.OnSelect(d)

@@ -619,6 +619,101 @@ func TestCalendarDemoSharesOneSelectionWithTheField(t *testing.T) {
 	assertNoConcerns(t)
 }
 
+// The two things the counted Marked and the deselectable grid buy this demo,
+// neither of which a caption can show: the cluster under a day is as many dots
+// as the day has things on it, and tapping the chosen day again empties the
+// selection the field below shares.
+func TestCalendarDemoCountsItsDotsAndClearsOnASecondTap(t *testing.T) {
+	mgr := newApp(t)
+	openLesson(t, mgr, "Calendars: a month grid and a date field")
+	cur := tree(t, mgr)
+
+	// dots returns the mark cluster of the named cell: the cell's second
+	// child, after the numeral. findNode is depth-first and the standalone
+	// grid precedes the DatePicker's, whose sheet carries cells with the very
+	// same spoken names.
+	dots := func(name string) []*node {
+		t.Helper()
+		cell := findNode(cur, func(n *node) bool {
+			return n.Style != nil && strings.HasPrefix(n.Style.AccessibilityLabel, name)
+		})
+		if cell == nil {
+			t.Fatalf("no day cell named %q", name)
+		}
+		if len(cell.Children) < 2 {
+			t.Fatalf("cell %q has %d children, want the numeral and the cluster", name, len(cell.Children))
+		}
+		return cell.Children[1].Children
+	}
+	inked := func(name string) int {
+		n := 0
+		for _, d := range dots(name) {
+			if d.Style != nil && d.Style.Background != "#00000000" {
+				n++
+			}
+		}
+		return n
+	}
+
+	// March 1 carries "Ask, Seek, Knock" plus two other things, March 15 a
+	// sermon plus one, March 22 a sermon alone, March 8 nothing at all.
+	for _, tc := range []struct {
+		name string
+		want int
+	}{
+		{"Sunday, March 1, 2026", 3},
+		{"Sunday, March 15, 2026", 2},
+		{"Sunday, March 22, 2026", 1},
+		{"Sunday, March 8, 2026", 0},
+	} {
+		if got := inked(tc.name); got != tc.want {
+			t.Errorf("%s: %d dots inked, want %d", tc.name, got, tc.want)
+		}
+	}
+	// The empty day still carries its placeholder, which is what keeps the
+	// numerals on one baseline across the grid.
+	if n := len(dots("Sunday, March 8, 2026")); n != 1 {
+		t.Errorf("an unmarked day holds %d dot boxes, want the one transparent placeholder", n)
+	}
+
+	// tap fires the first cell whose spoken name starts with name.
+	tap := func(name string) {
+		t.Helper()
+		cell := findNode(cur, func(n *node) bool {
+			if n.Style == nil || !strings.HasPrefix(n.Style.AccessibilityLabel, name) {
+				return false
+			}
+			_, clickable := n.Props["onClick"].(string)
+			return clickable
+		})
+		if cell == nil {
+			t.Fatalf("no tappable day cell named %q", name)
+		}
+		mgr.DispatchCallback(cell.Props["onClick"].(string))
+		cur = tree(t, mgr)
+	}
+
+	tap("Sunday, March 15, 2026")
+	if !hasTextContaining(cur, "Salt and Light") {
+		t.Fatal("the first tap should select the day and surface what is on it")
+	}
+	if !hasTextContaining(cur, "and 1 more that day") {
+		t.Error("the caption should name what the second dot stands for; the grid can count and cannot say")
+	}
+
+	// The same cell again — now announced as selected, which is why the tap
+	// helper matches on a prefix.
+	tap("Sunday, March 15, 2026")
+	if hasTextContaining(cur, "Salt and Light") {
+		t.Fatal("a second tap on the chosen day should clear the selection, not keep it")
+	}
+	if !hasTextContaining(cur, "Tap a dotted day") {
+		t.Error("with the selection cleared the caption should be the prompt again")
+	}
+
+	assertNoConcerns(t)
+}
+
 // Today is a field, and the range bounds the arrows. Both are checked through
 // the tree because both are invisible to a caption.
 func TestCalendarDemoRingsItsPinnedTodayAndStopsAtTheRange(t *testing.T) {

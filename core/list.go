@@ -115,6 +115,31 @@ func StickyHeader() StyleProp {
 // props run before children in containerNode, so there is nothing to count
 // yet when this closure is built — only when it is called.)
 //
+// # Where in the argument list it goes
+//
+// Anywhere. containerNode registers behavior props in argument order but
+// renders children only after that loop has finished, so a List's own
+// callback IDs always precede its rows' — and these two spellings produce the
+// same ID for the same list, at any row count:
+//
+//	core.List(core.OnEndReached(pager.LoadNext), rows...)
+//	core.List(append(rows, core.OnEndReached(pager.LoadNext))...)
+//
+// That is worth saying out loud rather than leaving to be derived, because
+// the guard below is keyed by the ID and a reader who works out what the key
+// is made of is right to wonder whether a page that lengthens the list moves
+// it. Within one List it cannot;
+// TestOnEndReachedIDIsIndependentOfArgumentOrder holds the contract still.
+//
+// What *does* move it is anything earlier in the same pass that registers a
+// varying number of callbacks: a sibling above the List whose own children
+// grow with the page, or a row helper that renders on the spot with
+// view.Render(ctx) rather than returning a View for the List to render. Then
+// the ID slides with the data, each page starts its guard from scratch under
+// a key something else held on the previous pass, and the double-load this
+// prop exists to prevent comes back. Same family as the edge below, and the
+// same identity-keyed IDs close both.
+//
 // # The guard's one sharp edge
 //
 // State is keyed by callback ID, and callback IDs are positional: the Nth

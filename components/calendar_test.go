@@ -210,6 +210,78 @@ func TestCalendarAdjacentDaysAreDimmedAndInert(t *testing.T) {
 	}
 }
 
+// Deselectable, both halves: the selected day reports the zero time, and every
+// other day still reports itself. Driven through the real callback rather than
+// read off the tree, because what changed is what a tap *says*, not how the
+// cell is drawn.
+func TestCalendarDeselectableReportsTheZeroTimeOnASecondTap(t *testing.T) {
+	sel := time.Date(2026, time.September, 12, 0, 0, 0, 0, time.UTC)
+
+	// tap renders a calendar and fires the cell for day n, reporting whatever
+	// OnSelect was handed. A fresh context each time: the callback registry is
+	// per-pass and a stale ID would be answering for the previous tree.
+	tap := func(deselectable bool, n int) (time.Time, bool) {
+		ctx := core.NewContext()
+		ctx.BeginRenderPass()
+		var got time.Time
+		fired := false
+		tree := Calendar{
+			Month:        sep2026,
+			Selected:     sel,
+			Deselectable: deselectable,
+			OnSelect:     func(d time.Time) { got, fired = d, true },
+		}.Render(ctx)
+		ctx.TriggerCallback(cellFor(t, dayCells(t, tree), 2, n).Props["onClick"].(string))
+		return got, fired
+	}
+
+	got, fired := tap(true, 12)
+	if !fired {
+		t.Fatal("tapping the selected day should still report something")
+	}
+	if !got.IsZero() {
+		t.Errorf("second tap on the chosen day reported %v, want the zero time", got)
+	}
+
+	// Its neighbour is an ordinary pick: Deselectable is about the one cell
+	// that is already chosen, not about the grid.
+	got, fired = tap(true, 13)
+	if !fired || got.Day() != 13 {
+		t.Errorf("tapping an unselected day reported %v (fired=%v), want September 13", got, fired)
+	}
+
+	// Off by default, and off means the old behavior exactly: the selected day
+	// re-reports itself rather than going quiet or clearing.
+	got, fired = tap(false, 12)
+	if !fired || got.Day() != 12 || got.IsZero() {
+		t.Errorf("without Deselectable the chosen day reported %v (fired=%v), want September 12", got, fired)
+	}
+}
+
+// Deselectable changes what a tap reports and nothing about the cell: the fill
+// still marks the selection and the spoken name still ends ", selected".
+// Pinned because the tempting shortcut — drawing a deselectable selection
+// differently — would make the grid say two things about one state.
+func TestCalendarDeselectableDoesNotChangeHowTheCellReads(t *testing.T) {
+	sel := time.Date(2026, time.September, 12, 0, 0, 0, 0, time.UTC)
+	plain := Calendar{Month: sep2026, Selected: sel, OnSelect: func(time.Time) {}}
+	loose := plain
+	loose.Deselectable = true
+
+	a := cellFor(t, dayCells(t, renderCalendar(t, plain)), 2, 12)
+	b := cellFor(t, dayCells(t, renderCalendar(t, loose)), 2, 12)
+
+	if a.Style.Background != b.Style.Background {
+		t.Errorf("fill differs: %q vs %q", a.Style.Background, b.Style.Background)
+	}
+	if a.Style.AccessibilityLabel != b.Style.AccessibilityLabel {
+		t.Errorf("spoken name differs: %q vs %q", a.Style.AccessibilityLabel, b.Style.AccessibilityLabel)
+	}
+	if b.Style.AccessibilityLabel != "Saturday, September 12, 2026, selected" {
+		t.Errorf("spoken name = %q, want the selection still announced", b.Style.AccessibilityLabel)
+	}
+}
+
 func TestCalendarSelectReportsMiddayInTheCalendarsLocation(t *testing.T) {
 	// A location whose offset is large enough that midnight UTC and midnight
 	// local are different calendar days, so a widget that quietly worked in
@@ -352,24 +424,39 @@ func TestCalendarWithoutOnMonthChangeDrawsNoArrows(t *testing.T) {
 	}
 }
 
-func TestCalendarMarkDotIsAlwaysPresentAndOnlySometimesInked(t *testing.T) {
+// dotsOf returns the mark cluster's dot boxes for a cell. The cluster is the
+// cell's second child, after the day number.
+func dotsOf(t *testing.T, cell *core.Node) []*core.Node {
+	t.Helper()
+	if len(cell.Children) < 2 {
+		t.Fatalf("cell has %d children, want the number and the mark cluster", len(cell.Children))
+	}
+	return cell.Children[1].Children
+}
+
+func TestCalendarMarkClusterIsAlwaysPresentAndOnlySometimesInked(t *testing.T) {
 	theme := core.DefaultTheme
 	n := renderCalendar(t, Calendar{
 		Month:  sep2026,
-		Marked: func(d time.Time) bool { return d.Day() == 18 },
+		Marked: func(d time.Time) int { return map[int]int{18: 1}[d.Day()] },
 	})
 	cells := dayCells(t, n)
 
 	marked := cellFor(t, cells, 2, 18)
 	plain := cellFor(t, cells, 2, 17)
 	if len(marked.Children) != len(plain.Children) {
-		t.Fatalf("marked cell has %d children, unmarked %d — the dot must not come and go",
+		t.Fatalf("marked cell has %d children, unmarked %d — the cluster must not come and go",
 			len(marked.Children), len(plain.Children))
 	}
-	if got := marked.Children[1].Style.Background; got != theme.Colors.Primary {
+	// The one-versus-none transition is every cell on a yes/no calendar, and
+	// it stays a color patch: both cells carry exactly one dot box.
+	if a, b := len(dotsOf(t, marked)), len(dotsOf(t, plain)); a != 1 || b != 1 {
+		t.Fatalf("one mark drew %d dots and none drew %d, want 1 and 1 — nothing-to-one must not insert a child", a, b)
+	}
+	if got := dotsOf(t, marked)[0].Style.Background; got != theme.Colors.Primary {
 		t.Errorf("mark = %q, want Primary %q", got, theme.Colors.Primary)
 	}
-	if got := plain.Children[1].Style.Background; got != ColorTransparent {
+	if got := dotsOf(t, plain)[0].Style.Background; got != ColorTransparent {
 		t.Errorf("unmarked dot = %q, want transparent so the day numbers keep one baseline", got)
 	}
 
@@ -378,15 +465,99 @@ func TestCalendarMarkDotIsAlwaysPresentAndOnlySometimesInked(t *testing.T) {
 	sel := renderCalendar(t, Calendar{
 		Month:    sep2026,
 		Selected: time.Date(2026, time.September, 18, 0, 0, 0, 0, time.UTC),
-		Marked:   func(d time.Time) bool { return d.Day() == 18 },
+		Marked:   func(d time.Time) int { return map[int]int{18: 1}[d.Day()] },
 		OnSelect: func(time.Time) {},
 	})
 	cell := cellFor(t, dayCells(t, sel), 2, 18)
-	if cell.Children[1].Style.Background == theme.Colors.Primary {
+	dot := dotsOf(t, cell)[0]
+	if dot.Style.Background == theme.Colors.Primary {
 		t.Error("a mark on the selected day must not be drawn in the fill's own color")
 	}
-	if cell.Children[1].Style.Background != cell.Children[0].Style.TextColor {
+	if dot.Style.Background != cell.Children[0].Style.TextColor {
 		t.Error("a mark on the selected day should take the day number's ink")
+	}
+}
+
+// The whole reason Marked returns an int: two things on a day and one thing on
+// a day have to look different, and past the cap the cluster stops counting
+// rather than overflowing a cell one seventh of a row wide.
+func TestCalendarDrawsOneDotPerThingUpToTheCap(t *testing.T) {
+	theme := core.DefaultTheme
+	// Day n carries n-10 marks, so the 10th has none and the 15th asks for
+	// five — one over twice the cap.
+	n := renderCalendar(t, Calendar{
+		Month:  sep2026,
+		Marked: func(d time.Time) int { return d.Day() - 10 },
+	})
+	cells := dayCells(t, n)
+
+	for _, tc := range []struct {
+		day       int
+		wantBoxes int
+		wantInked int
+	}{
+		// A day asking for a negative count is a day with nothing on it: one
+		// placeholder box, drawn transparent.
+		{day: 3, wantBoxes: 1, wantInked: 0},
+		{day: 10, wantBoxes: 1, wantInked: 0},
+		{day: 11, wantBoxes: 1, wantInked: 1},
+		{day: 12, wantBoxes: 2, wantInked: 2},
+		{day: 13, wantBoxes: 3, wantInked: 3},
+		{day: 14, wantBoxes: 3, wantInked: 3},
+		{day: 15, wantBoxes: 3, wantInked: 3},
+	} {
+		dots := dotsOf(t, cellFor(t, cells, 2, tc.day))
+		if len(dots) != tc.wantBoxes {
+			t.Errorf("day %d (%d marks): %d dot boxes, want %d",
+				tc.day, tc.day-10, len(dots), tc.wantBoxes)
+			continue
+		}
+		inked := 0
+		for _, d := range dots {
+			if d.Style.Background != ColorTransparent {
+				inked++
+			}
+			if d.Style.Width != "5px" || d.Style.Height != "5px" {
+				t.Errorf("day %d: dot is %sx%s, want the cluster to keep one dot size",
+					tc.day, d.Style.Width, d.Style.Height)
+			}
+		}
+		if inked != tc.wantInked {
+			t.Errorf("day %d (%d marks): %d dots inked, want %d", tc.day, tc.day-10, inked, tc.wantInked)
+		}
+		if inked > 0 && dots[0].Style.Background != theme.Colors.Primary {
+			t.Errorf("day %d: first dot = %q, want Primary", tc.day, dots[0].Style.Background)
+		}
+	}
+}
+
+// A nil Marked is a calendar nobody has given marks to, not a broken one: the
+// cluster is still there holding the baseline, and every dot in it is blank.
+func TestCalendarWithoutMarkedStillHoldsTheBaseline(t *testing.T) {
+	cells := dayCells(t, renderCalendar(t, Calendar{Month: sep2026}))
+	for i, cell := range cells {
+		dots := dotsOf(t, cell)
+		if len(dots) != 1 || dots[0].Style.Background != ColorTransparent {
+			t.Fatalf("cell %d: %d dots, first %q — want one transparent placeholder",
+				i, len(dots), dots[0].Style.Background)
+		}
+	}
+}
+
+// The cluster is decoration. It is hidden as a row, which takes its dots with
+// it — what a day's marks *mean* is DayLabel's to say, since the widget counts
+// them without knowing what any of them is.
+func TestCalendarMarkClusterIsHiddenFromScreenReaders(t *testing.T) {
+	cells := dayCells(t, renderCalendar(t, Calendar{
+		Month:  sep2026,
+		Marked: func(d time.Time) int { return 2 },
+	}))
+	cluster := cells[0].Children[1]
+	if !cluster.Style.AccessibilityHidden {
+		t.Error("the mark cluster should be hidden: a row of nameless boxes is a stop with nothing to say")
+	}
+	if cluster.Style.Padding.Left != 0 || cluster.Style.Padding.Top != 0 {
+		t.Errorf("the cluster keeps the theme Row's inset (%v) — a cell has no room for it", cluster.Style.Padding)
 	}
 }
 

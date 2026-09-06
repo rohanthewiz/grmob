@@ -15,7 +15,7 @@ import (
 //	┌─────────────────────────────────────────┐
 //	│  ‹        March 2026              ›     │  <- Header (arrows only if OnMonthChange)
 //	│  Su  Mo  Tu  We  Th  Fr  Sa             │  <- weekday captions
-//	│  ·1   2   3   4   5   6   7             │  <- ·n = Marked(n) is true
+//	│  ·1   2   3   4   5   6 ··7             │  <- ·n = one mark, ··n = two
 //	│   8   9  10  11 [12] 13  14             │  <- [n] = Selected
 //	│  15  16  17 ·18  19  20  21             │
 //	│  22  23  24  25  26  27  28             │
@@ -30,7 +30,7 @@ import (
 //	    Selected:      picked.Get(),
 //	    OnSelect:      picked.Set,
 //	    Today:         today,                 // see "The widget never asks what time it is"
-//	    Marked:        func(d time.Time) bool { return len(eventsOn(d)) > 0 },
+//	    Marked:        func(d time.Time) int { return len(eventsOn(d)) },
 //	}
 //
 // # Everything is the caller's, including which month is on screen
@@ -49,6 +49,25 @@ import (
 //
 // A nil OnMonthChange draws no arrows. That is the static case — a month with
 // its events dotted, printed into a page — not a broken one.
+//
+// # The zero time goes both ways
+//
+// Selected already spells "nothing is chosen" as the zero time. With
+// Deselectable set, OnSelect reports that same zero when the reader taps the
+// day that is already selected — so a grid used as a *filter* is cleared from
+// the grid itself, the value making a round trip through the caller's state
+// with no second callback to wire and nothing beside the calendar to build.
+//
+// It is off by default, and the default is the interesting half. A picker
+// asking which day the appointment is has no "no day" to offer, and there a
+// stray second tap that quietly emptied the field would lose an answer the
+// reader never asked to lose. So the widget does not guess which of the two
+// it is in: a filter opts in, a picker leaves it alone, and DatePicker forces
+// it off and puts the way out on its own Clear button.
+//
+// There is deliberately no OnDeselect. Two callbacks setting the same piece
+// of state is two things for every consumer to keep in step, and the day a
+// screen wants to tell them apart it can test for the zero it was handed.
 //
 // # The widget never asks what time it is
 //
@@ -141,6 +160,19 @@ type Calendar struct {
 	// rather than a picker.
 	OnSelect func(time.Time)
 
+	// Deselectable makes a tap on the already-selected day report the zero
+	// time through OnSelect instead of the day, so a calendar standing in for
+	// a filter can be un-set without a "Show all" button beside it. Off by
+	// default; see "The zero time goes both ways" for why the default is that
+	// way round.
+	//
+	// It changes what a tap *reports* and nothing about how the cell is drawn
+	// or announced. The spoken name still ends ", selected", which is the fact
+	// a reader needs; that activating it now clears rather than re-selects is
+	// a piece of *state* — ARIA would spell it aria-pressed — and core has no
+	// slot for one yet.
+	Deselectable bool
+
 	// Today rings the current day without selecting it, so "today" and "the
 	// day I picked" can be two different cells and both be visible. Zero
 	// draws no ring; the widget does not consult the clock.
@@ -155,10 +187,27 @@ type Calendar struct {
 	Min time.Time
 	Max time.Time
 
-	// Marked puts a dot under a day: the days with an event, a deadline, a
-	// service. It is called once per visible cell — 42 times per render,
-	// adjacent months included — so it should be a lookup, not a query.
-	Marked func(time.Time) bool
+	// Marked counts what a day has on it — events, deadlines, services — and
+	// the cell draws that many dots under its number, capped at
+	// calendarMaxDots. Zero draws none, and so does a negative; nil is the
+	// same as a function that always answers zero.
+	//
+	// A count rather than a bool because two services on one Sunday and one
+	// service on one Sunday are different facts about the day, and a reader
+	// scanning a month for its busy weeks is asking exactly that question. A
+	// caller holding only a yes/no writes it as a count and loses nothing:
+	//
+	//	Marked: func(d time.Time) int { if hasEvent(d) { return 1 }; return 0 }
+	//
+	// It is called once per visible cell — 42 times per render, adjacent
+	// months included — so it should be a lookup, not a query.
+	//
+	// The dots are decoration and hidden from assistive technology. The widget
+	// knows how many things a day holds and nothing about what any of them is,
+	// so there is nothing it could truthfully announce; a count worth speaking
+	// goes into the spoken name through DayLabel, which is the seam that
+	// knows.
+	Marked func(time.Time) int
 
 	// WeekStart is the weekday the grid's leftmost column is. The zero value
 	// is time.Sunday, which is also the intended default.
@@ -191,10 +240,29 @@ const (
 	calendarCols = 7
 )
 
-// calendarDotSize is the diameter of the Marked dot, in px. Small enough to
-// sit under a day number without changing the cell's rhythm, large enough to
-// survive a phone's pixel grid.
-const calendarDotSize = 5
+// calendarDotSize is the diameter of one mark dot in px, calendarDotGap the
+// air between two. Small enough to sit under a day number without changing the
+// cell's rhythm, large enough to survive a phone's pixel grid.
+//
+// Neither is a theme spacing step, and that is deliberate: the cluster is
+// glyph-scale furniture *inside* a cell rather than part of the screen's
+// layout rhythm, and the theme's smallest step (XS, 4px) is already most of a
+// dot. Tying them to the scale would mean a theme that loosened its spacing
+// pushed three dots wider than the cell that holds them.
+const (
+	calendarDotSize = 5
+	calendarDotGap  = 3
+)
+
+// calendarMaxDots caps the cluster.
+//
+// Three is the most a cell one seventh of a row wide can carry and still read
+// as a count rather than a smudge: 3 dots and 2 gaps is 21px, against roughly
+// 45px of cell on a narrow phone. It is also about where counting stops being
+// what the reader does — past three the answer they take away is "several",
+// which is exactly what a capped cluster says. An exact number that matters
+// belongs in DayLabel, where a screen reader can read it out.
+const calendarMaxDots = 3
 
 func (c Calendar) Render(ctx *core.Context) *core.Node {
 	t := ctx.Theme()
@@ -433,6 +501,14 @@ func (c Calendar) dayCell(ctx *core.Context, day time.Time, month time.Month) co
 
 	if selectable {
 		d := day // captured per cell; the closure outlives this pass
+		// A second tap on the day already chosen reports "nothing", which is
+		// the value Selected itself uses to mean that. Resolved here rather
+		// than inside the closure so the cell captures a settled value: the
+		// closure outlives the pass, and `selected` will not be true of this
+		// cell forever. See "The zero time goes both ways".
+		if c.Deselectable && selected {
+			d = time.Time{}
+		}
 		items = append(items, core.OnClick(func() { c.OnSelect(d) }))
 	} else {
 		// Disabled *and* a no-op handler, the pairing components.Button
@@ -467,24 +543,56 @@ func (c Calendar) dayCell(ctx *core.Context, day time.Time, month time.Month) co
 		core.Align(core.AlignCenter),
 	))
 
-	// The dot is always in the tree and goes transparent when the day is not
-	// marked, rather than appearing and disappearing. Two things follow: the
-	// day numbers keep the same baseline whether or not their day has
-	// something on it, and toggling a mark is a color patch rather than a
-	// child insertion in the middle of a 42-cell grid.
-	marked := c.Marked != nil && c.Marked(day)
-	if !marked {
-		dot = ColorTransparent
+	// One dot per thing on the day, capped, in a row under the number.
+	//
+	// The cluster is always in the tree and always holds at least one box,
+	// drawn transparent when the day has nothing on it. That keeps both
+	// properties the single dot this replaced was there for: the day numbers
+	// sit on one baseline whether or not their day is marked, and the common
+	// transition — nothing to one thing and back, which is every cell on a
+	// yes/no calendar and most cells on any other — stays a color patch
+	// rather than a child insertion in the middle of a 42-cell grid.
+	//
+	// Only the second and third dots are structural, and only on the cells
+	// whose count actually reaches them. That is the price of counting and it
+	// is charged to the cells doing the counting.
+	count := 0
+	if c.Marked != nil {
+		count = c.Marked(day)
 	}
-	items = append(items, core.Box(
-		core.Width(fmt.Sprintf("%dpx", calendarDotSize)),
-		core.Height(fmt.Sprintf("%dpx", calendarDotSize)),
-		core.BorderRadius(calendarDotSize),
-		core.BackgroundColor(dot),
-		// The mark's meaning belongs to the cell's spoken name, not to a
-		// nameless box a reader would otherwise stop on.
+	// A negative answer means the same as none. Clamping rather than trusting
+	// keeps a caller's `len(x) - 1` slip from asking for a negative number of
+	// children.
+	count = min(max(count, 0), calendarMaxDots)
+
+	dots := make([]core.PropsAndChildren, 0, calendarMaxDots+3)
+	dots = append(dots,
+		// Shed the theme Row's inset, as the week rows above do: this is a
+		// cluster of marks, not a band of content. The cell's own
+		// AlignItemsCenter is what centers it, so there is no Justify here —
+		// the row hugs its dots on every target.
+		core.Padding(0),
+		core.Gap(calendarDotGap),
+		// The marks' meaning belongs to the cell's spoken name — DayLabel is
+		// the seam that knows what they are — not to a row of nameless boxes a
+		// reader would otherwise stop on. Hidden on the row, which takes the
+		// subtree with it.
 		core.AccessibilityHidden(),
-	))
+	)
+	for i := range max(count, 1) {
+		fill := dot
+		if i >= count {
+			// The one placeholder dot on an unmarked day; see above.
+			fill = ColorTransparent
+		}
+		dots = append(dots, core.Box(
+			core.Width(fmt.Sprintf("%dpx", calendarDotSize)),
+			core.Height(fmt.Sprintf("%dpx", calendarDotSize)),
+			core.BorderRadius(calendarDotSize),
+			core.BackgroundColor(fill),
+		))
+	}
+	items = append(items, core.Row(dots...))
 
 	// Box, not Column: a Column would arrive with the theme's screen inset,
 	// and 16px of horizontal padding inside a cell one seventh of a row wide

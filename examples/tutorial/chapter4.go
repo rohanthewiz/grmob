@@ -1180,6 +1180,21 @@ var (
 	tutorialCalMax = time.Date(2026, time.March, 31, 12, 0, 0, 0, time.UTC)
 )
 
+// tutorialAlsoOn is the calendar lesson's second source of dots: whatever
+// else a day carries besides its sermon — a baptism, a members' meeting.
+// Keyed by the day rather than by instant for the reason archiveOn compares
+// that way.
+//
+// It exists because the 4.6 archive has at most one entry on any day, so a
+// count taken over it alone could never draw more than one dot — and a Marked
+// that cannot show two is the exact signature this lesson is here to explain.
+// March 1 ends up with three marks and March 15 with two, which is what makes
+// the cluster legible as a count in the demo rather than in prose.
+var tutorialAlsoOn = map[string]int{
+	"2026-03-01": 2,
+	"2026-03-15": 1,
+}
+
 // archiveOn finds the entry falling on a calendar day, which is what the
 // calendar's Marked and the caption under it both ask. Compared by the Y/M/D
 // triple rather than by instant: the widget hands out midday and the fixture
@@ -1207,19 +1222,30 @@ func lessonCalendars() Lesson {
 			month := core.NewState(ctx, tutorialToday)
 			picked := core.NewState(ctx, time.Time{})
 
-			marked := func(d time.Time) bool {
-				_, ok := archiveOn(d)
-				return ok
+			// The count the grid draws: the day's sermon, if it has one, plus
+			// anything else on it. A count, not a bool — one dot and two dots
+			// are different facts about a Sunday.
+			marked := func(d time.Time) int {
+				n := tutorialAlsoOn[d.Format("2006-01-02")]
+				if _, ok := archiveOn(d); ok {
+					n++
+				}
+				return n
 			}
 
 			// What the chosen day has on it — the reason a calendar is worth
 			// more than a text field.
-			note := "Tap a dotted day: those are the ones with a sermon."
+			note := "Tap a dotted day. One dot is one thing on it — March 1 has three, and tapping a chosen day again clears it."
 			if p := picked.Get(); !p.IsZero() {
 				if e, ok := archiveOn(p); ok {
 					note = fmt.Sprintf("%s — %s, %s", e.title, e.speaker, p.Format("Monday 2 January 2006"))
 				} else {
 					note = fmt.Sprintf("Nothing on %s.", p.Format("Monday 2 January 2006"))
+				}
+				// What the dots said, spelled out: the grid can draw the count
+				// and cannot name what it is counting.
+				if extra := tutorialAlsoOn[p.Format("2006-01-02")]; extra > 0 {
+					note += fmt.Sprintf(" (and %d more that day)", extra)
 				}
 			}
 
@@ -1238,7 +1264,8 @@ components.Calendar{
     Selected:      picked.Get(),  OnSelect:      picked.Set,
     Today:         today,                       // a field, not a clock read
     Min:           season.Start, Max: season.End,
-    Marked:        func(d time.Time) bool { return hasEvent(d) },
+    Marked:        func(d time.Time) int { return len(eventsOn(d)) },  // a count, so two dots mean two
+    Deselectable:  true,                                               // a second tap on the chosen day reports the zero time
 }`),
 				demoPanel("The dots are the 4.6 archive. The ring is \"today\"; the fill is your selection; the arrows die at the ends of the range.",
 					components.Calendar{
@@ -1250,6 +1277,11 @@ components.Calendar{
 						Min:           tutorialCalMin,
 						Max:           tutorialCalMax,
 						Marked:        marked,
+						// This grid is a filter over the caption below it, so
+						// "no day" is a state it can be in. The DatePicker
+						// under it is a field and is not — it clears through
+						// its own Clear button, and forces this off.
+						Deselectable: true,
 					},
 					caption(note),
 					components.FormField{
@@ -1270,6 +1302,23 @@ components.Calendar{
 						},
 					},
 				),
+				prose("Marked counts; it does not answer yes or no. Two services on one Sunday and one "+
+					"service on one Sunday are different facts about the day, and a reader scanning a "+
+					"month for its busy weeks is asking exactly that — so the cell draws one dot per "+
+					"thing, up to three. A caller holding only a yes/no writes it as a count and loses "+
+					"nothing. Past three the answer a reader takes away is \"several\" rather than a "+
+					"number, which is what a capped cluster says; an exact count that matters goes into "+
+					"DayLabel, where a screen reader can read it out. The dots themselves are hidden "+
+					"from assistive technology, because the widget knows how many things a day holds "+
+					"and nothing about what any of them is."),
+				prose("Deselectable is how a grid says \"nothing\". Selected already spells that as the "+
+					"zero time, so a second tap on the chosen day reports the same zero back through "+
+					"OnSelect — the value makes a round trip through your state and there is no second "+
+					"callback to wire. It is off by default, and the default is the interesting half: a "+
+					"picker asking which day the appointment is has no \"no day\" to offer, and a stray "+
+					"second tap that quietly emptied the field would lose an answer nobody asked to "+
+					"lose. The grid above opts in because it is a filter; the DatePicker under it does "+
+					"not, and clears through its own Clear button."),
 				prose("Today is a field and not a time.Now(). A render that reads the clock is not a "+
 					"function of its inputs, so the same grid would snapshot differently after "+
 					"midnight; and \"today\" is a question about a time zone that the widget cannot "+
@@ -1311,7 +1360,9 @@ components.Calendar{
 					"Six rows always — a grid that resized itself would move everything under it on every arrow tap, and a fixed shape makes a month change a pure prop patch.",
 					"Cells are built at midday, because midnight is a local time that does not exist on every day in every zone.",
 					"Min and Max are compared by calendar day, so a Max stamped at 15:04 still includes its own day; an arrow whose whole target month is out of range is disabled.",
+					"Marked returns a count, not a bool: the cell draws one dot per thing on the day, capped at three, and a yes/no caller returns 0 or 1.",
 					"Marked is called 42 times a render, adjacent months included — make it a lookup, not a query.",
+					"Deselectable lets a second tap on the chosen day report the zero time, which is what Selected already means by it. Off by default, because a picker has no \"no day\" and DatePicker forces it off.",
 					"MonthLabel, WeekdayLabel and DayLabel are the localization seams: Go's time package speaks English only.",
 					"DatePicker owns two view states and takes a Calendar as a template; wrap it in FormField for the label, hint and error.",
 				),

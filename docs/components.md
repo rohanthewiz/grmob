@@ -1020,6 +1020,23 @@ The busy case is a line of text rather than a spinner because core has no
 indeterminate progress node — and naming what is loading is more useful than
 an animation anyway.
 
+A wait renders in two places, and the words move between them. On a screen of
+its own it goes in `Title`, as above. Under the last row of a paged list — the
+footer saying the next page is coming — body-sized primary ink reads as one
+more row, so there it goes in `Hint` with `Title` left empty, usually with the
+padding brought in too:
+
+```go
+tail  components.EmptyState{Hint: "Loading more…",
+          Style: []core.StyleProp{core.Padding(t.Spacing.SM)}}
+```
+
+The rule underneath is *errors and empties speak in the primary line; a wait
+speaks there only when it is the whole screen*. The widget cannot apply it — it
+is handed a slot and never learns whether that slot is a screen's middle or a
+list's end — so it is the caller's, written down so two screens do not answer
+it differently.
+
 The column sets `Width: 100%`, which looks redundant and is not: on both
 natives a column hugs its widest child, so without it the block sits at the
 leading edge with its children centered inside a box only as wide as the

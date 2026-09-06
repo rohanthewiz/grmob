@@ -172,6 +172,17 @@ leaves the guard shut, so a feed that has reached its end goes quiet instead
 of re-asking forever. An empty list never reports the edge at all: the first
 page is the app's to ask for.
 
+Where the prop sits in the argument list does not matter. The guard is keyed
+by callback ID and callback IDs are positional, so a hand-written list looks
+like it ought to care — but `containerNode` registers behavior props during
+its argument loop and renders children only afterwards, so the `List`'s own ID
+is assigned before any row can take one, in either spelling and at any row
+count. What *does* move the ID is a varying number of callbacks registered
+earlier in the same pass: a sibling above the list whose children grow with
+the page, or a row helper that calls `view.Render(ctx)` itself instead of
+returning a `View`. Then each page starts its guard afresh under a key
+something else held last pass, and the double-load comes back.
+
 `components.GroupedList` wraps both (`StickyHeaders`, `OnEndReached`) and
 `components.ChipStrip{Scrollable: true}` wraps the horizontal scroll.
 

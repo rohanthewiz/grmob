@@ -206,7 +206,7 @@ func TestDatePickerCalendarTemplatePassesThrough(t *testing.T) {
 			Selected:   time.Date(2001, time.January, 1, 0, 0, 0, 0, time.UTC),
 			WeekStart:  time.Monday,
 			Min:        time.Date(2026, time.September, 10, 0, 0, 0, 0, time.UTC),
-			Marked:     func(d time.Time) bool { return d.Day() == 18 },
+			Marked:     func(d time.Time) int { return map[int]int{18: 1}[d.Day()] },
 			MonthLabel: func(m time.Time) string { return "Setembro de 2026" },
 		},
 	})
@@ -224,13 +224,51 @@ func TestDatePickerCalendarTemplatePassesThrough(t *testing.T) {
 	if !cells[9].Style.Disabled || cells[10].Style.Disabled {
 		t.Error("the template's Min should bound the grid")
 	}
-	if cells[18].Children[1].Style.Background != core.DefaultTheme.Colors.Primary {
+	if dotsOf(t, cells[18])[0].Style.Background != core.DefaultTheme.Colors.Primary {
 		t.Error("the template's Marked should dot the 18th")
 	}
 	// The 12th is at index 1 + 11 under a Monday start; it is the picker's own
 	// Selected, which must win over the template's.
 	if cells[12].Style.Background != core.DefaultTheme.Colors.Primary {
 		t.Error("the picker's Selected should win over the template's")
+	}
+}
+
+// The one template field the picker overrides for a reason other than "the
+// picker computes it": a form hands OnSelect to whatever holds its date, and
+// a deselecting tap would feed that setter the zero time — a clear arriving
+// through the callback whose whole job is to fill the field, indistinguishable
+// from a pick. Emptying is OnClear's, and whether a field may be emptied at
+// all is the form's question.
+func TestDatePickerForcesDeselectableOff(t *testing.T) {
+	ctx := core.NewContext()
+	var got time.Time
+	reported := false
+	n := renderPass(ctx, DatePicker{
+		Selected: pickerDay,
+		OnSelect: func(d time.Time) { got, reported = d, true },
+		Calendar: Calendar{Deselectable: true}, // asked for, and refused
+	})
+
+	// pickerDay is the picker's selection, so this is the cell a deselect
+	// would fire on. It should report the day like any other.
+	cal := pickerCalendar(t, n)
+	cell := findFirst(cal, func(n *core.Node) bool {
+		return n.Style != nil && n.Style.AccessibilityLabel == pickerDay.Format("Monday, January 2, 2006")+", selected"
+	})
+	if cell == nil {
+		t.Fatalf("no cell announced as the selected %v", pickerDay.Format("2006-01-02"))
+	}
+	ctx.TriggerCallback(cell.Props["onClick"].(string))
+
+	if !reported {
+		t.Fatal("tapping the selected day in a picker should still report")
+	}
+	if got.IsZero() {
+		t.Error("the picker let a template Deselectable empty the form's own date setter")
+	}
+	if y, m, d := got.Date(); y != pickerDay.Year() || m != pickerDay.Month() || d != pickerDay.Day() {
+		t.Errorf("reported %v, want the day itself", got)
 	}
 }
 

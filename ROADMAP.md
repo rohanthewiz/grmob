@@ -107,6 +107,15 @@
       states no application wants. Cells are built at *midday*, because
       midnight is a local time that does not exist on every day in every zone
       (tutorial lesson 4.9)
+- [x] `Calendar.Marked` counts (`func(time.Time) int`) rather than answering
+      yes or no: one dot per thing on the day, capped at three, in a cluster
+      that always holds at least one box so the numerals keep one baseline and
+      the nothing-to-one case stays a colour patch
+- [x] `Calendar.Deselectable` — a second tap on the chosen day reports the
+      zero time through `OnSelect`, which is what `Selected` already means by
+      it, so a grid used as a filter clears itself. Off by default and forced
+      off by `DatePicker`: a form's date setter must not receive a clear it
+      cannot tell from a pick
 
 ### 🧬 Extensions
 - [x] Animations & transitions (`Transition`, easing curves)

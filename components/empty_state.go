@@ -27,6 +27,30 @@ import "github.com/rohanthewiz/grmob/core"
 // loading is more useful than an animation in any case — "Loading sermons…"
 // tells the user which of the screen's three sections is slow.
 //
+// # The busy line moves when the wait is not the whole screen
+//
+// The three-state example above puts the busy words in Title, which is right
+// for a wait that owns the screen and wrong for the other place a wait
+// renders: under the last row of a paged list, as the footer that says the
+// next page is coming. There, body-sized primary ink reads as one more row —
+// the reader tries to parse "Loading sermons…" as content — so the tail case
+// puts the words in Hint and leaves Title empty:
+//
+//	screen  EmptyState{Title: "Loading sermons…"}
+//	tail    EmptyState{Hint: "Loading more…"}
+//
+// The rule the split comes out of is *errors and empties speak in the primary
+// line; a wait speaks there only when it is the whole screen*. The widget
+// cannot apply it itself, because it is handed a slot and never learns
+// whether that slot is a screen's middle or a list's end — so this is the
+// caller's call, written down here so the next screen does not re-derive it
+// and land somewhere else.
+//
+// A tail usually wants less air than a screen-sized placeholder too. Padding
+// is a default like any other and Style is applied after it:
+//
+//	EmptyState{Hint: "Loading more…", Style: []core.StyleProp{core.Padding(t.Spacing.SM)}}
+//
 // # Width is load-bearing
 //
 // The column sets Width 100%, which looks redundant and is not. On both

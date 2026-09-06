@@ -116,6 +116,54 @@ func TestOnEndReachedRegistersAVoidCallback(t *testing.T) {
 	}
 }
 
+// Argument order is not a hazard, and the doc says so on the strength of this.
+//
+// The guard is keyed by callback ID and callback IDs are positional, so a
+// hand-written list looks like it ought to care where the prop sits among its
+// rows. It does not: containerNode registers behavior props during its
+// argument loop and renders children only afterwards, so the List's own ID is
+// assigned before any row can take one — at any row count, in either
+// spelling. A regression here would not fail loudly; it would quietly restart
+// each page's guard under a key a row held last pass and bring the
+// double-load back, which is why the invariant is pinned rather than trusted.
+func TestOnEndReachedIDIsIndependentOfArgumentOrder(t *testing.T) {
+	// id renders a List of rows rows with the prop written first or last, and
+	// reports the callback ID the pass handed it. Each call gets a fresh
+	// context so the two spellings are compared from the same starting
+	// sequence rather than one after the other.
+	id := func(rows int, propFirst bool) string {
+		ctx := NewContext()
+		ctx.BeginRenderPass()
+		var items []PropsAndChildren
+		if propFirst {
+			items = append(items, OnEndReached(func() {}))
+		}
+		for range rows {
+			// A row with a callback of its own: a plain Text would register
+			// nothing and could not shift anything even if the order did
+			// matter.
+			items = append(items, Box(OnClick(func() {})))
+		}
+		if !propFirst {
+			items = append(items, OnEndReached(func() {}))
+		}
+		return List(items...).Render(ctx).Props["onEndReached"].(string)
+	}
+
+	// Two row counts, because the failure this guards against is not "the two
+	// spellings differ" but "one of them drifts as the list grows".
+	for _, rows := range []int{3, 30} {
+		first, last := id(rows, true), id(rows, false)
+		if first != last {
+			t.Errorf("%d rows: prop-first ID %q, prop-last ID %q — argument order must not matter",
+				rows, first, last)
+		}
+	}
+	if a, b := id(3, false), id(30, false); a != b {
+		t.Errorf("prop written last took %q at 3 rows and %q at 30 — the ID must not slide with the page", a, b)
+	}
+}
+
 // The debounce, which is the whole reason this prop is not a bare On("EndReached").
 //
 // Every renderer reports the edge more than once for the same bottom — an
