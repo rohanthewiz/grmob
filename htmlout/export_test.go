@@ -1355,3 +1355,51 @@ func TestHiddenBeatsNestingLevel(t *testing.T) {
 		t.Errorf("aria-hidden should win alone:\n%s", out)
 	}
 }
+
+// --- Rotate -----------------------------------------------------------------
+
+func TestRotateExportsATransform(t *testing.T) {
+	out := ExportHTML(&core.Node{
+		Type:  "Box",
+		Props: map[string]any{},
+		Style: &core.Style{Rotate: 123.4},
+	})
+	if !strings.Contains(out, "transform:rotate(123.4deg)") {
+		t.Fatalf("expected a rotate transform, got:\n%s", out)
+	}
+}
+
+// Zero means "not turned", and an identity transform in the declaration would
+// still create a containing block for any absolutely-positioned descendant —
+// a real behavioral difference, not just noise.
+func TestZeroRotateEmitsNoTransform(t *testing.T) {
+	out := ExportHTML(&core.Node{
+		Type:  "Box",
+		Props: map[string]any{},
+		Style: &core.Style{Rotate: 0},
+	})
+	if strings.Contains(out, "transform") {
+		t.Fatalf("a zero angle emitted a transform:\n%s", out)
+	}
+}
+
+// The winding survives the export, matching what the field promises: an
+// unwrapped angle is not folded onto the circle on its way to CSS.
+func TestNegativeAndUnwrappedRotateSurviveTheExport(t *testing.T) {
+	for _, c := range []struct {
+		deg  float64
+		want string
+	}{
+		{-90, "transform:rotate(-90deg)"},
+		{370, "transform:rotate(370deg)"},
+	} {
+		out := ExportHTML(&core.Node{
+			Type:  "Box",
+			Props: map[string]any{},
+			Style: &core.Style{Rotate: c.deg},
+		})
+		if !strings.Contains(out, c.want) {
+			t.Errorf("Rotate(%g): want %q in:\n%s", c.deg, c.want, out)
+		}
+	}
+}

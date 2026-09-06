@@ -253,6 +253,43 @@ own renders. Unlike every other hook here it stores **nothing derived**: the
 errors are recomputed from the values and the current spec on every read.
 See [Forms & Validation](forms.md).
 
+### Sensors: `UseHeading`
+
+A sensor is a third kind of thing beside a node and a service: it is
+*subscribed* rather than commanded, and it costs battery while it is on. So
+the interesting question is not what the reading looks like but who is allowed
+to turn it off.
+
+```go
+h := hooks.UseHeading(ctx)   // starts the compass; releases it on close
+```
+
+**Start and stop are refcounted, not toggled.** Two screens can each hold the
+sensor and each let go; the magnetometer stops when the *second* one does. A
+plain on/off flag makes the opposite bug easy and silent — a badge and a
+compass screen both start it, the screen is popped, and the badge quietly
+stops updating with nothing in any log.
+
+**`Received` and `Available` are two different facts.** "No reading yet" wants
+a spinner; "this device has no compass" wants a different screen, and a
+spinner there spins forever. One boolean could not say both.
+
+**Put a compass on its own route.** Hooks have no unmount signal, so the
+subscription is released on `ctx.Close` rather than when the component leaves
+the tree — the same limit `UseInterval` and `UseAudio` carry. For those the
+cost is a redundant render; here it is a sensor left running, which a user can
+measure. A navigation frame has its own cleanup registry, so popping the route
+releases the reference for real.
+
+**On iOS Safari the browser will not hand over orientation events unless the
+request came from a tap.** `core.StartHeading` is where that request is made,
+so a hook mounting on navigation may be refused — and when it is, the reason
+comes back as `Available: false` with a message, which is what a "tap to
+enable the compass" button is for.
+
+Below the hook, `core.CurrentHeading`/`core.OnHeading` are the un-scoped pair,
+for a subscriber that wants the reading without owning the sensor's lifetime.
+
 ## Lifecycle & cleanup
 
 Background resources register cleanup with the context:

@@ -58,6 +58,11 @@ type nodeStyle struct {
 	AccessibilityLabel string
 	BorderWidth        float64
 	Disabled           bool
+
+	// Chapter 4's compass lesson asserts on this one. core.Rotate is a style
+	// field and the rose is an unlabelled Box, so the angle is the only thing
+	// in the tree that says which way the widget is pointing.
+	Rotate float64
 }
 
 func findNode(n *node, pred func(*node) bool) *node {

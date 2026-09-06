@@ -1186,6 +1186,47 @@ four targets agree: Compose and SwiftUI divide the whole axis by weight, CSS
 divides only the leftover space. The natives ignore `FlexBasis`, so the prop
 that is inert on two targets is exactly the one that converges the other two.
 
+## Compass
+
+A bearing drawn as a compass rose.
+
+```go
+h := hooks.UseHeading(ctx)   // starts the device compass, releases it on unmount
+
+switch {
+case !h.Received:  return components.Skeleton{}            // no reading yet
+case !h.Available: return components.EmptyState{Hint: h.Error}
+default:           return components.Compass{Heading: h.Magnetic, ShowDegrees: true}
+}
+```
+
+**The rose turns, not a needle.** A magnetic compass has a fixed card and a
+needle that swings to north; a navigation compass — every phone — turns the
+whole card under a fixed mark at twelve o'clock. This is the second, because
+the question a phone user is asking is "which way am I facing", which is read
+off the top. So the rose is drawn with `core.Rotate(-Heading)`: turning the
+device clockwise must turn the rose counter-clockwise by the same amount for
+it to keep pointing at the same piece of the world.
+
+**The mark sits above the rose, not on it.** That is a framework limit rather
+than a preference: core has no z-stacking primitive — `Box` stacks vertically
+on all four targets and absolute positioning is web-only — so a needle drawn
+*over* the rose would be a web-only widget wearing a portable name.
+
+**`Heading` is a float, not a `core.Heading`.** The widget draws any bearing:
+the direction of a route leg, a wind reading, the way a photograph was taken.
+`hooks.UseHeading` supplies the sensor's; nothing else has to know about it.
+
+**It announces once, as a sentence.** Four letters whose *positions* carry the
+meaning are exactly what a screen reader cannot convey — read in tree order
+the rose is "N W E S" whatever the bearing — so the whole widget speaks
+("Heading 312 degrees, northwest") and every part inside it is hidden.
+`AccessibilityLabel` overrides the sentence.
+
+`Size` is the only geometry knob: the circle, its padding and the lettering
+all derive from it. Letters are an eighth of the diameter with a 10px floor,
+so a deliberately small compass stays readable.
+
 ## Writing your own
 
 The package doc (`components/doc.go`) is the reference for the idiom. In

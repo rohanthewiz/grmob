@@ -485,6 +485,38 @@ core.Button("✕", remove,
 repeating an override, either promote it into a custom `Theme` or wrap it in
 a component (see the [widget library](../components.md) for the idiom).
 
+## Rotation
+
+`Rotate(deg)` turns a node clockwise about its own centre.
+
+```go
+core.Box(core.Width("48px"), core.Height("48px"), core.Rotate(-heading))
+```
+
+It is a **paint** transform on all four targets, not a layout one: the box
+keeps the size and position it laid out with and only its pixels turn, so a
+rotated node never reflows its siblings. All four also agree on degrees and on
+clockwise-positive, which is why this is one float rather than a `Transform`
+type — the moment translate and scale join it the platforms stop agreeing on
+composition order and the type has to say what it means.
+
+| target | mapping |
+|---|---|
+| htmlout / WASM | `transform: rotate(Ndeg)`, origin `50% 50%` |
+| Compose | `Modifier.rotate(N)`, about the layout bounds' centre |
+| SwiftUI | `.rotationEffect(.degrees(N), anchor: .center)` |
+
+**Centre only.** There is no transform-origin: a caller who needs to swing a
+node about some other point wraps it in a box whose centre is that point,
+which costs one node and works identically everywhere.
+
+**The angle is not normalised.** 370 and 10 point the same way and are not the
+same animation — under a [transition](#transitions) the first sweeps 20 degrees
+forwards and the second unwinds 340 the other way. Folding the value into
+[0, 360) would take that choice away and pick the wrong one for a compass,
+which would unwind the whole rose every time the bearing passed north.
+`core.AngleDelta` is the arithmetic for accumulating an unwrapped angle.
+
 ## Transitions
 
 `Transition(durationMs, easing)` animates subsequent style changes on the

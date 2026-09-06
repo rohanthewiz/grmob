@@ -102,6 +102,9 @@ func ReceiveHostEvent(name string, data map[string]any) {
 	case hostEventLifecycle:
 		receiveLifecycle(data)
 		consumed = true
+	case hostEventHeading:
+		receiveHeading(data)
+		consumed = true
 	}
 
 	hostEventsMu.RLock()
@@ -121,7 +124,8 @@ func ReceiveHostEvent(name string, data map[string]any) {
 }
 
 // hostEventAudioStatus is the first of the host events core consumes itself;
-// see audio.go for the payload, and lifecycle.go for the other one.
+// see audio.go for the payload, lifecycle.go for the second, and heading.go
+// for the third.
 const hostEventAudioStatus = "audio_status"
 
 // numberProp reads a JSON number out of a decoded payload. JSON has one

@@ -149,6 +149,18 @@ func Shadow(elevation float64) StyleProp {
 	})
 }
 
+// Rotate turns the node clockwise by deg degrees about its own centre,
+// without disturbing the layout around it. See Style.Rotate for what each
+// renderer maps it onto and why the angle is not normalised.
+//
+// Unlike UseStyle, this setter can force zero: Rotate(0) writes the field,
+// which is how a caller clears an angle a theme or role style supplied.
+func Rotate(deg float64) StyleProp {
+	return styleFunc(func(s *Style) {
+		s.Rotate = deg
+	})
+}
+
 func FontWeight(weight Weight) StyleProp {
 	return styleFunc(func(s *Style) {
 		s.FontWeight = weight

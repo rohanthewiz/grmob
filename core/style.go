@@ -30,6 +30,48 @@ type Style struct {
 	Transition   string // "all 0.3s ease"
 	Animation    string // "bounce 2s infinite"
 
+	// Rotate turns the node clockwise by this many degrees about its own
+	// centre. It is a paint-time transform on all four targets, not a layout
+	// one: the box keeps the size and position it laid out with, and only its
+	// pixels are turned. A rotated node therefore never reflows its siblings,
+	// and a rotated node whose corners now stick out of its parent is clipped
+	// by that parent's Overflow like any other overflowing paint.
+	//
+	//	CSS       transform: rotate(Ndeg)     about transform-origin: 50% 50%
+	//	Compose   Modifier.rotate(N)          about the layout bounds' centre
+	//	SwiftUI   .rotationEffect(.degrees(N)) about .center
+	//
+	// All four agree on the two things that would otherwise need a mapping
+	// table: degrees (not radians or turns), and positive meaning clockwise
+	// on screen. That agreement is why this is one float and not a Transform
+	// type — the moment translate and scale join it, the three platforms stop
+	// agreeing on composition order and the type has to say what it means.
+	//
+	// # Centre only
+	//
+	// There is no transform-origin. A caller who needs to swing a node about
+	// some other point wraps it in a box whose centre is that point, which
+	// costs one node and works identically on every target; exposing an
+	// origin would cost a second field on every renderer to express the same
+	// thing less portably (Compose takes a TransformOrigin fraction, SwiftUI
+	// a UnitPoint, CSS a length-or-percentage pair).
+	//
+	// # Winding, and why nothing here normalises it
+	//
+	// 370 and 10 look identical and -90 and 270 look identical, and the value
+	// is passed through as written rather than folded into [0, 360). Without
+	// a Transition the two spellings are indistinguishable, since each frame
+	// simply draws where it was told. With one they are not, and the choice
+	// belongs to the caller: 350 → 370 sweeps 20 degrees forwards, 350 → 10
+	// sweeps 340 degrees back the other way.
+	//
+	// Normalising here would take that choice away and pick the wrong one for
+	// the case this field was added for — an animated compass fed bearings
+	// folded into [0, 360) unwinds the whole rose backwards every time the
+	// user turns past north. core.AngleDelta (heading.go) is the arithmetic
+	// for accumulating an unwrapped angle when a caller wants one.
+	Rotate float64
+
 	HoverStyle   *Style
 	FocusStyle   *Style
 	PseudoStates map[string]Style // ":hover", ":focus"
@@ -61,7 +103,7 @@ type Style struct {
 	// AccessibilityRole is what the node *is* — a heading, a table cell, a
 	// search landmark — as opposed to what it is called and what tapping it
 	// does. See role.go for the vocabulary, what each of the four renderers
-	// makes of it, and why nine of the sixteen values do nothing on either
+	// makes of it, and why nine of the seventeen values do nothing on either
 	// native.
 	//
 	// It sits with the three fields above and travels the same way: on Style
@@ -104,7 +146,7 @@ type Style struct {
 	// AccessibilityHeadingLevel is the same 1-6 idea, so the level survives to
 	// VoiceOver's heading rotor. Compose's heading() takes no argument and has
 	// no level at all, so this is inert on Android — the same honest gap nine
-	// of the sixteen roles have, documented in GrMobStyle.kt beside the role
+	// of the seventeen roles have, documented in GrMobStyle.kt beside the role
 	// dispatch rather than left for the next person to rediscover.
 	//
 	// Out-of-range values are dropped rather than clamped. 0 is the zero value
@@ -153,7 +195,7 @@ type Style struct {
 	// collectionItemInfo — describes an item's index and span within one
 	// collection rather than its depth within nested ones, so mapping onto it
 	// would state something the field does not mean. This is the same honest
-	// gap nine of the sixteen roles have, and it is written down in
+	// gap nine of the seventeen roles have, and it is written down in
 	// GrMobStyle.kt and GrMobStyle.swift beside the role dispatch rather than
 	// left for the next person to rediscover.
 	//
@@ -305,6 +347,13 @@ func (s Style) applyTo(target *Style) {
 	}
 	if s.Shadow != 0 {
 		target.Shadow = s.Shadow
+	}
+	// Rotate merges on the same "non-zero wins" rule as the rest, which means
+	// a role style cannot merge a node back to zero degrees. That is the
+	// documented UseStyle edge, not a special case here: use the Rotate()
+	// prop to force an angle, including 0.
+	if s.Rotate != 0 {
+		target.Rotate = s.Rotate
 	}
 
 	// Positioning. Top was the odd one out before: Bottom, Left and Right were

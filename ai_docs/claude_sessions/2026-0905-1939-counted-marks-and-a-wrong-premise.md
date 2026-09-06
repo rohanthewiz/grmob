@@ -199,38 +199,69 @@ has two new checked lines.
 
 ## Next
 
-Carried, minus the three done here:
+Sorted by **age**, oldest first — the default. To read the same list by payoff
+instead, re-sort by **value** (high → medium → low, age breaking ties). Age
+sorts first by default because an item nobody has looked at in seven sessions is
+the one most likely to have gone stale, and staleness is the failure the last
+bullet below names; sorting by value answers the different question of what to
+pick up next.
 
-1. Then Tier C: heading plumbing + `Rotate` + Compass.
-2. An "on-light" tone per palette role, which both Button's outlined treatment
-   and `Chip.ProminenceLoud` are working around.
-3. **No `tab` / `tablist` role.** Needs a *state* (`aria-selected`), which has
-   no home on `Style` and which both natives spell differently. Now two
-   consumers deep: `Calendar.Deselectable` wants the same slot to say that
-   activating a selected cell clears it.
-4. **ARIA's `log`** for a chat transcript. `RoleStatus` is the nearest thing
-   and is not the same promise.
-5. **Heading level 6 is reachable and nothing in the framework goes past 2.**
-6. **The themes give `Components.Input` no border.** Blocks widening
-   `borderResetTags` to `<input>`/`<textarea>`; a palette decision.
-7. **`AccessibilityNestingLevel` has no consumer.** Watch whether the first
-   nested list downstream reaches for it or invents something else.
-8. **A `<select>` will need the border decision** if a picker node type lands.
+Both keys are carried inline as `(age N · value X)`, so either sort is a
+reordering of the same eleven lines and nothing is lost by choosing one. There
+is no longer a separate "newly raised" section: `age 0` says exactly that, and
+one flat list is what makes it sortable at all.
 
-Newly raised here:
+**Age** is how many saved sessions ago the item was first raised, counted in
+`ai_docs/claude_sessions/` and measured from this doc — so `age 0` means it was
+raised here and `age 7` means seven session docs have been written since.
+**Value** is a judgement about the payoff of doing it, not the effort: `high`
+means something is being worked around today or a second consumer has arrived,
+`medium` means it blocks one named thing, `low` means it is a gap nobody has
+bumped into yet. An old item with a low value is a candidate for deletion rather
+than another carry.
 
-- **The carried "Next" list is not audited.** One of its three items had been
-  wrong for eight sessions and was carried verbatim through six of them,
-  because a small item reads as too small to re-check. The cost was low here —
-  the item was cheap enough to test in two minutes — but the same list carries
-  items whose premises are bigger. Worth spending a moment on the *why* of an
-  item before the *what*, especially one inherited from a downstream adoption
-  where the reporter saw a symptom and guessed a cause.
-- **A widget cannot say "this control is on".** `Deselectable` joins
-  `tab`/`tablist` in wanting a selected/pressed state on `Style`. Two
-  independent consumers is usually the bar for building the thing.
-- **`contrastInk` picks black on `#007AFF`.** Visible in the exported grid: a
-  selected cell's numeral and its dots come out `#000000` on the DefaultTheme
-  blue. Untouched here — it is pre-existing and orthogonal — but it is the same
-  family as the "on-light tone per palette role" item above, and this is now a
-  place it is easy to look at.
+1. **(age 7 · value high)** Then Tier C: heading plumbing + `Rotate` + Compass.
+   The sensor start/stop + host-event + permission pattern is what location and
+   motion reuse, so the dial is the smaller half of what it buys.
+2. **(age 4 · value high) No `tab` / `tablist` role.** Needs a *state*
+   (`aria-selected`), which has no home on `Style` and which both natives spell
+   differently. Now two consumers deep: `Calendar.Deselectable` wants the same
+   slot to say that activating a selected cell clears it.
+3. **(age 4 · value low) ARIA's `log`** for a chat transcript. `RoleStatus` is
+   the nearest thing and is not the same promise. No consumer yet.
+4. **(age 3 · value high)** An "on-light" tone per palette role, which both
+   Button's outlined treatment and `Chip.ProminenceLoud` are working around.
+   Age is from its re-raise; it was first written down 65 sessions back in
+   `2026-0831-1515-button-variants`, then fell off the list entirely — which is
+   its own argument for the audit item below.
+5. **(age 2 · value low) Heading level 6 is reachable and nothing in the
+   framework goes past 2.** Unrelated to the "heading plumbing" in item 1, which
+   is a compass bearing.
+6. **(age 1 · value medium) The themes give `Components.Input` no border.**
+   Blocks widening `borderResetTags` to `<input>`/`<textarea>`; a palette
+   decision.
+7. **(age 1 · value low) `AccessibilityNestingLevel` has no consumer.** Watch
+   whether the first nested list downstream reaches for it or invents something
+   else. Nothing to build until then.
+8. **(age 1 · value low) A `<select>` will need the border decision** if a
+   picker node type lands. Contingent on a node type that does not exist.
+9. **(age 0 · value high) A widget cannot say "this control is on".**
+   `Deselectable` joins `tab`/`tablist` in wanting a selected/pressed state on
+   `Style`. Two independent consumers is usually the bar for building the thing.
+   Same slot as item 2 — they land together or not at all.
+10. **(age 0 · value medium) The carried "Next" list is not audited.** One of
+    its three items had been wrong for eight sessions and was carried verbatim
+    through six of them, because a small item reads as too small to re-check.
+    The cost was low here — the item was cheap enough to test in two minutes —
+    but the same list carries items whose premises are bigger. Worth spending a
+    moment on the *why* of an item before the *what*, especially one inherited
+    from a downstream adoption where the reporter saw a symptom and guessed a
+    cause.
+11. **(age 0 · value medium) `contrastInk` picks black on `#007AFF`.** Visible
+    in the exported grid: a selected cell's numeral and its dots come out
+    `#000000` on the DefaultTheme blue. Untouched here — it is pre-existing and
+    orthogonal — but it is the same family as the "on-light tone per palette
+    role" item above, and this is now a place it is easy to look at.
+
+Read by value instead: **high** 1, 2, 4, 9 · **medium** 6, 10, 11 · **low** 3,
+5, 7, 8.

@@ -793,3 +793,72 @@ func TestCalendarDemoDatePickerOpensAndPicksInOneTap(t *testing.T) {
 
 	assertNoConcerns(t)
 }
+
+// --- 4.10 the compass -------------------------------------------------------
+
+// The rose turns against the chosen bearing, and the caption names the
+// rotation it applied. A sign error here is invisible in prose and obvious in
+// the tree.
+func TestCompassDemoTurnsTheRoseAgainstTheChosenBearing(t *testing.T) {
+	mgr := newApp(t)
+	openLesson(t, mgr, "Sensors: the compass")
+
+	cur := tree(t, mgr)
+	// The lesson opens on 45 degrees.
+	if !hasTextContaining(cur, "45° NE") {
+		t.Fatal("the demo should open showing its 45 degree bearing")
+	}
+	rose := findNode(cur, func(n *node) bool {
+		return n.Style != nil && n.Style.Rotate == -45
+	})
+	if rose == nil {
+		t.Fatal("no node rotated by -45: the rose should turn against the heading")
+	}
+
+	// 359 is the chip that matters. A compass that looks right in the middle
+	// of the circle and wrong beside north has a normalisation bug, and the
+	// readout is where it shows.
+	//
+	// A Chip renders as a Button carrying its caption in the "label" prop
+	// rather than as a Text child, so it is found by the prop and not by
+	// hasTextContaining — the same distinction the Load-more and arrow
+	// lookups above make.
+	chip := findNode(cur, func(n *node) bool {
+		return n.Type == "Button" && n.Props["label"] == "359°"
+	})
+	if chip == nil {
+		t.Fatal("no 359° chip — the seam is the bearing worth being able to pick")
+	}
+	mgr.DispatchCallback(chip.Props["onClick"].(string))
+
+	cur = tree(t, mgr)
+	if !hasTextContaining(cur, "359° N") {
+		t.Fatal("a bearing one degree short of north should read as N, not NNW")
+	}
+	if findNode(cur, func(n *node) bool { return n.Style != nil && n.Style.Rotate == -359 }) == nil {
+		t.Fatal("the rose should carry the unfolded -359, not a normalised 1")
+	}
+
+	assertNoConcerns(t)
+}
+
+// The live half, in the state a test always finds it in: mounted, sensor
+// started, no host event yet. "Waiting" and "no compass" are different
+// sentences and this is the one that must be showing.
+func TestCompassDemoDistinguishesWaitingFromAbsent(t *testing.T) {
+	mgr := newApp(t)
+	openLesson(t, mgr, "Sensors: the compass")
+
+	cur := tree(t, mgr)
+	if !hasTextContaining(cur, "Waiting for the first reading") {
+		t.Fatal("with no reading delivered the live panel should say it is waiting")
+	}
+	if hasTextContaining(cur, "No compass here") {
+		t.Fatal("a sensor that has not answered yet was reported as absent")
+	}
+	if !hasTextContaining(cur, "Received=false") {
+		t.Fatal("the live panel should show the flags it is explaining")
+	}
+
+	assertNoConcerns(t)
+}

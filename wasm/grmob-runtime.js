@@ -1240,6 +1240,13 @@ const GrMob = (() => {
         out.padding = style.Padding ? edgeToCSS(style.Padding) : "";
         out.margin = style.Margin ? edgeToCSS(style.Margin) : "";
         out.borderRadius = style.BorderRadius ? `${style.BorderRadius}px` : "";
+        // Rotation. Assigned unconditionally like everything else here: a
+        // compass whose heading passes through 0 sends Rotate: 0 in the patch,
+        // and a guarded write would leave the last angle standing on the live
+        // element — the dial would stick one frame short of north and never
+        // return. htmlout can omit the declaration instead because it builds a
+        // fresh string per export and has no element to leave stale.
+        out.transform = style.Rotate ? `rotate(${style.Rotate}deg)` : "";
         // A single elevation number on every target (Compose's
         // Modifier.shadow(elevation), SwiftUI's .shadow(radius:y:)) against a
         // CSS property that wants offsets, a blur and a color. The arithmetic
@@ -2288,6 +2295,163 @@ const GrMob = (() => {
         return { handle, status };
     })();
 
+    // The browser half of core's heading sensor (core/heading.go). Answers
+    // the "sensor" system event with kind "heading" and reports readings back
+    // over GrMobWASM.HostEvent as the "heading" host event.
+    //
+    // # Three browsers, two events, one usable number
+    //
+    //   Chrome/Android   deviceorientationabsolute, alpha counter-clockwise
+    //                    from north  ->  heading = 360 - alpha
+    //   Safari/iOS       deviceorientation, event.webkitCompassHeading is
+    //                    already clockwise from magnetic north, plus a
+    //                    webkitCompassAccuracy in degrees
+    //   desktop          neither fires; see the availability timeout
+    //
+    // A plain "deviceorientation" event without webkitCompassHeading is NOT
+    // used even though it carries an alpha, because on Android that alpha is
+    // relative to wherever the device happened to be when the listener
+    // attached. It looks exactly like a compass and points somewhere
+    // arbitrary, which is worse than reporting no compass at all.
+    const heading = (() => {
+        let running = false;
+        let listener = null;      // the attached handler, for removal
+        let eventName = "";
+        let firstTimer = 0;       // availability timeout
+        let lastSent = 0;         // throttle clock
+
+        // ~15 Hz, matching what the natives throttle to. The sensors fire far
+        // faster than that (Safari at 60 Hz), and every event that gets
+        // through costs a full Go render pass.
+        const MIN_INTERVAL_MS = 66;
+
+        // How long to wait for a first reading before calling the device
+        // compass-less. Desktop browsers define DeviceOrientationEvent and
+        // simply never fire it, so a feature check cannot tell them apart
+        // from a phone whose first event is still in flight; the only
+        // difference is that the phone's arrives. Two seconds is long enough
+        // for a cold magnetometer and short enough that a UI waiting on the
+        // answer does not look hung.
+        const AVAILABILITY_MS = 2000;
+
+        function report(payload) {
+            const host = window.GrMobWASM;
+            if (!host || typeof host.HostEvent !== "function") return;
+            host.HostEvent("heading", JSON.stringify(payload));
+        }
+
+        function unavailable(message) {
+            report({ available: false, error: message });
+        }
+
+        function onEvent(e) {
+            let magnetic = null;
+            let accuracy;
+            if (typeof e.webkitCompassHeading === "number" && !isNaN(e.webkitCompassHeading)) {
+                // Safari: already the bearing core wants.
+                magnetic = e.webkitCompassHeading;
+                if (typeof e.webkitCompassAccuracy === "number" && e.webkitCompassAccuracy >= 0) {
+                    accuracy = e.webkitCompassAccuracy;
+                }
+            } else if (e.absolute === true && typeof e.alpha === "number" && e.alpha !== null) {
+                // The spec's alpha counts counter-clockwise from north, so the
+                // clockwise bearing is its complement. Go normalises the 360
+                // case back to 0.
+                magnetic = 360 - e.alpha;
+            }
+            if (magnetic === null) return;
+
+            // Clear the availability timer on the first real reading: the
+            // device has answered, so the "no compass" verdict must not fire
+            // behind it.
+            if (firstTimer) { clearTimeout(firstTimer); firstTimer = 0; }
+
+            const now = Date.now();
+            if (now - lastSent < MIN_INTERVAL_MS) return;
+            lastSent = now;
+
+            const payload = { magnetic, ts: now };
+            if (accuracy !== undefined) payload.accuracy = accuracy;
+            report(payload);
+        }
+
+        function attach() {
+            // deviceorientationabsolute is the one that means north on
+            // Android; Safari does not implement it and answers the plain
+            // event with webkitCompassHeading instead. Both are attached
+            // through the same handler, which reads whichever fields it finds.
+            eventName = ("ondeviceorientationabsolute" in window)
+                ? "deviceorientationabsolute"
+                : "deviceorientation";
+            listener = onEvent;
+            window.addEventListener(eventName, listener, true);
+            firstTimer = setTimeout(() => {
+                firstTimer = 0;
+                unavailable("no compass on this device");
+            }, AVAILABILITY_MS);
+        }
+
+        function start() {
+            if (running) return;
+            if (typeof window === "undefined" || typeof window.addEventListener !== "function"
+                || typeof DeviceOrientationEvent === "undefined") {
+                unavailable("device orientation is not supported");
+                return;
+            }
+            running = true;
+            lastSent = 0;
+
+            // iOS 13+ gates orientation behind a prompt that only resolves
+            // from inside a user gesture. core.StartHeading is the call that
+            // makes it, per the contract on that function: there is no
+            // separate permission API to forget to call.
+            //
+            // When the request is refused — or when it was made outside a
+            // gesture, which rejects rather than prompting — the reason goes
+            // back as an unavailable reading. That is what lets an app draw a
+            // "tap to enable the compass" button and start again from inside
+            // the tap, which is the only way to recover.
+            const req = DeviceOrientationEvent.requestPermission;
+            if (typeof req === "function") {
+                req.call(DeviceOrientationEvent).then((state) => {
+                    if (!running) return; // stopped while the prompt was up
+                    if (state === "granted") { attach(); return; }
+                    unavailable("motion access was not granted");
+                }).catch((err) => {
+                    if (!running) return;
+                    unavailable(String((err && err.message) || err ||
+                        "motion access must be requested from a user gesture"));
+                });
+                return;
+            }
+            attach();
+        }
+
+        function stop() {
+            if (!running) return;
+            running = false;
+            if (firstTimer) { clearTimeout(firstTimer); firstTimer = 0; }
+            if (listener) {
+                window.removeEventListener(eventName, listener, true);
+                listener = null;
+            }
+        }
+
+        // The "sensor" system event's dispatcher. Unknown commands and kinds
+        // are dropped, matching every host's contract for unknown events —
+        // core's next sensor (location) adds a kind here without this file
+        // needing to know about it in advance.
+        function handle(cmd) {
+            if (cmd.kind !== "heading") return;
+            switch (cmd.command) {
+                case "start": start(); break;
+                case "stop": stop(); break;
+            }
+        }
+
+        return { handle };
+    })();
+
     // The browser half of core's lifecycle event (core/lifecycle.go): is
     // the app on screen. The Page Visibility API is the one signal a page
     // gets that means what a phone's foreground/background means — a
@@ -2320,6 +2484,7 @@ const GrMob = (() => {
         patch,
         showToast,
         audio,
+        heading,
     };
 })();
 
@@ -2337,6 +2502,12 @@ window.GrMobSystemEvent = function (name, payloadJSON) {
         // core's audio service (core/audio.go): the page owns the one
         // player, and reports back over GrMobWASM.HostEvent.
         GrMob.audio.handle(JSON.parse(payloadJSON));
+        return;
+    }
+    if (name === "sensor") {
+        // core's sensor plumbing (core/heading.go): start/stop for one named
+        // kind. Today the only kind is "heading".
+        GrMob.heading.handle(JSON.parse(payloadJSON));
         return;
     }
     if (name === "open_url") {

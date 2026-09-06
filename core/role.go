@@ -41,7 +41,7 @@ package core
 // navigation and toolbar — the tabular set, the collection pair, and the
 // landmarks.
 //
-// Nine of the sixteen do nothing on either native, and that is the
+// Nine of the seventeen do nothing on either native, and that is the
 // honest state of those platforms rather than a gap to be filled later:
 // neither has a tabular semantics vocabulary a role can be mapped onto (Compose
 // has collectionInfo, which describes counts and indices this prop does not
@@ -220,10 +220,29 @@ const (
 // rather than a lettered set of constants — see its doc for why six more
 // spellings of "heading" would cost both DOM renderers the mapping table this
 // vocabulary exists to avoid.
+//
+// RoleImg is for a node that is a *picture* — something whose meaning is
+// carried by its arrangement rather than by any text inside it, and which
+// therefore needs one text alternative standing in for the whole thing.
+// components.Compass is the case that asked for it: a rose read in tree order
+// is "N W E S" whatever direction it is pointing, so the widget hides its
+// parts and speaks once.
+//
+// It is also the role that makes such a label *work at all* on the web. ARIA
+// forbids an accessible name on a generic element, so an AccessibilityLabel on
+// a plain container — which is what every core layout node exports as — is
+// dropped by screen readers rather than announced. The two natives are more
+// forgiving (a contentDescription and an accessibilityLabel are honored on
+// anything), which is exactly what makes this the kind of gap that ships: it
+// works on the two targets a developer is most likely to be testing on.
+//
+// A node with this role should hide its children, or the reader gets the
+// alternative *and* the parts it was standing in for.
 const (
 	RoleHeading Role = "heading"
 	RoleButton  Role = "button"
 	RoleLink    Role = "link"
+	RoleImg     Role = "img"
 )
 
 // Roles returns every declared Role except RoleNone, in declaration order.
@@ -232,10 +251,10 @@ const (
 // them: it is the field's zero value, no renderer has an arm for it, and a
 // coverage check that demanded one would be asking each renderer to implement
 // "unset". Everything downstream that iterates roles — the native dispatch
-// pins, the DOM export test — wants the sixteen that do something.
+// pins, the DOM export test — wants the seventeen that do something.
 //
 // A fresh slice per call rather than a package-level var, which any importer
-// could write to. Sixteen elements are cheaper to build than to defend.
+// could write to. Seventeen elements are cheaper to build than to defend.
 //
 // Pinned to the const blocks above by role_enum_test.go, which reads this
 // file's syntax tree: adding a constant without adding it here should fail
@@ -247,6 +266,6 @@ func Roles() []Role {
 		RoleList, RoleListItem,
 		RoleBanner, RoleNavigation, RoleSearch, RoleToolbar,
 		RoleStatus, RoleAlert,
-		RoleHeading, RoleButton, RoleLink,
+		RoleHeading, RoleButton, RoleLink, RoleImg,
 	}
 }

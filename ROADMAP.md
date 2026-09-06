@@ -116,17 +116,41 @@
       it, so a grid used as a filter clears itself. Off by default and forced
       off by `DatePicker`: a form's date setter must not receive a clear it
       cannot tell from a pick
+- [x] `Compass` — a bearing as a rose that turns under a fixed mark, built
+      from flex alone (core has no z-stacking primitive, so the mark sits
+      above the circle rather than on it) and announcing itself as one spoken
+      sentence because four letters whose positions carry the meaning are
+      exactly what a screen reader cannot convey (tutorial lesson 4.10)
 
 ### 🧬 Extensions
 - [x] Animations & transitions (`Transition`, easing curves)
+- [x] `core.Rotate(deg)` — a paint transform on all four targets
+      (`transform: rotate()`, `Modifier.rotate`, `.rotationEffect`), about the
+      node's own centre, with the winding deliberately left unnormalised so an
+      animated bearing does not unwind a full turn every time it passes north.
+      Layer order is pinned in both natives by `mobile/verify/rotate_test.go`:
+      a rotation applied below the background turns the content inside a box
+      that stays square, which compiles and animates and is still wrong
+- [x] Heading sensor — `core.StartHeading`/`StopHeading` (refcounted, so two
+      screens can each hold the compass), `core.CurrentHeading`/`OnHeading`
+      and `hooks.UseHeading`, over one `"sensor"` system event carrying a
+      `kind` so location and motion reuse the channel. `SensorManager`'s fused
+      rotation vector on Android, `CLLocationManager` on iOS,
+      `deviceorientationabsolute`/`webkitCompassHeading` in the browser, and
+      an honest `available: false` on a desktop — which is a different answer
+      from "no reading yet", and a screen draws different things for the two
 - [x] Accessibility labels, hints and announced selection state
-- [x] Accessibility *roles* (`core.AccessibilityRole`, sixteen ARIA-spelled
+- [x] Accessibility *roles* (`core.AccessibilityRole`, seventeen ARIA-spelled
       values) — `role=` on both web targets, traits on SwiftUI and semantics
       on Compose where those vocabularies reach, and an explicit no-op arm
       where they do not; pinned in both natives by `mobile/verify/role_test.go`.
       Adopted by `DataTable` (table/rowgroup/row/columnheader/cell), `AppBar`
       (banner + heading), `Banner` (status/alert by variant), `SearchField`
-      (search) and `Calendar`'s day cells (button)
+      (search) and `Calendar`'s day cells (button). `RoleImg` joined for
+      `Compass`, and is the case that showed the vocabulary was doing more
+      than naming things: ARIA forbids an accessible name on a generic
+      element, so a labelled container had no announced name on either web
+      target while both natives read it fine
 - [x] Accessibility *heading levels* (`core.AccessibilityHeadingLevel`) —
       `aria-level` on both web targets and `.accessibilityHeading` on SwiftUI;
       Compose has no level to map onto and says so. `AppBar`'s title takes 1

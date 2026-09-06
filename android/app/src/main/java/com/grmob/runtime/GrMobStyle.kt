@@ -16,6 +16,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.LiveRegionMode
@@ -58,6 +59,15 @@ data class GrMobStyle(
     val margin: Edges,
     val borderRadius: Float,
     val shadow: Float,
+    /**
+     * core.Rotate: clockwise degrees about the node's own centre. A paint
+     * transform, not a layout one — Modifier.rotate draws the node turned and
+     * reports its unrotated bounds, which is what CSS `transform` and
+     * SwiftUI's `.rotationEffect` also do, so the three agree without a
+     * mapping table. Passed through unnormalised; see core.Style.Rotate for
+     * why the winding is the caller's to choose.
+     */
+    val rotate: Float,
     val align: String,
     val display: String,
     val width: String,
@@ -141,6 +151,7 @@ data class GrMobStyle(
                 margin = parseEdges(obj.optJSONObject("Margin")),
                 borderRadius = obj.optDouble("BorderRadius", 0.0).toFloat(),
                 shadow = obj.optDouble("Shadow", 0.0).toFloat(),
+                rotate = obj.optDouble("Rotate", 0.0).toFloat(),
                 align = obj.optString("Align"),
                 display = obj.optString("Display"),
                 width = obj.optString("Width"),
@@ -324,6 +335,31 @@ fun GrMobStyle?.boxModifier(extra: Modifier = Modifier, gestures: Modifier = Mod
     m = m.then(dimensionModifier(width, horizontal = true))
     m = m.then(dimensionModifier(height, horizontal = false))
 
+    // Rotation goes here — after margin and the dimension modifiers, before
+    // shadow/clip/background/border — and the position is load-bearing in a
+    // way the CSS property it mirrors is not.
+    //
+    // Modifier.rotate is a graphics layer, and a Compose layer turns only what
+    // is drawn *after* it in the chain. Placed below the background it would
+    // spin the content inside a square that stayed put; placed here it turns
+    // the whole painted box — shadow, corner clip, fill and border together —
+    // which is what `transform: rotate()` does to a border box on the web.
+    //
+    // Margin stays outside it, again matching CSS: the reserved space around
+    // the node is not part of the transformed box, and including it would
+    // swing an asymmetrically-spaced node about a centre that is not its own.
+    //
+    // The gesture modifier is added further down and so sits inside the
+    // layer, which is what makes the touch target turn with the pixels —
+    // Compose transforms pointer coordinates through the layer, so a tap on
+    // the visible corner of a turned box lands on the box.
+    //
+    // Guarded rather than applied unconditionally: unlike the WASM runtime,
+    // which reuses a live DOM element and must clear a stale declaration, this
+    // builds a fresh chain every recomposition, so a zero angle omits a layer
+    // instead of adding an identity one.
+    if (rotate != 0f) m = m.rotate(rotate)
+
     val shape = if (borderRadius > 0f) RoundedCornerShape(borderRadius.dp) else null
     if (shadow > 0f) {
         m = m.shadow(elevation = shadow.dp, shape = shape ?: RoundedCornerShape(0.dp))
@@ -421,6 +457,11 @@ fun SemanticsPropertyReceiver.grMobRole(kind: String) {
         // notion of heading and this is the nearest true thing to say.
         "heading", "columnheader" -> heading()
         "button" -> role = Role.Button
+        // A node standing in for a picture. Compose has the role, and pairing
+        // it with the contentDescription the caller supplied is what makes
+        // TalkBack announce "image" and then the alternative rather than
+        // reading whatever text happens to be inside.
+        "img" -> role = Role.Image
         // The two live regions differ in how rudely they interrupt: polite
         // waits for a pause, assertive cuts in.
         "status" -> liveRegion = LiveRegionMode.Polite

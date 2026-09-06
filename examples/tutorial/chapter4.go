@@ -36,6 +36,7 @@ func chapter4() Chapter {
 			lessonScreenFurniture(),
 			lessonEndlessFeeds(),
 			lessonCalendars(),
+			lessonCompass(),
 		},
 	}
 }
@@ -1366,6 +1367,125 @@ components.Calendar{
 					"MonthLabel, WeekdayLabel and DayLabel are the localization seams: Go's time package speaks English only.",
 					"DatePicker owns two view states and takes a Calendar as a template; wrap it in FormField for the label, hint and error.",
 				),
+			)
+		},
+	}
+}
+
+// --- 4.10 ----------------------------------------------------------------
+
+// tutorialBearings are the demo's hand-picked headings: one per quadrant plus
+// the seam. 359 is there deliberately — a compass that looks right at 0, 90,
+// 180 and 270 and wrong at 359 has a normalisation bug, and this is where a
+// reader can see that it does not.
+var tutorialBearings = []float64{0, 45, 135, 217, 300, 359}
+
+func lessonCompass() Lesson {
+	return Lesson{
+		Title:   "Sensors: the compass",
+		Summary: "core.Rotate, hooks.UseHeading and components.Compass — a paint transform, a refcounted sensor, and the difference between \"no compass\" and \"no reading yet\".",
+		Body: func(ctx *core.Context) core.View {
+			// The hand-driven bearing: what the widget draws when a caller
+			// supplies the number itself. Compass takes a float and not a
+			// core.Heading precisely so this works — a route leg or a wind
+			// direction is a bearing too.
+			bearing := core.NewState(ctx, 45.0)
+
+			// The live one. Mounting this hook turns the device's
+			// magnetometer on and leaving the lesson turns it off, because a
+			// lesson is a navigation route and a route's cleanup registry is
+			// what releases the reference. That is the arrangement UseHeading
+			// asks for in as many words.
+			live := hooks.UseHeading(ctx)
+
+			chips := make([]components.Chip, 0, len(tutorialBearings))
+			for _, deg := range tutorialBearings {
+				value := deg
+				chips = append(chips, components.Chip{
+					Label:    fmt.Sprintf("%.0f°", value),
+					Selected: bearing.Get() == value,
+					OnTap:    func() { bearing.Set(value) },
+				})
+			}
+
+			// What the live half has to say, which is three different
+			// sentences and not one. This is the whole reason Heading carries
+			// Received beside Available.
+			var liveNote string
+			switch {
+			case !live.Received:
+				liveNote = "Waiting for the first reading. On a desktop browser this becomes " +
+					"\"no compass\" after a couple of seconds; on a phone it should not last that long."
+			case !live.Available:
+				liveNote = "No compass here: " + live.Error
+			default:
+				liveNote = fmt.Sprintf("%.0f° %s, give or take %.0f°",
+					live.Magnetic, core.Cardinal(live.Magnetic), live.Accuracy)
+			}
+
+			return core.Column(
+				core.Gap(14),
+				prose("A compass is two things the framework did not have: a style prop that turns a "+
+					"node, and a sensor. core.Rotate is the first — one float, clockwise degrees, about "+
+					"the node's own centre. It is a paint transform on all four targets, so a turned "+
+					"node keeps the space it laid out with and never shoves its siblings around."),
+				codeBlock(`core.Box(
+    core.Width("48px"), core.Height("48px"),
+    core.Rotate(-heading),        // clockwise degrees, about the centre
+)`),
+				demoPanel("Pick a bearing. The rose turns the other way, which is what keeps N pointing at north.",
+					components.ChipStrip{Chips: chips},
+					components.Compass{Heading: bearing.Get(), ShowDegrees: true},
+					caption(fmt.Sprintf("Compass{Heading: %.0f} — the rose is drawn with Rotate(%.0f).",
+						bearing.Get(), -bearing.Get())),
+				),
+				prose("Which half turns is the design decision, not the arithmetic. A magnetic compass "+
+					"has a fixed card and a needle that swings to north; a navigation compass — every "+
+					"phone — turns the whole card under a fixed mark at twelve o'clock. This is the "+
+					"second, because the question a phone user is asking is \"which way am I facing\", "+
+					"and that is read off the top. So the rose rotates by minus the heading: turn the "+
+					"device clockwise and the rose must turn counter-clockwise by the same amount to "+
+					"keep pointing at the same piece of the world."),
+				prose("The mark sits above the rose rather than on it, and that is a framework limit "+
+					"showing through rather than a preference. core has no z-stacking primitive — Box "+
+					"stacks vertically on all four targets, and absolute positioning is web-only — so "+
+					"a needle drawn over the rose would be a web-only widget wearing a portable name. "+
+					"Stacking the mark above costs one glyph of height and works everywhere."),
+				codeBlock(`h := hooks.UseHeading(ctx)          // starts the sensor, releases it on unmount
+
+switch {
+case !h.Received:  // the first reading has not landed yet  -> a spinner
+case !h.Available: // this device has no compass, h.Error says why
+default:
+    components.Compass{Heading: h.Magnetic, ShowDegrees: true}
+}`),
+				demoPanel("The live sensor, if this device has one.",
+					components.Compass{Heading: live.Magnetic, Size: 120, ShowDegrees: live.Available},
+					caption(liveNote),
+					caption(fmt.Sprintf("Received=%v  Available=%v  Active=%v",
+						live.Received, live.Available, live.Active)),
+				),
+				prose("Received and Available are two facts and a screen draws different things for "+
+					"them. \"No reading yet\" is a spinner; \"this device has no compass\" is a "+
+					"different screen entirely, and a spinner there spins forever. One boolean could "+
+					"not say both, so Heading carries both."),
+				prose("Starting and stopping are refcounted, not toggled. Two screens can each hold the "+
+					"sensor and each let go, and the magnetometer stops when the second one does — not "+
+					"the first. A plain on/off flag makes the opposite bug easy and silent: a badge in "+
+					"a tab bar and a compass screen both start it, the screen is popped, and the badge "+
+					"quietly stops updating with nothing in any log."),
+				prose("On iOS Safari the browser will not hand over orientation events unless the "+
+					"request came from a tap. core.StartHeading is where that request is made, so a "+
+					"hook that mounts on navigation may be refused — and when it is, the reason comes "+
+					"back as Available=false with a message, which is exactly what a \"tap to enable "+
+					"the compass\" button is for. The recovery is a second StartHeading from inside "+
+					"the tap."),
+				prose("The angle is never folded onto the circle on its way to a renderer. 350 to 370 "+
+					"and 350 to 10 point the same way and are not the same animation — the first "+
+					"sweeps twenty degrees forwards and the second unwinds three hundred and forty the "+
+					"other way. Nothing turning today, so nothing to see; the moment a Transition "+
+					"reaches a rotated node it is the difference between a needle that nudges and one "+
+					"that spins the long way round every time you pass north."),
 			)
 		},
 	}

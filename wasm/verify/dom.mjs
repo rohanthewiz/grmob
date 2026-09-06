@@ -306,17 +306,41 @@ class Document {
 export function newDOM() {
     const document = new Document();
     const frames = [];
+    // Window-level event listeners, by type. The document has had its own
+    // since the lifecycle work; the window needs them for the sensor events,
+    // which are dispatched at the window and nowhere else
+    // (deviceorientationabsolute has no element to target).
+    const windowListeners = new Map();
     const window = {
         // Filled in by the harness or a test; the runtime calls it to reach
         // "Go". Left undefined here so an unexpected dispatch is a loud
         // TypeError rather than a silently swallowed event.
         GoInvokeCallback: undefined,
+        addEventListener(type, fn) {
+            if (!windowListeners.has(type)) windowListeners.set(type, []);
+            windowListeners.get(type).push(fn);
+        },
+        removeEventListener(type, fn) {
+            const list = windowListeners.get(type);
+            if (!list) return;
+            const i = list.indexOf(fn);
+            if (i >= 0) list.splice(i, 1);
+        },
     };
     window.document = document;
 
     return {
         document,
         window,
+        // fireWindowEvent delivers one event to every listener registered for
+        // type, and answers how many ran — zero being the interesting case,
+        // since it means the runtime never attached (or has detached).
+        fireWindowEvent(type, event) {
+            const list = windowListeners.get(type) || [];
+            for (const fn of [...list]) fn(event);
+            return list.length;
+        },
+        windowListenerCount: (type) => (windowListeners.get(type) || []).length,
         requestAnimationFrame(fn) {
             frames.push(fn);
             return frames.length;

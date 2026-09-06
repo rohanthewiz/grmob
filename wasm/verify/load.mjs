@@ -118,6 +118,13 @@ export function loadRuntime({ mountId = "app" } = {}) {
     // does not rely on but any future code reading window.document would.
     sandbox.globalThis = sandbox;
 
+    // The browser's orientation-sensor constructor. Present as a bare
+    // function by default — which is a phone that needs no permission prompt,
+    // i.e. Android Chrome. A test models iOS by assigning a
+    // `requestPermission` onto it, and a desktop that lacks the API entirely
+    // by deleting it from the sandbox.
+    sandbox.DeviceOrientationEvent = function DeviceOrientationEvent() {};
+
     const context = vm.createContext(sandbox);
     const source = readFileSync(RUNTIME, "utf8") + EXPORT_SHIM;
     vm.runInContext(source, context, { filename: RUNTIME.pathname });
@@ -129,8 +136,14 @@ export function loadRuntime({ mountId = "app" } = {}) {
 
     return {
         GrMob,
+        // The vm global. Tests reach through it to model a browser the
+        // default sandbox is not — deleting DeviceOrientationEvent for a
+        // desktop, or giving it a requestPermission for iOS Safari.
+        sandbox,
         document: dom.document,
         window: dom.window,
+        fireWindowEvent: dom.fireWindowEvent,
+        windowListenerCount: dom.windowListenerCount,
         mountPoint,
         drainFrames: dom.drainFrames,
         pendingFrames: dom.pendingFrames,

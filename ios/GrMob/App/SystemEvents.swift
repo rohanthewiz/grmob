@@ -7,6 +7,7 @@ import UIKit
 ///     core.ShowToast  ──▶ "toast"     ──▶ a transient overlay label
 ///     core.OpenURL    ──▶ "open_url"  ──▶ UIApplication.open
 ///     core.Audio*     ──▶ "audio"     ──▶ AudioPlayer (AVPlayer + the lock screen)
+///     core.StartHeading ▶ "sensor"    ──▶ HeadingSensor (CLLocationManager)
 ///
 /// Before this existed the events were emitted into a nil Go handler and
 /// vanished on both natives — only the WASM host had a sink — so an app
@@ -27,6 +28,7 @@ enum SystemEvents {
     @MainActor
     static func attach(_ bridge: GrMobBridge, runtime: GrMobRuntime) {
         AudioPlayer.shared.report = { name, payload in runtime.hostEvent(name, payload) }
+        HeadingSensor.shared.report = { name, payload in runtime.hostEvent(name, payload) }
         bridge.setSystemEventListener { name, payload in
             // The callback runs on the Go goroutine that emitted the event.
             // Everything below is UIKit, which is main-actor only, so every
@@ -51,6 +53,9 @@ enum SystemEvents {
         case "toast": showToast(object)
         case "open_url": openURL(object)
         case "audio": AudioPlayer.shared.handle(object)
+        // Sensors carry their own "kind", so one event name covers the compass
+        // today and location tomorrow without a second arm here.
+        case "sensor": HeadingSensor.shared.handle(object)
         default: break
         }
     }

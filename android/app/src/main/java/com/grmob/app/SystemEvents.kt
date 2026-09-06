@@ -20,6 +20,7 @@ import org.json.JSONObject
  *   core.ShowToast  ──▶ "toast"     ──▶ android.widget.Toast
  *   core.OpenURL    ──▶ "open_url"  ──▶ Intent(ACTION_VIEW)
  *   core.Audio*     ──▶ "audio"     ──▶ AudioPlayer (Media3, in GrMobAudioService)
+ *   core.StartHeading ▶ "sensor"    ──▶ HeadingSensor (SensorManager)
  *
  * Before this existed the events were emitted into a nil Go handler and
  * vanished on both natives — only the WASM host had a sink — so an app
@@ -51,6 +52,7 @@ object SystemEvents {
         val appContext = context.applicationContext
         val main = Handler(Looper.getMainLooper())
         AudioPlayer.attach(appContext, runtime::hostEvent)
+        HeadingSensor.attach(appContext, runtime::hostEvent)
         // The callback runs on the Go goroutine that emitted the event. Both
         // actions below touch the UI (a Toast must be shown from a Looper
         // thread; startActivity from an arbitrary thread is unreliable), so
@@ -73,6 +75,9 @@ object SystemEvents {
             "toast" -> showToast(context, data)
             "open_url" -> openUrl(context, data)
             "audio" -> AudioPlayer.handle(data)
+            // Sensors carry their own "kind", so one event name covers the
+            // compass today and location tomorrow without a second arm here.
+            "sensor" -> HeadingSensor.handle(data)
         }
     }
 

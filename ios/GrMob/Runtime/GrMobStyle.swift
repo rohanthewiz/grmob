@@ -30,6 +30,12 @@ struct GrMobStyle: Equatable {
     var margin: Edges = .zero
     var borderRadius: CGFloat = 0
     var shadow: CGFloat = 0
+    /// core.Rotate: clockwise degrees about the node's own centre. A paint
+    /// transform, not a layout one — `.rotationEffect` turns the rendered view
+    /// and leaves the frame it reported to its parent alone, matching CSS
+    /// `transform` and Compose's `Modifier.rotate`. Carried unnormalised; see
+    /// core.Style.Rotate for why the winding is the caller's to choose.
+    var rotate: CGFloat = 0
     var align: String = ""
     var display: String = ""
     var width: String = ""
@@ -137,6 +143,7 @@ struct GrMobStyle: Equatable {
         s.margin = parseEdges(obj["Margin"] as? [String: Any])
         s.borderRadius = num("BorderRadius")
         s.shadow = num("Shadow")
+        s.rotate = num("Rotate")
         s.align = str("Align")
         s.display = str("Display")
         s.width = str("Width")
@@ -348,6 +355,18 @@ extension View {
             .grMobShadow(s?.shadow ?? 0)
             .grMobDimension(s?.width ?? "", axis: .horizontal, alignment: alignment)
             .grMobDimension(s?.height ?? "", axis: .vertical, alignment: alignment)
+            // Rotation wraps the whole painted box — padding, background,
+            // gestures, corner clip, border, shadow and the explicit frame —
+            // and is applied before the margin, which is the CSS rule: a
+            // transform turns the border box about its own centre and leaves
+            // the space reserved around it axis-aligned. Rotating after the
+            // margin would swing an asymmetrically-spaced node about a point
+            // that is not its centre.
+            //
+            // SwiftUI hit-tests through a rotationEffect, so the gesture
+            // modifier further in keeps a touch target that turns with the
+            // pixels rather than staying square.
+            .grMobRotate(s?.rotate ?? 0)
             .padding((s?.margin ?? .zero).insets)
             .grMobGrow(grow, alignment: alignment)
             // "hidden" keeps the node's space but not its pixels ("none" is
@@ -467,6 +486,21 @@ extension View {
         } else {
             self
         }
+    }
+
+    /// core.Rotate as a `.rotationEffect`, always applied.
+    ///
+    /// Not a `@ViewBuilder` branch, for the reason spelled out on `.disabled`
+    /// in grMobBox: zero is the identity case, and a conditional would wrap
+    /// every unrotated node in a `_ConditionalContent` layer to express it.
+    /// `.rotationEffect` is a geometry transform rather than a compositing
+    /// group, so the identity costs nothing to apply.
+    ///
+    /// `.center` is the default anchor and the only origin core.Rotate offers;
+    /// it is named here so the agreement with CSS's `transform-origin: 50% 50%`
+    /// and Compose's layout-bounds centre is visible rather than inherited.
+    fileprivate func grMobRotate(_ degrees: CGFloat) -> some View {
+        rotationEffect(.degrees(degrees), anchor: .center)
     }
 
     @ViewBuilder fileprivate func grMobShadow(_ radius: CGFloat) -> some View {
@@ -659,6 +693,13 @@ private func grMobTraitsFor(_ role: String) -> AccessibilityTraits {
     // its own vocabulary, which is the argument for core.RoleLink existing.
     case "link": .isLink
     case "search": .isSearchField
+    // A node standing in for a picture — VoiceOver announces the trait and
+    // then the accessibilityLabel, instead of reading the parts the label was
+    // supplied to replace.
+    case "img": .isImage
+    // A node standing in for a picture — VoiceOver announces the trait and
+    // then the accessibilityLabel, instead of reading the parts the label was
+    // supplied to replace.
     // No SwiftUI trait names these.
     case "table", "rowgroup", "row", "cell": []
     case "list", "listitem": []

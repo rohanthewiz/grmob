@@ -922,6 +922,18 @@ func styleValue(s *core.Style, nodeType string) string {
 	if s.BorderRadius != 0 {
 		styles = append(styles, fmt.Sprintf("border-radius:%gpx", s.BorderRadius))
 	}
+	// Rotation is a paint transform, so it goes out whatever the display mode
+	// and needs no companion declaration: transform-origin defaults to the
+	// box's centre, which is the one origin core.Rotate offers.
+	//
+	// %g rather than a rounded form: unlike the shadow arithmetic below, the
+	// angle is the caller's own number and is not derived, so there is nothing
+	// to round away. A compass fed 123.4 degrees should export 123.4deg — and
+	// an unwrapped bearing past 360 stays past 360 here, because the winding
+	// is meaningful under a transition (see core.Style.Rotate).
+	if s.Rotate != 0 {
+		styles = append(styles, fmt.Sprintf("transform:rotate(%gdeg)", s.Rotate))
+	}
 	// Shadow is a single elevation number on every target — Compose's
 	// Modifier.shadow(elevation) and SwiftUI's .shadow(radius:y:) both take
 	// one — and CSS box-shadow wants offsets, a blur and a color. The
