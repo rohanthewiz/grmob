@@ -447,12 +447,31 @@ const GrMob = (() => {
     // the vocabulary has no such value, so an element carrying it can only
     // have got it from here. TestNoRoleCollidesWithTheTabPanelWiring in
     // htmlout keeps that true.
-    function canBeTabPanel(page) {
+    //
+    // "group" is the one core.Role that is *also* accepted, and it is the one
+    // value it is not theft to replace. A group says these things belong
+    // together and this is what they are called; a tabpanel says all of that
+    // and which tab shows it, so writing one over the other adds a fact rather
+    // than destroying one — which is the test every rule here applies. It has
+    // to be accepted, besides: applyAccessibility supplies `group` to any named
+    // page whether the author asked for it or not (see ariaRole), so rejecting
+    // it would silently stop every page carrying an AccessibilityLabel from
+    // being wired at all.
+    //
+    // The id is the third slot with two writers, and unlike the role it cannot
+    // be shared: a page given a core.Style.AccessibilityID has an author's
+    // string in it, and something else on the page is pointing at that string.
+    // So a page keeps its own id and goes unwired. Comparing against this
+    // wiring's own value is what tells an author's id from one this function
+    // wrote a sync ago — the same discrimination the role does one line up.
+    function canBeTabPanel(page, scope, i) {
         const role = page.getAttribute("role");
+        const id = page.getAttribute("id");
         return (
             GENERIC_TAGS.has(page.tagName.toLowerCase()) &&
             page.getAttribute("aria-hidden") !== "true" &&
-            (role === null || role === "tabpanel")
+            (role === null || role === "tabpanel" || role === "group") &&
+            (id === null || id === panelId(scope, i))
         );
     }
 
@@ -474,17 +493,28 @@ const GrMob = (() => {
     // to the author.
     function wireTabPanel(page, scope, i, wired) {
         setOrRemove(page, "id", wired ? panelId(scope, i) : "");
+        const named = !!page.getAttribute("aria-label");
         // The role is the one attribute here this function does not own
-        // outright: applyAccessibility writes the author's core.Role into the
-        // same slot. So the unwired case clears only the wiring's own value
-        // and leaves anything else standing — total in the sense that matters
-        // (no stale "tabpanel" survives) without reaching past its own mark.
+        // outright: applyAccessibility writes the author's core.Role — or the
+        // group it supplies to a named container — into the same slot. So the
+        // unwired case clears only the wiring's own value, and puts back what
+        // applyAccessibility would have left there, which for a page eligible
+        // to be wired at all can only be `group` (ariaRole's fallback) or
+        // nothing. Restoring rather than clearing matters because nothing
+        // guarantees another style patch: a page that stops being wired — its
+        // tab was dropped, the tabs prop shrank — would otherwise sit with an
+        // aria-label no browser announces, which is the exact silence the
+        // fallback exists to close.
+        //
+        // The corner it does not restore is an authored core.RoleGroup on a
+        // page with no name, which comes back as no role. Nothing is lost that
+        // a reader could hear: an unnamed group adds no node to the
+        // accessibility tree.
         if (wired) {
             page.setAttribute("role", "tabpanel");
         } else if (page.getAttribute("role") === "tabpanel") {
-            page.removeAttribute("role");
+            setOrRemove(page, "role", named ? "group" : "");
         }
-        const named = !!page.getAttribute("aria-label");
         setOrRemove(page, "aria-labelledby", wired && !named ? tabId(scope, i) : "");
     }
 
@@ -615,7 +645,7 @@ const GrMob = (() => {
                 // aria-controls is merely one that has not said what it governs.
                 const page = el.children[offset + i];
                 setOrRemove(tab, "aria-controls",
-                    page && canBeTabPanel(page) ? panelId(scope, i) : "");
+                    page && canBeTabPanel(page, scope, i) ? panelId(scope, i) : "");
             }
         }
 
@@ -634,7 +664,7 @@ const GrMob = (() => {
             // TabView's props *and* of which children it currently has, and
             // recomputing them together at the end of a batch is what keeps
             // every individual patch case from having to know about tabs.
-            wireTabPanel(page, scope, index, index < tabCount && canBeTabPanel(page));
+            wireTabPanel(page, scope, index, index < tabCount && canBeTabPanel(page, scope, index));
         }
     }
 
@@ -778,7 +808,23 @@ const GrMob = (() => {
     // target needs a table (see core/role.go). Emitted verbatim even when the
     // tag already implies it — suppressing the redundant case would mean this
     // knowing tagForType's table, and a redundant role is inert where a
-    // missing one is not.
+    // missing one is not. A named container that says nothing about what it is
+    // gets one supplied; see ariaRole below.
+    //
+    // The id and aria-controls come from core.Style.AccessibilityID and
+    // core.Style.AccessibilityControls, verbatim in both directions — the
+    // vocabulary's only two references. Nothing checks that the target of one
+    // exists: a patch is applied to one element and this runtime has no index
+    // of the document. A dangling IDREF is inert.
+    //
+    // The id has a second writer, wireTabPanel, and the two cannot both hold
+    // it. canBeTabPanel resolves that in the author's favour — a page carrying
+    // an AccessibilityID is left unwired — so by the time this writes, the
+    // wiring has already stood down. The *role* is the other way round: the
+    // wiring runs after this on every pass that can change it (renderNode
+    // calls syncTabView after building the subtree, and syncTouchedTabViews
+    // re-runs it at the end of every patch batch), so a wired panel ends the
+    // pass carrying "tabpanel" whatever this wrote a moment earlier.
     //
     // The hint becomes aria-description, not aria-describedby: the latter
     // takes an ID reference and there is no second element here to point at.
@@ -798,11 +844,15 @@ const GrMob = (() => {
         // accessibility tree has no element for role="dialog" to describe, and
         // aria-modal would claim the document behind it is inert.
         const dialog = nodeType === "Modal" && !hidden;
-        const role = hidden ? "" : (style.AccessibilityRole || (dialog ? "dialog" : ""));
+        const role = hidden ? "" : (dialog
+            ? (style.AccessibilityRole || "dialog")
+            : ariaRole(el, style));
         setOrRemove(el, "aria-hidden", hidden ? "true" : "");
         setOrRemove(el, "aria-label", hidden ? "" : (style.AccessibilityLabel || ""));
         setOrRemove(el, "aria-description", hidden ? "" : (style.AccessibilityHint || ""));
         setOrRemove(el, "role", role);
+        setOrRemove(el, "id", hidden ? "" : (style.AccessibilityID || ""));
+        setOrRemove(el, "aria-controls", hidden ? "" : (style.AccessibilityControls || ""));
         setOrRemove(el, "aria-modal", dialog ? "true" : "");
         setOrRemove(el, "aria-level", hidden ? "" : ariaLevel(style));
         // Both selection attributes are written on every call, not just the
@@ -814,6 +864,34 @@ const GrMob = (() => {
         const selected = hidden ? ["", ""] : ariaSelected(style, nodeType);
         setOrRemove(el, "aria-selected", selected[0]);
         setOrRemove(el, "aria-pressed", selected[1]);
+    }
+
+    // The value of the role attribute for one element: what the author said,
+    // or — when they said nothing and the element could not otherwise carry the
+    // name they gave it — "group". The htmlout twin of this is ariaRole in
+    // export.go and the two must agree; the whole argument lives there and in
+    // core.RoleGroup.
+    //
+    // The short version: a <div> and a <span> carry the implicit ARIA role
+    // `generic`, ARIA prohibits an accessible name on `generic`, and browsers
+    // enforce that by pruning the name out of the accessibility tree. So an
+    // AccessibilityLabel on a plain container was announced by VoiceOver and
+    // TalkBack and by nothing on the web. `group` is the smallest role that
+    // makes it legal: nameable, not a landmark, no required children, and its
+    // own children stay readable.
+    //
+    // The tag is read off the element rather than derived from the node type,
+    // which is this runtime's usual shortcut (it has the element in hand and
+    // htmlout has only the type). GENERIC_TAGS is the same set htmlout states
+    // in genericTags, pinned by TestRuntimeGenericTagsMatchGo.
+    //
+    // A Modal never reaches here — the caller answers the dialog case first —
+    // which is why there is no equivalent of htmlout's CarriesOwnRole guard.
+    function ariaRole(el, style) {
+        const authored = style.AccessibilityRole || "";
+        if (authored) return authored;
+        if (!style.AccessibilityLabel) return "";
+        return GENERIC_TAGS.has(el.tagName.toLowerCase()) ? "group" : "";
     }
 
     // core.Style.AccessibilitySelected as the pair [aria-selected,

@@ -198,6 +198,23 @@ func panelID(scope string, i int) string { return scope + "-panel-" + strconv.It
 //	AccessibilityHidden   the author took the page out of the accessibility
 //	                      tree on purpose; naming it as a panel would assert a
 //	                      relationship they severed.
+//	an authored id        core.Style.AccessibilityID puts the author's own
+//	                      string in the one slot the wiring needs for
+//	                      panelID. Same theft as the role, and worse in one
+//	                      way: an aria-controls somewhere else on the page is
+//	                      pointing at that id, so taking it would break a
+//	                      relationship rather than merely replace a word.
+//
+// # The one role that is not theft to replace
+//
+// core.RoleGroup is exempt from the authored-role rule, and it is the only
+// value that is. `group` says these things belong together and this is what
+// they are called; `tabpanel` says all of that *and* which tab shows it, so
+// writing it over a group adds a fact instead of destroying one — which is
+// exactly the test every other line above applies. It has to be exempt, too:
+// a named page has a group supplied to it by ariaRole (export.go) whether the
+// author asked or not, so treating group as an authored role would quietly
+// stop every page that carries an AccessibilityLabel from being wired at all.
 //
 // Transparency is resolved rather than refused. A page that is a core.WithTheme
 // (a Theme node) or a single-child Fragment has no box of its own here, but
@@ -235,7 +252,10 @@ func tabPanelBox(page *core.Node) *core.Node {
 		return tabPanelBox(page.Children[0])
 	case page.Style != nil && page.Style.AccessibilityHidden:
 		return nil
-	case page.Style != nil && page.Style.AccessibilityRole != core.RoleNone:
+	case page.Style != nil && page.Style.AccessibilityID != "":
+		return nil
+	case page.Style != nil && page.Style.AccessibilityRole != core.RoleNone &&
+		page.Style.AccessibilityRole != core.RoleGroup:
 		return nil
 	// A node type that states its own role, the way a Modal is a dialog (see
 	// modalSemantics). The tag is generic and the Style is nil, so neither

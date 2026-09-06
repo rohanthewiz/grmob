@@ -46,10 +46,14 @@ import "github.com/rohanthewiz/grmob/core"
 //
 // The state is scoped by role on both web targets, because ARIA scopes the
 // attributes it becomes: a state on an unroled element is dropped by screen
-// readers exactly as an accessible name on one is — the failure core.RoleImg
-// exists to close. A ListRow is a Box, so announcing a selection properly
-// means giving the row a role, and for three versions of this widget every
-// candidate was wrong:
+// readers exactly as an accessible name on one is. The *name* half of that has
+// since been closed for every widget at once — the two web exporters supply
+// core.RoleGroup to a named container that has no role, so an unroled row's
+// AccessibilityLabel is now announced on all four targets rather than two. The
+// state half could not be closed the same way, because there is no role that
+// carries a selection and fits any container (see core.Style.AccessibilitySelected).
+// A ListRow is a Box, so announcing a selection properly means giving the row a
+// role, and for three versions of this widget every candidate was wrong:
 //
 //	RoleButton    true only for a tappable row, and a role="button" child
 //	              makes the row a *foreign child* of any role="list" it sits
@@ -73,6 +77,9 @@ import "github.com/rohanthewiz/grmob/core"
 // A row that is *not* Selectable is unchanged: it still appends the suffix
 // when it has both a label and a selection, because it still has no role that
 // could carry the state, and saying the true thing weakly beats not saying it.
+// The suffix does at least reach a reader now — the group role the exporters
+// supply is what makes the name it rides on audible on the web at all, which
+// for the three sessions before that role existed it was not.
 //
 // # Two roles, one row, and the caller picks
 //

@@ -646,6 +646,12 @@ components.GroupedList[Sermon]{GroupBy: byMonth, HeadingLevel: 1} // a feed with
 // same three pages.
 var tabPageLabels = []string{"Info", "Stats", "Settings"}
 
+// tabDemoPanelID is the id of the region 4.5's hand-assembled strip switches,
+// and the string every segment's core.AccessibilityControls points at. One
+// constant referenced twice, because a typo in an IDREF is not an error
+// anywhere — it is a tab announcing a region that does not exist.
+const tabDemoPanelID = "tutorial-tabdemo-panel"
+
 func lessonTabs() Lesson {
 	return Lesson{
 		Title:   "Tabs & the wire contract",
@@ -684,47 +690,87 @@ func lessonTabs() Lesson {
 					"the same contract from parts it does draw — a SegmentedControl as the strip, "+
 					"core.Match as the page switch. Same state, same shape; on native, swap the "+
 					"pair for the Tabs above and change nothing else."),
+				prose("A hand-assembled strip has one thing the node type gets for free, and it "+
+					"is worth wiring by hand once. core.TabView mints element ids and writes the "+
+					"whole relationship — which region each tab shows — from the node type. Built "+
+					"out of parts, that relationship has to be stated: core.AccessibilityID names "+
+					"the region, core.AccessibilityControls points every segment at it, and the "+
+					"row and the segments take RoleTabList and RoleTab. Without it a screen "+
+					"reader announces three tabs governing nothing."),
+				codeBlock(`components.SegmentedControl{
+    Labels: tabPageLabels, Selected: page.Get(), OnSelect: page.Set,
+    Style:   []core.StyleProp{core.AccessibilityRole(core.RoleTabList)},
+    Segment: components.Chip{Style: []core.StyleProp{
+        core.AccessibilityRole(core.RoleTab),
+        core.AccessibilityControls("tabdemo-panel"),
+    }},
+}
+core.Box(
+    core.AccessibilityID("tabdemo-panel"),
+    core.AccessibilityLabel(tabPageLabels[page.Get()]),
+    core.Match(page.Get(), cases...),
+)`),
+				prose("Every segment points at the same id, and that is right rather than lazy: "+
+					"there is one region and its contents change, so three ids would name two "+
+					"regions that do not exist. The Box also picks up role=\"group\" from both "+
+					"web exporters — ARIA forbids an accessible name on a plain div, so without "+
+					"a role the label you just gave the panel would be dropped by every browser "+
+					"and read out by both phones. You never ask for that one; it is supplied."),
 				demoPanel("The strip writes an int; Match reads it — the tab contract, hand-assembled.",
 					components.SegmentedControl{
-						Style:     segWrap,
+						Style:     append(append([]core.StyleProp{}, segWrap...), core.AccessibilityRole(core.RoleTabList)),
 						Labels:    tabPageLabels,
 						Selected:  page.Get(),
 						OnSelect:  func(i int) { page.Set(i) },
 						KeyPrefix: "tabdemo-",
+						// The segment template: every chip is a tab, and every
+						// one of them points at the single region below.
+						Segment: components.Chip{Style: []core.StyleProp{
+							core.AccessibilityRole(core.RoleTab),
+							core.AccessibilityControls(tabDemoPanelID),
+						}},
 					},
-					core.Match(page.Get(),
-						core.Case(0, core.Column(
-							core.Gap(6),
-							prose("Pages are plain views — this one is an ordinary Column riding "+
-								"along as a child."),
-							core.Row(
-								core.Gap(8),
-								core.AlignItemsProp(core.AlignItemsCenter),
-								components.Badge{Text: "page 1 of 3"},
-								caption("nothing here knows it lives in a tab"),
-							),
-						)),
-						core.Case(1, core.Column(
-							core.Gap(6),
-							caption("64% of the gopher quota used:"),
-							components.ProgressBar{Value: 0.64, AccessibilityLabel: "Gopher quota"},
-						)),
-						core.Default[int](core.Column(
-							core.Gap(6),
-							checkRow("Email me on new releases", notify),
-							core.IfElse(notify.Get(),
-								caption("email notifications: ON"),
-								caption("email notifications: off"),
-							),
-							caption("Switch away and back — the box holds, because its slot lives "+
-								"on this lesson's frame, above the page switch."),
-						)),
+					core.Box(
+						core.AccessibilityID(tabDemoPanelID),
+						// Named for the page that is showing, so a reader
+						// following a tab's aria-controls arrives somewhere
+						// that says where it landed.
+						core.AccessibilityLabel(tabPageLabels[page.Get()]),
+						core.Match(page.Get(),
+							core.Case(0, core.Column(
+								core.Gap(6),
+								prose("Pages are plain views — this one is an ordinary Column riding "+
+									"along as a child."),
+								core.Row(
+									core.Gap(8),
+									core.AlignItemsProp(core.AlignItemsCenter),
+									components.Badge{Text: "page 1 of 3"},
+									caption("nothing here knows it lives in a tab"),
+								),
+							)),
+							core.Case(1, core.Column(
+								core.Gap(6),
+								caption("64% of the gopher quota used:"),
+								components.ProgressBar{Value: 0.64, AccessibilityLabel: "Gopher quota"},
+							)),
+							core.Default[int](core.Column(
+								core.Gap(6),
+								checkRow("Email me on new releases", notify),
+								core.IfElse(notify.Get(),
+									caption("email notifications: ON"),
+									caption("email notifications: off"),
+								),
+								caption("Switch away and back — the box holds, because its slot lives "+
+									"on this lesson's frame, above the page switch."),
+							)),
+						),
 					),
 				),
 				keyPoints(
 					"Tabs adds names to core.TabView's positional props and delegates — the node type and its wire contract stay in core, next to the renderers.",
 					"All pages are children of the node; the native side draws the strip and shows Selected. Selection is controlled: Selected in, OnChange out.",
 					"The web host doesn't render TabView yet — compose the contract there: SegmentedControl for the strip, Match for the pages.",
+					"A hand-built strip states its own semantics: RoleTabList on the row, RoleTab on the segments, and AccessibilityID / AccessibilityControls for the region each tab shows — the one relationship core.Style carries, because an element cannot be said as a value.",
 					"Keep page-independent state above the switch: pages come and go with the selection; hook slots must not.",
 				),
 			)

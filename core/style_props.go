@@ -404,6 +404,47 @@ func AccessibilitySelected(state SelectedState) StyleProp {
 	})
 }
 
+// AccessibilityID gives this element a document-global name that another
+// element can point at with AccessibilityControls. It becomes the `id`
+// attribute on both web targets and is deliberately unread on both natives.
+//
+//	core.Box(core.AccessibilityID("app-panel"), core.AccessibilityLabel("Home"), …)
+//
+// Uniqueness is the caller's, as it is in hand-written HTML, and the "grmob-"
+// prefix is reserved for core.TabView's own wiring. See
+// Style.AccessibilityID for the whole argument — including why this and
+// AccessibilityControls are the only two IDREF props in the vocabulary.
+func AccessibilityID(id string) StyleProp {
+	return styleFunc(func(s *Style) {
+		s.AccessibilityID = id
+	})
+}
+
+// AccessibilityControls says which element this control switches, by the
+// AccessibilityID that element was given. It becomes aria-controls on both web
+// targets and is deliberately unread on both natives.
+//
+//	core.Box(
+//		core.AccessibilityRole(core.RoleTab),
+//		core.AccessibilitySelected(core.SelectedWhen(tab == "home")),
+//		core.AccessibilityID("home-tab"),
+//		core.AccessibilityControls("app-panel"),
+//		core.Text("Home"),
+//	)
+//
+// It is written verbatim and nothing checks that the target exists: an export
+// is one document at a time and a runtime patch is one element at a time, so
+// neither target can see the whole page at the moment the attribute is
+// written. A reference to an id nothing answers to is inert rather than
+// harmful, which is the same trade aria-description makes. See
+// Style.AccessibilityID for why this is the one relationship the vocabulary
+// carries.
+func AccessibilityControls(id string) StyleProp {
+	return styleFunc(func(s *Style) {
+		s.AccessibilityControls = id
+	})
+}
+
 // AccessibilityHidden removes the element (and its subtree) from the
 // accessibility tree — for decorative content a screen reader should skip.
 func AccessibilityHidden() StyleProp {

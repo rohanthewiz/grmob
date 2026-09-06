@@ -239,11 +239,19 @@ type Style struct {
 	//
 	// aria-selected on a plain container is dropped by screen readers, for
 	// the same reason an accessible name on one is: neither attribute is
-	// defined for a generic element. That is the gap RoleImg was added to
-	// close, and it has the same shape here — a state set on an unroled Box
-	// works on both natives, works in the DOM inspector, and is announced by
-	// nothing. So a widget states the role alongside the state, and the two
-	// web exporters write nothing when it has not.
+	// defined for a generic element. So a widget states the role alongside the
+	// state, and the two web exporters write nothing when it has not.
+	//
+	// The name half of that pair is no longer the author's problem — the two
+	// web exporters supply RoleGroup to a named container that has no role of
+	// its own, which makes the name legal without claiming anything (see
+	// core.RoleGroup). A state gets no such rescue, and the asymmetry is the
+	// point rather than an omission. `group` is a role that fits any
+	// container, so supplying it invents nothing; there is no role that
+	// carries a selection and fits any container — aria-selected is scoped to
+	// option, tab, row and columnheader, and picking one of those for a node
+	// would be deciding what the node is. A name is a fact about the node the
+	// author already stated; a role is not.
 	//
 	// The one case that needs no role is a core.Button, whose node type
 	// already is one — the "roles a node type carries for itself" rule in
@@ -258,6 +266,89 @@ type Style struct {
 	// is; each platform says the truest thing it can, which is the same rule
 	// the nine unmapped roles follow.
 	AccessibilitySelected SelectedState
+
+	// AccessibilityID names this element so another one can point at it, and
+	// AccessibilityControls is the pointing. Both are web-only, and they are
+	// the vocabulary's one pair of *references* rather than values.
+	//
+	// # The rule that keeps this from becoming a second ARIA
+	//
+	// Half of ARIA is IDREF-shaped — aria-labelledby, aria-describedby,
+	// aria-controls, aria-owns, aria-activedescendant — and a framework that
+	// added all of them would be asking every app author to mint and track
+	// document-global ids for things it already has a shorter way to say. The
+	// line drawn here:
+	//
+	//	a reference prop earns its place only when what it points at cannot
+	//	be said as a value.
+	//
+	// aria-labelledby points at *text*, and AccessibilityLabel already carries
+	// text. aria-describedby points at text, and AccessibilityHint already
+	// carries text (as aria-description, which is that idea in value form —
+	// see accessibilityAttrs in htmlout/export.go). Neither reference buys an
+	// author anything except a saved copy of a string they are holding.
+	//
+	// aria-controls is different in kind: what it points at is *another
+	// element*, and there is no string that can stand in for one. That is why
+	// this pair exists and the other three do not.
+	//
+	// # What asked for it
+	//
+	// A tab strip built by hand. core.TabView mints its own ids and writes the
+	// whole tab/panel wiring from the node type (see htmlout/tabview.go), so
+	// the wired case needed nothing; a strip assembled out of chips or buttons
+	// — which is how the social example's bottom bar is built, and how anyone
+	// who wants a different-looking strip has to build one — could say
+	// role="tab" and role="tablist" and then had no way at all to say which
+	// region each tab shows. A reader that cannot follow that relationship
+	// announces three tabs controlling nothing.
+	//
+	//	// the strip
+	//	core.Row(core.AccessibilityRole(core.RoleTabList),
+	//	    Chip{Label: "Home", Style: []core.StyleProp{
+	//	        core.AccessibilityRole(core.RoleTab),
+	//	        core.AccessibilitySelected(core.SelectedWhen(tab == "home")),
+	//	        core.AccessibilityID("home-tab"),
+	//	        core.AccessibilityControls("app-panel"),
+	//	    }},
+	//	)
+	//	// the region it switches
+	//	core.Box(core.AccessibilityID("app-panel"), core.AccessibilityLabel("Home"), …)
+	//
+	// # Ids are the author's to keep unique, with one prefix reserved
+	//
+	// An id is document-global and this framework does not rewrite the string,
+	// so two elements given the same AccessibilityID are two elements with the
+	// same id — invalid HTML, and a reference that resolves to whichever the
+	// browser saw first. That is the author's to avoid, exactly as it is in
+	// hand-written HTML.
+	//
+	// The one reservation is the "grmob-" prefix, which is where core.TabView's
+	// own minted ids live (tabScope in htmlout/tabview.go and its twin in
+	// grmob-runtime.js). An author id colliding with one of those would break a
+	// TabView's wiring rather than their own.
+	//
+	// A TabView page that carries an AccessibilityID of its own is left
+	// unwired, on the same rule an authored role follows there: the author has
+	// claimed the slot, and the wiring does not take it back.
+	//
+	// # Neither native has an equivalent, and neither is given one
+	//
+	// There is no relationship of this kind in SwiftUI's or Compose's semantics
+	// vocabulary — a reader on either phone navigates a tab strip by swiping to
+	// the next element, not by following a reference — so both keys cross the
+	// bridge and are deliberately not parsed. Not parsed rather than parsed and
+	// ignored, for the reason AccessibilityNestingLevel is: a field silently
+	// dropped inside a renderer is indistinguishable from one nobody had heard
+	// of. mobile/verify/idref_test.go pins that.
+	//
+	// The near miss worth naming is accessibilityIdentifier (iOS) and testTag
+	// (Compose). Both are element identities and neither is an accessibility
+	// relationship: they are what a UI test selects by, they are not exposed to
+	// VoiceOver or TalkBack, and filling them from an ARIA wiring string would
+	// silently make every hand-built tab a test selector.
+	AccessibilityID       string
+	AccessibilityControls string
 
 	// Disabled marks the node inert: the renderers hand it to the platform's
 	// own disabled state rather than emulating one, so the control stops
@@ -511,6 +602,12 @@ func (s Style) applyTo(target *Style) {
 	// zero value, leaves the target alone. A widget layering an unselected
 	// state over a selected one has to be able to turn it off, which is the
 	// whole of what a strip does when the selection moves.
+	if s.AccessibilityID != "" {
+		target.AccessibilityID = s.AccessibilityID
+	}
+	if s.AccessibilityControls != "" {
+		target.AccessibilityControls = s.AccessibilityControls
+	}
 	if s.AccessibilitySelected != SelectedUnset {
 		target.AccessibilitySelected = s.AccessibilitySelected
 	}

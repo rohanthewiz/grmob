@@ -32,6 +32,17 @@ type Accordion struct {
 	//
 	// # The heading rides the title, not the row
 	//
+	// The row itself is unroled and named (AccessibilityLabel below), which
+	// used to mean its name was announced on both natives and dropped on both
+	// web targets — ARIA prohibits an accessible name on the `generic` role a
+	// <div> carries. The two web exporters now supply core.RoleGroup to a
+	// named container that has none, so the header announces everywhere. A
+	// group is also the right claim for this row: it says these things belong
+	// together and this is what they are called, and it leaves the heading
+	// inside readable — which role="button", ARIA's own disclosure control,
+	// would not, since a button's children are presentational and the heading
+	// would stop being one.
+	//
 	// The row is the tap target and the title is the words, and the role goes
 	// on the words for the reason GroupHeader's does: a band's row also holds
 	// a count badge, and this row also holds a chevron, so a heading spanning

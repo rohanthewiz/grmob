@@ -467,9 +467,20 @@ on Android, and on both it is a partial mapping by design: `heading` and
 `columnheader` become `.isHeader` / `heading()`, `button` becomes `.isButton`
 / `Role.Button`, `link` and `search` become `.isLink` and `.isSearchField`
 (no Compose analog for either — its `Role` has no Link), and `status` /
-`alert` become Compose live regions (no SwiftUI analog). The remaining nine — the tabular set, the collection pair and the landmarks —
-have no vocabulary on either platform and do nothing there while working on
-both web targets.
+`alert` become Compose live regions (no SwiftUI analog). The remaining twelve
+— the tabular set, both collection pairs, the landmarks and `group` — have no
+vocabulary on either platform and do nothing there while working on both web
+targets.
+
+`group` is worth telling apart from the other eleven, because it is empty for
+the opposite reason. Those are silent because the platform has no way to say
+the thing; `group` is silent because neither platform *needs* it. It exists
+because ARIA prohibits an accessible name on the `generic` role a `<div>`
+carries, so a labelled container was announced by nothing on the web — while a
+`contentDescription` and an `accessibilityLabel` are honoured on any node here.
+Both web exporters supply it automatically to a named, roleless node (see
+[Styling & Theming](../concepts/styling-and-theming.md#rolegroup-and-the-one-role-you-get-without-asking)),
+which means the role reaches both natives too and correctly does nothing.
 
 Both renderers *name* every role anyway, in a `switch`/`when` with explicit
 empty arms, so a role that does nothing is on record rather than lost in a
@@ -507,6 +518,31 @@ role dispatch, `GrMobStyle.swift` beside `grMobHeadingLevel`, which is where a
 reader who has just seen the heading third mapped will ask about the other two.
 `mobile/verify/nesting_level_test.go` pins the notes and their absence of a
 parse together.
+
+### `AccessibilityID` and `AccessibilityControls`
+
+The two IDREF props — an element identity and the `aria-controls` that points
+at it — are the third shape in this section: inert on both platforms, like the
+nesting level, and for a reason that is about the *reader* rather than about
+the API. VoiceOver and TalkBack both move through a screen by swiping to the
+next element; neither follows a relationship from a tab to the region it shows,
+which is what a browser's reader uses `aria-controls` for. There is nothing in
+either semantics vocabulary for the pair to become.
+
+Neither renderer parses either key, and both say why — beside `grMobRole` in
+each file, which is where a reader looking for the mapping arrives.
+`mobile/verify/idref_test.go` pins the notes and the absence of a parse
+together, as the two level tests do.
+
+It also pins one thing they do not, because this field has a near miss the
+levels never had: `accessibilityIdentifier` on iOS and `testTag` on Compose.
+Both look like the obvious mapping for `AccessibilityID` and both are *test*
+selectors rather than accessibility properties — XCUITest and Espresso read
+them, VoiceOver and TalkBack do not. Mapping onto them would quietly turn every
+hand-built tab into a test handle and still announce nothing, so each note names
+the property it is turning down and the test checks the naming is still there.
+
+### The field with a widget spending it
 
 The field now has a widget spending it — `components.ListRow`'s `NestingLevel`,
 for an outline flattened into one list — and that changes nothing here, which

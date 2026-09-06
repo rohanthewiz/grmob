@@ -75,14 +75,15 @@ import (
 // hidden. AccessibilityLabel overrides the sentence for a caller whose bearing
 // means something more specific than a heading.
 //
-// The container takes core.RoleImg, and that is load-bearing rather than
-// decorative. ARIA forbids an accessible name on a generic element, so the
-// label alone — on the plain container every core layout node exports as —
-// is *dropped* by screen readers on both web targets. The natives are more
-// forgiving and honour a label on anything, which is what makes this the kind
-// of gap that ships: it works on the two targets the author is most likely to
-// be testing on. The role is also the honest description: a compass is a
-// picture standing in for one fact.
+// The container takes core.RoleImg, and it is still the right value now that
+// the two web exporters supply core.RoleGroup to any named container that has
+// none (see core.RoleGroup). Both make the label legal — ARIA forbids an
+// accessible name on a generic element, which is what a plain core layout node
+// exports as, so the label alone was dropped by screen readers on both web
+// targets while both natives read it out. What only `img` says is the part
+// this widget depends on: a picture standing in for one fact, whose parts a
+// reader should not read. `group` names its children and leaves them readable,
+// which for a rose is "Heading 312 degrees, northwest" followed by "N W E S".
 type Compass struct {
 	// Heading is the bearing to draw, in degrees clockwise from north. Any
 	// value works: it is normalised for the readout and the spoken label, and

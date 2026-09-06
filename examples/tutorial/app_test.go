@@ -87,6 +87,13 @@ type nodeStyle struct {
 	// a picker and a text field wear the same edge, and the edge is a style
 	// field on both — there is nothing in the props to compare.
 	BorderColor string
+
+	// The two IDREF props, for 4.5's hand-assembled tab strip. They are the
+	// only place the relationship between a tab and the region it shows
+	// exists at all: the strip and the pages are siblings in the tree, drawn
+	// identically whether or not either end has been stated.
+	AccessibilityID       string
+	AccessibilityControls string
 }
 
 func findNode(n *node, pred func(*node) bool) *node {

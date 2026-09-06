@@ -22,7 +22,7 @@ func TestRuntimeWritesTheSameAccessibilityAttributes(t *testing.T) {
 		{`setOrRemove(el, "aria-modal", dialog ? "true" : "")`,
 			`the modal claim. htmlout's modalSemantics writes it, and it is not expressible ` +
 				`through core.Role, so a Modal is the only node that can`},
-		{`(dialog ? "dialog" : "")`,
+		{`? (style.AccessibilityRole || "dialog")`,
 			`the dialog role, defaulted after the author's own core.Role so a hand-built ` +
 				`Modal that states one still wins`},
 		{`setOrRemove(el, "aria-level", hidden ? "" : ariaLevel(style))`,
@@ -34,6 +34,13 @@ func TestRuntimeWritesTheSameAccessibilityAttributes(t *testing.T) {
 			"the toggle half, for a button. Both are written on every call rather than only " +
 				"the one the role asks for: a role can change between passes, and writing " +
 				"one would leave the other standing"},
+		{`setOrRemove(el, "id", hidden ? "" : (style.AccessibilityID || ""))`,
+			"the element identity an aria-controls somewhere else on the page points at. " +
+				"core.Style.AccessibilityID is written verbatim, and a page that carries one " +
+				"is left unwired by the TabView so the two writers never share the slot"},
+		{`setOrRemove(el, "aria-controls", hidden ? "" : (style.AccessibilityControls || ""))`,
+			"the pointing. It is the vocabulary's one reference to another element, which is " +
+				"the whole reason it is a prop rather than a value like the hint"},
 	} {
 		if !strings.Contains(src, want.expr) {
 			t.Errorf("grmob-runtime.js: %q not found — %s. htmlout writes it, so the two web "+
@@ -136,5 +143,71 @@ func TestRuntimeGivesAStylelessModalItsSemantics(t *testing.T) {
 	if !strings.Contains(src, `applyAccessibility(el, node.Style || {}, "Modal")`) {
 		t.Error(`grmob-runtime.js: createElement's Modal branch no longer applies the dialog ` +
 			`semantics — core.ModalNode has no Style, so nothing else would`)
+	}
+}
+
+// The role a named container is given when it has none of its own, restated in
+// the runtime as ariaRole and in htmlout as ariaRole. Both must agree, and the
+// consequence of drift is a silence rather than an error: the target that
+// stopped supplying the role keeps writing an aria-label that ARIA prohibits
+// on `generic` and every browser drops.
+//
+// The three parts pinned here are the three the rule is made of — the
+// author-wins short circuit, the name that earns the role, and the tag test
+// that keeps it off a <button>, an <img> or an <input>, which can carry a name
+// unaided and would *lose* the role their tag implies. See core.RoleGroup.
+func TestRuntimeSuppliesTheGroupRole(t *testing.T) {
+	src := runtimeSource(t)
+	for _, want := range []struct{ expr, why string }{
+		{"function ariaRole(el, style) {",
+			"the rule itself, which htmlout states as ariaRole in export.go"},
+		{"if (authored) return authored;",
+			"an author who said what the node is keeps their word; the fallback only ever " +
+				"fills an empty slot"},
+		{"if (!style.AccessibilityLabel) return \"\";",
+			"the fallback exists to rescue a name. A roleless, nameless container is a div, " +
+				"which is what it should be"},
+		{`return GENERIC_TAGS.has(el.tagName.toLowerCase()) ? "group" : "";`,
+			"only the tags whose implicit role is `generic` may be given one — writing a role " +
+				"onto a <button> or an <img> replaces the role the browser already gives it"},
+		{"? (style.AccessibilityRole || \"dialog\")\n            : ariaRole(el, style))",
+			"a Modal answers the dialog case before the fallback is consulted, which is why " +
+				"ariaRole needs no equivalent of htmlout's CarriesOwnRole guard"},
+	} {
+		if !strings.Contains(src, want.expr) {
+			t.Errorf("grmob-runtime.js: %q not found — %s. htmlout supplies the role, so the "+
+				"two web targets no longer describe the same screen", want.expr, want.why)
+		}
+	}
+}
+
+// The TabView wiring's two shared slots, which the group role and the IDREF
+// pair both reach into.
+//
+// role: the wiring writes "tabpanel" and applyAccessibility writes the author's
+// role or the supplied group. canBeTabPanel accepts a group because a tabpanel
+// says everything a group says and one thing more — and it *must*, since a
+// named page is given a group whether the author asked or not, and rejecting it
+// would silently stop every page with an AccessibilityLabel from being wired.
+//
+// id: the wiring writes panelID and applyAccessibility writes the author's
+// AccessibilityID. Here the author wins outright, because something else on the
+// page is pointing at their string; comparing against the wiring's own value is
+// what tells an authored id from one this runtime wrote a sync ago.
+func TestRuntimeSharesTheRoleAndIDSlotsWithTheTabWiring(t *testing.T) {
+	src := runtimeSource(t)
+	for _, want := range []struct{ expr, why string }{
+		{`(role === null || role === "tabpanel" || role === "group")`,
+			"the group exemption, which htmlout states in tabPanelBox"},
+		{`(id === null || id === panelId(scope, i))`,
+			"a page carrying its own AccessibilityID is left unwired rather than having the " +
+				"id taken from under an aria-controls that points at it"},
+		{`setOrRemove(page, "role", named ? "group" : "");`,
+			"unwiring restores what applyAccessibility would have left — a named page keeps " +
+				"the group that makes its name audible instead of falling back into silence"},
+	} {
+		if !strings.Contains(src, want.expr) {
+			t.Errorf("grmob-runtime.js: %q not found — %s", want.expr, want.why)
+		}
 	}
 }

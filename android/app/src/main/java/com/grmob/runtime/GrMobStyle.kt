@@ -463,6 +463,21 @@ private fun dimensionModifier(value: String, horizontal: Boolean): Modifier {
  * Same treatment as above: the key is deliberately not parsed, and
  * mobile/verify/nesting_level_test.go pins both halves.
  */
+/**
+ * AccessibilityID and AccessibilityControls are not read here either.
+ *
+ * Go's two IDREF props state that one element points at another — a hand-built
+ * tab and the region it shows. Compose semantics has no such relationship, and
+ * TalkBack navigates by swiping to the next node rather than by following a
+ * reference, so there is nothing for the pair to become.
+ *
+ * The near miss is `testTag`, and it is the same trap `accessibilityIdentifier`
+ * is on the other platform: a test selector, not an accessibility property, and
+ * invisible to TalkBack unless an app opts into testTagsAsResourceId. Filling
+ * it from an ARIA wiring string would make every hand-built tab a test handle
+ * and announce nothing. Same treatment as the two levels above: the key is
+ * deliberately not parsed, and mobile/verify/idref_test.go pins both halves.
+ */
 fun SemanticsPropertyReceiver.grMobRole(kind: String) {
     when (kind) {
         // A column header is a heading over its column; TalkBack has one
@@ -511,6 +526,13 @@ fun SemanticsPropertyReceiver.grMobRole(kind: String) {
         // Image and DropdownList, and no Link — the one place SwiftUI's
         // vocabulary is the richer of the two.
         "link" -> {}
+        // The naming role. Compose has no member for it, and unlike the arms
+        // above that is not the reason this one is empty: a
+        // contentDescription is honoured on any node here, so nothing needs
+        // unlocking. The role exists because ARIA prohibits a name on a
+        // generic element, which is a web problem with a web answer. See
+        // core/role.go's RoleGroup.
+        "group" -> {}
         else -> {}
     }
 }

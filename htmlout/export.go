@@ -61,9 +61,15 @@ func ExportHTML(node *core.Node) string {
 //	       what lets display:none outrank the display:flex a stack container
 //	       is given unconditionally
 //	attrs  element-style key/value pairs, appended to the node's own attribute
-//	       list. Nothing here ever collides with an attribute the node writes
-//	       for itself: the panel wiring is id/role/aria-labelledby, and no
-//	       core.Style field maps onto any of the three.
+//	       list. One of the three the panel wiring writes — role — is an
+//	       attribute the node can also write for itself, so renderNode asks
+//	       whether the parent has claimed the slot (imposesRole) and skips its
+//	       own if so. HTML gives an element one value per attribute name and a
+//	       browser keeps the *first*, so writing both would silently hand the
+//	       page the weaker of the two roles. The other two do not collide: the
+//	       wiring's id is only ever written to a page that has no
+//	       AccessibilityID of its own (tabPanelBox), and no core.Style field
+//	       maps onto aria-labelledby at all.
 type imposed struct {
 	decl  string
 	attrs []string
@@ -172,7 +178,7 @@ func renderNode(b *element.Builder, node *core.Node, from imposed, path string) 
 	if sv != "" {
 		attrs = append(attrs, "style", sv)
 	}
-	attrs = append(attrs, accessibilityAttrs(node.Style, node.Type)...)
+	attrs = append(attrs, accessibilityAttrs(node.Style, node.Type, imposesRole(from.attrs))...)
 	// The parent's attributes, after the node's own. Order is presentational
 	// only — an attribute list is a set, not a cascade — but keeping the
 	// node's own first means a reader of the markup sees what the node said
@@ -600,7 +606,21 @@ func modalChassis(props map[string]any) string {
 // the element already implies it — a Button carrying core.RoleButton exports
 // as <button role="button"> — because suppressing the redundant case would
 // mean this function knowing the tag table, and a redundant role is inert
-// while a missing one is not.
+// while a missing one is not. A node that names itself and says nothing about
+// what it is gets one supplied; see ariaRole.
+//
+// roleImposed says the node's container has already written a role onto this
+// element (the TabView panel wiring is the only one that does), in which case
+// this writes none of its own. An attribute has one slot and a browser keeps
+// the first value it parses, so a second role= would not be additive — it
+// would decide the element's role by document order. See imposed.
+//
+// An id and an aria-controls come from core.Style.AccessibilityID and
+// core.Style.AccessibilityControls, verbatim in both directions. They are the
+// vocabulary's only two references, and nothing here checks that the target of
+// one exists: an export is a snapshot of one tree and has no index of the
+// document it will become part of. A dangling IDREF is inert, which is the
+// same trade the hint makes below.
 //
 // A heading's level maps to aria-level, which is the attribute form of the
 // same question and is scoped to the roles ARIA defines it for — see
@@ -621,7 +641,7 @@ func modalChassis(props map[string]any) string {
 // the export states the intent ahead of universal support, on the same
 // reasoning as enterkeyhint above: the alternative is dropping the author's
 // hint entirely.
-func accessibilityAttrs(s *core.Style, nodeType string) []string {
+func accessibilityAttrs(s *core.Style, nodeType string, roleImposed bool) []string {
 	// A Modal is the one node type whose semantics do not come from a Style at
 	// all: core.ModalNode has no Style field, so `s` is nil for every dialog
 	// core.Modal builds, and the role would have nowhere to come from if this
@@ -640,17 +660,28 @@ func accessibilityAttrs(s *core.Style, nodeType string) []string {
 		// inert behind something a reader cannot reach.
 		return []string{"aria-hidden", "true"}
 	}
-	attrs := make([]string, 0, 12)
-	if dialog {
+	attrs := make([]string, 0, 16)
+	switch {
+	case dialog:
 		attrs = append(attrs, modalSemantics(s.AccessibilityRole)...)
-	} else if s.AccessibilityRole != core.RoleNone {
-		attrs = append(attrs, "role", string(s.AccessibilityRole))
+	case roleImposed:
+		// The container owns the slot; see the doc above.
+	default:
+		if role := ariaRole(s, nodeType); role != "" {
+			attrs = append(attrs, "role", role)
+		}
 	}
 	if level := ariaLevel(s); level != "" {
 		attrs = append(attrs, "aria-level", level)
 	}
 	if name, value := ariaSelected(s, nodeType); name != "" {
 		attrs = append(attrs, name, value)
+	}
+	if s.AccessibilityID != "" {
+		attrs = append(attrs, "id", s.AccessibilityID)
+	}
+	if s.AccessibilityControls != "" {
+		attrs = append(attrs, "aria-controls", s.AccessibilityControls)
 	}
 	if s.AccessibilityLabel != "" {
 		attrs = append(attrs, "aria-label", s.AccessibilityLabel)
@@ -659,6 +690,76 @@ func accessibilityAttrs(s *core.Style, nodeType string) []string {
 		attrs = append(attrs, "aria-description", s.AccessibilityHint)
 	}
 	return attrs
+}
+
+// imposesRole reports whether a parent's imposed attribute list already carries
+// a role for this element. The list is element's flat name/value form, so the
+// names sit at the even indices.
+//
+// Derived from the list rather than declared beside it, so it cannot fall out
+// of step with what tabPanelAttrs actually writes.
+func imposesRole(attrs []string) bool {
+	for i := 0; i+1 < len(attrs); i += 2 {
+		if attrs[i] == "role" {
+			return true
+		}
+	}
+	return false
+}
+
+// ariaRole is the value of the role attribute for one node: what the author
+// said, or — when they said nothing and the element would otherwise be unable
+// to carry the name they gave it — core.RoleGroup.
+//
+// # The silence the fallback closes
+//
+// Every layout node here exports as a <div> or a <span>, and both tags have
+// the implicit ARIA role `generic`. ARIA prohibits an accessible name on
+// `generic`, and browsers enforce that by pruning the name out of the
+// accessibility tree — so a core.Box carrying an AccessibilityLabel wrote a
+// correct-looking aria-label that no screen reader on either web target
+// announced, while VoiceOver and TalkBack read it out perfectly (a SwiftUI
+// accessibilityLabel and a Compose contentDescription are honoured on any
+// node). Two targets silent and two fine is what let it ship.
+//
+// `group` is the smallest role that makes the name legal: it is nameable, it
+// is not a landmark (so a named row does not join the list of regions a reader
+// jumps between), it requires no particular children, and it does not make the
+// ones it has presentational. It says these things belong together and this is
+// what they are called, and nothing more — which is what lets it be supplied
+// to a container nothing has looked inside. See core.RoleGroup for the
+// candidates that were turned down.
+//
+// # Three guards, and what each one is protecting
+//
+//	no name          the fallback exists to rescue a name. A roleless,
+//	                 nameless container is a div, which is what it should be.
+//	a roled tag      only genericTags may be given a role — writing one onto a
+//	                 <button>, an <img> or an <input> would *replace* the role
+//	                 the browser already gives it. Those tags can carry a name
+//	                 without help, which is why they need no rescue.
+//	a self-roling
+//	type             a Modal is a dialog by virtue of being a Modal
+//	                 (modalSemantics), and dialog is nameable too.
+//
+// The fallback is silent because it cannot make anything worse: before it the
+// name was invalid ARIA that was dropped, and after it the name is valid ARIA
+// that is announced. The one claim it could disturb is a structural
+// container's — a role="list" says its children are listitems — but a generic
+// div inside one was never a listitem either, so a group there is the same
+// foreign child it already was, one attribute louder. See core/role.go's
+// "A structural role owns what is inside it".
+//
+// grmob-runtime.js restates this as ariaRole; TestRuntimeSuppliesTheGroupRole
+// in wasm/verify holds the two together.
+func ariaRole(s *core.Style, nodeType string) string {
+	if s.AccessibilityRole != core.RoleNone {
+		return string(s.AccessibilityRole)
+	}
+	if s.AccessibilityLabel == "" || CarriesOwnRole(nodeType) || !IsGenericTag(TagFor(nodeType)) {
+		return ""
+	}
+	return string(core.RoleGroup)
 }
 
 // modalSemantics is the accessibility half of the Modal chassis: the pair of
@@ -784,9 +885,16 @@ func ariaLevel(s *core.Style) string {
 //
 // Everything else writes nothing. ARIA does not define either attribute for a
 // generic element, so a state on an unroled Box is dropped by the reader
-// rather than announced — the same failure an accessible name on a generic
-// element has, which is what core.RoleImg exists to close. Writing it anyway
-// would put invalid ARIA in the document and change nothing a user hears.
+// rather than announced, and writing it anyway would put invalid ARIA in the
+// document and change nothing a user hears.
+//
+// A *name* on a generic element is the same failure and is no longer left to
+// fail: ariaRole supplies core.RoleGroup so the name has something legal to
+// sit on. A state gets no equivalent rescue, and the asymmetry is deliberate.
+// `group` fits any container, so supplying it invents nothing; there is no
+// role that carries a selection and fits any container — the four that do are
+// option, tab, row and columnheader, and choosing between them would be this
+// function deciding what a node is.
 func ariaSelected(s *core.Style, nodeType string) (string, string) {
 	if s.AccessibilitySelected == core.SelectedUnset {
 		return "", ""

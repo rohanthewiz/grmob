@@ -23,7 +23,24 @@ func TestMain(m *testing.M) {
 type node struct {
 	Type     string
 	Props    map[string]any
+	Style    map[string]any
 	Children []*node
+}
+
+// styleString reads one core.Style field off a node as the JSON carried it,
+// or "" when the node has no style or the field is at its zero value (Style is
+// serialized with omitempty, so an unset field is an absent key rather than an
+// empty one).
+//
+// A map rather than a typed core.Style so a test asserting on semantics reads
+// the same names the two web exporters and both native parsers read — the
+// wire, which is what a renderer actually sees.
+func styleString(n *node, field string) string {
+	if n == nil || n.Style == nil {
+		return ""
+	}
+	v, _ := n.Style[field].(string)
+	return v
 }
 
 func findNode(n *node, pred func(*node) bool) *node {
@@ -166,6 +183,100 @@ func TestPushedRouteStateIsDiscardedOnPop(t *testing.T) {
 	again := tap(t, mgr, "Abrir Detalhes")
 	if !strings.Contains(again, "Contador: 0") {
 		t.Fatalf("re-pushed route inherited the popped frame's state:\n%s", again)
+	}
+
+	assertNoConcerns(t)
+}
+
+// The bottom bar as a real tab strip, end to end.
+//
+// This is the app that asked for core.AccessibilityID and
+// core.AccessibilityControls: a strip built out of buttons, switching pages
+// with core.Match, which could state role="tab" and role="tablist" and then
+// had no way at all to say which region each tab governs. See TabButton.
+//
+// Asserted on the node tree rather than on exported HTML because the tree is
+// where the app's own decisions live — the roles, the state on every tab, and
+// the two ends of the reference agreeing. What the two web targets do with
+// them is htmlout's and the runtime's to prove, and both do.
+func TestTheTabStripStatesItsSemantics(t *testing.T) {
+	core.ClearConcerns()
+
+	mgr := render.New(core.NewContext().WithTheme(core.DefaultTheme), App)
+	defer mgr.Close()
+	mgr.RenderInitial()
+	root := tree(t, mgr)
+
+	// The strip claims its children are tabs, so it must hold nothing else —
+	// see core/role.go. Counting is the executable half of that claim.
+	strip := findNode(root, func(n *node) bool { return styleString(n, "AccessibilityRole") == "tablist" })
+	if strip == nil {
+		t.Fatal("no tablist in the tree: the bar announces as three adjacent buttons")
+	}
+	if len(strip.Children) != 3 {
+		t.Errorf("tablist holds %d children; a strip that also holds chrome cannot take "+
+			"the role", len(strip.Children))
+	}
+
+	// The panel end of the relationship, named for the tab that is showing.
+	panel := findNode(root, func(n *node) bool { return styleString(n, "AccessibilityID") == TabPanelID })
+	if panel == nil {
+		t.Fatalf("no element carries %q, so every tab's aria-controls dangles", TabPanelID)
+	}
+	if got := styleString(panel, "AccessibilityLabel"); got != "Início" {
+		t.Errorf("panel name = %q, want the showing tab's name", got)
+	}
+
+	// Every tab answers, not only the selected one: a strip in which the other
+	// two say nothing announces them as unselected either way, which is what
+	// makes the distinction between "off" and "unstated" worth having.
+	wantSelected := map[string]string{"🏠": "true", "🔍": "false", "👤": "false"}
+	for glyph, want := range wantSelected {
+		tab := findNode(root, buttonLabeled(glyph))
+		if tab == nil {
+			t.Fatalf("no tab labeled %q", glyph)
+		}
+		if got := styleString(tab, "AccessibilityRole"); got != "tab" {
+			t.Errorf("%s: role = %q, want tab", glyph, got)
+		}
+		if got := styleString(tab, "AccessibilitySelected"); got != want {
+			t.Errorf("%s: aria-selected = %q, want %q", glyph, got, want)
+		}
+		// The reference, which is the whole point of the pair.
+		if got := styleString(tab, "AccessibilityControls"); got != TabPanelID {
+			t.Errorf("%s: controls %q, want %q", glyph, got, TabPanelID)
+		}
+		// And a name, because an emoji announces as its dictionary entry.
+		if styleString(tab, "AccessibilityLabel") == "" {
+			t.Errorf("%s: unnamed, so it reads as whatever the reader calls the glyph", glyph)
+		}
+	}
+
+	assertNoConcerns(t)
+}
+
+// The selection and the panel's name follow the tap. Both are derived from one
+// piece of state, so this is really one assertion made in two places — which is
+// the point: a strip whose aria-selected went stale would announce the old tab
+// as current, and a panel whose name went stale would announce the reader into
+// the wrong page.
+func TestTheTabStripFollowsTheSelection(t *testing.T) {
+	core.ClearConcerns()
+
+	mgr := render.New(core.NewContext().WithTheme(core.DefaultTheme), App)
+	defer mgr.Close()
+	mgr.RenderInitial()
+	tap(t, mgr, "🔍")
+
+	root := tree(t, mgr)
+	for glyph, want := range map[string]string{"🏠": "false", "🔍": "true", "👤": "false"} {
+		if got := styleString(findNode(root, buttonLabeled(glyph)), "AccessibilitySelected"); got != want {
+			t.Errorf("%s: aria-selected = %q, want %q after tapping search", glyph, got, want)
+		}
+	}
+	panel := findNode(root, func(n *node) bool { return styleString(n, "AccessibilityID") == TabPanelID })
+	if got := styleString(panel, "AccessibilityLabel"); got != "Pesquisa" {
+		t.Errorf("panel name = %q, want the tab that is now showing", got)
 	}
 
 	assertNoConcerns(t)

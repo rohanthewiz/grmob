@@ -434,7 +434,10 @@ Other notes:
     Without it the row falls back to appending `", selected"` to the
     accessibility label — which is what this widget did for three versions,
     because until `core.RoleOption` existed no role it could take would carry
-    the state. `RoleButton` is true only of a tappable row and would make it a
+    the state. That suffix now reaches a browser at all: an unroled row is
+    given `role="group"` by both web exporters, which is what makes the name it
+    rides on audible — see
+    [`RoleGroup`](concepts/styling-and-theming.md#rolegroup-and-the-one-role-you-get-without-asking). `RoleButton` is true only of a tappable row and would make it a
     *foreign child* of any `role="list"` it sits in; `RoleListItem` is the
     honest description of a row and ARIA defines no selection state for it. The
     suffix says the true thing in the weaker place: once, inside a name that is
@@ -719,11 +722,38 @@ components.SegmentedControl{
 }
 ```
 
-Two things that does not buy, both ARIA's rules rather than the widget's. A
+One thing that does not buy, and it is ARIA's rule rather than the widget's: a
 tablist claims its children are tabs, so a row that also holds a count or an
-add button is not one. And the panel cannot be pointed at from here —
-`aria-controls` is an IDREF and `core.Style` carries values, not references; a
-wired tab strip is [`core.TabView`](#tabs), which owns both ends.
+add button is not one.
+
+The **panel** is a third prop rather than a limit. `core.AccessibilityID` names
+the region the strip switches and `core.AccessibilityControls` points each
+segment at it, which is the pair of references `core.Style` grew for exactly
+this shape:
+
+```go
+components.SegmentedControl{
+    Labels:   []string{"Sermons", "Articles"},
+    Selected: tab.Get(), OnSelect: func(i int) { tab.Set(i) },
+    Style:   []core.StyleProp{core.AccessibilityRole(core.RoleTabList)},
+    Segment: components.Chip{Style: []core.StyleProp{
+        core.AccessibilityRole(core.RoleTab),
+        core.AccessibilityControls("library-panel"),
+    }},
+}
+core.Box(
+    core.AccessibilityID("library-panel"),
+    core.AccessibilityLabel(titles[tab.Get()]),
+    page,
+)
+```
+
+Every segment points at the one region, which is right: there is one panel and
+its contents change, so a per-segment id would be naming three regions only one
+of which exists. A fully wired tab strip — where the pages are real, separate
+elements and each tab names its own — is [`core.TabView`](#tabs), which mints
+the ids and writes both ends from the node type. `examples/social` is the
+worked example of the hand-built form.
 
 **Segments are keyed**, by `KeyPrefix` + caption. Keys never appear in exported
 HTML but they drive reconciler matching and native view recycling, so captions

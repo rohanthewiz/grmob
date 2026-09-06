@@ -695,6 +695,20 @@ private func grMobHeadingLevel(_ s: GrMobStyle) -> AccessibilityHeadingLevel {
     }
 }
 
+/// # AccessibilityID and AccessibilityControls are not read here
+///
+/// Go's two IDREF props — an element identity and the aria-controls that
+/// points at it — cross the bridge and are deliberately unparsed. There is no
+/// relationship of that kind in SwiftUI's semantics vocabulary: VoiceOver moves
+/// through a screen by swiping to the next element, not by following a
+/// reference from a tab to the region it shows, so there is nothing here for
+/// the pair to become.
+///
+/// The near miss is `accessibilityIdentifier`, and taking it would be wrong
+/// rather than approximate. That property is a UI-test selector — XCUITest
+/// reads it, VoiceOver never does — so filling it from an ARIA wiring string
+/// would silently turn every hand-built tab into a test handle and still
+/// announce nothing. mobile/verify/idref_test.go pins both halves.
 private func grMobTraitsFor(_ role: String) -> AccessibilityTraits {
     switch role {
     case "heading", "columnheader": .isHeader
@@ -735,6 +749,13 @@ private func grMobTraitsFor(_ role: String) -> AccessibilityTraits {
     // "status" is about the shape of the content (appended and ordered rather
     // than replaced), which this platform has no way to state at all.
     case "status", "alert", "log": []
+    // The naming role, and the one empty arm here that is empty because this
+    // platform does not *need* it rather than because it cannot say it. On the
+    // web a name on a generic element is prohibited and dropped, so `group` is
+    // what makes an accessibilityLabel on a plain container audible at all;
+    // VoiceOver honours accessibilityLabel on any view, so there is nothing
+    // for the role to unlock here. See core/role.go's RoleGroup.
+    case "group": []
     default: []
     }
 }

@@ -142,6 +142,8 @@ core.AccessibilityRole(core.RoleHeading)         // says what the node *is*
 core.AccessibilityHeadingLevel(2)                // and how deep it sits
 core.AccessibilityNestingLevel(2)                // the same question for a nested list item
 core.AccessibilitySelected(core.SelectedOn)      // and whether this control is *on*
+core.AccessibilityID("app-panel")                // names this element so another can point at it
+core.AccessibilityControls("app-panel")          // ...and the pointing
 ```
 
 Renderers map them to `contentDescription` (Android),
@@ -172,6 +174,7 @@ targets emit them verbatim as `role=`:
 | landmarks | `RoleBanner` `RoleNavigation` `RoleSearch` `RoleToolbar` |
 | live regions | `RoleStatus` `RoleAlert` `RoleLog` |
 | content | `RoleHeading` `RoleButton` `RoleLink` `RoleImg` |
+| naming | `RoleGroup` |
 
 The two natives map what their vocabularies can express — `heading` and
 `columnheader` become a header trait / `heading()`, `button` becomes
@@ -190,8 +193,10 @@ vocabulary could have supplied the pair, which is a small argument for the set
 being ARIA's. Both are for a **hand-built** strip; `core.TabView` writes these
 two, the `tabpanel` half and the `aria-controls`/`aria-labelledby` wiring
 between them from the node type. There is deliberately no `RoleTabPanel` — a
-panel is one end of a relationship whose other half is an IDREF a `Style`
-cannot carry, and the node type already owns both ends.
+panel is one end of a relationship, the node type already owns both ends, and
+the WASM runtime relies on `tabpanel` not being a `core.Role` to tell its own
+wiring apart from an author's. A hand-built strip states the relationship with
+`AccessibilityID` / `AccessibilityControls` instead; see below.
 
 `RoleStatus` and `RoleLog` are both polite live regions and differ in the shape
 of the content, not in how loudly they interrupt: a status is one advisory that
@@ -210,6 +215,49 @@ Roles are never inferred: a `Box` with an `OnTap` is a button only if it says
 so, because a widget that wraps a tappable row in a tappable card would
 otherwise announce two nested buttons. `AccessibilityHidden` wins over a role
 for the same reason it wins over a label.
+
+##### `RoleGroup`, and the one role you get without asking
+
+`RoleGroup` is the exception to "never inferred", and it exists because a name
+on a plain container did not work on the web at all.
+
+Every layout node exports as a `<div>` or a `<span>`, whose implicit ARIA role
+is `generic`, and ARIA **prohibits an accessible name on `generic`** — browsers
+enforce it by pruning the name out of the accessibility tree. So this:
+
+```go
+core.Box(core.AccessibilityLabel("Unread messages"), …)
+```
+
+was read out perfectly by VoiceOver and TalkBack (both honour a label on any
+node) and announced by nothing on either web target. Two targets fine, two
+silent, which is what let it ship: the two that worked are the two you are most
+likely to be testing on. It hit every `ListRow` with an `AccessibilityLabel`,
+every `Accordion` header, every named `StatTile` and `Skeleton`.
+
+Both web targets now **supply** `role="group"` to a node that has a name, no
+role of its own, and a generic tag. Nothing changes at your call sites; the
+name simply starts being announced. An author who says anything more specific
+wins — the fallback only ever fills an empty slot.
+
+`group` is the smallest role that makes a name legal, and that is why it is the
+one chosen: it is nameable, it is *not* a landmark (so a named row does not
+join the list of regions a reader jumps between), it requires no particular
+children, and it does not make the children it has presentational. It says
+these things belong together and this is what they are called, and nothing
+else — which is what lets it be given to a container nothing has looked inside.
+`region` would add six entries to a screen's table of contents; `button` would
+claim a control and would silence a heading inside it; `img` claims the node is
+a picture whose parts should be hidden, which is true of `components.Compass`
+and false of a list row.
+
+You can also set it yourself, which is worth doing where the grouping is the
+point rather than the name being rescued.
+
+Neither native does anything with it, and for the opposite of the usual reason:
+they do not *need* it. A `contentDescription` and an `accessibilityLabel` are
+honoured on any node, so the role that unlocks the name on the web buys them
+nothing.
 
 The **listbox pair** is the collection pair's selectable cousin, and the
 difference is not a shade of meaning: `aria-selected` is scoped to `gridcell`,
@@ -466,10 +514,92 @@ instead. Neither widget knows which arrangement it is in.
 
 **Pair it with a role.** ARIA does not define either attribute for a generic
 element, so a state on an unroled `Box` is dropped by screen readers exactly as
-an accessible name on one is — the gap `RoleImg` exists to close. Neither
-native scopes it, so such a state reaches both of them and neither web target;
-the web is the strict one because ARIA is. A `core.Button` is the one exception
-and needs no role, because the node type already is one.
+an accessible name on one is. Neither native scopes it, so such a state reaches
+both of them and neither web target; the web is the strict one because ARIA is.
+A `core.Button` is the one exception and needs no role, because the node type
+already is one.
+
+The *name* half of that failure is now rescued for you (`RoleGroup` above) and
+the state half is not, which is deliberate rather than half-finished. `group`
+fits any container, so supplying it invents nothing; there is no role that
+carries a selection and fits any container — the four that do are `option`,
+`tab`, `row` and `columnheader`, and choosing among them would be the exporter
+deciding what your node is. A name is a fact you already stated; a role is not.
+
+#### `AccessibilityID` and `AccessibilityControls`
+
+The vocabulary's only two **references**. Everything else on `Style` is a
+value — a name, a hint, a role, a level — and these two say that *this element*
+points at *that element*.
+
+```go
+// the strip
+core.Row(core.AccessibilityRole(core.RoleTabList),
+    components.Chip{Label: "Home", Style: []core.StyleProp{
+        core.AccessibilityRole(core.RoleTab),
+        core.AccessibilitySelected(core.SelectedWhen(tab == "home")),
+        core.AccessibilityID("home-tab"),
+        core.AccessibilityControls("app-panel"),
+    }},
+    …
+)
+
+// the region it switches
+core.Box(
+    core.AccessibilityID("app-panel"),
+    core.AccessibilityLabel("Home"),
+    page,
+)
+```
+
+`AccessibilityID` becomes the `id` attribute; `AccessibilityControls` becomes
+`aria-controls`. Both are written verbatim, both directions, on the two web
+targets.
+
+##### Why only these two, when half of ARIA is IDREF-shaped
+
+`aria-labelledby`, `aria-describedby`, `aria-owns` and
+`aria-activedescendant` are all references too, and adding them all would ask
+every app to mint and track document-global ids for things there is a shorter
+way to say. The line:
+
+> A reference prop earns its place only when what it points at cannot be said
+> as a value.
+
+`aria-labelledby` points at *text*, and `AccessibilityLabel` already carries
+text. `aria-describedby` points at text, and `AccessibilityHint` already
+carries text (as `aria-description`, the same idea in value form). Neither
+reference buys you anything but a saved copy of a string you are holding.
+`aria-controls` points at *another element*, and no string stands in for one.
+
+##### What asked for it
+
+A tab strip built by hand. `core.TabView` mints its own ids and writes the
+whole tab/panel wiring from the node type, so the wired case needed nothing —
+but a strip assembled out of chips or buttons, which is what you build when you
+want a different-looking bar, could say `role="tab"` and `role="tablist"` and
+then had no way at all to say which region each tab shows. A reader announces
+three tabs governing nothing. `examples/social`'s bottom bar is the worked
+example.
+
+##### Two rules worth knowing
+
+**Uniqueness is yours**, exactly as in hand-written HTML: the framework does
+not rewrite your string, so two elements given the same `AccessibilityID` are
+two elements with the same id. The `grmob-` prefix is reserved for
+`core.TabView`'s own minted ids.
+
+**A `TabView` page carrying an `AccessibilityID` is left unwired.** You have
+claimed the slot the wiring needs for its own `id`, and something else on the
+page is pointing at your string, so the wiring stands down rather than taking
+it — the same rule an authored role follows there.
+
+Neither native reads either key. There is no such relationship in SwiftUI's or
+Compose's semantics vocabulary, and neither reader needs one: both navigate a
+strip by swiping to the next element rather than by following a reference. The
+near miss is `accessibilityIdentifier` / `testTag`, and both are *test*
+selectors rather than accessibility properties — mapping onto them would make
+every hand-built tab a test handle and still announce nothing.
 
 #### Roles a node type carries for itself
 

@@ -371,6 +371,58 @@ func TestTabsDemoSwitchesPagesAndKeepsState(t *testing.T) {
 	assertNoConcerns(t)
 }
 
+// The half of 4.5 that has no visible effect and is the reason the lesson
+// spends a paragraph on it: a hand-assembled strip states the relationship
+// core.TabView writes from the node type. The strip and the region it switches
+// are siblings drawn identically whether or not either end has been stated, so
+// the style is the only place this exists.
+func TestTabsDemoWiresTheStripToItsPanel(t *testing.T) {
+	mgr := newApp(t)
+	openLesson(t, mgr, "Tabs & the wire contract")
+	cur := tree(t, mgr)
+
+	// The region, named for whichever page is showing.
+	panel := findNode(cur, func(n *node) bool {
+		return n.Style != nil && n.Style.AccessibilityID == tabDemoPanelID
+	})
+	if panel == nil {
+		t.Fatalf("no element carries %q, so every segment's aria-controls dangles",
+			tabDemoPanelID)
+	}
+	if panel.Style.AccessibilityLabel != "Info" {
+		t.Errorf("panel name = %q, want the showing page's", panel.Style.AccessibilityLabel)
+	}
+
+	// The strip claims its children are tabs...
+	if findNode(cur, roleIs("tablist")) == nil {
+		t.Error("the SegmentedControl row is not a tablist, so its chips announce as a " +
+			"row of toggle buttons")
+	}
+	// ...and every one of them points at the one region. One id for three
+	// tabs is right rather than lazy: there is a single region whose contents
+	// change, so a per-tab id would name two regions that do not exist.
+	tabs := findNodes(cur, roleIs("tab"))
+	if len(tabs) != len(tabPageLabels) {
+		t.Fatalf("found %d tabs, want %d", len(tabs), len(tabPageLabels))
+	}
+	for i, tab := range tabs {
+		if got := tab.Style.AccessibilityControls; got != tabDemoPanelID {
+			t.Errorf("tab %d controls %q, want %q", i, got, tabDemoPanelID)
+		}
+	}
+
+	// The name follows the selection, so a reader arriving through the
+	// relationship is told where it landed.
+	tap(t, mgr, "Stats")
+	panel = findNode(tree(t, mgr), func(n *node) bool {
+		return n.Style != nil && n.Style.AccessibilityID == tabDemoPanelID
+	})
+	if panel == nil || panel.Style.AccessibilityLabel != "Stats" {
+		t.Error("the panel's name did not follow the tab")
+	}
+	assertNoConcerns(t)
+}
+
 // --- 4.6 Collections --------------------------------------------------------
 
 func TestCollectionsDemoSortsPagesAndLoadsMore(t *testing.T) {
@@ -1110,4 +1162,12 @@ func TestALessonScreenHasAThreeTierOutline(t *testing.T) {
 	}
 
 	assertNoConcerns(t)
+}
+
+// roleIs matches a node by its core.AccessibilityRole. The wire carries the
+// role as the ARIA spelling, which is the string every renderer reads.
+func roleIs(role string) func(*node) bool {
+	return func(n *node) bool {
+		return n.Style != nil && n.Style.AccessibilityRole == role
+	}
 }

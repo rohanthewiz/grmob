@@ -879,10 +879,98 @@ func TestEveryRoleBecomesTheRoleAttribute(t *testing.T) {
 	}
 
 	// The zero value writes nothing at all — an unset role is the state every
-	// node in every existing golden is in.
-	bare := &core.Node{Type: "Box", Style: &core.Style{AccessibilityLabel: "Close"}}
+	// node in every existing golden is in. Nameless, because a name is the one
+	// thing that makes the exporter supply a role of its own; see
+	// TestANamedContainerIsGivenTheGroupRole.
+	bare := &core.Node{Type: "Box", Style: &core.Style{BorderRadius: 4}}
 	if out := ExportHTML(bare); strings.Contains(out, "role=") {
 		t.Errorf("RoleNone wrote a role attribute:\n%s", out)
+	}
+}
+
+// ariaRole's fallback: a container that names itself and says nothing about
+// what it is gets `group`, because ARIA prohibits a name on the `generic` role
+// a <div> and a <span> carry, and browsers enforce the prohibition by dropping
+// the name. Both natives announce such a name already, so this was a silence
+// on the two web targets alone. See core.RoleGroup.
+func TestANamedContainerIsGivenTheGroupRole(t *testing.T) {
+	named := &core.Node{Type: "Box", Style: &core.Style{AccessibilityLabel: "Unread messages"}}
+	out := ExportHTML(named)
+	if !strings.Contains(out, `role="group"`) {
+		t.Errorf("a named Box exported no role, so its aria-label is dropped by every "+
+			"browser:\n%s", out)
+	}
+	if strings.Count(out, "role=") != 1 {
+		t.Errorf("expected exactly one role attribute:\n%s", out)
+	}
+
+	// A <span> is `generic` too, so core.Text is rescued on the same terms.
+	text := &core.Node{Type: "Text", Props: map[string]any{"text": "*"},
+		Style: &core.Style{AccessibilityLabel: "required"}}
+	if out := ExportHTML(text); !strings.Contains(out, `role="group"`) {
+		t.Errorf("a named Text exported no role:\n%s", out)
+	}
+}
+
+// The three guards. Each one is a case where supplying a role would take
+// something away rather than add it.
+func TestTheGroupFallbackIsWithheldWhereItWouldCost(t *testing.T) {
+	// A tag whose implicit role is not `generic` can already carry a name, and
+	// writing a role onto it would replace the browser's.
+	for _, nodeType := range []string{"Button", "Image", "Input"} {
+		n := &core.Node{Type: nodeType, Style: &core.Style{AccessibilityLabel: "Close"}}
+		if out := ExportHTML(n); strings.Contains(out, `role="group"`) {
+			t.Errorf("%s was given a group role, replacing the one its tag implies:\n%s",
+				nodeType, out)
+		}
+	}
+
+	// A Modal is a dialog by virtue of being a Modal, and a dialog is
+	// nameable. The fallback must not turn one into a group.
+	modal := &core.Node{Type: "Modal", Style: &core.Style{AccessibilityLabel: "Confirm"}}
+	out := ExportHTML(modal)
+	if !strings.Contains(out, `role="dialog"`) || strings.Contains(out, `role="group"`) {
+		t.Errorf("a named Modal should stay a dialog:\n%s", out)
+	}
+
+	// An author who said what the node is keeps their word.
+	authored := &core.Node{Type: "Box", Style: &core.Style{
+		AccessibilityRole: core.RoleImg, AccessibilityLabel: "Compass, north"}}
+	if out := ExportHTML(authored); strings.Contains(out, `role="group"`) {
+		t.Errorf("an authored role was overwritten by the fallback:\n%s", out)
+	}
+
+	// aria-hidden still wins alone: there is no element in the accessibility
+	// tree for either the name or the role to describe.
+	hidden := &core.Node{Type: "Box", Style: &core.Style{
+		AccessibilityHidden: true, AccessibilityLabel: "Close"}}
+	if out := ExportHTML(hidden); strings.Contains(out, "role=") {
+		t.Errorf("a hidden node was given a role:\n%s", out)
+	}
+}
+
+// core.Style.AccessibilityID and core.Style.AccessibilityControls, the
+// vocabulary's only two references. Both are written verbatim, in both
+// directions, and nothing checks that the target exists — see
+// accessibilityAttrs.
+func TestTheIDRefPairExportsVerbatim(t *testing.T) {
+	tab := &core.Node{Type: "Box", Style: &core.Style{
+		AccessibilityRole:     core.RoleTab,
+		AccessibilityID:       "home-tab",
+		AccessibilityControls: "app-panel",
+	}}
+	out := ExportHTML(tab)
+	for _, want := range []string{`id="home-tab"`, `aria-controls="app-panel"`, `role="tab"`} {
+		if !strings.Contains(out, want) {
+			t.Errorf("missing %s:\n%s", want, out)
+		}
+	}
+
+	// A reference to nothing is inert rather than an error: one export is one
+	// tree, and the document it lands in is not this package's to index.
+	dangling := &core.Node{Type: "Box", Style: &core.Style{AccessibilityControls: "elsewhere"}}
+	if out := ExportHTML(dangling); !strings.Contains(out, `aria-controls="elsewhere"`) {
+		t.Errorf("a dangling aria-controls should still be written:\n%s", out)
 	}
 }
 

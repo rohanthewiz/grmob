@@ -246,24 +246,37 @@ already going to the wrong one. Deriving it this way also makes the ids the
 *same strings* `htmlout` writes rather than merely the same shape, so the
 contract the two web targets share is the literal id.
 
-A page opts out of being a panel five ways, each a case where wiring it would
+A page opts out of being a panel six ways, each a case where wiring it would
 say something false:
 
 | The page… | Why it is left alone |
 |---|---|
 | has no tab at its index | a `tabpanel` outside a tab set, with nothing for the `aria-controls` to sit on |
 | renders as an element that already has a role (`<button>`, `<img>`, `<input>`) | `role="tabpanel"` would *replace* the role the browser gave it — see `GENERIC_TAGS`, pinned to Go's `genericTags` by `TestRuntimeGenericTagsMatchGo` |
-| carries a `core.AccessibilityRole` | the author already said what it is, and the same theft applies |
+| carries a `core.AccessibilityRole` other than `RoleGroup` | the author already said what it is, and the same theft applies |
 | is a node type that states its own role (a `Modal` is a `dialog`) | the same theft, one layer down — and the attribute has one slot |
 | is `AccessibilityHidden` | the author severed the relationship on purpose |
+| carries a `core.AccessibilityID` | the author's own string is in the slot the wiring needs for the panel id, and something else on the page is pointing at it — taking it would break a relationship rather than replace a word |
+
+`RoleGroup` is the one role that is **not** theft to replace, and the exemption
+is load-bearing rather than a nicety. A group says these things belong together
+and this is what they are called; a `tabpanel` says all of that *and* which tab
+shows it, so writing one over the other adds a fact. And both web targets
+*supply* a group to any named page whether the author asked or not
+([`RoleGroup`](../concepts/styling-and-theming.md#rolegroup-and-the-one-role-you-get-without-asking)),
+so treating it as authored would silently stop every page with an
+`AccessibilityLabel` from being wired at all.
 
 The role case shares one attribute between several writers — the author's
-`core.AccessibilityRole`, a `Modal`'s own chassis, and this wiring — so the
-runtime tells them apart by value: `tabpanel` is not one of `core.Role`'s
-spellings and is not a chassis role, so an element carrying it got it from the
-wiring and nothing else ever did. That is
-what lets the sync clear its own mark without clearing the author's, and it is
-pinned by `TestNoRoleCollidesWithTheTabPanelWiring`.
+`core.AccessibilityRole`, the group the exporter supplies, a `Modal`'s own
+chassis, and this wiring — so the runtime tells them apart by value: `tabpanel`
+is not one of `core.Role`'s spellings and is not a chassis role, so an element
+carrying it got it from the wiring and nothing else ever did. That is what lets
+the sync clear its own mark without clearing the author's, and it is pinned by
+`TestNoRoleCollidesWithTheTabPanelWiring`. When it does clear the mark it puts
+back what the exporter would have left — `group` on a named page, nothing on an
+unnamed one — because a page that stops being wired must not fall back into the
+silence the group role exists to close.
 
 In each case the tab drops its `aria-controls` too: a dangling IDREF — a tab
 announcing a region that is not there — is worse than a tab that has simply not
@@ -272,8 +285,8 @@ own `AccessibilityLabel`, because the reference wins over `aria-label` in the
 accessible-name calculation and would silently discard the name the app author
 chose.
 
-`htmlout` applies the same three rules and asks one more question this runtime
-does not have to: *which* element stands in for the page. It drops the box for
+`htmlout` applies the same rules and asks one more question this runtime does
+not have to: *which* element stands in for the page. It drops the box for
 a `Fragment` or a `Theme` (see the tag table's exemption below), so a page that
 is one of those is wired on the single element standing in for it, or not at
 all when there are several. Here page *i* is always exactly the element in

@@ -1,9 +1,11 @@
 package components
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/rohanthewiz/grmob/core"
+	"github.com/rohanthewiz/grmob/htmlout"
 )
 
 // middleOf returns the row's growing centre column — the Column child whose
@@ -435,5 +437,60 @@ func TestSelectableDoesNotChangeTheSelectedLook(t *testing.T) {
 
 	if plain.Style.Background != option.Style.Background {
 		t.Errorf("background differs: %q vs %q", plain.Style.Background, option.Style.Background)
+	}
+}
+
+// An unroled row's name reaches a browser at all.
+//
+// This is the oldest of the two silences the widget documents and the one that
+// was never the widget's to fix: a ListRow with an AccessibilityLabel and
+// neither Selectable nor NestingLevel is a plain Box, ARIA prohibits an
+// accessible name on the `generic` role a <div> carries, and both web targets
+// dropped it while both natives read it out. core.RoleGroup — supplied by the
+// exporters rather than set here — is what closed it.
+//
+// Asserted through the export rather than on the node, because the node is
+// exactly what it always was. The fix is downstream of this widget, and this
+// test's job is to prove the widget's rows are on the right side of it.
+func TestAnUnroledRowsNameIsAnnouncedOnTheWeb(t *testing.T) {
+	ctx := core.NewContext()
+	n := ListRow{Title: "Ana", AccessibilityLabel: "Ana, 3 unread"}.Render(ctx)
+
+	// The widget itself states no role: that is the premise, not an oversight.
+	if n.Style != nil && n.Style.AccessibilityRole != core.RoleNone {
+		t.Fatalf("an unroled row should still state no role, got %q", n.Style.AccessibilityRole)
+	}
+
+	html := htmlout.ExportHTML(n)
+	if !strings.Contains(html, `aria-label="Ana, 3 unread"`) {
+		t.Fatalf("the name did not reach the export:\n%s", html)
+	}
+	if !strings.Contains(html, `role="group"`) {
+		t.Errorf("no role to carry the name, so no browser announces it:\n%s", html)
+	}
+}
+
+// The two roles the widget *does* state keep the slot. A row that is one
+// choice in a listbox, or one item at a depth, has already said what it is,
+// and the fallback only ever fills an empty slot.
+func TestARoledRowKeepsItsOwnRole(t *testing.T) {
+	ctx := core.NewContext()
+	for _, tc := range []struct {
+		name string
+		row  ListRow
+		want string
+	}{
+		{"selectable", ListRow{Title: "Weekly", Selectable: true, Selected: true,
+			AccessibilityLabel: "Weekly"}, `role="option"`},
+		{"nested", ListRow{Title: "Matthew", NestingLevel: 2,
+			AccessibilityLabel: "Matthew"}, `role="listitem"`},
+	} {
+		html := htmlout.ExportHTML(tc.row.Render(ctx))
+		if !strings.Contains(html, tc.want) {
+			t.Errorf("%s: missing %s:\n%s", tc.name, tc.want, html)
+		}
+		if strings.Contains(html, `role="group"`) {
+			t.Errorf("%s: the fallback overwrote the row's own role:\n%s", tc.name, html)
+		}
 	}
 }

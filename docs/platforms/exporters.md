@@ -58,9 +58,12 @@ indented HTML. Properties worth relying on:
   *same strings* the WASM runtime writes for the same tree rather than merely
   the same shape. A page whose element already has a role — from the browser
   (`<button>`, `<img>`, an input) or from the author's own
-  `core.AccessibilityRole` — one no tab names, or one marked
-  `AccessibilityHidden` is left unwired, and its tab drops the `aria-controls`
-  with it. See
+  `core.AccessibilityRole` — one carrying its own `core.AccessibilityID`, one
+  no tab names, or one marked `AccessibilityHidden` is left unwired, and its
+  tab drops the `aria-controls` with it. `core.RoleGroup` is the one authored
+  role that is *not* theft to replace, since a `tabpanel` says everything a
+  group says and one thing more — and it has to be, because the exporter
+  supplies a group to any named page whether the author asked or not. See
   `htmlout/tabview.go` and [WASM — Tab views](wasm.md#tab-views), which draws
   the same chrome live and states the reasoning for the pair.
 - **A `Modal` is a dialog.** The overlay carries `role="dialog"` and
@@ -72,6 +75,20 @@ indented HTML. Properties worth relying on:
   style already outranks the chassis. `htmlout.CarriesOwnRole` is how the tab
   wiring knows to leave such a page alone rather than writing a second `role`
   onto it.
+- **A named container is given `role="group"`.** ARIA prohibits an accessible
+  name on the `generic` role a `<div>` and a `<span>` carry, and browsers prune
+  it, so an `AccessibilityLabel` on any layout node was announced by both
+  natives and by nothing on either web target. A node with a name, no role of
+  its own and a generic tag is written `role="group"` — the smallest role that
+  makes a name legal. An author's own role always wins. See
+  [Styling & Theming](../concepts/styling-and-theming.md#rolegroup-and-the-one-role-you-get-without-asking).
+- **An `id` and an `aria-controls`** come from `core.Style.AccessibilityID` and
+  `core.Style.AccessibilityControls`, verbatim in both directions, and nothing
+  checks that the target of one exists — an export is a snapshot of one tree
+  and has no index of the document it lands in. A dangling IDREF is inert, the
+  same trade `aria-description` makes. They are what lets a hand-built tab
+  strip say which region each tab governs; see
+  [Styling & Theming](../concepts/styling-and-theming.md#accessibilityid-and-accessibilitycontrols).
 - **A heading's tier is `aria-level`,** written only alongside
   `role="heading"` and only for 1–6 — ARIA's own scoping, and a drop rather
   than a clamp. See

@@ -1,9 +1,11 @@
 package components
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/rohanthewiz/grmob/core"
+	"github.com/rohanthewiz/grmob/htmlout"
 )
 
 // renderPass drives one framework-shaped pass over a view, the sequence
@@ -77,5 +79,40 @@ func TestAccordionHeaderSlot(t *testing.T) {
 	}
 	if findText(n, "For accessibility") != nil {
 		t.Error("default title text should be suppressed when Header is set")
+	}
+}
+
+// The header's name reaches a browser.
+//
+// An Accordion header is a Row with an AccessibilityLabel, an
+// AccessibilityHint and no role — which on both web targets meant a name ARIA
+// prohibits on `generic` and every browser drops, while VoiceOver and TalkBack
+// announced it. core.RoleGroup, supplied by the exporters, closes that.
+//
+// `group` is also the right claim for this row rather than merely a legal one:
+// it leaves the heading inside readable. role="button" — ARIA's own disclosure
+// control — makes its children presentational, so the Title would stop being a
+// heading, which is the whole point of putting the tier on the words. The
+// second assertion is that pairing, since it is what would break if anyone
+// ever swapped the role for the more obvious one.
+func TestTheHeaderRowIsNamedAndKeepsItsHeadingInside(t *testing.T) {
+	ctx := core.NewContext()
+	n := Accordion{Title: "What is a hook", Content: core.Text("state")}.Render(ctx)
+
+	html := htmlout.ExportHTML(n)
+	for _, want := range []string{
+		`role="group"`,
+		`aria-label="What is a hook"`,
+		`aria-description="Expands or collapses the section"`,
+		`role="heading"`,
+		`aria-level="3"`,
+	} {
+		if !strings.Contains(html, want) {
+			t.Errorf("missing %s:\n%s", want, html)
+		}
+	}
+	if strings.Contains(html, `role="button"`) {
+		t.Errorf("a button header would make the title presentational and drop its "+
+			"heading role:\n%s", html)
 	}
 }

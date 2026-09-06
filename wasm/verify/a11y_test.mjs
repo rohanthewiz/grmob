@@ -399,3 +399,96 @@ test("aria-hidden beats a selected state too", () => {
     assert.equal(at(0).getAttribute("aria-selected"), null);
     assert.equal(at(0).getAttribute("role"), null);
 });
+
+// --------------------------------------------------------------------------
+// The supplied group role, and the two IDREFs
+// --------------------------------------------------------------------------
+
+test("a named container is given the group role", () => {
+    // ARIA prohibits an accessible name on `generic`, which is the implicit
+    // role of every <div> and <span> this runtime creates, and browsers
+    // enforce that by dropping the name. `group` is the smallest role that
+    // makes it legal. See ariaRole in the runtime and core.RoleGroup.
+    const { at } = mount([
+        { Type: "Box", Style: { AccessibilityLabel: "Unread messages" } },
+        { Type: "Text", Props: { text: "*" }, Style: { AccessibilityLabel: "required" } },
+    ]);
+
+    assert.equal(at(0).getAttribute("role"), "group");
+    assert.equal(at(0).getAttribute("aria-label"), "Unread messages");
+    assert.equal(at(1).getAttribute("role"), "group");
+});
+
+test("the group role is withheld where it would take something away", () => {
+    const { at } = mount([
+        // A <button> can carry a name already; a role here would replace the
+        // one the browser gives it.
+        { Type: "Button", Props: { label: "x" }, Style: { AccessibilityLabel: "Close" } },
+        // An author who said what the node is keeps their word.
+        { Type: "Box", Style: { AccessibilityRole: "img", AccessibilityLabel: "Compass" } },
+        // Nothing to rescue.
+        { Type: "Box", Style: { BorderRadius: 4 } },
+        // aria-hidden still wins alone.
+        { Type: "Box", Style: { AccessibilityHidden: true, AccessibilityLabel: "Close" } },
+    ]);
+
+    assert.equal(at(0).getAttribute("role"), null);
+    assert.equal(at(1).getAttribute("role"), "img");
+    assert.equal(at(2).getAttribute("role"), null);
+    assert.equal(at(3).getAttribute("role"), null);
+});
+
+test("a named Modal stays a dialog", () => {
+    // The dialog case is answered before ariaRole is consulted, and a dialog
+    // is nameable, so there is nothing for the fallback to rescue.
+    const rt = loadRuntime();
+    rt.GrMob.mount(JSON.stringify({
+        Type: "Column",
+        Children: [{ Type: "Modal", Style: { AccessibilityLabel: "Confirm" } }],
+    }));
+    rt.drainFrames();
+    const el = nodeAt(rt.document, "root/0");
+    assert.equal(el.getAttribute("role"), "dialog");
+});
+
+test("the supplied role goes away with the name that earned it", () => {
+    // The totality rule: an update-style carries the whole new Style, so a
+    // name back at its zero value means the role it unlocked has to go too.
+    const { rt, at } = mount([{ Type: "Box", Style: { AccessibilityLabel: "Unread" } }]);
+    assert.equal(at(0).getAttribute("role"), "group");
+
+    rt.GrMob.patch(JSON.stringify([{
+        Type: "update-style",
+        TargetID: "root/0",
+        Changes: { BorderRadius: 4 },
+    }]));
+    rt.drainFrames();
+
+    assert.equal(at(0).getAttribute("role"), null);
+    assert.equal(at(0).getAttribute("aria-label"), null);
+});
+
+test("an id and an aria-controls cross verbatim, in both directions", () => {
+    const { rt, at } = mount([{
+        Type: "Box",
+        Style: {
+            AccessibilityRole: "tab",
+            AccessibilityID: "home-tab",
+            AccessibilityControls: "app-panel",
+        },
+    }]);
+
+    assert.equal(at(0).getAttribute("id"), "home-tab");
+    assert.equal(at(0).getAttribute("aria-controls"), "app-panel");
+
+    // Total, like every other attribute here.
+    rt.GrMob.patch(JSON.stringify([{
+        Type: "update-style",
+        TargetID: "root/0",
+        Changes: { AccessibilityRole: "tab" },
+    }]));
+    rt.drainFrames();
+
+    assert.equal(at(0).getAttribute("id"), null);
+    assert.equal(at(0).getAttribute("aria-controls"), null);
+});

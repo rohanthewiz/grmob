@@ -615,3 +615,84 @@ func TestNoRoleCollidesWithTheTabPanelWiring(t *testing.T) {
 		}
 	}
 }
+
+// The three attributes the panel wiring and a node's own Style both reach for,
+// on one document.
+//
+// This is the interaction that gets missed rather than the rule that gets
+// broken: each half is obviously right on its own, and the failure only exists
+// where a page carries a name or an id. HTML gives an element one value per
+// attribute name and a browser keeps the *first*, so a second role= would not
+// be additive — it would decide the panel's role by document order.
+func TestThePanelWiringAndTheNodesOwnSemanticsShareOneSlot(t *testing.T) {
+	page := func(s *core.Style) *core.Node { return &core.Node{Type: "Box", Style: s} }
+	n := &core.Node{
+		Type: "TabView",
+		Props: map[string]any{"selectedIndex": 0, "tabs": []map[string]string{
+			{"label": "A"}, {"label": "B"}, {"label": "C"},
+		}},
+		Children: []*core.Node{
+			// Named, unroled: ariaRole would supply `group`, and the wiring
+			// writes `tabpanel`. Exactly one of them may reach the document.
+			page(&core.Style{AccessibilityLabel: "Page A"}),
+			// The author took the id slot, and something else on their page is
+			// pointing at that string. The wiring stands down entirely.
+			page(&core.Style{AccessibilityID: "mine"}),
+			// An authored group is the one role the wiring may replace: a
+			// tabpanel says everything a group says and one thing more. No
+			// name of its own, so this is also the page that takes the
+			// aria-labelledby the other two decline.
+			page(&core.Style{AccessibilityRole: core.RoleGroup}),
+		},
+	}
+	out := ExportHTML(n)
+
+	// Three tabs and two panels, and no element carrying two roles: 3 tabs +
+	// 1 tablist + 2 tabpanels.
+	if got := strings.Count(out, "role="); got != 6 {
+		t.Errorf("expected 6 role attributes (tablist, 3 tabs, 2 panels), got %d:\n%s",
+			got, out)
+	}
+	if strings.Contains(out, `role="group"`) {
+		t.Errorf("a wired panel kept the role it would have had unwired, so the element "+
+			"carries two:\n%s", out)
+	}
+	for _, want := range []string{
+		// The named page is a panel and keeps the name the author chose;
+		// aria-labelledby is withheld because the reference would win over it.
+		`aria-label="Page A" id="grmob-root-panel-0" role="tabpanel"`,
+		// The authored group was replaced, and the wiring named it from its tab.
+		`id="grmob-root-panel-2" role="tabpanel" aria-labelledby="grmob-root-tab-2"`,
+		// Both wired tabs point at their page.
+		`aria-controls="grmob-root-panel-0"`,
+		`aria-controls="grmob-root-panel-2"`,
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("missing %s:\n%s", want, out)
+		}
+	}
+
+	// The page with its own id keeps it, is not a panel, and its tab says
+	// nothing about what it governs — a dangling IDREF is worse than an
+	// absent one.
+	if !strings.Contains(out, `id="mine"`) {
+		t.Errorf("the author's id was taken by the wiring:\n%s", out)
+	}
+	if strings.Contains(out, "grmob-root-panel-1") {
+		t.Errorf("page 1 was wired despite carrying its own id:\n%s", out)
+	}
+}
+
+// The other end of the same rule: nothing outside a TabView loses its supplied
+// role, so the suppression is scoped to the one container that imposes one.
+func TestOnlyTheTabWiringSuppressesANodesOwnRole(t *testing.T) {
+	// A ZStack imposes a *declaration* on its children and no attributes, so a
+	// named layer keeps the role ariaRole gives it.
+	n := &core.Node{
+		Type:     "ZStack",
+		Children: []*core.Node{{Type: "Box", Style: &core.Style{AccessibilityLabel: "Overlay"}}},
+	}
+	if out := ExportHTML(n); !strings.Contains(out, `role="group"`) {
+		t.Errorf("a named layer lost its role:\n%s", out)
+	}
+}

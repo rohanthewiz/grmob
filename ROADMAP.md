@@ -191,7 +191,7 @@
       (`Heading.HasTrue` needs location authorization and the compass host
       prompts for nothing on purpose)
 - [x] Accessibility labels, hints and announced selection state
-- [x] Accessibility *roles* (`core.AccessibilityRole`, twenty-two ARIA-spelled
+- [x] Accessibility *roles* (`core.AccessibilityRole`, twenty-three ARIA-spelled
       values) — `role=` on both web targets, traits on SwiftUI and semantics
       on Compose where those vocabularies reach, and an explicit no-op arm
       where they do not; pinned in both natives by `mobile/verify/role_test.go`.
@@ -208,10 +208,42 @@
       and no strip, SwiftUI `.isTabBar` and no tab. There is deliberately no
       `RoleTabPanel`: a panel is one end of a relationship whose other half is
       an IDREF a `Style` cannot carry, and `core.TabView` owns both ends.
-      `RoleListBox`/`RoleOption` are the newest pair and the one that unblocked
-      a widget rather than described one: `aria-selected` is scoped to
-      `option` and not to `listitem`, so a selectable row had no role that
-      could carry its state — see `ListRow.Selectable` below
+      `RoleListBox`/`RoleOption` unblocked a widget rather than described one:
+      `aria-selected` is scoped to `option` and not to `listitem`, so a
+      selectable row had no role that could carry its state — see
+      `ListRow.Selectable` below
+- [x] **A name on a plain container is announced at all** (`core.RoleGroup`) —
+      the general answer to the failure `RoleImg` closed for one widget. ARIA
+      prohibits an accessible name on the `generic` role a `<div>` and a
+      `<span>` carry and browsers prune it, so an `AccessibilityLabel` on any
+      layout node was read out by VoiceOver and TalkBack and by nothing on
+      either web target — a two-target silence that hit every labelled
+      `ListRow`, every `Accordion` header, every named `StatTile` and
+      `Skeleton`. Both web exporters now *supply* `role="group"` to a node with
+      a name, no role and a generic tag, so no call site changed. `group` is
+      the smallest role that makes a name legal — nameable, not a landmark, no
+      required children, children not made presentational — which is what lets
+      it be given to a container nothing has looked inside; `region` would put
+      six rows in a screen's table of contents and `button` would silence the
+      heading inside an `Accordion` header. It is the one arm both natives
+      leave empty because they do not *need* it rather than cannot say it
+- [x] **A hand-built tab strip can point at its panel**
+      (`core.AccessibilityID` / `core.AccessibilityControls`) — the
+      vocabulary's only two *references*, where everything else on `Style` is a
+      value. `core.TabView` mints its own ids and writes the whole tab/panel
+      wiring from the node type, so the wired case never needed them; a strip
+      assembled out of chips — which is what you build for a bar that looks
+      different — could say `role="tab"` and `role="tablist"` and then had no
+      way at all to say which region each tab shows. The line that keeps this
+      from becoming a second ARIA: *a reference prop earns its place only when
+      what it points at cannot be said as a value* — `aria-labelledby` and
+      `aria-describedby` point at text `AccessibilityLabel` and
+      `AccessibilityHint` already carry, and `aria-controls` points at another
+      element, which no string stands in for. Adopted by `examples/social`'s
+      bottom bar, the app the gap was noticed in. Neither native reads either
+      key: no such relationship exists in their vocabularies, and the near miss
+      (`accessibilityIdentifier` / `testTag`) is a test selector rather than an
+      accessibility property
 - [x] A widget can say **this control is on** (`core.AccessibilitySelected`) —
       `aria-selected` or `aria-pressed` on both web targets (the role picks,
       which is `aria-level`'s switch running the other way), `selected`

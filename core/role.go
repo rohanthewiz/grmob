@@ -39,11 +39,11 @@ package core
 //	status        | role="status"   | —              | liveRegion = Polite
 //	alert         | role="alert"    | —              | liveRegion = Assertive
 //	log           | role="log"      | —              | liveRegion = Polite
-//	the other 11  | role=…          | —              | —
+//	the other 12  | role=…          | —              | —
 //
-// The other eleven are table, rowgroup, row, cell, list, listitem, listbox,
-// option, banner, navigation and toolbar — the tabular set, both collection
-// pairs, and the landmarks.
+// The other twelve are table, rowgroup, row, cell, list, listitem, listbox,
+// option, banner, navigation, toolbar and group — the tabular set, both
+// collection pairs, the landmarks, and the naming role.
 //
 // The tab pair is the one row of that table where the two natives disagree
 // about *which half* they can say, and it is a useful illustration of why the
@@ -53,7 +53,7 @@ package core
 // supplied the pair, and a caller marking up a tab strip sets both and gets
 // whichever half each platform knows.
 //
-// Eleven of the twenty-two do nothing on either native, and that is the
+// Twelve of the twenty-three do nothing on either native, and that is the
 // honest state of those platforms rather than a gap to be filled later:
 // neither has a tabular semantics vocabulary a role can be mapped onto (Compose
 // has collectionInfo, which describes counts and indices this prop does not
@@ -61,6 +61,13 @@ package core
 // chosen item as a *state* instead, which is why the selectable pair costs
 // them nothing to leave out — see RoleListBox), and neither has landmarks at
 // all — VoiceOver's rotor navigates by heading, not by banner.
+//
+// RoleGroup is the one empty pair in that twelve that is empty for the
+// opposite reason, and it is worth telling apart. The other eleven are silent
+// because the platform has no way to say the thing; `group` is silent because
+// neither platform *needs* it — both honour an accessibility label on any node
+// at all, and making that label legal is the whole of what the role does. See
+// its own block below.
 //
 // A role that maps to nothing is still worth setting. The web is a first-class
 // target here, the mapping can improve later without the call sites changing,
@@ -378,13 +385,14 @@ const (
 // is "N W E S" whatever direction it is pointing, so the widget hides its
 // parts and speaks once.
 //
-// It is also the role that makes such a label *work at all* on the web. ARIA
-// forbids an accessible name on a generic element, so an AccessibilityLabel on
-// a plain container — which is what every core layout node exports as — is
-// dropped by screen readers rather than announced. The two natives are more
-// forgiving (a contentDescription and an accessibilityLabel are honored on
-// anything), which is exactly what makes this the kind of gap that ships: it
-// works on the two targets a developer is most likely to be testing on.
+// It was also, for a while, the only role that made such a label *work at all*
+// on the web: ARIA forbids an accessible name on a generic element, so an
+// AccessibilityLabel on a plain container was dropped by screen readers rather
+// than announced. RoleGroup below is now the general answer to that, and the
+// division between the two is what the node is rather than what it needs — an
+// img stands in for its parts and should hide them, a group names them and
+// leaves them readable. Reach for this one only when the picture reading is
+// true.
 //
 // A node with this role should hide its children, or the reader gets the
 // alternative *and* the parts it was standing in for.
@@ -395,16 +403,87 @@ const (
 	RoleImg     Role = "img"
 )
 
+// The naming role: the least a container can be, and the only thing that makes
+// an accessible name on one legal at all.
+//
+// # The silence it closes
+//
+// Every layout node in this framework exports as a <div> or a <span>, and both
+// tags carry the implicit ARIA role `generic`. ARIA prohibits an accessible
+// name on `generic` — aria-label and aria-labelledby are listed under "roles
+// which cannot be named" — and browsers enforce it by pruning the name from
+// the accessibility tree. So:
+//
+//	core.Box(core.AccessibilityLabel("Unread messages"), …)
+//
+// wrote a correct-looking attribute that no screen reader on either web target
+// announced, while VoiceOver and TalkBack read it out perfectly, because a
+// SwiftUI accessibilityLabel and a Compose contentDescription are honoured on
+// any node without asking what it is. Two targets silent, two fine — which is
+// what let it ship: the two that work are the two a developer is most likely
+// to be testing on.
+//
+// RoleImg was the first door out and it is the wrong shape for most rows. It
+// says the node is a *picture* whose parts should be hidden behind one
+// alternative, which is true of components.Compass and false of a list row, a
+// disclosure header or a stat tile — all of which want their contents read as
+// well as their name.
+//
+// # Why `group` and not one of the louder candidates
+//
+//	region     also nameable, and a landmark. A reader adds every region to
+//	           the list it jumps between, so naming six rows would put six
+//	           entries in a screen's table of contents.
+//	button     claims a control, makes its children presentational (a heading
+//	           inside one stops being a heading), and is a foreign child of any
+//	           list around it — see components.ListRow, which turned it down
+//	           for exactly that.
+//	group      "a set of user interface objects", nameable, not a landmark,
+//	           and with no required children and no presentational-children
+//	           rule. It says these things belong together and this is what they
+//	           are called, and nothing else.
+//
+// That "nothing else" is the whole recommendation. A role is a claim, and the
+// structural rule above says a claim a container cannot keep is worse than no
+// role at all; `group` is the one value in this vocabulary that promises
+// nothing about what it holds, so it can be given to a container nobody has
+// looked inside.
+//
+// # It is also a fallback, not only a constant
+//
+// Because the silence is a framework bug rather than an author's mistake, the
+// two web exporters supply this role themselves: a node with an accessible
+// name, no role of its own, and a generic tag is written role="group" so the
+// name is heard. An author who says anything more specific wins — the fallback
+// only ever fills an empty slot. See accessibilityAttrs in htmlout/export.go
+// and applyAccessibility in wasm/grmob-runtime.js, which restate one rule.
+//
+// The fallback cannot make anything worse, which is the argument for doing it
+// silently. Before it, the name was invalid ARIA that was dropped; after it,
+// the name is valid ARIA that is announced. The one thing it could disturb is
+// a structural container's claim about its children — but a generic div inside
+// a role="list" was never a `listitem` either, so a `group` there is the same
+// foreign child it already was, one attribute louder.
+//
+// # Both natives leave it empty for the opposite of the usual reason
+//
+// Nine of the roles here are inert on SwiftUI and Compose because those
+// platforms have no way to say the thing. This one is inert because they have
+// no need to: both already announce a label on any node, so the role that
+// makes the label legal buys them nothing. Setting it therefore costs nothing
+// anywhere and closes a two-target silence.
+const RoleGroup Role = "group"
+
 // Roles returns every declared Role except RoleNone, in declaration order.
 //
 // RoleNone is excluded because it is the absence of a role rather than one of
 // them: it is the field's zero value, no renderer has an arm for it, and a
 // coverage check that demanded one would be asking each renderer to implement
 // "unset". Everything downstream that iterates roles — the native dispatch
-// pins, the DOM export test — wants the twenty-two that do something.
+// pins, the DOM export test — wants the twenty-three that do something.
 //
 // A fresh slice per call rather than a package-level var, which any importer
-// could write to. Twenty-two elements are cheaper to build than to defend.
+// could write to. Twenty-three elements are cheaper to build than to defend.
 //
 // Pinned to the const blocks above by role_enum_test.go, which reads this
 // file's syntax tree: adding a constant without adding it here should fail
@@ -419,5 +498,6 @@ func Roles() []Role {
 		RoleBanner, RoleNavigation, RoleSearch, RoleToolbar,
 		RoleStatus, RoleAlert, RoleLog,
 		RoleHeading, RoleButton, RoleLink, RoleImg,
+		RoleGroup,
 	}
 }
