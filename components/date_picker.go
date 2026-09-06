@@ -182,15 +182,25 @@ func (p DatePicker) trigger(ctx *core.Context, open core.State[bool], month core
 	items := make([]core.PropsAndChildren, 0, len(p.Style)+10)
 	items = append(items,
 		// The theme's own field chrome, so a picker sitting between two text
-		// inputs is the same height and the same fill as they are.
+		// inputs is the same height, the same fill and the same edge as they
+		// are.
+		//
+		// The edge used to be added here — a hairline in Colors.Border, on
+		// top of the base — because the theme's Input entry carried no rule
+		// and this control needs one: a text field can get away with no edge,
+		// since a caret and a keyboard announce it the moment it is touched,
+		// while a summary that only reports a value has to look like a
+		// control before it is touched, and on DefaultTheme its fill is the
+		// page's own white.
+		//
+		// Both bundled themes now state a field frame, so the base carries
+		// it, and inheriting is strictly better than restating: the divider
+		// role this used to reach for is a 1.26:1 hairline, where a boundary
+		// that identifies a control has a 3:1 floor under it (WCAG 1.4.11),
+		// which is the split ColorPalette.Border now describes. Restating it
+		// would have quietly *paled* the picker's edge below the fields
+		// beside it the moment the themes moved.
 		core.UseStyle(t.Components.Input),
-		// Plus the hairline the theme's Input entry does not carry. A text
-		// field can get away with no edge because a caret and a keyboard
-		// announce it the moment it is touched; a summary that only reports a
-		// value has to look like a control before it is touched, and on
-		// DefaultTheme its fill is the page's own white.
-		core.BorderWidth(1),
-		core.BorderColor(t.Colors.BorderColor()),
 		core.AlignItemsProp(core.AlignItemsCenter),
 		core.Gap(float64(t.Spacing.SM)),
 	)

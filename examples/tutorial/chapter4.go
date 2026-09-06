@@ -370,6 +370,24 @@ var teamMembers = []teamMember{
 	{"Sal Tunnels", "Theme therapist", ""},
 }
 
+// outlineNode is one line of 4.3's flattened-tree demo: a title and how deep
+// it sits. A flat slice, not a tree of children, because that is the shape the
+// demo is about — a list is a flat run of siblings, so the depth has to travel
+// as data rather than as structure.
+type outlineNode struct {
+	title string
+	depth int
+}
+
+var canonOutline = []outlineNode{
+	{"New Testament", 1},
+	{"Gospels", 2},
+	{"Matthew", 3},
+	{"Mark", 3},
+	{"Letters", 2},
+	{"Romans", 3},
+}
+
 func lessonListRow() Lesson {
 	return Lesson{
 		Title:   "ListRow & Avatar",
@@ -433,15 +451,75 @@ func lessonListRow() Lesson {
 						caption("Selected: "+selected.Get()),
 					),
 				),
+				prose("A row can also say how deep it sits. NestingLevel makes it a listitem at "+
+					"that depth, which is the one thing an indented outline cannot say any other "+
+					"way: a list is a flat run of siblings — that is what makes it virtualizable "+
+					"— so the nesting lives in the data and the indent is pixels a screen reader "+
+					"never sees. The field is opt-in because it needs a partner: a listitem is "+
+					"owned by a list, and a row cannot see its own container, so you put RoleList "+
+					"on the list and the depth on each row. Ask for neither and a row is the "+
+					"unroled box it has always been."),
+				codeBlock(`core.List(
+    core.AccessibilityRole(core.RoleList),
+    components.ListRow{Title: "Gospels", NestingLevel: 2},
+    components.ListRow{Title: "Matthew", NestingLevel: 3,
+        Style: []core.StyleProp{indentBy(3)}},   // pixels; the level is the announcement
+)`),
+				demoPanel("Six rows, one flat list, three depths. The indent is decoration; NestingLevel is what a reader hears.",
+					outlineDemo(),
+				),
 				keyPoints(
 					"Slots are core.View fields: Leading and Trailing take any view; Content replaces Title/Subtitle when set.",
 					"The middle column always renders, always FlexGrow(1) — that spine is what pins Trailing to the edge.",
 					"OnTap nil registers nothing: a presentational row carries no callback and no gesture recognizer on any platform.",
 					"ListRow synthesizes no accessibility name — its slots carry meaning it can't see, so you name the row; Avatar does synthesize one, and hides itself when nameless.",
+					"NestingLevel makes a row a listitem at a depth — the only way a flattened outline can be more than an indent; put RoleList on the list yourself.",
 				),
 			)
 		},
 	}
+}
+
+// outlineDemo is the flattened tree: one core.List carrying the list role, six
+// ListRows carrying their depths, indented by the same number that is
+// announced.
+//
+// The indent is derived from the depth rather than stored beside it, which is
+// the demo's whole argument in one line: the pixels and the announcement are
+// two renderings of one fact, and a reader who gets only the pixels gets
+// nothing.
+func outlineDemo() core.View {
+	return core.ComponentFunc(func(ctx *core.Context) *core.Node {
+		items := []core.PropsAndChildren{
+			core.Gap(2),
+			core.Padding(0),
+			// The other half of the pair. Without it every row below is an
+			// orphan listitem — a role naming a structure that is not there,
+			// which core/role.go calls worse than no role at all.
+			core.AccessibilityRole(core.RoleList),
+		}
+		for _, n := range canonOutline {
+			items = append(items, core.Keyed(n.title, components.ListRow{
+				Title:        n.title,
+				NestingLevel: n.depth,
+				Style:        []core.StyleProp{indentBy(n.depth)},
+			}))
+		}
+		return core.List(items...).Render(ctx)
+	})
+}
+
+// indentBy is the pixels half of a depth: one step of left inset per level.
+//
+// A whole EdgeInsets through UseStyle rather than a left-side prop, because
+// core has none — Padding, PaddingTop, PaddingHorizontal and PaddingVertical
+// are the set — and a merged EdgeInsets states the row's shape in one place
+// instead of leaving three sides to the theme's Row base and overriding a
+// fourth.
+func indentBy(depth int) core.StyleProp {
+	return core.UseStyle(core.Style{
+		Padding: core.EdgeInsets{Left: 16 * depth, Right: 16, Top: 4, Bottom: 4},
+	})
 }
 
 // --- 4.4 -----------------------------------------------------------------
@@ -506,11 +584,23 @@ func lessonAccordion() Lesson {
 					"appear and disappear with the toggle — the conditional-hook bug with a "+
 					"tap-target attached. Interactive hook-free content is fine; its callbacks "+
 					"re-register on every pass it is visible."),
+				prose("An accordion's Title is also a heading, at level 3, and the tier is not "+
+					"decoration: a reader navigating by heading needs to know that a question "+
+					"sits inside a section rather than beside it. The package fills the outline "+
+					"in — an AppBar title is 1, a Card title or a GroupedList band is 2, an "+
+					"accordion question is 3 — and each of the lower three takes a HeadingLevel "+
+					"field for when you put it somewhere else, because only the bar's position "+
+					"is fixed by construction. This very screen is the three tiers at once: the "+
+					"lesson's name above, this accordion's questions below, and Key points "+
+					"between them at 2."),
+				codeBlock(`components.Accordion{Title: "Shipping", HeadingLevel: 4} // inside a card in a section
+components.GroupedList[Sermon]{GroupBy: byMonth, HeadingLevel: 1} // a feed with no bar`),
 				demoPanel("Three accordions, three bool slots on this lesson's context, claimed in render order.",
 					faq...,
 				),
 				keyPoints(
 					"Accordion calls NewState on your context — render it unconditionally, in a stable position, every pass.",
+					"Title is a level-3 heading; HeadingLevel moves it, and Header opts out — a view you built is yours to describe.",
 					"Content renders only while expanded, so it must be hook-free; interactive hook-free content is fine.",
 					"InitiallyExpanded seeds the slot on the first pass only — after that the user's taps own it.",
 					"Debug mode reports a conditionally rendered accordion as cursor drift — this tutorial's tests would fail before a device saw it.",

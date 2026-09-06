@@ -73,12 +73,24 @@ quirks. A `core.Button` draws its own container on both natives, so it is
 handed a style with the box-drawing fields stripped and each one fed back
 through the platform control's own slot; the border used to be stripped and
 not fed back, which is why `components.Button`'s outlined emphasis had no rule
-on device. And on the web a `<button>` carries the *user agent's* border, which
-no `BorderWidth(0)` could remove, because emitting no declaration is exactly
-what leaves the browser in charge — so both DOM renderers now write
-`border:none` for the tags a browser draws on. `<input>` and `<textarea>` are
-deliberately left alone; neither bundled theme gives `Components.Input` a
-border, so resetting theirs would leave every web text field unmarked.
+on device. And on the web a `<button>`, an `<input>` and a `<textarea>` carry the *user
+agent's* border, which no `BorderWidth(0)` could remove, because emitting no
+declaration is exactly what leaves the browser in charge — so both DOM
+renderers now write `border:none` for the node types a browser draws a frame
+on. The set is keyed by node type because five of them share `<input>` and
+only three want it: a `Checkbox` and a `Slider` are drawn in their entirety by
+the browser, and their border is the control rather than chrome the Go style
+owns.
+
+The text fields joined that set only once both bundled themes gave
+`Components.Input` and `Components.TextArea` a border — resetting one nothing
+replaces would have left every web field an unmarked rectangle, which is what
+both phones already showed. The tone is a *control boundary* and not the
+palette's `Border` hairline: a divider between rows may be 1.26:1 and a rule
+that identifies a control may not, since WCAG 1.4.11 puts a 3:1 floor under it.
+`components.DatePicker`'s trigger inherits the whole frame off the same
+`Components.Input` base, so a picker between two text fields wears what they
+wear.
 
 `Padding` and `Margin` carry a `Horizontal`/`Vertical` pair alongside the four
 sides (`core.PaddingHorizontal(16)`). A side left at zero takes its axis's
@@ -232,9 +244,38 @@ core.Text("March",
 
 Without a level, a screen with a bar title above a run of section bands
 announces a flat list of peers, and a reader navigating by heading cannot tell
-the screen's name from a band inside it. `components.AppBar` sets 1 on its
-title and `components.GroupedList` sets 2 on its band labels, so the common
-two-tier screen needs no call site at all.
+the screen's name from a band inside it.
+
+##### The package's heading outline
+
+`components` fills the range in rather than leaving it to call sites, so the
+ordinary screen needs none:
+
+| widget | tier | fixed? |
+|---|---|---|
+| `AppBar.Title` | 1 | **yes** — an AppBar is the screen's own bar, so there is nothing above it to be a section of |
+| `GroupHeader` (via `GroupedList` / `DataTable`) | 2 | no — `HeadingLevel` |
+| `Card.Title` | 2 | no — `HeadingLevel` |
+| `Accordion.Title` | 3 | no — `HeadingLevel` |
+
+A widget can state its own tier only where its position is fixed, and only the
+bar's is. The other three are *usually* where the table says and can
+legitimately be anywhere: a grouped list inside a card is a tier deeper than
+the card, a screen made entirely of accordions has them at the top, and a
+bandless feed on a screen with no bar starts at 1. So those three take a
+`HeadingLevel` field whose zero value is the tier above, and levels 4 to 6 are
+a caller's to reach.
+
+Two shared rules. The field applies to the **default** content only — a
+`Card.Header` or an `Accordion.Header` replaces the line and is yours to
+describe — and the role rides the **words**, never the row around them, so a
+band's heading is named "March" rather than "March, 12" and an accordion's is
+"Advanced options" rather than "▸ Advanced options".
+
+A **negative** level asks for a heading with no tier at all. It needs no case
+in the resolution: an out-of-range level is dropped rather than clamped (see
+below), so it survives to the exporters and is written by none of them, which
+is exactly what every heading in the package announced before it had a tier.
 
 | target | what it becomes |
 |---|---|
@@ -295,10 +336,35 @@ The two can never contend for the attribute, because the exporters dispatch on
 the role and a node has exactly one. Set both fields and the role decides which
 is read; the other is simply not looked at.
 
-Nothing in the framework sets one. Unlike the heading pair — which `AppBar` and
-`GroupedList` supply for every app — no bundled widget nests a collection
-inside itself, so this is a prop an application reaches for when it builds the
-nesting itself.
+**The widget that spends it** is `components.ListRow`, through its
+`NestingLevel` field, which makes the row a `listitem` at that depth. It is the
+one thing a flattened outline cannot say any other way: a list is a flat run of
+siblings — which is also what makes it virtualizable — so an indent is pixels a
+screen reader never sees, and the nesting has to travel as data.
+
+```go
+core.List(
+    core.AccessibilityRole(core.RoleList),          // the caller's half
+    components.ListRow{Title: "Gospels", NestingLevel: 2},
+    components.ListRow{Title: "Matthew", NestingLevel: 3, Style: indent},
+)
+```
+
+The field is **opt-in**, and the two halves are set in different places on
+purpose. A `listitem` is owned by a `list` (see "a structural role owns what is
+inside it" under [`AccessibilityRole`](#accessibilityrole)), and a row cannot see
+its own container — so the caller roles the list and the widget states the
+depth, and a row asked for no depth stays the unroled box it has always been.
+An orphan `listitem` names a structure that is not there, which is the failure
+the ownership rule exists to prevent.
+
+One cost, stated because it is real: a row inside a `role="list"` must not also
+be a `role="button"`, so a tappable row in an outline announces as an item at a
+depth rather than as a control. That is the same foreign-child rule that keeps
+[`AccessibilitySelected`](#accessibilityselected) off `ListRow`, read from the
+other side — and it is the reason this field landed where the selection could
+not. A depth's role is `listitem`, one of aria-level's three; a selection's is
+`option`, which `core.Role` does not carry.
 
 #### `AccessibilitySelected`
 
@@ -488,7 +554,7 @@ Name the *role*, never the literal, and one theme swap restyles the tree:
 | `Background`, `Surface` | page ground and the raised/muted **fill** on top of it |
 | `TextPrimary`, `TextSecondary` | ink and de-emphasized ink |
 | `Error`, `Success`, `Warning` | the status triad — meaning, not brand |
-| `Border` | strokes and hairlines: rules, card outlines, input borders |
+| `Border` | strokes and hairlines: rules between rows, card outlines — a **divider**, not a control boundary |
 | `PrimaryOnLight`, `SuccessOnLight`, `WarningOnLight`, `ErrorOnLight` | the same four roles again, dark enough to be read as **ink** on a light surface |
 
 Two distinctions the names do not make obvious:
@@ -500,6 +566,17 @@ Two distinctions the names do not make obvious:
   tint both the same green. `Secondary` is a brand slot a theme is free to
   make teal or magenta (`MaterialTheme` makes it teal), while `Success`
   carries meaning — a magenta "saved" badge is a bug.
+- **`Border` is not a field's edge.** It used to name input borders too. A
+  rule *between* things is decoration and both bundled themes spend a very
+  pale hex on it (1.26:1 and 1.32:1 against white); the edge that says *this
+  rectangle is a field you can type in* is the only thing identifying a
+  control, which WCAG 1.4.11 puts a 3:1 floor under. One hex cannot be both,
+  for the same reason a role's fill tone cannot also be its ink. So the field
+  frames live in `Components.Input` and `Components.TextArea`, where each theme
+  states its own boundary tone, and the palette carries no role for it —
+  nothing outside those two spends it, and a widget that wants to look like a
+  text field reads the `Input` base itself, which is how `DatePicker`'s trigger
+  gets its radius, its fill and its edge in one prop.
 
 `Border`, `Success` and `Warning` were added on 2026-08-31, after the other
 seven. A theme written before that leaves them empty, and an empty color is

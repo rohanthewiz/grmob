@@ -62,11 +62,53 @@ test("half a border is no border, and still resets", () => {
 });
 
 test("a div with no border says nothing about one", () => {
-    // The reset is scoped to the tags the browser draws a border on. A <div>
-    // has none, so "none" there would be a declaration that means nothing and
-    // that an author's own stylesheet would then have to fight.
+    // The reset is scoped to the node types the browser draws a border on. A
+    // <div> has none, so "none" there would be a declaration that means
+    // nothing and that an author's own stylesheet would then have to fight.
     const { at } = mount([{ Type: "Box", Style: { Background: "#fff" } }]);
     assert.equal(at(0).style.border, "");
+});
+
+test("a text field with no border is talked out of the browser's too", () => {
+    // The three field types joined the set once both bundled themes gave
+    // Components.Input and Components.TextArea a frame of their own — before
+    // that, resetting the browser's rule left the control undrawn. A field
+    // whose style states no border is now borderless everywhere, which is
+    // what it already was on both phones.
+    const { at } = mount([
+        { Type: "Input", Props: { value: "", placeholder: "Search" }, Style: { Background: "#fff" } },
+        { Type: "TextArea", Props: { value: "" }, Style: { Background: "#fff" } },
+        { Type: "InputPassword", Props: { value: "" }, Style: { Background: "#fff" } },
+    ]);
+    assert.equal(at(0).style.border, "none");
+    assert.equal(at(1).style.border, "none");
+    assert.equal(at(2).style.border, "none");
+});
+
+test("a themed field draws the frame the theme gave it", () => {
+    // The ordinary case, and the one the reset must not swallow: core.Input
+    // carries Components.Input, which both bundled themes now fill in.
+    const { at } = mount([{
+        Type: "Input",
+        Props: { value: "", placeholder: "Name" },
+        Style: { Background: "#FFFFFF", BorderColor: "#8E8E93", BorderWidth: 1 },
+    }]);
+    assert.equal(at(0).style.border, "1px solid #8E8E93");
+});
+
+test("the user agent keeps its checkbox and its slider", () => {
+    // The case that made the set node-type-keyed rather than tag-keyed. All
+    // five of these are <input> elements; on a checkbox and a range the
+    // browser draws the whole control, so its border is the box itself and
+    // not chrome the Go style is meant to own.
+    // Both carry a Style, because a node with none never reaches
+    // styleFromGrMob at all and would pass this by never being asked.
+    const { at } = mount([
+        { Type: "Checkbox", Props: { checked: false }, Style: { Background: "#fff" } },
+        { Type: "Slider", Props: { value: 0.5 }, Style: { Background: "#fff" } },
+    ]);
+    assert.equal(at(0).style.border, "");
+    assert.equal(at(1).style.border, "");
 });
 
 test("a button that loses its border does not get the browser's back", () => {

@@ -71,6 +71,17 @@ type nodeStyle struct {
 	// difference exists.
 	AccessibilityRole     string
 	AccessibilitySelected string
+
+	// The heading tier, for the outline assertion in this file. It is the one
+	// property of a lesson screen that exists nowhere else in the tree: three
+	// headings on one screen draw at three different sizes, but "which is a
+	// section of which" is carried by this number alone.
+	AccessibilityHeadingLevel int
+
+	// The collection depth, for chapter 4's flattened-outline demo. Same
+	// argument one role over: the rows are indented in pixels and siblings in
+	// the tree, so this number is the only place their nesting exists.
+	AccessibilityNestingLevel int
 }
 
 func findNode(n *node, pred func(*node) bool) *node {

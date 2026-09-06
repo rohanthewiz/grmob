@@ -101,6 +101,17 @@ type GroupedList[T any] struct {
 	// built is the caller's.
 	StickyHeaders bool
 
+	// HeadingLevel places the default bands in the screen's outline. Zero is
+	// level 2 — a band is a section of the screen an AppBar's title names at
+	// level 1 — and a banded list inside a Card should say 3, while a feed on
+	// a screen with no bar at all should say 1.
+	//
+	// It reaches GroupHeader, so it does nothing without GroupBy and nothing
+	// under a Header override, on the same division StickyHeaders draws: a
+	// view the caller built is the caller's to place in the outline. See
+	// GroupHeader.HeadingLevel.
+	HeadingLevel int
+
 	// Dividers inserts a theme hairline between consecutive rows of a group
 	// (not after the last row, where the next header or the footer follows).
 	Dividers bool
@@ -166,7 +177,8 @@ func (g GroupedList[T]) Render(ctx *core.Context) *core.Node {
 		}
 	} else {
 		items = appendRows(ctx, items, g.Items, g.Key, g.Row,
-			g.GroupBy, g.Header, g.HideTrailingCount, g.StickyHeaders, g.Dividers, nil)
+			g.GroupBy, g.Header, g.HideTrailingCount, g.StickyHeaders, g.HeadingLevel,
+			g.Dividers, nil)
 	}
 
 	if g.Footer != nil {
@@ -184,6 +196,10 @@ func (g GroupedList[T]) Render(ctx *core.Context) *core.Node {
 // hideTrailingCount suppresses the last run's count badge; see
 // GroupedList.HideTrailingCount for why an open run must not publish one.
 // sticky pins the default headers; see GroupedList.StickyHeaders.
+// headingLevel places the bands in the screen's outline, zero meaning the
+// default tier; see GroupHeader.HeadingLevel. All three describe the *default*
+// band and are ignored under a header override, which builds its own view and
+// which this cannot reach into.
 func appendRows[T any](
 	ctx *core.Context,
 	items []core.PropsAndChildren,
@@ -194,6 +210,7 @@ func appendRows[T any](
 	header func(Group) core.View,
 	hideTrailingCount bool,
 	sticky bool,
+	headingLevel int,
 	dividers bool,
 	wrap func(T, core.View) core.View,
 ) []core.PropsAndChildren {
@@ -231,8 +248,9 @@ func appendRows[T any](
 			h = header(run.Group)
 		} else {
 			gh := GroupHeader{
-				Group:     run.Group,
-				HideCount: hideTrailingCount && ri == len(runs)-1,
+				Group:        run.Group,
+				HideCount:    hideTrailingCount && ri == len(runs)-1,
+				HeadingLevel: headingLevel,
 			}
 			if sticky {
 				// Onto the band's own Style, not around it in a wrapper: the

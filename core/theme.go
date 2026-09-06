@@ -32,9 +32,30 @@ type ColorPalette struct {
 	Error         string
 
 	// Border is the stroke/hairline role: rules between list rows, card
-	// outlines, input borders. It is deliberately distinct from Surface.
-	// Surface is a *fill* — the two are near neighbors on a light theme, so a
-	// Surface-colored hairline on a Surface-colored panel is invisible.
+	// outlines, the ring around a compass rose. It is deliberately distinct
+	// from Surface. Surface is a *fill* — the two are near neighbors on a
+	// light theme, so a Surface-colored hairline on a Surface-colored panel
+	// is invisible.
+	//
+	// # It is a divider, not a control boundary
+	//
+	// This role used to name input borders too, and no longer does. A rule
+	// *between* things is decoration — nothing about the page becomes
+	// unusable if a reader cannot make it out — and both bundled themes spend
+	// a very pale hex on it accordingly: #E5E5EA measures 1.26:1 against
+	// white and #E0E0E0 1.32:1. The edge that says *this rectangle is a field
+	// you can type in* is the opposite case: it is the only thing identifying
+	// a control, which WCAG 1.4.11 (Non-text Contrast) puts a 3:1 floor
+	// under. One hex cannot be both, for the same reason a role's fill tone
+	// cannot also be its ink — see the on-light tones below.
+	//
+	// So the field frames live in Components.Input and Components.TextArea,
+	// where each theme states its own control-boundary tone, and this role
+	// keeps the dividers. ColorPalette carries no role for the boundary
+	// because nothing outside those two component defaults spends it: a
+	// widget that wants to look like a text field reads the Input base
+	// itself (components.DatePicker does exactly that), which is also how it
+	// inherits the radius and the fill.
 	//
 	// Read via BorderColor.
 	Border string
@@ -338,11 +359,22 @@ var DefaultTheme = &Theme{
 			Display:      DisplayBlock,
 		},
 		Input: Style{
-			FontSize:     17,
-			FontWeight:   Normal,
-			TextColor:    "#000000",
-			Background:   "#FFFFFF",
-			Padding:      EdgeInsets{Top: 8, Bottom: 8, Left: 12, Right: 12},
+			FontSize:   17,
+			FontWeight: Normal,
+			TextColor:  "#000000",
+			Background: "#FFFFFF",
+			Padding:    EdgeInsets{Top: 8, Bottom: 8, Left: 12, Right: 12},
+			// The field frame. This theme paints a white field on a white
+			// page, so the border is the whole of what says a control is
+			// here — and it is why the border is not Colors.Border: that
+			// role's #E5E5EA is a 1.26:1 divider, and a boundary that
+			// identifies a control has a 3:1 floor under it (WCAG 1.4.11).
+			// systemGray is Apple's own tone at that weight and measures
+			// 3.26:1 against this theme's Background, which is also roughly
+			// what the browser's own input border was drawing before
+			// borderResetTypes took it away. See ColorPalette.Border.
+			BorderColor:  "#8E8E93", // iOS systemGray — 3.26:1 on #FFFFFF
+			BorderWidth:  1,
 			BorderRadius: 6,
 			Shadow:       0,
 			Display:      DisplayBlock,
@@ -354,11 +386,17 @@ var DefaultTheme = &Theme{
 			Display:      DisplayInline,
 		},
 		TextArea: Style{
-			FontSize:     17,
-			FontWeight:   Normal,
-			TextColor:    "#000000",
-			Background:   "#FFFFFF",
-			Padding:      EdgeInsets{Top: 12, Bottom: 12, Left: 12, Right: 12},
+			FontSize:   17,
+			FontWeight: Normal,
+			TextColor:  "#000000",
+			Background: "#FFFFFF",
+			Padding:    EdgeInsets{Top: 12, Bottom: 12, Left: 12, Right: 12},
+			// The same frame as Input, and the same reasoning: a <textarea>
+			// is the other tag whose user-agent border the web used to draw
+			// for free. A multi-line field that differed from a single-line
+			// one by its edge alone would look like two controls.
+			BorderColor:  "#8E8E93", // iOS systemGray — 3.26:1 on #FFFFFF
+			BorderWidth:  1,
 			BorderRadius: 6,
 			Display:      DisplayBlock,
 		},
@@ -442,6 +480,13 @@ var MaterialTheme = &Theme{
 		Input: Style{
 			Background: "#FAFAFA",
 			Padding:    EdgeInsets{Top: 10, Bottom: 10, Left: 12, Right: 12},
+			// grey 600, not the grey 300 this theme's Border role spends: a
+			// divider may be 1.32:1 and a control boundary may not (WCAG
+			// 1.4.11 asks 3:1). It is the same hex as TextSecondary, which is
+			// Material's own medium-emphasis weight, and it measures 4.61:1
+			// against both this theme's Background and the field's own fill.
+			BorderColor: "#757575", // MD grey 600 — 4.61:1 on #FFFFFF
+			BorderWidth: 1,
 		},
 		Column: Style{
 			Padding: EdgeInsets{Top: 12, Bottom: 12, Left: 16, Right: 16},
@@ -465,6 +510,8 @@ var MaterialTheme = &Theme{
 			Background:   "#FAFAFA",
 			TextColor:    "#212121",
 			Padding:      EdgeInsets{Top: 8, Bottom: 8, Left: 12, Right: 12},
+			BorderColor:  "#757575", // MD grey 600 — 4.61:1 on #FFFFFF
+			BorderWidth:  1,
 			BorderRadius: 4,
 		},
 	},

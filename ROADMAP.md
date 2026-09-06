@@ -182,6 +182,14 @@
       Compose has no level to map onto and says so. `AppBar`'s title takes 1
       and `GroupedList`'s band labels 2, so a banded screen has an outline
       instead of a flat run of peer headings
+- [x] The **outline goes past 2**: `Card.Title` is a heading at 2 and
+      `Accordion.Title` one at 3, which were both drawing at heading weight
+      and announcing as prose. Only an `AppBar`'s tier is fixed by
+      construction, so the other three take a `HeadingLevel` field whose zero
+      value is the default tier — a grouped list inside a card says 3, a feed
+      on a barless screen says 1 (previously unsayable), and 4 through 6 are a
+      caller's to reach. A negative level asks for a heading with no tier,
+      which the drop-don't-clamp rule already spells
 - [x] `core.Modal` announces as a dialog — `role="dialog"` + `aria-modal` from
       the Modal chassis on both DOM targets, which the SwiftUI sheet and the
       Compose `Dialog` already provide on device; deliberately not a
@@ -192,12 +200,29 @@
       second field rather than a widened heading one, because a heading's tier
       stops at 6 and a depth has no ceiling, and one exporter switch on the
       role keeps the two from ever contending for the attribute
+- [x] …and its **first consumer**: `ListRow.NestingLevel` makes a row a
+      `listitem` at a depth, which is the one thing a flattened outline cannot
+      say any other way — a list is a flat run of siblings, so an indent is
+      pixels a screen reader never sees. Opt-in, because a `listitem` is owned
+      by a `list` and a row cannot see its container: the caller roles the
+      list. It lands where the selected state could not, and the difference is
+      the role rather than the widget — a depth's is `listitem`, a selection's
+      is `option`, which `core.Role` still does not carry
 - [x] `components.Button`'s border means the same thing on all four targets —
       both natives now feed `BorderColor`/`BorderWidth` into the platform
       control's own slot (they were stripped with the rest of the box-drawing
       fields and never fed back, so outlined buttons had no rule on device),
-      and both DOM renderers write `border:none` for the tags a browser draws
-      one on (so ghost buttons no longer keep the user agent's)
+      and both DOM renderers write `border:none` for the node types a browser
+      draws one on (so ghost buttons no longer keep the user agent's)
+- [x] A **text field's frame** is the theme's on all four targets — both
+      bundled themes give `Components.Input` and `Components.TextArea` a
+      border at WCAG 1.4.11's 3:1 control-boundary floor, which is what let
+      `<input>` and `<textarea>` join the user-agent border reset. That set is
+      keyed by node type now rather than by tag, because five node types share
+      `<input>` and a `Checkbox` and a `Slider` are drawn by the browser in
+      their entirety. `Colors.Border` keeps the dividers and no longer names
+      field edges; `DatePicker`'s trigger inherits the whole frame off the
+      `Input` base instead of restating a paler one
 - [x] Navigation (`Navigator`, `Push`, `Pop`, `Replace`, `PopToRoot`, `Reset`,
       per-frame state) and `core.Modal` / toasts
 - [x] Forms with validation (`forms`) — a rule vocabulary, cross-field checks,

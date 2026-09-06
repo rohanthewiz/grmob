@@ -77,6 +77,21 @@ type GroupHeader struct {
 	// HideCount drops the trailing badge; the label stands alone.
 	HideCount bool
 
+	// HeadingLevel is where the band sits in the screen's outline. Zero is
+	// level 2 — a band is a section of the screen whose name an AppBar's
+	// title carries at level 1 — and a banded list nested inside a Card (also
+	// level 2) should say 3.
+	//
+	// The field is also how a screen with no bar stops lying. A bandless feed
+	// used to start its outline at 2 with no 1 above it, which is a soft lint
+	// on the web and nothing at all to either native; the alternative was
+	// announcing a screen's name and its March band as peers, so 2 stayed as
+	// the lesser of two wrongs. Now the caller in that position writes 1.
+	//
+	// See headingLevel in heading.go for the package's outline and for how to
+	// ask for a heading with no tier at all.
+	HeadingLevel int
+
 	// Style is applied to the band after its defaults.
 	Style []core.StyleProp
 }
@@ -100,32 +115,31 @@ func (h GroupHeader) Render(ctx *core.Context) *core.Node {
 		items = append(items, sp)
 	}
 
+	// A band titles a run of rows, which is what a heading is — and on a long
+	// banded feed it is the thing a reader navigating by heading wants to move
+	// between, since the screen's own title scrolled away several pages ago.
+	//
+	// On the label rather than on the band: the band also holds the count
+	// badge, and a heading whose name is "March 12" reads worse than one whose
+	// name is "March". The count is still announced, as the separate thing it
+	// is.
+	//
+	// Level 2 by default — a band is a section *of* the screen whose name the
+	// AppBar's title carries at level 1, which is the outline
+	// core.Style.AccessibilityHeadingLevel exists for — and whatever
+	// HeadingLevel says otherwise.
+	label := []core.StyleProp{
+		core.UseStyle(t.Typography.Caption),
+		core.FontWeight(core.Bold),
+		core.TextColor(t.Colors.TextSecondary),
+	}
+	label = append(label, headingProps(h.HeadingLevel, headingLevelSection)...)
+
 	// The label grows so the badge sits hard against the trailing edge —
 	// the same FlexGrow-not-JustifyBetween pinning ListRow settled on.
 	items = append(items, core.Box(
 		core.FlexGrow(1),
-		core.Text(h.Group.Label,
-			core.UseStyle(t.Typography.Caption),
-			core.FontWeight(core.Bold),
-			core.TextColor(t.Colors.TextSecondary),
-			// A band titles a run of rows, which is what a heading is — and
-			// on a long banded feed it is the thing a reader navigating by
-			// heading wants to move between, since the screen's own title
-			// scrolled away several pages ago.
-			//
-			// On the label rather than on the band: the band also holds the
-			// count badge, and a heading whose name is "March 12" reads worse
-			// than one whose name is "March". The count is still announced,
-			// as the separate thing it is.
-			core.AccessibilityRole(core.RoleHeading),
-			// Level 2: a band is a section *of* the screen whose name the
-			// AppBar's title already carries at level 1, which is the two-tier
-			// outline core.Style.AccessibilityHeadingLevel exists for. A
-			// banded feed with no bar starts at 2 with no 1 above it — a soft
-			// lint on the web and nothing at all to either native — which is
-			// the lesser of the two wrongs against announcing a screen's name
-			// and its March band as peers.
-			core.AccessibilityHeadingLevel(2)),
+		core.Text(h.Group.Label, label...),
 	))
 	if !h.HideCount {
 		items = append(items, Badge{Text: itoa(h.Group.Count)})

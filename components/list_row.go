@@ -68,6 +68,22 @@ import "github.com/rohanthewiz/grmob/core"
 //
 // So the suffix stays until the vocabulary has the pair that fits. It still
 // says the true thing; it says it in the weaker of the two places.
+//
+// # Depth, which the same table says yes to
+//
+// NestingLevel is the other half of that table, and it lands where the
+// selection could not. A depth's role is `listitem` — one of the three ARIA
+// defines aria-level for — and `listitem` is the row's honest description; the
+// selection's role is `option`, which core.Role does not carry. Two fields, one
+// widget, opposite answers, and the reason is a property of the roles rather
+// than of this widget's willingness.
+//
+// It is opt-in, and that is the ownership rule rather than caution: a
+// `listitem` with no `list` around it is a role naming a structure that is not
+// there, which core/role.go calls worse than no role at all. A row cannot see
+// its container, so it cannot make that true by itself — the caller sets
+// RoleList on the enclosing list and the depth on each row, and a row that is
+// asked for neither is exactly the unroled Box it has always been.
 type ListRow struct {
 	// Leading is the control at the start of the row: a checkbox, an icon,
 	// an avatar. Nil renders nothing and costs no node.
@@ -95,6 +111,49 @@ type ListRow struct {
 
 	// Selected drives the row's selected look and its accessibility suffix.
 	Selected bool
+
+	// NestingLevel is how deep this row sits in a nested collection — 1 for a
+	// top-level item, 2 for one inside it, and on down with no ceiling. It
+	// makes the row a `listitem` at that depth; zero leaves it the unroled Box
+	// it has always been.
+	//
+	// # What it is for
+	//
+	// A tree flattened into one list. That is the case ARIA defines aria-level
+	// on `listitem` for: the rows are siblings in the markup because a list is
+	// a flat run of children — which is also what core.List's virtualization
+	// requires — so the depth a reader needs has nowhere else to live. Without
+	// it an outline is announced as a flat run of items and every indent is
+	// pixels only.
+	//
+	//	core.List(
+	//	    core.AccessibilityRole(core.RoleList),
+	//	    ListRow{Title: "Gospels",  NestingLevel: 1},
+	//	    ListRow{Title: "Matthew",  NestingLevel: 2, Style: indent(1)},
+	//	    ListRow{Title: "Sermon on the Mount", NestingLevel: 3, Style: indent(2)},
+	//	)
+	//
+	// # The container is the caller's to role, and must be
+	//
+	// A `listitem` is owned by a `list` (see "A structural role owns what is
+	// inside it" in core/role.go). This widget renders one row and cannot see
+	// what it was put in, so it cannot supply the other half — set RoleList on
+	// the container yourself, or leave this field at zero. An orphan
+	// `listitem` is the "table with no rows" failure one row down.
+	//
+	// The corollary is worth stating because it costs something: a row inside
+	// a role="list" must not also be a role="button", so a tappable row in an
+	// outline announces as an item at a depth and not as a control. That is
+	// the same foreign-child rule that kept the selected state off this widget,
+	// read from the other side — and it is not a regression, because a ListRow
+	// has never carried RoleButton.
+	//
+	// # What each target does with it
+	//
+	// The web writes aria-level. Neither native has a nesting-depth property
+	// at all, so the role goes out and the depth does not, which is the honest
+	// gap nine of core's twenty roles already have.
+	NestingLevel int
 
 	// Style is applied to the row container after ListRow's own defaults
 	// (which sit on top of the theme's Row base), so every default here —
@@ -145,6 +204,21 @@ func (r ListRow) Render(ctx *core.Context) *core.Node {
 		for _, sp := range sel {
 			items = append(items, sp)
 		}
+	}
+
+	// Before the label, so the two arrive on the node in the order they are
+	// read: what this is, then what it is called. Both are style props and
+	// order does not affect the result, but a reader of this function should
+	// meet the role first for the same reason a screen reader does.
+	//
+	// The pair travels together — a depth with no role is dropped by every
+	// target that reads it, since ARIA scopes aria-level to three roles and
+	// both web exporters switch on exactly those.
+	if r.NestingLevel != 0 {
+		items = append(items,
+			core.AccessibilityRole(core.RoleListItem),
+			core.AccessibilityNestingLevel(r.NestingLevel),
+		)
 	}
 
 	if r.AccessibilityLabel != "" {

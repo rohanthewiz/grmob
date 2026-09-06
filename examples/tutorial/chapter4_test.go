@@ -192,6 +192,58 @@ func TestListRowDemoControlledSelection(t *testing.T) {
 	assertNoConcerns(t)
 }
 
+// A flattened tree announces its depths, and the list around it owns them.
+//
+// core.Style.AccessibilityNestingLevel had no consumer anywhere in the
+// framework until ListRow.NestingLevel: it was exported by both web targets
+// and exercised only by their own unit tests. This is the first nested list,
+// and it is the shape the field exists for — six rows that are siblings in the
+// markup, because a list is a flat run of children, carrying a nesting that
+// has nowhere else to live.
+//
+// The pairing is what the test is really for. A listitem is owned by a list,
+// so the two halves are set in different places by different people — the
+// widget states the depth, the caller states the container — and either alone
+// is a role naming a structure that is not there.
+func TestOutlineDemoStatesItsDepths(t *testing.T) {
+	mgr := newApp(t)
+	openLesson(t, mgr, "ListRow & Avatar")
+	cur := tree(t, mgr)
+
+	list := findNode(cur, func(n *node) bool {
+		return n.Style != nil && n.Style.AccessibilityRole == "list"
+	})
+	if list == nil {
+		t.Fatal("no role=list in the tree — every listitem under the demo is an orphan")
+	}
+
+	items := findNodes(list, func(n *node) bool {
+		return n.Style != nil && n.Style.AccessibilityRole == "listitem"
+	})
+	if len(items) != len(canonOutline) {
+		t.Fatalf("%d listitems under the list, want %d", len(items), len(canonOutline))
+	}
+	for i, n := range items {
+		if got := n.Style.AccessibilityNestingLevel; got != canonOutline[i].depth {
+			t.Errorf("row %d (%s): depth = %d, want %d",
+				i, canonOutline[i].title, got, canonOutline[i].depth)
+		}
+	}
+
+	// Three distinct depths, or the demo is an indent with a constant beside
+	// it and would keep passing if every row said 1.
+	seen := map[int]bool{}
+	for _, n := range items {
+		seen[n.Style.AccessibilityNestingLevel] = true
+	}
+	if len(seen) < 3 {
+		t.Errorf("the outline spans %d depths, want at least 3 — a flat list states nothing "+
+			"aria-level was added for", len(seen))
+	}
+
+	assertNoConcerns(t)
+}
+
 // --- 4.4 Accordion ----------------------------------------------------------
 
 func TestAccordionDemoTogglesContent(t *testing.T) {
@@ -900,6 +952,65 @@ func TestCompassDemoDistinguishesWaitingFromAbsent(t *testing.T) {
 	}
 	if !hasTextContaining(cur, "Received=false") {
 		t.Fatal("the live panel should show the flags it is explaining")
+	}
+
+	assertNoConcerns(t)
+}
+
+// --- The heading outline, end to end ----------------------------------------
+
+// A lesson screen carries a 1-2-3 outline and nobody wrote the 3.
+//
+// The accordion lesson is the one screen in the app where all three tiers are
+// live at once, which is what makes it the place to assert them: the lesson's
+// own name is level 1 (lessonHeader, a call site — a lesson screen has no
+// AppBar to claim it), "Key points" is level 2 (keyPoints, also a call site),
+// and each FAQ question is level 3 straight out of components.Accordion's
+// default. Before that default existed the third tier had no consumer anywhere
+// in the framework and levels 3 through 6 were plumbing nothing reached.
+//
+// Through the live app rather than against the widget, because the widget test
+// can only see its own node. What is being checked here is a *relationship* —
+// that the three tiers nest — and that only exists once three widgets from
+// three different files are on one screen.
+func TestALessonScreenHasAThreeTierOutline(t *testing.T) {
+	mgr := newApp(t)
+	openLesson(t, mgr, "Accordion: the stateful widget")
+	cur := tree(t, mgr)
+
+	levelOf := func(content string) int {
+		n := findNode(cur, func(n *node) bool {
+			return n.Type == "Text" && n.Props["content"] == content && n.Style != nil &&
+				n.Style.AccessibilityRole == "heading"
+		})
+		if n == nil {
+			t.Fatalf("no heading reading %q on the lesson screen", content)
+		}
+		return n.Style.AccessibilityHeadingLevel
+	}
+
+	if got := levelOf("4.4  Accordion: the stateful widget"); got != 1 {
+		t.Errorf("the lesson's own name is level %d, want 1 — there is no AppBar above it", got)
+	}
+	if got := levelOf("Key points"); got != 2 {
+		t.Errorf("the recap is level %d, want 2 — a section of the lesson", got)
+	}
+	if got := levelOf("Where does the open state live?"); got != 3 {
+		t.Errorf("an accordion question is level %d, want 3 — a disclosure inside a section", got)
+	}
+
+	// And every heading on the screen states a tier. A role with no level
+	// announces a heading a reader cannot place, which is the state the
+	// outline exists to end; one unplaced heading among three placed ones is
+	// worse than none at all, because the reader trusts the other two.
+	for _, n := range findNodes(cur, func(n *node) bool {
+		return n.Style != nil && n.Style.AccessibilityRole == "heading"
+	}) {
+		level := n.Style.AccessibilityHeadingLevel
+		if level < 1 || level > 6 {
+			t.Errorf("heading %q carries level %d, which every target drops",
+				n.Props["content"], level)
+		}
 	}
 
 	assertNoConcerns(t)

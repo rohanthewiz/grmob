@@ -50,10 +50,18 @@ import "github.com/rohanthewiz/grmob/core"
 // # The frame
 //
 // The row paints the theme's Surface at the theme's own field radius and the
-// input inside it is flattened — transparent, no radius, no padding of its
-// own. Without that the theme's Input base (its own background and corners)
-// would draw a second box inside the first, which is what a hand-rolled
-// search row looks like before someone notices.
+// input inside it is flattened — transparent, no radius, no padding and no
+// border of its own. Without that the theme's Input base (its own background,
+// corners and rule) would draw a second box inside the first, which is what a
+// hand-rolled search row looks like before someone notices.
+//
+// The border half of that is newer than the rest and the reason is worth
+// keeping: the theme's Input entry used to carry no rule at all, so on the web
+// a search field was quietly wearing the *browser's* — which the row's own
+// fill mostly hid, and which no core.BorderWidth(0) could have removed anyway
+// (see borderResetTypes in htmlout/tag.go). Now that both bundled themes state
+// a field frame, the second box would be drawn deliberately and on all four
+// targets, so the flattening has to say so.
 type SearchField struct {
 	// Value is the current text. The field is controlled: it renders what it
 	// is given and reports edits through OnChange.
@@ -182,6 +190,11 @@ func (s SearchField) input(placeholder, label string) core.View {
 		core.FlexGrow(1),
 		core.BackgroundColor(ColorTransparent),
 		core.BorderRadius(0),
+		// The row is the frame, so the field must not be a second one. Width
+		// alone is enough: every renderer guards its border on a width *and*
+		// a colour, so a zero width drops the rule on all four rather than
+		// leaving three of them arguing with a colour they were told to keep.
+		core.BorderWidth(0),
 		// Assigns rather than merges, which is the point: the theme's Input
 		// padding would inset the text from a frame that is no longer there.
 		core.Padding(0),

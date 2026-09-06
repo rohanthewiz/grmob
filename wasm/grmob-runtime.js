@@ -321,9 +321,9 @@ const GrMob = (() => {
     // textually, so keep it a flat array of string literals on one line.
     const GENERIC_TAGS = new Set(["div", "pre", "span"]);
 
-    // The tags whose user-agent stylesheet draws a border of its own, and which
-    // therefore need one written back to nothing when the Go style asks for no
-    // border.
+    // The node types whose user-agent stylesheet draws a border of its own, and
+    // which therefore need one written back to nothing when the Go style asks
+    // for no border.
     //
     // Compose, SwiftUI and htmlout all draw a border only when
     // BorderWidth > 0 && BorderColor != "". The guard alone gets the negative
@@ -334,14 +334,19 @@ const GrMob = (() => {
     // made that visible, drawing a rule on both web targets and none on either
     // phone.
     //
-    // <input> and <textarea> are deliberately absent; borderResetTags in
-    // htmlout/tag.go carries the reason.
+    // Keyed by node type rather than by tag because five node types share
+    // <input> and only three of them want this: a checkbox's border *is* the
+    // control and a range track has none. Both bundled themes now give
+    // Components.Input and Components.TextArea a frame of their own, which is
+    // what let the text fields join at all — resetting a border nothing
+    // replaces is levelling down. borderResetTypes in htmlout/tag.go carries
+    // the long version.
     //
-    // Go states this set once, in borderResetTags (htmlout/tag.go), and
-    // TestRuntimeBorderResetTagsMatchGo in wasm/verify compares the two under a
-    // plain `go test ./...`. That test reads this literal out of the source
+    // Go states this set once, in borderResetTypes (htmlout/tag.go), and
+    // TestRuntimeBorderResetTypesMatchGo in wasm/verify compares the two under
+    // a plain `go test ./...`. That test reads this literal out of the source
     // textually, so keep it a flat array of string literals on one line.
-    const BORDER_RESET_TAGS = new Set(["button"]);
+    const BORDER_RESET_TYPES = new Set(["Button", "Input", "InputPassword", "NumericInput", "TextArea"]);
 
     // The id prefix every element id inside one TabView is built from.
     //
@@ -1435,15 +1440,15 @@ const GrMob = (() => {
         // A flex *item* property: how this node behaves inside its parent's
         // layout, so it needs no display:flex of its own.
         out.flexGrow = style.FlexGrow ? `${style.FlexGrow}` : "";
-        // The false arm is "none", not "", for the tags the browser draws a
-        // border on unasked: clearing the inline declaration hands the element
-        // back to the user-agent stylesheet, which is the bug rather than the
-        // fix. It stays "" everywhere else, so totality is unaffected — every
-        // element still gets exactly one of the three values on every call.
-        // See BORDER_RESET_TAGS above.
+        // The false arm is "none", not "", for the node types the browser draws
+        // a border on unasked: clearing the inline declaration hands the
+        // element back to the user-agent stylesheet, which is the bug rather
+        // than the fix. It stays "" everywhere else, so totality is unaffected
+        // — every element still gets exactly one of the three values on every
+        // call. See BORDER_RESET_TYPES above.
         out.border = (style.BorderWidth && style.BorderColor)
             ? `${style.BorderWidth}px solid ${style.BorderColor}`
-            : (BORDER_RESET_TAGS.has(tagForType(nodeType)) ? "none" : "");
+            : (BORDER_RESET_TYPES.has(nodeType) ? "none" : "");
         // core.Transition's canonical "<ms>ms <easing>" is valid CSS as-is;
         // the browser drives the frames, same declare-in-Go model as the
         // native renderers.

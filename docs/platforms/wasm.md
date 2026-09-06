@@ -461,11 +461,20 @@ without the rule" and drawing one on both web targets.
 
 So the property has three values rather than two: the styled border, `""` for
 an element the browser draws nothing on, and `"none"` for one it does.
-`BORDER_RESET_TAGS` is the set — pinned to Go's `borderResetTags` by
-`TestRuntimeBorderResetTagsMatchGo` — and it holds `button` alone. `<input>`
-and `<textarea>` are deliberately excluded: neither bundled theme gives
-`Components.Input` a border, so resetting theirs would leave every web text
-field unmarked, and the honest fix for that is a border in the themes.
+`BORDER_RESET_TYPES` is the set — pinned to Go's `borderResetTypes` by
+`TestRuntimeBorderResetTypesMatchGo` — and it holds `Button`, `Input`,
+`InputPassword`, `NumericInput` and `TextArea`.
+
+It is keyed by **node type**, not by tag, and the text fields are why. Five
+node types share `<input>` and only three of them want the reset: a checkbox's
+border *is* the control and a range track has none, so a tag-keyed set would
+have swept both in. The fields could not join at all until both bundled themes
+gave `Components.Input` and `Components.TextArea` a frame of their own —
+resetting a border nothing replaces is levelling down, and until then the
+browser's rule was the only thing drawing a web text field. Both themes now
+state one, so all four targets draw the same edge from the same field, and a
+theme that states none renders a borderless field on the web exactly as it
+always did on both phones.
 
 Keeping the reset inside the same expression rather than in a guard of its own
 is what preserves totality — a guarded write would leave the old border

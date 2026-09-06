@@ -113,12 +113,19 @@ func demoPanel(hint string, children ...core.View) core.View {
 // keyPoints is the recap list closing every lesson: a subtitle and bulleted
 // lines. Bullets are plain Rows — a list this short gains nothing from
 // core.List's virtualization, and static children need no keys.
+//
+// "Key points" is a heading at level 2: a section of the lesson whose own name
+// lessonHeader carries at level 1. It is the one heading on a lesson screen a
+// reader is most likely to jump straight to, which is what the tier is for.
 func keyPoints(points ...string) core.View {
 	return core.ComponentFunc(func(ctx *core.Context) *core.Node {
 		t := ctx.Theme()
 		items := []core.PropsAndChildren{
 			core.Gap(6),
-			core.Text("Key points", core.UseStyle(t.Typography.Subtitle)),
+			core.Text("Key points",
+				core.UseStyle(t.Typography.Subtitle),
+				core.AccessibilityRole(core.RoleHeading),
+				core.AccessibilityHeadingLevel(2)),
 		}
 		for _, p := range points {
 			items = append(items, core.Row(

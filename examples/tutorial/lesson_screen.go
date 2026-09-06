@@ -49,12 +49,23 @@ func (t *tutorial) lessonTopBar(ctx *core.Context, e lessonEntry) core.View {
 	)
 }
 
+// lessonHeader is the lesson's own name and one-line summary.
+//
+// The title is the screen's heading at level 1. A lesson screen has no AppBar
+// — the top bar here is a back button and a chapter badge, not a titled bar —
+// so this is the top of the outline by construction, and it is the tier
+// components.AppBar would have claimed if there were one. Below it a lesson's
+// "Key points" recap takes 2 and any Accordion in the body takes 3, which is
+// the whole range the framework fills in without a call site.
 func lessonHeader(e lessonEntry) core.View {
 	return core.ComponentFunc(func(ctx *core.Context) *core.Node {
 		th := ctx.Theme()
 		return core.Column(
 			core.Gap(4),
-			core.Text(fmt.Sprintf("%s  %s", e.ID, e.Title), core.UseStyle(th.Typography.Title)),
+			core.Text(fmt.Sprintf("%s  %s", e.ID, e.Title),
+				core.UseStyle(th.Typography.Title),
+				core.AccessibilityRole(core.RoleHeading),
+				core.AccessibilityHeadingLevel(1)),
 			core.Text(e.Summary,
 				core.UseStyle(th.Typography.Body),
 				core.TextColor(th.Colors.TextSecondary),

@@ -226,3 +226,80 @@ func TestListRowSynthesizesNoLabel(t *testing.T) {
 		t.Errorf("row label = %q, want empty when the caller named nothing", got)
 	}
 }
+
+// --- Depth ------------------------------------------------------------------
+
+// The first consumer core.Style.AccessibilityNestingLevel has ever had.
+//
+// The field has been in core since the heading tier's sibling landed, exported
+// by both web targets and exercised by nothing but their own unit tests — the
+// note that came with it said to watch for the first nested list downstream.
+// This is it: a flattened outline, where the rows are siblings in the markup
+// because a list is a flat run of children, and the depth a reader needs has
+// nowhere else to live.
+func TestListRowStatesItsDepth(t *testing.T) {
+	ctx := core.NewContext()
+	ctx.BeginRenderPass()
+
+	for _, level := range []int{1, 2, 7} {
+		n := ListRow{Title: "Matthew", NestingLevel: level}.Render(ctx)
+		if n.Style.AccessibilityRole != core.RoleListItem {
+			t.Errorf("level %d: role = %q, want %q — a depth with no role is dropped by "+
+				"every target that reads it", level, n.Style.AccessibilityRole, core.RoleListItem)
+		}
+		if n.Style.AccessibilityNestingLevel != level {
+			t.Errorf("level %d: depth = %d", level, n.Style.AccessibilityNestingLevel)
+		}
+	}
+}
+
+// Zero leaves the row exactly the unroled Box it has always been.
+//
+// This is the ownership rule, not caution. A `listitem` with no `list` around
+// it names a structure that is not there, and a row cannot see its container,
+// so the opt-in is what keeps every existing list in every app from quietly
+// growing orphan roles.
+func TestListRowWithNoDepthClaimsNothing(t *testing.T) {
+	ctx := core.NewContext()
+	ctx.BeginRenderPass()
+
+	n := ListRow{Title: "Matthew", AccessibilityLabel: "Matthew"}.Render(ctx)
+	if n.Style.AccessibilityRole != "" {
+		t.Errorf("role = %q on a row that asked for no depth", n.Style.AccessibilityRole)
+	}
+	if n.Style.AccessibilityNestingLevel != 0 {
+		t.Errorf("depth = %d on a row that asked for none", n.Style.AccessibilityNestingLevel)
+	}
+}
+
+// The depth and the selection suffix are independent, and the pairing is the
+// point: this widget says yes to one and no to the other, and the reason is a
+// property of the roles rather than of the widget.
+//
+// A depth's role is `listitem`, one of the three ARIA defines aria-level for.
+// A selection's role is `option`, which core.Role does not carry — so the state
+// still rides the accessible name here while the depth gets a field.
+func TestDepthDoesNotBringTheSelectionInWithIt(t *testing.T) {
+	ctx := core.NewContext()
+	ctx.BeginRenderPass()
+
+	n := ListRow{
+		Title:              "Matthew",
+		AccessibilityLabel: "Matthew",
+		Selected:           true,
+		NestingLevel:       2,
+	}.Render(ctx)
+
+	if n.Style.AccessibilityNestingLevel != 2 {
+		t.Errorf("depth = %d, want 2", n.Style.AccessibilityNestingLevel)
+	}
+	if n.Style.AccessibilitySelected != "" {
+		t.Errorf("selected = %q — ARIA defines no selection state for listitem, so a row "+
+			"that took one would be announcing into a slot readers drop",
+			n.Style.AccessibilitySelected)
+	}
+	if n.Style.AccessibilityLabel != "Matthew, selected" {
+		t.Errorf("name = %q, want the suffix a row still has to spell",
+			n.Style.AccessibilityLabel)
+	}
+}

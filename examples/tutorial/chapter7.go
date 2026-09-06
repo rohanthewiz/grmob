@@ -300,6 +300,16 @@ core.BorderColor(t.Colors.BorderColor()) // late roles resolve through methods`)
 					"all. When you write a theme of your own, fill in Components.Button at "+
 					"minimum: ComponentDefaults has no resolvers, and a missing base is "+
 					"genuinely no styling."),
+				prose("One thing Border does not name: a text field's edge. A rule between "+
+					"rows is decoration and both bundled themes spend a very pale hex on it, "+
+					"while the edge that says this rectangle is a field you can type in is the "+
+					"only thing identifying a control — WCAG 1.4.11 puts a 3:1 floor under "+
+					"that, and neither Border passes it. So the field frame lives in "+
+					"Components.Input and Components.TextArea, where each theme states its "+
+					"own boundary tone, and a widget that wants to look like a field reads "+
+					"that base rather than the palette. It is also what let the web stop "+
+					"drawing the browser's own input border: resetting a rule nothing "+
+					"replaces would have left every field on the web an unmarked rectangle."),
 				demoPanel("Pick a bundled theme and read its data — nothing is installed here; installing is the next lesson.",
 					components.SegmentedControl{
 						Style:     segWrap,
@@ -319,6 +329,7 @@ core.BorderColor(t.Colors.BorderColor()) // late roles resolve through methods`)
 					"A Theme is one value: color roles, a type scale, spacing steps, and per-widget base styles.",
 					"Read it with ctx.Theme() — DefaultTheme is the fallback when nothing is installed.",
 					"Name the role, never the literal: Border is a stroke not a fill, Success carries meaning while Secondary is brand.",
+					"Border is a divider, not a control boundary — a field's frame lives in Components.Input, at WCAG 1.4.11's 3:1.",
 					"Border, Success and Warning postdate the original roles — read them through their resolvers and old themes degrade gracefully.",
 					"ComponentDefaults has no resolvers: a theme of your own should set Components.Button at minimum.",
 				),

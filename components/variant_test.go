@@ -261,3 +261,104 @@ func TestTheRoleColoursAreWhyTheOnLightTonesExist(t *testing.T) {
 			"their plumbing should be reconsidered rather than left standing")
 	}
 }
+
+// --- The field frame -------------------------------------------------------
+
+// The two text-field bases each state a border, and it clears WCAG 1.4.11's
+// 3:1 floor for a control boundary against both the page behind the field and
+// the field's own fill.
+//
+// It lives beside the on-light census for the same reason that one is here
+// rather than in core: the palette declares the tone and this package owns the
+// arithmetic. What is different is the floor. The on-light tones are *ink* and
+// take AA's 4.5:1 body-text floor; this is a *boundary* — Non-text Contrast,
+// where 3:1 is the whole requirement, because the question is only whether a
+// reader can see that a control is there.
+//
+// Both backdrops are checked because a field has two. Under DefaultTheme the
+// fill and the page are the same white and the border is the only thing
+// drawing the control; under MaterialTheme the fill is a shade off the page,
+// so the outer edge and the inner edge sit on different colours.
+//
+// The frame has to exist at all, and that is asserted rather than assumed: a
+// theme with no Input border would sail through a contrast loop with nothing
+// in it, and the web target would then reset the browser's border and draw
+// none of its own — the "levelling down" borderResetTypes was held back for.
+func TestBundledFieldFramesClearNonTextContrast(t *testing.T) {
+	const floor = 3.0
+
+	for name, theme := range map[string]*core.Theme{
+		"DefaultTheme":  core.DefaultTheme,
+		"MaterialTheme": core.MaterialTheme,
+	} {
+		for _, base := range []struct {
+			what  string
+			style core.Style
+		}{
+			{"Input", theme.Components.Input},
+			{"TextArea", theme.Components.TextArea},
+		} {
+			if base.style.BorderWidth == 0 || base.style.BorderColor == "" {
+				t.Errorf("%s: Components.%s states no frame (%v/%q) — every renderer guards "+
+					"the border on both halves, so the field goes out unmarked on all four "+
+					"targets", name, base.what, base.style.BorderWidth, base.style.BorderColor)
+				continue
+			}
+			edge, ok := relativeLuminance(base.style.BorderColor)
+			if !ok {
+				t.Errorf("%s: Components.%s border %q does not parse",
+					name, base.what, base.style.BorderColor)
+				continue
+			}
+			for _, backdrop := range []struct {
+				what string
+				hex  string
+			}{
+				{"Background", theme.Colors.Background},
+				{"its own fill", base.style.Background},
+			} {
+				lum, ok := relativeLuminance(backdrop.hex)
+				if !ok {
+					t.Errorf("%s: Components.%s backdrop %s = %q does not parse",
+						name, base.what, backdrop.what, backdrop.hex)
+					continue
+				}
+				if r := contrastRatio(edge, lum); r < floor {
+					t.Errorf("%s: Components.%s border %q is %.2f:1 against %s (%q), want at "+
+						"least %.1f:1 — WCAG 1.4.11 puts that floor under the boundary that "+
+						"identifies a control", name, base.what, base.style.BorderColor, r,
+						backdrop.what, backdrop.hex, floor)
+				}
+			}
+		}
+	}
+}
+
+// The other half of the same story: the palette's Border role does *not* clear
+// that floor on either bundled theme, which is why the field frames are not
+// spent out of it.
+//
+// A census rather than two assertions, and pointed the same way as the on-light
+// one. Border is a divider — a rule between list rows, the outline of a card —
+// and a pale rule is a legitimate choice there; the fault would be reaching for
+// it as a control boundary. If a later retint darkened it past 3:1 the two jobs
+// would collapse back into one hex and the split ColorPalette.Border documents
+// would be worth reconsidering, which nothing would otherwise say.
+func TestTheDividerRoleIsWhyTheFieldFrameIsSeparate(t *testing.T) {
+	const floor = 3.0
+	failing := 0
+
+	for _, theme := range []*core.Theme{core.DefaultTheme, core.MaterialTheme} {
+		bg, _ := relativeLuminance(theme.Colors.Background)
+		if lum, ok := relativeLuminance(theme.Colors.BorderColor()); ok &&
+			contrastRatio(bg, lum) < floor {
+			failing++
+		}
+	}
+
+	if failing == 0 {
+		t.Error("both bundled Border roles now clear 3:1 as a control boundary — the field " +
+			"frames could read the palette role instead of stating their own hex, and " +
+			"ColorPalette.Border's divider/boundary split should be revisited")
+	}
+}

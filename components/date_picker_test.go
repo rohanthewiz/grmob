@@ -338,12 +338,23 @@ func TestDatePickerTriggerCarriesTheThemeFieldChrome(t *testing.T) {
 		t.Errorf("trigger fill = %q, want the theme's Input fill %q",
 			trigger.Style.Background, theme.Components.Input.Background)
 	}
-	// Plus the hairline the theme's Input entry does not carry: on
+	// And the edge, which the trigger no longer states for itself: on
 	// DefaultTheme the field's fill is the page's own white, and a summary
-	// with no caret has to look like a control before it is touched.
-	if trigger.Style.BorderWidth != 1 || trigger.Style.BorderColor != theme.Colors.BorderColor() {
-		t.Errorf("trigger border = %v/%q, want a 1px palette hairline",
-			trigger.Style.BorderWidth, trigger.Style.BorderColor)
+	// with no caret has to look like a control before it is touched. It comes
+	// off the same Input base as the fill, so this asserts against the base
+	// rather than against a literal — a theme is free to choose its own
+	// boundary tone, and the claim here is that the picker wears whatever the
+	// text fields beside it wear.
+	if trigger.Style.BorderWidth != theme.Components.Input.BorderWidth ||
+		trigger.Style.BorderColor != theme.Components.Input.BorderColor {
+		t.Errorf("trigger border = %v/%q, want the theme's Input frame %v/%q",
+			trigger.Style.BorderWidth, trigger.Style.BorderColor,
+			theme.Components.Input.BorderWidth, theme.Components.Input.BorderColor)
+	}
+	// The bundled themes have to actually carry one, or the assertion above
+	// passes on two zero values and the trigger goes out unframed.
+	if theme.Components.Input.BorderWidth == 0 || theme.Components.Input.BorderColor == "" {
+		t.Error("the theme's Input base states no frame — the trigger has nothing to inherit")
 	}
 }
 

@@ -353,6 +353,14 @@ components.Card{
 }
 ```
 
+`Title` is a `RoleHeading` at **level 2** — a card is a section of a screen,
+the same tier as a `GroupedList` band and one below an `AppBar`'s title.
+`HeadingLevel` moves it when the card is not where the default assumes; a card
+inside a section says 3. It applies to `Title` alone: a `Header` replaces the
+line entirely and the view in it is yours to describe, since the widget cannot
+know whether it was handed a heading, a row of controls or an avatar. See
+[the outline](concepts/styling-and-theming.md#the-packages-heading-outline).
+
 ## ListRow
 
 The leading-control / flexible-title / trailing-action shape every list
@@ -414,6 +422,28 @@ Other notes:
   attribute for it (a selectable collection item is an `option` in a `listbox`,
   which `core.Role` does not carry). So the suffix stays until the vocabulary
   has the pair that fits.
+- `NestingLevel` is the same table's other answer, and it lands. A depth's
+  role is `listitem` — one of the three ARIA defines `aria-level` for, and the
+  honest description of a row — so the row states its depth and becomes the
+  first consumer
+  [`core.AccessibilityNestingLevel`](concepts/styling-and-theming.md#accessibilitynestinglevel)
+  has ever had. It is what a flattened outline cannot say any other way: a list
+  is a flat run of siblings, so an indent is pixels a screen reader never sees.
+
+    ```go
+    core.List(
+        core.AccessibilityRole(core.RoleList),          // the caller's half
+        components.ListRow{Title: "Gospels", NestingLevel: 2},
+        components.ListRow{Title: "Matthew", NestingLevel: 3, Style: indent},
+    )
+    ```
+
+    Opt-in, because a `listitem` is owned by a `list` and a row cannot see its
+    own container: role the list yourself, or leave the field at zero and the
+    row is the unroled box it has always been. The cost is that a row inside a
+    `role="list"` must not also be a `role="button"`, so a tappable row in an
+    outline announces as an item at a depth rather than as a control — the same
+    foreign-child rule as above, from the other side.
 - No label is synthesized from `Title`. A row is a compound control whose
   slots carry meaning the widget cannot see, and labelling the container
   overrides how its children are announced, so naming the row is the
@@ -872,6 +902,21 @@ components.Accordion{
 `Header` replaces the default title text (the tap target and toggle stay
 with the widget); `InitiallyExpanded` seeds the first pass only.
 
+`Title` is a `RoleHeading` at **level 3** — a disclosure sits inside a section,
+one tier below a `Card` title or a band — and `HeadingLevel` moves it: a screen
+built entirely of accordions under an `AppBar` says 2. As with `Card`, it
+applies to the default header only.
+
+The role rides the title rather than the row, so the heading is named "Advanced
+options" and not "▸ Advanced options" — the same reason a band's heading sits on
+its label and not on the row that also holds the count badge. ARIA's own
+disclosure pattern nests them the other way (a heading element *wrapping* a
+button that carries `aria-expanded`), and neither half of that helps here: a
+heading takes its name from its content, so wrapping the row brings the chevron
+straight back into the name, and core has no vocabulary for an expanded state at
+all. That last gap is why the chevron is deliberately left audible — it is the
+only thing in the row that says which way the disclosure is pointing.
+
 ## Tabs
 
 The named-field facade over `core.TabView`:
@@ -969,6 +1014,15 @@ announce as peers and a reader navigating by heading cannot tell the screen
 from the month inside it. The role sits on the label rather than on the band,
 so the heading's name is "March" and not "March, 12"; the count badge is still
 announced, as the separate thing it is.
+
+`HeadingLevel` on either collection moves the default bands: a banded list
+inside a `Card` says 3, and a feed on a screen with **no bar at all** says 1 —
+which used to be unsayable, so a barless feed started its outline at 2 with no
+1 above it. It reaches `GroupHeader`, so it does nothing without `GroupBy` and
+nothing under a `Header` override, the same division `StickyHeaders` draws. The
+*column* header is unaffected: its cells carry `RoleColumnHeader` and no tier,
+because `aria-level` is defined for `heading`, `listitem` and `row` and
+pointedly not for `columnheader`.
 
 `DataTable` states its structure as well as drawing it:
 `RoleTable` on the table, `RoleRowGroup` on the body list, `RoleRow` on the
@@ -1136,8 +1190,10 @@ What wants delaying is the *reaction*, and that lives in the caller — see
 [`hooks.UseDebounce`](concepts/state-and-hooks.md#hooksusedebouncectx-delay).
 
 The row paints the theme's Surface at the theme's own field radius and the
-input inside it is flattened (transparent, no radius, no padding), so there is
-one box rather than two. `AccessibilityLabel` falls back to the resolved
+input inside it is flattened (transparent, no radius, no padding, no border),
+so there is one box rather than two. The border half of that is newer than the
+rest: the theme's `Input` base now states a field frame, so without it the
+second box would be drawn deliberately and on all four targets. `AccessibilityLabel` falls back to the resolved
 placeholder, because a placeholder is not a label on any platform — it
 vanishes on the first keystroke.
 

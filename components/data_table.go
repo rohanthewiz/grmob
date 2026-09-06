@@ -159,6 +159,16 @@ type DataTable[T any] struct {
 	// there for the marker to mean.
 	StickyHeaders bool
 
+	// HeadingLevel places the default group bands in the screen's outline, as
+	// in GroupedList. Zero is level 2; a table nested inside a Card should say
+	// 3. It reaches GroupHeader, so it does nothing without GroupBy and
+	// nothing under a Header override.
+	//
+	// It says nothing about the *column* header, whose cells carry
+	// core.RoleColumnHeader and no level — aria-level is defined for heading,
+	// listitem and row, and pointedly not for columnheader.
+	HeadingLevel int
+
 	// Sort is the active sort, nil for none. OnSort receives the requested
 	// sort when a sortable header is tapped: the same column toggles
 	// direction, a different column starts ascending.
@@ -275,7 +285,8 @@ func (d DataTable[T]) Render(ctx *core.Context) *core.Node {
 	default:
 		body = appendRows(ctx, body, rows, d.Key,
 			func(row T) core.View { return d.cellRow(t, cols, row) },
-			d.GroupBy, d.Header, d.HideTrailingCount, d.StickyHeaders, d.Dividers, d.wrapRow)
+			d.GroupBy, d.Header, d.HideTrailingCount, d.StickyHeaders, d.HeadingLevel,
+			d.Dividers, d.wrapRow)
 	}
 	items = append(items, core.List(body...))
 

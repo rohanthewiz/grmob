@@ -442,6 +442,16 @@ reader who has just seen the heading third mapped will ask about the other two.
 `mobile/verify/nesting_level_test.go` pins the notes and their absence of a
 parse together.
 
+The field now has a widget spending it — `components.ListRow`'s `NestingLevel`,
+for an outline flattened into one list — and that changes nothing here, which
+is worth saying plainly rather than leaving to be inferred. Such a row goes out
+with `role="listitem"` and a depth; on device the role reaches the `when`/
+`switch` and lands on an empty arm, and the depth is not parsed at all. A
+flattened outline therefore announces as a flat list of items on both phones
+and as a nested one on both web targets. That is the same honest partial the
+nine unmapped roles have: each platform says the truest thing it can, and the
+half it cannot say is written down instead of faked.
+
 ### A `core.Button`'s border
 
 A Button draws its own container on both platforms, so each renderer hands it a
@@ -458,6 +468,21 @@ the `Surface` the long-press path rebuilds the button out of), and a
 The guard is the same on every target — a width **and** a color — so half a
 border is no border everywhere. `mobile/verify/button_border_test.go` pins both
 renderers.
+
+### A text field's frame
+
+Nothing to do here either, and for the opposite reason to the Button above: both
+renderers already honored the style. Compose composes a `BasicTextField` through
+the ordinary `boxModifier`, and SwiftUI a `.plain`-styled `TextField` through
+`grMobBox`, so each drew exactly what `core.Style` asked for — and until both
+bundled themes gave `Components.Input` and `Components.TextArea` a border, what
+they asked for was nothing.
+
+That is why the missing frame was a theme bug rather than a renderer one. The
+phones were right and looked wrong; the web was wrong and looked right, because
+a browser draws its own border on an `<input>`. Both themes now state a control
+boundary at WCAG 1.4.11's 3:1, all four targets draw it from the same field, and
+`borderResetTypes` could finally take the browser's away.
 
 ### `core.Modal` and the dialog role
 

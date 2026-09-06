@@ -217,9 +217,9 @@ func CarriesOwnRole(nodeType string) bool {
 	return nodeType == "Modal"
 }
 
-// borderResetTags are the tags whose *user-agent* stylesheet draws a border of
-// its own, and which therefore have to be told not to when the Go style asks
-// for no border.
+// borderResetTypes are the node types whose *user-agent* stylesheet draws a
+// border of its own, and which therefore have to be told not to when the Go
+// style asks for no border.
 //
 // # The divergence this closes
 //
@@ -227,51 +227,76 @@ func CarriesOwnRole(nodeType string) bool {
 // Modifier.border and SwiftUI a .grMobBorder overlay, both guarded on
 // `BorderWidth > 0 && BorderColor != ""`, and the two DOM renderers emit their
 // `border` declaration under the same guard — so "no border in the style" means
-// "no border on screen" on three targets and, on the web, means "whatever the
-// browser draws". A <button> is the one tag in the table above where the
-// browser draws something: 2px outset ButtonBorder, which no style can turn
-// off, since core.BorderWidth(0) emits nothing and nothing is exactly what left
-// the user agent in charge.
+// "no border on screen" on three targets and, on the web, meant "whatever the
+// browser draws". A <button>, an <input> and a <textarea> are the tags in the
+// table above where the browser draws something, and no style could turn it
+// off, since core.BorderWidth(0) emits nothing and nothing is exactly what
+// leaves the user agent in charge.
 //
 // The visible cost was components.Button's EmphasisGhost, documented as
 // "EmphasisOutlined without the rule" and drawing a rule on both web targets
 // and none on both phones. There was no call-site workaround.
 //
-// # Why <input> and <textarea> are not here
+// # Why this is keyed by node type and not by tag
 //
-// They have a user-agent border too, and the same argument would remove it.
-// The reason not to is that neither bundled theme gives Components.Input a
-// BorderColor, so the reset would leave every text field on the web as an
-// unmarked rectangle — the browser's border is currently the only thing
-// drawing the control at all. The natives already have that problem (Compose
-// uses a bare BasicTextField, SwiftUI a .plain textFieldStyle, and both draw
-// only what the Go style asks for), so the honest fix is a border in the
-// themes' Input style, which is a palette decision and not this one. Until
-// then the web is the target that happens to be right, and taking its border
-// away would be levelling down.
+// It was a set of tags while <button> was the only member, because one node
+// type becomes a <button> and the two questions were the same question. Text
+// fields ended that: five node types share <input> and only three of them want
+// the reset.
 //
-// A set rather than a `tag == "button"`, because the question it answers is
-// per-tag and the answer will change when the theme question above is settled.
-// The WASM runtime restates it as BORDER_RESET_TAGS in grmob-runtime.js, and
-// TestRuntimeBorderResetTagsMatchGo in wasm/verify compares the two under a
+//	Input, InputPassword, NumericInput   a frame the style should own
+//	TextArea                             the same, one tag over
+//	Checkbox, Slider                     the user agent draws the *control*
+//
+// A checkbox's border is not chrome around the control, it is the box; a range
+// track has no border to reset in the first place. Both draw through
+// `appearance: auto`, where a browser ignores the property anyway — so keying
+// by tag would have been harmless today and wrong on the day someone reaches
+// for appearance:none. The question the set answers is "does this element draw
+// a frame the Go style is meant to own", which is per-control, so the map is
+// per-node-type and the tag lookup drops out of the call.
+//
+// # Why the text fields could not join until the themes moved
+//
+// Resetting a border the theme does not replace is levelling down, and until
+// both bundled themes grew a Components.Input / Components.TextArea frame the
+// reset would have left every web text field an unmarked rectangle — the
+// browser's border was the only thing drawing the control at all. The natives
+// already had that problem (Compose renders a bare BasicTextField, SwiftUI a
+// .plain textFieldStyle, and both draw only what the Go style asks for), which
+// is what made the missing frame a theme bug rather than an argument for
+// keeping the web's. Both themes now state one, so all four targets draw the
+// same edge from the same field.
+//
+// A theme that predates those defaults and sets no Input border of its own now
+// renders a borderless field on the web, as it always did on both phones. That
+// is the point of the reset rather than a casualty of it: one style, one
+// answer, everywhere.
+//
+// The WASM runtime restates this as BORDER_RESET_TYPES in grmob-runtime.js, and
+// TestRuntimeBorderResetTypesMatchGo in wasm/verify compares the two under a
 // plain `go test ./...` — the same treatment tags, inputTypes and genericTags
 // get, and for the same reason.
-var borderResetTags = map[string]bool{
-	"button": true,
+var borderResetTypes = map[string]bool{
+	"Button":        true,
+	"Input":         true,
+	"InputPassword": true,
+	"NumericInput":  true,
+	"TextArea":      true,
 }
 
-// ResetsUABorder reports whether a tag needs an explicit "no border" written
-// for it when the style declares none. See borderResetTags.
-func ResetsUABorder(tag string) bool {
-	return borderResetTags[tag]
+// ResetsUABorder reports whether a node type needs an explicit "no border"
+// written for it when the style declares none. See borderResetTypes.
+func ResetsUABorder(nodeType string) bool {
+	return borderResetTypes[nodeType]
 }
 
-// BorderResetTags returns those tags, sorted so that a test looping over them
-// reports in a stable order. Exported for the reason GenericTags is: the WASM
-// conformance test has to compare set against set.
-func BorderResetTags() []string {
-	out := make([]string, 0, len(borderResetTags))
-	for t := range borderResetTags {
+// BorderResetTypes returns those node types, sorted so that a test looping over
+// them reports in a stable order. Exported for the reason GenericTags is: the
+// WASM conformance test has to compare set against set.
+func BorderResetTypes() []string {
+	out := make([]string, 0, len(borderResetTypes))
+	for t := range borderResetTypes {
 		out = append(out, t)
 	}
 	sort.Strings(out)

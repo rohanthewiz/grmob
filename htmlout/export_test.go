@@ -1,6 +1,7 @@
 package htmlout
 
 import (
+	"reflect"
 	"strconv"
 	"strings"
 	"testing"
@@ -1300,7 +1301,7 @@ func TestCarriesOwnRoleAgreesWithTheExport(t *testing.T) {
 // Three of the four renderers draw a border only when the style asks for one.
 // The fourth pair — the DOM targets — used the same guard and got the negative
 // case wrong: emitting nothing leaves the user-agent stylesheet in charge, and
-// for a <button> that stylesheet draws a 2px outset rule. See borderResetTags
+// for a <button> that stylesheet draws a 2px outset rule. See borderResetTypes
 // in tag.go, and components.Button's EmphasisGhost, which is documented as
 // "EmphasisOutlined without the rule" and had one on the web.
 
@@ -1355,18 +1356,76 @@ func TestHalfABorderStillResets(t *testing.T) {
 	}
 }
 
-func TestOnlyTheTagsTheBrowserDrawsOnAreReset(t *testing.T) {
-	// The reset is scoped by tag, not applied to everything with no border. A
-	// <div> has no user-agent border, so "none" there would be a declaration
-	// that says nothing and that an author's own stylesheet would have to
-	// fight. This walks the whole tag table so a new row joins the set
-	// deliberately rather than by being forgotten.
+func TestOnlyTheNodeTypesTheBrowserDrawsOnAreReset(t *testing.T) {
+	// The reset is scoped by node type, not applied to everything with no
+	// border. A <div> has no user-agent border, so "none" there would be a
+	// declaration that says nothing and that an author's own stylesheet would
+	// have to fight. This walks the whole tag table so a new node type joins
+	// the set deliberately rather than by being forgotten.
 	for nodeType, tag := range tags {
 		n := &core.Node{Type: nodeType, Props: map[string]any{"visible": true}}
 		reset := strings.Contains(ExportHTML(n), "border:none")
-		if want := ResetsUABorder(tag); reset != want {
+		if want := ResetsUABorder(nodeType); reset != want {
 			t.Errorf("%s (<%s>): exported a border reset = %v, ResetsUABorder = %v",
 				nodeType, tag, reset, want)
+		}
+	}
+}
+
+// The membership itself, spelled out.
+//
+// The walk above compares the exporter against ResetsUABorder and so agrees
+// with the set whatever the set says — drop a node type from borderResetTypes
+// and both sides move together in silence. This is the other assertion: which
+// node types the browser actually draws a frame on, written as a list, so that
+// removing one is a visible edit to a claim rather than an invisible edit to a
+// lookup.
+func TestTheBorderResetSetIsExactly(t *testing.T) {
+	want := []string{"Button", "Input", "InputPassword", "NumericInput", "TextArea"}
+	got := BorderResetTypes()
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("borderResetTypes = %v, want %v — <button>, <input> and <textarea> are the "+
+			"three tags whose user-agent stylesheet draws a frame the Go style is meant to "+
+			"own, and Checkbox and Slider share <input> without sharing that", got, want)
+	}
+}
+
+// The three node types that share <input> with a text field and are pointedly
+// not reset.
+//
+// This is the case that made the set node-type-keyed. A Checkbox and a Slider
+// are <input> elements whose user agent draws the *whole control*, so the
+// border the browser puts on a checkbox is the box itself rather than chrome
+// the Go style is meant to own — and a tag-keyed set would have swept both in
+// the moment text fields joined.
+func TestTheUserAgentKeepsItsCheckboxAndSlider(t *testing.T) {
+	for _, nodeType := range []string{"Checkbox", "Slider"} {
+		n := &core.Node{Type: nodeType}
+		if out := ExportHTML(n); strings.Contains(out, "border:none") {
+			t.Errorf("%s was reset — the browser draws that control itself:\n%s", nodeType, out)
+		}
+	}
+}
+
+// A text field's frame now comes from the theme on all four targets, which is
+// what let the two field tags into the set at all: resetting a border nothing
+// replaces would have left every web field an unmarked rectangle.
+//
+// The style here is what core.Input hands the exporter under either bundled
+// theme — the reset is the *else* arm, so a stated border must reach the
+// document and the reset must not be written beside it.
+func TestAThemedFieldKeepsItsOwnFrame(t *testing.T) {
+	for _, nodeType := range []string{"Input", "TextArea"} {
+		n := &core.Node{
+			Type:  nodeType,
+			Style: &core.Style{Background: "#FFFFFF", BorderColor: "#8E8E93", BorderWidth: 1},
+		}
+		out := ExportHTML(n)
+		if !strings.Contains(out, "border:1px solid #8E8E93") {
+			t.Errorf("%s: the theme's frame is missing:\n%s", nodeType, out)
+		}
+		if strings.Contains(out, "border:none") {
+			t.Errorf("%s: the reset was written alongside a real border:\n%s", nodeType, out)
 		}
 	}
 }

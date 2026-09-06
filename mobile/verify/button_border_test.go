@@ -22,7 +22,7 @@ import (
 // The visible cost was components.Button's EmphasisOutlined, documented as "a
 // transparent fill, a 1px rule and a label both in the variant's color" and
 // drawing its rule on the two web targets and nothing at all on either phone.
-// It is the mirror image of the gap borderResetTags (htmlout/tag.go) closes in
+// It is the mirror image of the gap borderResetTypes (htmlout/tag.go) closes in
 // the other direction, and the two were fixed together because they are one
 // disagreement: whether "BorderWidth > 0 && BorderColor != nil" decides the
 // border on all four targets or only on two.

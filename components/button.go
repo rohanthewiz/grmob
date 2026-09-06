@@ -61,8 +61,8 @@ const (
 	//   - Both web targets drew a ghost rule. A <button> carries the user
 	//     agent's own border, and emitting no declaration is exactly what
 	//     leaves it in charge, so core.BorderWidth(0) could not remove it.
-	//     Both DOM renderers now write border:none for the tags the browser
-	//     draws on (borderResetTags in htmlout/tag.go).
+	//     Both DOM renderers now write border:none for the node types the
+	//     browser draws on (borderResetTypes in htmlout/tag.go).
 	//
 	// So the same guard — a width *and* a color — decides the border on all
 	// four targets, and half a border is no border everywhere.

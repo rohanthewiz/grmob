@@ -1038,12 +1038,12 @@ func styleValue(s *core.Style, nodeType string) string {
 	// means no border on screen, and on the web it meant "whatever the user
 	// agent draws" — which for a <button> is a 2px outset rule that no
 	// core.BorderWidth(0) could turn off, because emitting nothing is exactly
-	// what leaves the browser in charge. See borderResetTags in tag.go for the
-	// tags this applies to and for why <input> and <textarea> are not among
-	// them.
+	// what leaves the browser in charge. See borderResetTypes in tag.go for
+	// the node types this applies to, and for why the two <input> types whose
+	// user agent draws the whole control are not among them.
 	if s.BorderWidth != 0 && s.BorderColor != "" {
 		styles = append(styles, fmt.Sprintf("border:%gpx solid %s", s.BorderWidth, s.BorderColor))
-	} else if ResetsUABorder(TagFor(nodeType)) {
+	} else if ResetsUABorder(nodeType) {
 		styles = append(styles, "border:none")
 	}
 	if s.Transition != "" {

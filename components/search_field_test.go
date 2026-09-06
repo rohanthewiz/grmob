@@ -38,7 +38,8 @@ func TestSearchFieldIsControlled(t *testing.T) {
 }
 
 // The row around the field is the frame, so the theme's Input base — its own
-// background, corners and inset — has to come off, or there are two boxes.
+// background, corners, inset and rule — has to come off, or there are two
+// boxes.
 func TestSearchFieldFlattensTheInput(t *testing.T) {
 	ctx := core.NewContext()
 	ctx.BeginRenderPass()
@@ -59,6 +60,16 @@ func TestSearchFieldFlattensTheInput(t *testing.T) {
 	}
 	if (in.Style.Padding != core.EdgeInsets{}) {
 		t.Errorf("input padding = %+v, want zero — the theme inset is from a frame that is gone", in.Style.Padding)
+	}
+	// The width alone, because that is what every renderer guards on: a zero
+	// width drops the rule on all four targets whatever the colour says.
+	if in.Style.BorderWidth != 0 {
+		t.Errorf("input border width = %v, want 0 — the row is the only frame", in.Style.BorderWidth)
+	}
+	// And the base has to have carried one, or the assertion above is vacuous
+	// and would keep passing if the flattening were dropped.
+	if core.DefaultTheme.Components.Input.BorderWidth == 0 {
+		t.Error("the theme's Input base states no frame — there is nothing here to flatten")
 	}
 }
 
