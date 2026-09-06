@@ -3,6 +3,8 @@ package htmlout
 import (
 	"maps"
 	"sort"
+
+	"github.com/rohanthewiz/grmob/core"
 )
 
 // stackAxes is the one authoritative statement of which node types are stacks
@@ -202,8 +204,92 @@ func OverlayTypes() []string {
 //
 // OverlayChildDecl goes on every child, imposed by the parent (see imposed in
 // export.go) because a child has no idea it is a layer. `grid-area: 1/1` is
-// the whole of it: row 1, column 1, on all of them.
+// the whole of it: row 1, column 1, on all of them. The layer's placement
+// inside that cell is appended after it, from stackPlacements below — the one
+// part of the imposed declaration that differs from sibling to sibling.
 const (
 	OverlayChassis   = "display:grid; align-items:center; justify-items:center"
 	OverlayChildDecl = "grid-area:1/1"
 )
+
+// stackPlacements is the one authoritative statement of core.StackAlignment ->
+// the CSS grid-item placement pair, and the sixth of the mappings the two DOM
+// renderers would otherwise each keep their own copy of.
+//
+//	htmlout (this package)      queries it through StackPlacementFor
+//	wasm/grmob-runtime.js       restates it as STACK_PLACEMENTS
+//
+// The runtime's copy is pinned to this one by TestRuntimeStackPlacementsMatchGo
+// in wasm/verify, the same way the tag, <input> type, object-fit, text-align
+// and cross-axis tables are.
+//
+// # Why justify-self/align-self and not the chassis
+//
+// OverlayChassis states the stack's *default* placement with the grid `-items`
+// properties; a layer overrides it with the matching `-self` property on its
+// own box, which is the ordinary CSS relationship between the two. Nothing
+// here touches the chassis, so a stack with one aligned layer still centres
+// the other seven.
+//
+// justify-self is the inline axis (horizontal in every writing mode this
+// framework targets) and align-self the block axis, which is why "top" writes
+// the align half and "start" the justify half. The values are the grid
+// spellings — `start`/`center`/`end` — not the flexbox `flex-start`/`flex-end`
+// that crossAxisAligns emits: those are what a *flex* container understands,
+// and an overlay is a grid.
+//
+// # The centre IS in the table, unlike every other zero value here
+//
+// core.StackAlignments() omits StackAlignCenter, because it is the field's
+// zero value and no *dispatch* should have an arm for "do the default". This
+// table is not a dispatch: it is a total statement of what an overlay writes
+// on each of its layers, and the centre row is what makes it total.
+//
+// Two things need it. The runtime restates every property it manages on every
+// pass so an update-style patch clears what the new Style dropped — a layer
+// that loses its placement has to go back to the middle, and a row of "" is
+// how the pass says so. And `align-self` is a property a *layer* can already
+// set for itself, through Style.AlignSelf, which is CSS's flexbox spelling and
+// applies to a grid item too: a stack that wrote nothing on its unplaced
+// layers would let that flex prop move one of them, on the two DOM targets
+// only, in flat contradiction of the alignment contract core.ZStack documents.
+// Imposing the centre closes that, on both of them, for the price of two
+// declarations per layer.
+var stackPlacements = map[core.StackAlignment]string{
+	core.StackAlignCenter:      "justify-self:center; align-self:center",
+	core.StackAlignTopStart:    "justify-self:start; align-self:start",
+	core.StackAlignTop:         "justify-self:center; align-self:start",
+	core.StackAlignTopEnd:      "justify-self:end; align-self:start",
+	core.StackAlignStart:       "justify-self:start; align-self:center",
+	core.StackAlignEnd:         "justify-self:end; align-self:center",
+	core.StackAlignBottomStart: "justify-self:start; align-self:end",
+	core.StackAlignBottom:      "justify-self:center; align-self:end",
+	core.StackAlignBottomEnd:   "justify-self:end; align-self:end",
+}
+
+// StackPlacementFor returns the CSS declarations that place a layer.
+//
+// Total over core.StackAlignment's declared values, centre included. A value
+// the table does not name — which can only be a hand-written string, since the
+// type is closed by its const block — falls back to the centre rather than to
+// nothing, so an unrecognised placement renders as the contract's default
+// instead of leaving a layer wherever a stray flex prop put it.
+func StackPlacementFor(align core.StackAlignment) string {
+	if decl, ok := stackPlacements[align]; ok {
+		return decl
+	}
+	return stackPlacements[core.StackAlignCenter]
+}
+
+// StackPlacements returns a copy of the whole table, keyed by the placement's
+// string form — the service CrossAxisAligns provides, for the reason it gives:
+// the conformance test in wasm/verify compares table against table, and a
+// caller that could mutate the original would be comparing the runtime against
+// whatever the last test left behind.
+func StackPlacements() map[string]string {
+	out := make(map[string]string, len(stackPlacements))
+	for k, v := range stackPlacements {
+		out[string(k)] = v
+	}
+	return out
+}

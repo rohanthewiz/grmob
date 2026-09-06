@@ -39,7 +39,12 @@ indented HTML. Properties worth relying on:
   size an overlay to its largest child. The container props that promote any
   other box to flex (`Gap`, `JustifyContent`, `AlignItems`, `FlexDirection`)
   are inert here and deliberately do not promote it — that would cost it the
-  overlay outright. See [WASM — The overlay](wasm.md#the-overlay).
+  overlay outright. The same imposed declaration carries each layer's
+  `core.StackAlign` as a `justify-self`/`align-self` pair — the one thing the
+  channel writes that differs from sibling to sibling — including for the
+  layers that ask for nothing, since `align-self` is a property a flex child
+  can set for itself and an unstated layer would otherwise be movable by it.
+  See [WASM — The overlay](wasm.md#the-overlay).
 - **A `Select` builds its own options.** They come from the `options` prop
   rather than from child nodes, the chosen one carrying `selected="selected"`
   — `<select>` has no value attribute, so the selection lives on the options.

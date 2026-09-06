@@ -645,6 +645,25 @@ node) and the platform supplies only the behaviour.
 `mobile/verify/select_test.go` pins both halves: that the arm draws through the
 style's box, and that neither forbidden construct appears in it.
 
+`SelectOption.Group` and `SelectOption.Disabled` are drawn by each platform's
+own means, and this is where the two menus stop looking alike:
+
+- **SwiftUI** has a `Section`, so a run of options sharing a heading is handed
+  to one. A `Section` is a container, so the runs are computed ahead of the
+  `ForEach` (`grMobOptionRuns`) rather than derived inside it, and the buttons
+  moved out of `GrMobSelect` into `grMobMenuItems` so a run can be handed over
+  whole. The disabling is `.disabled` on the **Button** — on the Section it
+  would take the whole run with it.
+- **Compose**'s `DropdownMenu` has no section construct, so a heading is an
+  ordinary `DropdownMenuItem` with `enabled = false` and an empty `onClick`,
+  written ahead of its run. That is what makes it a label rather than a choice.
+
+Both split by *runs*: consecutive options sharing a heading, in the order
+written. See `core.SelectOption.Group` for why a gather would be the wrong
+shape, and `mobile/verify/select_test.go` for the pins — including the one on
+`grMobOptionRuns` closing a run when the heading changes, which is the line a
+gather would replace.
+
 Whether the menu is **open** is the renderer's own state and nothing else's.
 There is no prop for it and no patch describes it; the *selection* stays
 controlled like every other input's value. A picker that closed on every
@@ -667,12 +686,37 @@ since a `Box` places its children at the top-start corner. Stating it in both
 is what keeps the alignment comparable from the other renderer, and
 `mobile/verify`'s `TestNativeZStackOverlaysItsChildren` reads both.
 
-The layers are rendered through each renderer's *plain* children loop rather
-than its flex one: an overlay divides no leftover space along an axis, so there
-is no `FlexGrow` weight to hand a layer and no cross-axis stretch to apply. A
-layer that wants the stack's full extent states its own dimensions, which is
-what `core.ZStack`'s alignment contract asks of it in place of a per-child
-alignment prop.
+The layers are rendered through neither renderer's *flex* children loop: an
+overlay divides no leftover space along an axis, so there is no `FlexGrow`
+weight to hand a layer and no cross-axis stretch to apply. A layer that wants
+the stack's full extent states its own dimensions.
+
+`core.StackAlign` is the per-layer opt-out from that centring, and it is the
+one place these two constructs stop being interchangeable.
+
+- **Compose** spells it directly: `Modifier.align(Alignment.*)` exists inside
+  `BoxScope` for exactly this, it places without resizing, and a placed child
+  still contributes its size to the `Box`. The children are looped over inside
+  `GrMobZStack` rather than handed to `RenderChildren` only because the
+  modifier has to be built per child, in that scope.
+- **SwiftUI** has no equivalent — a `ZStack`'s `alignment:` is the stack's, not
+  the layer's — so the layer is wrapped in
+  `.frame(maxWidth: .infinity, maxHeight: .infinity, alignment:)`, which is the
+  platform's own idiom for the job.
+
+The frame is applied **only** to a layer that asks for a placement, and that
+narrowness is load-bearing: a filling frame is greedy, so an *unsized* stack
+with an aligned layer grows to its parent's proposal on iOS where a Compose
+`Box` and a CSS grid track both stay the size of their largest child. A stack
+that states its own dimensions — which `core.ZStack` already asks for — is
+identical on all four targets.
+
+Both mappings return "no placement" for the centre rather than the platform's
+own centre constant, so an unplaced layer reaches the renderer exactly as it
+always did. `mobile/verify`'s `TestNativeStackAlignmentsCoverEveryPlacement`
+holds the arms to `core.StackAlignments()` and
+`TestNativeStackAlignmentsLeaveTheCentreToTheCatchAll` holds them to *not*
+carrying an arm for it.
 
 This is the counterpart to the `Box` fix: `Box` and `SafeArea` used to be built
 from these same two constructs and were moved onto the column implementations,

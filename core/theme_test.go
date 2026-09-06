@@ -283,8 +283,17 @@ func TestOnLightResolvesAColourToItsRolesTone(t *testing.T) {
 
 	// Case-insensitively, because a hand-written theme may spell either way
 	// and every renderer treats the two as one colour.
-	if got := p.OnLight("#007aff"); got != p.PrimaryOnLightColor() {
-		t.Errorf("OnLight(%q) = %q, want the lookup to ignore hex case", "#007aff", got)
+	//
+	// Read off the palette and lower-cased rather than written as a literal,
+	// and Error rather than Primary: Primary's tone is now the role itself
+	// (see the theme), so a case-sensitive implementation would answer that
+	// lookup with the *input* — a different string, so still a failure, but
+	// one that no longer shows a wrong colour. Error's tone is a genuinely
+	// different hex, so this checks the miss the way a widget would feel it.
+	lower := strings.ToLower(p.Error)
+	if got := p.OnLight(lower); got != p.ErrorOnLightColor() {
+		t.Errorf("OnLight(%q) = %q, want the lookup to ignore hex case and return %q",
+			lower, got, p.ErrorOnLightColor())
 	}
 
 	// A colour that is not one of the four toned roles comes back unchanged.
@@ -348,6 +357,41 @@ func TestBundledFieldFramesAreTheControlBorderRole(t *testing.T) {
 					"the frame and the role are the same decision and must not drift",
 					themeName, base.what, base.style.BorderColor, role)
 			}
+		}
+	}
+}
+
+// Each bundled theme's Button base is filled with its own Primary role.
+//
+// Components.Button is the one place a palette states a fill and an ink
+// together, and components.declaredInk reads that pair back as "the ink for
+// this fill" — so every widget that paints Colors.Primary (Badge, Avatar,
+// ProgressBar, Calendar's selected day, Chip's accent) gets its label colour
+// from this base, and gets it only while the two hexes match.
+//
+// The failure being guarded is a half-move. Somebody darkens the button
+// because its label is illegible and leaves Primary where it was: the button
+// is fixed, the pair is broken, and every *other* Primary fill silently falls
+// through to measurement — which on a mid-tone blue picks black, the exact
+// disagreement inkOn was written to end. Nothing about that fails to compile
+// and nothing about it looks wrong until two widgets are on screen together.
+//
+// It is a literal against a literal, like the field-frame pin below, because a
+// Style is a value and a component default cannot call anything.
+func TestBundledButtonFillsAreThePrimaryRole(t *testing.T) {
+	for themeName, theme := range map[string]*Theme{
+		"DefaultTheme":  DefaultTheme,
+		"MaterialTheme": MaterialTheme,
+	} {
+		fill := theme.Components.Button.Background
+		if !strings.EqualFold(fill, theme.Colors.Primary) {
+			t.Errorf("%s.Components.Button.Background = %q but Colors.Primary is %q — "+
+				"the declared pair only reaches the role's other spenders while the two "+
+				"are one colour", themeName, fill, theme.Colors.Primary)
+		}
+		if theme.Components.Button.TextColor == "" {
+			t.Errorf("%s.Components.Button states a fill and no ink, which is half a "+
+				"declaration: declaredInk reads both halves or neither", themeName)
 		}
 	}
 }

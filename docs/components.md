@@ -212,12 +212,17 @@ each theme's own `Background` (both `#FFFFFF`), with the value each replaced:
 
 | variant | DefaultTheme | MaterialTheme |
 |---|---|---|
-| default | **7.56:1** (was 4.02) | 7.63:1 (needed no second tone) |
+| default | **7.56:1** (needs no second tone) | 7.63:1 (needed no second tone) |
 | success | **5.40:1** (was 2.22) | 5.13:1 (needed no second tone) |
 | warning | **5.28:1** (was 2.20) | **5.60:1** (was 3.08) |
 | error | **5.38:1** (was 3.55) | 7.33:1 (needed no second tone) |
 
-All eight now clear WCAG AA (4.5:1); five of the eight did not before.
+All eight now clear WCAG AA (4.5:1); four of the eight did not before.
+
+`DefaultTheme`'s `default` row read "was 4.02" until its `Primary` role was
+[darkened to the accessible blue its tone already carried](concepts/styling-and-theming.md#the-on-light-tones),
+which the *filled* treatment needed and this one did not. The number here is
+unchanged by that; the role and its tone simply became one colour.
 
 The promise is still narrower than `EmphasisFilled`'s: these numbers hold
 against a theme's `Background`, and a button placed on some other surface — a
@@ -621,11 +626,12 @@ same hue on any theme. A theme with no Button fill falls back to
 lookup by *colour* rather than by role, because the accent is a hex the widget
 read off the Button base and has no name for — so the outline is drawn at ink
 weight. The numbers are the outlined [`Button`](#button)'s `default` row, since
-it is the same colour on the same backdrop: **7.56:1** under `DefaultTheme`
-(up from 4.02:1, which missed WCAG AA at the theme's Button font size) and
-**7.63:1** under `MaterialTheme`, whose blue needed no second tone. A theme
-that declares none falls back to the accent itself, which is what this painted
-before.
+it is the same colour on the same backdrop: **7.56:1** under `DefaultTheme` and
+**7.63:1** under `MaterialTheme`. Neither bundled role needs a second tone
+today, so under both of them this lookup is currently an identity; a theme that
+declares none falls back to the accent itself, which is what this painted
+before, and a theme whose brand colour is a mid-tone is where the lookup still
+moves the pixels.
 
 The outline and the fill it becomes when tapped are now two weights of one hue
 rather than the same value — still the same hue by construction, which is what
@@ -1432,11 +1438,17 @@ web-only, so a mark drawn *over* the rose would have been a web-only widget
 wearing a portable name, and it was parked in the row above instead.
 [`core.ZStack`](concepts/views.md#containers) is the container that fixed it,
 and this is the widget it was added for. The dial is two layers — the rose,
-then a full-height column that justifies the mark to the top — because a
-`ZStack` centres every layer and a layer that wants to be somewhere else says
-so with its own box. The rose's inset grew from half a letter to a whole one to
-make room; at heading zero the mark and the N deliberately coincide, since an
-index pointing at N is what facing north looks like.
+then the mark, which asks for the top with
+[`core.StackAlign`](concepts/views.md#containers) because a `ZStack` centres
+every layer that says nothing. The rose's inset grew from half a letter to a
+whole one to make room; at heading zero the mark and the N deliberately
+coincide, since an index pointing at N is what facing north looks like.
+
+The mark used to be wrapped in a full-height column justifying its child to the
+start — the escape a `ZStack` documented while it had no per-child alignment,
+and this widget being its only consumer is what kept the prop out. The wrapper
+cost a node per frame and restated the stack's height in a second place, so a
+`Size` change had to be made twice or the mark drifted off the rim.
 
 **`Heading` is a float, not a `core.Heading`.** The widget draws any bearing:
 the direction of a route leg, a wind reading, the way a photograph was taken.

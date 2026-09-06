@@ -104,6 +104,13 @@ data class GrMobStyle(
      * class comment. Read by GrMobList only.
      */
     val position: String,
+    /**
+     * Go's core.StackAlignment, verbatim: "top-start", "bottom", ... or "" for
+     * a layer that takes the stack's centre. Read by GrMobZStack alone,
+     * through grMobStackAlignment in Renderer.kt — it is a *layer* property,
+     * and a node that is not a layer of an overlay has no use for it.
+     */
+    val stackAlign: String,
     val lineHeight: Int,
     val accessibilityLabel: String,
     val accessibilityHint: String,
@@ -182,6 +189,7 @@ data class GrMobStyle(
                 flexWrap = obj.optString("FlexWrap"),
                 flexDirection = obj.optString("FlexDirection"),
                 position = obj.optString("Position"),
+                stackAlign = obj.optString("StackAlign"),
                 lineHeight = obj.optInt("LineHeight", 0),
                 accessibilityLabel = obj.optString("AccessibilityLabel"),
                 accessibilityHint = obj.optString("AccessibilityHint"),

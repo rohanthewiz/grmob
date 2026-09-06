@@ -121,3 +121,89 @@ test("a picker with no border in its style is talked out of the browser's", () =
         { style: { BorderWidth: 1, BorderColor: "#8E8E93" } });
     assert.equal(framed.el.style.border, "1px solid #8E8E93");
 });
+
+test("consecutive options sharing a group become one optgroup", () => {
+    // Runs, not a gather: the same heading either side of a different one is
+    // two groups, in the order written. See core.SelectOption.Group for why
+    // reordering the list to suit the headings is not this widget's to do.
+    const { el } = mountSelect("pt", [
+        opt("none", "Pick one"),
+        { value: "pt", label: "Portugal", group: "Europe" },
+        { value: "es", label: "Spain", group: "Europe" },
+        { value: "us", label: "United States", group: "Americas" },
+        opt("zz", "Elsewhere"),
+    ]);
+
+    // Top level: the ungrouped option, two groups, the ungrouped option.
+    assert.deepEqual(
+        el.children.map((c) => c.tagName.toLowerCase()),
+        ["option", "optgroup", "optgroup", "option"],
+    );
+    assert.equal(el.children[1].getAttribute("label"), "Europe");
+    assert.deepEqual(el.children[1].children.map((c) => c.textContent), ["Portugal", "Spain"]);
+    assert.equal(el.children[2].getAttribute("label"), "Americas");
+    assert.deepEqual(el.children[2].children.map((c) => c.textContent), ["United States"]);
+    assert.equal(el.children[3].textContent, "Elsewhere");
+});
+
+test("the same heading either side of another one is two groups", () => {
+    const { el } = mountSelect("a", [
+        { value: "a", label: "A", group: "One" },
+        { value: "b", label: "B", group: "Two" },
+        { value: "c", label: "C", group: "One" },
+    ]);
+
+    assert.equal(el.children.length, 3, "the runs were gathered instead of kept in order");
+    assert.deepEqual(el.children.map((c) => c.getAttribute("label")), ["One", "Two", "One"]);
+});
+
+test("an optgroup is chrome, like a TabView's bar", () => {
+    // No node is ever addressed to it, so the conformance replay must be able
+    // to tell it from a Go node — the same marker every option carries.
+    const { el } = mountSelect("a", [{ value: "a", label: "A", group: "G" }]);
+
+    assert.equal(el.children[0].dataset.grmobChrome, "optgroup");
+    assert.equal(el.children[0].children[0].dataset.grmobChrome, "option");
+});
+
+test("a disabled option is drawn and not choosable", () => {
+    // Drawn is half the point: an option that vanished would take its
+    // explanation with it. See core.SelectOption.Disabled.
+    const { el } = mountSelect("s", [
+        opt("s", "Small"),
+        { value: "l", label: "Large", disabled: "true" },
+    ]);
+
+    assert.equal(el.children[1].textContent, "Large");
+    assert.equal(el.children[1].disabled, true);
+    // false, not undefined: dom.mjs starts every element's `disabled` at the
+    // browser's own default, unlike `checked` and `value`.
+    assert.equal(el.children[0].disabled, false,
+        "an option nobody disabled was disabled anyway");
+});
+
+test("a group or a disabled flag changing rebuilds the list", () => {
+    // The rebuild signature is the list's JSON, so this is really a check that
+    // the two new keys are *in* it — a signature computed from values and
+    // labels alone would leave a re-grouped picker showing the old headings.
+    const { rt, el } = mountSelect("a", [
+        { value: "a", label: "A", group: "One" },
+        opt("b", "B"),
+    ]);
+    assert.equal(el.children[0].getAttribute("label"), "One");
+
+    rt.GrMob.patch(JSON.stringify([{
+        Type: "update-props",
+        TargetID: "root/0",
+        Changes: {
+            value: "a",
+            options: [
+                { value: "a", label: "A", group: "Two" },
+                { value: "b", label: "B", disabled: "true" },
+            ],
+        },
+    }]));
+
+    assert.equal(el.children[0].getAttribute("label"), "Two");
+    assert.equal(el.children[1].disabled, true);
+});

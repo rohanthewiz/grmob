@@ -93,6 +93,46 @@ func NumericInput(value int, onChange func(int), props ...PropsAndChildren) View
 type SelectOption struct {
 	Value string
 	Label string
+
+	// Group is the heading this option is filed under: a country's continent,
+	// a font's family, "Recently used" above the rest. Empty means the option
+	// stands on its own at the top level of the list, which is what every
+	// option did before this field existed.
+	//
+	// # Consecutive options with the same Group form one section
+	//
+	// Runs, not a gather. Two options naming "Europe" with an American one
+	// between them make *two* Europe sections, in the order they were written.
+	//
+	// That is the honest reading and the only one this widget can offer. The
+	// list's order is the caller's — it is what a person sees and what the
+	// keyboard walks — and a gather would silently reorder it to suit the
+	// headings, which is a bigger change than the one being asked for and one
+	// no renderer could undo. Sorting a list into its sections is a line of Go
+	// at the call site; un-sorting one is not.
+	//
+	// Each target draws a run as its own construct: an <optgroup> on the web,
+	// a Section in the iOS menu, a heading item in the Android dropdown. All
+	// three are labels rather than options — none of them is selectable, and
+	// none of them carries a Value.
+	Group string
+
+	// Disabled greys this option out: visible, announced, and not choosable.
+	// The plan a caller has outgrown, the size that is out of stock, the
+	// timezone their region does not offer.
+	//
+	// Distinct from leaving the option out, which is the alternative and is
+	// usually worse: an option that vanishes takes its explanation with it,
+	// and a list that changes length between renders is one a person has to
+	// re-read. A disabled option says *this exists and you cannot have it*.
+	//
+	// It does not stop Go from being handed the value. Every target refuses
+	// the tap or the click, so nothing reaches onChange through the control —
+	// but a Select is controlled, and an app that sets its own state to a
+	// disabled option's value will find the widget showing it, because the
+	// value shown is always the one Go passed. That is the same contract an
+	// out-of-list value lands under; see Select.
+	Disabled bool
 }
 
 // Option builds a SelectOption, mirroring Tab's constructor next door.
@@ -142,6 +182,18 @@ func Option(value, label string) SelectOption {
 // deciding which child is chrome, which is the complication core.TabView's
 // tabs prop already avoids one node type over. The web renderer builds the
 // <option> elements from the prop; both natives read the same list.
+//
+// # Grouped and disabled options
+//
+// SelectOption carries a Group and a Disabled beside its two required fields;
+// see the type. Both are drawn by every target — an <optgroup> and a disabled
+// <option> on the web, a Section and a disabled Button in the iOS menu, a
+// heading item and a disabled item in the Android dropdown.
+//
+// Neither reaches this function as anything but a map key, which is the point:
+// the flattening below is the one place that knows what a SelectOption is, and
+// the four renderers each read a list of flat string maps. A fifth field would
+// land here and nowhere else.
 func Select(value string, options []SelectOption, onChange func(string), props ...PropsAndChildren) View {
 	return ComponentFunc(func(ctx *Context) *Node {
 		// Flattened to []map[string]string here rather than in each renderer,
@@ -157,7 +209,28 @@ func Select(value string, options []SelectOption, onChange func(string), props .
 			if label == "" {
 				label = o.Value
 			}
-			opts = append(opts, map[string]string{"value": o.Value, "label": label})
+			opt := map[string]string{"value": o.Value, "label": label}
+			// The two optional keys are written only when they say something,
+			// so an ordinary option crosses the wire in exactly the shape it
+			// always did — which matters beyond tidiness: the WASM runtime
+			// decides whether to rebuild a picker's <option> elements by
+			// comparing the list's JSON, and rebuilding closes an open
+			// drop-down mid-choice. A key that appeared on every option with
+			// an empty value would change every signature the first time this
+			// shipped, for nothing.
+			//
+			// Disabled is a string rather than a bool because this map is
+			// []map[string]string — one flat shape all four renderers already
+			// read. "true" is the spelling core.SelectedState uses for the
+			// same reason one property over: it is what the DOM writes, so the
+			// web half needs no translation.
+			if o.Group != "" {
+				opt["group"] = o.Group
+			}
+			if o.Disabled {
+				opt["disabled"] = "true"
+			}
+			opts = append(opts, opt)
 		}
 		return leafNode(ctx, "Select", ctx.Theme().Components.Input, map[string]any{
 			"value":    value,

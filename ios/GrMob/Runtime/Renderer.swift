@@ -357,10 +357,32 @@ private struct GrMobColumn: View {
 /// reader can compare them. An inherited default is invisible from the other
 /// two renderers.
 ///
-/// PlainChildren, not FlexChildren: an overlay divides no leftover space along
-/// an axis, so there is no flex weight to hand a layer and no cross-axis
-/// stretch to apply. A layer that wants the stack's full extent states its own
-/// dimensions, which is the contract core.ZStack documents.
+/// Not FlexChildren: an overlay divides no leftover space along an axis, so
+/// there is no flex weight to hand a layer and no cross-axis stretch to apply.
+/// A layer that wants the stack's full extent states its own dimensions, which
+/// is the contract core.ZStack documents.
+///
+/// # The per-layer opt-out, and why it is a frame
+///
+/// core.Style.StackAlign lets one layer sit in a corner instead. SwiftUI is
+/// the target with no direct spelling for it — a ZStack's `alignment:` is the
+/// stack's, not the layer's, and there is no `.align()` for a child the way
+/// Compose's BoxScope has one — so the layer is wrapped in a frame that fills
+/// the stack and placed inside it. That is SwiftUI's own idiom for the job.
+///
+/// The frame is applied *only* to a layer that asks for a placement, which is
+/// what keeps the change from reaching any tree that existed before this
+/// property: grMobStackAlignment returns nil for the centre, and the `else`
+/// branch below is the code this view has always run.
+///
+/// It has to be that narrow, because a filling frame is greedy and the
+/// greediness is this target's one divergence. A Compose Box and a CSS grid
+/// track both stay the size of their largest child no matter where a child is
+/// placed; a stack here grows to whatever its parent proposes as soon as one
+/// layer is aligned *and* the stack states no size of its own. core.ZStack's
+/// doc already asks a stack to pin its dimensions, and a stack that does is
+/// identical on all four targets — the case to avoid is an unsized stack with
+/// an aligned layer, which is close to meaningless anyway.
 private struct GrMobZStack: View {
     let node: GrMobNode
     let grow: GrMobGrow
@@ -368,7 +390,14 @@ private struct GrMobZStack: View {
     var body: some View {
         let s = node.style
         ZStack(alignment: .center) {
-            PlainChildren(node: node)
+            ForEach(node.children, id: \.viewID) { child in
+                if let placed = grMobStackAlignment(child.style?.stackAlign ?? "") {
+                    RenderNode(node: child)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: placed)
+                } else {
+                    RenderNode(node: child)
+                }
+            }
         }
         .grMobBox(s, grow: grow,
                     onTap: node.stringProp("onClick"),
@@ -1226,12 +1255,17 @@ private struct GrMobSelect: View {
         let chosen = options.first { ($0["value"] as? String) == value }
 
         Menu {
-            // Indices rather than the dictionaries themselves: a [String: Any]
-            // is not Hashable, so it cannot identify a ForEach row.
-            ForEach(options.indices, id: \.self) { i in
-                Button(options[i]["label"] as? String ?? "") {
-                    if !cb.isEmpty {
-                        runtime?.textChanged(cb, options[i]["value"] as? String ?? "")
+            // The options, split into the runs core.SelectOption.Group
+            // describes: consecutive options sharing a heading are one
+            // Section, in the order they were written. Grouped here rather
+            // than in the ForEach because SwiftUI's Section is a container and
+            // a run has to be handed to it whole.
+            ForEach(grMobOptionRuns(options), id: \.first) { run in
+                if run.label.isEmpty {
+                    grMobMenuItems(run.range, options, cb, runtime)
+                } else {
+                    Section(run.label) {
+                        grMobMenuItems(run.range, options, cb, runtime)
                     }
                 }
             }
@@ -1243,6 +1277,62 @@ private struct GrMobSelect: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
         .grMobBox(s, grow: grow)
+    }
+}
+
+/// One run of a picker's options: the heading they share (empty for the
+/// ungrouped ones) and the half-open index range they occupy.
+///
+/// `first` is the run's starting index and is what identifies it to ForEach —
+/// a run is not Hashable through its range alone once two runs share a label,
+/// which core.SelectOption.Group explicitly allows (the same heading either
+/// side of a different one is two runs).
+private struct GrMobOptionRun {
+    let label: String
+    let range: Range<Int>
+    var first: Int { range.lowerBound }
+}
+
+/// Splits a picker's flattened options into consecutive runs by their "group".
+///
+/// Runs rather than a gather, which is core.SelectOption.Group's own rule: the
+/// list's order is the caller's, and reordering it to suit the headings would
+/// be a bigger change than the one being asked for.
+private func grMobOptionRuns(_ options: [[String: Any]]) -> [GrMobOptionRun] {
+    var runs: [GrMobOptionRun] = []
+    var start = 0
+    var label = options.first?["group"] as? String ?? ""
+    for i in options.indices {
+        let g = options[i]["group"] as? String ?? ""
+        if g != label {
+            runs.append(GrMobOptionRun(label: label, range: start..<i))
+            start = i
+            label = g
+        }
+    }
+    if start < options.count {
+        runs.append(GrMobOptionRun(label: label, range: start..<options.count))
+    }
+    return runs
+}
+
+/// The buttons for one run of options.
+///
+/// A disabled option is still drawn and still announced — that is what
+/// disabling one buys over leaving it out — and `.disabled` is what stops the
+/// tap. See core.SelectOption.Disabled.
+@ViewBuilder
+private func grMobMenuItems(_ range: Range<Int>, _ options: [[String: Any]],
+                            _ cb: String, _ runtime: GrMobRuntime?) -> some View {
+    // Indices rather than the dictionaries themselves: a [String: Any] is not
+    // Hashable, so it cannot identify a ForEach row.
+    ForEach(Array(range), id: \.self) { i in
+        Button(options[i]["label"] as? String ?? "") {
+            if !cb.isEmpty {
+                runtime?.textChanged(cb, options[i]["value"] as? String ?? "")
+            }
+        }
+        .disabled((options[i]["disabled"] as? String ?? "") == "true")
     }
 }
 

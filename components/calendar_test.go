@@ -146,10 +146,16 @@ func TestCalendarSelectionFillsAndPicksItsInk(t *testing.T) {
 	// keep out — the earlier version did exactly that against contrastInk and
 	// so agreed with the bug for as long as it stood.
 	//
-	// #FFFFFF is the ink DefaultTheme's Button base declares over #007AFF, and
+	// #FFFFFF is the ink DefaultTheme's Button base declares over Primary, and
 	// therefore what every filled components.Button on the same screen paints.
-	// Black is the higher ratio (5.23:1 against white's 4.02:1) and is what a
-	// pure contrast rule picks; see inkOn.
+	//
+	// It was also, when this test was written, the answer a pure contrast rule
+	// would *not* have given: Primary was systemBlue, where black is 5.23:1
+	// against white's 4.02:1. The role has since been darkened to Apple's
+	// accessible blue and both rules now say white here, so the discriminating
+	// case moved to components' midTonePrimaryTheme. The literal stays a
+	// literal for the original reason — asserting against inkOn(...) would
+	// pass whatever inkOn returned.
 	if got := sel.Children[0].Style.TextColor; got != "#FFFFFF" {
 		t.Errorf("selected ink = %q, want the theme's declared #FFFFFF over Primary", got)
 	}

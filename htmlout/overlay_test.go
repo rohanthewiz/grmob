@@ -141,3 +141,109 @@ func TestOverlayTypesAreNodeTypes(t *testing.T) {
 		}
 	}
 }
+
+// A layer names its own corner; the rest keep the centre.
+//
+// The placement travels through the `imposed` channel rather than being
+// written by the layer, so this is also the assertion that the channel now
+// varies per child — every other declaration it has ever carried was one
+// string for the whole sibling set.
+func TestOverlayPlacesEachLayerWhereItAsked(t *testing.T) {
+	out := ExportHTML(zstack(&core.Style{Width: "160px"},
+		textNode("under"),
+		&core.Node{Type: "Text", Props: map[string]any{"content": "N"},
+			Style: &core.Style{StackAlign: core.StackAlignTop}},
+		&core.Node{Type: "Text", Props: map[string]any{"content": "SE"},
+			Style: &core.Style{StackAlign: core.StackAlignBottomEnd}},
+	))
+
+	for _, want := range []string{
+		// The unplaced layer, stated rather than left to the chassis — see
+		// stackPlacements on why the centre is in the table.
+		"grid-area:1/1; justify-self:center; align-self:center",
+		"grid-area:1/1; justify-self:center; align-self:start",
+		"grid-area:1/1; justify-self:end; align-self:end",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("missing %q:\n%s", want, out)
+		}
+	}
+}
+
+// Every declared placement must reach the markup, and no two may reach it as
+// the same pair.
+//
+// A census rather than three spot checks, because the table is the kind of
+// thing that is written once and copied downwards: two rows with the same
+// value look right and put two different corners in one place. Driven off
+// core.StackAlignments() so a ninth placement fails here until it has a row.
+func TestEveryPlacementReachesTheMarkupAndIsDistinct(t *testing.T) {
+	seen := map[string]core.StackAlignment{}
+	for _, align := range core.StackAlignments() {
+		out := ExportHTML(zstack(nil, &core.Node{Type: "Text",
+			Props: map[string]any{"content": "x"},
+			Style: &core.Style{StackAlign: align}}))
+
+		decl := StackPlacementFor(align)
+		if decl == StackPlacementFor(core.StackAlignCenter) {
+			t.Errorf("%q resolves to the centre's declaration; a placement with no row of "+
+				"its own renders as the default it was written to escape", align)
+			continue
+		}
+		if !strings.Contains(out, decl) {
+			t.Errorf("%q does not reach the markup as %q:\n%s", align, decl, out)
+		}
+		if prev, dup := seen[decl]; dup {
+			t.Errorf("%q and %q both resolve to %q", align, prev, decl)
+		}
+		seen[decl] = align
+	}
+}
+
+// The placement is the stack's to impose, so a StackAlign on a node whose
+// parent is not an overlay must reach the markup as nothing at all.
+//
+// Not merely a nicety. `align-self` is a flexbox property that a *flex* item
+// honours, so a layer prop written into the node's own declaration list would
+// re-place a Row's children — on the two DOM targets only, since neither
+// native reads it outside a stack. Routing it through the parent is what makes
+// "inert outside a ZStack" true rather than approximately true.
+func TestAPlacementOutsideAStackReachesNothing(t *testing.T) {
+	out := ExportHTML(&core.Node{Type: "Row", Children: []*core.Node{
+		{Type: "Text", Props: map[string]any{"content": "a"},
+			Style: &core.Style{StackAlign: core.StackAlignTopEnd}},
+	}})
+
+	for _, unwanted := range []string{"justify-self", "align-self", "grid-area"} {
+		if strings.Contains(out, unwanted) {
+			t.Errorf("a Row's child was given %q by a StackAlign:\n%s", unwanted, out)
+		}
+	}
+}
+
+// A layer's own Style.AlignSelf must not move it.
+//
+// This is the leak the centre row of stackPlacements closes. AlignSelf is
+// flexbox's spelling and a grid item honours it too, so before the stack
+// imposed a placement on *every* layer, one flex prop moved a layer on the two
+// DOM targets and nowhere else — in flat contradiction of the alignment
+// contract core.ZStack documents.
+func TestALayersOwnAlignSelfDoesNotPlaceIt(t *testing.T) {
+	out := ExportHTML(zstack(&core.Style{Width: "160px"},
+		&core.Node{Type: "Text", Props: map[string]any{"content": "a"},
+			Style: &core.Style{AlignSelf: core.AlignItemsEnd}},
+	))
+
+	// Both are present; the imposed one is written last and wins the
+	// browser's last-one-wins parse, which is the whole reason `imposed.decl`
+	// is appended rather than prepended.
+	self := strings.Index(out, "align-self:flex-end")
+	imposed := strings.Index(out, "align-self:center")
+	if self < 0 || imposed < 0 {
+		t.Fatalf("expected both the layer's own align-self and the imposed centre:\n%s", out)
+	}
+	if imposed < self {
+		t.Errorf("the imposed centring is written before the layer's own align-self, so the "+
+			"flex prop wins the cascade and places the layer:\n%s", out)
+	}
+}

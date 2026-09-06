@@ -652,10 +652,16 @@ func lessonPicker() Lesson {
 						Label:    "Seat",
 						Required: form.Required("seat"),
 						Error:    form.Error("seat"),
+						// The two optional fields, on the picker where they
+						// read as the aircraft rather than as a feature demo:
+						// Group files consecutive options under a heading, and
+						// Disabled greys one out without taking it away.
 						Input: form.Select("seat", []core.SelectOption{
 							{Value: "", Label: "Choose a seat…"},
-							{Value: "aisle", Label: "Aisle"},
-							{Value: "window", Label: "Window"},
+							{Value: "aisle", Label: "Aisle", Group: "Front cabin"},
+							{Value: "window", Label: "Window", Group: "Front cabin"},
+							{Value: "rear-aisle", Label: "Aisle", Group: "Rear cabin"},
+							{Value: "exit", Label: "Exit row", Group: "Rear cabin", Disabled: true},
 						}),
 					},
 					caption(fmt.Sprintf("class = %q   seat = %q",
@@ -688,12 +694,35 @@ func lessonPicker() Lesson {
 					"every other input's value; the open state belongs to whichever renderer is "+
 					"drawing the menu. A picker that closed on every unrelated re-render would be "+
 					"unusable, and that is exactly what putting the flag in the tree would cause."),
+				prose("The seat picker above carries the option list's other two fields. Group files "+
+					"an option under a heading — an <optgroup> on the web, a Section in the iOS menu, "+
+					"an unclickable heading item in the Android dropdown — and Disabled greys one out "+
+					"without taking it away. Note that the two aisle seats share a label and differ "+
+					"in value, which is exactly the case the Value rule exists for: what the form "+
+					"stores is \"rear-aisle\", not \"Aisle\" and not index 3."),
+				codeBlock(`{Value: "aisle",      Label: "Aisle",    Group: "Front cabin"},
+{Value: "window",     Label: "Window",   Group: "Front cabin"},
+{Value: "rear-aisle", Label: "Aisle",    Group: "Rear cabin"},
+{Value: "exit",       Label: "Exit row", Group: "Rear cabin", Disabled: true},`),
+				prose("Grouping is by *runs*, not by gathering: consecutive options sharing a heading "+
+					"become one section, in the order they were written. Put a Front cabin seat back "+
+					"between the two Rear cabin ones and you get three sections, because the list's "+
+					"order is yours — it is what a person sees and what the keyboard walks — and no "+
+					"renderer is going to rearrange it to tidy up the headings. Sorting a list into "+
+					"its sections is a line of Go at the call site; un-sorting one is not."),
+				prose("A disabled option is drawn, announced, and unchoosable. That is the point of "+
+					"disabling one rather than leaving it out: an option that vanishes takes its "+
+					"explanation with it, and a list that changes length between renders is one a "+
+					"person has to re-read. It does not stop *Go* from setting the value — a Select "+
+					"shows whatever value it was passed, which is the same contract an out-of-list "+
+					"value lands under."),
 				keyPoints(
 					"core.Select stores the option's Value — not its label, and never its index.",
 					"A default is Field.Initial with no rule; no default is a leading empty option plus Required.",
 					"The picker reads the theme's Input base, which is what makes it match the fields around it.",
 					"The Go style owns the frame on all four targets, which is why the web's own <select> border is reset away.",
 					"The value is controlled; whether the menu is open is the renderer's, and Go never hears about it.",
+					"Group sections consecutive options; Disabled greys one out without removing it.",
 				),
 			)
 		},

@@ -111,15 +111,22 @@ const (
 // #FFFFFF), with the value each replaced in brackets:
 //
 //	            Default          Material
-//	default      7.56:1 [4.02]    7.63:1 [same]
+//	default      7.56:1 [same]    7.63:1 [same]
 //	success      5.40:1 [2.22]    5.13:1 [same]
 //	warning      5.28:1 [2.20]    5.60:1 [3.08]
 //	error        5.38:1 [3.55]    7.33:1 [same]
 //
-// All eight clear WCAG AA (4.5:1); five of the eight did not before. Three of
-// Material's four needed no second tone and declare the role itself, which is
-// why they read "same" rather than being blank — see the palette's own doc for
-// why a measurement is stated rather than left to the fallback.
+// All eight clear WCAG AA (4.5:1); four of the eight did not before. A "same"
+// means the role needed no second tone and the theme declares the role itself,
+// rather than the field being blank — see the palette's own doc for why a
+// measurement is stated rather than left to the fallback.
+//
+// DefaultTheme's default row reads "same" and did not always: its Primary was
+// iOS systemBlue at 4.02:1 here, and the tone was the second value that fixed
+// this treatment while the *filled* one stayed illegible. The role has since
+// moved to Apple's accessible blue, which is the same hex the tone already
+// carried — so the two collapsed into one, and the number in this row is
+// unchanged by it.
 //
 // The promise is still narrower than EmphasisFilled's. These numbers hold
 // against a theme's Background, and a button placed on some other surface —
@@ -128,12 +135,13 @@ const (
 // than documented as illegible.
 //
 // A theme that declares no on-light tones falls back to the role colour, i.e.
-// to the left-hand numbers, and to exactly the pixels this widget painted
+// to the bracketed numbers, and to exactly the pixels this widget painted
 // before the palette had a second value. Darkening a role colour *here* was
 // considered and rejected for the reason it always was: it would repaint a hex
-// the theme author chose, and DefaultTheme's 4.02:1 blue is Apple's own system
-// blue. Declaring the second value is the theme's call; spending it is this
-// widget's.
+// the theme author chose. Declaring the second value is the theme's call;
+// spending it is this widget's — and when DefaultTheme later did darken its
+// Primary, it was to fix the *filled* treatment, whose declared white on
+// systemBlue this widget could only document.
 type Button struct {
 	Label string
 	OnTap func()

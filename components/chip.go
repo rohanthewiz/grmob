@@ -276,10 +276,14 @@ func (c Chip) stateStyle(t *core.Theme) []core.StyleProp {
 		//
 		// The bundled numbers are Button's outlined "default" row, since it
 		// is the same colour on the same backdrop: 7.56:1 under DefaultTheme
-		// (up from 4.02:1, which missed WCAG AA at this font size) and
-		// 7.63:1 under MaterialTheme, whose blue needed no second tone. A
-		// theme that declares none falls back to the accent itself, which is
-		// what this painted before the palette had one.
+		// and 7.63:1 under MaterialTheme. Neither role needs a second tone
+		// today — DefaultTheme's Primary was systemBlue at 4.02:1 when this
+		// was written, and has since moved to the accessible blue its tone
+		// already named — so under both bundled themes this lookup is
+		// currently an identity. A theme that declares no tone falls back to
+		// the accent itself, which is what this painted before the palette
+		// had one, and a theme whose brand colour is a mid-tone is where the
+		// lookup still moves the pixels.
 		//
 		// The lookup is by *colour*, not by role, and that is forced by the
 		// line above: the accent is read off the theme's Button base rather

@@ -400,6 +400,33 @@ const GrMob = (() => {
     // TestRuntimeOverlayChildAreaMatchesGo.
     const OVERLAY_CHILD_AREA = "1/1";
 
+    // Where each layer sits inside that cell: core.StackAlignment -> the
+    // [justify-self, align-self] pair. Go states this once, as stackPlacements
+    // in htmlout/stack.go, and TestRuntimeStackPlacementsMatchGo in wasm/verify
+    // compares the two under a plain `go test ./...`.
+    //
+    // Total, centre included, and both halves for the same reason the rest of
+    // styleFromGrMob is total: syncOverlay restates every property it manages
+    // on every pass, so a layer that *loses* its placement goes back to the
+    // middle instead of keeping the last one it was given. The centre row is
+    // also what stops a layer's own Style.AlignSelf — a flexbox property that
+    // a grid item honours too — from moving it in contradiction of
+    // core.ZStack's centre-on-both-axes contract.
+    //
+    // That test reads this literal out of the source textually, so keep it a
+    // flat object literal with one `"key": ["a", "b"],` line per entry.
+    const STACK_PLACEMENTS = {
+        "": ["center", "center"],
+        "top-start": ["start", "start"],
+        "top": ["center", "start"],
+        "top-end": ["end", "start"],
+        "start": ["start", "center"],
+        "end": ["end", "center"],
+        "bottom-start": ["start", "end"],
+        "bottom": ["center", "end"],
+        "bottom-end": ["end", "end"],
+    };
+
     // The id prefix every element id inside one TabView is built from.
     //
     // aria-controls and aria-labelledby are IDREFs, so the wiring cannot be
@@ -698,6 +725,16 @@ const GrMob = (() => {
     function syncOverlay(el) {
         for (const child of el.children) {
             child.style.gridArea = OVERLAY_CHILD_AREA;
+            // core.Style.StackAlign, which reached the element as a data
+            // attribute in applyStyle. It is read back here rather than
+            // written there because the placement is the *stack's* to impose:
+            // a layer has no idea it is a layer, and justify-self/align-self
+            // written by any node would move a flex item too. htmlout makes
+            // the same split through its `imposed` channel.
+            const place = STACK_PLACEMENTS[child.dataset.stackAlign || ""]
+                || STACK_PLACEMENTS[""];
+            child.style.justifySelf = place[0];
+            child.style.alignSelf = place[1];
         }
     }
 
@@ -771,6 +808,24 @@ const GrMob = (() => {
         // function is total, so the record is refreshed on every style patch
         // and can never go stale.
         el.dataset.baseDisplay = css.display;
+        // core.Style.StackAlign, parked on the element rather than turned into
+        // a declaration here. It is a *layer* property, and only the overlay
+        // above knows whether this node is a layer — so syncOverlay reads it
+        // back off the dataset and writes the grid placement. Setting
+        // justify-self/align-self from here would place a flex item too, which
+        // is the leak core.StackAlign's doc says the prop must not have.
+        //
+        // Total like the rest of this function: the key is removed when the
+        // field is unset, so a layer that drops its placement is stamped back
+        // to the centre on the next overlay pass rather than keeping the last
+        // value it had. Kept in the same dataset channel data-tab-selected
+        // uses, for the same reason — a fact one element records for another
+        // to act on.
+        if (style.StackAlign) {
+            el.dataset.stackAlign = style.StackAlign;
+        } else {
+            delete el.dataset.stackAlign;
+        }
         applyAccessibility(el, style, nodeType);
 
         const disabled = !!style.Disabled;
@@ -1953,7 +2008,29 @@ const GrMob = (() => {
         if (el.dataset.selectOptions !== signature) {
             el.dataset.selectOptions = signature;
             el.innerHTML = "";
+            // The open <optgroup>, if any, and the label it was opened with.
+            // core.SelectOption.Group makes *consecutive* options with the
+            // same heading one group, in the order they were written — see
+            // that field for why a gather would silently reorder the list —
+            // so the loop closes a run by simply stopping appending to it.
+            let group = null;
+            let openLabel = "";
             for (const o of list) {
+                const label = o.group ?? "";
+                if (label !== openLabel) {
+                    openLabel = label;
+                    group = null;
+                    if (label !== "") {
+                        group = document.createElement("optgroup");
+                        // Chrome like the options themselves, below.
+                        group.dataset.grmobChrome = "optgroup";
+                        // setAttribute, not textContent: an <optgroup>'s label
+                        // is an attribute, and htmlout writes it through
+                        // element's attribute path for the same reason.
+                        group.setAttribute("label", label);
+                        el.appendChild(group);
+                    }
+                }
                 const opt = document.createElement("option");
                 // Chrome, like a TabView's bar: an element the runtime draws
                 // that no node asked for. It carries no data-node-path, no
@@ -1964,11 +2041,18 @@ const GrMob = (() => {
                 // node children for an option to sit ahead of.
                 opt.dataset.grmobChrome = "option";
                 opt.setAttribute("value", o.value ?? "");
+                // A disabled option is still drawn and still announced — that
+                // is what disabling one buys over leaving it out — it simply
+                // cannot be chosen. The wire carries the string "true", the
+                // spelling core.SelectedState uses one property over.
+                if (o.disabled === "true") {
+                    opt.disabled = true;
+                }
                 // textContent, not innerHTML: an option's label is content and
                 // is as user-originated as anything else here. htmlout escapes
                 // the same string through element's TE.
                 opt.textContent = o.label ?? o.value ?? "";
-                el.appendChild(opt);
+                (group ?? el).appendChild(opt);
             }
         }
         if (value !== undefined && el.value !== value) {

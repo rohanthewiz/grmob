@@ -60,22 +60,56 @@ core.Row(
   top-left corner, the other two centre). Like `Box` it carries no theme base,
   and it sizes to its largest child.
 
-  There is no per-child alignment prop. A layer that wants to sit somewhere
-  else says so with its own box — give it the stack's dimensions and lay its
-  content out inside it:
+  A layer that wants to sit somewhere else says so with `StackAlign`:
 
   ```go
   core.ZStack(
       core.Width("160px"), core.Height("160px"),
-      rose,                              // painted first, underneath
-      core.Column(                       // the mark, in a box as tall as the stack
-          core.Height("160px"),
-          core.Justify(core.JustifyStart),
-          core.AlignItemsProp(core.AlignItemsCenter),
-          core.Text("▼"),
-      ),
+      rose,                                          // painted first, underneath
+      core.Text("▼", core.StackAlign(core.StackAlignTop)),
   )
   ```
+
+  Nine placements, laid out as the 3×3 grid they are:
+
+  | | | |
+  |---|---|---|
+  | `StackAlignTopStart` | `StackAlignTop` | `StackAlignTopEnd` |
+  | `StackAlignStart` | *(the zero value)* | `StackAlignEnd` |
+  | `StackAlignBottomStart` | `StackAlignBottom` | `StackAlignBottomEnd` |
+
+  The centre is `StackAlignCenter` and has **no spelling** — it is the empty
+  string, so an unset `Style.StackAlign` *is* it and a layer that says nothing
+  is placed exactly as every layer was before the prop existed.
+
+  It is honoured on all four targets, which is what separates it from the
+  flexbox `AlignSelf` in the
+  [style reference](styling-and-theming.md#what-each-target-reads): a SwiftUI
+  `Alignment`, a Compose `Alignment` and a CSS grid item's
+  `justify-self`/`align-self` turn out to be the same nine values, so the prop
+  could be portable rather than a CSS property two renderers ignore.
+
+  !!! note "It is the stack that places the layer, not the layer itself"
+      On the web the declaration is written by the *container* onto each child
+      (htmlout's `imposed` channel), so a `StackAlign` on a child of a `Row` or
+      a `Column` reaches the markup as nothing at all. That is deliberate:
+      `align-self` means something else to a flex item, and a layer prop that
+      re-placed a row's children on the web alone would be worse than one that
+      did nothing.
+
+      The same rule closes an older leak in the other direction — a layer's own
+      `AlignSelf` used to move it on the two DOM targets and nowhere else, in
+      contradiction of the centring contract. A stack now states the centre on
+      its unplaced layers explicitly, so nothing else can.
+
+  !!! warning "Pin the stack's size once a layer is placed"
+      SwiftUI has no per-child `ZStack` alignment, so the iOS renderer places a
+      layer by wrapping it in a frame that fills the stack — and a filling
+      frame is greedy. An **unsized** stack with an aligned layer therefore
+      grows to its parent's proposal on iOS, where a Compose `Box` and a CSS
+      grid track both stay the size of their largest child. A stack that states
+      its own `Width`/`Height` — which the sizing note above already asks for —
+      is identical on all four.
 
   `Gap`, `JustifyContent`, `AlignItems` and `FlexDirection` are inert on a
   `ZStack`: there is one cell and nothing to space along. They do not promote
@@ -225,7 +259,7 @@ something else held last pass, and the double-load comes back.
 | `Button` | `Button(label, onClick, props...)` — also `ButtonWithEvent(label, event, fn, ...)` |
 | `Input` | `Input(value, placeholder, onChange, ...)` — also `InputWithSubmit`, `InputPassword`, `NumericInput`, `TextArea` |
 | `Checkbox` | `Checkbox(checked, onToggle, ...)` |
-| `Select` | `Select(value, []SelectOption{{Value, Label}}, onChange, ...)` — the picker. `onChange` carries the option's **Value**, never its label or index; an empty `Label` falls back to the value. Reads the theme's `Components.Input` base, so it matches the text fields beside it |
+| `Select` | `Select(value, []SelectOption{{Value, Label}}, onChange, ...)` — the picker. `onChange` carries the option's **Value**, never its label or index; an empty `Label` falls back to the value. Reads the theme's `Components.Input` base, so it matches the text fields beside it. An option may also carry a `Group` (a heading over the *run* of consecutive options sharing it) and `Disabled` (drawn and announced, not choosable) |
 | `Slider` | `Slider(value, min, max, onChange, ...)` with `OnSliderChangeEnd(fn)` (fires once on release — the one a seek bar acts on) and `SliderStep(s)` |
 | `Image` | `Image(src, styleProps...)` |
 | `TextGrid` | `TextGrid(rows []GridRow, props...)` — a monospace grid of styled runs (a terminal pane, a log tail); each `GridRun` has `Text`, `Fg`, `Bg` and `Attr` bits (`GridBold`, `GridDim`, `GridItalic`, `GridUnderline`, `GridStrike`). Rows are children, so a changed row is one patch |

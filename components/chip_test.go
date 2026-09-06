@@ -227,20 +227,28 @@ func TestChipNilOnTapDoesNotPanic(t *testing.T) {
 // chosen one pale. Here the fill is transparent, so the selected chip is still
 // the only solid pill in the row, and a row of suggestions is exactly the
 // shape that would hide a quiet slide back.
+// # Why this runs under a fixture theme and not DefaultTheme
+//
+// The load-bearing assertion is that the outline is the accent's *tone* and
+// not the accent, and it can only say that where the two are different hexes.
+// DefaultTheme's Primary was darkened to a value that is ink-weight on its own
+// (Colors.PrimaryOnLight now equals Colors.Primary), so under it the two
+// implementations paint the same pixels and this test would pass on either.
+// midTonePrimaryTheme (variant_test.go) is DefaultTheme as it stood before
+// that move: systemBlue with a separate accessible tone.
 func TestChipProminenceLoudIsAnOutlineNotAFill(t *testing.T) {
-	ctx := core.NewContext()
+	theme := midTonePrimaryTheme()
+	ctx := core.NewContext().WithTheme(theme)
 	ctx.BeginRenderPass()
 
-	theme := core.DefaultTheme
 	accent := theme.Components.Button.Background
 	// The outline is drawn in the accent's ink-weight tone, looked up by
 	// colour because the accent is a hex the widget read off the Button base
-	// rather than a role it named. Under DefaultTheme the two differ, which
-	// is what keeps this assertion from passing on the old behaviour.
+	// rather than a role it named.
 	ink := theme.Colors.OnLight(accent)
 	if ink == accent {
 		t.Fatalf("fixture no longer exercises the split: the Button base fill %q has no "+
-			"separate on-light tone under DefaultTheme", accent)
+			"separate on-light tone", accent)
 	}
 
 	c := Chip{Label: "$25", Prominence: ProminenceLoud, OnTap: func() {}}
@@ -322,8 +330,10 @@ func TestChipUnselectedStyleBeatsProminence(t *testing.T) {
 // It falls back to Primary and is then toned like any other accent, which is
 // the composition worth pinning: the two steps are independent — one answers
 // "which colour", the other "how dark" — and a fallback that skipped the
-// second would put a 4.02:1 label on exactly the themes that had said least
-// about their own colours.
+// second would spend the raw role colour on exactly the themes that had said
+// least about their own colours. Under a theme whose Primary is a mid-tone
+// that is a label nobody can read; under the bundled two it currently is not,
+// because their Primary is ink-weight on its own.
 func TestChipProminenceLoudFallsBackToPrimaryWithoutAButtonFill(t *testing.T) {
 	fillless := &core.Theme{Colors: core.DefaultTheme.Colors}
 	ctx := core.NewContext().WithTheme(fillless)

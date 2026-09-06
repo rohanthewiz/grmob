@@ -68,6 +68,11 @@ struct GrMobStyle: Equatable {
     /// what CSS sticky positioning means in a scrolling list. Read by
     /// GrMobList only; core.StickyHeader is the Go spelling.
     var position: String = ""
+    /// Go's core.StackAlignment, verbatim: "top-start", "bottom", ... or ""
+    /// for a layer that takes the stack's centre. Read by GrMobZStack alone,
+    /// through grMobStackAlignment below — it is a *layer* property, and a
+    /// node that is not a layer of an overlay has no use for it.
+    var stackAlign: String = ""
     var lineHeight: Int = 0
     var accessibilityLabel: String = ""
     var accessibilityHint: String = ""
@@ -162,6 +167,7 @@ struct GrMobStyle: Equatable {
         s.flexWrap = str("FlexWrap")
         s.flexDirection = str("FlexDirection")
         s.position = str("Position")
+        s.stackAlign = str("StackAlign")
         s.lineHeight = int("LineHeight")
         s.accessibilityLabel = str("AccessibilityLabel")
         s.accessibilityHint = str("AccessibilityHint")
@@ -805,4 +811,35 @@ private func grMobTraitsFor(_ role: String) -> AccessibilityTraits {
 /// ARIA scopes its attributes, not because the framework does.
 private func grMobSelectedTrait(_ state: String) -> AccessibilityTraits {
     state == "true" ? .isSelected : []
+}
+
+/// Go's core.StackAlignment as a SwiftUI Alignment, or nil for the centre.
+///
+/// nil rather than `.center` is what the caller needs: an unplaced layer must
+/// be left exactly as it was before this property existed, and on this
+/// platform "as it was" means *no frame at all* around it — see GrMobZStack
+/// for why the frame is the part with a cost.
+///
+/// The nine values line up one for one with SwiftUI's own 2D alignment
+/// vocabulary, which is the reason core.StackAlignment is a two-axis type
+/// rather than a second reading of the flexbox AlignSelf: leading/trailing are
+/// Go's start/end, and Go's bare "top"/"bottom"/"start"/"end" are the four
+/// edge-centres.
+///
+/// Every declared value has an arm, and the default is the centre rather than
+/// a crash: a placement this build does not know is a Go binary newer than
+/// this app, and a layer in the middle is the contract's own default.
+/// mobile/verify's coverage check holds the arms to core.StackAlignments().
+func grMobStackAlignment(_ align: String) -> Alignment? {
+    switch align {
+    case "top-start": return .topLeading
+    case "top": return .top
+    case "top-end": return .topTrailing
+    case "start": return .leading
+    case "end": return .trailing
+    case "bottom-start": return .bottomLeading
+    case "bottom": return .bottom
+    case "bottom-end": return .bottomTrailing
+    default: return nil
+    }
 }

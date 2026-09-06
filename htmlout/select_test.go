@@ -127,3 +127,154 @@ func TestAThemedPickerWearsTheThemesFieldFrame(t *testing.T) {
 		t.Errorf("no change callback ID was exported:\n%s", out)
 	}
 }
+
+// Consecutive options sharing a group become one <optgroup>, and an option
+// with none stays at the top level of the list.
+//
+// Both halves are asserted because either alone would pass on a picker that
+// got the nesting wrong: a renderer that wrapped *every* option in a group of
+// its own produces the same set of labels, and one that never closed a run
+// produces the same set of options.
+func TestSelectGroupsConsecutiveOptionsIntoOptgroups(t *testing.T) {
+	ctx := core.NewContext()
+	ctx.BeginRenderPass()
+
+	out := ExportHTML(core.Select("pt", []core.SelectOption{
+		{Value: "none", Label: "Pick one"},
+		{Value: "pt", Label: "Portugal", Group: "Europe"},
+		{Value: "es", Label: "Spain", Group: "Europe"},
+		{Value: "us", Label: "United States", Group: "Americas"},
+		{Value: "zz", Label: "Elsewhere"},
+	}, func(string) {}).Render(ctx))
+
+	if n := strings.Count(out, "<optgroup"); n != 2 {
+		t.Errorf("%d optgroups, want 2:\n%s", n, out)
+	}
+	if n := strings.Count(out, "</optgroup>"); n != 2 {
+		t.Errorf("%d optgroups closed, want 2 — an unclosed run swallows every option "+
+			"after it:\n%s", n, out)
+	}
+	for _, want := range []string{`<optgroup label="Europe">`, `<optgroup label="Americas">`} {
+		if !strings.Contains(out, want) {
+			t.Errorf("missing %s:\n%s", want, out)
+		}
+	}
+	// The ungrouped pair must sit outside any group. Checked by position:
+	// "Pick one" before the first <optgroup, "Elsewhere" after the last
+	// </optgroup>.
+	if strings.Index(out, "Pick one") > strings.Index(out, "<optgroup") {
+		t.Errorf("the leading ungrouped option was pulled into a group:\n%s", out)
+	}
+	if strings.LastIndex(out, "Elsewhere") < strings.LastIndex(out, "</optgroup>") {
+		t.Errorf("the trailing ungrouped option was left inside a group:\n%s", out)
+	}
+}
+
+// A group that ends the list is closed.
+//
+// Separated from the test above rather than folded into it, because that one
+// cannot see this: its last group is followed by an ungrouped option, so the
+// run is closed by the *next* option's heading changing and the explicit close
+// after the loop is never reached. Deleting that close passed every other
+// assertion in this file — the markup it produced was a `<select>` closed
+// inside an open `<optgroup>`, i.e. a document a browser repairs and a parser
+// does not.
+//
+// The nesting is what is checked, not the tag count: a stray `</optgroup>` in
+// the wrong place would balance the count and still be wrong.
+func TestSelectClosesAGroupThatEndsTheList(t *testing.T) {
+	ctx := core.NewContext()
+	ctx.BeginRenderPass()
+
+	out := ExportHTML(core.Select("", []core.SelectOption{
+		{Value: "a", Label: "A", Group: "G"},
+		{Value: "b", Label: "B", Group: "G"},
+	}, nil).Render(ctx))
+
+	closeGroup := strings.Index(out, "</optgroup>")
+	closeSelect := strings.Index(out, "</select>")
+	if closeGroup < 0 {
+		t.Fatalf("the trailing group is never closed:\n%s", out)
+	}
+	if closeSelect < 0 {
+		t.Fatalf("no </select> at all:\n%s", out)
+	}
+	if closeGroup > closeSelect {
+		t.Errorf("the picker is closed inside an open group:\n%s", out)
+	}
+	// Both options are inside it, which is the other half: a group closed too
+	// early is as wrong as one never closed.
+	inner := out[strings.Index(out, "<optgroup"):closeGroup]
+	for _, want := range []string{`value="a"`, `value="b"`} {
+		if !strings.Contains(inner, want) {
+			t.Errorf("option %s is outside the group that should hold it:\n%s", want, out)
+		}
+	}
+}
+
+// The same heading either side of a different one is two groups, in the order
+// written. See core.SelectOption.Group: a gather would silently reorder the
+// list, which is a bigger change than the one being asked for and one no
+// renderer could undo.
+func TestSelectDoesNotGatherASplitGroup(t *testing.T) {
+	ctx := core.NewContext()
+	ctx.BeginRenderPass()
+
+	out := ExportHTML(core.Select("", []core.SelectOption{
+		{Value: "a", Label: "A", Group: "One"},
+		{Value: "b", Label: "B", Group: "Two"},
+		{Value: "c", Label: "C", Group: "One"},
+	}, nil).Render(ctx))
+
+	if n := strings.Count(out, "<optgroup"); n != 3 {
+		t.Errorf("%d optgroups, want 3 — the runs were gathered:\n%s", n, out)
+	}
+	// And the order is the list's, not the headings'.
+	if strings.Index(out, `label="Two"`) < strings.Index(out, `label="One"`) {
+		t.Errorf("the groups were reordered:\n%s", out)
+	}
+}
+
+// A disabled option is written, announced and unselectable. `disabled` is the
+// spec-blessed spelling of the bare boolean attribute, as `selected` is on the
+// chosen option and `checked` is on a Checkbox — element emits key="value"
+// pairs only.
+func TestSelectMarksADisabledOptionWithoutDroppingIt(t *testing.T) {
+	ctx := core.NewContext()
+	ctx.BeginRenderPass()
+
+	out := ExportHTML(core.Select("s", []core.SelectOption{
+		{Value: "s", Label: "Small"},
+		{Value: "l", Label: "Large", Disabled: true},
+	}, nil).Render(ctx))
+
+	if !strings.Contains(out, `<option value="l" disabled="disabled">Large</option>`) {
+		t.Errorf("the disabled option is not written as one:\n%s", out)
+	}
+	if strings.Contains(out, `<option value="s" disabled`) {
+		t.Errorf("an option nobody disabled was disabled anyway:\n%s", out)
+	}
+	// The picker itself is untouched: disabling one choice is not disabling
+	// the control, which is core.Style.Disabled's job.
+	if strings.Contains(out, "<select disabled") || strings.Contains(out, `<select style="`) &&
+		strings.Contains(out, `aria-disabled`) {
+		t.Errorf("the control itself was disabled:\n%s", out)
+	}
+}
+
+// The <optgroup> label goes through the attribute path, so a heading carrying
+// markup cannot re-enter the document as markup. The options' own escaping is
+// pinned by TestSelectOptionsAreEscaped above; this is the third string the
+// picker writes and the one that arrived last.
+func TestSelectGroupLabelsAreEscaped(t *testing.T) {
+	ctx := core.NewContext()
+	ctx.BeginRenderPass()
+
+	out := ExportHTML(core.Select("", []core.SelectOption{
+		{Value: "a", Label: "A", Group: `Europe" onmouseover="x`},
+	}, nil).Render(ctx))
+
+	if strings.Contains(out, `onmouseover="x"`) {
+		t.Errorf("a group label escaped its attribute:\n%s", out)
+	}
+}

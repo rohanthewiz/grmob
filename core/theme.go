@@ -131,9 +131,26 @@ type ColorPalette struct {
 	// Five of those eight fail. This is the fix components.Button and
 	// components.Chip both name in their own docs and could not make: the
 	// widgets have the number and not the authority. Darkening a role until
-	// it passes would repaint a hex the theme author chose — DefaultTheme's
-	// 4.02:1 blue is Apple's own system blue, and it is the *default* case —
-	// so the second tone is the theme's to declare.
+	// it passes would repaint a hex the theme author chose, so the second
+	// tone is the theme's to declare.
+	//
+	// # One of those five was later fixed at the role, and why that is not a
+	// contradiction
+	//
+	// DefaultTheme's primary is no longer 4.02:1. The role itself moved to
+	// Apple's accessible blue #0040DD (7.56:1), because that role is not read
+	// as ink only — it is also the *fill* under every filled Button and under
+	// Calendar's selected day, and the white the theme declares over that fill
+	// was the thing failing. A second tone cannot reach a declared pairing;
+	// only the role can. So the table above is the state these fields were
+	// introduced to answer for, and four of the eight still fail today.
+	//
+	// Which gives the rule from the other side. Darken the *role* when the
+	// role is spent as a fill and the ink declared over it is the problem;
+	// add a *tone* when the role is a perfectly good fill and only fails as
+	// ink. Success and Warning are the second case — DefaultTheme's green and
+	// orange carry black text at ~9.5:1 — and Primary turned out to be the
+	// first.
 	//
 	// # Reading them
 	//
@@ -336,7 +353,28 @@ func WithTheme(theme *Theme, children ...View) View {
 
 var DefaultTheme = &Theme{
 	Colors: ColorPalette{
-		Primary:       "#007AFF",   // iOS system blue
+		// Apple's *accessible* system blue, not plain systemBlue (#007AFF).
+		//
+		// This role is spent as a fill far more often than as ink — every
+		// filled Button, Badge and Avatar, Calendar's selected day, the
+		// compass needle, ProgressBar's fill — and Components.Button below
+		// declares white as the ink over it. White on #007AFF is 4.02:1,
+		// under WCAG AA's 4.5:1 for body text, so the framework's own default
+		// theme was shipping an unreadable label on its commonest control.
+		//
+		// Apple publishes an accessible variant of each system colour for
+		// light mode and this is it verbatim, which is the provenance the
+		// rest of this palette has. White over it is 7.56:1.
+		//
+		// The alternative was to darken Components.Button alone and leave the
+		// role at systemBlue, and it is worth saying why that is wrong rather
+		// than merely narrower: the button base is what declares the ink for
+		// *this* fill (see components.declaredInk). Move one without the
+		// other and Primary becomes a fill the theme has paired nothing with,
+		// so Calendar's selected day falls back to measurement and picks
+		// black on system blue — exactly the disagreement inkOn was written
+		// to end.
+		Primary:       "#0040DD",   // Apple accessible blue — 7.56:1 under white
 		Secondary:     "#34C759",   // iOS system green
 		Background:    "#FFFFFF",   // white
 		Surface:       "#F2F2F7",   // light gray
@@ -369,7 +407,14 @@ var DefaultTheme = &Theme{
 		// darkened past it instead, which is the one value here without a
 		// published source and the one that would otherwise ship a number
 		// that looks official and fails.
-		PrimaryOnLight: "#0040DD", // Apple accessible blue   — 7.56:1 (from 4.02:1)
+		//
+		// Blue is stated and equal to its role, on MaterialTheme's pattern:
+		// Primary moved to the accessible variant for the fill's sake, so the
+		// role is now ink-weight on its own and needs no second tone. Written
+		// out rather than left to PrimaryOnLightColor's fallback because
+		// "this role needs no second tone" is a measurement, and a blank
+		// field cannot be told apart from "nobody has looked".
+		PrimaryOnLight: "#0040DD", // = Primary               — 7.56:1, already ink
 		SuccessOnLight: "#1E7A34", // systemGreen, darkened   — 5.40:1 (from 2.22:1)
 		WarningOnLight: "#C93400", // Apple accessible orange — 5.28:1 (from 2.20:1)
 		ErrorOnLight:   "#D70015", // Apple accessible red    — 5.38:1 (from 3.55:1)
@@ -409,10 +454,18 @@ var DefaultTheme = &Theme{
 	},
 	Components: ComponentDefaults{
 		Button: Style{
-			FontSize:     17,
-			FontWeight:   Normal,
+			FontSize:   17,
+			FontWeight: Normal,
+			// The declared pair, and the only place this theme states a fill
+			// and an ink together — which is what components.declaredInk
+			// reads back for every widget that paints Primary. Two things
+			// have to hold and neither is expressible in the type system:
+			// the fill stays Colors.Primary (TestBundledButtonFillsAreThe
+			// PrimaryRole, next door) and the ink stays legible over it
+			// (components' TestVariantInkIsLegibleOnEveryThemeAndVariant,
+			// which owns the WCAG arithmetic).
 			TextColor:    "#FFFFFF",
-			Background:   "#007AFF",
+			Background:   "#0040DD", // = Colors.Primary — white over it is 7.56:1
 			Padding:      EdgeInsets{Top: 10, Bottom: 10, Left: 16, Right: 16},
 			BorderRadius: 8,
 			Shadow:       1,

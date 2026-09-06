@@ -125,3 +125,78 @@ test("an ordinary container does not place its children in a cell", () => {
     assert.equal(nodeAt(rt.document, "root/0/0").style.gridArea, undefined);
     assert.equal(nodeAt(rt.document, "root/0").style.display, "flex");
 });
+
+test("a layer names its own corner and the rest stay centred", () => {
+    const { layer } = mountStack({ Width: "160px" }, [
+        text("under"),
+        { Type: "Text", Props: { content: "N" }, Style: { StackAlign: "top" } },
+        { Type: "Text", Props: { content: "SE" }, Style: { StackAlign: "bottom-end" } },
+    ]);
+
+    // The unplaced layer is placed *explicitly* at the centre rather than left
+    // to the chassis. See STACK_PLACEMENTS: the row exists so that a layer's
+    // own AlignSelf cannot move it, and so that a layer losing its placement
+    // comes back to the middle.
+    assert.equal(layer(0).style.justifySelf, "center");
+    assert.equal(layer(0).style.alignSelf, "center");
+
+    assert.equal(layer(1).style.justifySelf, "center");
+    assert.equal(layer(1).style.alignSelf, "start");
+
+    assert.equal(layer(2).style.justifySelf, "end");
+    assert.equal(layer(2).style.alignSelf, "end");
+});
+
+test("a layer's own AlignSelf does not move it", () => {
+    // Style.AlignSelf is flexbox's, and a grid item honours it too — so
+    // before the stack imposed a placement on every layer, this one prop
+    // moved a layer on the two DOM targets and nowhere else, in contradiction
+    // of the alignment contract core.ZStack documents.
+    const { layer } = mountStack({ Width: "160px" }, [
+        { Type: "Text", Props: { content: "a" }, Style: { AlignSelf: "flex-end" } },
+    ]);
+
+    assert.equal(layer(0).style.alignSelf, "center",
+        "a flex item property placed a layer of an overlay");
+});
+
+test("a layer that loses its placement returns to the centre", () => {
+    // The totality half. applyStyle drops the data attribute and the overlay
+    // pass restates both properties, so nothing is left holding the old
+    // corner — the failure a pass that only wrote placements it was asked for
+    // would have.
+    const { rt, layer } = mountStack({ Width: "160px" }, [
+        { Type: "Text", Props: { content: "N" }, Style: { StackAlign: "top-start" } },
+    ]);
+    assert.equal(layer(0).style.justifySelf, "start");
+
+    rt.GrMob.patch(JSON.stringify([{
+        Type: "update-style", TargetID: "root/0/0", Changes: { FontSize: 12 },
+    }]));
+
+    assert.equal(layer(0).style.justifySelf, "center");
+    assert.equal(layer(0).style.alignSelf, "center");
+});
+
+test("a placement outside an overlay is inert", () => {
+    // The prop is imposed by the stack, so a node that is not a layer never
+    // receives it — which is what keeps a StackAlign written on the wrong node
+    // from re-placing a Row's children on the web alone.
+    const rt = loadRuntime();
+    rt.GrMob.mount(JSON.stringify({
+        Type: "Column",
+        Children: [{
+            Type: "Row",
+            Children: [{ Type: "Text", Props: { content: "a" }, Style: { StackAlign: "top-end" } }],
+        }],
+    }));
+    rt.drainFrames();
+
+    // Falsy rather than "": dom.mjs leaves a property that was never assigned
+    // undefined, where a browser's CSSOM reports the empty string, and
+    // justify-self is never assigned outside an overlay while align-self is
+    // (styleFromGrMob writes it for every node, from Style.AlignSelf).
+    const child = nodeAt(rt.document, "root/0/0");
+    assert.ok(!child.style.justifySelf, "a StackAlign placed a node that is not a layer");
+    assert.ok(!child.style.alignSelf, "a StackAlign placed a node that is not a layer");
+});

@@ -46,7 +46,7 @@ difference is structural rather than an oversight:
 
 | group | Android | iOS | WASM DOM | `htmlout` |
 |---|---|---|---|---|
-| typography, color, box model, borders, `Shadow`, `Gap`, `RowGap`/`ColumnGap`, `Justify`, `AlignItems`, `FlexWrap`, `Transition`, accessibility, `Disabled` | yes | yes | yes | yes |
+| typography, color, box model, borders, `Shadow`, `Gap`, `RowGap`/`ColumnGap`, `Justify`, `AlignItems`, `FlexWrap`, `StackAlign`, `Transition`, accessibility, `Disabled` | yes | yes | yes | yes |
 | `Position` + `Top`/`Right`/`Bottom`/`Left`/`ZIndex`, `MinWidth`/`MaxWidth`/`MinHeight`/`MaxHeight`, `Overflow`, `WhiteSpace`, `AlignSelf`, `FlexBasis`, `FlexShrink`, `FlexDirection` | — | — | yes | yes |
 | `HoverStyle`, `FocusStyle`, `PseudoStates` | — | — | — | — |
 
@@ -56,6 +56,16 @@ placement model — so a layout that leans on it will not look the same on
 device. The third row merges correctly on `Style` and is read by nothing: an
 inline style cannot express a pseudo-state, so the web targets need a
 generated stylesheet, not another declaration.
+
+`StackAlign` sits in the first row and `AlignSelf` in the second, which looks
+odd for two props that both let a child place itself and is the whole of why
+`StackAlign` is a type of its own. `AlignSelf` is CSS's flexbox property: one
+axis, whose identity depends on the container's direction, and neither native
+has a model for it. `StackAlign` names both axes at once, applies only inside a
+[`ZStack`](views.md#containers), and is the same nine values as a SwiftUI
+`Alignment` and a Compose `Alignment` — so every renderer can answer for it.
+See [`ZStack`](views.md#containers) for the grid of placements and for why the
+stack imposes them rather than the layer writing them.
 
 `RowGap` and `ColumnGap` moved up into the first row once the natives learned
 to read them, and `FlexWrap` with them: both are things a stack can express
@@ -912,7 +922,7 @@ do:
   placed on, which the widget cannot see, and a mid-tone loses.
 
 Measured against each bundled theme's own white `Background`, five of the eight
-role colors failed the 4.5:1 body-text floor:
+role colors failed the 4.5:1 body-text floor when these fields were introduced:
 
 | role | Default | Material |
 |---|---|---|
@@ -922,9 +932,26 @@ role colors failed the 4.5:1 body-text floor:
 | error | 3.55:1 → **5.38:1** | 7.33:1 (already ink) |
 
 The widgets had the number and not the authority: darkening a role until it
-passes would repaint a hex the theme author chose — `DefaultTheme`'s 4.02:1
-blue is Apple's own system blue, i.e. the *default* case. So the second tone is
-the theme's to declare and the widget's to spend.
+passes would repaint a hex the theme author chose. So the second tone is the
+theme's to declare and the widget's to spend.
+
+!!! note "`DefaultTheme`'s primary row was later settled at the role"
+    Its `Primary` is no longer the 4.02:1 systemBlue in that table — it is
+    `#0040DD`, the same accessible blue `PrimaryOnLight` already carried, so
+    the role and its tone are now one colour.
+
+    The reason is that this role is not only read as ink. It is also the
+    **fill** under every filled `Button`, under `Calendar`'s selected day and
+    under `Badge`, `Avatar` and `ProgressBar` — and the white that
+    `Components.Button` declares over that fill was 4.02:1 too. A second tone
+    cannot reach a declared pairing; only the role can.
+
+    Which gives the rule from the other side. **Darken the role** when the role
+    is spent as a fill and the ink declared over it is the problem; **add a
+    tone** when the role is a perfectly good fill and only fails as ink.
+    Success and Warning are the second case — `DefaultTheme`'s green and orange
+    carry black at ~9.5:1 — and Primary turned out to be the first. Four of the
+    eight still need their tone.
 
 ```go
 ink := ctx.Theme().Colors.PrimaryOnLightColor()   // by role
@@ -970,22 +997,36 @@ ink roles wins on WCAG contrast. That is what keeps white off `DefaultTheme`'s
 shipped a badge nobody can read.
 
 Measurement alone is the wrong rule for a role the theme has an opinion about,
-and `DefaultTheme`'s `Primary` is the case that shows it: against `#007AFF`
-white measures 4.02:1 and black 5.23:1, so a pure contrast rule picks **black**
-— while every filled `components.Button` in the framework paints white, because
-that is the pair the theme declares. `components.Calendar` used to compute its
-selected day's ink and so drew a black numeral on iOS system blue. No third ink
-role was added to settle it, and the reason is arithmetic rather than taste:
-nothing a theme could name would outscore black on a mid-tone, so any fix
-expressed as another *candidate* would have lost the same comparison. The
-question had to change.
+and `DefaultTheme`'s `Primary` was the case that showed it: against iOS
+systemBlue `#007AFF` white measures 4.02:1 and black 5.23:1, so a pure contrast
+rule picks **black** — while every filled `components.Button` in the framework
+paints white, because that is the pair the theme declares. `components.Calendar`
+used to compute its selected day's ink and so drew a black numeral on iOS
+system blue. No third ink role was added to settle it, and the reason is
+arithmetic rather than taste: nothing a theme could name would outscore black
+on a mid-tone, so any fix expressed as another *candidate* would have lost the
+same comparison. The question had to change.
 
-The honest cost is that white on `#007AFF` is below AA for body text. That is
-not a regression being waved through — it is the number every filled button has
-always painted. Raising it is the theme's move (a darker `Button` base, or
-Apple's accessible blue `#0040DD`, which this palette already carries as
-`PrimaryOnLight`), and it would lift the buttons and the calendar together. One
-widget quietly disagreeing with the theme fixed nothing and hid the question.
+The cost of asking the theme instead was that white on `#007AFF` is below AA
+for body text, and this rule returned it where measurement returned a passing
+black. That was not a regression waved through — it was the number every filled
+button had always painted — and it was booked against the *palette*, because a
+widget quietly disagreeing with its theme fixes nothing and hides the question.
+
+`DefaultTheme` has since paid it: `Colors.Primary` is `#0040DD` and the
+declared pair is 7.56:1.
+
+!!! warning "Both bundled themes now agree with the measurement"
+    Each pairs white with a fill dark enough that maximising contrast would
+    pick white too, so neither of them can *show* the declaration being
+    preferred — an implementation that deleted the first step and only measured
+    would paint identical pixels under both.
+
+    The rule is unchanged and is not merely historical: it holds for any theme
+    whose house button is a mid-tone, which is the ordinary case for a brand
+    colour. What moved is where the evidence lives — `components`'
+    `midTonePrimaryTheme` test fixture, which is `DefaultTheme` as it stood
+    before the role was darkened.
 
 !!! note "A theme with no `Components.Button` has declared no pairing"
     Its fills are measured like any other colour, including for the default

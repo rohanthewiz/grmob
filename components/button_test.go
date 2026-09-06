@@ -76,21 +76,28 @@ func TestButtonZeroValueDoesNotRederiveFromThePalette(t *testing.T) {
 // widget rather than to Variant directly: a naive white ink would ship
 // DefaultTheme's success and warning at ~2.2:1.
 //
-// VariantDefault is excluded for the same reason it is excluded from
-// TestVariantInkIsLegibleOnEveryThemeAndVariant, and the exclusion is more
-// pointed here. Its pairing is not the widget's: it is the theme's own
-// Components.Button, which under DefaultTheme is white on #007AFF at 4.02:1 —
-// below AA. Button applies no color props at all in that case, so failing it
-// here would be reporting a palette decision as a widget defect, and "fixing"
-// it would mean the zero value silently repaints every button in every tree.
-// Recorded as a backlog item against the theme instead.
+// # VariantDefault is in the loop now
+//
+// It was excluded, and the exclusion was pointed: the default variant's
+// pairing is not the widget's but the theme's own Components.Button, which
+// under DefaultTheme was white on systemBlue at 4.02:1. Button applies no
+// colour props at all in that case, so failing here would have reported a
+// palette decision as a widget defect, and "fixing" it in the widget would
+// have meant the zero value silently repainting every button in every tree.
+// It was recorded as a backlog item against the theme instead.
+//
+// The theme paid it: Primary is Apple's accessible blue and the declared pair
+// is 7.56:1. What the variant adds to this loop is the case the status
+// variants cannot cover — the one whose colours the *palette* chose rather
+// than the widget — so a later retint of either bundled theme's button is now
+// caught by number here rather than by eye on a screen.
 func TestButtonFilledStatusVariantsAreLegibleOnEveryTheme(t *testing.T) {
 	const wcagAA = 4.5
 	for themeName, theme := range map[string]*core.Theme{
 		"Default":  core.DefaultTheme,
 		"Material": core.MaterialTheme,
 	} {
-		for _, v := range []Variant{VariantSuccess, VariantWarning, VariantError} {
+		for _, v := range []Variant{VariantDefault, VariantSuccess, VariantWarning, VariantError} {
 			ctx := core.NewContext().WithTheme(theme)
 			ctx.BeginRenderPass()
 			n := Button{Label: "Act", Variant: v, OnTap: func() {}}.Render(ctx)
@@ -115,51 +122,74 @@ func TestButtonFilledStatusVariantsAreLegibleOnEveryTheme(t *testing.T) {
 // empty Background inherits the theme's solid Button base, which is the
 // opposite of the intent.
 //
-// Their label is the role's *on-light* tone, not the fill colour, and the two
-// differ under DefaultTheme for every variant — which is what this checks. A
-// treatment that owns no background cannot pick its ink by contrast the way
-// the filled one does, so the palette has to supply a value that stands on a
-// light surface unaided; see the contrast table on the Button type.
+// Their label is the role's *on-light* tone, not the fill colour. A treatment
+// that owns no background cannot pick its ink by contrast the way the filled
+// one does, so the palette has to supply a value that stands on a light
+// surface unaided; see the contrast table on the Button type.
+//
+// # Two themes, because one variant lost its split
+//
+// The assertion that matters is `tone != fill`: a widget that quietly went
+// back to v.Color would look plausible everywhere the two happen to agree.
+// They agree for the default variant under both bundled themes now, because
+// Primary was darkened to a hex that is ink-weight on its own — so
+// DefaultTheme alone can no longer tell the two implementations apart for
+// that variant, and midTonePrimaryTheme (variant_test.go) carries the case
+// that can. The census at the end is what holds the matrix honest: every
+// variant tested must split under at least one theme in it.
 func TestButtonOutlinedAndGhostAreTransparentWithVariantInk(t *testing.T) {
-	theme := core.DefaultTheme
-	for _, v := range []Variant{VariantDefault, VariantError} {
-		t.Run(string("v="+v), func(t *testing.T) {
-			ctx := core.NewContext().WithTheme(theme)
-			ctx.BeginRenderPass()
+	themes := map[string]*core.Theme{
+		"DefaultTheme":   core.DefaultTheme,
+		"midTonePrimary": midTonePrimaryTheme(),
+	}
+	variants := []Variant{VariantDefault, VariantError}
 
-			out := Button{Label: "Cancel", Variant: v, Emphasis: EmphasisOutlined}.Render(ctx)
-			if out.Style.Background != ColorTransparent {
-				t.Errorf("outlined fill = %q, want transparent", out.Style.Background)
-			}
-			want := v.OnLight(theme)
-			if out.Style.TextColor != want {
-				t.Errorf("outlined ink = %q, want the role's on-light tone %q",
-					out.Style.TextColor, want)
-			}
-			if out.Style.BorderWidth == 0 || out.Style.BorderColor != want {
-				t.Errorf("outlined rule = %vpx %q, want 1px in the on-light tone %q",
-					out.Style.BorderWidth, out.Style.BorderColor, want)
-			}
-			// The distinction is not academic under this theme: both of these
-			// variants ship a tone that differs from the fill, and a widget
-			// that quietly went back to v.Color would still look plausible.
-			if want == v.Color(theme) {
-				t.Fatalf("fixture no longer exercises the split: %q's on-light tone is its "+
-					"fill colour under DefaultTheme", v)
-			}
+	// Which variants were seen splitting, under any theme in the matrix.
+	split := map[Variant]bool{}
 
-			ghost := Button{Label: "Skip", Variant: v, Emphasis: EmphasisGhost}.Render(ctx)
-			if ghost.Style.Background != ColorTransparent {
-				t.Errorf("ghost fill = %q, want transparent", ghost.Style.Background)
-			}
-			if ghost.Style.BorderWidth != 0 {
-				t.Errorf("ghost drew a rule of %vpx", ghost.Style.BorderWidth)
-			}
-			if ghost.Style.TextColor != want {
-				t.Errorf("ghost ink = %q, want the role's on-light tone %q",
-					ghost.Style.TextColor, want)
-			}
-		})
+	for themeName, theme := range themes {
+		for _, v := range variants {
+			t.Run(themeName+"/v="+string(v), func(t *testing.T) {
+				ctx := core.NewContext().WithTheme(theme)
+				ctx.BeginRenderPass()
+
+				out := Button{Label: "Cancel", Variant: v, Emphasis: EmphasisOutlined}.Render(ctx)
+				if out.Style.Background != ColorTransparent {
+					t.Errorf("outlined fill = %q, want transparent", out.Style.Background)
+				}
+				want := v.OnLight(theme)
+				if out.Style.TextColor != want {
+					t.Errorf("outlined ink = %q, want the role's on-light tone %q",
+						out.Style.TextColor, want)
+				}
+				if out.Style.BorderWidth == 0 || out.Style.BorderColor != want {
+					t.Errorf("outlined rule = %vpx %q, want 1px in the on-light tone %q",
+						out.Style.BorderWidth, out.Style.BorderColor, want)
+				}
+				if want != v.Color(theme) {
+					split[v] = true
+				}
+
+				ghost := Button{Label: "Skip", Variant: v, Emphasis: EmphasisGhost}.Render(ctx)
+				if ghost.Style.Background != ColorTransparent {
+					t.Errorf("ghost fill = %q, want transparent", ghost.Style.Background)
+				}
+				if ghost.Style.BorderWidth != 0 {
+					t.Errorf("ghost drew a rule of %vpx", ghost.Style.BorderWidth)
+				}
+				if ghost.Style.TextColor != want {
+					t.Errorf("ghost ink = %q, want the role's on-light tone %q",
+						ghost.Style.TextColor, want)
+				}
+			})
+		}
+	}
+
+	for _, v := range variants {
+		if !split[v] {
+			t.Errorf("no theme in the matrix gives variant %q a tone that differs from its "+
+				"fill; the assertions for it would pass on a widget that spent v.Color", v)
+		}
 	}
 }
 

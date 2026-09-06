@@ -89,6 +89,18 @@ type Style struct {
 	FlexShrink     float64
 	FlexGrow       float64
 
+	// StackAlign is where this node sits inside the core.ZStack it is a layer
+	// of: the per-layer opt-out from the stack's centre-on-both-axes contract.
+	// See stack_align.go for the nine values, what each of the four renderers
+	// does with one, and why this is a two-axis value of its own rather than a
+	// second reading of AlignSelf above.
+	//
+	// It sits with the flex fields because it is the same kind of thing — a
+	// child's say in its own placement — and deliberately not next to them in
+	// meaning: those are read by the two DOM targets alone, and this one is
+	// honoured on all four.
+	StackAlign StackAlignment
+
 	// Accessibility semantics. These live on Style rather than Props so every
 	// builder that takes StyleProps — leaves and containers alike — supports
 	// them without a signature change, and so the reconciler's value-compared
@@ -611,6 +623,23 @@ func (s Style) applyTo(target *Style) {
 	if s.AlignSelf != "" {
 		target.AlignSelf = s.AlignSelf
 	}
+	// Non-empty wins, like every other string field here — which means
+	// StackAlign(StackAlignCenter) cannot clear a placement an earlier prop
+	// set, because the centre is the empty string. That is the same trade
+	// every zero-valued enum in this struct makes (SelectedUnset, an unset
+	// Role, an unset Align), and it costs less here than it does for those:
+	// a layer's placement is written once, by the layer, and there is no
+	// theme base or component default that arrives carrying one.
+	// Non-empty wins, like every other string field here — which means
+	// StackAlign(StackAlignCenter) cannot clear a placement an earlier prop
+	// set, because the centre is the empty string. That is the same trade
+	// every zero-valued enum in this struct makes (SelectedUnset, an unset
+	// Role, an unset Align), and it costs less here than it does for those:
+	// a layer's placement is written once, by the layer, and there is no
+	// theme base or component default that arrives carrying one.
+	if s.StackAlign != "" {
+		target.StackAlign = s.StackAlign
+	}
 	if s.FlexWrap != "" {
 		target.FlexWrap = s.FlexWrap
 	}
@@ -736,8 +765,21 @@ func mergedStylePtr(target *Style, src Style) *Style {
 	src.applyTo(&merged)
 	return &merged
 }
-func PrimaryColor() string { return "#007AFF" }
-func DangerColor() string  { return "#FF3B30" }
+
+// PrimaryColor and DangerColor are the theme-blind convenience accessors that
+// predate Context.Theme(). They answer for the *default* theme's roles and
+// nothing else, so a screen under WithTheme still gets the default palette's
+// hexes from them — which is why nothing in components or core calls either,
+// and why new code should read ctx.Theme().Colors instead.
+//
+// They read DefaultTheme rather than repeating its literals. Both used to be
+// hard-coded, and the copy was not free: when Colors.Primary moved to Apple's
+// accessible blue (white over systemBlue was 4.02:1, under WCAG AA, and the
+// theme's own Button base declares white), this function kept the old hex —
+// so examples/chat, its one caller, went on painting white on a fill nobody
+// could read it on, in the one place the fix could not reach.
+func PrimaryColor() string { return DefaultTheme.Colors.Primary }
+func DangerColor() string  { return DefaultTheme.Colors.Error }
 func RoundedShadowBox() StyleProp {
 	return UseStyle(Style{
 		BorderRadius: 12,

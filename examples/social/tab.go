@@ -22,8 +22,9 @@ const TabPanelID = "social-tab-panel"
 // It is a ghost button, and that fixes a real bug rather than restyling
 // anything. This used to be a bare core.Button with a TextColor override and
 // no Background override — which meant it inherited the theme's Button base,
-// a solid #007AFF pill. The active tab therefore rendered #007AFF on #007AFF,
-// an invisible glyph at 1:1 contrast, and the inactive one #555 on #007AFF at
+// a solid Primary pill (#007AFF at the time; the role has since been darkened
+// to Apple's accessible blue). The active tab therefore rendered the accent on
+// itself, an invisible glyph at 1:1 contrast, and the inactive one #555 at
 // about 2.6:1. Setting only half of a color pair is exactly the mistake the
 // widget's emphasis axis exists to prevent: EmphasisGhost punches the fill out
 // instead of leaving it to whatever the theme put there.

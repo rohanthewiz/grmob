@@ -1,6 +1,7 @@
 package tutorial
 
 import (
+	"reflect"
 	"testing"
 
 	"github.com/rohanthewiz/grmob/core"
@@ -498,6 +499,69 @@ func TestPickerStoresTheValueAndIsRequiredWhenEmpty(t *testing.T) {
 	if !hasTextContaining(tree(t, mgr), "✓ business, window seat") {
 		t.Fatal("a complete form should book, carrying both picked values")
 	}
+}
+
+// The seat picker's own option list, which is the lesson's demonstration of
+// Group and Disabled.
+//
+// Read off the *rendered* options rather than off a copy of the literal, for
+// the reason the tutorial's other pins give: the prose and the code block
+// beside the demo claim particular behaviour, and what makes them honest is
+// that the demo really has it. Two facts in particular:
+//
+//	the runs are runs         "Front cabin" twice then "Rear cabin" twice, in
+//	                          that order — a gather would produce the same set
+//	                          of headings and a different list
+//	two options share a label the aisle seats differ only in value, which is
+//	                          the case the prose points at and the one a
+//	                          label-dispatching renderer would get wrong
+func TestTheSeatPickerIsGroupedWithOneOptionDisabled(t *testing.T) {
+	mgr := newApp(t)
+	openLesson(t, mgr, "Pickers: one value from a list")
+
+	opts, ok := selectByValue(t, mgr, "").Props["options"].([]any)
+	if !ok {
+		// The tree here is the JSON round-trip, so the flattened maps arrive
+		// as []any of map[string]any rather than as core's own slice type.
+		t.Fatalf("the seat picker's options are %T", selectByValue(t, mgr, "").Props["options"])
+	}
+
+	var groups, labels []string
+	disabled := map[string]bool{}
+	for _, raw := range opts {
+		o, ok := raw.(map[string]any)
+		if !ok {
+			t.Fatalf("an option is %T, want a flat map", raw)
+		}
+		groups = append(groups, str(o["group"]))
+		labels = append(labels, str(o["label"]))
+		if str(o["disabled"]) == "true" {
+			disabled[str(o["value"])] = true
+		}
+	}
+
+	wantGroups := []string{"", "Front cabin", "Front cabin", "Rear cabin", "Rear cabin"}
+	if !reflect.DeepEqual(groups, wantGroups) {
+		t.Errorf("group runs = %q, want %q — the placeholder stands alone and the two cabins "+
+			"are consecutive runs", groups, wantGroups)
+	}
+	// The shared label, and the values that keep the two apart.
+	if labels[1] != labels[3] {
+		t.Errorf("the two aisle seats read %q and %q; the lesson's point is that a label "+
+			"may repeat because the *value* is the identity", labels[1], labels[3])
+	}
+	if !disabled["exit"] || len(disabled) != 1 {
+		t.Errorf("disabled options = %v, want the exit row alone", disabled)
+	}
+}
+
+// str reads a JSON string field, tolerating the absent key that an option
+// carrying neither a group nor a disabled flag has — which is itself the
+// thing worth tolerating, since core.Select writes those two keys only when
+// they say something.
+func str(v any) string {
+	s, _ := v.(string)
+	return s
 }
 
 // The picker wears the theme's field style, which is what makes it match the

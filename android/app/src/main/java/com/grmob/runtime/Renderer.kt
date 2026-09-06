@@ -800,13 +800,38 @@ private fun GrMobSelect(node: GrMobNode, extra: Modifier) {
     Box(modifier = s.boxModifier(extra).clickable(enabled = enabled) { open = true }) {
         Text(text = chosen?.get("label") as? String ?: value, style = textStyle(s))
         DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+            // The heading of the run currently being emitted. Material's
+            // dropdown has no Section construct, so a run of options sharing a
+            // core.SelectOption.Group is announced by a heading item written
+            // ahead of it — an item with no onClick, which is what makes it a
+            // label rather than a choice.
+            //
+            // Runs, not a gather: consecutive options with the same heading
+            // are one section, in the order they were written. See that field
+            // for why reordering the list is not this widget's to do.
+            var openLabel = ""
             options.forEach { option ->
+                val label = option["group"] as? String ?: ""
+                if (label != openLabel) {
+                    openLabel = label
+                    if (label.isNotEmpty()) {
+                        DropdownMenuItem(
+                            text = { Text(label, style = MaterialTheme.typography.labelSmall) },
+                            onClick = {},
+                            enabled = false,
+                        )
+                    }
+                }
                 DropdownMenuItem(
                     text = { Text(option["label"] as? String ?: "") },
                     onClick = {
                         open = false
                         if (cb.isNotEmpty()) runtime.textChanged(cb, option["value"] as? String ?: "")
                     },
+                    // A disabled option is still drawn and still announced —
+                    // that is what disabling one buys over leaving it out — and
+                    // this is what stops the tap. See core.SelectOption.Disabled.
+                    enabled = (option["disabled"] as? String ?: "") != "true",
                 )
             }
         }
@@ -1148,10 +1173,23 @@ private fun GrMobRow(node: GrMobNode, extra: Modifier) {
  * CSS grid cell both centre. Centre is the arrangement core.ZStack documents
  * as its contract, so this is the renderer that would have diverged silently.
  *
- * RenderChildren, not ColumnChildren: an overlay divides no leftover space
- * along an axis, so there is no weight to hand a layer and no cross-axis
- * stretch to apply. A layer that wants the stack's full extent states its own
- * dimensions, which is what core.ZStack's alignment contract asks of it.
+ * Not ColumnChildren: an overlay divides no leftover space along an axis, so
+ * there is no weight to hand a layer and no cross-axis stretch to apply. A
+ * layer that wants the stack's full extent states its own dimensions, which is
+ * what core.ZStack's alignment contract asks of it.
+ *
+ * # The per-layer opt-out
+ *
+ * core.Style.StackAlign lets one layer sit in a corner instead, and Compose is
+ * the target that spells it most directly: `Modifier.align` exists inside
+ * BoxScope for exactly this, it places without resizing, and a placed child
+ * still contributes its size to the Box the way an unplaced one does. That is
+ * why the children are looped over here rather than handed to RenderChildren —
+ * the modifier has to be built per child, in this scope.
+ *
+ * An unplaced layer receives Modifier and falls to `contentAlignment` above,
+ * which is byte for byte what RenderChildren did, so no tree that predates the
+ * property moves.
  */
 @Composable
 private fun GrMobZStack(node: GrMobNode, extra: Modifier) {
@@ -1159,7 +1197,44 @@ private fun GrMobZStack(node: GrMobNode, extra: Modifier) {
     Box(
         modifier = s.boxModifier(extra, gestureModifier(node)),
         contentAlignment = Alignment.Center,
-    ) { RenderChildren(node) }
+    ) {
+        node.children.forEachIndexed { i, child ->
+            val placed = grMobStackAlignment(child.style?.stackAlign ?: "")
+            key(child.key.ifEmpty { i }) {
+                RenderNode(child, if (placed == null) Modifier else Modifier.align(placed))
+            }
+        }
+    }
+}
+
+/**
+ * Go's core.StackAlignment as a Compose Alignment, or null for the centre.
+ *
+ * null rather than Alignment.Center is what the caller needs: an unplaced
+ * layer must reach RenderNode with the same Modifier it always did, so that
+ * adding this property moved nothing that already existed.
+ *
+ * The nine values line up one for one with Compose's own 2D Alignment
+ * vocabulary, which is the reason core.StackAlignment is a two-axis type
+ * rather than a second reading of the flexbox AlignSelf. Start/End are the
+ * writing-direction-aware pair, matching Go's spelling and SwiftUI's
+ * leading/trailing.
+ *
+ * Every declared value has an arm, and the default is the centre rather than a
+ * crash: a placement this build does not know is a Go binary newer than this
+ * app, and a layer in the middle is the contract's own default.
+ * mobile/verify's coverage check holds the arms to core.StackAlignments().
+ */
+private fun grMobStackAlignment(align: String): Alignment? = when (align) {
+    "top-start" -> Alignment.TopStart
+    "top" -> Alignment.TopCenter
+    "top-end" -> Alignment.TopEnd
+    "start" -> Alignment.CenterStart
+    "end" -> Alignment.CenterEnd
+    "bottom-start" -> Alignment.BottomStart
+    "bottom" -> Alignment.BottomCenter
+    "bottom-end" -> Alignment.BottomEnd
+    else -> null
 }
 
 /**

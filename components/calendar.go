@@ -495,13 +495,18 @@ func (c Calendar) dayCell(ctx *core.Context, day time.Time, month time.Month) co
 		// be read on both.
 		//
 		// Resolved, not measured. This used to call contrastInk directly and
-		// so returned the higher ratio, which on DefaultTheme's #007AFF is
-		// *black* — a black numeral on iOS system blue, disagreeing with every
-		// filled components.Button on the same screen, which paints the white
-		// the theme's own Button base declares. inkOn reads that declaration
-		// first and falls back to the measurement for a fill the theme has
-		// said nothing about; see its doc for why a third ink role could not
-		// have settled this.
+		// so returned the higher ratio, which on DefaultTheme's Primary of the
+		// day (iOS systemBlue) was *black* — a black numeral on system blue,
+		// disagreeing with every filled components.Button on the same screen,
+		// which paints the white the theme's own Button base declares. inkOn
+		// reads that declaration first and falls back to the measurement for a
+		// fill the theme has said nothing about; see its doc for why a third
+		// ink role could not have settled this.
+		//
+		// DefaultTheme's Primary has since been darkened to Apple's accessible
+		// blue, so under it the two rules now agree — but the call still has
+		// to be inkOn rather than contrastInk, because they part company again
+		// under any theme whose brand colour is a mid-tone.
 		ink = inkOn(t, t.Colors.Primary)
 		dot = ink
 		items = append(items, core.BackgroundColor(t.Colors.Primary))

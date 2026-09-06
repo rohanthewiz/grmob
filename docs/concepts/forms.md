@@ -327,6 +327,24 @@ rule; one without is declared with a leading empty option and a `Required`
 rule. Those are two different forms, and the widget takes no position on which
 is meant.
 
+An option can also carry a `Group` and a `Disabled`:
+
+```go
+form.Select("seat", []core.SelectOption{
+    {Value: "", Label: "Choose a seat…"},
+    {Value: "aisle", Label: "Aisle", Group: "Front cabin"},
+    {Value: "window", Label: "Window", Group: "Front cabin"},
+    {Value: "exit", Label: "Exit row", Group: "Rear cabin", Disabled: true},
+})
+```
+
+`Group` heads a **run** of consecutive options — the same heading either side of
+a different one is two sections, in the order written, because the list's order
+is yours and no renderer is going to rearrange it. `Disabled` greys an option
+out without removing it, which is the point: an option that vanishes takes its
+explanation with it. Neither stops *Go* from setting the field to a disabled
+option's value — a `Select` shows whatever value it was passed.
+
 ## Prefilling and resetting
 
 `Field.Initial` seeds a value the first time that name is seen, and again after

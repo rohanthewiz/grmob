@@ -193,18 +193,25 @@ func TestTheIndexMarkIsALayerOverTheRose(t *testing.T) {
 	if !strings.Contains(dumpText(stack.Children[1]), "▼") {
 		t.Errorf("the second layer holds %q, want the index mark", dumpText(stack.Children[1]))
 	}
-	// The mark's layer is as tall as the stack and justifies to the start.
-	// Without both, a ZStack centres it and the mark sits in the middle of the
-	// rose — see core.ZStack on why a layer places itself.
+	// The mark asks for the top. Without it a ZStack centres every layer and
+	// the mark sits in the middle of the rose.
+	//
+	// This used to assert a full-height column justifying its child to the
+	// start, which was the same picture expressed as three props that never
+	// name a corner — and which restated the stack's height in a second place,
+	// so a Size change had to be made twice or the mark drifted off the rim.
+	// One prop replaced all of it; see core.StackAlign.
 	mark := stack.Children[1]
-	if mark.Style == nil || mark.Style.Height != stack.Style.Height {
-		t.Errorf("the mark's layer is %q tall, want the stack's own %q — a layer that does not "+
-			"fill the stack cannot place itself against its edge",
-			mark.Style.Height, stack.Style.Height)
+	if mark.Style == nil || mark.Style.StackAlign != core.StackAlignTop {
+		t.Errorf("the mark is placed %q, want %q so it lands on the rim rather than in the "+
+			"middle of the rose", mark.Style.StackAlign, core.StackAlignTop)
 	}
-	if mark.Style.JustifyContent != core.JustifyStart {
-		t.Errorf("the mark's layer justifies %q, want %q so the mark lands on the rim",
-			mark.Style.JustifyContent, core.JustifyStart)
+	// And the wrapper is gone rather than merely unused: the mark is the layer
+	// now, not a box holding one. A stack of two nodes is what makes the
+	// widget's own node count a thing a reader can check.
+	if mark.Type != "Text" {
+		t.Errorf("the mark's layer is a %s, want the Text itself — a box around it is the "+
+			"workaround StackAlign replaced", mark.Type)
 	}
 }
 

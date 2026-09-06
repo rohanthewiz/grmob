@@ -358,14 +358,40 @@ func renderContainer(b *element.Builder, node *core.Node, attrs []string, path s
 	// through), which is exactly right — a Fragment has no box, so the layers
 	// are its children, and a core.For inside a ZStack overlays what it
 	// generated instead of stacking it.
-	child := imposed{}
-	if IsOverlay(node.Type) {
-		child.decl = OverlayChildDecl
-	}
+	overlay := IsOverlay(node.Type)
 	for i, c := range node.Children {
+		child := imposed{}
+		if overlay {
+			child.decl = OverlayChildDecl
+			// core.Style.StackAlign, imposed rather than written by the layer
+			// itself — which is what makes the prop inert outside a stack.
+			//
+			// The value is the *child's* and the decision to honour it is the
+			// parent's, so this is the one imposed declaration whose content
+			// varies per child; everything else the channel has carried has
+			// been one string for the whole sibling set. Appended after
+			// grid-area for readability only: the two never name the same
+			// property.
+			//
+			// It has to travel this way rather than through the child's own
+			// declaration list because align-self means something else to a
+			// flex item. A layer prop that reached every container would
+			// re-place a Row's children the moment somebody wrote it on the
+			// wrong node, silently and only on the web.
+			child.decl += "; " + StackPlacementFor(stackAlignOf(c))
+		}
 		renderNode(b, c, child, childPath(path, i))
 	}
 	e.R()
+}
+
+// stackAlignOf reads a node's placement, tolerating the nil Style a
+// hand-assembled node may have. Every node core builds carries one.
+func stackAlignOf(node *core.Node) core.StackAlignment {
+	if node == nil || node.Style == nil {
+		return core.StackAlignCenter
+	}
+	return node.Style.StackAlign
 }
 
 // childPath is the node path of child i of the node at path — the one place
@@ -436,7 +462,17 @@ const (
 // (quote-escaped) and the label through TE (entity-escaped), so an option
 // carrying markup cannot re-enter the document as markup. Options are as
 // user-originated as any other content here — a country list read from a
-// server is the normal case.
+// server is the normal case. An <optgroup>'s label goes through the attribute
+// path for the same reason, since it is one.
+//
+// # Groups are runs, and the run is closed here
+//
+// core.SelectOption.Group makes consecutive options with the same heading one
+// <optgroup>, in the order they were written — see the field for why a gather
+// would be the wrong shape. The loop therefore carries the group it is inside
+// and closes it when the next option names a different one (or none), which is
+// the only bookkeeping HTML's nesting requires and the reason this is not a
+// straight map over the list.
 func renderSelect(b *element.Builder, node *core.Node, attrs []string) {
 	value := getStr(node.Props["value"])
 	e := b.Ele("select", attrs...)
@@ -444,7 +480,22 @@ func renderSelect(b *element.Builder, node *core.Node, attrs []string) {
 	// carrying something else renders as an empty picker rather than panicking,
 	// which is the same degradation an Image with no src gets.
 	if opts, ok := node.Props["options"].([]map[string]string); ok {
+		// The open <optgroup>, if any: its handle (to close) and its label
+		// (to compare). Two variables rather than one because an element.Element
+		// is a value with no label to read back, so openLabel is also what says
+		// whether `group` holds anything worth closing.
+		var group element.Element
+		openLabel := ""
 		for _, o := range opts {
+			if o["group"] != openLabel {
+				if openLabel != "" {
+					group.R()
+				}
+				openLabel = o["group"]
+				if openLabel != "" {
+					group = b.Ele("optgroup", "label", openLabel)
+				}
+			}
 			lead := []string{"value", o["value"]}
 			if o["value"] == value {
 				// element emits key="value" pairs only; selected="selected" is
@@ -452,7 +503,18 @@ func renderSelect(b *element.Builder, node *core.Node, attrs []string) {
 				// checked="checked" is on a Checkbox.
 				lead = append(lead, "selected", "selected")
 			}
+			// The same spelling, and the same reason. A disabled option is
+			// still rendered and still announced — that is the whole point of
+			// disabling one rather than omitting it — it simply cannot be
+			// chosen.
+			if o["disabled"] == "true" {
+				lead = append(lead, "disabled", "disabled")
+			}
 			b.Ele("option", lead...).TE(o["label"])
+		}
+		// The last run has no following option to close it.
+		if openLabel != "" {
+			group.R()
 		}
 	}
 	e.R()

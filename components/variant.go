@@ -124,14 +124,14 @@ func (v Variant) Ink(t *core.Theme, bg string) string {
 // # Why measurement alone is the wrong rule for a palette role
 //
 // contrastInk maximises contrast, which is right for a colour nobody has said
-// anything about and wrong for one the theme has. DefaultTheme's Primary is
-// the case that shows the difference: against #007AFF, white measures 4.02:1
-// and black 5.23:1, so the maximum picks *black* — and a components.Button one
-// screen up paints white on the same blue, because the theme's Button base
-// states the pair outright. The framework was drawing two different answers
-// for one colour, and the calendar's selected day was the visible half: a
-// black numeral on iOS system blue, which reads as a rendering fault rather
-// than as a selection.
+// anything about and wrong for one the theme has. DefaultTheme's Primary was
+// the case that showed the difference: against iOS systemBlue #007AFF, white
+// measures 4.02:1 and black 5.23:1, so the maximum picks *black* — and a
+// components.Button one screen up paints white on the same blue, because the
+// theme's Button base states the pair outright. The framework was drawing two
+// different answers for one colour, and the calendar's selected day was the
+// visible half: a black numeral on iOS system blue, which reads as a rendering
+// fault rather than as a selection.
 //
 // No third ink role was added to the palette to settle it, and the reason is
 // arithmetic rather than taste: nothing a theme could name would outscore
@@ -141,17 +141,29 @@ func (v Variant) Ink(t *core.Theme, bg string) string {
 // under, where a widget was said to have "the number and not the authority" —
 // so the pairing is read, not recomputed, wherever one exists.
 //
-// # The honest cost
+// # The cost the theme then paid
 //
-// White on #007AFF is 4.02:1, below WCAG AA's 4.5:1 for body text, and this
-// function now returns it where the old rule returned a passing black. That is
-// not a contrast regression being waved through: it is the number every
-// filled components.Button in the framework has always painted, because it is
-// the pair DefaultTheme declares. Raising it is the theme's move (a darker
-// Button base, or Apple's own accessible blue #0040DD, which this palette
-// already carries as PrimaryOnLight) and it would lift the buttons and the
-// calendar together. One widget quietly disagreeing with the theme fixed
-// nothing and hid the question.
+// The declared answer was white on #007AFF at 4.02:1, below WCAG AA's 4.5:1
+// for body text, and this function returned it where pure measurement returned
+// a passing black. That was not a regression waved through — it was the number
+// every filled components.Button had always painted — and it was recorded as
+// owed by the palette rather than by the widgets, because raising it here
+// would have meant one widget quietly disagreeing with its theme again.
+//
+// DefaultTheme has since paid it: Colors.Primary is Apple's accessible blue
+// #0040DD and the declared pair is 7.56:1. Only the *role* could, since the
+// failing thing was a pairing and a pairing has no second tone to reach for.
+//
+// # What that leaves here
+//
+// Both bundled themes now pair white with a fill dark enough that the maximum
+// would pick white anyway, so neither of them can show this function choosing
+// the declaration over the measurement. The rule is unchanged and is not
+// merely historical: it holds for any theme whose house button is a mid-tone,
+// which is the ordinary case for a brand colour. What it costs is that the
+// evidence now lives in a fixture — components' midTonePrimaryTheme, which is
+// DefaultTheme as it stood before the move — rather than in the default theme
+// itself.
 func inkOn(t *core.Theme, fill string) string {
 	if ink := declaredInk(t, fill); ink != "" {
 		return ink

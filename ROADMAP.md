@@ -30,9 +30,19 @@
       grid, all told to *centre* rather than left to their own defaults. Not
       built from `Position`/`ZIndex` below, which only two of the four targets
       read — naming the container is what lets each renderer reach for its own
-      construct. Sizes to its largest child; a layer that wants to sit
-      elsewhere states its own box rather than reaching for a per-child
-      alignment prop that does not exist. First consumer: `Compass`
+      construct. Sizes to its largest child. First consumer: `Compass`
+- [x] `core.StackAlign` — the per-layer opt-out from that centre, on all four
+      targets: nine placements, the centre unspelled so it stays the zero
+      value. A layer used to state its own box instead (a full-height column
+      justifying its child to one end), which is what `Compass` did and what
+      kept the prop out while `Compass` was the only consumer. What made it a
+      vocabulary is that a SwiftUI `Alignment`, a Compose `Alignment` and a
+      CSS grid item's `justify-self`/`align-self` are the same nine values, so
+      the prop is portable where the flexbox `AlignSelf` above is web-only.
+      The web half is *imposed by the stack* rather than written by the layer,
+      because `align-self` means something else to a flex child — which also
+      closes a leak: a layer's own `AlignSelf` used to move it on the two DOM
+      targets and nowhere else
 - [x] `Position` (`Sticky`/`Absolute`/`Relative`/`Fixed`) with `Top`/`Right`/
       `Bottom`/`Left`/`ZIndex`, plus `MinWidth`/`MaxWidth`/`MinHeight`/
       `MaxHeight`, `Overflow`, `WhiteSpace`, `AlignSelf`,
@@ -104,11 +114,24 @@
       palette states a fill and an ink together, so a fill matching it takes
       the ink it was declared with; everything else falls to the higher WCAG
       contrast of the theme's two ink roles. Pure measurement picks *black* on
-      `DefaultTheme`'s `#007AFF` (5.23:1 against white's 4.02:1), which is how
-      `Calendar` came to draw a black numeral on iOS system blue while every
+      iOS systemBlue `#007AFF` (5.23:1 against white's 4.02:1), which is how
+      `Calendar` came to draw a black numeral on system blue while every
       filled `Button` beside it painted white. No third ink role could have
       fixed it — nothing outscores black on a mid-tone — so the question
       changed rather than the candidate list
+
+- [x] `DefaultTheme.Colors.Primary` darkened to Apple's accessible blue
+      `#0040DD`, the hex `PrimaryOnLight` already carried. The declared pair
+      was white on systemBlue at 4.02:1, under WCAG AA for body text, and it
+      was spent by every filled `Button`, `Badge`, `Avatar` and `ProgressBar`
+      fill plus `Calendar`'s selected day — a pairing, which no second tone
+      can reach. `Components.Button.Background` moves with the role and is
+      pinned to it (`TestBundledButtonFillsAreThePrimaryRole`): move one
+      without the other and every *other* Primary fill loses its declaration
+      and falls back to measurement. The payoff is that `VariantDefault` joins
+      the two filled-legibility censuses it had to be exempted from; the cost
+      is that neither bundled theme can still demonstrate the declaration
+      beating the measurement, which a test fixture now carries
 
 ### 📱 Native Runtime Bridges
 - [x] **Android Runtime** (Go → JSON → Jetpack Compose renderer)
@@ -390,6 +413,17 @@
       so the frame is the theme's `Components.Input` base everywhere, which is
       also what lets `<select>` join the user-agent border reset above
       (tutorial lesson 5.6, `examples/signup`)
+- [x] `SelectOption.Group` and `SelectOption.Disabled` — a heading over a run
+      of options and a choice that is drawn, announced and unchoosable, on all
+      four targets: an `<optgroup>` and a `disabled` `<option>`, a SwiftUI
+      `Section` and a disabled `Button`, an unclickable heading item and a
+      disabled item in the Compose dropdown. Grouping is by *runs* — the same
+      heading either side of a different one is two sections, in the order
+      written — because the list's order is the caller's and a gather would
+      silently reorder it. Both keys are written to the wire only when they
+      say something, so an ordinary option's JSON signature (which is what
+      decides whether the WASM runtime rebuilds an open drop-down) is
+      unchanged
 - [x] `core.Slider` — a range control on all four targets, with a separate
       end-of-drag callback so a seek bar acts once
 - [x] `core.TextGrid` — a monospace grid of styled runs on all four targets,

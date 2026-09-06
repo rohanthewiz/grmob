@@ -188,6 +188,19 @@ container, which on an auto-sized container does nothing). And the flex
 promotion test is skipped for it entirely: a `ZStack` carrying a `Gap` must not
 become a flex container, which would silently cost it the overlay.
 
+`syncOverlay` writes a second declaration per layer: the `justify-self` /
+`align-self` pair for its `core.StackAlign`, from `STACK_PLACEMENTS` (Go's
+`stackPlacements`, compared by `TestRuntimeStackPlacementsMatchGo`). The value
+reaches the element as `data-stack-align`, stamped by `applyStyle`, because the
+placement is the *stack's* to impose and a layer has no idea it is a layer —
+the same split `htmlout` makes.
+
+The pair is written on **every** layer, the unplaced ones included, and that
+totality does two jobs. A layer whose `StackAlign` is dropped by a patch goes
+back to the middle instead of keeping the corner it had; and a layer's own
+`Style.AlignSelf` — flexbox's property, which a grid item honours too — can no
+longer move it in contradiction of the centring contract.
+
 `TabView` was absent too, on the weaker grounds that neither web target had
 ever defaulted it to flex and leaving it out kept the two agreeing — but they
 were agreeing on the wrong layout, since both natives build it from a vertical
@@ -547,6 +560,15 @@ conformance replay skips them rather than comparing them against Go nodes that
 do not exist. Unlike a TabView's bar they are not counted by `chromeOffset`,
 because a `Select` has no node children for an option to sit ahead of.
 
+`core.SelectOption.Group` makes consecutive options sharing a heading one
+`<optgroup>`, built here and marked `data-grmob-chrome="optgroup"` like the
+options inside it. **Runs, not a gather**: the same heading either side of a
+different one is two groups, in the order written, because the list's order is
+the caller's — it is what a person sees and what the keyboard walks — and
+reordering it to tidy the headings is a bigger change than the one being asked
+for. `SelectOption.Disabled` sets `option.disabled`, a property rather than an
+attribute, exactly as a `<select>`'s value is.
+
 `applySelectOptions` rebuilds the list only when the list itself changed,
 keyed on a JSON signature — a length comparison would miss a relabel. That is
 not a performance note: replacing a `<select>`'s options resets the control, so
@@ -555,6 +577,11 @@ controlled picker gets a props patch on exactly the pass where someone has just
 opened it. The value is assigned on every call regardless, and always *after*
 the options, because a `<select>` silently ignores a value that matches none of
 its current options.
+
+That signature is why `core.Select` writes `group` and `disabled` into an
+option's map only when they say something: a key present on every option with
+an empty value would have changed every picker's signature the first time the
+two fields shipped, rebuilding every list in every app for nothing.
 
 ### One attribute, two level fields
 

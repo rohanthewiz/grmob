@@ -259,23 +259,39 @@ func Box(stylePropsAndChildren ...PropsAndChildren) View {
 // targets (a SwiftUI ZStack, a Compose Box, a single-cell CSS grid), and
 // naming the container is what lets each renderer reach for its own.
 //
-// # The alignment contract: centred, and only centred
+// # The alignment contract: centred by default
 //
 // Every child is centred on both axes and keeps its own size. That is the one
 // arrangement all three constructs agree on without argument — SwiftUI's
 // ZStack already defaults to .center, Compose's Box is told to (its own
 // default is TopStart), and the grid cell is given align-items/justify-items
-// centre — and agreeing exactly is worth more here than a knob, because an
-// overlay that drifted a few points between targets is a bug nobody sees until
-// they hold two phones side by side.
+// centre — and agreeing exactly is worth more than a default that varied,
+// because an overlay that drifted a few points between targets is a bug nobody
+// sees until they hold two phones side by side.
 //
-// A child that wants to sit somewhere else says so *with its own box* rather
-// than with a per-child alignment prop: give it the stack's dimensions and lay
-// its content out inside itself. components.Compass does exactly that — the
-// index mark is a full-height Column that justifies its glyph to the start, so
-// the mark lands at top centre while the Column itself is centred like
-// everything else. Should a second consumer want the prop, this is where it
-// goes; one consumer is not a vocabulary.
+// A child that wants to sit somewhere else says so with StackAlign, the
+// per-layer opt-out:
+//
+//	core.ZStack(
+//	    core.Width("160px"), core.Height("160px"),
+//	    rose,
+//	    core.Text("▼", core.StackAlign(core.StackAlignTop)),
+//	)
+//
+// The nine placements and what each target makes of one are in
+// core/stack_align.go. The centre is the zero value and has no spelling, so a
+// layer that says nothing is placed exactly as every layer was before the
+// property existed.
+//
+// It arrived a good while after this container did, and the reason is worth
+// recording: while components.Compass was the only consumer, the escape was to
+// give the layer *its own box* — the index mark was a full-height Column
+// justifying its glyph to the start, which lands the mark at top centre while
+// the Column itself is centred like everything else. That works, and one
+// consumer is not a vocabulary. What made it a vocabulary is that all three
+// constructs turned out to have the same nine-value 2D placement enum, so the
+// prop could be portable rather than a CSS property with two renderers
+// ignoring it — which is what Style.AlignSelf beside it still is.
 //
 // # What the stack sizes to
 //
@@ -283,6 +299,13 @@ func Box(stylePropsAndChildren ...PropsAndChildren) View {
 // big as the biggest thing in it, which is why the example above states the
 // rose's dimensions on the stack: pinning the box is what keeps a smaller
 // overlay from deciding the size.
+//
+// Pinning it matters twice over once a layer is placed. SwiftUI has no
+// per-child ZStack alignment, so the iOS renderer places a layer by wrapping
+// it in a frame that fills the stack — and a filling frame is greedy, so an
+// *unsized* stack with an aligned layer grows to its parent's proposal there
+// while a Compose Box and a CSS grid track both stay the size of their largest
+// child. A stack that states its dimensions is identical on all four.
 //
 // Like Box and Scroll it carries no theme base — a theme Column's screen inset
 // applied to an overlay would offset every layer by 16px and change nothing

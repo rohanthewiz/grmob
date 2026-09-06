@@ -2,6 +2,7 @@ package components
 
 import (
 	"math"
+	"strings"
 	"testing"
 
 	"github.com/rohanthewiz/grmob/core"
@@ -58,6 +59,22 @@ func TestVariantFallsBackOnAThemeWithoutTheStatusRoles(t *testing.T) {
 // Background, i.e. white) would put Success at 2.22:1 and Warning at 2.20:1
 // under DefaultTheme: a badge nobody can read, on the framework's own default
 // theme, with nothing in the tree to suggest a bug.
+//
+// # VariantDefault is in the loop, and used to be exempt
+//
+// Its pairing is not this package's: the default variant's fill is the
+// palette's Primary and its ink is whatever the theme's own Components.Button
+// declares over it, so a failure here is a *palette* defect and the widgets
+// can only report it. That is exactly why it sat outside the loop — under
+// DefaultTheme it was white on systemBlue at 4.02:1, and a test that failed on
+// it would have been reporting a theme decision as a widget defect while
+// "fixing" it would have meant the zero value silently repainting every button
+// in every tree.
+//
+// The palette answered instead: Primary moved to Apple's accessible blue and
+// the pair is 7.56:1. So the exemption has nothing left to protect, and
+// including the variant turns the bundled themes' own button colours into
+// something a retint cannot quietly break.
 func TestVariantInkIsLegibleOnEveryThemeAndVariant(t *testing.T) {
 	const wcagAA = 4.5
 
@@ -65,7 +82,7 @@ func TestVariantInkIsLegibleOnEveryThemeAndVariant(t *testing.T) {
 		"DefaultTheme":  core.DefaultTheme,
 		"MaterialTheme": core.MaterialTheme,
 	} {
-		for _, v := range []Variant{VariantSuccess, VariantWarning, VariantError} {
+		for _, v := range []Variant{VariantDefault, VariantSuccess, VariantWarning, VariantError} {
 			bg := v.Color(theme)
 			ink := v.Ink(theme, bg)
 
@@ -104,16 +121,51 @@ func TestVariantInkFlipsDirectionBetweenThemes(t *testing.T) {
 	}
 }
 
+// midTonePrimaryTheme is DefaultTheme as it stood before its Primary role was
+// darkened: iOS systemBlue as the brand colour, white declared over it by the
+// Button base, and Apple's accessible blue as the separate on-light tone.
+//
+// It is the fixture for the two properties a mid-tone role has and a dark one
+// does not, both of which the bundled themes have now lost for Primary:
+//
+//	the declaration splits from the measurement
+//	    white on #007AFF is 4.02:1 and black is 5.23:1, so declaredInk and
+//	    contrastInk give different answers. Both bundled themes now pair white
+//	    with a fill dark enough that measurement picks white anyway, so an
+//	    implementation that deleted declaredInk and only measured would paint
+//	    identical pixels under both of them.
+//
+//	the role splits from its on-light tone
+//	    #007AFF cannot be read as ink on white and #0040DD can, which is the
+//	    whole reason the tones exist. DefaultTheme's Primary is now its own
+//	    tone, so a widget that quietly went back to spending the role colour
+//	    where it should spend the tone would look right under both themes.
+//
+// The blue is not invented for the test — it is the framework's own former
+// default, kept as a fixture precisely because it stopped being the default.
+func midTonePrimaryTheme() *core.Theme {
+	return &core.Theme{
+		Colors: core.ColorPalette{
+			Primary:        "#007AFF", // iOS systemBlue: white 4.02:1, black 5.23:1
+			PrimaryOnLight: "#0040DD", // Apple accessible blue — 7.56:1 on white
+			Background:     "#FFFFFF",
+			Surface:        "#F2F2F7",
+			TextPrimary:    "#000000",
+			Error:          "#FF3B30",
+			ErrorOnLight:   "#D70015",
+		},
+		Components: core.ComponentDefaults{
+			Button: core.Style{Background: "#007AFF", TextColor: "#FFFFFF"},
+		},
+	}
+}
+
 // The default variant keeps the Primary/Background pairing the themes chose
 // and Button paints, so the zero value stays a no-op for every badge that
 // already exists — but it reaches it by reading the theme's declaration rather
 // than by exempting itself from the rule. Both bundled themes state
 // Components.Button.TextColor "#FFFFFF" over a Primary background, which is
 // also their Colors.Background, so the two routes land on one hex.
-//
-// The declaration is observable under DefaultTheme, which is what makes this
-// worth a test: on Primary (#007AFF) white is 4.02:1 and black 5.23:1, so a
-// pure contrast rule picks black.
 func TestVariantDefaultKeepsTheThemePairing(t *testing.T) {
 	for name, theme := range map[string]*core.Theme{
 		"DefaultTheme":  core.DefaultTheme,
@@ -125,14 +177,24 @@ func TestVariantDefaultKeepsTheThemePairing(t *testing.T) {
 				name, got, theme.Colors.Background)
 		}
 	}
-	// Prove the declaration is doing work rather than agreeing by luck. Only
-	// DefaultTheme's blue splits the two rules; MaterialTheme's indigo is dark
-	// enough that measurement picks white too.
-	theme := core.DefaultTheme
+
+	// Prove the declaration is doing work rather than agreeing by luck.
+	//
+	// This used to read DefaultTheme, whose Primary was systemBlue and so
+	// split the two rules on its own. It no longer does — both bundled themes
+	// pair white with a fill dark enough that measurement picks white too —
+	// which is a *palette* improvement that would have quietly cost this
+	// assertion its teeth. The fixture carries the split instead, and the
+	// guard below is what says the fixture still has it.
+	theme := midTonePrimaryTheme()
 	bg := VariantDefault.Color(theme)
 	if contrastInk(bg, theme.Colors.Background, theme.Colors.TextPrimary) == theme.Colors.Background {
-		t.Error("the contrast rule now agrees with the theme pairing on Primary; this test " +
-			"no longer proves the declaration is consulted")
+		t.Fatal("the fixture's fill no longer splits the two rules; this test no longer " +
+			"proves the declaration is consulted")
+	}
+	if got := VariantDefault.Ink(theme, bg); got != theme.Colors.Background {
+		t.Errorf("on a fill where measurement disagrees, VariantDefault ink = %q, want the "+
+			"theme's declared %q", got, theme.Colors.Background)
 	}
 }
 
@@ -144,10 +206,17 @@ func TestInkOnReadsTheThemeDeclarationAndMeasuresEverythingElse(t *testing.T) {
 	theme := core.DefaultTheme
 
 	// The declared pair, spelled in the other case: a theme is hand-written
-	// and "#007aff" is the same blue to every renderer.
-	if got := inkOn(theme, "#007aff"); got != theme.Components.Button.TextColor {
-		t.Errorf("inkOn on a lower-case Primary = %q, want the declared %q",
-			got, theme.Components.Button.TextColor)
+	// and "#0040dd" is the same blue to every renderer.
+	//
+	// Asserted through declaredInk rather than through inkOn, because inkOn
+	// can no longer see the difference under a bundled theme: measurement
+	// picks white over this fill as well, so a case-blind lookup would fall
+	// through to the same answer. declaredInk returns "" on a miss, which is
+	// the observation the case-folding is actually about.
+	lower := strings.ToLower(theme.Components.Button.Background)
+	if got := declaredInk(theme, lower); got != theme.Components.Button.TextColor {
+		t.Errorf("declaredInk on a lower-case Primary %q = %q, want the declared %q",
+			lower, got, theme.Components.Button.TextColor)
 	}
 	// A pale fill nobody declared anything about. This is the case the old
 	// VariantDefault arm got wrong: it returned white on pale yellow because

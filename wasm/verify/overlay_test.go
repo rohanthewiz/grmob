@@ -69,6 +69,71 @@ func TestRuntimeOverlayChildAreaMatchesGo(t *testing.T) {
 	}
 }
 
+// Where each layer sits inside that cell: core.StackAlignment -> the CSS
+// placement pair.
+//
+// Go states it once (stackPlacements in htmlout/stack.go) as a declaration
+// list, and the runtime restates it as a [justify-self, align-self] pair
+// because the two write CSS through different doors — a style attribute there,
+// two CSSOM properties here. So the comparison normalises Go's side into the
+// same pair rather than comparing strings, which is the same shape
+// TestRuntimeOverlayChildAreaMatchesGo's TrimPrefix has and for the same
+// reason.
+//
+// Drift here is silent and one-sided: a placement missing from the runtime's
+// table falls back to the centre, so a layer asking for the top-left corner
+// sits in the middle in the live app and in the corner in an exported page,
+// with nothing failing on either.
+func TestRuntimeStackPlacementsMatchGo(t *testing.T) {
+	src := runtimeSource(t)
+
+	m := regexp.MustCompile(`(?s)const STACK_PLACEMENTS = \{(.*?)\};`).FindStringSubmatch(src)
+	if m == nil {
+		t.Fatal("grmob-runtime.js: no `const STACK_PLACEMENTS = { ... };` found — if it was " +
+			"renamed or reshaped, update this test rather than deleting it")
+	}
+	got := map[string]string{}
+	entry := regexp.MustCompile(`"([^"]*)":\s*\["([^"]*)",\s*"([^"]*)"\]`)
+	for _, e := range entry.FindAllStringSubmatch(m[1], -1) {
+		got[e[1]] = "justify-self:" + e[2] + "; align-self:" + e[3]
+	}
+
+	want := htmlout.StackPlacements()
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("STACK_PLACEMENTS is\n  %v\nhtmlout.StackPlacements() is\n  %v", got, want)
+	}
+}
+
+// The pair is written on every layer of every overlay, centre included.
+//
+// Totality is the load-bearing half and it is not visible from the table
+// comparison: a pass that wrote a placement only when the layer asked for one
+// would leave a layer that *lost* its StackAlign wherever it last was, and
+// would leave an unplaced layer at the mercy of its own Style.AlignSelf —
+// which is a flexbox property a grid item honours, and which core.ZStack's
+// alignment contract says nothing may move a layer by.
+func TestRuntimePlacesEveryLayerIncludingTheUnaligned(t *testing.T) {
+	src := runtimeSource(t)
+	for _, expr := range []string{
+		// The read: off the dataset, so the *stack* imposes the placement and
+		// no node writes justify-self/align-self for itself.
+		`STACK_PLACEMENTS[child.dataset.stackAlign || ""]`,
+		// The fallback, which is what makes the lookup total.
+		`|| STACK_PLACEMENTS[""];`,
+		// Both properties, unconditionally.
+		"child.style.justifySelf = place[0];",
+		"child.style.alignSelf = place[1];",
+		// And the other end: the field reaching the element at all.
+		"el.dataset.stackAlign = style.StackAlign;",
+		"delete el.dataset.stackAlign;",
+	} {
+		if !strings.Contains(src, expr) {
+			t.Errorf("grmob-runtime.js: missing %q — a core.StackAlign does not survive to "+
+				"the live DOM the way it does to an exported page", expr)
+		}
+	}
+}
+
 // The runtime must consult the set in styleFromGrMob's *first* branch, ahead
 // of the flex test.
 //

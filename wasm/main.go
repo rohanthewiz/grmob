@@ -216,7 +216,12 @@ func TabsComponent(ctx *core.Context, activeTab core.State[string]) core.View {
 			core.Margin(4),
 			core.BorderRadius(6),
 			core.FontWeight(core.Bold),
-			core.BackgroundColor(ifThen(active, "#007AFF", "#E0E0E0")),
+			// The active pill is the default theme's Primary rather than a
+			// literal systemBlue: this demo declares white over it, and the
+			// role was darkened precisely because white on systemBlue is
+			// 4.02:1. A copy of the hex here would have kept the demo at the
+			// old number with nothing to say so.
+			core.BackgroundColor(ifThen(active, core.PrimaryColor(), "#E0E0E0")),
 			core.TextColor(ifThen(active, "#FFFFFF", "#000000")),
 		)
 	}
