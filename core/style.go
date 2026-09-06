@@ -103,7 +103,7 @@ type Style struct {
 	// AccessibilityRole is what the node *is* — a heading, a table cell, a
 	// search landmark — as opposed to what it is called and what tapping it
 	// does. See role.go for the vocabulary, what each of the four renderers
-	// makes of it, and why nine of the seventeen values do nothing on either
+	// makes of it, and why nine of the twenty values do nothing on either
 	// native.
 	//
 	// It sits with the three fields above and travels the same way: on Style
@@ -146,7 +146,7 @@ type Style struct {
 	// AccessibilityHeadingLevel is the same 1-6 idea, so the level survives to
 	// VoiceOver's heading rotor. Compose's heading() takes no argument and has
 	// no level at all, so this is inert on Android — the same honest gap nine
-	// of the seventeen roles have, documented in GrMobStyle.kt beside the role
+	// of the twenty roles have, documented in GrMobStyle.kt beside the role
 	// dispatch rather than left for the next person to rediscover.
 	//
 	// Out-of-range values are dropped rather than clamped. 0 is the zero value
@@ -195,7 +195,7 @@ type Style struct {
 	// collectionItemInfo — describes an item's index and span within one
 	// collection rather than its depth within nested ones, so mapping onto it
 	// would state something the field does not mean. This is the same honest
-	// gap nine of the seventeen roles have, and it is written down in
+	// gap nine of the twenty roles have, and it is written down in
 	// GrMobStyle.kt and GrMobStyle.swift beside the role dispatch rather than
 	// left for the next person to rediscover.
 	//
@@ -203,6 +203,61 @@ type Style struct {
 	// value and means "an item, depth unstated", which is what every list item
 	// in every tree is unless something says otherwise.
 	AccessibilityNestingLevel int
+
+	// AccessibilitySelected is whether this control is *on* — the applied
+	// filter chip, the tab that is showing, the chosen calendar day. See
+	// SelectedState for the vocabulary and for why "off" and "not selectable"
+	// are two values rather than one bool.
+	//
+	// # One field, two attributes — the mirror of the level pair
+	//
+	// AccessibilityHeadingLevel and AccessibilityNestingLevel are two fields
+	// that become one attribute, resolved by a switch on the role. This is
+	// the same problem reflected: one field that becomes two attributes,
+	// resolved by the same switch, in the same two functions.
+	//
+	//	role                         attribute
+	//	-------------------------    -------------------------------------
+	//	tab, row, columnheader       aria-selected
+	//	button (or a core.Button)    aria-pressed
+	//	anything else                nothing at all
+	//
+	// ARIA has two words because it draws a real distinction. Selection is
+	// *one of these*: a tab among tabs, a row among rows, and choosing one
+	// unchooses the rest. Pressed is *this one, on or off*: a toggle that
+	// answers only for itself. A filter chip is pressed; a tab is selected;
+	// and a widget that says the wrong one is announced as a member of a set
+	// that does not exist.
+	//
+	// The natives have one spelling each and so need no switch: Compose sets
+	// its `selected` semantics property, SwiftUI adds `.isSelected`. That
+	// asymmetry is why the switch lives in the two web exporters rather than
+	// in core — the field means one thing, and only ARIA needs to know which
+	// word to say it with.
+	//
+	// # The role guard is ARIA's, not this framework's
+	//
+	// aria-selected on a plain container is dropped by screen readers, for
+	// the same reason an accessible name on one is: neither attribute is
+	// defined for a generic element. That is the gap RoleImg was added to
+	// close, and it has the same shape here — a state set on an unroled Box
+	// works on both natives, works in the DOM inspector, and is announced by
+	// nothing. So a widget states the role alongside the state, and the two
+	// web exporters write nothing when it has not.
+	//
+	// The one case that needs no role is a core.Button, whose node type
+	// already is one — the "roles a node type carries for itself" rule in
+	// role.go. Both web exporters read the node type beside the role for
+	// exactly that reason, as they already do for a Modal's dialog.
+	//
+	// # Neither native scopes it, and that is not a divergence to fix
+	//
+	// Compose will set `selected` on any node and VoiceOver will honour
+	// `.isSelected` on any view, so a state on an unroled node reaches both
+	// natives and neither web target. The web is the strict one because ARIA
+	// is; each platform says the truest thing it can, which is the same rule
+	// the nine unmapped roles follow.
+	AccessibilitySelected SelectedState
 
 	// Disabled marks the node inert: the renderers hand it to the platform's
 	// own disabled state rather than emulating one, so the control stops
@@ -450,6 +505,14 @@ func (s Style) applyTo(target *Style) {
 	// depend on which Style in the chain happened to name the role.
 	if s.AccessibilityNestingLevel != 0 {
 		target.AccessibilityNestingLevel = s.AccessibilityNestingLevel
+	}
+	// Independently of the role for the same reason, and note that
+	// SelectedOff is a *stated* value and so merges: only SelectedUnset, the
+	// zero value, leaves the target alone. A widget layering an unselected
+	// state over a selected one has to be able to turn it off, which is the
+	// whole of what a strip does when the selection moves.
+	if s.AccessibilitySelected != SelectedUnset {
+		target.AccessibilitySelected = s.AccessibilitySelected
 	}
 	if s.Disabled {
 		target.Disabled = true

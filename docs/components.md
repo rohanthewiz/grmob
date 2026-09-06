@@ -204,21 +204,32 @@ components.Button{
 contrast and is tested to clear WCAG AA under both bundled themes.
 
 Outlined and Ghost own neither — the fill is transparent, so the label's real
-backdrop is whatever you placed the button on. Their label is the variant's
-color **verbatim**. Measured against each theme's own `Background` (both
-`#FFFFFF`):
+backdrop is whatever you placed the button on. Their label and rule are
+therefore the role's
+[**on-light tone**](concepts/styling-and-theming.md#the-on-light-tones), the
+palette's second value per role, rather than the fill color. Measured against
+each theme's own `Background` (both `#FFFFFF`), with the value each replaced:
 
 | variant | DefaultTheme | MaterialTheme |
 |---|---|---|
-| default | 4.02:1 | 7.63:1 |
-| success | 2.22:1 | 5.13:1 |
-| warning | 2.20:1 | 3.08:1 |
-| error | 3.55:1 | 7.33:1 |
+| default | **7.56:1** (was 4.02) | 7.63:1 (needed no second tone) |
+| success | **5.40:1** (was 2.22) | 5.13:1 (needed no second tone) |
+| warning | **5.28:1** (was 2.20) | **5.60:1** (was 3.08) |
+| error | **5.38:1** (was 3.55) | 7.33:1 (needed no second tone) |
 
-Prefer `EmphasisFilled` for a status action; override `TextColor` where those
-numbers do not hold. Darkening the role color until it passes was rejected — it
-would repaint DefaultTheme's own brand blue, i.e. the default case. The durable
-fix is a second palette value per role, which is a palette decision.
+All eight now clear WCAG AA (4.5:1); five of the eight did not before.
+
+The promise is still narrower than `EmphasisFilled`'s: these numbers hold
+against a theme's `Background`, and a button placed on some other surface — a
+tinted card, a photo — is measured against that instead, which nothing here can
+know. What changed is that the *default* case is legible rather than documented
+as illegible. A theme that declares no on-light tones falls back to the role
+color, i.e. to the numbers in brackets, and to exactly the pixels this widget
+painted before.
+
+Darkening the role color *here* was rejected then and still is — it would
+repaint DefaultTheme's own brand blue. Declaring the second value is the
+theme's call; spending it is the widget's.
 
 ### FullWidth and Disabled
 
@@ -234,9 +245,12 @@ makes the *platform* refuse to dispatch and announce the state to a screen
 reader.
 
 That last part is why the accessibility label is left alone. The widget used
-to append `", disabled"` to it — the `", selected"` convention Chip and
-ListRow still use — because no renderer carried a disabled state. Now that
-they all do, appending it as well would announce the state twice.
+to append `", disabled"` to it — the `", selected"` convention `ListRow` still
+uses — because no renderer carried a disabled state. Now that they all do,
+appending it as well would announce the state twice. `Chip` and `Calendar`
+followed the same path once
+[`core.AccessibilitySelected`](concepts/styling-and-theming.md#accessibilityselected)
+existed; `ListRow` did not, and its own entry says why.
 
 ## InputRow
 
@@ -390,8 +404,16 @@ Other notes:
   may be set at once; the renderers wire them as one gesture recognizer, so
   a long press never also fires the tap.
 - `Selected` tints the row with the theme's `Surface` (override with
-  `SelectedStyle`) and appends `", selected"` to the accessibility label —
-  the same convention Chip owns.
+  `SelectedStyle`) and appends `", selected"` to the accessibility label.
+  `Chip` and `Calendar` moved that state onto
+  [`core.AccessibilitySelected`](concepts/styling-and-theming.md#accessibilityselected);
+  this row deliberately did not, because the state is scoped by role on both
+  web targets and a row is not a control. `RoleButton` is true only of a
+  tappable row and would make it a *foreign child* of any `role="list"` it sits
+  in; `RoleListItem` is the honest description and ARIA defines neither state
+  attribute for it (a selectable collection item is an `option` in a `listbox`,
+  which `core.Role` does not carry). So the suffix stays until the vocabulary
+  has the pair that fits.
 - No label is synthesized from `Title`. A row is a compound control whose
   slots carry meaning the widget cannot see, and labelling the container
   overrides how its children are announced, so naming the row is the
@@ -486,8 +508,12 @@ components.Chip{
 - `Style` applies to both states and the state wins where they collide —
   otherwise one `Style` shared across a strip would flatten the distinction
   the strip is drawing.
-- When selected, `", selected"` is appended to the accessibility label so
-  screen readers announce state with the name.
+- Every chip states
+  [`core.AccessibilitySelected`](concepts/styling-and-theming.md#accessibilityselected),
+  selected or not, so a reader announces "pressed" / "not pressed" alongside
+  the name. It used to be a `", selected"` suffix on the accessibility label,
+  which announced nothing at all for a chip that had no label — most of them —
+  and which changed the control's *name* on every tap.
 
 The two state defaults used to be the other way round — the selected chip was
 the quiet one — which read as an inverted filter row and is the one thing that
@@ -502,7 +528,7 @@ this field touches. *How much* quieter the other one is has two right answers:
 | | |
 |---|---|
 | `ProminenceQuiet` (zero) | Surface fill, `TextPrimary` ink, hairline rule. Right for a **filter** row, which is chrome above the content it filters: a loud row of years competes with the archive it is filtering. |
-| `ProminenceLoud` | The chip's accent as ink and as a 1px rule over a transparent fill — the outlined treatment. Right for a row of **suggestions** the reader is meant to reach into: grey pills over an empty amount field do not read as "tap one of these". |
+| `ProminenceLoud` | The chip's accent, in its on-light tone, as ink and as a 1px rule over a transparent fill — the outlined treatment. Right for a row of **suggestions** the reader is meant to reach into: grey pills over an empty amount field do not read as "tap one of these". |
 
 ```go
 components.Chip{Label: "$25", Prominence: components.ProminenceLoud,
@@ -519,13 +545,21 @@ selected chip is still the only solid pill in the row.
 The accent is the theme's own `Components.Button` background — the fill the
 selected chip paints — so the outline and what it becomes when tapped are the
 same hue on any theme. A theme with no Button fill falls back to
-`Colors.Primary`. Legibility over a transparent fill is the palette's, exactly
-as it is for an outlined [`Button`](#button) — and the numbers are that
-widget's `default` row, since it is the same colour on the same backdrop:
-**4.02:1** under `DefaultTheme` (`#007AFF` on white), **7.63:1** under
-`MaterialTheme`. Only the second clears WCAG AA at the theme's Button font
-size, so a screen leaning on loud chips under a `DefaultTheme`-like palette
-should override `TextColor` through `UnselectedStyle`.
+`Colors.Primary`. Whichever it lands on is then resolved through
+[`Colors.OnLight`](concepts/styling-and-theming.md#the-on-light-tones) — a
+lookup by *colour* rather than by role, because the accent is a hex the widget
+read off the Button base and has no name for — so the outline is drawn at ink
+weight. The numbers are the outlined [`Button`](#button)'s `default` row, since
+it is the same colour on the same backdrop: **7.56:1** under `DefaultTheme`
+(up from 4.02:1, which missed WCAG AA at the theme's Button font size) and
+**7.63:1** under `MaterialTheme`, whose blue needed no second tone. A theme
+that declares none falls back to the accent itself, which is what this painted
+before.
+
+The outline and the fill it becomes when tapped are now two weights of one hue
+rather than the same value — still the same hue by construction, which is what
+kept the two from drifting apart on a theme whose buttons are not
+primary-coloured.
 
 `UnselectedStyle` wins where both are set — it replaces the treatment,
 `Prominence` picks between them. And because `SegmentedControl.Segment` is a
@@ -607,10 +641,31 @@ which grows a field every time `Chip` does. It is the same move
 **`SegmentLabel` is a function because the name is the one thing that varies
 per segment and is not derivable from the caption** — todoapp announces "Show
 active tasks" for a chip captioned "Active". A parallel `[]string` would have
-to be kept in step with `Labels` by hand. `Chip` still appends `", selected"`
-to whichever name it ends up with, so state and name are announced together;
-return the name only. A nil `SegmentLabel` leaves `Chip` to announce the
-caption itself.
+to be kept in step with `Labels` by hand. Which segment is live is announced
+separately, as a control state, so return the name only — and the name then
+does not change when the selection moves. A nil `SegmentLabel` leaves `Chip` to
+announce the caption itself.
+
+**It becomes a tab strip with two props and no new field.** As built it is a
+group of toggle buttons, which is what a filter bar is. Give the row
+`RoleTabList` and the segment template `RoleTab` and the state each `Chip`
+already sets goes out as `aria-selected` instead of `aria-pressed`, because the
+web exporters pick the attribute from the role:
+
+```go
+components.SegmentedControl{
+    Labels:   []string{"Sermons", "Articles"},
+    Selected: tab.Get(), OnSelect: func(i int) { tab.Set(i) },
+    Style:   []core.StyleProp{core.AccessibilityRole(core.RoleTabList)},
+    Segment: components.Chip{Style: []core.StyleProp{core.AccessibilityRole(core.RoleTab)}},
+}
+```
+
+Two things that does not buy, both ARIA's rules rather than the widget's. A
+tablist claims its children are tabs, so a row that also holds a count or an
+add button is not one. And the panel cannot be pointed at from here —
+`aria-controls` is an IDREF and `core.Style` carries values, not references; a
+wired tab strip is [`core.TabView`](#tabs), which owns both ends.
 
 **Segments are keyed**, by `KeyPrefix` + caption. Keys never appear in exported
 HTML but they drive reconciler matching and native view recycling, so captions
@@ -981,12 +1036,20 @@ components.Banner{
 }
 ```
 
-**The variant is a tint, not a fill.** A hairline border and the leading
-glyph take the role color; the strip keeps the theme's Surface and the primary
-ink. A saturated Error red across the width of a screen reads as a failure of
-the app rather than of one fetch, and the palette carries no muted container
-tone to fill with instead. The upshot is that a banner's contrast does not
+**The variant is a tint, not a fill.** A hairline border and the leading glyph
+take the role's
+[on-light tone](concepts/styling-and-theming.md#the-on-light-tones); the strip
+keeps the theme's Surface and the primary ink. A saturated Error red across the
+width of a screen reads as a failure of the app rather than of one fetch, and
+the palette carries no muted *container* tone to fill with instead — an
+on-light tone is the opposite end of the range, ink for a light surface rather
+than a wash to sit behind one. The upshot is that a banner's contrast does not
 depend on which variant it is.
+
+The glyph is the mark that most needed the second tone: under `DefaultTheme` a
+warning's ⚠ in `Colors.Warning` on Surface is about 2:1. The tones are stated
+against a theme's `Background` and drawn here on its `Surface`, which costs
+roughly 7% — all four still clear AA.
 
 Default glyphs are `ⓘ ✓ ⚠ ⊗` for the four roles, overridable with `Glyph` and
 droppable with `NoGlyph`. They are **decoration** and are hidden from
@@ -1177,9 +1240,13 @@ take one each, rather than a `Framed` bool that is wrong half the time.
 package where `VariantDefault` is not the theme's brand color. A delta is a
 measurement, and whether a number going up is good is the caller's domain:
 attendance up is a success, spend up is not, latency up is an incident. So
-the default says nothing. The [outlined-Button contrast caveat](#contrast-and-what-the-widget-can-promise)
-applies to a colored delta as well — under `DefaultTheme`, Success is 2.22:1
-and Warning 2.20:1 against the Background.
+the default says nothing. A colored delta takes the role's
+[on-light tone](concepts/styling-and-theming.md#the-on-light-tones) rather than
+its fill color, for the reason an outlined [`Button`](#contrast-and-what-the-widget-can-promise)'s
+label does: the line is *read*, on whatever the tile was dropped into, and the
+tile paints no background to pick an ink against. Under `DefaultTheme` a
+Success delta was 2.22:1 and a Warning delta 2.20:1 before the palette had a
+second value per role.
 
 `Fill` sets `FlexGrow` **and** a zero `FlexBasis`, which is what makes the
 four targets agree: Compose and SwiftUI divide the whole axis by weight, CSS

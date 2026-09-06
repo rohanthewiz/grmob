@@ -166,11 +166,17 @@ type Calendar struct {
 	// default; see "The zero time goes both ways" for why the default is that
 	// way round.
 	//
-	// It changes what a tap *reports* and nothing about how the cell is drawn
-	// or announced. The spoken name still ends ", selected", which is the fact
-	// a reader needs; that activating it now clears rather than re-selects is
-	// a piece of *state* — ARIA would spell it aria-pressed — and core has no
-	// slot for one yet.
+	// It changes what a tap *reports* and nothing about how the cell is drawn.
+	// What it does change is how well the announcement fits: every cell states
+	// core.AccessibilitySelected, which reaches the web as aria-pressed, and a
+	// pressed toggle button that un-presses when you activate it is exactly
+	// what a deselectable day is. Without this field the cell is a toggle that
+	// only turns on, which is the honest report of a grid where the selection
+	// can move but not clear.
+	//
+	// That state used to be a ", selected" suffix on the spoken name, because
+	// core.Style had no slot for a state. It has one now, and the suffix is
+	// gone — see dayLabel.
 	Deselectable bool
 
 	// Today rings the current day without selecting it, so "today" and "the
@@ -217,7 +223,8 @@ type Calendar struct {
 	// WeekdayLabel captions a column; nil gives the first two letters of the
 	// English name ("Su", "Mo", …). DayLabel is the *spoken* name of a cell
 	// for a screen reader; nil gives "Monday, January 2, 2006", to which the
-	// widget appends ", selected" and ", today" as they apply.
+	// widget appends ", today" when it applies. The selection is not part of
+	// the name — it is announced as the control state it is; see dayLabel.
 	MonthLabel   func(time.Time) string
 	WeekdayLabel func(time.Weekday) string
 	DayLabel     func(time.Time) string
@@ -523,7 +530,27 @@ func (c Calendar) dayCell(ctx *core.Context, day time.Time, month time.Month) co
 		)
 	}
 	items = append(items,
-		core.AccessibilityLabel(c.dayLabel(day, selected, isToday)),
+		core.AccessibilityLabel(c.dayLabel(day, isToday)),
+		// Which day is chosen, as a state rather than as part of the name.
+		// Paired with the role below: a cell is a button in this vocabulary,
+		// so "on" is spelled aria-pressed on the web and the platform's own
+		// selected property on the two natives.
+		//
+		// ARIA's own date-picker pattern would say this differently — a grid
+		// of role="gridcell" carrying aria-selected — and core.Role has no
+		// value for a gridcell, deliberately: the role would oblige the whole
+		// scaffold around it (a grid, rows, and the roving focus a grid
+		// promises) and a lone gridcell inside plain divs describes a table
+		// with no table, which role.go's structural rule calls worse than no
+		// role at all. A pressed toggle button is the true thing this widget
+		// can say about itself as it is actually built.
+		//
+		// Stated on every cell in the grid, including the adjacent and
+		// out-of-range ones. They are already announced as disabled buttons;
+		// a cell that said nothing about its state would be the one square
+		// the reader could not place, and "not pressed" is exactly what an
+		// unselectable day is.
+		core.AccessibilitySelected(core.SelectedWhen(selected)),
 		// A day cell is a Box with a tap handler, which every renderer draws
 		// as scenery and every screen reader announces as text — the label
 		// above names it and nothing said it could be activated. The role is
@@ -605,19 +632,28 @@ func (c Calendar) dayCell(ctx *core.Context, day time.Time, month time.Month) co
 	return core.Box(items...)
 }
 
-// dayLabel is the cell's spoken name. The state suffixes are appended to
+// dayLabel is the cell's spoken name. The "today" suffix is appended to
 // whatever names the day — a caller's DayLabel included — so a translated
-// calendar still announces its selection.
-func (c Calendar) dayLabel(day time.Time, selected, isToday bool) string {
+// calendar still announces which square is today.
+//
+// The selection used to be a second suffix here and is not any more: it goes
+// out as core.AccessibilitySelected, which every renderer announces as a
+// control's state. Two announcements of one fact is the reasoning
+// components.Button gives for dropping its own ", disabled" suffix, and the
+// state is the better half to keep — a name is meant to be stable, so a
+// reader re-announcing the cell after a tap read out the whole altered name
+// rather than the one thing that changed.
+//
+// "Today" stays a suffix because it is not a state a control can be in. There
+// is no platform property for "this is the current date"; it is a fact about
+// the day the cell names, which is what a name is for.
+func (c Calendar) dayLabel(day time.Time, isToday bool) string {
 	label := day.Format("Monday, January 2, 2006")
 	if c.DayLabel != nil {
 		label = c.DayLabel(day)
 	}
 	if isToday {
 		label += ", today"
-	}
-	if selected {
-		label += ", selected"
 	}
 	return label
 }

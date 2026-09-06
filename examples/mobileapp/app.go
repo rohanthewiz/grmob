@@ -155,7 +155,8 @@ func feedTab() core.View {
 					// which is better still because the widget owns it.)
 					// And the ", selected" suffix on the accessibility label
 					// was appended by hand in the same branch; ListRow owns
-					// that convention, so the label here is just the name.
+					// that convention now, so the label here is just the
+					// name.
 					return core.Keyed(fmt.Sprintf("article-%d", n), components.ListRow{
 						Title:       title,
 						Selected:    selected.Get() == n,

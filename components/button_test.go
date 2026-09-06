@@ -113,9 +113,13 @@ func TestButtonFilledStatusVariantsAreLegibleOnEveryTheme(t *testing.T) {
 
 // Outlined and Ghost both punch a real hole rather than omitting the fill: an
 // empty Background inherits the theme's solid Button base, which is the
-// opposite of the intent. Their label is the variant color verbatim — the
-// documented contract, and the reason the type doc carries a contrast table
-// instead of a guarantee.
+// opposite of the intent.
+//
+// Their label is the role's *on-light* tone, not the fill colour, and the two
+// differ under DefaultTheme for every variant — which is what this checks. A
+// treatment that owns no background cannot pick its ink by contrast the way
+// the filled one does, so the palette has to supply a value that stands on a
+// light surface unaided; see the contrast table on the Button type.
 func TestButtonOutlinedAndGhostAreTransparentWithVariantInk(t *testing.T) {
 	theme := core.DefaultTheme
 	for _, v := range []Variant{VariantDefault, VariantError} {
@@ -127,12 +131,21 @@ func TestButtonOutlinedAndGhostAreTransparentWithVariantInk(t *testing.T) {
 			if out.Style.Background != ColorTransparent {
 				t.Errorf("outlined fill = %q, want transparent", out.Style.Background)
 			}
-			if want := v.Color(theme); out.Style.TextColor != want {
-				t.Errorf("outlined ink = %q, want the variant color %q", out.Style.TextColor, want)
+			want := v.OnLight(theme)
+			if out.Style.TextColor != want {
+				t.Errorf("outlined ink = %q, want the role's on-light tone %q",
+					out.Style.TextColor, want)
 			}
-			if out.Style.BorderWidth == 0 || out.Style.BorderColor != v.Color(theme) {
-				t.Errorf("outlined rule = %vpx %q, want 1px in the variant color",
-					out.Style.BorderWidth, out.Style.BorderColor)
+			if out.Style.BorderWidth == 0 || out.Style.BorderColor != want {
+				t.Errorf("outlined rule = %vpx %q, want 1px in the on-light tone %q",
+					out.Style.BorderWidth, out.Style.BorderColor, want)
+			}
+			// The distinction is not academic under this theme: both of these
+			// variants ship a tone that differs from the fill, and a widget
+			// that quietly went back to v.Color would still look plausible.
+			if want == v.Color(theme) {
+				t.Fatalf("fixture no longer exercises the split: %q's on-light tone is its "+
+					"fill colour under DefaultTheme", v)
 			}
 
 			ghost := Button{Label: "Skip", Variant: v, Emphasis: EmphasisGhost}.Render(ctx)
@@ -142,8 +155,9 @@ func TestButtonOutlinedAndGhostAreTransparentWithVariantInk(t *testing.T) {
 			if ghost.Style.BorderWidth != 0 {
 				t.Errorf("ghost drew a rule of %vpx", ghost.Style.BorderWidth)
 			}
-			if want := v.Color(theme); ghost.Style.TextColor != want {
-				t.Errorf("ghost ink = %q, want the variant color %q", ghost.Style.TextColor, want)
+			if ghost.Style.TextColor != want {
+				t.Errorf("ghost ink = %q, want the role's on-light tone %q",
+					ghost.Style.TextColor, want)
 			}
 		})
 	}

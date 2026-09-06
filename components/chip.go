@@ -150,9 +150,22 @@ type Chip struct {
 	SelectedStyle   []core.StyleProp
 	UnselectedStyle []core.StyleProp
 
-	// AccessibilityLabel names the chip for screen readers; when Selected,
-	// ", selected" is appended so state is announced with the name.
+	// AccessibilityLabel names the chip for screen readers.
 	// AccessibilityHint describes the effect of tapping.
+	//
+	// The name no longer carries the state. Until core.Style had a slot for
+	// one, this widget appended ", selected" to whatever named the chip,
+	// because a name was the only channel it had; the state now goes out as
+	// core.AccessibilitySelected and reaches every target as the platform's
+	// own idea of a control being on (aria-pressed on both web targets, a
+	// `selected` semantics property in Compose, the .isSelected trait in
+	// SwiftUI).
+	//
+	// Both would announce it twice, which is the reasoning Button's Disabled
+	// field already gives for dropping its own ", disabled" suffix. It is
+	// also the better half to keep: a name is meant to be stable, so a reader
+	// re-announcing the control after a tap read out the whole altered name,
+	// where a state change is announced as a state change.
 	AccessibilityLabel string
 	AccessibilityHint  string
 }
@@ -167,12 +180,22 @@ func (c Chip) Render(ctx *core.Context) *core.Node {
 	}
 	styles = append(styles, state...)
 
+	// Stated on every chip, selected or not. SelectedOff is not the same as
+	// saying nothing: a strip in which only the chosen chip answers announces
+	// its neighbours as plain buttons, so the reader hears one toggle among
+	// several pieces of furniture rather than one of five options. See
+	// core.SelectedState.
+	//
+	// It needs no core.AccessibilityRole beside it because a Chip renders as
+	// a core.Button, and a <button> already is one — the node type carries
+	// the role, which is what both web exporters check when the style names
+	// none. A caller who makes a strip of these into a tab bar sets
+	// core.RoleTab through Style, and the same state then goes out as
+	// aria-selected instead; nothing here has to know which.
+	styles = append(styles, core.AccessibilitySelected(core.SelectedWhen(c.Selected)))
+
 	if c.AccessibilityLabel != "" {
-		label := c.AccessibilityLabel
-		if c.Selected {
-			label += ", selected"
-		}
-		styles = append(styles, core.AccessibilityLabel(label))
+		styles = append(styles, core.AccessibilityLabel(c.AccessibilityLabel))
 	}
 
 	// A nil OnTap becomes an explicit no-op rather than being handed to
@@ -236,19 +259,34 @@ func (c Chip) stateStyle(t *core.Theme) []core.StyleProp {
 		// Legibility here is the palette's, not the widget's, and for the
 		// reason Button's doc gives at length: a transparent fill means the
 		// label's real backdrop is whatever the chip was placed on, which the
-		// widget cannot see. The accent is the theme author's own hex, spent
-		// verbatim rather than darkened until it passes.
+		// widget cannot see. So the outline is drawn in the accent's
+		// *on-light* tone — the palette's second value per role, dark enough
+		// to be read as ink on a light surface.
 		//
-		// The bundled numbers are exactly Button's outlined "default" row,
-		// since it is the same colour on the same backdrop — 4.02:1 under
-		// DefaultTheme (#007AFF on white) and 7.63:1 under MaterialTheme. So
-		// the second clears WCAG AA at this font size and the first does not,
-		// and a screen leaning on loud chips under a DefaultTheme-like
-		// palette wants a darker TextColor through UnselectedStyle. The
-		// durable fix is the same one Button names: a second palette value
-		// per role, an "on-light" tone, which is a theme's decision and not
-		// this widget's.
-		accent := chipAccent(t)
+		// The bundled numbers are Button's outlined "default" row, since it
+		// is the same colour on the same backdrop: 7.56:1 under DefaultTheme
+		// (up from 4.02:1, which missed WCAG AA at this font size) and
+		// 7.63:1 under MaterialTheme, whose blue needed no second tone. A
+		// theme that declares none falls back to the accent itself, which is
+		// what this painted before the palette had one.
+		//
+		// The lookup is by *colour*, not by role, and that is forced by the
+		// line above: the accent is read off the theme's Button base rather
+		// than off Colors.Primary, precisely so a theme whose buttons are not
+		// primary-coloured keeps its own look — which leaves this widget
+		// holding a hex and no name for it. Colors.OnLight is the reverse
+		// lookup for that position, and a base fill that is not one of the
+		// palette's toned roles comes back unchanged, which is the same
+		// fallback and the same pixels as before.
+		//
+		// Both the label and the rule take it, rather than tinting the rule
+		// separately. See Button's colorProps for why that is a coherence
+		// argument and not a contrast one — and note it means the outline and
+		// the fill the *selected* chip paints are now two weights of one hue
+		// rather than the same value. They are still the same hue by
+		// construction, which is what stopped the two from drifting apart on
+		// a theme whose buttons are not primary-coloured.
+		accent := t.Colors.OnLight(chipAccent(t))
 		return []core.StyleProp{
 			core.BackgroundColor(ColorTransparent),
 			core.TextColor(accent),

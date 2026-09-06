@@ -46,6 +46,40 @@ func (v Variant) Color(t *core.Theme) string {
 	}
 }
 
+// OnLight resolves the variant to the ink-weight tone of its role — the value
+// to spend when the color *is* the ink, rather than the fill something else is
+// laid over.
+//
+// Color and this are the two halves of one role, and which one a widget wants
+// is decided by what it does with it:
+//
+//	Color     a fill. The ink over it is chosen by contrast (Ink, below), so
+//	          a mid-tone works and the pair clears AA on both bundled themes.
+//	OnLight   ink itself — an outlined button's label and rule, a loud chip's
+//	          outline. The backdrop is whatever the widget was placed on,
+//	          which the widget cannot see, so the value has to be dark enough
+//	          to be read against a light surface on its own.
+//
+// VariantDefault resolves through the palette's Primary tone rather than being
+// exempt the way it is in Ink, and the asymmetry is not an oversight. Ink
+// exempts the default to preserve a *pairing* the bundled themes chose
+// (Background over Primary, which is what Button already paints); there is no
+// such pre-existing pairing here, because before these tones existed every
+// caller spent the role colour raw — which is exactly what the unset fallback
+// still returns.
+func (v Variant) OnLight(t *core.Theme) string {
+	switch v {
+	case VariantSuccess:
+		return t.Colors.SuccessOnLightColor()
+	case VariantWarning:
+		return t.Colors.WarningOnLightColor()
+	case VariantError:
+		return t.Colors.ErrorOnLightColor()
+	default:
+		return t.Colors.PrimaryOnLightColor()
+	}
+}
+
 // Ink returns the label color to lay over bg.
 //
 // # Why this is computed rather than a fixed pairing

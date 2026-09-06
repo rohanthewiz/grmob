@@ -259,9 +259,14 @@ func TestCalendarDeselectableReportsTheZeroTimeOnASecondTap(t *testing.T) {
 }
 
 // Deselectable changes what a tap reports and nothing about the cell: the fill
-// still marks the selection and the spoken name still ends ", selected".
+// still marks the selection and the cell still announces itself as chosen.
 // Pinned because the tempting shortcut — drawing a deselectable selection
 // differently — would make the grid say two things about one state.
+//
+// The announcement is core.AccessibilitySelected rather than a suffix on the
+// name, which is what a pressed toggle button is; the name is checked here
+// too, because the two used to be one string and the whole point of the split
+// is that changing the state no longer rewrites the name.
 func TestCalendarDeselectableDoesNotChangeHowTheCellReads(t *testing.T) {
 	sel := time.Date(2026, time.September, 12, 0, 0, 0, 0, time.UTC)
 	plain := Calendar{Month: sep2026, Selected: sel, OnSelect: func(time.Time) {}}
@@ -277,8 +282,49 @@ func TestCalendarDeselectableDoesNotChangeHowTheCellReads(t *testing.T) {
 	if a.Style.AccessibilityLabel != b.Style.AccessibilityLabel {
 		t.Errorf("spoken name differs: %q vs %q", a.Style.AccessibilityLabel, b.Style.AccessibilityLabel)
 	}
-	if b.Style.AccessibilityLabel != "Saturday, September 12, 2026, selected" {
-		t.Errorf("spoken name = %q, want the selection still announced", b.Style.AccessibilityLabel)
+	if b.Style.AccessibilityLabel != "Saturday, September 12, 2026" {
+		t.Errorf("spoken name = %q, want the day and nothing else — the selection is a "+
+			"state now, not part of the name", b.Style.AccessibilityLabel)
+	}
+	if a.Style.AccessibilitySelected != b.Style.AccessibilitySelected {
+		t.Errorf("selected state differs: %q vs %q",
+			a.Style.AccessibilitySelected, b.Style.AccessibilitySelected)
+	}
+	if b.Style.AccessibilitySelected != core.SelectedOn {
+		t.Errorf("selected state = %q, want the selection still announced",
+			b.Style.AccessibilitySelected)
+	}
+}
+
+// Every cell states a selection, not just the chosen one, and the role that
+// carries it goes on all of them too.
+//
+// The half that would rot silently is the unselected majority: a grid where
+// only the chosen day answers announces its other forty-one squares as plain
+// buttons, so a reader hears one toggle among a page of furniture rather than
+// one day picked out of a month. See core.SelectedState.
+func TestCalendarEveryCellStatesWhetherItIsChosen(t *testing.T) {
+	sel := time.Date(2026, time.September, 12, 0, 0, 0, 0, time.UTC)
+	cells := dayCells(t, renderCalendar(t, Calendar{
+		Month: sep2026, Selected: sel, OnSelect: func(time.Time) {},
+	}))
+
+	stated := 0
+	for _, cell := range cells {
+		if cell.Style.AccessibilityRole != core.RoleButton {
+			t.Fatalf("a cell lost the button role, which is what carries the state")
+		}
+		switch cell.Style.AccessibilitySelected {
+		case core.SelectedOn:
+			stated++
+		case core.SelectedOff:
+		default:
+			t.Fatalf("cell %q says nothing about its state; an unselected day has to "+
+				"say so, not go quiet", cell.Style.AccessibilityLabel)
+		}
+	}
+	if stated != 1 {
+		t.Errorf("%d cells announced as chosen, want exactly the one Selected names", stated)
 	}
 }
 
@@ -606,11 +652,16 @@ func TestCalendarLabelSeamsAreTheLocalizationPoints(t *testing.T) {
 	if got := n.Children[1].Children[0].Children[0].Props["content"]; got != "D" {
 		t.Errorf("first caption = %v, want the caller's %q", got, "D")
 	}
-	// The state suffixes are appended to whatever names the day, so a
-	// translated calendar still announces its selection.
+	// "today" is appended to whatever names the day, so a translated calendar
+	// still says which square is the current date. The selection is not a
+	// suffix — it is a control state, announced separately — which is why a
+	// translated calendar needs no translation for it at all.
 	cell := cellFor(t, dayCells(t, n), 2, 12)
-	if got := cell.Style.AccessibilityLabel; got != "dia 12, today, selected" {
-		t.Errorf("spoken name = %q, want the caller's name with the state appended", got)
+	if got := cell.Style.AccessibilityLabel; got != "dia 12, today" {
+		t.Errorf("spoken name = %q, want the caller's name with only the day fact appended", got)
+	}
+	if got := cell.Style.AccessibilitySelected; got != core.SelectedOn {
+		t.Errorf("selected state = %q, want the selection announced as a state", got)
 	}
 }
 

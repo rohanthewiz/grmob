@@ -74,6 +74,17 @@
       and a Google-like design system, which was the "real-world design
       system demo" this file used to track
 - [x] Semantic status roles: `Success`, `Warning`, `Error`, `Border`
+- [x] An **on-light tone** per status role (`PrimaryOnLight`, `SuccessOnLight`,
+      `WarningOnLight`, `ErrorOnLight`) — the second value a role needs when it
+      is spent as *ink* on a light surface rather than as a fill with an ink
+      picked over it. Five of the eight bundled role colours failed the 4.5:1
+      body-text floor that way; all eight tones clear it. Read through the four
+      resolvers, or through `Colors.OnLight(colour)` for a widget holding a hex
+      it has no name for. An unset tone falls back to its own role, so a theme
+      written before these renders exactly as it did. Spent by `Button`'s
+      outlined and ghost treatments, `Chip`'s loud prominence, `Banner`'s
+      hairline and glyph, and `StatTile`'s delta — every one of which
+      previously documented the gap it could not close from where it sat
 
 ### 📱 Native Runtime Bridges
 - [x] **Android Runtime** (Go → JSON → Jetpack Compose renderer)
@@ -140,7 +151,7 @@
       an honest `available: false` on a desktop — which is a different answer
       from "no reading yet", and a screen draws different things for the two
 - [x] Accessibility labels, hints and announced selection state
-- [x] Accessibility *roles* (`core.AccessibilityRole`, seventeen ARIA-spelled
+- [x] Accessibility *roles* (`core.AccessibilityRole`, twenty ARIA-spelled
       values) — `role=` on both web targets, traits on SwiftUI and semantics
       on Compose where those vocabularies reach, and an explicit no-op arm
       where they do not; pinned in both natives by `mobile/verify/role_test.go`.
@@ -150,7 +161,22 @@
       `Compass`, and is the case that showed the vocabulary was doing more
       than naming things: ARIA forbids an accessible name on a generic
       element, so a labelled container had no announced name on either web
-      target while both natives read it fine
+      target while both natives read it fine. `RoleTab`/`RoleTabList` and
+      `RoleLog` complete the vocabulary for a hand-built tab strip and a chat
+      transcript (`examples/chat`); the tab pair is the one row where the two
+      natives disagree about which half they can say — Compose has `Role.Tab`
+      and no strip, SwiftUI `.isTabBar` and no tab. There is deliberately no
+      `RoleTabPanel`: a panel is one end of a relationship whose other half is
+      an IDREF a `Style` cannot carry, and `core.TabView` owns both ends
+- [x] A widget can say **this control is on** (`core.AccessibilitySelected`) —
+      `aria-selected` or `aria-pressed` on both web targets (the role picks,
+      which is `aria-level`'s switch running the other way), `selected`
+      semantics on Compose, the `.isSelected` trait on SwiftUI. Three values,
+      not a bool: a tablist in which only the live tab answers announces the
+      other four as furniture, so `SelectedOff` is a value with a job. Adopted
+      by `Chip` (and through it `SegmentedControl` and `ChipStrip`) and by
+      `Calendar`'s day cells, both of which dropped the `", selected"` suffix
+      they had been spelling into the accessible *name* for want of a slot
 - [x] Accessibility *heading levels* (`core.AccessibilityHeadingLevel`) —
       `aria-level` on both web targets and `.accessibilityHeading` on SwiftUI;
       Compose has no level to map onto and says so. `AppBar`'s title takes 1

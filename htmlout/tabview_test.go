@@ -594,9 +594,18 @@ func TestAPageWithAnAuthoredRoleIsNotAPanel(t *testing.T) {
 // the wiring, because no core.Role spells it. That is only true while nobody
 // adds one, which is what this pins.
 //
-// The tab and tablist roles are not at risk in the same way (they go on
-// chrome, which is never a node), so this is deliberately about the one value
-// that lands on an app's own element.
+// It stopped being a hypothetical when RoleTab and RoleTabList landed and
+// RoleTabPanel deliberately did not. The absence has its own reasons — a
+// panel is one end of a relationship whose other half is an IDREF a Style
+// cannot carry, and core.TabView already owns both ends; core/role.go argues
+// it at length. This check is the part of that decision the compiler can see,
+// so a later "for symmetry" addition fails here with the consequence attached
+// rather than shipping a panel that unwires and rewires itself on alternate
+// syncs.
+//
+// RoleTab and RoleTabList are not at risk in the same way: those two land on
+// the bar and its buttons, which are chrome the runtime builds rather than
+// nodes an app can style, so neither value can arrive on a page element.
 func TestNoRoleCollidesWithTheTabPanelWiring(t *testing.T) {
 	for _, role := range core.Roles() {
 		if string(role) == "tabpanel" {

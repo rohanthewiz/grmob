@@ -379,6 +379,31 @@ func AccessibilityNestingLevel(level int) StyleProp {
 	})
 }
 
+// AccessibilitySelected says whether this control is on — the applied filter
+// chip, the tab that is showing, the chosen day in a calendar.
+//
+//	core.Box(
+//		core.AccessibilityRole(core.RoleTab),
+//		core.AccessibilitySelected(core.SelectedWhen(i == current)),
+//		core.Text(label),
+//	)
+//
+// Use core.SelectedWhen to convert the bool a widget already holds. Passing
+// core.SelectedOn alone and leaving the other controls unset is the mistake
+// the three-valued type exists to prevent — see SelectedState.
+//
+// Paired with a role that can carry a state, exactly as a level is: tab, row
+// and columnheader take aria-selected, a button takes aria-pressed, and a
+// state on anything else is dropped by both web targets because ARIA does not
+// define either attribute there. A core.Button needs no role of its own; the
+// node type is one. See Style.AccessibilitySelected for the two-attribute
+// mapping and for why the natives do not scope it the same way.
+func AccessibilitySelected(state SelectedState) StyleProp {
+	return styleFunc(func(s *Style) {
+		s.AccessibilitySelected = state
+	})
+}
+
 // AccessibilityHidden removes the element (and its subtree) from the
 // accessibility tree — for decorative content a screen reader should skip.
 func AccessibilityHidden() StyleProp {

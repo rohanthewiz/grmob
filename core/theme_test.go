@@ -183,3 +183,107 @@ func TestScopeKeepsItsHookSlotsAcrossAThemeChange(t *testing.T) {
 		t.Errorf("scope state = %d after a theme change, want the 42 it held", got)
 	}
 }
+
+// The on-light tones fall back to their own role rather than to a constant,
+// which is what makes them a no-op for a theme written before they existed:
+// every widget spending one lands on exactly the colour it spent before.
+//
+// Each role is checked with the *other* three set, so a resolver that read the
+// wrong field would fail here rather than pass by coincidence.
+func TestOnLightTonesFallBackToTheirOwnRole(t *testing.T) {
+	full := ColorPalette{
+		Primary: "#111111", Error: "#222222", Success: "#333333", Warning: "#444444",
+		PrimaryOnLight: "#AAAAAA", ErrorOnLight: "#BBBBBB",
+		SuccessOnLight: "#CCCCCC", WarningOnLight: "#DDDDDD",
+	}
+
+	for _, c := range []struct {
+		role  string
+		tone  func(ColorPalette) string
+		clear func(*ColorPalette)
+		want  string
+	}{
+		{"Primary", ColorPalette.PrimaryOnLightColor, func(p *ColorPalette) { p.PrimaryOnLight = "" }, "#111111"},
+		{"Error", ColorPalette.ErrorOnLightColor, func(p *ColorPalette) { p.ErrorOnLight = "" }, "#222222"},
+		{"Success", ColorPalette.SuccessOnLightColor, func(p *ColorPalette) { p.SuccessOnLight = "" }, "#333333"},
+		{"Warning", ColorPalette.WarningOnLightColor, func(p *ColorPalette) { p.WarningOnLight = "" }, "#444444"},
+	} {
+		if got := c.tone(full); got == c.want {
+			t.Errorf("%sOnLightColor read the role while the tone was set", c.role)
+		}
+		bare := full
+		c.clear(&bare)
+		if got := c.tone(bare); got != c.want {
+			t.Errorf("%sOnLightColor with no tone = %q, want the role's own %q — a theme "+
+				"that predates the field must render as it always did", c.role, got, c.want)
+		}
+	}
+}
+
+// A theme missing both halves of Success or Warning still lands somewhere
+// visible: the on-light resolver defers to the role's *resolver*, not to the
+// raw field, so the documented fallback colour comes through rather than an
+// empty string. Primary and Error need no such step — they are two of the
+// original seven and no theme can be missing them.
+func TestOnLightTonesInheritTheRoleFallbacks(t *testing.T) {
+	empty := ColorPalette{}
+	if got := empty.SuccessOnLightColor(); got != FallbackSuccess {
+		t.Errorf("SuccessOnLightColor on an empty palette = %q, want %q", got, FallbackSuccess)
+	}
+	if got := empty.WarningOnLightColor(); got != FallbackWarning {
+		t.Errorf("WarningOnLightColor on an empty palette = %q, want %q", got, FallbackWarning)
+	}
+}
+
+// OnLight is the reverse lookup, for a widget holding a colour rather than a
+// role — components.Chip's accent, read off the theme's Button base.
+func TestOnLightResolvesAColourToItsRolesTone(t *testing.T) {
+	p := DefaultTheme.Colors
+
+	for _, c := range []struct{ from, want string }{
+		{p.Primary, p.PrimaryOnLightColor()},
+		{p.Error, p.ErrorOnLightColor()},
+		{p.Success, p.SuccessOnLightColor()},
+		{p.Warning, p.WarningOnLightColor()},
+	} {
+		if got := p.OnLight(c.from); got != c.want {
+			t.Errorf("OnLight(%q) = %q, want %q", c.from, got, c.want)
+		}
+	}
+
+	// Case-insensitively, because a hand-written theme may spell either way
+	// and every renderer treats the two as one colour.
+	if got := p.OnLight("#007aff"); got != p.PrimaryOnLightColor() {
+		t.Errorf("OnLight(%q) = %q, want the lookup to ignore hex case", "#007aff", got)
+	}
+
+	// A colour that is not one of the four toned roles comes back unchanged.
+	// That is the honest answer for a reverse lookup and it is also what makes
+	// the function safe to call unconditionally: a theme whose Button base is
+	// some fifth colour keeps it rather than being snapped to a role it never
+	// named.
+	for _, other := range []string{"#8E44AD", p.Surface, p.TextSecondary, ""} {
+		if got := p.OnLight(other); got != other {
+			t.Errorf("OnLight(%q) = %q, want it unchanged", other, got)
+		}
+	}
+}
+
+// Secondary is deliberately not one of the toned roles, and DefaultTheme is
+// the fixture that proves it matters: it paints Secondary and Success the same
+// green. A lookup that consulted Secondary would answer for a brand slot with
+// a status role's tone.
+func TestOnLightDoesNotTintTheBrandSlot(t *testing.T) {
+	p := DefaultTheme.Colors
+	if p.Secondary != p.Success {
+		t.Skipf("fixture assumed DefaultTheme paints Secondary and Success alike; "+
+			"they are now %q and %q", p.Secondary, p.Success)
+	}
+	// The shared hex resolves through Success, which is the documented
+	// first-match rule — what is pinned is that Secondary has no tone of its
+	// own to disagree with it.
+	if got := p.OnLight(p.Secondary); got != p.SuccessOnLightColor() {
+		t.Errorf("OnLight(Secondary) = %q, want the Success tone %q it shares a hex with",
+			got, p.SuccessOnLightColor())
+	}
+}

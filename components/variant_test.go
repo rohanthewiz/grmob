@@ -181,3 +181,83 @@ func TestRelativeLuminance(t *testing.T) {
 		}
 	}
 }
+
+// The guarantee the on-light tones exist to make: every one of them clears
+// WCAG AA against its own theme's Background.
+//
+// This is the check that could not live in core. The tones are a palette
+// decision and the palette declares them, but the arithmetic that says whether
+// a declaration is any good is here — relativeLuminance and contrastRatio, the
+// same WCAG 2.x implementation Variant.Ink picks with. So this package is
+// where a retint of either bundled theme gets caught, and it is caught by
+// number rather than by eye.
+//
+// 4.5:1 is the body-text floor, and body text is what these are for: an
+// outlined button's label and a loud chip's caption are read, not glanced at.
+// The looser 3:1 large-text allowance is deliberately not used — a chip's
+// caption is 13pt in the one app that has one.
+func TestBundledOnLightTonesClearWCAGAA(t *testing.T) {
+	const floor = 4.5
+
+	for name, theme := range map[string]*core.Theme{
+		"DefaultTheme":  core.DefaultTheme,
+		"MaterialTheme": core.MaterialTheme,
+	} {
+		bg, ok := relativeLuminance(theme.Colors.Background)
+		if !ok {
+			t.Fatalf("%s: Background %q does not parse", name, theme.Colors.Background)
+		}
+		for _, role := range []struct {
+			what string
+			tone string
+		}{
+			{"Primary", theme.Colors.PrimaryOnLightColor()},
+			{"Success", theme.Colors.SuccessOnLightColor()},
+			{"Warning", theme.Colors.WarningOnLightColor()},
+			{"Error", theme.Colors.ErrorOnLightColor()},
+		} {
+			lum, ok := relativeLuminance(role.tone)
+			if !ok {
+				t.Errorf("%s: %s on-light tone %q does not parse", name, role.what, role.tone)
+				continue
+			}
+			if r := contrastRatio(bg, lum); r < floor {
+				t.Errorf("%s: %s on-light tone %q is %.2f:1 against Background %q, want at "+
+					"least %.1f:1 — the tone exists precisely to clear this",
+					name, role.what, role.tone, r, theme.Colors.Background, floor)
+			}
+		}
+	}
+}
+
+// The other half of the same story: the role colours these replace mostly do
+// *not* clear the floor, which is why the second value exists at all.
+//
+// Written as a census rather than as four assertions, because the point is the
+// count. If a later retint made every role ink-weight on its own, the tones
+// would be redundant and this would say so; a test that only checked the tones
+// would let that pass in silence and leave eight fields with nothing to do.
+func TestTheRoleColoursAreWhyTheOnLightTonesExist(t *testing.T) {
+	const floor = 4.5
+	failing := 0
+
+	for _, theme := range []*core.Theme{core.DefaultTheme, core.MaterialTheme} {
+		bg, _ := relativeLuminance(theme.Colors.Background)
+		for _, raw := range []string{
+			theme.Colors.Primary,
+			theme.Colors.SuccessColor(),
+			theme.Colors.WarningColor(),
+			theme.Colors.Error,
+		} {
+			if lum, ok := relativeLuminance(raw); ok && contrastRatio(bg, lum) < floor {
+				failing++
+			}
+		}
+	}
+
+	if failing == 0 {
+		t.Error("every bundled role colour now clears AA as ink on its own Background — " +
+			"the on-light tones have nothing left to fix, and eight palette fields plus " +
+			"their plumbing should be reconsidered rather than left standing")
+	}
+}

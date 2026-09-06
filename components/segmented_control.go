@@ -52,6 +52,39 @@ import "github.com/rohanthewiz/grmob/core"
 // "Active". A parallel []string would have to be kept in step with Labels by
 // hand, so it is a function of the caption instead, and nil means "let Chip
 // use the caption itself".
+//
+// # What a screen reader makes of the row
+//
+// A group of toggle buttons, which is what this is: every segment states
+// core.AccessibilitySelected (Chip does it, per segment), so the live one
+// announces as pressed and the others as not. Nothing here claims the row is
+// anything in particular — no landmark, no structural role — because a
+// segmented control is not one thing on every screen it appears on.
+//
+// It becomes a *tab strip* the moment its segments switch what the screen
+// below is showing, and that is a claim only the caller can make. It takes
+// two props and no new field:
+//
+//	components.SegmentedControl{
+//	    Labels:   []string{"Sermons", "Articles"},
+//	    Selected: tab.Get(),
+//	    OnSelect: func(i int) { tab.Set(i) },
+//	    Style:    []core.StyleProp{core.AccessibilityRole(core.RoleTabList)},
+//	    Segment:  components.Chip{Style: []core.StyleProp{core.AccessibilityRole(core.RoleTab)}},
+//	}
+//
+// The state each Chip already sets then goes out as aria-selected instead of
+// aria-pressed, because the two web exporters pick the attribute from the
+// role — nothing in this widget or in Chip has to know which arrangement it
+// is in. See core.Style.AccessibilitySelected.
+//
+// Two things that arrangement does not buy, both of which are ARIA's rules
+// rather than this widget's limits. A tablist claims its children are tabs,
+// so a row that also holds a count or an add button is not one (see
+// core/role.go). And the panel the tabs control cannot be pointed at from
+// here: aria-controls is an IDREF, and core.Style carries values rather than
+// references — a real wired tab strip is core.TabView, which owns both ends
+// of that relationship.
 type SegmentedControl struct {
 	// Labels are the segment captions, left to right. Selected indexes this
 	// slice.
@@ -74,9 +107,10 @@ type SegmentedControl struct {
 	Segment Chip
 
 	// SegmentLabel derives a segment's accessibility label from its caption
-	// and index. Nil leaves Chip to announce the caption itself. Chip appends
-	// ", selected" to whichever name it ends up with, so this returns the
-	// name only.
+	// and index. Nil leaves Chip to announce the caption itself. Which
+	// segment is live is announced separately, as a control state, so this
+	// returns the name only and the name does not change when the selection
+	// moves.
 	SegmentLabel func(label string, index int) string
 
 	// KeyPrefix is prepended to each segment's reconciler key, which is

@@ -254,7 +254,9 @@ func TestDatePickerForcesDeselectableOff(t *testing.T) {
 	// would fire on. It should report the day like any other.
 	cal := pickerCalendar(t, n)
 	cell := findFirst(cal, func(n *core.Node) bool {
-		return n.Style != nil && n.Style.AccessibilityLabel == pickerDay.Format("Monday, January 2, 2006")+", selected"
+		return n.Style != nil &&
+			n.Style.AccessibilityLabel == pickerDay.Format("Monday, January 2, 2006") &&
+			n.Style.AccessibilitySelected == core.SelectedOn
 	})
 	if cell == nil {
 		t.Fatalf("no cell announced as the selected %v", pickerDay.Format("2006-01-02"))

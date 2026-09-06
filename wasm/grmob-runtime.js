@@ -660,7 +660,7 @@ const GrMob = (() => {
         }
     }
 
-    // core.Style's four accessibility fields -> the ARIA attributes that mean
+    // core.Style's accessibility fields -> the ARIA attributes that mean
     // the same thing. Attributes rather than style properties, which is why
     // this is here and not in styleFromGrMob — the same split Disabled makes.
     //
@@ -709,6 +709,51 @@ const GrMob = (() => {
         setOrRemove(el, "role", role);
         setOrRemove(el, "aria-modal", dialog ? "true" : "");
         setOrRemove(el, "aria-level", hidden ? "" : ariaLevel(style));
+        // Both selection attributes are written on every call, not just the
+        // one this role calls for. The role can change between passes — a
+        // patch can turn a tab into a button — and the totality rule has to
+        // hold across the *pair*: writing only the new one would leave the
+        // other standing, so a node that had been a tab would be announced as
+        // a selected tab and a pressed button at once.
+        const selected = hidden ? ["", ""] : ariaSelected(style, nodeType);
+        setOrRemove(el, "aria-selected", selected[0]);
+        setOrRemove(el, "aria-pressed", selected[1]);
+    }
+
+    // core.Style.AccessibilitySelected as the pair [aria-selected,
+    // aria-pressed], at most one of which is non-empty. The htmlout twin of
+    // this is ariaSelected in export.go and the two must agree; the reasoning
+    // for every guard here lives there and in core.Style.
+    //
+    // This is ariaLevel's mirror. That one resolves two Go fields onto one
+    // attribute; this resolves one Go field onto two attributes, with the same
+    // switch on the role deciding. ARIA has two words and they are not
+    // synonyms: aria-selected is one of a set (a tab among tabs), aria-pressed
+    // is a toggle answering only for itself (a filter chip).
+    //
+    // A pair is returned rather than a name/value because the caller has to
+    // clear the other attribute either way — see the note at the call site.
+    //
+    // The Button node type is checked only when the style names no role: a
+    // core.Button already is a button, which is what lets components.Chip —
+    // which renders as one and sets no role — carry a state at all. Same rule
+    // that gives a Modal its dialog role.
+    function ariaSelected(style, nodeType) {
+        const value = style.AccessibilitySelected || "";
+        if (!value) return ["", ""];
+        switch (style.AccessibilityRole) {
+            case "tab":
+            case "row":
+            case "columnheader":
+                return [value, ""];
+            case "button":
+                return ["", value];
+            case "":
+            case undefined:
+                return nodeType === "Button" ? ["", value] : ["", ""];
+            default:
+                return ["", ""];
+        }
     }
 
     // Whichever of core.Style's two level fields the node's role calls for, as

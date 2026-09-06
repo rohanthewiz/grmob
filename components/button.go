@@ -105,29 +105,35 @@ const (
 //
 // Outlined and Ghost own neither: the fill is transparent, so the label's real
 // backdrop is whatever the button was placed on, which the widget cannot see.
-// Their label is the variant's color verbatim — the theme author's choice, not
-// a synthesized shade. Their legibility is therefore the palette's
-// responsibility, and several bundled combinations are genuinely poor.
-// Measured against each theme's own Background (both are #FFFFFF):
+// Their label is therefore the role's *on-light* tone — the palette's second
+// value per role, dark enough to be read as ink on a light surface — rather
+// than the fill colour. Measured against each theme's own Background (both are
+// #FFFFFF), with the value each replaced in brackets:
 //
-//	            Default   Material
-//	default      4.02:1    7.63:1
-//	success      2.22:1    5.13:1
-//	warning      2.20:1    3.08:1
-//	error        3.55:1    7.33:1
+//	            Default          Material
+//	default      7.56:1 [4.02]    7.63:1 [same]
+//	success      5.40:1 [2.22]    5.13:1 [same]
+//	warning      5.28:1 [2.20]    5.60:1 [3.08]
+//	error        5.38:1 [3.55]    7.33:1 [same]
 //
-// Only Material's default, success and error clear WCAG AA (4.5:1). So prefer
-// EmphasisFilled for a status action — it is tested to clear AA on both themes
-// — and override TextColor when placing an outlined button where the numbers
-// above do not hold.
+// All eight clear WCAG AA (4.5:1); five of the eight did not before. Three of
+// Material's four needed no second tone and declare the role itself, which is
+// why they read "same" rather than being blank — see the palette's own doc for
+// why a measurement is stated rather than left to the fallback.
 //
-// Darkening the role color until it passes was considered and rejected. It
-// would repaint DefaultTheme's own brand blue (4.02:1, the value Apple ships
-// and the one both themes pair with Button), i.e. the *default* case, and a
-// widget silently altering a hex the theme author chose is worse than a
-// documented number. The durable fix is a second palette value per role — an
-// "on-light" tone, as Material carries alongside each container color — which
-// is a palette decision, not a Button one.
+// The promise is still narrower than EmphasisFilled's. These numbers hold
+// against a theme's Background, and a button placed on some other surface —
+// a tinted card, a photo — is measured against that instead, which nothing
+// here can know. What changed is that the default case is now legible rather
+// than documented as illegible.
+//
+// A theme that declares no on-light tones falls back to the role colour, i.e.
+// to the left-hand numbers, and to exactly the pixels this widget painted
+// before the palette had a second value. Darkening a role colour *here* was
+// considered and rejected for the reason it always was: it would repaint a hex
+// the theme author chose, and DefaultTheme's 4.02:1 blue is Apple's own system
+// blue. Declaring the second value is the theme's call; spending it is this
+// widget's.
 type Button struct {
 	Label string
 	OnTap func()
@@ -229,18 +235,36 @@ func (b Button) colorProps(t *core.Theme) []core.StyleProp {
 
 	fill := b.Variant.Color(t)
 
+	// The two transparent treatments spend the role's *ink-weight* tone, not
+	// the fill. They own no background, so the label's real backdrop is
+	// whatever the button was placed on — which the widget cannot see, and
+	// which on both bundled themes is a light surface — so the value has to
+	// stand on its own. That is the whole of what the on-light tone is for,
+	// and it is why the numbers in the type doc above are now the ones they
+	// are. A theme that declares no tone falls back to the role colour, which
+	// is what this spent before the palette had a second value, so nothing
+	// that already exists changes look without the theme asking.
+	//
+	// Both the label and the rule take it, rather than tinting the rule
+	// separately. A 1px border is non-text content and clears its own (looser)
+	// 3:1 threshold at either weight, so the argument is not contrast but
+	// coherence: a label and the box drawn around it reading as two different
+	// colours is worse than either one being a shade darker than the fill it
+	// would turn into.
+	ink := b.Variant.OnLight(t)
+
 	switch b.Emphasis {
 	case EmphasisOutlined:
 		return []core.StyleProp{
 			core.BackgroundColor(ColorTransparent),
-			core.TextColor(fill),
-			core.BorderColor(fill),
+			core.TextColor(ink),
+			core.BorderColor(ink),
 			core.BorderWidth(1),
 		}
 	case EmphasisGhost:
 		return []core.StyleProp{
 			core.BackgroundColor(ColorTransparent),
-			core.TextColor(fill),
+			core.TextColor(ink),
 		}
 	}
 

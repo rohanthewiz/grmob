@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/rohanthewiz/grmob/core"
+	"github.com/rohanthewiz/grmob/htmlout"
 )
 
 var segLabels = []string{"All", "Active", "Done"}
@@ -179,9 +180,12 @@ func TestSegmentedControlTemplateCannotOverrideComputedFields(t *testing.T) {
 	}
 }
 
-// The accessibility name is derived per segment, and Chip still appends
-// ", selected" to whichever name it ends up with — so state and name are
-// announced together rather than the derivation replacing the state.
+// The accessibility name is derived per segment, and the selection is
+// announced beside it as the control state it is — so a derivation that
+// renames a segment cannot take the state with it.
+//
+// The two used to be one string (Chip appended ", selected" to whichever name
+// it ended up with), which made every segment's name change on every tap.
 func TestSegmentedControlDerivesPerSegmentAccessibilityLabels(t *testing.T) {
 	root, _ := renderSeg(t, core.DefaultTheme, SegmentedControl{
 		Labels:   segLabels,
@@ -191,17 +195,27 @@ func TestSegmentedControlDerivesPerSegmentAccessibilityLabels(t *testing.T) {
 		},
 	})
 
-	want := []string{"Show all tasks", "Show active tasks, selected", "Show done tasks"}
+	want := []string{"Show all tasks", "Show active tasks", "Show done tasks"}
+	wantState := []core.SelectedState{core.SelectedOff, core.SelectedOn, core.SelectedOff}
 	for i, c := range root.Children {
 		if c.Style.AccessibilityLabel != want[i] {
 			t.Errorf("segment %d announced %q, want %q", i, c.Style.AccessibilityLabel, want[i])
 		}
+		if c.Style.AccessibilitySelected != wantState[i] {
+			t.Errorf("segment %d state = %q, want %q — every segment answers, not just the "+
+				"live one", i, c.Style.AccessibilitySelected, wantState[i])
+		}
 	}
 }
 
-// A nil SegmentLabel must leave Chip's own behavior alone rather than writing
-// an empty label, which would suppress the ", selected" announcement entirely
-// (Chip only emits the prop when the name is non-empty).
+// A nil SegmentLabel must leave the template's own label alone rather than
+// writing an empty one over it, which would drop the caller's name.
+//
+// This mattered more before the state moved out of the name: Chip emits the
+// label prop only when the name is non-empty, so an overwritten name once
+// silenced the selection along with it. The state no longer rides on the
+// name, which is checked below — the two failures are now independent, and
+// that is the improvement.
 func TestSegmentedControlNilSegmentLabelFallsBackToChip(t *testing.T) {
 	root, _ := renderSeg(t, core.DefaultTheme, SegmentedControl{
 		Labels:   segLabels,
@@ -209,11 +223,16 @@ func TestSegmentedControlNilSegmentLabelFallsBackToChip(t *testing.T) {
 		Segment:  Chip{AccessibilityLabel: "Filter"},
 	})
 
-	if got := root.Children[1].Style.AccessibilityLabel; got != "Filter, selected" {
-		t.Errorf("selected segment announced %q, want %q", got, "Filter, selected")
+	for i, c := range root.Children {
+		if got := c.Style.AccessibilityLabel; got != "Filter" {
+			t.Errorf("segment %d announced %q, want the template's %q", i, got, "Filter")
+		}
 	}
-	if got := root.Children[0].Style.AccessibilityLabel; got != "Filter" {
-		t.Errorf("unselected segment announced %q, want %q", got, "Filter")
+	if got := root.Children[1].Style.AccessibilitySelected; got != core.SelectedOn {
+		t.Errorf("selected segment state = %q, want %q", got, core.SelectedOn)
+	}
+	if got := root.Children[0].Style.AccessibilitySelected; got != core.SelectedOff {
+		t.Errorf("unselected segment state = %q, want %q", got, core.SelectedOff)
 	}
 }
 
@@ -279,5 +298,44 @@ func TestSegmentedControlWithNoLabelsRendersAnEmptyRow(t *testing.T) {
 	}
 	if root.Style.Gap != 8 {
 		t.Errorf("props still apply with no segments: Gap = %v, want 8", root.Style.Gap)
+	}
+}
+
+// A caller can turn the row into a tab strip with two props and no new field,
+// and the state each segment already sets follows the role it is given.
+//
+// This is the payoff of putting the state on Style and the attribute choice in
+// the exporters: neither SegmentedControl nor Chip knows which arrangement it
+// is in, and the same Selected bool comes out as aria-pressed in a filter bar
+// and aria-selected in a tab strip. Pinned end to end — through the widgets in
+// Go and out through htmlout — because the two halves are in different
+// packages and a change to either would leave the other looking correct.
+func TestSegmentedControlBecomesATabStripByRoleAlone(t *testing.T) {
+	root, _ := renderSeg(t, core.DefaultTheme, SegmentedControl{
+		Labels:   segLabels,
+		Selected: 1,
+		Style:    []core.StyleProp{core.AccessibilityRole(core.RoleTabList)},
+		Segment:  Chip{Style: []core.StyleProp{core.AccessibilityRole(core.RoleTab)}},
+	})
+
+	if got := root.Style.AccessibilityRole; got != core.RoleTabList {
+		t.Errorf("row role = %q, want %q", got, core.RoleTabList)
+	}
+	for i, c := range root.Children {
+		if got := c.Style.AccessibilityRole; got != core.RoleTab {
+			t.Errorf("segment %d role = %q, want %q", i, got, core.RoleTab)
+		}
+	}
+
+	// The exporter's half: the same state field becomes the other attribute.
+	// A tablist whose tabs said aria-pressed would announce three toggle
+	// buttons inside a tab strip, which is a shape no reader has a story for.
+	out := htmlout.ExportHTML(root)
+	if strings.Count(out, `aria-selected="false"`) != 2 ||
+		!strings.Contains(out, `aria-selected="true"`) {
+		t.Errorf("want one selected tab and two unselected:\n%s", out)
+	}
+	if strings.Contains(out, "aria-pressed") {
+		t.Errorf("a tab is selected, not pressed:\n%s", out)
 	}
 }

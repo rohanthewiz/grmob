@@ -126,6 +126,24 @@ func MessageList(msgs []Message) core.View {
 	return core.Scroll(
 		core.Column(
 			core.Padding(12),
+			// A transcript is ARIA's `log`, and this is the widget that asked
+			// for the role: content that is appended to and whose order is
+			// meaningful, as against `status`, which is one advisory that is
+			// replaced.
+			//
+			// The difference is what a reader does after the announcement.
+			// Marked `status`, a new message announces correctly and the whole
+			// conversation reads back as one region that has just changed
+			// entirely; marked `log`, what arrived is announced and everything
+			// before it is still there to be read back in order.
+			//
+			// It goes on the Column rather than the Scroll because the live
+			// region is the element whose children change — the scroller is a
+			// viewport onto it and gains and loses nothing. TalkBack hears a
+			// polite live region either way (Compose has one call for both
+			// roles); VoiceOver hears nothing, which is the same honest gap
+			// the other two live regions have. See core/role.go.
+			core.AccessibilityRole(core.RoleLog),
 			core.For(msgs, func(m Message, _ int) core.View {
 				return core.Keyed("msg-"+m.ID, MessageBubble(m))
 			}),

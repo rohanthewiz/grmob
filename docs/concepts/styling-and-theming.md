@@ -119,6 +119,7 @@ core.AccessibilityHint("Filters the task list")  // describes the result of acti
 core.AccessibilityRole(core.RoleHeading)         // says what the node *is*
 core.AccessibilityHeadingLevel(2)                // and how deep it sits
 core.AccessibilityNestingLevel(2)                // the same question for a nested list item
+core.AccessibilitySelected(core.SelectedOn)      // and whether this control is *on*
 ```
 
 Renderers map them to `contentDescription` (Android),
@@ -144,18 +145,37 @@ targets emit them verbatim as `role=`:
 |---|---|
 | tabular | `RoleTable` `RoleRowGroup` `RoleRow` `RoleColumnHeader` `RoleCell` |
 | collections | `RoleList` `RoleListItem` |
+| tabs | `RoleTab` `RoleTabList` |
 | landmarks | `RoleBanner` `RoleNavigation` `RoleSearch` `RoleToolbar` |
-| live regions | `RoleStatus` `RoleAlert` |
-| content | `RoleHeading` `RoleButton` `RoleLink` |
+| live regions | `RoleStatus` `RoleAlert` `RoleLog` |
+| content | `RoleHeading` `RoleButton` `RoleLink` `RoleImg` |
 
 The two natives map what their vocabularies can express — `heading` and
 `columnheader` become a header trait / `heading()`, `button` becomes
 `.isButton` / `Role.Button`, `link` becomes `.isLink` (the one place SwiftUI's
-vocabulary is the richer of the two), `search` becomes `.isSearchField`, and
-`status` / `alert` become Compose live regions — and name the rest as explicit no-ops, so
-a role that does nothing there is a decision on record rather than an
-oversight. See `core/role.go` for the full table and
-`mobile/verify/role_test.go` for the check that holds both natives to it.
+vocabulary is the richer of the two), `search` becomes `.isSearchField`, `img`
+becomes `.isImage` / `Role.Image`, and `status` / `alert` / `log` become Compose
+live regions — and name the rest as explicit no-ops, so a role that does
+nothing there is a decision on record rather than an oversight. See
+`core/role.go` for the full table and `mobile/verify/role_test.go` for the
+check that holds both natives to it.
+
+The tab pair is the one row where the two natives disagree about *which half*
+they can say: Compose has `Role.Tab` for the control and nothing for the strip,
+SwiftUI has `.isTabBar` for the strip and nothing for the control. Neither
+vocabulary could have supplied the pair, which is a small argument for the set
+being ARIA's. Both are for a **hand-built** strip; `core.TabView` writes these
+two, the `tabpanel` half and the `aria-controls`/`aria-labelledby` wiring
+between them from the node type. There is deliberately no `RoleTabPanel` — a
+panel is one end of a relationship whose other half is an IDREF a `Style`
+cannot carry, and the node type already owns both ends.
+
+`RoleStatus` and `RoleLog` are both polite live regions and differ in the shape
+of the content, not in how loudly they interrupt: a status is one advisory that
+is *replaced* ("Saved", "3 new items"), a log is a record that is *appended to*
+and whose order is meaningful (a chat transcript, a console). A transcript
+marked `status` announces correctly and reads back as one region that has just
+changed entirely.
 
 `RoleButton` and `RoleLink` are a real distinction, not a synonym: a button
 does something *here*, a link goes somewhere else, and nothing in the tree
@@ -191,10 +211,13 @@ contents are then announced as the text they are, which is what they were
 before roles existed. A paged list whose "Load more" footer sits inside the
 `core.List` is the common shape: it is not a list, whatever it looks like.
 
+`RoleTabList` makes the same claim — a strip that also holds a count or an add
+button is not a tablist. `RoleTab` does not: it describes one control, the way
+`RoleButton` does, and only the strip around it claims what it contains.
+
 The landmarks, live regions and content roles carry no such promise. A banner
 or a navigation region owns whatever it likes, and `RoleHeading` / `RoleButton`
-/ `RoleLink` describe the node itself. Only the tabular and collection rows of
-the table above make a claim about their children.
+/ `RoleLink` / `RoleImg` describe the node itself.
 
 #### `AccessibilityHeadingLevel`
 
@@ -276,6 +299,67 @@ Nothing in the framework sets one. Unlike the heading pair — which `AppBar` an
 `GroupedList` supply for every app — no bundled widget nests a collection
 inside itself, so this is a prop an application reaches for when it builds the
 nesting itself.
+
+#### `AccessibilitySelected`
+
+Whether a control is **on** — the applied filter chip, the tab that is showing,
+the chosen day in a calendar. A role says what a control is and a label says
+what it is called; neither can say that this one of five is the live one.
+
+```go
+core.Box(
+    core.AccessibilityRole(core.RoleTab),
+    core.AccessibilitySelected(core.SelectedWhen(i == current)),
+    core.Text(label),
+)
+```
+
+`core.SelectedState` has three values, not two, and the third is the point:
+
+| | |
+|---|---|
+| `SelectedUnset` | the zero value. A `Box`, a heading, a run of text — no claim, no attribute, which is what every node was before the field existed |
+| `SelectedOn` | the chip that is applied, the tab that is showing |
+| `SelectedOff` | a control that *could* be on and is not |
+
+A bool has one spelling for the last two, and losing the distinction is not
+cosmetic: a tablist where only the live tab carries a state announces the other
+four as plain tabs, so the strip reads as one tab and four pieces of furniture.
+Set the state on **every** control in a group — `core.SelectedWhen(bool)` is
+the conversion, and it exists because the tempting hand-rolled version sets
+`SelectedOn` and leaves the rest silent.
+
+**One field, two attributes** — the mirror of the level pair above, resolved by
+the same switch on the role:
+
+| role | attribute |
+|---|---|
+| `tab`, `row`, `columnheader` | `aria-selected` |
+| `button` (or a `core.Button` node) | `aria-pressed` |
+| anything else | nothing at all |
+
+ARIA has two words because it draws a real distinction. Selection is *one of
+these* — a tab among tabs, and choosing one unchooses the rest. Pressed is
+*this one, on or off* — a toggle answering only for itself. A filter chip is
+pressed; a tab is selected.
+
+That is why `components.SegmentedControl` becomes a tab strip with two props
+and no new field: give the row `RoleTabList` and the segment template
+`RoleTab`, and the state each `Chip` already sets goes out as `aria-selected`
+instead. Neither widget knows which arrangement it is in.
+
+| target | what it becomes |
+|---|---|
+| Android | `selected = true` / `false` in the semantics lambda |
+| iOS | the `.isSelected` trait when on; SwiftUI has no word for *off*, so an unselected control looks like an unstated one there |
+| HTML / WASM | `aria-selected` or `aria-pressed`, per the table above |
+
+**Pair it with a role.** ARIA does not define either attribute for a generic
+element, so a state on an unroled `Box` is dropped by screen readers exactly as
+an accessible name on one is — the gap `RoleImg` exists to close. Neither
+native scopes it, so such a state reaches both of them and neither web target;
+the web is the strict one because ARIA is. A `core.Button` is the one exception
+and needs no role, because the node type already is one.
 
 #### Roles a node type carries for itself
 
@@ -377,7 +461,8 @@ A `Theme` centralizes the design system:
 type Theme struct {
     Colors     ColorPalette      // Primary, Secondary, Background, Surface,
                                  // TextPrimary, TextSecondary, Error,
-                                 // Border, Success, Warning
+                                 // Border, Success, Warning, and the four
+                                 // on-light tones
     Typography Typography        // Title, Subtitle, Body, Caption (each a Style)
     Spacing    SpacingScale      // XS SM MD LG XL
     Components ComponentDefaults // base Style per widget: Button, Card, Input, ...
@@ -404,6 +489,7 @@ Name the *role*, never the literal, and one theme swap restyles the tree:
 | `TextPrimary`, `TextSecondary` | ink and de-emphasized ink |
 | `Error`, `Success`, `Warning` | the status triad — meaning, not brand |
 | `Border` | strokes and hairlines: rules, card outlines, input borders |
+| `PrimaryOnLight`, `SuccessOnLight`, `WarningOnLight`, `ErrorOnLight` | the same four roles again, dark enough to be read as **ink** on a light surface |
 
 Two distinctions the names do not make obvious:
 
@@ -428,6 +514,56 @@ bg := ctx.Theme().Colors.SuccessColor()
 
 The original seven need no resolver and deliberately have none: every theme
 that exists predates them, so none can be missing.
+
+#### The on-light tones
+
+A palette role is one hex, and one hex cannot do both jobs a role is asked to
+do:
+
+- **As a fill**, with an ink chosen over it, a mid-tone works.
+  `components.Variant.Ink` picks the more legible of the theme's two ink roles,
+  and a filled `Badge` or `Button` clears WCAG AA on both bundled themes.
+- **As ink itself** — an outlined button's label and rule, a loud chip's
+  outline, a banner's leading glyph — the backdrop is whatever the widget was
+  placed on, which the widget cannot see, and a mid-tone loses.
+
+Measured against each bundled theme's own white `Background`, five of the eight
+role colors failed the 4.5:1 body-text floor:
+
+| role | Default | Material |
+|---|---|---|
+| primary | 4.02:1 → **7.56:1** | 7.63:1 (already ink) |
+| success | 2.22:1 → **5.40:1** | 5.13:1 (already ink) |
+| warning | 2.20:1 → **5.28:1** | 3.08:1 → **5.60:1** |
+| error | 3.55:1 → **5.38:1** | 7.33:1 (already ink) |
+
+The widgets had the number and not the authority: darkening a role until it
+passes would repaint a hex the theme author chose — `DefaultTheme`'s 4.02:1
+blue is Apple's own system blue, i.e. the *default* case. So the second tone is
+the theme's to declare and the widget's to spend.
+
+```go
+ink := ctx.Theme().Colors.PrimaryOnLightColor()   // by role
+ink = ctx.Theme().Colors.OnLight(someAccent)      // by colour, for a widget
+                                                  // that holds a hex and no
+                                                  // name for it
+```
+
+`components.Variant.OnLight(theme)` is the same lookup keyed by variant, and is
+what `Button`'s outlined and ghost treatments, `Chip`'s loud prominence and
+`Banner`'s edges now spend.
+
+An unset tone falls back to **its own role**, not to a constant — a softer
+fallback than `Border`/`Success`/`Warning` get, because those degrade to a
+visible default (an empty color is no color) while an absent on-light tone has
+a perfectly good, merely paler, answer beside it. So a theme written before
+these fields renders exactly as it always did.
+
+"Light" means the theme's own `Background`, which is `#FFFFFF` for both bundled
+themes. A dark theme's role colors are usually already legible on its dark
+ground, so it leaves these empty and the fallback does the right thing — which
+is why these are four extra fields rather than a second palette every theme has
+to fill in twice.
 
 !!! warning "`ComponentDefaults` has no resolvers either — and *can* be missing"
     The same reasoning does not extend to `Theme.Components`. It is a plain

@@ -113,6 +113,48 @@ func TestPillsDemoBadgeAndChipSelection(t *testing.T) {
 	assertNoConcerns(t)
 }
 
+// The tab-strip arrangement on the same panel: the same SegmentedControl, two
+// roles, and a state that comes out as the other ARIA attribute.
+//
+// The announcement is the whole lesson, so the announcement is what is
+// checked, not just that the caption moved. Both halves matter and they fail
+// separately — a strip that lost its roles still switches panes, and a strip
+// that kept them but stopped stating the unselected tabs still announces the
+// live one.
+func TestPillsDemoTabStripArrangementAnnouncesEveryTab(t *testing.T) {
+	mgr := newApp(t)
+	openLesson(t, mgr, "Badges, chips & segments")
+
+	if !hasTextContaining(tree(t, mgr), "showing: Sermons") {
+		t.Fatal("the tab strip should open on its first pane")
+	}
+	tap(t, mgr, "Articles")
+	if !hasTextContaining(tree(t, mgr), "showing: Articles") {
+		t.Fatal("tapping a tab should move the pane")
+	}
+
+	// A Chip renders as a Button carrying its caption in the label prop, not
+	// as a Text child, so the tabs are found by that prop rather than by text.
+	on, off := 0, 0
+	for _, n := range findNodes(tree(t, mgr), func(n *node) bool {
+		return n.Type == "Button" && n.Style != nil && n.Style.AccessibilityRole == "tab"
+	}) {
+		switch n.Style.AccessibilitySelected {
+		case "true":
+			on++
+		case "false":
+			off++
+		default:
+			t.Fatalf("a tab says nothing about its state (%q); an unselected tab has to "+
+				"say so, not go quiet", n.Style.AccessibilitySelected)
+		}
+	}
+	if on != 1 || off != 2 {
+		t.Fatalf("tabs announced: %d selected, %d unselected — want 1 and 2", on, off)
+	}
+	assertNoConcerns(t)
+}
+
 // --- 4.3 ListRow & Avatar --------------------------------------------------
 
 func TestListRowDemoControlledSelection(t *testing.T) {

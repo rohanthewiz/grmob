@@ -547,6 +547,10 @@ func modalChassis(props map[string]any) string {
 // same question and is scoped to the roles ARIA defines it for — see
 // headingLevel below.
 //
+// A selected state maps to aria-selected or aria-pressed, and which of the
+// two is again the role's decision — see ariaSelected below, which is the
+// same switch running in the other direction.
+//
 // A Modal gets role="dialog" and aria-modal="true" from its node type rather
 // than from a Style, which is modalSemantics' subject.
 //
@@ -577,7 +581,7 @@ func accessibilityAttrs(s *core.Style, nodeType string) []string {
 		// inert behind something a reader cannot reach.
 		return []string{"aria-hidden", "true"}
 	}
-	attrs := make([]string, 0, 8)
+	attrs := make([]string, 0, 12)
 	if dialog {
 		attrs = append(attrs, modalSemantics(s.AccessibilityRole)...)
 	} else if s.AccessibilityRole != core.RoleNone {
@@ -585,6 +589,9 @@ func accessibilityAttrs(s *core.Style, nodeType string) []string {
 	}
 	if level := ariaLevel(s); level != "" {
 		attrs = append(attrs, "aria-level", level)
+	}
+	if name, value := ariaSelected(s, nodeType); name != "" {
+		attrs = append(attrs, name, value)
 	}
 	if s.AccessibilityLabel != "" {
 		attrs = append(attrs, "aria-label", s.AccessibilityLabel)
@@ -671,6 +678,68 @@ func ariaLevel(s *core.Style) string {
 		return strconv.Itoa(s.AccessibilityNestingLevel)
 	}
 	return ""
+}
+
+// ariaSelected renders core.Style.AccessibilitySelected as the attribute the
+// node's role calls for, as a name/value pair, or two empty strings when
+// there is nothing valid to write.
+//
+// # One field, two attributes — ariaLevel in a mirror
+//
+// ariaLevel above resolves two Go fields onto one attribute by switching on
+// the role. This is the same switch answering the opposite question: one Go
+// field onto two attributes, because ARIA has two words for "on" and they are
+// not synonyms.
+//
+//	aria-selected   one of a set — a tab among tabs, a row among rows.
+//	                Choosing one unchooses the others.
+//	aria-pressed    a toggle that answers only for itself.
+//
+// A filter chip is pressed; a tab is selected. Saying the wrong one announces
+// the control as a member of a set that does not exist, which is worse than
+// saying nothing — the same standard the structural roles are held to.
+//
+// # The role list is ARIA's own scoping, not a shortlist
+//
+// aria-selected is defined for gridcell, option, row, tab, columnheader and
+// rowheader; of those, core.Role carries tab, row and columnheader. The two
+// near misses are worth naming because both look like they belong:
+//
+//	cell       is not gridcell. A table cell is not selectable; a grid cell
+//	           in an interactive grid is, and core.Role has no grid.
+//	listitem   is not option. A list item is content, an option is a control
+//	           in a listbox, and core has neither the listbox nor the option.
+//
+// aria-pressed is defined for button alone. A core.Button gets it without a
+// role because the node type already is one — the same rule that gives a
+// core.Modal its dialog role — which is why this takes the node type beside
+// the style. That case is not an optimisation: components.Chip renders as a
+// core.Button with no role set, so without it the widget that most wants this
+// attribute would be the one node that could not have it.
+//
+// Everything else writes nothing. ARIA does not define either attribute for a
+// generic element, so a state on an unroled Box is dropped by the reader
+// rather than announced — the same failure an accessible name on a generic
+// element has, which is what core.RoleImg exists to close. Writing it anyway
+// would put invalid ARIA in the document and change nothing a user hears.
+func ariaSelected(s *core.Style, nodeType string) (string, string) {
+	if s.AccessibilitySelected == core.SelectedUnset {
+		return "", ""
+	}
+	value := string(s.AccessibilitySelected)
+	switch s.AccessibilityRole {
+	case core.RoleTab, core.RoleRow, core.RoleColumnHeader:
+		return "aria-selected", value
+	case core.RoleButton:
+		return "aria-pressed", value
+	case core.RoleNone:
+		// No role of its own: the node type is the only thing left that can
+		// say what this is, and <button> is the one that carries a state.
+		if nodeType == "Button" {
+			return "aria-pressed", value
+		}
+	}
+	return "", ""
 }
 
 // isFormControl reports whether the node exports as an HTML element that

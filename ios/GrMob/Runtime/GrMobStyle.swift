@@ -78,6 +78,9 @@ struct GrMobStyle: Equatable {
     /// does not state its tier. Read only when the role is "heading"; see
     /// grMobHeadingLevel below.
     var accessibilityHeadingLevel: Int = 0
+    /// Go's core.SelectedState, verbatim: "true", "false", or "" for a node
+    /// that makes no claim. Mapped to a trait by grMobSelectedTrait below.
+    var accessibilitySelected: String = ""
     /// Platform disabled state; see Go's core.Style.Disabled.
     var disabled: Bool = false
     var transition: String = ""
@@ -165,6 +168,7 @@ struct GrMobStyle: Equatable {
         s.accessibilityHidden = obj["AccessibilityHidden"] as? Bool ?? false
         s.accessibilityRole = str("AccessibilityRole")
         s.accessibilityHeadingLevel = int("AccessibilityHeadingLevel")
+        s.accessibilitySelected = str("AccessibilitySelected")
         s.disabled = obj["Disabled"] as? Bool ?? false
         s.transition = str("Transition")
         return s
@@ -451,11 +455,17 @@ extension View {
     /// tree changes nothing, where a @ViewBuilder branch would add another
     /// _ConditionalContent layer to grMobBox's opaque-type tower. Both arms of
     /// the guard below take the same two modifiers so the return types match.
+    ///
+    /// The selected state rides along for the same reason and by the same
+    /// mechanism: it *is* a trait on this platform, so it unions into the
+    /// role's set rather than needing a modifier of its own.
     fileprivate func grMobRole(_ s: GrMobStyle?) -> some View {
         guard let s, !s.accessibilityHidden else {
             return accessibilityAddTraits([]).accessibilityHeading(.unspecified)
         }
-        return accessibilityAddTraits(grMobTraitsFor(s.accessibilityRole))
+        let traits = grMobTraitsFor(s.accessibilityRole)
+            .union(grMobSelectedTrait(s.accessibilitySelected))
+        return accessibilityAddTraits(traits)
             .accessibilityHeading(grMobHeadingLevel(s))
     }
 
@@ -630,7 +640,7 @@ private func RoundedCornerShapeIfAny(radius: CGFloat) -> RoundedRectangle? {
 
 /// Maps one core.Role onto SwiftUI accessibility traits.
 ///
-/// Five of the sixteen roles land on a trait; the other eleven are spelled out
+/// Seven of the twenty roles land on a trait; the other thirteen are spelled out
 /// anyway. SwiftUI's AccessibilityTraits is a small set about *controls* —
 /// button, link, image, search field, header — and has no landmarks at all
 /// (VoiceOver's rotor navigates by heading, not by banner) and no tabular
@@ -697,17 +707,49 @@ private func grMobTraitsFor(_ role: String) -> AccessibilityTraits {
     // then the accessibilityLabel, instead of reading the parts the label was
     // supplied to replace.
     case "img": .isImage
-    // A node standing in for a picture — VoiceOver announces the trait and
-    // then the accessibilityLabel, instead of reading the parts the label was
-    // supplied to replace.
+    // The strip, not the control in it. SwiftUI has the container half of the
+    // tab pair and no trait for a single tab; Compose has exactly the
+    // opposite, which is why core.Role carries both and neither platform's
+    // vocabulary could have supplied them. See core/role.go.
+    case "tablist": .isTabBar
+    // The other half, which this platform cannot name. A tab announces as a
+    // button (it is one) plus, when the app states it, the .isSelected trait
+    // grMobSelectedTrait adds — which is the part of "tab 2 of 3" VoiceOver
+    // can actually be told here.
+    case "tab": []
     // No SwiftUI trait names these.
     case "table", "rowgroup", "row", "cell": []
     case "list", "listitem": []
     case "banner", "navigation", "toolbar": []
     // Nor these: SwiftUI announces a change through
     // AccessibilityNotification, which is an imperative call at the moment of
-    // the change and not a property of the view that changed.
-    case "status", "alert": []
+    // the change and not a property of the view that changed. "log" is the
+    // third of that family and is dropped with them — its distinction from
+    // "status" is about the shape of the content (appended and ordered rather
+    // than replaced), which this platform has no way to state at all.
+    case "status", "alert", "log": []
     default: []
     }
+}
+
+/// Go's core.SelectedState as a trait.
+///
+/// SwiftUI has one word where ARIA has two: .isSelected covers both
+/// aria-selected and aria-pressed, so unlike the two web targets this needs no
+/// switch on the role — see the mapping table in Go's
+/// core.Style.AccessibilitySelected.
+///
+/// It also has no word for the *off* state. An unselected control simply
+/// carries no trait, which is the same view an unstated one produces, so this
+/// platform cannot distinguish "off" from "not selectable" and does not try.
+/// That is a real loss and it is on SwiftUI's side of the line: the value
+/// crosses the bridge and there is nothing here to spend it on. The web
+/// targets, where a tablist genuinely needs every tab to answer, write both.
+///
+/// The role is deliberately not consulted. VoiceOver honours .isSelected on
+/// any view, so guarding it the way the web exporters do would drop a state
+/// this platform would otherwise have announced — the web is strict because
+/// ARIA scopes its attributes, not because the framework does.
+private func grMobSelectedTrait(_ state: String) -> AccessibilityTraits {
+    state == "true" ? .isSelected : []
 }

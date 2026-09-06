@@ -28,6 +28,7 @@ import androidx.compose.ui.semantics.disabled
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import org.json.JSONObject
@@ -109,6 +110,11 @@ data class GrMobStyle(
     val accessibilityHidden: Boolean,
     /** Go's core.Role, verbatim; mapped by grMobRole below. */
     val accessibilityRole: String,
+    /**
+     * Go's core.SelectedState, verbatim: "true", "false", or "" for a node
+     * that makes no claim. Mapped by grMobSelected below.
+     */
+    val accessibilitySelected: String,
     /** Platform disabled state; see Go's core.Style.Disabled. */
     val disabled: Boolean,
     /** Parsed Transition duration; 0 means "no transition, snap changes". */
@@ -172,6 +178,7 @@ data class GrMobStyle(
                 accessibilityHint = obj.optString("AccessibilityHint"),
                 accessibilityHidden = obj.optBoolean("AccessibilityHidden", false),
                 accessibilityRole = obj.optString("AccessibilityRole"),
+                accessibilitySelected = obj.optString("AccessibilitySelected"),
                 disabled = obj.optBoolean("Disabled", false),
                 transitionMs = parseTransitionMs(obj.optString("Transition")),
                 transitionEasing = parseTransitionEasing(obj.optString("Transition")),
@@ -299,10 +306,14 @@ fun GrMobStyle?.boxModifier(extra: Modifier = Modifier, gestures: Modifier = Mod
     // style's flag.
     val isDisabled = disabled
     val kind = accessibilityRole
+    // Bound out here for the same reason `kind` is: inside the lambda,
+    // `selected` is the SemanticsPropertyReceiver's own property being
+    // assigned rather than this style's field.
+    val selectedState = accessibilitySelected
     if (accessibilityHidden) {
         m = m.clearAndSetSemantics { }
     } else if (accessibilityLabel.isNotEmpty() || accessibilityHint.isNotEmpty() ||
-        isDisabled || kind.isNotEmpty()
+        isDisabled || kind.isNotEmpty() || selectedState.isNotEmpty()
     ) {
         val description = listOf(accessibilityLabel, accessibilityHint)
             .filter { it.isNotEmpty() }.joinToString(". ")
@@ -316,6 +327,7 @@ fun GrMobStyle?.boxModifier(extra: Modifier = Modifier, gestures: Modifier = Mod
             // and which would otherwise still look activatable to TalkBack.
             if (isDisabled) disabled()
             grMobRole(kind)
+            grMobSelected(selectedState)
         }
     }
 
@@ -404,7 +416,7 @@ private fun dimensionModifier(value: String, horizontal: Boolean): Modifier {
  * Maps one core.Role onto Compose semantics, inside the semantics lambda that
  * is already open for the label, the hint and the disabled marker.
  *
- * Five of the sixteen roles land on something here; the other eleven are named
+ * Eight of the twenty roles land on something here; the other twelve are named
  * anyway. Compose has no landmark vocabulary at all — TalkBack navigates by
  * heading, not by banner — and its tabular semantics are collectionInfo, which
  * describes counts and indices this prop does not carry, so a `role="table"`
@@ -462,9 +474,26 @@ fun SemanticsPropertyReceiver.grMobRole(kind: String) {
         // TalkBack announce "image" and then the alternative rather than
         // reading whatever text happens to be inside.
         "img" -> role = Role.Image
-        // The two live regions differ in how rudely they interrupt: polite
-        // waits for a pause, assertive cuts in.
+        // One control in a tab strip. Compose has the control half of the tab
+        // pair and nothing for the strip around it; SwiftUI has exactly the
+        // opposite (.isTabBar and no trait for a tab), which is why core.Role
+        // carries both and neither platform could have supplied the pair. The
+        // *state* — which tab is showing — is grMobSelected's, below.
+        "tab" -> role = Role.Tab
+        // The strip. No Compose analog: a Role is a property of a control,
+        // and there is no container semantics for "these are tabs".
+        "tablist" -> {}
+        // The three live regions. The first two differ in how rudely they
+        // interrupt: polite waits for a pause, assertive cuts in.
         "status" -> liveRegion = LiveRegionMode.Polite
+        // A log is polite too, and on this platform that is the whole of what
+        // can be said about it — the difference from "status" is that a log is
+        // appended to and read back in order rather than replaced, which
+        // TalkBack has no way to be told. Deliberately the same call as the
+        // arm above rather than a gap: collapsing two ARIA roles onto one
+        // Compose primitive is the honest mapping, where dropping it would
+        // silence a chat transcript entirely.
+        "log" -> liveRegion = LiveRegionMode.Polite
         "alert" -> liveRegion = LiveRegionMode.Assertive
         // No Compose analog. See the note above on why they are spelled out.
         "table", "rowgroup", "row", "cell" -> {}
@@ -474,6 +503,41 @@ fun SemanticsPropertyReceiver.grMobRole(kind: String) {
         // Image and DropdownList, and no Link — the one place SwiftUI's
         // vocabulary is the richer of the two.
         "link" -> {}
+        else -> {}
+    }
+}
+
+/**
+ * Maps one core.SelectedState onto Compose semantics, inside the same lambda
+ * grMobRole writes into.
+ *
+ * Compose has one property where ARIA has two attributes: `selected` covers
+ * both aria-selected and aria-pressed, so unlike the two web targets this
+ * needs no switch on the role — see the mapping table in Go's
+ * core.Style.AccessibilitySelected.
+ *
+ * Unlike SwiftUI, this platform can state the *off* case: TalkBack announces
+ * "not selected" for `selected = false`, which is what a tab strip needs so
+ * that the four tabs that are not showing are announced as tabs rather than
+ * as furniture. That is why core.SelectedState has three values and not two.
+ *
+ * The role is deliberately not consulted. Compose honours `selected` on any
+ * node, so guarding it the way the web exporters do would drop a state this
+ * platform would otherwise have announced — the web is strict because ARIA
+ * scopes its attributes, not because the framework does.
+ *
+ * The parameter is `state` and not `selected` for the reason grMobRole's is
+ * `kind`: `selected` inside a SemanticsPropertyReceiver is the property being
+ * assigned one line down, and a parameter of that name would shadow it.
+ *
+ * One arm per line, string literals first, `else ->` last:
+ * mobile/verify's TestKotlinSelectedCoversEveryState reads these arms out of
+ * the source and holds them against core.SelectedStates().
+ */
+fun SemanticsPropertyReceiver.grMobSelected(state: String) {
+    when (state) {
+        "true" -> selected = true
+        "false" -> selected = false
         else -> {}
     }
 }

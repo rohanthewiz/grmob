@@ -898,6 +898,109 @@ func TestHiddenBeatsRole(t *testing.T) {
 	}
 }
 
+// The selected state, and the switch that turns one Go field into whichever
+// of ARIA's two attributes the role calls for.
+//
+// Every role is exercised rather than the three that are expected to write
+// something, for the reason TestEveryRoleBecomesTheRoleAttribute walks the
+// whole vocabulary: what is being pinned is the *scoping*, and a scoping
+// checked only at the values it admits is not checked at all. A role that
+// starts writing a state it should not is exactly as wrong as one that stops
+// writing a state it should — aria-selected on a listitem is invalid ARIA,
+// which a reader drops, so the announcement is silently lost either way.
+func TestSelectedStateBecomesTheAttributeTheRoleCallsFor(t *testing.T) {
+	// ARIA's own scoping, restated here rather than read out of the exporter:
+	// a test that derived the answer from ariaSelected would agree with any
+	// mistake it made.
+	want := map[core.Role]string{
+		core.RoleTab:          "aria-selected",
+		core.RoleRow:          "aria-selected",
+		core.RoleColumnHeader: "aria-selected",
+		core.RoleButton:       "aria-pressed",
+	}
+
+	for _, role := range core.Roles() {
+		for _, state := range core.SelectedStates() {
+			n := &core.Node{Type: "Box", Style: &core.Style{
+				AccessibilityRole:     role,
+				AccessibilitySelected: state,
+			}}
+			out := ExportHTML(n)
+			attr, wanted := want[role]
+
+			if wanted {
+				pair := attr + `="` + string(state) + `"`
+				if !strings.Contains(out, pair) {
+					t.Errorf("role %q + %q: want %s\n%s", role, state, pair, out)
+				}
+				continue
+			}
+			for _, other := range []string{"aria-selected", "aria-pressed"} {
+				if strings.Contains(out, other) {
+					t.Errorf("role %q + %q wrote %s — ARIA does not define it for this "+
+						"role, so a reader drops it\n%s", role, state, other, out)
+				}
+			}
+		}
+	}
+}
+
+// The one node type that needs no role, because it already is one.
+//
+// components.Chip renders as a core.Button and sets no AccessibilityRole — the
+// node type carries it, which is the rule core/role.go states for RoleButton
+// and RoleDialog. Without this arm the widget that most wants aria-pressed
+// would be the single node that could not have it, and nothing would say so:
+// the state would merge, cross the bridge, reach both natives, and vanish on
+// the web alone.
+func TestAButtonNodeCarriesAPressedStateWithoutARole(t *testing.T) {
+	n := &core.Node{
+		Type:  "Button",
+		Props: map[string]any{"label": "Active"},
+		Style: &core.Style{AccessibilitySelected: core.SelectedOn},
+	}
+	if out := ExportHTML(n); !strings.Contains(out, `aria-pressed="true"`) {
+		t.Errorf("a core.Button with no role should still take a pressed state:\n%s", out)
+	}
+
+	// The node type does not extend to anything else. A Box is a div, and a
+	// pressed div is invalid ARIA whatever it does on tap — the case
+	// core.RoleButton exists for.
+	box := &core.Node{Type: "Box", Style: &core.Style{AccessibilitySelected: core.SelectedOn}}
+	if out := ExportHTML(box); strings.Contains(out, "aria-pressed") {
+		t.Errorf("a roleless Box is not a button:\n%s", out)
+	}
+}
+
+// The zero value writes nothing, which is the state every node in every
+// existing golden is in.
+func TestUnstatedSelectionWritesNoAttribute(t *testing.T) {
+	n := &core.Node{Type: "Box", Style: &core.Style{AccessibilityRole: core.RoleTab}}
+	out := ExportHTML(n)
+	if strings.Contains(out, "aria-selected") || strings.Contains(out, "aria-pressed") {
+		t.Errorf("SelectedUnset wrote an attribute:\n%s", out)
+	}
+	// The role itself is unaffected: a tab that does not say whether it is
+	// showing is still a tab.
+	if !strings.Contains(out, `role="tab"`) {
+		t.Errorf("the role went missing with the state:\n%s", out)
+	}
+}
+
+// aria-hidden prunes the subtree, so a state on the same node describes an
+// element the reader cannot reach — the same exclusion the role and the level
+// are already held to.
+func TestHiddenBeatsTheSelectedState(t *testing.T) {
+	n := &core.Node{Type: "Box", Style: &core.Style{
+		AccessibilityHidden:   true,
+		AccessibilityRole:     core.RoleTab,
+		AccessibilitySelected: core.SelectedOn,
+	}}
+	if out := ExportHTML(n); strings.Contains(out, "aria-selected") {
+		t.Errorf("aria-hidden should win alone:\n%s", out)
+	}
+}
+
 // A label is user-originated (it reaches the DSL from app state like any other
 // string), so it goes out through the same escaping every other attribute value
 // does. A raw double quote is the attribute-breakout character.

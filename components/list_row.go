@@ -41,7 +41,33 @@ import "github.com/rohanthewiz/grmob/core"
 // the right one now that Border exists, since Border is a stroke role; there
 // is no dedicated Selected entry — and, when an AccessibilityLabel
 // is set, get ", selected" appended so the state is announced along with the
-// name. That suffix convention is the same one Chip owns internally.
+// name.
+//
+// # Why this row still spells its state into the name
+//
+// Chip and Calendar used to do the same and no longer do: core.Style has
+// core.AccessibilitySelected now, which every renderer announces as a control
+// being on. This row deliberately did not follow them, and the reason is that
+// a row is not a control.
+//
+// The state is scoped by role on both web targets, because ARIA scopes the
+// attributes it becomes: a state on an unroled element is dropped by screen
+// readers exactly as an accessible name on one is — the failure core.RoleImg
+// exists to close. A ListRow is a Box. So adopting the field here means
+// giving every row a role, and both candidates are wrong:
+//
+//	RoleButton    true only for a tappable row, and a role="button" child
+//	              makes the row a *foreign child* of any role="list" it sits
+//	              in — the structural rule in core/role.go, which says such a
+//	              container may then take no list role at all. One widget's
+//	              announcement would cost the enclosing list its shape.
+//	RoleListItem  the honest description of a row, and ARIA defines neither
+//	              state attribute for it. A selectable item in a collection is
+//	              an `option` inside a `listbox`, and core.Role carries
+//	              neither — nor the roving focus a listbox promises.
+//
+// So the suffix stays until the vocabulary has the pair that fits. It still
+// says the true thing; it says it in the weaker of the two places.
 type ListRow struct {
 	// Leading is the control at the start of the row: a checkbox, an icon,
 	// an avatar. Nil renders nothing and costs no node.

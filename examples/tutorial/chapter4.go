@@ -179,6 +179,13 @@ var pillStatusLabels = []string{"Draft", "Live", "Expiring", "Failed"}
 // the chips and the picked-summary caption render in one stable order.
 var pillTopics = []string{"goroutines", "generics", "reflection", "testing"}
 
+// paneLabels caption the tab-strip arrangement of the same widget. Three, and
+// short, because the point of that demo is the announcement rather than the
+// content: the strip is the one thing on the panel that is a tablist, and a
+// reader stepping through it should hear "tab 2 of 3" without the row wrapping
+// onto a second line first.
+var paneLabels = []string{"Sermons", "Articles", "Notes"}
+
 func lessonPills() Lesson {
 	return Lesson{
 		Title:   "Badges, chips & segments",
@@ -186,6 +193,11 @@ func lessonPills() Lesson {
 		Body: func(ctx *core.Context) core.View {
 			status := core.NewState(ctx, 0)
 			picked := core.NewState(ctx, map[string]bool{})
+			// The tab-strip arrangement's own selection. A third state rather
+			// than reusing `status`, because the two demos below answer
+			// different questions and sharing one index would make the tab
+			// strip move when you picked a badge variant.
+			pane := core.NewState(ctx, 0)
 
 			// Copy, flip, Set: the immutable-update rule from chapter 2,
 			// applied to a map. Earlier renders still hold the old map, so the
@@ -254,6 +266,32 @@ components.SegmentedControl{
 					"And selection lives with you: tapping a chip below flips nothing inside the "+
 					"chip. The handler copies a map, flips one key, Sets it, and the chips re-render "+
 					"from it like any other state."),
+				prose("What a reader hears is a third contract, and it is the one you get for free. "+
+					"Every Chip states core.AccessibilitySelected — on the unselected ones too, "+
+					"which is the half that matters: a row where only the chosen pill answers is "+
+					"announced as one toggle among three pieces of furniture. That is why the type "+
+					"has three values and not a bool."),
+				prose("The state does not say which ARIA attribute it becomes; the role does. A "+
+					"chip with no role is a <button>, so it is aria-pressed — a toggle answering "+
+					"only for itself. Say the row is a tablist and the pills are tabs, and the same "+
+					"field comes out as aria-selected — one of a set, where choosing one unchooses "+
+					"the rest. Two props, no new field, and neither widget knows which arrangement "+
+					"it is in:"),
+				codeBlock(`components.SegmentedControl{
+    Labels:   []string{"Sermons", "Articles"},
+    Selected: tab.Get(),
+    OnSelect: func(i int) { tab.Set(i) },
+    // Without these two: a group of toggle buttons (aria-pressed).
+    // With them: a tab strip (aria-selected).
+    Style:   []core.StyleProp{core.AccessibilityRole(core.RoleTabList)},
+    Segment: components.Chip{Style: []core.StyleProp{core.AccessibilityRole(core.RoleTab)}},
+}`),
+				prose("Two things that does not buy, and both are ARIA's rules rather than the "+
+					"widget's. A tablist claims its children are tabs, so a row that also holds a "+
+					"count or an add button is not one. And the tabs cannot point at the panel they "+
+					"control: aria-controls is an ID reference and a Style carries values, not "+
+					"references. A strip that is really wired to panels is core.TabView (4.5), "+
+					"which owns both ends of that relationship and writes the whole wiring itself."),
 				demoPanel("A badge fed by a segmented control, and a chip group over one map.",
 					caption("Pick a status — the Badge takes its variant from the same index:"),
 					components.SegmentedControl{
@@ -280,12 +318,37 @@ components.SegmentedControl{
 						caption("nothing picked — every chip renders Selected straight from the map"),
 						caption("picked: "+strings.Join(chosen, " · ")),
 					),
+					components.Separator{},
+					caption("The same widget as a tab strip — two roles, and the state each chip "+
+						"already sets goes out as aria-selected instead of aria-pressed:"),
+					components.SegmentedControl{
+						Style: []core.StyleProp{
+							core.Gap(8),
+							core.FlexWrap(true),
+							core.AccessibilityRole(core.RoleTabList),
+						},
+						Labels:    paneLabels,
+						Selected:  pane.Get(),
+						OnSelect:  func(i int) { pane.Set(i) },
+						KeyPrefix: "pill-pane-",
+						Segment: components.Chip{
+							Style: []core.StyleProp{core.AccessibilityRole(core.RoleTab)},
+						},
+					},
+					// A panel of sorts, and deliberately an unwired one: the
+					// tabs above cannot point at it, because aria-controls is
+					// an ID reference. What makes this honest is that it is
+					// captioned as a demonstration rather than dressed up as a
+					// real tab view — 4.5 has the wired one.
+					caption("showing: "+paneLabels[pane.Get()]),
 				),
 				keyPoints(
 					"Badge is a statement, Chip a controlled toggle, SegmentedControl a controlled index — none of them holds state.",
 					"Color reinforces, text carries: the label must say \"Failed\" by itself; no renderer announces a tint (WCAG 1.4.1).",
 					"Update the chips' map immutably — copy, flip, Set — the chapter-2 slice rule, applied to a map.",
 					"Key looped chips, and give twin segmented controls a KeyPrefix, so the reconciler matches pills by identity, not position.",
+					"Every chip states core.AccessibilitySelected, unselected ones included — SelectedOff is a value with a job, not a way of saying nothing.",
+					"The role picks the attribute: a plain chip is aria-pressed, a chip carrying RoleTab inside a RoleTabList row is aria-selected.",
 				),
 			)
 		},

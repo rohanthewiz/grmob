@@ -154,14 +154,50 @@ func TestChipAccessibilityAnnouncesSelection(t *testing.T) {
 	base.Selected = true
 	selected := base.Render(ctx)
 
-	if got := unselected.Style.AccessibilityLabel; got != "Show all tasks" {
-		t.Errorf("unselected label = %q", got)
+	// The name is the name in both states. It used to carry ", selected" on
+	// the chosen chip, which meant the reader heard a *different control*
+	// after a tap rather than the same one in a new state.
+	for _, c := range []struct {
+		what string
+		node *core.Node
+	}{{"unselected", unselected}, {"selected", selected}} {
+		if got := c.node.Style.AccessibilityLabel; got != "Show all tasks" {
+			t.Errorf("%s label = %q, want the plain name — the state is not part of it",
+				c.what, got)
+		}
 	}
-	if got := selected.Style.AccessibilityLabel; got != "Show all tasks, selected" {
-		t.Errorf("selected label = %q, want the state appended", got)
+	// Both chips state a selection, and the unselected one is the half that
+	// matters: a strip where only the chosen chip answers announces the rest
+	// as plain buttons. See core.SelectedState.
+	if got := unselected.Style.AccessibilitySelected; got != core.SelectedOff {
+		t.Errorf("unselected state = %q, want %q — an unselected chip has to say so",
+			got, core.SelectedOff)
+	}
+	if got := selected.Style.AccessibilitySelected; got != core.SelectedOn {
+		t.Errorf("selected state = %q, want %q", got, core.SelectedOn)
 	}
 	if got := selected.Style.AccessibilityHint; got != "Filters the task list" {
 		t.Errorf("hint = %q", got)
+	}
+}
+
+// A chip with no accessibility label still states its selection.
+//
+// The two used to be one branch — the state was appended to the name, so a
+// chip that was not named announced nothing about being chosen — and that is
+// the case most chips in a tree are in: the caption usually names them well
+// enough that nobody sets a label. Splitting the state out is what fixes it,
+// and this is the half of the split with no caller to notice it was broken.
+func TestChipStatesItsSelectionWithoutALabel(t *testing.T) {
+	ctx := core.NewContext()
+	ctx.BeginRenderPass()
+
+	n := Chip{Label: "Active", Selected: true, OnTap: func() {}}.Render(ctx)
+	if got := n.Style.AccessibilitySelected; got != core.SelectedOn {
+		t.Errorf("selected state = %q, want %q", got, core.SelectedOn)
+	}
+	if got := n.Style.AccessibilityLabel; got != "" {
+		t.Errorf("label = %q, want none — the caption names an unlabelled chip", got)
 	}
 }
 
@@ -197,6 +233,15 @@ func TestChipProminenceLoudIsAnOutlineNotAFill(t *testing.T) {
 
 	theme := core.DefaultTheme
 	accent := theme.Components.Button.Background
+	// The outline is drawn in the accent's ink-weight tone, looked up by
+	// colour because the accent is a hex the widget read off the Button base
+	// rather than a role it named. Under DefaultTheme the two differ, which
+	// is what keeps this assertion from passing on the old behaviour.
+	ink := theme.Colors.OnLight(accent)
+	if ink == accent {
+		t.Fatalf("fixture no longer exercises the split: the Button base fill %q has no "+
+			"separate on-light tone under DefaultTheme", accent)
+	}
 
 	c := Chip{Label: "$25", Prominence: ProminenceLoud, OnTap: func() {}}
 	unselected := c.Render(ctx)
@@ -207,9 +252,9 @@ func TestChipProminenceLoudIsAnOutlineNotAFill(t *testing.T) {
 		t.Errorf("loud unselected fill = %q, want the transparent hole %q",
 			unselected.Style.Background, ColorTransparent)
 	}
-	if unselected.Style.TextColor != accent || unselected.Style.BorderColor != accent {
-		t.Errorf("loud unselected ink/rule = %q/%q, want the chip's accent %q",
-			unselected.Style.TextColor, unselected.Style.BorderColor, accent)
+	if unselected.Style.TextColor != ink || unselected.Style.BorderColor != ink {
+		t.Errorf("loud unselected ink/rule = %q/%q, want the accent's on-light tone %q",
+			unselected.Style.TextColor, unselected.Style.BorderColor, ink)
 	}
 	if unselected.Style.BorderWidth != 1 {
 		t.Errorf("loud unselected rule width = %v, want 1", unselected.Style.BorderWidth)
@@ -273,6 +318,12 @@ func TestChipUnselectedStyleBeatsProminence(t *testing.T) {
 // fallback here is the palette's Primary rather than chipRing's transparent:
 // this colour is ink and a visible rule, and transparent ink is an invisible
 // chip.
+//
+// It falls back to Primary and is then toned like any other accent, which is
+// the composition worth pinning: the two steps are independent — one answers
+// "which colour", the other "how dark" — and a fallback that skipped the
+// second would put a 4.02:1 label on exactly the themes that had said least
+// about their own colours.
 func TestChipProminenceLoudFallsBackToPrimaryWithoutAButtonFill(t *testing.T) {
 	fillless := &core.Theme{Colors: core.DefaultTheme.Colors}
 	ctx := core.NewContext().WithTheme(fillless)
@@ -280,9 +331,9 @@ func TestChipProminenceLoudFallsBackToPrimaryWithoutAButtonFill(t *testing.T) {
 
 	n := Chip{Label: "$25", Prominence: ProminenceLoud}.Render(ctx)
 
-	want := fillless.Colors.Primary
+	want := fillless.Colors.PrimaryOnLightColor()
 	if n.Style.TextColor != want || n.Style.BorderColor != want {
-		t.Errorf("ink/rule = %q/%q, want the palette's Primary %q",
+		t.Errorf("ink/rule = %q/%q, want the Primary role's on-light tone %q",
 			n.Style.TextColor, n.Style.BorderColor, want)
 	}
 }

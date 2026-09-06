@@ -28,6 +28,12 @@ func TestRuntimeWritesTheSameAccessibilityAttributes(t *testing.T) {
 		{`setOrRemove(el, "aria-level", hidden ? "" : ariaLevel(style))`,
 			"the level — a heading's tier or a nested item's depth, whichever the role calls " +
 				"for — and aria-hidden winning over it as it does over the role"},
+		{`setOrRemove(el, "aria-selected", selected[0])`,
+			"the selection half of the state, for a tab, a row or a column header"},
+		{`setOrRemove(el, "aria-pressed", selected[1])`,
+			"the toggle half, for a button. Both are written on every call rather than only " +
+				"the one the role asks for: a role can change between passes, and writing " +
+				"one would leave the other standing"},
 	} {
 		if !strings.Contains(src, want.expr) {
 			t.Errorf("grmob-runtime.js: %q not found — %s. htmlout writes it, so the two web "+
@@ -70,6 +76,47 @@ func TestRuntimeGuardsTheLevelsTheSameWay(t *testing.T) {
 	} {
 		if !strings.Contains(src, want.expr) {
 			t.Errorf("grmob-runtime.js: ariaLevel is missing %q — %s", want.expr, want.why)
+		}
+	}
+}
+
+// The selected state's guards, which htmlout's ariaSelected applies as well.
+//
+// The role list is ARIA's own scoping and not a shortlist: aria-selected is
+// defined for gridcell, option, row, tab, columnheader and rowheader, of which
+// core.Role carries three, and aria-pressed for button alone. The two near
+// misses are the ones a reader of the switch will wonder about — a `cell` is
+// not a gridcell and a `listitem` is not an option — so their absence is as
+// load-bearing as the arms that are there.
+//
+// The Button node type is the one arm that is not ARIA's: a core.Button
+// already is a button, which is what lets components.Chip carry a state
+// without setting a role. Same rule that gives a Modal its dialog role, and
+// the reason this function takes the node type at all.
+func TestRuntimeGuardsTheSelectedStateTheSameWay(t *testing.T) {
+	src := runtimeSource(t)
+	for _, want := range []struct{ expr, why string }{
+		{`function ariaSelected(style, nodeType) {`,
+			"the function htmlout's ariaSelected mirrors"},
+		{`if (!value) return ["", ""];`,
+			"the zero value writing nothing at all, which is what every node in every " +
+				"existing tree carries"},
+		{`case "tab":`, "the tab arm"},
+		{`case "row":`, "the row arm"},
+		{`case "columnheader":`, "the column-header arm"},
+		{`case "button":
+                return ["", value];`,
+			"the button arm, which is the one that becomes aria-pressed"},
+		{`return nodeType === "Button" ? ["", value] : ["", ""];`,
+			"the node type standing in for an unstated role — without it, a components.Chip " +
+				"would be the one node that could not carry the attribute it most wants"},
+		{`default:
+                return ["", ""];`,
+			"the catch-all. A role ARIA does not scope either attribute to must write " +
+				"neither, rather than falling through to one"},
+	} {
+		if !strings.Contains(src, want.expr) {
+			t.Errorf("grmob-runtime.js: ariaSelected is missing %q — %s", want.expr, want.why)
 		}
 	}
 }

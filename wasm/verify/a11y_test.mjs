@@ -282,3 +282,110 @@ test("aria-hidden beats a nesting depth too", () => {
     assert.equal(at(0).getAttribute("aria-level"), null);
     assert.equal(at(0).getAttribute("role"), null);
 });
+
+// --------------------------------------------------------------------------
+// The selected state: one field, two attributes
+// --------------------------------------------------------------------------
+
+const control = (role, selected) => ({
+    Type: "Box",
+    Style: { AccessibilityRole: role, AccessibilitySelected: selected },
+});
+
+test("the role decides which selection attribute is written", () => {
+    // ariaLevel's mirror. That switch resolves two Go fields onto one
+    // attribute; this one resolves one Go field onto two, because ARIA has two
+    // words and they are not synonyms — selected is one of a set, pressed is a
+    // toggle answering only for itself.
+    const { at } = mount([
+        control("tab", "true"),
+        control("row", "false"),
+        control("columnheader", "true"),
+        control("button", "true"),
+    ]);
+
+    assert.equal(at(0).getAttribute("aria-selected"), "true");
+    assert.equal(at(0).getAttribute("aria-pressed"), null);
+    assert.equal(at(1).getAttribute("aria-selected"), "false");
+    assert.equal(at(2).getAttribute("aria-selected"), "true");
+    assert.equal(at(3).getAttribute("aria-pressed"), "true");
+    assert.equal(at(3).getAttribute("aria-selected"), null);
+});
+
+test("a state on a role that cannot carry one is dropped", () => {
+    // ARIA's scoping, not the framework's. aria-selected is defined for
+    // gridcell, option, row, tab, columnheader and rowheader; a listitem is
+    // not an option and a cell is not a gridcell, so both write nothing. A
+    // reader drops invalid ARIA, so writing it anyway would change nothing a
+    // user hears and would put a lie in the document.
+    const { at } = mount([
+        control("listitem", "true"),
+        control("cell", "true"),
+        { Type: "Box", Style: { AccessibilitySelected: "true" } },
+    ]);
+
+    for (let i = 0; i < 3; i++) {
+        assert.equal(at(i).getAttribute("aria-selected"), null);
+        assert.equal(at(i).getAttribute("aria-pressed"), null);
+    }
+});
+
+test("a Button node carries a pressed state with no role of its own", () => {
+    // The node type is the role — the same rule that gives a Modal its dialog
+    // role. components.Chip renders as a core.Button and sets no role, so
+    // without this the widget that most wants aria-pressed is the one node
+    // that could not have it.
+    const { at } = mount([
+        { Type: "Button", Props: { label: "Active" }, Style: { AccessibilitySelected: "true" } },
+    ]);
+    assert.equal(at(0).getAttribute("aria-pressed"), "true");
+});
+
+test("a state that goes away takes its attribute with it", () => {
+    // The totality rule, on the third field to reach this family.
+    const { rt, at } = mount([control("tab", "true")]);
+    assert.equal(at(0).getAttribute("aria-selected"), "true");
+
+    rt.GrMob.patch(JSON.stringify([{
+        Type: "update-style",
+        TargetID: "root/0",
+        Changes: { AccessibilityRole: "tab" },
+    }]));
+    rt.drainFrames();
+
+    assert.equal(at(0).getAttribute("aria-selected"), null);
+    assert.equal(at(0).getAttribute("role"), "tab");
+});
+
+test("a role change swaps which attribute holds the state", () => {
+    // The sharpest case the switch has to survive, and the reason both
+    // attributes are written on every call rather than only the one the role
+    // asks for: a node that had been a tab and becomes a button must stop
+    // being aria-selected, or it is announced as a selected tab and a pressed
+    // button at once.
+    const { rt, at } = mount([control("tab", "true")]);
+    assert.equal(at(0).getAttribute("aria-selected"), "true");
+
+    rt.GrMob.patch(JSON.stringify([{
+        Type: "update-style",
+        TargetID: "root/0",
+        Changes: { AccessibilityRole: "button", AccessibilitySelected: "true" },
+    }]));
+    rt.drainFrames();
+
+    assert.equal(at(0).getAttribute("aria-selected"), null);
+    assert.equal(at(0).getAttribute("aria-pressed"), "true");
+});
+
+test("aria-hidden beats a selected state too", () => {
+    const { at } = mount([{
+        Type: "Box",
+        Style: {
+            AccessibilityHidden: true,
+            AccessibilityRole: "tab",
+            AccessibilitySelected: "true",
+        },
+    }]);
+    assert.equal(at(0).getAttribute("aria-selected"), null);
+    assert.equal(at(0).getAttribute("role"), null);
+});

@@ -27,13 +27,15 @@ import "github.com/rohanthewiz/grmob/core"
 // Badge and a filled Button spend the whole variant color as a background.
 // A strip that runs the width of the screen cannot: a saturated Error red
 // across a screen reads as a failure of the app rather than of one fetch, and
-// the palette carries no muted container tone to fill with instead (one value
-// per role — see Button's note on what a second "on-light" tone would fix).
+// the palette carries no muted *container* tone to fill with instead. (It
+// carries an on-light tone now, which is the opposite end of the range — ink
+// for a light surface, not a wash to sit behind one — so it does not answer
+// this. A container tone would still be a palette decision, not a Banner one.)
 //
 // So the variant is spent on the edges: a hairline border and the leading
-// glyph take the role color, the fill stays the theme's Surface, and the text
-// keeps the primary ink so it is legible whatever the role. That also means a
-// Banner's contrast does not depend on which variant it is, which the
+// glyph take the role's on-light tone, the fill stays the theme's Surface, and
+// the text keeps the primary ink so it is legible whatever the role. That also
+// means a Banner's contrast does not depend on which variant it is, which the
 // alternatives could not promise.
 //
 // # Color is not the message, again
@@ -110,7 +112,19 @@ type Banner struct {
 
 func (b Banner) Render(ctx *core.Context) *core.Node {
 	t := ctx.Theme()
-	accent := b.Variant.Color(t)
+	// The role's ink-weight tone, not its fill. Both places this colour lands
+	// — the hairline and the leading glyph — are drawn *over* the Surface fill
+	// rather than being a fill themselves, which is exactly the position the
+	// on-light tone exists for. The glyph is the one that needed it: under
+	// DefaultTheme a warning's ⚠ was Colors.Warning on Surface, about 2:1,
+	// which is a mark that is technically present.
+	//
+	// The tones are stated against a theme's Background and this draws them on
+	// its Surface, so the real numbers are a few percent below the palette's —
+	// #F2F2F7 rather than #FFFFFF costs roughly 7% — and all four still clear
+	// AA. Worth knowing rather than worth a second set of tones: a Surface is
+	// a light surface, which is what the name claims.
+	accent := b.Variant.OnLight(t)
 
 	items := make([]core.PropsAndChildren, 0, len(b.Style)+8)
 	items = append(items,

@@ -320,8 +320,9 @@ func filterBar(active int, onSelect func(int)) core.View {
 			AccessibilityHint: "Filters the task list",
 		},
 		// The one thing that varies per segment and is not the caption:
-		// "Active" is announced as "Show active tasks". Chip appends
-		// ", selected" to whichever name it is given.
+		// "Active" is announced as "Show active tasks". Which segment is live
+		// is announced separately, as a control state, so this returns the
+		// name alone and it does not change when the filter moves.
 		SegmentLabel: func(label string, _ int) string {
 			return "Show " + strings.ToLower(label) + " tasks"
 		},
@@ -375,8 +376,9 @@ func todoRow(t Todo, setDone func(int, bool), remove func(int)) core.View {
 			core.Transition(200, core.EaseInOut),
 		},
 		// Not ListRow.Selected: "done" is not "selected". The widget's
-		// Selected flag appends ", selected", whereas this app announces
-		// completion — so the whole label stays the app's to compose.
+		// Selected flag means a row picked out of a list, whereas this app
+		// announces completion — so the whole label stays the app's to
+		// compose.
 		AccessibilityLabel: rowAccessibilityLabel(t),
 	})
 }

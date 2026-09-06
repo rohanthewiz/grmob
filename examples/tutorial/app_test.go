@@ -63,6 +63,14 @@ type nodeStyle struct {
 	// field and the rose is an unlabelled Box, so the angle is the only thing
 	// in the tree that says which way the widget is pointing.
 	Rotate float64
+
+	// Chapter 4's tab-strip arrangement asserts on these two. They are the
+	// whole subject of that demo — the same widget announcing itself
+	// differently — and neither is visible anywhere else in the tree: a tab
+	// and a filter chip draw identically, so the style is the only place the
+	// difference exists.
+	AccessibilityRole     string
+	AccessibilitySelected string
 }
 
 func findNode(n *node, pred func(*node) bool) *node {
@@ -78,6 +86,32 @@ func findNode(n *node, pred func(*node) bool) *node {
 		}
 	}
 	return nil
+}
+
+// findNodes is findNode's plural: every node under n matching the predicate,
+// in tree order.
+//
+// It exists for the assertions that are about a *set* of nodes rather than
+// one — chapter 4's tab strip, where what is being checked is that every tab
+// answers and exactly one says yes. Written as a separate walk rather than by
+// giving findNode a limit, so the singular stays the cheap early-exit it is
+// for the dozen callers that want the first match.
+func findNodes(n *node, pred func(*node) bool) []*node {
+	var out []*node
+	var walk func(*node)
+	walk = func(n *node) {
+		if n == nil {
+			return
+		}
+		if pred(n) {
+			out = append(out, n)
+		}
+		for _, c := range n.Children {
+			walk(c)
+		}
+	}
+	walk(n)
+	return out
 }
 
 // hasText reports whether any Text node under n carries exactly this content.

@@ -20,6 +20,12 @@ import (
 // unselected branch below is new, and it is the hand-written spelling of
 // Chip's current unselected default.
 //
+// It moved a second time when core.Style grew a slot for a control state.
+// Chip used to append ", selected" to the accessibility label because a name
+// was the only channel it had; it now states core.AccessibilitySelected, which
+// every renderer announces as a state, and both halves of that change are
+// spelled out below.
+//
 // What the comparison proves is therefore narrower than it was, and still the
 // half worth having: the widget builds exactly the row this app would build by
 // hand today. It no longer says anything about the migration, which happened
@@ -49,7 +55,6 @@ func legacyFilterBar(active int, onSelect func(int)) core.View {
 					core.BackgroundColor(colorAccent),
 					core.TextColor(colorAccentInk),
 				)
-				accLabel += ", selected"
 			} else {
 				palette := core.DefaultTheme.Colors
 				styles = append(styles,
@@ -59,7 +64,14 @@ func legacyFilterBar(active int, onSelect func(int)) core.View {
 					core.BorderColor(palette.BorderColor()),
 				)
 			}
-			styles = append(styles, core.AccessibilityLabel(accLabel))
+			// The selection, as the control state Chip now states rather than
+			// as a suffix on the name. Every segment answers, including the
+			// unselected ones — see core.SelectedState for why the silence
+			// is the bug and not the economy.
+			styles = append(styles,
+				core.AccessibilitySelected(core.SelectedWhen(i == active)),
+				core.AccessibilityLabel(accLabel),
+			)
 			return core.Keyed("filter-"+label,
 				core.Button(label, func() { onSelect(i) }, styles...),
 			)
