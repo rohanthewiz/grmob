@@ -10,6 +10,7 @@ import (
 	"github.com/rohanthewiz/grmob/components"
 	"github.com/rohanthewiz/grmob/core"
 	"github.com/rohanthewiz/grmob/hooks"
+	"github.com/rohanthewiz/grmob/permission"
 )
 
 // chapter4 — The Widget Library: a tour of the components package and the
@@ -410,6 +411,10 @@ func lessonListRow() Lesson {
 					Subtitle: m.role,
 					Trailing: trailing,
 					Selected: selected.Get() == m.name,
+					// The row is one choice in a listbox — see the RoleListBox
+					// on the Column below, which is the half a row cannot
+					// supply for itself.
+					Selectable: true,
 					OnTap: func() {
 						// Tap toggles: re-tapping the selected row clears it.
 						if selected.Get() == m.name {
@@ -444,13 +449,37 @@ func lessonListRow() Lesson {
 					"goes missing. The Avatar in the Leading slot earns its cameo: give it a Name "+
 					"and it derives initials (first word, last word) and announces the name; give "+
 					"it neither and it hides from assistive tech rather than announce \"image\"."),
+				prose("A list where tapping a row changes which one is chosen is a listbox, "+
+					"and saying so is what lets a row announce its selection at all. Put "+
+					"core.RoleListBox on the container and Selectable on each row: the row "+
+					"becomes an option carrying a real selected state, both values of it, so a "+
+					"reader says \"selected\" on the chosen row and \"not selected\" on the rest. "+
+					"Without the pair the state has nowhere to live — ARIA scopes it to a "+
+					"handful of roles and a plain row is none of them — so the widget falls "+
+					"back to appending \", selected\" to the row's name, which announces once "+
+					"and makes a name that is supposed to be stable move."),
+				codeBlock(`core.Column(
+    core.AccessibilityRole(core.RoleListBox),   // the container's half
+    components.ListRow{Title: m.Name, Selectable: true,
+        Selected: selected.Get() == m.Name},    // the row's half
+)`),
 				demoPanel("Tap a row to select it; tap it again to clear. Rows are Keyed by name.",
-					core.Column(rows...),
+					// The listbox half of the pair. Sayable here because this
+					// Column holds nothing but rows: a heading or a footer
+					// inside it would be a foreign child and cost the role.
+					core.Column(append([]core.PropsAndChildren{
+						core.AccessibilityRole(core.RoleListBox),
+					}, rows...)...),
 					core.IfElse(selected.Get() == "",
 						caption("No row selected — tap one."),
 						caption("Selected: "+selected.Get()),
 					),
 				),
+				prose("A row cannot be both, and the reason is ARIA's rather than the "+
+					"widget's: an option carries the selected state and no depth, a listitem "+
+					"carries the depth and no selected state. Set both and Selectable wins — "+
+					"the state is what the tap changes, and a depth inside a container that "+
+					"never claimed to be a list is decoration."),
 				prose("A row can also say how deep it sits. NestingLevel makes it a listitem at "+
 					"that depth, which is the one thing an indented outline cannot say any other "+
 					"way: a list is a flat run of siblings — that is what makes it virtualizable "+
@@ -1551,6 +1580,20 @@ func lessonCompass() Lesson {
 			// asks for in as many words.
 			live := hooks.UseHeading(ctx)
 
+			// True north is where the compass runs into the permission
+			// package, and it is the reason that package has functions in it
+			// at all. A magnetic bearing is free on every platform; a
+			// *geographic* one needs the local declination, which needs
+			// knowing where on the planet you are — so iOS reports
+			// Heading.HasTrue only once location authorization has been
+			// granted, and neither Android's rotation vector nor the browser's
+			// orientation events carry it at all.
+			//
+			// UsePermission checks and never prompts, which is what makes it
+			// safe here: a Request from inside a render pass would put the OS
+			// dialog on screen as a side effect of drawing.
+			locationStatus := hooks.UsePermission(ctx, permission.Location)
+
 			chips := make([]components.Chip, 0, len(tutorialBearings))
 			for _, deg := range tutorialBearings {
 				value := deg
@@ -1574,6 +1617,39 @@ func lessonCompass() Lesson {
 			default:
 				liveNote = fmt.Sprintf("%.0f° %s, give or take %.0f°",
 					live.Magnetic, core.Cardinal(live.Magnetic), live.Accuracy)
+			}
+
+			// The four states a permission-gated feature has to draw, which is
+			// the whole argument for Status having four values. Prompt is the
+			// only one with a button on it.
+			var permissionNote string
+			var permissionAction core.View = core.Fragment()
+			switch locationStatus {
+			case permission.Granted:
+				if live.HasTrue {
+					permissionNote = fmt.Sprintf("True north: %.0f°, %.0f° off magnetic.",
+						live.True, core.AngleDelta(live.Magnetic, live.True))
+				} else {
+					permissionNote = "Location is granted. This platform still reports no true " +
+						"heading — only iOS carries one, and only once it has a fix."
+				}
+			case permission.Prompt:
+				permissionNote = "Undecided. Asking will show the platform's dialog."
+				permissionAction = components.Button{
+					Label: "Use my location",
+					// From a tap, never from the render pass. Every platform
+					// here either requires that or punishes the alternative.
+					OnTap: func() { permission.Request(permission.Location) },
+				}
+			case permission.Denied:
+				permissionNote = "Refused. Asking again shows nothing on most platforms — the " +
+					"fix is the system settings, which is why Denied and Prompt are two words."
+			case permission.Unavailable:
+				permissionNote = "This platform cannot grant it at all, so there is nothing to " +
+					"ask for and no settings screen to send anyone to. A browser preview and " +
+					"a Go test are both in this state."
+			default:
+				permissionNote = "Checking…"
 			}
 
 			return core.Column(
@@ -1650,6 +1726,40 @@ default:
 					"back as Available=false with a message, which is exactly what a \"tap to enable "+
 					"the compass\" button is for. The recovery is a second StartHeading from inside "+
 					"the tap."),
+				prose("True north is where a sensor runs into an authorization. A magnetic bearing "+
+					"is free everywhere; a geographic one needs the local declination, which needs "+
+					"knowing where you are — so iOS fills in Heading.True only once location has "+
+					"been granted, and the compass host deliberately prompts for nothing, because "+
+					"a permission dialog nobody expected is worse than a bearing a few degrees off "+
+					"a map. Asking is the app's job, and permission is where it lives."),
+				codeBlock(`switch hooks.UsePermission(ctx, permission.Location) {  // checks, never prompts
+case permission.Granted:     return mapView(ctx)
+case permission.Prompt:      return askButton()   // Request from a tap
+case permission.Denied:      return openSettingsHint()
+case permission.Unavailable: return nil           // nothing to ask for here
+default:                     return components.Skeleton{}   // the check is in flight
+}`),
+				demoPanel("The live status. Unavailable in a browser preview; on a phone this is a real dialog.",
+					caption("permission.Location — "+string(locationStatus)),
+					caption(permissionNote),
+					permissionAction,
+				),
+				prose("Check and Request are two functions because they are two operations, and "+
+					"collapsing them is wrong in either direction. A check that prompts puts the OS "+
+					"dialog up as a side effect of a screen mounting, which is the surest route to a "+
+					"permanent refusal; a request that only checks leaves a button that does nothing. "+
+					"So the hook checks on mount, and asking stays yours, from a gesture."),
+				prose("Four statuses, not a bool, and the fourth is the one people leave out. Denied "+
+					"is fixable in the system settings and Unavailable is not — a device with no "+
+					"camera, a permission the manifest never declared, an app with no host attached "+
+					"at all — so a screen that offers \"Open Settings\" for both sends someone to a "+
+					"page with no switch on it. Unknown is the fifth and is the zero value: the "+
+					"check is asynchronous, so the first pass has no answer and draws a placeholder."),
+				prose("Nothing tells an app that a permission changed while it was in the background. "+
+					"A user can grant one in Settings and come back, and the record here still says "+
+					"denied — so a screen that cares pairs this with hooks.UseLifecycle and calls "+
+					"permission.Check itself when the state turns \"active\". The hook does not do it "+
+					"for you, because it cannot see whether its screen is still the one on top."),
 				prose("The angle is never folded onto the circle on its way to a renderer. 350 to 370 "+
 					"and 350 to 10 point the same way and are not the same animation — the first "+
 					"sweeps twenty degrees forwards and the second unwinds three hundred and forty the "+

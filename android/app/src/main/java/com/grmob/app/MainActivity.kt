@@ -30,6 +30,10 @@ class MainActivity : ComponentActivity() {
         // constructed first because the audio player reports back through
         // it, but nothing renders until start(). See SystemEvents.kt.
         SystemEvents.attach(this, bridge, runtime)
+        // Runtime permissions, which need the Activity SystemEvents does not
+        // retain — and need it *here*, because registerForActivityResult
+        // throws once the Activity is STARTED. See Permissions.kt.
+        Permissions.attach(this, runtime::hostEvent)
         // Foreground/background transitions, reported through the same
         // host-event channel the audio player uses. Attached after start()
         // on purpose: the process observer fires ON_RESUME shortly after

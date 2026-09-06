@@ -33,28 +33,38 @@ swiftc -typecheck -target arm64-apple-macos14.0 ../GrMob/Runtime/*.swift
 
 echo "OK: view layer type-checks"
 
-# The app layer — the system-event sinks and the platform services behind them
-# — was checked by nothing at all until the compass landed, because its files
-# lean on iOS-only frameworks that the macOS target above cannot see:
-# CLLocationManager.startUpdatingHeading and AVAudioSession simply do not
-# exist there.
+# The app layer — the system-event sinks, the platform services behind them,
+# and the shell that wires the whole thing together — needs two things the
+# passes above deliberately do without.
 #
-# So this pass targets iOS proper, which needs the iPhoneOS SDK — Xcode, not
-# just the Command Line Tools. It is skipped rather than failed when that is
-# missing, which keeps this script's promise (Go and the CLT are enough) while
-# still catching the errors on any machine that can catch them.
+# The first is the iPhoneOS SDK: these files lean on iOS-only frameworks that
+# the macOS target cannot see (CLLocationManager.startUpdatingHeading,
+# AVAudioSession). That needs Xcode rather than just the Command Line Tools,
+# so the pass is skipped rather than failed when it is missing — which keeps
+# this script's promise that Go and the CLT are enough, while still catching
+# the errors on any machine that can catch them.
 #
-# GomobileBridge.swift, GrMobApp.swift and AppLifecycle.swift are left out:
-# they import the generated Mobile.xcframework, which only exists after a
-# gomobile bind, and a harness that required a build step would not run here
-# at all.
+# The second is the `GrMob` module, which GomobileBridge.swift imports and
+# which only exists after a `gomobile bind` (ios/build.sh). Requiring a bind
+# would cost the harness its whole audience, so instead gomobile_stub.swift is
+# compiled as that module: it declares the bound surface and nothing else, so
+# `import GrMob` resolves and the three files that were checked by nothing —
+# GomobileBridge, GrMobApp and AppLifecycle, including the @main entry point —
+# type-check like any others. See that file for what holds it to the Go
+# source it stands for.
 sdk="$(xcrun --sdk iphoneos --show-sdk-path 2>/dev/null || true)"
 if [ -n "$sdk" ] && [ -d "$sdk" ]; then
-  swiftc -typecheck -target arm64-apple-ios17.0 -sdk "$sdk" \
+  # -emit-module only: nothing is linked, and the .swiftmodule is written to
+  # the scratch directory rather than beside the sources so a stale one can
+  # never shadow the real framework in an Xcode build.
+  swiftc -emit-module -module-name GrMob \
+    -emit-module-path "$out/GrMob.swiftmodule" \
+    -target arm64-apple-ios17.0 -sdk "$sdk" \
+    gomobile_stub.swift
+
+  swiftc -typecheck -target arm64-apple-ios17.0 -sdk "$sdk" -I "$out" \
     ../GrMob/Runtime/*.swift \
-    ../GrMob/App/AudioPlayer.swift \
-    ../GrMob/App/HeadingSensor.swift \
-    ../GrMob/App/SystemEvents.swift
+    ../GrMob/App/*.swift
   echo "OK: app layer type-checks against the iOS SDK"
 else
   echo "SKIP: app layer (no iPhoneOS SDK; install Xcode to check it)"

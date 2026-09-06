@@ -302,6 +302,7 @@ test("the role decides which selection attribute is written", () => {
         control("row", "false"),
         control("columnheader", "true"),
         control("button", "true"),
+        control("option", "false"),
     ]);
 
     assert.equal(at(0).getAttribute("aria-selected"), "true");
@@ -310,14 +311,23 @@ test("the role decides which selection attribute is written", () => {
     assert.equal(at(2).getAttribute("aria-selected"), "true");
     assert.equal(at(3).getAttribute("aria-pressed"), "true");
     assert.equal(at(3).getAttribute("aria-selected"), null);
+    // The off case on an option, which is the one a listbox needs every row to
+    // answer: a listbox where only the chosen row says anything announces the
+    // rest as unselectable furniture. Same argument core.SelectedOff carries.
+    assert.equal(at(4).getAttribute("aria-selected"), "false");
+    assert.equal(at(4).getAttribute("aria-pressed"), null);
 });
 
 test("a state on a role that cannot carry one is dropped", () => {
     // ARIA's scoping, not the framework's. aria-selected is defined for
-    // gridcell, option, row, tab, columnheader and rowheader; a listitem is
-    // not an option and a cell is not a gridcell, so both write nothing. A
+    // gridcell, option, row, tab, columnheader and rowheader; a cell is not a
+    // gridcell and a listitem is not an option, so both write nothing. A
     // reader drops invalid ARIA, so writing it anyway would change nothing a
     // user hears and would put a lie in the document.
+    //
+    // The listitem case is the sharp one now that `option` is in the
+    // vocabulary and does write the attribute: the two roles describe the same
+    // visual row, and only one of them is a control.
     const { at } = mount([
         control("listitem", "true"),
         control("cell", "true"),

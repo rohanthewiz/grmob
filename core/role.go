@@ -39,11 +39,11 @@ package core
 //	status        | role="status"   | —              | liveRegion = Polite
 //	alert         | role="alert"    | —              | liveRegion = Assertive
 //	log           | role="log"      | —              | liveRegion = Polite
-//	the other nine| role=…          | —              | —
+//	the other 11  | role=…          | —              | —
 //
-// The other nine are table, rowgroup, row, cell, list, listitem, banner,
-// navigation and toolbar — the tabular set, the collection pair, and the
-// landmarks.
+// The other eleven are table, rowgroup, row, cell, list, listitem, listbox,
+// option, banner, navigation and toolbar — the tabular set, both collection
+// pairs, and the landmarks.
 //
 // The tab pair is the one row of that table where the two natives disagree
 // about *which half* they can say, and it is a useful illustration of why the
@@ -53,12 +53,14 @@ package core
 // supplied the pair, and a caller marking up a tab strip sets both and gets
 // whichever half each platform knows.
 //
-// Nine of the twenty do nothing on either native, and that is the
+// Eleven of the twenty-two do nothing on either native, and that is the
 // honest state of those platforms rather than a gap to be filled later:
 // neither has a tabular semantics vocabulary a role can be mapped onto (Compose
 // has collectionInfo, which describes counts and indices this prop does not
-// carry), and neither has landmarks at all — VoiceOver's rotor navigates by
-// heading, not by banner.
+// carry), neither has a listbox in its semantics vocabulary (both spell a
+// chosen item as a *state* instead, which is why the selectable pair costs
+// them nothing to leave out — see RoleListBox), and neither has landmarks at
+// all — VoiceOver's rotor navigates by heading, not by banner.
 //
 // A role that maps to nothing is still worth setting. The web is a first-class
 // target here, the mapping can improve later without the call sites changing,
@@ -67,10 +69,10 @@ package core
 //
 // # A structural role owns what is inside it
 //
-// The tabular five and the collection pair are not labels on a container —
-// they are claims about what the container holds. role="list" says its
-// children are listitems; role="table" says its children are rows, or
-// rowgroups holding rows. A reader acts on the claim rather than re-deriving
+// The tabular five and the two collection pairs are not labels on a container
+// — they are claims about what the container holds. role="list" says its
+// children are listitems; role="listbox" says its children are options;
+// role="table" says its children are rows, or rowgroups holding rows. A reader acts on the claim rather than re-deriving
 // it: it announces the count ("list, five items"), it offers item-by-item
 // navigation, and it reads the structure instead of the text.
 //
@@ -109,10 +111,10 @@ package core
 // and are not subject to this. A banner, a navigation region or a log owns
 // whatever it likes; RoleHeading, RoleButton, RoleLink, RoleImg and RoleTab
 // describe the node itself.
-// Three of the const blocks below hold a role that makes a claim about its
-// children — the tabular set, the collection pair, and the tablist half of the
-// tab pair — which is where to look rather than here if a role is ever added
-// to any of them. (RoleTab itself does not: it describes one control, the way
+// Four of the const blocks below hold a role that makes a claim about its
+// children — the tabular set, both collection pairs, and the tablist half of
+// the tab pair — which is where to look rather than here if a role is ever
+// added to any of them. (RoleTab itself does not: it describes one control, the way
 // RoleButton does, and only the strip around it claims what it contains.)
 //
 // # Roles a node type carries for itself
@@ -217,6 +219,60 @@ const (
 const (
 	RoleList     Role = "list"
 	RoleListItem Role = "listitem"
+)
+
+// The selectable collection: a run of choices, and one choice in it. The
+// fourth structural block, and the pair `list`/`listitem` above cannot stand
+// in for.
+//
+// # Why a second collection pair rather than a state on the first
+//
+// Because ARIA will not carry it. `aria-selected` is defined for gridcell,
+// option, row, tab and columnheader — not for `listitem` — so a list item
+// that says it is chosen says it into a void on both web targets: the
+// attribute is written, the DOM inspector shows it, and no reader announces
+// anything. A list is *content* and a listbox is a *control*, and the state
+// only exists on the control side.
+//
+// components.ListRow is what asked. Its selected row spelled the state into
+// its own accessible name (", selected") because both other doors were shut:
+// `listitem` cannot carry the state, and `button` — which carries the
+// neighbouring `aria-pressed` — would make the row a foreign child of any
+// role="list" around it, costing the whole list its shape for one row's
+// announcement. This pair is the door that was left.
+//
+// # What a listbox promises, and what this vocabulary supplies
+//
+// A listbox is a real control in ARIA's model, and the pattern that goes with
+// it is larger than two attributes: the container takes keyboard focus, the
+// arrow keys move an active option, and the reader is told which option is
+// active through a roving tabindex or aria-activedescendant.
+//
+// None of that is here. This type is a vocabulary — it says what a node *is*,
+// and nothing in core stamps a tabindex or reads an arrow key (core/focus.go
+// is about putting the cursor in a named field, which is a different
+// question). So the semantics are stated and the behaviour is the author's,
+// exactly as the structural rule above makes a `list` role's promise the
+// author's to keep. On the two phones the gap costs nothing — VoiceOver and
+// TalkBack navigate a collection by swipe, not by arrow key — which is also
+// why neither native has a listbox in its semantics vocabulary at all: both
+// spell a chosen item as the `selected` state this pair exists to make
+// *legal*, and they honour that state on any node without being told what
+// contains it.
+//
+// # The depth question, answered the other way
+//
+// `listitem` carries aria-level and `option` does not, so a row cannot be
+// both a choice and a depth: the two roles are exclusive and only one of them
+// takes a level. ARIA does have a role for an item that is both — `treeitem`
+// inside a `tree`, which supports aria-level and aria-selected together — and
+// it is deliberately not here, because a tree is a third pattern with its own
+// expansion state and its own keyboard contract, and nothing in this
+// repository has one. See components.ListRow.Selectable, which is where the
+// two fields meet and where the precedence is written down.
+const (
+	RoleListBox Role = "listbox"
+	RoleOption  Role = "option"
 )
 
 // The tab pair: a strip of controls that switches what the screen is showing,
@@ -345,10 +401,10 @@ const (
 // them: it is the field's zero value, no renderer has an arm for it, and a
 // coverage check that demanded one would be asking each renderer to implement
 // "unset". Everything downstream that iterates roles — the native dispatch
-// pins, the DOM export test — wants the twenty that do something.
+// pins, the DOM export test — wants the twenty-two that do something.
 //
 // A fresh slice per call rather than a package-level var, which any importer
-// could write to. Twenty elements are cheaper to build than to defend.
+// could write to. Twenty-two elements are cheaper to build than to defend.
 //
 // Pinned to the const blocks above by role_enum_test.go, which reads this
 // file's syntax tree: adding a constant without adding it here should fail
@@ -358,6 +414,7 @@ func Roles() []Role {
 	return []Role{
 		RoleTable, RoleRowGroup, RoleRow, RoleColumnHeader, RoleCell,
 		RoleList, RoleListItem,
+		RoleListBox, RoleOption,
 		RoleTab, RoleTabList,
 		RoleBanner, RoleNavigation, RoleSearch, RoleToolbar,
 		RoleStatus, RoleAlert, RoleLog,

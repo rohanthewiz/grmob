@@ -666,9 +666,56 @@ scheduler, not of the contract.
 
 ## Permissions
 
-Hardware permission requests (camera, microphone, geolocation) route through
-an optional `GrMobRequestPermission(name, callback)` page global, letting
-the host page bridge to browser permission APIs.
+Go's `permission` package reaches the page through the ordinary system-event
+channel — `GrMobSystemEvent("permission", …)` in, `GrMobWASM.HostEvent` out —
+rather than through a bridge of its own. There is no page global to implement:
+the runtime handles both commands itself.
+
+This is the host where the two commands are genuinely different operations and
+where one of them mostly cannot be honoured:
+
+| command | what it does |
+|---|---|
+| `check` | `navigator.permissions.query({name})` — a real read, no UI, answering `granted` / `denied` / `prompt` in exactly the words Go's `Status` carries |
+| `request` | there is no such API. A page obtains a capability by *calling the feature*, and the browser puts the prompt up as a side effect |
+
+So a request does the smallest thing that actually prompts and reports whatever
+came of it:
+
+| permission | request becomes | check descriptor |
+|---|---|---|
+| camera | `getUserMedia({video:true})`, tracks stopped | `camera` |
+| microphone | `getUserMedia({audio:true})`, tracks stopped | `microphone` |
+| location | `geolocation.getCurrentPosition`, result discarded | `geolocation` |
+| storage | nothing — reported `unavailable` | none |
+
+**The tracks are stopped the instant the promise resolves.** The prompt is the
+point and the stream is not; a resolved `getUserMedia` is a live capture
+device, and leaving it running keeps the browser's recording indicator lit for
+a page that only wanted an answer.
+
+**`query()` throws for a descriptor it does not know**, rather than resolving
+to a state, and browsers disagree about which those are — Firefox has no
+`camera` descriptor at all. So the rejection path is a common one, and it
+answers `unavailable`: reporting a denial would send the user to a settings
+page that has no switch on it.
+
+**A rejected request says two different things through one channel.**
+`NotAllowedError` is a refusal (`denied`); `NotFoundError`,
+`OverconstrainedError` and `NotReadableError` mean the device is not there
+(`unavailable`). Geolocation is the same split — only `PERMISSION_DENIED`
+(code 1) is a refusal, while a position failure falls back to a `query`,
+because a page may be perfectly authorised and simply indoors.
+
+**Storage has no browser permission at all.** A page reaches files through an
+`<input>` or the file-system access API, both of which are a gesture rather
+than a permission. It is answered `unavailable` rather than dropped, so a
+screen waiting on it stops waiting.
+
+The costs are the browser's and are stated rather than hidden: a granted
+request has genuinely opened the camera for a moment, and a refused one reads
+as `denied` whether the user pressed Block or dismissed the prompt, because a
+`NotAllowedError` does not say which.
 
 ## Same engine, same rules
 

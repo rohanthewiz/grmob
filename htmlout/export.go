@@ -761,13 +761,19 @@ func ariaLevel(s *core.Style) string {
 // # The role list is ARIA's own scoping, not a shortlist
 //
 // aria-selected is defined for gridcell, option, row, tab, columnheader and
-// rowheader; of those, core.Role carries tab, row and columnheader. The two
-// near misses are worth naming because both look like they belong:
+// rowheader; of those, core.Role carries option, tab, row and columnheader.
+// The one near miss is worth naming because it looks like it belongs:
 //
 //	cell       is not gridcell. A table cell is not selectable; a grid cell
 //	           in an interactive grid is, and core.Role has no grid.
-//	listitem   is not option. A list item is content, an option is a control
-//	           in a listbox, and core has neither the listbox nor the option.
+//
+// listitem was a second near miss until core.RoleOption existed, and the two
+// are still not interchangeable: a list item is *content* and an option is a
+// *control in a listbox*, so a row that wants to announce a selection has to
+// take the option role and give up the listitem one — along with aria-level,
+// which ARIA defines for listitem and not for option. components.ListRow is
+// where that trade is made and its Selectable field is where it is written
+// down.
 //
 // aria-pressed is defined for button alone. A core.Button gets it without a
 // role because the node type already is one — the same rule that gives a
@@ -787,7 +793,7 @@ func ariaSelected(s *core.Style, nodeType string) (string, string) {
 	}
 	value := string(s.AccessibilitySelected)
 	switch s.AccessibilityRole {
-	case core.RoleTab, core.RoleRow, core.RoleColumnHeader:
+	case core.RoleOption, core.RoleTab, core.RoleRow, core.RoleColumnHeader:
 		return "aria-selected", value
 	case core.RoleButton:
 		return "aria-pressed", value

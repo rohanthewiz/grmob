@@ -196,6 +196,72 @@ an app that has just started is on screen — and a shell that disagrees says
 so with its first report. `mobile/verify` holds the three shells' spellings
 of the event and its states to core's.
 
+## Permissions
+
+`permission.Check(p)` and `permission.Request(p)` travel as the `"permission"`
+system event with two keys — `command` and `kind` — and each host answers over
+the `"permission"` host event with `kind` and `status`. Go validates both keys
+on arrival and drops anything it cannot read rather than guessing: every wrong
+guess has a cost, since `granted` opens a device the OS did not authorise,
+`denied` hides a feature that works, and `unavailable` sends a user to a
+settings page with no switch on it.
+
+The vocabulary is the browser's, so the browser needs no mapping table and
+these two hosts each map their own richer enum onto it.
+
+| Go | iOS | Android |
+|---|---|---|
+| `Granted` | `.authorized` / `.authorizedWhenInUse` / `.authorizedAlways`, and Photos' `.limited` | `PERMISSION_GRANTED` |
+| `Prompt` | `.notDetermined` | `PERMISSION_DENIED`, no rationale, never asked in this process |
+| `Denied` | `.denied` | `PERMISSION_DENIED` with a rationale, or after this process has asked |
+| `Unavailable` | `.restricted` — a parental control or an MDM profile | the permission is missing from the manifest |
+
+Photos' `.limited` maps to `Granted` because the app really can read the
+photos the user picked; which ones is the picker's business, not this
+channel's.
+
+**Android has to reconstruct three states out of two.** `checkSelfPermission`
+answers GRANTED or DENIED and nothing else, and
+`shouldShowRequestPermissionRationale` is false both for "never asked" and for
+"don't ask again" — so the shell tracks whether *this process* has asked, and
+breaks the tie towards `Denied`. Reporting `Prompt` for a permanently refused
+permission would leave a screen offering a button that does nothing. That flag
+is in memory: a process restart forgets it, which turns a permanent refusal
+back into `Prompt` until the next request proves otherwise. Persisting it is
+something an app does with its own preferences, not something a framework shell
+should write to disk unasked.
+
+**Two build-time halves no Go code can supply.** An iOS prompt whose
+`NS*UsageDescription` key is missing from `Info.plist` *terminates the app* at
+the moment it would appear; an Android permission missing from
+`AndroidManifest.xml` is auto-denied with nothing on screen. Both shells ship
+the entries for all four permissions, `mobile/verify/permission_test.go` holds
+them there, and the Android shell reports an undeclared permission as
+`Unavailable` rather than `Denied` — it is a build the user cannot influence.
+
+**Location asks for the narrower option on both.** iOS requests
+when-in-use, not always: "always" is a second prompt Apple shows on its own
+schedule after the app has demonstrably used location in the foreground, and
+requesting it up front is how an app gets refused. Android requests
+`ACCESS_COARSE_LOCATION` alone, so no precise/approximate chooser appears for a
+promise the Go API did not make. One `permission.Location` constant means the
+narrower thing everywhere, which is why there is no second constant for the
+wider one.
+
+**iOS needs an object where the others need a function.** `CLLocationManager`
+reports an authorization change through its delegate rather than through a
+completion handler, and a manager released while its prompt is up reports
+nothing at all — so `Permissions.swift` is a singleton holding one. It is
+deliberately not `HeadingSensor`'s manager: the compass asks for nothing on
+purpose (an unexpected permission dialog is worse than a bearing a few degrees
+off a map), and sharing the object would make one of those decisions the
+other's.
+
+**Android needs the Activity.** `registerForActivityResult` is an Activity API
+whose registration must happen in `onCreate`, so `Permissions.attach` is called
+from `MainActivity` rather than from `SystemEvents` — which keeps only an
+application context, deliberately, so an Activity handed to it is not leaked.
+
 ## Persistence on device
 
 Go code cannot discover the writable sandbox path itself — it is an OS-level

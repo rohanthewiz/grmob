@@ -192,6 +192,66 @@ func TestListRowDemoControlledSelection(t *testing.T) {
 	assertNoConcerns(t)
 }
 
+// The roster is a listbox, and every row in it answers.
+//
+// The pairing is the subject, as it is for the outline below: an `option` is
+// owned by a `listbox`, so the two halves are set in different places by
+// different people — the caller roles the container, the widget states the
+// row — and either alone is a role naming a structure that is not there.
+//
+// Both values are asserted, not just the chosen row's. A listbox in which only
+// the selection answers announces the rest as plain rows, which is the exact
+// failure core.SelectedOff exists to prevent one widget over.
+func TestListRowDemoAnnouncesItsSelectionAsAState(t *testing.T) {
+	mgr := newApp(t)
+	openLesson(t, mgr, "ListRow & Avatar")
+
+	tapRow(t, mgr, "June Gopher")
+	cur := tree(t, mgr)
+
+	box := findNode(cur, func(n *node) bool {
+		return n.Style != nil && n.Style.AccessibilityRole == "listbox"
+	})
+	if box == nil {
+		t.Fatal("no role=listbox in the tree — every option under the roster is an orphan, " +
+			"and an orphan option is the structure-that-is-not-there failure")
+	}
+
+	options := findNodes(box, func(n *node) bool {
+		return n.Style != nil && n.Style.AccessibilityRole == "option"
+	})
+	if len(options) != len(teamMembers) {
+		t.Fatalf("%d options under the listbox, want %d", len(options), len(teamMembers))
+	}
+
+	on, off := 0, 0
+	for i, n := range options {
+		switch n.Style.AccessibilitySelected {
+		case "true":
+			on++
+		case "false":
+			off++
+		default:
+			t.Errorf("option %d states %q — an option that says nothing is announced as one "+
+				"that cannot be chosen", i, n.Style.AccessibilitySelected)
+		}
+		// The name must have stopped moving: the state lives in the state now.
+		if strings.Contains(n.Style.AccessibilityLabel, ", selected") {
+			t.Errorf("option %d still spells the state into its name (%q) — that is the "+
+				"fallback for a row with no role to carry it", i, n.Style.AccessibilityLabel)
+		}
+	}
+	if on != 1 {
+		t.Errorf("%d options are selected, want exactly 1", on)
+	}
+	if off != len(teamMembers)-1 {
+		t.Errorf("%d options say they are unselected, want %d — the quiet ones read as "+
+			"furniture beside the chosen row", off, len(teamMembers)-1)
+	}
+
+	assertNoConcerns(t)
+}
+
 // A flattened tree announces its depths, and the list around it owns them.
 //
 // core.Style.AccessibilityNestingLevel had no consumer anywhere in the
@@ -952,6 +1012,42 @@ func TestCompassDemoDistinguishesWaitingFromAbsent(t *testing.T) {
 	}
 	if !hasTextContaining(cur, "Received=false") {
 		t.Fatal("the live panel should show the flags it is explaining")
+	}
+
+	assertNoConcerns(t)
+}
+
+// The permission half of the same lesson, in the state a test is always in:
+// no host attached, so nothing can grant anything.
+//
+// Unavailable rather than Unknown is the assertion that matters. The check is
+// asynchronous, so the obvious implementation leaves a headless run sitting on
+// the zero value forever — which is exactly the state the screen draws
+// "Checking…" for. permission.send short-circuits instead, because "there is
+// no platform to ask" is what Unavailable means, and a Go test is one of the
+// three places (with a static export and an unwired embedder) that is really
+// in it.
+//
+// The lesson must also offer no button here: an "ask" that cannot ask is the
+// dead control the four-value Status exists to prevent.
+func TestCompassDemoReportsLocationAsUnavailableWithNoHost(t *testing.T) {
+	mgr := newApp(t)
+	openLesson(t, mgr, "Sensors: the compass")
+
+	cur := tree(t, mgr)
+	if !hasTextContaining(cur, "permission.Location — unavailable") {
+		t.Fatal("a headless run should resolve the permission immediately, not sit on the " +
+			"zero value drawing its placeholder")
+	}
+	if hasTextContaining(cur, "Checking…") {
+		t.Fatal("the check never resolved; a permission-gated screen would spin forever " +
+			"under test")
+	}
+	if findNode(cur, func(n *node) bool {
+		return n.Type == "Button" && n.Props["label"] == "Use my location"
+	}) != nil {
+		t.Fatal("an ask button on a platform that cannot grant anything — the button is " +
+			"only for Prompt, which is the one status where asking does something")
 	}
 
 	assertNoConcerns(t)

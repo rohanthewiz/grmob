@@ -412,16 +412,37 @@ Other notes:
   may be set at once; the renderers wire them as one gesture recognizer, so
   a long press never also fires the tap.
 - `Selected` tints the row with the theme's `Surface` (override with
-  `SelectedStyle`) and appends `", selected"` to the accessibility label.
-  `Chip` and `Calendar` moved that state onto
-  [`core.AccessibilitySelected`](concepts/styling-and-theming.md#accessibilityselected);
-  this row deliberately did not, because the state is scoped by role on both
-  web targets and a row is not a control. `RoleButton` is true only of a
-  tappable row and would make it a *foreign child* of any `role="list"` it sits
-  in; `RoleListItem` is the honest description and ARIA defines neither state
-  attribute for it (a selectable collection item is an `option` in a `listbox`,
-  which `core.Role` does not carry). So the suffix stays until the vocabulary
-  has the pair that fits.
+  `SelectedStyle`). How the state is *announced* depends on `Selectable`.
+- `Selectable` makes the row one choice in a listbox: it takes `RoleOption` and
+  states
+  [`core.AccessibilitySelected`](concepts/styling-and-theming.md#accessibilityselected)
+  for **both** values of `Selected`, so a reader says "selected" on the chosen
+  row and "not selected" on the rest rather than passing over them silently.
+
+    ```go
+    core.List(
+        core.AccessibilityRole(core.RoleListBox),       // the caller's half
+        components.ListRow{Title: "Weekly",  Selectable: true, Selected: plan == weekly},
+        components.ListRow{Title: "Monthly", Selectable: true, Selected: plan == monthly},
+    )
+    ```
+
+    Opt-in for the same reason `NestingLevel` is: an `option` is owned by a
+    `listbox`, a row cannot see its own container, and an orphan `option` names
+    a structure that is not there.
+
+    Without it the row falls back to appending `", selected"` to the
+    accessibility label — which is what this widget did for three versions,
+    because until `core.RoleOption` existed no role it could take would carry
+    the state. `RoleButton` is true only of a tappable row and would make it a
+    *foreign child* of any `role="list"` it sits in; `RoleListItem` is the
+    honest description of a row and ARIA defines no selection state for it. The
+    suffix says the true thing in the weaker place: once, inside a name that is
+    meant to be stable.
+
+    The two web targets write `role="option"` and `aria-selected`. Neither
+    native names a listbox or an option, but both announce the *state* on any
+    node, so the row still reads as chosen on device.
 - `NestingLevel` is the same table's other answer, and it lands. A depth's
   role is `listitem` — one of the three ARIA defines `aria-level` for, and the
   honest description of a row — so the row states its depth and becomes the
@@ -444,6 +465,13 @@ Other notes:
     `role="list"` must not also be a `role="button"`, so a tappable row in an
     outline announces as an item at a depth rather than as a control — the same
     foreign-child rule as above, from the other side.
+
+    `NestingLevel` and `Selectable` ask for different roles and a node has one,
+    so a row is a depth *or* a choice. `Selectable` wins when both are set: an
+    `option` carries `aria-selected` and no `aria-level`, a `listitem` the
+    reverse, and the state is what the tap changes. ARIA's role for an item
+    that is both is `treeitem` inside a `tree`, which `core.Role` does not
+    carry.
 - No label is synthesized from `Title`. A row is a compound control whose
   slots carry meaning the widget cannot see, and labelling the container
   overrides how its children are announced, so naming the row is the

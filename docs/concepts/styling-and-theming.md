@@ -167,6 +167,7 @@ targets emit them verbatim as `role=`:
 |---|---|
 | tabular | `RoleTable` `RoleRowGroup` `RoleRow` `RoleColumnHeader` `RoleCell` |
 | collections | `RoleList` `RoleListItem` |
+| selectable collections | `RoleListBox` `RoleOption` |
 | tabs | `RoleTab` `RoleTabList` |
 | landmarks | `RoleBanner` `RoleNavigation` `RoleSearch` `RoleToolbar` |
 | live regions | `RoleStatus` `RoleAlert` `RoleLog` |
@@ -210,10 +211,34 @@ so, because a widget that wraps a tappable row in a tappable card would
 otherwise announce two nested buttons. `AccessibilityHidden` wins over a role
 for the same reason it wins over a label.
 
-**A structural role owns what is inside it.** The tabular five and the
-collection pair are not labels on a container — they are claims about what it
-holds. `role="list"` says its children are listitems; `role="table"` says its
-children are rows, or rowgroups holding rows. A reader acts on that claim: it
+The **listbox pair** is the collection pair's selectable cousin, and the
+difference is not a shade of meaning: `aria-selected` is scoped to `gridcell`,
+`option`, `row`, `tab` and `columnheader` and *not* to `listitem`, so a list
+item that says it is chosen says it into a void on both web targets. A list is
+content; a listbox is a control, and only the control side has the state. That
+is why `components.ListRow` spelled `", selected"` into its own accessible name
+for three versions of the widget — `RoleButton` would have made it a foreign
+child of the enclosing list, and `RoleListItem` cannot carry the state at all.
+`ListRow.Selectable` is the door this pair opened.
+
+A listbox in ARIA's full pattern also takes keyboard focus and moves an active
+option with the arrow keys. `core.Role` is a vocabulary and nothing in `core`
+stamps a `tabindex` or reads an arrow key, so that half is the author's on the
+web; on both phones it costs nothing, because VoiceOver and TalkBack navigate a
+collection by swipe. Neither native names a listbox or an option at all — both
+spell a chosen item as the *state* instead, and honour it on any node.
+
+An `option` takes `aria-selected` and no `aria-level`; a `listitem` takes
+`aria-level` and no `aria-selected`. A row is therefore one or the other, never
+both. ARIA's role for an item that is both is `treeitem` inside a `tree`, which
+`core.Role` deliberately does not carry: a tree is a third pattern with its own
+expansion state and keyboard contract, and nothing here has one.
+
+**A structural role owns what is inside it.** The tabular five and the two
+collection pairs are not labels on a container — they are claims about what it
+holds. `role="list"` says its children are listitems; `role="listbox"` says its
+children are options; `role="table"` says its children are rows, or rowgroups
+holding rows. A reader acts on that claim: it
 announces a count, it offers item-by-item navigation, it reads structure rather
 than text.
 
@@ -370,11 +395,14 @@ the ownership rule exists to prevent.
 
 One cost, stated because it is real: a row inside a `role="list"` must not also
 be a `role="button"`, so a tappable row in an outline announces as an item at a
-depth rather than as a control. That is the same foreign-child rule that keeps
-[`AccessibilitySelected`](#accessibilityselected) off `ListRow`, read from the
-other side — and it is the reason this field landed where the selection could
-not. A depth's role is `listitem`, one of aria-level's three; a selection's is
-`option`, which `core.Role` does not carry.
+depth rather than as a control. That is the same foreign-child rule that kept
+[`AccessibilitySelected`](#accessibilityselected) off `ListRow` until
+`RoleOption` existed, read from the other side.
+
+The two are still exclusive, and now for a sharper reason than availability: a
+depth's role is `listitem`, one of aria-level's three, and a selection's is
+`option`, which takes `aria-selected` and no level. A row is a depth *or* a
+choice — `ListRow.Selectable` is where that precedence is written down.
 
 #### `AccessibilitySelected`
 
@@ -410,7 +438,7 @@ the same switch on the role:
 
 | role | attribute |
 |---|---|
-| `tab`, `row`, `columnheader` | `aria-selected` |
+| `option`, `tab`, `row`, `columnheader` | `aria-selected` |
 | `button` (or a `core.Button` node) | `aria-pressed` |
 | anything else | nothing at all |
 
@@ -418,6 +446,12 @@ ARIA has two words because it draws a real distinction. Selection is *one of
 these* — a tab among tabs, and choosing one unchooses the rest. Pressed is
 *this one, on or off* — a toggle answering only for itself. A filter chip is
 pressed; a tab is selected.
+
+`option` is the arm a row reaches for. It is the only role in the vocabulary
+that lets a *collection item* carry a selection — `listitem`, which describes
+the same visual row, is not scoped for either attribute — and it is why
+`components.ListRow.Selectable` exists and why the widget appended `",
+selected"` to its own name before it did.
 
 That is why `components.SegmentedControl` becomes a tab strip with two props
 and no new field: give the row `RoleTabList` and the segment template

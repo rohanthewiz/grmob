@@ -838,6 +838,7 @@ const GrMob = (() => {
         const value = style.AccessibilitySelected || "";
         if (!value) return ["", ""];
         switch (style.AccessibilityRole) {
+            case "option":
             case "tab":
             case "row":
             case "columnheader":
@@ -2694,6 +2695,152 @@ const GrMob = (() => {
         return { handle };
     })();
 
+    // The browser half of Go's permission package. Answers the "permission"
+    // system event and reports back over GrMobWASM.HostEvent as the
+    // "permission" host event.
+    //
+    // # A browser cannot be asked, only used
+    //
+    // This is the host where the two commands are genuinely different
+    // operations, and where one of them mostly cannot be honoured.
+    //
+    //   check     navigator.permissions.query({name}) — a real read, no UI,
+    //             answering "granted" | "denied" | "prompt" in exactly the
+    //             words Go's Status carries
+    //   request   there is no such API. A page obtains camera, microphone or
+    //             location by *calling the feature* — getUserMedia,
+    //             geolocation.getCurrentPosition — and the browser puts the
+    //             prompt up as a side effect of that call.
+    //
+    // So a request here does the smallest thing that actually prompts, and
+    // hands back whatever came of it. For the media devices that is a
+    // getUserMedia whose tracks are stopped the instant it resolves: the
+    // prompt is the point, the stream is not, and a live track left running
+    // is a recording indicator the user did not ask for. For geolocation it
+    // is a single getCurrentPosition.
+    //
+    //   permission     request becomes
+    //   ------------   ---------------------------------------------------
+    //   camera         getUserMedia({video:true}), tracks stopped
+    //   microphone     getUserMedia({audio:true}), tracks stopped
+    //   location       geolocation.getCurrentPosition, result discarded
+    //   storage        unavailable — a page reaches files through an <input>
+    //                  or the file-system access API, both of which are a
+    //                  gesture rather than a permission, so there is nothing
+    //                  to ask for and nothing to read back
+    //
+    // The cost is stated rather than hidden: a granted request has actually
+    // opened the camera for a moment, and a refused one is reported as
+    // "denied" whether the user pressed Block or dismissed the prompt,
+    // because a NotAllowedError does not say which. Both are the browser's
+    // limits and not this file's choices.
+    const permission = (() => {
+        // Go's Permission constants, mapped to the Permissions API descriptor
+        // name where one exists. A permission with no descriptor is not
+        // queryable and is answered "unavailable" — see the storage row above.
+        const DESCRIPTORS = {
+            camera: "camera",
+            microphone: "microphone",
+            location: "geolocation",
+            storage: null,
+        };
+
+        function report(kind, status) {
+            const host = window.GrMobWASM;
+            if (!host || typeof host.HostEvent !== "function") return;
+            host.HostEvent("permission", JSON.stringify({ kind, status }));
+        }
+
+        // A query result, or "unavailable" for anything this browser cannot
+        // answer. Chrome and Safari disagree about which descriptors exist —
+        // Firefox has no "camera" at all — and query() *throws* a TypeError
+        // for a name it does not know rather than resolving to a state, so
+        // the catch is the common path on some browsers and not an edge case.
+        function query(kind) {
+            const name = DESCRIPTORS[kind];
+            if (!name || !navigator.permissions
+                || typeof navigator.permissions.query !== "function") {
+                return Promise.resolve("unavailable");
+            }
+            return navigator.permissions.query({ name })
+                .then((s) => s.state)
+                .catch(() => "unavailable");
+        }
+
+        function check(kind) {
+            query(kind).then((status) => report(kind, status));
+        }
+
+        // getUserMedia's prompt, with the stream discarded. The tracks are
+        // stopped in both settled paths because a resolved promise means a
+        // live capture device: leaving it running would keep the browser's
+        // recording indicator lit for a page that only wanted an answer.
+        function askMedia(kind, constraints) {
+            const md = navigator.mediaDevices;
+            if (!md || typeof md.getUserMedia !== "function") {
+                report(kind, "unavailable");
+                return;
+            }
+            md.getUserMedia(constraints).then((stream) => {
+                stream.getTracks().forEach((t) => t.stop());
+                report(kind, "granted");
+            }).catch((err) => {
+                // NotAllowedError is a refusal; NotFoundError and
+                // OverconstrainedError mean the device is not there at all,
+                // which is Unavailable rather than Denied — the distinction
+                // Go's two statuses exist to draw, since only one of them has
+                // a fix in the browser's settings.
+                const name = (err && err.name) || "";
+                report(kind, (name === "NotFoundError" || name === "OverconstrainedError"
+                    || name === "NotReadableError") ? "unavailable" : "denied");
+            });
+        }
+
+        function askLocation() {
+            if (!navigator.geolocation
+                || typeof navigator.geolocation.getCurrentPosition !== "function") {
+                report("location", "unavailable");
+                return;
+            }
+            navigator.geolocation.getCurrentPosition(
+                () => report("location", "granted"),
+                (err) => {
+                    // PERMISSION_DENIED is 1; POSITION_UNAVAILABLE and TIMEOUT
+                    // are failures of the *fix* rather than of the permission,
+                    // so they fall back to a query — the page may well be
+                    // authorised and simply indoors.
+                    if (err && err.code === 1) { report("location", "denied"); return; }
+                    check("location");
+                },
+                { timeout: 10000, maximumAge: Infinity },
+            );
+        }
+
+        function request(kind) {
+            switch (kind) {
+                case "camera": askMedia("camera", { video: true }); break;
+                case "microphone": askMedia("microphone", { audio: true }); break;
+                case "location": askLocation(); break;
+                // Nothing to ask for. Answered rather than dropped, so a
+                // screen waiting on it stops waiting.
+                case "storage": report("storage", "unavailable"); break;
+            }
+        }
+
+        // The "permission" system event's dispatcher. An unknown kind or
+        // command is dropped, matching every host's contract for unknown
+        // events.
+        function handle(cmd) {
+            if (!Object.prototype.hasOwnProperty.call(DESCRIPTORS, cmd.kind)) return;
+            switch (cmd.command) {
+                case "check": check(cmd.kind); break;
+                case "request": request(cmd.kind); break;
+            }
+        }
+
+        return { handle };
+    })();
+
     // The browser half of core's lifecycle event (core/lifecycle.go): is
     // the app on screen. The Page Visibility API is the one signal a page
     // gets that means what a phone's foreground/background means — a
@@ -2727,6 +2874,7 @@ const GrMob = (() => {
         showToast,
         audio,
         heading,
+        permission,
     };
 })();
 
@@ -2750,6 +2898,11 @@ window.GrMobSystemEvent = function (name, payloadJSON) {
         // core's sensor plumbing (core/heading.go): start/stop for one named
         // kind. Today the only kind is "heading".
         GrMob.heading.handle(JSON.parse(payloadJSON));
+        return;
+    }
+    if (name === "permission") {
+        // Go's permission package: check/request for one named capability.
+        GrMob.permission.handle(JSON.parse(payloadJSON));
         return;
     }
     if (name === "open_url") {
@@ -2801,20 +2954,3 @@ function waitForWasm() {
     }
 }
 waitForWasm();
-
-
-window.GrMobRequestPermission = function (permission, callback) {
-    if (permission === "camera") {
-        navigator.mediaDevices.getUserMedia({ video: true })
-            .then(stream => {
-                // Permissão concedida
-                stream.getTracks().forEach(track => track.stop()); // parar stream após teste
-                callback(true);
-            })
-            .catch(err => {
-                console.warn("Camera permission denied:", err);
-                callback(false);
-            });
-    }
-    // poderás adicionar outros casos como 'microphone', 'geolocation' etc.
-}

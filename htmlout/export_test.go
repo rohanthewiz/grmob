@@ -908,12 +908,15 @@ func TestHiddenBeatsRole(t *testing.T) {
 // checked only at the values it admits is not checked at all. A role that
 // starts writing a state it should not is exactly as wrong as one that stops
 // writing a state it should — aria-selected on a listitem is invalid ARIA,
-// which a reader drops, so the announcement is silently lost either way.
+// which a reader drops, so the announcement is silently lost either way. That
+// pair is the sharpest case in the vocabulary: `option` admits the attribute
+// and `listitem`, the role that looks like its synonym, does not.
 func TestSelectedStateBecomesTheAttributeTheRoleCallsFor(t *testing.T) {
 	// ARIA's own scoping, restated here rather than read out of the exporter:
 	// a test that derived the answer from ariaSelected would agree with any
 	// mistake it made.
 	want := map[core.Role]string{
+		core.RoleOption:       "aria-selected",
 		core.RoleTab:          "aria-selected",
 		core.RoleRow:          "aria-selected",
 		core.RoleColumnHeader: "aria-selected",

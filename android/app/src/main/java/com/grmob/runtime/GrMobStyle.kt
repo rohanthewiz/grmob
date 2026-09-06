@@ -498,6 +498,14 @@ fun SemanticsPropertyReceiver.grMobRole(kind: String) {
         // No Compose analog. See the note above on why they are spelled out.
         "table", "rowgroup", "row", "cell" -> {}
         "list", "listitem" -> {}
+        // A listbox and one option in it. Compose's Role has no member for
+        // either, and the loss is smaller than the empty arm suggests: what a
+        // chosen row most needs said is the *state*, and grMobSelected below
+        // sets `selected` on any node without asking what contains it.
+        // Missing is only the container's word for what the choice is among —
+        // which TalkBack, navigating by swipe rather than by arrow key, does
+        // not use the way a browser does.
+        "listbox", "option" -> {}
         "banner", "navigation", "search", "toolbar" -> {}
         // Compose's Role has Button, Checkbox, Switch, RadioButton, Tab,
         // Image and DropdownList, and no Link — the one place SwiftUI's

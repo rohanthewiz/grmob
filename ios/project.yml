@@ -33,6 +33,15 @@ targets:
         # requires TLS for every non-local host.
         NSAppTransportSecurity:
           NSAllowsLocalNetworking: true
+        # Go's permission package (App/Permissions.swift). These are not
+        # optional documentation: iOS *crashes* the app when a prompt would
+        # appear and its usage-description key is absent, so a shell that
+        # ships permission.Request without them fails at the one moment it is
+        # being exercised. One key per Permission constant.
+        NSCameraUsageDescription: Demonstrates permission.Camera. Nothing is captured or stored.
+        NSMicrophoneUsageDescription: Demonstrates permission.Microphone. Nothing is recorded or stored.
+        NSLocationWhenInUseUsageDescription: Demonstrates permission.Location, and lets the compass report true north instead of magnetic north.
+        NSPhotoLibraryUsageDescription: Demonstrates permission.Storage. Nothing is read or written.
     settings:
       PRODUCT_BUNDLE_IDENTIFIER: com.grmob.demo
       # gomobile's generated glue is Objective-C; the app is Swift-only, but

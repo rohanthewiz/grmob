@@ -1,10 +1,10 @@
 // Loads the real wasm/grmob-runtime.js into a controlled context.
 //
 // The runtime is a classic browser script, not a module: it declares
-// `const GrMob = (() => {...})()` at the top level and, at the bottom, calls
-// waitForWasm() and assigns window.GrMobRequestPermission. So it cannot be
-// imported — it has to be *evaluated* with the globals a page would have
-// already provided, which is exactly what node:vm is for.
+// `const GrMob = (() => {...})()` at the top level and, at the bottom, assigns
+// window.GrMobSystemEvent and calls waitForWasm(). So it cannot be imported —
+// it has to be *evaluated* with the globals a page would have already
+// provided, which is exactly what node:vm is for.
 //
 // Nothing here modifies the file under test. The one addition is a single
 // appended statement that publishes GrMob onto the context, because a
@@ -117,6 +117,21 @@ export function loadRuntime({ mountId = "app" } = {}) {
     // The page's own `window.window === window` identity, which the runtime
     // does not rely on but any future code reading window.document would.
     sandbox.globalThis = sandbox;
+
+    // The browser's `navigator`, empty by default.
+    //
+    // Empty is a real browser rather than a stub of one: it models a page
+    // where none of the permission-adjacent APIs exist, which is what the
+    // permission host's guards are written for and which no other test in
+    // this directory needed. A test that wants a browser with a Permissions
+    // API, a camera or a geolocation provider installs those onto
+    // `rt.sandbox.navigator` itself, the same way heading_test.mjs installs a
+    // requestPermission to model iOS Safari.
+    //
+    // It must exist as a binding either way: the runtime reads
+    // `navigator.permissions` directly, and a missing global is a
+    // ReferenceError rather than the falsy value the guard expects.
+    sandbox.navigator = {};
 
     // The browser's orientation-sensor constructor. Present as a bare
     // function by default — which is a phone that needs no permission prompt,

@@ -21,6 +21,7 @@ import org.json.JSONObject
  *   core.OpenURL    ──▶ "open_url"  ──▶ Intent(ACTION_VIEW)
  *   core.Audio*     ──▶ "audio"     ──▶ AudioPlayer (Media3, in GrMobAudioService)
  *   core.StartHeading ▶ "sensor"    ──▶ HeadingSensor (SensorManager)
+ *   permission.Check  ▶ "permission"──▶ Permissions (runtime permissions)
  *
  * Before this existed the events were emitted into a nil Go handler and
  * vanished on both natives — only the WASM host had a sink — so an app
@@ -78,6 +79,12 @@ object SystemEvents {
             // Sensors carry their own "kind", so one event name covers the
             // compass today and location tomorrow without a second arm here.
             "sensor" -> HeadingSensor.handle(data)
+            // Authorization, which unlike the four above has an answer: each
+            // command is replied to over the host-event channel. Attached from
+            // MainActivity rather than here, because a runtime permission
+            // needs the Activity this object deliberately does not keep — see
+            // Permissions.kt.
+            "permission" -> Permissions.handle(data)
         }
     }
 

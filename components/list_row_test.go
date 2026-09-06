@@ -272,13 +272,16 @@ func TestListRowWithNoDepthClaimsNothing(t *testing.T) {
 	}
 }
 
-// The depth and the selection suffix are independent, and the pairing is the
-// point: this widget says yes to one and no to the other, and the reason is a
-// property of the roles rather than of the widget.
+// A depth does not bring the selection state in with it, and the pairing is
+// the point: the two fields get opposite answers, and the reason is a property
+// of the roles rather than of the widget.
 //
-// A depth's role is `listitem`, one of the three ARIA defines aria-level for.
-// A selection's role is `option`, which core.Role does not carry — so the state
-// still rides the accessible name here while the depth gets a field.
+// A depth's role is `listitem`, one of the three ARIA defines aria-level for,
+// and ARIA defines no selection state for it. So a nested row that is also
+// chosen still spells the state into its accessible name — the fallback the
+// widget has always had, kept because the alternative here is silence. A row
+// that wants the state stated properly asks for Selectable and gives up the
+// depth; TestSelectableTakesTheRowsOneRoleFromTheDepth is that case.
 func TestDepthDoesNotBringTheSelectionInWithIt(t *testing.T) {
 	ctx := core.NewContext()
 	ctx.BeginRenderPass()
@@ -301,5 +304,136 @@ func TestDepthDoesNotBringTheSelectionInWithIt(t *testing.T) {
 	if n.Style.AccessibilityLabel != "Matthew, selected" {
 		t.Errorf("name = %q, want the suffix a row still has to spell",
 			n.Style.AccessibilityLabel)
+	}
+}
+
+// --- Selectable -------------------------------------------------------------
+
+// The row's first real state, four sessions after the widget started asking
+// for one.
+//
+// Both values are stated, not just the chosen one. A listbox in which only the
+// selected option answers announces the rest as plain rows — the same failure
+// core.SelectedOff was added for one widget over, where a tab strip's four
+// quiet tabs read as furniture beside one real tab.
+func TestSelectableRowStatesBothSidesOfTheChoice(t *testing.T) {
+	ctx := core.NewContext()
+	ctx.BeginRenderPass()
+
+	for _, tc := range []struct {
+		on   bool
+		want core.SelectedState
+	}{
+		{true, core.SelectedOn},
+		{false, core.SelectedOff},
+	} {
+		n := ListRow{Title: "Weekly", Selectable: true, Selected: tc.on}.Render(ctx)
+
+		if n.Style.AccessibilityRole != core.RoleOption {
+			t.Errorf("selected=%v: role = %q, want %q — a state with no role is dropped "+
+				"by both web targets exactly as a name on a generic element is",
+				tc.on, n.Style.AccessibilityRole, core.RoleOption)
+		}
+		if n.Style.AccessibilitySelected != tc.want {
+			t.Errorf("selected=%v: state = %q, want %q", tc.on,
+				n.Style.AccessibilitySelected, tc.want)
+		}
+	}
+}
+
+// The suffix is a fallback and stops the moment the state has a real home.
+//
+// Appending it to a Selectable row would announce the selection twice — once
+// inside the row's name and once as the control state — and would put a
+// changing word in a name that is meant to be stable, which is the whole
+// complaint core.SelectedState was written to answer.
+func TestSelectableRowDropsTheNameSuffix(t *testing.T) {
+	ctx := core.NewContext()
+	ctx.BeginRenderPass()
+
+	row := ListRow{Title: "Weekly", AccessibilityLabel: "Weekly",
+		Selected: true, Selectable: true}
+	n := row.Render(ctx)
+
+	if got := n.Style.AccessibilityLabel; got != "Weekly" {
+		t.Errorf("name = %q, want the caller's own label — the state is stated "+
+			"separately now and the name must stop moving", got)
+	}
+
+	// The same row without the opt-in still spells it, because there is still
+	// nowhere else for it to go.
+	row.Selectable = false
+	if got := row.Render(ctx).Style.AccessibilityLabel; got != "Weekly, selected" {
+		t.Errorf("unroled row name = %q, want the suffix it has always had", got)
+	}
+}
+
+// Selectable takes the row's one role, and the depth is what loses.
+//
+// A node has one role and the two candidates are exclusive: `option` carries
+// aria-selected and not aria-level, `listitem` the reverse. A row asking for
+// both is describing a container that is a list and a listbox at once, which
+// does not exist — so the state wins, because it is what the row is being
+// tapped to change, and a depth inside a container that has not claimed to be
+// a list is decoration.
+//
+// The level field is not merely ignored downstream; it is never set, so no
+// exporter has to know about a combination core does not produce.
+func TestSelectableTakesTheRowsOneRoleFromTheDepth(t *testing.T) {
+	ctx := core.NewContext()
+	ctx.BeginRenderPass()
+
+	n := ListRow{
+		Title:        "Matthew",
+		Selectable:   true,
+		Selected:     true,
+		NestingLevel: 3,
+	}.Render(ctx)
+
+	if n.Style.AccessibilityRole != core.RoleOption {
+		t.Errorf("role = %q, want %q", n.Style.AccessibilityRole, core.RoleOption)
+	}
+	if n.Style.AccessibilityNestingLevel != 0 {
+		t.Errorf("depth = %d, want it dropped: ARIA defines aria-level for listitem "+
+			"and not for option, so a level here would describe nothing",
+			n.Style.AccessibilityNestingLevel)
+	}
+}
+
+// A row that asks for nothing claims nothing — the ownership rule, checked
+// from the selection's side.
+//
+// An `option` with no `listbox` around it is the orphan-role failure one row
+// down from an orphan `listitem`, and a row cannot see its container. So the
+// state is opt-in too: every list in every existing app keeps rendering the
+// unroled Boxes it always did.
+func TestAnUnselectableRowStatesNoSelection(t *testing.T) {
+	ctx := core.NewContext()
+	ctx.BeginRenderPass()
+
+	n := ListRow{Title: "Weekly", Selected: true}.Render(ctx)
+
+	if n.Style.AccessibilityRole != "" {
+		t.Errorf("role = %q on a row that did not ask to be an option",
+			n.Style.AccessibilityRole)
+	}
+	if n.Style.AccessibilitySelected != "" {
+		t.Errorf("state = %q on an unroled Box — both web targets drop it, so it would "+
+			"be announced on the natives alone", n.Style.AccessibilitySelected)
+	}
+}
+
+// The look is the same either way: Selectable is an accessibility opt-in, not
+// a second selected style. A caller adding it to an existing row must not find
+// the row repainting itself.
+func TestSelectableDoesNotChangeTheSelectedLook(t *testing.T) {
+	ctx := core.NewContext()
+	ctx.BeginRenderPass()
+
+	plain := ListRow{Title: "Weekly", Selected: true}.Render(ctx)
+	option := ListRow{Title: "Weekly", Selected: true, Selectable: true}.Render(ctx)
+
+	if plain.Style.Background != option.Style.Background {
+		t.Errorf("background differs: %q vs %q", plain.Style.Background, option.Style.Background)
 	}
 }

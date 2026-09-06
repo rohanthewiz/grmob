@@ -170,8 +170,28 @@
       `deviceorientationabsolute`/`webkitCompassHeading` in the browser, and
       an honest `available: false` on a desktop — which is a different answer
       from "no reading yet", and a screen draws different things for the two
+- [x] **Permissions** (`permission`) — `Check` never prompts and `Request`
+      does, which is the whole reason they are two functions: a check that
+      prompted would put the OS dialog up as a side effect of a screen
+      mounting, and a request that only checked would leave a button that does
+      nothing. Shaped like the compass minus the refcounting — `Check`/`Request`
+      out over the `"permission"` system event, the answer back over the
+      `"permission"` host event into a record a screen reads with
+      `permission.Current` or `hooks.UsePermission` — so there is no callback
+      to leak and no request id to correlate. Four statuses, and the fourth is
+      the one usually left out: `Denied` is fixable in the system settings and
+      `Unavailable` is not (no camera, an iOS restriction, an undeclared
+      Android permission, no host attached at all), so a screen offering "Open
+      Settings" for both sends someone to a page with no switch on it. The
+      spellings are the W3C Permissions API's, for the reason the roles are
+      ARIA's. It is deliberately *not* a second way to do what
+      `core.StartHeading` already does — it exists for the rationale shown
+      before a dialog and for the status read back to draw a settings row,
+      the second of which the compass named a session before it landed
+      (`Heading.HasTrue` needs location authorization and the compass host
+      prompts for nothing on purpose)
 - [x] Accessibility labels, hints and announced selection state
-- [x] Accessibility *roles* (`core.AccessibilityRole`, twenty ARIA-spelled
+- [x] Accessibility *roles* (`core.AccessibilityRole`, twenty-two ARIA-spelled
       values) — `role=` on both web targets, traits on SwiftUI and semantics
       on Compose where those vocabularies reach, and an explicit no-op arm
       where they do not; pinned in both natives by `mobile/verify/role_test.go`.
@@ -187,7 +207,11 @@
       natives disagree about which half they can say — Compose has `Role.Tab`
       and no strip, SwiftUI `.isTabBar` and no tab. There is deliberately no
       `RoleTabPanel`: a panel is one end of a relationship whose other half is
-      an IDREF a `Style` cannot carry, and `core.TabView` owns both ends
+      an IDREF a `Style` cannot carry, and `core.TabView` owns both ends.
+      `RoleListBox`/`RoleOption` are the newest pair and the one that unblocked
+      a widget rather than described one: `aria-selected` is scoped to
+      `option` and not to `listitem`, so a selectable row had no role that
+      could carry its state — see `ListRow.Selectable` below
 - [x] A widget can say **this control is on** (`core.AccessibilitySelected`) —
       `aria-selected` or `aria-pressed` on both web targets (the role picks,
       which is `aria-level`'s switch running the other way), `selected`
@@ -196,7 +220,13 @@
       other four as furniture, so `SelectedOff` is a value with a job. Adopted
       by `Chip` (and through it `SegmentedControl` and `ChipStrip`) and by
       `Calendar`'s day cells, both of which dropped the `", selected"` suffix
-      they had been spelling into the accessible *name* for want of a slot
+      they had been spelling into the accessible *name* for want of a slot.
+      `ListRow` was the holdout for three more sessions and is now the third:
+      `Selectable` makes the row an `option`, the caller puts `RoleListBox` on
+      the container, and the suffix goes. A row is a choice *or* a depth, never
+      both — `option` takes the state and no `aria-level`, `listitem` the
+      reverse — and ARIA's role for an item that is both (`treeitem` in a
+      `tree`) is deliberately not in the vocabulary
 - [x] Accessibility *heading levels* (`core.AccessibilityHeadingLevel`) —
       `aria-level` on both web targets and `.accessibilityHeading` on SwiftUI;
       Compose has no level to map onto and says so. `AppBar`'s title takes 1

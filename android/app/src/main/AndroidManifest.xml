@@ -15,6 +15,27 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
 
+    <!-- Go's permission package (app/Permissions.kt). A runtime permission
+         that is not declared here is never granted and never prompts:
+         requestPermissions returns DENIED immediately with nothing on screen.
+         One entry per permission.Permission constant, and Permissions.declared
+         reports a missing one as "unavailable" rather than "denied", since it
+         is a build-time fact no user can fix in Settings.
+
+         READ_MEDIA_IMAGES is Android 13's replacement for the storage read;
+         READ_EXTERNAL_STORAGE stays for older releases, capped with
+         maxSdkVersion so 13+ does not carry a permission it stopped granting.
+         Location asks for the coarse permission alone — see the note in
+         permission.Location on why one Go constant means the narrower thing on
+         every platform. -->
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
+    <uses-permission
+        android:name="android.permission.READ_EXTERNAL_STORAGE"
+        android:maxSdkVersion="32" />
+
     <application
         android:label="GrMob"
         android:allowBackup="true"

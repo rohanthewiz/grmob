@@ -39,22 +39,17 @@ import "github.com/rohanthewiz/grmob/core"
 // state, it renders Selected and reports taps. Selected rows take the theme's
 // Surface as a background tint — the palette's only muted *fill*, and still
 // the right one now that Border exists, since Border is a stroke role; there
-// is no dedicated Selected entry — and, when an AccessibilityLabel
-// is set, get ", selected" appended so the state is announced along with the
-// name.
+// is no dedicated Selected entry. How the state reaches a screen reader is the
+// next section's subject and depends on Selectable.
 //
-// # Why this row still spells its state into the name
-//
-// Chip and Calendar used to do the same and no longer do: core.Style has
-// core.AccessibilitySelected now, which every renderer announces as a control
-// being on. This row deliberately did not follow them, and the reason is that
-// a row is not a control.
+// # How the state is announced, and why it took a role to do it
 //
 // The state is scoped by role on both web targets, because ARIA scopes the
 // attributes it becomes: a state on an unroled element is dropped by screen
 // readers exactly as an accessible name on one is — the failure core.RoleImg
-// exists to close. A ListRow is a Box. So adopting the field here means
-// giving every row a role, and both candidates are wrong:
+// exists to close. A ListRow is a Box, so announcing a selection properly
+// means giving the row a role, and for three versions of this widget every
+// candidate was wrong:
 //
 //	RoleButton    true only for a tappable row, and a role="button" child
 //	              makes the row a *foreign child* of any role="list" it sits
@@ -62,28 +57,36 @@ import "github.com/rohanthewiz/grmob/core"
 //	              container may then take no list role at all. One widget's
 //	              announcement would cost the enclosing list its shape.
 //	RoleListItem  the honest description of a row, and ARIA defines neither
-//	              state attribute for it. A selectable item in a collection is
-//	              an `option` inside a `listbox`, and core.Role carries
-//	              neither — nor the roving focus a listbox promises.
+//	              state attribute for it. `aria-selected` is scoped to
+//	              gridcell, option, row, tab, columnheader and rowheader, and
+//	              a list item is none of them.
 //
-// So the suffix stays until the vocabulary has the pair that fits. It still
-// says the true thing; it says it in the weaker of the two places.
+// So the row wrote ", selected" into its own accessible name instead — the
+// true thing said in the weaker of the two places, announced once, inside a
+// string that is meant to be stable.
 //
-// # Depth, which the same table says yes to
+// core.RoleOption and core.RoleListBox are the door that was left, and
+// Selectable is how a caller walks through it. A row that takes the option
+// role carries a real core.AccessibilitySelected, every renderer announces it
+// as a state rather than as part of a name, and the suffix does not appear.
 //
-// NestingLevel is the other half of that table, and it lands where the
-// selection could not. A depth's role is `listitem` — one of the three ARIA
-// defines aria-level for — and `listitem` is the row's honest description; the
-// selection's role is `option`, which core.Role does not carry. Two fields, one
-// widget, opposite answers, and the reason is a property of the roles rather
-// than of this widget's willingness.
+// A row that is *not* Selectable is unchanged: it still appends the suffix
+// when it has both a label and a selection, because it still has no role that
+// could carry the state, and saying the true thing weakly beats not saying it.
 //
-// It is opt-in, and that is the ownership rule rather than caution: a
-// `listitem` with no `list` around it is a role naming a structure that is not
-// there, which core/role.go calls worse than no role at all. A row cannot see
-// its container, so it cannot make that true by itself — the caller sets
-// RoleList on the enclosing list and the depth on each row, and a row that is
-// asked for neither is exactly the unroled Box it has always been.
+// # Two roles, one row, and the caller picks
+//
+// NestingLevel and Selectable both give the row a role and the two roles are
+// exclusive — see Selectable for the precedence, which is a fact about the
+// roles rather than about this widget's willingness.
+//
+// Both are opt-in, and that is the ownership rule rather than caution: a
+// `listitem` with no `list` around it, or an `option` with no `listbox`, is a
+// role naming a structure that is not there, which core/role.go calls worse
+// than no role at all. A row cannot see its container, so it cannot make that
+// true by itself — the caller roles the enclosing collection and marks each
+// row to match, and a row that is asked for neither is exactly the unroled Box
+// it has always been.
 type ListRow struct {
 	// Leading is the control at the start of the row: a checkbox, an icon,
 	// an avatar. Nil renders nothing and costs no node.
@@ -109,13 +112,76 @@ type ListRow struct {
 	OnTap       func()
 	OnLongPress func()
 
-	// Selected drives the row's selected look and its accessibility suffix.
+	// Selected drives the row's selected look, and how the state is announced
+	// — as a real core.AccessibilitySelected when Selectable is set, and
+	// otherwise as a ", selected" suffix on AccessibilityLabel. See "How the
+	// state is announced" in the type comment for why there are two answers.
 	Selected bool
+
+	// Selectable says this row is one choice in a listbox: it takes
+	// core.RoleOption and states core.AccessibilitySelected for *both* values
+	// of Selected, so a reader announces "selected" and "not selected" rather
+	// than announcing the chosen row and passing silently over the rest. That
+	// is core.SelectedOff doing the job it exists for, one widget over from
+	// the tab strip whose argument it was written for.
+	//
+	// # The container is the caller's to role, and must be
+	//
+	// An `option` is owned by a `listbox` (see "A structural role owns what is
+	// inside it" in core/role.go). This widget renders one row and cannot see
+	// what it was put in, so set core.RoleListBox on the container yourself,
+	// or leave this field false. An orphan `option` is the "table with no
+	// rows" failure one row down.
+	//
+	//	core.List(
+	//	    core.AccessibilityRole(core.RoleListBox),
+	//	    ListRow{Title: "Weekly",  Selectable: true, Selected: plan == weekly,
+	//	            AccessibilityLabel: "Weekly", OnTap: choose(weekly)},
+	//	    ListRow{Title: "Monthly", Selectable: true, Selected: plan == monthly,
+	//	            AccessibilityLabel: "Monthly", OnTap: choose(monthly)},
+	//	)
+	//
+	// The same foreign-child rule applies as ever: a listbox holding a
+	// "Load more" footer or a section heading is not a listbox.
+	//
+	// # It wins over NestingLevel, and the depth is lost
+	//
+	// The two fields ask for different roles and a node has one. `option`
+	// takes aria-selected and not aria-level; `listitem` takes aria-level and
+	// not aria-selected. So a row setting both describes a container that is a
+	// list and a listbox at once, which does not exist, and this field is the
+	// half that wins: the state is what the row is being tapped to change,
+	// and a depth inside a container that has not claimed to be a list is
+	// decoration.
+	//
+	// ARIA does have a role carrying both — `treeitem` inside a `tree` — and
+	// core.Role deliberately does not, because a tree is a third pattern with
+	// its own expansion state and keyboard contract and nothing here has one.
+	// See the RoleListBox block in core/role.go.
+	//
+	// # What each target does with it
+	//
+	// The two web targets write role="option" and aria-selected. Neither
+	// native names a listbox or an option, but both announce the *state* on
+	// any node — a SwiftUI .isSelected trait, a Compose `selected` property —
+	// so the row still reads as chosen on device and it is only the
+	// container's word that is missing. Setting this therefore adds on every
+	// target and costs nothing on any.
+	//
+	// # What it does not buy
+	//
+	// The keyboard. A listbox in ARIA's full pattern takes focus, moves an
+	// active option with the arrow keys and reports which one through a roving
+	// tabindex; nothing in core stamps a tabindex or reads an arrow key, so
+	// that half is the author's on the web. On both phones it costs nothing —
+	// VoiceOver and TalkBack navigate a collection by swipe.
+	Selectable bool
 
 	// NestingLevel is how deep this row sits in a nested collection — 1 for a
 	// top-level item, 2 for one inside it, and on down with no ceiling. It
 	// makes the row a `listitem` at that depth; zero leaves it the unroled Box
-	// it has always been.
+	// it has always been. Ignored when Selectable is set, which takes the
+	// row's one role for `option` — see that field.
 	//
 	// # What it is for
 	//
@@ -164,9 +230,13 @@ type ListRow struct {
 	// a Surface background tint.
 	SelectedStyle []core.StyleProp
 
-	// AccessibilityLabel names the whole row for screen readers; when
-	// Selected, ", selected" is appended. AccessibilityHint describes what
-	// tapping does.
+	// AccessibilityLabel names the whole row for screen readers.
+	// AccessibilityHint describes what tapping does.
+	//
+	// A Selected row with no Selectable gets ", selected" appended, because
+	// the name is then the only place the state can be said; a Selectable row
+	// leaves the name alone and states the selection properly. See "How the
+	// state is announced" in the type comment.
 	//
 	// No label is synthesized from Title: a row is a compound control whose
 	// slots (a badge's amount, a trailing control's own name) carry meaning
@@ -206,15 +276,30 @@ func (r ListRow) Render(ctx *core.Context) *core.Node {
 		}
 	}
 
-	// Before the label, so the two arrive on the node in the order they are
-	// read: what this is, then what it is called. Both are style props and
-	// order does not affect the result, but a reader of this function should
-	// meet the role first for the same reason a screen reader does.
+	// The row's one role, and whatever second prop that role can carry. Before
+	// the label, so the props arrive on the node in the order they are read:
+	// what this is, then what it is called. Order does not affect the result —
+	// they are all style props — but a reader of this function should meet the
+	// role first for the same reason a screen reader does.
 	//
-	// The pair travels together — a depth with no role is dropped by every
-	// target that reads it, since ARIA scopes aria-level to three roles and
-	// both web exporters switch on exactly those.
-	if r.NestingLevel != 0 {
+	// Each pair travels together, because half of one is inert. A depth with
+	// no role is dropped by every target that reads it (ARIA scopes aria-level
+	// to three roles and both web exporters switch on exactly those), and a
+	// state with no role is dropped for the same reason one attribute over.
+	//
+	// The branch is an either/or rather than two ifs because a node has one
+	// role and the two candidates are exclusive; see the Selectable field for
+	// which wins and why the loser is the depth.
+	switch {
+	case r.Selectable:
+		items = append(items,
+			core.AccessibilityRole(core.RoleOption),
+			// SelectedWhen, not "set it only when on": an option that stays
+			// quiet while its neighbour says "selected" is announced as
+			// something that cannot be chosen at all.
+			core.AccessibilitySelected(core.SelectedWhen(r.Selected)),
+		)
+	case r.NestingLevel != 0:
 		items = append(items,
 			core.AccessibilityRole(core.RoleListItem),
 			core.AccessibilityNestingLevel(r.NestingLevel),
@@ -223,7 +308,11 @@ func (r ListRow) Render(ctx *core.Context) *core.Node {
 
 	if r.AccessibilityLabel != "" {
 		label := r.AccessibilityLabel
-		if r.Selected {
+		// The fallback, and only the fallback. A Selectable row has a real
+		// state on it, so appending here would announce the selection twice —
+		// once as part of the row's name and once as the control state — and
+		// would put a changing word inside a name that is meant to be stable.
+		if r.Selected && !r.Selectable {
 			label += ", selected"
 		}
 		items = append(items, core.AccessibilityLabel(label))

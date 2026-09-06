@@ -84,10 +84,11 @@ func TestRuntimeGuardsTheLevelsTheSameWay(t *testing.T) {
 //
 // The role list is ARIA's own scoping and not a shortlist: aria-selected is
 // defined for gridcell, option, row, tab, columnheader and rowheader, of which
-// core.Role carries three, and aria-pressed for button alone. The two near
-// misses are the ones a reader of the switch will wonder about — a `cell` is
-// not a gridcell and a `listitem` is not an option — so their absence is as
-// load-bearing as the arms that are there.
+// core.Role carries four, and aria-pressed for button alone. The near miss is
+// the one a reader of the switch will wonder about — a `cell` is not a
+// gridcell — and so is the pair the switch now splits: `option` is here and
+// `listitem`, which reads like its synonym, is deliberately not. Their absence
+// is as load-bearing as the arms that are there.
 //
 // The Button node type is the one arm that is not ARIA's: a core.Button
 // already is a button, which is what lets components.Chip carry a state
@@ -101,6 +102,8 @@ func TestRuntimeGuardsTheSelectedStateTheSameWay(t *testing.T) {
 		{`if (!value) return ["", ""];`,
 			"the zero value writing nothing at all, which is what every node in every " +
 				"existing tree carries"},
+		{`case "option":`, "the option arm — the one that lets a selectable row in a " +
+			"listbox announce its state, which is what components.ListRow.Selectable buys"},
 		{`case "tab":`, "the tab arm"},
 		{`case "row":`, "the row arm"},
 		{`case "columnheader":`, "the column-header arm"},

@@ -290,6 +290,63 @@ enable the compass" button is for.
 Below the hook, `core.CurrentHeading`/`core.OnHeading` are the un-scoped pair,
 for a subscriber that wants the reading without owning the sensor's lifetime.
 
+### Permissions: `UsePermission`
+
+A permission is a fourth kind of thing: it is *asked*, and the answer outlives
+the asking. The `permission` package is shaped like the sensor above minus the
+reference counting — two one-way channels with a record in between — so a
+screen reads state rather than holding a callback, and a prompt the user leaves
+standing for a minute strands nothing.
+
+```go
+switch hooks.UsePermission(ctx, permission.Location) {   // checks; never prompts
+case permission.Granted:     return mapView(ctx)
+case permission.Prompt:      return askButton()          // Request from a tap
+case permission.Denied:      return openSettingsHint()
+case permission.Unavailable: return nil
+default:                     return components.Skeleton{}   // the check is in flight
+}
+```
+
+**`Check` and `Request` are two operations and collapsing them is wrong in
+either direction.** A check that prompts puts the OS dialog on screen as a side
+effect of a screen mounting, which is the surest route to a permanent refusal;
+a request that only checks leaves a button that does nothing. The hook checks,
+and asking stays yours — from a gesture, because every platform here either
+requires that or punishes the alternative.
+
+**Four statuses, and the fourth is the one people leave out.** `Denied` is
+fixable in the system settings; `Unavailable` is not — a device with no camera,
+an iOS parental restriction, an Android permission the manifest never declared,
+an app with no host attached at all. A screen offering "Open Settings" for both
+sends someone to a page with no switch on it. `Unknown` is the zero value: the
+check is asynchronous, so the first pass has no answer and must draw a
+placeholder. A headless run — a Go test, a static export, an unwired embedder —
+resolves to `Unavailable` immediately rather than sitting on `Unknown`, so a
+permission-gated screen under test takes a real branch instead of spinning.
+
+**The status values are the W3C Permissions API's own spellings**, for the
+reason `core.Role`'s are ARIA's: the browser host then needs no mapping table,
+and iOS and Android each map their richer enums onto it.
+
+**Nothing tells an app that a permission changed while it was in the
+background.** A user can grant one in Settings and come back. The hook does not
+re-check on foreground — it cannot see whether its screen is still the one on
+top, and a stack of five screens would each fire a check on every resume — so
+pair it with `hooks.UseLifecycle` and call `permission.Check` yourself when the
+state turns `"active"`.
+
+**This is not a second way to do what a capability already does.**
+`core.StartHeading` makes the browser's motion prompt itself, deliberately, so
+there is no separate API to forget. `permission` exists for the two things that
+cannot serve: showing a rationale *before* the OS dialog, and reading a status
+back to draw a settings row. The compass is the case that named it — iOS
+reports `Heading.True` only once location has been granted, and the compass
+host prompts for nothing on purpose.
+
+Below the hook, `permission.Current`/`permission.On` are the un-scoped pair,
+`permission.IsGranted` the one-line read.
+
 ## Lifecycle & cleanup
 
 Background resources register cleanup with the context:

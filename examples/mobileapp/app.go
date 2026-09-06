@@ -140,6 +140,14 @@ func feedTab() core.View {
 			components.Separator{},
 			core.List(
 				core.FlexGrow(1),
+				// A listbox, because that is what this list is: one choice
+				// among several, and tapping a row changes which. The role has
+				// to be here rather than on the rows — an `option` is owned by
+				// a `listbox` and a row cannot see its container — and it is
+				// only sayable because this list holds nothing but rows. A
+				// "Load more" footer inside it would make it a foreign-child
+				// container and cost it the role (core/role.go).
+				core.AccessibilityRole(core.RoleListBox),
 				core.For(articles, func(n int, _ int) core.View {
 					title := fmt.Sprintf("Article %d", n)
 					if starred.Get() == n {
@@ -154,12 +162,15 @@ func feedTab() core.View {
 					// ListRow.SelectedStyle is the same conditional declared,
 					// which is better still because the widget owns it.)
 					// And the ", selected" suffix on the accessibility label
-					// was appended by hand in the same branch; ListRow owns
-					// that convention now, so the label here is just the
-					// name.
+					// was appended by hand in the same branch; ListRow owned
+					// that convention next, and now does not need it: with
+					// Selectable the row is an `option` carrying a real
+					// aria-selected, so the name stays the name and the state
+					// is announced as a state.
 					return core.Keyed(fmt.Sprintf("article-%d", n), components.ListRow{
 						Title:       title,
 						Selected:    selected.Get() == n,
+						Selectable:  true,
 						OnTap:       func() { selected.Set(n) },
 						OnLongPress: func() { starred.Set(n) },
 						Style: []core.StyleProp{

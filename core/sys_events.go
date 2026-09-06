@@ -31,6 +31,20 @@ func SetSystemEventHandler(fn func(name string, data map[string]any)) {
 	sysEventHandler = fn
 }
 
+// HasSystemEventHandler reports whether a host has registered a sink.
+//
+// It exists for the one caller that has to behave differently when nobody is
+// listening rather than merely have its event dropped: the permission package,
+// where "there is no platform to ask" is a real answer a screen must draw
+// (permission.Unavailable) and not the same thing as "the user has not decided
+// yet". Every other sender is fire-and-forget and correctly does not care —
+// a toast with no screen to draw on is a no-op, not a state.
+func HasSystemEventHandler() bool {
+	sysEventsMu.RLock()
+	defer sysEventsMu.RUnlock()
+	return sysEventHandler != nil
+}
+
 // SendSystemEvent delivers one event to the host, synchronously on the
 // caller's goroutine. The read is under RLock so senders never contend with
 // each other, only with the (rare) handler swap.

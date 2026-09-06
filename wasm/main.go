@@ -62,14 +62,6 @@ type jsPatchListener struct{}
 func (jsPatchListener) ApplyPatches(patches string) {
 	js.Global().Call("GrMobApplyPatches", patches)
 }
-func RequestPermission(p Permission, onResult func(granted bool)) {
-	js.Global().Call("GrMobRequestPermission", string(p), js.FuncOf(func(this js.Value, args []js.Value) any {
-		granted := args[0].Bool()
-		onResult(granted)
-		return nil
-	}))
-}
-
 func isDirty(this js.Value, args []js.Value) any {
 	return js.ValueOf(ctx.IsDirty())
 }
@@ -78,14 +70,6 @@ func renderAgain(this js.Value, args []js.Value) any {
 	out := manager.RenderAgain()
 	return js.ValueOf(out)
 }
-
-type Permission string
-
-const (
-	PermissionCamera      Permission = "camera"
-	PermissionMicrophone  Permission = "microphone"
-	PermissionGeolocation Permission = "geolocation"
-)
 
 func receiveEvent(this js.Value, args []js.Value) any {
 	id := args[0].String()

@@ -8,6 +8,7 @@ import UIKit
 ///     core.OpenURL    ──▶ "open_url"  ──▶ UIApplication.open
 ///     core.Audio*     ──▶ "audio"     ──▶ AudioPlayer (AVPlayer + the lock screen)
 ///     core.StartHeading ▶ "sensor"    ──▶ HeadingSensor (CLLocationManager)
+///     permission.Check  ▶ "permission"──▶ Permissions (AVFoundation/Photos/CL)
 ///
 /// Before this existed the events were emitted into a nil Go handler and
 /// vanished on both natives — only the WASM host had a sink — so an app
@@ -29,6 +30,7 @@ enum SystemEvents {
     static func attach(_ bridge: GrMobBridge, runtime: GrMobRuntime) {
         AudioPlayer.shared.report = { name, payload in runtime.hostEvent(name, payload) }
         HeadingSensor.shared.report = { name, payload in runtime.hostEvent(name, payload) }
+        Permissions.shared.report = { name, payload in runtime.hostEvent(name, payload) }
         bridge.setSystemEventListener { name, payload in
             // The callback runs on the Go goroutine that emitted the event.
             // Everything below is UIKit, which is main-actor only, so every
@@ -56,6 +58,10 @@ enum SystemEvents {
         // Sensors carry their own "kind", so one event name covers the compass
         // today and location tomorrow without a second arm here.
         case "sensor": HeadingSensor.shared.handle(object)
+        // Authorization, which unlike the four above has an answer: each
+        // command is replied to over the host-event channel. See
+        // Permissions.swift for why the mapping table lives there.
+        case "permission": Permissions.shared.handle(object)
         default: break
         }
     }

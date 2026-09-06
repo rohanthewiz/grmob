@@ -233,6 +233,7 @@ iOS simulator and Android emulator. The finished app is
 - `hooks/` – `UseInterval`, `UseTimeout`, `UseEffect`, `UseMemo`, `UseReducer`
 - `components/` – the widget library built on `core`
 - `forms/` – form state and validation: rules, cross-field checks, reveal policies, server errors
+- `permission/` – ask the platform for the camera, the microphone, location or the media store
 - `reconcile/` – the diff engine that turns two trees into a patch list
 - `render/` – the render manager: passes, dirty tracking, callback dispatch, patch pumping
 - `mobile/` – the gomobile-bindable bridge the native shells talk to
@@ -298,6 +299,7 @@ is in [docs/platforms/native.md](docs/platforms/native.md).
 - `UseEffect(ctx, fn, deps...)` – run after mount, and again when a dependency changes
 - `UseMemo(ctx, compute, deps...)` – cache a value until a dependency changes
 - `UseReducer(ctx, reducer, initial)` – state driven by dispatched actions
+- `UsePermission(ctx, p)` – the platform's current answer about one permission; checks on mount, never prompts
 
 ---
 

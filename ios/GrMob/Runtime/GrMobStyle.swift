@@ -720,6 +720,13 @@ private func grMobTraitsFor(_ role: String) -> AccessibilityTraits {
     // No SwiftUI trait names these.
     case "table", "rowgroup", "row", "cell": []
     case "list", "listitem": []
+    // A listbox and one option in it. SwiftUI names neither, and the loss is
+    // smaller than the empty arm suggests: what a chosen row most needs said
+    // is the *state*, and grMobSelectedTrait below adds .isSelected on any
+    // view without asking what contains it. Missing is only the container's
+    // word for what the choice is among — which VoiceOver, navigating by
+    // swipe rather than by arrow key, does not use the way a browser does.
+    case "listbox", "option": []
     case "banner", "navigation", "toolbar": []
     // Nor these: SwiftUI announces a change through
     // AccessibilityNotification, which is an imperative call at the moment of

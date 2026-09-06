@@ -131,6 +131,22 @@ func TestFeedTabListGestures(t *testing.T) {
 		t.Errorf("row tap patches don't update the selection status:\n%s", patches)
 	}
 
+	// The same tap end to end at the accessibility level, which is the half a
+	// status-line assertion cannot see. The list declares RoleListBox and each
+	// row is Selectable, so the tapped row's style patch must carry the
+	// selection as a *state* — and the label must not have grown a ", selected"
+	// suffix, because a row that can state it properly stops spelling it into
+	// its own name.
+	if !strings.Contains(patches, `"AccessibilitySelected":"true"`) {
+		t.Errorf("the tapped row's patch states no selection — core.RoleOption is what "+
+			"lets it, and without the state the row announces as an unchosen option:\n%s",
+			patches)
+	}
+	if strings.Contains(patches, "Article 1, selected") {
+		t.Errorf("the row still appends the state to its own name; the suffix is the "+
+			"fallback for a row with no role to carry it:\n%s", patches)
+	}
+
 	patches = mobile.TriggerCallback(mustFindT(t, "Row", "onLongPress"))
 	if !strings.Contains(patches, "Starred: Article 1") {
 		t.Errorf("row long-press patches don't update the starred status:\n%s", patches)
