@@ -263,6 +263,7 @@ func lessonThemeAnatomy() Lesson {
 				{"Success", th.Colors.SuccessColor()},
 				{"Warning", th.Colors.WarningColor()},
 				{"Border", th.Colors.BorderColor()},
+				{"ControlBorder", th.Colors.ControlBorderColor()},
 			}
 			swatches := []core.PropsAndChildren{core.Gap(6)}
 			for _, r := range roles {
@@ -293,23 +294,26 @@ core.BorderColor(t.Colors.BorderColor()) // late roles resolve through methods`)
 					"inspector's swatches wear a hairline. And Success is not Secondary even "+
 					"when a theme tints both the same green, as Default does: Secondary is a "+
 					"brand slot a theme may make teal (Material does — see for yourself below), "+
-					"while Success carries meaning. Border, Success and Warning arrived after "+
-					"the original seven roles, so read them through their resolver methods — "+
-					"BorderColor(), SuccessColor(), WarningColor() — and a theme written before "+
+					"while Success carries meaning. Border, ControlBorder, Success and Warning "+
+					"arrived after the original seven roles, so read them through their "+
+					"resolver methods — BorderColor(), ControlBorderColor(), SuccessColor(), "+
+					"WarningColor() — and a theme written before "+
 					"they existed degrades to the documented fallback instead of to no color at "+
 					"all. When you write a theme of your own, fill in Components.Button at "+
 					"minimum: ComponentDefaults has no resolvers, and a missing base is "+
 					"genuinely no styling."),
-				prose("One thing Border does not name: a text field's edge. A rule between "+
-					"rows is decoration and both bundled themes spend a very pale hex on it, "+
-					"while the edge that says this rectangle is a field you can type in is the "+
-					"only thing identifying a control — WCAG 1.4.11 puts a 3:1 floor under "+
-					"that, and neither Border passes it. So the field frame lives in "+
-					"Components.Input and Components.TextArea, where each theme states its "+
-					"own boundary tone, and a widget that wants to look like a field reads "+
-					"that base rather than the palette. It is also what let the web stop "+
-					"drawing the browser's own input border: resetting a rule nothing "+
-					"replaces would have left every field on the web an unmarked rectangle."),
+				prose("One thing Border does not name: the edge of a control. A rule between "+
+					"rows is decoration and both bundled themes spend a very pale hex on it "+
+					"(1.26:1 and 1.32:1), while the edge that says this rectangle is something "+
+					"you can operate is the only thing identifying it — WCAG 1.4.11 puts a 3:1 "+
+					"floor under that, and neither Border passes it. ControlBorder is the other "+
+					"half, and the swatches above show how far apart the two sit. It arrived a "+
+					"step behind the split: the field frames moved first and lived in "+
+					"Components.Input and Components.TextArea alone, with no palette role, "+
+					"because nothing else spent a boundary — until a quiet Chip's ring turned "+
+					"out to be one too. A second spender is what a role is for. The two "+
+					"component bases still state the hex directly, since a Style is a value "+
+					"and cannot call a resolver, and a test pins them to the role."),
 				demoPanel("Pick a bundled theme and read its data — nothing is installed here; installing is the next lesson.",
 					components.SegmentedControl{
 						Style:     segWrap,

@@ -1093,6 +1093,141 @@ func TestHiddenBeatsTheSelectedState(t *testing.T) {
 	}
 }
 
+// aria-expanded is written for the roles ARIA defines it for and no others,
+// and the list is not the selection's.
+//
+// Restated here rather than read out of ariaExpanded, for the reason the
+// selection census gives: a test that derived the answer from the exporter
+// would agree with any mistake it made. The value of restating is higher here
+// than usual, because the two guards look interchangeable and are wrong at
+// four roles in the two directions the loop below covers — option takes a
+// selection and not a disclosure, link and listbox the reverse.
+func TestExpandedStateIsScopedToItsOwnRoles(t *testing.T) {
+	want := map[core.Role]bool{
+		core.RoleButton:       true,
+		core.RoleLink:         true,
+		core.RoleListBox:      true,
+		core.RoleRow:          true,
+		core.RoleColumnHeader: true,
+		core.RoleTab:          true,
+	}
+
+	for _, role := range core.Roles() {
+		for _, state := range core.ExpandedStates() {
+			n := &core.Node{Type: "Box", Style: &core.Style{
+				AccessibilityRole:     role,
+				AccessibilityExpanded: state,
+			}}
+			out := ExportHTML(n)
+			pair := `aria-expanded="` + string(state) + `"`
+
+			if want[role] {
+				if !strings.Contains(out, pair) {
+					t.Errorf("role %q + %q: want %s\n%s", role, state, pair, out)
+				}
+				continue
+			}
+			if strings.Contains(out, "aria-expanded") {
+				t.Errorf("role %q + %q wrote aria-expanded — ARIA does not define it for "+
+					"this role, so a reader drops it\n%s", role, state, out)
+			}
+		}
+	}
+
+	// The half that a shared guard would get wrong, asserted as a pair so the
+	// divergence is stated rather than implied by two absences elsewhere.
+	if want[core.RoleOption] {
+		t.Error("option takes aria-selected and not aria-expanded: an option is a leaf " +
+			"choice, and the thing that expands is the listbox around it")
+	}
+	if !want[core.RoleLink] || !want[core.RoleListBox] {
+		t.Error("link and listbox take aria-expanded and neither selection attribute")
+	}
+}
+
+// The disclosure pattern is a button, so the node type has to carry it.
+//
+// core.Button sets no AccessibilityRole and is the element ARIA's own
+// disclosure and accordion patterns are built out of — so without this arm the
+// attribute would be defined for exactly the node that could not have it.
+// Same rule that gives a Chip its aria-pressed and a Modal its dialog role.
+func TestAButtonNodeCarriesAnExpandedStateWithoutARole(t *testing.T) {
+	n := &core.Node{
+		Type:  "Button",
+		Props: map[string]any{"label": "What is a hook"},
+		Style: &core.Style{AccessibilityExpanded: core.ExpandedClosed},
+	}
+	if out := ExportHTML(n); !strings.Contains(out, `aria-expanded="false"`) {
+		t.Errorf("a core.Button with no role should still take a disclosure state:\n%s", out)
+	}
+
+	// And it does not extend past the one type. A named Box is given
+	// core.RoleGroup so its name is legal, and `group` is *not* one of the
+	// roles above — which is the asymmetry with the name worth pinning: the
+	// exporter can supply a role that makes a name announceable and there is
+	// no role it could supply that makes a disclosure one.
+	box := &core.Node{Type: "Box", Style: &core.Style{
+		AccessibilityLabel:    "What is a hook",
+		AccessibilityExpanded: core.ExpandedClosed,
+	}}
+	out := ExportHTML(box)
+	if !strings.Contains(out, `role="group"`) {
+		t.Errorf("the supplied group went missing:\n%s", out)
+	}
+	if strings.Contains(out, "aria-expanded") {
+		t.Errorf("a group is not a disclosure; the state must be dropped:\n%s", out)
+	}
+}
+
+// The zero value writes nothing, which is the state every node in every
+// existing golden is in — and the role survives it, because a button that does
+// not say whether it is open is still a button.
+func TestUnstatedDisclosureWritesNoAttribute(t *testing.T) {
+	n := &core.Node{Type: "Box", Style: &core.Style{AccessibilityRole: core.RoleButton}}
+	out := ExportHTML(n)
+	if strings.Contains(out, "aria-expanded") {
+		t.Errorf("ExpandedUnset wrote an attribute:\n%s", out)
+	}
+	if !strings.Contains(out, `role="button"`) {
+		t.Errorf("the role went missing with the state:\n%s", out)
+	}
+}
+
+// aria-hidden prunes the subtree, so a disclosure state on the same node
+// describes an element no reader can reach — the exclusion the role, the level
+// and the selection are all already held to.
+func TestHiddenBeatsTheExpandedState(t *testing.T) {
+	n := &core.Node{Type: "Box", Style: &core.Style{
+		AccessibilityHidden:   true,
+		AccessibilityRole:     core.RoleButton,
+		AccessibilityExpanded: core.ExpandedOpen,
+	}}
+	if out := ExportHTML(n); strings.Contains(out, "aria-expanded") {
+		t.Errorf("aria-hidden should win alone:\n%s", out)
+	}
+}
+
+// The three state attributes coexist on one element without colliding.
+//
+// A menu button that is both the current tab and showing its submenu is the
+// shape core.ExpandedState's doc names as the reason the two states are two
+// fields rather than one. Nothing in the framework builds it, which is exactly
+// why it is asserted: the two guards are separate switches over the same role,
+// and a "simplification" that merged them would still pass every test above.
+func TestASelectionAndADisclosureCoexistOnOneNode(t *testing.T) {
+	n := &core.Node{Type: "Box", Style: &core.Style{
+		AccessibilityRole:     core.RoleTab,
+		AccessibilitySelected: core.SelectedOn,
+		AccessibilityExpanded: core.ExpandedOpen,
+	}}
+	out := ExportHTML(n)
+	for _, want := range []string{`aria-selected="true"`, `aria-expanded="true"`} {
+		if !strings.Contains(out, want) {
+			t.Errorf("missing %s — the two states are independent facts:\n%s", want, out)
+		}
+	}
+}
+
 // A label is user-originated (it reaches the DSL from app state like any other
 // string), so it goes out through the same escaping every other attribute value
 // does. A raw double quote is the attribute-breakout character.

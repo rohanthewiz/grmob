@@ -6,10 +6,31 @@ import (
 	"github.com/rohanthewiz/grmob/core"
 )
 
-// heading returns the style of the Text node carrying s, which is where every
-// heading in this package lives — on the words, never on the row around them.
+// heading returns the style of the node carrying the heading for s.
+//
+// Two shapes, checked in that order, because the package has one exception to
+// its own rule.
+//
+// The rule is that a heading rides the *words*: the Text node reading s, never
+// the row around it, because a row also holds a badge or a chevron and a
+// heading spanning one is named "▸ What is a hook".
+//
+// The exception is components.Accordion, whose header row has to be a button
+// so it can carry aria-expanded — and a button's children are presentational,
+// so a heading on the words inside it would be pruned. Its tier rides a Box
+// wrapped around the row, which is named explicitly (an explicit
+// AccessibilityLabel is what overrides content-derived naming, and is the
+// whole reason that shape works). So an explicitly-named heading node wins the
+// lookup where there is one, and the Text node answers everywhere else.
 func heading(t *testing.T, n *core.Node, s string) core.Style {
 	t.Helper()
+	if named := findFirst(n, func(n *core.Node) bool {
+		return n.Style != nil &&
+			n.Style.AccessibilityRole == core.RoleHeading &&
+			n.Style.AccessibilityLabel == s
+	}); named != nil {
+		return *named.Style
+	}
 	node := findText(n, s)
 	if node == nil {
 		t.Fatalf("no Text node reading %q in the rendered tree", s)

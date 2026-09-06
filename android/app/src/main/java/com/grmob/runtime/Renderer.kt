@@ -77,6 +77,12 @@ import androidx.compose.runtime.SideEffect
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalView
+// The disclosure pair. Compose says "expanded" with actions rather than with a
+// property, which is why these land in gestureModifier and not in
+// GrMobStyle.boxModifier's semantics block — see grMobDisclosure.
+import androidx.compose.ui.semantics.collapse
+import androidx.compose.ui.semantics.expand
+import androidx.compose.ui.semantics.semantics
 import androidx.core.view.WindowCompat
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextStyle
@@ -463,13 +469,66 @@ private fun gestureModifier(node: GrMobNode): Modifier {
     // what a disabled surface should look like.
     if (node.isDisabled()) return Modifier
     val runtime = LocalGrMobRuntime.current
-    return Modifier.combinedClickable(
-        onClick = { if (onClick.isNotEmpty()) runtime.click(onClick) },
-        onLongClick = if (onLongPress.isEmpty()) null else {
-            { runtime.click(onLongPress) }
-        },
-    )
+    return Modifier
+        .combinedClickable(
+            onClick = { if (onClick.isNotEmpty()) runtime.click(onClick) },
+            onLongClick = if (onLongPress.isEmpty()) null else {
+                { runtime.click(onLongPress) }
+            },
+        )
+        .grMobDisclosure(node.style?.accessibilityExpanded ?: "") {
+            if (onClick.isNotEmpty()) runtime.click(onClick)
+        }
 }
+
+/**
+ * Go's core.ExpandedState onto Compose semantics.
+ *
+ * # Why this is the one accessibility field that is not in boxModifier
+ *
+ * Every other one — the label, the hint, the role, the selected state — is a
+ * semantics *property*: a fact about the node that GrMobStyle carries and the
+ * style layer can state on its own. Compose has no expanded property. What it
+ * has is a pair of **actions**, `expand()` and `collapse()`, which Compose maps
+ * onto AccessibilityNodeInfo's ACTION_EXPAND and ACTION_COLLAPSE, and which
+ * TalkBack offers as "double-tap to expand" / "to collapse".
+ *
+ * An action has to *do* something, and the only thing that can open this
+ * disclosure is the callback the node's own tap already runs. So the mapping
+ * needs the click ID, which lives on the node rather than on the style — which
+ * is why it is here, in the gesture layer, and not beside grMobSelected.
+ *
+ * The consequence is worth stating plainly rather than treating as a detail: a
+ * node that declares an expanded state and registers no onClick gets nothing.
+ * That is the honest outcome. An expand action Compose cannot perform would be
+ * announced to TalkBack, accepted, and do nothing, which is worse than a
+ * disclosure that is merely quiet — and a disclosure with no handler cannot be
+ * opened by touch either, so there is no reader being denied something a
+ * sighted user has.
+ *
+ * # Which action is offered is the inverse of the state
+ *
+ * A *closed* disclosure offers `expand` and an open one offers `collapse`. The
+ * transposition is the bug this shape invites, and it is invisible on any
+ * screen: both arms compile, both wire the same callback, and both toggle the
+ * section correctly on activation. Only the announcement is wrong — a shut
+ * accordion inviting the reader to collapse it.
+ *
+ * ExpandedUnset ("") adds no modifier at all, so the several hundred nodes of
+ * a tree that are not disclosures pay nothing. An unrecognized value falls into
+ * the same arm rather than guessing, on the rule the rest of this file follows.
+ *
+ * The two literals are Go's core.ExpandedState verbatim; the values are ARIA's
+ * spellings and this platform compares against them directly, the way
+ * grMobSelected does. mobile/verify/expanded_test.go holds these arms against
+ * core.ExpandedStates().
+ */
+private fun Modifier.grMobDisclosure(state: String, toggle: () -> Unit): Modifier =
+    when (state) {
+        "false" -> this.semantics { expand { toggle(); true } }
+        "true" -> this.semantics { collapse { toggle(); true } }
+        else -> this
+    }
 
 /**
  * core.ContentMode -> Compose ContentScale. An absent or unknown mode is Fit,

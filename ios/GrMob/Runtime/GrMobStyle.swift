@@ -709,6 +709,31 @@ private func grMobHeadingLevel(_ s: GrMobStyle) -> AccessibilityHeadingLevel {
 /// reads it, VoiceOver never does — so filling it from an ARIA wiring string
 /// would silently turn every hand-built tab into a test handle and still
 /// announce nothing. mobile/verify/idref_test.go pins both halves.
+///
+/// # AccessibilityExpanded is not read here either, for a different reason
+///
+/// Go's core.ExpandedState — whether a disclosure is open — crosses the bridge
+/// and is deliberately unparsed. This is not the IDREF case above, where the
+/// concept has no meaning on the platform: a disclosure means exactly what it
+/// means everywhere, SwiftUI ships a `DisclosureGroup`, and VoiceOver does
+/// announce its state. What is missing is a *property to put it in*.
+/// `AccessibilityTraits` has no expanded member, and `DisclosureGroup`
+/// announces itself by writing an accessibility **value** — a localized string
+/// SwiftUI supplies from its own bundle.
+///
+/// The near miss is therefore `accessibilityValue`, and taking it would mean
+/// this renderer emitting the literal "expanded" or "collapsed" in English,
+/// for every app, in every locale. That is the same move `components.Chip`
+/// deleted when it stopped appending ", selected" to its accessibility label:
+/// a state written into a text channel, announced in the wrong place and in a
+/// language nobody chose. The value slot also belongs to the app — a slider
+/// or a field that states its own value would have it overwritten.
+///
+/// So this platform says nothing, and Compose — which has `expand`/`collapse`
+/// semantics actions — says what it can. That asymmetry is the reverse of the
+/// usual one for this framework, where the natives agree and the web is the
+/// strict target. mobile/verify/expanded_test.go pins the note, the absence of
+/// a parse, and the property it is turning down.
 private func grMobTraitsFor(_ role: String) -> AccessibilityTraits {
     switch role {
     case "heading", "columnheader": .isHeader

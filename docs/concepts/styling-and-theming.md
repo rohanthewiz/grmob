@@ -85,7 +85,7 @@ owns.
 The text fields joined that set only once both bundled themes gave
 `Components.Input` and `Components.TextArea` a border — resetting one nothing
 replaces would have left every web field an unmarked rectangle, which is what
-both phones already showed. The tone is a *control boundary* and not the
+both phones already showed. The tone is `Colors.ControlBorder` and not the
 palette's `Border` hairline: a divider between rows may be 1.26:1 and a rule
 that identifies a control may not, since WCAG 1.4.11 puts a 3:1 floor under it.
 `components.DatePicker`'s trigger inherits the whole frame off the same
@@ -142,6 +142,7 @@ core.AccessibilityRole(core.RoleHeading)         // says what the node *is*
 core.AccessibilityHeadingLevel(2)                // and how deep it sits
 core.AccessibilityNestingLevel(2)                // the same question for a nested list item
 core.AccessibilitySelected(core.SelectedOn)      // and whether this control is *on*
+core.AccessibilityExpanded(core.ExpandedOpen)    // ...and whether this disclosure is *open*
 core.AccessibilityID("app-panel")                // names this element so another can point at it
 core.AccessibilityControls("app-panel")          // ...and the pointing
 ```
@@ -526,6 +527,89 @@ carries a selection and fits any container — the four that do are `option`,
 `tab`, `row` and `columnheader`, and choosing among them would be the exporter
 deciding what your node is. A name is a fact you already stated; a role is not.
 
+#### `AccessibilityExpanded`
+
+Whether a disclosure is **open** — the accordion section showing its body, the
+twisty that has been turned. It is the third state field, and it exists
+because a control can be on *and* open at the same time.
+
+```go
+core.Button(title, toggle,
+    core.AccessibilityExpanded(core.ExpandedWhen(open.Get())),
+)
+```
+
+`core.ExpandedState` has the same three-valued shape as `SelectedState`, and
+for the same reason arriving from the other end — there "off" and "not
+selectable" were two facts a bool spells the same; here it is "closed" and
+"not a disclosure":
+
+| | |
+|---|---|
+| `ExpandedUnset` | the zero value. Not a disclosure, no attribute — what every node was before the field existed |
+| `ExpandedOpen` | the section that is showing |
+| `ExpandedClosed` | a disclosure that could be open and is not |
+
+The third is again the one that would be lost, and losing it is worse here than
+for a selection: a collapsed section that says nothing is announced as an
+ordinary button, so a reader is told they can press it and *not* that there is
+anything behind it. "Collapsed" is the whole of what invites the press. Use
+`core.ExpandedWhen(bool)`.
+
+**It is a separate type from `SelectedState`, deliberately.** The two carry
+identical values, and reusing the type would compile and render. It is turned
+down on two grounds, and the second is the one you will hit:
+
+- They are *independent facts about one node*. A menu button can be both the
+  current tab and showing its submenu. Two fields typed the same are two fields
+  you can transpose, and `AccessibilitySelected(ExpandedOpen)` would type-check.
+- They are *scoped to different roles*. ARIA's lists overlap and do not match:
+
+  | role | selection | disclosure |
+  |---|---|---|
+  | `button` | `aria-pressed` | ✅ |
+  | `tab`, `row`, `columnheader` | `aria-selected` | ✅ |
+  | `option` | `aria-selected` | ❌ |
+  | `link`, `listbox` | ❌ | ✅ |
+
+  An `option` is a leaf choice — the thing that expands is the `listbox` around
+  it. A shared guard would be wrong at four roles, and wrong silently.
+
+A `core.Button` needs no role, on the same rule that gives a `Modal` its dialog
+role. That is load-bearing rather than convenient: ARIA's disclosure pattern
+*is* a button, so the node type that most wants this attribute is exactly the
+one that carries no `core.Role`.
+
+**There is no `RoleGroup`-shaped rescue here**, and the asymmetry with the name
+is the same one the selection has. `group` is not among the roles above, so
+there is no value the exporter could supply that both fits any container and
+carries a disclosure. A widget that wants this attribute has to *be* a control
+— which is what `components.Accordion`'s header row became when it adopted it,
+along with ARIA's own accordion nesting:
+
+```
+Box  role=heading  aria-level=3  aria-label="What is a hook"
+  Row  role=button  aria-expanded="false"  aria-label="What is a hook"
+    "▸"  "What is a hook"        presentational, inside the button
+```
+
+**The near miss: a control that opens a *dialog* is not expanded.**
+`aria-expanded` says the content is here, in the page, and can be shown or
+hidden. A trigger that opens a modal is a different relationship — ARIA spells
+that `aria-haspopup`, which this vocabulary does not carry — so
+`components.DatePicker`'s trigger, which looks exactly like a disclosure and
+even flips a glyph, deliberately states nothing.
+
+| target | what it becomes |
+|---|---|
+| Android | the `expand()` / `collapse()` semantics action the state calls for, wired to the node's own click callback. TalkBack offers "double-tap to expand" on a closed one. A node with a state and no `OnClick` gets neither — an action nothing can perform is worse than none |
+| iOS | nothing. `AccessibilityTraits` has no expanded member, and SwiftUI's own `DisclosureGroup` announces through a *localized accessibility value* this framework has no channel for. Emitting an English "expanded" from the renderer is the move `components.Chip`'s `", selected"` name suffix was deleted for |
+| HTML / WASM | `aria-expanded`, per the role table above |
+
+That split runs the opposite way to the usual one, where the two phones agree
+and the web is the strict target. Here the web and Android both say something
+and iOS says nothing.
+
 #### `AccessibilityID` and `AccessibilityControls`
 
 The vocabulary's only two **references**. Everything else on `Style` is a
@@ -701,8 +785,8 @@ A `Theme` centralizes the design system:
 type Theme struct {
     Colors     ColorPalette      // Primary, Secondary, Background, Surface,
                                  // TextPrimary, TextSecondary, Error,
-                                 // Border, Success, Warning, and the four
-                                 // on-light tones
+                                 // Border, ControlBorder, Success, Warning,
+                                 // and the four on-light tones
     Typography Typography        // Title, Subtitle, Body, Caption (each a Style)
     Spacing    SpacingScale      // XS SM MD LG XL
     Components ComponentDefaults // base Style per widget: Button, Card, Input, ...
@@ -728,7 +812,8 @@ Name the *role*, never the literal, and one theme swap restyles the tree:
 | `Background`, `Surface` | page ground and the raised/muted **fill** on top of it |
 | `TextPrimary`, `TextSecondary` | ink and de-emphasized ink |
 | `Error`, `Success`, `Warning` | the status triad — meaning, not brand |
-| `Border` | strokes and hairlines: rules between rows, card outlines — a **divider**, not a control boundary |
+| `Border` | strokes and hairlines: rules between rows, card outlines — a **divider** |
+| `ControlBorder` | the edge that says *this rectangle is a control*: a field frame, a quiet chip's ring — a **boundary** |
 | `PrimaryOnLight`, `SuccessOnLight`, `WarningOnLight`, `ErrorOnLight` | the same four roles again, dark enough to be read as **ink** on a light surface |
 
 Two distinctions the names do not make obvious:
@@ -740,26 +825,43 @@ Two distinctions the names do not make obvious:
   tint both the same green. `Secondary` is a brand slot a theme is free to
   make teal or magenta (`MaterialTheme` makes it teal), while `Success`
   carries meaning — a magenta "saved" badge is a bug.
-- **`Border` is not a field's edge.** It used to name input borders too. A
-  rule *between* things is decoration and both bundled themes spend a very
-  pale hex on it (1.26:1 and 1.32:1 against white); the edge that says *this
-  rectangle is a field you can type in* is the only thing identifying a
-  control, which WCAG 1.4.11 puts a 3:1 floor under. One hex cannot be both,
-  for the same reason a role's fill tone cannot also be its ink. So the field
-  frames live in `Components.Input` and `Components.TextArea`, where each theme
-  states its own boundary tone, and the palette carries no role for it —
-  nothing outside those two spends it, and a widget that wants to look like a
-  text field reads the `Input` base itself, which is how `DatePicker`'s trigger
-  gets its radius, its fill and its edge in one prop.
+- **`Border` is not `ControlBorder`.** A rule *between* things is decoration
+  and both bundled themes spend a very pale hex on it (1.26:1 and 1.32:1
+  against white); the edge that says *this rectangle is something you can
+  operate* is the only thing identifying a control, which WCAG 1.4.11 puts a
+  3:1 floor under. One hex cannot be both, for the same reason a role's fill
+  tone cannot also be its ink.
 
-`Border`, `Success` and `Warning` were added on 2026-08-31, after the other
-seven. A theme written before that leaves them empty, and an empty color is
-not "the default" — it is *no color*. So read those three through their
-resolver methods, which fall back to `core.FallbackBorder` / `FallbackSuccess`
-/ `FallbackWarning` (`DefaultTheme`'s own values):
+  | | `Border` | `ControlBorder` |
+  |---|---|---|
+  | `DefaultTheme` | `#E5E5EA` 1.26:1 | `#8E8E93` 3.26:1 |
+  | `MaterialTheme` | `#E0E0E0` 1.32:1 | `#757575` 4.61:1 |
+
+  The split shipped in two steps and the second one is the instructive half.
+  The field frames moved first and lived in `Components.Input` and
+  `Components.TextArea` alone, with no palette role, because nothing else
+  spent a boundary. `components.Chip` is what made that false: a quiet chip's
+  ring is not a rule between things, it is the only edge a filter control has,
+  and it was drawing it out of the divider role. A second spender is what a
+  role is for.
+
+  The two component bases still state their frame as a literal — a `Style` is
+  a value and cannot call a resolver — so they are pinned to the role by
+  `TestBundledFieldFramesAreTheControlBorderRole`. A widget that wants to look
+  like a text field still reads the `Input` base itself, which is how
+  `DatePicker`'s trigger gets its radius, its fill and its edge in one prop;
+  the role is for a widget that wants only the edge.
+
+`Border`, `Success` and `Warning` were added on 2026-08-31 and `ControlBorder`
+on 2026-09-06, after the other seven. A theme written before that leaves them
+empty, and an empty color is not "the default" — it is *no color*. So read
+those four through their resolver methods, which fall back to
+`core.FallbackBorder` / `FallbackControlBorder` / `FallbackSuccess` /
+`FallbackWarning` (`DefaultTheme`'s own values):
 
 ```go
-core.BorderColor(ctx.Theme().Colors.BorderColor())   // not .Colors.Border
+core.BorderColor(ctx.Theme().Colors.BorderColor())          // not .Colors.Border
+core.BorderColor(ctx.Theme().Colors.ControlBorderColor())   // a control's edge
 bg := ctx.Theme().Colors.SuccessColor()
 ```
 

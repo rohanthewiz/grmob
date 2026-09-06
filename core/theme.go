@@ -49,16 +49,53 @@ type ColorPalette struct {
 	// under. One hex cannot be both, for the same reason a role's fill tone
 	// cannot also be its ink — see the on-light tones below.
 	//
-	// So the field frames live in Components.Input and Components.TextArea,
-	// where each theme states its own control-boundary tone, and this role
-	// keeps the dividers. ColorPalette carries no role for the boundary
-	// because nothing outside those two component defaults spends it: a
-	// widget that wants to look like a text field reads the Input base
-	// itself (components.DatePicker does exactly that), which is also how it
-	// inherits the radius and the fill.
+	// So this role keeps the dividers and ControlBorder below carries the
+	// boundary. That split used to have no second field in it — the frames
+	// lived in Components.Input and Components.TextArea alone, and the note
+	// here said no palette role was needed because nothing outside those two
+	// component defaults spent one. components.Chip is what made that false:
+	// a quiet chip's hairline is not a rule *between* things, it is the only
+	// edge a filter control has, and it was drawing it out of this role.
 	//
 	// Read via BorderColor.
 	Border string
+
+	// ControlBorder is the boundary tone: the edge that says *this rectangle
+	// is a control*. A text field's frame, a quiet chip's ring — anything a
+	// reader has to make out before they can know there is something here to
+	// operate.
+	//
+	// It is Border's other half and exists because one hex cannot do both
+	// jobs, which is the same shape the on-light tones' argument has one
+	// property over. A divider is decoration and a pale one is a legitimate
+	// choice; a boundary that identifies a control carries WCAG 1.4.11's 3:1
+	// floor. Both bundled themes spend 1.26:1 and 1.32:1 on Border
+	// accordingly, so a control drawn in it is close to invisible *as a
+	// control*:
+	//
+	//	                    Default              Material
+	//	Border              #E5E5EA  1.26:1      #E0E0E0  1.32:1
+	//	ControlBorder       #8E8E93  3.26:1      #757575  4.61:1
+	//
+	// (against each theme's own white Background; see the two themes for the
+	// second backdrop each measures against.)
+	//
+	// # Why this arrived a session after the frames did
+	//
+	// Components.Input and Components.TextArea state their frame as a literal
+	// and still do — a Style is a value, so a component default cannot call a
+	// resolver — and while those two were the only spenders, a role would have
+	// been a name with one call site. The second spender is what a role is
+	// for. The two must not drift, so a bundled theme's Input and TextArea
+	// frames are pinned to its ControlBorder by TestBundledFieldFramesAreThe
+	// ControlBorderRole rather than by the type system.
+	//
+	// A widget that wants to look like a text field still reads the Input base
+	// itself (components.DatePicker does), because it wants the radius and the
+	// fill too. This role is for a widget that wants only the edge.
+	//
+	// Read via ControlBorderColor.
+	ControlBorder string
 
 	// Success and Warning complete the status triad with the existing Error,
 	// for the "saved" / "expiring" / "failed" progression a status chip,
@@ -133,6 +170,13 @@ const (
 	FallbackBorder  = "#E5E5EA" // iOS systemGray5, the hairline both examples had independently picked
 	FallbackSuccess = "#34C759" // iOS system green
 	FallbackWarning = "#FF9500" // iOS system orange
+
+	// FallbackControlBorder is DefaultTheme's boundary tone, which is also
+	// what its Input and TextArea frames are painted in. A theme predating
+	// this role degrades to a *visible* edge rather than to Border's hairline:
+	// falling back to the divider is the levelling-down the role was split to
+	// prevent, and it would be indistinguishable from the bug.
+	FallbackControlBorder = "#8E8E93" // iOS systemGray — 3.26:1 on white
 )
 
 // BorderColor resolves the Border role, falling back to FallbackBorder when
@@ -147,6 +191,20 @@ func (c ColorPalette) BorderColor() string {
 		return c.Border
 	}
 	return FallbackBorder
+}
+
+// ControlBorderColor resolves the ControlBorder role, falling back to
+// FallbackControlBorder when the theme predates it.
+//
+// Note it does *not* fall back to BorderColor(). The two roles are near
+// neighbours in the struct and opposites in intent — see the field docs — and
+// a theme that has one and not the other is a theme that has only the divider,
+// which is precisely the value this must not return.
+func (c ColorPalette) ControlBorderColor() string {
+	if c.ControlBorder != "" {
+		return c.ControlBorder
+	}
+	return FallbackControlBorder
 }
 
 // SuccessColor resolves the Success role, falling back to FallbackSuccess.
@@ -288,6 +346,17 @@ var DefaultTheme = &Theme{
 		Border:        "#E5E5EA",   // iOS systemGray5 — the separator hairline
 		Success:       "#34C759",   // iOS system green (same hue as Secondary here; different role)
 		Warning:       "#FF9500",   // iOS system orange
+
+		// The boundary tone, and the same hex Components.Input and
+		// Components.TextArea below paint their frames in — which is a
+		// requirement rather than a coincidence, pinned in theme_test.go.
+		//
+		// Measured against both backdrops a control has here. The page and a
+		// field's fill are the same white (3.26:1); a quiet Chip's fill is
+		// Surface, and against that the same edge is 2.92:1 — see the Chip's
+		// own note for why the number that identifies the pill is the outer
+		// one and what the inner one costs.
+		ControlBorder: "#8E8E93", // iOS systemGray — 3.26:1 on #FFFFFF, 2.92:1 on #F2F2F7
 
 		// The ink-weight halves, measured against this theme's own white
 		// Background. Apple publishes an accessible variant of each system
@@ -435,6 +504,13 @@ var MaterialTheme = &Theme{
 		Border:        "#E0E0E0", // MD grey 300 — black at 12% over white, Material's divider
 		Success:       "#2E7D32", // MD green 800, dark enough to carry white label text
 		Warning:       "#EF6C00", // MD orange 800
+
+		// The boundary tone, and the hex this theme's Input and TextArea
+		// frames already carried. Material's own text-field outline colour,
+		// and it clears 3:1 against every backdrop a control sits on here:
+		// the white page, the #FAFAFA field fill, and the #F5F5F5 Surface a
+		// quiet Chip is filled with.
+		ControlBorder: "#757575", // MD grey 600 — 4.61:1 on #FFFFFF, 4.23:1 on #F5F5F5
 
 		// Three of Material's four roles are already ink-weight against this
 		// theme's white Background, so their on-light tone is the role

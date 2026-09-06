@@ -401,6 +401,119 @@ test("aria-hidden beats a selected state too", () => {
 });
 
 // --------------------------------------------------------------------------
+// The expanded state: one field, one attribute, a third role list
+// --------------------------------------------------------------------------
+
+const disclosure = (role, expanded) => ({
+    Type: "Box",
+    Style: { AccessibilityRole: role, AccessibilityExpanded: expanded },
+});
+
+test("aria-expanded is scoped to its own roles, which are not the selection's", () => {
+    // The third state field and the third role list. ARIA defines
+    // aria-expanded for button, link, listbox, row, columnheader and tab among
+    // the roles this framework carries — which drops option and adds link and
+    // listbox relative to the selection above. The two guards look
+    // interchangeable and disagree at four roles, which is why they are two
+    // switches and why core.ExpandedState is a type of its own.
+    const { at } = mount([
+        disclosure("button", "false"),
+        disclosure("link", "true"),
+        disclosure("listbox", "true"),
+        disclosure("row", "false"),
+        disclosure("columnheader", "true"),
+        disclosure("tab", "true"),
+        // The divergence, from both sides.
+        disclosure("option", "true"),
+        disclosure("listitem", "true"),
+        { Type: "Box", Style: { AccessibilityExpanded: "true" } },
+    ]);
+
+    assert.equal(at(0).getAttribute("aria-expanded"), "false");
+    assert.equal(at(1).getAttribute("aria-expanded"), "true");
+    assert.equal(at(2).getAttribute("aria-expanded"), "true");
+    assert.equal(at(3).getAttribute("aria-expanded"), "false");
+    assert.equal(at(4).getAttribute("aria-expanded"), "true");
+    assert.equal(at(5).getAttribute("aria-expanded"), "true");
+    // An option takes aria-selected and not this: it is a leaf choice, and the
+    // thing that expands is the listbox around it.
+    assert.equal(at(6).getAttribute("aria-expanded"), null);
+    assert.equal(at(7).getAttribute("aria-expanded"), null);
+    // And an unroled Box, which is `generic` — the same drop a name would get
+    // if the runtime did not supply `group`. There is no equivalent rescue
+    // here, because `group` is not one of the six roles above.
+    assert.equal(at(8).getAttribute("aria-expanded"), null);
+});
+
+test("a Button node carries an expanded state with no role of its own", () => {
+    // ARIA's disclosure pattern *is* a button, so without this arm the
+    // attribute would be defined for exactly the node type that could not have
+    // it. components.Accordion's header row states the role explicitly; a
+    // hand-built disclosure out of core.Button does not have to.
+    const { at } = mount([
+        { Type: "Button", Props: { label: "What is a hook" }, Style: { AccessibilityExpanded: "false" } },
+    ]);
+    assert.equal(at(0).getAttribute("aria-expanded"), "false");
+});
+
+test("a disclosure that opens and shuts moves the attribute both ways", () => {
+    // The totality rule on the fourth field to reach this family, and the case
+    // an accordion actually produces: the state is patched, not the tree, so
+    // the attribute has to be rewritten rather than added once.
+    const { rt, at } = mount([disclosure("button", "false")]);
+    assert.equal(at(0).getAttribute("aria-expanded"), "false");
+
+    const restyle = (changes) => {
+        rt.GrMob.patch(JSON.stringify([{
+            Type: "update-style",
+            TargetID: "root/0",
+            Changes: changes,
+        }]));
+        rt.drainFrames();
+    };
+
+    restyle({ AccessibilityRole: "button", AccessibilityExpanded: "true" });
+    assert.equal(at(0).getAttribute("aria-expanded"), "true");
+
+    // And back to unstated, which is a node that has stopped being a
+    // disclosure at all. A guarded write would leave "true" standing and
+    // announce a section that is no longer there as open.
+    restyle({ AccessibilityRole: "button" });
+    assert.equal(at(0).getAttribute("aria-expanded"), null);
+    assert.equal(at(0).getAttribute("role"), "button");
+});
+
+test("a selection and a disclosure coexist on one node", () => {
+    // Two independent facts about one control — the shape that makes these two
+    // Go fields rather than one. Nothing in the framework builds it, which is
+    // why it is pinned: the two guards are separate switches over the same
+    // role, and a merge of them would still pass every other test here.
+    const { at } = mount([{
+        Type: "Box",
+        Style: {
+            AccessibilityRole: "tab",
+            AccessibilitySelected: "true",
+            AccessibilityExpanded: "true",
+        },
+    }]);
+    assert.equal(at(0).getAttribute("aria-selected"), "true");
+    assert.equal(at(0).getAttribute("aria-expanded"), "true");
+});
+
+test("aria-hidden beats an expanded state too", () => {
+    const { at } = mount([{
+        Type: "Box",
+        Style: {
+            AccessibilityHidden: true,
+            AccessibilityRole: "button",
+            AccessibilityExpanded: "true",
+        },
+    }]);
+    assert.equal(at(0).getAttribute("aria-expanded"), null);
+    assert.equal(at(0).getAttribute("role"), null);
+});
+
+// --------------------------------------------------------------------------
 // The supplied group role, and the two IDREFs
 // --------------------------------------------------------------------------
 

@@ -82,37 +82,118 @@ func TestAccordionHeaderSlot(t *testing.T) {
 	}
 }
 
-// The header's name reaches a browser.
+// The header announces all three of what it is called, what it is, and
+// whether it is open.
 //
-// An Accordion header is a Row with an AccessibilityLabel, an
-// AccessibilityHint and no role — which on both web targets meant a name ARIA
-// prohibits on `generic` and every browser drops, while VoiceOver and TalkBack
-// announced it. core.RoleGroup, supplied by the exporters, closes that.
+// The shape is ARIA's own accordion pattern — a heading wrapping a button —
+// and it is the third arrangement this header has had, so the assertion is
+// written as the whole document rather than as a list of attributes: what
+// makes it right is which element carries which fact, and every intermediate
+// version passed a bag of substrings.
 //
-// `group` is also the right claim for this row rather than merely a legal one:
-// it leaves the heading inside readable. role="button" — ARIA's own disclosure
-// control — makes its children presentational, so the Title would stop being a
-// heading, which is the whole point of putting the tier on the words. The
-// second assertion is that pairing, since it is what would break if anyone
-// ever swapped the role for the more obvious one.
-func TestTheHeaderRowIsNamedAndKeepsItsHeadingInside(t *testing.T) {
+//	Box  role=heading  aria-level  aria-label      the outline entry
+//	  Row  role=button  aria-expanded  aria-label  the control
+//
+// Two earlier versions to keep in mind, because both are one edit away.
+//
+// The row was unroled and named, which put the name on `generic` — prohibited
+// by ARIA and pruned by every browser, while VoiceOver and TalkBack read it out
+// perfectly. core.RoleGroup, supplied by the exporters, closed that.
+//
+// Then the row was a group, which is nameable and leaves its children readable
+// but is not one of the six roles aria-expanded is defined for. That is what
+// this arrangement buys and it is the assertion with no visible effect: a
+// group announces a section a reader is never told they can press, and a
+// header that cannot say it is shut is a header nobody opens.
+func TestTheHeaderAnnouncesItsTierItsRoleAndItsState(t *testing.T) {
 	ctx := core.NewContext()
 	n := Accordion{Title: "What is a hook", Content: core.Text("state")}.Render(ctx)
-
 	html := htmlout.ExportHTML(n)
+
+	// The two elements, each with its own three facts. Asserted as one
+	// substring apiece so that a fact landing on the wrong element fails —
+	// which is the only failure mode this shape has, and the one a list of
+	// individual attribute checks cannot see.
 	for _, want := range []string{
-		`role="group"`,
-		`aria-label="What is a hook"`,
-		`aria-description="Expands or collapses the section"`,
-		`role="heading"`,
-		`aria-level="3"`,
+		`role="heading" aria-level="3" aria-label="What is a hook"`,
+		`role="button" aria-expanded="false" aria-label="What is a hook" ` +
+			`aria-description="Expands or collapses the section"`,
 	} {
 		if !strings.Contains(html, want) {
 			t.Errorf("missing %s:\n%s", want, html)
 		}
 	}
-	if strings.Contains(html, `role="button"`) {
-		t.Errorf("a button header would make the title presentational and drop its "+
-			"heading role:\n%s", html)
+	// The heading is named rather than being left to take a name from its
+	// content. Without the explicit label it would be called "▸ What is a
+	// hook", which is what this widget turned the wrapping shape down for
+	// until core.AccessibilityLabel was noticed to override it.
+	if strings.Contains(html, `aria-label="▸ What is a hook"`) {
+		t.Errorf("the heading took its name from its content, chevron included:\n%s", html)
 	}
+	// And the words inside the button carry no heading of their own. A button's
+	// children are presentational, so a role there is written into the document
+	// and pruned out of the accessibility tree — correct-looking and inert,
+	// which is worse than absent.
+	if strings.Count(html, `role="heading"`) != 1 {
+		t.Errorf("want exactly one heading in the document:\n%s", html)
+	}
+}
+
+// The state follows the taps, on every pass, in both directions.
+//
+// The half that would go silently is ExpandedClosed. A widget that sets the
+// open value and leaves the shut one unstated renders identically, toggles
+// correctly, and announces a collapsed section as an ordinary button with
+// nothing behind it — see core.ExpandedState for why the third value exists.
+func TestTheHeaderStatesBothHalvesOfTheDisclosure(t *testing.T) {
+	ctx := core.NewContext()
+	acc := Accordion{Title: "Details", Content: core.Text("hidden treasure")}
+
+	n := renderPass(ctx, acc)
+	if got := headerState(t, n); got != core.ExpandedClosed {
+		t.Errorf("collapsed accordion states %q, want %q", got, core.ExpandedClosed)
+	}
+
+	header := findFirst(n, func(n *core.Node) bool { return n.Props["onClick"] != nil })
+	ctx.TriggerCallback(header.Props["onClick"].(string))
+	n = renderPass(ctx, acc)
+	if got := headerState(t, n); got != core.ExpandedOpen {
+		t.Errorf("expanded accordion states %q, want %q", got, core.ExpandedOpen)
+	}
+}
+
+// A Header slot gets the control and its state and no heading.
+//
+// The division is Card.Title/Card.Header's: the caller replaced the content,
+// so the widget no longer knows what the line says and will not stamp an
+// outline entry named by a Title that is not on screen. What it does still
+// know is that the row is a disclosure, which is a fact about the Accordion
+// rather than about what was put inside it.
+func TestACustomHeaderKeepsTheDisclosureAndDropsTheHeading(t *testing.T) {
+	ctx := core.NewContext()
+	n := renderPass(ctx, Accordion{
+		Title:   "For accessibility",
+		Header:  core.Text("custom header"),
+		Content: core.Text("content"),
+	})
+
+	if got := headerState(t, n); got != core.ExpandedClosed {
+		t.Errorf("custom header states %q, want the disclosure state anyway", got)
+	}
+	if html := htmlout.ExportHTML(n); strings.Contains(html, `role="heading"`) {
+		t.Errorf("a replaced header must not be given an outline entry:\n%s", html)
+	}
+}
+
+// headerState reads the disclosure state off the one node in the tree that
+// carries a button role — the header row.
+func headerState(t *testing.T, n *core.Node) core.ExpandedState {
+	t.Helper()
+	node := findFirst(n, func(n *core.Node) bool {
+		return n.Style != nil && n.Style.AccessibilityRole == core.RoleButton
+	})
+	if node == nil {
+		t.Fatal("no node carrying the button role: the header is not a control")
+	}
+	return node.Style.AccessibilityExpanded
 }

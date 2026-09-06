@@ -542,6 +542,47 @@ them, VoiceOver and TalkBack do not. Mapping onto them would quietly turn every
 hand-built tab into a test handle and still announce nothing, so each note names
 the property it is turning down and the test checks the naming is still there.
 
+### `AccessibilityExpanded`
+
+The disclosure state is the one accessibility field where the *two natives*
+disagree, which is the reverse of every shape above.
+
+**Compose maps it, and to an action rather than a property.** There is no
+expanded property in Compose semantics; there are `expand()` and `collapse()`,
+which become `AccessibilityNodeInfo`'s `ACTION_EXPAND` and `ACTION_COLLAPSE`
+and which TalkBack offers as "double-tap to expand". So a closed disclosure is
+given the expand action and an open one the collapse action — the inverse of
+the state, which is this mapping's one silent bug, since both arms compile and
+both toggle the section correctly when activated.
+
+An action has to *do* something, and the only thing that can open the section
+is the callback the node's tap already runs. That callback lives on the node
+rather than on the style, which is why this mapping is the one that does not
+live in `GrMobStyle.boxModifier`'s semantics lambda beside `grMobRole` and
+`grMobSelected` — it is `grMobDisclosure` in `Renderer.kt`'s `gestureModifier`,
+the one place holding both halves. The consequence is that **a node with an
+expanded state and no `OnClick` gets nothing**, which is the honest outcome: an
+expand action TalkBack can invoke and Compose cannot perform is worse than a
+disclosure that is merely quiet.
+
+**SwiftUI has nothing.** `AccessibilityTraits` has no expanded member, and
+SwiftUI's own `DisclosureGroup` announces its state by writing an accessibility
+**value** — a localized string SwiftUI supplies from its own bundle. That is
+the near miss, and it is a sharper one than `accessibilityIdentifier` was
+above, because `accessibilityValue` is a real accessibility channel that the
+platform genuinely uses for this. What makes it wrong for a framework is that
+this renderer would have to supply the literal "expanded" or "collapsed" in
+English, for every app in every locale, in a slot the app may want for a value
+of its own. It is the same move `components.Chip`'s `", selected"` name suffix
+was deleted for.
+
+So the key crosses the bridge and `GrMobStyle.swift` does not parse it, with a
+note beside `grMobTraitsFor` naming `accessibilityValue` and saying why.
+`mobile/verify/expanded_test.go` pins both sides: Compose's parse, its two arms
+against `core.ExpandedStates()`, and the state/action pairing as one string so
+a transposition fails; and iOS's absence of a parse plus both halves of the
+note.
+
 ### The field with a widget spending it
 
 The field now has a widget spending it — `components.ListRow`'s `NestingLevel`,

@@ -131,6 +131,61 @@ func TestRuntimeGuardsTheSelectedStateTheSameWay(t *testing.T) {
 	}
 }
 
+// The expanded state's guards, which htmlout's ariaExpanded applies as well.
+//
+// The reason this is a test of its own rather than three more lines in the
+// selection's is the whole point of the field: aria-expanded's role list is
+// ARIA's own and it is *not* aria-selected's. It is defined for application,
+// button, checkbox, combobox, gridcell, link, listbox, menuitem, row,
+// rowheader, tab and treeitem, and inherits into columnheader — of which
+// core.Role carries six. Relative to the selection that drops `option` and
+// adds `link` and `listbox`, so a switch shared between the two would be wrong
+// at four roles and wrong silently.
+//
+// The absent arms are held below for the same reason the present ones are.
+// `option` reading like it belongs is the trap here, exactly as `listitem`
+// looking like `option` is the trap one function up.
+func TestRuntimeGuardsTheExpandedStateTheSameWay(t *testing.T) {
+	src := runtimeSource(t)
+	for _, want := range []struct{ expr, why string }{
+		{`function ariaExpanded(style, nodeType) {`,
+			"the function htmlout's ariaExpanded mirrors"},
+		{`const value = style.AccessibilityExpanded || "";`,
+			"reading the field at all — an unread key is not an error in JavaScript, so a " +
+				"runtime that dropped this line would render every accordion header as a " +
+				"button with nothing behind it"},
+		{`if (!value) return "";`,
+			"the zero value writing nothing, which is what every node in every existing " +
+				"tree carries"},
+		{`case "link":`, "the link arm, one of the two roles this list has and the " +
+			"selection's does not"},
+		{`case "listbox":`, "the listbox arm — the popup half of a combobox, and the other " +
+			"role the two lists disagree about"},
+		{`return nodeType === "Button" ? value : "";`,
+			"the node type standing in for an unstated role. ARIA's disclosure pattern is a " +
+				"button, so without this the attribute would be defined for exactly the node " +
+				"type that could not carry it"},
+		{`default:
+                return "";`,
+			"the catch-all. A role ARIA does not scope this to writes nothing — and there " +
+				"is no RoleGroup-shaped rescue here, because `group` is not on the list"},
+	} {
+		if !strings.Contains(src, want.expr) {
+			t.Errorf("grmob-runtime.js: ariaExpanded is missing %q — %s", want.expr, want.why)
+		}
+	}
+
+	// The attribute is written on every call, including when the guard returns
+	// "". This is the totality rule, and it is the line a "tidier" guarded
+	// write would remove: a disclosure that stops being one would keep the
+	// attribute it had, announcing a section that is gone as open.
+	if !strings.Contains(src, `setOrRemove(el, "aria-expanded", hidden ? "" : ariaExpanded(style, nodeType));`) {
+		t.Error("grmob-runtime.js: applyAccessibility does not write aria-expanded " +
+			"unconditionally — an update-style patch carries the whole new Style, so a " +
+			"guarded write leaves a stale state standing")
+	}
+}
+
 // A Modal core built carries no Style at all, so the applyStyle path — the one
 // applyAccessibility normally rides on — never runs for it. The chassis in
 // createElement is what covers that case, and it goes through the same

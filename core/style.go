@@ -267,6 +267,76 @@ type Style struct {
 	// the nine unmapped roles follow.
 	AccessibilitySelected SelectedState
 
+	// AccessibilityExpanded is whether this disclosure is *open* — the
+	// accordion section showing its body, the twisty that has been turned. See
+	// ExpandedState for the vocabulary, for why it is a separate type from
+	// SelectedState, and for why "closed" and "not a disclosure" are two
+	// values rather than one bool.
+	//
+	// # One field, one attribute, and a role guard that is not the same one
+	//
+	// This is the simplest of the three accessibility state fields on the web
+	// — it becomes aria-expanded and nothing else, where a level resolves two
+	// fields onto one attribute and a selection resolves one field onto two.
+	// What it does *not* share with the selection is the role list, and the
+	// difference is the whole of the guard:
+	//
+	//	                aria-selected / -pressed   aria-expanded
+	//	button          aria-pressed               yes
+	//	tab             aria-selected              yes
+	//	row             aria-selected              yes
+	//	columnheader    aria-selected              yes
+	//	option          aria-selected              no
+	//	link            no                         yes
+	//	listbox         no                         yes
+	//
+	// Both lists are ARIA's own scoping rather than a shortlist of what seemed
+	// useful, and the two disagree at both ends. So the two fields cannot
+	// share a guard even though they look like they should, which is one of
+	// the two reasons ExpandedState is a type of its own.
+	//
+	// A core.Button needs no role beside it, on the rule that gives a Modal
+	// its dialog role and a Chip its aria-pressed: the node type already is a
+	// button. That is not an optimisation here either — ARIA's own disclosure
+	// pattern *is* a button, so the node type that most wants this attribute
+	// would otherwise be the one that could not carry it.
+	//
+	// Anything else writes nothing. An unroled container is `generic`, ARIA
+	// does not define aria-expanded there, and a reader drops it. This gets no
+	// RoleGroup-shaped rescue for the reason a selection does not: `group` is
+	// not among the roles above, so there is no role that both fits any
+	// container and carries a disclosure. components.Accordion is what happens
+	// when a widget takes that seriously — its header row is a button inside a
+	// heading, which is ARIA's own accordion shape, rather than a named div
+	// with a state a browser throws away.
+	//
+	// # The near miss: a control that opens a *dialog* is not expanded
+	//
+	// aria-expanded says the content is here, in the page, and can be shown or
+	// hidden. A trigger that opens a modal is a different relationship —
+	// ARIA spells that aria-haspopup, which this vocabulary does not carry —
+	// so components.DatePicker's trigger, which looks exactly like a
+	// disclosure and even flips a glyph, deliberately sets nothing.
+	//
+	// # One native maps it and one cannot, which is the reverse of usual
+	//
+	// Compose has expand()/collapse() semantics actions, so a collapsed
+	// disclosure offers TalkBack an "expand" action and an open one offers
+	// "collapse". They are actions rather than a state, which means they need
+	// something to perform: Renderer.kt wires them to the node's own click
+	// callback, and a node with a state but no handler gets neither. That is
+	// the honest shape — an expand action nothing can perform is worse than
+	// none.
+	//
+	// SwiftUI has nothing. There is no expanded trait, and its own
+	// DisclosureGroup announces the state by writing a localized accessibility
+	// *value* — a string SwiftUI supplies and this framework has no channel
+	// for. Emitting an English "expanded" from the renderer would be the same
+	// move components.Chip's ", selected" name suffix was deleted for. So the
+	// key crosses the bridge, is deliberately not parsed, and the note in
+	// GrMobStyle.swift says which property it is turning down.
+	AccessibilityExpanded ExpandedState
+
 	// AccessibilityID names this element so another one can point at it, and
 	// AccessibilityControls is the pointing. Both are web-only, and they are
 	// the vocabulary's one pair of *references* rather than values.
@@ -610,6 +680,12 @@ func (s Style) applyTo(target *Style) {
 	}
 	if s.AccessibilitySelected != SelectedUnset {
 		target.AccessibilitySelected = s.AccessibilitySelected
+	}
+	// And on the same terms: ExpandedClosed is a stated value and merges, so
+	// that a layer describing a shut disclosure can close one a layer below it
+	// had opened. Only ExpandedUnset leaves the target alone.
+	if s.AccessibilityExpanded != ExpandedUnset {
+		target.AccessibilityExpanded = s.AccessibilityExpanded
 	}
 	if s.Disabled {
 		target.Disabled = true

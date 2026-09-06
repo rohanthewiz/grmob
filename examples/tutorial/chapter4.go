@@ -624,12 +624,35 @@ func lessonAccordion() Lesson {
 					"between them at 2."),
 				codeBlock(`components.Accordion{Title: "Shipping", HeadingLevel: 4} // inside a card in a section
 components.GroupedList[Sermon]{GroupBy: byMonth, HeadingLevel: 1} // a feed with no bar`),
+				prose("The heading is the only one in the package that does not ride the words, "+
+					"and the reason is the other half of what a disclosure has to announce. A "+
+					"header that says what it is called and not whether it is open is a control "+
+					"a reader has no reason to press — so the row states core.RoleButton and "+
+					"core.AccessibilityExpanded, and ARIA defines that state for a button and "+
+					"not for the group role a named row would otherwise be given. A button's "+
+					"children are presentational, though, so the tier cannot stay on the title "+
+					"inside it. It moves to a Box wrapped around the row, named explicitly with "+
+					"the Title — which is what stops the heading from being called \"▸ Shipping\", "+
+					"since a heading with no name of its own takes one from its content. That "+
+					"nesting is ARIA's own accordion pattern, and a reader hears the question "+
+					"twice: once as an outline entry to jump to, once as a control that says "+
+					"collapsed or expanded. On the web that is a heading div carrying an "+
+					"aria-level and an aria-label, wrapped around a button div carrying an "+
+					"aria-expanded, and neither element holds the other's attributes."),
+				prose("core.ExpandedWhen is what states both halves. Setting the open case and "+
+					"leaving the shut one alone is the mistake the three-valued type exists to "+
+					"prevent — a collapsed section that answers nothing is announced as an "+
+					"ordinary button, and \"collapsed\" is the whole of what invites the press. "+
+					"On a phone the two targets diverge further than usual: Compose has "+
+					"expand/collapse actions and offers TalkBack the one the state calls for, "+
+					"while SwiftUI has no expanded trait at all and says nothing."),
 				demoPanel("Three accordions, three bool slots on this lesson's context, claimed in render order.",
 					faq...,
 				),
 				keyPoints(
 					"Accordion calls NewState on your context — render it unconditionally, in a stable position, every pass.",
 					"Title is a level-3 heading; HeadingLevel moves it, and Header opts out — a view you built is yours to describe.",
+					"The header row is a button carrying core.AccessibilityExpanded, with the heading wrapped around it — ARIA's accordion shape, because aria-expanded is not defined for a group.",
 					"Content renders only while expanded, so it must be hook-free; interactive hook-free content is fine.",
 					"InitiallyExpanded seeds the slot on the first pass only — after that the user's taps own it.",
 					"Debug mode reports a conditionally rendered accordion as cursor drift — this tutorial's tests would fail before a device saw it.",

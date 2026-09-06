@@ -72,6 +72,12 @@ type nodeStyle struct {
 	AccessibilityRole     string
 	AccessibilitySelected string
 
+	// The disclosure state, for 4.4's accordion lesson. It is the one thing on
+	// that screen with no visual counterpart at all: the chevron flips and the
+	// section opens whether or not this is stated, which is how the widget
+	// shipped without it for as long as it did.
+	AccessibilityExpanded string
+
 	// The heading tier, for the outline assertion in this file. It is the one
 	// property of a lesson screen that exists nowhere else in the tree: three
 	// headings on one screen draw at three different sizes, but "which is a

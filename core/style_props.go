@@ -404,6 +404,33 @@ func AccessibilitySelected(state SelectedState) StyleProp {
 	})
 }
 
+// AccessibilityExpanded says whether this disclosure is open — the accordion
+// section showing its body, the twisty that has been turned.
+//
+//	core.Button(title, toggle,
+//		core.AccessibilityExpanded(core.ExpandedWhen(open.Get())),
+//	)
+//
+// Use core.ExpandedWhen to convert the bool the widget already holds. Setting
+// only the open case and leaving the shut one unset is the mistake the
+// three-valued type exists to prevent: a closed disclosure that says nothing
+// is announced as an ordinary button, and "collapsed" is the whole of what
+// invites the press.
+//
+// Paired with a role that can carry it, as a level and a selection both are —
+// and *not* the same list a selection takes. aria-expanded is defined for
+// button, link, listbox, row and columnheader among the roles this framework
+// carries, which drops option and adds link and listbox. A core.Button needs
+// no role of its own, the node type being one; anything else is dropped by
+// both web targets. See Style.AccessibilityExpanded for the full table, for
+// the dialog-shaped near miss it deliberately does not cover, and for why one
+// native maps this and the other cannot.
+func AccessibilityExpanded(state ExpandedState) StyleProp {
+	return styleFunc(func(s *Style) {
+		s.AccessibilityExpanded = state
+	})
+}
+
 // AccessibilityID gives this element a document-global name that another
 // element can point at with AccessibilityControls. It becomes the `id`
 // attribute on both web targets and is deliberately unread on both natives.

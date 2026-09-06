@@ -40,8 +40,13 @@ type Prominence string
 
 const (
 	// ProminenceQuiet is the zero value: a Surface fill, TextPrimary ink and
-	// a hairline rule. Right for a filter row, which is chrome above the
-	// content it filters.
+	// a ring in the theme's control-boundary tone. Right for a filter row,
+	// which is chrome above the content it filters.
+	//
+	// "Quiet" is about the fill and the ink. The ring is not part of what
+	// recedes — it is the only thing that says the pill is a control, and it
+	// used to be drawn in the divider role, which made a chip that receded
+	// out of sight rather than into the background. See stateStyle.
 	ProminenceQuiet Prominence = ""
 
 	// ProminenceLoud draws the unselected chip as an outline in the chip's
@@ -69,7 +74,7 @@ const (
 //
 // Selected is the prominent state: the theme's Button base — a solid fill with
 // the base's own label colour. Unselected is the quiet one: a Surface fill,
-// TextPrimary ink and a hairline rule.
+// TextPrimary ink and a ring in the theme's control-boundary tone.
 //
 // That is the reverse of what this widget shipped with, and the reversal is
 // the whole of the change. The original default painted the *selected* chip
@@ -96,6 +101,12 @@ const (
 // Prominence is the field that picks: quiet (the default, a Surface fill) for
 // a filter row, loud (an outline in the chip's own accent) for a row of
 // suggestions the reader is meant to reach into. See Prominence.
+//
+// Neither answer is "invisible". Both treatments draw a 1px ring at
+// control-boundary weight — the loud one in the chip's own accent, the quiet
+// one in Colors.ControlBorder — because WCAG 1.4.11 puts a 3:1 floor under the
+// edge that identifies a control, and a chip's fill clears it in neither
+// state. See stateStyle for the numbers.
 //
 // # The selected default restates the theme's own Button colors
 //
@@ -294,11 +305,47 @@ func (c Chip) stateStyle(t *core.Theme) []core.StyleProp {
 			core.BorderColor(accent),
 		}
 	}
+	// The quiet treatment: a Surface fill, TextPrimary ink, and a ring in the
+	// theme's *boundary* tone rather than its divider.
+	//
+	// The ring used to be Colors.Border, and the whole pill was very close to
+	// invisible as a control because of it. A quiet chip has two channels for
+	// saying "there is something here to tap" and both were spent on hairline
+	// values:
+	//
+	//	                    Default          Material
+	//	fill vs page        1.12:1           1.09:1
+	//	old ring vs page    1.26:1           1.32:1
+	//	new ring vs page    3.26:1           4.61:1
+	//
+	// WCAG 1.4.11 (Non-text Contrast) is the line, and it is the same one the
+	// field frames were moved for one session earlier: a rule *between* things
+	// is decoration, while the edge that identifies a control carries a 3:1
+	// floor. A filter row is chrome and is *meant* to recede — that is what
+	// ProminenceQuiet means — but receding is a matter of how loud the fill
+	// and the ink are, not of whether the control can be found at all.
+	//
+	// Colors.ControlBorderColor, not Components.Input.BorderColor. The two
+	// hold the same hex in both bundled themes and reading the Input base
+	// would have got the right pixels today, at the cost of tying a chip's
+	// edge to a text field's: a theme that restyled its fields would have
+	// silently restyled its chips. The role is the thing both of them name.
+	//
+	// One number under the floor, stated rather than rounded off. A chip has
+	// two backdrops — the page behind it and its own Surface fill — and under
+	// DefaultTheme the ring is 3.26:1 against the first and 2.92:1 against the
+	// second. The edge that identifies the pill is the outer one: the fill is
+	// 1.12:1 against the page and identifies nothing, so what a reader picks
+	// the control out by is the ring against the page, which clears. The
+	// inner edge is the boundary between two parts of one control. Closing
+	// that last 0.08 would mean darkening the theme's boundary tone past
+	// Apple's own systemGray, which is the same repaint-the-theme's-choice
+	// move the on-light tones were added to avoid.
 	return []core.StyleProp{
 		core.BackgroundColor(t.Colors.Surface),
 		core.TextColor(t.Colors.TextPrimary),
 		core.BorderWidth(1),
-		core.BorderColor(t.Colors.BorderColor()),
+		core.BorderColor(t.Colors.ControlBorderColor()),
 	}
 }
 

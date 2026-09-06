@@ -58,6 +58,7 @@ func TestFallbacksTrackDefaultTheme(t *testing.T) {
 		{"Border", FallbackBorder, DefaultTheme.Colors.Border},
 		{"Success", FallbackSuccess, DefaultTheme.Colors.Success},
 		{"Warning", FallbackWarning, DefaultTheme.Colors.Warning},
+		{"ControlBorder", FallbackControlBorder, DefaultTheme.Colors.ControlBorder},
 	}
 	for _, c := range cases {
 		if c.fallback != c.themed {
@@ -94,15 +95,41 @@ func TestResolversFallBackOnAPaletteMissingTheNewRoles(t *testing.T) {
 	if got := legacy.WarningColor(); got != FallbackWarning {
 		t.Errorf("WarningColor() = %q, want the fallback %q", got, FallbackWarning)
 	}
+	if got := legacy.ControlBorderColor(); got != FallbackControlBorder {
+		t.Errorf("ControlBorderColor() = %q, want the fallback %q", got, FallbackControlBorder)
+	}
+}
+
+// The boundary must not degrade into the divider.
+//
+// ControlBorder and Border are neighbours in the struct and opposites in
+// intent, and the tempting implementation of the resolver — fall back to
+// BorderColor(), since a theme that has one probably meant the other — returns
+// exactly the 1.26:1 hairline the roles were split apart to stop a control
+// from being drawn in. A legacy palette with a *stated* Border is the case
+// that would hide it: the fallback would look like it was working.
+func TestTheControlBoundaryDoesNotFallBackToTheDivider(t *testing.T) {
+	dividerOnly := ColorPalette{Border: "#E5E5EA"}
+
+	got := dividerOnly.ControlBorderColor()
+	if got == dividerOnly.BorderColor() {
+		t.Errorf("ControlBorderColor() = %q, the same as BorderColor() — a control drawn "+
+			"in the divider role is the bug this role exists to fix", got)
+	}
+	if got != FallbackControlBorder {
+		t.Errorf("ControlBorderColor() = %q, want the boundary fallback %q",
+			got, FallbackControlBorder)
+	}
 }
 
 // The other half of the contract: a theme that *does* set a role must win over
 // the fallback, or theming these three roles would be a no-op.
 func TestResolversPreferTheThemedValue(t *testing.T) {
 	themed := ColorPalette{
-		Border:  "#111111",
-		Success: "#222222",
-		Warning: "#333333",
+		Border:        "#111111",
+		Success:       "#222222",
+		Warning:       "#333333",
+		ControlBorder: "#444444",
 	}
 
 	if got := themed.BorderColor(); got != "#111111" {
@@ -113,6 +140,9 @@ func TestResolversPreferTheThemedValue(t *testing.T) {
 	}
 	if got := themed.WarningColor(); got != "#333333" {
 		t.Errorf("WarningColor() = %q, want the themed value", got)
+	}
+	if got := themed.ControlBorderColor(); got != "#444444" {
+		t.Errorf("ControlBorderColor() = %q, want the themed value", got)
 	}
 
 	// MaterialTheme is the live proof that a theme can diverge from the
@@ -285,5 +315,58 @@ func TestOnLightDoesNotTintTheBrandSlot(t *testing.T) {
 	if got := p.OnLight(p.Secondary); got != p.SuccessOnLightColor() {
 		t.Errorf("OnLight(Secondary) = %q, want the Success tone %q it shares a hex with",
 			got, p.SuccessOnLightColor())
+	}
+}
+
+// Each bundled theme's field frames are its ControlBorder role.
+//
+// Components.Input and Components.TextArea state their border as a literal
+// hex, and they have to: a component default is a Style *value*, so it cannot
+// call ControlBorderColor() the way a widget does. The role and the two
+// literals are therefore three copies of one decision that the type system
+// cannot hold together, and this is what holds them instead.
+//
+// The failure being guarded is a retint. Somebody darkens a theme's field
+// frames, leaves the role alone, and every chip in that theme keeps the old
+// edge while every text field beside it moves — two controls on one screen
+// disagreeing about where a boundary sits, with nothing failing anywhere.
+func TestBundledFieldFramesAreTheControlBorderRole(t *testing.T) {
+	for themeName, theme := range map[string]*Theme{
+		"DefaultTheme":  DefaultTheme,
+		"MaterialTheme": MaterialTheme,
+	} {
+		role := theme.Colors.ControlBorderColor()
+		for _, base := range []struct {
+			what  string
+			style Style
+		}{
+			{"Input", theme.Components.Input},
+			{"TextArea", theme.Components.TextArea},
+		} {
+			if base.style.BorderColor != role {
+				t.Errorf("%s.Components.%s.BorderColor = %q but Colors.ControlBorder is %q — "+
+					"the frame and the role are the same decision and must not drift",
+					themeName, base.what, base.style.BorderColor, role)
+			}
+		}
+	}
+}
+
+// The two border roles must stay different colours in every bundled theme.
+//
+// They were one role until a second kind of consumer arrived, and the whole of
+// the split is that a divider may be pale and a boundary may not. A theme that
+// tints them the same has un-split them — silently, since every call site still
+// compiles and every widget still draws a rule.
+func TestTheDividerAndTheBoundaryAreDifferentTones(t *testing.T) {
+	for themeName, theme := range map[string]*Theme{
+		"DefaultTheme":  DefaultTheme,
+		"MaterialTheme": MaterialTheme,
+	} {
+		if theme.Colors.BorderColor() == theme.Colors.ControlBorderColor() {
+			t.Errorf("%s paints Border and ControlBorder the same %q: a hairline between "+
+				"rows and the edge that identifies a control carry different floors",
+				themeName, theme.Colors.BorderColor())
+		}
 	}
 }

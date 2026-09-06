@@ -115,6 +115,15 @@ data class GrMobStyle(
      * that makes no claim. Mapped by grMobSelected below.
      */
     val accessibilitySelected: String,
+    /**
+     * Go's core.ExpandedState, verbatim: "true", "false", or "" for a node
+     * that is not a disclosure. Unlike every other accessibility field here it
+     * is *not* spent in boxModifier's semantics block — Compose says this with
+     * an action rather than a property, and an action needs the node's click
+     * callback to perform. Renderer.kt's gestureModifier is where it lands;
+     * see grMobDisclosure there.
+     */
+    val accessibilityExpanded: String,
     /** Platform disabled state; see Go's core.Style.Disabled. */
     val disabled: Boolean,
     /** Parsed Transition duration; 0 means "no transition, snap changes". */
@@ -179,6 +188,7 @@ data class GrMobStyle(
                 accessibilityHidden = obj.optBoolean("AccessibilityHidden", false),
                 accessibilityRole = obj.optString("AccessibilityRole"),
                 accessibilitySelected = obj.optString("AccessibilitySelected"),
+                accessibilityExpanded = obj.optString("AccessibilityExpanded"),
                 disabled = obj.optBoolean("Disabled", false),
                 transitionMs = parseTransitionMs(obj.optString("Transition")),
                 transitionEasing = parseTransitionEasing(obj.optString("Transition")),

@@ -1105,6 +1105,64 @@ func TestCompassDemoReportsLocationAsUnavailableWithNoHost(t *testing.T) {
 	assertNoConcerns(t)
 }
 
+// The accordion lesson's three FAQ headers each announce as a disclosure, and
+// the state follows the taps.
+//
+// Through the live app rather than the widget, because what is being checked
+// is that the lesson *demonstrates* what its prose now teaches: three
+// accordions on one screen, one open and two shut, is the arrangement that
+// makes ExpandedClosed visible as a value rather than as an absence.
+//
+// It is also the assertion with no visible effect. The chevrons already flip,
+// the sections already open, and every one of those keeps working if the state
+// is deleted — which is exactly how the widget shipped for as long as it did.
+func TestTheAccordionDemoAnnouncesEachHeaderAsADisclosure(t *testing.T) {
+	mgr := newApp(t)
+	openLesson(t, mgr, "Accordion: the stateful widget")
+
+	states := func() []string {
+		var out []string
+		for _, n := range findNodes(tree(t, mgr), roleIs("button")) {
+			if n.Style.AccessibilityExpanded != "" {
+				out = append(out, string(n.Style.AccessibilityExpanded))
+			}
+		}
+		return out
+	}
+
+	// The seeded arrangement: accordionFAQ opens the first entry and leaves
+	// the other two shut. Every header answers — the two shut ones are what a
+	// two-valued field would have left silent.
+	got := states()
+	// The literals are ARIA's own spellings, which is what crosses the wire —
+	// core.ExpandedOpen and core.ExpandedClosed are these two strings, and
+	// this side of the bridge sees only the strings.
+	want := []string{"true", "false", "false"}
+	if len(got) != len(want) {
+		t.Fatalf("found %d disclosure headers, want %d: %v", len(got), len(want), got)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("header %d states %q, want %q", i, got[i], want[i])
+		}
+	}
+
+	// And it moves. Tapping the second question opens it, which is the half a
+	// hard-coded state would still pass the check above with.
+	//
+	// Not tap(): an accordion header is a Row with an OnClick, not a Button
+	// node — the tap target is the whole row, which is what lets the chevron
+	// and the title share it. So the header is found by its button *role*, the
+	// thing the widget now states, and the tree is walked the way openLesson
+	// walks it.
+	header := findNodes(tree(t, mgr), roleIs("button"))[1]
+	mgr.DispatchCallback(header.Props["onClick"].(string))
+	if got := states(); got[1] != "true" {
+		t.Errorf("after the tap the second header states %q, want \"true\" — the state is "+
+			"not following the widget's own bool", got[1])
+	}
+}
+
 // --- The heading outline, end to end ----------------------------------------
 
 // A lesson screen carries a 1-2-3 outline and nobody wrote the 3.
@@ -1126,10 +1184,21 @@ func TestALessonScreenHasAThreeTierOutline(t *testing.T) {
 	openLesson(t, mgr, "Accordion: the stateful widget")
 	cur := tree(t, mgr)
 
+	// Two shapes of heading, because the third tier changed shape when
+	// components.Accordion's header became a button. Levels 1 and 2 ride the
+	// words, which is where every heading in the components package lives;
+	// level 3 rides the Box wrapped around an accordion's header row, named by
+	// an explicit AccessibilityLabel, because the row itself has to be the
+	// button that carries aria-expanded. Both are matched here so the
+	// *relationship* — the thing this test exists for — is still asserted
+	// across the change rather than around it.
 	levelOf := func(content string) int {
 		n := findNode(cur, func(n *node) bool {
-			return n.Type == "Text" && n.Props["content"] == content && n.Style != nil &&
-				n.Style.AccessibilityRole == "heading"
+			if n.Style == nil || n.Style.AccessibilityRole != "heading" {
+				return false
+			}
+			return (n.Type == "Text" && n.Props["content"] == content) ||
+				n.Style.AccessibilityLabel == content
 		})
 		if n == nil {
 			t.Fatalf("no heading reading %q on the lesson screen", content)
@@ -1156,8 +1225,14 @@ func TestALessonScreenHasAThreeTierOutline(t *testing.T) {
 	}) {
 		level := n.Style.AccessibilityHeadingLevel
 		if level < 1 || level > 6 {
-			t.Errorf("heading %q carries level %d, which every target drops",
-				n.Props["content"], level)
+			// Named by content where there is any, and by the accessibility
+			// label otherwise — an accordion's heading is a wrapper Box with
+			// no text of its own.
+			name, _ := n.Props["content"].(string)
+			if name == "" {
+				name = n.Style.AccessibilityLabel
+			}
+			t.Errorf("heading %q carries level %d, which every target drops", name, level)
 		}
 	}
 

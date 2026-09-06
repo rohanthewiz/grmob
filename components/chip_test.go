@@ -25,7 +25,7 @@ func TestChipRendersAsButton(t *testing.T) {
 		t.Error("tapping the chip should invoke OnTap")
 	}
 	// Unselected is the quiet state: a Surface fill and TextPrimary ink over
-	// the theme's Button base, with a hairline rule.
+	// the theme's Button base, with a rule in the control-boundary role.
 	theme := core.DefaultTheme
 	if n.Style.Background != theme.Colors.Surface {
 		t.Errorf("unselected chip background = %q, want theme Surface %q", n.Style.Background, theme.Colors.Surface)
@@ -33,9 +33,9 @@ func TestChipRendersAsButton(t *testing.T) {
 	if n.Style.TextColor != theme.Colors.TextPrimary {
 		t.Errorf("unselected chip ink = %q, want theme TextPrimary %q", n.Style.TextColor, theme.Colors.TextPrimary)
 	}
-	if n.Style.BorderWidth != 1 || n.Style.BorderColor != theme.Colors.BorderColor() {
+	if n.Style.BorderWidth != 1 || n.Style.BorderColor != theme.Colors.ControlBorderColor() {
 		t.Errorf("unselected chip rule = %vpx %q, want 1px %q",
-			n.Style.BorderWidth, n.Style.BorderColor, theme.Colors.BorderColor())
+			n.Style.BorderWidth, n.Style.BorderColor, theme.Colors.ControlBorderColor())
 	}
 }
 
@@ -355,5 +355,72 @@ func TestChipLoudTreatmentBeatsSharedStyle(t *testing.T) {
 	}
 	if n.Style.FontSize != 13 {
 		t.Error("Style's non-colliding fields should still survive")
+	}
+}
+
+// The quiet chip's ring is the theme's control-boundary role, not its divider.
+//
+// This is the assertion the widget shipped without, and the reason it shipped
+// is that nothing about a chip painted in Colors.Border *looks* broken in a
+// tree dump: the border is set, it is a themed value, and it renders. What was
+// wrong was the number, and a number is only wrong against a backdrop — which
+// is why the second half measures rather than compares hexes.
+func TestChipQuietRingIsTheBoundaryRoleAndNotTheDivider(t *testing.T) {
+	for name, theme := range map[string]*core.Theme{
+		"DefaultTheme":  core.DefaultTheme,
+		"MaterialTheme": core.MaterialTheme,
+	} {
+		ctx := core.NewContext().WithTheme(theme)
+		ctx.BeginRenderPass()
+
+		n := Chip{Label: "2024"}.Render(ctx)
+
+		if got, want := n.Style.BorderColor, theme.Colors.ControlBorderColor(); got != want {
+			t.Errorf("%s: quiet ring = %q, want the boundary role %q", name, got, want)
+		}
+		if n.Style.BorderColor == theme.Colors.BorderColor() {
+			t.Errorf("%s: quiet ring is the divider role — a filter chip drawn in a "+
+				"hairline is chrome nobody can find", name)
+		}
+	}
+}
+
+// And the ring clears WCAG 1.4.11's floor against the page it sits on.
+//
+// 3:1, not the 4.5:1 the ink assertions in this package use: this is non-text
+// contrast, and the thing being identified is a control rather than read as
+// words.
+//
+// The page is the backdrop measured, and deliberately only the page. A chip
+// has two — the Background behind it and its own Surface fill — and the outer
+// one is what a reader picks the pill out by, because the fill is 1.12:1
+// against the page under DefaultTheme and identifies nothing on its own. The
+// inner edge is the boundary between two parts of one control; under
+// DefaultTheme it is 2.92:1, which is stated in the theme and in stateStyle
+// rather than asserted here, since asserting it would fail on a value that is
+// Apple's own systemGray and correct.
+func TestChipQuietRingClearsTheNonTextContrastFloor(t *testing.T) {
+	const wcagNonText = 3.0
+
+	for name, theme := range map[string]*core.Theme{
+		"DefaultTheme":  core.DefaultTheme,
+		"MaterialTheme": core.MaterialTheme,
+	} {
+		ctx := core.NewContext().WithTheme(theme)
+		ctx.BeginRenderPass()
+
+		ring := Chip{Label: "2024"}.Render(ctx).Style.BorderColor
+		ringLum, ok := relativeLuminance(ring)
+		if !ok {
+			t.Fatalf("%s: quiet ring %q is not a parseable hex", name, ring)
+		}
+		pageLum, ok := relativeLuminance(theme.Colors.Background)
+		if !ok {
+			t.Fatalf("%s: Background %q is not a parseable hex", name, theme.Colors.Background)
+		}
+		if r := contrastRatio(ringLum, pageLum); r < wcagNonText {
+			t.Errorf("%s: quiet ring %q is %.2f:1 against the page, want at least %.1f:1 "+
+				"(WCAG 1.4.11 — the edge that identifies a control)", name, ring, r, wcagNonText)
+		}
 	}
 }

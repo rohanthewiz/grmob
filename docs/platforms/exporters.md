@@ -98,6 +98,17 @@ indented HTML. Properties worth relying on:
   (`ariaLevel`) switches on the role, so the two `core.Style` level fields are
   mutually exclusive by construction rather than by a precedence rule. See
   [Styling & Theming](../concepts/styling-and-theming.md#accessibilitynestinglevel).
+- **A control state is `aria-selected` / `aria-pressed` / `aria-expanded`,**
+  each written only for the roles ARIA scopes it to. Two `core.Style` fields
+  and three attributes: `ariaSelected` picks between the first two by role
+  (selection is one of a set, pressed is a toggle answering for itself), and
+  `ariaExpanded` answers a *third* role list that is neither of theirs — it
+  drops `option` and adds `link` and `listbox`. A `core.Button` carries all
+  three with no role at all, the node type being one, which is what lets a
+  `components.Chip` be pressed and an `components.Accordion` header be a
+  disclosure. There is no `role="group"`-shaped rescue for either state, and
+  that asymmetry with the name is deliberate. See
+  [Styling & Theming](../concepts/styling-and-theming.md#accessibilityexpanded).
 - **A form control is told it has no border** when the style declares none.
   The border guard is "a width *and* a color" on all four targets; emitting
   nothing on the web left the user agent's own rule standing, which is what

@@ -20,6 +20,9 @@ import (
 // unselected branch below is new, and it is the hand-written spelling of
 // Chip's current unselected default.
 //
+// It moved a third time when ColorPalette split its border role in two and
+// the quiet chip's rule went to the boundary half.
+//
 // It moved a second time when core.Style grew a slot for a control state.
 // Chip used to append ", selected" to the accessibility label because a name
 // was the only channel it had; it now states core.AccessibilitySelected, which
@@ -61,7 +64,14 @@ func legacyFilterBar(active int, onSelect func(int)) core.View {
 					core.BackgroundColor(palette.Surface),
 					core.TextColor(palette.TextPrimary),
 					core.BorderWidth(1),
-					core.BorderColor(palette.BorderColor()),
+					// ControlBorderColor, not BorderColor: the quiet chip's
+					// rule moved off the divider role and onto the palette's
+					// control-boundary tone, because it is the only edge that
+					// says a filter pill is something you can press (WCAG
+					// 1.4.11). Read through the resolver for the same reason
+					// the fill above is read off the palette — the comparison
+					// is against the role, not against a hex.
+					core.BorderColor(palette.ControlBorderColor()),
 				)
 			}
 			// The selection, as the control state Chip now states rather than

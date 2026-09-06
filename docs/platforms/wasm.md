@@ -574,6 +574,32 @@ tree. `TestRuntimeGuardsTheLevelsTheSameWay` pins the dispatch and both ranges;
 have — an item that keeps both fields and changes only its role has to swap
 which one is written.
 
+### Three state attributes, two style fields
+
+`applyAccessibility` writes `aria-selected`, `aria-pressed` and `aria-expanded`
+on **every** call, including when the value is empty. That is the totality rule
+the border reset above states, and here it is load-bearing twice over.
+
+`ariaSelected` returns a *pair* rather than a name and a value, because the
+caller has to clear the other attribute either way: a node that had been a
+`tab` and becomes a `button` must stop being `aria-selected`, or it announces
+as a selected tab and a pressed button at once. A role can change between
+passes, so writing only the attribute the *new* role asks for leaves the old
+one standing.
+
+`ariaExpanded` returns one string — there is no sibling to clear — but the
+unconditional write still matters: a disclosure that stops being one has to
+lose its attribute, or a section that is gone is announced as open.
+
+The three lists are ARIA's own scoping and are not interchangeable.
+`aria-expanded`'s drops `option` and adds `link` and `listbox` relative to
+`aria-selected`'s, which is why they are two switches and why
+`core.ExpandedState` is a type of its own rather than `SelectedState` reused.
+`TestRuntimeGuardsTheSelectedStateTheSameWay` and
+`TestRuntimeGuardsTheExpandedStateTheSameWay` hold each dispatch against its
+`htmlout` twin; `a11y_test.mjs` covers the live halves, including the patch
+sequence a static export cannot have.
+
 ## Testing without a browser
 
 `wasm/verify/run.sh` is the WASM analog of `ios/verify`, and needs only Go

@@ -561,7 +561,8 @@ components.Chip{
 
 - Selected is the loud state: the theme's Button base, untouched (plus a ring
   painted in the fill, so both states hold the same box). Unselected is the
-  quiet one: Surface fill, `TextPrimary` ink, a hairline rule.
+  quiet one: Surface fill, `TextPrimary` ink, a 1px ring in
+  `Colors.ControlBorder`.
 - `Prominence` tunes *how* quiet the unselected state is — see below.
 - `SelectedStyle` and `UnselectedStyle` replace their state's default. Both
   read `nil` as "use the default" and an allocated-but-empty slice as "apply
@@ -588,7 +589,7 @@ this field touches. *How much* quieter the other one is has two right answers:
 
 | | |
 |---|---|
-| `ProminenceQuiet` (zero) | Surface fill, `TextPrimary` ink, hairline rule. Right for a **filter** row, which is chrome above the content it filters: a loud row of years competes with the archive it is filtering. |
+| `ProminenceQuiet` (zero) | Surface fill, `TextPrimary` ink, a ring in `Colors.ControlBorder`. Right for a **filter** row, which is chrome above the content it filters: a loud row of years competes with the archive it is filtering. |
 | `ProminenceLoud` | The chip's accent, in its on-light tone, as ink and as a 1px rule over a transparent fill — the outlined treatment. Right for a row of **suggestions** the reader is meant to reach into: grey pills over an empty amount field do not read as "tap one of these". |
 
 ```go
@@ -598,6 +599,15 @@ components.Chip{Label: "$25", Prominence: components.ProminenceLoud,
 
 Material draws the same distinction (filter chip vs. suggestion chip) with a
 different default prominence for each.
+
+**Neither answer is "invisible".** Both treatments draw their ring at
+control-boundary weight, because WCAG 1.4.11 puts a 3:1 floor under the edge
+that identifies a control and a chip's fill clears it in neither state
+(`Surface` is 1.12:1 against the page under `DefaultTheme`). The quiet ring
+used to be the palette's `Border` hairline — 1.26:1 — which made a filter row
+that receded out of sight rather than into the background; it is
+[`Colors.ControlBorder`](concepts/styling-and-theming.md#color-roles) now, and
+that role exists because of this chip. Quiet is about the fill and the ink.
 
 Loud is **not** the pre-inversion look. That one gave every unselected chip a
 solid fill and left the chosen one pale; here the fill is transparent, so the
@@ -965,15 +975,42 @@ one tier below a `Card` title or a band — and `HeadingLevel` moves it: a scree
 built entirely of accordions under an `AppBar` says 2. As with `Card`, it
 applies to the default header only.
 
-The role rides the title rather than the row, so the heading is named "Advanced
-options" and not "▸ Advanced options" — the same reason a band's heading sits on
-its label and not on the row that also holds the count badge. ARIA's own
-disclosure pattern nests them the other way (a heading element *wrapping* a
-button that carries `aria-expanded`), and neither half of that helps here: a
-heading takes its name from its content, so wrapping the row brings the chevron
-straight back into the name, and core has no vocabulary for an expanded state at
-all. That last gap is why the chevron is deliberately left audible — it is the
-only thing in the row that says which way the disclosure is pointing.
+### The header is ARIA's accordion shape
+
+This is the one widget in the package whose heading does not ride the words,
+and the reason is the other half of what a disclosure has to announce.
+
+```
+Box  role=heading  aria-level=3  aria-label="Advanced options"
+  Row  role=button  aria-expanded="false"  aria-label="Advanced options"
+    "▸"  "Advanced options"        presentational, inside the button
+```
+
+The row is the tap target, so the row is the control: it states `RoleButton`
+and [`AccessibilityExpanded`](concepts/styling-and-theming.md#accessibilityexpanded),
+and `aria-expanded` is defined for a button and **not** for the `group` role a
+named row would otherwise be supplied. Without that, a header announces what it
+is called and never that it can be pressed or whether it is open.
+
+A button's children are presentational, so the tier cannot stay on the title
+inside it. It moves to a `Box` wrapped around the row, **named explicitly** with
+the `Title` — which is what stops the heading from being called "▸ Advanced
+options", since a heading with no name of its own takes one from its content.
+That was the objection this widget raised against the wrapping shape for two
+releases, and `AccessibilityLabel` is the answer to it.
+
+A reader hears the question twice: once as an outline entry to jump to, once as
+a control that says collapsed or expanded. That is what every accessible
+accordion on the web does.
+
+The chevron used to be deliberately left audible, because it was the only thing
+on screen that said which way the disclosure pointed. It is presentational now
+— by construction rather than by choice, being inside a button — and the state
+says it in a channel that does not depend on a reader pronouncing "▸".
+
+A `Header` slot gets the button and its state and **no** heading, on the same
+division `Card.Title` / `Card.Header` draws: you replaced the content, so the
+widget will not stamp an outline entry named by a `Title` that is not on screen.
 
 ## Tabs
 

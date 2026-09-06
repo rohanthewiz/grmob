@@ -630,6 +630,10 @@ func modalChassis(props map[string]any) string {
 // two is again the role's decision — see ariaSelected below, which is the
 // same switch running in the other direction.
 //
+// An expanded state maps to aria-expanded, guarded by a *third* role list that
+// is neither of the other two — see ariaExpanded, which is where the three
+// lists are set against each other.
+//
 // A Modal gets role="dialog" and aria-modal="true" from its node type rather
 // than from a Style, which is modalSemantics' subject.
 //
@@ -676,6 +680,9 @@ func accessibilityAttrs(s *core.Style, nodeType string, roleImposed bool) []stri
 	}
 	if name, value := ariaSelected(s, nodeType); name != "" {
 		attrs = append(attrs, name, value)
+	}
+	if expanded := ariaExpanded(s, nodeType); expanded != "" {
+		attrs = append(attrs, "aria-expanded", expanded)
 	}
 	if s.AccessibilityID != "" {
 		attrs = append(attrs, "id", s.AccessibilityID)
@@ -913,6 +920,66 @@ func ariaSelected(s *core.Style, nodeType string) (string, string) {
 		}
 	}
 	return "", ""
+}
+
+// ariaExpanded renders core.Style.AccessibilityExpanded as the aria-expanded
+// value, or "" when there is nothing valid to write.
+//
+// # The third state field, and the simplest of the three
+//
+// ariaLevel resolves two Go fields onto one attribute and ariaSelected
+// resolves one field onto two. This is one onto one: the value is ARIA's own
+// spelling and goes out verbatim. All the work is in the guard.
+//
+// # The role list is ARIA's, and it is not ariaSelected's
+//
+// aria-expanded is defined for application, button, checkbox, combobox,
+// gridcell, link, listbox, menuitem, row, rowheader, tab and treeitem, and
+// inherits into columnheader, menuitemcheckbox, menuitemradio and switch. Of
+// those, core.Role carries button, link, listbox, row, tab and columnheader.
+//
+// The overlap with ariaSelected's list is partial in both directions, which is
+// the fact worth stating because the two guards look like they should be one:
+//
+//	option     takes aria-selected and *not* aria-expanded. An option is a
+//	           leaf choice; the thing that expands is the listbox around it.
+//	link       and listbox take aria-expanded and neither selection
+//	           attribute — a link that discloses a section, and the popup half
+//	           of a combobox.
+//	cell       is not gridcell, the same near miss ariaSelected names.
+//
+// So a shared guard would be wrong at four roles, which is one of the two
+// reasons core.ExpandedState is a type of its own rather than SelectedState
+// reused.
+//
+// A core.Button gets it with no role at all, on the rule that gives a Modal
+// its dialog role: the node type already is a button. That is load-bearing
+// rather than convenient — ARIA's disclosure pattern *is* a button, so the
+// element that most wants this attribute is exactly the one that carries no
+// core.Role.
+//
+// Everything else writes nothing, and there is no RoleGroup-shaped rescue.
+// ariaRole supplies `group` to a named container so its name has something
+// legal to sit on; `group` is not among the roles above, so there is no value
+// that both fits any container and carries a disclosure. A widget that wants
+// this attribute has to *be* a control, which is what components.Accordion's
+// header row became when it adopted it.
+func ariaExpanded(s *core.Style, nodeType string) string {
+	if s.AccessibilityExpanded == core.ExpandedUnset {
+		return ""
+	}
+	value := string(s.AccessibilityExpanded)
+	switch s.AccessibilityRole {
+	case core.RoleButton, core.RoleLink, core.RoleListBox, core.RoleRow, core.RoleColumnHeader, core.RoleTab:
+		return value
+	case core.RoleNone:
+		// No role of its own: the node type is the only thing left that can
+		// say what this is, and <button> is the one that discloses.
+		if nodeType == "Button" {
+			return value
+		}
+	}
+	return ""
 }
 
 // isFormControl reports whether the node exports as an HTML element that

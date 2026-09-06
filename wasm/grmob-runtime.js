@@ -864,6 +864,7 @@ const GrMob = (() => {
         const selected = hidden ? ["", ""] : ariaSelected(style, nodeType);
         setOrRemove(el, "aria-selected", selected[0]);
         setOrRemove(el, "aria-pressed", selected[1]);
+        setOrRemove(el, "aria-expanded", hidden ? "" : ariaExpanded(style, nodeType));
     }
 
     // The value of the role attribute for one element: what the author said,
@@ -928,6 +929,47 @@ const GrMob = (() => {
                 return nodeType === "Button" ? ["", value] : ["", ""];
             default:
                 return ["", ""];
+        }
+    }
+
+    // core.Style.AccessibilityExpanded as the aria-expanded value, or "" when
+    // there is nothing valid to write. The htmlout twin of this is
+    // ariaExpanded in export.go and the two must agree; the reasoning for
+    // every guard lives there and in core.Style.
+    //
+    // One field onto one attribute, which makes this the simplest of the three
+    // state mappings — ariaLevel resolves two fields onto one attribute and
+    // ariaSelected one field onto two. All the work is in the role list, and
+    // the point of that list is that it is *not* ariaSelected's: aria-expanded
+    // drops option and adds link and listbox. A shared guard would be wrong at
+    // four roles.
+    //
+    // Only one attribute is written, so this returns a string rather than the
+    // pair ariaSelected returns — there is no sibling attribute the totality
+    // rule has to clear alongside it. The caller still writes on every call,
+    // including the empty value, because an update-style patch carries the
+    // whole new Style and a guarded write would leave a stale state standing.
+    //
+    // The Button node type is checked only when the style names no role, the
+    // same rule that gives a Modal its dialog role. ARIA's disclosure pattern
+    // is a button, so this is the case the attribute exists for rather than a
+    // shortcut.
+    function ariaExpanded(style, nodeType) {
+        const value = style.AccessibilityExpanded || "";
+        if (!value) return "";
+        switch (style.AccessibilityRole) {
+            case "button":
+            case "link":
+            case "listbox":
+            case "row":
+            case "columnheader":
+            case "tab":
+                return value;
+            case "":
+            case undefined:
+                return nodeType === "Button" ? value : "";
+            default:
+                return "";
         }
     }
 

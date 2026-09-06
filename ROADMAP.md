@@ -244,6 +244,22 @@
       key: no such relationship exists in their vocabularies, and the near miss
       (`accessibilityIdentifier` / `testTag`) is a test selector rather than an
       accessibility property
+- [x] A widget can say **this disclosure is open** (`core.AccessibilityExpanded`)
+      — `aria-expanded` on both web targets, scoped to a *third* ARIA role list
+      that is neither `aria-level`'s nor `aria-selected`'s: it drops `option`
+      and adds `link` and `listbox`, which is why `core.ExpandedState` is a
+      type of its own rather than `SelectedState` reused. Three values for the
+      reason that type has three: a collapsed section that answers nothing is
+      announced as an ordinary button, and "collapsed" is the whole of what
+      invites the press. The two natives disagree here, which is the reverse of
+      the usual split — Compose has `expand`/`collapse` semantics *actions* and
+      is given the one the state calls for, wired to the node's own click
+      callback, while SwiftUI has no expanded trait and its near miss
+      (`accessibilityValue`) would mean shipping an English literal to every
+      locale. Adopted by `components.Accordion`, whose header row became a
+      button inside a heading — ARIA's own accordion shape, reachable once
+      `AccessibilityLabel` was noticed to override the content-derived name the
+      wrapper had been turned down for
 - [x] A widget can say **this control is on** (`core.AccessibilitySelected`) —
       `aria-selected` or `aria-pressed` on both web targets (the role picks,
       which is `aria-level`'s switch running the other way), `selected`
@@ -306,7 +322,13 @@
       existed, and its drop-down indicator is untouched for the checkbox's own
       reason: it is the thing that says the control is a picker. `Colors.Border` keeps the dividers and no longer names
       field edges; `DatePicker`'s trigger inherits the whole frame off the
-      `Input` base instead of restating a paler one
+      `Input` base instead of restating a paler one. `Colors.ControlBorder` is
+      the palette role that arrived a session later, when `Chip` turned out to
+      be a second spender: a quiet chip's ring is not a rule between things, it
+      is the only edge a filter control has, and it was drawing it out of the
+      1.26:1 divider. The two component bases still state their frame as a
+      literal — a `Style` is a value and cannot call a resolver — and a test
+      pins them to the role
 - [x] Navigation (`Navigator`, `Push`, `Pop`, `Replace`, `PopToRoot`, `Reset`,
       per-frame state) and `core.Modal` / toasts
 - [x] Forms with validation (`forms`) — a rule vocabulary, cross-field checks,
