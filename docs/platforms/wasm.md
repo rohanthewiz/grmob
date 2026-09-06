@@ -355,15 +355,18 @@ not clamped: it selects no tab and shows no page, which is what
 `children.indices.contains` in Swift and `getOrNull` in Kotlin do for the page,
 and what the Swift bar's plain `i == selected` does for the indicator.
 
-Both DOM renderers read the table twice, and the second read is the
-non-obvious one. The first plants the default on the element as it is built
-(`createElement`, `renderNode`). The second restates it while serializing the
-`Style` (`styleFromGrMob`, `styleValue`), because those functions are *total*:
-an update-style patch carries the whole new `Style`, so a `display` they do
-not write is a `display` they erase. A runtime that read the table only when
-building would stack a container until its first style patch and then drop it
-into block flow. `TestRuntimeStackAxesMatchGo` compares the tables and
-`TestRuntimeAppliesTheStackDefault` pins both reads.
+The read that matters is the one inside the total function. `styleFromGrMob`
+and `styleValue` assign every property they manage on every call, so a
+`display` they do not write is a `display` they erase — which means the table
+has to be consulted there, or an update-style patch would drop a container into
+block flow the first time anything restyled it.
+
+`htmlout` reads the table a second time when it builds the element
+(`renderNode`), because a static export has no patch path for a total function
+to be total *for*. The runtime does not: `createElement` calls `applyStyle` for
+every node, passing an empty object where there is no `Style`, so one call site
+plants the default and restates it. `TestRuntimeStackAxesMatchGo` compares the
+tables and `TestRuntimeAppliesTheStackDefault` pins the reads.
 
 `Fragment` and `Theme` are the one exemption, the same one the tag table
 makes: this runtime boxes them in real `<div>`s to keep positional patch
@@ -526,6 +529,46 @@ an element the browser draws nothing on, and `"none"` for one it does.
 `TestRuntimeBorderResetTypesMatchGo` — and it holds `Button`, `Input`,
 `InputPassword`, `NumericInput`, `TextArea` and `Select`.
 
+### Every node is styled, including one with no `Style`
+
+The border reset is also where the create path's one asymmetry showed up.
+`createElement` used to call `applyStyle` only for a node that carried a
+`Style`, and made up the difference with three branches of its own — a
+`TextGrid` chassis, a stack default, an overlay default — which between them
+covered every type-keyed answer `styleFromGrMob` gives *except* the border. So
+a `<button>` with no `Style` kept the browser's rule, while the patch path,
+which has always called `applyStyle` unconditionally, took it away the moment
+anything gave that button a `Style`: one node drawn two ways depending on
+whether it had been touched.
+
+Nothing `core` builds is ever styleless — every widget reads a theme base — so
+only a hand-assembled tree could reach it. The fix was to make the call total
+rather than to document the gap: `applyStyle(el, node.Style || {}, node.Type)`,
+and the three branches went with it. `styleless_test.mjs` holds the four
+node-type answers a styleless node now gets.
+
+`Modal`'s chassis moved with them, into `styleFromGrMob` beside the grid's,
+where a set of node-type defaults has to live to survive an update-style patch.
+Each line is `out.x = out.x || …`, which is how the runtime says what `htmlout`
+gets from the cascade by writing `modalChassis` ahead of the author's
+declarations: **the author wins**. `htmlout.ModalChassis()` is the shared
+statement of the nine, and `TestRuntimeModalChassisMatchesGo` compares them —
+including the `||` itself, since a plain assignment would pass a value
+comparison while making the runtime the one target where a hand-built `Modal`'s
+own `Style` loses. It used to be worse than that: the chassis was assigned at
+creation, the total pass cleared position, centring and z-index straight back
+off, and nothing put them back.
+
+`display` is the exemption, on both targets and for the same reason from
+opposite directions. It is the open/closed state, written from the `visible`
+prop; `htmlout` writes the whole declaration list at once from props it can
+see, while the runtime's style pass never sees a prop — so `styleFromGrMob`
+**deletes** the key rather than assigning it, and `Object.assign` leaves an
+absent property alone. That is the one hole in the totality rule, and it is
+what stops a restyle from slamming an open dialog shut.
+
+### The reset is keyed by node type
+
 It is keyed by **node type**, not by tag, and the text fields are why. Five
 node types share `<input>` and only three of them want the reset: a checkbox's
 border *is* the control and a range track has none, so a tag-keyed set would
@@ -626,6 +669,70 @@ The three lists are ARIA's own scoping and are not interchangeable.
 `TestRuntimeGuardsTheExpandedStateTheSameWay` hold each dispatch against its
 `htmlout` twin; `a11y_test.mjs` covers the live halves, including the patch
 sequence a static export cannot have.
+
+### Composite widgets are operable
+
+A `listbox` and a `tablist` are real ARIA *controls*, and the pattern each one
+names is larger than the two attributes that declare it: the widget is one stop
+in the page's tab order, the arrow keys move between its members, and a roving
+`tabindex` says which member holds the stop. `core.Role` states the semantics
+and stops there — it is a vocabulary — so for a long time three shipped screens
+claimed a pattern that no target implemented: `examples/mobileapp`'s article
+list is a listbox of `<div>`s no keyboard could reach at all, and
+`examples/social`'s bottom bar and tutorial 4.5 are tab strips a keyboard could
+cross only by tabbing through every member.
+
+This runtime supplies the behavioural half, and it needed no new prop and no
+change to any of those screens, because everything the pattern wants was
+already on the wire:
+
+| what the pattern needs | what already said it |
+|---|---|
+| which nodes are members of which widget | `role="listbox"`/`"option"`, `role="tablist"`/`"tab"` — a structural role owns what is inside it |
+| which member is chosen | `aria-selected`, which a strip already sets on every member and not only the live one |
+| which arrow pair moves | the container's own resolved `flex-direction` — this runtime planted it from the stack table |
+| what activation means | the `onClick` the author already wired |
+
+What the runtime does with that:
+
+| key | effect |
+|---|---|
+| arrow along the container's axis | moves to the next or previous member, wrapping at both ends |
+| arrow across it | left to the page, so a horizontal strip does not stop a vertical scroll |
+| `Home` / `End` | first and last member |
+| `Enter` / `Space` | runs the member's own `onClick` — but only for a member that is not already a control the browser activates for itself, since a `<button>` fires a real click on both keys and a synthesized one would run the handler twice |
+| anything else, `Tab` included | untouched. A listbox that swallowed `Tab` would trap a keyboard user inside it. |
+
+The tab stop follows two rules, and both were bugs in the version that only
+read `aria-selected`: while focus is inside the widget it stays on the member
+holding focus, so a user who has arrowed to the third option without choosing
+it does not lose their place to an unrelated patch; once focus has left, it
+returns to the selected member, which is where ARIA says `Tab` should enter and
+where a click that changed the selection has just moved it.
+
+`core.TabView`'s own bar gets all of this for free: the bar is chrome this
+runtime draws, it already writes `role="tablist"` and `role="tab"` from the
+node type, and it goes through the same table every hand-built strip does.
+
+Two exclusions, for opposite reasons. A `disabled` form control is out of the
+rotation entirely — the browser refuses it focus, so arrowing onto it would
+move the tab stop somewhere no focus can follow — while a `<div>` carrying
+`aria-disabled` stays in, because it is still focusable and ARIA keeps a
+disabled option reachable so a user can find out it is there.
+
+**`htmlout` writes none of it, and that is the one deliberate difference
+between the two DOM targets.** Everywhere else a divergence between them is a
+bug being closed; here a roving `tabindex` without the handler that moves it is
+strictly worse than no pattern at all — it takes every member but one out of
+the tab order and supplies nothing that reaches the rest, so a static export
+would go from three tab stops to one tab stop and two unreachable rows.
+`tabindex` is behaviour here, not semantics, and the exporter is not a runtime.
+`wasm/verify/keynav_test.go` holds that line from Go; `keynav_test.mjs` covers
+the live half.
+
+Both phones lose nothing and have no arm to add: VoiceOver and TalkBack
+navigate a collection by swipe, and neither native has a listbox in its
+semantics vocabulary at all.
 
 ## Testing without a browser
 
@@ -778,10 +885,38 @@ because a page may be perfectly authorised and simply indoors.
 than a permission. It is answered `unavailable` rather than dropped, so a
 screen waiting on it stops waiting.
 
-The costs are the browser's and are stated rather than hidden: a granted
-request has genuinely opened the camera for a moment, and a refused one reads
-as `denied` whether the user pressed Block or dismissed the prompt, because a
-`NotAllowedError` does not say which.
+**Every request reads the permission before it reaches for the device.** The
+obvious version of the table above calls the feature every time, and it opened
+the camera for a moment on a page that already had the camera permission — the
+recording indicator lighting up to answer a question the browser had already
+written down. So:
+
+| the query says | what happens |
+|---|---|
+| `granted` | reported. Nothing is opened. |
+| `denied` | reported. A `getUserMedia` here rejects immediately with no UI, so the call buys a `NotAllowedError` and nothing else. |
+| `prompt` | the feature is called. This is the one state where a request has something to do, and opening the camera *is* the prompt. |
+| nothing (no descriptor) | the feature is called, as this always did. A browser that cannot be read can only be asked by asking. |
+
+Note which way that short-circuit differs from the Android shell's, which
+deliberately does *not* stop on `denied`: this one is the browser's own live
+answer, and that one is bookkeeping the shell keeps itself and which
+[auto-reset](native.md#permissions) can make stale.
+
+**And a refusal is read back, because `NotAllowedError` does not say which
+refusal it was.** A Block and a dismissed prompt arrive identically and want
+different words — one can be asked again, the other wants the user sent to the
+site settings. The Permissions API knows: a Block is recorded as `denied`, a
+dismissal leaves the state at `prompt`. So the request asks a second time and
+reports what it hears; only `prompt` upgrades the answer, since a query
+claiming `granted` right after a rejected request is a browser contradicting
+itself. Where there is no descriptor to read there is still no way to tell, and
+the answer stays `denied` — the direction whose remedy is harmless to offer.
+
+The cost that remains is the browser's and is stated rather than hidden: a
+request for a permission the user has not decided on genuinely opens the device
+for a moment, because that call is the only thing on this platform that can put
+a prompt on screen.
 
 ## Same engine, same rules
 

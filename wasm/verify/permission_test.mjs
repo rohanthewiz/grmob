@@ -43,10 +43,16 @@ function harness(navigator = {}) {
 }
 
 // The runtime answers from promise callbacks, so every assertion has to come
-// after the microtask queue has drained. Two turns rather than one: the media
-// path chains a .then onto the getUserMedia promise, so its report lands one
-// tick behind the call.
-const settle = async () => { await null; await null; await null; };
+// after the microtask queue has drained. Several turns rather than one: the
+// longest path here is three promises deep — a request reads the permission,
+// reaches for the device, and reads the permission again to tell a Block from
+// a dismissed prompt — and each link lands one tick behind the last. The count
+// is generous on purpose; an extra drained turn costs nothing and a missing
+// one is a test that fails for a reason that has nothing to do with its
+// subject.
+const settle = async () => {
+    for (let i = 0; i < 8; i++) await null;
+};
 
 // --- check ------------------------------------------------------------------
 
@@ -257,4 +263,209 @@ test("an answer with no host channel attached is dropped rather than thrown", as
     });
     rt.GrMob.permission.handle({ command: "check", kind: "camera" });
     await settle();
+});
+
+// --- request: the read that comes first -------------------------------------
+
+test("a request for something already granted never opens the device", async () => {
+    // The entry this closes: a granted camera request had genuinely opened the
+    // camera for a moment — the browser's recording indicator lighting up to
+    // answer a question the browser had already written down.
+    let opened = 0;
+    const h = harness({
+        permissions: { query: () => Promise.resolve({ state: "granted" }) },
+        mediaDevices: {
+            getUserMedia: () => {
+                opened++;
+                return Promise.resolve({ getTracks: () => [] });
+            },
+        },
+    });
+    h.request("camera");
+    await settle();
+
+    assert.equal(opened, 0, "the camera was opened to confirm a permission the "
+        + "browser had already recorded");
+    assert.deepEqual(h.answers, [{ kind: "camera", status: "granted" }]);
+});
+
+test("a request for something already denied does not call the feature", async () => {
+    // A getUserMedia here rejects immediately with no UI, so the call buys a
+    // NotAllowedError and nothing else.
+    let opened = 0;
+    const h = harness({
+        permissions: { query: () => Promise.resolve({ state: "denied" }) },
+        mediaDevices: {
+            getUserMedia: () => { opened++; return Promise.reject(new Error("no")); },
+        },
+    });
+    h.request("camera");
+    await settle();
+
+    assert.equal(opened, 0);
+    assert.deepEqual(h.answers, [{ kind: "camera", status: "denied" }]);
+});
+
+test("a location request for a granted origin does not take a fix", async () => {
+    // The same saving on the other API, where the cost is larger: a
+    // getCurrentPosition on a phone can spin up the GPS.
+    let fixes = 0;
+    const h = harness({
+        permissions: { query: () => Promise.resolve({ state: "granted" }) },
+        geolocation: { getCurrentPosition: (ok) => { fixes++; ok({ coords: {} }); } },
+    });
+    h.request("location");
+    await settle();
+
+    assert.equal(fixes, 0);
+    assert.deepEqual(h.answers, [{ kind: "location", status: "granted" }]);
+});
+
+test("an undecided permission still reaches for the device", async () => {
+    // The one state where a request has something to do. Opening the camera
+    // *is* the prompt; there is no other way to put one on screen.
+    let opened = 0;
+    const h = harness({
+        permissions: { query: () => Promise.resolve({ state: "prompt" }) },
+        mediaDevices: {
+            getUserMedia: () => {
+                opened++;
+                return Promise.resolve({ getTracks: () => [] });
+            },
+        },
+    });
+    h.request("camera");
+    await settle();
+
+    assert.equal(opened, 1, "an undecided permission was never asked for");
+    assert.deepEqual(h.answers, [{ kind: "camera", status: "granted" }]);
+});
+
+test("a browser with no descriptor asks by asking", async () => {
+    // Firefox has no "camera" descriptor at all, so query() throws rather than
+    // resolving. The read cannot answer and the feature call is the only thing
+    // left — which is what this path always did.
+    let opened = 0;
+    const h = harness({
+        permissions: { query: () => Promise.reject(new TypeError("bad descriptor")) },
+        mediaDevices: {
+            getUserMedia: () => {
+                opened++;
+                return Promise.resolve({ getTracks: () => [] });
+            },
+        },
+    });
+    h.request("camera");
+    await settle();
+
+    assert.equal(opened, 1, "a browser that cannot be read was not asked either");
+    assert.deepEqual(h.answers, [{ kind: "camera", status: "granted" }]);
+});
+
+test("storage is answered without ever reaching the query", async () => {
+    // There is no descriptor for it, so the read would be a round trip to an
+    // answer this file already knows.
+    let queried = 0;
+    const h = harness({
+        permissions: { query: () => { queried++; return Promise.resolve({ state: "granted" }); } },
+    });
+    h.request("storage");
+    await settle();
+
+    assert.equal(queried, 0);
+    assert.deepEqual(h.answers, [{ kind: "storage", status: "unavailable" }]);
+});
+
+// --- request: a Block and a dismissal are different answers -----------------
+
+test("a dismissed prompt is prompt, and a Block is denied", async () => {
+    // Both arrive as the same NotAllowedError. The Permissions API is what
+    // separates them: a Block is recorded as "denied", a dismissal leaves the
+    // state where it was. The words matter to the screen — one of them means
+    // "ask again next time the user reaches for this" and the other means
+    // "send them to the site settings".
+    for (const [after, status] of [["prompt", "prompt"], ["denied", "denied"]]) {
+        // The first query has to say "prompt" or the request would never reach
+        // getUserMedia at all; the second is the read-back after the refusal.
+        const states = ["prompt", after];
+        let n = 0;
+        const h = harness({
+            permissions: { query: () => Promise.resolve({ state: states[n++] || after }) },
+            mediaDevices: {
+                getUserMedia: () => Promise.reject(
+                    Object.assign(new Error("no"), { name: "NotAllowedError" })),
+            },
+        });
+        h.request("camera");
+        await settle();
+        assert.deepEqual(h.answers, [{ kind: "camera", status }], after);
+    }
+});
+
+test("a refusal a browser cannot explain stays denied", async () => {
+    // No descriptor to read back, so there is still no way to tell the two
+    // apart — and denied is the direction whose remedy is harmless to offer.
+    const h = harness({
+        mediaDevices: {
+            getUserMedia: () => Promise.reject(
+                Object.assign(new Error("no"), { name: "NotAllowedError" })),
+        },
+    });
+    h.request("camera");
+    await settle();
+    assert.deepEqual(h.answers, [{ kind: "camera", status: "denied" }]);
+});
+
+test("a browser contradicting itself does not hand back a grant", async () => {
+    // A query answering "granted" straight after a rejected getUserMedia is a
+    // browser disagreeing with itself. Reporting the grant would give the app
+    // a camera that had just refused it, so everything except "prompt" stays
+    // denied.
+    const states = ["prompt", "granted"];
+    let n = 0;
+    const h = harness({
+        permissions: { query: () => Promise.resolve({ state: states[n++] || "granted" }) },
+        mediaDevices: {
+            getUserMedia: () => Promise.reject(
+                Object.assign(new Error("no"), { name: "NotAllowedError" })),
+        },
+    });
+    h.request("camera");
+    await settle();
+    assert.deepEqual(h.answers, [{ kind: "camera", status: "denied" }]);
+});
+
+test("a dismissed location prompt is prompt too", async () => {
+    // Same distinction through the other API's code 1, which is equally silent
+    // about which of the two happened.
+    const states = ["prompt", "prompt"];
+    let n = 0;
+    const h = harness({
+        permissions: { query: () => Promise.resolve({ state: states[n++] || "prompt" }) },
+        geolocation: { getCurrentPosition: (_, fail) => fail({ code: 1 }) },
+    });
+    h.request("location");
+    await settle();
+    assert.deepEqual(h.answers, [{ kind: "location", status: "prompt" }]);
+});
+
+test("a missing device is unavailable and is not read back", async () => {
+    // NotFoundError is not a refusal at all, so it must not go through the
+    // Block/dismissal read: there is no permission state that would describe
+    // a camera the machine does not have.
+    let queries = 0;
+    const h = harness({
+        permissions: {
+            query: () => { queries++; return Promise.resolve({ state: "prompt" }); },
+        },
+        mediaDevices: {
+            getUserMedia: () => Promise.reject(
+                Object.assign(new Error("no"), { name: "NotFoundError" })),
+        },
+    });
+    h.request("camera");
+    await settle();
+
+    assert.equal(queries, 1, "the refusal read-back ran for a device that is simply absent");
+    assert.deepEqual(h.answers, [{ kind: "camera", status: "unavailable" }]);
 });

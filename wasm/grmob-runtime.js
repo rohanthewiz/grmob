@@ -52,39 +52,51 @@ const GrMob = (() => {
         // patches carry only the changed Style — see the patch handler.
         el.dataset.nodeType = node.Type;
 
-        if (node.Type === "Modal") {
-            // The overlay chassis. Core's ModalNode carries no Style — its
-            // look is these fixed rules plus the backdrop prop — so this is
-            // assigned once here and only display (visible) and background
-            // (backdrop) ever change, both through the prop paths below.
-            // display starts "none" because Visible defaults to false in Go;
-            // the visible prop in the loop below sets the truth either way.
-            Object.assign(el.style, {
-                position: "fixed",
-                top: 0, left: 0, right: 0, bottom: 0,
-                display: "none",
-                flexDirection: "column",
-                alignItems: "center",
-                justifyContent: "center",
-                zIndex: 1000,
-            });
-            // The accessibility half of the same chassis: role="dialog" plus
-            // aria-modal. Written here as well as in applyStyle because a
-            // Modal core built has no Style at all, so the applyStyle path
-            // below never runs for it — while a hand-assembled Modal node that
-            // *does* carry one needs the attributes to survive every later
-            // update-style patch, which is applyAccessibility's job. Both
-            // routes end in the same function, so they cannot drift.
-            applyAccessibility(el, node.Style || {}, "Modal");
-        }
+        // The style pass, run for every node — including one that carries no
+        // Style at all, which is what the `|| {}` is for.
+        //
+        // styleFromGrMob is *total*, and several of the properties it assigns
+        // are answers to the node TYPE rather than to the Style: the flex axis
+        // a Row or a Column stacks along, the single-cell grid a ZStack draws
+        // its layers in, the fixed rules of a TextGrid, and the three-valued
+        // border that turns the user agent's own 2px outset rule off for a
+        // <button>, an <input> and a <select>. A node with no Style needs
+        // every one of those exactly as much as a node with one — so the empty
+        // Style goes through the same function rather than each default being
+        // restated here, which is what this used to do for three node types
+        // and never did for the border.
+        //
+        // The update-style patch has always called applyStyle unconditionally
+        // (reconcile emits the whole new Style, so the patch handler has no
+        // "no style" case to guard). A conditional call *here* therefore meant
+        // a styleless <button> kept the browser's border until some later
+        // patch gave it a Style and took the border away — one node drawn two
+        // ways depending on whether anything had touched it since it was
+        // built. Nothing core constructs is ever styleless, since every widget
+        // reads a theme base, so only a hand-assembled tree could reach it;
+        // that made it cheaper to close than to keep documenting.
+        applyStyle(el, node.Style || {}, node.Type);
 
-        // A grid or row built without a Style still needs its chassis, which
-        // lives in styleFromGrMob (keyed on the node type) so that an
-        // update-style patch re-applies it rather than clearing it. Nodes
-        // core.TextGrid builds always carry a Style and take the applyStyle
-        // path below; this covers a hand-assembled one.
-        if ((node.Type === "TextGrid" || node.Type === "GridRow") && !node.Style) {
-            applyStyle(el, {}, node.Type);
+        if (node.Type === "Modal") {
+            // The one thing about a Modal that is neither a Style nor a prop
+            // this element has been given yet: it starts closed, because
+            // core.Visible defaults to false in Go. The `visible` prop in the
+            // loop below sets the truth either way, and a hand-assembled node
+            // that carries no such prop stays shut rather than splicing a
+            // dialog's body into the middle of the page.
+            //
+            // The rest of the chassis — the fixed inset-0 box, the centred
+            // flex column, the z-index — is in styleFromGrMob beside the grid
+            // chassis, which is where a set of node-type defaults has to live
+            // to survive an update-style patch. It used to be assigned here,
+            // and a hand-assembled Modal carrying any Style at all had it
+            // cleared out from under it by the total pass, with nothing to put
+            // it back.
+            //
+            // The accessibility half — role="dialog" plus aria-modal — used to
+            // be restated here too, because applyStyle did not run for a node
+            // with no Style. It rides the unconditional call above now.
+            el.style.display = "none";
         }
 
         // The <input> variant, which the tag alone cannot express: tagForType
@@ -99,46 +111,6 @@ const GrMob = (() => {
         const inputType = inputTypeFor(node.Type);
         if (inputType) {
             el.setAttribute("type", inputType);
-        }
-
-        // Containers are stacks by definition: on the native renderers a
-        // Row/Column is inherently an HStack/VStack, so the web has to opt
-        // into the same default or diverge — a block-flow div lets inline
-        // children (Text renders as <span>) run together on one line, which
-        // is exactly what a bare Column of texts looked like before this.
-        // Assigned before applyStyle so a style-driven flex block (which
-        // carries the axis and alignment logic in styleFromGrMob) still wins.
-        // Which types stack, and why Modal and Spacer are not among them, is
-        // stackAxisFor's table.
-        const stackAxis = stackAxisFor(node.Type);
-        if (stackAxis) {
-            el.style.display = "flex";
-            el.style.flexDirection = stackAxis;
-            // What this element's display is when nothing is hiding it. Only a
-            // tab page ever reads it back (syncTabView), and only a container
-            // with no Style at all reaches this line without applyStyle
-            // recording the same thing a moment later — but that container is
-            // exactly the case a "" default would get wrong, by restoring an
-            // unhidden page to block flow.
-            el.dataset.baseDisplay = "flex";
-        }
-
-        // The overlay's own half of the same default, and planted here for
-        // the same reason: a core.ZStack carries no theme base, so a stack
-        // written with children and no style props reaches this function with
-        // Style null and never sees applyStyle at all — and a box that is not
-        // a grid runs its layers down the page instead of over each other.
-        // styleFromGrMob restates it for every node that does have a Style,
-        // because that function is total.
-        if (OVERLAY_TYPES.has(node.Type)) {
-            el.style.display = "grid";
-            el.style.alignItems = "center";
-            el.style.justifyItems = "center";
-            el.dataset.baseDisplay = "grid";
-        }
-
-        if (node.Style) {
-            applyStyle(el, node.Style, node.Type);
         }
 
         if (node.Props) {
@@ -680,8 +652,8 @@ const GrMob = (() => {
             const page = el.children[i];
             const index = i - offset;
             // baseDisplay is the display this page would have with nothing
-            // hiding it, recorded wherever this runtime decides one (the stack
-            // default in createElement, and applyStyle). Restoring it rather
+            // hiding it, recorded by applyStyle — which is now the single
+            // place this runtime decides a display at all. Restoring it rather
             // than clearing the declaration is the point: a Column page cleared
             // to "" would lose the display:flex every stack container gets, and
             // come back as block flow.
@@ -767,6 +739,346 @@ const GrMob = (() => {
         }
     }
 
+
+    // --- The keyboard half of a composite widget -----------------------------
+    //
+    // core.Role is a vocabulary: it says what a node *is* and stops there, and
+    // its own doc says so where it declares the two pairs this section is
+    // about —
+    //
+    //     A listbox is a real control in ARIA's model, and the pattern that
+    //     goes with it is larger than two attributes: the container takes
+    //     keyboard focus, the arrow keys move an active option, and the reader
+    //     is told which option is active through a roving tabindex or
+    //     aria-activedescendant.
+    //
+    // None of that was anywhere. Three consumers shipped a role that claimed
+    // more than the widget did: examples/mobileapp's article list is a
+    // listbox of divs that no keyboard could reach at all, and
+    // examples/social's bottom bar and tutorial 4.5 are tablists of buttons
+    // that a keyboard could reach only by tabbing through every one of them.
+    // The first is a control with no keyboard operation; the second announces
+    // "tab, 1 of 3" and then behaves like three unrelated buttons.
+    //
+    // # Why this is here and not in core
+    //
+    // The entry that asked for this said it needed a focus concept core does
+    // not have. It does not, and the reason is worth stating because it is
+    // what made the work small: everything the pattern needs is already on
+    // the wire.
+    //
+    //     what is a member of what   role="listbox" / "option", role="tablist"
+    //                                / "tab" — a structural role owns what is
+    //                                inside it, which core/role.go states as a
+    //                                rule an author has to keep
+    //     which one is chosen        aria-selected, which both pairs already
+    //                                carry and which a strip sets on every
+    //                                member rather than only the live one
+    //     which way the arrows go    the container's own flex-direction, which
+    //                                this runtime planted from stackAxisFor
+    //     what activation means      the onClick the author already wired
+    //
+    // So there is no new prop, no new core type, and no source change in any
+    // of the three consumers — they were already saying all of it. What was
+    // missing was a target that reads it.
+    //
+    // core/focus.go is not the missing piece either. That file is about
+    // putting the cursor in a *named* field, from Go, as a command that rides
+    // the render tree; this is about which of a widget's own members holds the
+    // one tab stop, which changes on a keystroke with no render in between.
+    // Routing it through Go would be a render pass per arrow key.
+    //
+    // # Both phones lose nothing
+    //
+    // VoiceOver and TalkBack navigate a collection by swipe, not by arrow key,
+    // and neither native has a listbox in its semantics vocabulary at all —
+    // both spell a chosen item as the `selected` state and honour it on any
+    // node without being told what contains it. So this is a web-target
+    // concern in the same way the Modal chassis is, and there is no native arm
+    // missing.
+    //
+    // # htmlout writes none of it, deliberately
+    //
+    // The static exporter is not a runtime (docs/platforms/exporters.md says
+    // so, and its TabView bar is already inert chrome). A roving tabindex
+    // *without* the key handler that moves it is strictly worse than nothing:
+    // it takes every member but one out of the tab order and supplies no way
+    // to reach them, so a static export would go from "three tab stops" to
+    // "one tab stop and two unreachable items". tabindex here is behaviour,
+    // not semantics, and it is only correct in the presence of the code below.
+
+    // The two structural pairs, container role to member role. Everything in
+    // this section is driven by this table and nothing else knows the words.
+    //
+    // Kept to the two roles that have a keyboard pattern *and* a container
+    // that owns its children. `list`/`listitem` is content rather than a
+    // control and has no pattern; `menu`, `tree` and `grid` are patterns core
+    // has no roles for yet.
+    const COMPOSITE_MEMBERS = { listbox: "option", tablist: "tab" };
+
+    // Which arrow pair moves within a container, when its own axis cannot say.
+    // ARIA's defaults: a tablist is horizontal unless it says otherwise, a
+    // listbox is vertical.
+    const COMPOSITE_DEFAULT_VERTICAL = { listbox: true, tablist: false };
+
+    // Elements the browser already activates from the keyboard. A <button>
+    // fires a real click on both Enter and Space and an <a href> on Enter, so
+    // synthesizing one here would run the author's handler twice.
+    const NATIVELY_ACTIVATED = new Set(["BUTTON", "A", "INPUT", "SELECT", "TEXTAREA"]);
+
+    function compositeMemberRole(el) {
+        if (!el || !el.getAttribute) return "";
+        return COMPOSITE_MEMBERS[el.getAttribute("role")] || "";
+    }
+
+    // The members of one composite, in document order.
+    //
+    // A subtree walk rather than a children scan, because nothing says a
+    // member is a direct child: components.ListRow renders a row inside
+    // whatever core.For and core.Keyed wrap it in, and a tab strip may have
+    // its buttons inside a scroller. The walk stops at three things:
+    //
+    //   a nested composite of the same kind   its members are its own, and a
+    //                                         listbox inside a listbox would
+    //                                         otherwise pool both sets
+    //   an aria-hidden subtree                pruned from the accessibility
+    //                                         tree, so it has no members
+    //   a disabled form control               the browser refuses it focus
+    //                                         outright, so arrowing onto it
+    //                                         would move the tab stop to a
+    //                                         place no focus can follow. An
+    //                                         aria-disabled div is *not*
+    //                                         excluded: it is still focusable,
+    //                                         and ARIA keeps a disabled option
+    //                                         reachable so a user can tell it
+    //                                         is there.
+    function compositeMembers(container, memberRole, out = []) {
+        for (const child of container.children) {
+            if (!child.getAttribute) continue;
+            // An aria-hidden *subtree*. The member case is already covered
+            // upstream — applyAccessibility drops the role of a hidden node,
+            // so a hidden option is not an option here — but a hidden wrapper
+            // keeps its children's roles, and those children are pruned from
+            // the accessibility tree along with it.
+            if (child.getAttribute("aria-hidden") === "true") continue;
+            if (child.getAttribute("role") === memberRole) {
+                if (!child.disabled) out.push(child);
+                // A member is a leaf of this walk even when it holds elements:
+                // its contents belong to it, and a tab inside a tab is not a
+                // shape ARIA has.
+                continue;
+            }
+            if (compositeMemberRole(child) === memberRole) continue;
+            compositeMembers(child, memberRole, out);
+        }
+        return out;
+    }
+
+    // The composite a member belongs to, or null. Walks out rather than
+    // searching, so a member nested three containers deep finds the same
+    // answer compositeMembers reached it from.
+    //
+    // The match is on the member's *own* role rather than on "the nearest
+    // composite of any kind", and the difference is the one thing that keeps
+    // this the inverse of compositeMembers. That walk descends through a
+    // composite of the other kind — a tablist inside a listbox is not a
+    // listbox's member and does not close it — so an option below one is still
+    // the listbox's member, and a walk out that stopped at the tablist would
+    // disagree with the walk in. Nobody writes that tree on purpose; the two
+    // functions still have to answer the same question the same way.
+    function compositeOf(member) {
+        const role = member.getAttribute("role");
+        for (let el = member.parentNode; el && el.getAttribute; el = el.parentNode) {
+            if (compositeMemberRole(el) === role) return el;
+        }
+        return null;
+    }
+
+    // Which member holds the widget's one tab stop.
+    //
+    // The order is what keeps two different things right at once, and both
+    // were bugs in the version that only looked at aria-selected:
+    //
+    //   focus is inside      the member holding it. A user who has arrowed to
+    //                        the third option without choosing it must not
+    //                        have the tab stop yanked back to the second by
+    //                        an unrelated patch landing.
+    //   otherwise            the selected member, which is where ARIA says
+    //                        Tab should enter a widget — and where a click
+    //                        that changed the selection has just moved it.
+    //   nothing selected     whatever already holds the stop, so a widget with
+    //                        no selection at all still remembers where the
+    //                        user left it.
+    //   nothing at all       the first member, so the widget is enterable on
+    //                        its very first render.
+    function activeMemberIndex(members) {
+        const focused = document.activeElement;
+        const held = members.indexOf(focused);
+        if (held >= 0) return held;
+        const selected = members.findIndex(
+            (m) => m.getAttribute("aria-selected") === "true");
+        if (selected >= 0) return selected;
+        const stop = members.findIndex((m) => m.getAttribute("tabindex") === "0");
+        return stop >= 0 ? stop : 0;
+    }
+
+    // Writes the roving tabindex and wires the members' keys.
+    //
+    // Total over the member list on every call, for the reason applyStyle and
+    // applyAccessibility are total: a member that stops being the active one
+    // has to lose the "0", and a guarded write would leave two tab stops in
+    // one widget. The listener is the one thing that is not re-done, because
+    // adding it twice would run the handler twice — a fresh element from a
+    // replace has no stamp and gets one, which is the case the stamp exists
+    // for.
+    function syncComposite(container) {
+        const memberRole = compositeMemberRole(container);
+        if (!memberRole) return;
+        const members = compositeMembers(container, memberRole);
+        if (members.length === 0) return;
+
+        const active = activeMemberIndex(members);
+        members.forEach((member, i) => {
+            member.setAttribute("tabindex", i === active ? "0" : "-1");
+            if (!member.dataset.grmobKeyNav) {
+                member.dataset.grmobKeyNav = "true";
+                member.addEventListener("keydown", handleCompositeKey);
+            }
+        });
+    }
+
+    // Whether this container's arrows run down the page.
+    //
+    // The container's own resolved flex-direction is the honest answer: every
+    // container this runtime draws is a flex container (stackAxisFor), and an
+    // author who turned a tab strip on its side with FlexDirection said which
+    // way its arrows go by doing so. ARIA's per-role default is the fallback
+    // for a container whose direction nothing set — which on this target means
+    // a role placed on a node type that is not a stack.
+    function compositeIsVertical(container) {
+        const dir = (container.style && container.style.flexDirection) || "";
+        if (dir.startsWith("column")) return true;
+        if (dir.startsWith("row")) return false;
+        return !!COMPOSITE_DEFAULT_VERTICAL[container.getAttribute("role")];
+    }
+
+    // Moves the tab stop to one member and puts focus on it.
+    //
+    // Focus and the stop move together, always: they are two statements of one
+    // fact, and a browser that focused a member holding tabindex="-1" would
+    // put the next Tab back at the top of the document.
+    function moveCompositeFocus(members, index) {
+        members.forEach((member, i) => {
+            member.setAttribute("tabindex", i === index ? "0" : "-1");
+        });
+        members[index].focus();
+    }
+
+    // Enter and Space on a member that is not a control the browser activates
+    // for itself.
+    //
+    // The author's onClick is invoked directly rather than through a
+    // synthesized click, which is the same move buildTabBar makes for a tab
+    // button: the callback ID is read back off the dataset at fire time, so a
+    // handler replaced by a later render pass is the one that runs.
+    //
+    // A member with no onClick is left alone entirely — including its
+    // preventDefault, so Space still scrolls a page whose options do nothing.
+    function activateCompositeMember(member, e) {
+        if (NATIVELY_ACTIVATED.has(member.tagName)) return;
+        const cbId = member.dataset.listener_onClick;
+        if (!cbId) return;
+        // Space would scroll the page and Enter would submit a surrounding
+        // form; a member that is about to act on the key owns it.
+        e.preventDefault();
+        window.GoInvokeCallback(cbId, {});
+    }
+
+    // One member's keydown.
+    //
+    // currentTarget rather than target: in a browser the key arrives at
+    // whatever inside the row actually holds focus, and the member is the
+    // element this listener is on.
+    //
+    // Movement wraps at both ends. ARIA makes wrapping optional for a listbox
+    // and recommends it for a tablist; one rule for both is what keeps a user
+    // who has learned the tab strip from finding the article list behaves
+    // differently, and there is nothing at either end of these widgets that a
+    // stop would protect.
+    function handleCompositeKey(e) {
+        const member = e.currentTarget;
+        const container = compositeOf(member);
+        if (!container) return;
+        const members = compositeMembers(container, compositeMemberRole(container));
+        const at = members.indexOf(member);
+        if (at < 0) return;
+
+        const vertical = compositeIsVertical(container);
+        let to = -1;
+        switch (e.key) {
+            case vertical ? "ArrowDown" : "ArrowRight":
+                to = (at + 1) % members.length;
+                break;
+            case vertical ? "ArrowUp" : "ArrowLeft":
+                to = (at - 1 + members.length) % members.length;
+                break;
+            case "Home":
+                to = 0;
+                break;
+            case "End":
+                to = members.length - 1;
+                break;
+            case "Enter":
+            case " ":
+                activateCompositeMember(member, e);
+                return;
+            default:
+                // Every other key belongs to the page: a listbox that
+                // swallowed Tab would trap a keyboard user inside it.
+                return;
+        }
+        // Before the move, not after: the arrow keys scroll a page and Home
+        // and End jump it to the ends, and a widget that moved its own focus
+        // while the document scrolled underneath is the same widget twice.
+        e.preventDefault();
+        moveCompositeFocus(members, to);
+    }
+
+    // Syncs every composite in a subtree, skipping anything already visited in
+    // this pass.
+    //
+    // The `seen` set is what bounds the cost: syncTouchedComposites walks down
+    // from every touched element, and a batch that touched a container and
+    // four of its children would otherwise walk the container's subtree five
+    // times.
+    function syncCompositesIn(el, done, seen) {
+        if (!el || !el.getAttribute || seen.has(el)) return;
+        seen.add(el);
+        if (compositeMemberRole(el) && !done.has(el)) {
+            done.add(el);
+            syncComposite(el);
+        }
+        for (const child of el.children) syncCompositesIn(child, done, seen);
+    }
+
+    // The patch pass. Up from each touched element, because a member changing
+    // its aria-selected moves the widget's tab stop and the member cannot see
+    // its own container; and down, because an added or replaced subtree may
+    // carry a whole composite the up-walk would never reach.
+    function syncTouchedComposites(touched) {
+        const done = new Set();
+        const seen = new Set();
+        for (const start of touched) {
+            for (let el = start; el && el.getAttribute; el = el.parentNode) {
+                if (compositeMemberRole(el) && !done.has(el)) {
+                    done.add(el);
+                    syncComposite(el);
+                }
+            }
+            syncCompositesIn(start, done, seen);
+        }
+    }
+
     // The size of a Spacer, on both axes.
     //
     // core.Spacer(n) is n x n on both natives — Compose
@@ -807,7 +1119,13 @@ const GrMob = (() => {
         // the declaration, which would drop a Column page into block flow. This
         // function is total, so the record is refreshed on every style patch
         // and can never go stale.
-        el.dataset.baseDisplay = css.display;
+        //
+        // `?? ""` for the one node type styleFromGrMob abstains from assigning
+        // a display to at all: a Modal's is its open/closed state and belongs
+        // to the prop channel. Writing the bare undefined would land the
+        // string "undefined" in the attribute, which is not a display and is
+        // worse than the empty string a modal has always recorded here.
+        el.dataset.baseDisplay = css.display ?? "";
         // core.Style.StackAlign, parked on the element rather than turned into
         // a declaration here. It is a *layer* property, and only the overlay
         // above knows whether this node is a layer — so syncOverlay reads it
@@ -1498,10 +1816,11 @@ const GrMob = (() => {
 
     // Which node types are stacks — containers that lay their children out
     // along an axis whether or not the Style asks — and the axis each uses.
-    // Both this runtime and htmlout consult it in two places: createElement /
-    // renderNode plants the default, and styleFromGrMob / styleValue restates
-    // it (this function is total, so an update-style patch would otherwise
-    // clear the display the element was built with).
+    // Read from styleFromGrMob alone on this target: that function is total
+    // and createElement now runs it for every node, Style or no Style, so the
+    // stacking default is planted and restated by one call site. htmlout still
+    // consults its copy in two places (renderNode plants it, styleValue
+    // restates it) because a static export has no patch path to be total for.
     //
     // Go's copy is stackAxes in htmlout/stack.go, which carries the reasoning
     // — including why Modal and Spacer are absent, and what TabView's row does
@@ -1612,10 +1931,12 @@ const GrMob = (() => {
         if (!alignItems && dir.startsWith("column") && alignFallbackAxisFor(nodeType)) {
             alignItems = crossAxisAlignFor(style.Align || "");
         }
-        // Stack containers are flex whether or not this Style asks for it —
-        // createElement plants the same default for nodes with no Style at
-        // all, and the totality rule above means this function must restate
-        // it here or an update-style patch would clear it. htmlout's
+        // Stack containers are flex whether or not this Style asks for it,
+        // and this is the only place on this target that says so: createElement
+        // calls applyStyle for a styleless node too, so the default is planted
+        // here at build time and restated here on every update-style patch —
+        // which the totality rule above requires, since a patch that dropped
+        // the display would otherwise leave a Column in block flow. htmlout's
         // styleValue reads the same table for the same reason.
         // RowGap/ColumnGap promote a box exactly as Gap does — `gap` IS the
         // two of them, so a node setting one has asked for the same spacing
@@ -1824,6 +2145,46 @@ const GrMob = (() => {
         out.alignSelf = style.AlignSelf || "";
         out.flexBasis = style.FlexBasis || "";
         out.flexShrink = style.FlexShrink ? `${style.FlexShrink}` : "";
+
+        // The Modal overlay chassis, on exactly the same terms as the grid's
+        // and for the same two reasons: it is the fixed look of a node *type*,
+        // and a chassis set only at creation would be wiped by the first
+        // update-style patch, since every property above is reassigned on
+        // every one. htmlout states the identical declarations in
+        // modalChassis, ahead of the author's style so the author still wins
+        // — which is what the `||` on each line here says.
+        //
+        // core.ModalNode carries no Style at all, so on every tree core builds
+        // this is the whole of a modal's look; a hand-assembled node that does
+        // carry one is the case the `||` is for. The z-index of 1000 sits
+        // under the toast layer's 2000, so a toast confirming a dialog's
+        // action is not drawn behind the dialog.
+        if (nodeType === "Modal") {
+            out.position = out.position || "fixed";
+            out.top = out.top || "0";
+            out.left = out.left || "0";
+            out.right = out.right || "0";
+            out.bottom = out.bottom || "0";
+            // flex, not block: the overlay centres its content.
+            out.flexDirection = out.flexDirection || "column";
+            out.alignItems = out.alignItems || "center";
+            out.justifyContent = out.justifyContent || "center";
+            out.zIndex = out.zIndex || "1000";
+            // The one exemption this function makes to its own totality rule,
+            // and it is deliberate: a Modal's `display` IS its open/closed
+            // state. It is written by the `visible` prop — at creation, and by
+            // the prop patch that opens or closes the dialog — and this
+            // function never sees a prop. Assigning anything here would close
+            // an open modal on the next update-style patch; assigning ""
+            // would open a closed one. Deleting the key is how the pass
+            // abstains: Object.assign leaves an absent property alone, so the
+            // prop channel keeps sole ownership of it.
+            //
+            // htmlout has no such split — it writes the whole declaration list
+            // once from the props it can see, so its chassis carries the
+            // display and this one does not.
+            delete out.display;
+        }
         return out;
     }
 
@@ -2013,6 +2374,13 @@ const GrMob = (() => {
             // same heading one group, in the order they were written — see
             // that field for why a gather would silently reorder the list —
             // so the loop closes a run by simply stopping appending to it.
+            //
+            // core.SelectMenuSections is the authority for that split, and the
+            // three other renderers each follow it as a run of sections. This
+            // one is the exception, on purpose: a DOM append has no closing
+            // step. A run ends when the next option stops being appended to
+            // the element, so there is no end-of-loop flush here to forget —
+            // which is exactly what htmlout, writing markup, did forget.
             let group = null;
             let openLabel = "";
             for (const o of list) {
@@ -2191,6 +2559,11 @@ const GrMob = (() => {
         rootElement = document.getElementById(mountPointId);
         rootElement.innerHTML = "";
         rootElement.appendChild(root);
+        // The initial render has no patch batch, so the composite pass runs
+        // over the whole tree once. After the append, because the pass reads
+        // document.activeElement and writes a tab stop, and both are questions
+        // about an element that is in the document.
+        syncCompositesIn(root, new Set(), new Set());
     }
 
     function patch(patchList) {
@@ -2427,6 +2800,11 @@ const GrMob = (() => {
 
         syncTouchedTabViews(touched);
         syncTouchedOverlays(touched);
+        // After the tab pass, and this ordering is load-bearing: syncTabView
+        // is what writes aria-selected onto the bar's buttons, and the tab
+        // stop follows the selection. Running first would move the stop from
+        // the state the batch replaced.
+        syncTouchedComposites(touched);
         // After the tab pass, and after every add-child/remove has landed:
         // the observation target is the list's last child, and this batch is
         // exactly what may have replaced it.
@@ -2939,11 +3317,42 @@ const GrMob = (() => {
     //                  gesture rather than a permission, so there is nothing
     //                  to ask for and nothing to read back
     //
-    // The cost is stated rather than hidden: a granted request has actually
-    // opened the camera for a moment, and a refused one is reported as
-    // "denied" whether the user pressed Block or dismissed the prompt,
-    // because a NotAllowedError does not say which. Both are the browser's
-    // limits and not this file's choices.
+    // # The query is what keeps the device shut
+    //
+    // The obvious version of the table above reaches for the device every
+    // time, and it opened the camera for a moment on a page that already had
+    // the camera permission — the recording indicator lighting up to answer a
+    // question the browser had already written down. So every request reads
+    // first:
+    //
+    //   query says granted   report it. Nothing is opened; the browser has
+    //                        already recorded the answer this request would
+    //                        have produced.
+    //   query says denied    report it. A getUserMedia here rejects
+    //                        immediately with no UI, so the call buys a
+    //                        NotAllowedError and nothing else.
+    //   query says prompt    reach for the device. This is the one state
+    //                        where a request has something to do, and opening
+    //                        the camera *is* the prompt.
+    //   query cannot answer  reach for the device, as this always did. A
+    //                        browser with no descriptor for this kind (Firefox
+    //                        has no "camera") can only be asked by asking.
+    //
+    // The short-circuit on "denied" is the browser's own live answer, not
+    // bookkeeping of this file's — which is the difference between it and the
+    // Android shell, where a locally remembered refusal deliberately does not
+    // short-circuit anything (Permissions.kt, "Auto-reset").
+    //
+    // # And what tells a Block from a dismissal
+    //
+    // A NotAllowedError does not say which happened, and the two need
+    // different words: a dismissed prompt can be asked again, a Block cannot
+    // and wants the user sent to the site settings. The Permissions API knows
+    // — a Block is recorded as "denied", a dismissal leaves the state at
+    // "prompt" — so a refusal is resolved by reading it back rather than
+    // guessed at. Where there is no descriptor to read there is still no way
+    // to tell, and the answer falls back to "denied", which is the direction
+    // whose remedy is harmless to offer.
     const permission = (() => {
         // Go's Permission constants, mapped to the Permissions API descriptor
         // name where one exists. A permission with no descriptor is not
@@ -3001,8 +3410,27 @@ const GrMob = (() => {
                 // Go's two statuses exist to draw, since only one of them has
                 // a fix in the browser's settings.
                 const name = (err && err.name) || "";
-                report(kind, (name === "NotFoundError" || name === "OverconstrainedError"
-                    || name === "NotReadableError") ? "unavailable" : "denied");
+                if (name === "NotFoundError" || name === "OverconstrainedError"
+                    || name === "NotReadableError") {
+                    report(kind, "unavailable");
+                    return;
+                }
+                refused(kind);
+            });
+        }
+
+        // Reports a refusal as the browser recorded it.
+        //
+        // The feature call cannot tell a Block from a dismissed prompt, and
+        // the Permissions API can: see "And what tells a Block from a
+        // dismissal" above. Only "prompt" upgrades the answer. A query that
+        // says "granted" straight after a rejected request is a browser
+        // contradicting itself, and reporting the grant would hand the app a
+        // camera that had just refused it — so everything except "prompt"
+        // stays denied.
+        function refused(kind) {
+            query(kind).then((state) => {
+                report(kind, state === "prompt" ? "prompt" : "denied");
             });
         }
 
@@ -3019,22 +3447,45 @@ const GrMob = (() => {
                     // are failures of the *fix* rather than of the permission,
                     // so they fall back to a query — the page may well be
                     // authorised and simply indoors.
-                    if (err && err.code === 1) { report("location", "denied"); return; }
+                    //
+                    // The refusal reads the permission back too, for the
+                    // different reason refused() exists: a dismissed prompt
+                    // and a blocked origin arrive through the same code 1.
+                    if (err && err.code === 1) { refused("location"); return; }
                     check("location");
                 },
                 { timeout: 10000, maximumAge: Infinity },
             );
         }
 
-        function request(kind) {
+        // The feature call for one kind — the part of a request that actually
+        // puts a prompt on screen, and the part that opens a device to do it.
+        // Reached only when the read above could not answer; see "The query is
+        // what keeps the device shut".
+        function prompt(kind) {
             switch (kind) {
                 case "camera": askMedia("camera", { video: true }); break;
                 case "microphone": askMedia("microphone", { audio: true }); break;
                 case "location": askLocation(); break;
-                // Nothing to ask for. Answered rather than dropped, so a
-                // screen waiting on it stops waiting.
-                case "storage": report("storage", "unavailable"); break;
             }
+        }
+
+        function request(kind) {
+            // Nothing to ask for, and nothing to read: answered here rather
+            // than sent through the query, which has no descriptor for it.
+            // Answered rather than dropped, so a screen waiting on it stops
+            // waiting.
+            if (kind === "storage") {
+                report("storage", "unavailable");
+                return;
+            }
+            query(kind).then((state) => {
+                if (state === "granted" || state === "denied") {
+                    report(kind, state);
+                    return;
+                }
+                prompt(kind);
+            });
         }
 
         // The "permission" system event's dispatcher. An unknown kind or

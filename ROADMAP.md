@@ -217,6 +217,41 @@
       the second of which the compass named a session before it landed
       (`Heading.HasTrue` needs location authorization and the compass host
       prompts for nothing on purpose)
+- [x] **A permission re-checked on the way back in** (`permission.WatchForeground`,
+      `hooks.UsePermissionLive`) — no platform announces a permission changed
+      in Settings, so a screen that sent the user there was still drawing its
+      `Denied` state when they came back: the button that fixed the problem
+      was the thing still saying it was broken. The signal every platform does
+      send is the foreground transition, and this turns it into a `Check`.
+      What kept it open for five sessions was "which screen owns the
+      re-check", and the answer is that no screen does — there is one device
+      with one camera, so the *permission* owns it, reference-counted by kind
+      the way `core.StartHeading` counts the sensor. Five screens watching the
+      camera are one check per resume between them, an app with no live
+      watcher takes no lifecycle subscription at all, and a resume that
+      changed nothing stops at the record because it notifies only on a change
+- [x] **The Android asked-before flag survives a restart** — the shell
+      reconstructs `Prompt` from `Denied` by remembering whether this install
+      has asked, because `shouldShowRequestPermissionRationale` is false both
+      for "never asked" and for "don't ask again". That flag was in memory, so
+      every cold start reported a permanent refusal as `Prompt` and the first
+      thing the user saw was a button that did nothing. It is in
+      `SharedPreferences` now: the fact is the platform's own bookkeeping,
+      which Android keeps and will not answer, so it belongs in the one file
+      that knows about it. The request path stopped short-circuiting on
+      `Denied` in the same pass — Android 11+ auto-reset clears
+      don't-ask-again without clearing this flag, and the launcher is the only
+      thing that can say so
+- [x] **A browser request reads before it opens the device** — a granted
+      camera request used to call `getUserMedia` to confirm a permission the
+      browser had already written down, lighting the recording indicator to
+      answer a question nobody asked. Every request now queries first and only
+      reaches for the device in the one state where a request has something to
+      do. The refusal is read back too: `NotAllowedError` cannot say whether
+      the user pressed Block or dismissed the prompt, and the Permissions API
+      can — a Block is recorded `denied`, a dismissal leaves `prompt` — so the
+      two reach Go as different words, and only a browser with no descriptor
+      for the kind still collapses them
 - [x] Accessibility labels, hints and announced selection state
 - [x] Accessibility *roles* (`core.AccessibilityRole`, twenty-three ARIA-spelled
       values) — `role=` on both web targets, traits on SwiftUI and semantics
@@ -239,6 +274,27 @@
       `aria-selected` is scoped to `option` and not to `listitem`, so a
       selectable row had no role that could carry its state — see
       `ListRow.Selectable` below
+- [x] **The keyboard half of the listbox and tablist patterns** (WASM runtime)
+      — the two pairs above name real ARIA *controls*, and a control's pattern
+      is behaviour as well as attributes: one tab stop for the widget, arrow
+      keys between its members, a roving `tabindex` saying which member holds
+      it. Three shipped screens claimed a pattern nothing implemented —
+      `examples/mobileapp`'s article list was a listbox of `<div>`s no keyboard
+      could reach at all, `examples/social`'s bottom bar and tutorial 4.5 were
+      strips a keyboard could cross only by tabbing through every member. The
+      entry said it needed a focus concept `core` does not have; it did not.
+      Everything the pattern wants was already on the wire — the roles say what
+      contains what, `aria-selected` says where a keyboard enters, the
+      container's own axis says which arrows move, the author's `onClick` says
+      what activation means — so the runtime reads it and no screen, widget or
+      `core` type changed a line. `core.TabView`'s own bar gets it for free.
+      `htmlout` deliberately writes none of it and that is the one intended
+      difference between the two DOM targets: a roving tab stop with nothing to
+      move it takes every member but one out of the tab order and reaches none
+      of them, so `tabindex` is behaviour rather than semantics and a static
+      export must not carry it (`wasm/verify/keynav_test.go` holds both
+      directions). Both phones never had the gap — VoiceOver and TalkBack
+      navigate a collection by swipe
 - [x] **A name on a plain container is announced at all** (`core.RoleGroup`) —
       the general answer to the failure `RoleImg` closed for one widget. ARIA
       prohibits an accessible name on the `generic` role a `<div>` and a
@@ -338,7 +394,11 @@
       control's own slot (they were stripped with the rest of the box-drawing
       fields and never fed back, so outlined buttons had no rule on device),
       and both DOM renderers write `border:none` for the node types a browser
-      draws one on (so ghost buttons no longer keep the user agent's)
+      draws one on (so ghost buttons no longer keep the user agent's). The WASM
+      runtime reached that reset for every node once its create path stopped
+      styling only the nodes that carried a `Style` — the patch path had always
+      been total, so a styleless `<button>` used to keep the browser's rule
+      until something restyled it and took the rule away
 - [x] A **text field's frame** is the theme's on all four targets — both
       bundled themes give `Components.Input` and `Components.TextArea` a
       border at WCAG 1.4.11's 3:1 control-boundary floor, which is what let
@@ -424,6 +484,15 @@
       say something, so an ordinary option's JSON signature (which is what
       decides whether the WASM runtime rebuilds an open drop-down) is
       unchanged
+- [x] `core.SelectMenuSections` — the one statement of how a flat option list
+      becomes the menu a person sees. `htmlout` calls it; the two natives carry
+      UI-free transliterations (`GrMobSelectMenu.swift` / `.kt`) so that the
+      decision leaves the view closure a menu cannot be read back out of, and
+      `ios/verify` compiles the Swift one into its harness and runs it against
+      cases generated from the Go function. Four copies of one rule were three
+      too many, and the edge each copy had to remember on its own — that a run
+      ending the list has nothing following it to close it — is exactly the one
+      `htmlout` shipped wrong for a release
 - [x] `core.Slider` — a range control on all four targets, with a separate
       end-of-drag callback so a seek bar acts once
 - [x] `core.TextGrid` — a monospace grid of styled runs on all four targets,

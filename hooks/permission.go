@@ -62,10 +62,11 @@ type permissionRecord struct {
 //
 // A user can grant or revoke a permission in the system settings and return to
 // the app, and no platform tells the app that happened. This hook does not
-// re-check on foreground, because a hook cannot see whether its screen is
-// still the one on top and a stack of five screens would each fire a check on
-// every app resume. A screen that cares pairs this with hooks.UseLifecycle and
-// calls permission.Check itself when the state turns "active".
+// re-check on foreground: it reports what the record says and asks once, on
+// mount. UsePermissionLive is this hook plus the re-check, and its doc carries
+// the argument for why the re-check is owned by the permission rather than by
+// the screen — which is the objection that used to be written here, and the
+// reason it no longer stands.
 //
 // # The mount/unmount limit
 //
@@ -118,4 +119,92 @@ func UsePermission(ctx *core.Context, p permission.Permission) permission.Status
 		})
 	}
 	return permission.Current(p)
+}
+
+// UsePermissionLive is UsePermission that also re-checks p every time the app
+// returns to the foreground.
+//
+//	switch hooks.UsePermissionLive(ctx, permission.Camera) {
+//	case permission.Granted:
+//	    return scanner(ctx)
+//	case permission.Denied:
+//	    return components.EmptyState{
+//	        Hint:   "Camera is off",
+//	        Action: components.Button{Label: "Open Settings", OnTap: openSettings},
+//	    }
+//	...
+//	}
+//
+// That Denied branch is the whole reason this exists. It sends the user to
+// the system settings, they flip the switch, and they come back — and with
+// UsePermission the screen still says the camera is off, because nothing on
+// any of the three platforms announces a permission change and the hook's one
+// check already happened on mount. The screen is wrong until something else
+// re-renders it, and the button that fixed the problem is the thing still
+// telling the user it is broken.
+//
+// # What it costs, and why it is not per-screen
+//
+// The re-check is permission.WatchForeground, which reference-counts by
+// permission rather than by caller: five screens watching the camera produce
+// one check per resume between them, and an app with no live watcher takes no
+// lifecycle subscription at all. See that function's file for the argument —
+// it is the one that used to keep this hook from existing.
+//
+// A resume that changed nothing costs one system event out and one host event
+// back, and stops there: permission.set notifies only on a change, so no
+// subscriber runs and no render is requested. Only the resume that actually
+// changed something reaches the screen.
+//
+// # Use this one by default
+//
+// UsePermission is the narrower tool and stays for the screens that want it —
+// a debug readout, a settings row rendered inside a sheet that cannot be left
+// without unmounting it — but a screen that draws a Denied state and offers a
+// way out of it wants this. The extra cost over UsePermission is one lifecycle
+// subscription per process and one round trip per resume per kind.
+//
+// The watch is released when the context tree is closed, the same mount/unmount
+// limit UsePermission carries and for the same reason: hooks have no unmount
+// signal. A watch that outlives its screen costs a check per resume that
+// diffs to nothing.
+func UsePermissionLive(ctx *core.Context, p permission.Permission) permission.Status {
+	// Ordered so the opening Check happens first: UsePermission subscribes and
+	// checks on its own first render, and registering the watch before that
+	// would be asking for a re-check of something nobody has checked yet.
+	status := UsePermission(ctx, p)
+
+	slot := core.NewState(ctx, &foregroundRecord{})
+	rec := slot.Get()
+
+	rec.mu.Lock()
+	already := rec.watching
+	rec.watching = true
+	rec.mu.Unlock()
+
+	if !already {
+		cancel := permission.WatchForeground(p)
+		ctx.OnClose(func() {
+			cancel()
+			// Same drain semantics as every other hook here: after a Close the
+			// tree stays renderable and a re-mount must be able to watch
+			// again, so the slot forgets that it did.
+			rec.mu.Lock()
+			rec.watching = false
+			rec.mu.Unlock()
+		})
+	}
+	return status
+}
+
+// foregroundRecord is the per-hook-slot memory of UsePermissionLive's watch.
+//
+// A second record rather than a field on permissionRecord, because the two
+// hooks do not share a slot: UsePermissionLive calls UsePermission, which
+// takes its own core.NewState at the cursor position before this one. Folding
+// the flag into permissionRecord would put UsePermission's slot and this one
+// at the same index and make the two hooks read each other's memory.
+type foregroundRecord struct {
+	mu       sync.Mutex
+	watching bool
 }

@@ -266,3 +266,71 @@ func quotedAfter(src string, prefixes []string) []string {
 	}
 	return out
 }
+
+// The Android asked-before flag has to reach disk, and the request path has to
+// stay open to a "denied" it may have produced.
+//
+// The two halves are one fact and each is useless without the other, which is
+// why they are pinned together:
+//
+//	persisted    without it, a permanently refused permission reads as
+//	             "prompt" on every cold start, so the first thing the user
+//	             sees is a button offering to ask and pressing it does nothing
+//	asked in the request path only, never in status()
+//	launched     without it, Android 11+'s auto-reset — which revokes an
+//	             unused app's permissions and clears don't-ask-again with them
+//	             — leaves the stale flag saying "denied" and a short-circuiting
+//	             request path locking the user out of a permission the system
+//	             has just handed back
+//
+// Source text, because neither is reachable from Go and the Android build's
+// only check is that the file compiles. The reasoning is in Permissions.kt's
+// class doc under "The flag is on disk" and "Auto-reset".
+func TestTheAndroidAskedFlagSurvivesARestart(t *testing.T) {
+	src := readNative(t, kotlinPermissions)
+
+	for _, pin := range []struct{ needle, why string }{
+		{"getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)",
+			"there is no preferences store at all, so the asked-before flag has " +
+				"nowhere to live past the process that learned it"},
+		{"getStringSet(ASKED_KEY, null)",
+			"the store is opened and never read, which is the same cold start as " +
+				"having no store: a permanent refusal reports as \"prompt\" and the " +
+				"button offering to ask does nothing"},
+		{"putStringSet(ASKED_KEY, asked.toSet())",
+			"the asked-before flag is never written, so nothing survives the " +
+				"process it was learned in"},
+	} {
+		if !strings.Contains(src, pin.needle) {
+			t.Errorf("%s: %s", kotlinPermissions, pin.why)
+		}
+	}
+
+	// The short-circuit, matched as the whole condition rather than as the
+	// word "granted": the failure being guarded against is one arm too many in
+	// this test, and a substring check would pass on the version that has it.
+	openToDenied := regexp.MustCompile(
+		`if \(current == "granted" \|\| current == "unavailable"\) \{`)
+	if !openToDenied.MatchString(src) {
+		t.Errorf("%s: the request path does not short-circuit on exactly granted and "+
+			"unavailable — a \"denied\" that came from the persisted flag has to reach "+
+			"the launcher, because auto-reset can make that flag a lie and the "+
+			"launcher is the only thing that can say so", kotlinPermissions)
+	}
+
+	// The write happens on the request path and nowhere else. A check runs
+	// inside a render pass (hooks.UsePermission calls it on mount, and
+	// UsePermissionLive again on every resume), and a render pass that touches
+	// the disk is a render pass that can jank.
+	if strings.Contains(src, `"check" -> `) {
+		checkArm := src[strings.Index(src, `"check" -> `):]
+		if end := strings.Index(checkArm, "\n"); end > 0 {
+			checkArm = checkArm[:end]
+		}
+		if strings.Contains(checkArm, "rememberAsked") {
+			t.Errorf("%s: the check command records the asked-before flag — a check "+
+				"is what a render pass runs, and it must not write to disk",
+				kotlinPermissions)
+		}
+	}
+}

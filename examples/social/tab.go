@@ -58,11 +58,16 @@ const TabPanelID = "social-tab-panel"
 //	id/aria-controls  the relationship. Without it a reader announces "tab 1
 //	                  of 3" and has no way to reach what the tab governs.
 //
-// What is still missing is the keyboard half of ARIA's tablist pattern —
-// arrow-key movement and a roving tabindex — which core has no vocabulary for.
-// Both phones navigate a strip by swipe and lose nothing; a keyboard user on
-// the web gets three tab stops instead of one. That is the same gap
-// core.RoleListBox documents for a hand-built listbox.
+// The keyboard half of ARIA's tablist pattern — one tab stop for the strip,
+// arrow keys within it — is not written here either, and does not need to be.
+// The WASM runtime builds it from exactly the four things above: role="tablist"
+// says what the strip is, role="tab" says what its members are, aria-selected
+// says where a keyboard should enter, and the Row's own axis says which arrows
+// move. This file gained the behaviour without gaining a line, which is the
+// argument for the roles being a vocabulary rather than a widget.
+//
+// Both phones navigate a strip by swipe and never had the gap; a static
+// htmlout export still does, deliberately — see core.RoleListBox.
 //
 // name is what the glyph is read as: an emoji alone announces as whatever the
 // reader's emoji dictionary calls it ("house building"), which is not the name

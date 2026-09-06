@@ -57,11 +57,14 @@ func TestTheBrowserHostReportsOnlyDeclaredStatuses(t *testing.T) {
 		{`report(kind, "granted")`,
 			"a resolved getUserMedia. The query path forwards the browser's own state " +
 				"untouched, so this is one of the few places the host writes a word itself"},
-		{`? "unavailable" : "denied"`,
+		{`if (name === "NotFoundError" || name === "OverconstrainedError"`,
 			"the split that makes a missing camera a different answer from a refused " +
-				"prompt — only one of the two has a fix in the browser's settings"},
-		{`report("location", "denied")`,
-			"PERMISSION_DENIED, which is the only geolocation error that means a refusal"},
+				"prompt — only one of the two has a fix in the browser's settings. " +
+				"Repointed when the refusal arm grew a read-back: the fact still needs " +
+				"guarding, and this is the line that now makes it true"},
+		{`if (err && err.code === 1) { refused("location"); return; }`,
+			"PERMISSION_DENIED, which is the only geolocation error that means a refusal. " +
+				"The other two are failures of the fix rather than of the permission"},
 		{`report(kind, "unavailable")`,
 			"a page with no media provider at all"},
 		{`Promise.resolve("unavailable")`,
@@ -74,9 +77,61 @@ func TestTheBrowserHostReportsOnlyDeclaredStatuses(t *testing.T) {
 		}
 	}
 
+	// "prompt" is never a word this host decides on. It reaches Go either
+	// forwarded whole out of query(), or — in refused() — echoed back after the
+	// API has been asked a second time to say whether a NotAllowedError was a
+	// Block or a dismissal. Both are the browser's answer; an unconditional
+	// report of it would be the host inventing one.
 	if strings.Contains(src, `report(kind, "prompt")`) {
 		t.Error("grmob-runtime.js: the host writes \"prompt\" itself somewhere — that word " +
 			"should only ever reach Go as the Permissions API's own answer, forwarded")
+	}
+}
+
+// A request reads the permission before it reaches for the device, and reads it
+// again when the device refuses.
+//
+// Both halves are entries this closes rather than shape checks:
+//
+//	query first    a granted camera request used to open the camera to confirm
+//	               a permission the browser had already written down — the
+//	               recording indicator lighting up for a question nobody asked
+//	read back      a NotAllowedError does not say whether the user pressed
+//	               Block or dismissed the prompt, and the two want different
+//	               words: one can be asked again, the other wants the user sent
+//	               to the site settings
+//
+// The behaviour is covered live in permission_test.mjs. What is pinned here is
+// that the two reads exist at all, because deleting either is invisible in Go
+// and leaves a host that is merely worse rather than broken.
+func TestABrowserRequestReadsBeforeAndAfterItAsks(t *testing.T) {
+	src := runtimeSource(t)
+	for _, want := range []struct{ expr, why string }{
+		{`if (state === "granted" || state === "denied") {`,
+			"the read that comes first. A granted permission is reported from the " +
+				"browser's own record and the device is never opened; a denied one " +
+				"would reject immediately with no UI, so the call buys nothing"},
+		{"prompt(kind);",
+			"and the fall-through when the read cannot answer. A browser with no " +
+				"descriptor for this kind — Firefox has none for the camera — can only " +
+				"be asked by asking"},
+		{`report(kind, state === "prompt" ? "prompt" : "denied");`,
+			"the read-back that tells a Block from a dismissal. Only \"prompt\" " +
+				"upgrades the answer: a query claiming \"granted\" straight after a " +
+				"rejected request is a browser contradicting itself, and reporting the " +
+				"grant would hand the app a camera that had just refused it"},
+	} {
+		if !strings.Contains(src, want.expr) {
+			t.Errorf("grmob-runtime.js: %q not found — %s", want.expr, want.why)
+		}
+	}
+
+	// storage never reaches the query: it has no descriptor, so the read would
+	// be a round trip to an answer this file already knows.
+	if !strings.Contains(src, `if (kind === "storage") {`) {
+		t.Error("grmob-runtime.js: a storage request no longer short-circuits ahead of " +
+			"the query — there is no descriptor for it, so the read cannot answer and " +
+			"the request would fall through to a prompt() with no arm")
 	}
 }
 

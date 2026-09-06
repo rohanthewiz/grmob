@@ -340,7 +340,10 @@ form.Select("seat", []core.SelectOption{
 
 `Group` heads a **run** of consecutive options — the same heading either side of
 a different one is two sections, in the order written, because the list's order
-is yours and no renderer is going to rearrange it. `Disabled` greys an option
+is yours and no renderer is going to rearrange it. Which options form which run
+is decided once, by `core.SelectMenuSections`, rather than four times by four
+renderers; each target then draws a section its own way (an `<optgroup>`, a
+SwiftUI `Section`, an unclickable heading item in a Compose dropdown). `Disabled` greys an option
 out without removing it, which is the point: an option that vanishes takes its
 explanation with it. Neither stops *Go* from setting the field to a disabled
 option's value — a `Select` shows whatever value it was passed.

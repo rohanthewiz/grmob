@@ -57,13 +57,20 @@ func TestRuntimeStackAxesMatchGo(t *testing.T) {
 	}
 }
 
-// The table being right is not enough: both places that consult it have to,
-// and they are different places. createElement plants the default on the
-// element it builds; styleFromGrMob has to restate it because that function is
-// total — an update-style patch assigns every property it manages, so a
-// display it did not write is a display it erased. A runtime that read the
-// table only in createElement would stack a container until its first
-// style patch and then quietly drop it into block flow.
+// The table being right is not enough: something has to consult it, on both
+// the path that builds an element and the path that patches one.
+//
+// On this target those are one function. styleFromGrMob decides the axis and
+// the promotion to a flex container, and it is *total* — an update-style patch
+// assigns every property it manages, so a display it did not write is a
+// display it erased — which is why the read has to be in there and not only at
+// build time. createElement then reaches it for every node by passing an empty
+// object where there is no Style, so the default is planted and restated by
+// one call site rather than two that could disagree. That third substring is
+// the one holding the build path up: a runtime that went back to styling only
+// the nodes that carry a Style would leave a bare Column in block flow, and
+// no patch would ever arrive to correct it. htmlout, which has no patch path
+// to be total for, still reads the table in two places of its own.
 //
 // Substrings of the actual expressions rather than the function name alone,
 // so a comment mentioning stackAxisFor cannot satisfy the pin — the property
@@ -71,16 +78,16 @@ func TestRuntimeStackAxesMatchGo(t *testing.T) {
 func TestRuntimeAppliesTheStackDefault(t *testing.T) {
 	src := runtimeSource(t)
 	for _, want := range []string{
-		// createElement: the axis drives flex-direction, not a ternary on Row.
-		`const stackAxis = stackAxisFor(node.Type);`,
-		`el.style.flexDirection = stackAxis;`,
-		// styleFromGrMob: the same table decides the axis and the promotion.
+		// styleFromGrMob: the table decides the axis and the promotion.
 		`stackAxisFor(nodeType) || "column"`,
 		`alignItems || style.FlexDirection || stackAxisFor(nodeType)`,
+		// createElement: every node reaches that function, Style or no Style.
+		// a11y_test.go pins the same line for the other thing riding on it.
+		`applyStyle(el, node.Style || {}, node.Type);`,
 	} {
 		if !strings.Contains(src, want) {
 			t.Errorf("grmob-runtime.js: %q not found — the stack table is pinned to htmlout but "+
-				"one of the two places that must read it does not, so a container stacks on one "+
+				"the runtime does not read it where it must, so a container stacks on one "+
 				"web target and runs in block flow on the other", want)
 		}
 	}

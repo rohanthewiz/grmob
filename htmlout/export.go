@@ -458,21 +458,22 @@ const (
 // the way a browser would anyway: nothing is marked, and the browser shows the
 // first option, which is what a live <select> does with an out-of-list value.
 //
-// element escapes both halves: the value goes through the attribute path
-// (quote-escaped) and the label through TE (entity-escaped), so an option
-// carrying markup cannot re-enter the document as markup. Options are as
-// user-originated as any other content here — a country list read from a
-// server is the normal case. An <optgroup>'s label goes through the attribute
-// path for the same reason, since it is one.
+// An <optgroup>'s label goes through element's attribute path, for the same
+// reason the options' own two halves do (renderSelectOptions): a heading is as
+// user-originated as the list it stands over.
 //
-// # Groups are runs, and the run is closed here
+// # Groups are runs, and the decomposition is core's
 //
 // core.SelectOption.Group makes consecutive options with the same heading one
 // <optgroup>, in the order they were written — see the field for why a gather
-// would be the wrong shape. The loop therefore carries the group it is inside
-// and closes it when the next option names a different one (or none), which is
-// the only bookkeeping HTML's nesting requires and the reason this is not a
-// straight map over the list.
+// would be the wrong shape. Which options form which run is core's
+// SelectMenuSections, not this function's: the same split has to be made by
+// four renderers, and the one piece of bookkeeping it needs (a run is closed
+// by the *next* option naming a different heading, so the last run has to be
+// flushed explicitly) is exactly the piece that went untested here for a
+// release. What is left below is the markup — an <optgroup> per section that
+// names one, the options written straight into the <select> for a section
+// that does not.
 func renderSelect(b *element.Builder, node *core.Node, attrs []string) {
 	value := getStr(node.Props["value"])
 	e := b.Ele("select", attrs...)
@@ -480,44 +481,47 @@ func renderSelect(b *element.Builder, node *core.Node, attrs []string) {
 	// carrying something else renders as an empty picker rather than panicking,
 	// which is the same degradation an Image with no src gets.
 	if opts, ok := node.Props["options"].([]map[string]string); ok {
-		// The open <optgroup>, if any: its handle (to close) and its label
-		// (to compare). Two variables rather than one because an element.Element
-		// is a value with no label to read back, so openLabel is also what says
-		// whether `group` holds anything worth closing.
-		var group element.Element
-		openLabel := ""
-		for _, o := range opts {
-			if o["group"] != openLabel {
-				if openLabel != "" {
-					group.R()
-				}
-				openLabel = o["group"]
-				if openLabel != "" {
-					group = b.Ele("optgroup", "label", openLabel)
-				}
+		for _, section := range core.SelectMenuSections(opts) {
+			// The ungrouped run has no wrapper: its options are children of
+			// the <select> itself, which is where every option lived before
+			// the field existed.
+			if section.Heading != "" {
+				group := b.Ele("optgroup", "label", section.Heading)
+				renderSelectOptions(b, section.Items, value)
+				group.R()
+				continue
 			}
-			lead := []string{"value", o["value"]}
-			if o["value"] == value {
-				// element emits key="value" pairs only; selected="selected" is
-				// the spec-blessed spelling of the bare boolean attribute, as
-				// checked="checked" is on a Checkbox.
-				lead = append(lead, "selected", "selected")
-			}
-			// The same spelling, and the same reason. A disabled option is
-			// still rendered and still announced — that is the whole point of
-			// disabling one rather than omitting it — it simply cannot be
-			// chosen.
-			if o["disabled"] == "true" {
-				lead = append(lead, "disabled", "disabled")
-			}
-			b.Ele("option", lead...).TE(o["label"])
-		}
-		// The last run has no following option to close it.
-		if openLabel != "" {
-			group.R()
+			renderSelectOptions(b, section.Items, value)
 		}
 	}
 	e.R()
+}
+
+// renderSelectOptions writes one section's <option> elements.
+//
+// element escapes both halves: the value goes through the attribute path
+// (quote-escaped) and the label through TE (entity-escaped), so an option
+// carrying markup cannot re-enter the document as markup. Options are as
+// user-originated as any other content here — a country list read from a
+// server is the normal case.
+func renderSelectOptions(b *element.Builder, items []core.SelectMenuItem, value string) {
+	for _, item := range items {
+		lead := []string{"value", item.Value}
+		if item.Value == value {
+			// element emits key="value" pairs only; selected="selected" is
+			// the spec-blessed spelling of the bare boolean attribute, as
+			// checked="checked" is on a Checkbox.
+			lead = append(lead, "selected", "selected")
+		}
+		// The same spelling, and the same reason. A disabled option is
+		// still rendered and still announced — that is the whole point of
+		// disabling one rather than omitting it — it simply cannot be
+		// chosen.
+		if item.Disabled {
+			lead = append(lead, "disabled", "disabled")
+		}
+		b.Ele("option", lead...).TE(item.Label)
+	}
 }
 
 func renderGridRow(b *element.Builder, node *core.Node, attrs []string) {
@@ -635,15 +639,65 @@ func modalChassis(props map[string]any) string {
 		// flex, not block: the overlay centers its content.
 		display = "flex"
 	}
-	decls := "position:fixed; top:0; left:0; right:0; bottom:0; " +
-		"display:" + display + "; flex-direction:column; " +
-		"align-items:center; justify-content:center; z-index:1000"
+	decls := ""
+	for _, d := range modalChassisDecls {
+		decls = addDecl(decls, d[0]+":"+d[1])
+	}
+	// display sits between the box and the flex rules in the written order,
+	// but CSS is not positional and the two DOM targets differ on where it
+	// comes from at all — see ModalChassis — so it is appended rather than
+	// woven into the table.
+	decls = addDecl(decls, "display:"+display)
 	// The scrim. Absent rather than transparent when the prop is missing: a
 	// hand-built ModalNode may omit it, and core.Modal always supplies one.
 	if backdrop := getStr(props["backdrop"]); backdrop != "" {
 		decls = addDecl(decls, "background:"+backdrop)
 	}
 	return decls
+}
+
+// The property/value pairs of the Modal chassis that are the same on every
+// render — everything but display (the open/closed state, which comes from the
+// visible prop) and background (the scrim, which comes from backdrop).
+//
+// A table rather than a string literal because the WASM runtime states the
+// same nine declarations, and two copies of one rule drift silently. Ordered
+// pairs rather than a map so the declaration list this builds is stable, which
+// is what keeps the exporter's golden output from depending on map iteration.
+var modalChassisDecls = [][2]string{
+	{"position", "fixed"},
+	{"top", "0"},
+	{"left", "0"},
+	{"right", "0"},
+	{"bottom", "0"},
+	{"flex-direction", "column"},
+	{"align-items", "center"},
+	{"justify-content", "center"},
+	// Under the toast layer's 2000, so a toast confirming a dialog's action is
+	// not drawn behind the dialog.
+	{"z-index", "1000"},
+}
+
+// ModalChassis returns the fixed declarations of a Modal's overlay look, for
+// the WASM runtime conformance test.
+//
+// The runtime states the same set in styleFromGrMob, spelled as CSSOM property
+// names with a `||` per line so an author's Style wins — which is what this
+// exporter gets from the cascade by writing the chassis first. The two are
+// compared by TestRuntimeModalChassisMatchesGo.
+//
+// display and background are deliberately not in it. Both are prop-driven, and
+// the two targets get them by different routes: this exporter writes the whole
+// declaration list at once from props it can see, while the runtime's style
+// pass never sees a prop and abstains from display entirely, leaving it to the
+// visible prop's own path.
+//
+// A copy, not the slice itself, for the reason StackAxes returns one: a
+// package-level slice is reachable and writable by any importer.
+func ModalChassis() [][2]string {
+	out := make([][2]string, len(modalChassisDecls))
+	copy(out, modalChassisDecls)
+	return out
 }
 
 // accessibilityAttrs maps core.Style's semantics fields onto the ARIA

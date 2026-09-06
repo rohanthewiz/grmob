@@ -50,7 +50,11 @@ indented HTML. Properties worth relying on:
   — `<select>` has no value attribute, so the selection lives on the options.
   A value matching nothing marks nothing, which is what a live `<select>` does
   with an out-of-list value. Both halves of every option are escaped: the
-  value through the attribute path, the label through the text one.
+  value through the attribute path, the label through the text one. Which
+  options share an `<optgroup>` is not this exporter's decision but
+  `core.SelectMenuSections`', the one statement of the rule that all four
+  renderers follow — an `<optgroup>` per section that names a heading, and the
+  options written straight into the `<select>` for the section that does not.
 - **A `TabView` gets its bar and its selection.** The `tabs` prop becomes a
   `role="tablist"` strip of `role="tab"` buttons ahead of the pages, carrying
   `data-ontabchange` and a `data-tab-index` per tab in the same spirit as the
@@ -124,6 +128,19 @@ indented HTML. Properties worth relying on:
   pointedly out, because the browser draws those controls in their entirety
   and their border *is* the control. See
   [WASM — The user-agent border](wasm.md#the-user-agent-border-and-the-third-value-totality-needs).
+
+- **No `tabindex`, on any node, ever.** A `listbox` and a `tablist` are ARIA
+  *controls*, and the pattern each one names includes a roving `tabindex` that
+  puts the widget's one tab stop on its active member. The WASM runtime writes
+  that and moves it with the arrow keys; this exporter deliberately writes
+  neither half. A roving tab stop without the handler that moves it is strictly
+  worse than nothing — it takes every member but one out of the tab order and
+  supplies no way to reach the rest — so `tabindex` is behaviour rather than
+  semantics, and this is not a runtime. Every *semantic* half of both patterns
+  (the roles, `aria-selected`, the `aria-controls` wiring) is written here as
+  usual, which is exactly what lets the runtime supply the rest without a new
+  prop. `wasm/verify/keynav_test.go` holds the line in both directions. See
+  [WASM — Composite widgets are operable](wasm.md#composite-widgets-are-operable).
 
 ### Testing with htmlout
 

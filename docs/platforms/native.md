@@ -212,8 +212,8 @@ these two hosts each map their own richer enum onto it.
 | Go | iOS | Android |
 |---|---|---|
 | `Granted` | `.authorized` / `.authorizedWhenInUse` / `.authorizedAlways`, and Photos' `.limited` | `PERMISSION_GRANTED` |
-| `Prompt` | `.notDetermined` | `PERMISSION_DENIED`, no rationale, never asked in this process |
-| `Denied` | `.denied` | `PERMISSION_DENIED` with a rationale, or after this process has asked |
+| `Prompt` | `.notDetermined` | `PERMISSION_DENIED`, no rationale, never asked by this install |
+| `Denied` | `.denied` | `PERMISSION_DENIED` with a rationale, or after this install has asked |
 | `Unavailable` | `.restricted` — a parental control or an MDM profile | the permission is missing from the manifest |
 
 Photos' `.limited` maps to `Granted` because the app really can read the
@@ -223,13 +223,37 @@ channel's.
 **Android has to reconstruct three states out of two.** `checkSelfPermission`
 answers GRANTED or DENIED and nothing else, and
 `shouldShowRequestPermissionRationale` is false both for "never asked" and for
-"don't ask again" — so the shell tracks whether *this process* has asked, and
+"don't ask again" — so the shell tracks whether this install has asked, and
 breaks the tie towards `Denied`. Reporting `Prompt` for a permanently refused
-permission would leave a screen offering a button that does nothing. That flag
-is in memory: a process restart forgets it, which turns a permanent refusal
-back into `Prompt` until the next request proves otherwise. Persisting it is
-something an app does with its own preferences, not something a framework shell
-should write to disk unasked.
+permission would leave a screen offering a button that does nothing.
+
+That flag is in `SharedPreferences`, in the shell's own file, written on the
+request path only. It used to be in memory, on the argument that a framework
+shell should not write to disk unasked, and the cost was paid on every cold
+start: a permanently refused permission read as `Prompt` until the next request
+proved otherwise, so the first thing the user saw was a button offering to ask
+and pressing it did nothing. What settled it is that the fact being remembered
+is the *platform's* — "has this install ever asked for X" is bookkeeping
+Android keeps and will not answer — and a quirk of one platform belongs in the
+one file that knows about it rather than in every app built on top.
+
+**A `denied` request still reaches the launcher.** Persisting the flag
+introduces a failure the in-memory version could not have: Android 11+ revokes
+permissions for apps the user has not opened in months and resets
+don't-ask-again with them, so the flag on disk says "asked" while a request
+would in fact show the dialog again. A request path that short-circuited on
+`Denied` would lock the user out of a permission the system had just handed
+back. So it short-circuits on `Granted` and `Unavailable` only — safe because
+`registerForActivityResult` always delivers a result, so a permanent refusal
+comes straight back as DENIED with nothing on screen.
+
+**Nothing announces a permission changing in Settings**, on either phone. The
+signal both platforms do send is the app returning to the foreground, which is
+what `permission.WatchForeground` — and `hooks.UsePermissionLive` above it —
+turns into a re-check. It is reference-counted by permission rather than by
+screen, so five screens watching the camera produce one `check` per resume
+between them and an app with no live watcher takes no lifecycle subscription at
+all.
 
 **Two build-time halves no Go code can supply.** An iOS prompt whose
 `NS*UsageDescription` key is missing from `Info.plist` *terminates the app* at
@@ -649,20 +673,41 @@ style's box, and that neither forbidden construct appears in it.
 own means, and this is where the two menus stop looking alike:
 
 - **SwiftUI** has a `Section`, so a run of options sharing a heading is handed
-  to one. A `Section` is a container, so the runs are computed ahead of the
-  `ForEach` (`grMobOptionRuns`) rather than derived inside it, and the buttons
-  moved out of `GrMobSelect` into `grMobMenuItems` so a run can be handed over
-  whole. The disabling is `.disabled` on the **Button** — on the Section it
-  would take the whole run with it.
+  to one. A `Section` is a container, so a run has to be handed over whole,
+  which is why the rows are drawn by `grMobMenuItems` rather than inline. The
+  disabling is `.disabled` on the **Button** — on the Section it would take the
+  whole run with it.
 - **Compose**'s `DropdownMenu` has no section construct, so a heading is an
   ordinary `DropdownMenuItem` with `enabled = false` and an empty `onClick`,
   written ahead of its run. That is what makes it a label rather than a choice.
 
 Both split by *runs*: consecutive options sharing a heading, in the order
 written. See `core.SelectOption.Group` for why a gather would be the wrong
-shape, and `mobile/verify/select_test.go` for the pins — including the one on
-`grMobOptionRuns` closing a run when the heading changes, which is the line a
-gather would replace.
+shape.
+
+#### The menu is invisible, so the decision was moved out of it
+
+A SwiftUI `Menu`'s content is a closure of views and a Compose `DropdownMenu`'s
+is a composable lambda. Neither can be read back, so nothing short of a
+simulator or a device could open a picker and check its sections — which left
+three facts about the open menu (the runs, the headings, the refused rows)
+resting on `mobile/verify` finding the right substrings in a 900-line renderer.
+
+The decision is out of the closure now. `GrMobSelectMenu.swift` and
+`GrMobSelectMenu.kt` turn the flat option list into sections and rows, each
+renderer's menu is a loop over the result, and both files import no UI at all
+— which is what makes them runnable off a device. `core.SelectMenuSections` is
+the authority both transliterate (and the one `htmlout` calls directly), and
+`ios/verify` compiles the Swift file into its harness and runs it against cases
+generated from that function, so the iOS decomposition is checked by behaviour.
+
+The Android half has no runner: the Android build's only check is
+`compileDebugKotlin`, so its decomposition is still held by source-text checks
+plus the shared authority. What no harness reaches on **either** platform is
+the last step — the line handing a row's value to `textChanged` and its
+disabled flag to the construct that refuses the tap. That is what
+`mobile/verify/select_test.go` is for now, and it is a much smaller surface
+than the one it used to cover.
 
 Whether the menu is **open** is the renderer's own state and nothing else's.
 There is no prop for it and no patch describes it; the *selection* stays

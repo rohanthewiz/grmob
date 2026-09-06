@@ -10,6 +10,10 @@ struct Transcript: Decodable {
     let initial: String
     let steps: [String]
     let final: String
+    /// The picker-menu cases, which have nothing to do with the replay and
+    /// ride along in the same file because this harness is one executable.
+    /// See selectmenu.swift.
+    let menuCases: [MenuCase]
 }
 
 /// Structural equality, reported as per-path differences so a failure names
@@ -61,6 +65,18 @@ func run() -> Int32 {
     else {
         FileHandle.standardError.write(Data("usage: harness <transcript.json>\n".utf8))
         return 2
+    }
+
+    // The picker menu, before the replay: it is a pure function of the
+    // transcript's own table, so a decomposition regression should be named
+    // on its own rather than buried under whatever the tree diff says next.
+    let menuProblems = checkSelectMenu(transcript.menuCases)
+    if menuProblems.isEmpty {
+        print("OK: \(transcript.menuCases.count) picker menus match Go's decomposition")
+    } else {
+        print("FAIL: \(menuProblems.count) picker menu difference(s)")
+        for p in menuProblems { print("  " + p) }
+        return 1
     }
 
     let store = TreeStore()

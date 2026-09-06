@@ -74,6 +74,37 @@ func TestNativeSelectDrawsTheStylesBoxAndNotAPlatformPicker(t *testing.T) {
 	}
 }
 
+// The two files the decomposition now lives in, and which no other check in
+// this package reads. Both are UI-free by construction — that is the whole
+// point of them existing — and TestNativeMenuDecompositionIsUIFree is what
+// keeps them that way.
+var (
+	swiftSelectMenu  = nativeFile("ios", "GrMob", "Runtime", "GrMobSelectMenu.swift")
+	kotlinSelectMenu = nativeFile("android", "app", "src", "main", "java", "com", "grmob",
+		"runtime", "GrMobSelectMenu.kt")
+)
+
+// The picker's menu, and what is left for a text check to hold.
+//
+// A SwiftUI Menu's content is a closure of views and a Compose DropdownMenu's
+// is a composable lambda; neither can be read back, so three facts about the
+// open menu — the runs, the headings, the refused rows — used to rest entirely
+// on finding the right substrings in a 900-line renderer.
+//
+// They rest on a UI-free function now. grMobMenuSections (GrMobSelectMenu.swift
+// / .kt) turns the flat option list into sections and rows, and each renderer's
+// menu is a loop over the result. ios/verify compiles the Swift one into its
+// harness and runs it against cases generated from core.SelectMenuSections, so
+// the *decision* is checked by behaviour on that side. The Android half has no
+// runner — the Android build's only check is compileDebugKotlin — so its
+// decomposition is still held by the shape checks below plus the Go authority
+// both transliterations follow.
+//
+// What no harness can reach on either platform is the last step: the line that
+// hands a row's value to textChanged and its disabled flag to the construct
+// that refuses the tap. That is what the checks in this file are now for, and
+// it is a much smaller surface than the one they used to cover.
+
 // The choice goes up as the option's *value*, through the text channel.
 //
 // core.Select registers a func(string), so Go put the handler in the text
@@ -83,18 +114,24 @@ func TestNativeSelectDrawsTheStylesBoxAndNotAPlatformPicker(t *testing.T) {
 // happen to equal its values would work in every test anyone wrote.
 //
 // The Swift half is anchored on grMobMenuItems rather than on GrMobSelect: the
-// buttons moved out of the composite when the options grew headings, because
-// SwiftUI's Section is a container and a run has to be handed to it whole. The
-// anchor follows the code rather than the code being kept in one place to suit
-// the anchor — and it caught the move, which is the check working.
+// buttons live in a helper because SwiftUI's Section is a container and a run
+// has to be handed to it whole. The anchor follows the code rather than the
+// code being kept in one place to suit the anchor.
 func TestNativeSelectDispatchesTheOptionValue(t *testing.T) {
 	for _, pin := range []struct {
 		file, marker string
 		next         *regexp.Regexp
 		dispatch     string
+		// value is the menu row's value as the renderer spells it. Both
+		// languages read it off the same GrMobMenuItem field now, which is
+		// what makes one substring able to say "not the label and not the
+		// index".
+		value string
 	}{
-		{swiftRenderer, "private func grMobMenuItems(", swiftCompositeStart, "textChanged("},
-		{kotlinRenderer, "private fun GrMobSelect", kotlinCompositeStart, "textChanged("},
+		{swiftRenderer, "private func grMobMenuItems(", swiftCompositeStart,
+			"textChanged(", "item.value"},
+		{kotlinRenderer, "private fun GrMobSelect", kotlinCompositeStart,
+			"textChanged(", "item.value"},
 	} {
 		body := dispatchArm(t, pin.file, pin.marker, pin.next)
 		at := strings.Index(body, pin.dispatch)
@@ -103,56 +140,57 @@ func TestNativeSelectDispatchesTheOptionValue(t *testing.T) {
 				pin.file, pin.marker, pin.dispatch)
 			continue
 		}
-		// The argument that follows has to read the option's "value" key. Read
-		// as text rather than parsed: the two languages spell the subscript
-		// differently and there is nothing shared to compare against.
+		// The argument that follows has to be the row's value. Read as text
+		// rather than parsed: the two languages spell the call differently and
+		// there is nothing shared to compare against.
 		rest := body[at:]
 		if end := strings.Index(rest, "\n"); end > 0 {
 			rest = rest[:end]
 		}
-		if !strings.Contains(rest, `"value"`) {
-			t.Errorf("%s: %s dispatches %q, which does not read the option's value key",
+		if !strings.Contains(rest, pin.value) {
+			t.Errorf("%s: %s dispatches %q, which is not the menu row's value",
 				pin.file, pin.marker, strings.TrimSpace(rest))
 		}
 	}
 }
 
-// core.SelectOption's Group and Disabled must reach both native pickers.
+// Each renderer draws the menu the decomposition describes, and does not
+// decompose the list a second time of its own.
 //
-// Neither is a compile-time obligation anywhere: the options cross the bridge
-// as a list of flat string maps, so a renderer that never reads the two new
-// keys parses cleanly, draws a flat list of choosable options, and disagrees
-// with both web targets — a grouped picker whose headings are gone and a
-// disabled option that can be chosen, on device only. That is the same shape
-// the gap-longhand gap had, and the same reason it can only be caught here.
+// Neither obligation is a compile-time one. A renderer that ignored the
+// sections and looped over the raw options would parse cleanly, draw a flat
+// list of choosable rows, and disagree with both web targets — a grouped
+// picker whose headings are gone and a disabled option that can be chosen, on
+// device only. That is the same shape the gap-longhand gap had, and the same
+// reason it can only be caught here.
 //
 // Read off the composite's own code rather than the file, so a construct used
 // somewhere else in a 900-line renderer cannot stand in for this one.
-func TestNativeSelectDrawsGroupsAndDisabledOptions(t *testing.T) {
+func TestNativeSelectDrawsTheDecomposedMenu(t *testing.T) {
 	for _, pin := range []struct {
 		file, marker string
 		next         *regexp.Regexp
-		// group is how the arm splits the list into headings, heading is the
-		// construct it draws one with, and disabled is the read that stops a
-		// tap. All three are required: a renderer that read the key and drew
-		// nothing, or drew a section it never filled, would satisfy any one of
-		// them alone.
-		group, heading, disabled string
+		// sections is the call into the UI-free decomposition, heading is the
+		// construct a run's label is drawn with, and disabled is the read that
+		// refuses a tap. All three are required: a renderer that computed the
+		// sections and drew a flat list, or drew a heading it never filled,
+		// would satisfy any one of them alone.
+		sections, heading, disabled string
 	}{
+		// SwiftUI's Section is a container, so the run is handed to it whole
+		// and the rows are drawn by a helper (checked separately below).
 		{swiftRenderer, "private struct GrMobSelect", swiftCompositeStart,
-			// The runs are computed outside the ForEach because SwiftUI's
-			// Section is a container and a run has to be handed to it whole.
-			"grMobOptionRuns(options)", "Section(run.label)", "grMobMenuItems("},
+			"grMobMenuSections(options)", "Section(section.heading)", "grMobMenuItems("},
+		// Material's dropdown has no Section, so a run is announced by an
+		// unclickable item written ahead of it.
 		{kotlinRenderer, "private fun GrMobSelect", kotlinCompositeStart,
-			// Material's dropdown has no Section, so a run is announced by an
-			// unclickable item written ahead of it.
-			`option["group"]`, "enabled = false", `option["disabled"]`},
+			"grMobMenuSections(options)", "enabled = false", "!item.isDisabled"},
 	} {
 		body := dispatchArm(t, pin.file, pin.marker, pin.next)
 		for what, want := range map[string]string{
-			"split the options into groups": pin.group,
-			"draw a group's heading":        pin.heading,
-			"honour a disabled option":      pin.disabled,
+			"ask the decomposition for its sections": pin.sections,
+			"draw a section's heading":               pin.heading,
+			"honour a disabled option":               pin.disabled,
 		} {
 			if !strings.Contains(body, want) {
 				t.Errorf("%s: %s does not %s (no %q) — the picker is grouped on the web and "+
@@ -162,24 +200,110 @@ func TestNativeSelectDrawsGroupsAndDisabledOptions(t *testing.T) {
 	}
 }
 
-// The Swift half of the same story lives in two helpers outside the composite,
-// so the check above cannot see whether they do anything. These are the two
-// facts that make them right, and both are the ones a rewrite is most likely
-// to get wrong.
-func TestSwiftOptionRunsAreRunsAndDisableWhatTheyShould(t *testing.T) {
-	src := readNative(t, swiftRenderer)
-
-	// Runs, not a gather: the splitter walks the list in order and closes a
-	// run when the heading changes. A gather would sort the options, which is
-	// what core.SelectOption.Group says this widget must not do.
-	if !strings.Contains(src, "if g != label {") {
-		t.Error("Renderer.swift: grMobOptionRuns no longer closes a run when the heading " +
-			"changes — a gather would silently reorder the caller's list")
+// The Swift rows live in a helper the check above cannot see into, and the
+// disabling there is the one fact about the iOS menu that no harness reaches.
+//
+// It goes on the Button and never on the Section: on the Section it would take
+// the whole run with it, which is a much larger wrong answer than a row that
+// can be tapped.
+func TestSwiftMenuItemsDisableTheButtonAndNotTheSection(t *testing.T) {
+	body := dispatchArm(t, swiftRenderer, "private func grMobMenuItems(", swiftCompositeStart)
+	if !strings.Contains(body, ".disabled(item.isDisabled)") {
+		t.Error("Renderer.swift: grMobMenuItems does not disable a row from its own " +
+			"isDisabled — a disabled option can be chosen on iOS")
 	}
-	// And the disabling is on the Button, not on the Section: disabling a
-	// section would take its whole run with it.
-	if !strings.Contains(src, `.disabled((options[i]["disabled"] as? String ?? "") == "true")`) {
-		t.Error("Renderer.swift: grMobMenuItems does not disable an option from its own " +
-			"`disabled` key")
+	if strings.Contains(body, "Section(") {
+		t.Error("Renderer.swift: grMobMenuItems builds a Section — the disabling in here " +
+			"would then take a whole run with it")
+	}
+}
+
+// The decomposition files import no UI, on either platform.
+//
+// This is what makes the Swift half runnable at all: ios/verify compiles
+// GrMobSelectMenu.swift into a plain macOS executable, and a single `import
+// SwiftUI` would end that — the harness would stop building, and the fallback
+// would be the source-text checks this file used to be made of. The Kotlin
+// twin has no runner yet, so the check there is about keeping one possible:
+// a decomposition that reached for a Compose type could only ever be checked
+// on a device.
+//
+// Stated as an absence of imports rather than of any particular symbol,
+// because it is the whole dependency that matters and a new UI framework
+// would be spelled a way this file could not guess.
+func TestNativeMenuDecompositionIsUIFree(t *testing.T) {
+	for _, pin := range []struct {
+		file string
+		// allowed is the one import each file may carry: Foundation supplies
+		// Swift's dictionary and string types, and the Kotlin file needs
+		// nothing at all.
+		allowed  string
+		prefixes []string
+	}{
+		{swiftSelectMenu, "import Foundation", []string{"import "}},
+		{kotlinSelectMenu, "", []string{"import "}},
+	} {
+		for _, line := range strings.Split(readNative(t, pin.file), "\n") {
+			line = strings.TrimSpace(line)
+			for _, prefix := range pin.prefixes {
+				if !strings.HasPrefix(line, prefix) || line == pin.allowed {
+					continue
+				}
+				t.Errorf("%s: %q — the decomposition has to stay runnable off a device, "+
+					"which means importing no UI", pin.file, line)
+			}
+		}
+	}
+}
+
+// Both transliterations exist and say the same thing.
+//
+// core.SelectMenuSections is the authority; each native carries a copy because
+// neither can call into Go while drawing. The copies are checked differently —
+// the Swift one by ios/verify running it, the Kotlin one only by reading —
+// so what is worth pinning here is that the two have the same shape, since a
+// Kotlin copy that drifted would drift silently.
+//
+// Four facts, each one a property of core.SelectOption.Group or .Disabled that
+// a rewrite is most likely to lose.
+func TestNativeMenuDecompositionsAgree(t *testing.T) {
+	for _, pin := range []struct {
+		file string
+		// runs is the comparison that closes a run when the heading changes —
+		// a gather would silently reorder the caller's list, which the field
+		// says this widget must not do. flush is the append after the loop,
+		// without which a run that ends the list is dropped. disabled is the
+		// wire spelling, and index is the identity a row is known by.
+		//
+		// flush carries the `return` with it on purpose. The same guard opens
+		// the loop's own append, so the condition alone matched a file whose
+		// flush had been deleted outright — the break-test that caught this
+		// pin being too weak is the same shape as the one that caught
+		// htmlout's trailing <optgroup>, which is not a coincidence: an
+		// end-of-loop flush is hard to check *because* it looks like the thing
+		// inside the loop.
+		runs, flush, disabled, index string
+	}{
+		{swiftSelectMenu, "group != heading",
+			"    if building {\n" +
+				"        sections.append(GrMobMenuSection(heading: heading, items: items))\n" +
+				"    }\n    return sections",
+			`== "true"`, "index: i"},
+		{kotlinSelectMenu, "group != heading",
+			"    if (building) sections.add(GrMobMenuSection(heading, items))\n" +
+				"    return sections",
+			`== "true"`, "index = i"},
+	} {
+		src := readNative(t, pin.file)
+		for what, want := range map[string]string{
+			"close a run when the heading changes": pin.runs,
+			"flush a run that ends the list":       pin.flush,
+			"read the wire's disabled spelling":    pin.disabled,
+			"carry the option's index":             pin.index,
+		} {
+			if !strings.Contains(src, want) {
+				t.Errorf("%s: does not %s (no %q)", pin.file, what, want)
+			}
+		}
 	}
 }

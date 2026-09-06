@@ -175,12 +175,20 @@ type ListRow struct {
 	// container's word that is missing. Setting this therefore adds on every
 	// target and costs nothing on any.
 	//
-	// # What it does not buy
+	// # What it buys on the keyboard, and what the caller has to do for it
 	//
-	// The keyboard. A listbox in ARIA's full pattern takes focus, moves an
-	// active option with the arrow keys and reports which one through a roving
-	// tabindex; nothing in core stamps a tabindex or reads an arrow key, so
-	// that half is the author's on the web. On both phones it costs nothing —
+	// A listbox in ARIA's full pattern takes focus, moves an active option
+	// with the arrow keys and reports which one through a roving tabindex.
+	// The WASM runtime supplies all of it — one tab stop per list, Up/Down
+	// within it, Home and End, and Enter or Space running this row's OnTap —
+	// but only for rows inside a container that says it is a listbox. That is
+	// the same core.RoleListBox the field above already asks the caller for,
+	// so the keyboard arrives with the container's role and not with this
+	// flag: a Selectable row in an unroled Box is an `option` with nothing to
+	// be an option of, and gets no more keyboard than it did before.
+	//
+	// A static htmlout export writes no tab stops at all, deliberately — see
+	// core.RoleListBox. On both phones none of this was ever missing:
 	// VoiceOver and TalkBack navigate a collection by swipe.
 	Selectable bool
 

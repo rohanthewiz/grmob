@@ -1256,16 +1256,18 @@ private struct GrMobSelect: View {
 
         Menu {
             // The options, split into the runs core.SelectOption.Group
-            // describes: consecutive options sharing a heading are one
-            // Section, in the order they were written. Grouped here rather
-            // than in the ForEach because SwiftUI's Section is a container and
-            // a run has to be handed to it whole.
-            ForEach(grMobOptionRuns(options), id: \.first) { run in
-                if run.label.isEmpty {
-                    grMobMenuItems(run.range, options, cb, runtime)
+            // describes. The split itself is grMobMenuSections in
+            // GrMobSelectMenu.swift — UI-free, so ios/verify runs it against
+            // cases generated from core.SelectMenuSections rather than reading
+            // this file as text. Sectioned ahead of the ForEach because
+            // SwiftUI's Section is a container and a run has to be handed to
+            // it whole.
+            ForEach(grMobMenuSections(options), id: \.first) { section in
+                if section.heading.isEmpty {
+                    grMobMenuItems(section.items, cb, runtime)
                 } else {
-                    Section(run.label) {
-                        grMobMenuItems(run.range, options, cb, runtime)
+                    Section(section.heading) {
+                        grMobMenuItems(section.items, cb, runtime)
                     }
                 }
             }
@@ -1280,59 +1282,29 @@ private struct GrMobSelect: View {
     }
 }
 
-/// One run of a picker's options: the heading they share (empty for the
-/// ungrouped ones) and the half-open index range they occupy.
-///
-/// `first` is the run's starting index and is what identifies it to ForEach —
-/// a run is not Hashable through its range alone once two runs share a label,
-/// which core.SelectOption.Group explicitly allows (the same heading either
-/// side of a different one is two runs).
-private struct GrMobOptionRun {
-    let label: String
-    let range: Range<Int>
-    var first: Int { range.lowerBound }
-}
-
-/// Splits a picker's flattened options into consecutive runs by their "group".
-///
-/// Runs rather than a gather, which is core.SelectOption.Group's own rule: the
-/// list's order is the caller's, and reordering it to suit the headings would
-/// be a bigger change than the one being asked for.
-private func grMobOptionRuns(_ options: [[String: Any]]) -> [GrMobOptionRun] {
-    var runs: [GrMobOptionRun] = []
-    var start = 0
-    var label = options.first?["group"] as? String ?? ""
-    for i in options.indices {
-        let g = options[i]["group"] as? String ?? ""
-        if g != label {
-            runs.append(GrMobOptionRun(label: label, range: start..<i))
-            start = i
-            label = g
-        }
-    }
-    if start < options.count {
-        runs.append(GrMobOptionRun(label: label, range: start..<options.count))
-    }
-    return runs
-}
-
 /// The buttons for one run of options.
 ///
 /// A disabled option is still drawn and still announced — that is what
 /// disabling one buys over leaving it out — and `.disabled` is what stops the
-/// tap. See core.SelectOption.Disabled.
+/// tap. It goes on the Button and never on the Section: disabling a Section
+/// would take its whole run with it. See core.SelectOption.Disabled.
+///
+/// The choice goes up as the option's *value*. core.Select registers a
+/// func(string), so the dispatch is the text channel; the index is the one
+/// identity that changes when the list is reordered, and a label is written to
+/// be read.
 @ViewBuilder
-private func grMobMenuItems(_ range: Range<Int>, _ options: [[String: Any]],
-                            _ cb: String, _ runtime: GrMobRuntime?) -> some View {
-    // Indices rather than the dictionaries themselves: a [String: Any] is not
-    // Hashable, so it cannot identify a ForEach row.
-    ForEach(Array(range), id: \.self) { i in
-        Button(options[i]["label"] as? String ?? "") {
+private func grMobMenuItems(_ items: [GrMobMenuItem], _ cb: String,
+                            _ runtime: GrMobRuntime?) -> some View {
+    // Keyed on the option's index, which is what GrMobMenuItem carries it for:
+    // a [String: Any] is not Hashable and two options may share a label.
+    ForEach(items, id: \.index) { item in
+        Button(item.label) {
             if !cb.isEmpty {
-                runtime?.textChanged(cb, options[i]["value"] as? String ?? "")
+                runtime?.textChanged(cb, item.value)
             }
         }
-        .disabled((options[i]["disabled"] as? String ?? "") == "true")
+        .disabled(item.isDisabled)
     }
 }
 

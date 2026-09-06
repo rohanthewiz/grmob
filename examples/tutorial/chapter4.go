@@ -350,6 +350,7 @@ components.SegmentedControl{
 					"Key looped chips, and give twin segmented controls a KeyPrefix, so the reconciler matches pills by identity, not position.",
 					"Every chip states core.AccessibilitySelected, unselected ones included — SelectedOff is a value with a job, not a way of saying nothing.",
 					"The role picks the attribute: a plain chip is aria-pressed, a chip carrying RoleTab inside a RoleTabList row is aria-selected.",
+					"And the pair buys the keyboard on the web: a tablist is one tab stop, and the arrow keys move within it.",
 				),
 			)
 		},
@@ -457,7 +458,10 @@ func lessonListRow() Lesson {
 					"Without the pair the state has nowhere to live — ARIA scopes it to a "+
 					"handful of roles and a plain row is none of them — so the widget falls "+
 					"back to appending \", selected\" to the row's name, which announces once "+
-					"and makes a name that is supposed to be stable move."),
+					"and makes a name that is supposed to be stable move. The container's "+
+					"role also buys the keyboard on the web: the list becomes one tab stop, "+
+					"the arrow keys move between rows, and Enter or Space runs the focused "+
+					"row's OnTap."),
 				codeBlock(`core.Column(
     core.AccessibilityRole(core.RoleListBox),   // the container's half
     components.ListRow{Title: m.Name, Selectable: true,
@@ -1828,10 +1832,13 @@ default:                     return components.Skeleton{}   // the check is in f
 					"page with no switch on it. Unknown is the fifth and is the zero value: the "+
 					"check is asynchronous, so the first pass has no answer and draws a placeholder."),
 				prose("Nothing tells an app that a permission changed while it was in the background. "+
-					"A user can grant one in Settings and come back, and the record here still says "+
-					"denied — so a screen that cares pairs this with hooks.UseLifecycle and calls "+
-					"permission.Check itself when the state turns \"active\". The hook does not do it "+
-					"for you, because it cannot see whether its screen is still the one on top."),
+					"A user is refused, taps your \"Open Settings\" button, grants it there and comes "+
+					"back — and UsePermission still says denied, because its one check happened on "+
+					"mount. hooks.UsePermissionLive is the same hook plus a re-check on every return "+
+					"to the foreground, and it is what a screen drawing a denied state wants. The "+
+					"re-check is owned by the permission rather than by a screen: there is one device "+
+					"with one camera, so five screens watching it are one check per resume between "+
+					"them, and an app with no live watcher takes no lifecycle subscription at all."),
 				prose("The angle is never folded onto the circle on its way to a renderer. 350 to 370 "+
 					"and 350 to 10 point the same way and are not the same animation — the first "+
 					"sweeps twenty degrees forwards and the second unwinds three hundred and forty the "+

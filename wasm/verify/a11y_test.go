@@ -186,18 +186,24 @@ func TestRuntimeGuardsTheExpandedStateTheSameWay(t *testing.T) {
 	}
 }
 
-// A Modal core built carries no Style at all, so the applyStyle path — the one
-// applyAccessibility normally rides on — never runs for it. The chassis in
-// createElement is what covers that case, and it goes through the same
-// function so the two routes cannot drift.
+// A Modal core built carries no Style at all, and applyAccessibility rides on
+// the applyStyle path — so whether a modal announces as a dialog comes down to
+// whether that path runs for a node with nothing to style.
+//
+// It does, for every node: createElement passes an empty object where there is
+// no Style rather than skipping the call. The Modal branch used to restate the
+// semantics itself precisely because the call was conditional, and that second
+// copy is gone now that it cannot be reached differently from the first.
 //
 // This is the check the .mjs suite makes behaviorally ("a Modal announces as a
-// dialog with no Style at all"); here it is the one line that makes it true.
+// dialog with no Style at all", and styleless_test.mjs from the other side);
+// here it is the one line that makes it true. stack_test.go pins the same line
+// for the other thing that rests on it — a styleless container's flex axis.
 func TestRuntimeGivesAStylelessModalItsSemantics(t *testing.T) {
 	src := runtimeSource(t)
-	if !strings.Contains(src, `applyAccessibility(el, node.Style || {}, "Modal")`) {
-		t.Error(`grmob-runtime.js: createElement's Modal branch no longer applies the dialog ` +
-			`semantics — core.ModalNode has no Style, so nothing else would`)
+	if !strings.Contains(src, `applyStyle(el, node.Style || {}, node.Type);`) {
+		t.Error(`grmob-runtime.js: createElement no longer styles a node that carries no ` +
+			`Style — core.ModalNode has no Style, so nothing would apply the dialog semantics`)
 	}
 }
 

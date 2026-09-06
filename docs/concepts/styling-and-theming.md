@@ -355,6 +355,24 @@ The landmarks, live regions and content roles carry no such promise. A banner
 or a navigation region owns whatever it likes, and `RoleHeading` / `RoleButton`
 / `RoleLink` / `RoleImg` describe the node itself.
 
+#### The two pairs that come with a keyboard
+
+`RoleListBox`/`RoleOption` and `RoleTabList`/`RoleTab` are the two that name
+real ARIA *controls*, and a control's pattern includes behaviour: the widget is
+one stop in the page's tab order and the arrow keys move between its members.
+The WASM runtime supplies that from what these roles already say — plus
+`AccessibilitySelected` for where a keyboard enters, and the container's own
+layout axis for which arrow pair moves — so a hand-built listbox or tab strip
+becomes keyboard-operable by declaring what it is, with no extra prop and no
+handler of the author's. Both phones never needed it (VoiceOver and TalkBack
+navigate a collection by swipe) and a static `htmlout` export deliberately
+writes no tab stops. See
+[WASM — Composite widgets are operable](../platforms/wasm.md#composite-widgets-are-operable).
+
+The role has to be on the *container*, which is the same rule the structural
+claim above states: an `option` in an unroled Box is an option with nothing to
+be an option of, and gets no keyboard.
+
 #### `AccessibilityHeadingLevel`
 
 `RoleHeading` says a node *is* a heading; the level says where it sits — 1 for
@@ -735,16 +753,19 @@ exists for the *other* case, a `Box` or `Row` with an `OnTap`.
 natives present it through a platform dialog (a SwiftUI sheet, a Compose
 `Dialog`) that announces itself; the two DOM renderers drew a plain `div`, so
 the overlay was the one target where a dialog was not a dialog. Both now write
-`role="dialog"` and `aria-modal="true"` as part of the Modal chassis, beside
-the fixed-overlay rules. A closed modal needs no special case — it is
+`role="dialog"` and `aria-modal="true"` from the node type, beside the
+fixed-overlay rules. A closed modal needs no special case — it is
 `display:none`, which takes it out of the accessibility tree entirely.
 
 There is deliberately no `RoleDialog`. Adding one would hand the author work
 that three of the four targets already do unasked, and would cost two native
 arms that could only be empty — which in this vocabulary means "this platform
 cannot say it", the opposite of the truth here. An author who sets
-`AccessibilityRole` on a hand-built Modal node still wins, on the same
-principle the chassis follows for style: the framework's default goes first.
+`AccessibilityRole` on a hand-built Modal node still wins — `dialog` is the
+default the node type supplies, not a rule it imposes. The visual chassis
+follows the same principle: a Modal's fixed positioning, centring and z-index
+are written *under* whatever a hand-built node's `Style` says, on both web
+targets and by the same table.
 
 ### `Disabled`
 

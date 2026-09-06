@@ -451,6 +451,15 @@ Other notes:
     The two web targets write `role="option"` and `aria-selected`. Neither
     native names a listbox or an option, but both announce the *state* on any
     node, so the row still reads as chosen on device.
+
+    The container's role also buys the **keyboard**: under the WASM runtime a
+    `RoleListBox` becomes one stop in the page's tab order, Up and Down move
+    between its rows, `Home` and `End` reach the ends, and `Enter` or `Space`
+    runs the focused row's `OnTap`. That arrives with the container's role and
+    not with this flag — a `Selectable` row in an unroled Box is an `option`
+    with nothing to be an option of. A static `htmlout` export writes no tab
+    stops, deliberately; see
+    [WASM — Composite widgets are operable](platforms/wasm.md#composite-widgets-are-operable).
 - `NestingLevel` is the same table's other answer, and it lands. A depth's
   role is `listitem` — one of the three ARIA defines `aria-level` for, and the
   honest description of a row — so the row states its depth and becomes the
@@ -738,7 +747,13 @@ components.SegmentedControl{
 }
 ```
 
-One thing that does not buy, and it is ARIA's rule rather than the widget's: a
+It buys the keyboard with it under the WASM runtime: the strip becomes one tab
+stop, Left and Right move between segments, and `Home` and `End` reach the
+ends. Nothing about the widget changed to get that — the roles and
+`aria-selected` are all the runtime needs. See
+[WASM — Composite widgets are operable](platforms/wasm.md#composite-widgets-are-operable).
+
+One thing it does not buy, and it is ARIA's rule rather than the widget's: a
 tablist claims its children are tabs, so a row that also holds a count or an
 add button is not one.
 

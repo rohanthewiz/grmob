@@ -115,6 +115,10 @@ type SelectOption struct {
 	// a Section in the iOS menu, a heading item in the Android dropdown. All
 	// three are labels rather than options — none of them is selectable, and
 	// none of them carries a Value.
+	//
+	// Which options form which run is decided once, by SelectMenuSections
+	// (select_menu.go), and not by each renderer — see that file for what four
+	// copies of this rule cost.
 	Group string
 
 	// Disabled greys this option out: visible, announced, and not choosable.
@@ -194,6 +198,11 @@ func Option(value, label string) SelectOption {
 // the flattening below is the one place that knows what a SelectOption is, and
 // the four renderers each read a list of flat string maps. A fifth field would
 // land here and nowhere else.
+//
+// What the renderers do *not* each decide is which options form which run.
+// SelectMenuSections (select_menu.go) takes the flattened list and answers
+// that once; htmlout calls it, and the two natives carry transliterations that
+// ios/verify checks against it.
 func Select(value string, options []SelectOption, onChange func(string), props ...PropsAndChildren) View {
 	return ComponentFunc(func(ctx *Context) *Node {
 		// Flattened to []map[string]string here rather than in each renderer,

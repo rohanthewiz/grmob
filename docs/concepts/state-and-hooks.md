@@ -290,7 +290,7 @@ enable the compass" button is for.
 Below the hook, `core.CurrentHeading`/`core.OnHeading` are the un-scoped pair,
 for a subscriber that wants the reading without owning the sensor's lifetime.
 
-### Permissions: `UsePermission`
+### Permissions: `UsePermission` and `UsePermissionLive`
 
 A permission is a fourth kind of thing: it is *asked*, and the answer outlives
 the asking. The `permission` package is shaped like the sensor above minus the
@@ -330,11 +330,33 @@ reason `core.Role`'s are ARIA's: the browser host then needs no mapping table,
 and iOS and Android each map their richer enums onto it.
 
 **Nothing tells an app that a permission changed while it was in the
-background.** A user can grant one in Settings and come back. The hook does not
-re-check on foreground — it cannot see whether its screen is still the one on
-top, and a stack of five screens would each fire a check on every resume — so
-pair it with `hooks.UseLifecycle` and call `permission.Check` yourself when the
-state turns `"active"`.
+background,** on any of the three platforms. A user is refused, taps your
+"Open Settings" button, grants it there, and comes back — and with
+`UsePermission` the screen still says the camera is off, because the hook's one
+check happened on mount. The button that fixed the problem is the thing still
+telling them it is broken.
+
+`hooks.UsePermissionLive` is the same hook plus a re-check on every return to
+the foreground, and it is what a screen drawing a `Denied` state wants:
+
+```go
+switch hooks.UsePermissionLive(ctx, permission.Camera) { … }
+```
+
+For a long time the objection to it was that a hook cannot see whether its
+screen is still the one on top, so a stack of five screens would fire five
+checks per resume. That assumed a *screen* has to own the re-check. Nothing
+about the question is per-screen — there is one device with one camera — so the
+owner is the permission: `permission.WatchForeground` reference-counts by kind,
+exactly as `core.StartHeading` does for the sensor, and five watchers of the
+camera produce one `check` per resume between them. An app with no live watcher
+takes no lifecycle subscription at all.
+
+A resume that changed nothing costs one system event out and one host event
+back and stops there, because the record notifies only on a *change* — so a
+watched screen does not re-render every time the user switches apps and back.
+`UsePermission` stays for the screens that want the narrower thing; use the
+live one by default.
 
 **This is not a second way to do what a capability already does.**
 `core.StartHeading` makes the browser's motion prompt itself, deliberately, so

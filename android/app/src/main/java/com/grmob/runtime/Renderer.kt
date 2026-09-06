@@ -800,39 +800,43 @@ private fun GrMobSelect(node: GrMobNode, extra: Modifier) {
     Box(modifier = s.boxModifier(extra).clickable(enabled = enabled) { open = true }) {
         Text(text = chosen?.get("label") as? String ?: value, style = textStyle(s))
         DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
-            // The heading of the run currently being emitted. Material's
-            // dropdown has no Section construct, so a run of options sharing a
-            // core.SelectOption.Group is announced by a heading item written
-            // ahead of it — an item with no onClick, which is what makes it a
-            // label rather than a choice.
+            // Material's dropdown has no Section construct, so a run of
+            // options sharing a core.SelectOption.Group is announced by a
+            // heading item written ahead of it — an item with no onClick,
+            // which is what makes it a label rather than a choice.
             //
-            // Runs, not a gather: consecutive options with the same heading
-            // are one section, in the order they were written. See that field
-            // for why reordering the list is not this widget's to do.
-            var openLabel = ""
-            options.forEach { option ->
-                val label = option["group"] as? String ?: ""
-                if (label != openLabel) {
-                    openLabel = label
-                    if (label.isNotEmpty()) {
-                        DropdownMenuItem(
-                            text = { Text(label, style = MaterialTheme.typography.labelSmall) },
-                            onClick = {},
-                            enabled = false,
-                        )
-                    }
+            // The split into runs is grMobMenuSections in GrMobSelectMenu.kt,
+            // which imports nothing and states the rule once for this
+            // renderer; core.SelectMenuSections is the authority it follows.
+            grMobMenuSections(options).forEach { section ->
+                if (section.heading.isNotEmpty()) {
+                    DropdownMenuItem(
+                        text = {
+                            Text(section.heading, style = MaterialTheme.typography.labelSmall)
+                        },
+                        onClick = {},
+                        enabled = false,
+                    )
                 }
-                DropdownMenuItem(
-                    text = { Text(option["label"] as? String ?: "") },
-                    onClick = {
-                        open = false
-                        if (cb.isNotEmpty()) runtime.textChanged(cb, option["value"] as? String ?: "")
-                    },
-                    // A disabled option is still drawn and still announced —
-                    // that is what disabling one buys over leaving it out — and
-                    // this is what stops the tap. See core.SelectOption.Disabled.
-                    enabled = (option["disabled"] as? String ?: "") != "true",
-                )
+                section.items.forEach { item ->
+                    DropdownMenuItem(
+                        text = { Text(item.label) },
+                        onClick = {
+                            open = false
+                            // The choice goes up as the option's *value*:
+                            // core.Select registers a func(string), so this is
+                            // the text channel. The index is the one identity
+                            // that changes when the list is reordered, and a
+                            // label is written to be read.
+                            if (cb.isNotEmpty()) runtime.textChanged(cb, item.value)
+                        },
+                        // A disabled option is still drawn and still announced
+                        // — that is what disabling one buys over leaving it
+                        // out — and this is what stops the tap. See
+                        // core.SelectOption.Disabled.
+                        enabled = !item.isDisabled,
+                    )
+                }
             }
         }
     }

@@ -248,24 +248,39 @@ const (
 // role="list" around it, costing the whole list its shape for one row's
 // announcement. This pair is the door that was left.
 //
-// # What a listbox promises, and what this vocabulary supplies
+// # What a listbox promises, and who keeps the promise
 //
 // A listbox is a real control in ARIA's model, and the pattern that goes with
 // it is larger than two attributes: the container takes keyboard focus, the
 // arrow keys move an active option, and the reader is told which option is
 // active through a roving tabindex or aria-activedescendant.
 //
-// None of that is here. This type is a vocabulary — it says what a node *is*,
-// and nothing in core stamps a tabindex or reads an arrow key (core/focus.go
-// is about putting the cursor in a named field, which is a different
-// question). So the semantics are stated and the behaviour is the author's,
-// exactly as the structural rule above makes a `list` role's promise the
-// author's to keep. On the two phones the gap costs nothing — VoiceOver and
-// TalkBack navigate a collection by swipe, not by arrow key — which is also
-// why neither native has a listbox in its semantics vocabulary at all: both
-// spell a chosen item as the `selected` state this pair exists to make
-// *legal*, and they honour that state on any node without being told what
-// contains it.
+// None of that is *here*, and it does not need to be. This type is a
+// vocabulary — it says what a node is, and nothing in core stamps a tabindex
+// or reads an arrow key (core/focus.go is about putting the cursor in a named
+// field, which is a different question and one that costs a render pass per
+// keystroke). What closed the gap instead was noticing that the vocabulary
+// already says everything the pattern needs:
+//
+//	what is a member of what   this pair, and the structural rule above that
+//	                           makes a listbox's contents its own
+//	which one is chosen        Style.AccessibilitySelected
+//	which way the arrows go    the container's own layout axis
+//	what activation means      the OnTap the author already wrote
+//
+// So the WASM runtime supplies the whole keyboard half from what crosses the
+// wire, with no new prop and no source change in any screen that had already
+// said the above — see "Composite widgets are operable" in
+// docs/platforms/wasm.md. htmlout deliberately writes none of it: a roving
+// tabindex without the handler that moves it takes every option but one out of
+// the tab order and reaches none of them, so the attribute is behaviour rather
+// than semantics and a static export must not carry it.
+//
+// On the two phones there was never a gap — VoiceOver and TalkBack navigate a
+// collection by swipe, not by arrow key — which is also why neither native has
+// a listbox in its semantics vocabulary at all: both spell a chosen item as
+// the `selected` state this pair exists to make *legal*, and they honour that
+// state on any node without being told what contains it.
 //
 // # The depth question, answered the other way
 //
@@ -300,6 +315,14 @@ const (
 // them as unselected. So a strip sets the state on every tab, not just the
 // live one — SelectedOff is a value with a job here, not a way of saying
 // nothing.
+//
+// It is also what the arrow keys move between. The WASM runtime reads this
+// pair the same way it reads the listbox one and supplies ARIA's keyboard
+// half — one tab stop for the strip, Left/Right within it (Up/Down for a strip
+// laid out as a column), Home and End to the ends — from the roles and the
+// selection alone. A hand-built strip gets it by saying what it is; see the
+// listbox pair above for the argument, and docs/platforms/wasm.md for what
+// each target does.
 const (
 	RoleTab     Role = "tab"
 	RoleTabList Role = "tablist"

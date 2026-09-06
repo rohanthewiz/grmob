@@ -42,6 +42,10 @@
 //	the read-back     a settings screen showing "Location: denied — open
 //	                  Settings". Check never prompts, so it is safe on mount,
 //	                  and it is the only way to draw that row at all.
+//	the return        and the moment after that row's button worked: the user
+//	                  granted it in Settings and came back, which no platform
+//	                  announces. foreground.go is that half; the capability
+//	                  that makes its own prompt has nowhere to hang it.
 //
 // There is a consumer for the second today, one file over from the compass:
 // ios/GrMob/App/HeadingSensor.swift reports Heading.HasTrue only when location
@@ -166,9 +170,11 @@ const (
 	// Android is the one host where the state is genuinely coarser than the
 	// word: a refusal that will still re-prompt and one that will not are the
 	// same PERMISSION_DENIED, and telling them apart needs the app to
-	// remember whether it has already asked. Both arrive here as Denied
-	// rather than being guessed at — see the host notes in
-	// docs/platforms/native.md.
+	// remember whether it has already asked. The shell remembers it, in its
+	// own preferences and across restarts, because the platform will not — so
+	// both arrive here as Denied rather than being guessed at, and a cold
+	// start no longer reports a permanent refusal as Prompt. See the host
+	// notes in docs/platforms/native.md.
 	Denied Status = "denied"
 
 	// Prompt — undecided. Request will show the platform's dialog, which is
@@ -254,9 +260,10 @@ func Request(p Permission) { send(commandRequest, p) }
 // Safe on mount and safe to repeat, which is what makes it the right call on
 // a lifecycle change: a user can grant or revoke a permission in the system
 // settings and come back, and nothing tells an app that happened. Re-checking
-// when core.CurrentLifecycle returns to "active" is how a screen notices —
-// hooks.UsePermission does not do it for you, because the hook cannot know
-// whether the screen is still the one on top.
+// when core.CurrentLifecycle returns to "active" is how a screen notices, and
+// WatchForeground is that arrangement written once — one check per permission
+// per resume however many screens are watching. hooks.UsePermissionLive is
+// this and the mount check together, and is what most callers want.
 func Check(p Permission) { send(commandCheck, p) }
 
 // send emits one command, or records Unavailable when nothing is listening.
@@ -420,7 +427,15 @@ func reportable(s Status) bool {
 
 // resetForTest returns the record and the subscriptions to their initial
 // state, so one test's answers cannot leak into the next.
+//
+// The foreground watches go with them, and before the record rather than
+// after: a watch left standing would re-check on the next test's first
+// lifecycle transition and write a status into a record that test believes it
+// controls. Released outside this function's own lock because it takes a
+// different one and reaches into core to cancel its subscription.
 func resetForTest() {
+	resetForegroundForTest()
+
 	mu.Lock()
 	defer mu.Unlock()
 	statuses = map[Permission]Status{}

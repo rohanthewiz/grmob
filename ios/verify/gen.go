@@ -10,6 +10,13 @@
 // This is the iOS analog of examples/mobileapp/app_test.go: it proves the
 // Swift TreeStore/parser agree with the Go reconciler without needing Xcode
 // or a simulator.
+//
+// The file carries one thing besides the transcript: a table of picker option
+// lists with the menu core.SelectMenuSections says each decomposes into (see
+// menuCase). It rides along here because the harness is a single executable,
+// and it is generated rather than hand-written for the reason that whole
+// mechanism exists — a fixture written out twice proves only that one person
+// made the same mistake twice.
 package main
 
 import (
@@ -18,6 +25,7 @@ import (
 	"os"
 	"sync"
 
+	"github.com/rohanthewiz/grmob/core"
 	"github.com/rohanthewiz/grmob/mobile"
 
 	// Imported for its init: registers the demo app with the bridge, the same
@@ -29,6 +37,128 @@ type transcript struct {
 	Initial string   `json:"initial"`
 	Steps   []string `json:"steps"`
 	Final   string   `json:"final"`
+
+	// The picker-menu cases, which have nothing to do with the replay above
+	// and ride along in the same file because the harness is one executable.
+	// See menuCases.
+	MenuCases []menuCase `json:"menuCases"`
+}
+
+// menuCase is one option list and the menu Go says it decomposes into.
+//
+// A SwiftUI Menu's content is a closure of views and cannot be read back, so
+// nothing short of a simulator can open a picker and check its Sections. What
+// *can* be checked is the decision the view is a direct drawing of:
+// GrMobSelectMenu.swift turns the flat option list into sections and rows, and
+// Renderer.swift's Menu is one ForEach over the result. These cases put Go's
+// answer and Swift's side by side.
+//
+// The expected value is computed by core.SelectMenuSections rather than
+// written out here. That is the point of the file existing: htmlout calls that
+// function, the Swift and Kotlin renderers each carry a transliteration of it,
+// and a fixture written twice by hand would only prove that one person made
+// the same mistake twice.
+type menuCase struct {
+	Name    string              `json:"name"`
+	Options []map[string]string `json:"options"`
+	Want    []wantSection       `json:"want"`
+}
+
+// wantSection and wantItem mirror core.SelectMenuSection / SelectMenuItem with
+// JSON names the Swift side decodes without a CodingKeys block. First is
+// carried explicitly, so the Swift section's own `first` computed property is
+// compared rather than assumed.
+type wantSection struct {
+	Heading string     `json:"heading"`
+	First   int        `json:"first"`
+	Items   []wantItem `json:"items"`
+}
+
+type wantItem struct {
+	Index    int    `json:"index"`
+	Value    string `json:"value"`
+	Label    string `json:"label"`
+	Disabled bool   `json:"disabled"`
+}
+
+// menuCases is the table both sides are held to.
+//
+// Every case is one property of core.SelectOption.Group or .Disabled, and the
+// two that matter most are the ones a transliteration gets wrong: a heading
+// that reappears after a different one (runs, not a gather) and a run that
+// ends the list (which nothing follows, so it needs an explicit flush — the
+// bug htmlout shipped for a release).
+func menuCases() []menuCase {
+	lists := []struct {
+		name    string
+		options []map[string]string
+	}{
+		{"ungrouped", []map[string]string{
+			{"value": "s", "label": "Small"},
+			{"value": "m", "label": "Medium"},
+		}},
+		{"one run", []map[string]string{
+			{"value": "pt", "label": "Portugal", "group": "Europe"},
+			{"value": "fr", "label": "France", "group": "Europe"},
+		}},
+		{"a heading that comes back is a second run", []map[string]string{
+			{"value": "pt", "label": "Portugal", "group": "Europe"},
+			{"value": "us", "label": "United States", "group": "Americas"},
+			{"value": "fr", "label": "France", "group": "Europe"},
+		}},
+		{"a run that ends the list", []map[string]string{
+			{"value": "any", "label": "Pick one"},
+			{"value": "pt", "label": "Portugal", "group": "Europe"},
+			{"value": "fr", "label": "France", "group": "Europe"},
+		}},
+		{"a run that starts the list", []map[string]string{
+			{"value": "pt", "label": "Portugal", "group": "Europe"},
+			{"value": "any", "label": "Elsewhere"},
+		}},
+		{"disabled options", []map[string]string{
+			{"value": "a", "label": "Aisle", "disabled": "true"},
+			{"value": "b", "label": "Aisle"},
+			{"value": "c", "label": "Window", "disabled": "false"},
+		}},
+		{"a disabled option inside a run", []map[string]string{
+			{"value": "1", "label": "Row 1", "group": "Exit row", "disabled": "true"},
+			{"value": "2", "label": "Row 2", "group": "Main cabin"},
+		}},
+		// The label default lives at core.Select's flattening seam; a
+		// hand-assembled node can carry a map that never went through it.
+		{"a label falling back to the value", []map[string]string{
+			{"value": "42"},
+		}},
+		{"no options at all", []map[string]string{}},
+	}
+
+	cases := make([]menuCase, 0, len(lists))
+	for _, l := range lists {
+		// Both slices are allocated empty rather than left nil: a nil slice
+		// marshals to JSON `null`, and Swift's Decodable refuses a null where
+		// a non-optional array is declared — so the empty-list case would
+		// bring the whole harness down on a usage message rather than
+		// reporting a menu of no sections.
+		c := menuCase{Name: l.name, Options: l.options, Want: []wantSection{}}
+		for _, section := range core.SelectMenuSections(l.options) {
+			w := wantSection{
+				Heading: section.Heading,
+				First:   section.First(),
+				Items:   make([]wantItem, 0, len(section.Items)),
+			}
+			for _, item := range section.Items {
+				w.Items = append(w.Items, wantItem{
+					Index:    item.Index,
+					Value:    item.Value,
+					Label:    item.Label,
+					Disabled: item.Disabled,
+				})
+			}
+			c.Want = append(c.Want, w)
+		}
+		cases = append(cases, c)
+	}
+	return cases
 }
 
 // recorder collects patch batches in arrival order. Sync trigger returns are
@@ -138,7 +268,10 @@ func main() {
 
 	rec.mu.Lock()
 	defer rec.mu.Unlock()
-	out, err := json.Marshal(transcript{Initial: initial, Steps: rec.steps, Final: final})
+	out, err := json.Marshal(transcript{
+		Initial: initial, Steps: rec.steps, Final: final,
+		MenuCases: menuCases(),
+	})
 	if err != nil {
 		fatal("marshal transcript: %v", err)
 	}
