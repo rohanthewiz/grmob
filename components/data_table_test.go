@@ -255,7 +255,9 @@ func hasConcern(kind string) bool {
 // GroupedList: a table fed by an append-style pager holds only the rows
 // loaded so far, so its last run is still open. Pinned separately because
 // DataTable reaches appendRows down a different path (its own cell renderer
-// and row wrapper), and a dropped argument there would go unnoticed.
+// and row wrapper), and a knob dropped from its rowsSpec literal would
+// otherwise go unnoticed — see TestBothWidgetsForwardEveryRowsSpecKnob for
+// the same check across all ten at once.
 func TestDataTableHidesTheTrailingCountWhenMoreMayFollow(t *testing.T) {
 	ctx := core.NewContext()
 	ctx.BeginRenderPass()

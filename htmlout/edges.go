@@ -22,13 +22,21 @@ import (
 //	left   = Left   != 0 ? Left   : Horizontal
 //	right  = Right  != 0 ? Right  : Horizontal
 //
-// "Set explicitly" means non-zero, which is the one place the rule is lossy:
-// PaddingHorizontal(16) plus PaddingLeft(0) cannot ask for a zero left inset,
-// because a zero Left is indistinguishable from an unset one. Both natives
+// "Set explicitly" means non-zero, which is where the rule is lossy: in a
+// hand-built EdgeInsets a zero Left is indistinguishable from an unset one,
+// so {Horizontal: 16, Left: 0} cannot ask for a zero left inset. Both natives
 // have the same limitation for the same reason (a Go zero value carries no
 // "was it set?" bit), and reproducing it exactly is the point — an inset that
 // resolves one way on device and another on the web is worse than one that is
 // uniformly lossy.
+//
+// The DSL is not subject to it. core.PaddingLeft and its three siblings
+// dissolve the shorthand into the sides it was standing in for before writing
+// their own, so PaddingHorizontal(16) followed by PaddingLeft(0) arrives here
+// as {Left: 0, Right: 16} and resolves to a real zero. That is a
+// transformation on the Style value, not a change to this rule; see
+// core/padding_sides.go, and TestSettlingAnAxisPreservesEveryResolvedSide for
+// the proof that it leaves every other side resolving as it did.
 //
 // This is a restatement of GrMobStyle.swift's parseEdges and GrMobStyle.kt's
 // parseEdges, which have honored the shorthand since they were written. Until

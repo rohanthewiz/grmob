@@ -148,6 +148,12 @@ func lessonStyleMerging() Lesson {
 			clearZero := core.NewState(ctx, false) // the documented no-op
 			clearProp := core.NewState(ctx, false) // the working alternative
 
+			// The same lesson on the box model, where the merge's granularity
+			// is the thing that bites rather than the zero. EdgeInsets is one
+			// comparable struct, so UseStyle replaces all four sides at once.
+			insetWhole := core.NewState(ctx, false) // the whole-struct way
+			insetSide := core.NewState(ctx, false)  // the one-side prop
+
 			// One node, one Style: every toggle below edits the same struct,
 			// in the order the appends run, so the preview is a literal
 			// visualization of the merge.
@@ -164,6 +170,27 @@ func lessonStyleMerging() Lesson {
 				// A direct prop assigns unconditionally — this is the tool
 				// for forcing a value rather than layering one.
 				props = append(props, core.BorderRadius(0))
+			}
+
+			// A second node for the inset half: it starts with all four sides
+			// set, which is what a themed container arrives with, so the two
+			// toggles below differ in what they leave behind rather than in
+			// what they set.
+			insetProps := []core.StyleProp{
+				core.UseStyle(core.Style{
+					Background: "#F2F2F7",
+					Padding:    core.EdgeInsets{Top: 10, Right: 10, Bottom: 10, Left: 10},
+				}),
+			}
+			if insetWhole.Get() {
+				// Replaces the struct: the three sides not named here go to
+				// zero, and the box loses its top, bottom and right padding.
+				insetProps = append(insetProps,
+					core.UseStyle(core.Style{Padding: core.EdgeInsets{Left: 40}}))
+			}
+			if insetSide.Get() {
+				// Writes one field. The other three are still the base's.
+				insetProps = append(insetProps, core.PaddingLeft(40))
 			}
 
 			return core.Column(
@@ -199,15 +226,58 @@ core.BorderRadius(0)                       // a direct prop assigns unconditiona
 					caption("The first clear merges a zero, and a zero field holds no opinion. "+
 						"The second is an assignment, and it runs last."),
 				),
+				prose("Padding has a second version of the same trap, and it is not about "+
+					"zero. EdgeInsets is one comparable struct, so the merge's granularity is "+
+					"the whole inset set: a Style naming only Left replaces all four sides, and "+
+					"the three it did not name go to zero. That is why an indent used to have "+
+					"to restate the sides it did not care about, in numbers copied out of the "+
+					"theme — copies a later theme edit would never reach. The per-side props "+
+					"write one field: core.PaddingTop, PaddingBottom, PaddingLeft and "+
+					"PaddingRight."),
+				codeBlock(`// Replaces the struct — top, right and bottom go to zero:
+core.UseStyle(core.Style{Padding: core.EdgeInsets{Left: 16 * depth}})
+
+// Writes one side, leaves the theme's other three:
+core.PaddingLeft(16 * depth)
+
+// And a zero really clears, because the side prop dissolves its axis's
+// shorthand before writing — {Left: 0, Right: 16} reaches every renderer.
+core.PaddingHorizontal(16)
+core.PaddingLeft(0)`),
+				demoPanel("A box padded 10 on all four sides. Indent it both ways and watch the other three.",
+					insetBox(insetProps),
+					checkRow("Indent with UseStyle(Style{Padding: EdgeInsets{Left: 40}}) — the other three collapse", insetWhole),
+					checkRow("Indent with core.PaddingLeft(40) — only the left moves", insetSide),
+					caption("Tick both and the prop runs last, so the base's other three sides "+
+						"are already gone: the whole-struct layer replaced them before the "+
+						"side prop got there. Order is the ordinary last-one-wins."),
+				),
 				keyPoints(
 					"UseStyle turns a named Style value into one prop: set fields win, zero fields pass through.",
 					"Layering only ever adds — a role never blanks out what the theme base already supplied.",
 					"Style.With composes two values; hover/focus/pseudo states merge recursively, key by key.",
 					"Zero is indistinguishable from unset, so UseStyle cannot clear — use the direct prop to force a value.",
+					"EdgeInsets merges as one struct, so a Style naming one side zeroes the other three — the per-side props write one field and leave the rest.",
 				),
 			)
 		},
 	}
+}
+
+// insetBox is 7.2's box-model demo node: a tinted box whose padding is
+// whatever the toggles built, with a label inside so the insets are visible as
+// the gap between the tint's edge and the words.
+//
+// A helper and not an inline core.Box, because the props are a []StyleProp and
+// the child is a View — two different element types of core's variadic
+// PropsAndChildren list, which cannot be appended to one another.
+func insetBox(props []core.StyleProp) core.View {
+	items := make([]core.PropsAndChildren, 0, len(props)+1)
+	for _, p := range props {
+		items = append(items, p)
+	}
+	items = append(items, core.Text("indent me", core.FontSize(14)))
+	return core.Box(items...)
 }
 
 // --- 7.3 -----------------------------------------------------------------

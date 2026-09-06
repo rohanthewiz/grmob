@@ -100,6 +100,17 @@ type nodeStyle struct {
 	// identically whether or not either end has been stated.
 	AccessibilityID       string
 	AccessibilityControls string
+
+	// The inset set, for 7.2's box-model half. The lesson there is entirely
+	// about which of the four sides a layer leaves behind, so the sides have
+	// to be readable individually — a rendered box does not say in its props
+	// whether its top padding survived. Decoded as the wire shape, six fields
+	// and not four, because the shorthand pair is exactly what the per-side
+	// props dissolve and the test wants to see it gone.
+	Padding struct {
+		Top, Right, Bottom, Left int
+		Horizontal, Vertical     int
+	}
 }
 
 func findNode(n *node, pred func(*node) bool) *node {

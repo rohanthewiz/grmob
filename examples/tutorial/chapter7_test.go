@@ -265,3 +265,64 @@ func TestTransitionDeclarationRidesTheStyle(t *testing.T) {
 	}
 	assertNoConcerns(t)
 }
+
+// 7.2's second half: the box model, where the merge's granularity is what
+// bites rather than the zero. core.EdgeInsets is one comparable struct, so a
+// Style naming a single side replaces all four — which is why an indent used
+// to have to restate the three sides it did not care about.
+//
+// The two toggles are the before and after, driven against one box. Checkbox
+// indices 3 and 4: the first three belong to the radius demo above and this
+// test would otherwise silently drive those instead.
+func TestPerSidePropIndentsWithoutClearingTheOtherThree(t *testing.T) {
+	mgr := newApp(t)
+	openLesson(t, mgr, "UseStyle: layers that merge")
+
+	const marker = "indent me"
+
+	// The base: all four sides set, which is what a themed container arrives
+	// with and what both toggles are then measured against.
+	box := func() *node {
+		t.Helper()
+		n := findNode(tree(t, mgr), func(n *node) bool {
+			return n.Type == "Box" && n.Style != nil && hasText(n, marker)
+		})
+		if n == nil {
+			t.Fatalf("no padded Box containing %q", marker)
+		}
+		return n
+	}
+
+	p := box().Style.Padding
+	if p.Top != 10 || p.Right != 10 || p.Bottom != 10 || p.Left != 10 {
+		t.Fatalf("the demo box should start padded 10 on all four sides, got %+v", p)
+	}
+
+	// The whole-struct layer: Left arrives, and the three sides the layer
+	// never named go to zero with it. That is the trap, drawn.
+	toggleCheckbox(t, mgr, 3, true)
+	p = box().Style.Padding
+	if p.Left != 40 {
+		t.Errorf("UseStyle(Style{Padding:{Left:40}}) should set the left inset, got %+v", p)
+	}
+	if p.Top != 0 || p.Right != 0 || p.Bottom != 0 {
+		t.Errorf("the whole-struct layer should have replaced all four sides, got %+v", p)
+	}
+	toggleCheckbox(t, mgr, 3, false)
+
+	// The per-side prop: one field written, the base's other three intact.
+	toggleCheckbox(t, mgr, 4, true)
+	p = box().Style.Padding
+	if p.Left != 40 {
+		t.Errorf("core.PaddingLeft(40) should set the left inset, got %+v", p)
+	}
+	if p.Top != 10 || p.Right != 10 || p.Bottom != 10 {
+		t.Errorf("core.PaddingLeft must leave the other three sides alone, got %+v", p)
+	}
+	// And it leaves its axis stated per-side rather than through the
+	// shorthand, which is what makes a later zero able to clear it.
+	if p.Horizontal != 0 || p.Vertical != 0 {
+		t.Errorf("a side prop should leave no shorthand behind, got %+v", p)
+	}
+	assertNoConcerns(t)
+}

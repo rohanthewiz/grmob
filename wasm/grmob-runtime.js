@@ -1781,13 +1781,19 @@ const GrMob = (() => {
     // meant PaddingHorizontal(16) applied cleanly in Go, rendered as 16px on
     // both natives, and as nothing at all here.
     //
-    // "Set explicitly" means non-zero, so PaddingHorizontal(16) plus
-    // PaddingLeft(0) cannot ask for a zero left inset. Both natives are lossy
-    // in exactly the same way for the same reason (a Go zero value carries no
+    // "Set explicitly" means non-zero, so a hand-built {Horizontal: 16,
+    // Left: 0} cannot ask for a zero left inset. Both natives are lossy in
+    // exactly the same way for the same reason (a Go zero value carries no
     // "was it set?" bit), and matching them is the point. Go states the rule
     // in htmlout/edges.go; the two are independent statements of one contract,
     // each with its own tests, the same arrangement the conformance replay
     // makes for the prop table.
+    //
+    // The DSL's per-side props are not subject to it: core.PaddingLeft and its
+    // siblings dissolve the shorthand into the sides before writing their own,
+    // so what arrives here is already stated per-side. Nothing changes on this
+    // side of the wire — that is the property that made the fix a Style
+    // transformation rather than a fifth copy of the resolution rule.
     // Two decimal places, the precision a CSS length measured in device pixels
     // is meaningful at. Go's copy is round2 in htmlout/export.go.
     function round2(v) {

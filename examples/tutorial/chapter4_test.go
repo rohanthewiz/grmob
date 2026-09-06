@@ -301,6 +301,41 @@ func TestOutlineDemoStatesItsDepths(t *testing.T) {
 			"aria-level was added for", len(seen))
 	}
 
+	// The pixels half. indentBy is one core.PaddingLeft now, where it used to
+	// be a whole EdgeInsets through UseStyle — which replaced all four sides,
+	// so the helper also owned the top, bottom and right, in numbers copied
+	// out of the theme that a theme edit would never reach.
+	//
+	// The baseline is the same lesson's other ListRow demo: the listbox rows
+	// above, which are the same widget with no inset prop on them. Comparing
+	// against those and not against literals is the whole point — a test that
+	// spelled the theme's numbers would be the third copy of the thing the
+	// conversion removed, and it would keep passing if indentBy went back to
+	// hardcoding them.
+	plain := findNodes(cur, func(n *node) bool {
+		return n.Style != nil && n.Style.AccessibilityRole == "option"
+	})
+	if len(plain) == 0 {
+		t.Fatal("no un-indented ListRow on the lesson to measure the indent against")
+	}
+	base := plain[0].Style.Padding
+	if base.Left == 0 || base.Top == 0 {
+		t.Fatalf("the baseline row carries no padding to compare against: %+v", base)
+	}
+
+	for i, n := range items {
+		p := n.Style.Padding
+		if want := 16 * canonOutline[i].depth; p.Left != want {
+			t.Errorf("row %d (%s): left inset = %d, want %d",
+				i, canonOutline[i].title, p.Left, want)
+		}
+		if p.Top != base.Top || p.Bottom != base.Bottom || p.Right != base.Right {
+			t.Errorf("row %d (%s): the indent changed sides it does not own — %+v, "+
+				"want top/bottom/right from the widget's own base %+v",
+				i, canonOutline[i].title, p, base)
+		}
+	}
+
 	assertNoConcerns(t)
 }
 

@@ -522,7 +522,8 @@ func (s Style) applyTo(target *Style) {
 	// Box model. EdgeInsets is a comparable struct, so the whole inset set is
 	// one field: a partially-filled EdgeInsets replaces the target's outright
 	// rather than merging edge by edge. Layering one edge onto another is what
-	// the PaddingTop / PaddingHorizontal props are for.
+	// the per-side props (PaddingTop / PaddingBottom / PaddingLeft /
+	// PaddingRight) and the two axis props are for.
 	if s.Padding != (EdgeInsets{}) {
 		target.Padding = s.Padding
 	}
@@ -753,12 +754,6 @@ var TextInputStyle = UseStyle(Style{
 	BorderRadius: 8,
 	Shadow:       1,
 })
-
-func PaddingTop(px int) StyleProp {
-	return styleFunc(func(s *Style) {
-		s.Padding.Top = px
-	})
-}
 
 // PaddingHorizontal sets the left and right insets.
 //

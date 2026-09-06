@@ -176,9 +176,19 @@ func (g GroupedList[T]) Render(ctx *core.Context) *core.Node {
 			items = append(items, g.Empty)
 		}
 	} else {
-		items = appendRows(ctx, items, g.Items, g.Key, g.Row,
-			g.GroupBy, g.Header, g.HideTrailingCount, g.StickyHeaders, g.HeadingLevel,
-			g.Dividers, nil)
+		items = appendRows(ctx, items, rowsSpec[T]{
+			Rows:              g.Items,
+			Key:               g.Key,
+			Row:               g.Row,
+			GroupBy:           g.GroupBy,
+			Header:            g.Header,
+			HideTrailingCount: g.HideTrailingCount,
+			StickyHeaders:     g.StickyHeaders,
+			HeadingLevel:      g.HeadingLevel,
+			Dividers:          g.Dividers,
+			// No Wrap: a GroupedList row is the caller's view, emitted as
+			// it came back. DataTable is the only decorator.
+		})
 	}
 
 	if g.Footer != nil {
@@ -187,72 +197,128 @@ func (g GroupedList[T]) Render(ctx *core.Context) *core.Node {
 	return core.List(items...).Render(ctx)
 }
 
+// rowsSpec is appendRows' parameter list, named. It carries the widget-level
+// decisions about how a run of rows is grouped, keyed, banded and divided —
+// everything the two collection widgets hand down unchanged — while ctx and
+// the child slice stay positional, because those are the call's *subject*
+// rather than its knobs.
+//
+// # Why a struct
+//
+// The parameters are not independent: they arrived together, they travel
+// together, and four of them (HideTrailingCount, StickyHeaders, HeadingLevel,
+// Dividers) describe one thing, the default band. As positional arguments
+// that was twelve in a row, with two adjacent bools in the middle —
+// hideTrailingCount and sticky — that the compiler cannot tell apart. A swap
+// there produced a list whose last band hid its count and whose bands did not
+// pin, which is two silent visual bugs from one edit, and the only reason it
+// was caught is that both flags happen to have a test of their own.
+//
+// The type does not remove that risk by being a struct; it removes it by
+// making the call site name each value. What it *does* remove structurally is
+// the next one: a thirteenth knob added to a positional list shifts every
+// argument after its insertion point, and a thirteenth field shifts nothing.
+//
+// # The field names are the widgets' field names
+//
+// Every field here is spelled exactly as the corresponding field on
+// GroupedList and DataTable, so a call site reads as a copy rather than a
+// translation — `HideTrailingCount: g.HideTrailingCount` is checkable by eye
+// in a way that the eighth positional argument was not. Rows and Row are the
+// one place the two widgets diverge (DataTable synthesizes its Row from its
+// columns), and they are named for what appendRows does with them rather than
+// for either widget's spelling.
+type rowsSpec[T any] struct {
+	// Rows is the flat, already-ordered run of items. Grouping is by run,
+	// not by bucket; see GroupedList's type comment.
+	Rows []T
+
+	// Key returns a row's reconciler key. Nil falls back to positional keys.
+	Key func(T) string
+	// Row draws one item. Required. DataTable passes a closure over its
+	// resolved columns rather than a caller-supplied function.
+	Row func(T) core.View
+
+	// GroupBy assigns each row to a Group; nil emits a flat run with no
+	// bands. Header overrides the default band, and owns everything the
+	// three fields below describe — a view the caller built is the caller's.
+	GroupBy func(T) Group
+	Header  func(Group) core.View
+
+	// The default band's three knobs. Each is ignored under a Header
+	// override, and each is documented on the widget field it comes from:
+	// GroupedList.HideTrailingCount (why an open run must not publish a
+	// count), .StickyHeaders (the pin goes on the band's own Style), and
+	// GroupHeader.HeadingLevel (zero meaning the default tier).
+	HideTrailingCount bool
+	StickyHeaders     bool
+	HeadingLevel      int
+
+	// Dividers inserts a hairline between consecutive rows of a run, never
+	// after the last one, where a band or the footer follows.
+	Dividers bool
+
+	// Wrap decorates each rendered row before it is keyed. DataTable uses it
+	// for the tap target and the selection tint; a nil Wrap emits the row as
+	// it came back from Row. It is the one field with no widget field behind
+	// it — it is how the shared code lets one caller add behavior the other
+	// does not have.
+	Wrap func(T, core.View) core.View
+}
+
 // appendRows emits the grouped, keyed, optionally divided row sequence into
 // a container's child list. It is shared with DataTable, which differs only
-// in how a row is drawn (a cell Row rather than the caller's view), so it
-// takes the row renderer as a function and an optional group-header
-// override. wrap, when non-nil, decorates each rendered row (DataTable uses
-// it for tap handling and selection tint); a nil wrap emits the row as-is.
-// hideTrailingCount suppresses the last run's count badge; see
-// GroupedList.HideTrailingCount for why an open run must not publish one.
-// sticky pins the default headers; see GroupedList.StickyHeaders.
-// headingLevel places the bands in the screen's outline, zero meaning the
-// default tier; see GroupHeader.HeadingLevel. All three describe the *default*
-// band and are ignored under a header override, which builds its own view and
-// which this cannot reach into.
+// in how a row is drawn (a cell Row rather than the caller's view) and in
+// wanting each row decorated, so the drawing and the decoration are both
+// functions on the spec.
+//
+// ctx and items stay positional: they are what the call operates on and they
+// are the same two arguments at every call site. Everything that varies is in
+// spec, where it is named — see rowsSpec for why.
 func appendRows[T any](
 	ctx *core.Context,
 	items []core.PropsAndChildren,
-	rows []T,
-	key func(T) string,
-	row func(T) core.View,
-	groupBy func(T) Group,
-	header func(Group) core.View,
-	hideTrailingCount bool,
-	sticky bool,
-	headingLevel int,
-	dividers bool,
-	wrap func(T, core.View) core.View,
+	spec rowsSpec[T],
 ) []core.PropsAndChildren {
 	keyOf := func(i int, item T) string {
-		if key != nil {
-			return key(item)
+		if spec.Key != nil {
+			return spec.Key(item)
 		}
 		return "row:" + itoa(i)
 	}
 	emit := func(i int, item T, last bool) {
 		k := keyOf(i, item)
-		v := row(item)
-		if wrap != nil {
-			v = wrap(item, v)
+		v := spec.Row(item)
+		if spec.Wrap != nil {
+			v = spec.Wrap(item, v)
 		}
 		items = append(items, core.Keyed(k, v))
-		if dividers && !last {
+		if spec.Dividers && !last {
 			items = append(items, core.Keyed("sep:"+k, Separator{}))
 		}
 	}
 
-	runs := groupRuns(rows, groupBy)
+	runs := groupRuns(spec.Rows, spec.GroupBy)
 	if runs == nil {
-		for i, item := range rows {
-			emit(i, item, i == len(rows)-1)
+		for i, item := range spec.Rows {
+			emit(i, item, i == len(spec.Rows)-1)
 		}
 		return items
 	}
-	// ri, not i: the row loop below indexes rows and would shadow it.
+	// ri, not i: the row loop below indexes spec.Rows and would shadow it.
 	for ri, run := range runs {
 		var h core.View
-		if header != nil {
+		if spec.Header != nil {
 			// An override owns its own counting: the Group goes through
 			// untouched, trailing or not.
-			h = header(run.Group)
+			h = spec.Header(run.Group)
 		} else {
 			gh := GroupHeader{
 				Group:        run.Group,
-				HideCount:    hideTrailingCount && ri == len(runs)-1,
-				HeadingLevel: headingLevel,
+				HideCount:    spec.HideTrailingCount && ri == len(runs)-1,
+				HeadingLevel: spec.HeadingLevel,
 			}
-			if sticky {
+			if spec.StickyHeaders {
 				// Onto the band's own Style, not around it in a wrapper: the
 				// pin has to be on the node the list sees as its child, and a
 				// wrapper would put a plain Box there with the sticky band
@@ -263,7 +329,7 @@ func appendRows[T any](
 		}
 		items = append(items, core.Keyed(groupHeaderKey(run.Group), h))
 		for i := run.Start; i < run.End; i++ {
-			emit(i, rows[i], i == run.End-1)
+			emit(i, spec.Rows[i], i == run.End-1)
 		}
 	}
 	return items

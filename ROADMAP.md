@@ -43,6 +43,10 @@
       child, which both natives now honour as a pinned header — see
       `core.StickyHeader()` below.
 - [x] `Padding`/`Margin` `Horizontal`/`Vertical` shorthands on all four targets
+- [x] Per-side padding props — `PaddingTop`/`Bottom`/`Left`/`Right` set one
+      inset without restating the other three through a whole `EdgeInsets`.
+      Each dissolves its axis's shorthand first, so a zero really clears;
+      no renderer changed. `Margin` still has no per-side props.
 - [x] Responsive layouts via style merging
 - [x] `Shadow`, border, radius on all four targets
 - [x] Proportional flex weights on every target — `GrMobFlexStack`, a custom

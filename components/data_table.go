@@ -283,10 +283,20 @@ func (d DataTable[T]) Render(ctx *core.Context) *core.Node {
 			body = append(body, d.Empty)
 		}
 	default:
-		body = appendRows(ctx, body, rows, d.Key,
-			func(row T) core.View { return d.cellRow(t, cols, row) },
-			d.GroupBy, d.Header, d.HideTrailingCount, d.StickyHeaders, d.HeadingLevel,
-			d.Dividers, d.wrapRow)
+		body = appendRows(ctx, body, rowsSpec[T]{
+			Rows: rows,
+			Key:  d.Key,
+			// The one field neither widget spells the same way: a table's
+			// row is synthesized from its resolved columns, not supplied.
+			Row:               func(row T) core.View { return d.cellRow(t, cols, row) },
+			GroupBy:           d.GroupBy,
+			Header:            d.Header,
+			HideTrailingCount: d.HideTrailingCount,
+			StickyHeaders:     d.StickyHeaders,
+			HeadingLevel:      d.HeadingLevel,
+			Dividers:          d.Dividers,
+			Wrap:              d.wrapRow,
+		})
 	}
 	items = append(items, core.List(body...))
 

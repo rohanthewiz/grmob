@@ -106,8 +106,38 @@ it stays.
 sides (`core.PaddingHorizontal(16)`). A side left at zero takes its axis's
 shorthand; an explicit side wins. All four targets resolve it the same way,
 including the one edge the rule cannot express — a zero value carries no "was
-it set?" bit, so `PaddingHorizontal(16)` plus `PaddingLeft(0)` cannot ask for a
-zero left inset.
+it set?" bit, so a hand-built `EdgeInsets{Horizontal: 16, Left: 0}` cannot ask
+for a zero left inset.
+
+#### One side at a time
+
+`core.PaddingTop`, `PaddingBottom`, `PaddingLeft` and `PaddingRight` set one
+inset and leave the other three alone. The alternative is a whole `EdgeInsets`
+through `UseStyle`, which is not just longer: `UseStyle` replaces `Padding`
+outright rather than merging edge by edge, so a screen that wants a left
+indent has to restate the three sides it does not care about, in numbers
+copied out of the theme — and those copies are what a later theme edit will
+not reach.
+
+```go
+core.Row(core.PaddingLeft(16*depth), ...)   // the indent, and nothing else
+```
+
+These props are not subject to the shorthand's lossy edge. Each one dissolves
+its axis's shorthand into the two sides it was standing in for and clears it
+*before* writing its own side, so `PaddingHorizontal(16)` followed by
+`PaddingLeft(0)` reaches every renderer as `{Left: 0, Right: 16}` and resolves
+to a real zero. Nothing changed in any renderer to allow that — the settle is
+a transformation on the `Style` value, and it is resolution-preserving by
+construction, since the only sides it writes are ones that were taking the
+shorthand anyway.
+
+Ordering is the ordinary last-one-wins: a side prop after an axis prop narrows
+it, an axis prop after a side prop overwrites it, and `Padding(all)` clears
+everything including both shorthands.
+
+`Margin` has no per-side props yet; a single-side margin still goes through
+`UseStyle(core.Style{Margin: core.EdgeInsets{...}})`.
 
 `Display` splits across two CSS properties on the web, matching what the
 natives do with it: `DisplayNone` removes the node entirely (no pixels, no

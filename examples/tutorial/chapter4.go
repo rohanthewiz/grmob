@@ -540,15 +540,18 @@ func outlineDemo() core.View {
 
 // indentBy is the pixels half of a depth: one step of left inset per level.
 //
-// A whole EdgeInsets through UseStyle rather than a left-side prop, because
-// core has none — Padding, PaddingTop, PaddingHorizontal and PaddingVertical
-// are the set — and a merged EdgeInsets states the row's shape in one place
-// instead of leaving three sides to the theme's Row base and overriding a
-// fourth.
+// One prop for the one side that varies. This used to be a whole EdgeInsets
+// through UseStyle, because core had no left-side prop and UseStyle replaces
+// Padding outright rather than merging edge by edge — so the helper had to
+// restate the three sides it did not care about, in numbers copied out of the
+// theme that a theme edit would never reach. core.PaddingLeft is what that
+// workaround was waiting for.
+//
+// A StyleProp and not a Style, so it composes with whatever the row already
+// carries: the theme Row's own vertical padding stays, and a caller can put
+// core.PaddingRight after this one without either undoing the other.
 func indentBy(depth int) core.StyleProp {
-	return core.UseStyle(core.Style{
-		Padding: core.EdgeInsets{Left: 16 * depth, Right: 16, Top: 4, Bottom: 4},
-	})
+	return core.PaddingLeft(16 * depth)
 }
 
 // --- 4.4 -----------------------------------------------------------------
