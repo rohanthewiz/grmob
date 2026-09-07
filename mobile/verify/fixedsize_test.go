@@ -27,7 +27,7 @@ import (
 //	Compose              squeezed             squeezed        derived
 //
 // The DOM row was MEASURED, and it is not what the note assumed: a browser does
-// not simply let the child spill. wasm/verify/browser.mjs check 10 mounts a
+// not simply let the child spill. wasm/verify/browser.mjs check 11 mounts a
 // fixed-size core.Box and a fixed-size core.Row, each holding a child too big
 // for it on both axes, and reads the rects. The child is squeezed along the
 // container's main axis — it is a flex item, its shrink factor defaults to 1,

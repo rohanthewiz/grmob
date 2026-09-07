@@ -17,7 +17,7 @@ import (
 // spill across the cross axis, and Compose squeezes both. Two harnesses
 // establish the halves of that:
 //
-//	browser.mjs check 10    mounts a fixed-size core.Box and core.Row in a real
+//	browser.mjs check 11    mounts a fixed-size core.Box and core.Row in a real
 //	                        browser, each holding a child too big for it on both
 //	                        axes, and reads the rects
 //	ios/verify/flex.swift   runs GrMobFlexSolver — this repository's own CSS flex

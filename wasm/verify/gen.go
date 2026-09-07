@@ -620,7 +620,7 @@ type bandRender struct {
 	// height is its tallest child plus its own insets, the insets are the same
 	// in both branches, and the disclosure has one child the plain band does
 	// not. Carrying both paths is what lets the browser state that as an
-	// equation instead of a tolerance. See check 9.
+	// equation instead of a tolerance. See check 10.
 	Label   string `json:"label"`
 	Chevron string `json:"chevron"`
 
@@ -646,6 +646,24 @@ type bandRender struct {
 	// Collapsible separates the two branches, which are asked different
 	// things: only the disclosure has a wrapper to fill.
 	Collapsible bool `json:"collapsible"`
+
+	// Fill is the band Row's own background and Page the fill of the box it
+	// sits on, both read off the rendered nodes the way the widget grid reads
+	// its three.
+	//
+	// They are here because this grid mounted nine real widgets and read no
+	// pixels at all. Every other browser check that mounts something real
+	// samples a colour; this one measured rects, so a band that laid out
+	// perfectly and painted nothing would have passed every assertion in it —
+	// and "the band has a fill of its own" is the whole reason it may span its
+	// container edge to edge rather than being inset like a row.
+	//
+	// Page is carried alongside so the sample can distinguish. A theme whose
+	// Surface equalled its Background would make the pixel read agree with
+	// both answers at once, which is a check that cannot fail rather than one
+	// that passes.
+	Fill string `json:"fill"`
+	Page string `json:"page"`
 }
 
 // bandRenderBuilders is one entry per band shape, so a shape added here is
@@ -747,13 +765,33 @@ func renderBandCase(name string, theme *core.Theme, what string, collapsible boo
 
 	c := bandRender{
 		Theme: name, What: what, Tree: jsonout.Export(page),
-		Band:     "root/0",
+		Band: "root/0",
+		// Read off the rendered nodes rather than off the theme: what the
+		// browser is asked is whether the band's OWN declaration reaches the
+		// screen, and a colour taken from theme.Colors would still be there
+		// after the widget stopped declaring it.
+		Fill:     row.Style.Background,
+		Page:     page.Style.Background,
 		RowLeft:  float64(row.Style.Padding.Left),
 		RowRight: float64(row.Style.Padding.Right),
 		Gap:      row.Style.Gap,
 		// The count is the last child when there is one; hidden, the growing
 		// child is all there is.
 		Collapsible: collapsible,
+	}
+
+	if c.Fill == "" {
+		return bandRender{}, fmt.Errorf(
+			"%s/%s: the band Row declares no background. Its fill is why a band may span "+
+				"its container edge to edge, and with none there is nothing for the "+
+				"browser to read back", name, what)
+	}
+	if c.Fill == c.Page {
+		return bandRender{}, fmt.Errorf(
+			"%s/%s: the band's fill and the page behind it are both %s, so a pixel taken "+
+				"inside the band agrees with either answer and the paint check cannot "+
+				"fail. A theme whose Surface equals its Background needs a different "+
+				"backdrop here, not a check that passes on it", name, what, c.Fill)
 	}
 
 	// The growing child, found rather than indexed. There must be exactly one:
@@ -843,7 +881,7 @@ func renderBandCase(name string, theme *core.Theme, what string, collapsible boo
 		if c.Label == "" || c.Chevron == "" {
 			return bandRender{}, fmt.Errorf(
 				"%s/%s: the button's children are not a chevron and the group's label — "+
-					"the height comparison in check 9 is an equation over exactly those two",
+					"the height comparison in check 10 is an equation over exactly those two",
 				name, what)
 		}
 	} else {

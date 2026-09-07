@@ -76,6 +76,12 @@
 // signature of that shape. A reworded paragraph up there is a style change; a
 // wrong row down here is a test failure.
 //
+// The fixed-width rows are newer than the rest and were a refusal until their
+// Swift names could be read: gobind emits Objective-C, the shell writes Swift,
+// and nothing here could see the importer between them.
+// ios/verify/importer.swift is that step, and it is what those seven rows are
+// read off.
+//
 // The type rows are readings of `bind/genobjc.go` — objcParamType for a
 // parameter, objcType for every other position — in the gobind the first row
 // pins. That version is the moment at which somebody has to look, and the only
@@ -108,6 +114,13 @@
 //	type     bool        | Bool                  | Bool
 //	type     int         | Int                   | Int
 //	type     error       | (any Error)?          | -
+//	type     int8        | Int8                  | Int8
+//	type     int16       | Int16                 | Int16
+//	type     int32       | Int32                 | Int32
+//	type     int64       | Int64                 | Int64
+//	type     rune        | Int32                 | Int32
+//	type     float32     | Float                 | Float
+//	type     float64     | Double                | Double
 //	type     <interface> | Mobile<Name>Protocol? | Mobile<Name>Protocol?
 //	results  func    func()                       | public func F()
 //	results  func    func(s string) string        | public func F(_ s: String?) -> String

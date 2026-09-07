@@ -117,6 +117,39 @@ var bindableGoTypes = map[string]bool{
 	// position, and the answer is not to guess their spellings but to make a
 	// function that uses one fail loudly until somebody runs a bind.
 	"error": true,
+
+	// The fixed-width numerics, and rune, which is int32 under another name.
+	//
+	// They were in gobindCarriesUnused until their Swift spellings could be
+	// read, which is the only thing that ever kept them out. The refusal's own
+	// text said so: their PARAMETER spellings were legible off
+	// bind/testdata/basictypes.objc.h.golden and it was the out-pointer a
+	// (value, error) result moves into that nobody had read — so a bridge
+	// function taking an int8 and returning nothing was refused for a reason
+	// that did not apply to it, and told to go and run `gomobile bind` on a Mac
+	// before it could exist.
+	//
+	// ios/verify/importer.swift is that reading, and it is a reading rather
+	// than a derivation: gobind's C is declared as gobind spells it and the
+	// Swift compiler says what it imports as. Its control is that it reproduces
+	// the two spellings that WERE read off a real bind, including
+	// UnsafeMutablePointer<ObjCBool>, which is the answer no rule stated here
+	// would have produced. See TestTheSwiftSpellingsAreReadOffTheImporter.
+	//
+	// A narrow bridge surface is still the intent, and it is not what this set
+	// enforces — this set decides which functions the stub is *required* to
+	// declare, so a carried type omitted from it is a bridge function with no
+	// stub and no type-check. Refusing a type whose spelling is legible was
+	// enforcing the design by accident, and the sentence it printed while doing
+	// so ("bind a package with this shape and add the rows from what it
+	// produced") was asking for the one thing the file forbids.
+	"int8":    true,
+	"int16":   true,
+	"int32":   true,
+	"int64":   true,
+	"float32": true,
+	"float64": true,
+	"rune":    true,
 }
 
 // swiftFuncDecl matches a stub function declaration, capturing its name.
@@ -333,44 +366,44 @@ var gobindCarriesUnused = map[string]string{
 		"The spelling is legible; what is not is the two-result split — a nullable " +
 		"first result stays the return where a scalar moves into an out-pointer, " +
 		"and no golden exercises ([]byte, error). Add the row from a real bind",
-	// The aliases, classified beside the kinds they name because
+	// The one alias left here, classified beside the kind it names because
 	// bindableSignature reads the identifier a signature actually writes: a
-	// parameter spelled `byte` is a uint8 and one spelled `rune` is an int32,
-	// and a table that knew only the canonical spellings would let either
-	// through as "not carried".
+	// parameter spelled `byte` is a uint8, and a table that knew only the
+	// canonical spelling would let it through as "not carried". (`rune` was
+	// the other, and it is in bindableGoTypes now — int32's spellings are read,
+	// so its alias's are too.)
 	"byte": "an alias for uint8, which gobind spells as a bare `byte` nothing " +
 		"it emits declares — see the uint8 row",
-	"rune": "an alias for int32, which is a fixed-width C scalar — see the " +
-		"int32 row",
-
-	"int8":    gobindScalarWhy,
-	"int16":   gobindScalarWhy,
-	"int32":   gobindScalarWhy,
-	"int64":   gobindScalarWhy,
-	"float32": gobindScalarWhy,
-	"float64": gobindScalarWhy,
 }
 
-// The reason the fixed-width numerics are unspelled, which is one reason and
-// not six.
+// The fixed-width numerics used to be six more rows above, and this is what
+// happened to them.
 //
-// Their parameter spellings are legible — bind/testdata/basictypes.objc.h.golden
-// has `BasictypesInts(int8_t x, int16_t y, int32_t z, int64_t t, long u)`, and
-// the Swift importer's names for those are not in doubt. Their RESULT spellings
-// are the gap: a C scalar is not nullable, so funcSummary moves a (value, error)
+// Their refusal read: the parameter spellings are legible —
+// bind/testdata/basictypes.objc.h.golden has `BasictypesInts(int8_t x, int16_t
+// y, int32_t z, int64_t t, long u)` — and the RESULT spelling is the gap,
+// because a C scalar is not nullable, so funcSummary moves a (value, error)
 // pair's first result into an out-parameter and makes the return BOOL, and the
 // Swift spelling of that pointer is what gobindErrorOutPointer holds. Both rows
-// in it — UnsafeMutablePointer<Int> for long*, UnsafeMutablePointer<ObjCBool>
-// for BOOL* — were read off a real bind, and ObjCBool is precisely why: it is
-// not what a plain BOOL parameter imports as, and no rule stated anywhere here
-// would have predicted it. Deriving the other six from the two would be
-// assuming the case that already surprised us once.
-const gobindScalarWhy = "gobind spells it as a fixed-width C scalar " +
-	"(bind/testdata/basictypes.objc.h.golden), which is legible; its out-pointer " +
-	"spelling for a (value, error) result is not — gobindErrorOutPointer's two " +
-	"rows were read off a real bind, and one of them is UnsafeMutablePointer" +
-	"<ObjCBool>, which no rule here would have predicted. Bind a package with " +
-	"this shape and add the rows from what it produced"
+// in it were read off a real bind, and one is UnsafeMutablePointer<ObjCBool>,
+// which no rule stated here would have predicted. Deriving the other six from
+// the two would have been assuming the case that already surprised us once.
+//
+// All of that was right, and the conclusion drawn from it was wrong. The
+// refusal was type-level where the gap was position-level, so a bridge function
+// taking an int8 and returning nothing was refused for a reason that did not
+// apply to it — and the instruction it printed, "bind a package with this shape
+// and add the rows from what it produced", made the next such function wait on
+// somebody owning a Mac.
+//
+// What was missing was not a bind. It was a way to ask the Swift importer
+// anything at all: gobind emits Objective-C, the shell writes Swift, and
+// nothing here could see the step between them. ios/verify/importer.swift is
+// that step, declared in gobind's own C spelling and settled by the compiler,
+// with the two already-known rows as its control. So the six are spelled now,
+// in both positions, and the refusal that remains — uint8 and its alias, and
+// []byte — is a refusal about the C rather than about the Swift, which is a
+// gap this arrangement cannot close and does not pretend to.
 
 // boundInterfaces returns the exported interface types in `mobile`. Each
 // becomes a protocol the shell can conform to — the only way a callback
@@ -513,6 +546,22 @@ var gobindSwiftTypes = map[string]struct{ param, result string }{
 	// As a *parameter* it is an ordinary type — `NSError* _Nullable`, which
 	// Swift imports as `(any Error)?`.
 	"error": {"(any Error)?", ""},
+
+	// The fixed-width numerics. One column's worth of answer twice over, for
+	// the reason stated above: objcParamType special-cases String and nothing
+	// else, so every other type is spelled identically in both positions.
+	//
+	// Every one of these is a line of ios/verify/importer.swift, which is where
+	// the Swift names come from. `rune` is int32 under another name and gets
+	// int32's spelling — gobind agrees, and says so in its own golden:
+	// `FOUNDATION_EXPORT const int32_t BasictypesARune`.
+	"int8":    {"Int8", "Int8"},
+	"int16":   {"Int16", "Int16"},
+	"int32":   {"Int32", "Int32"},
+	"int64":   {"Int64", "Int64"},
+	"float32": {"Float", "Float"},
+	"float64": {"Double", "Double"},
+	"rune":    {"Int32", "Int32"},
 }
 
 // gobindErrorOutPointer is the other half of gobind's two-result split, and the
@@ -532,6 +581,26 @@ var gobindSwiftTypes = map[string]struct{ param, result string }{
 var gobindErrorOutPointer = map[string]string{
 	"bool": "UnsafeMutablePointer<ObjCBool>?",
 	"int":  "UnsafeMutablePointer<Int>?",
+
+	// The rest of the non-nullable scalars, read the same way the two above
+	// were — off the importer rather than off a rule — by
+	// ios/verify/importer.swift. They are here because membership in this map
+	// IS the claim that a type moves out of the return: a C scalar is not
+	// nullable, so funcSummary has nowhere to put a nil, and every one of these
+	// is a C scalar in gobind's own golden.
+	//
+	// The reason this map could not simply be completed before is the reason
+	// the ObjCBool row is worth staring at: it is not what a plain BOOL
+	// parameter imports as, and a map filled in by pattern from the two known
+	// rows would have written UnsafeMutablePointer<Bool> and type-checked
+	// against nothing.
+	"int8":    "UnsafeMutablePointer<Int8>?",
+	"int16":   "UnsafeMutablePointer<Int16>?",
+	"int32":   "UnsafeMutablePointer<Int32>?",
+	"int64":   "UnsafeMutablePointer<Int64>?",
+	"float32": "UnsafeMutablePointer<Float>?",
+	"float64": "UnsafeMutablePointer<Double>?",
+	"rune":    "UnsafeMutablePointer<Int32>?",
 }
 
 // goErrorType is the Go spelling gobind treats as the bridge's error channel.
@@ -2048,4 +2117,180 @@ func (c *kindCollector) add(expr ast.Expr) {
 	}
 	c.seen[sel.Sel.Name] = true
 	c.out = append(c.out, sel.Sel.Name)
+}
+
+// The Swift spellings this file states must be the ones the importer gives.
+//
+// # The step nothing could see
+//
+// Every reading here is meant to come off gobind's source or its golden output,
+// and one step of the chain is neither. gobind emits an Objective-C header; the
+// shell writes Swift; what the shell sees is what the *importer* makes of that
+// header, and no document in this module says what that is. So two rows of
+// gobindErrorOutPointer were marked "read off a real bind" and every type that
+// would have needed a third was refused with an instruction to go and produce
+// one — which made the next bridge function of an ordinary shape wait on
+// somebody owning a Mac, and which the refusal's own text admitted was asking
+// for a guess if nobody did.
+//
+// ios/verify/importer.swift asks the compiler instead. It declares gobind's C
+// as gobind spells it and annotates each symbol with the Swift type this file
+// says it imports as, so a disagreement is a type error at the line that names
+// both. This is the Go end of that pairing: it holds the two tables to the
+// annotations, in both directions.
+//
+// # Why both directions
+//
+// A row with no reading is the old problem back again — a Swift spelling
+// somebody wrote down. A reading with no row is a line that type-checks and
+// answers a question nothing asked, which is the shape a stale control takes:
+// the file would go on passing while the table it exists for had moved.
+//
+// # What it cannot do
+//
+// Run anywhere but a machine with a Swift toolchain. The reading is checked by
+// `swiftc` in ios/verify, and this test only holds the tables to what that file
+// SAYS — so on a machine with no Swift, the pairing is verified and the reading
+// behind it is not. That is the same division ios/verify's other passes have
+// and it is stated here rather than left to be discovered: the rows are as good
+// as the last machine that ran ios/verify/run.sh.
+var importerReading = nativeFile("ios", "verify", "importer.swift")
+
+// One annotated symbol: `let x: (Int8) -> Int8 = GrMobImportInt8`.
+//
+// A regexp rather than a Swift parse, for the reason the rest of this package
+// reads native source with one: the file is written to be read this way — one
+// declaration per line, the annotation before the symbol — and that constraint
+// is stated in its own header.
+var importerLine = regexp.MustCompile(
+	`(?m)^let \w+: \((.+)\) -> (\S+) = (GrMobImport(?:Out)?\w+)$`)
+
+// The Go types importer.h declares, keyed by the suffix its symbols carry.
+//
+// Written out rather than derived from the tables, because it is the third
+// statement of the pairing and a derived one would agree with whichever side it
+// was derived from. `byte` and `[]byte` are absent on purpose: they are still
+// refused, and for a reason about the C rather than about the Swift (see
+// gobindCarriesUnused), which no amount of asking the importer settles.
+var importerSymbols = map[string]string{
+	"Int8": "int8", "Int16": "int16", "Int32": "int32", "Int64": "int64",
+	"Int": "int", "Float32": "float32", "Float64": "float64", "Bool": "bool",
+}
+
+// gobindAliases are the Go spellings that are another type under a different
+// name. They carry that type's rows and share its reading rather than having
+// one of their own, which is what makes them aliases rather than entries.
+var gobindAliases = map[string]string{"rune": "int32"}
+
+func TestTheSwiftSpellingsAreReadOffTheImporter(t *testing.T) {
+	src := readNative(t, importerReading)
+
+	// What the importer said, keyed by Go type: the plain spelling and the
+	// out-pointer a (value, error) result moves into.
+	type reading struct{ plain, out string }
+	got := map[string]*reading{}
+	for _, m := range importerLine.FindAllStringSubmatch(src, -1) {
+		param, result, symbol := m[1], m[2], m[3]
+		out := strings.HasPrefix(symbol, "GrMobImportOut")
+		suffix := strings.TrimPrefix(strings.TrimPrefix(symbol, "GrMobImport"), "Out")
+		goType, ok := importerSymbols[suffix]
+		if !ok {
+			t.Errorf("%s reads %s, and importerSymbols says no Go type is spelled that "+
+				"way. A reading with no row is a line that type-checks and answers a "+
+				"question nothing asked.", importerReading, symbol)
+			continue
+		}
+		if got[goType] == nil {
+			got[goType] = &reading{}
+		}
+		if out {
+			if result != "Bool" {
+				t.Errorf("%s: %s returns %s. The out-pointer shape is `BOOL F(T* ret0_)` "+
+					"— the return is what signals the error — so a reading that is not "+
+					"about a Bool is not about that shape.", importerReading, symbol, result)
+			}
+			got[goType].out = param
+			continue
+		}
+		if param != result {
+			t.Errorf("%s: %s imports as (%s) -> %s. objcParamType special-cases String "+
+				"and nothing else, so every other type is spelled the same in both "+
+				"positions — two different answers here mean that argument has stopped "+
+				"holding and gobindSwiftTypes needs two real columns for this type.",
+				importerReading, symbol, param, result)
+		}
+		got[goType].plain = param
+	}
+	if len(got) == 0 {
+		t.Fatalf("%s yielded no readings (%s). A parse that finds nothing must not read "+
+			"as a pass — it would agree with every row in both tables.",
+			importerReading, importerLine)
+	}
+
+	// Every spelled scalar has a reading, and the reading is what the row says.
+	for goType, spelling := range gobindSwiftTypes {
+		canonical := goType
+		if alias, isAlias := gobindAliases[goType]; isAlias {
+			canonical = alias
+		}
+		r := got[canonical]
+		if r == nil {
+			// string, error and the bound interfaces are read off genobjc.go's
+			// own nullability choices rather than off the importer, and
+			// importer.h says why. Anything else with no reading is a spelling
+			// somebody wrote down.
+			if goType == "string" || goType == goErrorType {
+				continue
+			}
+			t.Errorf("gobindSwiftTypes spells %s and %s reads nothing for it. A row with "+
+				"no reading is the position the fixed-width numerics were in: a Swift "+
+				"name in a table, and nothing between it and the header gobind emits.",
+				goType, importerReading)
+			continue
+		}
+		if r.plain != spelling.param || r.plain != spelling.result {
+			t.Errorf("gobindSwiftTypes spells %s as %q / %q and the importer gives %q "+
+				"(%s). The table is what the stub is generated against, so a spelling "+
+				"that is not the importer's is a declaration the shell cannot call.",
+				goType, spelling.param, spelling.result, r.plain, importerReading)
+		}
+	}
+
+	// And every out-pointer row.
+	for goType, ptr := range gobindErrorOutPointer {
+		canonical := goType
+		if alias, isAlias := gobindAliases[goType]; isAlias {
+			canonical = alias
+		}
+		r := got[canonical]
+		if r == nil || r.out == "" {
+			t.Errorf("gobindErrorOutPointer says a %s result moves into %s and %s reads "+
+				"no out-pointer for it. Membership in that map IS the claim that the "+
+				"value leaves through a pointer, and the pointer's spelling is the one "+
+				"thing about it no rule here predicts — UnsafeMutablePointer<ObjCBool> "+
+				"is the standing proof of that.", goType, ptr, importerReading)
+			continue
+		}
+		if r.out != ptr {
+			t.Errorf("gobindErrorOutPointer spells a %s out-pointer %q and the importer "+
+				"gives %q (%s)", goType, ptr, r.out, importerReading)
+		}
+	}
+
+	// The other direction: a reading with no row.
+	for goType, r := range got {
+		if _, spelled := gobindSwiftTypes[goType]; !spelled {
+			t.Errorf("%s reads %s as %q and gobindSwiftTypes has no row for it — the "+
+				"reading is answering a question nothing asks", importerReading, goType, r.plain)
+		}
+		if r.out == "" {
+			continue
+		}
+		if _, moved := gobindErrorOutPointer[goType]; !moved {
+			t.Errorf("%s reads an out-pointer for %s and gobindErrorOutPointer has no "+
+				"row for it. That map's membership decides whether swiftResults moves "+
+				"the value out at all, so a reading with no row is a shape the stub "+
+				"generator will never produce.", importerReading, goType)
+		}
+	}
 }

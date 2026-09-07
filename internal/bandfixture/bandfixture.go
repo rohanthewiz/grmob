@@ -83,7 +83,7 @@
 //
 // wasm/verify's gen.go renders real components.GroupHeaders through every
 // bundled theme and browser.mjs measures them with real glyphs in them (see
-// bandRender there, and check 9). That is where this half is checked, and it is
+// bandRender there, and check 10). That is where this half is checked, and it is
 // the only place it can be.
 //
 // It lives under internal/ for the reason menufixture does: it is not part of

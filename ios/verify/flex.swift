@@ -223,7 +223,7 @@ func checkFlexSolver() -> [String] {
 // docs/platforms/native.md carries a four-target census of that question, and
 // its rows were not all established the same way:
 //
-//	WASM runtime   measured    browser.mjs check 10 mounts the trees and reads
+//	WASM runtime   measured    browser.mjs check 11 mounts the trees and reads
 //	                           the rects
 //	htmlout        inherited   it emits the same declarations for the same tree
 //	SwiftUI        DERIVED     read off .frame(width:)/.frame(height:) and

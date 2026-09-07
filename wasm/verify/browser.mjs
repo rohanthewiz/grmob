@@ -6,35 +6,37 @@
 // few hundred lines that model element trees, attributes, listeners and which
 // element holds focus. That is enough for almost everything, and its limits
 // are stated in its own header: there is no layout, no bubbling, and `focus()`
-// is an assignment, and nothing is ever painted. Eight claims sit exactly in
+// is an assignment, and nothing is ever painted. Eleven claims sit exactly in
 // that blind spot, and no amount of widening the shim would settle them,
 // because each one is a claim about what a *browser* does:
 //
-//   1. tabindex="-1" really takes a <button> out of the tab order. The roving
+//   1. tabindex="-1" takes a <button> out of the tab order. The roving
 //      tabindex is the whole reason a tab strip is one stop rather than five;
 //      in dom.mjs the attribute is a string nobody reads.
-//   2. A disabled control refuses focus. The runtime relies on this to keep a
+//   2. a disabled control refuses focus. The runtime relies on this to keep a
 //      disabled member from being landed on; dom.mjs's focus() assigns.
-//   3. preventDefault on ArrowDown stops the page scrolling. A listbox that
-//      moved its selection *and* scrolled the page under it would be unusable,
-//      and defaultPrevented in a shim is a flag the shim set itself.
-//   4. A sticky band stays put while the rows scroll under it.
+//   3. preventDefault on ArrowDown stops the scroll. A listbox that moved its
+//      selection *and* scrolled the page under it would be unusable, and
+//      defaultPrevented in a shim is a flag the shim set itself.
+//   4. a toolbar of plain <button>s is one tab stop, and the arrows reach the
+//      rest. The other half of the roving tabindex: check 1 says the members
+//      are out of the tab order, and this says they are still reachable — by
+//      the browser's own focus algorithm rather than by an assignment.
+//   5. the palette reaches the screen. core.ColorPalette.ControlBorder has
+//      WCAG 1.4.11's 3:1 floor under it and components/variant_test.go
+//      measures every pair — as arithmetic over hex strings, which is all Go
+//      can do. Two retints and a whole third palette later, no pass had ever
+//      *looked* at the result. This one paints the pairs and reads the pixels
+//      back out of a screenshot, which is the only place an alpha channel, a
+//      colour profile or a hairline antialiased into a tint can be caught.
+//   6. a sticky band stays put while the rows scroll under it.
 //      core.StickyHeader() writes position:sticky, top:0 and z-index:1, and
 //      dom.mjs can say those three landed on the element and nothing more: it
 //      has no layout at all. "The property is written" is exactly what stays
 //      true when the box around it defeats the pin — an ancestor with overflow
 //      other than visible, a flex item shrunk to its container, a containing
 //      block that is not the scroller.
-//   5. A browser applies ARIA's own rules to a value range.
-//      This is the one claim here that is not about the runtime at all. Both
-//      DOM exporters deliberately do not implement the implicit 0..100, the
-//      indeterminate spelling or the clamping — they write aria-valuenow and
-//      its two bounds verbatim, on the argument that a browser applies those
-//      rules itself. core.ValueRange.Progress states them for the platforms
-//      that do not (Compose, through android/verify's JVM pass), so the
-//      repository held the rule to one target and asserted the web's half by
-//      reasoning. This asks Chrome, through its own accessibility tree.
-//   6. A real widget draws the palette. Check 7 paints the census's pairs as
+//   7. a real widget draws the palette. Check 5 paints the census's pairs as
 //      boxes this file builds — a model of a control boundary, and a good one.
 //      Everything between the palette role and a chip's actual ring goes
 //      through `components`, which is Go, so a widget that had stopped
@@ -44,14 +46,16 @@
 //      those trees and reads the pixels back. The two are the tone's two
 //      spenders and they read it from two different places in Go, which is why
 //      the field is worth painting rather than assumed from the chip.
-//   7. The palette reaches the screen. core.ColorPalette.ControlBorder has
-//      WCAG 1.4.11's 3:1 floor under it and components/variant_test.go
-//      measures every pair — as arithmetic over hex strings, which is all Go
-//      can do. Two retints and a whole third palette later, no pass had ever
-//      *looked* at the result. This one paints the pairs and reads the pixels
-//      back out of a screenshot, which is the only place an alpha channel, a
-//      colour profile or a hairline antialiased into a tint can be caught.
-//   8. Two arrangements of the same band lay out the same way, overflow
+//   8. a browser applies ARIA's own rules to a value range.
+//      This is the one claim here that is not about the runtime at all. Both
+//      DOM exporters deliberately do not implement the implicit 0..100, the
+//      indeterminate spelling or the clamping — they write aria-valuenow and
+//      its two bounds verbatim, on the argument that a browser applies those
+//      rules itself. core.ValueRange.Progress states them for the platforms
+//      that do not (Compose, through android/verify's JVM pass), so the
+//      repository held the rule to one target and asserted the web's half by
+//      reasoning. This asks Chrome, through its own accessibility tree.
+//   9. two arrangements of the same band lay out the same way, overflow
 //      included. components.GroupHeader moved its padding from the Row onto
 //      the growing control inside it so that a press lands on the whole band,
 //      and the warrant for the move is that it costs nothing. ios/verify checks
@@ -63,8 +67,8 @@
 //      instead, which is a different rule — and the comment recording that had
 //      never been asked of a browser. This asks one, and the answer is a
 //      genuine cross-target divergence rather than an artefact.
-//   9. A real band's tap target spans it, and its control is its tallest child.
-//      Check 8 is the band as arithmetic over synthetic sizes, which is the
+//  10. a real band's tap target spans it, and its control is its tallest child.
+//      Check 9 is the band as arithmetic over synthetic sizes, which is the
 //      right shape for a distribution and cannot reach two things. One is
 //      cross-axis: the disclosure branch puts the insets on a button one level
 //      inside the Row's growing heading wrapper, so whether a press lands on
@@ -75,7 +79,7 @@
 //      than a plain one" — a measurement no Go test can take. gen.go renders
 //      real components.GroupHeaders through every bundled theme and this mounts
 //      them with real glyphs in them.
-//  10. A fixed-size container squeezes its child along its main axis and lets
+//  11. a fixed-size container squeezes its child along its main axis and lets
 //      it spill across. core.Spacer became "a Box with a fixed size", and the
 //      note closing that work recorded that Compose constrains a child to the
 //      declared size where the DOM was believed to let it spill — for every
@@ -84,6 +88,13 @@
 //      blanket one assumed: squeezed along the main axis (a flex item's shrink
 //      factor defaults to 1 and an empty box has no automatic minimum to stop
 //      at), and spilling across the cross one.
+//
+// The numbering is one sequence, and it is the order the checks run in rather
+// than the order they were written. It is also load-bearing: a dozen comments
+// across four languages cite these by number, so the list above and the markers
+// in main() are held to each other by
+// TestTheBrowserChecksAreOneNumberedSequence in checknumbering_test.go — which
+// is what a numbering nobody could renumber safely was missing.
 //
 // # How
 //
@@ -136,11 +147,11 @@ const TRANSCRIPT_JSON = TRANSCRIPT_EXISTS
     ? JSON.parse(readFileSync(TRANSCRIPT, "utf8"))
     : {};
 const WIDGETS = TRANSCRIPT_JSON.widgets || [];
-// internal/bandfixture, for check 8. Same file, same reason: a real
+// internal/bandfixture, for check 9. Same file, same reason: a real
 // components.GroupHeader's geometry, read off the rendered band by Go, which is
 // not something a table of numbers in a .mjs file could be.
 const BANDS = TRANSCRIPT_JSON.bands || [];
-// Real components.GroupHeaders, for check 9. Same file, same reason as the
+// Real components.GroupHeaders, for check 10. Same file, same reason as the
 // three tables above it — and a different subject from BANDS, which is the same
 // band as arithmetic over synthetic sizes. See bandRender in gen.go: these are
 // the two band claims that are measurements of a rendered widget with glyphs in
@@ -768,6 +779,12 @@ const widgetPath = (i) =>
 // definite offer" as a negative number, which is SwiftUI probing for an ideal
 // size; max-content is the same question in CSS, and the two arrangements have
 // to agree about what they hug to as well.
+//
+// That second one was a judgement and is now a measurement. min-content is the
+// other candidate and asks a different question, so check 9 mounts every
+// intrinsic keyword and holds each to the band's natural width: they agree on
+// this fixture, which is what made the choice safe, and it is a property of the
+// fixture rather than of CSS — nothing here has text to wrap.
 const bandEdges = (i) => ({ Top: i.top, Right: i.right, Bottom: i.bottom, Left: i.left });
 
 const bandPx = (n) => `${n}px`;
@@ -824,6 +841,13 @@ function bandTree(a, c, offer) {
             // max-content needs no such adjustment: it is a content-box
             // keyword already, and the padding lands outside it in both
             // arrangements alike.
+            //
+            // WHICH intrinsic keyword this is was a judgement with nothing
+            // behind it until check 9's intrinsic block, which mounts all
+            // three candidates and holds each to the band's natural width.
+            // They agree here — every child is a box with a declared size, so
+            // there is nothing to wrap — and the day one of them stops
+            // agreeing is the day the choice starts mattering.
             Width: offer < 0
                 ? "max-content"
                 : bandPx(offer - a.row.left - a.row.right),
@@ -883,7 +907,7 @@ const bandSame = (a, b) => Math.abs(a - b) <= BAND_EPSILON;
 // The band's chrome is padding on the growing control rather than on the Row,
 // so that a press lands on the whole band rather than on a strip in the middle
 // of it. On the plain branch the growing child *is* the control and the claim
-// is a main-axis one, which check 8 settles. On the disclosure branch it is
+// is a main-axis one, which check 9 settles. On the disclosure branch it is
 // not: the Row's growing child is a heading wrapper with no chrome at all, and
 // the button carrying the insets sits inside it with no weight of its own.
 //
@@ -920,9 +944,15 @@ const bandSame = (a, b) => Math.abs(a - b) <= BAND_EPSILON;
 // # Why the whole table is one mount
 //
 // The same economy the widget grid and the band table are built on: nine trees
-// in one Column, one round trip of rects. Nothing here reads a pixel, so unlike
-// the widget grid there is no fold to stay above — a rect is reported for a node
-// the screenshot would never have covered.
+// in one Column, one round trip of rects and one screenshot.
+//
+// The screenshot is newer than the rest of this and it changes a constraint the
+// comment here used to record. While nothing read a pixel there was no fold to
+// stay above — a rect is reported for a node the screenshot would never have
+// covered — and the paint check ends that: a band pushed past the bottom of the
+// viewport has a rect and no pixels, so the grid is now subject to the same
+// bound WIDGETS_PER_ROW keeps the swatches inside, and says so by name when it
+// stops fitting.
 const BAND_RENDER_GRID = {
     Type: "Column",
     Style: {
@@ -938,7 +968,7 @@ const BAND_RENDER_GRID = {
 // Nested in the grid, that box is root/i, so every path gains one level.
 const bandRenderPath = (i, path) => path ? path.replace(/^root/, `root/${i}`) : null;
 
-// The tolerance check 8 uses, for the same reason: rects are LayoutUnits, and
+// The tolerance check 9 uses, for the same reason: rects are LayoutUnits, and
 // two edges that arrive at the same place by different routes can land on
 // adjacent ones.
 const bandRenderSame = (a, b) => Math.abs(a - b) <= BAND_EPSILON;
@@ -1519,7 +1549,7 @@ async function main() {
         }
 
         // ------------------------------------------------------------------
-        // 6. a real widget draws the palette
+        // 7. a real widget draws the palette
         // ------------------------------------------------------------------
         //
         // The swatch grid above proves Chrome puts the census's hexes on the
@@ -1685,7 +1715,7 @@ async function main() {
         }
 
         // ------------------------------------------------------------------
-        // 7. a browser applies ARIA's own rules to a value range
+        // 8. a browser applies ARIA's own rules to a value range
         // ------------------------------------------------------------------
         //
         // The two DOM exporters write aria-valuenow, -valuemin and -valuemax
@@ -1711,7 +1741,7 @@ async function main() {
 
 
         // ------------------------------------------------------------------
-        // 8. two arrangements of the same band lay out the same way
+        // 9. two arrangements of the same band lay out the same way
         // ------------------------------------------------------------------
         //
         // See bandMounts above for the claim and for the two modelling
@@ -1724,7 +1754,7 @@ async function main() {
         // does not, and that the recorded difference is a real cross-target
         // divergence rather than an artefact of either implementation.
         //
-        // Asserted in both directions, like the pinned divergence in check 7: a
+        // Asserted in both directions, like the pinned divergence in check 8: a
         // browser that started disagreeing is a failure somebody reads, and so
         // is one that stopped reaching the overflow arm at all.
         const mounts = bandMounts();
@@ -1977,13 +2007,97 @@ async function main() {
         }
 
 
+        // The intrinsic offer, which is the one modelling decision in bandTree
+        // that is a judgement rather than a reading.
+        //
+        // internal/bandfixture spells "no definite offer" as a negative number —
+        // SwiftUI probing for an ideal size — and bandTree spells that as
+        // `width: max-content`. Nothing held that. `min-content` is the other
+        // candidate and it asks a different question, so the comment saying
+        // max-content was the faithful one was a decision with no consequence
+        // attached to it.
+        //
+        // Two things are asked here, and the second is the interesting one:
+        //
+        //	the band hugs its content   at an indefinite offer each arrangement
+        //	                            must lay out at its natural width, which
+        //	                            is what "ideal size" means and is the
+        //	                            whole of what the comparisons above need
+        //	                            from the keyword
+        //	the candidates agree        max-content, min-content and fit-content
+        //	                            all land on that number for THIS fixture,
+        //	                            so the choice between them is not
+        //	                            load-bearing
+        //
+        // The second is why the judgement was safe, and it is a fact about the
+        // fixture rather than about CSS: every child here is a box with a
+        // declared size, so there is nothing to wrap and the three intrinsic
+        // sizings coincide. A fixture that grew a child with real text would
+        // separate them — min-content is its longest word — and this fails on
+        // the day that happens, which is exactly the day somebody should choose
+        // deliberately instead of inheriting a comment.
+        const intrinsic = [];
+        for (const c of BANDS) {
+            for (const offer of c.offers.filter((o) => o < 0)) {
+                for (const a of [c.now, c.before]) {
+                    for (const keyword of ["max-content", "min-content", "fit-content"]) {
+                        const tree = bandTree(a, c, offer);
+                        tree.Style.Width = keyword;
+                        intrinsic.push({ c, a, keyword, tree });
+                    }
+                }
+            }
+        }
+        if (intrinsic.length === 0) {
+            problems.push(`internal/bandfixture states no indefinite offer, so bandTree's ` +
+                `max-content arm is never built and the judgement behind it is unasked`);
+        } else {
+            await mount({
+                Type: "Column",
+                Style: {
+                    Padding: { Top: 0, Right: 0, Bottom: 0, Left: 0 }, Gap: 0,
+                    AlignItems: "flex-start",
+                },
+                Children: intrinsic.map((m) => m.tree),
+            });
+            const intrinsicWidths = await evaluate(`${JSON.stringify(
+                intrinsic.map((_, i) => `root/${i}`))}.map((p) => {
+                const el = document.querySelector('[data-node-path="' + p + '"]');
+                return el ? el.getBoundingClientRect().width : null;
+            })`);
+            intrinsic.forEach((m, i) => {
+                const got = intrinsicWidths[i];
+                const want = bandNatural(m.a, m.c);
+                if (got === null) {
+                    problems.push(`${m.c.what} at width:${m.keyword}: the band was not ` +
+                        `laid out`);
+                    return;
+                }
+                if (bandSame(got, want)) return;
+                problems.push(`${m.c.what} with the insets ${m.a.what} is ` +
+                    `${got.toFixed(2)}px wide at width:${m.keyword} and its natural ` +
+                    `width is ${want}px. ` +
+                    (m.keyword === "max-content"
+                        ? `bandTree renders bandfixture's indefinite offer as max-content ` +
+                          `on the argument that it is the CSS spelling of "hug your ` +
+                          `content", and every comparison at that offer is between two ` +
+                          `bands that are supposed to have hugged`
+                        : `That keyword is not the one bandTree uses — it is mounted here ` +
+                          `as a control. While all three intrinsic sizings land on the ` +
+                          `natural width the choice between them costs nothing, which is ` +
+                          `why the comment could state it without holding it to anything. ` +
+                          `They have now come apart, so the judgement has a consequence ` +
+                          `and somebody has to make it on purpose`));
+            });
+        }
+
         // ------------------------------------------------------------------
-        // 9. a real band's tap target spans it, and its control is its tallest
-        //    child
+        // 10. a real band's tap target spans it, and its control is its tallest
+        //     child
         // ------------------------------------------------------------------
         //
         // See BAND_RENDER_GRID for both claims and for why neither is reachable
-        // from the arithmetic fixture check 8 runs on. In short: one is a
+        // from the arithmetic fixture check 9 runs on. In short: one is a
         // cross-axis question a main-axis solver cannot answer, and the other is
         // a measurement of text.
         await mount(BAND_RENDER_GRID);
@@ -2009,6 +2123,24 @@ async function main() {
             return out;
         })`);
 
+        // And the paint, which this grid did not read at all until now.
+        //
+        // Every other browser check that mounts something real samples a colour;
+        // this one measured rects only, so a band that laid out perfectly and
+        // painted nothing would have passed every assertion below it. That is
+        // not a hypothetical gap: a band's own fill is the whole reason it may
+        // span its container edge to edge instead of being inset like a row, and
+        // it is the one declaration in GroupHeader's recipe that geometry cannot
+        // see.
+        //
+        // One screenshot for the whole grid, like the widget grid's, and the
+        // same fold rule applies to it now that pixels are being read — a band
+        // pushed past the bottom of the viewport has a rect and no pixels.
+        const bandShot = await session.send("Page.captureScreenshot",
+            { format: "png", captureBeyondViewport: false });
+        const bandImg = decodePNG(Buffer.from(bandShot.data, "base64"));
+        const bandDpr = await evaluate(`window.devicePixelRatio`);
+
         // Keyed by theme so the two branches can be held against each other
         // below: adding a handler to a band is supposed to hand the caller a
         // control and not a relayout.
@@ -2032,6 +2164,40 @@ async function main() {
             if (Boolean(r.badge) !== Boolean(b.badge)) {
                 problems.push(`${where}: gen.go ${b.badge ? "found" : "found no"} badge ` +
                     `and the mount ${r.badge ? "has" : "has no"} node at that path`);
+                continue;
+            }
+
+            // The band painted its own fill.
+            //
+            // Sampled six device-independent pixels into the band and vertically
+            // centred. The band Row's own leading inset is 0 — that is the move
+            // this whole check is about — so that point is inside the control,
+            // and inside the control's own leading padding, which is a run of
+            // the band's fill with no ink in it. The control declares no
+            // background of its own, so what is there is the Row's, showing
+            // through: which is the arrangement being asserted as much as the
+            // colour is.
+            //
+            // Vertically centred for the widget grid's reason: a horizontal edge
+            // at mid-height is clear of any glyph and of any corner the band
+            // might grow.
+            if (r.band.y + r.band.h > bandImg.height / bandDpr + 0.5) {
+                problems.push(`${where}: the band grid runs past the bottom of the ` +
+                    `viewport (this one ends at ${Math.round(r.band.y + r.band.h)}px of a ` +
+                    `${Math.round(bandImg.height / bandDpr)}px screenshot), so nothing was ` +
+                    `painted where its rect says it is — the grid or the window size ` +
+                    `needs to grow with the number of themes`);
+                continue;
+            }
+            const bandFill = pixelAt(bandImg,
+                (r.band.x + 6) * bandDpr, (r.band.y + r.band.h / 2) * bandDpr);
+            if (bandFill !== b.fill) {
+                problems.push(`${where}: the band painted as ${bandFill}, and its own ` +
+                    `Style declares ${b.fill} (the page behind it is ${b.page}). A band's ` +
+                    `fill is why it may span its container edge to edge rather than being ` +
+                    `inset like a row, and it is the one thing in the recipe that every ` +
+                    `rect below is blind to — this grid measured nine real bands and read ` +
+                    `no pixels at all until this line`);
                 continue;
             }
 
@@ -2061,7 +2227,7 @@ async function main() {
 
             // And its trailing edge stops where the band's content does: at the
             // badge when there is one, at the Row's own trailing inset when
-            // there is not. This is the half check 8 cannot see on the
+            // there is not. This is the half check 9 cannot see on the
             // disclosure branch, because it is the wrapper that is distributed
             // to and the button that has to fill it.
             const wantRight = r.band.x + r.band.w - b.rowRight -
@@ -2078,7 +2244,7 @@ async function main() {
                           `wrapper that stopped stretching its child makes the picture ` +
                           `in components.bandInsets wrong about this branch`
                         : `The control is the band Row's growing child, so this is the ` +
-                          `distribution check 8 measures, in a band with real text`));
+                          `distribution check 9 measures, in a band with real text`));
             }
 
             // The mechanism, on the branch that has one. Stated separately from
@@ -2214,7 +2380,7 @@ async function main() {
 
 
         // ------------------------------------------------------------------
-        // 10. a fixed-size container squeezes its child along its main axis
+        // 11. a fixed-size container squeezes its child along its main axis
         //     and lets it spill across
         // ------------------------------------------------------------------
         //
@@ -2355,8 +2521,10 @@ async function main() {
     their own boundary tones on both edges, a sticky band pins, ${VALUE_RANGES.length}
     value ranges resolve the way core.Progress says a browser resolves them,
     ${BANDS.length} bands lay out identically in both inset arrangements at every
-    offer — overflow included, which is where the SwiftUI solver does not —
-    ${BAND_RENDERS.length} real bands span their own tap targets and are taller than
+    offer — overflow included, which is where the SwiftUI solver does not — and
+    hug their own natural width under every intrinsic keyword,
+    ${BAND_RENDERS.length} real bands span their own tap targets, paint their own
+    fill and are taller than
     their badges with real glyphs in them, and a fixed-size container squeezes its
     child along the main axis and lets it spill across — unless the child is
     pinned with core.FlexShrink(0), which until core.ShrinkNone was a declaration

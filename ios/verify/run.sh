@@ -49,6 +49,26 @@ swiftc -typecheck -target arm64-apple-macos14.0 ../GrMob/Runtime/*.swift
 
 echo "OK: view layer type-checks"
 
+# What the Swift importer makes of gobind's C spellings.
+#
+# mobile/verify maps every bound Go type onto the Swift type the shell will see,
+# and its standing rule is that each reading comes off gobind's source or its
+# golden output. That rule could not reach the last step: gobind emits an
+# Objective-C header and the shell writes Swift, so the importer is between the
+# two — and the types whose Swift name nobody had read were refused with an
+# instruction to run `gomobile bind` on a Mac and write the row from what it
+# produced.
+#
+# importer.h declares the C, importer.swift states what Swift is expected to
+# import it as, and this settles it. Nothing is linked: the symbols are declared
+# and never defined, which is what a question about declarations wants.
+# Typecheck-only against the macOS target, so this needs no more than the
+# Command Line Tools the passes above already need.
+swiftc -typecheck -target arm64-apple-macos14.0 \
+  -import-objc-header importer.h importer.swift
+
+echo "OK: the Swift importer spells gobind's C the way mobile/verify says"
+
 # The app layer — the system-event sinks, the platform services behind them,
 # and the shell that wires the whole thing together — needs two things the
 # passes above deliberately do without.
