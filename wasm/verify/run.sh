@@ -12,12 +12,14 @@
 #
 # Some of what was in that bucket is not any more: browser.mjs drives a
 # headless Chrome over the DevTools protocol at the end of this script and
-# checks four keyboard facts plus one about paint — that every bundled
-# palette's ControlBorder reaches the screen as the hex the contrast census
-# did its arithmetic about, read back out of a real screenshot. It skips when
-# there is no Chrome to launch, which keeps the promise above intact — see
-# that file for the claims and why no amount of widening dom.mjs would settle
-# them.
+# checks four keyboard facts, two about paint, one about layout and one about
+# ARIA's value rules — that every bundled palette's ControlBorder reaches the
+# screen as the hex the contrast census did its arithmetic about, that a real
+# components.Chip still draws that tone, that a sticky band pins, and that a
+# browser resolves a value range the way core.Progress says it does. It skips
+# when there is no Chrome to launch, which keeps the promise above intact —
+# see that file for the claims and why no amount of widening dom.mjs would
+# settle them.
 #
 # The .mjs extension is deliberate: it makes these files ES modules on every
 # Node from 12 onward, where a bare .js would depend on the module-detection
@@ -43,4 +45,8 @@ echo "OK: grmob-runtime.js replays Go's transcripts and passes its unit tests"
 # The browser pass. Last, because it is the slow one (a Chrome launch) and
 # because everything above has to hold before a question about the tab order
 # is worth asking. It prints its own OK or SKIP.
-node ./browser.mjs
+#
+# It gets the transcript too, and needs it: the widget swatches it paints are
+# real components rendered by Go (gen.go's widgetCases), which is the half of
+# the palette check that a table of hexes in a .mjs file cannot reach.
+GRMOB_TRANSCRIPT="$out/transcript.json" node ./browser.mjs

@@ -34,12 +34,17 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"math"
 	"os"
+	"sort"
 
+	"github.com/rohanthewiz/grmob/components"
 	"github.com/rohanthewiz/grmob/core"
 	"github.com/rohanthewiz/grmob/examples/mobileapp"
 	"github.com/rohanthewiz/grmob/examples/signup"
 	"github.com/rohanthewiz/grmob/internal/menufixture"
+	"github.com/rohanthewiz/grmob/internal/palette"
+	"github.com/rohanthewiz/grmob/jsonout"
 	"github.com/rohanthewiz/grmob/render"
 )
 
@@ -60,6 +65,11 @@ type scenario struct {
 type transcript struct {
 	Scenarios []scenario         `json:"scenarios"`
 	MenuCases []menufixture.Case `json:"menuCases"`
+	// Widgets are real components rendered through real themes, for the
+	// browser pass. See widgetCase: it is the third unrelated table riding in
+	// this file, and for the same reason as the second — run.sh generates one
+	// file and every consumer reads it.
+	Widgets []widgetCase `json:"widgets"`
 }
 
 // node mirrors just enough of core.Node's JSON to hunt down callback IDs.
@@ -264,9 +274,125 @@ func main() {
 	out, err := json.Marshal(transcript{
 		Scenarios: []scenario{demoScenario(), signupScenario()},
 		MenuCases: menufixture.Cases(),
+		Widgets:   widgetCases(),
 	})
 	if err != nil {
 		fatal("marshal transcript: %v", err)
 	}
 	os.Stdout.Write(out)
+}
+
+// --- The widget swatches ----------------------------------------------------
+
+// widgetCase is one real widget, rendered by Go, with the colours it actually
+// puts on screen.
+//
+// # Why the browser pass needed this
+//
+// palette.mjs's rows are (tone, backdrop) pairs painted by browser.mjs itself:
+// a 120x52 box in the backdrop with an 80x24 box inside it carrying a 1px
+// border in the tone. That geometry is a *model* of a control boundary, and it
+// proved the thing it was built to prove — that Chrome puts the census's hexes
+// on the screen, through the runtime's style mapping, with no alpha or colour
+// management in between.
+//
+// What it could not prove is that any widget draws them. Everything between
+// core.ColorPalette.ControlBorder and a pixel goes through `components`, and
+// `components` is Go: the browser pass mounts JSON and cannot call it. So a
+// chip whose ring had stopped being the boundary tone — a Style override, a
+// dropped BorderWidth, a fallback taken — would leave every swatch in
+// palette.mjs painting perfectly and every Go test passing on hex strings.
+//
+// This closes that: the tree below is a real components.Chip rendered through
+// a real theme, and the three colours are read off the *rendered node* rather
+// than off the palette. What the browser then checks is that the widget's own
+// declarations reach the screen.
+type widgetCase struct {
+	Theme string `json:"theme"`
+	What  string `json:"what"`
+	// Tree is the rendered widget as JSON, ready for GrMob.mount.
+	Tree string `json:"tree"`
+	// Page is the fill behind the widget, Fill is the widget's own, and Ring
+	// is the boundary tone between them — each read off the node that carries
+	// it, so a widget that stopped declaring one is a case with an empty
+	// column rather than a case that still checks the palette's answer.
+	Page string `json:"page"`
+	Fill string `json:"fill"`
+	Ring string `json:"ring"`
+	// The two ratios the census computes for this ring, carried across so a
+	// failure can say what was believed about the pair. Nothing in the browser
+	// recomputes them, for the reason palette.mjs gives.
+	RatioOnPage float64 `json:"ratioOnPage"`
+	RatioOnFill float64 `json:"ratioOnFill"`
+}
+
+// widgetCases renders one quiet, unselected chip per bundled theme.
+//
+// # Why a chip and why quiet
+//
+// components.Chip is the widget core.ColorPalette.ControlBorder was introduced
+// for (see chipRing), and ProminenceQuiet is the arm that draws the ring: a
+// filter row is chrome that is meant to recede, and the ring is the whole of
+// what says the control is there. It is also the widget with *two* backdrops —
+// the page outside the ring and its own Surface fill inside it — which is the
+// pair shape the census wants at least one real widget to have.
+//
+// Unselected, because a selected chip paints its accent over both.
+//
+// The page is a Box carrying the theme's own Colors.Background rather than the
+// document's default white, so the ring's outer backdrop is the one the census
+// measured rather than whatever the browser's body happens to be.
+func widgetCases() []widgetCase {
+	byName := core.BundledThemes()
+	names := make([]string, 0, len(byName))
+	for name := range byName {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+
+	out := make([]widgetCase, 0, len(names))
+	for _, name := range names {
+		theme := byName[name]
+		ctx := core.NewContext().WithTheme(theme)
+		ctx.BeginRenderPass()
+		page := core.Box(
+			core.BackgroundColor(theme.Colors.Background),
+			core.Padding(24),
+			core.Width("240px"),
+			components.Chip{Label: "Sermons"},
+		).Render(ctx)
+
+		if len(page.Children) != 1 {
+			fatal("the page box rendered %d children, want the chip alone", len(page.Children))
+		}
+		chip := page.Children[0]
+		if page.Style == nil || chip.Style == nil {
+			fatal("%s: a widget swatch rendered a node with no Style", name)
+		}
+
+		c := widgetCase{
+			Theme: name, What: "quiet Chip",
+			Tree: jsonout.Export(page),
+			Page: page.Style.Background,
+			Fill: chip.Style.Background,
+			Ring: chip.Style.BorderColor,
+		}
+		c.RatioOnPage = ratioBetween(name, c.Ring, c.Page)
+		c.RatioOnFill = ratioBetween(name, c.Ring, c.Fill)
+		out = append(out, c)
+	}
+	return out
+}
+
+// ratioBetween is the census's own arithmetic, through internal/palette, so
+// the number travelling to the browser is the number components/variant_test.go
+// measures. A colour that does not parse is fatal rather than zero: a ratio of
+// 0 would print in a failure as a claim somebody made.
+func ratioBetween(theme, a, b string) float64 {
+	la, oka := palette.Luminance(a)
+	lb, okb := palette.Luminance(b)
+	if !oka || !okb {
+		fatal("%s: a widget swatch declares an unparseable colour (%q, %q)", theme, a, b)
+	}
+	return math.Round(palette.Ratio(la, lb)*100) / 100
 }

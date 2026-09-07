@@ -216,6 +216,51 @@ func (v ValueRange) Progress() Progress {
 	return Progress{Reading: ProgressDeterminate, Now: now, Min: min, Max: max}
 }
 
+// Unparsed names the stated numeric fields that are not numbers this
+// vocabulary can use, in the order the type declares them.
+//
+// # Why the reading alone is not enough to report one
+//
+// Progress answers what the three strings amount to, and it answers it in
+// ARIA's own terms: a position that does not parse is a bar with no position,
+// which is a state ARIA already has a meaning for, and a bound that does not
+// parse falls back to ARIA's default. Both are the right resolution and
+// neither is what the author wrote — and from the outside the two cases are
+// indistinguishable from the ones where nothing was stated at all.
+//
+//	ValueRange{Now: "half", Min: "0", Max: "100"}   reads as indeterminate
+//	ValueRange{Min: "0", Max: "100"}                reads as indeterminate
+//
+// The first is a mistake and the second is a bar that is genuinely running
+// with no idea how far. So the fields are named separately from the reading,
+// and core.AuditTree is what reports the first without reporting the second.
+//
+// # And it is not a harmless mistake
+//
+// The three targets that parse these strings do not agree about a string that
+// is not a number. Compose and this package read it as absent; a browser reads
+// aria-valuenow="half" as 0 and pins the bar at the start of its range, and
+// reads aria-valuemax="lots" as 0 and then clamps the position down to it. So
+// an unparseable number is not "no number" — it is a different wrong answer on
+// each platform, with nothing anywhere saying so. wasm/verify's browser pass
+// holds Chrome to that divergence case by case.
+//
+// Text has no part in it: it is words by design, and any string is a legal one.
+func (v ValueRange) Unparsed() []string {
+	var out []string
+	for _, f := range []struct{ name, value string }{
+		{"Now", v.Now}, {"Min", v.Min}, {"Max", v.Max},
+	} {
+		if f.value == "" {
+			continue
+		}
+		if _, ok := parseValue(f.value); !ok {
+			out = append(out, f.name)
+		}
+	}
+	return out
+}
+
 // parseValue is the wire-string-to-number rule, in one place because three
 // callers have to agree on it: this file, GrMobStyle.kt's parser (through
 // grMobProgressNumber) and GrMobStyle.swift's.

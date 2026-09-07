@@ -1,6 +1,7 @@
 package components
 
 import (
+	"fmt"
 	"math"
 	"sort"
 	"strings"
@@ -321,6 +322,12 @@ var wantWitnesses = []witnessRow{
 // internal/palette charges a backdrop exclusion — and the reason the price is
 // worth paying is that both extremes look, in a diff, exactly like a theme
 // somebody forgot to finish adding.
+//
+// Empty also means the arms that read them cannot run against these palettes,
+// which is why the classification is a function (landingComplaints) rather than
+// a run of t.Errorf calls: TestTheLandingArmsEachReportTheirCase drives every
+// arm over constructed theme sets, so the message the first person to add a
+// quiet palette gets is one somebody has already read.
 var (
 	// theme -> why it is allowed to witness no rule at all.
 	quietThemes = map[string]string{}
@@ -443,61 +450,261 @@ func diffThemes(got, want []string) (gained, lost []string) {
 func TestEveryKnownThemeLandsSomewhereStated(t *testing.T) {
 	themes := knownThemes()
 
+	// A census over no rules classifies every theme as quiet, which is a
+	// sentence about the rules rather than about the palettes. Checked before
+	// the counts, because with paletteRules emptied every complaint below
+	// would be true and none of them would be the finding.
+	if len(paletteRules) == 0 {
+		t.Fatal("there are no palette rules — every theme witnesses all zero of them " +
+			"and none of them, and the two exception tables would both be right")
+	}
+
+	carried := make(map[string][]string, len(themes))
+	for name, kt := range themes {
+		for _, rule := range paletteRules {
+			if rule.witnesses(kt.theme) {
+				carried[name] = append(carried[name], rule.name)
+			}
+		}
+		// Present with a nil slice for a theme that carries nothing: the map's
+		// keys are the theme list landingComplaints holds the tables to, and a
+		// quiet theme that was simply absent from it would be indistinguishable
+		// from one this package does not measure.
+		if _, ok := carried[name]; !ok {
+			carried[name] = nil
+		}
+	}
+
+	for _, c := range landingComplaints(carried, len(paletteRules), quietThemes, universalThemes) {
+		t.Error(c)
+	}
+}
+
+// landingComplaints is the whole of what the census says about a *theme*, as
+// data rather than as t.Errorf calls.
+//
+// # Why it is a function
+//
+// Both exception tables are empty and have been since the day they were
+// written, which means five of the six arms below have never run — a table with
+// no entries cannot produce an entry naming a theme that does not exist, and a
+// package where every palette witnesses some rules and not others never reaches
+// either degenerate case. That is the ordinary state and it is also the state
+// in which an arm can be wrong for as long as it likes: the first person to add
+// a quiet palette would be the first person to find out whether the check that
+// was supposed to greet them works.
+//
+// Taking the counts and the two tables as parameters is what makes those arms
+// reachable without inventing an entry. The census keeps its real, empty tables;
+// TestTheLandingArmsEachReportTheirCase drives this function with the theme sets
+// that would produce each one. The same split internal/valuefixture's own tests
+// make for internal/valuefixture: exercise the classifier over constructed
+// inputs, and let the real data stay whatever it happens to be.
+//
+// carried is theme name → the rules it witnesses, and its keys are the theme
+// list — so a table entry naming something not in it is an entry arguing for
+// nothing. rules is how many rules there are in total, which is what "every
+// rule" means; it is passed rather than derived from carried because a theme
+// witnessing all of them and a census with only those rules are different
+// facts.
+func landingComplaints(carried map[string][]string, rules int, quiet, universal map[string]string) []string {
+	var out []string
+
 	// Both exception tables are held to the theme list in the other direction,
 	// for the reason internal/palette holds its backdrop exclusions to
 	// core.ComponentDefaults: an entry naming a theme that no longer exists is
 	// an argument for nothing, and it would sit here looking like coverage.
+	//
+	// Sorted, so a failure reports the same order every run: a map's range is
+	// randomized and a two-entry complaint list that reshuffled between runs
+	// would read as a flapping test.
 	for _, table := range []struct {
 		name    string
 		entries map[string]string
 	}{
-		{"quietThemes", quietThemes},
-		{"universalThemes", universalThemes},
+		{"quietThemes", quiet},
+		{"universalThemes", universal},
 	} {
-		for name, why := range table.entries {
-			if _, known := themes[name]; !known {
-				t.Errorf("%s names %q, which is not a theme this package measures — "+
-					"the entry argues for nothing", table.name, name)
+		for _, name := range sortedKeys(table.entries) {
+			if _, known := carried[name]; !known {
+				out = append(out, fmt.Sprintf("%s names %q, which is not a theme this "+
+					"package measures — the entry argues for nothing", table.name, name))
 			}
-			if why == "" {
-				t.Errorf("%s[%q] gives no reason; the reason is the entry", table.name, name)
+			if table.entries[name] == "" {
+				out = append(out, fmt.Sprintf("%s[%q] gives no reason; the reason is "+
+					"the entry", table.name, name))
 			}
 		}
 	}
 
-	for name, kt := range themes {
-		var carried []string
-		for _, rule := range paletteRules {
-			if rule.witnesses(kt.theme) {
-				carried = append(carried, rule.name)
-			}
-		}
+	for _, name := range sortedKeys(carried) {
+		got := carried[name]
 		switch {
-		case len(carried) == 0:
-			if _, allowed := quietThemes[name]; !allowed {
-				t.Errorf("%s witnesses no palette rule at all. That is legal and it is "+
-					"not nothing: a palette the census cannot use adds no evidence to "+
-					"any row, so it cannot be the answer when a witness is lost. If it "+
-					"is a theme being added, record it in quietThemes with the reason "+
-					"its palette shows none of these rules", name)
+		case len(got) == 0:
+			if _, allowed := quiet[name]; !allowed {
+				out = append(out, fmt.Sprintf("%s witnesses no palette rule at all. That "+
+					"is legal and it is not nothing: a palette the census cannot use adds "+
+					"no evidence to any row, so it cannot be the answer when a witness is "+
+					"lost. If it is a theme being added, record it in quietThemes with the "+
+					"reason its palette shows none of these rules", name))
 			}
-		case len(carried) == len(paletteRules):
-			if _, allowed := universalThemes[name]; !allowed {
-				t.Errorf("%s witnesses every palette rule, including the ones that "+
-					"rested on the fixture. Check whether midTonePrimaryTheme is still "+
-					"carrying anything before recording it in universalThemes with a "+
-					"reason — see TestTheFixtureStillCarriesWhatNoBundledThemeCan", name)
+		case len(got) == rules:
+			if _, allowed := universal[name]; !allowed {
+				out = append(out, fmt.Sprintf("%s witnesses every palette rule, including "+
+					"the ones that rested on the fixture. Check whether midTonePrimaryTheme "+
+					"is still carrying anything before recording it in universalThemes with "+
+					"a reason — see TestTheFixtureStillCarriesWhatNoBundledThemeCan", name))
 			}
 		default:
-			if _, quiet := quietThemes[name]; quiet {
-				t.Errorf("%s is recorded in quietThemes and witnesses %d rules %v",
-					name, len(carried), carried)
+			if _, q := quiet[name]; q {
+				out = append(out, fmt.Sprintf("%s is recorded in quietThemes and witnesses "+
+					"%d rules %v", name, len(got), got))
 			}
-			if _, all := universalThemes[name]; all {
-				t.Errorf("%s is recorded in universalThemes and witnesses %d of %d rules",
-					name, len(carried), len(paletteRules))
+			if _, a := universal[name]; a {
+				out = append(out, fmt.Sprintf("%s is recorded in universalThemes and "+
+					"witnesses %d of %d rules", name, len(got), rules))
 			}
 		}
+	}
+	return out
+}
+
+// sortedKeys is the deterministic order a complaint list is built in.
+func sortedKeys[V any](m map[string]V) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out
+}
+
+// Each arm of the landing check, driven over a theme set that reaches it.
+//
+// # What this is for
+//
+// quietThemes and universalThemes are both empty, and the honest reading of
+// that is not "the arms are fine" — it is that the arms have never run. Five
+// of the six have no way to run against the real palettes at all: every theme
+// core bundles witnesses some rules and not others, so the two degenerate
+// columns are unreachable, and an empty map cannot hold a stale name or a
+// missing reason.
+//
+// The first person to meet those arms would be somebody adding a palette on a
+// day when they were doing something else, and the message they get is the
+// whole value of the check — it is what says which of quietThemes and
+// universalThemes to write in, and why an entry costs a sentence. So the arms
+// are exercised here, over constructed inputs, and the real tables stay empty.
+//
+// The pairs are deliberate: every case that must complain is written beside the
+// one that must not, because "the check fires" and "the exception silences it"
+// are two claims and a table that only made the first would pass with the
+// exception lookups deleted.
+func TestTheLandingArmsEachReportTheirCase(t *testing.T) {
+	const rules = 3
+	all := []string{"a", "b", "c"}
+	some := []string{"a"}
+	reason := map[string]string{"Palette": "because"}
+
+	cases := []struct {
+		name             string
+		carried          map[string][]string
+		quiet, universal map[string]string
+		want             string // a substring of the one complaint expected, or "" for silence
+	}{
+		{
+			name:    "a quiet palette nobody recorded",
+			carried: map[string][]string{"Palette": nil},
+			want:    "witnesses no palette rule at all",
+		},
+		{
+			name:    "a quiet palette with a reason",
+			carried: map[string][]string{"Palette": nil},
+			quiet:   reason,
+		},
+		{
+			name:    "a universal palette nobody recorded",
+			carried: map[string][]string{"Palette": all},
+			want:    "witnesses every palette rule",
+		},
+		{
+			name:      "a universal palette with a reason",
+			carried:   map[string][]string{"Palette": all},
+			universal: reason,
+		},
+		{
+			name:    "an ordinary palette is neither, and is recorded as quiet",
+			carried: map[string][]string{"Palette": some},
+			quiet:   reason,
+			want:    "is recorded in quietThemes and witnesses 1 rules",
+		},
+		{
+			name:      "an ordinary palette recorded as universal",
+			carried:   map[string][]string{"Palette": some},
+			universal: reason,
+			want:      "is recorded in universalThemes and witnesses 1 of 3 rules",
+		},
+		{
+			name:    "an ordinary palette in neither table",
+			carried: map[string][]string{"Palette": some},
+		},
+		{
+			// The direction that has nothing to do with counts: an entry for a
+			// theme that is not measured. It is what a retired palette leaves
+			// behind, and it reads in a diff exactly like coverage.
+			name:    "an entry naming a theme that is gone",
+			carried: map[string][]string{"Palette": some},
+			quiet:   map[string]string{"Retired": "because"},
+			want:    `quietThemes names "Retired"`,
+		},
+		{
+			name:    "an entry with no reason",
+			carried: map[string][]string{"Palette": nil},
+			quiet:   map[string]string{"Palette": ""},
+			want:    "gives no reason",
+		},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got := landingComplaints(c.carried, rules, c.quiet, c.universal)
+			if c.want == "" {
+				if len(got) != 0 {
+					t.Errorf("complained about a case that is in order: %v", got)
+				}
+				return
+			}
+			if len(got) != 1 {
+				t.Fatalf("want one complaint containing %q, got %d: %v", c.want, len(got), got)
+			}
+			if !strings.Contains(got[0], c.want) {
+				t.Errorf("complaint is %q, want one containing %q", got[0], c.want)
+			}
+		})
+	}
+}
+
+// A theme carrying every rule is universal and a theme carrying none is quiet,
+// and the two are the same theme when there are no rules.
+//
+// That is why TestEveryKnownThemeLandsSomewhereStated refuses an empty
+// paletteRules before it counts anything: the switch below takes the quiet arm
+// first, so a census whose rules had all been deleted would report every
+// palette as quiet — a true statement about a table that no longer says
+// anything, offered as a finding about the palettes.
+func TestAnEmptyCensusClassifiesEveryPaletteAsQuiet(t *testing.T) {
+	got := landingComplaints(map[string][]string{"Palette": nil}, 0, nil, nil)
+	if len(got) != 1 || !strings.Contains(got[0], "witnesses no palette rule at all") {
+		t.Fatalf("want the quiet complaint, got %v", got)
+	}
+	// And recording it in universalThemes — which is equally true of a theme
+	// that carries all zero rules — does not silence it. The order of the arms
+	// is the thing being pinned: it is what makes the guard above necessary
+	// rather than decorative.
+	got = landingComplaints(map[string][]string{"Palette": nil}, 0,
+		nil, map[string]string{"Palette": "carries all zero of them"})
+	if len(got) != 1 || !strings.Contains(got[0], "witnesses no palette rule at all") {
+		t.Fatalf("the quiet arm did not win over the universal one: %v", got)
 	}
 }
 

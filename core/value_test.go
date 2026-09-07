@@ -1,6 +1,9 @@
 package core
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 // ValueOf's formatting, which is the reason the numbers are strings at all.
 func TestValueOfFormatsWithoutScientificNotation(t *testing.T) {
@@ -188,5 +191,94 @@ func TestAWordOnlyRangeIsStatedAndUnreadable(t *testing.T) {
 	if got := v.Progress().Reading; got != ProgressUnstated {
 		t.Errorf("reading = %q, want %q — a text on an ordinary node must not turn it "+
 			"into a progress bar", got, ProgressUnstated)
+	}
+}
+
+// --- Unparsed: the fields that are not numbers ------------------------------
+
+// Progress resolves an unusable number and says nothing about it, which is the
+// right resolution and the reason this second question exists: from the
+// outside, a position that failed to parse and a position that was never
+// stated are the same reading.
+func TestUnparsedNamesTheStatedFieldsThatAreNotNumbers(t *testing.T) {
+	for _, c := range []struct {
+		name string
+		in   ValueRange
+		want []string
+	}{
+		{"an ordinary range", ValueOf(45, 0, 100), nil},
+		{"the zero value", ValueRange{}, nil},
+		// The unstated fields are not reported. They are ARIA's defaults and
+		// its indeterminate spelling, which is the whole of what makes a bare
+		// Now announce as a percentage.
+		{"a bare position", ValueRange{Now: "45"}, nil},
+		{"ARIA's indeterminate bar", ValueRange{Min: "0", Max: "100"}, nil},
+		// Words are words. Any string is a legal Text and it never carries a
+		// number, so it is outside the question.
+		{"words alone", ValueRange{Text: "almost done"}, nil},
+		{"words beside a broken position",
+			ValueRange{Now: "half", Text: "almost done"}, []string{"Now"}},
+		// The formatting bugs this is actually for.
+		{"a percent sign", ValueRange{Now: "45%"}, []string{"Now"}},
+		{"scientific notation is fine", ValueRange{Now: "1.048576e+06"}, nil},
+		// The non-finite spellings strconv accepts and no range property on
+		// any platform can hold.
+		{"a NaN position", ValueRange{Now: "NaN", Min: "0", Max: "100"}, []string{"Now"}},
+		{"an infinite bound", ValueRange{Now: "45", Max: "Inf"}, []string{"Max"}},
+		// Order is the type's own field order, so a report reads the way the
+		// struct does rather than the way a map ranged.
+		{"all three", ValueRange{Now: "a", Min: "b", Max: "c"},
+			[]string{"Now", "Min", "Max"}},
+		{"two of three", ValueRange{Now: "45", Min: "b", Max: "c"},
+			[]string{"Min", "Max"}},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			got := c.in.Unparsed()
+			if strings.Join(got, ",") != strings.Join(c.want, ",") {
+				t.Errorf("Unparsed(%#v) = %v, want %v", c.in, got, c.want)
+			}
+		})
+	}
+}
+
+// Every field Unparsed can name is one Progress silently resolved away.
+//
+// The property rather than the cases: for any range whose fields all parse,
+// Unparsed is empty; for any range with a field it names, the reading is not a
+// statement about that field. That is the invariant the audit's report rests
+// on — it says "this is not the number you wrote", and the sentence is only
+// true if Progress did in fact write a different one.
+func TestAnUnparsedFieldIsAlwaysOneProgressResolvedAway(t *testing.T) {
+	for _, c := range []ValueRange{
+		{Now: "half", Min: "0", Max: "100"},
+		{Now: "45", Max: "lots"},
+		{Now: "45", Min: "none"},
+		{Now: "NaN"},
+	} {
+		bad := c.Unparsed()
+		if len(bad) == 0 {
+			t.Fatalf("%#v: nothing named, so this case is not what it says it is", c)
+		}
+		p := c.Progress()
+		for _, name := range bad {
+			switch name {
+			case "Now":
+				// A position that did not parse is a bar with no position.
+				if p.Reading == ProgressDeterminate || p.Reading == ProgressEmptyRange {
+					t.Errorf("%#v: Now did not parse and the reading is %q, which is a "+
+						"claim about a position", c, p.Reading)
+				}
+			case "Min":
+				if p.Reading == ProgressDeterminate && p.Min != 0 {
+					t.Errorf("%#v: Min did not parse and the resolved minimum is %v, "+
+						"which is neither the stated value nor ARIA's default", c, p.Min)
+				}
+			case "Max":
+				if p.Reading == ProgressDeterminate && p.Max != 100 {
+					t.Errorf("%#v: Max did not parse and the resolved maximum is %v, "+
+						"which is neither the stated value nor ARIA's default", c, p.Max)
+				}
+			}
+		}
 	}
 }

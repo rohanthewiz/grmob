@@ -1164,6 +1164,30 @@ while that group is shut and restores it the moment the reader opens it; the
 `Footer` stays reachable, which is the other reason to keep it. A shut group
 *above* the last one changes nothing — the pager was never going to extend it.
 
+**Ask `AutoLoadWithheld()` if the footer is conditional.** Withholding is
+silent by construction: a feed that stopped fetching because the last run is
+shut and a feed that has genuinely run out produce the same tree. A screen
+whose `Footer` is always a `LoadMore` is fine — the button is there and calls
+the same function — and the shape that is not is a footer hidden on the
+strength of auto-loading doing the work. The answer is composed from `Items`,
+`GroupBy` and `Collapse`, three fields none of which means anything alone, so
+the widget is the one that can give it:
+
+```go
+list := components.GroupedList[Sermon]{
+    Items: pager.Items, GroupBy: byMonth, Collapse: shut,
+    OnEndReached: pager.LoadMore,
+}
+// Shown when there is more to fetch *and* nothing is fetching it.
+if pager.HasMore && list.AutoLoadWithheld() {
+    list.Footer = components.LoadMore{HasMore: true, OnLoadMore: pager.LoadMore}
+}
+```
+
+It answers `false` when `OnEndReached` is nil — there is no sensor to withhold
+on a manual pager. `Collapse.IsCollapsed` is the question to ask about the run
+itself.
+
 `StickyHeaders` pins the *default* `GroupHeader`. A `Header` override builds
 its own view, which the widget cannot reach into; such a header pins itself
 with `core.StickyHeader()` in its own `Style`. On `DataTable` the flag pins

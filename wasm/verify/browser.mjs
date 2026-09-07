@@ -1,11 +1,12 @@
 // The facts a shimmed DOM cannot check, checked in a browser: four about the
-// keyboard, one about paint, and one about layout.
+// keyboard, two about paint, one about layout, and one about what a browser
+// does with an accessibility value nobody here resolves.
 //
 // wasm/verify's other suites run the real grmob-runtime.js against dom.mjs — a
 // few hundred lines that model element trees, attributes, listeners and which
 // element holds focus. That is enough for almost everything, and its limits
 // are stated in its own header: there is no layout, no bubbling, and `focus()`
-// is an assignment, and nothing is ever painted. Five claims sit exactly in
+// is an assignment, and nothing is ever painted. Seven claims sit exactly in
 // that blind spot, and no amount of widening the shim would settle them,
 // because each one is a claim about what a *browser* does:
 //
@@ -24,7 +25,24 @@
 //      true when the box around it defeats the pin — an ancestor with overflow
 //      other than visible, a flex item shrunk to its container, a containing
 //      block that is not the scroller.
-//   5. The palette reaches the screen. core.ColorPalette.ControlBorder has
+//   5. A browser applies ARIA's own rules to a value range.
+//      This is the one claim here that is not about the runtime at all. Both
+//      DOM exporters deliberately do not implement the implicit 0..100, the
+//      indeterminate spelling or the clamping — they write aria-valuenow and
+//      its two bounds verbatim, on the argument that a browser applies those
+//      rules itself. core.ValueRange.Progress states them for the platforms
+//      that do not (Compose, through android/verify's JVM pass), so the
+//      repository held the rule to one target and asserted the web's half by
+//      reasoning. This asks Chrome, through its own accessibility tree.
+//   6. A real widget draws the palette. Check 7 paints the census's pairs as
+//      boxes this file builds — a model of a control boundary, and a good one.
+//      Everything between the palette role and a chip's actual ring goes
+//      through `components`, which is Go, so a widget that had stopped
+//      declaring the boundary tone would leave every swatch painting perfectly.
+//      gen.go renders a real components.Chip through each bundled theme and
+//      reads the colours off the rendered node; this mounts those trees and
+//      reads the pixels back.
+//   7. The palette reaches the screen. core.ColorPalette.ControlBorder has
 //      WCAG 1.4.11's 3:1 floor under it and components/variant_test.go
 //      measures every pair — as arithmetic over hex strings, which is all Go
 //      can do. Two retints and a whole third palette later, no pass had ever
@@ -63,6 +81,33 @@ import http from "node:http";
 import zlib from "node:zlib";
 
 import { PALETTES } from "./palette.mjs";
+import { VALUE_RANGES } from "./valuerange.mjs";
+
+// The widget swatches come from the transcript rather than from a .mjs table,
+// because they are real components rendered by Go: gen.go builds the trees and
+// reads their colours off the rendered nodes, which is the whole point (see
+// widgetCase there). run.sh generates that file and points every consumer at
+// it, this one included.
+//
+// A hard requirement rather than an optional extra. The other checks here skip
+// when the machine has no Chrome, which is a fact about the machine; a missing
+// transcript is a fact about how this script was invoked, and a pass that
+// quietly dropped a third of itself for that would be worth less than one that
+// says so.
+const TRANSCRIPT = process.env.GRMOB_TRANSCRIPT;
+if (!TRANSCRIPT || !existsSync(TRANSCRIPT)) {
+    console.error("FAIL: browser.mjs needs the transcript gen.go writes.\n" +
+        "  Run wasm/verify/run.sh, which generates it and sets GRMOB_TRANSCRIPT,\n" +
+        "  or set GRMOB_TRANSCRIPT to the output of `go run ./wasm/verify`.");
+    process.exit(1);
+}
+const WIDGETS = JSON.parse(readFileSync(TRANSCRIPT, "utf8")).widgets || [];
+if (WIDGETS.length === 0) {
+    console.error("FAIL: the transcript carries no widget swatches — gen.go's " +
+        "widgetCases() produced nothing, so the half of the palette check that " +
+        "goes through `components` would pass by having no subject.");
+    process.exit(1);
+}
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const RUNTIME = join(HERE, "..", "grmob-runtime.js");
@@ -438,6 +483,21 @@ const BAND_FILL = "#123456";
 const ROW_FILL = "#ABCDEF";
 const STICKY_ROWS = 6;
 
+// core.StickyHeader()'s declarations, as this file has to state them.
+//
+// It cannot import them. browser.mjs mounts JSON trees through the real
+// runtime, which is the whole point — what is being checked is what these
+// three do in a browser, not what Go writes — so the values live here as
+// literals the way palette.mjs's hexes do.
+//
+// And like palette.mjs's hexes, they are pinned rather than transcribed:
+// wasm/verify/sticky_test.go applies core.StickyHeader() to an empty Style and
+// requires this object to be exactly the fields it set, with exactly those
+// values. A fourth declaration added to the Go prop, or one of these three
+// changed, fails there — which is the failure that would otherwise leave this
+// pass green while checking a pin the framework no longer writes.
+const STICKY_DECLARATIONS = { Position: "sticky", Top: "0", ZIndex: 1 };
+
 const STICKY = {
     Type: "Scroll",
     Style: {
@@ -459,12 +519,10 @@ const STICKY = {
                 Type: "Box",
                 Style: {
                     Height: "40px", Background: BAND_FILL,
-                    // core.StickyHeader()'s three declarations, written out
-                    // rather than imported: this file mounts JSON trees, and
-                    // what is being checked is what those three do in a
-                    // browser. core/list_test.go is what holds the Go prop to
-                    // this spelling.
-                    Position: "sticky", Top: "0", ZIndex: 1,
+                    // Spread rather than written out again: there is one
+                    // statement of the pin in this file and sticky_test.go
+                    // holds that statement to core.StickyHeader().
+                    ...STICKY_DECLARATIONS,
                 },
             },
             ...Array.from({ length: STICKY_ROWS }, () => ({
@@ -473,6 +531,35 @@ const STICKY = {
             })),
         ],
     }],
+};
+
+// One progressbar per row of valuerange.mjs, named by the case so the
+// accessibility tree can be read back by name.
+//
+// Boxes rather than any widget: what is under test is what a *browser* does
+// with the four aria-value* attributes, so the tree has to be the attributes
+// and nothing else. components.ProgressBar would bring a fill, a track and a
+// theme, none of which the accessibility tree can see, and would only ever
+// produce the one range it builds by construction.
+//
+// The whole table mounts at once and the accessibility tree is read once, which
+// is what keeps twenty-two cases to a single round trip.
+const VALUE_BARS = {
+    Type: "Column",
+    Style: { Padding: { Top: 0, Right: 0, Bottom: 0, Left: 0 }, Gap: 0 },
+    Children: VALUE_RANGES.map((row) => ({
+        Type: "Box",
+        Style: {
+            Height: "6px",
+            AccessibilityRole: "progressbar",
+            // The case name is the accessible name, which is how a row is
+            // found again in the tree Chrome computes. internal/valuefixture
+            // guarantees they are unique (TestEveryCaseIsNamedOnce).
+            AccessibilityLabel: row.name,
+            AccessibilityValue: row.wire,
+        },
+        Props: {},
+    })),
 };
 
 const SWATCHES_PER_ROW = 6;
@@ -510,6 +597,64 @@ const SWATCHES = {
 // than from this file guessing at one.
 const swatchPath = (i) =>
     `root/${Math.floor(i / SWATCHES_PER_ROW)}/${i % SWATCHES_PER_ROW}`;
+
+// The numbers a browser resolved one aria-value* family to, or null when it
+// has no progressbar of that name at all.
+//
+// Read off Chrome's own accessibility tree rather than off the DOM, which is
+// the entire point: the attributes are what this runtime wrote, and what is
+// being asked is what the browser made of them. valuemin and valuemax are
+// serialized as node properties and the position is the node's value, which is
+// absent — not zero — for a bar with no aria-valuenow.
+//
+// aria-valuetext is deliberately outside the comparison. It is words rather
+// than a number, core.Progress ignores it by design (its reading must not
+// depend on a string that is announced instead of the digits), and Chrome does
+// not surface it as a node property here in any case.
+function axRange(nodes, name) {
+    const n = nodes.find((n) =>
+        n.name?.value === name && n.role?.value === "progressbar");
+    if (!n) return null;
+    const props = Object.fromEntries(
+        (n.properties || []).map((p) => [p.name, p.value?.value]));
+    return { value: n.value?.value, min: props.valuemin, max: props.valuemax };
+}
+
+// Whether the browser's answer is core.Progress's answer, or null for a
+// reading this function has no arm for.
+//
+// What counts as agreement is different per reading, and each difference is
+// the reading's own meaning rather than a concession:
+//
+//	determinate    all three numbers, since that is the whole claim
+//	indeterminate  no position at all. The bounds are not compared: ARIA's
+//	unstated       0..100 is what a browser reports for a progressbar whether
+//	               or not one was written, so a comparison there would pass
+//	               for the wrong reason — and core.Progress returns zeros for
+//	               both of these readings precisely because they are not a
+//	               position.
+//	empty-range    the bounds as stated. The position is not compared because
+//	               there is nowhere for it to be: Chrome clamps it to whichever
+//	               end it can reach and core.Progress reports it unclamped, and
+//	               both are honest answers to a range that is not one.
+//
+// wasm/verify/valuerange_test.go holds this switch to core.ProgressReading, so
+// a fifth reading arrives as a Go failure rather than as rows nothing asserts.
+function axAgreesWithGo(ax, row) {
+    switch (row.reading) {
+        case "determinate":
+            return ax.value === row.now && ax.min === row.min && ax.max === row.max;
+        case "indeterminate":
+        case "unstated":
+            return ax.value === undefined;
+        case "empty-range":
+            return ax.min === row.min && ax.max === row.max;
+    }
+    return null;
+}
+
+const showRange = (r) =>
+    `value ${r.value === undefined ? "(none)" : r.value}, min ${r.min}, max ${r.max}`;
 
 // --------------------------------------------------------------------------
 // The checks
@@ -954,6 +1099,151 @@ async function main() {
                 `what it put on the screen there`);
         }
 
+        // ------------------------------------------------------------------
+        // 6. a real widget draws the palette
+        // ------------------------------------------------------------------
+        //
+        // The swatch grid above proves Chrome puts the census's hexes on the
+        // screen. It cannot prove that anything in the framework asks it to:
+        // the boxes are built here, and every widget's route from
+        // core.ColorPalette.ControlBorder to a border declaration runs through
+        // `components`, which this file cannot call.
+        //
+        // So gen.go renders one quiet components.Chip per bundled theme, on a
+        // page painted in that theme's own Background, and reads the three
+        // colours off the rendered nodes. What is mounted below is that tree,
+        // unmodified; what is asserted is that the widget's own declarations
+        // survive to the pixel.
+        for (const w of WIDGETS) {
+            const where = `${w.theme}/${w.what}`;
+            await mount(JSON.parse(w.tree));
+
+            const rects = await evaluate(`(() => {
+                const at = (path) => {
+                    const el = document.querySelector('[data-node-path="' + path + '"]');
+                    if (!el) return null;
+                    const r = el.getBoundingClientRect();
+                    return { x: r.left, y: r.top, w: r.width, h: r.height };
+                };
+                return { page: at("root"), widget: at("root/0") };
+            })()`);
+            if (!rects.page || !rects.widget || rects.widget.w === 0) {
+                problems.push(`${where}: the widget was not laid out — nothing below ` +
+                    `measured anything`);
+                continue;
+            }
+
+            const wShot = await session.send("Page.captureScreenshot",
+                { format: "png", captureBeyondViewport: false });
+            const wImg = decodePNG(Buffer.from(wShot.data, "base64"));
+
+            // The page, sampled inside its own 24px padding and so clear of
+            // the widget. This is the ring's outer backdrop, and it is the
+            // theme's Colors.Background rather than the document's white.
+            const pageAt = pixelAt(wImg, (rects.page.x + 8) * dpr, (rects.page.y + 8) * dpr);
+            if (pageAt !== w.page) {
+                problems.push(`${where}: the page behind the widget painted as ` +
+                    `${pageAt}, not ${w.page} — the ${w.ratioOnPage.toFixed(2)}:1 the ` +
+                    `census records for this ring is against a fill nothing painted`);
+                continue;
+            }
+
+            // The widget's own fill, sampled in its leading padding rather
+            // than at its centre — the centre is where the label is, and a
+            // chip's ink blends with the fill across every antialiased stem.
+            // (The first attempt sampled the middle and read #8D8D90 out of an
+            // #F2F2F7 chip, which is the label and not the fill.) Vertically
+            // centred, so a pill's corner radius is nowhere near it.
+            const c = rects.widget;
+            const fillAt = pixelAt(wImg, (c.x + 6) * dpr, (c.y + c.h / 2) * dpr);
+            if (fillAt !== w.fill) {
+                problems.push(`${where}: the widget's fill painted as ${fillAt}, not ` +
+                    `${w.fill} — its own Style says one colour and the screen has ` +
+                    `another, and the ${w.ratioOnFill.toFixed(2)}:1 inside the ring is ` +
+                    `about the declared one`);
+                continue;
+            }
+
+            // The ring, scanned down the *top* edge at the widget's horizontal
+            // middle. The swatch grid scans a left edge because its inner box
+            // is square; a chip is a pill, and a pill's leftmost point is the
+            // apex of a curve, where every pixel is an antialiased blend — the
+            // first version of this check read #907267 out of an #8D6E63 ring
+            // and was measuring the corner radius. The top edge at mid-width
+            // is the one run of this shape that is a straight horizontal line
+            // at any radius.
+            //
+            // Three device pixels, for the reason the swatch scan uses three:
+            // the rect's edge is a float and a 1px border straddles the
+            // rounding at dpr 2. What is asserted is that a fully saturated
+            // boundary pixel exists at all, which is exactly what a border
+            // blended into its backdrop would not have.
+            const x = (c.x + c.w / 2) * dpr;
+            let ring = null;
+            const seen = [];
+            for (let dy = 0; dy <= 2; dy++) {
+                const got = pixelAt(wImg, x, c.y * dpr + dy);
+                seen.push(got);
+                if (got === w.ring) ring = got;
+            }
+            if (!ring) {
+                problems.push(`${where}: the widget's boundary in ${w.ring} painted as ` +
+                    `${seen.join("/")}. The census measures that tone at ` +
+                    `${w.ratioOnPage.toFixed(2)}:1 against the page and ` +
+                    `${w.ratioOnFill.toFixed(2)}:1 against the fill, and no Go test and ` +
+                    `no painted swatch can tell you the widget stopped drawing it`);
+            }
+        }
+
+        // ------------------------------------------------------------------
+        // 7. a browser applies ARIA's own rules to a value range
+        // ------------------------------------------------------------------
+        //
+        // The two DOM exporters write aria-valuenow, -valuemin and -valuemax
+        // verbatim and resolve nothing, on the argument that a browser applies
+        // ARIA's rules itself. core.ValueRange.Progress states those rules for
+        // the platforms that do not — and until this check the only thing that
+        // had ever compared against it was a JVM running Compose's
+        // transliteration. So the web half of a rule the whole vocabulary
+        // rests on was an assumption.
+        await mount(VALUE_BARS);
+        await session.send("Accessibility.enable");
+        const { nodes: axNodes } = await session.send("Accessibility.getFullAXTree");
+
+        for (const row of VALUE_RANGES) {
+            const ax = axRange(axNodes, row.name);
+            if (!ax) {
+                problems.push(`no progressbar named "${row.name}" in the browser's ` +
+                    `accessibility tree — the row mounted and the browser did not ` +
+                    `compute it as a progress bar, so nothing below was asked about it`);
+                continue;
+            }
+            const agrees = axAgreesWithGo(ax, row);
+            if (agrees === null) {
+                problems.push(`"${row.name}" reads as ${row.reading}, which ` +
+                    `axAgreesWithGo has no arm for — the bar mounted, was found, and ` +
+                    `had nothing asserted about it`);
+                continue;
+            }
+            if (row.parses && !agrees) {
+                problems.push(`"${row.name}": the browser resolved ` +
+                    `${JSON.stringify(row.wire)} to ${showRange(ax)}, and ` +
+                    `core.ValueRange.Progress says ${row.reading} at ` +
+                    `${showRange({ value: row.now, min: row.min, max: row.max })}. ` +
+                    `Every number here parses, so this is a disagreement about ARIA's ` +
+                    `own defaulting or clamping — and the web exporters implement ` +
+                    `neither, they rely on the browser for both`);
+            }
+            if (!row.parses && agrees) {
+                problems.push(`"${row.name}": the browser now agrees with ` +
+                    `core.ValueRange.Progress about a range holding a value that is ` +
+                    `not a number. That is good news and it is still a failure: the ` +
+                    `divergence is written down in valuerange.mjs, in core.ValueRange` +
+                    `.Unparsed and in core.AuditTree's ConcernUnusableValueRange, and ` +
+                    `all three now say something that is no longer true of this browser`);
+            }
+        }
+
     } finally {
         if (session) session.close();
         chrome.kill();
@@ -967,7 +1257,9 @@ async function main() {
     }
     console.log(`OK: roving tabindex, disabled focus, ArrowDown and the toolbar walk
     hold in a real browser, ${PALETTES.length} palette swatches paint the
-    hexes the contrast census measures, and a sticky band pins`);
+    hexes the contrast census measures, ${WIDGETS.length} real widgets draw
+    their own boundary tones, a sticky band pins, and ${VALUE_RANGES.length}
+    value ranges resolve the way core.Progress says a browser resolves them`);
 }
 
 await main();

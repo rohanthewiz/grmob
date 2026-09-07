@@ -370,13 +370,41 @@ type SpacingScale struct {
 	XS, SM, MD, LG, XL int
 }
 
+// ComponentDefaults is the per-component base Style a theme supplies. Every
+// widget merges the caller's props over the field named for it.
+//
+// # The notbackdrop tag
+//
+// A field's Background is, by default, a fill a bordered control can be drawn
+// on — and core.ColorPalette.ControlBorder has WCAG 1.4.11's 3:1 floor against
+// every such fill. internal/palette derives that list by reflecting over this
+// struct, precisely so that adding a field (a Sheet, a Popover) adds a
+// backdrop with nobody having to remember, and components/variant_test.go
+// measures the pair.
+//
+// A field whose fill nothing is ever drawn on top of is the exception, and the
+// tag is where it says so. The value is the argument, and it is required: an
+// exclusion with no reason is a census defeating itself, since both fields
+// tagged below fail the floor in all three bundled themes and would otherwise
+// look like two failures somebody made go away.
+//
+// It lives here rather than in a list one package over because this is where a
+// theme author works. The exclusion is a claim about the *geometry* of the
+// framework — "no widget puts a bordered control on this surface" — which is
+// knowable at the field and is not knowable from a name in
+// internal/palette, and a name in a list is invisible in the diff that adds a
+// field beside it.
+//
+// palette.NotABackdrop reads these tags and is the only reader;
+// TestTheBackdropExclusionsNameRealFills holds each one to a field that states
+// a fill.
 type ComponentDefaults struct {
-	Button   Style
+	Button   Style `notbackdrop:"a control's own fill, not a surface: Colors.Primary. A bordered control is never drawn on top of a filled button — an outline Button draws its own edge over whatever is behind it, which is the page or a panel, and both of those are already measured. Excluded because the pair is unreachable, not because it is close"`
 	Card     Style
 	Input    Style
 	Column   Style
 	Row      Style
-	Camera   Style
+	Camera   Style `notbackdrop:"a viewfinder: its fill is black in every theme because it is what shows for the frame before the first camera frame arrives, and nothing draws a control boundary on top of a preview. Excluded by name rather than by a lightness test, because a rule that skipped dark fills would also skip a dark theme's page"`
 	CheckBox Style
 	TextArea Style
 	Text     Style

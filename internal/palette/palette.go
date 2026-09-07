@@ -83,21 +83,42 @@ type Backdrop struct {
 // is a different kind of statement from knownBoundaryShortfalls, which says a
 // pair is real, falls short, and is allowed to.
 //
-// Both fields below fail the 3:1 floor in all three bundled themes, which is
+// Both fields it names fail the 3:1 floor in all three bundled themes, which is
 // exactly why the exclusion has to be argued rather than assumed — an entry
 // that merely made a failure go away would be the census defeating itself.
-var NotABackdrop = map[string]string{
-	"Camera": "a viewfinder: its fill is black in every theme because it is what " +
-		"shows for the frame before the first camera frame arrives, and nothing " +
-		"draws a control boundary on top of a preview. Excluded by name rather " +
-		"than by a lightness test, because a rule that skipped dark fills would " +
-		"also skip a dark theme's page",
-	"Button": "a control's own fill, not a surface: Colors.Primary. A bordered " +
-		"control is never drawn on top of a filled button — an outline Button " +
-		"draws its own edge over whatever is behind it, which is the page or a " +
-		"panel, and both of those are already measured. Excluded because the " +
-		"pair is unreachable, not because it is close",
+//
+// # Why it is read off the struct
+//
+// It used to be a map literal here, and that put the exclusion in the one place
+// a theme author never opens. Everything else about this list is derived from
+// core.ComponentDefaults precisely so that adding a field cannot silently leave
+// a pair unmeasured — and the exception to that derivation was a name in an
+// internal package, invisible in the diff that adds the field beside it.
+//
+// The `notbackdrop` struct tag is the fact in its own place: the argument sits
+// next to the field it is about, where the person adding a Sheet or a Popover
+// is already looking, and this function is the reading of it. That also makes
+// the two failure modes the old map had impossible rather than checked — an
+// entry naming a field that does not exist cannot be written, and neither can
+// one that has drifted from the field it names.
+//
+// A function rather than a var because it is derived, and because a map that
+// looked like data would go on looking editable here.
+func NotABackdrop() map[string]string {
+	t := reflect.TypeOf(core.ComponentDefaults{})
+	out := map[string]string{}
+	for i := 0; i < t.NumField(); i++ {
+		f := t.Field(i)
+		if why, ok := f.Tag.Lookup(notABackdropTag); ok {
+			out[f.Name] = why
+		}
+	}
+	return out
 }
+
+// notABackdropTag is the struct tag key, spelled once. core.ComponentDefaults
+// carries the values; this package is their only reader.
+const notABackdropTag = "notbackdrop"
 
 // Backdrops returns every fill a control boundary can be drawn on in theme, in a
 // stable order: the two palette roles first, then the ComponentDefaults fields
@@ -110,12 +131,13 @@ var NotABackdrop = map[string]string{
 // Column, Row and (in two of the three themes) CheckBox are all in that
 // position today.
 func Backdrops(theme *core.Theme) []Backdrop {
+	excluded := NotABackdrop()
 	out := []Backdrop{
 		{"Background", theme.Colors.Background},
 		{"Surface", theme.Colors.Surface},
 	}
 	for _, name := range ComponentFields() {
-		if _, skip := NotABackdrop[name]; skip {
+		if _, skip := excluded[name]; skip {
 			continue
 		}
 		if hex := Fill(theme, name); hex != "" {
@@ -149,7 +171,7 @@ func Fill(theme *core.Theme, field string) string {
 }
 
 // ComponentFields returns core.ComponentDefaults' field names in declaration
-// order, so a test can hold NotABackdrop to the struct it names.
+// order, so a test can walk the same fields Backdrops and NotABackdrop do.
 //
 // Exported for that one purpose: an exclusion for a field that no longer
 // exists exempts nothing, and it reads as though the census had considered a

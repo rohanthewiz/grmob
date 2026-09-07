@@ -1045,13 +1045,32 @@ Two distinctions the names do not make obvious:
   rather than a decision. A new field carrying a `Background` (a `Sheet`, a
   `Popover`) is a fill a control can sit on, and a hand-written list would
   simply not have measured it. `internal/palette` reflects over the struct
-  instead, so adding a field adds a pair; the two components that are
-  deliberately not backdrops — `Camera`, whose fill is a viewfinder's black,
-  and `Button`, whose fill is a control's own — survive as data with the
-  argument attached, held to the struct by
-  `TestTheBackdropExclusionsNameRealFills`. Deriving the list found two pairs
-  the hand-written one had never measured (a `CheckBox` fill and a `Text`
-  fill); both clear.
+  instead, so adding a field adds a pair. Deriving the list found two pairs the
+  hand-written one had never measured (a `CheckBox` fill and a `Text` fill);
+  both clear.
+
+  The two components that are deliberately not backdrops say so **on the
+  field**, with a `notbackdrop` struct tag whose value is the argument:
+
+  ```go
+  type ComponentDefaults struct {
+      Button Style `notbackdrop:"a control's own fill, not a surface: …"`
+      …
+      Camera Style `notbackdrop:"a viewfinder: its fill is black in every theme …"`
+  }
+  ```
+
+  That is where it belongs, and it used to be a map in `internal/palette` — the
+  one file a theme author never opens. Everything else about this list is
+  derived from the struct precisely so a new field cannot go unmeasured, and
+  the exception to that derivation was a name in an internal package, invisible
+  in the diff that adds a field beside it. `palette.NotABackdrop()` is now the
+  *reading* of these tags rather than a second list, which also makes two
+  failure modes impossible rather than checked: a tag cannot name a field that
+  does not exist, and it cannot drift from the field it names. The reason is
+  still required (`TestTheBackdropExclusionsNameRealFills`), and both tagged
+  fills fail the 3:1 floor in all three bundled themes — which is exactly why
+  an exclusion has to be argued rather than assumed.
 
   **And the pairs are painted.** All of the above is arithmetic over hex
   strings: it proves the number and cannot prove the colour ever reaches a
@@ -1059,6 +1078,16 @@ Two distinctions the names do not make obvious:
   headless Chrome, screenshots them and reads the pixels back, which is the
   only place a translucent tone, a stray opacity or a dropped frame shows up.
   See [the WASM harness](../platforms/wasm.md#the-palette-on-a-screenshot).
+
+  **And a real widget draws them.** Those swatches are a model of a control
+  boundary, built by the harness itself; the route from the palette role to the
+  hex runs through `components`, which the browser pass cannot call. So
+  `wasm/verify/gen.go` renders one quiet `components.Chip` per bundled theme,
+  reads the page fill, the chip's own fill and its ring off the **rendered
+  node**, and the browser samples all three — while `widget_test.go` holds the
+  ring to `Colors.ControlBorderColor()` and both backdrops to the derived list
+  above. A chip whose ring had drifted onto `Components.Input.BorderColor`
+  would paint perfectly and pass every string comparison; this is what notices.
 
   **`DefaultTheme`'s tone is not Apple's `systemGray`, and this is the one
   value in that palette that leaves its published source.** `systemGray` is

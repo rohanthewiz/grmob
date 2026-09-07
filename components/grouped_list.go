@@ -210,6 +210,11 @@ type GroupedList[T any] struct {
 	// This is a fact about the *last* run only. A shut group anywhere above
 	// it hides its rows and changes nothing about the edge, because the pager
 	// was never going to extend it.
+	//
+	// AutoLoadWithheld is how a caller finds out it has happened. Without it
+	// the withholding is invisible from outside — a feed that has stopped
+	// fetching and a feed that has run out look identical — and a screen that
+	// hides its footer on the strength of auto-loading has no way out at all.
 	OnEndReached func()
 
 	// Style is applied to the List after its defaults. The defaults shed the
@@ -230,6 +235,54 @@ func (g GroupedList[T]) trailingRunIsShut() bool {
 	return ok && g.Collapse.hides(last)
 }
 
+// AutoLoadWithheld reports whether this list is about to render *without* the
+// edge sensor it was given — the state OnEndReached's "a shut trailing group
+// withholds it" section describes.
+//
+// # Why a caller needs to be able to ask
+//
+// Withholding the sensor is the right call and it is invisible. The reader
+// collapses the last group, scrolling quietly stops fetching, and the only cue
+// anywhere is the absence of new rows — which is exactly what a feed that has
+// genuinely run out looks like. Nothing in the tree says which of the two it
+// is, and until this method nothing outside Render could work it out either:
+// the answer is composed from Items, GroupBy and Collapse, three fields the
+// caller holds separately and none of which means anything alone.
+//
+// The footer is where that matters, because the footer is the way out. A
+// screen whose Footer is a bare LoadMore is already fine — the button is
+// visible and calls the same function — and the shape that is not fine is the
+// common one:
+//
+//	Footer: hasMore ? LoadMore{...} : nil     // "the feed is over"
+//
+// With the last group shut, hasMore is true, so that one is fine too. The
+// trap is the other direction — a footer hidden while auto-load is believed to
+// be doing the work:
+//
+//	list := components.GroupedList[Sermon]{
+//	    Items: pager.Items, GroupBy: byMonth, Collapse: shut,
+//	    OnEndReached: pager.LoadMore,
+//	}
+//	// Shown when there is more to fetch *and* nothing is fetching it.
+//	if pager.HasMore && list.AutoLoadWithheld() {
+//	    list.Footer = components.LoadMore{HasMore: true, OnLoadMore: pager.LoadMore, ...}
+//	}
+//
+// A method rather than a second field, because it is derived: a field would be
+// a copy of a fact the widget already computes, free to disagree with it the
+// moment either the items or the collapse state moved. The value has to be
+// built before it can be asked, which is why the example assigns Footer after
+// the literal — the same ordering any derived-from-itself decision takes.
+//
+// It answers false when OnEndReached is nil. There is no sensor to withhold on
+// a manual pager, and a caller asking this question is asking whether the
+// automatic path is off *right now*, not whether the last group happens to be
+// shut. Collapse.hides is the field to ask for that.
+func (g GroupedList[T]) AutoLoadWithheld() bool {
+	return g.OnEndReached != nil && g.trailingRunIsShut()
+}
+
 func (g GroupedList[T]) Render(ctx *core.Context) *core.Node {
 	items := make([]core.PropsAndChildren, 0, 2*len(g.Items)+len(g.Style)+7)
 	items = append(items,
@@ -239,7 +292,7 @@ func (g GroupedList[T]) Render(ctx *core.Context) *core.Node {
 	// Auto-loading is withheld while the run a page would land in is shut.
 	// The argument is on the field; the short version is that the alternative
 	// is a fetch whose rows nobody can see, followed by silence.
-	if g.OnEndReached != nil && !g.trailingRunIsShut() {
+	if g.OnEndReached != nil && !g.AutoLoadWithheld() {
 		items = append(items, core.OnEndReached(g.OnEndReached))
 	}
 	for _, sp := range g.Style {

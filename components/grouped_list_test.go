@@ -405,6 +405,73 @@ func TestGroupedListWithholdsTheEdgeWhileTheLastRunIsShut(t *testing.T) {
 	}
 }
 
+// AutoLoadWithheld answers the question the tree cannot be asked.
+//
+// The withholding above is right and it is silent: a feed that stopped fetching
+// because the last run is shut and a feed that has genuinely run out produce
+// the same tree and the same experience. This method is the only way a caller
+// can tell them apart, and the property that makes it worth having is that it
+// agrees with the tree — a method that said "withheld" while the prop was still
+// on the List would send a screen into showing two ways to load the next page.
+func TestAutoLoadWithheldAgreesWithTheRenderedList(t *testing.T) {
+	rows := []string{"jan-1", "jan-2", "feb-1"}
+	byMonth := func(s string) Group { return Group{Key: s[:3], Label: s[:3]} }
+
+	base := func(shut map[string]bool) GroupedList[string] {
+		return GroupedList[string]{
+			Items:   rows,
+			Key:     func(s string) string { return s },
+			Row:     func(s string) core.View { return core.Text(s) },
+			GroupBy: byMonth,
+			Collapse: Collapse{
+				IsCollapsed: func(g Group) bool { return shut[g.Key] },
+				OnToggle:    func(Group) {},
+			},
+		}
+	}
+
+	for _, c := range []struct {
+		name string
+		shut map[string]bool
+		want bool
+	}{
+		{"the trailing run is shut", map[string]bool{"feb": true}, true},
+		{"nothing is shut", map[string]bool{}, false},
+		{"a run above the trailing one is shut", map[string]bool{"jan": true}, false},
+		{"every run is shut", map[string]bool{"jan": true, "feb": true}, true},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			list := base(c.shut)
+			list.OnEndReached = func() {}
+			if got := list.AutoLoadWithheld(); got != c.want {
+				t.Errorf("AutoLoadWithheld() = %v, want %v", got, c.want)
+			}
+			// And the tree agrees, which is the whole claim: the answer is
+			// worth nothing if it is not the same answer Render acted on.
+			ctx := core.NewContext()
+			ctx.BeginRenderPass()
+			_, advertised := list.Render(ctx).Props["onEndReached"]
+			if advertised == c.want {
+				t.Errorf("AutoLoadWithheld() says %v and the List %s advertise its "+
+					"edge — a caller acting on this would show a second way to load a "+
+					"page the scroll is already fetching, or hide the only one there is",
+					c.want, map[bool]string{true: "does", false: "does not"}[advertised])
+			}
+		})
+	}
+
+	// A manual pager withholds nothing, because there is nothing to withhold.
+	// The question is "is the automatic path off right now", and on a list
+	// that never had one the answer is not "yes" — Collapse.hides is what a
+	// caller asks about the run itself.
+	shutList := base(map[string]bool{"feb": true})
+	if shutList.AutoLoadWithheld() {
+		t.Error("a list with no OnEndReached reports its edge as withheld — there is " +
+			"no sensor to withhold, and a footer shown on the strength of this would " +
+			"appear on every manual pager with a collapsed last group")
+	}
+}
+
 // The three shapes that have nothing to withhold, each of which used to be the
 // only shape this list had.
 //

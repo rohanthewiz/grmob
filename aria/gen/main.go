@@ -24,6 +24,7 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 
@@ -31,13 +32,21 @@ import (
 )
 
 func main() {
-	if err := run(); err != nil {
+	if err := run(os.Stdout); err != nil {
 		fmt.Fprintln(os.Stderr, "aria/gen:", err)
 		os.Exit(1)
 	}
 }
 
-func run() error {
+// run is the whole command, with its one output stream passed in.
+//
+// The writer is a parameter rather than os.Stdout inline for the reason
+// main_test.go exists at all: the summary line carries the two counts that say
+// whether the run did what it was asked, and a command whose only report is a
+// side effect on a terminal cannot be checked. main() supplies the real stream
+// and is then the one line here that no test covers, which is the right place
+// for that line to be.
+func run(out io.Writer) error {
 	// Resolved from this file's own package rather than from the working
 	// directory, so `go run ./aria/gen` works from anywhere in the tree the
 	// way every other generator here does.
@@ -62,11 +71,11 @@ func run() error {
 		return err
 	}
 
-	out := filepath.Join(root, spec.FixturePath)
-	if err := os.WriteFile(out, fx.Render(), 0o644); err != nil {
+	dest := filepath.Join(root, spec.FixturePath)
+	if err := os.WriteFile(dest, fx.Render(), 0o644); err != nil {
 		return err
 	}
-	fmt.Printf("OK: %d roles, %d name-prohibited -> %s\n",
+	fmt.Fprintf(out, "OK: %d roles, %d name-prohibited -> %s\n",
 		len(fx.Order), len(fx.NameProhibited), spec.FixturePath)
 	return nil
 }

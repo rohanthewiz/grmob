@@ -91,7 +91,7 @@
 //	type     <interface>   Mobile<Name>Protocol?   Mobile<Name>Protocol?
 //	results  0   bound, with no return clause
 //	results  1   bound, as the result's own spelling
-//	results  2   refused: maps a (T, error) pair onto a Swift
+//	results  2   refused: gobind keeps the first as the return when
 //	results  3   refused: refuses more than two outright
 //	--- end ---
 import Foundation

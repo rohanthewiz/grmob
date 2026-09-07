@@ -7,6 +7,8 @@ import (
 	"go/token"
 	"io/fs"
 	"os"
+	"os/exec"
+	"path/filepath"
 	"regexp"
 	"sort"
 	"strings"
@@ -527,18 +529,15 @@ func swiftParams(sig *ast.FuncType, ifaces map[string]bool, label func(int, stri
 //
 // # More than one result
 //
-// Still refused, and the message is now a description of what gobind actually
-// does rather than a request to go and find out. The old one said gobind maps a
-// multi-result signature "onto a throwing function or an out-parameter", which
-// is half right and blurs a distinction that decides what a reader should do
-// next. funcSummary in bind/genobjc.go has three arms, not two:
+// Still refused, and the message is a description of what gobind actually does
+// rather than a request to go and find out. funcSummary in bind/genobjc.go has
+// three arms, not two, and TestTheResultArmsAreReadOffThePinnedGobind holds
+// each of these lines to that file:
 //
-//	(T, error), T nullable       s.ret = objcType(T), plus a trailing
-//	                             NSError** out-parameter — a Swift `throws`
-//	                             function returning T
+//	(T, error), T nullable       s.ret = objcType(T), and the error becomes a
+//	                             trailing NSError** out-parameter
 //	(T, error), T not nullable   s.ret = BOOL, and T becomes an out-parameter
-//	                             too. A Swift `throws` function returning Void,
-//	                             with T arriving through a pointer
+//	                             too, alongside the error
 //	three or more                g.errorf("too many result values") — gobind
 //	                             REFUSES it. There is no mapping to transcribe
 //
@@ -548,9 +547,36 @@ func swiftParams(sig *ast.FuncType, ifaces map[string]bool, label func(int, stri
 // here. Reporting it as a missing mapping would send the next person to read a
 // header for a declaration that was never generated.
 //
-// Both two-result shapes stay refused because neither has crossed this bridge.
-// The difference from before is that the refusal now names the shape a reader
-// would be transcribing, and says which of the two it would be.
+// # Why the two-result arms are still refused, which is not the reason it was
+//
+// The old note said they were refused because no bridge function had either
+// shape — true, and not the obstacle. Reading the pinned generator through to
+// the end turns up a second one, and it is the one that decides the spelling:
+//
+//	genFuncH, for a package-level func:
+//	    g.Printf("FOUNDATION_EXPORT %s;\n", s.asFunc(g))
+//
+// Every symbol this bridge exports is a package-level function, so every one
+// of them is emitted as a plain C function — not an Objective-C method. The
+// Swift `throws` spelling is the *method* convention: Clang's importer rewrites
+// a trailing NSError** into `throws` for ObjC methods, and does not do it for C
+// functions, which have no error convention unless the declaration carries an
+// explicit swift_error attribute. gobind emits none.
+//
+// So `func F() (string, error)` becomes, verbatim:
+//
+//	FOUNDATION_EXPORT NSString* _Nonnull MobileF(NSError* _Nullable* _Nullable error);
+//
+// and what Swift makes of *that* is the fact that is not in the module cache —
+// it is in the importer. Which is exactly the position gobindSwiftTypes was in
+// before the generator was read: a spelling nobody here can state without
+// running the tool. The difference is that the unknown is now named and small,
+// and it is one `gomobile bind` on any Mac away rather than a header hunt.
+//
+// Writing the row on a guess is the one thing that must not happen. Every other
+// row in this file is a reading of a file in the module cache; a row that was a
+// guess about the Swift importer would look identical and would be the only one
+// that could be wrong.
 func swiftResult(sig *ast.FuncType, ifaces map[string]bool) (string, error) {
 	if sig.Results == nil || len(sig.Results.List) == 0 {
 		return "", nil
@@ -567,11 +593,15 @@ func swiftResult(sig *ast.FuncType, ifaces map[string]bool) (string, error) {
 		if err != nil {
 			last = "?"
 		}
-		return "", fmt.Errorf("2 results; gobind maps a (T, error) pair onto a Swift "+
-			"`throws` function — returning T when T is nullable, and returning Void "+
-			"with T as an out-parameter when it is not (bind/genobjc.go, funcSummary). "+
-			"No bridge function has done either, so the throwing spelling is "+
-			"transcribed nowhere. Second result reads as %s; add the row deliberately",
+		return "", fmt.Errorf("2 results; gobind keeps the first as the return when it "+
+			"is nullable and turns it into a second out-parameter when it is not, with "+
+			"the error arriving as a trailing NSError** either way (bind/genobjc.go, "+
+			"funcSummary). A package-level func is emitted as a C function "+
+			"(FOUNDATION_EXPORT, genFuncH), and Clang's error convention — the one that "+
+			"produces a Swift `throws` — applies to Objective-C methods, not to C "+
+			"functions, so what Swift calls this declaration is the one fact here that "+
+			"is not in the module cache. Second result reads as %s; run `gomobile bind` "+
+			"once and add the row from what it produced, rather than guessing it",
 			last)
 	}
 	typ, err := swiftType(results[0].expr, ifaces, true)
@@ -889,6 +919,122 @@ func TestTheTableDescribesTheShapesItUsedToRefuse(t *testing.T) {
 				"or the reader is back to guessing", tc.sig, err, tc.mustSay)
 		}
 	}
+}
+
+// The three result arms, held to the generator they were read out of.
+//
+// # Why a source check and not prose
+//
+// swiftResult's arms and both of its refusal messages are readings of one file
+// — bind/genobjc.go in the gobind gobindVersion pins — and that file is in the
+// module cache on any machine that has run `go mod download`. Until this test
+// they were prose about it: a sentence naming funcSummary and isNullableType,
+// with nothing anywhere able to notice that the version bump which moved
+// gobindVersion had also moved what those functions do.
+//
+// gobindVersion's own doc says as much — "the moment at which somebody has to
+// look, and the only such moment there is". This is what looking consists of,
+// and it is cheap because the readings are all one line each.
+//
+// # What it can and cannot settle
+//
+// It settles that the *generator* still behaves the way the refusals describe.
+// It cannot settle what Swift makes of a C function with a trailing NSError**,
+// which is the one fact the two-result arm is actually blocked on and the one
+// thing that is not in the module cache — see swiftResult. Saying which half is
+// checked is the deliverable; a test that implied both would be the same
+// mistake the refusal itself used to make.
+//
+// # When it does not run
+//
+// It skips when the module cache has no copy, which is the stance ios/verify
+// takes toward a missing iPhoneOS SDK: `go test ./...` must not fail on a
+// machine that has the repository and not the download. The pin on go.mod
+// (TestTheGobindPinIsTheOneInGoMod) is what still runs there.
+func TestTheResultArmsAreReadOffThePinnedGobind(t *testing.T) {
+	src, ok := gobindSource(t, "bind", "genobjc.go")
+	if !ok {
+		return
+	}
+	types, _ := gobindSource(t, "bind", "types.go")
+
+	for _, c := range []struct {
+		what, want, why string
+	}{
+		{
+			what: "a package-level func is emitted as a C function",
+			want: `g.Printf("FOUNDATION_EXPORT %s;\n", s.asFunc(g))`,
+			why: "this is the whole reason the two-result arm cannot simply be " +
+				"transcribed as a Swift `throws` function: Clang's error convention is " +
+				"the Objective-C *method* one, and every symbol this bridge exports is " +
+				"a package-level func. If gobind has started emitting these as methods, " +
+				"the throwing spelling is suddenly the right one and swiftResult's " +
+				"refusal is describing a generator that no longer exists",
+		},
+		{
+			what: "the two-result split is on nullability",
+			want: "if isNullableType(typ) {",
+			why: "swiftResult says the first result stays the return when it is " +
+				"nullable and becomes an out-parameter when it is not. That split is " +
+				"this line",
+		},
+		{
+			what: "a non-nullable first result returns BOOL",
+			want: `s.ret = "BOOL" // Return is not nullable`,
+			why:  "the other half of the same split, and the half that adds a parameter",
+		},
+		{
+			what: "three or more results are refused outright",
+			want: `g.errorf("too many result values: %s", f)`,
+			why: "swiftResult tells a reader to change the Go signature rather than to " +
+				"go and find a mapping, on the strength of gobind refusing the shape. " +
+				"A gobind that had relaxed this (the TODO beside it says it might) " +
+				"would make that advice wrong",
+		},
+	} {
+		if !strings.Contains(src, c.want) {
+			t.Errorf("bind/genobjc.go at gobind %s no longer contains %s:\n\t%s\n\n%s",
+				gobindVersion, c.what, c.want, c.why)
+		}
+	}
+
+	// isNullableType is in a different file, and it is the predicate the split
+	// above turns on. Its `string` clause is the one that matters here: it is
+	// what puts a (string, error) pair in the first arm rather than the second,
+	// and `string` is the only nullable type this bridge's surface carries.
+	if types != "" && !strings.Contains(types, `t.String() == "string"`) {
+		t.Errorf("bind/types.go at gobind %s no longer treats a Go string as nullable. "+
+			"Every two-result signature this bridge could grow returns a string, so "+
+			"that clause is what decides which of gobind's two arms it lands in — "+
+			"and swiftResult's refusal names both", gobindVersion)
+	}
+}
+
+// gobindSource reads one file out of the pinned golang.org/x/mobile in the
+// module cache.
+//
+// Returns ok=false after skipping, rather than failing, when the cache has no
+// copy. A checkout is not broken because a module nothing imports has not been
+// downloaded — golang.org/x/mobile is held in go.mod by the tool block and by
+// nothing else, so `go build ./...` never fetches it.
+func gobindSource(t *testing.T, parts ...string) (string, bool) {
+	t.Helper()
+	out, err := exec.Command("go", "env", "GOMODCACHE").Output()
+	if err != nil {
+		t.Skipf("cannot read GOMODCACHE, so the pinned gobind is unreachable: %v", err)
+		return "", false
+	}
+	path := filepath.Join(append([]string{
+		strings.TrimSpace(string(out)), "golang.org", "x", "mobile@" + gobindVersion,
+	}, parts...)...)
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Skipf("golang.org/x/mobile@%s is not in the module cache, so the readings "+
+			"in this file cannot be held to it here. `go mod download "+
+			"golang.org/x/mobile` fetches it.", gobindVersion)
+		return "", false
+	}
+	return string(raw), true
 }
 
 // --- The stub's own doc comment --------------------------------------------

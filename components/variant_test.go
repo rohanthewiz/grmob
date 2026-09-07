@@ -624,16 +624,29 @@ func TestTheBackdropExclusionsNameRealFills(t *testing.T) {
 	for _, name := range palette.ComponentFields() {
 		fields[name] = true
 	}
-	for name, reason := range palette.NotABackdrop {
+	excluded := palette.NotABackdrop()
+	if len(excluded) == 0 {
+		t.Fatal("no core.ComponentDefaults field carries a `notbackdrop` tag. Either " +
+			"the tag key changed and this reads nothing — in which case Camera and " +
+			"Button are now measured against a floor they fail in every theme — or " +
+			"two arguments were deleted without the pairs they exempted being looked at")
+	}
+	for name, reason := range excluded {
 		if reason == "" {
-			t.Errorf("palette.NotABackdrop[%q] has no reason — an exclusion without "+
-				"an argument is a pair that was quietly dropped", name)
+			t.Errorf("Components.%s carries an empty `notbackdrop` tag — an exclusion "+
+				"without an argument is a pair that was quietly dropped", name)
 		}
+		// The tag cannot name a field that does not exist, which is half of
+		// what this test used to check; the reflection reads the field's own
+		// name. What is still worth asking is whether the field is one this
+		// package can see at all — palette.ComponentFields is the walk
+		// Backdrops uses, and a disagreement between the two walks would leave
+		// a tagged field measured anyway.
 		if !fields[name] {
-			t.Errorf("palette.NotABackdrop[%q] names no core.ComponentDefaults field. "+
-				"The exclusion exempts nothing and the census is measuring the pair "+
-				"anyway, or the field was renamed and the reason travelled with the "+
-				"old spelling", name)
+			t.Errorf("Components.%s carries a `notbackdrop` tag and is not in "+
+				"palette.ComponentFields(). The two reflections over one struct "+
+				"disagree, so the exclusion exempts nothing and the census is "+
+				"measuring the pair", name)
 			continue
 		}
 		fills := false
@@ -643,9 +656,9 @@ func TestTheBackdropExclusionsNameRealFills(t *testing.T) {
 			}
 		}
 		if !fills {
-			t.Errorf("palette.NotABackdrop[%q] names a component that states no "+
+			t.Errorf("Components.%s carries a `notbackdrop` tag and states no "+
 				"Background in any bundled theme, so it was never a backdrop to "+
-				"exclude. Delete the entry, or the next theme to give it a fill "+
+				"exclude. Drop the tag, or the next theme to give it a fill "+
 				"inherits an exemption written for a different reason", name)
 		}
 	}
@@ -663,6 +676,7 @@ func TestTheBackdropExclusionsNameRealFills(t *testing.T) {
 // and a green run, which is the one failure mode a table that measures things
 // cannot afford.
 func TestEveryStatedFillIsMeasuredOrExcluded(t *testing.T) {
+	exclusions := palette.NotABackdrop()
 	for name, theme := range core.BundledThemes() {
 		measured := map[string]bool{}
 		for _, b := range boundaryBackdrops(theme) {
@@ -673,15 +687,15 @@ func TestEveryStatedFillIsMeasuredOrExcluded(t *testing.T) {
 			if hex == "" {
 				continue
 			}
-			_, excluded := palette.NotABackdrop[field]
-			if excluded == measured[field+" fill"] {
+			_, exempt := exclusions[field]
+			if exempt == measured[field+" fill"] {
 				verb := "is measured and excluded at once"
-				if !excluded {
+				if !exempt {
 					verb = "states " + hex + " and is neither measured nor excluded"
 				}
 				t.Errorf("%s: Components.%s %s — every fill a control could be drawn "+
-					"on is either a pair with a number under it or an entry in "+
-					"palette.NotABackdrop with an argument attached", name, field, verb)
+					"on is either a pair with a number under it or a `notbackdrop` tag "+
+					"on the field, with an argument attached", name, field, verb)
 			}
 		}
 		// The two palette roles are not components and would not be caught

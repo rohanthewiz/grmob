@@ -305,6 +305,112 @@ func TestCompositesThatAreNotNestedAreSilent(t *testing.T) {
 	requireNoKind(t, found, ConcernNestedComposite)
 }
 
+// A number that is not a number, on the one role that carries a range.
+//
+// This is the finding whose subject is not a relationship between two elements
+// but a disagreement between four platforms about one string: a browser reads
+// aria-valuenow="45%" as 0 and pins the bar at the start, Compose reads it as
+// absent and announces an indeterminate bar, SwiftUI has no numeric value
+// property at all, and the fill on screen goes on drawing the caller's own
+// float — so the bar looks right everywhere and announces three different
+// wrong things.
+func TestAValueRangeThatIsNotNumbersIsReported(t *testing.T) {
+	found := auditWith(t, &Node{Type: "Row", Style: &Style{
+		AccessibilityRole:  RoleProgressBar,
+		AccessibilityLabel: "Upload",
+		// The formatting bug this actually is in the wild: a percent sign on
+		// a value ARIA wants bare.
+		AccessibilityValue: ValueRange{Now: "45%", Min: "0", Max: "100"},
+	}})
+	requireKind(t, found, ConcernUnusableValueRange, "field Now is", `Now = "45%"`)
+}
+
+// Both bounds at once, so the report is a sentence rather than three of them.
+func TestSeveralUnparseableFieldsAreOneFinding(t *testing.T) {
+	found := auditWith(t, &Node{Type: "Row", Style: &Style{
+		AccessibilityRole:  RoleProgressBar,
+		AccessibilityValue: ValueRange{Now: "45", Min: "none", Max: "lots"},
+	}})
+	requireKind(t, found, ConcernUnusableValueRange,
+		"fields Min and Max are", `Min = "none"`, `Max = "lots"`)
+	if n := kinds(found)[ConcernUnusableValueRange]; n != 1 {
+		t.Errorf("one node produced %d findings, want 1 — an author fixes the range, "+
+			"not the fields one at a time", n)
+	}
+}
+
+// A range with no position in it.
+//
+// Separated from the parse failures because it is not a string problem: every
+// one of these three parses, and "5" is a perfectly good number to be nowhere
+// between 9 and 1. It is the arm Compose cannot express at all —
+// ProgressBarRangeInfo throws on an empty range — so Renderer.kt drops the
+// property, and the web keeps the numbers and clamps.
+func TestAnEmptyValueRangeIsReported(t *testing.T) {
+	for _, c := range []struct {
+		name  string
+		value ValueRange
+	}{
+		{"inverted", ValueRange{Now: "5", Min: "9", Max: "1"}},
+		{"a single point", ValueRange{Now: "5", Min: "5", Max: "5"}},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			found := auditWith(t, &Node{Type: "Row", Style: &Style{
+				AccessibilityRole:  RoleProgressBar,
+				AccessibilityValue: c.value,
+			}})
+			requireKind(t, found, ConcernUnusableValueRange, "range is empty")
+		})
+	}
+}
+
+// The ranges that are fine, and the two that look like mistakes and are not.
+//
+// The second pair is the whole reason this check asks core.ValueRange rather
+// than testing strings: an unstated position *is* ARIA's indeterminate bar, and
+// an unstated bound *is* ARIA's 0..100 — both are the vocabulary working, and a
+// check that reported them would fire on components.ProgressBar's own output
+// and on every indeterminate spinner in every app.
+func TestAUsableValueRangeIsSilent(t *testing.T) {
+	for _, c := range []struct {
+		name  string
+		value ValueRange
+	}{
+		{"a bare percentage", ValueOf(45, 0, 100)},
+		{"a bare position under ARIA's defaults", ValueRange{Now: "45"}},
+		{"a step out of five", ValueOf(3, 1, 5)},
+		{"a position outside its range, which every target clamps", ValueOf(150, 0, 100)},
+		{"a fractional position", ValueRange{Now: "45.5", Min: "0", Max: "100"}},
+		{"a negative range", ValueOf(-5, -10, 0)},
+		{"ARIA's indeterminate bar", ValueRange{Min: "0", Max: "100"}},
+		{"words with no numbers, which are not a range at all",
+			ValueRange{Text: "almost done"}},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			found := auditWith(t, &Node{Type: "Row", Style: &Style{
+				AccessibilityRole:  RoleProgressBar,
+				AccessibilityValue: c.value,
+			}})
+			requireNoKind(t, found, ConcernUnusableValueRange)
+		})
+	}
+}
+
+// The role is not part of the question, deliberately.
+//
+// A range on a node with no role is dropped by both web exporters by design and
+// announced by neither phone as a number — that guard is tested at each writer,
+// and the audit's header says why such cases are not findings. What is *not*
+// covered anywhere is the same broken string on a node whose role will be added
+// next week, so the check reads the value rather than the pair. It is the
+// author's own numbers either way, and they are unusable either way.
+func TestAnUnusableRangeIsReportedWhateverTheRole(t *testing.T) {
+	found := auditWith(t, &Node{Type: "Box", Style: &Style{
+		AccessibilityValue: ValueRange{Now: "half"},
+	}})
+	requireKind(t, found, ConcernUnusableValueRange, "field Now is")
+}
+
 // The zero value says nothing and is what every node in every tree carries, so
 // it cannot be a finding.
 func TestAnOrdinaryTreeIsSilent(t *testing.T) {

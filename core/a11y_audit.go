@@ -12,7 +12,7 @@ import (
 //
 // # Why a tree walk and not a guard in the exporters
 //
-// Four of the six findings below are about *relationships between elements*,
+// Four of the seven findings below are about *relationships between elements*,
 // and no renderer can see one. htmlout writes an id as it walks past the node
 // carrying it and has no index of the document it is building; the WASM runtime
 // applies a patch to one element and has no index at all. Both say so in their
@@ -25,7 +25,7 @@ import (
 // third such check and the first about semantics rather than about the
 // framework's own bookkeeping.
 //
-// # Why these six and not a general ARIA validator
+// # Why these seven and not a general ARIA validator
 //
 // Each of them is a failure with no symptom. A duplicate id resolves to
 // whichever element the browser saw first, so a tab strip switches the wrong
@@ -35,7 +35,9 @@ import (
 // disclosure with no handler offers TalkBack an action nothing performs. A
 // selection-follows-focus flag on a role with no arrow keys is a contract
 // about a keyboard nobody has. A composite inside a composite is two tab stops
-// where ARIA describes one, and both widgets work.
+// where ARIA describes one, and both widgets work. A range whose numbers are
+// not numbers is resolved by every target and by no two of them the same way,
+// while the bar on screen goes on drawing the caller's own float.
 //
 // Everything else in ARIA that this vocabulary can express is already caught
 // where it is written: a state on a role that cannot carry it is dropped by
@@ -44,7 +46,7 @@ import (
 // make. The line is "would a reader be told something false, with nothing
 // anywhere saying so".
 //
-// # The seventh finding, which is not about accessibility
+// # The eighth finding, which is not about accessibility
 //
 // AuditTree's walk also carries ConcernInertPlacement — a core.StackAlign on a
 // node no overlay will place. It is a layout fact rather than a semantic one,
@@ -65,8 +67,8 @@ import (
 // site in render.Manager. The placement check adds one map lookup per node.
 
 // Concern kinds for the accessibility audit. Declared here rather than beside
-// the others in debug.go so the six arrive with the walk that produces them.
-// The walk's seventh finding, ConcernInertPlacement, is declared in
+// the others in debug.go so the seven arrive with the walk that produces them.
+// The walk's eighth finding, ConcernInertPlacement, is declared in
 // placement_audit.go for the same reason: beside the argument for it.
 const (
 	// ConcernDuplicateAccessibilityID: two elements in one tree carry the
@@ -107,6 +109,13 @@ const (
 	// nothing, and no other target writes anything for it at all.
 	ConcernInertFollowsFocus = "inert-follows-focus"
 
+	// ConcernUnusableValueRange: a node states a core.Style.AccessibilityValue
+	// whose numbers no platform can use as written — a position or a bound
+	// that is not a number, or a range whose Max is at or below its Min. Every
+	// target resolves it and no two of them resolve it the same way, so the
+	// bar announces a different wrong number on each. See checkValueRange.
+	ConcernUnusableValueRange = "unusable-value-range"
+
 	// ConcernNestedComposite: a container with an ARIA keyboard pattern sits
 	// inside another one. Both keep their own roving tabindex, so the pair is
 	// two tab stops where ARIA describes one — the outer widget's arrows step
@@ -115,7 +124,7 @@ const (
 	ConcernNestedComposite = "nested-composite"
 )
 
-// AuditTree runs the whole-tree checks over a finished render tree: the six
+// AuditTree runs the whole-tree checks over a finished render tree: the seven
 // accessibility findings above and the placement finding beside them.
 //
 // Called by the render driver after the pass that produced the tree, beside
@@ -180,6 +189,7 @@ func (a *a11yAudit) walk(n *Node, path, placer string, composite compositeAncest
 		}
 		a.checkDisclosure(n, path)
 		a.checkFollowsFocus(n, path)
+		a.checkValueRange(n, path)
 		reportInertPlacement(n, path, placer)
 		composite = a.checkNestedComposite(n, path, composite)
 	}
@@ -339,6 +349,119 @@ func (a *a11yAudit) checkFollowsFocus(n *Node, path string) {
 			"data-grmob-selection-follows-focus, read by nothing, and written at "+
 			"all by no other target",
 		path, stated, joinRoles(KeyboardComposites())))
+}
+
+// checkValueRange flags a stated range that no platform can use as written.
+//
+// # Why this is a finding and the guards are not
+//
+// Everything else about core.Style.AccessibilityValue is already answered
+// where it is written. A range on a role that cannot carry one is dropped by
+// both web exporters *by design*, documented at each guard and tested on both
+// targets; a role with no range at all is ARIA's own spelling of an
+// indeterminate bar and is not a mistake. Neither belongs here, for the reason
+// this file's header gives.
+//
+// What is left is the case where the author stated numbers and the numbers are
+// not usable — and it is the one shape in this vocabulary that fails
+// *differently on every target*:
+//
+//	                     Now: "half"            Min: "9", Max: "1"
+//	web (Chrome)         a bar pinned at 0      a bar pinned at 9
+//	Compose              indeterminate          the property is dropped
+//	SwiftUI              nothing either way     nothing either way
+//	core.Progress        indeterminate          empty-range
+//
+// Not one of those is what was written, none of them errors, and the bar looks
+// correct on screen in every case — the fill is drawn from the caller's own
+// float, which never went through this vocabulary at all. So the number a
+// sighted user sees and the number a reader announces disagree, silently, and
+// the only place that can notice is a walk of the finished tree.
+//
+// # Why it asks ValueRange rather than reading the strings
+//
+// The two questions are core.ValueRange's own: Unparsed names the fields that
+// are not numbers, and Progress says what the three of them amount to once
+// ARIA's defaults and clamping are applied. Restating either here would be a
+// second copy of the rule the renderers are held to — and the empty-range
+// arm in particular is not a string test at all, since "45" with no bounds is
+// fine and "5" between 9 and 1 is not.
+//
+// This is also the audit's first use of Progress, which until now had no Go
+// consumer: components.ProgressBar states all three numbers itself and is
+// determinate by construction, so the only readers of the reading were a test
+// and a Kotlin transliteration.
+func (a *a11yAudit) checkValueRange(n *Node, path string) {
+	v := n.Style.AccessibilityValue
+	if !v.Stated() {
+		return
+	}
+
+	// The fields first, because an unparseable bound is *also* what produces
+	// a nonsense range downstream, and naming the field is the more useful
+	// half of the report.
+	if bad := v.Unparsed(); len(bad) > 0 {
+		upsertConcern(ConcernUnusableValueRange, fmt.Sprintf(
+			"%s states an AccessibilityValue whose %s not a number: %s. A browser "+
+				"reads an unparseable aria-value* as 0 and pins the bar there, Compose "+
+				"reads it as absent and announces an indeterminate bar, and core.Progress "+
+				"agrees with Compose — three answers, none of them the one written, and "+
+				"the bar on screen goes on drawing the caller's own float",
+			path, fieldsAre(bad), quoteFields(v, bad)))
+		return
+	}
+
+	if p := v.Progress(); p.Reading == ProgressEmptyRange {
+		upsertConcern(ConcernUnusableValueRange, fmt.Sprintf(
+			"%s states an AccessibilityValue whose range is empty: Max %s is at or "+
+				"below Min %s, so there is no position for Now %s to be at. Compose "+
+				"cannot express it — ProgressBarRangeInfo throws on an empty range, so "+
+				"Renderer.kt drops the property rather than crashing a render over an "+
+				"annotation — and a browser keeps the numbers and clamps the position "+
+				"to whichever end it lands outside",
+			path, quote(v.Max), quote(v.Min), quote(v.Now)))
+	}
+}
+
+// fieldsAre reads "field Now is" or "fields Now and Max are", so the report is
+// a sentence in both the one-field case and the several-field one.
+func fieldsAre(names []string) string {
+	if len(names) == 1 {
+		return "field " + names[0] + " is"
+	}
+	return "fields " + strings.Join(names[:len(names)-1], ", ") +
+		" and " + names[len(names)-1] + " are"
+}
+
+// quoteFields prints the offending values, so the report names the string
+// rather than only the field it was in — which is the half a reader needs, as
+// the value is usually a formatting bug ("45%", "1.048576e+06") rather than a
+// typo.
+func quoteFields(v ValueRange, names []string) string {
+	parts := make([]string, len(names))
+	for i, name := range names {
+		var value string
+		switch name {
+		case "Now":
+			value = v.Now
+		case "Min":
+			value = v.Min
+		case "Max":
+			value = v.Max
+		}
+		parts[i] = name + " = " + quote(value)
+	}
+	return strings.Join(parts, ", ")
+}
+
+// quote renders a stated value, or the word for an unstated one — an empty
+// string in this report means ARIA's default was used, which is a different
+// statement from a value of "".
+func quote(s string) string {
+	if s == "" {
+		return "(unstated, so ARIA's default)"
+	}
+	return "\"" + s + "\""
 }
 
 // checkNestedComposite flags one keyboard pattern inside another, and returns

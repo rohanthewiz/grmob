@@ -988,6 +988,51 @@
       else's (`grid` owns `row`, and a `gridcell` is a row's), which is exactly
       the difference between a walk this runtime does and the one it lacks.
       That piece is `Nesting`, declared and derived; the rest is labelled prose
+- [x] **`aria/gen` runs on a verification path** — the command's own half (the
+      walk to the module root, the two paths, the write, and the error a
+      missing download produces) was reached by nothing. `aria/gen/main_test.go`
+      runs `run` against a synthetic specification in a temp module, from three
+      working directories, and holds what it writes to `spec.Scope` and
+      `Fixture.Render`
+- [x] **The palette census's two degenerate columns are exercised** — the
+      `quietThemes`/`universalThemes` tables are empty and have been since they
+      were written, so five of the six arms that read them had never run. The
+      classification is a function now (`landingComplaints`), driven over
+      constructed theme sets, and the real tables stay empty
+- [x] **The browser's sticky fixture is pinned to `core.StickyHeader()`** —
+      `STICKY_DECLARATIONS` in `browser.mjs`, held to the *set of fields* the
+      prop touches rather than to three names typed on each side
+- [x] **`core.ValueRange.Progress` has a Go consumer** — `core.AuditTree`
+      reports `unusable-value-range`: a stated position or bound that is not a
+      number, or a range whose `Max` is at or below its `Min`. Every target
+      resolves those and no two of them the same way, while the bar on screen
+      goes on drawing the caller's own float. `ValueRange.Unparsed` is the new
+      half the reading alone could not give
+- [x] **`internal/valuefixture` is compared on the web too** — `browser.mjs`
+      mounts one `progressbar` per case in a real Chrome and reads the answer
+      out of the browser's accessibility tree. Cases whose numbers all parse
+      must agree with `core.Progress`; cases with an unparseable field must
+      *not*, which pins a real divergence (Chrome reads `aria-valuemax="lots"`
+      as 0 and clamps a bar at 45% into announcing as complete)
+- [x] **A `GroupedList` can be asked whether its edge was withheld** —
+      `AutoLoadWithheld()`. The withholding is right and silent, and a feed
+      that stopped fetching looks exactly like one that ran out; a screen whose
+      footer is conditional had no way to tell
+- [x] **The browser pass paints a real widget, not only swatches** — `gen.go`
+      renders a quiet `components.Chip` per bundled theme and reads its three
+      colours off the rendered node; `widget_test.go` holds the ring to
+      `Colors.ControlBorderColor()` and both backdrops to `internal/palette`'s
+      derived list
+- [x] **The backdrop exclusions live on the field** — a `notbackdrop` struct
+      tag on `core.ComponentDefaults`, whose value is the argument.
+      `palette.NotABackdrop()` is the reading of it, so an entry can no longer
+      name a field that does not exist or drift from the one it names
+- [x] **gobind's three result arms are read off the pinned generator** —
+      `TestTheResultArmsAreReadOffThePinnedGobind` holds `swiftResult`'s
+      refusals to `bind/genobjc.go` in the module cache. Reading it through
+      also corrected them: every bound symbol here is a package-level func,
+      emitted as a C function, and Clang's `throws` convention is the
+      Objective-C *method* one
 
 ---
 
