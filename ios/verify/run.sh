@@ -17,8 +17,10 @@ go run . > "$out/transcript.json"
 swiftc -o "$out/harness" -target arm64-apple-macos14.0 \
   main.swift \
   flex.swift \
+  stack.swift \
   selectmenu.swift \
   ../GrMob/Runtime/GrMobSelectMenu.swift \
+  ../GrMob/Runtime/GrMobStack.swift \
   ../GrMob/Runtime/GrMobNode.swift \
   ../GrMob/Runtime/GrMobStyle.swift \
   ../GrMob/Runtime/GrMobFlex.swift \

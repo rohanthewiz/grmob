@@ -151,7 +151,16 @@ func TestNativeZStackOverlaysItsChildren(t *testing.T) {
 		// centring it must state.
 		overlay, align string
 	}{
-		{swiftRenderer, "private struct GrMobZStack", swiftCompositeStart, "ZStack(", "alignment: .center"},
+		// The Swift side is a custom Layout rather than a SwiftUI ZStack, and
+		// the centre it must state is the *fallback anchor* rather than a
+		// container alignment. Both changed together and for one reason: a
+		// SwiftUI ZStack can only place a layer by wrapping it in a filling
+		// frame, and a filling frame made an unsized stack greedy on this
+		// target alone (see GrMobStack.swift). GrMobStackLayout is what
+		// replaced it, so the construct to look for is the layout, and the
+		// centring is the `?? .center` every unplaced layer takes.
+		{swiftRenderer, "private struct GrMobZStack", swiftCompositeStart,
+			"GrMobStackLayout {", "GrMobStackPlacement.self"},
 		{kotlinRenderer, "private fun GrMobZStack", kotlinCompositeStart, "Box(", "contentAlignment = Alignment.Center"},
 	} {
 		body := dispatchArm(t, pin.file, pin.marker, pin.next)
@@ -165,6 +174,21 @@ func TestNativeZStackOverlaysItsChildren(t *testing.T) {
 				"centre, and a renderer that leaves it to its own default is the one that drifts",
 				pin.file, pin.marker, pin.align)
 		}
+	}
+
+	// The Swift stack must not go back to a filling frame around a layer.
+	//
+	// That is the construct this target's one divergence was made of, and it
+	// is the obvious thing to reach for the next time somebody needs a layer
+	// placed — it is SwiftUI's own idiom, and it works, and it quietly makes
+	// an unsized stack greedy on iOS alone. The Layout that replaced it has
+	// no such failure available to it, so what needs guarding is the return.
+	zstack := dispatchArm(t, swiftRenderer, "private struct GrMobZStack", swiftCompositeStart)
+	if strings.Contains(zstack, "maxWidth: .infinity") {
+		t.Error("Renderer.swift: GrMobZStack wraps a layer in a filling frame again — " +
+			"that frame is greedy, so an unsized stack with an aligned layer grows to " +
+			"its parent's proposal here and stays the size of its largest child on the " +
+			"other three targets. Place by coordinate through GrMobStackSolver instead")
 	}
 }
 

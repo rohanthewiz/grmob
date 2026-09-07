@@ -54,7 +54,7 @@ func (v Variant) Color(t *core.Theme) string {
 // is decided by what it does with it:
 //
 //	Color     a fill. The ink over it is chosen by contrast (Ink, below), so
-//	          a mid-tone works and the pair clears AA on both bundled themes.
+//	          a mid-tone works and the pair clears AA on every bundled theme.
 //	OnLight   ink itself — an outlined button's label and rule, a loud chip's
 //	          outline. The backdrop is whatever the widget was placed on,
 //	          which the widget cannot see, so the value has to be dark enough
@@ -154,16 +154,35 @@ func (v Variant) Ink(t *core.Theme, bg string) string {
 // #0040DD and the declared pair is 7.56:1. Only the *role* could, since the
 // failing thing was a pairing and a pairing has no second tone to reach for.
 //
-// # What that leaves here
+// # What that leaves here, and what a third palette put back
 //
-// Both bundled themes now pair white with a fill dark enough that the maximum
-// would pick white anyway, so neither of them can show this function choosing
-// the declaration over the measurement. The rule is unchanged and is not
-// merely historical: it holds for any theme whose house button is a mid-tone,
-// which is the ordinary case for a brand colour. What it costs is that the
-// evidence now lives in a fixture — components' midTonePrimaryTheme, which is
-// DefaultTheme as it stood before the move — rather than in the default theme
-// itself.
+// DefaultTheme and MaterialTheme both pair white with a fill dark enough that
+// the maximum would pick white anyway, so neither can show this function
+// choosing the declaration over the measurement. For two sessions the evidence
+// lived entirely in a fixture — components' midTonePrimaryTheme, which is
+// DefaultTheme as it stood before the move.
+//
+// core.AmberTheme now carries it. Its button declares MD brown 900 over an
+// amber fill and the measurement would pick the page's near-black instead, so
+// deleting the declaredInk call below repaints every Primary fill in that
+// theme. That is a shipped palette rather than a fixture, and it got there by
+// making an ordinary brand decision rather than by being tuned to a gap.
+//
+// One half stayed with the fixture, and provably: the case where the
+// declaration picks the *opposite ink pole* — white where measurement says
+// black, which is the pairing this function was written for. A declared ink
+// that loses the measurement is the lower-contrast of the theme's two, and the
+// two ratios multiply to a palette constant of at most 21, so the loser can
+// never exceed sqrt(21) = 4.58:1 while the package's AA check asks 4.5:1 of it.
+// The band is [4.50, 4.58]. See TestThePoleFlipBandIsTooNarrowToShip, which
+// also finds that two of the three bundled palettes could not host such a fill
+// at any brand colour, because their near-blacks are soft.
+//
+// All of that is recorded per rule and per theme by
+// TestEveryPaletteRuleStillHasAWitness rather than left as a note, because
+// losing a witness is silent: DefaultTheme's move to the accessible blue was a
+// straightforward improvement and it quietly left this check with nothing to
+// observe.
 func inkOn(t *core.Theme, fill string) string {
 	if ink := declaredInk(t, fill); ink != "" {
 		return ink

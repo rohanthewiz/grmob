@@ -320,7 +320,7 @@ func (c Chip) stateStyle(t *core.Theme) []core.StyleProp {
 	//	                    Default          Material
 	//	fill vs page        1.12:1           1.09:1
 	//	old ring vs page    1.26:1           1.32:1
-	//	new ring vs page    3.26:1           4.61:1
+	//	new ring vs page    3.48:1           4.61:1
 	//
 	// WCAG 1.4.11 (Non-text Contrast) is the line, and it is the same one the
 	// field frames were moved for one session earlier: a rule *between* things
@@ -335,25 +335,30 @@ func (c Chip) stateStyle(t *core.Theme) []core.StyleProp {
 	// edge to a text field's: a theme that restyled its fields would have
 	// silently restyled its chips. The role is the thing both of them name.
 	//
-	// One number under the floor, stated rather than rounded off. A chip has
-	// two backdrops — the page behind it and its own Surface fill — and under
-	// DefaultTheme the ring is 3.26:1 against the first and 2.92:1 against the
-	// second. The edge that identifies the pill is the outer one: the fill is
-	// 1.12:1 against the page and identifies nothing, so what a reader picks
-	// the control out by is the ring against the page, which clears. The
-	// inner edge is the boundary between two parts of one control. Closing
-	// that last 0.08 would mean darkening the theme's boundary tone past
-	// Apple's own systemGray, which is the same repaint-the-theme's-choice
-	// move the on-light tones were added to avoid.
+	// Two backdrops, both above the floor. A chip has the page behind it and
+	// its own Surface fill, and under DefaultTheme the ring is 3.48:1 against
+	// the first and 3.12:1 against the second.
 	//
-	// That paragraph is now also a test fixture. knownBoundaryShortfalls in
-	// variant_test.go carries the pair, the number and a précis of this
-	// argument, and TestEveryControlBoundaryPairIsAccountedFor measures every
-	// (bundled tone, bundled fill) pair against the 3:1 floor. What that buys
-	// is not a check on this widget — the chip was always fine — but on the
-	// next one: a widget drawing a boundary on Surface used to inherit the
-	// shortfall silently, and now inherits a failing test that points here.
-	// The sibling test deletes the exemption if a retint ever closes the gap.
+	// The second of those was 2.92:1 for three sessions, and the paragraph
+	// that used to stand here is worth remembering rather than deleting,
+	// because it was *correct*: the edge that identifies the pill is the
+	// outer one — the fill is 1.12:1 against the page and identifies nothing,
+	// so what a reader picks the control out by is the ring against the page,
+	// which always cleared — and the inner pair is a boundary between two
+	// parts of one control. On those grounds the shortfall was defended and
+	// recorded in knownBoundaryShortfalls rather than fixed.
+	//
+	// What ended it was not a better argument, it was a cheaper alternative.
+	// The census (TestEveryControlBoundaryPairIsAccountedFor) measures every
+	// (bundled tone, bundled fill) pair, so "does this candidate hex clear
+	// all four backdrops" became one test run instead of an audit, and the
+	// answer was a tone five steps darker than systemGray. See
+	// core.ColorPalette.ControlBorder.
+	//
+	// The census still earns its keep with nothing to exempt. What it buys is
+	// not a check on this widget — the chip was always fine — but on the
+	// next one: a widget drawing a boundary on Surface used to inherit a
+	// shortfall silently, and would now inherit a failing test.
 	return []core.StyleProp{
 		core.BackgroundColor(t.Colors.Surface),
 		core.TextColor(t.Colors.TextPrimary),

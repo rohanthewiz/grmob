@@ -17,10 +17,7 @@ import (
 // grew past. Walking the type by reflection means a new role fails here by
 // name until every bundled theme carries it.
 func TestBundledThemesSetEveryColorRole(t *testing.T) {
-	themes := map[string]*Theme{
-		"DefaultTheme":  DefaultTheme,
-		"MaterialTheme": MaterialTheme,
-	}
+	themes := BundledThemes()
 
 	paletteType := reflect.TypeOf(ColorPalette{})
 	for themeName, theme := range themes {
@@ -340,10 +337,7 @@ func TestOnLightDoesNotTintTheBrandSlot(t *testing.T) {
 // edge while every text field beside it moves — two controls on one screen
 // disagreeing about where a boundary sits, with nothing failing anywhere.
 func TestBundledFieldFramesAreTheControlBorderRole(t *testing.T) {
-	for themeName, theme := range map[string]*Theme{
-		"DefaultTheme":  DefaultTheme,
-		"MaterialTheme": MaterialTheme,
-	} {
+	for themeName, theme := range BundledThemes() {
 		role := theme.Colors.ControlBorderColor()
 		for _, base := range []struct {
 			what  string
@@ -379,10 +373,7 @@ func TestBundledFieldFramesAreTheControlBorderRole(t *testing.T) {
 // It is a literal against a literal, like the field-frame pin below, because a
 // Style is a value and a component default cannot call anything.
 func TestBundledButtonFillsAreThePrimaryRole(t *testing.T) {
-	for themeName, theme := range map[string]*Theme{
-		"DefaultTheme":  DefaultTheme,
-		"MaterialTheme": MaterialTheme,
-	} {
+	for themeName, theme := range BundledThemes() {
 		fill := theme.Components.Button.Background
 		if !strings.EqualFold(fill, theme.Colors.Primary) {
 			t.Errorf("%s.Components.Button.Background = %q but Colors.Primary is %q — "+
@@ -403,10 +394,7 @@ func TestBundledButtonFillsAreThePrimaryRole(t *testing.T) {
 // tints them the same has un-split them — silently, since every call site still
 // compiles and every widget still draws a rule.
 func TestTheDividerAndTheBoundaryAreDifferentTones(t *testing.T) {
-	for themeName, theme := range map[string]*Theme{
-		"DefaultTheme":  DefaultTheme,
-		"MaterialTheme": MaterialTheme,
-	} {
+	for themeName, theme := range BundledThemes() {
 		if theme.Colors.BorderColor() == theme.Colors.ControlBorderColor() {
 			t.Errorf("%s paints Border and ControlBorder the same %q: a hairline between "+
 				"rows and the edge that identifies a control carry different floors",

@@ -75,10 +75,7 @@ func TestInputRowGapDefaultsToTheThemeSMStep(t *testing.T) {
 	}
 
 	// And the bundled themes still produce the 8 the migrations depend on.
-	for name, bundled := range map[string]*core.Theme{
-		"Default":  core.DefaultTheme,
-		"Material": core.MaterialTheme,
-	} {
+	for name, bundled := range core.BundledThemes() {
 		root, _ := renderRow(t, bundled, InputRow{OnSubmit: func() {}})
 		if g := root.Style.Gap; g != 8 {
 			t.Errorf("%s theme: default Gap = %v, want 8", name, g)

@@ -41,15 +41,30 @@ import (
 // make. The line is "would a reader be told something false, with nothing
 // anywhere saying so".
 //
+// # The fifth finding, which is not about accessibility
+//
+// AuditTree's walk also carries ConcernInertPlacement — a core.StackAlign on a
+// node no overlay will place. It is a layout fact rather than a semantic one,
+// and it is in this walk because it is the same *shape*: a relationship between
+// a node and its container, silent on all four targets, invisible to every
+// exporter for structural reasons. The argument is in placement_audit.go, which
+// is where it lives; only the call in walk() is here.
+//
+// So the walk's subject is a little wider than this file's name: it is the
+// failures a finished tree can be asked about and a renderer cannot. The four
+// below were the first family, not the only one.
+//
 // # Cost
 //
 // One walk of the finished tree per pass, in debug mode only — the same
 // condition the other two checks run under, and the same order of work the
 // reconciler is about to do anyway. Off, it is a single atomic load at the call
-// site in render.Manager.
+// site in render.Manager. The placement check adds one map lookup per node.
 
 // Concern kinds for the accessibility audit. Declared here rather than beside
 // the others in debug.go so the four arrive with the walk that produces them.
+// The walk's fifth finding, ConcernInertPlacement, is declared in
+// placement_audit.go for the same reason: beside the argument for it.
 const (
 	// ConcernDuplicateAccessibilityID: two elements in one tree carry the
 	// same core.Style.AccessibilityID. Ids are document-global and nothing
@@ -81,7 +96,8 @@ const (
 	ConcernInertDisclosure = "inert-disclosure"
 )
 
-// AuditTree runs the accessibility checks over a finished render tree.
+// AuditTree runs the whole-tree checks over a finished render tree: the four
+// accessibility findings above and the placement finding beside them.
 //
 // Called by the render driver after the pass that produced the tree, beside
 // EndRenderPass and for the same reason: both describe a *completed* pass, and
@@ -98,7 +114,8 @@ func AuditTree(root *Node) {
 		return
 	}
 	a := &a11yAudit{ids: make(map[string][]string)}
-	a.walk(root, "root")
+	// "" is the placing container above the root: nothing. See placerFor.
+	a.walk(root, "root", "")
 	a.report()
 }
 
@@ -124,7 +141,11 @@ type reference struct {
 	path   string
 }
 
-func (a *a11yAudit) walk(n *Node, path string) {
+// placer is the node type of the container that would place this node — the
+// nearest ancestor that is not a grouping container. It is threaded rather
+// than looked up because a walk already knows it and a node does not carry a
+// parent pointer; see placerFor and placement_audit.go.
+func (a *a11yAudit) walk(n *Node, path, placer string) {
 	if n == nil {
 		return
 	}
@@ -137,9 +158,11 @@ func (a *a11yAudit) walk(n *Node, path string) {
 			a.controls = append(a.controls, reference{s.AccessibilityControls, path})
 		}
 		a.checkDisclosure(n, path)
+		reportInertPlacement(n, path, placer)
 	}
+	childPlacer := placerFor(n.Type, placer)
 	for i, child := range n.Children {
-		a.walk(child, fmt.Sprintf("%s/%d", path, i))
+		a.walk(child, fmt.Sprintf("%s/%d", path, i), childPlacer)
 	}
 }
 

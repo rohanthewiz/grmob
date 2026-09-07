@@ -46,6 +46,7 @@ grmob debug: 2 concern(s)
 | `dangling-aria-reference` | An `AccessibilityControls` naming an id no element claims | Both exporters write the attribute anyway (an export has no index of its document; a patch is one element), so a reader following it announces a control that governs nothing — which sounds exactly like a control |
 | `invalid-accessibility-id` | An `AccessibilityID` containing whitespace, or starting with the reserved `grmob-` prefix | An id is a single HTML token, so `"app panel"` is written verbatim into an invalid document that no `#id` selector or `getElementById` can find; and the prefix is where `core.TabView` mints its own tab and panel ids, so a collision breaks a wiring the app never wrote and never mentions |
 | `inert-disclosure` | An `AccessibilityExpanded` on a node carrying neither `OnClick` nor `OnLongPress` | Compose says a disclosure with `expand()`/`collapse()` **actions**, which need a handler to perform, so the state is announced on both web targets and is silently nothing on Android. That is deliberate — an action nothing can perform is worse than none — and this is what says so at the call site |
+| `inert-stack-placement` | A `core.StackAlign` on a node whose placing container is not a `ZStack` | A stack is the only container that places its children in two dimensions, so this prop is inert everywhere else — deliberately, since `align-self` means something else to a flex item and a layer prop that re-placed a `Row`'s children on the web alone would be worse than one that did nothing. Being deliberate does not make it visible: the value compiles, merges into the `Style`, crosses the bridge as a JSON key, and is read by nobody on any of the four targets. This is the only diagnostic anywhere |
 | `partial-sort` | A `components.DataTable` sorting client-side (its active `Sort` names a column with a `Less`) while its `Pagination` declares a `PageCount` — the caller saying the server chose the rows | The table can only order the window it holds, so a header claiming an ordering over the table delivers one over a page of it. A partial sort looks exactly like a working sort; the rows that disprove it are the ones not fetched. Set `Sortable` without `Less` and put the sort in the query |
 
 ### Cursor drift, precisely
@@ -69,6 +70,31 @@ stopping short means trailing slots went unread). The second catches the
 line up — only the pass-over-pass cursor change reveals it. The non-zero
 guards are deliberate: a `Scope` that renders on some passes and sits out
 others (the navigation pattern) is **not** drift, and is never flagged.
+
+### A placement outside a stack
+
+The check walks with the *placing* container rather than the tree parent,
+because a `Fragment` and a `Theme` have no box of their own and hand their
+children to whatever is above them — `htmlout` forwards the imposed placement
+declaration through a `Fragment` for exactly this reason, so that a `core.For`
+inside a `ZStack` overlays what it generated instead of stacking it. Checking
+the tree parent would report every generated layer in the framework's own idiom
+for generating layers.
+
+```text
+ZStack                      ZStack                      Row
+└── Fragment                └── Row                     └── Text StackAlign(top)
+    └── Text StackAlign         └── Text StackAlign         ^ reported: a Row
+        ^ fine: the Fragment        ^ reported: the Row
+          is transparent              places this child
+```
+
+The finding names the node path, the placement, and the container that was
+going to place it, and it says what to do instead: move the node into a
+`ZStack`, or say what was meant with the container's own `AlignItems`,
+`JustifyContent` or `Align`. Two sets decide it — `core.PlacingContainers()`
+and `core.GroupingContainers()` — and `htmlout`'s own tables are pinned to
+them, so the exporter and the audit cannot drift on which container is which.
 
 ### Duplicate keys
 

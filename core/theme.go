@@ -41,9 +41,10 @@ type ColorPalette struct {
 	//
 	// This role used to name input borders too, and no longer does. A rule
 	// *between* things is decoration — nothing about the page becomes
-	// unusable if a reader cannot make it out — and both bundled themes spend
+	// unusable if a reader cannot make it out — and every bundled theme spends
 	// a very pale hex on it accordingly: #E5E5EA measures 1.26:1 against
-	// white and #E0E0E0 1.32:1. The edge that says *this rectangle is a field
+	// white and #E0E0E0 1.32:1 (AmberTheme spends the second of those). The
+	// edge that says *this rectangle is a field
 	// you can type in* is the opposite case: it is the only thing identifying
 	// a control, which WCAG 1.4.11 (Non-text Contrast) puts a 3:1 floor
 	// under. One hex cannot be both, for the same reason a role's fill tone
@@ -69,15 +70,15 @@ type ColorPalette struct {
 	// jobs, which is the same shape the on-light tones' argument has one
 	// property over. A divider is decoration and a pale one is a legitimate
 	// choice; a boundary that identifies a control carries WCAG 1.4.11's 3:1
-	// floor. Both bundled themes spend 1.26:1 and 1.32:1 on Border
+	// floor. Every bundled theme spends 1.26:1 or 1.32:1 on Border
 	// accordingly, so a control drawn in it is close to invisible *as a
 	// control*:
 	//
-	//	                    Default              Material
-	//	Border              #E5E5EA  1.26:1      #E0E0E0  1.32:1
-	//	ControlBorder       #8E8E93  3.26:1      #757575  4.61:1
+	//	                    Default            Material           Amber
+	//	Border              #E5E5EA  1.26:1    #E0E0E0  1.32:1    #E0E0E0  1.32:1
+	//	ControlBorder       #89898E  3.48:1    #757575  4.61:1    #8D6E63  4.62:1
 	//
-	// (against each theme's own white Background; see the two themes for the
+	// (against each theme's own white Background; see the themes for the
 	// second backdrop each measures against.)
 	//
 	// # A control has more than one backdrop, and the census is the list
@@ -90,14 +91,21 @@ type ColorPalette struct {
 	// Every pair a bundled theme can produce is enumerated and measured by
 	// TestEveryControlBoundaryPairIsAccountedFor in components/variant_test.go
 	// (the arithmetic lives there, beside the on-light census, for the reason
-	// that one gives). Exactly one falls short: DefaultTheme's tone on its own
-	// Surface, at 2.92:1, which is the quiet chip's ring against its own fill
-	// and is argued at length on chipRing. That argument is recorded in the
-	// census's knownBoundaryShortfalls table, which is the single place it is
-	// stated as a *fact* rather than as prose — a second widget drawing a
-	// boundary on Surface used to inherit the shortfall without inheriting
-	// the argument, and a new pair that falls short now fails the census
-	// until somebody retints or writes down why.
+	// that one gives). Every pair clears, and the census's
+	// knownBoundaryShortfalls table — the place a defended shortfall would be
+	// recorded as a fact rather than as prose — is empty.
+	//
+	// It was not always. DefaultTheme's tone was iOS systemGray #8E8E93,
+	// which is 3.26:1 on that theme's page and 2.92:1 on its Surface, and the
+	// quiet chip's ring is drawn on Surface. The shortfall was argued and
+	// exempted for two sessions — the edge that identifies the pill is the
+	// outer one, so the inner pair is a boundary between two parts of one
+	// control — and the argument was sound. What retired it is that the
+	// census made the alternative cheap: with every pair measured, "does this
+	// candidate hex clear all four backdrops" is one test run, and #89898E
+	// clears them at 3.12:1 and above while differing from systemGray by
+	// 5/255 per channel. Defending a shortfall costs a paragraph that every
+	// future boundary has to be read against; this cost a retint.
 	//
 	// # Why this arrived a session after the frames did
 	//
@@ -135,8 +143,8 @@ type ColorPalette struct {
 	// A palette role is one hex, and one hex cannot do both jobs a role is
 	// asked to do. Spent as a fill with a chosen ink over it, a mid-tone
 	// works — components.Variant.Ink picks the more legible of the theme's
-	// two inks and a filled Badge or Button clears WCAG AA on both bundled
-	// themes. Spent as ink *itself* — an outlined button's label and rule, a
+	// two inks and a filled Badge or Button clears WCAG AA on every bundled
+	// theme. Spent as ink *itself* — an outlined button's label and rule, a
 	// loud chip's outline, a banner's leading glyph — the backdrop is
 	// whatever the widget was placed on, and a mid-tone loses. The numbers
 	// against each bundled theme's own white Background were:
@@ -212,7 +220,7 @@ const (
 	// this role degrades to a *visible* edge rather than to Border's hairline:
 	// falling back to the divider is the levelling-down the role was split to
 	// prevent, and it would be indistinguishable from the bug.
-	FallbackControlBorder = "#8E8E93" // iOS systemGray — 3.26:1 on white
+	FallbackControlBorder = "#89898E" // systemGray, darkened — 3.48:1 on white
 )
 
 // BorderColor resolves the Border role, falling back to FallbackBorder when
@@ -318,6 +326,25 @@ func (c ColorPalette) ErrorOnLightColor() string {
 //
 // Comparison is case-insensitive because "#007AFF" and "#007aff" are the same
 // colour to every renderer, and a theme is hand-written.
+//
+// # Most of these arms are identities under most bundled themes
+//
+// A role whose colour is already ink-weight sets its tone equal to itself,
+// deliberately (see each palette for why "this role needs no second tone" is
+// written out rather than left blank). Under DefaultTheme only Primary is in
+// that position; under MaterialTheme, Primary, Success and Error are; under
+// AmberTheme, Success and Error. An arm that is an identity for *every*
+// bundled theme could be deleted with no bundled pixel moving.
+//
+// Primary's used to be exactly that, and AmberTheme is what put it back: amber
+// 700 is a fill that cannot be ink (2.04:1 on white), so its role and its tone
+// are genuinely different colours and deleting this arm repaints every outlined
+// button and loud chip in that theme.
+//
+// Which arms have a bundled witness and which rest on a test fixture is
+// recorded and checked per role by TestEveryPaletteRuleStillHasAWitness in
+// components/palette_witness_test.go, so a retint that leaves an arm with no
+// evidence anywhere is reported rather than merely true.
 func (c ColorPalette) OnLight(color string) string {
 	switch {
 	case strings.EqualFold(color, c.Primary):
@@ -408,12 +435,20 @@ var DefaultTheme = &Theme{
 		// Components.TextArea below paint their frames in — which is a
 		// requirement rather than a coincidence, pinned in theme_test.go.
 		//
-		// Measured against both backdrops a control has here. The page and a
-		// field's fill are the same white (3.26:1); a quiet Chip's fill is
-		// Surface, and against that the same edge is 2.92:1 — see the Chip's
-		// own note for why the number that identifies the pill is the outer
-		// one and what the inner one costs.
-		ControlBorder: "#8E8E93", // iOS systemGray — 3.26:1 on #FFFFFF, 2.92:1 on #F2F2F7
+		// Measured against both backdrops a control has here: the page and a
+		// field's fill are the same white, and a quiet Chip's fill is Surface.
+		// Both clear WCAG 1.4.11's 3:1 floor, which is the whole census in
+		// components/variant_test.go for this theme.
+		//
+		// This is *not* Apple's systemGray, and the two digits are the only
+		// value in this palette that leaves its published source. systemGray
+		// is #8E8E93 and measures 2.92:1 on this theme's Surface — under the
+		// floor, by 0.08. The pair was defended rather than fixed while the
+		// only way to check a replacement was an audit; the census turned that
+		// into one test run, and a tone five steps darker clears every backdrop
+		// at a distance an eye cannot tell from systemGray. See
+		// ColorPalette.ControlBorder for the argument that was retired.
+		ControlBorder: "#89898E", // systemGray, darkened — 3.48:1 on #FFFFFF, 3.12:1 on #F2F2F7
 
 		// The ink-weight halves, measured against this theme's own white
 		// Background. Apple publishes an accessible variant of each system
@@ -510,11 +545,13 @@ var DefaultTheme = &Theme{
 			// here — and it is why the border is not Colors.Border: that
 			// role's #E5E5EA is a 1.26:1 divider, and a boundary that
 			// identifies a control has a 3:1 floor under it (WCAG 1.4.11).
-			// systemGray is Apple's own tone at that weight and measures
-			// 3.26:1 against this theme's Background, which is also roughly
-			// what the browser's own input border was drawing before
-			// borderResetTypes took it away. See ColorPalette.Border.
-			BorderColor:  "#8E8E93", // iOS systemGray — 3.26:1 on #FFFFFF
+			// systemGray is Apple's own tone at that weight, and this is that
+			// tone darkened five steps for the Surface backdrop a chip's ring
+			// needs (see Colors.ControlBorder). It measures 3.48:1 against
+			// this theme's Background, which is also roughly what the
+			// browser's own input border was drawing before borderResetTypes
+			// took it away. See ColorPalette.Border.
+			BorderColor:  "#89898E", // = Colors.ControlBorder — 3.48:1 on #FFFFFF
 			BorderWidth:  1,
 			BorderRadius: 6,
 			Shadow:       0,
@@ -536,7 +573,7 @@ var DefaultTheme = &Theme{
 			// is the other tag whose user-agent border the web used to draw
 			// for free. A multi-line field that differed from a single-line
 			// one by its edge alone would look like two controls.
-			BorderColor:  "#8E8E93", // iOS systemGray — 3.26:1 on #FFFFFF
+			BorderColor:  "#89898E", // = Colors.ControlBorder — 3.48:1 on #FFFFFF
 			BorderWidth:  1,
 			BorderRadius: 6,
 			Display:      DisplayBlock,
@@ -663,4 +700,232 @@ var MaterialTheme = &Theme{
 			BorderRadius: 4,
 		},
 	},
+}
+
+// AmberTheme is the third bundled palette, and the one whose brand colour is
+// not a colour you can put white on.
+//
+// # Why a third theme exists at all
+//
+// Two rules in this framework had no bundled evidence. inkOn reads the theme's
+// declared fill/ink pair *before* measuring contrast, and ColorPalette.OnLight
+// moves a role to its ink-weight tone — and under both palettes above, an
+// implementation that deleted either would paint identical pixels. Their only
+// witness was a test fixture (components' midTonePrimaryTheme), which is a
+// thing a palette edit can quietly leave holding the whole thread.
+//
+// This palette witnesses both, and it does so the way a real brand does rather
+// than by being contrived:
+//
+//	the declaration outranks the measurement
+//	    Components.Button below states brown 900 over the amber fill. Measured
+//	    against this theme's own two inks, the winner is TextPrimary (8.39:1
+//	    against brown 900's 6.77:1) — so an inkOn that only measured would paint
+//	    a different, and slightly *higher*-contrast, label. Deleting declaredInk
+//	    moves pixels here.
+//
+//	OnLight moves the Primary role
+//	    Amber 700 is 2.04:1 on white. It is an excellent fill and cannot be ink,
+//	    which is the whole argument for the on-light tones and the case neither
+//	    palette above still makes for Primary.
+//
+// # The escape that made this shippable, which is worth recording
+//
+// The obvious third theme — a mid-tone brand with white declared over it — is
+// not shippable, and the reason is arithmetic rather than taste. contrastInk
+// picks the *higher*-contrast of the theme's two ink roles, and against any
+// fill the white ratio and the black ratio multiply to at most 21. So a
+// declaration that loses the measurement can be at most sqrt(21) = 4.58:1,
+// while components' AA check demands 4.5:1 of every variant's ink. The band a
+// pole-flipping bundled theme would have to sit in is [4.50, 4.58] — 1.8%
+// wide, at the very bottom of the legibility scale.
+//
+// The squeeze binds only when the declared ink is one of the two poles being
+// measured. A brand ink that is *neither* — brown 900 over amber, where the
+// page's ink is MD3's near-black — is a different colour from the measurement's
+// answer with three points of headroom on both. That is also the ordinary
+// real-world decision ("our label is warm, not the page's black"), so the theme
+// carries the rule by being a normal theme rather than by being tuned to a
+// gap. components' TestThePoleFlipBandIsTooNarrowToShip states the arithmetic
+// above as a test, and the pole flip itself stays with the fixture — now
+// provably rather than accidentally.
+//
+// # Provenance
+//
+// Material Design published values throughout, as MaterialTheme's are, with one
+// exception stated at the field: the amber family carries no swatch dark enough
+// to be read as ink on white (amber 900 is 2.79:1), so PrimaryOnLight is amber
+// 700 scaled to 56% brightness — the same hue at 37.8 degrees, and the same
+// move DefaultTheme's SuccessOnLight makes one hue over for the same reason.
+var AmberTheme = &Theme{
+	Colors: ColorPalette{
+		// MD amber 700. A fill and not an ink: white over it is 2.04:1 and the
+		// page's own near-black is 8.39:1, which is why this role has a
+		// separate on-light tone below and why the button declares a dark
+		// label. Both bundled palettes above are the other case — a role dark
+		// enough to be either — so this is the only place in the repository a
+		// reader can see the two halves of a role come apart in a shipped
+		// theme.
+		Primary:       "#FFA000",
+		Secondary:     "#00897B", // MD teal 600 — a brand slot, deliberately not the status green
+		Background:    "#FFFFFF", // white; the warmth is in Surface, not the page
+		Surface:       "#FFF8E1", // MD amber 50 — the panel tint, one step off the page
+		TextPrimary:   "#1C1B1F", // MD3 on-surface — 17.13:1 on the page
+		TextSecondary: "#616161", // MD grey 700 — 6.19:1 on the page, 5.83:1 on Surface
+		Error:         "#B00020", // MD error, as MaterialTheme
+		Border:        "#E0E0E0", // MD grey 300 — 1.32:1, a divider and nothing else
+		Success:       "#2E7D32", // MD green 800
+		Warning:       "#EF6C00", // MD orange 800
+
+		// MD brown 300, chosen at Material's own field-frame *weight* rather
+		// than for its family: grey 600 measures 4.61:1 on white and this
+		// measures 4.62:1, so the frame reads as the same thickness of edge in
+		// a warm palette. It clears WCAG 1.4.11's 3:1 on every backdrop a
+		// control sits on here — the white page and Card, and the amber-50
+		// Surface a quiet Chip and both field fills use, at 4.35:1.
+		ControlBorder: "#8D6E63",
+
+		// Amber 700 darkened until it can be read as ink: (255,160,0) scaled
+		// to 56% is (143,90,0), which is the same hue (37.8 degrees) at 5.78:1.
+		// The amber family stops at 900 (#FF6F00, 2.79:1) and has nothing
+		// darker, so this is the one value in this palette without a published
+		// source — the same position, and the same remedy, as DefaultTheme's
+		// SuccessOnLight.
+		//
+		// This is the pair no bundled theme could show before: a role that is
+		// a good fill and cannot be ink.
+		PrimaryOnLight: "#8F5A00", // amber 700 at 56% — 5.78:1 (from 2.04:1)
+		SuccessOnLight: "#2E7D32", // = Success            — 5.13:1, already ink
+		WarningOnLight: "#BF360C", // MD deep orange 900   — 5.60:1 (from 3.08:1)
+		ErrorOnLight:   "#B00020", // = Error              — 7.33:1, already ink
+	},
+	Typography: Typography{
+		Title:    Style{FontSize: 24, FontWeight: Bold, TextColor: "#1C1B1F", Display: DisplayBlock},
+		Subtitle: Style{FontSize: 19, FontWeight: Normal, TextColor: "#3A3A3E", Display: DisplayBlock},
+		Body:     Style{FontSize: 16, FontWeight: Normal, TextColor: "#1C1B1F", Display: DisplayBlock},
+		Caption:  Style{FontSize: 13, FontWeight: Normal, TextColor: "#616161", Display: DisplayBlock},
+	},
+	Spacing: SpacingScale{
+		XS: 4,
+		SM: 8,
+		MD: 16,
+		LG: 24,
+		XL: 32,
+	},
+	Components: ComponentDefaults{
+		// The declaration this theme exists to carry.
+		//
+		// Brown 900 over amber 700 at 6.77:1 — comfortably legible, and *not*
+		// what measurement would choose. contrastInk compares this theme's two
+		// ink roles against the fill and prefers TextPrimary at 8.39:1, so an
+		// implementation that dropped declaredInk from inkOn would repaint
+		// every filled Button, Badge, Avatar and Calendar selection in this
+		// theme with the page's near-black.
+		//
+		// A brand ink rather than the page's ink is an ordinary decision and
+		// the reason it is the *shippable* one is in this theme's own doc: an
+		// ink that is one of the two measured poles would have had to sit in a
+		// 1.8%-wide band at the AA floor.
+		Button: Style{
+			FontSize:     16,
+			FontWeight:   Bold,
+			TextColor:    "#3E2723", // MD brown 900 — 6.77:1 over the amber fill
+			Background:   "#FFA000", // = Colors.Primary
+			Padding:      EdgeInsets{Top: 10, Bottom: 10, Left: 20, Right: 20},
+			BorderRadius: 20, // a pill, which is what a single strong brand colour wants
+			Shadow:       1,
+			Align:        AlignCenter,
+			Display:      DisplayInline,
+		},
+		Card: Style{
+			Background:   "#FFFFFF",
+			Padding:      EdgeInsets{Top: 16, Bottom: 16, Left: 16, Right: 16},
+			Margin:       EdgeInsets{Top: 8, Bottom: 8, Left: 8, Right: 8},
+			BorderRadius: 12,
+			Shadow:       1,
+			Display:      DisplayBlock,
+		},
+		Input: Style{
+			FontSize:   16,
+			FontWeight: Normal,
+			TextColor:  "#1C1B1F",
+			// The field fill is the Surface tint rather than the page, so the
+			// frame has two different backdrops here as it does under
+			// MaterialTheme — which is the shape the boundary census wants at
+			// least one bundled theme to have.
+			Background:   "#FFF8E1",
+			Padding:      EdgeInsets{Top: 10, Bottom: 10, Left: 12, Right: 12},
+			BorderColor:  "#8D6E63", // = Colors.ControlBorder — 4.62:1 on the page, 4.35:1 on this fill
+			BorderWidth:  1,
+			BorderRadius: 8,
+			Shadow:       0,
+			Display:      DisplayBlock,
+		},
+		CheckBox: Style{
+			Background:   "#FFFFFF",
+			TextColor:    "#1C1B1F",
+			BorderRadius: 4,
+			Margin:       EdgeInsets{Right: 8},
+			Display:      DisplayInline,
+		},
+		TextArea: Style{
+			FontSize:     16,
+			FontWeight:   Normal,
+			TextColor:    "#1C1B1F",
+			Background:   "#FFF8E1",
+			Padding:      EdgeInsets{Top: 12, Bottom: 12, Left: 12, Right: 12},
+			BorderColor:  "#8D6E63", // = Colors.ControlBorder, as Input's — one edge, two tags
+			BorderWidth:  1,
+			BorderRadius: 8,
+			Display:      DisplayBlock,
+		},
+		Column: Style{
+			Padding: EdgeInsets{Top: 12, Bottom: 12, Left: 16, Right: 16},
+		},
+		Row: Style{
+			Padding: EdgeInsets{Top: 8, Bottom: 8, Left: 16, Right: 16},
+		},
+		Camera: Style{
+			Background: "#000000",
+			Display:    DisplayBlock,
+		},
+		Text: Style{
+			FontSize:     16,
+			FontWeight:   Normal,
+			TextColor:    "#1C1B1F",
+			Background:   "#FFFFFF",
+			Padding:      EdgeInsets{Top: 12, Bottom: 12, Left: 12, Right: 12},
+			BorderRadius: 8,
+			Display:      DisplayBlock,
+		},
+	},
+}
+
+// BundledThemes returns every theme this package ships, keyed by its Go
+// identifier.
+//
+// # Why this exists rather than a list at each call site
+//
+// It used to be a hand-written map in every test that asks a question of "the
+// bundled themes" — the palette censuses in components, the role and frame pins
+// in this package's own tests, several widget tests. There were a dozen of
+// them, all spelling the same two entries, and the failure mode is the one
+// TestBundledThemesSetEveryColorRole was written reflectively to avoid one
+// level down: a third theme is added, a census keeps its two-entry literal, and
+// the new palette is simply never asked the question. Nothing fails. The rule
+// goes on being true of the themes somebody remembered.
+//
+// So the list is one list, and TestBundledThemesListIsExhaustive derives it
+// from this file's own source rather than trusting it — a package-level
+// *Theme var that is not in this map fails there.
+//
+// A fresh map each call, for the reason ColorPalette's resolvers exist: a
+// package-level map is reachable and writable by any importer, and a test that
+// deleted an entry would silently narrow every census at once.
+func BundledThemes() map[string]*Theme {
+	return map[string]*Theme{
+		"DefaultTheme":  DefaultTheme,
+		"MaterialTheme": MaterialTheme,
+		"AmberTheme":    AmberTheme,
+	}
 }

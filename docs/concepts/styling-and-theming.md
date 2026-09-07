@@ -142,9 +142,37 @@ a transformation on the `Style` value, and it is resolution-preserving by
 construction, since the only sides it writes are ones that were taking the
 shorthand anyway.
 
-Ordering is the ordinary last-one-wins: a side prop after an axis prop narrows
-it, an axis prop after a side prop overwrites it, and `Padding(all)` clears
-everything including both shorthands.
+##### The wider brush goes first
+
+Ordering is the ordinary last-one-wins, and the three widths — `Padding(all)`,
+the two axis props, the four sides — are asymmetric in exactly one way:
+
+- a **narrower** prop can override or clear a wider one that ran before it,
+  because it settles the axis first and then owns its own side;
+- a **wider** prop cannot preserve a narrower one that ran before it, because
+  it writes every side it covers.
+
+```go
+core.PaddingHorizontal(16), core.PaddingLeft(0)   // 0 left, 16 right
+core.PaddingLeft(0), core.PaddingHorizontal(16)   // 16 on both
+```
+
+Both are correct last-one-wins. Every combination is expressible, but only in
+one order, so **state the wider brush first**.
+
+There is deliberately no prop for "this side stays zero through a later axis
+prop". It would be the one `StyleProp` in the framework whose effect outlives
+the props written after it, and it would be invisible at the call site of
+whatever it defeated. `TestTheWiderBrushGoesFirst` pins the lattice in both
+directions on both families.
+
+What makes the ordering rule reachable is a separate guarantee, and it is the
+one the advice rests on: **a widget applies its own inset defaults before your
+`Style`, never after**, so your props always have the last word. Every widget
+says so on its `Style` field and
+`TestACallerStylePropOutranksAWidgetsOwnInsets` is where it is checked —
+clearing `GroupHeader`'s own horizontal padding, or one end of a
+`Separator`'s `Inset`, from the outside.
 
 `Margin` has the same six: `core.MarginTop`, `MarginBottom`, `MarginLeft`,
 `MarginRight`, `MarginHorizontal` and `MarginVertical`. They are the padding
@@ -971,7 +999,7 @@ Two distinctions the names do not make obvious:
   make teal or magenta (`MaterialTheme` makes it teal), while `Success`
   carries meaning — a magenta "saved" badge is a bug.
 - **`Border` is not `ControlBorder`.** A rule *between* things is decoration
-  and both bundled themes spend a very pale hex on it (1.26:1 and 1.32:1
+  and every bundled theme spends a very pale hex on it (1.26:1 or 1.32:1
   against white); the edge that says *this rectangle is something you can
   operate* is the only thing identifying a control, which WCAG 1.4.11 puts a
   3:1 floor under. One hex cannot be both, for the same reason a role's fill
@@ -979,8 +1007,9 @@ Two distinctions the names do not make obvious:
 
   | | `Border` | `ControlBorder` |
   |---|---|---|
-  | `DefaultTheme` | `#E5E5EA` 1.26:1 | `#8E8E93` 3.26:1 |
+  | `DefaultTheme` | `#E5E5EA` 1.26:1 | `#89898E` 3.48:1 |
   | `MaterialTheme` | `#E0E0E0` 1.32:1 | `#757575` 4.61:1 |
+  | `AmberTheme` | `#E0E0E0` 1.32:1 | `#8D6E63` 4.62:1 |
 
   The split shipped in two steps and the second one is the instructive half.
   The field frames moved first and lived in `Components.Input` and
@@ -1002,25 +1031,35 @@ Two distinctions the names do not make obvious:
   a field's own fill, so "`ControlBorder` clears 3:1" is a property of a
   *pair* rather than of the tone. Every pair a bundled theme can produce is
   enumerated and measured by `TestEveryControlBoundaryPairIsAccountedFor`, and
-  exactly one falls short:
+  every one of them clears:
 
   | | page | `Surface` | `Card` | field fill |
   |---|---|---|---|---|
-  | `DefaultTheme` | 3.26:1 | **2.92:1** | 3.26:1 | 3.26:1 |
+  | `DefaultTheme` | 3.48:1 | 3.12:1 | 3.48:1 | 3.48:1 |
   | `MaterialTheme` | 4.61:1 | 4.23:1 | 4.61:1 | 4.41:1 |
+  | `AmberTheme` | 4.62:1 | 4.35:1 | 4.62:1 | 4.35:1 |
 
-  That one is the quiet chip's ring against its own fill, and it is allowed:
-  a chip's fill is 1.12:1 against the page and identifies nothing, so the edge
-  a reader picks the control out by is the outer one, which clears. The inner
-  edge is the boundary between two parts of one control. Closing the last 0.08
-  would mean darkening the tone past Apple's own systemGray.
+  **`DefaultTheme`'s tone is not Apple's `systemGray`, and this is the one
+  value in that palette that leaves its published source.** `systemGray` is
+  `#8E8E93`; it clears against the page at 3.26:1 and falls to 2.92:1 against
+  `Surface`, which is the quiet chip's own fill.
 
-  What is new is not the argument, which the chip has carried all along, but
-  where it lives: in the census's `knownBoundaryShortfalls` table, with the
-  pair and the number. A widget that draws a boundary on `Surface` used to
-  inherit the shortfall without inheriting the argument. Now a new pair under
-  3:1 fails until somebody retints or writes down why, and a sibling test
-  deletes the exemption if a retint ever closes the gap.
+  That shortfall stood for three sessions with an argument attached, and the
+  argument was sound — a chip's fill is 1.12:1 against the page and identifies
+  nothing, so the edge a reader picks the control out by is the outer one, and
+  the inner pair is a boundary between two parts of one control. What retired
+  it was not a better argument but a cheaper alternative. While the only way
+  to evaluate a candidate tone was to go and find every fill a boundary lands
+  on, defending the pair was less work than fixing it; once the census *is*
+  that list, "does this hex clear all four backdrops" is one test run, and
+  `#89898E` — five steps darker, indistinguishable by eye — clears them.
+
+  The census outlives the shortfall it was built to record. Its
+  `knownBoundaryShortfalls` table is empty now, which is its resting state:
+  it exists so that the *next* pair under 3:1 has to be either fixed or
+  defended in writing, with the pair, the number and the argument in one
+  place. A widget that draws a boundary on `Surface` used to inherit a
+  shortfall without inheriting the argument; now it inherits a failing test.
 
 `Border`, `Success` and `Warning` were added on 2026-08-31 and `ControlBorder`
 on 2026-09-06, after the other seven. A theme written before that leaves them
@@ -1146,17 +1185,52 @@ widget quietly disagreeing with its theme fixes nothing and hides the question.
 `DefaultTheme` has since paid it: `Colors.Primary` is `#0040DD` and the
 declared pair is 7.56:1.
 
-!!! warning "Both bundled themes now agree with the measurement"
-    Each pairs white with a fill dark enough that maximising contrast would
-    pick white too, so neither of them can *show* the declaration being
-    preferred — an implementation that deleted the first step and only measured
-    would paint identical pixels under both.
+!!! note "A third bundled theme now carries the rule — and one half of it cannot be carried at all"
+    `DefaultTheme` and `MaterialTheme` each pair white with a fill dark enough
+    that maximising contrast would pick white too, so neither of them can
+    *show* the declaration being preferred: an implementation that deleted the
+    first step and only measured would paint identical pixels under both. For
+    two releases the evidence lived entirely in a test fixture — `components`'
+    `midTonePrimaryTheme`, which is `DefaultTheme` as it stood before the role
+    was darkened.
 
-    The rule is unchanged and is not merely historical: it holds for any theme
-    whose house button is a mid-tone, which is the ordinary case for a brand
-    colour. What moved is where the evidence lives — `components`'
-    `midTonePrimaryTheme` test fixture, which is `DefaultTheme` as it stood
-    before the role was darkened.
+    **`core.AmberTheme` was written to answer that.** Its brand is MD amber 700,
+    a colour that is an excellent fill and 2.04:1 as ink on white, and its
+    `Components.Button` declares MD brown 900 over it. Measured against that
+    theme's own two inks the winner is `TextPrimary` at 8.39:1, not the declared
+    brown at 6.77:1 — so deleting the declaration step repaints every `Primary`
+    fill in that theme. `Colors.OnLight`'s `Primary` arm is witnessed there too,
+    for the same reason: a role that cannot be ink needs a separate tone.
+
+    **The strong form is unshippable, and that is arithmetic rather than an
+    accident of these three palettes.** The dramatic case — the declaration
+    picking the *opposite ink pole* from the measurement, which is the
+    white-on-system-blue pairing this rule was written for — puts the declared
+    ink at the lower-contrast end by definition. The two ratios against any
+    fill multiply to a constant of the palette, at most 21 (white over black),
+    so the loser can never exceed **√21 = 4.58:1** — while the AA check on every
+    variant's ink asks 4.5:1. A bundled witness would have to sit inside
+    `[4.50, 4.58]`, a band 1.8% wide at the very bottom of the legibility scale.
+
+    Worse, the band only exists at all when the palette's two inks are close to
+    pure black and white. Feasibility works out to
+    `TextPrimary + 0.05 < (Background + 0.05) / 20.25`, which against a white
+    page means a near-black darker than `#101010`. Two of the three bundled
+    palettes use a *soft* near-black (`#212121`, `#1C1B1F`), and for them **no
+    brand colour whatever** could host such a fill.
+
+    So that half stays with the fixture, provably.
+    `TestThePoleFlipBandIsTooNarrowToShip` states both halves of the argument as
+    assertions, and `TestEveryPaletteRuleStillHasAWitness` records, per rule and
+    per theme, which themes can still show each rule working — failing if the
+    last witness disappears, and also if a new one appears, since a rule that
+    has become observable under a bundled theme is one whose fixture may have
+    stopped being load-bearing.
+
+    That failure is not hypothetical. The evidence for the two-step ink rule
+    *used* to be `DefaultTheme` itself, and it was lost to the retint two
+    paragraphs up: a straightforward palette improvement that quietly cost an
+    assertion its teeth, with nothing to report it.
 
 !!! note "A theme with no `Components.Button` has declared no pairing"
     Its fills are measured like any other colour, including for the default
@@ -1177,8 +1251,14 @@ declared pair is 7.56:1.
 
     When you write a theme, fill in `Components.Button` at minimum.
 
-Two themes ship with the framework: `core.DefaultTheme` (iOS-flavored) and
-`core.MaterialTheme`. Install one at the root:
+Three themes ship with the framework: `core.DefaultTheme` (iOS-flavored),
+`core.MaterialTheme`, and `core.AmberTheme` — a warm brand palette whose
+`Primary` is a fill rather than an ink, and whose button declares its own brand
+label colour. `core.BundledThemes()` returns all three by name; every palette
+census in the repository loops over that rather than over a list of its own, so
+a fourth theme is asked every question the first three are.
+
+Install one at the root:
 
 ```go
 ctx := core.NewContext().WithTheme(core.DefaultTheme)

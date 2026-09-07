@@ -59,6 +59,18 @@ func run() -> Int32 {
         return 1
     }
 
+    // The overlay arithmetic, on the same footing and for the same reason.
+    // This is the pass that pins what a ZStack sizes to, which was the one
+    // documented cross-target divergence with nothing measuring it.
+    let stackProblems = checkStackSolver()
+    if stackProblems.isEmpty {
+        print("OK: stack solver sizes to the largest child and places every anchor")
+    } else {
+        print("FAIL: \(stackProblems.count) stack solver difference(s)")
+        for p in stackProblems { print("  " + p) }
+        return 1
+    }
+
     guard CommandLine.arguments.count == 2,
           let data = FileManager.default.contents(atPath: CommandLine.arguments[1]),
           let transcript = try? JSONDecoder().decode(Transcript.self, from: data)

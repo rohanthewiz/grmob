@@ -42,7 +42,9 @@
       The web half is *imposed by the stack* rather than written by the layer,
       because `align-self` means something else to a flex child — which also
       closes a leak: a layer's own `AlignSelf` used to move it on the two DOM
-      targets and nowhere else
+      targets and nowhere else. iOS carried the one divergence for two
+      releases — a filling frame is greedy — and no longer does; see the
+      overlay `Layout` entry below
 - [x] `Position` (`Sticky`/`Absolute`/`Relative`/`Fixed`) with `Top`/`Right`/
       `Bottom`/`Left`/`ZIndex`, plus `MinWidth`/`MaxWidth`/`MinHeight`/
       `MaxHeight`, `Overflow`, `WhiteSpace`, `AlignSelf`,
@@ -56,7 +58,8 @@
 - [x] Per-side padding props — `PaddingTop`/`Bottom`/`Left`/`Right` set one
       inset without restating the other three through a whole `EdgeInsets`.
       Each dissolves its axis's shorthand first, so a zero really clears;
-      no renderer changed. `Margin` still has no per-side props.
+      no renderer changed. `Margin` has the same six props now, and the
+      three-width ordering rule is in docs/concepts/styling-and-theming.md.
 - [x] Responsive layouts via style merging
 - [x] `Shadow`, border, radius on all four targets
 - [x] Proportional flex weights on every target — `GrMobFlexStack`, a custom
@@ -362,6 +365,111 @@
       type table that is all this deliberately narrow bridge can need. It keeps
       gobind's nullability asymmetry, which is the point of copying it: a stub
       taking `String` everywhere would accept shell code the framework rejects
+- [x] **The last control boundary under 3:1 was retinted, and the census is
+      what made that cheap** (`core.DefaultTheme`) — `Colors.ControlBorder` was
+      iOS `systemGray` `#8E8E93`, which clears against that theme's page at
+      3.26:1 and falls to 2.92:1 against its `Surface`, the quiet chip's own
+      fill. It stood exempt for three sessions with a sound argument attached
+      (the edge that identifies a pill is the outer one; the inner pair is a
+      boundary between two parts of one control). What retired it was not a
+      better argument but a cheaper alternative: while evaluating a candidate
+      tone meant auditing every fill a boundary lands on, defending the pair
+      was less work than fixing it, and once the census *is* that list it costs
+      one test run. `#89898E` clears all four backdrops and differs by 5/255
+      per channel. `knownBoundaryShortfalls` is empty now, which is its resting
+      state — it exists so the next pair has to be fixed or defended in writing
+- [x] **The inset props' width lattice is stated and pinned**
+      (`core/inset_width_order_test.go`) — `Padding(all)` over the two axis
+      props over the four sides, on both families, and one asymmetry: a
+      narrower prop can clear a wider one because it settles the axis first, a
+      wider prop cannot preserve a narrower one because it writes every side it
+      covers. So the wider brush goes first, every combination is expressible,
+      and there is deliberately *no* prop for "this side survives the next axis
+      prop" — it would be the one `StyleProp` whose effect outlives what is
+      written after it. What makes the rule reachable is a separate guarantee
+      the twenty-odd widget `Style` fields promise in prose and nothing
+      checked: a widget applies its own insets before the caller's `Style`,
+      never after. Six widgets now assert it from the outside
+- [x] **A single-widget knob in `rowsSpec` has an admission test**
+      (`components/rows_spec_test.go`) — the census counted the two
+      widget-specific fields in the shared parameter list and said a third was
+      "worth asking about", which is a prompt without an answer. The answer is
+      a property of `appendRows`' output rather than a matter of taste: every
+      child it emits is a `core.Keyed` closure, so a band, a separator and a
+      row are one dynamic type with the key sealed inside until render time and
+      the item captured out of reach. A knob that can be applied to that slice
+      belongs in a wrapper the widget applies itself; one that cannot belongs
+      in the spec. Both current fields fail the wrapper test, for the only two
+      available reasons — `Wrap` needs the item, `Collapse` needs rows *not to
+      be produced*. The owner column is now derived from the widgets rather
+      than trusted as a string
+- [x] **Every palette rule has a recorded witness**
+      (`components/palette_witness_test.go`) — two rules were invisible under
+      both bundled themes: `inkOn`'s first step (read the theme's declared
+      pair before measuring) and `Colors.OnLight`'s `Primary` arm. An
+      implementation that deleted either would paint identical pixels and pass
+      everything. The census records, per rule and per theme, which themes can
+      still *show* each rule working, so losing the last witness is a failure
+      rather than a silence — which is exactly what happened once before: the
+      two-step ink rule's witness *was* `DefaultTheme`, and a straightforward
+      retint took it away with nothing to report it
+- [x] **`core.AmberTheme` — a third bundled palette, written to be the witness**
+      (`core/theme.go`) — MD amber 700 as the brand, which is an excellent
+      *fill* and 2.04:1 as ink on white, so its `Primary` role and its on-light
+      tone are genuinely different colours; and a `Components.Button` declaring
+      MD brown 900 over that amber where measurement would pick the page's
+      near-black at 8.39:1. Two rules that rested on a test fixture now rest on
+      a shipped palette. Material provenance throughout bar one value, which is
+      amber 700 scaled to 56% because the family carries no swatch dark enough
+      to be read as ink
+- [x] **Why the *strong* form of that rule cannot be shipped, as arithmetic**
+      (`TestThePoleFlipBandIsTooNarrowToShip`) — the dramatic case is a
+      declaration choosing the opposite ink *pole* from the measurement, and it
+      is unshippable rather than merely absent. A declaration that loses the
+      measurement is the lower-contrast of the two inks by definition, and the
+      two ratios against any fill multiply to a palette constant of at most 21,
+      so the loser can never exceed √21 = 4.58:1 while the AA check asks 4.5:1.
+      The band is 1.8% wide — and it only exists at all when the palette's inks
+      are near pure black and white, so two of the three bundled palettes could
+      not host such a fill at *any* brand colour. That half stays with the
+      fixture, provably rather than accidentally
+- [x] **`core.BundledThemes()` — one list, derived from the source**
+      (`core/bundled_themes_test.go`) — a dozen tests each spelled their own
+      two-entry map of "the bundled themes", so a third palette would simply
+      have been absent from every census rather than failing one. The list is
+      now one function, and `TestBundledThemesListIsExhaustive` parses
+      `theme.go` for package-level `var X = &Theme{}` declarations and requires
+      each to appear in it — guarding the shared list with a *derived* one
+      rather than a second hand-written one
+- [x] **A `StackAlign` outside a stack is reported** (`inert-stack-placement`,
+      `core/placement_audit.go`) — the prop is inert on a `Column`'s or a
+      `Row`'s child deliberately, and was silent about it on all four targets:
+      it compiles, merges, crosses the bridge and is read by nobody. A fifth
+      arm on `core.AuditTree`'s walk, which is where a fact about a node *and
+      its container* can be checked at all — an exporter writing one element
+      has no index of the document. It walks by the *placing* container rather
+      than the tree parent, so a `core.For` inside a `ZStack` is fine and a
+      stack's grandchild is not
+- [x] **The iOS overlay places without filling** (`ios/GrMob/Runtime/GrMobStack.swift`)
+      — SwiftUI has no per-child `ZStack` alignment, so a placed layer was
+      wrapped in `.frame(maxWidth: .infinity, maxHeight: .infinity,
+      alignment:)`. That is SwiftUI's own idiom and it is *greedy*: an unsized
+      stack with an aligned layer grew to its parent's proposal on iOS while a
+      Compose `Box` and a CSS grid track stayed the size of their largest
+      child. Documented in four places, avoidable by pinning the box, and
+      pinned nowhere. A custom `Layout` replaces it, and the arithmetic is a
+      pure CoreGraphics file for the reason `GrMobFlexSolver` is one — so
+      `ios/verify` now *measures* the overlay (largest child per axis, all nine
+      anchors, the bounds' origin, an oversized layer overhanging) where before
+      it could only check that the file compiled
+- [x] **Every shared `rowsSpec` knob has an effect assertion of its own**
+      (`components/rows_spec_test.go`) — the census required a new field to have
+      a *row*; nothing required it to have an *assertion*, so a knob marked
+      "both", forwarded by one widget and never asserted passed everything. The
+      nine shared knobs are now a table keyed by field name, driven from the
+      census in both directions, and run against both widgets — which also
+      bought `Row` and `Header` the assertions they never had, and separated
+      `Rows` (the row count) from `Key` (the row keys)
 - [x] **Every control boundary is measured, not just the two named ones**
       (`components/variant_test.go`) — `Colors.ControlBorder` clears WCAG
       1.4.11's 3:1 floor against a page and falls 0.08 short against

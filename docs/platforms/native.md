@@ -797,23 +797,35 @@ one place these two constructs stop being interchangeable.
   `GrMobZStack` rather than handed to `RenderChildren` only because the
   modifier has to be built per child, in that scope.
 - **SwiftUI** has no equivalent — a `ZStack`'s `alignment:` is the stack's, not
-  the layer's — so the layer is wrapped in
-  `.frame(maxWidth: .infinity, maxHeight: .infinity, alignment:)`, which is the
-  platform's own idiom for the job.
+  the layer's — so the whole stack is a custom `Layout` (`GrMobStackLayout`)
+  that measures every layer, sizes to the largest, and places each one at its
+  own anchor. The layer's anchor rides to the layout on a `LayoutValueKey`,
+  because a `Layout` sees opaque subview proxies and cannot get back to the
+  `GrMobNode` a child came from.
 
-The frame is applied **only** to a layer that asks for a placement, and that
-narrowness is load-bearing: a filling frame is greedy, so an *unsized* stack
-with an aligned layer grows to its parent's proposal on iOS where a Compose
-`Box` and a CSS grid track both stay the size of their largest child. A stack
-that states its own dimensions — which `core.ZStack` already asks for — is
-identical on all four targets.
+This used to be `.frame(maxWidth: .infinity, maxHeight: .infinity, alignment:)`
+around the placed layer, which is SwiftUI's own idiom for the job and carried
+this target's one divergence: **a filling frame is greedy**, so an *unsized*
+stack with an aligned layer grew to its parent's proposal on iOS where a Compose
+`Box` and a CSS grid track both stay the size of their largest child. It was
+documented in four places, avoidable by pinning the stack's box, and pinned
+nowhere — `ios/verify` type-checks and replays, and neither measures a size.
+
+The `Layout` closes it, and the arithmetic behind it is a pure CoreGraphics file
+(`GrMobStack.swift`) for the reason `GrMobFlexSolver` is one: a `Layout` needs a
+view hierarchy to exercise and a function from numbers to numbers does not. So
+`ios/verify` now *measures* the overlay — the container sizing to the largest
+child on each axis independently, all nine anchors against a known box, the
+bounds' origin being added, an oversized layer overhanging rather than being
+clamped — where before it could only check that the file compiled.
 
 Both mappings return "no placement" for the centre rather than the platform's
-own centre constant, so an unplaced layer reaches the renderer exactly as it
-always did. `mobile/verify`'s `TestNativeStackAlignmentsCoverEveryPlacement`
-holds the arms to `core.StackAlignments()` and
+own centre constant, so "said nothing" and "asked for the centre" stay one state
+all the way down. `mobile/verify`'s `TestNativeStackAlignmentsCoverEveryPlacement`
+holds the arms to `core.StackAlignments()`,
 `TestNativeStackAlignmentsLeaveTheCentreToTheCatchAll` holds them to *not*
-carrying an arm for it.
+carrying an arm for it, and `TestNativeZStackOverlaysItsChildren` now also fails
+if a filling frame ever comes back.
 
 This is the counterpart to the `Box` fix: `Box` and `SafeArea` used to be built
 from these same two constructs and were moved onto the column implementations,

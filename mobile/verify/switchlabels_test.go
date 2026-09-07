@@ -208,10 +208,14 @@ func nativeFile(parts ...string) string {
 	return filepath.Join(append([]string{"..", ".."}, parts...)...)
 }
 
-// The three files every check in this package reads.
+// The files every check in this package reads.
 var (
-	swiftRenderer  = nativeFile("ios", "GrMob", "Runtime", "Renderer.swift")
-	swiftFlex      = nativeFile("ios", "GrMob", "Runtime", "GrMobFlex.swift")
+	swiftRenderer = nativeFile("ios", "GrMob", "Runtime", "Renderer.swift")
+	swiftFlex     = nativeFile("ios", "GrMob", "Runtime", "GrMobFlex.swift")
+	// The overlay's arithmetic and its placement vocabulary. A sibling of
+	// GrMobFlex.swift in every sense: pure, CoreGraphics-only, split out of a
+	// SwiftUI Layout so ios/verify can measure it rather than type-check it.
+	swiftStack     = nativeFile("ios", "GrMob", "Runtime", "GrMobStack.swift")
 	kotlinRenderer = nativeFile("android", "app", "src", "main", "java", "com", "grmob",
 		"runtime", "Renderer.kt")
 )

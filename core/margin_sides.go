@@ -53,6 +53,14 @@ package core
 // was already explicit. They need no settle of their own — assigning both
 // sides of an axis leaves nothing on that axis for a stale shorthand to
 // resolve through, and the shorthand they write is their own.
+//
+// Writing both sides is also what makes an axis prop the *wider brush*: it
+// cannot preserve a side that an earlier prop set, so a caller who wants one
+// side to differ states the axis first and the side second. See "The wider
+// brush goes first" in core/padding_sides.go, which is the rule for both
+// families — Margin(all) over MarginHorizontal over MarginLeft, exactly as
+// padding's three widths order — and for why no prop exists to say "this side
+// survives the next axis prop".
 
 // MarginTop sets the top margin alone, leaving the other three as they were.
 // A zero clears whatever a theme or an earlier prop supplied.

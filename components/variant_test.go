@@ -11,7 +11,7 @@ import (
 // The variants map onto palette roles, not literals — so a theme swap
 // restyles every status pill in the tree.
 func TestVariantResolvesPaletteRoles(t *testing.T) {
-	for _, theme := range []*core.Theme{core.DefaultTheme, core.MaterialTheme} {
+	for _, theme := range core.BundledThemes() {
 		cases := []struct {
 			v    Variant
 			want string
@@ -78,10 +78,7 @@ func TestVariantFallsBackOnAThemeWithoutTheStatusRoles(t *testing.T) {
 func TestVariantInkIsLegibleOnEveryThemeAndVariant(t *testing.T) {
 	const wcagAA = 4.5
 
-	for themeName, theme := range map[string]*core.Theme{
-		"DefaultTheme":  core.DefaultTheme,
-		"MaterialTheme": core.MaterialTheme,
-	} {
+	for themeName, theme := range core.BundledThemes() {
 		for _, v := range []Variant{VariantDefault, VariantSuccess, VariantWarning, VariantError} {
 			bg := v.Color(theme)
 			ink := v.Ink(theme, bg)
@@ -126,23 +123,34 @@ func TestVariantInkFlipsDirectionBetweenThemes(t *testing.T) {
 // Button base, and Apple's accessible blue as the separate on-light tone.
 //
 // It is the fixture for the two properties a mid-tone role has and a dark one
-// does not, both of which the bundled themes have now lost for Primary:
+// does not. core.AmberTheme now carries the second of them in a shipped
+// palette, and the first in its weak form; what stays here alone is the
+// *strong* form — a declaration that picks the opposite ink pole from the
+// measurement — which no bundled theme can carry without placing its button
+// label in a band 1.8% wide at the AA floor. See
+// TestThePoleFlipBandIsTooNarrowToShip for that arithmetic.
 //
-//	the declaration splits from the measurement
+//	the declaration splits from the measurement, at the poles
 //	    white on #007AFF is 4.02:1 and black is 5.23:1, so declaredInk and
-//	    contrastInk give different answers. Both bundled themes now pair white
-//	    with a fill dark enough that measurement picks white anyway, so an
-//	    implementation that deleted declaredInk and only measured would paint
-//	    identical pixels under both of them.
+//	    contrastInk give different answers *and* the two answers are the
+//	    theme's own two ink roles. That is the pairing inkOn was written for,
+//	    and it is unshippable in a bundled palette: the declared ink here is
+//	    below AA, and every legal version of the same disagreement sits between
+//	    4.50:1 and 4.58:1.
 //
 //	the role splits from its on-light tone
 //	    #007AFF cannot be read as ink on white and #0040DD can, which is the
-//	    whole reason the tones exist. DefaultTheme's Primary is now its own
-//	    tone, so a widget that quietly went back to spending the role colour
-//	    where it should spend the tone would look right under both themes.
+//	    whole reason the tones exist. core.AmberTheme now shows this too, so
+//	    this half of the fixture is a second witness rather than the only one.
 //
 // The blue is not invented for the test — it is the framework's own former
 // default, kept as a fixture precisely because it stopped being the default.
+//
+// The first property is asserted from the outside by
+// TestTheFixtureStillCarriesWhatNoBundledThemeCan, so an edit here that looked
+// like tidying a helper — rounding the blue, dropping the separate on-light
+// tone — fails rather than leaving that rule with no evidence in the repository
+// at all.
 func midTonePrimaryTheme() *core.Theme {
 	return &core.Theme{
 		Colors: core.ColorPalette{
@@ -160,21 +168,52 @@ func midTonePrimaryTheme() *core.Theme {
 	}
 }
 
-// The default variant keeps the Primary/Background pairing the themes chose
-// and Button paints, so the zero value stays a no-op for every badge that
-// already exists — but it reaches it by reading the theme's declaration rather
-// than by exempting itself from the rule. Both bundled themes state
-// Components.Button.TextColor "#FFFFFF" over a Primary background, which is
-// also their Colors.Background, so the two routes land on one hex.
+// The default variant paints whatever pairing the theme declared over its own
+// Primary fill, so the zero value stays a no-op for every badge that already
+// exists — and it reaches that by reading the declaration rather than by
+// exempting itself from the rule.
+//
+// # Why the assertion is the declaration and not the Background
+//
+// It used to be "the ink is the theme's Colors.Background", which was true of
+// both palettes at the time and true for a reason neither of them states:
+// DefaultTheme and MaterialTheme each spend white on both, so the declared ink
+// and the page colour are one hex and there was no way to tell which one this
+// test was actually checking. AmberTheme is what separates them — its button
+// label is MD brown 900 over amber and its page is white — so the assertion has
+// to name the thing the rule is about.
+//
+// The two spellings are kept apart below rather than merged: the general rule
+// holds for every bundled theme, and "this theme's declaration happens to be
+// its Background" is a fact about two of the three that is worth stating where
+// somebody can see it stop being universal.
 func TestVariantDefaultKeepsTheThemePairing(t *testing.T) {
-	for name, theme := range map[string]*core.Theme{
-		"DefaultTheme":  core.DefaultTheme,
-		"MaterialTheme": core.MaterialTheme,
-	} {
+	for name, theme := range core.BundledThemes() {
 		bg := VariantDefault.Color(theme)
-		if got := VariantDefault.Ink(theme, bg); got != theme.Colors.Background {
-			t.Errorf("%s: VariantDefault ink = %q, want the theme's Background %q",
-				name, got, theme.Colors.Background)
+		want := declaredInk(theme, bg)
+		if want == "" {
+			t.Errorf("%s: Components.Button declares no ink over the Primary fill %q, so "+
+				"the default variant falls through to measurement — see "+
+				"TestBundledButtonFillsAreThePrimaryRole", name, bg)
+			continue
+		}
+		if got := VariantDefault.Ink(theme, bg); got != want {
+			t.Errorf("%s: VariantDefault ink = %q, want the theme's declared %q",
+				name, got, want)
+		}
+	}
+
+	// The two palettes whose declaration *is* their Background, named. A third
+	// theme that joined them would not be a failure; a fourth palette written
+	// on the assumption that this is what "the default variant" means would be,
+	// and the comment above is the only place that assumption is contradicted.
+	for _, name := range []string{"DefaultTheme", "MaterialTheme"} {
+		theme := core.BundledThemes()[name]
+		if theme.Components.Button.TextColor != theme.Colors.Background {
+			t.Errorf("%s no longer states its Background as the button's ink (%q vs %q) — "+
+				"that is fine, and the comment above saying two of the bundled themes do "+
+				"is now wrong", name, theme.Components.Button.TextColor,
+				theme.Colors.Background)
 		}
 	}
 
@@ -350,10 +389,7 @@ func TestRelativeLuminance(t *testing.T) {
 func TestBundledOnLightTonesClearWCAGAA(t *testing.T) {
 	const floor = 4.5
 
-	for name, theme := range map[string]*core.Theme{
-		"DefaultTheme":  core.DefaultTheme,
-		"MaterialTheme": core.MaterialTheme,
-	} {
+	for name, theme := range core.BundledThemes() {
 		bg, ok := relativeLuminance(theme.Colors.Background)
 		if !ok {
 			t.Fatalf("%s: Background %q does not parse", name, theme.Colors.Background)
@@ -392,7 +428,7 @@ func TestTheRoleColoursAreWhyTheOnLightTonesExist(t *testing.T) {
 	const floor = 4.5
 	failing := 0
 
-	for _, theme := range []*core.Theme{core.DefaultTheme, core.MaterialTheme} {
+	for _, theme := range core.BundledThemes() {
 		bg, _ := relativeLuminance(theme.Colors.Background)
 		for _, raw := range []string{
 			theme.Colors.Primary,
@@ -438,10 +474,7 @@ func TestTheRoleColoursAreWhyTheOnLightTonesExist(t *testing.T) {
 func TestBundledFieldFramesClearNonTextContrast(t *testing.T) {
 	const floor = 3.0
 
-	for name, theme := range map[string]*core.Theme{
-		"DefaultTheme":  core.DefaultTheme,
-		"MaterialTheme": core.MaterialTheme,
-	} {
+	for name, theme := range core.BundledThemes() {
 		for _, base := range []struct {
 			what  string
 			style core.Style
@@ -499,7 +532,7 @@ func TestTheDividerRoleIsWhyTheFieldFrameIsSeparate(t *testing.T) {
 	const floor = 3.0
 	failing := 0
 
-	for _, theme := range []*core.Theme{core.DefaultTheme, core.MaterialTheme} {
+	for _, theme := range core.BundledThemes() {
 		bg, _ := relativeLuminance(theme.Colors.Background)
 		if lum, ok := relativeLuminance(theme.Colors.BorderColor()); ok &&
 			contrastRatio(bg, lum) < floor {
@@ -525,18 +558,34 @@ func TestTheDividerRoleIsWhyTheFieldFrameIsSeparate(t *testing.T) {
 // on *their own* backdrops. That is the right question for those two and it
 // answers nothing about the next widget, which is how the one shortfall in
 // this repository came to be argued in two prose blocks and asserted nowhere:
-// components.Chip draws its quiet ring in this role on a Surface fill, where
-// DefaultTheme's tone measures 2.92:1 rather than 3.26:1, and the reason that
-// is acceptable lives in chipRing's comment. A second widget drawing a
-// boundary on Surface would inherit the shortfall without inheriting the
-// argument — it would simply be under the floor, with nothing anywhere saying
-// so.
+// components.Chip drew its quiet ring in this role on a Surface fill, where
+// DefaultTheme's tone measured 2.92:1 rather than 3.26:1. A second widget
+// drawing a boundary on Surface would have inherited the shortfall without
+// inheriting the argument — it would simply have been under the floor, with
+// nothing anywhere saying so.
 //
 // So the census is over the *palette role and the theme's own fills* rather
 // than over widgets. Every pair a widget could reach is measured whether or
 // not one reaches it today, which is what turns "the chip happens to be fine"
-// into "these are the pairs, this is the one that falls short, and here is
-// why".
+// into "these are the pairs, and this is the one that falls short".
+//
+// # What the census did next
+//
+// It closed the shortfall it was built to record, and by an unplanned route.
+// The pair had stood for three sessions because the honest fixes were both
+// palette decisions, and a palette decision was expensive: to know whether a
+// candidate tone was an improvement or a trade you had to go and find every
+// fill a boundary lands on. That is exactly what this table is, so the cost
+// fell to one test run — and #89898E, five steps darker than systemGray,
+// clears all four DefaultTheme backdrops. The retint is recorded on
+// core.ColorPalette.ControlBorder and the argument it retired on chipRing.
+//
+// The table below is therefore empty, and that is its resting state rather
+// than a defect. It exists so that the *next* pair under the floor has to be
+// either fixed or defended in writing, and an empty exemption list is what
+// "no pair is currently under the floor" looks like.
+// TestKnownBoundaryShortfallsIsEmptyOrJustified is what stops it filling up
+// quietly.
 //
 // # The backdrops
 //
@@ -557,6 +606,8 @@ func boundaryBackdrops(theme *core.Theme) []struct{ what, hex string } {
 }
 
 // The pairs that do not clear 3:1, stated once with the reason attached.
+// Currently none — see the census comment above for why empty is the resting
+// state and not a gap.
 //
 // Transcribed rather than derived, and that is the point: an entry here is a
 // decision someone made and can defend, where a pair that merely happens to
@@ -568,18 +619,7 @@ func boundaryBackdrops(theme *core.Theme) []struct{ what, hex string } {
 var knownBoundaryShortfalls = map[string]struct {
 	ratio  float64 // to 2dp, the number the argument was made about
 	reason string
-}{
-	"DefaultTheme/Surface": {
-		2.92,
-		"the quiet chip's ring against its own fill. A chip has two backdrops and " +
-			"the edge that identifies the pill is the outer one — the fill is 1.12:1 " +
-			"against the page and identifies nothing, so what a reader picks the " +
-			"control out by is the ring against the page, which clears at 3.26:1. " +
-			"This is the boundary between two parts of one control. Closing the last " +
-			"0.08 means darkening the tone past Apple's own systemGray; see chipRing " +
-			"and ColorPalette.ControlBorder",
-	},
-}
+}{}
 
 // Every (theme, backdrop) pair either clears WCAG 1.4.11's 3:1 floor or is a
 // recorded shortfall whose number has not moved.
@@ -591,10 +631,7 @@ var knownBoundaryShortfalls = map[string]struct {
 func TestEveryControlBoundaryPairIsAccountedFor(t *testing.T) {
 	const floor = 3.0
 
-	for name, theme := range map[string]*core.Theme{
-		"DefaultTheme":  core.DefaultTheme,
-		"MaterialTheme": core.MaterialTheme,
-	} {
+	for name, theme := range core.BundledThemes() {
 		edge, ok := relativeLuminance(theme.Colors.ControlBorderColor())
 		if !ok {
 			t.Errorf("%s: ControlBorder %q does not parse", name, theme.Colors.ControlBorderColor())
@@ -642,13 +679,14 @@ func TestEveryControlBoundaryPairIsAccountedFor(t *testing.T) {
 // theme keeps carrying the paragraph explaining why it was not fixed — and
 // worse, how the next real shortfall gets waved through by an entry that
 // looks like precedent.
+//
+// This is the test that fired. The DefaultTheme/Surface entry was retired by
+// the retint that closed its pair, and this loop is what would have reported
+// it had the retint come from someone who had not read chipRing.
 func TestNoRecordedBoundaryShortfallHasQuietlyBeenFixed(t *testing.T) {
 	const floor = 3.0
 
-	byName := map[string]*core.Theme{
-		"DefaultTheme":  core.DefaultTheme,
-		"MaterialTheme": core.MaterialTheme,
-	}
+	byName := core.BundledThemes()
 	for key := range knownBoundaryShortfalls {
 		name, what, found := strings.Cut(key, "/")
 		theme, ok := byName[name]
@@ -673,6 +711,53 @@ func TestNoRecordedBoundaryShortfallHasQuietlyBeenFixed(t *testing.T) {
 			t.Errorf("%s clears %.1f:1 now — delete the entry from "+
 				"knownBoundaryShortfalls, and the argument in chipRing and "+
 				"ColorPalette.ControlBorder with it", key, floor)
+		}
+	}
+}
+
+// What a new entry has to look like.
+//
+// The table is empty, which is the state it is hardest to add a bad entry to
+// safely: there is no neighbour to match against, and the two tests above
+// both pass vacuously over nothing. Each requirement below is a way the one
+// entry this table has ever held could have been written badly.
+//
+//   - A reason long enough to be an argument. The retired entry's was six
+//     lines and carried the whole case; "the chip" would have exempted the
+//     same pair, passed both sibling tests, and told the next reader nothing.
+//     The floor is arbitrary and deliberately low — it separates a sentence
+//     from a label, and no more.
+//   - A recorded ratio actually under 3:1. The sibling test compares the
+//     recorded number against the measured one, but only for pairs the census
+//     reaches; an entry recording 3.2 is exempting something that clears, and
+//     is unfalsifiable rather than wrong.
+//   - A pointer to where the argument lives in full. The reason here is a
+//     précis by design — the retired one pointed at chipRing and
+//     ColorPalette.ControlBorder — and a précis with no referent is the only
+//     copy, which is the shape that drifts.
+func TestKnownBoundaryShortfallsIsEmptyOrJustified(t *testing.T) {
+	const floor = 3.0
+	// Long enough to be a sentence. Chosen against the shortest defensible
+	// argument, not against the retired one, which was six times this.
+	const minReason = 60
+
+	for key, entry := range knownBoundaryShortfalls {
+		if len(entry.reason) < minReason {
+			t.Errorf("knownBoundaryShortfalls[%q] gives %d characters of reason, want at "+
+				"least %d — an exemption is worth what its argument is worth, and this "+
+				"table is the place the argument is stated as a fact",
+				key, len(entry.reason), minReason)
+		}
+		if entry.ratio >= floor {
+			t.Errorf("knownBoundaryShortfalls[%q] records %.2f:1, which is not below the "+
+				"%.1f:1 floor — an entry for a pair that clears exempts nothing and "+
+				"cannot be checked by TestNoRecordedBoundaryShortfallHasQuietlyBeenFixed",
+				key, entry.ratio, floor)
+		}
+		if !strings.Contains(entry.reason, "see ") {
+			t.Errorf("knownBoundaryShortfalls[%q] points nowhere — end the reason with "+
+				"\"see <identifier>\" naming where the argument is made in full, so this "+
+				"précis has something to be a précis of", key)
 		}
 	}
 }

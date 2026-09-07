@@ -32,8 +32,8 @@ func TestNativeStackAlignmentsCoverEveryPlacement(t *testing.T) {
 		fn     string
 	}{
 		{
-			swiftSwitch.with(swiftStyle, "func grMobStackAlignment(", "switch align {"),
-			"GrMobStyle.swift", "grMobStackAlignment",
+			swiftSwitch.with(swiftStack, "public func grMobStackAnchor(", "switch align {"),
+			"GrMobStack.swift", "grMobStackAnchor",
 		},
 		{
 			kotlinWhen.with(kotlinRenderer, "private fun grMobStackAlignment(", "when (align) {"),
@@ -80,12 +80,14 @@ func TestBothNativeParsersReadTheStackAlignment(t *testing.T) {
 // The centre must NOT have an arm, on either native.
 //
 // It is core.StackAlignment's zero value, so every node in every tree carries
-// it, and both mappings answer for it by returning nil — which the renderers
-// read as "wrap this layer in nothing at all". An arm returning `.center` /
-// `Alignment.Center` would look equivalent and is not: on iOS it would put a
-// filling frame around every layer of every stack (see GrMobZStack on why that
-// frame is the part with a cost), and on Android it would replace the Modifier
-// an unplaced layer has always been given.
+// it, and both mappings answer for it by returning nil — the caller substitutes
+// the centre. An arm returning it directly would look equivalent and is not: it
+// makes "said nothing" and "asked for the centre" two states where the rest of
+// the framework has one, and on Android it would replace the Modifier an
+// unplaced layer has always been given. On iOS it used to be worse still, since
+// nil was what kept a filling frame off an unplaced layer; the Layout that
+// replaced that frame has no such cost, and the rule stands for the reason
+// core.StackAlignments() excludes the centre in the first place.
 //
 // The coverage check above cannot say this — an unlisted arm is a failure
 // there, but the empty string is not a value it would think to look for.
@@ -94,14 +96,14 @@ func TestNativeStackAlignmentsLeaveTheCentreToTheCatchAll(t *testing.T) {
 		syntax dispatchSyntax
 		file   string
 	}{
-		{swiftSwitch.with(swiftStyle, "func grMobStackAlignment(", "switch align {"), "GrMobStyle.swift"},
+		{swiftSwitch.with(swiftStack, "public func grMobStackAnchor(", "switch align {"), "GrMobStack.swift"},
 		{kotlinWhen.with(kotlinRenderer, "private fun grMobStackAlignment(", "when (align) {"), "Renderer.kt"},
 	} {
 		for _, label := range c.syntax.labels(t) {
 			if label == string(core.StackAlignCenter) {
-				t.Errorf("%s: grMobStackAlignment has an arm for the empty placement; the "+
-					"centre is the catch-all's, and an arm for it would wrap every unplaced "+
-					"layer of every stack", c.file)
+				t.Errorf("%s: the placement mapping has an arm for the empty placement; the "+
+					"centre is core.StackAlignCenter, which every node in every tree "+
+					"carries, and an arm for it would be an arm for \"the default\"", c.file)
 			}
 		}
 	}
@@ -125,11 +127,11 @@ func TestNativeZStacksPlaceEachLayer(t *testing.T) {
 		{
 			swiftRenderer, "private struct GrMobZStack", swiftCompositeStart, []string{
 				// Read per child, off the child's own style.
-				`grMobStackAlignment(child.style?.stackAlign ?? "")`,
-				// SwiftUI has no per-child ZStack alignment; the frame is the
-				// idiom, and maxWidth/maxHeight are what make it fill the
-				// stack so the alignment has room to act.
-				".frame(maxWidth: .infinity, maxHeight: .infinity, alignment: placed)",
+				`grMobStackAnchor(child.style?.stackAlign ?? "")`,
+				// SwiftUI has no per-child ZStack alignment, so the layer's
+				// anchor rides to the Layout on a LayoutValueKey — a Layout
+				// sees opaque subview proxies and cannot get back to the node.
+				"GrMobStackPlacement.self",
 			},
 		},
 		{

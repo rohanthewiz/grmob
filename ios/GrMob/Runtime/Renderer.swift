@@ -362,46 +362,97 @@ private struct GrMobColumn: View {
 /// A layer that wants the stack's full extent states its own dimensions, which
 /// is the contract core.ZStack documents.
 ///
-/// # The per-layer opt-out, and why it is a frame
+/// # The per-layer opt-out, and why it stopped being a frame
 ///
 /// core.Style.StackAlign lets one layer sit in a corner instead. SwiftUI is
 /// the target with no direct spelling for it — a ZStack's `alignment:` is the
 /// stack's, not the layer's, and there is no `.align()` for a child the way
-/// Compose's BoxScope has one — so the layer is wrapped in a frame that fills
-/// the stack and placed inside it. That is SwiftUI's own idiom for the job.
+/// Compose's BoxScope has one — so the layer used to be wrapped in a frame
+/// that filled the stack and placed inside it. That is SwiftUI's own idiom for
+/// the job, and it carried this target's one divergence with it: **a filling
+/// frame is greedy**. An *unsized* stack grew to whatever its parent proposed
+/// as soon as one layer was aligned, where a Compose Box and a CSS grid track
+/// both stay the size of their largest child.
 ///
-/// The frame is applied *only* to a layer that asks for a placement, which is
-/// what keeps the change from reaching any tree that existed before this
-/// property: grMobStackAlignment returns nil for the centre, and the `else`
-/// branch below is the code this view has always run.
+/// The frame is gone. GrMobStackLayout below places each layer by coordinate,
+/// so nothing is wrapped and nothing is greedy, and the container reports the
+/// largest child on each axis — which is core.ZStack's stated contract and what
+/// the other three targets already did. An unsized stack with an aligned layer
+/// now renders the same on all four.
 ///
-/// It has to be that narrow, because a filling frame is greedy and the
-/// greediness is this target's one divergence. A Compose Box and a CSS grid
-/// track both stay the size of their largest child no matter where a child is
-/// placed; a stack here grows to whatever its parent proposes as soon as one
-/// layer is aligned *and* the stack states no size of its own. core.ZStack's
-/// doc already asks a stack to pin its dimensions, and a stack that does is
-/// identical on all four targets — the case to avoid is an unsized stack with
-/// an aligned layer, which is close to meaningless anyway.
+/// The Layout replaces the ZStack for *every* stack rather than only for ones
+/// with a placed layer, and that is deliberate: two paths that have to agree
+/// about sizing is a worse trade than one path. What keeps the change honest is
+/// that the arithmetic is separately testable — GrMobStackSolver is pure and
+/// `ios/verify` measures it, which a `ZStack { }` never could be.
 private struct GrMobZStack: View {
     let node: GrMobNode
     let grow: GrMobGrow
 
     var body: some View {
         let s = node.style
-        ZStack(alignment: .center) {
+        GrMobStackLayout {
             ForEach(node.children, id: \.viewID) { child in
-                if let placed = grMobStackAlignment(child.style?.stackAlign ?? "") {
-                    RenderNode(node: child)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: placed)
-                } else {
-                    RenderNode(node: child)
-                }
+                RenderNode(node: child)
+                    .layoutValue(key: GrMobStackPlacement.self,
+                                 value: grMobStackAnchor(child.style?.stackAlign ?? ""))
             }
         }
         .grMobBox(s, grow: grow,
                     onTap: node.stringProp("onClick"),
                     onLongPress: node.stringProp("onLongPress"))
+    }
+}
+
+/// One layer's placement, handed from GrMobZStack to GrMobStackLayout.
+///
+/// A LayoutValueKey rather than an array on the layout, for the reason
+/// GrMobFlexWeight gives: a Layout receives its children as opaque proxies,
+/// `subviews[i]` cannot be traced back to the GrMobNode it came from, and a
+/// parallel array would silently mis-align the moment SwiftUI flattened a
+/// Group or dropped an empty view. A stack is exactly where that would show —
+/// a core.For inside one generates its layers.
+///
+/// nil is the centre, which is core.StackAlignCenter and every layer's default.
+/// Carried as an Optional rather than defaulting to `.center` here so that
+/// "said nothing" and "asked for the centre" stay one state all the way down;
+/// grMobStackAnchor returns nil for both.
+private struct GrMobStackPlacement: LayoutValueKey {
+    static let defaultValue: GrMobStackAnchor? = nil
+}
+
+/// The overlay's layout: measure every layer, size to the largest, place each
+/// one at its own anchor.
+///
+/// The arithmetic is GrMobStackSolver's (GrMobStack.swift), which is pure and
+/// therefore checkable off-device; what stays here is the part that needs
+/// SwiftUI — proposing sizes to subviews and placing them.
+///
+/// Children are measured with the *incoming* proposal rather than an
+/// unspecified one, which is what a SwiftUI ZStack does and what keeps a
+/// greedy layer greedy: a background that states `maxWidth: .infinity` reports
+/// the proposal and so makes the stack fill, exactly as it did before. What
+/// changed is that the layout no longer imposes that on a layer which never
+/// asked for it.
+private struct GrMobStackLayout: Layout {
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        GrMobStackSolver.containerSize(children: subviews.map { $0.sizeThatFits(proposal) })
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        // Proposed the size actually being drawn into rather than `proposal`:
+        // the parent is free to hand over a different size than the one
+        // sizeThatFits asked for, and every layer of an overlay is offered the
+        // whole box. Same rule GrMobFlexLayout states at its own placeSubviews.
+        let offer = ProposedViewSize(bounds.size)
+        for subview in subviews {
+            let anchor = subview[GrMobStackPlacement.self] ?? .center
+            let size = subview.sizeThatFits(offer)
+            subview.place(
+                at: GrMobStackSolver.origin(child: size, in: bounds, anchor: anchor),
+                anchor: .topLeading,
+                proposal: offer)
+        }
     }
 }
 

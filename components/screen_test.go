@@ -35,10 +35,7 @@ func column(t *testing.T, root *core.Node) *core.Node {
 // depends on it — a scaffold that quietly imposed a gap or a flex-grow would
 // have shifted the layout of four apps that never asked for one.
 func TestScreenZeroValueIsExactlySafeAreaColumn(t *testing.T) {
-	for name, theme := range map[string]*core.Theme{
-		"Default":  core.DefaultTheme,
-		"Material": core.MaterialTheme,
-	} {
+	for name, theme := range core.BundledThemes() {
 		t.Run(name, func(t *testing.T) {
 			body := core.Text("hello")
 

@@ -210,14 +210,17 @@ therefore the role's
 palette's second value per role, rather than the fill color. Measured against
 each theme's own `Background` (both `#FFFFFF`), with the value each replaced:
 
-| variant | DefaultTheme | MaterialTheme |
-|---|---|---|
-| default | **7.56:1** (needs no second tone) | 7.63:1 (needed no second tone) |
-| success | **5.40:1** (was 2.22) | 5.13:1 (needed no second tone) |
-| warning | **5.28:1** (was 2.20) | **5.60:1** (was 3.08) |
-| error | **5.38:1** (was 3.55) | 7.33:1 (needed no second tone) |
+| variant | DefaultTheme | MaterialTheme | AmberTheme |
+|---|---|---|---|
+| default | **7.56:1** (needs no second tone) | 7.63:1 (needed no second tone) | **5.78:1** (was 2.04) |
+| success | **5.40:1** (was 2.22) | 5.13:1 (needed no second tone) | 5.13:1 (needed no second tone) |
+| warning | **5.28:1** (was 2.20) | **5.60:1** (was 3.08) | **5.60:1** (was 3.08) |
+| error | **5.38:1** (was 3.55) | 7.33:1 (needed no second tone) | 7.33:1 (needed no second tone) |
 
-All eight now clear WCAG AA (4.5:1); four of the eight did not before.
+All twelve clear WCAG AA (4.5:1); five of them did not before their tone
+existed. `AmberTheme`'s `default` row is the widest gap in the table and the
+reason that palette was written: MD amber 700 is a fine fill and cannot be ink,
+which is the case neither of the other two still makes for `Primary`.
 
 `DefaultTheme`'s `default` row read "was 4.02" until its `Primary` role was
 [darkened to the accessible blue its tone already carried](concepts/styling-and-theming.md#the-on-light-tones),

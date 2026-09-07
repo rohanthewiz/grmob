@@ -56,6 +56,39 @@ package core
 // s.Padding.Top — so PaddingTop(0) after PaddingVertical(8) left the 8 in
 // place. It settles its axis now, which makes the four consistent; the only
 // behavior that differs is the case that used to silently fail.
+//
+// # The wider brush goes first
+//
+// The inset props come in three widths — Padding(all), the two axis props,
+// and the four sides — and they are asymmetric in exactly one way:
+//
+//	a narrower prop can override or clear a wider one that ran before it,
+//	because it settles the axis first and then owns its own side
+//
+//	a wider prop cannot preserve a narrower one that ran before it,
+//	because it writes every side it covers
+//
+// So PaddingHorizontal(16) then PaddingLeft(0) is 0 on the left and 16 on the
+// right, and the same two props in the other order are 16 on both. Both are
+// last-one-wins, and every (axis, side) combination is expressible — but only
+// in one order. State the wider brush first.
+//
+// That asymmetry is not a gap to be closed and no prop should be added to
+// close it. "Left stays zero through a later PaddingHorizontal" would mean a
+// prop whose effect outlives the props after it, and every other StyleProp in
+// this package is last-one-wins; a sticky exception would be invisible at the
+// call site of the prop it defeats. TestTheWiderBrushGoesFirst pins the
+// lattice in both directions, on both families and both axes, so a future
+// "merge instead of overwrite" in an axis prop fails rather than quietly
+// making prop order stop mattering.
+//
+// What makes the ordering rule *reachable* is a separate fact, and it is the
+// one the rule silently rests on: a widget appends its own inset defaults
+// before the caller's Style, never after. A caller therefore always has the
+// last word and can always state their side prop after whatever axis default
+// the widget set — see components.TestACallerStylePropOutranksAWidgetsOwnInsets,
+// which is where that contract is checked rather than merely documented on
+// each widget's Style field.
 
 // settleHorizontal dissolves the Horizontal shorthand into the Left/Right
 // fields it was standing in for, then clears it. See the file comment for why

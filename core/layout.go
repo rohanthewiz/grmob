@@ -300,12 +300,14 @@ func Box(stylePropsAndChildren ...PropsAndChildren) View {
 // rose's dimensions on the stack: pinning the box is what keeps a smaller
 // overlay from deciding the size.
 //
-// Pinning it matters twice over once a layer is placed. SwiftUI has no
-// per-child ZStack alignment, so the iOS renderer places a layer by wrapping
-// it in a frame that fills the stack — and a filling frame is greedy, so an
-// *unsized* stack with an aligned layer grows to its parent's proposal there
-// while a Compose Box and a CSS grid track both stay the size of their largest
-// child. A stack that states its dimensions is identical on all four.
+// That holds on all four targets including a stack with a placed layer, which
+// it did not always. SwiftUI has no per-child ZStack alignment, so the iOS
+// renderer used to place a layer by wrapping it in a frame that filled the
+// stack — and a filling frame is greedy, so an *unsized* stack with an aligned
+// layer grew to its parent's proposal there. It now places by coordinate
+// through a custom Layout instead; see core/stack_align.go for the divergence
+// and what closed it. Pinning a stack's dimensions is still worth doing, and is
+// no longer the difference between two renderings.
 //
 // Like Box and Scroll it carries no theme base — a theme Column's screen inset
 // applied to an overlay would offset every layer by 16px and change nothing

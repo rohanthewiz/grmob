@@ -376,10 +376,7 @@ func TestChipLoudTreatmentBeatsSharedStyle(t *testing.T) {
 // wrong was the number, and a number is only wrong against a backdrop — which
 // is why the second half measures rather than compares hexes.
 func TestChipQuietRingIsTheBoundaryRoleAndNotTheDivider(t *testing.T) {
-	for name, theme := range map[string]*core.Theme{
-		"DefaultTheme":  core.DefaultTheme,
-		"MaterialTheme": core.MaterialTheme,
-	} {
+	for name, theme := range core.BundledThemes() {
 		ctx := core.NewContext().WithTheme(theme)
 		ctx.BeginRenderPass()
 
@@ -395,42 +392,57 @@ func TestChipQuietRingIsTheBoundaryRoleAndNotTheDivider(t *testing.T) {
 	}
 }
 
-// And the ring clears WCAG 1.4.11's floor against the page it sits on.
+// And the ring clears WCAG 1.4.11's floor against *both* backdrops a chip has.
 //
 // 3:1, not the 4.5:1 the ink assertions in this package use: this is non-text
 // contrast, and the thing being identified is a control rather than read as
 // words.
 //
-// The page is the backdrop measured, and deliberately only the page. A chip
-// has two — the Background behind it and its own Surface fill — and the outer
-// one is what a reader picks the pill out by, because the fill is 1.12:1
-// against the page under DefaultTheme and identifies nothing on its own. The
-// inner edge is the boundary between two parts of one control; under
-// DefaultTheme it is 2.92:1, which is stated in the theme and in stateStyle
-// rather than asserted here, since asserting it would fail on a value that is
-// Apple's own systemGray and correct.
+// # Why the inner backdrop is asserted now
+//
+// A chip sits on the page and is filled with Surface, so its ring has an
+// outer edge and an inner one. This measured only the outer one for three
+// sessions, and said so at length: the outer edge is what a reader picks the
+// pill out by, because the fill is 1.12:1 against the page under DefaultTheme
+// and identifies nothing on its own, while the inner pair is a boundary
+// between two parts of one control. That was the argument for a 2.92:1 inner
+// pair, and the last sentence of the comment that stood here was the tell —
+// asserting the inner edge "would fail on a value that is Apple's own
+// systemGray and correct".
+//
+// A test shaped around the value it must not fail on is a test that has
+// stopped being able to find anything. The tone moved (see
+// core.ColorPalette.ControlBorder), both pairs clear, and the loop measures
+// both — so the next tone that clears the page and not the fill is caught
+// here, at the widget, and not only in the palette census.
 func TestChipQuietRingClearsTheNonTextContrastFloor(t *testing.T) {
 	const wcagNonText = 3.0
 
-	for name, theme := range map[string]*core.Theme{
-		"DefaultTheme":  core.DefaultTheme,
-		"MaterialTheme": core.MaterialTheme,
-	} {
+	for name, theme := range core.BundledThemes() {
 		ctx := core.NewContext().WithTheme(theme)
 		ctx.BeginRenderPass()
 
-		ring := Chip{Label: "2024"}.Render(ctx).Style.BorderColor
-		ringLum, ok := relativeLuminance(ring)
+		// The rendered node, not the palette role: this is the pair the
+		// widget actually draws, fill and ring together.
+		quiet := Chip{Label: "2024"}.Render(ctx).Style
+		ringLum, ok := relativeLuminance(quiet.BorderColor)
 		if !ok {
-			t.Fatalf("%s: quiet ring %q is not a parseable hex", name, ring)
+			t.Fatalf("%s: quiet ring %q is not a parseable hex", name, quiet.BorderColor)
 		}
-		pageLum, ok := relativeLuminance(theme.Colors.Background)
-		if !ok {
-			t.Fatalf("%s: Background %q is not a parseable hex", name, theme.Colors.Background)
-		}
-		if r := contrastRatio(ringLum, pageLum); r < wcagNonText {
-			t.Errorf("%s: quiet ring %q is %.2f:1 against the page, want at least %.1f:1 "+
-				"(WCAG 1.4.11 — the edge that identifies a control)", name, ring, r, wcagNonText)
+
+		for _, backdrop := range []struct{ what, hex string }{
+			{"the page", theme.Colors.Background},
+			{"its own fill", quiet.Background},
+		} {
+			lum, ok := relativeLuminance(backdrop.hex)
+			if !ok {
+				t.Fatalf("%s: %s %q is not a parseable hex", name, backdrop.what, backdrop.hex)
+			}
+			if r := contrastRatio(ringLum, lum); r < wcagNonText {
+				t.Errorf("%s: quiet ring %q is %.2f:1 against %s (%q), want at least %.1f:1 "+
+					"(WCAG 1.4.11 — the edge that identifies a control)",
+					name, quiet.BorderColor, r, backdrop.what, backdrop.hex, wcagNonText)
+			}
 		}
 	}
 }

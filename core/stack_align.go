@@ -1,5 +1,7 @@
 package core
 
+import "sort"
+
 // StackAlignment is where one layer of a ZStack sits inside the stack.
 //
 // Every layer of a ZStack is centred, which is the alignment contract the node
@@ -33,28 +35,38 @@ package core
 //	web       justify-self / align-self on the grid item, imposed by the
 //	          stack (see htmlout's imposed) rather than written by the layer,
 //	          because align-self means something else on a flex child
-//	iOS       .frame(maxWidth: .infinity, maxHeight: .infinity, alignment:)
-//	          around the layer — SwiftUI has no per-child ZStack alignment
+//	iOS       a coordinate handed to GrMobStackLayout, a custom SwiftUI
+//	          Layout — SwiftUI has no per-child ZStack alignment
 //	Android   Modifier.align(Alignment.*) in the Box's scope
 //
 // The three constructs each have a nine-value 2D placement vocabulary and they
 // agree value for value, which is what makes this portable where a flexbox
 // property would not have been.
 //
-// # The one divergence, and how to avoid it
+// # The divergence this used to carry, and what closed it
 //
-// SwiftUI's spelling is the odd one: a frame that fills the stack, with the
-// layer placed inside it. A filling frame is *greedy*, so on iOS a stack that
-// states no size of its own grows to whatever its parent offers as soon as one
-// layer is aligned, where a Compose Box and a CSS grid track both stay the
-// size of their largest child.
+// SwiftUI's spelling was the odd one: a frame that fills the stack, with the
+// layer placed inside it. That is SwiftUI's own idiom for a job it has no
+// direct spelling for, and a filling frame is *greedy* — so on iOS a stack
+// that stated no size of its own grew to whatever its parent offered as soon
+// as one layer was aligned, where a Compose Box and a CSS grid track both stay
+// the size of their largest child.
 //
-// core.ZStack's own doc already asks a stack to state its dimensions ("pinning
-// the box is what keeps a smaller overlay from deciding the size"), and a
-// stack that does is identical on all four targets. An unsized stack with an
-// aligned layer is the case to avoid — and it is close to meaningless anyway,
-// since "top-start" of a box with no size is wherever the largest layer
-// happens to end.
+// It was documented in four places and avoided by pinning the stack's box,
+// which core.ZStack asks for anyway. What it was not was *pinned*: ios/verify
+// type-checks and replays a transcript, and neither of those measures a size.
+//
+// The frame is gone. The iOS renderer places a layer by coordinate through a
+// custom SwiftUI Layout (GrMobStackLayout), so nothing is wrapped and nothing
+// is greedy, and the container reports the largest child on each axis like the
+// other three. The arithmetic lives in GrMobStack.swift as pure CoreGraphics —
+// split out for the reason GrMobFlexSolver was — and ios/verify measures both
+// halves of it: what the stack sizes to, and where each of the nine anchors
+// puts a layer.
+//
+// Pinning a stack's dimensions is still good advice, and for the reason it
+// always had: "top-start" of a box with no size is wherever the largest layer
+// happens to end. It is no longer the difference between two renderings.
 type StackAlignment string
 
 const (
@@ -121,8 +133,85 @@ func StackAlignments() []StackAlignment {
 // because align-self *does* mean something to a flex child and a layer prop
 // that silently re-placed a row's children would be worse than one that did
 // nothing.
+//
+// Inert is the right behaviour and *silent* is not, so the tree walk says so:
+// with debug mode on, core.AuditTree reports a placement no container will read
+// as ConcernInertPlacement, naming the node path and the container that was
+// going to place it. That is the only diagnostic any target produces, and the
+// argument for putting it there rather than in a renderer is in
+// placement_audit.go.
 func StackAlign(value StackAlignment) StyleProp {
 	return styleFunc(func(s *Style) {
 		s.StackAlign = value
 	})
+}
+
+// The two node-type facts a placement depends on, stated here because this is
+// the property they exist for and because core owns the node types.
+//
+// They were htmlout's alone until the audit needed them. That is the wrong way
+// round for a fact about core.ZStack — an exporter is a consumer of the node
+// vocabulary, not its author — and it left core unable to say anything about a
+// placement it defines. htmlout's own tables carry the *rendering* consequence
+// of each set (a grid cell, a wrapper that would swallow a flex gap) and stay
+// where they are; TestHtmloutAgreesWithCoreOnWhoPlacesAndWhoGroups pins them to
+// these, so there is one census with two consumers rather than two lists that
+// happen to agree.
+
+// placingContainers are the node types that read a child's StackAlign. A
+// layer's placement is the *container's* decision to honour it — see
+// StackAlign's doc and htmlout's imposed channel — so this is the set of
+// containers that make the decision at all.
+//
+// One entry, and the reason it is a set rather than a comparison against the
+// string "ZStack" is that a second overlay is a change to this line rather
+// than to the audit, the exporter and two renderers.
+var placingContainers = map[string]bool{
+	"ZStack": true,
+}
+
+// groupingContainers are the node types that have no box of their own and
+// hand their children straight to the container above them: core.For's
+// Fragment and core.WithTheme's Theme.
+//
+// They matter to a placement because they are transparent to one. A core.For
+// inside a ZStack overlays what it generated — htmlout forwards the imposed
+// declaration through a Fragment rather than absorbing it, and both natives
+// render these as a bare pass-through — so the container that places a node is
+// the nearest ancestor that is not one of these, not simply its tree parent.
+var groupingContainers = map[string]bool{
+	"Fragment": true,
+	"Theme":    true,
+}
+
+// PlacingContainers returns the node types that place their children, sorted.
+//
+// Sorted for the reason htmlout's OverlayTypes is: a test looping over a map
+// reports in a different order every run, and a census that names the offender
+// wants one order.
+func PlacingContainers() []string {
+	return sortedNodeTypes(placingContainers)
+}
+
+// GroupingContainers returns the transparent node types, sorted. See
+// groupingContainers.
+func GroupingContainers() []string {
+	return sortedNodeTypes(groupingContainers)
+}
+
+// placesChildren reports whether a container of this type reads its children's
+// StackAlign.
+func placesChildren(nodeType string) bool { return placingContainers[nodeType] }
+
+// groupsChildren reports whether this node type is transparent to a placement:
+// it has no box, so the container above it is the one that places its children.
+func groupsChildren(nodeType string) bool { return groupingContainers[nodeType] }
+
+func sortedNodeTypes(set map[string]bool) []string {
+	out := make([]string, 0, len(set))
+	for k := range set {
+		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out
 }

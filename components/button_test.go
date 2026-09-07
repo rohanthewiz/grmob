@@ -10,10 +10,7 @@ import (
 // The load-bearing property of both new axes: their zero values contribute
 // nothing, so the widget's output is the theme's Button base byte for byte.
 func TestButtonZeroValueIsExactlyCoreButton(t *testing.T) {
-	for name, theme := range map[string]*core.Theme{
-		"Default":  core.DefaultTheme,
-		"Material": core.MaterialTheme,
-	} {
+	for name, theme := range core.BundledThemes() {
 		t.Run(name, func(t *testing.T) {
 			ctx := core.NewContext().WithTheme(theme)
 			ctx.BeginRenderPass()
@@ -93,10 +90,7 @@ func TestButtonZeroValueDoesNotRederiveFromThePalette(t *testing.T) {
 // caught by number here rather than by eye on a screen.
 func TestButtonFilledStatusVariantsAreLegibleOnEveryTheme(t *testing.T) {
 	const wcagAA = 4.5
-	for themeName, theme := range map[string]*core.Theme{
-		"Default":  core.DefaultTheme,
-		"Material": core.MaterialTheme,
-	} {
+	for themeName, theme := range core.BundledThemes() {
 		for _, v := range []Variant{VariantDefault, VariantSuccess, VariantWarning, VariantError} {
 			ctx := core.NewContext().WithTheme(theme)
 			ctx.BeginRenderPass()

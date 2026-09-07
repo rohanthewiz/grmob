@@ -102,14 +102,20 @@ core.Row(
       contradiction of the centring contract. A stack now states the centre on
       its unplaced layers explicitly, so nothing else can.
 
-  !!! warning "Pin the stack's size once a layer is placed"
-      SwiftUI has no per-child `ZStack` alignment, so the iOS renderer places a
-      layer by wrapping it in a frame that fills the stack — and a filling
-      frame is greedy. An **unsized** stack with an aligned layer therefore
-      grows to its parent's proposal on iOS, where a Compose `Box` and a CSS
-      grid track both stay the size of their largest child. A stack that states
-      its own `Width`/`Height` — which the sizing note above already asks for —
-      is identical on all four.
+  !!! note "The iOS divergence this used to carry is closed"
+      SwiftUI has no per-child `ZStack` alignment, so the iOS renderer used to
+      place a layer by wrapping it in a frame that filled the stack — and a
+      filling frame is greedy. An **unsized** stack with an aligned layer
+      therefore grew to its parent's proposal on iOS, where a Compose `Box` and
+      a CSS grid track both stay the size of their largest child.
+
+      It now places by coordinate through a custom SwiftUI `Layout`, so the
+      stack is the size of its largest child on all four targets whether or not
+      a layer is placed. The arithmetic is pure and `ios/verify` measures it —
+      which is what the old divergence never had, being documented in four
+      places and asserted in none. Stating the stack's own `Width`/`Height` is
+      still worth doing for the reason the sizing note above gives; it is no
+      longer the difference between two renderings.
 
   `Gap`, `JustifyContent`, `AlignItems` and `FlexDirection` are inert on a
   `ZStack`: there is one cell and nothing to space along. They do not promote

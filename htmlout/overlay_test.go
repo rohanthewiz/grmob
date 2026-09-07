@@ -247,3 +247,54 @@ func TestALayersOwnAlignSelfDoesNotPlaceIt(t *testing.T) {
 			"flex prop wins the cascade and places the layer:\n%s", out)
 	}
 }
+
+// This package's two node-type sets and core's must be the same sets.
+//
+// overlayTypes and transparentTypes are this exporter's, and they carry the
+// *rendering* consequence of each decision: a grid cell that keeps a layer in
+// flow, a wrapper that would swallow the parent's gap and flex-direction. core
+// now states the same two memberships for the placement audit
+// (core.PlacingContainers and core.GroupingContainers), because a fact about
+// core.ZStack belongs to the package that defines core.ZStack.
+//
+// Two lists is one too many unless something compares them, and the failure if
+// nothing did is quiet in both directions. A type this exporter treats as an
+// overlay and core does not is a stack whose every layer the audit reports; a
+// type core places and this exporter does not is a placement written into a
+// document that has no grid to honour it. Neither shows up as a test failure
+// anywhere else, because each package's own tests are internally consistent.
+//
+// The comparison lives here rather than in core because only this direction
+// compiles: htmlout imports core.
+func TestHtmloutAgreesWithCoreOnWhoPlacesAndWhoGroups(t *testing.T) {
+	for _, c := range []struct {
+		what      string
+		mine      []string
+		theirs    []string
+		mineName  string
+		theirName string
+	}{
+		{"the containers that place their children",
+			OverlayTypes(), core.PlacingContainers(),
+			"htmlout.OverlayTypes", "core.PlacingContainers"},
+		{"the containers with no box of their own",
+			TransparentTypes(), core.GroupingContainers(),
+			"htmlout.TransparentTypes", "core.GroupingContainers"},
+	} {
+		// Both are already sorted by their own accessors, which is what makes
+		// a positional comparison honest here rather than lucky.
+		if len(c.mine) != len(c.theirs) {
+			t.Errorf("%s: %s() = %v, %s() = %v — the two lists must name the same node "+
+				"types, or the exporter and the placement audit disagree about %s",
+				c.what, c.mineName, c.mine, c.theirName, c.theirs, c.what)
+			continue
+		}
+		for i := range c.mine {
+			if c.mine[i] != c.theirs[i] {
+				t.Errorf("%s: %s() = %v, %s() = %v", c.what,
+					c.mineName, c.mine, c.theirName, c.theirs)
+				break
+			}
+		}
+	}
+}
