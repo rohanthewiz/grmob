@@ -89,6 +89,18 @@ var bindableGoTypes = map[string]bool{
 	"string": true,
 	"bool":   true,
 	"int":    true,
+	// error is here because gobind binds it, not because the bridge uses it.
+	// That distinction matters: this set decides which functions the stub is
+	// *required* to declare, so a type gobind carries and this set omits is a
+	// bridge function with no stub declaration and no type-check — the exact
+	// hole TestTheGomobileStubMatchesTheBoundGoSurface exists to close.
+	//
+	// It was omitted, and the omission was invisible because nothing in
+	// `mobile` returns an error. `func F() error` binds as
+	// `BOOL F(NSError**)`, and `func F(e error)` as `void F(NSError*)`; both
+	// were verified against a real `gomobile bind` rather than reasoned about.
+	// See swiftResults for what a signature carrying one turns into.
+	"error": true,
 }
 
 // swiftFuncDecl matches a stub function declaration, capturing its name.
@@ -289,7 +301,7 @@ func sortedNamesOf[V any](m map[string]V) []string {
 // said, in effect, "read it off Headers/Mobile.objc.h and add the row" — which
 // made the next bridge function of either shape blocked on somebody having run
 // a `gomobile bind` at least once, on a Mac with Xcode, for a fact that was
-// sitting in the module cache the whole time. See swiftType and swiftResult.
+// sitting in the module cache the whole time. See swiftType and swiftResults.
 //
 // gobindVersion below pins the version those readings were made against.
 //
@@ -331,10 +343,47 @@ var gobindSwiftTypes = map[string]struct{ param, result string }{
 	"string": {"String?", "String"},
 	"bool":   {"Bool", "Bool"},
 	"int":    {"Int", "Int"},
+	// error has no result spelling, and the empty string is the statement of
+	// that rather than an oversight. A Go error never appears as a Swift result
+	// type: it becomes a trailing NSError** the importer either turns into
+	// `throws` or leaves as a pointer parameter, which is swiftResults' whole
+	// subject. swiftType refuses an empty spelling rather than returning it, so
+	// this cell cannot be reached by accident.
+	//
+	// As a *parameter* it is an ordinary type — `NSError* _Nullable`, which
+	// Swift imports as `(any Error)?`.
+	"error": {"(any Error)?", ""},
+}
+
+// gobindErrorOutPointer is the other half of gobind's two-result split, and the
+// split itself: a first result listed here is *not* nullable in Objective-C, so
+// funcSummary moves it into an out-parameter and makes the return BOOL. A first
+// result that is not listed — a string, a bound interface — stays the return.
+//
+// The value is the Swift spelling of that out-parameter. Both were read off a
+// real bind rather than derived: `long*` imports as UnsafeMutablePointer<Int>?
+// and `BOOL*` as UnsafeMutablePointer<ObjCBool>?, which is not the same as the
+// `Bool` a plain BOOL parameter gives — ObjCBool is the C ABI's one-byte
+// spelling, and it only surfaces through a pointer.
+//
+// Membership rather than a boolean column on gobindSwiftTypes, because the two
+// facts are one: a type is in the non-nullable arm exactly when it has a
+// pointer spelling to be moved into.
+var gobindErrorOutPointer = map[string]string{
+	"bool": "UnsafeMutablePointer<ObjCBool>?",
+	"int":  "UnsafeMutablePointer<Int>?",
+}
+
+// goErrorType is the Go spelling gobind treats as the bridge's error channel.
+const goErrorType = "error"
+
+func isGoError(expr ast.Expr) bool {
+	ident, ok := expr.(*ast.Ident)
+	return ok && ident.Name == goErrorType
 }
 
 // gobindVersion is the golang.org/x/mobile the mapping above and the two result
-// rules in swiftResult were read out of.
+// rules in swiftResults were read out of.
 //
 // Pinned because the readings are of a *generator*, and a generator is a thing
 // that changes. The pin is not a claim that a newer gobind is wrong — it is the
@@ -346,6 +395,49 @@ var gobindSwiftTypes = map[string]struct{ param, result string }{
 // The version lives in go.mod, held there by the `tool` block rather than by an
 // import, which is also what keeps `go mod tidy` from dropping it.
 const gobindVersion = "v0.0.0-20251021151156-188f512ec823"
+
+// The two type tables answer for each other.
+//
+// bindableGoTypes decides which functions the stub is *required* to declare;
+// gobindSwiftTypes decides how each of their types is spelled. They are two
+// halves of one claim about what this bridge can carry, and they can disagree
+// in both directions, silently:
+//
+//	in bindableGoTypes only    a function is required to have a declaration and
+//	                           swiftType cannot build one, so every stub check
+//	                           for it fails with a refusal rather than a diff
+//	in gobindSwiftTypes only   the checker knows the spelling and does not ask
+//	                           for the declaration — `gomobile bind` produces
+//	                           the symbol, the stub omits it, and the app layer
+//	                           silently drops out of the type-check for it
+//
+// The second is the one that has actually happened. `error` was in neither
+// table, on the reasonable-looking grounds that no bridge function returns one
+// — but gobind binds it (`func F() error` becomes `BOOL F(NSError**)`), so a
+// bridge function that grew an error would have been judged unbindable here,
+// gone undeclared in the stub, and taken GomobileBridge.swift's type-check with
+// it. Nothing in the repository would have said so.
+//
+// Interfaces are deliberately outside this: bindableSignature admits any
+// exported identifier, because a bound interface's spelling is derived from its
+// name rather than looked up.
+func TestTheBindableTypesAndTheirSpellingsAreTheSameSet(t *testing.T) {
+	for name := range bindableGoTypes {
+		if _, ok := gobindSwiftTypes[name]; !ok {
+			t.Errorf("bindableGoTypes has %q and gobindSwiftTypes does not: a function "+
+				"using it is required to have a stub declaration that swiftType cannot "+
+				"build, so the check fails with a refusal instead of a difference", name)
+		}
+	}
+	for name := range gobindSwiftTypes {
+		if !bindableGoTypes[name] {
+			t.Errorf("gobindSwiftTypes can spell %q and bindableGoTypes does not admit "+
+				"it: `gomobile bind` produces the symbol, bindableFuncs skips it, the "+
+				"stub is never asked to declare it, and the app layer stops being "+
+				"type-checked for it without anything failing", name)
+		}
+	}
+}
 
 // The pinned gobind is the one in go.mod.
 //
@@ -362,7 +454,7 @@ func TestTheGobindReadingsArePinnedToTheModulesOwnVersion(t *testing.T) {
 	}
 	if !strings.Contains(string(raw), "golang.org/x/mobile "+gobindVersion) {
 		t.Errorf("go.mod no longer requires golang.org/x/mobile %s.\n\n"+
-			"gobindSwiftTypes, swiftType's interface row and swiftResult's two result "+
+			"gobindSwiftTypes, swiftType's interface row and swiftResults' arms "+
 			"rules are all readings of that version's bind/genobjc.go — objcParamType, "+
 			"objcType and funcSummary. Re-read them against the new one and move this "+
 			"constant, or the stub is being checked against a mapping the toolchain no "+
@@ -474,11 +566,23 @@ func swiftFuncSignature(name string, sig *ast.FuncType, ifaces map[string]bool) 
 	if err != nil {
 		return "", err
 	}
-	ret, err := swiftResult(sig, ifaces)
+	shape, err := swiftResults(sig, ifaces, false)
 	if err != nil {
 		return "", err
 	}
-	return "public func " + name + "(" + params + ")" + ret, nil
+	return "public func " + name + "(" + joinParams(params, shape.outParams) + ")" +
+		shape.clause(), nil
+}
+
+// joinParams puts gobind's own out-parameters after the ones the Go signature
+// declared, which is where the generated header puts them: the error pointer is
+// always last, and a moved-out first result sits immediately before it.
+func joinParams(declared string, added []string) string {
+	all := append([]string{}, added...)
+	if declared != "" {
+		all = append([]string{declared}, added...)
+	}
+	return strings.Join(all, ", ")
 }
 
 // swiftMethodSignature builds the declaration gobind produces for one method
@@ -499,11 +603,12 @@ func swiftMethodSignature(name string, sig *ast.FuncType, ifaces map[string]bool
 	if err != nil {
 		return "", err
 	}
-	ret, err := swiftResult(sig, ifaces)
+	shape, err := swiftResults(sig, ifaces, true)
 	if err != nil {
 		return "", err
 	}
-	return "func " + name + "(" + params + ")" + ret, nil
+	return "func " + name + "(" + joinParams(params, shape.outParams) + ")" +
+		shape.clause(), nil
 }
 
 // swiftParams renders a parameter list. label decides each parameter's
@@ -525,90 +630,174 @@ func swiftParams(sig *ast.FuncType, ifaces map[string]bool, label func(int, stri
 	return strings.Join(out, ", "), nil
 }
 
-// swiftResult renders the return clause, which is empty for a void function.
+// resultShape is what gobind and the Swift importer between them make of a
+// signature's results: extra parameters, a `throws`, and a return clause.
 //
-// # More than one result
+// Three fields because a Go result does not always become a Swift result. An
+// error becomes a trailing NSError** out-parameter in the generated header, and
+// what Swift then does with that depends on where the symbol sits — see
+// swiftResults.
+type resultShape struct {
+	// outParams are the Swift parameters gobind adds after the declared ones,
+	// already carrying their argument labels.
+	outParams []string
+	// throws replaces both the error parameter and (for a BOOL-returning
+	// method) the return, which is what Clang's error convention does.
+	throws bool
+	// ret is " -> T", or empty for a Swift function returning nothing.
+	ret string
+}
+
+// clause is everything after the closing parenthesis of a declaration.
+func (r resultShape) clause() string {
+	if r.throws {
+		return " throws" + r.ret
+	}
+	return r.ret
+}
+
+// swiftResults renders what a signature's results do to a Swift declaration.
 //
-// Still refused, and the message is a description of what gobind actually does
-// rather than a request to go and find out. funcSummary in bind/genobjc.go has
-// three arms, not two, and TestTheResultArmsAreReadOffThePinnedGobind holds
-// each of these lines to that file:
+// isMethod says which of the two positions the symbol is in, and it changes the
+// answer — see the error convention section below.
 //
-//	(T, error), T nullable       s.ret = objcType(T), and the error becomes a
-//	                             trailing NSError** out-parameter
-//	(T, error), T not nullable   s.ret = BOOL, and T becomes an out-parameter
-//	                             too, alongside the error
-//	three or more                g.errorf("too many result values") — gobind
-//	                             REFUSES it. There is no mapping to transcribe
+// # This used to be two refusals, and is not any more
 //
-// That third arm is the one worth having written down. A three-result bridge
-// function is not a gap in this table: it is a function `gomobile bind` will
-// not build, so the fix is to change the Go signature rather than to add a row
-// here. Reporting it as a missing mapping would send the next person to read a
-// header for a declaration that was never generated.
+// The previous version of this function refused every two-result signature and
+// told the reader to run `gomobile bind` once and write the row from what it
+// produced. That instruction was right and it was also the whole problem: the
+// next bridge function of that shape was blocked on somebody having a Mac with
+// Xcode, and the refusal's own text warned that writing the row on a guess was
+// the one thing that must not happen.
 //
-// # Why the two-result arms are still refused, which is not the reason it was
+// Somebody ran it. Every arm below was read off a real `gomobile bind -target=ios`
+// of a package written to have one function of each shape, and then off what
+// `swiftc` says the importer makes of the resulting module — not off the
+// generator, and not off reasoning about Clang. The generator readings in
+// TestTheResultArmsAreReadOffThePinnedGobind still stand and still matter, but
+// they answer a different question: they say gobind still emits the header this
+// was transcribed from.
 //
-// The old note said they were refused because no bridge function had either
-// shape — true, and not the obstacle. Reading the pinned generator through to
-// the end turns up a second one, and it is the one that decides the spelling:
+// # The error convention, which is the whole of why isMethod exists
 //
-//	genFuncH, for a package-level func:
-//	    g.Printf("FOUNDATION_EXPORT %s;\n", s.asFunc(g))
+// The old refusal predicted that a package-level func would *not* import as
+// `throws`, and that prediction was correct. gobind emits every package-level
+// func as a plain C function (genFuncH: FOUNDATION_EXPORT ... s.asFunc(g)), and
+// Clang's error convention — the rewrite of a trailing NSError** into a Swift
+// `throws` — applies to Objective-C *methods*. A C function gets none of it
+// without an explicit swift_error attribute, and gobind emits none:
 //
-// Every symbol this bridge exports is a package-level function, so every one
-// of them is emitted as a plain C function — not an Objective-C method. The
-// Swift `throws` spelling is the *method* convention: Clang's importer rewrites
-// a trailing NSError** into `throws` for ObjC methods, and does not do it for C
-// functions, which have no error convention unless the declaration carries an
-// explicit swift_error attribute. gobind emits none.
+//	func F() (string, error)
+//	  ->  FOUNDATION_EXPORT NSString* _Nonnull MobileF(NSError* _Nullable* _Nullable error);
+//	  ->  public func MobileF(_ error: NSErrorPointer) -> String
 //
-// So `func F() (string, error)` becomes, verbatim:
+// A bound *interface* method is the other position, and there the convention
+// does apply — with one exception that no amount of reading would have
+// produced. The convention needs a return it can use to signal failure: BOOL,
+// or a nullable object. A `(string, error)` method returns `NSString* _Nonnull`,
+// which is neither, so it keeps its explicit error parameter and does not
+// throw, while `(Iface, error)` returns a nullable object, throws, *and loses
+// the optional* — nil is the error signal, so the imported return is
+// non-optional:
 //
-//	FOUNDATION_EXPORT NSString* _Nonnull MobileF(NSError* _Nullable* _Nullable error);
+//	                        package func                       interface method
+//	() error                (_ error:) -> Bool                 throws
+//	(string, error)         (_ error:) -> String               (error:) -> String
+//	(Iface, error)          (_ error:) -> MobileXProtocol?     throws -> MobileXProtocol
+//	(int, error)            (_ ret0:, _ error:) -> Bool        (ret0_:) throws
+//	(bool, error)           (_ ret0:, _ error:) -> Bool        (ret0_:) throws
 //
-// and what Swift makes of *that* is the fact that is not in the module cache —
-// it is in the importer. Which is exactly the position gobindSwiftTypes was in
-// before the generator was read: a spelling nobody here can state without
-// running the tool. The difference is that the unknown is now named and small,
-// and it is one `gomobile bind` on any Mac away rather than a header hunt.
+// The labels differ for the reason swiftMethodSignature gives: a C function
+// imports with no argument labels at all, and a method's labels are its
+// selector pieces, which gobind spells `error:` and `ret0_:`.
 //
-// Writing the row on a guess is the one thing that must not happen. Every other
-// row in this file is a reading of a file in the module cache; a row that was a
-// guess about the Swift importer would look identical and would be the only one
-// that could be wrong.
-func swiftResult(sig *ast.FuncType, ifaces map[string]bool) (string, error) {
+// # What is still refused
+//
+// Three or more results, and a two-result signature whose second result is not
+// an error. Both are refused *by gobind itself* — verified, not read: it stops
+// with "too many result values" and "second result value must be of type
+// error" respectively, and builds nothing. So neither is a mapping this table
+// is missing; the fix is to change the Go signature.
+func swiftResults(sig *ast.FuncType, ifaces map[string]bool, isMethod bool) (resultShape, error) {
 	if sig.Results == nil || len(sig.Results.List) == 0 {
-		return "", nil
+		return resultShape{}, nil
 	}
 	results := flattenParams(sig.Results)
 	if len(results) > 2 {
-		return "", fmt.Errorf("%d results; gobind refuses more than two outright "+
-			"(bind/genobjc.go, funcSummary: \"too many result values\"), so this is not "+
-			"a mapping this table is missing — `gomobile bind` will not build the "+
+		return resultShape{}, fmt.Errorf("%d results; gobind refuses more than two "+
+			"outright (bind/genobjc.go, funcSummary: \"too many result values\"), so this "+
+			"is not a mapping this table is missing — `gomobile bind` will not build the "+
 			"function at all. Change the Go signature", len(results))
 	}
-	if len(results) == 2 {
-		last, err := swiftType(results[1].expr, ifaces, true)
-		if err != nil {
-			last = "?"
-		}
-		return "", fmt.Errorf("2 results; gobind keeps the first as the return when it "+
-			"is nullable and turns it into a second out-parameter when it is not, with "+
-			"the error arriving as a trailing NSError** either way (bind/genobjc.go, "+
-			"funcSummary). A package-level func is emitted as a C function "+
-			"(FOUNDATION_EXPORT, genFuncH), and Clang's error convention — the one that "+
-			"produces a Swift `throws` — applies to Objective-C methods, not to C "+
-			"functions, so what Swift calls this declaration is the one fact here that "+
-			"is not in the module cache. Second result reads as %s; run `gomobile bind` "+
-			"once and add the row from what it produced, rather than guessing it",
-			last)
+	if len(results) == 2 && !isGoError(results[1].expr) {
+		return resultShape{}, fmt.Errorf("two results and the second is not an error; " +
+			"gobind refuses that shape outright (\"second result value must be of type " +
+			"error\") and builds nothing. A bound symbol returns zero or one values, and " +
+			"optionally an error. Change the Go signature")
 	}
+	if isGoError(results[0].expr) && len(results) == 2 {
+		return resultShape{}, fmt.Errorf("both results are errors; nothing here has " +
+			"asked a real `gomobile bind` what it does with that, and every other arm " +
+			"in this function was read off one. Change the Go signature, or bind a " +
+			"package with this shape in it and add the arm from what it produced")
+	}
+
+	// The ordinary single result: no error anywhere, so the whole answer is
+	// the type's own result spelling.
+	if len(results) == 1 && !isGoError(results[0].expr) {
+		typ, err := swiftType(results[0].expr, ifaces, true)
+		if err != nil {
+			return resultShape{}, err
+		}
+		return resultShape{ret: " -> " + typ}, nil
+	}
+
+	// Everything below carries an error, which is a parameter in the header
+	// whatever else happens. The label is the one thing the two positions
+	// always disagree about.
+	errParam := "_ error: NSErrorPointer"
+	retParam := "_ ret0: "
+	if isMethod {
+		errParam = "error: NSErrorPointer"
+		retParam = "ret0_: "
+	}
+
+	if len(results) == 1 { // an error and nothing else
+		if isMethod {
+			// BOOL errOnly:error: — the convention's textbook shape.
+			return resultShape{throws: true}, nil
+		}
+		return resultShape{outParams: []string{errParam}, ret: " -> Bool"}, nil
+	}
+
 	typ, err := swiftType(results[0].expr, ifaces, true)
 	if err != nil {
-		return "", err
+		return resultShape{}, err
 	}
-	return " -> " + typ, nil
+	first, _ := results[0].expr.(*ast.Ident)
+	if ptr, movedOut := gobindErrorOutPointer[first.Name]; movedOut {
+		// Not nullable in ObjC, so the value leaves through a pointer and the
+		// return becomes BOOL — which is a return the error convention can
+		// use, so a method throws and has no return at all.
+		if isMethod {
+			return resultShape{outParams: []string{retParam + ptr}, throws: true}, nil
+		}
+		return resultShape{
+			outParams: []string{retParam + ptr, errParam},
+			ret:       " -> Bool",
+		}, nil
+	}
+	// Nullable in ObjC: the value stays the return.
+	if isMethod && ifaces[first.Name] {
+		// A nullable object return is the convention's other usable shape, and
+		// the import drops the optional: nil is what signals the error, so it
+		// can no longer also be a value.
+		return resultShape{throws: true, ret: " -> " + strings.TrimSuffix(typ, "?")}, nil
+	}
+	// A method returning NSString* _Nonnull is the one arm that keeps its error
+	// parameter: the convention has no way to signal failure through a return
+	// annotated non-null, so it declines to rewrite the method at all.
+	return resultShape{outParams: []string{errParam}, ret: " -> " + typ}, nil
 }
 
 // swiftType maps one Go type onto its Swift spelling, in the given position.
@@ -623,6 +812,16 @@ func swiftType(expr ast.Expr, ifaces map[string]bool, isResult bool) (string, er
 	}
 	if m, ok := gobindSwiftTypes[ident.Name]; ok {
 		if isResult {
+			if m.result == "" {
+				// error is the only row with an empty result cell, and this is
+				// what makes the empty string a statement rather than a hole:
+				// a Go error never becomes a Swift result type, and a caller
+				// asking for one has skipped swiftResults' error arms.
+				return "", fmt.Errorf("%s has no Swift result spelling: it is not "+
+					"returned, it becomes a trailing NSError** that the importer "+
+					"either rewrites into `throws` or leaves as a pointer parameter. "+
+					"swiftResults is what handles it", ident.Name)
+			}
 			return m.result, nil
 		}
 		return m.param, nil
@@ -847,18 +1046,20 @@ func lowerFirst(s string) string {
 	return s
 }
 
-// The two shapes this table used to refuse, exercised directly.
+// The shapes no bridge function has, exercised directly.
 //
-// Neither reaches the checks above, because no bridge function has either shape
-// — which is exactly why they need a test of their own. A resolved refusal with
-// no caller is indistinguishable from an unresolved one until something asks it
-// the question, and the whole point of resolving these was that the *next*
-// bridge function of either shape should get a checked declaration rather than
-// an instruction to go and run `gomobile bind` on a Mac.
+// None of them reaches the checks above, because `mobile` has no function of
+// any of these shapes — which is exactly why they need a test of their own. A
+// transcribed arm with no caller is indistinguishable from an untranscribed one
+// until something asks it the question, and the whole point of transcribing
+// them was that the *next* bridge function of one of these shapes should get a
+// checked declaration rather than an instruction to go and run `gomobile bind`
+// on a Mac.
 //
-// Both cases are read off bind/genobjc.go at the version gobindVersion pins; see
-// gobindSwiftTypes for the provenance and swiftResult for the three result arms.
-func TestTheTableDescribesTheShapesItUsedToRefuse(t *testing.T) {
+// The declarations below were read off a real bind of a package written to have
+// one function and one interface method of each shape; see swiftResults for the
+// two positions and for why they differ.
+func TestTheTableDescribesTheShapesNoBridgeFunctionHas(t *testing.T) {
 	ifaces := interfaceSet(t)
 	if len(ifaces) == 0 {
 		t.Fatal("mobile declares no bound interfaces; this test has nothing to ask about")
@@ -885,38 +1086,84 @@ func TestTheTableDescribesTheShapesItUsedToRefuse(t *testing.T) {
 		}
 	}
 
-	// The result arms, each asked with the signature it is about.
+	// Every result shape, in both positions, as a whole declaration. Comparing
+	// declarations rather than clauses is deliberate: an error result changes
+	// the *parameter list* as well as the return, and a check that only looked
+	// at the tail would pass a signature missing its NSErrorPointer.
 	for _, tc := range []struct {
-		sig, want, mustSay string
+		sig      string
+		wantFunc string // the package-level declaration, or "" if refused
+		wantMeth string // the protocol method's, or "" if refused
+		mustSay  string // for a refusal, a phrase the message has to carry
 	}{
-		{"func()", "", ""},
-		{"func() string", " -> String", ""},
-		{"func() (string, error)", "", "throws"},
-		{"func() (string, int, error)", "", "refuses more than two"},
+		{sig: "func()",
+			wantFunc: "public func F()",
+			wantMeth: "func m()"},
+		{sig: "func(s string) string",
+			wantFunc: "public func F(_ s: String?) -> String",
+			wantMeth: "func m(_ s: String?) -> String"},
+		// An error and nothing else. The method throws; the C function cannot,
+		// so the pointer stays and BOOL is the return.
+		{sig: "func() error",
+			wantFunc: "public func F(_ error: NSErrorPointer) -> Bool",
+			wantMeth: "func m() throws"},
+		// The pair the old refusal was about. Neither position throws: the
+		// function because it is a C function, the method because a _Nonnull
+		// object return gives the error convention nothing to signal with.
+		{sig: "func() (string, error)",
+			wantFunc: "public func F(_ error: NSErrorPointer) -> String",
+			wantMeth: "func m(error: NSErrorPointer) -> String"},
+		// Not nullable, so the value leaves through a pointer and the return
+		// becomes BOOL — which the method then spends on `throws`.
+		{sig: "func() (int, error)",
+			wantFunc: "public func F(_ ret0: UnsafeMutablePointer<Int>?, _ error: NSErrorPointer) -> Bool",
+			wantMeth: "func m(ret0_: UnsafeMutablePointer<Int>?) throws"},
+		{sig: "func() (bool, error)",
+			wantFunc: "public func F(_ ret0: UnsafeMutablePointer<ObjCBool>?, _ error: NSErrorPointer) -> Bool",
+			wantMeth: "func m(ret0_: UnsafeMutablePointer<ObjCBool>?) throws"},
+		// An error as an ordinary argument, which gobind carries like any
+		// other reference type.
+		{sig: "func(e error)",
+			wantFunc: "public func F(_ e: (any Error)?)",
+			wantMeth: "func m(_ e: (any Error)?)"},
+		{sig: "func() (string, int, error)", mustSay: "refuses more than two"},
+		{sig: "func() (string, string)", mustSay: "second is not an error"},
 	} {
 		expr, err := parser.ParseExpr(tc.sig)
 		if err != nil {
 			t.Fatalf("parsing %q: %v", tc.sig, err)
 		}
-		got, err := swiftResult(expr.(*ast.FuncType), ifaces)
-		if tc.mustSay == "" {
-			if err != nil {
-				t.Errorf("swiftResult(%s) refused it: %v", tc.sig, err)
-			} else if got != tc.want {
-				t.Errorf("swiftResult(%s) = %q, want %q", tc.sig, got, tc.want)
+		for _, pos := range []struct {
+			what  string
+			build func() (string, error)
+			want  string
+		}{
+			{"a package function", func() (string, error) {
+				return swiftFuncSignature("F", expr.(*ast.FuncType), ifaces)
+			}, tc.wantFunc},
+			{"an interface method", func() (string, error) {
+				return swiftMethodSignature("m", expr.(*ast.FuncType), ifaces)
+			}, tc.wantMeth},
+		} {
+			got, err := pos.build()
+			if tc.mustSay == "" {
+				if err != nil {
+					t.Errorf("%s as %s: refused it: %v", tc.sig, pos.what, err)
+				} else if got != pos.want {
+					t.Errorf("%s as %s:\n\tgot  %s\n\twant %s", tc.sig, pos.what, got, pos.want)
+				}
+				continue
 			}
-			continue
-		}
-		if err == nil {
-			t.Errorf("swiftResult(%s) = %q and should have refused: no bridge function "+
-				"has that shape, so its Swift spelling is transcribed nowhere",
-				tc.sig, got)
-			continue
-		}
-		if !strings.Contains(err.Error(), tc.mustSay) {
-			t.Errorf("swiftResult(%s) refused it with %q, which does not mention %q — "+
-				"the refusal has to say which of gobind's three result arms this is, "+
-				"or the reader is back to guessing", tc.sig, err, tc.mustSay)
+			if err == nil {
+				t.Errorf("%s as %s = %q and should have refused: gobind will not build "+
+					"the symbol at all", tc.sig, pos.what, got)
+				continue
+			}
+			if !strings.Contains(err.Error(), tc.mustSay) {
+				t.Errorf("%s as %s: refused with %q, which does not mention %q — the "+
+					"refusal has to say which shape gobind is rejecting, or the reader "+
+					"is back to guessing", tc.sig, pos.what, err, tc.mustSay)
+			}
 		}
 	}
 }
@@ -925,7 +1172,8 @@ func TestTheTableDescribesTheShapesItUsedToRefuse(t *testing.T) {
 //
 // # Why a source check and not prose
 //
-// swiftResult's arms and both of its refusal messages are readings of one file
+// swiftResults' two refusals, and the header shape its arms were transcribed
+// from, are readings of one file
 // — bind/genobjc.go in the gobind gobindVersion pins — and that file is in the
 // module cache on any machine that has run `go mod download`. Until this test
 // they were prose about it: a sentence naming funcSummary and isNullableType,
@@ -938,12 +1186,18 @@ func TestTheTableDescribesTheShapesItUsedToRefuse(t *testing.T) {
 //
 // # What it can and cannot settle
 //
-// It settles that the *generator* still behaves the way the refusals describe.
-// It cannot settle what Swift makes of a C function with a trailing NSError**,
-// which is the one fact the two-result arm is actually blocked on and the one
-// thing that is not in the module cache — see swiftResult. Saying which half is
-// checked is the deliverable; a test that implied both would be the same
-// mistake the refusal itself used to make.
+// It settles that the *generator* still emits the header the result arms were
+// transcribed from. It cannot settle what Swift makes of that header — whether
+// a trailing NSError** on a C function becomes a `throws` — because that is a
+// fact about Clang's importer and not about anything in the module cache.
+//
+// That question used to be the reason the two-result arms were refused. It is
+// answered now, and it was answered the only way it could be: by running
+// `gomobile bind` and asking `swiftc` what the module looks like (see
+// swiftResults, and the rows in gomobile_stub.swift). What this test protects
+// is the link between the two — a gobind that started emitting package
+// functions as Objective-C *methods* would make every one of those readings
+// wrong at once, and the first row below is what notices.
 //
 // # When it does not run
 //
@@ -968,13 +1222,13 @@ func TestTheResultArmsAreReadOffThePinnedGobind(t *testing.T) {
 				"transcribed as a Swift `throws` function: Clang's error convention is " +
 				"the Objective-C *method* one, and every symbol this bridge exports is " +
 				"a package-level func. If gobind has started emitting these as methods, " +
-				"the throwing spelling is suddenly the right one and swiftResult's " +
+				"the throwing spelling is suddenly the right one and swiftResults' " +
 				"refusal is describing a generator that no longer exists",
 		},
 		{
 			what: "the two-result split is on nullability",
 			want: "if isNullableType(typ) {",
-			why: "swiftResult says the first result stays the return when it is " +
+			why: "swiftResults says the first result stays the return when it is " +
 				"nullable and becomes an out-parameter when it is not. That split is " +
 				"this line",
 		},
@@ -986,7 +1240,7 @@ func TestTheResultArmsAreReadOffThePinnedGobind(t *testing.T) {
 		{
 			what: "three or more results are refused outright",
 			want: `g.errorf("too many result values: %s", f)`,
-			why: "swiftResult tells a reader to change the Go signature rather than to " +
+			why: "swiftResults tells a reader to change the Go signature rather than to " +
 				"go and find a mapping, on the strength of gobind refusing the shape. " +
 				"A gobind that had relaxed this (the TODO beside it says it might) " +
 				"would make that advice wrong",
@@ -1006,7 +1260,7 @@ func TestTheResultArmsAreReadOffThePinnedGobind(t *testing.T) {
 		t.Errorf("bind/types.go at gobind %s no longer treats a Go string as nullable. "+
 			"Every two-result signature this bridge could grow returns a string, so "+
 			"that clause is what decides which of gobind's two arms it lands in — "+
-			"and swiftResult's refusal names both", gobindVersion)
+			"and swiftResults' two arms are named for it", gobindVersion)
 	}
 }
 
@@ -1088,7 +1342,7 @@ func stubRules(t *testing.T, src string) []stubRule {
 // The declarations in gomobile_stub.swift are pinned character-for-character
 // by the two tests above. The comment over them was not: it is a hand-written
 // description of gobind's naming, its nullability asymmetry and its three
-// result arms, and it agreed with gobindSwiftTypes, swiftType and swiftResult
+// result arms, and it agreed with gobindSwiftTypes, swiftType and swiftResults
 // on the day it was written because it was written from them.
 //
 // That is exactly the shape this whole file exists to refuse one level up. A
@@ -1102,7 +1356,7 @@ func stubRules(t *testing.T, src string) []stubRule {
 // reads them. Every row is compared against the thing it describes rather than
 // against a second copy here: the version against go.mod's, the names against
 // the constants the checker builds names from, the type rows against swiftType
-// itself, and the result rows against what swiftResult does when handed a
+// itself, and the result rows against what the checker does when handed a
 // signature of that shape.
 //
 // The prose around the rows is not checked and is not meant to be. A paragraph
@@ -1162,13 +1416,20 @@ func TestTheStubsHeaderStatesTheRulesTheCheckerUses(t *testing.T) {
 	}
 
 	// One row per scalar fact, one type row per row of gobindSwiftTypes plus
-	// the interface rule, and one result row per arm swiftResult distinguishes.
+	// the interface rule, and one result row per arm swiftResults distinguishes
+	// in each of the two positions, plus the two shapes gobind refuses.
+	//
+	// The result count is written out rather than derived, and there is nothing
+	// to derive it from: the arms are branches in a function, not entries in a
+	// table, which is itself the reason the rows exist. A branch added without
+	// a row is a shape the comment does not describe, and this number is what
+	// notices.
 	for tag, want := range map[string]int{
 		"gobind":  1,
 		"prefix":  1,
 		"suffix":  1,
 		"type":    len(gobindSwiftTypes) + 1,
-		"results": 4,
+		"results": 12,
 	} {
 		if seen[tag] != want {
 			t.Errorf("%s: the checked block has %d %q rows, want %d — a rule dropped "+
@@ -1190,12 +1451,18 @@ func TestTheStubsHeaderStatesTheRulesTheCheckerUses(t *testing.T) {
 func checkStubTypeRule(t *testing.T, r stubRule, ifaces map[string]bool) {
 	t.Helper()
 
-	if len(r.fields) != 3 {
-		t.Errorf("%s: type row %q has %d fields, want 3 (Go type, parameter, result)",
-			gomobileStub, r.line, len(r.fields))
+	// Bar-separated, like the result rows and for the same reason: a Swift
+	// spelling can contain a space — `(any Error)?` does — so counting fields
+	// would split one cell into two and report the row as malformed.
+	cells := strings.Split(r.line, "|")
+	if len(cells) != 3 {
+		t.Errorf("%s: type row %q has %d bar-separated cells, want 3 "+
+			"(`type <go type> | <parameter> | <result>`)",
+			gomobileStub, r.line, len(cells))
 		return
 	}
-	goType, wantParam, wantResult := r.fields[0], r.fields[1], r.fields[2]
+	goType := strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(cells[0]), "type"))
+	wantParam, wantResult := strings.TrimSpace(cells[1]), strings.TrimSpace(cells[2])
 
 	set := ifaces
 	name := goType
@@ -1214,6 +1481,20 @@ func checkStubTypeRule(t *testing.T, r stubRule, ifaces map[string]bool) {
 		want     string
 	}{{false, wantParam}, {true, wantResult}} {
 		got, err := swiftType(&ast.Ident{Name: name}, set, c.isResult)
+		// "-" is the row's way of saying there is no spelling in that
+		// position, which is a claim as much as a type is: a Go error is not
+		// returned, it becomes the trailing pointer swiftResults handles. A
+		// refusal is what must happen, so a checker that started producing one
+		// is the failure.
+		if c.want == "-" {
+			if err == nil {
+				t.Errorf("%s: the header says a Go %s has no result spelling, and the "+
+					"checker produced %q. If gobind has started returning one, the "+
+					"result rows below are describing a different generator",
+					gomobileStub, goType, got)
+			}
+			continue
+		}
 		if err != nil {
 			t.Errorf("%s: type row %q: swiftType refused %s: %v",
 				gomobileStub, r.line, goType, err)
@@ -1232,68 +1513,105 @@ func checkStubTypeRule(t *testing.T, r stubRule, ifaces map[string]bool) {
 	}
 }
 
-// One `results` row: a result count and what gobind does with it.
+// One `results` row: a position, a Go signature, and the declaration gobind and
+// the Swift importer produce for it.
 //
-// "bound" rows must produce a return clause and refuse nothing; "refused: X"
-// rows must be refused with a message containing X. Comparing against the
-// message rather than against a second copy of the rule is the point — the
-// refusal text is where swiftResult states which of gobind's three arms it is
-// reporting, and a row that stopped matching it would be a comment pointing a
-// reader at the wrong arm.
+// # Why a whole declaration and not a return clause
+//
+// The row used to be a result *count* and a phrase, which was the right shape
+// while every multi-result signature was refused: there was nothing to state
+// but which refusal. Now that the arms are transcribed there is, and an error
+// result changes the parameter list as well as the return — a row that named
+// only the tail would be silent about the NSErrorPointer, which is the half a
+// shell author actually has to type.
+//
+// So the row is the declaration, and it is built by the same two functions that
+// build the stub's own: swiftFuncSignature and swiftMethodSignature. `F` and
+// `m` are stand-in names, and the position column is which of the two to ask —
+// they disagree, and the disagreement is the reason the rows exist.
+//
+// A `refused` row names a phrase the refusal must carry, on the old reasoning:
+// comparing against the message rather than against a second copy of the rule
+// keeps the comment pointing a reader at the shape gobind actually rejects.
 func checkStubResultRule(t *testing.T, r stubRule, ifaces map[string]bool) {
 	t.Helper()
 
-	if len(r.fields) < 2 {
-		t.Errorf("%s: results row %q has nothing after the count", gomobileStub, r.line)
+	// Cut on the bar rather than on whitespace. A Go signature and a Swift
+	// declaration both contain spaces, so field counting cannot separate them —
+	// and the failure of a heuristic that tried would be a row silently checked
+	// against the wrong half of itself.
+	left, want, found := strings.Cut(r.line, "|")
+	if !found {
+		t.Errorf("%s: results row %q has no `|` — a row is "+
+			"`results <position> <go signature> | <what it binds as>`",
+			gomobileStub, r.line)
 		return
 	}
-	// The signature this row is about, built to have exactly that many
-	// results. The types do not matter beyond being bindable — what
-	// swiftResult branches on is the count, and (for two) the pair shape.
-	var sig string
-	switch r.fields[0] {
-	case "0":
-		sig = "func()"
-	case "1":
-		sig = "func() string"
-	case "2":
-		sig = "func() (string, error)"
-	case "3":
-		sig = "func() (string, int, error)"
-	default:
-		t.Errorf("%s: results row %q counts %q, which this test has no signature for",
-			gomobileStub, r.line, r.fields[0])
+	want = strings.TrimSpace(want)
+	fields := strings.Fields(left)
+	if len(fields) < 3 {
+		t.Errorf("%s: results row %q wants a position and a Go signature before the `|`",
+			gomobileStub, r.line)
 		return
 	}
+	position, sig := fields[1], strings.Join(fields[2:], " ")
+
 	expr, err := parser.ParseExpr(sig)
 	if err != nil {
-		t.Fatalf("parsing %q: %v", sig, err)
-	}
-	got, err := swiftResult(expr.(*ast.FuncType), ifaces)
-
-	rest := strings.Join(r.fields[1:], " ")
-	phrase, refused := strings.CutPrefix(rest, "refused:")
-	phrase = strings.TrimSpace(phrase)
-
-	if !refused {
-		if err != nil {
-			t.Errorf("%s: the header says %s results are %q, but swiftResult refuses "+
-				"that shape: %v", gomobileStub, r.fields[0], rest, err)
-		}
-		if r.fields[0] == "1" && got == "" {
-			t.Errorf("%s: the header says a single result is %q, and swiftResult "+
-				"produced no return clause", gomobileStub, rest)
-		}
+		t.Errorf("%s: results row %q names %q, which does not parse as a Go signature: %v",
+			gomobileStub, r.line, sig, err)
 		return
 	}
-	if err == nil {
-		t.Errorf("%s: the header says %s results are refused, and swiftResult bound "+
-			"them as %q", gomobileStub, r.fields[0], got)
+	fn, ok := expr.(*ast.FuncType)
+	if !ok {
+		t.Errorf("%s: results row %q names %q, which is not a func type",
+			gomobileStub, r.line, sig)
 		return
 	}
-	if !strings.Contains(err.Error(), phrase) {
-		t.Errorf("%s: the header says %s results are refused because %q; swiftResult "+
-			"says %q. The comment sends a reader to the wrong one of gobind's three "+
-			"result arms", gomobileStub, r.fields[0], phrase, err)
+
+	var got string
+	switch position {
+	case "func":
+		got, err = swiftFuncSignature("F", fn, ifaces)
+	case "method":
+		got, err = swiftMethodSignature("m", fn, ifaces)
+	case "refused":
+		// Both positions, because a refusal is gobind's and gobind builds
+		// neither: a shape refused for a function and quietly bound for a
+		// method would be a row that is only half true.
+		for _, pos := range []struct {
+			what  string
+			build func() (string, error)
+		}{
+			{"a package function", func() (string, error) { return swiftFuncSignature("F", fn, ifaces) }},
+			{"an interface method", func() (string, error) { return swiftMethodSignature("m", fn, ifaces) }},
+		} {
+			bound, ferr := pos.build()
+			if ferr == nil {
+				t.Errorf("%s: the header says %q is refused, and the checker binds it as "+
+					"%s for %s", gomobileStub, sig, bound, pos.what)
+				continue
+			}
+			if !strings.Contains(ferr.Error(), want) {
+				t.Errorf("%s: the header says %q is refused because %q; for %s the "+
+					"checker says %q. The comment sends a reader to the wrong shape",
+					gomobileStub, sig, want, pos.what, ferr)
+			}
+		}
+		return
+	default:
+		t.Errorf("%s: results row %q names position %q; the two positions a bound "+
+			"symbol can be in are `func` and `method`, and `refused` is the third row "+
+			"kind", gomobileStub, r.line, position)
+		return
+	}
+	if err != nil {
+		t.Errorf("%s: the header says %q binds as %q, and the checker refuses it: %v",
+			gomobileStub, sig, want, err)
+		return
+	}
+	if got != want {
+		t.Errorf("%s: the header says %q binds as\n\t%s\nand the checker produces\n\t%s",
+			gomobileStub, sig, want, got)
 	}
 }

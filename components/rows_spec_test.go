@@ -63,18 +63,29 @@ import (
 //	yes -> it belongs in a wrapper the widget applies itself, because the
 //	       wrapper needs nothing appendRows has
 //
-// Both current fields fail the wrapper test, each for its own reason, and
-// the two reasons are the only two available:
+// All three current fields fail the wrapper test, each for its own reason,
+// and the three reasons are one per direction the loop has an edge on — its
+// item, its output, and its input:
 //
-//	Wrap      needs the item. A row's T is captured inside the closure and
-//	          is not recoverable from it, and DataTable's tap handler and
-//	          selection tint are both functions of the row.
-//	Collapse  needs rows *not to be produced*. No pass over produced
-//	          children can undo their production — hiding them is a
-//	          different thing, with a different reconciler cost and a
-//	          different export.
+//	Wrap              needs the item. A row's T is captured inside the closure
+//	                  and is not recoverable from it, and DataTable's tap
+//	                  handler and selection tint are both functions of the row.
+//	Collapse          needs rows *not to be produced*. No pass over produced
+//	                  children can undo their production — hiding them is a
+//	                  different thing, with a different reconciler cost and a
+//	                  different export.
+//	AutoLoadWithheld  needs to reach a band's *input*. It is stamped onto the
+//	                  Group before the Header override or the default band is
+//	                  built, and both consume that Group and return an opaque
+//	                  child; a wrapper over the output is handed the view, and
+//	                  the argument it was built from is gone.
 //
-// A third field is fine if it fails the test too, and is a mistake if it
+// That third reason is the one worth stating separately, because it is the
+// only one that is not about rows at all. Wrap and Collapse are decisions
+// about children; this is a fact travelling to a view the *caller* wrote, and
+// the loop is simply the last place that fact still exists.
+//
+// A fourth field is fine if it fails the test too, and is a mistake if it
 // passes. What the count below is for is making somebody run the test.
 // The fourth column, feeds, is what makes the third one checkable. An owner
 // is a claim about the two widgets, and the claim is only true while exactly
@@ -118,6 +129,22 @@ var wantRowsSpecFields = []struct {
 	{"StickyHeaders", reflect.Bool, "both", nil},
 	{"HeadingLevel", reflect.Int, "both", nil},
 	{"Dividers", reflect.Bool, "both", nil},
+	// GroupedList's alone, and the one field here that is an *answer* rather
+	// than a knob: the list has already decided whether it is attaching its
+	// edge sensor, and this carries that decision down to the run it is about
+	// so a Header override can read it off the Group. See
+	// GroupedList.AutoLoadWithheld and Group.AutoLoadWithheld.
+	//
+	// A table has no OnEndReached, so there is no sensor for a shut run to
+	// withhold and nothing for DataTable to forward. The two fields named
+	// below are what compose the answer and are GroupedList's alone; Items and
+	// GroupBy go into it too and are not named, because DataTable has rows and
+	// a GroupBy of its own and naming them would make the owner underivable.
+	//
+	// Fails the admission test on the third count: the Group it stamps is
+	// consumed while the children are built, so no pass over the returned
+	// children can put it there.
+	{"AutoLoadWithheld", reflect.Bool, "GroupedList", []string{"OnEndReached", "Collapse"}},
 	// GroupedList's alone. A DataTable band sits inside the body's rowgroup,
 	// where ARIA has no reading for it even as a plain heading (see
 	// DataTable.Render's note); making it a button would be a second claim on
@@ -161,11 +188,16 @@ func TestRowsSpecCensus(t *testing.T) {
 // it and nothing else in the package would say otherwise.
 //
 // A count rather than a ban, and the threshold is a prompt rather than a
-// limit: two is the state of the world and is fine, and a third that fails
+// limit: three is the state of the world and is fine, and a fourth that fails
 // the wrapper test is fine too — it is added here with its reason and the
-// number below goes up by one. What must not happen quietly is a third that
+// number below goes up by one. What must not happen quietly is one that
 // *passes* the wrapper test, because that one is a decoration sitting in a
 // shared parameter list for no reason but proximity.
+//
+// The number has moved once, for AutoLoadWithheld, and the move is what the
+// prompt is for rather than a failure of it: the field was written, the census
+// failed, and the admission test turned up a reason the two existing entries
+// did not cover.
 func TestRowsSpecHasNotAccumulatedMoreSingleWidgetKnobs(t *testing.T) {
 	var single []string
 	for _, w := range wantRowsSpecFields {
@@ -173,12 +205,13 @@ func TestRowsSpecHasNotAccumulatedMoreSingleWidgetKnobs(t *testing.T) {
 			single = append(single, w.name+" ("+w.owner+")")
 		}
 	}
-	if len(single) > 2 {
+	if len(single) > 3 {
 		t.Errorf("rowsSpec now carries %d single-widget knobs (%s) — apply the admission "+
 			"test on wantRowsSpecFields: can the new one be done to appendRows' "+
 			"returned slice instead? If yes it is a wrapper the widget applies to "+
-			"that slice, not a spec field. If no, record which of the two things it "+
-			"needs (the item, or rows not being produced) and raise this number",
+			"that slice, not a spec field. If no, record which of the three things it "+
+			"needs (the item, rows not being produced, or a band's input) and raise "+
+			"this number",
 			len(single), strings.Join(single, ", "))
 	}
 }

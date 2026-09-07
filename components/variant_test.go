@@ -608,58 +608,116 @@ func boundaryBackdrops(theme *core.Theme) []palette.Backdrop {
 	return palette.Backdrops(theme)
 }
 
-// Every exclusion names a real ComponentDefaults field that really carries a
-// fill.
+// Every core.ComponentDefaults field says whether a control boundary is drawn
+// on its fill.
 //
-// Both halves matter and they fail differently. An exclusion for a field that
-// no longer exists exempts nothing — the census would measure a pair the
-// exclusion's author believed was skipped, and the reason attached to it reads
-// as though somebody had considered it. An exclusion for a field that states
-// no Background exempts nothing either, because For skips empty fills anyway;
-// such an entry is an argument about a pair that does not exist, and the next
-// person to give that component a fill inherits an exemption nobody made for
-// them.
-func TestTheBackdropExclusionsNameRealFills(t *testing.T) {
+// # What the second tag bought
+//
+// The derivation started with one tag. `notbackdrop` named the fills nothing
+// draws on and everything else was measured *because it was left over*, which
+// is a census with no claim behind it and two costs.
+//
+// The first is the one this test's item was raised for: a pair nothing builds
+// was measured beside a pair three widgets build, at the same weight, and a
+// shortfall in either read identically to whoever had to fix it. The second is
+// worse. A `notbackdrop` tag could be deleted and the only consequence was a
+// pair quietly joining the census — removing Camera's adds a pair that clears
+// 6:1, so the run stays green while a geometry claim has been thrown away.
+// (Button's is load-bearing by accident: Primary as a fill is 2.17:1 and the
+// census fails. Half the exclusions were defended by their own numbers and
+// half by nothing at all.)
+//
+// Totality closes both. A field carrying neither tag — or, just as absent a
+// decision, carrying both — is what palette.Untagged reports, and this test
+// refuses to let the census run in that state.
+//
+// # What was retired with it, and why
+//
+// This test used to require that a `notbackdrop` field state a Background in
+// some bundled theme, on the grounds that an exclusion for a fill-less field
+// exempts nothing and would be inherited by the next theme to fill it. That
+// argument does not survive the second tag: with both classifications
+// mandatory, a tag on a fill-less field is a decision somebody made *for that
+// field*, not one left over, and it is supposed to survive the field gaining a
+// fill — which is exactly what Column and Row's `backdrop` tags are. The
+// coverage it gave is now split between the totality check here and
+// TestEveryMeasuredBackdropSaysWhatDrawsOnIt below.
+func TestEveryComponentFillIsClassified(t *testing.T) {
+	if untagged := palette.Untagged(); len(untagged) > 0 {
+		t.Errorf("core.ComponentDefaults.%s carries neither a `backdrop` tag nor a "+
+			"`notbackdrop` one (or carries both, which is the same absence of a "+
+			"decision). Every field is a fill, and until somebody says whether a "+
+			"control boundary can be drawn on it there is nothing honest for the "+
+			"census to do: measuring asserts a pair nobody has claimed exists, and "+
+			"skipping drops one silently. Write the tag with the argument on the "+
+			"field", strings.Join(untagged, ", core.ComponentDefaults."))
+	}
+
 	fields := map[string]bool{}
 	for _, name := range palette.ComponentFields() {
 		fields[name] = true
 	}
-	excluded := palette.NotABackdrop()
-	if len(excluded) == 0 {
-		t.Fatal("no core.ComponentDefaults field carries a `notbackdrop` tag. Either " +
-			"the tag key changed and this reads nothing — in which case Camera and " +
-			"Button are now measured against a floor they fail in every theme — or " +
-			"two arguments were deleted without the pairs they exempted being looked at")
-	}
-	for name, reason := range excluded {
-		if reason == "" {
-			t.Errorf("Components.%s carries an empty `notbackdrop` tag — an exclusion "+
-				"without an argument is a pair that was quietly dropped", name)
+	// Long enough to be a sentence rather than a label, on the same reasoning
+	// TestKnownBoundaryShortfallsIsEmptyOrJustified spells out: the floor
+	// separates an argument from a word, and no more.
+	const minReason = 60
+
+	for tag, claims := range map[string]map[string]string{
+		"backdrop":    palette.IsABackdrop(),
+		"notbackdrop": palette.NotABackdrop(),
+	} {
+		if len(claims) == 0 {
+			t.Errorf("no core.ComponentDefaults field carries a `%s` tag. Either the "+
+				"tag key changed and this reads nothing — in which case the census is "+
+				"measuring whatever is left over again — or every claim of one kind "+
+				"was deleted without the pairs being looked at", tag)
 		}
-		// The tag cannot name a field that does not exist, which is half of
-		// what this test used to check; the reflection reads the field's own
-		// name. What is still worth asking is whether the field is one this
-		// package can see at all — palette.ComponentFields is the walk
-		// Backdrops uses, and a disagreement between the two walks would leave
-		// a tagged field measured anyway.
-		if !fields[name] {
-			t.Errorf("Components.%s carries a `notbackdrop` tag and is not in "+
-				"palette.ComponentFields(). The two reflections over one struct "+
-				"disagree, so the exclusion exempts nothing and the census is "+
-				"measuring the pair", name)
-			continue
-		}
-		fills := false
-		for _, theme := range core.BundledThemes() {
-			if palette.Fill(theme, name) != "" {
-				fills = true
+		for name, reason := range claims {
+			if len(reason) < minReason {
+				t.Errorf("Components.%s gives %d characters of `%s` reason, want at "+
+					"least %d — the whole argument for a tag over a list in "+
+					"internal/palette is that the claim sits next to the field it is "+
+					"about, and a marker with no words is a list again",
+					name, len(reason), tag, minReason)
+			}
+			// The tag cannot name a field that does not exist — the reflection
+			// reads the field's own name. What is still worth asking is
+			// whether the field is one this package can see at all:
+			// palette.ComponentFields is the walk Backdrops uses, and a
+			// disagreement between the two walks would leave a tagged field
+			// classified in one and measured in the other.
+			if !fields[name] {
+				t.Errorf("Components.%s carries a `%s` tag and is not in "+
+					"palette.ComponentFields(). The two reflections over one struct "+
+					"disagree, so the claim reaches nothing", name, tag)
 			}
 		}
-		if !fills {
-			t.Errorf("Components.%s carries a `notbackdrop` tag and states no "+
-				"Background in any bundled theme, so it was never a backdrop to "+
-				"exclude. Drop the tag, or the next theme to give it a fill "+
-				"inherits an exemption written for a different reason", name)
+	}
+}
+
+// Every pair the census measures says what draws it.
+//
+// This is the reachability claim arriving where it is used. The tags make the
+// classification total; this makes the *measured* half carry its argument all
+// the way to the failure message, which is where somebody reads it — see the
+// census loop, which prints Why for a pair that falls short.
+//
+// The two palette roles are included deliberately. They are not tagged (there
+// is no ComponentDefaults field to hang a tag off) and their claims are stated
+// in palette.Backdrops instead, so they are the two rows most likely to end up
+// as bare names again.
+func TestEveryMeasuredBackdropSaysWhatDrawsOnIt(t *testing.T) {
+	const minReason = 60
+	for name, theme := range core.BundledThemes() {
+		for _, b := range boundaryBackdrops(theme) {
+			if len(b.Why) < minReason {
+				t.Errorf("%s: the census measures %s (%s) and gives %d characters of "+
+					"reachability claim, want at least %d. A pair with no claim behind "+
+					"it is the cross product this derivation replaced: it is measured "+
+					"because it was left over, and a shortfall in it reads exactly "+
+					"like a shortfall in a pair three widgets build",
+					name, b.What, b.Hex, len(b.Why), minReason)
+			}
 		}
 	}
 }
@@ -760,12 +818,16 @@ func TestEveryControlBoundaryPairIsAccountedFor(t *testing.T) {
 				// Clears. If it is also recorded as a shortfall, the sibling
 				// test below is the one that reports it.
 			case !exempt:
+				// The reachability claim is in the message, which is what it
+				// is carried across for: "ControlBorder is 2.9:1 on Card fill"
+				// is arithmetic, and "…, and a FormField's frame inside a Card
+				// is that pair" is a screen somebody can go and look at.
 				t.Errorf("%s: ControlBorder %q is %.2f:1 against %s (%q), want at least "+
 					"%.1f:1 — WCAG 1.4.11 puts that floor under the boundary that "+
-					"identifies a control. Either retint, or record it in "+
-					"knownBoundaryShortfalls with the argument for why this pair is "+
-					"allowed to fall short", name, theme.Colors.ControlBorderColor(),
-					r, backdrop.What, backdrop.Hex, floor)
+					"identifies a control. What draws this pair: %s. Either retint, or "+
+					"record it in knownBoundaryShortfalls with the argument for why this "+
+					"pair is allowed to fall short", name, theme.Colors.ControlBorderColor(),
+					r, backdrop.What, backdrop.Hex, floor, backdrop.Why)
 			case round2(r) != known.ratio:
 				t.Errorf("%s: ControlBorder against %s is %.2f:1, recorded as %.2f:1 — the "+
 					"exemption's argument was made about the recorded number (%s)",

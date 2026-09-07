@@ -39,9 +39,11 @@
 //      Everything between the palette role and a chip's actual ring goes
 //      through `components`, which is Go, so a widget that had stopped
 //      declaring the boundary tone would leave every swatch painting perfectly.
-//      gen.go renders a real components.Chip through each bundled theme and
-//      reads the colours off the rendered node; this mounts those trees and
-//      reads the pixels back.
+//      gen.go renders a real components.Chip and a real core.Input through each
+//      bundled theme and reads the colours off the rendered nodes; this mounts
+//      those trees and reads the pixels back. The two are the tone's two
+//      spenders and they read it from two different places in Go, which is why
+//      the field is worth painting rather than assumed from the chip.
 //   7. The palette reaches the screen. core.ColorPalette.ControlBorder has
 //      WCAG 1.4.11's 3:1 floor under it and components/variant_test.go
 //      measures every pair — as arithmetic over hex strings, which is all Go
@@ -1109,11 +1111,39 @@ async function main() {
         // core.ColorPalette.ControlBorder to a border declaration runs through
         // `components`, which this file cannot call.
         //
-        // So gen.go renders one quiet components.Chip per bundled theme, on a
-        // page painted in that theme's own Background, and reads the three
-        // colours off the rendered nodes. What is mounted below is that tree,
-        // unmodified; what is asserted is that the widget's own declarations
-        // survive to the pixel.
+        // So gen.go renders one quiet components.Chip and one core.Input per
+        // bundled theme, on a page painted in that theme's own Background, and
+        // reads the three colours off the rendered nodes. What is mounted below
+        // is those trees, unmodified; what is asserted is that each widget's own
+        // declarations survive to the pixel.
+        //
+        // # What the field adds that the chip did not
+        //
+        // Not "a widget on a tag the user agent draws a border on" — the chip
+        // was already that. components.Chip is a tappable control and exports
+        // as a <button>, which is the first member borderResetTypes ever had.
+        // Both widgets are therefore drawing over a user-agent rule, and if the
+        // runtime had ever left one in force the chip would have shown it.
+        //
+        // What the field adds is two things the chip cannot say. It is a second
+        // *tag* with a different user-agent rule (<button> is given `outset`,
+        // <input> `inset`, and an <input> also arrives with a fill and padding
+        // of its own), and it reads the tone from a second *authority* in Go:
+        // components.chipRing takes Colors.ControlBorderColor, the role, while
+        // core.Input takes Components.Input.BorderColor, a literal the theme
+        // states and core/theme_test.go pins to the role separately. Those two
+        // hold the same hex in every bundled theme, which is exactly why each
+        // case names its own source (widgetCase.RingFrom) rather than both
+        // being compared against whichever is handy.
+        //
+        // # Why both edges are scanned
+        //
+        // A frame drawn on some sides and not others. One edge in the declared
+        // tone says the tone survived; it says nothing about whether the box was
+        // closed, and a border emitted per-side — or a user-agent rule surviving
+        // on one side under a partial override — paints exactly that. The
+        // two-tone styles (`inset`, `outset`) are caught by either edge on its
+        // own; the one-sided case is caught by neither unless both are read.
         for (const w of WIDGETS) {
             const where = `${w.theme}/${w.what}`;
             await mount(JSON.parse(w.tree));
@@ -1164,34 +1194,51 @@ async function main() {
                 continue;
             }
 
-            // The ring, scanned down the *top* edge at the widget's horizontal
+            // The ring, scanned across the *horizontal* edges at the widget's
             // middle. The swatch grid scans a left edge because its inner box
             // is square; a chip is a pill, and a pill's leftmost point is the
             // apex of a curve, where every pixel is an antialiased blend — the
             // first version of this check read #907267 out of an #8D6E63 ring
-            // and was measuring the corner radius. The top edge at mid-width
-            // is the one run of this shape that is a straight horizontal line
+            // and was measuring the corner radius. A horizontal edge at
+            // mid-width is the one run of either shape that is a straight line
             // at any radius.
             //
-            // Three device pixels, for the reason the swatch scan uses three:
-            // the rect's edge is a float and a 1px border straddles the
-            // rounding at dpr 2. What is asserted is that a fully saturated
-            // boundary pixel exists at all, which is exactly what a border
-            // blended into its backdrop would not have.
+            // Both of them, not just the top. A user agent's `inset` border —
+            // which is what an <input> is given, and what a renderer that
+            // emitted colour and width without style would leave in force —
+            // paints the top and left in a darkened tone and the bottom and
+            // right in a lightened one. Either single edge is consistent with a
+            // correct frame; the pair is not.
+            //
+            // Three device pixels per edge, for the reason the swatch scan uses
+            // three: the rect's edge is a float and a 1px border straddles the
+            // rounding at dpr 2. The bottom is scanned *inward* from the last
+            // row of the rect for the same reason — c.y + c.h is the first row
+            // past the box. What is asserted is that a fully saturated boundary
+            // pixel exists on each edge, which is exactly what a border blended
+            // into its backdrop, or tinted by the user agent's own style, would
+            // not have.
             const x = (c.x + c.w / 2) * dpr;
-            let ring = null;
-            const seen = [];
-            for (let dy = 0; dy <= 2; dy++) {
-                const got = pixelAt(wImg, x, c.y * dpr + dy);
-                seen.push(got);
-                if (got === w.ring) ring = got;
-            }
-            if (!ring) {
-                problems.push(`${where}: the widget's boundary in ${w.ring} painted as ` +
-                    `${seen.join("/")}. The census measures that tone at ` +
-                    `${w.ratioOnPage.toFixed(2)}:1 against the page and ` +
-                    `${w.ratioOnFill.toFixed(2)}:1 against the fill, and no Go test and ` +
-                    `no painted swatch can tell you the widget stopped drawing it`);
+            for (const edge of [
+                { name: "top", rows: [0, 1, 2].map((dy) => c.y * dpr + dy) },
+                { name: "bottom", rows: [0, 1, 2].map((dy) => (c.y + c.h) * dpr - 1 - dy) },
+            ]) {
+                let ring = null;
+                const seen = [];
+                for (const y of edge.rows) {
+                    const got = pixelAt(wImg, x, y);
+                    seen.push(got);
+                    if (got === w.ring) ring = got;
+                }
+                if (!ring) {
+                    problems.push(`${where}: the widget's ${edge.name} boundary in ` +
+                        `${w.ring} painted as ${seen.join("/")}. The census measures ` +
+                        `that tone at ${w.ratioOnPage.toFixed(2)}:1 against the page ` +
+                        `and ${w.ratioOnFill.toFixed(2)}:1 against the fill, and no Go ` +
+                        `test and no painted swatch can tell you the widget stopped ` +
+                        `drawing it — or that a user agent is still drawing one of ` +
+                        `its own underneath`);
+                }
             }
         }
 
@@ -1258,7 +1305,7 @@ async function main() {
     console.log(`OK: roving tabindex, disabled focus, ArrowDown and the toolbar walk
     hold in a real browser, ${PALETTES.length} palette swatches paint the
     hexes the contrast census measures, ${WIDGETS.length} real widgets draw
-    their own boundary tones, a sticky band pins, and ${VALUE_RANGES.length}
+    their own boundary tones on both edges, a sticky band pins, and ${VALUE_RANGES.length}
     value ranges resolve the way core.Progress says a browser resolves them`);
 }
 

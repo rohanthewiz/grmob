@@ -382,32 +382,51 @@ type SpacingScale struct {
 // backdrop with nobody having to remember, and components/variant_test.go
 // measures the pair.
 //
-// A field whose fill nothing is ever drawn on top of is the exception, and the
-// tag is where it says so. The value is the argument, and it is required: an
-// exclusion with no reason is a census defeating itself, since both fields
-// tagged below fail the floor in all three bundled themes and would otherwise
-// look like two failures somebody made go away.
+// Every field carries exactly one of two tags, and both are claims about the
+// *geometry* of the framework rather than about any number:
 //
-// It lives here rather than in a list one package over because this is where a
-// theme author works. The exclusion is a claim about the *geometry* of the
-// framework — "no widget puts a bordered control on this surface" — which is
-// knowable at the field and is not knowable from a name in
-// internal/palette, and a name in a list is invisible in the diff that adds a
-// field beside it.
+//	backdrop      what draws a control boundary on this fill
+//	notbackdrop   why nothing ever does
 //
-// palette.NotABackdrop reads these tags and is the only reader;
-// TestTheBackdropExclusionsNameRealFills holds each one to a field that states
-// a fill.
+// The value is the argument in both cases and it is required. An exclusion
+// with no reason is a census defeating itself — every excluded field below
+// fails the 3:1 floor in all three bundled themes and would otherwise look
+// like a failure somebody made go away — and an inclusion with no reason is
+// the thing the pair was introduced to end.
+//
+// # Why both, and not just the exclusion
+//
+// The exclusion came first and everything else was measured because it was
+// left over, which had two costs. A pair nothing builds was measured beside a
+// pair three widgets build, so a shortfall in either read the same way to
+// whoever had to fix it — and, worse, a `notbackdrop` tag could be *deleted*
+// with no consequence but a pair quietly joining the census. Drop Camera's and
+// the added pair clears 6:1, so the run stays green while a geometry claim has
+// been thrown away.
+//
+// With both tags mandatory a field carrying neither is a hard failure, so
+// deleting either one is now the same kind of event as deleting a field's
+// name. palette.Untagged is that reading and
+// TestEveryComponentFillIsClassified is where it fails.
+//
+// They live here rather than in a list one package over because this is where
+// a theme author works. "No widget puts a bordered control on this surface" is
+// knowable at the field and is not knowable from a name in internal/palette,
+// and a name in a list is invisible in the diff that adds a field beside it.
+//
+// palette.IsABackdrop and palette.NotABackdrop read these tags and are their
+// only readers; the reachability claim travels on into the census, which
+// prints it when a pair falls short.
 type ComponentDefaults struct {
 	Button   Style `notbackdrop:"a control's own fill, not a surface: Colors.Primary. A bordered control is never drawn on top of a filled button — an outline Button draws its own edge over whatever is behind it, which is the page or a panel, and both of those are already measured. Excluded because the pair is unreachable, not because it is close"`
-	Card     Style
-	Input    Style
-	Column   Style
-	Row      Style
+	Card     Style `backdrop:"a panel: a Card is a container, so anything a screen puts inside one is drawn on this fill. components.FormField's Input inside a components.Card is the commonest screen this framework builds, and its frame is a control boundary against exactly this colour"`
+	Input    Style `backdrop:"a field's own interior, enclosed by its own frame: the pair here is a boundary against the fill it encircles rather than one control on top of another. Reachable by construction, not by composition — every Input that states a BorderColor builds it, and there is no arrangement of widgets that avoids it"`
+	Column   Style `backdrop:"a layout container. It states no fill in any bundled theme, so it contributes no pair today — that is a fact about the themes and not about the geometry. A theme that fills its Column has made it a page region, and every control laid out in one is then drawn on it"`
+	Row      Style `backdrop:"a layout container, on the other axis and for the same reason as Column. components.GroupHeader's band is a filled Row with a bordered control in it the moment a caller styles one, which is the shape that makes this a real pair rather than a hypothetical"`
 	Camera   Style `notbackdrop:"a viewfinder: its fill is black in every theme because it is what shows for the frame before the first camera frame arrives, and nothing draws a control boundary on top of a preview. Excluded by name rather than by a lightness test, because a rule that skipped dark fills would also skip a dark theme's page"`
-	CheckBox Style
-	TextArea Style
-	Text     Style
+	CheckBox Style `backdrop:"the box's own interior, enclosed by its own boundary — the same by-construction pair as Input. Two of the three bundled themes state a fill here and the third does not, so the pair exists in some palettes and not others, which is what a derived census handles and a hand-written list does not"`
+	TextArea Style `backdrop:"a field's own interior, as Input, one tag over. The two are separate fields because a theme may want a taller field to read differently, and they are separate rows in the census for the same reason"`
+	Text     Style `notbackdrop:"a run of words, not a region. core.Text is a leaf — it takes content and style props and never children (core/text.go), so no node can be nested inside one and no control boundary can land on its fill. A theme that fills Text is drawing behind glyphs, which is the one fill in this struct that is not a surface at all. Excluded because the pair is unreachable, not because it is close"`
 }
 
 func WithTheme(theme *Theme, children ...View) View {

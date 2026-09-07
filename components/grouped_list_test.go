@@ -586,3 +586,362 @@ func TestGroupHeaderLabelIsAHeading(t *testing.T) {
 			label.Style.AccessibilityHeadingLevel)
 	}
 }
+
+// --- The two facts a band is handed ------------------------------------------
+
+// bandGroups renders a list whose Header override records every Group it is
+// handed, in band order. That is the only vantage point from which
+// Group.Trailing and Group.AutoLoadWithheld are observable at all: they are
+// stamped inside appendRows and consumed by whatever builds the band, so a
+// test that looked at the rendered tree would be looking at what the override
+// decided rather than at what it was told.
+func bandGroups(t *testing.T, list GroupedList[string]) []Group {
+	t.Helper()
+	var seen []Group
+	list.Row = func(s string) core.View { return core.Text(s) }
+	list.Header = func(g Group) core.View {
+		seen = append(seen, g)
+		return core.Text(g.Label)
+	}
+	ctx := core.NewContext()
+	ctx.BeginRenderPass()
+	list.Render(ctx)
+	return seen
+}
+
+// threeRuns is two January rows and one February row: three items, two runs,
+// and the trailing run is the short one — so a check that confused "the last
+// group" with "the biggest" or with "the first" fails.
+var threeRuns = []string{"jan-1", "jan-2", "feb-1"}
+
+func byPrefix(s string) Group { return Group{Key: s[:3], Label: s[:3]} }
+
+// Exactly one band is told it is the trailing one, and it is the last.
+//
+// This is the fact HideTrailingCount rests on, and until Group carried it a
+// Header override could not implement the same rule: the field's own
+// documentation says an override "owns the decision itself", and the decision
+// is *do not publish an open run's count* — which needs to know which run is
+// open. Deriving that in the override meant re-walking Items with the same
+// GroupBy the widget had just walked.
+func TestABandIsToldWhetherItIsTheTrailingRun(t *testing.T) {
+	got := bandGroups(t, GroupedList[string]{Items: threeRuns, GroupBy: byPrefix})
+	if len(got) != 2 {
+		t.Fatalf("got %d bands, want 2 — the fixture this test reasons about has changed", len(got))
+	}
+	if got[0].Trailing {
+		t.Errorf("the %q band says it is trailing — a pager cannot extend a run that "+
+			"another run already closed, and an override eliding this band's count "+
+			"would be hiding a number that is final", got[0].Key)
+	}
+	if !got[1].Trailing {
+		t.Errorf("the %q band does not say it is trailing — it is the run an append "+
+			"pager extends, so its Count is the one that changes under the reader",
+			got[1].Key)
+	}
+
+	// A single run is trailing: there is no "and also some earlier ones"
+	// requirement, and a one-group feed is exactly the shape whose count is
+	// most obviously still open.
+	one := bandGroups(t, GroupedList[string]{Items: []string{"jan-1"}, GroupBy: byPrefix})
+	if len(one) != 1 || !one[0].Trailing {
+		t.Errorf("a list with one run reported %+v — the only band there is is the "+
+			"trailing one", one)
+	}
+}
+
+// The default band's own trailing rule is the same fact, so the two cannot
+// drift.
+//
+// HideTrailingCount used to be `ri == len(runs)-1` at the band and
+// trailingRun's own walk at the sensor: two derivations of one question, in a
+// function where they are forty lines apart. They are one statement now, and
+// this is the assertion that the default band still reads it — a band that
+// went back to counting its own index would pass every test above and this
+// one would keep it honest only if the two answers can be made to disagree,
+// which is why the check is on the *rendered* band rather than on the Group.
+func TestTheDefaultBandsTrailingRuleReadsTheStampedFact(t *testing.T) {
+	ctx := core.NewContext()
+	ctx.BeginRenderPass()
+	n := GroupedList[string]{
+		Items:             threeRuns,
+		GroupBy:           byPrefix,
+		Row:               func(s string) core.View { return core.Text(s) },
+		HideTrailingCount: true,
+	}.Render(ctx)
+
+	// Two bands: the first keeps its badge, the second does not.
+	bands := []*core.Node{}
+	for _, c := range n.Children {
+		if strings.HasPrefix(c.Key, "group:") {
+			bands = append(bands, c)
+		}
+	}
+	if len(bands) != 2 {
+		t.Fatalf("got %d bands, want 2", len(bands))
+	}
+	if findText(bands[0], "2") == nil {
+		t.Error("the closed run's band lost its count — only the trailing run's number " +
+			"is still open, and hiding a closed one throws away a fact the reader can use")
+	}
+	if findText(bands[1], "1") != nil {
+		t.Error("the trailing run's band published a count while more rows may follow — " +
+			"HideTrailingCount is no longer reading Group.Trailing")
+	}
+}
+
+// The withholding reaches the band that caused it, and no other.
+//
+// GroupedList.AutoLoadWithheld answers the caller, who owns the Footer. A
+// Header override is a different reader in a different place, and the tree it
+// builds is the only thing on screen that could say "collapsed — auto-load is
+// off here". Before this it had to close over Items, GroupBy and Collapse and
+// recompute an answer the widget had just computed.
+func TestTheBandThatWithheldTheEdgeIsToldSo(t *testing.T) {
+	list := func(shut map[string]bool, sensor bool) GroupedList[string] {
+		g := GroupedList[string]{
+			Items:   threeRuns,
+			GroupBy: byPrefix,
+			Collapse: Collapse{
+				IsCollapsed: func(g Group) bool { return shut[g.Key] },
+				OnToggle:    func(Group) {},
+			},
+		}
+		if sensor {
+			g.OnEndReached = func() {}
+		}
+		return g
+	}
+
+	for _, c := range []struct {
+		name string
+		shut map[string]bool
+		want []bool // per band, in order
+	}{
+		{"the trailing run is shut", map[string]bool{"feb": true}, []bool{false, true}},
+		{"nothing is shut", map[string]bool{}, []bool{false, false}},
+		// The one that matters most: a shut run above the trailing one hides
+		// its rows and withholds nothing, because the pager was never going to
+		// extend it. A band that announced a pause here would be wrong on a
+		// feed that is still fetching normally.
+		{"a run above the trailing one is shut", map[string]bool{"jan": true}, []bool{false, false}},
+		{"every run is shut", map[string]bool{"jan": true, "feb": true}, []bool{false, true}},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			got := bandGroups(t, list(c.shut, true))
+			if len(got) != len(c.want) {
+				t.Fatalf("got %d bands, want %d", len(got), len(c.want))
+			}
+			for i, want := range c.want {
+				if got[i].AutoLoadWithheld != want {
+					t.Errorf("band %q: AutoLoadWithheld = %v, want %v",
+						got[i].Key, got[i].AutoLoadWithheld, want)
+				}
+			}
+		})
+	}
+
+	// No sensor, no withholding — the same answer the method gives, for the
+	// same reason. A band on a manual pager that announced a pause would
+	// appear on every list with a collapsed last group and no auto-load at all.
+	for _, g := range bandGroups(t, list(map[string]bool{"feb": true}, false)) {
+		if g.AutoLoadWithheld {
+			t.Errorf("band %q reports the edge as withheld on a list with no "+
+				"OnEndReached — there was no sensor to withhold", g.Key)
+		}
+	}
+}
+
+// What the bands are told and what the list does are one answer.
+//
+// This is the property that makes the field worth carrying at all, and it is
+// the same one TestAutoLoadWithheldAgreesWithTheRenderedList asserts for the
+// method: a Group saying "auto-load is off" above a List that kept its sensor
+// would put two ways to load one page on the screen, and the opposite pair
+// would hide the only one there is.
+//
+// It is a separate assertion from the method's because the two travel by
+// different routes — the method is called on the value, the field is stamped
+// inside the row loop — and a render that computed the answer twice could
+// disagree with itself between them.
+func TestTheBandAndTheListAgreeAboutTheWithheldEdge(t *testing.T) {
+	for _, shut := range []map[string]bool{
+		{"feb": true},
+		{},
+		{"jan": true},
+		{"jan": true, "feb": true},
+	} {
+		list := GroupedList[string]{
+			Items:        threeRuns,
+			GroupBy:      byPrefix,
+			OnEndReached: func() {},
+			Collapse: Collapse{
+				IsCollapsed: func(g Group) bool { return shut[g.Key] },
+				OnToggle:    func(Group) {},
+			},
+		}
+
+		var announced bool
+		for _, g := range bandGroups(t, list) {
+			if g.AutoLoadWithheld {
+				announced = true
+			}
+		}
+
+		ctx := core.NewContext()
+		ctx.BeginRenderPass()
+		l := list
+		l.Row = func(s string) core.View { return core.Text(s) }
+		_, hasSensor := l.Render(ctx).Props["onEndReached"]
+
+		if announced == hasSensor {
+			t.Errorf("shut=%v: a band %s the edge is withheld and the List %s its "+
+				"sensor", shut,
+				map[bool]string{true: "says", false: "does not say"}[announced],
+				map[bool]string{true: "kept", false: "dropped"}[hasSensor])
+		}
+		if announced != list.AutoLoadWithheld() {
+			t.Errorf("shut=%v: the bands say %v and the method says %v", shut,
+				announced, list.AutoLoadWithheld())
+		}
+	}
+}
+
+// Every reader of a Group sees the same Group.
+//
+// The fields are stamped once, before anything is asked about the run — the
+// Collapse predicate, the Header override, the default band, OnToggle. That
+// ordering is not cosmetic: a predicate handed a bare Group and an override
+// handed a stamped one is two shapes of the same value in one render, and the
+// next person to key a collapse map on something other than Key would find
+// out the hard way.
+//
+// trailingRun is the one deliberate exception and it is asserted here too: it
+// stamps Trailing (it is, by construction, the trailing run) and never
+// AutoLoadWithheld, which is the answer that walk is being run to compute.
+func TestEveryReaderOfAGroupSeesTheSameGroup(t *testing.T) {
+	var predicate, toggled []Group
+	list := GroupedList[string]{
+		Items:        threeRuns,
+		GroupBy:      byPrefix,
+		Row:          func(s string) core.View { return core.Text(s) },
+		OnEndReached: func() {},
+		Collapse: Collapse{
+			IsCollapsed: func(g Group) bool {
+				predicate = append(predicate, g)
+				return g.Key == "feb"
+			},
+			OnToggle: func(g Group) { toggled = append(toggled, g) },
+		},
+	}
+	ctx := core.NewContext()
+	ctx.BeginRenderPass()
+	list.Render(ctx)
+
+	// The bands, for comparison.
+	bands := bandGroups(t, list)
+	byKey := map[string]Group{}
+	for _, g := range bands {
+		byKey[g.Key] = g
+	}
+
+	// Every predicate call from inside the row loop matches the band for the
+	// same run. The pre-render probe (trailingRun, from Render's own
+	// AutoLoadWithheld call) is the exception: it carries Trailing and not the
+	// answer it is computing.
+	for _, g := range predicate {
+		want := byKey[g.Key]
+		if g == want {
+			continue
+		}
+		probe := want
+		probe.AutoLoadWithheld = false
+		if g == probe && g.Trailing {
+			continue // the trailingRun probe, as documented
+		}
+		t.Errorf("the Collapse predicate was asked about %+v; the band for that run "+
+			"is %+v", g, want)
+	}
+
+	// Pressing a band calls OnToggle with the same value the band was built
+	// from. A handler keying off Trailing — "collapse every run but the last",
+	// which is the shape a feed's "collapse all" control takes — must see the
+	// run the reader actually pressed.
+	//
+	// The default band, because a Header override is handed no OnToggle: the
+	// override draws its own control (CollapseBand) and calls the caller's
+	// function itself.
+	ctx2 := core.NewContext()
+	ctx2.BeginRenderPass()
+	toggled = nil
+	tree := list.Render(ctx2)
+	var pressed int
+	for _, band := range tree.Children {
+		if !strings.HasPrefix(band.Key, "group:") {
+			continue
+		}
+		button := findFirst(band, func(n *core.Node) bool {
+			return n.Style != nil && n.Style.AccessibilityRole == core.RoleButton
+		})
+		if button == nil {
+			t.Fatalf("band %s built no control — Collapse is active, so it should be a "+
+				"disclosure", band.Key)
+		}
+		id, ok := button.Props["onClick"].(string)
+		if !ok {
+			t.Fatalf("band %s has a Button with no onClick", band.Key)
+		}
+		ctx2.TriggerCallback(id)
+		pressed++
+	}
+	if pressed != len(bands) {
+		t.Fatalf("pressed %d bands, want %d", pressed, len(bands))
+	}
+	if len(toggled) != len(bands) {
+		t.Fatalf("OnToggle fired %d times for %d presses", len(toggled), len(bands))
+	}
+	for i, g := range toggled {
+		if g != bands[i] {
+			t.Errorf("pressing band %d called OnToggle with %+v; the band was built "+
+				"from %+v", i, g, bands[i])
+		}
+	}
+}
+
+// A DataTable's bands carry the position and never the pause.
+//
+// A table has no OnEndReached, so there is no sensor for a shut run to
+// withhold; the census in rows_spec_test.go records the field as
+// GroupedList's for exactly that reason. What a table's bands *do* get is
+// Trailing, because "which run is still open" is a fact about grouping rather
+// than about paging, and a table's Header override wants it for the same
+// count rule.
+func TestADataTableBandIsToldItsPositionAndNeverThatAPageWasWithheld(t *testing.T) {
+	var seen []Group
+	ctx := core.NewContext()
+	ctx.BeginRenderPass()
+	DataTable[string]{
+		Columns: []Column[string]{{Title: "Row", Cell: func(s string) core.View { return core.Text(s) }}},
+		Rows:    threeRuns,
+		GroupBy: byPrefix,
+		Header: func(g Group) core.View {
+			seen = append(seen, g)
+			return core.Text(g.Label)
+		},
+	}.Render(ctx)
+
+	if len(seen) != 2 {
+		t.Fatalf("got %d bands, want 2", len(seen))
+	}
+	if seen[0].Trailing || !seen[1].Trailing {
+		t.Errorf("a table's bands report Trailing %v/%v, want false/true — the "+
+			"grouping walk is shared, so the position is too",
+			seen[0].Trailing, seen[1].Trailing)
+	}
+	for _, g := range seen {
+		if g.AutoLoadWithheld {
+			t.Errorf("the %q band of a table says an auto-load was withheld — a table "+
+				"has no edge sensor, so there is nothing that could have been", g.Key)
+		}
+	}
+}

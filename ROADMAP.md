@@ -1033,6 +1033,44 @@
       also corrected them: every bound symbol here is a package-level func,
       emitted as a C function, and Clang's `throws` convention is the
       Objective-C *method* one
+- [x] **A `Header` override is told what the widget knows** — `Group` carries
+      `Trailing` (this is the run an append pager extends) and
+      `AutoLoadWithheld` (this run being shut is why the list has no edge
+      sensor). The first is what makes `HideTrailingCount`'s rule
+      implementable in an override at all; both are stamped before anything
+      reads the `Group`, so the predicate, the band and `OnToggle` see one
+      shape
+- [x] **Every `ComponentDefaults` field says whether a control is drawn on it**
+      — a `backdrop` tag beside the `notbackdrop` one, exclusive and total.
+      With only the exclusion, everything else was measured because it was left
+      over, and a `notbackdrop` tag could be *deleted* with no consequence but
+      a pair quietly joining the census. `palette.Untagged()` now refuses that
+      state, and the reachability claim travels into the census's failure
+      message. Classifying `Text` — a leaf nothing can be nested inside, whose
+      component default nothing even reads — removed two pairs the census had
+      been measuring against nothing
+- [x] **The browser paints an `Input` frame as well as a chip ring** — the
+      tone's two spenders read it from two different Go values, so each case
+      names its own authority (`widgetCase.RingFrom`). The field is also a
+      second tag with a second user-agent rule, and both horizontal edges are
+      scanned: one edge says the tone survived, the pair says the box was
+      closed
+- [x] **gobind's result arms are transcribed, from a real bind** — a package
+      with one function and one interface method of every result shape was
+      bound with `gomobile bind -target=ios` and read back through `swiftc`.
+      No package function ever throws (they are C functions); an interface
+      method does, except when its return is `NSString* _Nonnull`, which gives
+      Clang's error convention nothing to signal with. The bind also found a
+      hole: `error` was bindable and in neither type table, so a bridge
+      function that grew one would have gone undeclared and taken the app
+      layer's type-check with it
+- [x] **The band's insets are asked of SwiftUI** — `internal/bandfixture`
+      reads the real `GroupHeader`'s geometry and `ios/verify/band.swift`
+      solves both arrangements through `GrMobFlexSolver`. They place the same
+      pixels at every offer with slack and at an indefinite proposal, and
+      diverge in two recorded places: under overflow (shrink is proportional
+      to a base that includes the child's own padding) and for a badge taller
+      than the control, which no real band has
 
 ---
 

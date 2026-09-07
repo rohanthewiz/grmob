@@ -1188,6 +1188,47 @@ It answers `false` when `OnEndReached` is nil — there is no sensor to withhold
 on a manual pager. `Collapse.IsCollapsed` is the question to ask about the run
 itself.
 
+**A `Header` override is told the same two things on the `Group`.** The method
+answers the *caller*, who owns the footer. An override is a different reader in
+a different place — it is handed a `Group` and nothing else — so `Group` carries
+the two facts only the widget knows:
+
+| field | what it says |
+|---|---|
+| `Trailing` | this is the last run, the one an append pager extends |
+| `AutoLoadWithheld` | this run being shut is why the list has no edge sensor |
+
+```go
+Header: func(g components.Group) core.View {
+    band := core.Row(components.CollapseBand{Collapse: shut, Group: g})
+    if g.AutoLoadWithheld {
+        band = core.Row(band, components.Badge{Text: "paused"})
+    }
+    return band
+},
+```
+
+`Trailing` is what makes `HideTrailingCount`'s rule implementable in an
+override: the rule is *do not publish an open run's count*, and until the field
+existed nothing handed to the override said which run was open — deriving it
+meant re-walking `Items` with the same `GroupBy` the widget had just walked.
+Both are filled in by the widget like `Count`, so a value a `GroupBy` callback
+sets is overwritten, and both are stamped before *anything* reads the `Group` —
+the `Collapse` predicate, the override, the default band, `OnToggle` — so every
+reader sees one shape.
+
+`AutoLoadWithheld` is true on at most one group of a list and always a
+`Trailing` one, false throughout a list with no `OnEndReached`, and false on
+every band of a `DataTable`, which has no edge sensor at all. The widget states
+it rather than letting a band derive it because the composite is easy to get
+subtly wrong: it is `Trailing` *and* the run is hidden *and* a sensor was given,
+and "the run is hidden" needs `OnToggle` as well as `IsCollapsed` — a caller
+with a predicate and no handler hides nothing, so their bands would announce a
+pause the list is not taking.
+
+The default `GroupHeader` ignores it. What a band says about a paused feed is a
+wording decision, and the default band's vocabulary is a label and a count.
+
 `StickyHeaders` pins the *default* `GroupHeader`. A `Header` override builds
 its own view, which the widget cannot reach into; such a header pins itself
 with `core.StickyHeader()` in its own `Style`. On `DataTable` the flag pins

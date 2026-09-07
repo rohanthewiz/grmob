@@ -1015,6 +1015,48 @@ compares the resulting tree against Go's final render, and the view layer
 (`Renderer.swift`, `GrMobFlexStack` included) is then type-checked. Only Go
 and the Xcode Command Line Tools are required.
 
+### Asking the solver whether a change was free
+
+`ios/verify` carries `GrMobFlexSolver` and `GrMobStackSolver`, split out of the
+SwiftUI `Layout`s precisely so they can be exercised without mounting anything.
+That makes them the one thing in the repository that can answer a question the
+web answers with a screenshot: **did this layout change move any pixels?**
+
+`components.GroupHeader`'s band is the case it was first asked about. The band's
+padding used to be on the `Row` and is now on the growing control inside it, so
+that a press lands on the whole band rather than a strip in the middle of it —
+and the argument that the move is *free* is that padding on a stretched child
+fills exactly the space the same padding on its parent held. That was verified
+on the web by the pixels it did not move, and everywhere else it was an
+assumption.
+
+`internal/bandfixture` reads the band's real numbers off a rendered
+`GroupHeader` — the insets, the gap, the flex-grow, the alignment — and derives
+the arrangement they came from by a stated rule; the pair rides in the same
+transcript the picker cases do, and `ios/verify/band.swift` solves both at four
+container widths. The content sizes are synthetic, because what is under test is
+the arithmetic of an arrangement and not the width of a string.
+
+The answer is **yes, with two recorded exceptions**, and finding them is what
+the check was worth:
+
+- **Under overflow the two diverge.** This solver shrinks each child in
+  proportion to its base size, and a base includes that child's own padding — so
+  the control's 32 points are inside the proportion in one arrangement and
+  outside it in the other. At a 120pt offer a 100pt label gets 63.14pt with the
+  insets on the control and 64.52pt with them on the `Row`. It needs a second
+  child to show: with the count hidden the control is alone on the line and is
+  clamped to the container either way. CSS distributes shrink over the *inner*
+  flex base size rather than the outer one, so a browser may well agree where
+  this does not — nothing here has asked one.
+- **A badge taller than the control would change the band's height.** With
+  children centred, a `Row`'s height is its tallest child plus its own vertical
+  padding, so moving that padding onto one child stops it being added to the
+  other. It cannot happen to the real band — the control carries more vertical
+  padding than the badge and both wrap the same caption type — so it is a case
+  with a made-up badge, asserted in the *other* direction so the agreement of
+  the real ones is not holding for a reason nobody stated.
+
 `mobile/verify` needs even less — just Go. It holds the checks that have to
 hold in *both* native renderers at once, which is why they live under
 `mobile/` (the bridge surface both shells are written against) rather than in
@@ -1056,14 +1098,13 @@ package `mobile`, in two directions and at two levels:
 
 - **The header comment.** The declarations were pinned character-for-character
   and the comment above them was a hand-written description of the rules doing
-  the pinning — the naming, the nullability asymmetry, gobind's three result
-  arms. It agreed with the checker because it was written from it, which is the
+  the pinning — the naming, the nullability asymmetry, the result arms. It agreed with the checker because it was written from it, which is the
   same copy-that-drifts this whole stand-in exists to refuse. So the
   load-bearing half of it is now written as rows in a delimited block, and the
   test reads them out of the comment and holds each to the thing it describes:
   the version to `go.mod`, the prefix and suffix to the names the checker
-  builds, each type row to `swiftType`, each result row to what `swiftResult`
-  does with a signature of that shape. The prose around the rows is not checked
+  builds, each type row to `swiftType`, and each result row to the whole
+  declaration the checker produces for a signature of that shape. The prose around the rows is not checked
   and is not meant to be — a paragraph explaining *why* nullability is
   asymmetric cannot be wrong in the way `string String? String` can.
 
@@ -1081,27 +1122,68 @@ which pins the gobind the stub is written against — so the mapping is read off
 position, `funcSummary` for the shape of a result clause. `gobindVersion` pins
 the version those readings were made at, and a bump fails until somebody looks.
 
-That provenance closed two refusals the table used to carry, both of which said
-in effect "read it off `Headers/Mobile.objc.h` and add the row" — which made the
-*next* bridge function of either shape blocked on somebody having run a
-`gomobile bind` at least once, on a Mac with Xcode, for a fact sitting in the
-module cache the whole time:
+That provenance closed a refusal for **a returned bound interface**.
+`objcParamType` special-cases exactly one Go type, `String`, and falls through
+to `objcType` for everything else — so the asymmetry the two columns exist for
+is `string` and nothing else, and a returned protocol is `_Nullable` exactly as
+a parameter is.
 
-- **A returned bound interface** is no longer refused. `objcParamType`
-  special-cases exactly one Go type, `String`, and falls through to `objcType`
-  for everything else — so the asymmetry the two columns exist for is `string`
-  and nothing else, and a returned protocol is `_Nullable` exactly as a
-  parameter is. Nothing returns one yet; that is now a fact about this bridge
-  rather than a hole in the table.
-- **A multi-result signature** is still refused, and the refusal now describes
-  what gobind does instead of asking someone to find out. `funcSummary` has
-  three arms, not two: a `(T, error)` pair where `T` is nullable becomes a Swift
-  `throws` function returning `T`; where `T` is not nullable it becomes a
-  `throws` function returning `Void` with `T` as an out-parameter; and **three
-  or more results gobind refuses outright**. That last one is not a gap in this
-  table — `gomobile bind` will not build the function — so the fix is to change
-  the Go signature, and reporting it as a missing mapping would send the next
-  person to read a header for a declaration that was never generated.
+#### The result arms, and the one thing the module cache could not settle
+
+A **multi-result signature** used to be refused, and the refusal said: run
+`gomobile bind` once and write the row from what it produced, because writing it
+on a guess is the one thing that must not happen. That instruction was right and
+it was the whole problem — the next bridge function of that shape was blocked on
+somebody having a Mac.
+
+Somebody ran it. A package with one function and one interface method of every
+result shape was bound with `gomobile bind -target=ios`, and the module it
+produced was read back through `swiftc`. Every row below is that, not a reading
+of the generator and not reasoning about Clang:
+
+| Go results | package `func` | interface method |
+|---|---|---|
+| `()` | — | — |
+| `T` | `-> T` | `-> T` |
+| `error` | `(_ error: NSErrorPointer) -> Bool` | `throws` |
+| `(string, error)` | `(_ error: NSErrorPointer) -> String` | `(error: NSErrorPointer) -> String` |
+| `(Iface, error)` | `(_ error: NSErrorPointer) -> MobileXProtocol?` | `throws -> MobileXProtocol` |
+| `(int, error)` | `(_ ret0: UnsafeMutablePointer<Int>?, _ error: NSErrorPointer) -> Bool` | `(ret0_: UnsafeMutablePointer<Int>?) throws` |
+| `(bool, error)` | `(_ ret0: UnsafeMutablePointer<ObjCBool>?, _ error: NSErrorPointer) -> Bool` | `(ret0_: UnsafeMutablePointer<ObjCBool>?) throws` |
+
+**No package function ever throws**, and the prediction that said so was
+correct. gobind emits every package-level func as a plain C function
+(`genFuncH`: `FOUNDATION_EXPORT … s.asFunc(g)`), and Clang's error convention —
+the rewrite of a trailing `NSError**` into a Swift `throws` — is the
+Objective-C *method* convention. A C function gets none of it without an
+explicit `swift_error` attribute, and gobind emits none:
+
+```
+func F() (string, error)
+  ->  FOUNDATION_EXPORT NSString* _Nonnull MobileF(NSError* _Nullable* _Nullable error);
+  ->  public func MobileF(_ error: NSErrorPointer) -> String
+```
+
+**A bound interface method does throw — except in one case no amount of reading
+would have produced.** The convention needs a return it can use to signal
+failure: `BOOL`, or a nullable object. A `(string, error)` method returns
+`NSString* _Nonnull`, which is neither, so it keeps its explicit error parameter
+and does not throw. A `(Iface, error)` method returns a nullable object, throws,
+*and loses the optional* — `nil` is the error signal, so it can no longer also
+be a value.
+
+**Two shapes are still refused, and they are gobind's refusals rather than this
+table's.** It stops with `too many result values` for three or more, and
+`second result value must be of type error` for a two-result signature whose
+second is something else, and builds nothing either way. So neither is a mapping
+the table is missing; the fix is to change the Go signature.
+
+The bind also turned up a hole. `error` was in neither the bindable-type set nor
+the spelling table, on the reasonable-looking grounds that nothing in `mobile`
+returns one — but gobind binds it, so a bridge function that grew an error would
+have been judged unbindable, gone undeclared in the stub, and taken
+`GomobileBridge.swift`'s type-check with it, silently. The two tables now answer
+for each other.
 
 The signature half was left out for a while, on the argument that a wrong
 signature fails the Swift type-check the moment the shell calls it. That

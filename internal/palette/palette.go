@@ -24,15 +24,26 @@
 //
 // So the two palette roles are named — they are roles, not components — and
 // everything else is read off ComponentDefaults by reflection. Adding a field
-// to that struct adds a backdrop, and the two things that could go wrong when
-// it does are both failures rather than silences: a fill under the floor
-// fails the census, and a field that is deliberately not a backdrop has to be
-// written into NotABackdrop with a reason.
+// to that struct is a decision somebody has to make, and every way it can go
+// wrong is a failure rather than a silence: an unclassified field fails
+// Untagged, a fill under the floor fails the census, and either classification
+// has to carry its argument.
 //
-// The cost of deriving is that the Camera exclusion had to survive as data,
-// which is the map below. That is a fair trade: as a line missing from a slice
-// literal it was invisible, and as a map entry it is a claim a test can hold
-// (see the two exported helpers, and TestTheBackdropExclusionsNameRealFills).
+// # Reachable, unreachable, and the state between them
+//
+// The derivation started with one tag. `notbackdrop` said a fill is never
+// drawn on; the absence of one said nothing, so the census was the boundary
+// tone crossed with whatever fills the struct happened to carry. IsABackdrop
+// is the other half and its doc comment carries the argument for why the
+// missing half mattered — the short version is that a pair nothing builds was
+// measured at the same weight as a pair three widgets build, and that a tag
+// could be deleted with no consequence but a pair silently joining the census.
+//
+// The cost of deriving is that both claims have to survive as data, which is
+// what the tags are. That is a fair trade: as a line missing from a slice
+// literal an exclusion was invisible, and as a tag it is a claim a test can
+// hold (see the three exported readings, and
+// TestEveryComponentFillIsClassified).
 //
 // # The contrast arithmetic
 //
@@ -62,7 +73,7 @@ import (
 )
 
 // Backdrop is one fill a control boundary can land on, with the name a
-// failure reports it by.
+// failure reports it by and the reason it is in the list at all.
 //
 // What is the census key — knownBoundaryShortfalls in components/variant_test.go
 // is keyed by "<theme>/<What>" — so the spelling is part of the contract and
@@ -72,6 +83,29 @@ import (
 type Backdrop struct {
 	What string
 	Hex  string
+
+	// Why is the reachability claim: what actually draws a control boundary on
+	// this fill. For a component row it is the field's `backdrop` tag verbatim;
+	// for the two palette roles it is stated in Backdrops, which is where those
+	// two are named.
+	//
+	// # Why a measured pair carries an argument
+	//
+	// The census used to be a full cross product — the boundary tone against
+	// every fill in the theme — and a cross product cannot tell a pair three
+	// widgets build from a pair nothing builds. Both appear as a row with a
+	// number under it, both have to clear 3:1, and a shortfall in either one
+	// reads the same way to whoever has to fix it. The `notbackdrop` tag said
+	// which fills were *not* reachable; nothing said why the rest were.
+	//
+	// So the claim travels with the pair. A failing row can now name the thing
+	// that builds it, which is the difference between "ControlBorder is 2.9:1
+	// on Card" and "a FormField's frame inside a Card is 2.9:1" — the second
+	// is a screen somebody can go and look at.
+	//
+	// Empty only for a field carrying neither tag, which is a state Untagged
+	// reports and the census refuses to run in.
+	Why string
 }
 
 // NotABackdrop names the core.ComponentDefaults fields whose fill no control
@@ -104,21 +138,93 @@ type Backdrop struct {
 //
 // A function rather than a var because it is derived, and because a map that
 // looked like data would go on looking editable here.
-func NotABackdrop() map[string]string {
+func NotABackdrop() map[string]string { return tagged(notABackdropTag) }
+
+// tagged is the reflection both readings share: field name -> the tag's value,
+// for every field carrying key. One walk rather than two near-copies, so the
+// two readings cannot disagree about what "carries a tag" means.
+func tagged(key string) map[string]string {
 	t := reflect.TypeOf(core.ComponentDefaults{})
 	out := map[string]string{}
 	for i := 0; i < t.NumField(); i++ {
 		f := t.Field(i)
-		if why, ok := f.Tag.Lookup(notABackdropTag); ok {
+		if why, ok := f.Tag.Lookup(key); ok {
 			out[f.Name] = why
 		}
 	}
 	return out
 }
 
-// notABackdropTag is the struct tag key, spelled once. core.ComponentDefaults
-// carries the values; this package is their only reader.
-const notABackdropTag = "notbackdrop"
+// Untagged returns the core.ComponentDefaults fields carrying neither tag, in
+// declaration order — the fields nobody has said anything about.
+//
+// This is the state the two tags exist to make impossible. A new field is a new
+// fill, and until somebody says whether a control boundary can be drawn on it
+// there is no honest thing for the census to do: measuring it asserts a pair
+// nothing has claimed exists, and skipping it drops a pair silently, which is
+// the failure the derivation was built to prevent in the first place. So the
+// answer is neither — the census refuses to run and names the field.
+//
+// A field carrying *both* tags is reported here too. It is the same absence of
+// a decision wearing two hats, and the alternative (letting one win) would make
+// which one silently load-bearing.
+func Untagged() []string {
+	is, not := IsABackdrop(), NotABackdrop()
+	var out []string
+	for _, name := range ComponentFields() {
+		_, yes := is[name]
+		_, no := not[name]
+		if yes == no {
+			out = append(out, name)
+		}
+	}
+	return out
+}
+
+// The two struct tag keys, spelled once. core.ComponentDefaults carries the
+// values; this package is their only reader.
+//
+// They are exclusive and, together, total: every field must carry exactly one,
+// and Untagged is what refuses the state where a field carries neither. See
+// IsABackdrop for what the pair buys over the single tag it replaced.
+const (
+	isABackdropTag  = "backdrop"
+	notABackdropTag = "notbackdrop"
+)
+
+// IsABackdrop names the core.ComponentDefaults fields whose fill a control
+// boundary really is drawn on, each with the thing that draws it.
+//
+// # The half NotABackdrop could not state
+//
+// A `notbackdrop` tag says a fill is unreachable. The absence of one said
+// nothing at all: everything else was measured because it was left over, so
+// the census was the boundary tone crossed with every fill the struct
+// happened to carry. That is a set with no claim behind it, and it has two
+// costs a contrast census can ill afford.
+//
+// The first is that a pair nothing builds is measured beside a pair three
+// widgets build, at the same weight, and a shortfall in either reads
+// identically. The second is worse and is what decided this: a `notbackdrop`
+// tag could be *deleted* and the only consequence would be a pair quietly
+// joining the census. Removing core.ComponentDefaults.Camera's tag adds a pair
+// that clears 6:1, so the whole run stays green while a geometry claim has
+// been thrown away. (Button's is load-bearing by accident — Primary as a fill
+// is 2.17:1 and the census fails — so half the exclusions were defended by
+// their own numbers and half by nothing.)
+//
+// Making the tags total closes both. A field carrying neither is Untagged,
+// which is a hard failure rather than a silent measurement, so deleting either
+// tag is now the same kind of event as deleting a field's name.
+//
+// # Why the argument and not a bare marker
+//
+// The value is what draws there, in the words of whoever knew. `backdrop:""`
+// would make the tags total and would say nothing — and the reason to prefer a
+// tag over a list in this package was never the totality, it was that the
+// claim sits next to the field it is about, where the person adding a Sheet or
+// a Popover is already looking.
+func IsABackdrop() map[string]string { return tagged(isABackdropTag) }
 
 // Backdrops returns every fill a control boundary can be drawn on in theme, in a
 // stable order: the two palette roles first, then the ComponentDefaults fields
@@ -131,17 +237,34 @@ const notABackdropTag = "notbackdrop"
 // Column, Row and (in two of the three themes) CheckBox are all in that
 // position today.
 func Backdrops(theme *core.Theme) []Backdrop {
-	excluded := NotABackdrop()
+	excluded, reachable := NotABackdrop(), IsABackdrop()
 	out := []Backdrop{
-		{"Background", theme.Colors.Background},
-		{"Surface", theme.Colors.Surface},
+		// The two roles' reachability claims are stated here rather than in a
+		// tag because these are core.ColorPalette roles and there is no field
+		// on ComponentDefaults to hang them off. They are also the two claims
+		// least likely to need revisiting: a page and a raised panel are what
+		// a control is drawn on by definition.
+		{"Background", theme.Colors.Background,
+			"the page. Every screen is drawn on it, so every control that is not " +
+				"inside a Card, a panel or a field is drawn on it too — this is the " +
+				"pair a bare components.Input on a Screen produces"},
+		{"Surface", theme.Colors.Surface,
+			"the raised fill: a quiet components.Chip's interior, a " +
+				"components.GroupHeader band, a Card in the themes that give the two " +
+				"the same hex. The quiet Chip is the one that decided " +
+				"core.ColorPalette.ControlBorder's own value — its ring is drawn on " +
+				"this fill and on the page at once"},
 	}
 	for _, name := range ComponentFields() {
 		if _, skip := excluded[name]; skip {
 			continue
 		}
 		if hex := Fill(theme, name); hex != "" {
-			out = append(out, Backdrop{name + " fill", hex})
+			// reachable[name] is "" for an untagged field, which is the one
+			// way a Backdrop can come back with no argument. Measured anyway
+			// rather than skipped: a field nobody has classified must not
+			// silently leave the census, and Untagged is what fails the run.
+			out = append(out, Backdrop{name + " fill", hex, reachable[name]})
 		}
 	}
 	return out

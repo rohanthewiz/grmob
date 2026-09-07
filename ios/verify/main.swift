@@ -4,6 +4,7 @@
 // resulting tree against the Go side's final full render. Runs as a plain
 // macOS executable: the data layer is UI-free, so no Xcode or simulator is
 // needed to prove the Swift store agrees with the Go reconciler.
+import CoreGraphics
 import Foundation
 
 struct Transcript: Decodable {
@@ -14,6 +15,44 @@ struct Transcript: Decodable {
     /// ride along in the same file because this harness is one executable.
     /// See selectmenu.swift.
     let menuCases: [MenuCase]
+    /// The band-inset cases, which have even less to do with the replay: they
+    /// are pure geometry solved through GrMobFlexSolver. See band.swift.
+    let bandCases: [BandCase]
+}
+
+/// One band arrangement: which node carries the chrome.
+struct BandArrangement: Decodable {
+    let what: String
+    let row: BandInsets
+    let gap: CGFloat
+    let control: BandInsets
+    let grow: CGFloat
+    let align: String
+}
+
+struct BandInsets: Decodable {
+    let top: CGFloat
+    let right: CGFloat
+    let bottom: CGFloat
+    let left: CGFloat
+}
+
+struct BandSize: Decodable {
+    let w: CGFloat
+    let h: CGFloat
+}
+
+/// One band, both ways. See internal/bandfixture.
+struct BandCase: Decodable {
+    let what: String
+    let now: BandArrangement
+    let before: BandArrangement
+    let label: BandSize
+    let badge: BandSize
+    let badgeInsets: BandInsets
+    let offers: [Double]
+    let sameHeight: Bool
+    let sharesADeficit: Bool
 }
 
 /// Structural equality, reported as per-path differences so a failure names
@@ -94,6 +133,24 @@ func run() -> Int32 {
     } else {
         print("FAIL: \(menuProblems.count) picker menu difference(s)")
         for p in menuProblems { print("  " + p) }
+        return 1
+    }
+
+    // The band insets, before the replay and for the same reason the picker
+    // menus are: pure arithmetic over the transcript's own table, so a
+    // divergence should be named on its own rather than buried under a tree
+    // diff. This is the pass that asks *this* renderer whether moving a band's
+    // padding from its Row onto the control inside it is the same band, which
+    // was verified on the web by the pixels it did not move and assumed
+    // everywhere else.
+    let bandProblems = checkBandInsets(transcript.bandCases)
+    if bandProblems.isEmpty {
+        print("OK: \(transcript.bandCases.count) band arrangements place the same "
+            + "pixels with the insets on the Row and on the control, and differ only "
+            + "where they are recorded to (a shared deficit, a taller badge)")
+    } else {
+        print("FAIL: \(bandProblems.count) band inset difference(s)")
+        for p in bandProblems { print("  " + p) }
         return 1
     }
 

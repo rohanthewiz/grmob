@@ -1049,28 +1049,56 @@ Two distinctions the names do not make obvious:
   hand-written one had never measured (a `CheckBox` fill and a `Text` fill);
   both clear.
 
-  The two components that are deliberately not backdrops say so **on the
-  field**, with a `notbackdrop` struct tag whose value is the argument:
+  **Every field says which side it is on, and the value is the argument.**
+  There are two tags, they are exclusive, and together they are total:
 
   ```go
   type ComponentDefaults struct {
       Button Style `notbackdrop:"a control's own fill, not a surface: …"`
+      Card   Style `backdrop:"a panel: a Card is a container, so anything a screen puts inside one …"`
+      Input  Style `backdrop:"a field's own interior, enclosed by its own frame …"`
       …
       Camera Style `notbackdrop:"a viewfinder: its fill is black in every theme …"`
+      Text   Style `notbackdrop:"a run of words, not a region. core.Text is a leaf …"`
   }
   ```
 
-  That is where it belongs, and it used to be a map in `internal/palette` — the
-  one file a theme author never opens. Everything else about this list is
-  derived from the struct precisely so a new field cannot go unmeasured, and
-  the exception to that derivation was a name in an internal package, invisible
-  in the diff that adds a field beside it. `palette.NotABackdrop()` is now the
-  *reading* of these tags rather than a second list, which also makes two
-  failure modes impossible rather than checked: a tag cannot name a field that
-  does not exist, and it cannot drift from the field it names. The reason is
-  still required (`TestTheBackdropExclusionsNameRealFills`), and both tagged
-  fills fail the 3:1 floor in all three bundled themes — which is exactly why
-  an exclusion has to be argued rather than assumed.
+  That is where they belong, and the exclusion used to be a map in
+  `internal/palette` — the one file a theme author never opens. Everything else
+  about this list is derived from the struct precisely so a new field cannot go
+  unmeasured, and the exception to that derivation was a name in an internal
+  package, invisible in the diff that adds a field beside it.
+  `palette.NotABackdrop()` and `palette.IsABackdrop()` are the *readings* of
+  these tags rather than second lists, which makes two failure modes impossible
+  rather than checked: a tag cannot name a field that does not exist, and it
+  cannot drift from the field it names.
+
+  **The second tag exists because the absence of the first said nothing.** With
+  only `notbackdrop`, everything else was measured *because it was left over* —
+  a set with no claim behind it, and that cost two things. A pair nothing builds
+  was measured beside a pair three widgets build, at the same weight, so a
+  shortfall in either read identically to whoever had to fix it. And worse: a
+  `notbackdrop` tag could be **deleted** with no consequence but a pair quietly
+  joining the census. Removing `Camera`'s adds a pair that clears 6:1, so the
+  whole run stays green while a geometry claim has been thrown away. (`Button`'s
+  is load-bearing by accident — `Primary` as a fill is 2.17:1 and the census
+  fails — so half the exclusions were defended by their own numbers and half by
+  nothing.)
+
+  With both mandatory, a field carrying neither is `palette.Untagged()`, which
+  `TestEveryComponentFillIsClassified` refuses to let the census run in.
+  Deleting either tag is now the same kind of event as deleting a field's name.
+  The reason is required on both, and the reachability claim travels with the
+  pair (`palette.Backdrop.Why`) all the way into the census's failure message —
+  which is the difference between *"`ControlBorder` is 2.9:1 on `Card`"* and
+  *"a `FormField`'s frame inside a `Card` is 2.9:1"*.
+
+  Classifying `Text` cost the census two pairs, and that is the payoff rather
+  than a loss. `core.Text` is a leaf — it takes content and style props and
+  never children — so nothing can be nested inside one and no control boundary
+  can land on its fill; two bundled themes give it a white `Background` and the
+  census was dutifully measuring a boundary against it. Nothing in the framework
+  even reads `Components.Text`.
 
   **And the pairs are painted.** All of the above is arithmetic over hex
   strings: it proves the number and cannot prove the colour ever reaches a
@@ -1079,15 +1107,35 @@ Two distinctions the names do not make obvious:
   only place a translucent tone, a stray opacity or a dropped frame shows up.
   See [the WASM harness](../platforms/wasm.md#the-palette-on-a-screenshot).
 
-  **And a real widget draws them.** Those swatches are a model of a control
+  **And real widgets draw them.** Those swatches are a model of a control
   boundary, built by the harness itself; the route from the palette role to the
   hex runs through `components`, which the browser pass cannot call. So
-  `wasm/verify/gen.go` renders one quiet `components.Chip` per bundled theme,
-  reads the page fill, the chip's own fill and its ring off the **rendered
-  node**, and the browser samples all three — while `widget_test.go` holds the
-  ring to `Colors.ControlBorderColor()` and both backdrops to the derived list
-  above. A chip whose ring had drifted onto `Components.Input.BorderColor`
-  would paint perfectly and pass every string comparison; this is what notices.
+  `wasm/verify/gen.go` renders one quiet `components.Chip` **and** one
+  `core.Input` per bundled theme, reads the page fill, the widget's own fill and
+  its boundary off the **rendered node**, and the browser samples all three —
+  while `widget_test.go` holds each boundary to its own Go authority and both
+  backdrops to the derived list above. A widget whose ring had drifted would
+  paint perfectly and pass every string comparison; this is what notices.
+
+  The two are there because the tone has two spenders that read it from two
+  different places. `components.chipRing` takes `Colors.ControlBorderColor()`,
+  the role; `core.Input` takes `Components.Input.BorderColor`, a literal each
+  theme states and `core/theme_test.go` pins to the role separately (a
+  `core.Style` is a value, so a component default cannot call a resolver). They
+  hold the same hex in all three bundled themes, so a swatch for one says
+  nothing about the other — which is why each case names its own source and a
+  case that names neither fails.
+
+  The field is also a second *tag*. Both widgets draw over a user-agent border
+  — a chip is a tappable control and exports as a `<button>` — but the rules
+  differ (`<button>` is given `outset`, `<input>` `inset`, and an `<input>`
+  arrives with a fill and padding of its own), and whether the theme's frame
+  *replaces* the user agent's rather than tinting it has no answer in Go. A
+  renderer emitting `border-color` and `border-width` without `border-style`
+  leaves the UA style in force, painting one hex as two tones while every tree
+  comparison and every contrast calculation passes. Both horizontal edges are
+  scanned for exactly that reason — and for the one a single edge cannot see, a
+  frame drawn on some sides and not others.
 
   **`DefaultTheme`'s tone is not Apple's `systemGray`, and this is the one
   value in that palette that leaves its published source.** `systemGray` is

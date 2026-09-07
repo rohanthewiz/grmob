@@ -292,7 +292,15 @@ func (g GroupedList[T]) Render(ctx *core.Context) *core.Node {
 	// Auto-loading is withheld while the run a page would land in is shut.
 	// The argument is on the field; the short version is that the alternative
 	// is a fetch whose rows nobody can see, followed by silence.
-	if g.OnEndReached != nil && !g.AutoLoadWithheld() {
+	//
+	// Asked once and carried, rather than asked here and again at the band:
+	// the answer runs the caller's Collapse predicate over the trailing run,
+	// and a predicate consulted twice in one render is one that can disagree
+	// with itself. The band and the sensor must never disagree — a Group
+	// telling an override "auto-load is off" above a list that kept its
+	// sensor is worse than either fact alone.
+	withheld := g.AutoLoadWithheld()
+	if g.OnEndReached != nil && !withheld {
 		items = append(items, core.OnEndReached(g.OnEndReached))
 	}
 	for _, sp := range g.Style {
@@ -315,6 +323,7 @@ func (g GroupedList[T]) Render(ctx *core.Context) *core.Node {
 			HeadingLevel:      g.HeadingLevel,
 			Dividers:          g.Dividers,
 			Collapse:          g.Collapse,
+			AutoLoadWithheld:  withheld,
 			// No Wrap: a GroupedList row is the caller's view, emitted as
 			// it came back. DataTable is the only decorator.
 		})
@@ -387,6 +396,23 @@ type rowsSpec[T any] struct {
 	// after the last one, where a band or the footer follows.
 	Dividers bool
 
+	// AutoLoadWithheld is the list's own answer to
+	// GroupedList.AutoLoadWithheld, computed once by the caller of this
+	// function and stamped onto the trailing run's Group so a Header override
+	// can read it. See Group.AutoLoadWithheld for who reads it and why the
+	// widget states it rather than letting a band derive it.
+	//
+	// Passed in rather than recomputed here, for two reasons that point the
+	// same way. It is composed from OnEndReached — a field this spec does not
+	// carry, because emitting rows has nothing to do with a sensor — and
+	// answering it costs a run of the caller's Collapse predicate, which
+	// GroupedList.Render has already paid for in deciding whether to attach
+	// the prop at all.
+	//
+	// DataTable leaves it false and that is not an omission: a table has no
+	// OnEndReached, so there is no sensor for a shut run to withhold.
+	AutoLoadWithheld bool
+
 	// Collapse is the caller-owned collapse state, if the bands are
 	// disclosures. The zero value is "nothing collapses" and is what
 	// DataTable passes, for the reason its own type comment gives about band
@@ -452,19 +478,32 @@ func appendRows[T any](
 		}
 		return items
 	}
-	// ri, not i: the row loop below indexes spec.Rows and would shadow it.
-	for ri, run := range runs {
+	// The index is not needed: "which run is last" used to be an `ri ==
+	// len(runs)-1` here and is now Group.Trailing, stamped by groupRuns, so
+	// the band's count rule and the auto-load decision read one statement of
+	// it rather than two comparisons that have to agree.
+	for _, run := range runs {
 		// Copied out of the range variable before the closure below captures
 		// it. Correct without the copy under Go 1.22's per-iteration scoping,
 		// and written this way anyway: the capture is the kind of thing that
 		// gets moved into a helper, where the scoping rule no longer applies.
 		group := run.Group
+		// The two facts the widget knows about a run and its bands do not.
+		// Trailing arrives already stamped by groupRuns; this is where the
+		// list-level answer lands on the one run it is about. Both are set
+		// before anything reads the Group — the Collapse predicate, the
+		// override, the default band, OnToggle — so every one of them sees a
+		// Group of the same shape.
+		group.AutoLoadWithheld = spec.AutoLoadWithheld && group.Trailing
 
 		var h core.View
 		if spec.Header != nil {
 			// An override owns its own counting *and* its own control: the
-			// Group goes through untouched, trailing or not, and a collapsible
-			// band built here would be a second control for the same run.
+			// Group goes through with the widget's own facts on it — Count,
+			// Trailing, AutoLoadWithheld — and no decision taken from them,
+			// because a collapsible band built here would be a second control
+			// for the same run and a count elided here would be a wording
+			// choice made for a view somebody else wrote.
 			//
 			// components.CollapseBand is how the override builds one that
 			// matches — it takes the caller's own Collapse, so the control and
@@ -473,7 +512,7 @@ func appendRows[T any](
 		} else {
 			gh := GroupHeader{
 				Group:        group,
-				HideCount:    spec.HideTrailingCount && ri == len(runs)-1,
+				HideCount:    spec.HideTrailingCount && group.Trailing,
 				HeadingLevel: spec.HeadingLevel,
 			}
 			if spec.Collapse.active() {

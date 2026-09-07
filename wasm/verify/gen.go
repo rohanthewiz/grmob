@@ -324,9 +324,36 @@ type widgetCase struct {
 	// recomputes them, for the reason palette.mjs gives.
 	RatioOnPage float64 `json:"ratioOnPage"`
 	RatioOnFill float64 `json:"ratioOnFill"`
+
+	// RingFrom names the Go authority this widget's boundary is supposed to
+	// come from, so widget_test.go can hold each case to its own.
+	//
+	// It exists because the two widgets here read the tone from two different
+	// places, deliberately. components.chipRing reads
+	// Colors.ControlBorderColor — the role — while core.Input reads
+	// Components.Input.BorderColor, the field base, which is a *literal* that
+	// core/theme_test.go pins to the role separately. The two hold the same hex
+	// in all three bundled themes, so a case checked against the wrong one
+	// would pass, and the day somebody restyles their fields is the day both
+	// checks would have been wrong at once.
+	//
+	// A string rather than the expected hex: carrying the hex would make this
+	// a copy of the answer, and the point is to name the *source* so the Go
+	// side goes and reads it. A spelling widget_test.go does not know is a
+	// failure, which is what stops a new case borrowing its neighbour's
+	// authority by leaving the field blank.
+	RingFrom string `json:"ringFrom"`
 }
 
-// widgetCases renders one quiet, unselected chip per bundled theme.
+// The two spellings RingFrom takes. Declared here, beside the field, and read
+// by widget_test.go, which maps each to the value it names.
+const (
+	ringFromRole      = "Colors.ControlBorder"
+	ringFromInputBase = "Components.Input.BorderColor"
+)
+
+// widgetCases renders both halves of ControlBorder's job, per bundled theme:
+// a quiet chip's ring and a text field's frame.
 //
 // # Why a chip and why quiet
 //
@@ -339,9 +366,33 @@ type widgetCase struct {
 //
 // Unselected, because a selected chip paints its accent over both.
 //
-// The page is a Box carrying the theme's own Colors.Background rather than the
-// document's default white, so the ring's outer backdrop is the one the census
-// measured rather than whatever the browser's body happens to be.
+// # Why a field as well
+//
+// The chip is the role's second spender; the field frame is the first, and it
+// spends the tone through a different Go value. components.chipRing reads
+// Colors.ControlBorderColor — the role — while core.Input reads
+// Components.Input.BorderColor, a literal each theme states and
+// core/theme_test.go pins to the role separately, because a core.Style is a
+// value and a component default cannot call a resolver. The two hold the same
+// hex in all three bundled themes, so a swatch for one says nothing about the
+// other: that is what RingFrom is for.
+//
+// It is also a second tag. Both widgets draw over a user-agent border — a chip
+// is a tappable control and exports as a `<button>`, which is the first member
+// htmlout's borderResetTypes ever had — but the rules differ (`<button>` is
+// given `outset`, `<input>` `inset`, and an `<input>` arrives with a fill and
+// padding of its own). Whether the theme's frame *replaces* the user agent's
+// rather than tinting it has no answer in Go: a renderer emitting
+// `border-color` and `border-width` without `border-style` leaves the UA style
+// in force, which paints one hex as two tones while every tree comparison,
+// every exporter test and every contrast calculation passes.
+//
+// # The page
+//
+// A Box carrying the theme's own Colors.Background rather than the document's
+// default white, so the ring's outer backdrop is the one the census measured
+// rather than whatever the browser's body happens to be. Both cases are built
+// the same way, and the browser reads both at root and root/0 for that reason.
 func widgetCases() []widgetCase {
 	byName := core.BundledThemes()
 	names := make([]string, 0, len(byName))
@@ -350,36 +401,60 @@ func widgetCases() []widgetCase {
 	}
 	sort.Strings(names)
 
-	out := make([]widgetCase, 0, len(names))
+	// One entry per widget, so a case added here is added for every theme and
+	// the two loops cannot drift apart. The view is built inside a theme's
+	// context, which is why it is a function rather than a value.
+	widgets := []struct {
+		what     string
+		ringFrom string
+		build    func(*core.Theme) core.View
+	}{
+		{"quiet Chip", ringFromRole, func(*core.Theme) core.View {
+			return components.Chip{Label: "Sermons"}
+		}},
+		// Empty value and no handler: what is under test is the frame, and a
+		// field with text in it puts ink near the fill sample. The placeholder
+		// is empty for the same reason — placeholder ink is drawn inside the
+		// padding, which is exactly where the fill is read.
+		{"Input frame", ringFromInputBase, func(*core.Theme) core.View {
+			return core.Input("", "", nil)
+		}},
+	}
+
+	out := make([]widgetCase, 0, len(names)*len(widgets))
 	for _, name := range names {
 		theme := byName[name]
-		ctx := core.NewContext().WithTheme(theme)
-		ctx.BeginRenderPass()
-		page := core.Box(
-			core.BackgroundColor(theme.Colors.Background),
-			core.Padding(24),
-			core.Width("240px"),
-			components.Chip{Label: "Sermons"},
-		).Render(ctx)
+		for _, w := range widgets {
+			ctx := core.NewContext().WithTheme(theme)
+			ctx.BeginRenderPass()
+			page := core.Box(
+				core.BackgroundColor(theme.Colors.Background),
+				core.Padding(24),
+				core.Width("240px"),
+				w.build(theme),
+			).Render(ctx)
 
-		if len(page.Children) != 1 {
-			fatal("the page box rendered %d children, want the chip alone", len(page.Children))
-		}
-		chip := page.Children[0]
-		if page.Style == nil || chip.Style == nil {
-			fatal("%s: a widget swatch rendered a node with no Style", name)
-		}
+			if len(page.Children) != 1 {
+				fatal("%s/%s: the page box rendered %d children, want the widget alone",
+					name, w.what, len(page.Children))
+			}
+			widget := page.Children[0]
+			if page.Style == nil || widget.Style == nil {
+				fatal("%s/%s: a widget swatch rendered a node with no Style", name, w.what)
+			}
 
-		c := widgetCase{
-			Theme: name, What: "quiet Chip",
-			Tree: jsonout.Export(page),
-			Page: page.Style.Background,
-			Fill: chip.Style.Background,
-			Ring: chip.Style.BorderColor,
+			c := widgetCase{
+				Theme: name, What: w.what,
+				Tree:     jsonout.Export(page),
+				Page:     page.Style.Background,
+				Fill:     widget.Style.Background,
+				Ring:     widget.Style.BorderColor,
+				RingFrom: w.ringFrom,
+			}
+			c.RatioOnPage = ratioBetween(name, c.Ring, c.Page)
+			c.RatioOnFill = ratioBetween(name, c.Ring, c.Fill)
+			out = append(out, c)
 		}
-		c.RatioOnPage = ratioBetween(name, c.Ring, c.Page)
-		c.RatioOnFill = ratioBetween(name, c.Ring, c.Fill)
-		out = append(out, c)
 	}
 	return out
 }

@@ -1051,7 +1051,7 @@ a border declared narrower than a device pixel — Chrome snaps a solid sub-pixe
 border up to one full-strength pixel at dpr 1, so that mutation changes nothing
 on screen, which is the honest reason the check stays quiet for it.
 
-### And the same palette, drawn by a real widget
+### And the same palette, drawn by real widgets
 
 The swatch grid is a *model* of a control boundary: a box in the backdrop
 holding a smaller box with a 1px frame, both built by `browser.mjs` itself. It
@@ -1064,31 +1064,55 @@ override, a fallback taken, `Components.Input.BorderColor` read instead of the
 role — would leave every swatch painting perfectly and every Go test passing on
 strings.
 
-`gen.go` therefore renders one quiet `components.Chip` per bundled theme, on a
-page painted in that theme's own `Colors.Background`, and reads three colours
-off the **rendered node**: the page behind the ring, the chip's own fill inside
-it, and the ring itself. Those trees travel in the transcript (which is why
-`run.sh` now hands `browser.mjs` `GRMOB_TRANSCRIPT`, and why the script refuses
-to run without it), and the browser mounts them unmodified and samples all
-three.
+`gen.go` therefore renders one quiet `components.Chip` **and** one `core.Input`
+per bundled theme, on a page painted in that theme's own `Colors.Background`,
+and reads three colours off the **rendered node**: the page behind the boundary,
+the widget's own fill inside it, and the boundary itself. Those trees travel in
+the transcript (which is why `run.sh` now hands `browser.mjs`
+`GRMOB_TRANSCRIPT`, and why the script refuses to run without it), and the
+browser mounts them unmodified and samples all three.
 
-Two sampling details are the check's own history and are worth keeping:
+**Two widgets, because the tone has two spenders reading it from two places.**
+`components.chipRing` takes `Colors.ControlBorderColor()`, the role;
+`core.Input` takes `Components.Input.BorderColor`, a literal each theme states
+and `core/theme_test.go` pins to the role separately — a `core.Style` is a
+value, so a component default cannot call a resolver. They hold the same hex in
+all three bundled themes, so a swatch for one says nothing about the other.
 
-- The **fill** is read in the chip's leading padding, not at its centre. The
+The field is also a second *tag*, and the harder one. Both widgets draw over a
+user-agent border — a chip is a tappable control and exports as a `<button>`,
+which is the first member `borderResetTypes` ever had — but the rules differ:
+`<button>` is given `outset`, `<input>` `inset`, and an `<input>` arrives with a
+fill and padding of its own. Whether the theme's frame *replaces* the user
+agent's rather than tinting it has no answer in Go. A renderer emitting
+`border-color` and `border-width` without `border-style` would leave the UA's
+style in force, painting one hex as two tones, while every tree comparison,
+every exporter test and every contrast calculation passed.
+
+Three sampling details are the check's own history and are worth keeping:
+
+- The **fill** is read in the widget's leading padding, not at its centre. The
   centre is where the label is, and the first version read `#8D8D90` out of an
   `#F2F2F7` chip — antialiased ink, not a fill.
-- The **ring** is scanned down the *top* edge at mid-width, where the swatch
-  grid scans a left edge. A chip is a pill, and a pill's leftmost point is the
-  apex of a curve where every pixel is a blend; the first version read
-  `#907267` out of an `#8D6E63` ring and was measuring the corner radius. The
-  top edge at mid-width is straight at any radius.
+- The **boundary** is scanned across a *horizontal* edge at mid-width, where
+  the swatch grid scans a left edge. A chip is a pill, and a pill's leftmost
+  point is the apex of a curve where every pixel is a blend; the first version
+  read `#907267` out of an `#8D6E63` ring and was measuring the corner radius.
+  A horizontal edge at mid-width is straight at any radius.
+- **Both** horizontal edges, not just the top. One edge in the declared tone
+  says the tone survived; it says nothing about whether the box was closed, and
+  a border emitted per-side — or a user-agent rule surviving on one side under
+  a partial override — paints exactly that. The two-tone styles (`inset`,
+  `outset`) are caught by either edge alone; the one-sided case is caught by
+  neither unless both are read.
 
 What the browser cannot check is whether those three hexes are the ones the
 census measured — it is handed three colours and compares three colours.
-`wasm/verify/widget_test.go` is that half, in Go: the ring must be
-`Colors.ControlBorderColor()`, both backdrops must be fills
-`internal/palette` derives from `core.ComponentDefaults`, and the ratios
-carried across must be `palette.Ratio`'s.
+`wasm/verify/widget_test.go` is that half, in Go: each case names the Go
+authority its boundary is supposed to come from (`widgetCase.RingFrom`, and a
+spelling the test does not know is a failure rather than a skip), both backdrops
+must be fills `internal/palette` derives from `core.ComponentDefaults`, and the
+ratios carried across must be `palette.Ratio`'s.
 
 ### A pinned band, and the first layout question
 

@@ -24,6 +24,7 @@ import (
 	"os"
 	"sync"
 
+	"github.com/rohanthewiz/grmob/internal/bandfixture"
 	"github.com/rohanthewiz/grmob/internal/menufixture"
 	"github.com/rohanthewiz/grmob/mobile"
 
@@ -41,6 +42,13 @@ type transcript struct {
 	// and ride along in the same file because the harness is one executable.
 	// See internal/menufixture.
 	MenuCases []menufixture.Case `json:"menuCases"`
+
+	// The band cases, riding along for the same reason and with even less to
+	// do with the replay: they are pure geometry, solved by band.swift through
+	// GrMobFlexSolver without any of the runtime being involved. See
+	// internal/bandfixture for what they claim and why this renderer is the
+	// one being asked.
+	BandCases []bandfixture.Case `json:"bandCases"`
 }
 
 // recorder collects patch batches in arrival order. Sync trigger returns are
@@ -153,6 +161,7 @@ func main() {
 	out, err := json.Marshal(transcript{
 		Initial: initial, Steps: rec.steps, Final: final,
 		MenuCases: menufixture.Cases(),
+		BandCases: bandfixture.Cases(),
 	})
 	if err != nil {
 		fatal("marshal transcript: %v", err)

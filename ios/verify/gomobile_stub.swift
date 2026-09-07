@@ -76,23 +76,51 @@
 // signature of that shape. A reworded paragraph up there is a style change; a
 // wrong row down here is a test failure.
 //
-// The rows are readings of `bind/genobjc.go` — objcParamType for a parameter,
-// objcType for every other position, funcSummary for a result clause — in the
-// gobind the first row pins. That version is the moment at which somebody has
-// to look, and the only one there is.
+// The type rows are readings of `bind/genobjc.go` — objcParamType for a
+// parameter, objcType for every other position — in the gobind the first row
+// pins. That version is the moment at which somebody has to look, and the only
+// one there is.
+//
+// The `results` rows are not readings of anything. They were taken off a real
+// `gomobile bind -target=ios` of a package written to have one function and one
+// interface method of every result shape, and then off what `swiftc` says the
+// importer makes of the module that produced. That is the one half of this file
+// that the module cache could never settle: whether Clang rewrites a trailing
+// NSError** into a Swift `throws` is a fact about the importer, not about the
+// generator, and the answer turns out to depend on where the symbol sits.
+//
+// A package-level func is emitted as a plain C function (FOUNDATION_EXPORT), and
+// the error convention is the Objective-C *method* one, so no function here can
+// ever throw. A bound interface method is a real method and does throw — except
+// when its return is `NSString* _Nonnull`, which gives the convention nothing to
+// signal failure with. Both exceptions are rows below rather than sentences,
+// because a sentence about a generated shape is a copy like any other.
+//
+// The two `refused` rows are refusals of gobind's, also verified: it stops with
+// "too many result values" and "second result value must be of type error" and
+// builds nothing. Neither is a mapping this table is missing.
 //
 //	--- checked against mobile/verify/gomobilestub_test.go ---
 //	gobind   v0.0.0-20251021151156-188f512ec823
 //	prefix   Mobile
 //	suffix   Protocol
-//	type     string        String?                 String
-//	type     bool          Bool                    Bool
-//	type     int           Int                     Int
-//	type     <interface>   Mobile<Name>Protocol?   Mobile<Name>Protocol?
-//	results  0   bound, with no return clause
-//	results  1   bound, as the result's own spelling
-//	results  2   refused: gobind keeps the first as the return when
-//	results  3   refused: refuses more than two outright
+//	type     string      | String?               | String
+//	type     bool        | Bool                  | Bool
+//	type     int         | Int                   | Int
+//	type     error       | (any Error)?          | -
+//	type     <interface> | Mobile<Name>Protocol? | Mobile<Name>Protocol?
+//	results  func    func()                       | public func F()
+//	results  func    func(s string) string        | public func F(_ s: String?) -> String
+//	results  func    func() error                 | public func F(_ error: NSErrorPointer) -> Bool
+//	results  func    func() (string, error)       | public func F(_ error: NSErrorPointer) -> String
+//	results  func    func() (int, error)          | public func F(_ ret0: UnsafeMutablePointer<Int>?, _ error: NSErrorPointer) -> Bool
+//	results  func    func() (bool, error)         | public func F(_ ret0: UnsafeMutablePointer<ObjCBool>?, _ error: NSErrorPointer) -> Bool
+//	results  method  func() error                 | func m() throws
+//	results  method  func() (string, error)       | func m(error: NSErrorPointer) -> String
+//	results  method  func() (int, error)          | func m(ret0_: UnsafeMutablePointer<Int>?) throws
+//	results  method  func() (bool, error)         | func m(ret0_: UnsafeMutablePointer<ObjCBool>?) throws
+//	results  refused func() (string, string)      | second is not an error
+//	results  refused func() (string, int, error)  | refuses more than two
 //	--- end ---
 import Foundation
 

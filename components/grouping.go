@@ -11,6 +11,70 @@ type Group struct {
 	Key   string
 	Label string
 	Count int
+
+	// Trailing reports whether this is the last run in the collection — the
+	// one an append-style pager extends, and the only one whose Count is
+	// still open (see GroupedList.HideTrailingCount for why that matters).
+	//
+	// Filled in by the widget, like Count: a value a GroupBy callback sets is
+	// overwritten. The two grouping walks agree about it — groupRuns marks its
+	// last run and trailingRun marks the run it went looking for — so a band
+	// and the auto-load decision are answering the same question.
+	//
+	// It exists for the Header override. HideTrailingCount is documented as a
+	// decision an override "owns itself", and until this field an override
+	// could not make it: the rule is *don't publish an open run's count*, and
+	// nothing handed to the override said which run was open. Deriving it
+	// meant re-walking Items with the same GroupBy the widget had just walked.
+	//
+	//	Header: func(g components.Group) core.View {
+	//	    label := g.Label
+	//	    if !g.Trailing || !pager.HasMore {
+	//	        label += " (" + strconv.Itoa(g.Count) + ")"
+	//	    }
+	//	    return ...
+	//	}
+	Trailing bool
+
+	// AutoLoadWithheld reports that this run being shut is why the list is
+	// rendering without its edge sensor — the state
+	// GroupedList.OnEndReached's "a shut trailing group withholds it" section
+	// describes, attached to the run that caused it.
+	//
+	// True on at most one group of a list, and always a Trailing one. False
+	// throughout a list with no OnEndReached, since there is no sensor to
+	// withhold; false on every band of a DataTable, which has no edge sensor
+	// at all.
+	//
+	// # Why the widget states it rather than the band deriving it
+	//
+	// GroupedList.AutoLoadWithheld answers the *caller*, who can then build a
+	// footer. A Header override is a different reader in a different place: it
+	// is handed a Group and nothing else, so a band that wanted to say
+	// "collapsed — auto-load is off here" had to close over Items, GroupBy and
+	// Collapse and re-derive an answer the widget had just computed.
+	//
+	//	Header: func(g components.Group) core.View {
+	//	    band := core.Row(components.CollapseBand{Collapse: shut, Group: g})
+	//	    if g.AutoLoadWithheld {
+	//	        band = core.Row(band, components.Badge{Text: "paused"})
+	//	    }
+	//	    return band
+	//	},
+	//
+	// Deriving it in the override is also easy to get subtly wrong, which is
+	// the stronger half of the argument. The composite is Trailing *and* the
+	// run is hidden *and* a sensor was given — and "the run is hidden" is
+	// Collapse.hides, which needs OnToggle as well as IsCollapsed: a caller
+	// with a predicate and no handler hides nothing, so their bands would
+	// announce a pause the list is not taking. One statement, from the value
+	// that made the decision.
+	//
+	// The default GroupHeader ignores it. What a band says about a paused feed
+	// is a wording decision, and the default band's vocabulary is a label and a
+	// count; this is the fact an override needs to make that decision, not a
+	// decision the widget makes for it.
+	AutoLoadWithheld bool
 }
 
 // Collapse is caller-owned collapse state for a banded collection: which
@@ -298,6 +362,11 @@ func groupRuns[T any](items []T, by func(T) Group) []groupRun[T] {
 		g.Count = 1
 		runs = append(runs, groupRun[T]{Group: g, Start: i, End: i + 1})
 	}
+	// The last run is the one an append pager extends, which is a fact about
+	// the walk rather than about any one item — so it is stamped here, where
+	// the walk ends, and not at the band, where it would be an index
+	// comparison repeated at every call site that grouped anything.
+	runs[len(runs)-1].Group.Trailing = true
 	return runs
 }
 
@@ -329,6 +398,12 @@ func trailingRun[T any](items []T, by func(T) Group) (Group, bool) {
 	}
 	g := by(items[start])
 	g.Count = len(items) - start
+	// The same stamp groupRuns puts on its last run, so the Group this hands
+	// to a Collapse predicate is shaped exactly like the one the band will.
+	// Group.AutoLoadWithheld is deliberately *not* set: it is the answer this
+	// walk is being run to compute, and a probe that pre-announced its own
+	// result would be asking the predicate a leading question.
+	g.Trailing = true
 	return g, true
 }
 
