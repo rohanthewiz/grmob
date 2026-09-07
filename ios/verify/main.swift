@@ -89,9 +89,12 @@ func run() -> Int32 {
     // The flex arithmetic is independent of the transcript, so it is checked
     // first: a layout regression should be reported even if the bridge
     // transcript cannot be read at all.
-    let flexProblems = checkFlexSolver() + checkWrapSolver()
+    // checkFixedSizeContainer is part of the same sum because it is the same
+    // solver: it is not a new rule, it is the fixed-size census's SwiftUI
+    // main-axis row being measured here instead of reasoned about in a comment.
+    let flexProblems = checkFlexSolver() + checkWrapSolver() + checkFixedSizeContainer()
     if flexProblems.isEmpty {
-        print("OK: flex solver matches the CSS rules")
+        print("OK: flex solver matches the CSS rules, including the fixed-size census")
     } else {
         print("FAIL: \(flexProblems.count) flex solver difference(s)")
         for p in flexProblems { print("  " + p) }

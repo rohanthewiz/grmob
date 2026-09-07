@@ -485,7 +485,8 @@ func quote(s string) string {
 // This used to be reported as one outcome — "the outer widget's arrows step
 // over the inner one whole" — on the strength of both member walks stopping at
 // a nested composite. Only one of them stops unconditionally. The rule is
-// core.CompositeWalkStopsAt, and it has three cases:
+// core.CompositeWalkAt, and for a pair that are both composites — which is the
+// only pair this reaches — it has three cases:
 //
 //	toolbar around anything      stops. Its members are named by no role at
 //	                             all (ARIA defines no `toolbaritem`), so
@@ -507,6 +508,13 @@ func quote(s string) string {
 // audit's sentence and for the runtime's two walks at once; wasm/verify's
 // keynav_test.go is what holds the runtime to it, and keynav_test.mjs
 // exercises a descending pair in a real DOM.
+//
+// Read through CompositeWalkAt and not CompositeWalkStopsAt. The bool has a
+// fourth case the three above do not name — an outer role with no keyboard,
+// for which it answers `true` because that is the safe reading rather than a
+// true one — and this sentence is the one place in the repository where
+// writing the stop wording for that case would produce a finding that
+// describes a rotation the tree does not have.
 //
 // # Why the framework diverges rather than fixing it
 //
@@ -550,19 +558,36 @@ func (a *a11yAudit) checkNestedComposite(
 		// Reporting the wrong one of these is worse than reporting neither: an
 		// author told the strip is "stepped over" will not go looking for the
 		// option of theirs that the outer widget's arrows can now land on.
-		reach := "the outer widget's arrows step over the inner one whole"
 		// The second return is discarded here and only here: this branch runs
 		// for a pair AuditTree has already established are both composites, so
 		// the answer is known to be true. Spelling it out is what keeps the
 		// discard a statement rather than a habit.
 		outerMembers, _ := CompositeMemberRole(outer.role)
-		if !CompositeWalkStopsAt(outer.role, role) {
+		var reach string
+		// Three arms rather than an if/else on CompositeWalkStopsAt, because
+		// core.CompositeWalkAt now answers with three values and the third one
+		// is the case this sentence must not be written for. The bool spelling
+		// folds "there is no walk" into "the walk stops", which would put the
+		// step-over sentence on a pair where nothing steps over anything.
+		switch CompositeWalkAt(outer.role, role) {
+		case CompositeWalkStops:
+			reach = "the outer widget's arrows step over the inner one whole"
+		case CompositeWalkDescends:
 			reach = fmt.Sprintf(
 				"the outer widget's walk descends through this one, so any %q of "+
 					"its own buried inside the %q is pooled into the outer widget's "+
 					"rotation and its arrows land inside a widget they are not "+
 					"steering",
 				outerMembers, role)
+		case CompositeWalkNotApplicable:
+			// Not reachable from here: both ends of the pair have passed
+			// hasKeyboard, which is exactly the membership CompositeMemberRole
+			// reports as its second return. It is written out anyway, and it
+			// says nothing rather than guessing — a role with no walk has no
+			// nested-composite finding to make, and the ancestor is still
+			// updated below so the next composite down is compared against
+			// this node.
+			return compositeAncestor{role: role, path: path}
 		}
 		upsertConcern(ConcernNestedComposite, fmt.Sprintf(
 			"%s is a %q inside the %q at %s: both keep their own roving tabindex, "+

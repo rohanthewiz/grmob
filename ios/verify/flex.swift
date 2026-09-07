@@ -211,6 +211,91 @@ func checkFlexSolver() -> [String] {
     return problems
 }
 
+// --------------------------------------------------------------------------
+// The fixed-size census, SwiftUI's main-axis row
+// --------------------------------------------------------------------------
+//
+// What a container of a declared size does with a child bigger than it, for
+// the one target whose arithmetic this repository owns.
+//
+// # Why this is here and not derived
+//
+// docs/platforms/native.md carries a four-target census of that question, and
+// its rows were not all established the same way:
+//
+//	WASM runtime   measured    browser.mjs check 10 mounts the trees and reads
+//	                           the rects
+//	htmlout        inherited   it emits the same declarations for the same tree
+//	SwiftUI        DERIVED     read off .frame(width:)/.frame(height:) and
+//	                           GrMobFlexSolver, by a person
+//	Compose        derived     read off Modifier.width/height
+//
+// The SwiftUI row was the odd one out: half of it is a SwiftUI fact (a .frame
+// PROPOSES a size and does not enforce one, so the cross axis spills and
+// nothing clips it — mobile/verify pins that call site), and the other half is
+// not SwiftUI's at all. The main-axis squeeze is GrMobFlexSolver's, which is
+// this repository's own CSS flex arithmetic, and this harness executes it. So
+// that half can be measured, and reasoning about code we run is the one thing
+// in the census that had no excuse.
+//
+// # The numbers
+//
+// browser.mjs's, deliberately: the census's claim is that the targets AGREE
+// about the main axis, and two harnesses agreeing on different numbers is a
+// weaker statement than two harnesses agreeing on the same ones. They are
+// pinned to each other by wasm/verify's TestTheFixedSizeCensusUsesOneSetOfNumbers,
+// so a fixture edited on one side fails rather than quietly measuring
+// something else.
+private let voidW: CGFloat = 120
+private let voidH: CGFloat = 40
+private let oversizeW: CGFloat = 200
+private let oversizeH: CGFloat = 80
+
+func checkFixedSizeContainer() -> [String] {
+    var problems: [String] = []
+    let plain = GrMobFlexSolver(spacing: 0, justify: "")
+
+    // Both containers, because "the main axis is the one that squeezes" is the
+    // claim and one container cannot tell it from "width is the one that
+    // squeezes". A core.Row stacks along the width and a core.Box (a Column
+    // with no theme style) along the height, so the two put the same fixture
+    // on opposite axes — which is exactly the pair browser.mjs mounts.
+    for (name, voidMain, childMain) in [
+        ("a fixed-size core.Row (main axis: width)", voidW, oversizeW),
+        ("a fixed-size core.Box (main axis: height)", voidH, oversizeH),
+    ] {
+        // The declared size reaches the solver as a definite proposal, and a
+        // definite offer smaller than the content wins — the container does
+        // not grow to fit its child. This is the step that makes the next one
+        // an overflow rather than an ordinary layout.
+        check("\(name): the container takes its declared extent",
+              plain.containerMain(offered: voidMain, bases: [childMain], weights: [0]),
+              voidMain, into: &problems)
+
+        // The squeeze itself, and the whole point of the exercise: the child
+        // is a flex item with the default factor of 1, the deficit is the
+        // whole overflow, and it is the only item — so it gives up all of it
+        // and lands exactly on the container's extent. Same answer as the
+        // browser's, arrived at by running the code rather than by reading it.
+        check("\(name): the child is squeezed to the container's extent",
+              plain.resolve(main: voidMain, bases: [childMain], weights: [0]).mains,
+              [voidMain], into: &problems)
+
+        // And the declaration that stops it. core.FlexShrink(0) is a factor of
+        // zero (core.ShrinkNone), the deficit has nowhere else to go, and the
+        // child keeps its base while the container overflows — which is the
+        // instruction, not a failure to follow one. The pair is what makes
+        // this a statement about the declaration: same container, same child,
+        // one factor apart.
+        check("\(name): a pinned child keeps its own size and overflows",
+              plain.resolve(main: voidMain, bases: [childMain], weights: [0],
+                            shrinks: [0]).mains,
+              [childMain], into: &problems)
+    }
+
+    return problems
+}
+
 // Checks for GrMobWrapSolver — the line breaking behind a Row with
 // core.FlexWrap(true). Expected values follow CSS flex-line collection with
 // flex-shrink: 0, which is also what the Android FlowRow and the browser's

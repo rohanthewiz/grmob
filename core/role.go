@@ -1,5 +1,7 @@
 package core
 
+import "strconv"
+
 // Role is what a node *is* to assistive technology, as distinct from what it
 // is called (AccessibilityLabel) or what tapping it does (AccessibilityHint).
 //
@@ -705,8 +707,9 @@ func CompositeMemberRole(container Role) (member Role, composite bool) {
 	return "", false
 }
 
-// CompositeWalkStopsAt reports what an outer composite's member walk does when
-// it meets a nested composite: stop there, or descend through it.
+// CompositeWalkAt reports what an outer composite's member walk does when it
+// meets a nested composite: stop there, descend through it, or — the case that
+// is not an answer — nothing, because the outer role has no walk.
 //
 // # Why core states a rule about a walk in another language
 //
@@ -719,6 +722,11 @@ func CompositeMemberRole(container Role) (member Role, composite bool) {
 // cannot get the answer from a runtime written in JavaScript.
 //
 // # The rule
+//
+//	outer has no keyboard          not applicable. There is no member walk, so
+//	(a heading, a Box)             neither answer is true of it — see
+//	                               CompositeWalkNotApplicable for why that is a
+//	                               value rather than a `true` chosen for safety.
 //
 //	outer names no member role     stop. Nothing says whose a plain button is,
 //	(toolbar)                      so a control inside a nested composite
@@ -748,26 +756,105 @@ func CompositeMemberRole(container Role) (member Role, composite bool) {
 // it, on any element of the outer's member role buried in the inner's subtree.
 // Neither is what ARIA describes for nested composites, and the framework's
 // refusal to guess is documented at ConcernNestedComposite.
-func CompositeWalkStopsAt(outer, inner Role) bool {
+func CompositeWalkAt(outer, inner Role) CompositeWalk {
 	members, composite := CompositeMemberRole(outer)
 	if !composite {
-		// No keyboard at all, so there is no walk for this to be about. "Stops"
-		// is the safe answer rather than the true one — the true one is that
-		// the question does not apply — and it is separated from the toolbar
-		// arm below deliberately: the two used to be one `members == ""` test,
-		// which meant a non-composite got a confident answer about a walk it
-		// does not have. AuditTree only ever asks about pairs it has already
-		// found to be composites; this is what stops the next caller relying
-		// on that.
-		return true
+		// No keyboard at all, so there is no walk for this to be about. This
+		// arm used to return the same `true` the toolbar arm below does: the
+		// separation was written into the code and then thrown away in the
+		// return, which is the whole reason this function answers with three
+		// values instead of two. AuditTree only ever asks about pairs it has
+		// already found to be composites; this is what stops the next caller
+		// relying on that.
+		return CompositeWalkNotApplicable
 	}
 	if members == "" {
 		// A toolbar. It has a walk and names no member role, so nothing says
 		// whose a control inside a nested composite is, and the walk stops.
-		return true
+		return CompositeWalkStops
 	}
 	innerMembers, _ := CompositeMemberRole(inner)
-	return innerMembers == members
+	if innerMembers == members {
+		return CompositeWalkStops
+	}
+	return CompositeWalkDescends
+}
+
+// CompositeWalkStopsAt is CompositeWalkAt for a caller that only wants the
+// bool, and it is kept because that is what the two runtimes' walks and the
+// audit's sentence actually ask: "does my rotation reach inside this node".
+//
+// It answers true for both non-descending values, which is exactly the
+// conflation CompositeWalkAt exists to undo — so this is safe only for a
+// caller that has already established both roles are composites, and every
+// caller in this repository has (AuditTree tests hasKeyboard on both ends
+// before it asks, and wasm/verify's pins iterate KeyboardComposites()). A
+// caller that has not should ask CompositeWalkAt and handle the third value,
+// because for a role with no walk this returns a confident `true` about a
+// rotation that does not exist.
+func CompositeWalkStopsAt(outer, inner Role) bool {
+	return CompositeWalkAt(outer, inner) != CompositeWalkDescends
+}
+
+// CompositeWalk is what an outer composite's member walk does at a nested
+// composite: one of two answers, or the value that says the question does not
+// apply.
+//
+// # Why the third value exists
+//
+// This started as CompositeWalkStopsAt alone, returning a bool. Two of its
+// three arms returned true — a container with no keyboard, and a toolbar whose
+// walk genuinely does stop — and the two are different facts: one is "the
+// arrows step over this node", the other is "there are no arrows". The
+// distinction was real in the code, with a paragraph on each arm saying so,
+// and invisible from outside: a caller holding the `true` could not tell which
+// it had, and the safe reading of a non-composite ("stops") is a confident
+// statement about a walk that does not exist.
+//
+// Making it a value rather than a doc note is the same move CompositeMemberRole
+// made one function up when its two empty answers became (member, composite):
+// the fact is put where the compiler and the caller can both see it, instead of
+// in a sentence asking the caller to have already checked something.
+type CompositeWalk int
+
+const (
+	// CompositeWalkNotApplicable: the outer role has no keyboard, so it has no
+	// member walk and neither of the other two values is true of it.
+	//
+	// Zero so that a CompositeWalk nobody assigned reads as "no claim" rather
+	// than as one of the answers — the same trade every unset field in
+	// core.Style makes, and it is safe here for the reason it is not safe for
+	// flex-shrink (see ShrinkNone): the useful default really is the empty one.
+	CompositeWalkNotApplicable CompositeWalk = iota
+
+	// CompositeWalkStops: the outer widget's arrows step over the inner one
+	// whole. Its members are still its own; what it loses is any element of
+	// its member role buried inside the nested widget.
+	CompositeWalkStops
+
+	// CompositeWalkDescends: the outer widget's walk carries on through the
+	// inner one, so an element of the outer's member role inside the nested
+	// widget's subtree is pooled into the outer's rotation and the arrows can
+	// land inside a widget they are not steering.
+	CompositeWalkDescends
+)
+
+// String names the value for a message. The three spellings are the words the
+// audit's finding and this file's docs already use, so a report built from a
+// %v and a report written by hand read the same.
+func (w CompositeWalk) String() string {
+	switch w {
+	case CompositeWalkNotApplicable:
+		return "not applicable"
+	case CompositeWalkStops:
+		return "stops"
+	case CompositeWalkDescends:
+		return "descends"
+	}
+	// Unreachable through this package's own constructors, and spelled rather
+	// than left empty: a CompositeWalk built out of an int by an importer
+	// should print as the number it is instead of as one of the three answers.
+	return "CompositeWalk(" + strconv.Itoa(int(w)) + ")"
 }
 
 // TappableContainerRoles returns the roles whose whole purpose is to make an

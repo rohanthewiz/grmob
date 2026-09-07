@@ -47,8 +47,19 @@ difference is structural rather than an oversight:
 | group | Android | iOS | WASM DOM | `htmlout` |
 |---|---|---|---|---|
 | typography, color, box model, borders, `Shadow`, `Gap`, `RowGap`/`ColumnGap`, `Justify`, `AlignItems`, `FlexWrap`, `StackAlign`, `Transition`, accessibility, `Disabled` | yes | yes | yes | yes |
-| `Position` + `Top`/`Right`/`Bottom`/`Left`/`ZIndex`, `MinWidth`/`MaxWidth`/`MinHeight`/`MaxHeight`, `Overflow`, `WhiteSpace`, `AlignSelf`, `FlexBasis`, `FlexShrink`, `FlexDirection` | — | — | yes | yes |
+| `Position` + `Top`/`Right`/`Bottom`/`Left`/`ZIndex`, `MinWidth`/`MaxWidth`/`MinHeight`/`MaxHeight`, `Overflow`, `WhiteSpace`, `AlignSelf`, `FlexBasis`, `FlexDirection` | — | — | yes | yes |
+| `FlexShrink` | `0` only | yes | yes | yes |
 | `HoverStyle`, `FocusStyle`, `PseudoStates` | — | — | — | — |
+
+`FlexShrink` has a row of its own because its gap is a different shape from the
+others'. It is not that Compose has no way to say "do not shrink this item" —
+it is that a Compose `Row` has no *proportional* shrink at all: an unweighted
+child is measured against whatever main-axis space the children before it did
+not take, so there is no factor in the arithmetic for a fractional value to
+scale. Zero is not a proportion but a refusal, and a refusal is expressible —
+`core.FlexShrink(0)` measures the child unbounded and lets the row overflow,
+which is what the other three targets do with it. A fractional factor is
+silently ignored on Android and honoured everywhere else.
 
 The second row is CSS the natives have no direct equivalent for — Compose and
 SwiftUI take a stack's axis from the node type and have no out-of-flow

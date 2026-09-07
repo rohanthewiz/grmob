@@ -60,10 +60,10 @@ func TestEveryTappableContainerRoleIsDeclared(t *testing.T) {
 // return honest. It is a claim about two functions that must not drift, and
 // each direction fails differently:
 //
-//	a composite reporting false   CompositeWalkStopsAt takes the "no walk at
-//	                              all" arm for a container that has one, so the
-//	                              audit describes a nested pair with reasoning
-//	                              from a case that does not apply
+//	a composite reporting false   CompositeWalkAt takes the "no walk at all"
+//	                              arm for a container that has one, so the
+//	                              audit stops reporting a nested pair it should
+//	                              be reporting
 //
 //	a non-composite reporting     the trap comes back one function over: a
 //	true                          caller filtering on the flag admits a role
@@ -149,5 +149,102 @@ func TestCompositeWalkStopsAtSeparatesNoWalkFromNoMemberRole(t *testing.T) {
 			"stops. An option below a tablist is still the listbox's option — the " +
 			"roles say whose it is — so this is the descending case, and if nothing " +
 			"descends the two arms above prove nothing")
+	}
+}
+
+// The three answers are three values, and each is reached for its own reason.
+//
+// # What this replaces
+//
+// CompositeWalkStopsAt's two stopping arms used to be indistinguishable from
+// outside: a non-composite outer and a toolbar both came back `true`. The test
+// above this one could reach both arms and could not tell them apart, so
+// swapping their bodies — the mutation that turns "there is no walk" into
+// "the walk stops" — changed nothing any check could see. That is the whole
+// case for CompositeWalkAt, and this is the check that mutation now fails.
+//
+// Every pair below is (outer, inner) and every one names why it lands where it
+// does, because the values are cheap to assert and worthless asserted without
+// the reason.
+func TestCompositeWalkAtAnswersWithThreeDistinguishableValues(t *testing.T) {
+	for _, c := range []struct {
+		outer, inner Role
+		want         CompositeWalk
+		why          string
+	}{
+		{RoleHeading, RoleTabList, CompositeWalkNotApplicable,
+			"a RoleHeading has no keyboard, so it has no member walk and neither " +
+				"answer is true of it. This is the value that did not exist: the bool " +
+				"spelling answered `true` here, which is a confident statement about " +
+				"a rotation that does not exist"},
+		{RoleToolbar, RoleTabList, CompositeWalkStops,
+			"a toolbar has a walk and ARIA names no member role for it, so nothing " +
+				"says whose a button buried in the strip is and the walk stops. The " +
+				"same `true` as the row above, for an entirely different reason"},
+		{RoleListBox, RoleListBox, CompositeWalkStops,
+			"two listboxes share a member role, so descending would pool their " +
+				"options and let one widget's arrows walk out into the other's rows"},
+		{RoleListBox, RoleTabList, CompositeWalkDescends,
+			"an option below a tablist is still the listbox's option — the roles say " +
+				"whose it is — so the walk carries on through"},
+		{RoleTabList, RoleToolbar, CompositeWalkDescends,
+			"a tab inside a toolbar is still the tablist's tab, and a toolbar names " +
+				"no member role to collide with the tablist's"},
+	} {
+		if got := CompositeWalkAt(c.outer, c.inner); got != c.want {
+			t.Errorf("CompositeWalkAt(%q, %q) = %v, want %v — %s",
+				c.outer, c.inner, got, c.want, c.why)
+		}
+	}
+
+	// The three values must also be three: an enum whose members compared
+	// equal would satisfy every row above and separate nothing.
+	if CompositeWalkNotApplicable == CompositeWalkStops ||
+		CompositeWalkStops == CompositeWalkDescends ||
+		CompositeWalkNotApplicable == CompositeWalkDescends {
+		t.Error("two CompositeWalk values are equal, so the answers this type exists " +
+			"to separate are back to being one answer")
+	}
+	// And they print differently, because the audit's finding is built out of
+	// the value and a reader who sees two of them spelled the same is back
+	// where they started.
+	seen := map[string]CompositeWalk{}
+	for _, w := range []CompositeWalk{
+		CompositeWalkNotApplicable, CompositeWalkStops, CompositeWalkDescends,
+	} {
+		if prior, dup := seen[w.String()]; dup {
+			t.Errorf("CompositeWalk(%d) and CompositeWalk(%d) both print as %q",
+				int(prior), int(w), w.String())
+		}
+		seen[w.String()] = w
+	}
+}
+
+// CompositeWalkStopsAt is exactly "not descends", over every pair of declared
+// roles.
+//
+// The bool is what the runtime's walks and the audit's own guard ask for, and
+// it is kept — but it is now a reading of CompositeWalkAt rather than a second
+// implementation, and this is what stops the two drifting into disagreement.
+// A total sweep rather than the composites alone: the pairs where they could
+// disagree are the ones where the outer role is not a composite at all, which
+// is precisely what a check over KeyboardComposites() would never mount.
+func TestTheBoolIsTheEnumWithTheThirdValueFoldedIn(t *testing.T) {
+	pairs := 0
+	for _, outer := range Roles() {
+		for _, inner := range Roles() {
+			pairs++
+			want := CompositeWalkAt(outer, inner) != CompositeWalkDescends
+			if got := CompositeWalkStopsAt(outer, inner); got != want {
+				t.Errorf("CompositeWalkStopsAt(%q, %q) = %v and CompositeWalkAt says "+
+					"%v. The bool is documented as the enum with the not-applicable "+
+					"value folded into the stop, and a second implementation of the "+
+					"rule is how the audit and the runtime's walks stop agreeing",
+					outer, inner, got, CompositeWalkAt(outer, inner))
+			}
+		}
+	}
+	if pairs == 0 {
+		t.Error("Roles() is empty, so the sweep above compared nothing")
 	}
 }

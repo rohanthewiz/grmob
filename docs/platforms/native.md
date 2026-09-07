@@ -1121,13 +1121,24 @@ nothing anywhere had asked whether the four targets agree about overflow for
 |---|---|---|---|
 | WASM runtime | squeezed | spills | measured |
 | htmlout | squeezed | spills | inherited |
-| SwiftUI | squeezed | spills | derived |
-| Compose | squeezed | **squeezed** | derived |
+| SwiftUI | **measured** | spills | main axis measured, cross axis derived |
+| Compose | squeezed | **squeezed** | derived, from the pinned version's source |
 
 The DOM row was measured, in a real Chrome, and it is not the blanket "spills"
 the note assumed — see [the WASM
-harness](wasm.md#a-fixed-size-box-on-four-targets) for that half. The two native
-rows are derived from the platform call each renderer makes, and
+harness](wasm.md#a-fixed-size-box-on-four-targets) for that half.
+
+The SwiftUI row is half measured. Its cross axis is a SwiftUI fact and stays a
+reading of the call site; its main axis is not SwiftUI's at all — the squeeze
+comes from `GrMobFlexSolver`, which is this repository's own arithmetic and
+which `ios/verify` executes. So `checkFixedSizeContainer` in
+`ios/verify/flex.swift` runs the census's box through the solver, on both axes'
+worth of container, and gets the browser's answer. It uses browser.mjs's
+numbers, and `wasm/verify`'s `TestTheFixedSizeCensusUsesOneSetOfNumbers` holds
+the two harnesses to one fixture: two passes agreeing about different boxes is a
+weaker statement than the row makes, and neither pass could tell.
+
+The rest is derived from the platform call each renderer makes, and
 `mobile/verify/fixedsize_test.go` is what holds the renderers to those calls:
 
 - **SwiftUI.** `.frame(width:)` / `.frame(height:)` *proposes* a size to its
@@ -1148,14 +1159,88 @@ with this target's row silently wrong. On the Swift side it is `.clipped()`,
 which would compile, look tidier, and make one target hide an overflow the other
 three show.
 
-**Why the Compose half is derived and not read.** The reading above is of
-`foundation-layout` 1.10.0, which is what a gradle cache happens to hold;
-`android/app/build.gradle` pins the Compose BOM at `2024.06.00`, which resolves
-`foundation-layout` to 1.6.8, and 1.6.8's sources are not cached — only its
-`.aar`. A pin against the wrong version is the mistake `gobindVersion` exists to
-prevent one file over, and fetching the right sources is a network call no
-harness here makes. So the call site is what is pinned, and the platform's rule
-travels beside it as prose.
+**Which `foundation-layout` the Compose half is read from.** It used to be
+whichever one a gradle cache happened to hold — 1.10.0 on the machine where the
+paragraph was written, while `android/app/build.gradle` pins the Compose BOM at
+`2024.06.00`, which resolves `foundation-layout` to 1.6.8. A reading of the
+wrong version is the mistake `gobindVersion` exists to prevent one file over,
+and it is worse here: the claim is prose about a third party's arithmetic, and a
+reader cannot tell a paragraph that was checked from one that was true two
+releases ago.
+
+Two pieces close that, and neither costs a network call at test time:
+
+- **The version is derived.** `android/app/build.gradle` declares a
+  `composeLayoutSources` configuration, and
+  `TestTheComposeSourcesAreTheVersionTheBOMResolves` reads the BOM's own pom out
+  of the gradle cache, finds `foundation-layout` in its dependency management,
+  and fails if the configuration asks for a different release. That check runs
+  on any machine that has ever built the app, because that build caches the pom.
+- **The claims are read from the source.**
+  `./gradlew :app:fetchComposeLayoutSources` puts the sources jar in the cache
+  once, and `TestTheComposeCensusClaimsAreWhatTheSourceSays` then reads
+  `Size.kt` and `RowColumnMeasurementHelper.kt` out of it: that
+  `Modifier.width` is `SizeElement(minWidth = width, maxWidth = width,
+  enforceIncoming = true)`, and that the zero-weight measure branch offers a
+  child `mainAxisMax - fixedSpace`. Machines that have never fetched skip that
+  half, with the command in the skip message — which is the honest state for a
+  check whose subject has to be downloaded, and is why the version half is
+  separate.
+
+The call site pins stay either way: they are about *this* repository's code,
+which no reading of androidx can answer for.
+
+### `core.FlexShrink(0)` on a target with no proportional shrink
+
+`core.FlexShrink` was a web-only prop for two releases, and then half of it
+stopped being one: `GrMobFlexSolver` implements CSS's scaled-base rule, so every
+factor means on iOS what it means in a browser. Compose was the target left out,
+and the reason was real — a Compose `Row` has no proportional shrink *at all*.
+Its measure policy walks the unweighted children in order and offers each one
+`mainAxisMax - fixedSpace`, the main-axis space its predecessors did not take.
+There is no factor anywhere in that arithmetic for a fractional value to scale.
+
+That argument covers the fractional values and not the one that matters most.
+Zero is not a proportion, it is a refusal, and a refusal is expressible:
+
+```kotlin
+private fun Modifier.pinMainAxis(horizontal: Boolean): Modifier = layout { measurable, constraints ->
+    val unbounded = if (horizontal) constraints.copy(minWidth = 0, maxWidth = Constraints.Infinity)
+                    else            constraints.copy(minHeight = 0, maxHeight = Constraints.Infinity)
+    val placeable = measurable.measure(unbounded)
+    layout(placeable.width, placeable.height) { placeable.place(0, 0) }
+}
+```
+
+The child is measured against its own content rather than against what is left,
+and — the half that is easy to get wrong — the size reported back to the `Row`
+is the measured one, not a value clamped to the incoming constraints. So the
+row's running total passes its own maximum and the overflow is visible, which is
+what `flex-shrink: 0` does everywhere else. Clamping on the way out compiles,
+looks better behaved, and produces a third thing that matches no target: a child
+drawn spilling out of a box its parent still believes it fits inside.
+`mobile/verify` refuses that spelling by name.
+
+```
+   Row(maxWidth = 120)   [  pinned child, 200 wide  ][ next child ]
+                         └──── reports 200 ────┘      └ offered 0 ┘
+```
+
+What still diverges is the siblings. CSS shares the deficit among the items that
+*can* shrink, in proportion to their bases; a Compose `Row` gave the earlier
+children what they asked for and offers the later ones what is left, which after
+an overflow is nothing. That is the no-proportional-shrink divergence, unchanged
+— but the pinned child's own size, which is what the declaration is *about*, now
+agrees on all four targets. Order does not matter to it either: `remaining` is
+ignored whether the pin is the first child or the last.
+
+Only the zero is read. `GrMobStyle.kt`'s `shrinkFactor` maps the sentinel the
+way every other runtime does (`wasm/verify`'s `shrink_test.go` pins all four
+spellings of `core.ShrinkNone` to the same number), and `shrinkPinned` is what
+the two children loops consult. A weighted child is not given the modifier, and
+that is not an omission: `Modifier.weight` already fixes that child's main axis
+as both a minimum and a maximum, and CSS never applies grow and shrink at once
+either — one divides positive free space, the other negative.
 
 ### Why the band's census has three rows
 

@@ -5,6 +5,18 @@ plugins {
     id 'org.jetbrains.kotlin.plugin.compose'
 }
 
+// The foundation-layout release the fixed-size census's Compose row is read
+// from — see the composeLayoutSources configuration below.
+//
+// It must equal what the Compose BOM in `dependencies` resolves
+// foundation-layout to, and it is spelled separately because the resolution
+// that would derive it cannot be asked for a sources jar without dragging in
+// the whole Compose graph. mobile/verify's
+// TestTheComposeSourcesAreTheVersionTheBOMResolves is what holds the two
+// together: it reads the BOM's own pom out of the gradle cache and fails if
+// this number is not the one listed there.
+ext.composeLayoutVersion = '1.6.8'
+
 android {
     // Properties are assigned with '=' throughout. The Groovy space-assignment
     // form ('namespace "x"') is deprecated and removed in Gradle 10.
@@ -46,12 +58,64 @@ kotlin {
     }
 }
 
+// A configuration of its own so the sources are never on any compile or
+// runtime classpath: they are documentation this repository checks, not code
+// it builds against.
+//
+// transitive = false because nothing here wants foundation-layout's
+// dependencies — only its own text. Without it the resolution drags in the
+// whole Compose graph including the desktop artifacts, whose skiko dependency
+// publishes two runtime variants and cannot be chosen between by a
+// configuration carrying no attributes.
+configurations {
+    composeLayoutSources {
+        transitive = false
+    }
+}
+
+tasks.register('fetchComposeLayoutSources') {
+    group = 'verification'
+    description = 'Downloads the foundation-layout sources jar that ' +
+        'mobile/verify reads the fixed-size census out of.'
+    // Captured outside doLast so the task holds the file collection rather
+    // than the project, which is what lets it run under the configuration
+    // cache.
+    def sources = configurations.composeLayoutSources
+    doLast {
+        sources.files.each { println it }
+    }
+}
+
 dependencies {
     // The Go core + app, bound by gomobile. Produced by ../build.sh.
     implementation files('libs/grmob.aar')
 
     def composeBom = platform('androidx.compose:compose-bom:2024.06.00')
     implementation composeBom
+
+    // The sources for the one Compose artifact this repository makes written
+    // claims about.
+    //
+    // docs/platforms/native.md's fixed-size census says what Modifier.width/
+    // height do to a child (they set a minimum AND a maximum, which is the
+    // whole of that target's divergence) and what a Row does to an unweighted
+    // child that does not fit (it clamps it to the space left, with no
+    // proportional shrink anywhere). Both are readings of foundation-layout,
+    // and until this configuration existed they were readings of whatever
+    // version happened to be in the machine's gradle cache — which is not the
+    // version this module builds against.
+    //
+    // Nothing compiles against these; they exist so mobile/verify can hold the
+    // prose to the source. The version is the BOM's, by construction: the
+    // platform below is the same one the implementation dependencies get, so
+    // the sources cannot be for a different release than the .aar.
+    //
+    //     ./gradlew :app:fetchComposeLayoutSources
+    //
+    // is the one-shot fetch, and it is a network call — which is why the
+    // checks that read the jar skip rather than fail when it is absent.
+    composeLayoutSources "androidx.compose.foundation:foundation-layout-android:" +
+        "$composeLayoutVersion:sources@jar"
 
     implementation 'androidx.activity:activity-compose:1.9.0'
     implementation 'androidx.compose.foundation:foundation'

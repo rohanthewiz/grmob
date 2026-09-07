@@ -92,6 +92,19 @@ data class GrMobStyle(
     val justifyContent: String,
     val alignItems: String,
     val flexGrow: Float,
+    /**
+     * core.Style.FlexShrink, as written — which is NOT the shrink factor.
+     *
+     * Zero means "unset" here, as it does for every other number in a
+     * core.Style, and flex-shrink is the one property whose CSS initial value
+     * is not zero. So the Go side spells a factor of zero as core.ShrinkNone
+     * (-1) and this field carries that verbatim; `shrinkFactor` below is the
+     * reading. Storing the raw number rather than the reading keeps this class
+     * a decode of the JSON and puts the one rule in one place — the same
+     * arrangement GrMobStyle.swift makes, and wasm/verify's shrink_test.go
+     * pins all four spellings of the sentinel to core.ShrinkNone.
+     */
+    val flexShrink: Float,
     /** core.FlexWrap: "wrap" or "nowrap" (empty when unset). Read by GrMobRow only. */
     val flexWrap: String,
     /**
@@ -200,6 +213,39 @@ data class GrMobStyle(
 
     val horizontalGap: Float get() = if (columnGap != 0f) columnGap else gap
 
+    /**
+     * The shrink factor this style asks for: 1 when nothing was set (the CSS
+     * initial value), 0 for core.ShrinkNone, and the number otherwise.
+     *
+     * The mirror of core.Style.ShrinkFactor and of GrMobStyle.swift's
+     * shrinkFactor, and the only place in this runtime that knows what -1
+     * means.
+     *
+     * What this renderer can do with it is narrower than what the other three
+     * do, and the narrowing is a property of Compose rather than of this
+     * mapping. A Compose Row has no proportional shrink: it measures each
+     * unweighted child against whatever main-axis space is left and hands the
+     * next one the remainder, so there is no per-item factor to scale and a
+     * fractional factor has nothing to mean. Zero does: "measure me against
+     * my own content and let the row overflow" is expressible, and
+     * shrinkPinned is what the children loops read. See core.ShrinkNone.
+     */
+    val shrinkFactor: Float get() = when (flexShrink) {
+        0f -> 1f
+        -1f -> 0f
+        else -> flexShrink
+    }
+
+    /**
+     * Whether this node refuses to shrink — core.FlexShrink(0), and the only
+     * shrink declaration a Compose Row can honour.
+     *
+     * Read rather than `shrinkFactor == 0f` at the call sites so that the one
+     * comparison against a float lives here, beside the mapping that produces
+     * it.
+     */
+    val shrinkPinned: Boolean get() = shrinkFactor == 0f
+
     companion object {
         fun parse(obj: JSONObject?): GrMobStyle? {
             if (obj == null) return null
@@ -225,6 +271,7 @@ data class GrMobStyle(
                 justifyContent = obj.optString("JustifyContent"),
                 alignItems = obj.optString("AlignItems"),
                 flexGrow = obj.optDouble("FlexGrow", 0.0).toFloat(),
+                flexShrink = obj.optDouble("FlexShrink", 0.0).toFloat(),
                 flexWrap = obj.optString("FlexWrap"),
                 flexDirection = obj.optString("FlexDirection"),
                 position = obj.optString("Position"),

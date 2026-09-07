@@ -23,7 +23,7 @@ import (
 //	                     main axis            cross axis
 //	WASM runtime         squeezed             spills          measured
 //	htmlout              squeezed             spills          inherited
-//	SwiftUI              squeezed             spills          derived
+//	SwiftUI              squeezed             spills          measured / derived
 //	Compose              squeezed             squeezed        derived
 //
 // The DOM row was MEASURED, and it is not what the note assumed: a browser does
@@ -37,11 +37,19 @@ import (
 // (TestAFixedSizeBoxExportsTheDeclarationsTheBrowserMeasured), so it inherits
 // that answer rather than being measured again.
 //
-// The two native rows are DERIVED, from the platform call each renderer makes,
-// and this file is what holds the renderers to those calls. That is the whole of
-// what this package can do — its subject is "a rule the native shells must obey
-// that no native toolchain can see" — and it is worth being exact about which
-// half is which:
+// The SwiftUI row is half measured and half derived, and the split is not
+// arbitrary: the cross axis is SwiftUI's own behaviour, while the main-axis
+// squeeze is GrMobFlexSolver's — this repository's arithmetic, which ios/verify
+// executes. checkFixedSizeContainer in ios/verify/flex.swift runs the census's
+// box through it, on browser.mjs's numbers, and gets the browser's answer;
+// wasm/verify's TestTheFixedSizeCensusUsesOneSetOfNumbers holds the two
+// harnesses to one fixture.
+//
+// What is left is DERIVED, from the platform call each renderer makes, and this
+// file is what holds the renderers to those calls. That is the whole of what
+// this package can do — its subject is "a rule the native shells must obey that
+// no native toolchain can see" — and it is worth being exact about which half is
+// which:
 //
 //	SwiftUI   .frame(width:) / .frame(height:) PROPOSES a size to its content
 //	          and reports the fixed size to its parent. Content that insists on
@@ -59,21 +67,20 @@ import (
 //	          the whole of the divergence: the child is squeezed on both axes
 //	          rather than on one.
 //
-// # Why the Compose half is not read out of Compose
+// # Why the call site is pinned even though the source is now readable
 //
-// The reading above is of foundation-layout 1.10.0, which is what happens to be
-// in this machine's gradle cache; android/app/build.gradle pins the Compose BOM
-// at 2024.06.00, which resolves foundation-layout to 1.6.8, and 1.6.8's sources
-// jar is not cached — only its .aar. So a check that read Size.kt would be
-// holding this repository to a version it does not build against, which is the
-// mistake gobindVersion exists to prevent one file over. Fetching the right
-// sources is a network call, and no harness here makes one.
+// The Compose reading used to be of whichever foundation-layout a gradle cache
+// happened to hold, which was not the version this module builds against.
+// composelayout_test.go closes that: the version is derived from the BOM's own
+// pom and the claims are read out of the sources jar itself, so the paragraph
+// above is now held to androidx's code rather than to somebody's memory of it.
 //
-// What is checkable offline is the call site, and that is what fails below: the
-// divergence is a property of Modifier.width/height, so a renderer that moved
-// off them — to requiredSize, which ignores incoming constraints, or to
-// sizeIn, which sets a maximum and no minimum — would change this target's
-// answer with nothing to say so.
+// This file is still the other half, and the halves answer different questions.
+// composelayout_test.go asks "is Modifier.width still what the census says it
+// is"; this asks "is Modifier.width still what the renderer calls". A renderer
+// that moved off it — to requiredSize, which ignores incoming constraints, or
+// to sizeIn, which sets a maximum and no minimum — would change this target's
+// answer with a perfectly accurate reading of androidx sitting beside it.
 const fixedSizeWhy = "the four-target answer for a child bigger than a " +
 	"fixed-size container is derived from this call (see the header), and a " +
 	"renderer that no longer makes it has an answer nothing here describes"

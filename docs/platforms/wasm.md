@@ -1417,9 +1417,14 @@ container overflows on both axes.
 answer rather than being measured again; that bridge is
 `TestAFixedSizeBoxExportsTheDeclarationsTheBrowserMeasured`, and it also refuses
 an `overflow`, a `min-width` or a `min-height`, each of which would change the
-answer on that target alone and silently. The two native rows are derived from
-the platform call each renderer makes, and `mobile/verify` holds the renderers
-to those calls — see [the native harness](native.md#a-fixed-size-box-on-four-targets).
+answer on that target alone and silently.
+
+The SwiftUI row is measured too, on the axis where it can be: the main-axis
+squeeze is `GrMobFlexSolver`'s rather than SwiftUI's, and `ios/verify` runs it —
+over this fixture's numbers, which
+`TestTheFixedSizeCensusUsesOneSetOfNumbers` holds the two harnesses to. Compose's
+row stays derived, now from the `foundation-layout` release the build actually
+resolves. See [the native harness](native.md#a-fixed-size-box-on-four-targets).
 
 **A check that waits for a frame waits for its own subject to work.** The
 toolbar check hung for its whole timeout the first time its subject was broken,

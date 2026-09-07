@@ -69,6 +69,7 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.layout
 import android.app.Activity
 import android.content.Context
 import android.content.ContextWrapper
@@ -96,6 +97,7 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.withStyle
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -1345,10 +1347,81 @@ private fun RowScope.RowChildren(node: GrMobNode) {
         key(child.key.ifEmpty { i }) {
             val grow = child.style?.flexGrow ?: 0f
             var m: Modifier = if (grow > 0f) Modifier.weight(grow) else Modifier
+            // core.FlexShrink(0) on an unweighted child. A weighted one is not
+            // given the modifier and that is not an omission: Modifier.weight
+            // sets the child's main axis to its share of the remainder as both
+            // a minimum and a maximum, so the two would be contradictory
+            // instructions about one number and weight is the one the author
+            // wrote second. CSS resolves the same pair by never letting them
+            // apply at once — flex-grow divides positive free space and
+            // flex-shrink divides negative — so a Row that is overflowing has
+            // no growth to hand out either way.
+            if (grow <= 0f && child.style?.shrinkPinned == true) m = m.pinMainAxis(horizontal = true)
             if (stretch) m = m.fillMaxHeight()
             RenderNode(child, m)
         }
     }
+}
+
+/**
+ * core.FlexShrink(0), the one shrink declaration a Compose Row or Column can
+ * honour: measure this child against its own content and let the container
+ * overflow, instead of against whatever main-axis space is left.
+ *
+ * # What Compose does without it
+ *
+ * A Row measures its unweighted children in order, each against
+ * `mainAxisMax - fixedSpace` — the space the ones before it did not take
+ * (foundation-layout's RowColumnMeasurePolicy). So a child too big for what is
+ * left is clamped to it: text wraps or ellipsises, a fixed-size box is cut
+ * down. There is no factor anywhere in that arithmetic, which is why a
+ * *fractional* flex-shrink has nothing to map onto here and why this renderer
+ * reads only `shrinkPinned` rather than the whole factor.
+ *
+ * Zero is different, because zero is not a proportion — it is a refusal, and
+ * a refusal is expressible: this measures the child with an unbounded main
+ * axis and reports its full size to the parent, so the child keeps its own
+ * extent and the Row's running total passes the container's own maximum. That
+ * is what the other three targets do with `flex-shrink: 0`.
+ *
+ *      Row(maxWidth = 120)     [ pinned child, 200 wide ][ next child ]
+ *                              └──── reported 200 ────┘  └─ measured
+ *                                                           against 0 ─┘
+ *
+ * # Where it still differs from CSS, and why that is not this function's doing
+ *
+ * The siblings. In CSS the deficit is shared out among the items that *can*
+ * shrink, in proportion to their bases; in a Compose Row the child before the
+ * overflow already took what it asked for and the ones after it are offered
+ * what is left, which is nothing. That is the no-proportional-shrink
+ * divergence the census records, and it is a property of the measure policy
+ * rather than of this modifier — the pinned child's own size, which is what
+ * the declaration is about, now agrees on all four targets.
+ *
+ * Order does not matter to the pinned child: `remaining` is ignored whether it
+ * is the first child or the last, so a pin is honoured wherever it sits.
+ *
+ * @param horizontal true in a Row (the main axis is the width), false in a
+ * Column. The cross axis is passed through untouched — flex-shrink is a
+ * main-axis property in CSS too, and a child that also wants the cross axis
+ * has fillMaxHeight/fillMaxWidth for it.
+ */
+private fun Modifier.pinMainAxis(horizontal: Boolean): Modifier = layout { measurable, constraints ->
+    val unbounded = if (horizontal) {
+        constraints.copy(minWidth = 0, maxWidth = Constraints.Infinity)
+    } else {
+        constraints.copy(minHeight = 0, maxHeight = Constraints.Infinity)
+    }
+    val placeable = measurable.measure(unbounded)
+    // Reported at the measured size, and NOT clamped back to the incoming
+    // constraints on the way out: the whole point is that the parent learns
+    // the child's real extent, so its running total overflows and the overflow
+    // is visible. Compose does not clip a child that reports more than it was
+    // offered, which is what makes this match the DOM's `overflow: visible`
+    // rather than hiding the difference. mobile/verify refuses the clamping
+    // spelling by name, because it compiles and looks like the better-behaved
+    // of the two.
+    layout(placeable.width, placeable.height) { placeable.place(0, 0) }
 }
 
 /**
@@ -1374,6 +1447,10 @@ private fun ColumnScope.ColumnChildren(node: GrMobNode, growMinHeight: Dp? = nul
                 growMinHeight != null -> Modifier.heightIn(min = growMinHeight)
                 else -> Modifier.weight(grow)
             }
+            // The vertical half of core.FlexShrink(0); see pinMainAxis. Same
+            // condition as the Row's, and for the same reason: a weighted
+            // child's main axis is already both fixed and asked for.
+            if (grow <= 0f && child.style?.shrinkPinned == true) m = m.pinMainAxis(horizontal = false)
             if (stretch && !hugsContent(child.style)) m = m.fillMaxWidth()
             RenderNode(child, m)
         }

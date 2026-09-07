@@ -48,12 +48,15 @@
 - [x] `Position` (`Sticky`/`Absolute`/`Relative`/`Fixed`) with `Top`/`Right`/
       `Bottom`/`Left`/`ZIndex`, plus `MinWidth`/`MaxWidth`/`MinHeight`/
       `MaxHeight`, `Overflow`, `WhiteSpace`, `AlignSelf`,
-      `FlexBasis`, `FlexShrink` — **web targets only**
+      `FlexBasis` — **web targets only**
       (WASM DOM and `htmlout`). Compose and SwiftUI have no direct equivalent
       for out-of-flow placement; a layout that depends on these will not look
       the same on device. The one exception is `Position: sticky` on a `List`
       child, which both natives now honour as a pinned header — see
-      `core.StickyHeader()` below.
+      `core.StickyHeader()` below. `FlexShrink` left this list in two steps and
+      is on all four targets now: `GrMobFlexSolver` implements CSS's
+      scaled-base rule, and Compose honours the one value it can express — see
+      `core.ShrinkNone` below.
 - [x] `Padding`/`Margin` `Horizontal`/`Vertical` shorthands on all four targets
 - [x] Per-side padding props — `PaddingTop`/`Bottom`/`Left`/`Right` set one
       inset without restating the other three through a whole `EdgeInsets`.
@@ -1250,6 +1253,42 @@
       with the fault. Extracting the Android one found the order was wrong:
       `kotlinc` is a JVM application, so a machine with a compiler and no JDK
       ran it and failed under `set -e` instead of skipping
+- [x] **`core.FlexShrink(0)` means something on Compose too** — the argument
+      for leaving Android out was real and covered the wrong half. A Compose
+      `Row` has no proportional shrink at all: an unweighted child is measured
+      against the main-axis space the ones before it did not take, so there is
+      nothing for a *fractional* factor to scale. Zero is not a proportion but
+      a refusal, and a refusal is expressible — `Modifier.pinMainAxis` measures
+      the child unbounded and reports the size it measured, so the child keeps
+      its extent and the row overflows around it, which is what the other three
+      targets do. The reporting half is the one that fails silently: clamping
+      the size on the way out compiles, looks better behaved, and draws the
+      child spilling out of a box its parent still believes it fits inside
+- [x] **`CompositeWalkStopsAt`'s two stopping arms are two values now** — a
+      container with no keyboard and a toolbar whose walk really does stop both
+      returned `true`, so the distinction was written into the code with a
+      paragraph on each arm and thrown away in the return. `core.CompositeWalk`
+      is the three answers — not applicable, stops, descends — the bool is a
+      reading of it rather than a second implementation, and the audit's finding
+      is built from the value so the one case it must not describe cannot be
+      described by accident
+- [x] **The fixed-size census's SwiftUI main axis is measured** — its cross axis
+      is a SwiftUI fact and stays a reading of the call site, but the main-axis
+      squeeze is `GrMobFlexSolver`'s, which is ours and which `ios/verify`
+      executes. It now runs the census's own box, on `browser.mjs`'s numbers,
+      with the two harnesses pinned to one fixture: two passes agreeing about
+      different boxes is a weaker statement than the census makes and neither
+      pass could tell
+- [x] **The census's Compose row is read from the version this build resolves**
+      — it had been read from whichever `foundation-layout` a gradle cache
+      happened to hold, two minor versions off what the BOM pins. The version is
+      derived now (the BOM's own pom, out of the cache, on any machine that has
+      ever built the app), a `composeLayoutSources` configuration fetches the
+      matching sources once, and the two claims — that `Modifier.width` sets a
+      maximum, and that the zero-weight branch offers a child what is left — are
+      read out of `Size.kt` and `RowColumnMeasurementHelper.kt` themselves.
+      Machines that have never fetched skip that half with the command in the
+      message
 
 ---
 

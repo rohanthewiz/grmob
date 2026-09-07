@@ -1061,10 +1061,19 @@ const (
 //	WASM runtime   writes flexShrink "0"
 //	SwiftUI        GrMobFlexSolver takes a per-item shrink factor and gives a
 //	               zero one none of the deficit
-//	Compose        nothing. A Compose Row has no proportional shrink at all —
-//	               an unweighted child is measured with what is left of the
-//	               main axis and a weighted one gets a share of it — so there
-//	               is no factor for this to be. See docs/platforms/native.md.
+//	Compose        measures the child with an unbounded main axis and reports
+//	               its own size, so the Row overflows around it
+//
+// The Compose arm is the one that needed an argument, and it is worth having
+// here because it is also the limit of what the field means on that target. A
+// Compose Row has no proportional shrink at all — an unweighted child is
+// measured against whatever main-axis space the ones before it did not take —
+// so there is no factor for a FRACTIONAL flex-shrink to be, and Android
+// ignores one. Zero is not a proportion but a refusal, and a refusal is
+// expressible: Modifier.pinMainAxis in Renderer.kt is that, and it is why
+// core.FlexShrink(0) is a declaration that means the same thing on all four
+// targets while core.FlexShrink(0.5) means something on three.
+// See docs/platforms/native.md.
 const ShrinkNone = -1
 
 // ShrinkFactor returns the effective flex-shrink and whether one was declared.
