@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/rohanthewiz/grmob/core"
+	"github.com/rohanthewiz/grmob/internal/palette"
 )
 
 // The variants map onto palette roles, not literals — so a theme swap
@@ -494,24 +495,25 @@ func TestBundledFieldFramesClearNonTextContrast(t *testing.T) {
 					name, base.what, base.style.BorderColor)
 				continue
 			}
-			for _, backdrop := range []struct {
-				what string
-				hex  string
-			}{
-				{"Background", theme.Colors.Background},
-				{"its own fill", base.style.Background},
+			// The field frame's own two backdrops, which are deliberately
+			// not the census's: this test asks about one widget on the two
+			// fills that widget lands on. palette.Backdrop is borrowed for
+			// the field names alone.
+			for _, backdrop := range []palette.Backdrop{
+				{What: "Background", Hex: theme.Colors.Background},
+				{What: "its own fill", Hex: base.style.Background},
 			} {
-				lum, ok := relativeLuminance(backdrop.hex)
+				lum, ok := relativeLuminance(backdrop.Hex)
 				if !ok {
 					t.Errorf("%s: Components.%s backdrop %s = %q does not parse",
-						name, base.what, backdrop.what, backdrop.hex)
+						name, base.what, backdrop.What, backdrop.Hex)
 					continue
 				}
 				if r := contrastRatio(edge, lum); r < floor {
 					t.Errorf("%s: Components.%s border %q is %.2f:1 against %s (%q), want at "+
 						"least %.1f:1 — WCAG 1.4.11 puts that floor under the boundary that "+
 						"identifies a control", name, base.what, base.style.BorderColor, r,
-						backdrop.what, backdrop.hex, floor)
+						backdrop.What, backdrop.Hex, floor)
 				}
 			}
 		}
@@ -577,7 +579,8 @@ func TestTheDividerRoleIsWhyTheFieldFrameIsSeparate(t *testing.T) {
 // candidate tone was an improvement or a trade you had to go and find every
 // fill a boundary lands on. That is exactly what this table is, so the cost
 // fell to one test run — and #89898E, five steps darker than systemGray,
-// clears all four DefaultTheme backdrops. The retint is recorded on
+// clears every DefaultTheme backdrop. (Four of them at the time; the list is
+// derived now, and the two the derivation added clear it too.) The retint is recorded on
 // core.ColorPalette.ControlBorder and the argument it retired on chipRing.
 //
 // The table below is therefore empty, and that is its resting state rather
@@ -589,19 +592,107 @@ func TestTheDividerRoleIsWhyTheFieldFrameIsSeparate(t *testing.T) {
 //
 // # The backdrops
 //
-// The four light fills a control can be drawn on: the page, the Surface
-// panel, a Card, and a field's own fill. Components.Camera is deliberately
-// not among them — it is a viewfinder, its fill is black in both themes, and
-// nothing draws a control boundary on top of a camera preview. Excluded by
-// name rather than by a lightness test, because a rule that skipped dark
-// fills would also skip a dark theme's page.
-func boundaryBackdrops(theme *core.Theme) []struct{ what, hex string } {
-	return []struct{ what, hex string }{
-		{"Background", theme.Colors.Background},
-		{"Surface", theme.Colors.Surface},
-		{"Card fill", theme.Components.Card.Background},
-		{"Input fill", theme.Components.Input.Background},
-		{"TextArea fill", theme.Components.TextArea.Background},
+// Derived rather than named. Every fill a control can be drawn on is either
+// one of the two palette roles — the page and the Surface panel — or a
+// core.ComponentDefaults field that states a Background, and the second half
+// is read off the struct by reflection in internal/palette.
+//
+// That package carries the argument. The short version is that the set is a
+// consequence of ComponentDefaults rather than a decision, so a new field
+// carrying a fill (a Sheet, a Popover) is a backdrop a hand-written list would
+// silently not measure — and the census exists precisely so that an unmeasured
+// pair is impossible. The two exclusions that used to be a line missing from a
+// slice literal are now data with reasons attached, held to the struct by the
+// test below.
+func boundaryBackdrops(theme *core.Theme) []palette.Backdrop {
+	return palette.Backdrops(theme)
+}
+
+// Every exclusion names a real ComponentDefaults field that really carries a
+// fill.
+//
+// Both halves matter and they fail differently. An exclusion for a field that
+// no longer exists exempts nothing — the census would measure a pair the
+// exclusion's author believed was skipped, and the reason attached to it reads
+// as though somebody had considered it. An exclusion for a field that states
+// no Background exempts nothing either, because For skips empty fills anyway;
+// such an entry is an argument about a pair that does not exist, and the next
+// person to give that component a fill inherits an exemption nobody made for
+// them.
+func TestTheBackdropExclusionsNameRealFills(t *testing.T) {
+	fields := map[string]bool{}
+	for _, name := range palette.ComponentFields() {
+		fields[name] = true
+	}
+	for name, reason := range palette.NotABackdrop {
+		if reason == "" {
+			t.Errorf("palette.NotABackdrop[%q] has no reason — an exclusion without "+
+				"an argument is a pair that was quietly dropped", name)
+		}
+		if !fields[name] {
+			t.Errorf("palette.NotABackdrop[%q] names no core.ComponentDefaults field. "+
+				"The exclusion exempts nothing and the census is measuring the pair "+
+				"anyway, or the field was renamed and the reason travelled with the "+
+				"old spelling", name)
+			continue
+		}
+		fills := false
+		for _, theme := range core.BundledThemes() {
+			if palette.Fill(theme, name) != "" {
+				fills = true
+			}
+		}
+		if !fills {
+			t.Errorf("palette.NotABackdrop[%q] names a component that states no "+
+				"Background in any bundled theme, so it was never a backdrop to "+
+				"exclude. Delete the entry, or the next theme to give it a fill "+
+				"inherits an exemption written for a different reason", name)
+		}
+	}
+}
+
+// Every fill a bundled theme states is either measured or excluded.
+//
+// This is the closure the derivation buys, and it is deliberately computed a
+// different way from palette.Backdrops: it walks ComponentFields and asks
+// palette.Fill directly, so a Backdrops that quietly stopped reflecting — an
+// early return, a skipped field, a Kind check that no longer matches — leaves
+// pairs unmeasured and this reports them by name.
+//
+// Without it the census can shrink silently. Fewer pairs is fewer assertions
+// and a green run, which is the one failure mode a table that measures things
+// cannot afford.
+func TestEveryStatedFillIsMeasuredOrExcluded(t *testing.T) {
+	for name, theme := range core.BundledThemes() {
+		measured := map[string]bool{}
+		for _, b := range boundaryBackdrops(theme) {
+			measured[b.What] = true
+		}
+		for _, field := range palette.ComponentFields() {
+			hex := palette.Fill(theme, field)
+			if hex == "" {
+				continue
+			}
+			_, excluded := palette.NotABackdrop[field]
+			if excluded == measured[field+" fill"] {
+				verb := "is measured and excluded at once"
+				if !excluded {
+					verb = "states " + hex + " and is neither measured nor excluded"
+				}
+				t.Errorf("%s: Components.%s %s — every fill a control could be drawn "+
+					"on is either a pair with a number under it or an entry in "+
+					"palette.NotABackdrop with an argument attached", name, field, verb)
+			}
+		}
+		// The two palette roles are not components and would not be caught
+		// above; a census that dropped them would be measuring the widgets
+		// and not the page.
+		for _, role := range []string{"Background", "Surface"} {
+			if !measured[role] {
+				t.Errorf("%s: the census no longer measures Colors.%s, which is the "+
+					"fill most controls in the theme are actually drawn on", name, role)
+			}
+		}
 	}
 }
 
@@ -638,18 +729,18 @@ func TestEveryControlBoundaryPairIsAccountedFor(t *testing.T) {
 			continue
 		}
 		for _, backdrop := range boundaryBackdrops(theme) {
-			if backdrop.hex == "" {
+			if backdrop.Hex == "" {
 				t.Errorf("%s: %s states no fill — a control boundary drawn on it lands on "+
-					"whatever is behind, which no test can measure", name, backdrop.what)
+					"whatever is behind, which no test can measure", name, backdrop.What)
 				continue
 			}
-			lum, ok := relativeLuminance(backdrop.hex)
+			lum, ok := relativeLuminance(backdrop.Hex)
 			if !ok {
-				t.Errorf("%s: %s = %q does not parse", name, backdrop.what, backdrop.hex)
+				t.Errorf("%s: %s = %q does not parse", name, backdrop.What, backdrop.Hex)
 				continue
 			}
 			r := contrastRatio(edge, lum)
-			known, exempt := knownBoundaryShortfalls[name+"/"+backdrop.what]
+			known, exempt := knownBoundaryShortfalls[name+"/"+backdrop.What]
 			switch {
 			case r >= floor:
 				// Clears. If it is also recorded as a shortfall, the sibling
@@ -660,11 +751,11 @@ func TestEveryControlBoundaryPairIsAccountedFor(t *testing.T) {
 					"identifies a control. Either retint, or record it in "+
 					"knownBoundaryShortfalls with the argument for why this pair is "+
 					"allowed to fall short", name, theme.Colors.ControlBorderColor(),
-					r, backdrop.what, backdrop.hex, floor)
+					r, backdrop.What, backdrop.Hex, floor)
 			case round2(r) != known.ratio:
 				t.Errorf("%s: ControlBorder against %s is %.2f:1, recorded as %.2f:1 — the "+
 					"exemption's argument was made about the recorded number (%s)",
-					name, backdrop.what, r, known.ratio, known.reason)
+					name, backdrop.What, r, known.ratio, known.reason)
 			}
 		}
 	}
@@ -696,8 +787,8 @@ func TestNoRecordedBoundaryShortfallHasQuietlyBeenFixed(t *testing.T) {
 		}
 		var hex string
 		for _, b := range boundaryBackdrops(theme) {
-			if b.what == what {
-				hex = b.hex
+			if b.What == what {
+				hex = b.Hex
 			}
 		}
 		if hex == "" {

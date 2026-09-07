@@ -32,10 +32,10 @@
 // Adding a bindable function to mobile/bridge.go without adding it here fails
 // `go test ./...`, and so does renaming one of its parameters.
 //
-// The signature half is why the nullability note at the end of this comment
-// is load-bearing rather than advisory: the test derives `String?` for a
-// `string` parameter and `String` for a `string` result, so a declaration
-// that took `String` everywhere is now a failure rather than a latitude.
+// The signature half is why the nullability rule below is load-bearing rather
+// than advisory: the test derives `String?` for a `string` parameter and
+// `String` for a `string` result, so a declaration that took `String`
+// everywhere is now a failure rather than a latitude.
 //
 // # The naming rules being imitated
 //
@@ -55,12 +55,45 @@
 // suffixing the protocol with `Protocol`; that suffixed spelling is the one
 // GomobileBridge.swift conforms to, so it is the one declared here.
 //
-// Nullability follows the generated header (Headers/Mobile.objc.h): gobind
-// annotates every `NSString*` parameter `_Nullable` and every return
-// `_Nonnull`, so a Go `string` argument arrives as `String?` and a Go `string`
-// result as `String`. Keeping that asymmetry is the point of copying it — a
-// stub that took `String` everywhere would accept shell code the real
-// framework rejects.
+// Nullability is not symmetric: gobind annotates every `NSString*` parameter
+// `_Nullable` and every `NSString*` return `_Nonnull`, so a Go `string`
+// argument arrives as `String?` and a Go `string` result as `String`. Keeping
+// that asymmetry is the point of copying it — a stub that took `String`
+// everywhere would accept shell code the real framework rejects.
+//
+// # The rules, in a form that cannot go stale
+//
+// Everything above is prose, and prose about a generator is a copy like any
+// other. It agreed with the checker on the day it was written because it was
+// written from it, and nothing would have said so on the day it stopped —
+// which is the same failure this whole file exists to prevent, one level up.
+//
+// So the load-bearing half is stated again below as rows, and
+// mobile/verify/gomobilestub_test.go reads them out of this comment and holds
+// each one to the thing it describes: the version to go.mod, the prefix and
+// suffix to the names the checker builds, each type row to gobindSwiftTypes
+// and swiftType, and each result row to what swiftResult actually does with a
+// signature of that shape. A reworded paragraph up there is a style change; a
+// wrong row down here is a test failure.
+//
+// The rows are readings of `bind/genobjc.go` — objcParamType for a parameter,
+// objcType for every other position, funcSummary for a result clause — in the
+// gobind the first row pins. That version is the moment at which somebody has
+// to look, and the only one there is.
+//
+//	--- checked against mobile/verify/gomobilestub_test.go ---
+//	gobind   v0.0.0-20251021151156-188f512ec823
+//	prefix   Mobile
+//	suffix   Protocol
+//	type     string        String?                 String
+//	type     bool          Bool                    Bool
+//	type     int           Int                     Int
+//	type     <interface>   Mobile<Name>Protocol?   Mobile<Name>Protocol?
+//	results  0   bound, with no return clause
+//	results  1   bound, as the result's own spelling
+//	results  2   refused: maps a (T, error) pair onto a Swift
+//	results  3   refused: refuses more than two outright
+//	--- end ---
 import Foundation
 
 /// Go's mobile.PatchListener. Single-method by necessity: gobind cannot bind

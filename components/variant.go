@@ -1,11 +1,10 @@
 package components
 
 import (
-	"math"
-	"strconv"
 	"strings"
 
 	"github.com/rohanthewiz/grmob/core"
+	"github.com/rohanthewiz/grmob/internal/palette"
 )
 
 // Variant selects a widget's semantic color role — what a piece of UI *means*
@@ -259,51 +258,18 @@ func contrastInk(bg string, candidates ...string) string {
 
 // contrastRatio is the WCAG 2.x formula: (lighter + 0.05) / (darker + 0.05),
 // ranging from 1 (identical) to 21 (black on white).
-func contrastRatio(a, b float64) float64 {
-	hi, lo := a, b
-	if lo > hi {
-		hi, lo = lo, hi
-	}
-	return (hi + 0.05) / (lo + 0.05)
-}
+//
+// A forwarder since a second consumer arrived. wasm/verify pins the census's
+// (tone, backdrop, ratio) table into browser.mjs so a real Chrome paints the
+// pairs, and it cannot reach an unexported function in this package — so the
+// arithmetic itself moved to internal/palette rather than being written twice.
+// The name stays because forty-odd call sites and their failure messages use
+// it, and because "the widget package computes contrast" is still true.
+func contrastRatio(a, b float64) float64 { return palette.Ratio(a, b) }
 
 // relativeLuminance implements the WCAG definition for an #RGB, #RRGGBB or
 // #RRGGBBAA color, reporting false for anything it cannot parse.
 //
-// Alpha is parsed but ignored: compositing needs the backdrop, and a widget
-// resolving its own ink does not know what it will be drawn over. A
-// translucent fill therefore reads as its opaque form, which overestimates
-// contrast — acceptable, since every palette fill role is opaque and the one
-// translucent value in the bundled themes (TextSecondary) is an ink.
-func relativeLuminance(hex string) (float64, bool) {
-	h := strings.TrimPrefix(strings.TrimSpace(hex), "#")
-	switch len(h) {
-	case 3: // #RGB shorthand — each digit doubles, as in CSS
-		h = string([]byte{h[0], h[0], h[1], h[1], h[2], h[2]})
-	case 6, 8:
-		h = h[:6]
-	default:
-		return 0, false
-	}
-
-	channels := [3]float64{}
-	for i := range channels {
-		v, err := strconv.ParseUint(h[i*2:i*2+2], 16, 8)
-		if err != nil {
-			return 0, false
-		}
-		channels[i] = linearizeChannel(float64(v) / 255)
-	}
-	return 0.2126*channels[0] + 0.7152*channels[1] + 0.0722*channels[2], true
-}
-
-// linearizeChannel undoes the sRGB transfer function, converting a gamma
-// encoded 0..1 channel to linear light. Luminance is a sum of *linear*
-// intensities; averaging the encoded values instead is the classic mistake
-// that makes mid-tones look far brighter than they are.
-func linearizeChannel(c float64) float64 {
-	if c <= 0.03928 {
-		return c / 12.92
-	}
-	return math.Pow((c+0.055)/1.055, 2.4)
-}
+// Alpha is parsed but ignored; see palette.Luminance, which this forwards to
+// and which carries the argument.
+func relativeLuminance(hex string) (float64, bool) { return palette.Luminance(hex) }

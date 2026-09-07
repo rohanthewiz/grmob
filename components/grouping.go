@@ -156,6 +156,37 @@ type CollapseBand struct {
 	// count badge sits hard against the trailing edge; a caller arranging
 	// their own row decides that for themselves.
 	Style []core.StyleProp
+
+	// ControlStyle is applied to the button, which is the node a finger lands
+	// on. This is where a caller's own chrome belongs.
+	//
+	// # The question it answers
+	//
+	// A band's padding on the row that holds the control is dead space: the
+	// button fills the box it was given and the insets are outside it, so the
+	// 16px before the chevron is a place a press does nothing. GroupHeader
+	// used to be built that way and is not any more (see bandInsets), and a
+	// caller writing their own row inherits the same question one level out:
+	//
+	//	core.Row(                                    core.Row(
+	//	    core.PaddingHorizontal(16),                  CollapseBand{
+	//	    CollapseBand{...},              becomes          Collapse: shut, Group: g,
+	//	    Badge{Text: count},                              ControlStyle: []core.StyleProp{
+	//	)                                                        core.PaddingLeft(16),
+	//	                                                         core.PaddingRight(8)},
+	//	                                                 },
+	//	                                                 Badge{Text: count},
+	//	                                                 core.PaddingRight(16),
+	//	                                             )
+	//
+	// Same pixels; a target that reaches the leading edge rather than starting
+	// 16px into it.
+	//
+	// On an inactive Collapse there is no button and this lands on the plain
+	// heading, for the same reason GroupHeader.ControlStyle does: the two
+	// branches must be the same size, or a band changes shape on the day
+	// somebody gives it a handler.
+	ControlStyle []core.StyleProp
 }
 
 func (b CollapseBand) Render(ctx *core.Context) *core.Node {
@@ -180,8 +211,13 @@ func (b CollapseBand) Render(ctx *core.Context) *core.Node {
 		// is the division GroupHeader draws too: there is no button for the
 		// tier to sit outside of.
 		plain := append(label, headingProps(b.HeadingLevel, headingLevelSection)...)
-		box := make([]core.PropsAndChildren, 0, len(b.Style)+len(content)+1)
+		box := make([]core.PropsAndChildren, 0, len(b.Style)+len(b.ControlStyle)+len(content)+1)
 		for _, sp := range b.Style {
+			box = append(box, sp)
+		}
+		// After Style, so a caller who set both gets the control's chrome
+		// last — the same order the disclosure branch below applies them in.
+		for _, sp := range b.ControlStyle {
 			box = append(box, sp)
 		}
 		if len(b.Content) == 0 {
@@ -210,10 +246,10 @@ func (b CollapseBand) Render(ctx *core.Context) *core.Node {
 		OwnLevel:     headingLevelSection,
 		HeadingStyle: b.Style,
 		ChevronStyle: []core.StyleProp{core.UseStyle(t.Typography.Caption)},
-		ControlStyle: []core.StyleProp{
+		ControlStyle: append([]core.StyleProp{
 			core.Gap(float64(t.Spacing.SM)),
 			core.AlignItemsProp(core.AlignItemsCenter),
-		},
+		}, b.ControlStyle...),
 		Control: content,
 	}.view().Render(ctx)
 }
@@ -263,6 +299,37 @@ func groupRuns[T any](items []T, by func(T) Group) []groupRun[T] {
 		runs = append(runs, groupRun[T]{Group: g, Start: i, End: i + 1})
 	}
 	return runs
+}
+
+// trailingRun returns the last group in items — the run an append-style pager
+// extends — or false when there is no grouping or nothing to group.
+//
+// # Why it walks backwards instead of calling groupRuns
+//
+// The caller wants one run out of a list that can be thousands of rows long,
+// and it wants it on every render. groupRuns is a full pass that allocates a
+// slice of every run in the list; this is a walk over the last run alone,
+// which for a month-banded feed is a handful of items regardless of how many
+// pages have loaded.
+//
+// The subtlety is that it must agree with groupRuns about what the last run's
+// Group *is*, or the widget would ask its Collapse predicate about a group the
+// band never showed. groupRuns takes the Group from the run's first item and
+// counts the rest, so this does the same after finding the boundary: a GroupBy
+// that returns the same Key with a different Label for two items — a
+// "March" and a "March 2026" — is answered here exactly as the band answers it.
+func trailingRun[T any](items []T, by func(T) Group) (Group, bool) {
+	if by == nil || len(items) == 0 {
+		return Group{}, false
+	}
+	key := by(items[len(items)-1]).Key
+	start := len(items) - 1
+	for start > 0 && by(items[start-1]).Key == key {
+		start--
+	}
+	g := by(items[start])
+	g.Count = len(items) - start
+	return g, true
 }
 
 // groupHeaderKey is the reconciler key for a group's header row. Prefixed so
@@ -319,34 +386,130 @@ type GroupHeader struct {
 	// button rather than within it, which is also what keeps the heading named
 	// "January 2026" instead of "January 2026 3".
 	//
-	// The cost is that the badge and the band's own padding are not part of
-	// the tap target: the button fills the space between the insets and stops
-	// where the count begins. That is the ordinary shape of a header row with
-	// a trailing badge, and the alternative — folding the count into the
-	// button's accessible name — would be assembling an English phrase in the
-	// renderer, which is the move Chip's ", selected" suffix was deleted for.
+	// The cost is that the badge is not part of the tap target: the button
+	// runs from the band's leading edge and stops where the count begins.
+	// That is the ordinary shape of a header row with a trailing badge, and
+	// the alternative — folding the count into the button's accessible name —
+	// would be assembling an English phrase in the renderer, which is the move
+	// Chip's ", selected" suffix was deleted for.
+	//
+	// The band's own insets used to be excluded too, which was not the same
+	// kind of cost: the count is content a press should not toggle, and the
+	// padding is chrome. They are on the control now — see bandInsets — so
+	// what the target excludes is exactly the thing that is not the control.
 	Expanded bool
 	OnToggle func()
 
-	// Style is applied to the band after its defaults.
+	// Style is applied to the band Row after its defaults: its fill, its
+	// margins, core.StickyHeader, a width.
+	//
+	// Not its insets. The band's padding lives on the control now — see
+	// bandInsets for why and for the picture — so a caller who wants the
+	// label flush left writes it in ControlStyle. Putting a
+	// core.PaddingLeft(0) here still reaches the Row, where it is a no-op on
+	// every side but the badge's own trailing inset.
 	Style []core.StyleProp
+
+	// ControlStyle is applied to the band's control after the insets: the
+	// node a finger lands on, and therefore where the band's own padding is.
+	//
+	// A caller indenting a nested band's label, or shipping a denser feed,
+	// reaches for this rather than Style — and gets a tap target that moves
+	// with the chrome instead of a strip in the middle of it.
+	//
+	// On a band with no OnToggle there is no control, and this lands on the
+	// plain heading that stands in for one. That is deliberate: the two
+	// branches are the same band geometrically, and a knob that silently did
+	// nothing on one of them would be a relayout the first time a caller
+	// added a handler.
+	ControlStyle []core.StyleProp
+}
+
+// bandInsets is the band's chrome, expressed as padding on the control rather
+// than on the row that holds it.
+//
+// # Why the insets are not on the band Row
+//
+// They used to be, and the shape that produced was a header whose tap target
+// was a strip in the middle of it:
+//
+//	 Row ────────────────────────────────────────────────
+//	│        ┌───────────────────────┐          ┌───┐    │   before
+//	│  16px  │ ▸ January 2026        │   8px    │ 3 │ 16 │   the button is the
+//	│        └───────────────────────┘          └───┘    │   box; the insets
+//	 ────────────────────────────────────────────────────    are dead space
+//
+//	 Row ────────────────────────────────────────────────
+//	│┌──────────────────────────────────────┐  ┌───┐     │   after
+//	││  ▸ January 2026                      │  │ 3 │ 16px│   the button owns
+//	│└──────────────────────────────────────┘  └───┘     │   the insets and
+//	 ────────────────────────────────────────────────────    the gap
+//
+// Nothing moves. The pixels the reader sees are identical in both — the same
+// 16 before the chevron, the same 8 before the badge, the same 4 above and
+// below — because padding on a stretched child fills exactly the space the
+// same padding on its parent held. What changes is which node it belongs to,
+// and therefore what a finger landing on it hits.
+//
+// The band Row keeps its Padding(0) (to shed the theme Row's own recipe), its
+// fill and its cross-axis centering, which is what matters for the two things
+// that must not move: core.StickyHeader goes on this node because the list
+// sees it as its child, and the fill has to span the full width or the pinned
+// band would show the rows scrolling through its margins.
+//
+// # Where the tap target still stops
+//
+// At the badge, and that is deliberate rather than residual. The count is
+// content — it is announced separately, which is the whole reason it sits
+// outside the button (see GroupHeader.Expanded) — so a press on the number is
+// a press on a thing, not on the control beside it. The gap before it belongs
+// to the button, because the gap is chrome.
+//
+// trailing is therefore the caller's answer to "what comes next": the gap
+// when a badge follows, the band's own trailing inset when nothing does.
+// trailing is 0 for "whatever the leading inset is", which is what a band
+// with nothing after its control wants.
+func bandInsets(t *core.Theme, trailing int) []core.StyleProp {
+	insets := []core.StyleProp{
+		core.PaddingHorizontal(t.Spacing.MD),
+		core.PaddingVertical(t.Spacing.XS),
+	}
+	if trailing > 0 {
+		// A side beside the shorthand rather than two explicit sides. The
+		// horizontal step is the band's own recipe and the trailing value is
+		// an override for what follows it, and spelling it this way keeps the
+		// two separable — core/padding_sides.go settles the pair the same way
+		// for every renderer, and a caller clearing one side through
+		// ControlStyle lands on the same machinery.
+		insets = append(insets, core.PaddingRight(trailing))
+	}
+	return insets
 }
 
 func (h GroupHeader) Render(ctx *core.Context) *core.Node {
 	t := ctx.Theme()
 
 	items := make([]core.PropsAndChildren, 0, len(h.Style)+8)
-	// Padding(0) first to shed the theme Row's own padding, then the band's
-	// tighter recipe: a full row of horizontal breathing room and the
-	// finest vertical step, so the band reads as a divider, not a row.
+	// Padding(0) to shed the theme Row's own padding, and Gap(0) because the
+	// one gap this band has is the button's trailing inset now. The band's
+	// tighter recipe — a full row of horizontal breathing room and the finest
+	// vertical step, so the band reads as a divider rather than a row — is on
+	// the control instead; see bandInsets.
 	items = append(items,
 		core.Padding(0),
-		core.PaddingHorizontal(t.Spacing.MD),
-		core.PaddingVertical(t.Spacing.XS),
+		core.Gap(0),
 		core.BackgroundColor(t.Colors.Surface),
 		core.AlignItemsProp(core.AlignItemsCenter),
-		core.Gap(float64(t.Spacing.SM)),
 	)
+	// The one inset that cannot move onto the control: the badge's own
+	// trailing breathing room, which is past the button's right edge. With no
+	// badge there is nothing on that side, so the inset is the button's and
+	// arrives through trailing below.
+	trailing := 0
+	if !h.HideCount {
+		trailing = t.Spacing.SM
+		items = append(items, core.PaddingRight(t.Spacing.MD))
+	}
 	for _, sp := range h.Style {
 		items = append(items, sp)
 	}
@@ -380,10 +543,15 @@ func (h GroupHeader) Render(ctx *core.Context) *core.Node {
 	// growth is passed in as HeadingStyle for exactly that reason.
 	if h.OnToggle == nil {
 		label = append(label, headingProps(h.HeadingLevel, headingLevelSection)...)
-		items = append(items, core.Box(
-			core.FlexGrow(1),
+		// The same insets the disclosure branch puts on its button. There is
+		// no tap target here to enlarge — the point is that the two branches
+		// are the same band geometrically, so a caller who adds OnToggle to a
+		// GroupHeader gets a control and not a relayout.
+		box := asProps(append(append(bandInsets(t, trailing), core.FlexGrow(1)),
+			h.ControlStyle...))
+		items = append(items, core.Box(append(box,
 			core.Text(h.Group.Label, label...),
-		))
+		)...))
 	} else {
 		// No heading props on the words here: the tier rides the wrapper, and
 		// a heading inside a button is written into the document and pruned
@@ -399,10 +567,12 @@ func (h GroupHeader) Render(ctx *core.Context) *core.Node {
 			OwnLevel:     headingLevelSection,
 			HeadingStyle: []core.StyleProp{core.FlexGrow(1)},
 			ChevronStyle: []core.StyleProp{core.UseStyle(t.Typography.Caption)},
-			ControlStyle: []core.StyleProp{
+			// The band's insets, on the button. See bandInsets for the
+			// before/after and for why the badge is where the target stops.
+			ControlStyle: append(append(bandInsets(t, trailing),
 				core.Gap(float64(t.Spacing.SM)),
 				core.AlignItemsProp(core.AlignItemsCenter),
-			},
+			), h.ControlStyle...),
 			Control: []core.View{core.Text(h.Group.Label, label...)},
 		}.view())
 	}

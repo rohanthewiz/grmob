@@ -967,6 +967,35 @@ an unusual install.
 The split is worth knowing when something fails: `keynav_test.mjs` says the
 runtime made the right decision, `browser.mjs` says the browser honoured it.
 
+### The palette, on a screenshot
+
+The fifth check is not about the keyboard. `core.ColorPalette.ControlBorder`
+has WCAG 1.4.11's 3:1 floor under it and `components/variant_test.go` measures
+the tone against every fill a control can be drawn on — but all of that is
+arithmetic over hex strings. It proves `#89898E` is 3.12:1 on `#F2F2F7`; it
+cannot prove either colour ever reaches a screen. Two retints and a whole third
+palette later, nothing in the repository had ever *looked* at the result.
+
+So `browser.mjs` paints one swatch per pair — a box filled with the backdrop,
+holding a smaller box with a 1px frame in the tone — takes a
+`Page.captureScreenshot`, decodes the PNG (about eighty lines and `node:zlib`,
+because `run.sh` promises Go and Node and nothing else) and reads the pixels
+back. What it asserts is **equality with the hex**, not a ratio: the ratio
+travels with the table from Go, and a second WCAG implementation is the one
+thing a contrast floor cannot survive.
+
+The table is `wasm/verify/palette.mjs`, pinned to `core.BundledThemes()` and
+`internal/palette` by `wasm/verify/palette_test.go` in both directions — a
+theme with no row is a palette the browser has never painted, and a row with no
+theme is a check measuring a colour nothing ships.
+
+What this catches is the class of bug that leaves the number true and the
+control unreadable: a translucent border colour, an opacity somewhere in the
+composite, a guard that drops the frame, a colour profile. It does *not* catch
+a border declared narrower than a device pixel — Chrome snaps a solid sub-pixel
+border up to one full-strength pixel at dpr 1, so that mutation changes nothing
+on screen, which is the honest reason the check stays quiet for it.
+
 **A check that waits for a frame waits for its own subject to work.** The
 toolbar check hung for its whole timeout the first time its subject was broken,
 having passed every time it worked — because the wait after a key was a doubled

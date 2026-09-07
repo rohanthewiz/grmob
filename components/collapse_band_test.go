@@ -239,3 +239,186 @@ func TestACollapseBandCarriesNoneOfTheBandsChrome(t *testing.T) {
 		t.Error("the default band lost its badge, so the assertion above is vacuous")
 	}
 }
+
+// --- The band's insets are the band's tap target ---------------------------
+
+// bandNodes pulls the three nodes a band's geometry is spread over: the Row
+// the list sees, the control a finger lands on, and the badge if there is one.
+//
+// The control is found by role rather than by path, because the two branches
+// nest differently — a disclosure is a heading wrapping a button, a plain band
+// is one Box — and which node holds the padding is the fact under test rather
+// than a step on the way to it.
+func bandNodes(t *testing.T, n *core.Node) (row, control *core.Node) {
+	t.Helper()
+	control = findFirst(n, func(c *core.Node) bool {
+		return c.Style != nil && c.Style.AccessibilityRole == core.RoleButton
+	})
+	if control == nil {
+		t.Fatalf("the band built no control: %+v", n)
+	}
+	return n, control
+}
+
+// The insets a reader sees are on the node a press reaches.
+//
+// # What this is asserting
+//
+// A band is a Row holding a control and a count. The chrome — 16px before the
+// chevron, 4px above and below — used to be padding on the Row, which meant
+// the button occupied the middle of the band and a press anywhere in the
+// insets did nothing. Nothing about that was visible: the band looked right,
+// announced right and exported right, and the only symptom was a header that
+// needed aiming at.
+//
+// It is now padding on the control, which is the same pixels on a different
+// node (see bandInsets for the picture). This test is what stops it drifting
+// back, and the failure it is written against is a well-meant one: moving an
+// inset "up to the band, where the rest of the styling is" reads as tidying.
+func TestTheBandsInsetsAreOnItsControl(t *testing.T) {
+	t.Run("with a count", func(t *testing.T) {
+		row, control := bandNodes(t, renderBand(t, GroupHeader{
+			Group:    Group{Key: "a", Label: "A", Count: 3},
+			OnToggle: func() {},
+		}))
+
+		// The leading inset and both vertical ones are the control's; the
+		// trailing one is an override for the badge that follows, which is
+		// also what settles the horizontal shorthand into two sides here.
+		want := core.EdgeInsets{Top: 4, Bottom: 4, Left: 16, Right: 8, Vertical: 4}
+		if got := control.Style.Padding; got != want {
+			t.Errorf("the control is padded %+v, want %+v — the band's insets are not "+
+				"on it, so the 16px before the chevron is a place a press does nothing",
+				got, want)
+		}
+		// And the Row holds the badge's own trailing inset and nothing else,
+		// because that is the one inset past the control's right edge.
+		if got := row.Style.Padding; got.Left != 0 || got.Top != 0 || got.Bottom != 0 ||
+			got.Horizontal != 0 || got.Vertical != 0 {
+			t.Errorf("the band Row still carries insets %+v — every one of them is "+
+				"dead space, since the control fills the box it is given and no more",
+				got)
+		}
+		if got, want := row.Style.Padding.Right, 16; got != want {
+			t.Errorf("the band Row's trailing padding is %d, want %d — the badge's own "+
+				"breathing room is the one inset that cannot move onto the control",
+				got, want)
+		}
+	})
+
+	t.Run("without a count", func(t *testing.T) {
+		row, control := bandNodes(t, renderBand(t, GroupHeader{
+			Group:     Group{Key: "a", Label: "A", Count: 3},
+			HideCount: true,
+			OnToggle:  func() {},
+		}))
+		if got := row.Style.Padding; got != (core.EdgeInsets{}) {
+			t.Errorf("the band Row carries %+v with nothing after the control — every "+
+				"inset on this band is reachable, so none of them belongs here", got)
+		}
+		// The whole horizontal step, both ends, since nothing follows — and
+		// the shorthand still live beside its sides, which is what makes this
+		// the case caller_style_insets_test.go reads for the settle.
+		want := core.EdgeInsets{Top: 4, Bottom: 4, Left: 16, Right: 16,
+			Horizontal: 16, Vertical: 4}
+		if got := control.Style.Padding; got != want {
+			t.Errorf("the control is padded %+v, want %+v — with no badge the trailing "+
+				"inset is the control's too", got, want)
+		}
+	})
+}
+
+// The two branches are the same band, geometrically.
+//
+// A caller who adds OnToggle to a GroupHeader is asking for a control, not a
+// relayout. The insets moved onto the control in the disclosure branch, and
+// the plain branch had to move them onto the Box that stands in for one, or
+// the day a feed became collapsible every band in it would have shifted 16px.
+func TestABandIsTheSameSizeWithAndWithoutItsControl(t *testing.T) {
+	group := Group{Key: "a", Label: "A", Count: 3}
+
+	plain := renderBand(t, GroupHeader{Group: group})
+	live := renderBand(t, GroupHeader{Group: group, OnToggle: func() {}})
+
+	if plain.Style.Padding != live.Style.Padding {
+		t.Errorf("the band Row is padded %+v without a control and %+v with one",
+			plain.Style.Padding, live.Style.Padding)
+	}
+
+	// The plain branch's stand-in is the Box carrying the growth, which is
+	// the same job the heading wrapper does in the other branch.
+	inner := findFirst(plain, func(c *core.Node) bool {
+		return c.Style != nil && c.Style.FlexGrow == 1
+	})
+	if inner == nil {
+		t.Fatalf("the plain band has no growing child: %+v", plain)
+	}
+	_, control := bandNodes(t, live)
+	if inner.Style.Padding != control.Style.Padding {
+		t.Errorf("the plain band's label box is padded %+v and the control %+v — "+
+			"adding a handler to a band moves it", inner.Style.Padding,
+			control.Style.Padding)
+	}
+}
+
+// A caller's ControlStyle reaches the control in both branches.
+//
+// The field exists because the insets are no longer where GroupHeader.Style
+// lands, and a knob that worked on one branch only would be the relayout the
+// test above rules out, arriving through the caller instead.
+func TestControlStyleReachesBothBranches(t *testing.T) {
+	group := Group{Key: "a", Label: "A", Count: 3}
+
+	for _, c := range []struct {
+		name string
+		band GroupHeader
+	}{
+		{"plain", GroupHeader{Group: group,
+			ControlStyle: []core.StyleProp{core.PaddingLeft(0)}}},
+		{"disclosure", GroupHeader{Group: group, OnToggle: func() {},
+			ControlStyle: []core.StyleProp{core.PaddingLeft(0)}}},
+	} {
+		n := renderBand(t, c.band)
+		inner := findFirst(n, func(x *core.Node) bool {
+			return x.Style != nil && x.Style.FlexGrow == 1
+		})
+		if c.name == "disclosure" {
+			// The wrapper grows; the padding is on the button inside it.
+			_, inner = bandNodes(t, n)
+		}
+		if inner == nil {
+			t.Fatalf("%s: no node to read", c.name)
+		}
+		if got := inner.Style.Padding; got.Left != 0 || got.Horizontal != 0 {
+			t.Errorf("%s: ControlStyle's PaddingLeft(0) left %+v — the caller's prop "+
+				"is not the last one applied, or the shorthand was not settled",
+				c.name, got)
+		}
+	}
+}
+
+// CollapseBand takes the same knob, which is the question it was built to
+// answer one level out: a caller placing the control in their own row still
+// has chrome to put somewhere, and putting it on the row is the shape this
+// whole change was about.
+func TestACollapseBandTakesTheChromeOnItsControl(t *testing.T) {
+	group := Group{Key: "a", Label: "A", Count: 3}
+	shut := Collapse{OnToggle: func(Group) {}}
+
+	live := renderBand(t, CollapseBand{Collapse: shut, Group: group,
+		ControlStyle: []core.StyleProp{core.PaddingHorizontal(16)}})
+	_, control := bandNodes(t, live)
+	if got, want := control.Style.Padding.Horizontal, 16; got != want {
+		t.Errorf("CollapseBand's control is padded %d horizontally, want %d",
+			got, want)
+	}
+
+	// And the inactive band, whose stand-in has to be the same size or a
+	// caller's row changes shape when the handler arrives.
+	plain := renderBand(t, CollapseBand{Group: group,
+		ControlStyle: []core.StyleProp{core.PaddingHorizontal(16)}})
+	if got, want := plain.Style.Padding.Horizontal, 16; got != want {
+		t.Errorf("an inactive CollapseBand is padded %d horizontally, want %d — the "+
+			"band changes size on the day it gets a handler", got, want)
+	}
+}

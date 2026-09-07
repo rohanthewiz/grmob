@@ -135,6 +135,11 @@ type GroupedList[T any] struct {
 	// See Collapse for why the state is the caller's and why the two
 	// functions are one type, and GroupHeader.Expanded for the band's ARIA
 	// shape.
+	//
+	// It interacts with OnEndReached, which is the one place two of this
+	// widget's features are in tension: a shut *trailing* group withholds the
+	// edge sensor, because a page fetched into a hidden run appears nowhere
+	// and silences the guard behind it. See OnEndReached.
 	Collapse Collapse
 
 	// Empty is rendered in place of the rows when Items is empty. Nil renders
@@ -171,6 +176,40 @@ type GroupedList[T any] struct {
 	//
 	// Nil leaves the list exactly as it was — a manual pager, driven by its
 	// footer.
+	//
+	// # A shut trailing group withholds it
+	//
+	// The two features are in tension and neither one is wrong. An append
+	// pager can only ever extend the *last* run (see the type comment), and a
+	// shut run emits no rows at all — so when the reader has collapsed the
+	// group at the bottom of the feed, a page that arrives is a page that
+	// appears nowhere.
+	//
+	// Left alone, that is worse than it sounds. core.OnEndReached will not
+	// re-ask until the List's child count changes, and a page absorbed into a
+	// hidden run changes nothing, so the *first* auto-load spends a page and
+	// every one after it is refused. The feed reads as exhausted, the pager's
+	// offset has moved, and nothing anywhere says so.
+	//
+	//	shut trailing group, auto-load left on
+	//	  scroll to bottom -> fetch page 3 -> 20 rows into a hidden run
+	//	  -> child count unchanged -> the guard closes -> the feed is over
+	//
+	// So the prop is withheld while that group is shut, and comes back the
+	// moment it is opened. Suppressing rather than starving is the honest
+	// half: the reader has said they do not want to see this run, and
+	// fetching more of it in the background is work nobody asked for and
+	// nobody can look at.
+	//
+	// What stays reachable is the Footer, which is why "keep the Footer"
+	// above is not only about static targets. components.LoadMore is a button
+	// that calls the same function directly, so a reader who wants the next
+	// page while the last group is shut has one — and pressing it is a
+	// deliberate act, where a scroll is not.
+	//
+	// This is a fact about the *last* run only. A shut group anywhere above
+	// it hides its rows and changes nothing about the edge, because the pager
+	// was never going to extend it.
 	OnEndReached func()
 
 	// Style is applied to the List after its defaults. The defaults shed the
@@ -179,13 +218,28 @@ type GroupedList[T any] struct {
 	Style []core.StyleProp
 }
 
+// trailingRunIsShut reports whether the group an append pager would extend is
+// currently collapsed. See OnEndReached for what that costs and why the answer
+// withholds the edge sensor.
+//
+// False for a flat list, for a list with no items, and for a zero Collapse —
+// each of which is a feed with nothing to hide, so the prop goes on as it
+// always has.
+func (g GroupedList[T]) trailingRunIsShut() bool {
+	last, ok := trailingRun(g.Items, g.GroupBy)
+	return ok && g.Collapse.hides(last)
+}
+
 func (g GroupedList[T]) Render(ctx *core.Context) *core.Node {
 	items := make([]core.PropsAndChildren, 0, 2*len(g.Items)+len(g.Style)+7)
 	items = append(items,
 		core.Padding(0),
 		core.Gap(0),
 	)
-	if g.OnEndReached != nil {
+	// Auto-loading is withheld while the run a page would land in is shut.
+	// The argument is on the field; the short version is that the alternative
+	// is a fetch whose rows nobody can see, followed by silence.
+	if g.OnEndReached != nil && !g.trailingRunIsShut() {
 		items = append(items, core.OnEndReached(g.OnEndReached))
 	}
 	for _, sp := range g.Style {

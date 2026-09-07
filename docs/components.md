@@ -1154,6 +1154,16 @@ browser with no `IntersectionObserver`). Handing the same load function to
 both is the intended shape — `core.OnEndReached` will not re-ask until the row
 count changes, so a tap and a scroll cannot double-load.
 
+**A shut trailing group withholds the edge.** `Collapse` and `OnEndReached` are
+the one pair of features here that are in tension. An append pager can only
+extend the *last* run, and a shut run emits no rows — so a page fetched while
+the bottom group is collapsed lands nowhere, and the guard above (which watches
+the row count) then refuses every fire after it. The feed reads as exhausted
+while the pager's offset has quietly moved on. So the widget withholds the prop
+while that group is shut and restores it the moment the reader opens it; the
+`Footer` stays reachable, which is the other reason to keep it. A shut group
+*above* the last one changes nothing — the pager was never going to extend it.
+
 `StickyHeaders` pins the *default* `GroupHeader`. A `Header` override builds
 its own view, which the widget cannot reach into; such a header pins itself
 with `core.StickyHeader()` in its own `Style`. On `DataTable` the flag pins
@@ -1231,6 +1241,26 @@ button's children are presentational, and the count is content rather than
 chrome — which also keeps the heading named "March" rather than "March 12".
 The cost is that the badge is not part of the tap target.
 
+The band's own insets **are**. They live on the control rather than on the row
+that holds it, so the 16px before the chevron and the 4px above and below are
+part of what a finger hits:
+
+```
+ Row ────────────────────────────────────      Row ───────────────────────────
+│      ┌──────────────────┐     ┌───┐    │    │┌──────────────────────┐ ┌───┐ │
+│ 16px │ ▸ January 2026   │ 8px │ 3 │ 16 │    ││  ▸ January 2026      │ │ 3 │ │
+│      └──────────────────┘     └───┘    │    │└──────────────────────┘ └───┘ │
+ ────────────────────────────────────────      ───────────────────────────────
+ the insets are dead space                     the control owns them
+```
+
+Nothing moves: padding on a stretched child fills exactly the space the same
+padding on its parent held. The band `Row` keeps its fill, its cross-axis
+centering and `core.StickyHeader` — it has to, since that is the node the list
+sees as its child — plus the badge's own trailing inset, which is the one that
+is past the control's edge. `GroupHeader.Style` therefore no longer reaches the
+padding; **`ControlStyle` does**, and it is where a caller's own chrome belongs.
+
 Unlike `StickyHeaders` and `HeadingLevel`, `Collapse` is *not* ignored under a
 `Header` override. The override owns the band; this owns whether the rows
 under it are emitted, which is not something a view you built can reach.
@@ -1250,10 +1280,16 @@ in a row of your own:
 ```go
 Header: func(g components.Group) core.View {
     return core.Row(
-        core.PaddingHorizontal(16),
-        components.CollapseBand{Collapse: shut, Group: g},
+        components.CollapseBand{
+            Collapse: shut, Group: g,
+            // Your chrome, on the control — not on the Row, where a press
+            // would do nothing. This is the same move the default band makes.
+            ControlStyle: []core.StyleProp{
+                core.PaddingLeft(16), core.PaddingRight(8)},
+        },
         components.Avatar{Name: leader[g.Key]},
         components.Badge{Text: strconv.Itoa(g.Count)},
+        core.PaddingRight(16),
     )
 },
 ```
@@ -1264,7 +1300,8 @@ the words inside the button and never the announced name, because a button's
 children are presentational and the name comes from `Group.Label`. An inactive
 `Collapse` builds a plain heading rather than a control with nothing behind it:
 a stated expansion with no handler is what `core.AuditTree` reports as
-`ConcernInertDisclosure`.
+`ConcernInertDisclosure`. `ControlStyle` lands on that stand-in too, so a band
+does not change size on the day it gets a handler.
 
 `DataTable` does not take it. A table's band sits inside the body's rowgroup,
 where ARIA has no reading for it even as a plain heading — making it a button

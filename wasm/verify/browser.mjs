@@ -1,10 +1,11 @@
-// The three keyboard facts a shimmed DOM cannot check, checked in a browser.
+// The facts a shimmed DOM cannot check, checked in a browser: four about the
+// keyboard, and one about paint.
 //
 // wasm/verify's other suites run the real grmob-runtime.js against dom.mjs — a
 // few hundred lines that model element trees, attributes, listeners and which
 // element holds focus. That is enough for almost everything, and its limits
 // are stated in its own header: there is no layout, no bubbling, and `focus()`
-// is an assignment. Three claims the keyboard pattern rests on sit exactly in
+// is an assignment, and nothing is ever painted. Four claims sit exactly in
 // that blind spot, and no amount of widening the shim would settle them,
 // because each one is a claim about what a *browser* does:
 //
@@ -16,6 +17,13 @@
 //   3. preventDefault on ArrowDown stops the page scrolling. A listbox that
 //      moved its selection *and* scrolled the page under it would be unusable,
 //      and defaultPrevented in a shim is a flag the shim set itself.
+//   4. The palette reaches the screen. core.ColorPalette.ControlBorder has
+//      WCAG 1.4.11's 3:1 floor under it and components/variant_test.go
+//      measures every pair — as arithmetic over hex strings, which is all Go
+//      can do. Two retints and a whole third palette later, no pass had ever
+//      *looked* at the result. This one paints the pairs and reads the pixels
+//      back out of a screenshot, which is the only place an alpha channel, a
+//      colour profile or a hairline antialiased into a tint can be caught.
 //
 // # How
 //
@@ -45,6 +53,9 @@ import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import http from "node:http";
+import zlib from "node:zlib";
+
+import { PALETTES } from "./palette.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const RUNTIME = join(HERE, "..", "grmob-runtime.js");
@@ -96,6 +107,115 @@ const PAGE = `<!DOCTYPE html>
 <script src="/grmob-runtime.js"></script>
 </body></html>
 `;
+
+// --------------------------------------------------------------------------
+// PNG
+// --------------------------------------------------------------------------
+
+// A minimal PNG decoder, because a screenshot arrives as one and the only
+// question worth asking of it is the colour of a pixel.
+//
+// # Why hand-rolled
+//
+// wasm/verify's run.sh promises Go and Node and nothing else — no npm, no
+// lockfile, no node_modules. A decoder is the price of that promise, and the
+// price is small: Chrome's screenshots are 8-bit, non-interlaced, truecolour
+// with or without alpha, `node:zlib` is built in, and the five scanline
+// filters are the whole of the format that matters here.
+//
+// # What it refuses
+//
+// Everything else, loudly. A palette-indexed, 16-bit or interlaced image would
+// decode to plausible garbage under a decoder that guessed, and this check's
+// entire output is "the pixel is #89898E" — a wrong answer is worse here than
+// no answer, because it is a contrast claim about a colour nothing painted.
+function decodePNG(buf) {
+    const SIG = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
+    for (let i = 0; i < SIG.length; i++) {
+        if (buf[i] !== SIG[i]) throw new Error("not a PNG");
+    }
+
+    let width = 0, height = 0, bitDepth = 0, colorType = 0;
+    const idat = [];
+    for (let off = 8; off + 8 <= buf.length;) {
+        const len = buf.readUInt32BE(off);
+        const type = buf.toString("ascii", off + 4, off + 8);
+        const data = buf.subarray(off + 8, off + 8 + len);
+        if (type === "IHDR") {
+            width = data.readUInt32BE(0);
+            height = data.readUInt32BE(4);
+            bitDepth = data[8];
+            colorType = data[9];
+            if (data[12] !== 0) throw new Error("interlaced PNG");
+        } else if (type === "IDAT") {
+            idat.push(data);
+        } else if (type === "IEND") {
+            break;
+        }
+        off += 12 + len; // length + type + data + CRC
+    }
+    if (bitDepth !== 8) throw new Error(`PNG bit depth ${bitDepth}, want 8`);
+    const channels = { 0: 1, 2: 3, 4: 2, 6: 4 }[colorType];
+    if (!channels) throw new Error(`PNG colour type ${colorType} is not truecolour or grey`);
+
+    const raw = zlib.inflateSync(Buffer.concat(idat));
+    const stride = width * channels;
+    const out = Buffer.alloc(height * stride);
+    let prev = Buffer.alloc(stride);
+
+    // Unfiltering. Each scanline is preceded by a filter byte and is decoded
+    // against the pixel to its left (a), the one above (b) and the one above
+    // left (c) — all of them already-decoded bytes, which is why this runs in
+    // place and in order.
+    for (let y = 0; y < height; y++) {
+        const rowStart = y * (stride + 1);
+        const filter = raw[rowStart];
+        const line = raw.subarray(rowStart + 1, rowStart + 1 + stride);
+        const cur = out.subarray(y * stride, (y + 1) * stride);
+        for (let i = 0; i < stride; i++) {
+            const a = i >= channels ? cur[i - channels] : 0;
+            const b = prev[i];
+            const c = i >= channels ? prev[i - channels] : 0;
+            let v = line[i];
+            switch (filter) {
+                case 0: break;
+                case 1: v += a; break;
+                case 2: v += b; break;
+                case 3: v += (a + b) >> 1; break;
+                case 4: {
+                    // Paeth: whichever of a, b, c the linear predictor a+b-c
+                    // is closest to, ties going to a then b.
+                    const p = a + b - c;
+                    const pa = Math.abs(p - a), pb = Math.abs(p - b), pc = Math.abs(p - c);
+                    v += (pa <= pb && pa <= pc) ? a : (pb <= pc ? b : c);
+                    break;
+                }
+                default: throw new Error(`PNG scanline filter ${filter}`);
+            }
+            cur[i] = v & 0xff;
+        }
+        prev = cur;
+    }
+    return { width, height, channels, data: out };
+}
+
+const hex2 = (n) => n.toString(16).padStart(2, "0").toUpperCase();
+
+// The colour at one pixel, as "#RRGGBB", or null outside the image.
+//
+// Greyscale images are expanded to three equal channels rather than refused:
+// a screenshot of black-and-white swatches is a legitimate thing for Chrome to
+// hand back, and every colour this check compares against is spelled in six
+// digits.
+function pixelAt(img, x, y) {
+    x = Math.round(x);
+    y = Math.round(y);
+    if (x < 0 || y < 0 || x >= img.width || y >= img.height) return null;
+    const i = (y * img.width + x) * img.channels;
+    const d = img.data;
+    if (img.channels <= 2) return `#${hex2(d[i])}${hex2(d[i])}${hex2(d[i])}`;
+    return `#${hex2(d[i])}${hex2(d[i + 1])}${hex2(d[i + 2])}`;
+}
 
 // --------------------------------------------------------------------------
 // CDP
@@ -262,6 +382,69 @@ const BUTTONS = {
     ],
 };
 
+// A grid of palette swatches, one per row of palette.mjs.
+//
+// # The shape of a swatch, and why it has two boxes
+//
+//	┌─ outer: 120x52, filled with the backdrop ─┐
+//	│                                           │   the fill sample is taken
+//	│    ┌─ inner: 80x24, same fill, 1px ─┐     │   here, clear of the inner
+//	│    │  border in the ControlBorder   │     │   box
+//	│    └────────────────────────────────┘     │
+//	└───────────────────────────────────────────┘
+//
+// The inner box is filled with the *same* colour as the outer one, so the
+// border has the backdrop on both sides — which is what the census's number is
+// about. It is 1px because that is what core.Theme's Input and TextArea
+// frames are.
+//
+// What the border sample catches is a *blended* edge rather than a thin one.
+// A border drawn in a translucent colour, or composited under an opacity, or
+// dropped entirely by a guard, leaves no pixel that is the tone — and the
+// contrast a reader gets is then not the contrast the census computed. A
+// border declared narrower than a device pixel is a different story: Chrome
+// snaps a solid sub-pixel border up to one full-strength pixel at dpr 1, so
+// that mutation changes no pixel and this check correctly reports nothing.
+//
+// A `role` row has no backdrop, so its swatch is the tone alone and only the
+// centre is sampled. It is what makes the tone's own hex a measured fact
+// rather than something inferred from a border that happened to look right.
+const SWATCHES_PER_ROW = 6;
+
+const SWATCHES = {
+    Type: "Column",
+    Style: { Padding: { Top: 0, Right: 0, Bottom: 0, Left: 0 }, Gap: 0 },
+    Children: Array.from(
+        { length: Math.ceil(PALETTES.length / SWATCHES_PER_ROW) },
+        (_, r) => ({
+            Type: "Row",
+            Style: { Padding: { Top: 0, Right: 0, Bottom: 0, Left: 0 }, Gap: 0 },
+            Children: PALETTES
+                .slice(r * SWATCHES_PER_ROW, (r + 1) * SWATCHES_PER_ROW)
+                .map((p) => ({
+                    Type: "Box",
+                    Style: { Width: "120px", Height: "52px", Background: p.hex },
+                    Children: p.kind === "role" ? [] : [{
+                        Type: "Box",
+                        Style: {
+                            Width: "80px", Height: "24px",
+                            Margin: { Top: 14, Right: 20, Bottom: 14, Left: 20 },
+                            Background: p.hex,
+                            BorderColor: PALETTES.find(
+                                (q) => q.theme === p.theme && q.kind === "role").hex,
+                            BorderWidth: 1,
+                        },
+                    }],
+                })),
+        })),
+};
+
+// Where swatch i sits in the mounted tree. The runtime stamps every element
+// with its path, so the coordinates come from the browser's own layout rather
+// than from this file guessing at one.
+const swatchPath = (i) =>
+    `root/${Math.floor(i / SWATCHES_PER_ROW)}/${i % SWATCHES_PER_ROW}`;
+
 // --------------------------------------------------------------------------
 // The checks
 // --------------------------------------------------------------------------
@@ -310,6 +493,12 @@ async function main() {
         // the document, and a headless default that changed would change what
         // the check means.
         "--window-size=800,600",
+        // The palette check reads hexes back out of a screenshot, so the
+        // browser must not colour-manage them into something else, and a
+        // scrollbar must not shift the swatches under the coordinates the
+        // page reported for them.
+        "--force-color-profile=srgb",
+        "--hide-scrollbars",
         "about:blank",
     ], { stdio: ["ignore", "ignore", "ignore"] });
 
@@ -527,6 +716,98 @@ async function main() {
                 `the chips Tab no longer reaches are not reachable at all, which is ` +
                 `strictly worse than the three tab stops this replaced`);
         }
+
+        // ------------------------------------------------------------------
+        // 5. the palette reaches the screen
+        // ------------------------------------------------------------------
+        // components/variant_test.go crosses every theme's ControlBorder with
+        // every fill a control can be drawn on and checks the pair against
+        // WCAG 1.4.11's 3:1 floor. All of that is arithmetic over hex strings:
+        // it proves #89898E is 3.12:1 on #F2F2F7 and it cannot prove either
+        // colour ever reaches a screen. Everything in between — the runtime's
+        // style mapping, CSS shorthand parsing, an alpha channel, a colour
+        // profile, a hairline antialiased into a tint — is invisible to Go,
+        // and every one of them leaves the number true and the control
+        // unreadable.
+        //
+        // So the pairs are painted and the pixels are read back. What is
+        // asserted is equality with the hex, not a ratio: the ratio came from
+        // Go with the table (see palette.mjs) and recomputing it here would be
+        // a second WCAG implementation, which is the one thing a contrast
+        // floor cannot survive. A pixel that is the stated colour makes the
+        // census's number true of something; a pixel that is not makes it a
+        // fact about nothing, and the failure says which.
+        await mount(SWATCHES);
+
+        const dpr = await evaluate(`window.devicePixelRatio`);
+        // The coordinates come from the browser's own layout rather than
+        // from arithmetic here: a swatch is 120x52 by declaration, and where
+        // it lands depends on the body margin, the sentinel button above it
+        // and whatever the runtime's own flex defaults do.
+        const swatchPaths = PALETTES.map((_, i) => swatchPath(i));
+        const boxes = await evaluate(`${JSON.stringify(swatchPaths)}.map((p) => {
+            const at = (path) => {
+                const el = document.querySelector('[data-node-path="' + path + '"]');
+                if (!el) return null;
+                const r = el.getBoundingClientRect();
+                return { x: r.left, y: r.top, w: r.width, h: r.height };
+            };
+            return { outer: at(p), inner: at(p + "/0") };
+        })`);
+
+        const shot = await session.send("Page.captureScreenshot",
+            { format: "png", captureBeyondViewport: false });
+        const img = decodePNG(Buffer.from(shot.data, "base64"));
+
+        for (let i = 0; i < PALETTES.length; i++) {
+            const p = PALETTES[i];
+            const box = boxes[i];
+            const where = `${p.theme}/${p.what}`;
+            if (!box || !box.outer || box.outer.w === 0) {
+                problems.push(`${where}: the swatch was not laid out — the palette ` +
+                    `check measured nothing for this pair`);
+                continue;
+            }
+
+            // The fill, sampled inside the outer box and clear of the inner
+            // one, which starts 20px in.
+            const o = box.outer;
+            const fill = pixelAt(img, (o.x + 6) * dpr, (o.y + 6) * dpr);
+            if (fill !== p.hex) {
+                problems.push(`${where}: the fill painted as ${fill}, not ${p.hex} — ` +
+                    (p.kind === "role"
+                        ? `every ratio the census records for ${p.theme} is about a ` +
+                          `tone the browser does not produce`
+                        : `the ${p.ratio.toFixed(2)}:1 the census records against this ` +
+                          `backdrop is a fact about a colour nothing painted`));
+                continue;
+            }
+            if (p.kind === "role") continue;
+
+            // The hairline, scanned across the inner box's left edge at its
+            // vertical middle. A window of three pixels rather than one
+            // because the rect's left edge is a float and a border straddles
+            // the rounding; what is being asserted is that a *fully
+            // saturated* border pixel exists at all, which is exactly what a
+            // sub-pixel or blended edge would not have.
+            const b = box.inner;
+            const y = (b.y + b.h / 2) * dpr;
+            const tone = PALETTES.find(
+                (q) => q.theme === p.theme && q.kind === "role").hex;
+            let found = null;
+            const seen = [];
+            for (let dx = -1; dx <= 1; dx++) {
+                const got = pixelAt(img, b.x * dpr + dx, y);
+                seen.push(got);
+                if (got === tone) found = got;
+            }
+            if (!found) {
+                problems.push(`${where}: the 1px frame in ${tone} painted as ` +
+                    `${seen.join("/")} — a boundary blended into its backdrop is not ` +
+                    `the ${p.ratio.toFixed(2)}:1 the census measured, and no Go test ` +
+                    `can see the difference`);
+            }
+        }
     } finally {
         if (session) session.close();
         chrome.kill();
@@ -538,7 +819,9 @@ async function main() {
         for (const p of problems) console.error(`  ${p}`);
         process.exit(1);
     }
-    console.log("OK: roving tabindex, disabled focus, ArrowDown and the toolbar walk\n    hold in a real browser");
+    console.log(`OK: roving tabindex, disabled focus, ArrowDown and the toolbar walk
+    hold in a real browser, and ${PALETTES.length} palette swatches paint the
+    hexes the contrast census measures`);
 }
 
 await main();

@@ -890,3 +890,264 @@ func TestTheTableDescribesTheShapesItUsedToRefuse(t *testing.T) {
 		}
 	}
 }
+
+// --- The stub's own doc comment --------------------------------------------
+
+// stubRules cuts the checked block out of gomobile_stub.swift's header
+// comment: the lines between the two markers, with the comment prefix and the
+// leading tab stripped.
+//
+// Anchored on both markers rather than on the first alone, because the failure
+// of an unanchored cut is a block that silently grows: a marker somebody moved
+// would take the rest of the file with it, and every row after the real end
+// would be reported as malformed rather than as missing.
+var stubRulesBlock = regexp.MustCompile(
+	`(?s)//\t--- checked against mobile/verify/gomobilestub_test\.go ---\n(.*?)//\t--- end ---`)
+
+// stubRule is one row of that block: a tag and the fields after it.
+type stubRule struct {
+	tag    string
+	fields []string
+	line   string // as written, for a failure to quote
+}
+
+func stubRules(t *testing.T, src string) []stubRule {
+	t.Helper()
+
+	m := stubRulesBlock.FindStringSubmatch(src)
+	if m == nil {
+		t.Fatalf("%s: the header comment has no checked block. It is the half of that "+
+			"comment that is held to this file rather than believed; if it was "+
+			"deliberately removed, delete the tests below with it rather than "+
+			"leaving them matching nothing", gomobileStub)
+	}
+	var out []stubRule
+	for _, raw := range strings.Split(m[1], "\n") {
+		line := strings.TrimPrefix(raw, "//")
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		fields := strings.Fields(line)
+		out = append(out, stubRule{tag: fields[0], fields: fields[1:], line: line})
+	}
+	return out
+}
+
+// The stub's header comment states the checker's own rules, and every row of
+// it is held to the code that implements them.
+//
+// # Why the comment is a test subject at all
+//
+// The declarations in gomobile_stub.swift are pinned character-for-character
+// by the two tests above. The comment over them was not: it is a hand-written
+// description of gobind's naming, its nullability asymmetry and its three
+// result arms, and it agreed with gobindSwiftTypes, swiftType and swiftResult
+// on the day it was written because it was written from them.
+//
+// That is exactly the shape this whole file exists to refuse one level up. A
+// copy of generated behaviour drifts, the drift is silent, and the reader who
+// most needs the comment — someone adding a bridge function of a shape nothing
+// has used yet — is the one who cannot tell that it has stopped being true.
+// The signature checker would still fail them, eventually, in a message about
+// a declaration rather than about the rule they had just read.
+//
+// So the load-bearing half of the comment is written as rows, and this is what
+// reads them. Every row is compared against the thing it describes rather than
+// against a second copy here: the version against go.mod's, the names against
+// the constants the checker builds names from, the type rows against swiftType
+// itself, and the result rows against what swiftResult does when handed a
+// signature of that shape.
+//
+// The prose around the rows is not checked and is not meant to be. A paragraph
+// that explains *why* nullability is asymmetric cannot be wrong in the way a
+// row saying `string String? String` can.
+func TestTheStubsHeaderStatesTheRulesTheCheckerUses(t *testing.T) {
+	src := readNative(t, gomobileStub)
+	ifaces := interfaceSet(t)
+
+	// Every tag the block may carry, and how many rows of it must be present.
+	// Counting is what catches a row that was *deleted*: each check below
+	// verifies the rows it finds, and a rule quietly dropped from the comment
+	// would otherwise be verified by nothing.
+	seen := map[string]int{}
+
+	for _, r := range stubRules(t, src) {
+		seen[r.tag]++
+		switch r.tag {
+		case "gobind":
+			if len(r.fields) != 1 || r.fields[0] != gobindVersion {
+				t.Errorf("%s: the header pins gobind %q, but the readings in this file "+
+					"were made against %s. Re-read bind/genobjc.go against the new "+
+					"version, or the comment is describing a generator nobody used",
+					gomobileStub, r.line, gobindVersion)
+			}
+		case "prefix":
+			if len(r.fields) != 1 || r.fields[0] != gobindPrefix {
+				t.Errorf("%s: the header says the symbol prefix is %q; the checker "+
+					"builds every name with %q", gomobileStub, r.line, gobindPrefix)
+			}
+		case "suffix":
+			// Derived from a real interface rather than from a constant,
+			// because there is no constant: the suffix is spelled inline
+			// where the protocol names are built, and reading it back out of
+			// one is what holds the comment to that spelling.
+			name := sortedNamesOf(ifaces)[0]
+			spelled, err := swiftType(&ast.Ident{Name: name}, ifaces, false)
+			if err != nil {
+				t.Fatalf("swiftType refused a bound interface: %v", err)
+			}
+			want := strings.TrimSuffix(strings.TrimPrefix(spelled, gobindPrefix+name), "?")
+			if len(r.fields) != 1 || r.fields[0] != want {
+				t.Errorf("%s: the header says a bound interface is suffixed %q; the "+
+					"checker spells one %s, which is a %q suffix",
+					gomobileStub, r.line, spelled, want)
+			}
+		case "type":
+			checkStubTypeRule(t, r, ifaces)
+		case "results":
+			checkStubResultRule(t, r, ifaces)
+		default:
+			t.Errorf("%s: the checked block carries a row this test does not know how "+
+				"to hold to anything: %q. An unrecognised tag is a claim nothing "+
+				"verifies, which is what the block exists to stop",
+				gomobileStub, r.line)
+		}
+	}
+
+	// One row per scalar fact, one type row per row of gobindSwiftTypes plus
+	// the interface rule, and one result row per arm swiftResult distinguishes.
+	for tag, want := range map[string]int{
+		"gobind":  1,
+		"prefix":  1,
+		"suffix":  1,
+		"type":    len(gobindSwiftTypes) + 1,
+		"results": 4,
+	} {
+		if seen[tag] != want {
+			t.Errorf("%s: the checked block has %d %q rows, want %d — a rule dropped "+
+				"from the comment is verified by nothing, which is how the comment "+
+				"drifted the first time", gomobileStub, seen[tag], tag, want)
+		}
+	}
+}
+
+// One `type` row: a Go spelling and its parameter and result spellings, held
+// to swiftType.
+//
+// The interface row is written with placeholders — `<interface>` standing for
+// any bound interface and `<Name>` for its name — and is checked by asking
+// swiftType about an interface literally called `<Name>`. That is not a trick:
+// the spelling is a pure function of the name, so substituting the placeholder
+// *is* the general case, and a row written with a real interface's name would
+// go stale the day that interface was renamed.
+func checkStubTypeRule(t *testing.T, r stubRule, ifaces map[string]bool) {
+	t.Helper()
+
+	if len(r.fields) != 3 {
+		t.Errorf("%s: type row %q has %d fields, want 3 (Go type, parameter, result)",
+			gomobileStub, r.line, len(r.fields))
+		return
+	}
+	goType, wantParam, wantResult := r.fields[0], r.fields[1], r.fields[2]
+
+	set := ifaces
+	name := goType
+	if goType == "<interface>" {
+		name = "<Name>"
+		set = map[string]bool{name: true}
+	} else if _, ok := gobindSwiftTypes[goType]; !ok {
+		t.Errorf("%s: type row %q names %q, which has no row in gobindSwiftTypes and "+
+			"is not the interface rule — the comment describes a mapping the "+
+			"checker does not have", gomobileStub, r.line, goType)
+		return
+	}
+
+	for _, c := range []struct {
+		isResult bool
+		want     string
+	}{{false, wantParam}, {true, wantResult}} {
+		got, err := swiftType(&ast.Ident{Name: name}, set, c.isResult)
+		if err != nil {
+			t.Errorf("%s: type row %q: swiftType refused %s: %v",
+				gomobileStub, r.line, goType, err)
+			continue
+		}
+		if got != c.want {
+			position := "parameter"
+			if c.isResult {
+				position = "result"
+			}
+			t.Errorf("%s: the header says a Go %s is %q in %s position; the checker "+
+				"spells it %q. The stub's declarations follow the checker, so the "+
+				"comment is describing a file that no longer looks like this",
+				gomobileStub, goType, c.want, position, got)
+		}
+	}
+}
+
+// One `results` row: a result count and what gobind does with it.
+//
+// "bound" rows must produce a return clause and refuse nothing; "refused: X"
+// rows must be refused with a message containing X. Comparing against the
+// message rather than against a second copy of the rule is the point — the
+// refusal text is where swiftResult states which of gobind's three arms it is
+// reporting, and a row that stopped matching it would be a comment pointing a
+// reader at the wrong arm.
+func checkStubResultRule(t *testing.T, r stubRule, ifaces map[string]bool) {
+	t.Helper()
+
+	if len(r.fields) < 2 {
+		t.Errorf("%s: results row %q has nothing after the count", gomobileStub, r.line)
+		return
+	}
+	// The signature this row is about, built to have exactly that many
+	// results. The types do not matter beyond being bindable — what
+	// swiftResult branches on is the count, and (for two) the pair shape.
+	var sig string
+	switch r.fields[0] {
+	case "0":
+		sig = "func()"
+	case "1":
+		sig = "func() string"
+	case "2":
+		sig = "func() (string, error)"
+	case "3":
+		sig = "func() (string, int, error)"
+	default:
+		t.Errorf("%s: results row %q counts %q, which this test has no signature for",
+			gomobileStub, r.line, r.fields[0])
+		return
+	}
+	expr, err := parser.ParseExpr(sig)
+	if err != nil {
+		t.Fatalf("parsing %q: %v", sig, err)
+	}
+	got, err := swiftResult(expr.(*ast.FuncType), ifaces)
+
+	rest := strings.Join(r.fields[1:], " ")
+	phrase, refused := strings.CutPrefix(rest, "refused:")
+	phrase = strings.TrimSpace(phrase)
+
+	if !refused {
+		if err != nil {
+			t.Errorf("%s: the header says %s results are %q, but swiftResult refuses "+
+				"that shape: %v", gomobileStub, r.fields[0], rest, err)
+		}
+		if r.fields[0] == "1" && got == "" {
+			t.Errorf("%s: the header says a single result is %q, and swiftResult "+
+				"produced no return clause", gomobileStub, rest)
+		}
+		return
+	}
+	if err == nil {
+		t.Errorf("%s: the header says %s results are refused, and swiftResult bound "+
+			"them as %q", gomobileStub, r.fields[0], got)
+		return
+	}
+	if !strings.Contains(err.Error(), phrase) {
+		t.Errorf("%s: the header says %s results are refused because %q; swiftResult "+
+			"says %q. The comment sends a reader to the wrong one of gobind's three "+
+			"result arms", gomobileStub, r.fields[0], phrase, err)
+	}
+}

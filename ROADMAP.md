@@ -795,7 +795,7 @@
       the compiler jars the gradle cache already holds, and skips when neither
       is there. The case table crosses as **Kotlin source**, not JSON: Kotlin's
       standard library has no JSON parser and neither does the JDK
-- [x] **`wasm/verify/browser.mjs`** — the three keyboard facts a shimmed DOM
+- [x] **`wasm/verify/browser.mjs`** — the keyboard facts a shimmed DOM
       cannot check, checked in a headless Chrome over the DevTools protocol
       with Node's built-in `WebSocket` (no npm, no network). That `tabindex="-1"`
       really removes a `<button>` from the tab order, that a disabled control
@@ -806,6 +806,45 @@
       `Input.dispatchKeyEvent`, so the tab order is walked by the browser's own
       focus algorithm and a scroll is a real scroll; the pass skips when there
       is no Chrome to launch
+- [x] **The palette on a screenshot** (`wasm/verify/palette.mjs`,
+      `wasm/verify/browser.mjs`) — the fifth browser check, and the first that
+      is not about the keyboard. `ControlBorder` has WCAG 1.4.11's 3:1 floor
+      under it and the census in `components/variant_test.go` measures every
+      pair as arithmetic over hex strings — which proves the number and cannot
+      prove either colour reaches a screen. Two retints and a third palette
+      later, nothing had ever looked. Now one swatch per pair is painted,
+      screenshotted, decoded (an eighty-line PNG reader on `node:zlib`, because
+      `run.sh` promises Go and Node and nothing else) and compared **as a hex**
+      — the ratio travels with the table from Go, since a second WCAG
+      implementation is what a contrast floor least survives. The table is
+      pinned to `core.BundledThemes()` in both directions
+- [x] **The boundary census derives its backdrops** (`internal/palette`) — the
+      list of fills a control can be drawn on was five names and one exclusion,
+      and the set is a consequence of `core.ComponentDefaults` rather than a
+      decision: a new field carrying a `Background` was a pair nothing would
+      measure. Reflected over the struct now, with `Camera` and `Button` kept
+      out as data carrying their arguments. Deriving it found two pairs the
+      hand-written list had never measured
+- [x] **The gomobile stub's header comment is checked**
+      (`ios/verify/gomobile_stub.swift`) — the declarations were pinned
+      character-for-character and the comment describing the rules that pinned
+      them was prose. The load-bearing half is rows in a delimited block now,
+      and `gomobilestub_test.go` holds each to what it describes: the version
+      to `go.mod`, the names to the checker's own, each type row to
+      `swiftType`, each result row to what `swiftResult` does with that shape
+- [x] **A band's insets are its tap target** (`components.bandInsets`,
+      `GroupHeader.ControlStyle`, `CollapseBand.ControlStyle`) — the chrome was
+      padding on the row that held the button, so a press in the 16px before
+      the chevron did nothing. It is padding on the control now: identical
+      pixels, a different node. The row keeps its fill, its centering,
+      `StickyHeader` and the badge's own trailing inset, which is the one past
+      the control's edge
+- [x] **A shut trailing group withholds `OnEndReached`** (`components.GroupedList`)
+      — an append pager extends the last run and a shut run emits nothing, so a
+      page fetched into a collapsed bottom group landed nowhere and closed the
+      guard behind it: one page spent, every fire after it refused, the feed
+      reading as exhausted. Withheld while that group is shut, restored when it
+      opens; the `Footer` stays as the deliberate way to ask
 - [x] **The rule for a second totality exemption** (`wasm/verify/totality_test.mjs`)
       — `styleFromGrMob` deletes a `Modal`'s `display` rather than assigning
       it, because the `visible` prop owns that property, and "abstain by

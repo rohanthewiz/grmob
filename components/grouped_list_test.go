@@ -350,6 +350,139 @@ func TestGroupedListWithoutOnEndReachedCarriesNoProp(t *testing.T) {
 	}
 }
 
+// A shut trailing group withholds the edge sensor, and opening it gives it
+// back.
+//
+// # What the failure looks like without this
+//
+// An append pager extends the last run and a shut run emits nothing, so a page
+// that lands in a collapsed trailing group is invisible. core.OnEndReached
+// then refuses to fire again — its guard is the List's child count, which a
+// hidden page does not move — so the *first* auto-load spends a page and every
+// one after it is swallowed. The feed reads as exhausted while the pager's
+// offset has quietly moved on.
+//
+// So the prop is withheld rather than left to starve, and the Footer stays as
+// the deliberate way to ask.
+func TestGroupedListWithholdsTheEdgeWhileTheLastRunIsShut(t *testing.T) {
+	rows := []string{"jan-1", "jan-2", "feb-1"}
+	byMonth := func(s string) Group {
+		k := s[:3]
+		return Group{Key: k, Label: k}
+	}
+
+	render := func(shut map[string]bool) *core.Node {
+		ctx := core.NewContext()
+		ctx.BeginRenderPass()
+		return GroupedList[string]{
+			Items:        rows,
+			Key:          func(s string) string { return s },
+			Row:          func(s string) core.View { return core.Text(s) },
+			GroupBy:      byMonth,
+			OnEndReached: func() {},
+			Collapse: Collapse{
+				IsCollapsed: func(g Group) bool { return shut[g.Key] },
+				OnToggle:    func(Group) {},
+			},
+		}.Render(ctx)
+	}
+
+	if _, ok := render(map[string]bool{"feb": true}).Props["onEndReached"]; ok {
+		t.Error("the last group is shut and the list still advertises its edge — a " +
+			"page fetched now lands in a hidden run, and the guard then refuses " +
+			"every fire after it")
+	}
+	if _, ok := render(map[string]bool{}).Props["onEndReached"]; !ok {
+		t.Error("nothing is shut and the edge is gone — opening the run has to give " +
+			"the auto-load back, or a reader who collapses a group once loses " +
+			"infinite scrolling for the session")
+	}
+	// A shut group *above* the last one changes nothing: the pager was never
+	// going to extend it, so its rows being hidden is not the pager's problem.
+	if _, ok := render(map[string]bool{"jan": true}).Props["onEndReached"]; !ok {
+		t.Error("a shut group above the trailing one withheld the edge — the run a " +
+			"page lands in is open, so there is nothing to withhold")
+	}
+}
+
+// The three shapes that have nothing to withhold, each of which used to be the
+// only shape this list had.
+//
+// A flat feed has no runs, an empty one has no rows, and a zero Collapse hides
+// nothing — so all three keep the prop, and the feature costs a list that has
+// never heard of collapsing exactly nothing.
+func TestGroupedListKeepsTheEdgeWhenThereIsNothingToHide(t *testing.T) {
+	for _, c := range []struct {
+		name string
+		list GroupedList[string]
+	}{
+		{"flat", GroupedList[string]{Items: []string{"a", "b"}}},
+		{"empty", GroupedList[string]{
+			GroupBy: func(s string) Group { return Group{Key: s, Label: s} },
+			Collapse: Collapse{
+				IsCollapsed: func(Group) bool { return true },
+				OnToggle:    func(Group) {},
+			},
+		}},
+		{"no collapse", GroupedList[string]{
+			Items:   []string{"a", "b"},
+			GroupBy: func(s string) Group { return Group{Key: s, Label: s} },
+		}},
+		// A predicate with no handler hides nothing — Collapse.hides requires
+		// both halves, because a run withheld behind a band nobody can press
+		// is a feed that silently loses rows. The edge must follow the rows:
+		// they are all on screen, so the pager's next page has somewhere to
+		// land.
+		{"predicate with no handler", GroupedList[string]{
+			Items:    []string{"a", "b"},
+			GroupBy:  func(s string) Group { return Group{Key: s, Label: s} },
+			Collapse: Collapse{IsCollapsed: func(Group) bool { return true }},
+		}},
+	} {
+		ctx := core.NewContext()
+		ctx.BeginRenderPass()
+		list := c.list
+		list.Row = func(s string) core.View { return core.Text(s) }
+		list.OnEndReached = func() {}
+		if _, ok := list.Render(ctx).Props["onEndReached"]; !ok {
+			t.Errorf("%s: the edge was withheld from a list with nothing shut", c.name)
+		}
+	}
+}
+
+// trailingRun agrees with groupRuns about the last run.
+//
+// The widget asks its Collapse predicate about the group trailingRun returns,
+// and the band the reader presses is the one groupRuns produced. If the two
+// disagreed about the Label or the Count, a feed could withhold its edge for a
+// group whose band says it is open — and the two derivations are deliberately
+// different, because one is a full partition and the other is a walk back from
+// the end.
+func TestTrailingRunAgreesWithTheFullPartition(t *testing.T) {
+	byKey := func(s string) Group {
+		// Label deliberately varies within a key, which is the case the
+		// first-item rule is about.
+		return Group{Key: s[:1], Label: s}
+	}
+	for _, items := range [][]string{
+		{"a1"},
+		{"a1", "a2", "b1"},
+		{"a1", "b1", "b2", "b3"},
+		{"a1", "b1", "a2"}, // an unsorted input: the last run is one item
+	} {
+		runs := groupRuns(items, byKey)
+		want := runs[len(runs)-1].Group
+		got, ok := trailingRun(items, byKey)
+		if !ok {
+			t.Errorf("%v: trailingRun found nothing, groupRuns found %+v", items, want)
+			continue
+		}
+		if got != want {
+			t.Errorf("%v: trailingRun = %+v, groupRuns last = %+v", items, got, want)
+		}
+	}
+}
+
 // A band titles a run of rows, so its label is a heading — the thing a reader
 // navigating a long banded feed by heading moves between once the screen's own
 // title has scrolled away.

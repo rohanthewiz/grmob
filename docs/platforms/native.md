@@ -945,6 +945,19 @@ package `mobile`, in two directions and at two levels:
   a bindable function without adding it here fails `go test ./...`, and so does
   renaming one of its parameters.
 
+- **The header comment.** The declarations were pinned character-for-character
+  and the comment above them was a hand-written description of the rules doing
+  the pinning — the naming, the nullability asymmetry, gobind's three result
+  arms. It agreed with the checker because it was written from it, which is the
+  same copy-that-drifts this whole stand-in exists to refuse. So the
+  load-bearing half of it is now written as rows in a delimited block, and the
+  test reads them out of the comment and holds each to the thing it describes:
+  the version to `go.mod`, the prefix and suffix to the names the checker
+  builds, each type row to `swiftType`, each result row to what `swiftResult`
+  does with a signature of that shape. The prose around the rows is not checked
+  and is not meant to be — a paragraph explaining *why* nullability is
+  asymmetric cannot be wrong in the way `string String? String` can.
+
 The type mapping is three rows and a protocol rule (`gobindSwiftTypes`), which
 is all this bridge's narrow surface can need — a Go type outside it already
 stops the bind. It is split by position because gobind's nullability is not

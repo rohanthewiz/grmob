@@ -26,14 +26,18 @@ import (
 //
 // # Why these five
 //
-// The census is over widgets whose *root node* carries a non-zero inset
-// default, since those are the only ones where a caller's side prop has
-// anything to reach past. They divide into the two shapes that matter:
+// The census is over widgets carrying a non-zero inset default on the node a
+// caller's Style field reaches, since those are the only ones where a side
+// prop has anything to reach past. That is the root for four of the five and
+// the control for GroupHeader, whose insets moved inward so that the padding
+// and the tap target are the same rectangle. They divide into the two shapes
+// that matter:
 //
 //	explicit sides       Card (padding and margin), ListRow
 //	                     the caller's assignment is the whole of it
 //
-//	a live shorthand     GroupHeader, SearchField, Separator
+//	a live shorthand     GroupHeader (on its control, not its root — see
+//	                     controlPadding), SearchField, Separator
 //	                     the widget's default arrives as EdgeInsets.Horizontal
 //	                     or .Vertical, which every renderer resolves into any
 //	                     side left at zero — so a side prop that only assigned
@@ -59,6 +63,25 @@ func TestACallerStylePropOutranksAWidgetsOwnInsets(t *testing.T) {
 	padding := func(n *core.Node) core.EdgeInsets { return n.Style.Padding }
 	margin := func(n *core.Node) core.EdgeInsets { return n.Style.Margin }
 
+	// A band's insets are not on its root: they are on the control inside it,
+	// which is the whole of components.bandInsets' argument — padding on the
+	// row that holds a button is a place a press does nothing. So the two
+	// GroupHeader cases read one node in, through the field that reaches it.
+	//
+	// findFirst rather than a fixed path: the disclosure shape is a heading
+	// wrapping the button, and which of those two carries the padding is
+	// exactly the kind of detail this test must not restate.
+	controlPadding := func(n *core.Node) core.EdgeInsets {
+		c := findFirst(n, func(c *core.Node) bool {
+			return c.Style != nil && c.Style.AccessibilityRole == core.RoleButton
+		})
+		if c == nil {
+			t.Fatalf("no control in the band — GroupHeader stopped building a "+
+				"disclosure, and these cases are reading the wrong node (%+v)", n)
+		}
+		return c.Style.Padding
+	}
+
 	cases := []struct {
 		name string
 		// The same widget twice: without a caller Style, and with one whose
@@ -74,22 +97,32 @@ func TestACallerStylePropOutranksAWidgetsOwnInsets(t *testing.T) {
 	}{
 		{
 			// The band's own PaddingHorizontal(Spacing.MD), which arrives as
-			// a live shorthand. A caller indenting a nested band's label
-			// wants the left gap gone and the right one kept.
-			name: "GroupHeader padding, horizontal shorthand",
-			bare: GroupHeader{Group: Group{Key: "a", Label: "A", Count: 1}},
+			// a live shorthand on the control. A caller indenting a nested
+			// band's label wants the left gap gone and the right one kept.
+			//
+			// HideCount, because that is the band whose control has the
+			// shorthand alone: with a badge following, the widget's own
+			// PaddingRight(Spacing.SM) settles the axis before the caller
+			// gets to it, and the case would be an explicit-sides one that
+			// ListRow already covers.
+			name: "GroupHeader control padding, horizontal shorthand",
+			bare: GroupHeader{Group: Group{Key: "a", Label: "A", Count: 1},
+				HideCount: true, OnToggle: func() {}},
 			styled: GroupHeader{Group: Group{Key: "a", Label: "A", Count: 1},
-				Style: []core.StyleProp{core.PaddingLeft(0)}},
-			read: padding, clearedName: "Left", keptName: "Right",
+				HideCount: true, OnToggle: func() {},
+				ControlStyle: []core.StyleProp{core.PaddingLeft(0)}},
+			read: controlPadding, clearedName: "Left", keptName: "Right",
 			cleared: left, kept: right, axis: horizontal,
 		},
 		{
 			// The same widget's other axis, from PaddingVertical(Spacing.XS).
-			name: "GroupHeader padding, vertical shorthand",
-			bare: GroupHeader{Group: Group{Key: "a", Label: "A", Count: 1}},
+			name: "GroupHeader control padding, vertical shorthand",
+			bare: GroupHeader{Group: Group{Key: "a", Label: "A", Count: 1},
+				HideCount: true, OnToggle: func() {}},
 			styled: GroupHeader{Group: Group{Key: "a", Label: "A", Count: 1},
-				Style: []core.StyleProp{core.PaddingTop(0)}},
-			read: padding, clearedName: "Top", keptName: "Bottom",
+				HideCount: true, OnToggle: func() {},
+				ControlStyle: []core.StyleProp{core.PaddingTop(0)}},
+			read: controlPadding, clearedName: "Top", keptName: "Bottom",
 			cleared: top, kept: bottom, axis: vertical,
 		},
 		{

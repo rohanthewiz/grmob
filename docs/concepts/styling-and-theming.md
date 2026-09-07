@@ -1039,6 +1039,27 @@ Two distinctions the names do not make obvious:
   | `MaterialTheme` | 4.61:1 | 4.23:1 | 4.61:1 | 4.41:1 |
   | `AmberTheme` | 4.62:1 | 4.35:1 | 4.62:1 | 4.35:1 |
 
+  **The list of backdrops is derived, not remembered.** It used to be five
+  fills named by hand with `Camera` left out by name — every entry correct and
+  the shape wrong, because the set is a *consequence* of `ComponentDefaults`
+  rather than a decision. A new field carrying a `Background` (a `Sheet`, a
+  `Popover`) is a fill a control can sit on, and a hand-written list would
+  simply not have measured it. `internal/palette` reflects over the struct
+  instead, so adding a field adds a pair; the two components that are
+  deliberately not backdrops — `Camera`, whose fill is a viewfinder's black,
+  and `Button`, whose fill is a control's own — survive as data with the
+  argument attached, held to the struct by
+  `TestTheBackdropExclusionsNameRealFills`. Deriving the list found two pairs
+  the hand-written one had never measured (a `CheckBox` fill and a `Text`
+  fill); both clear.
+
+  **And the pairs are painted.** All of the above is arithmetic over hex
+  strings: it proves the number and cannot prove the colour ever reaches a
+  screen. `wasm/verify/browser.mjs` paints one swatch per pair in a real
+  headless Chrome, screenshots them and reads the pixels back, which is the
+  only place a translucent tone, a stray opacity or a dropped frame shows up.
+  See [the WASM harness](../platforms/wasm.md#the-palette-on-a-screenshot).
+
   **`DefaultTheme`'s tone is not Apple's `systemGray`, and this is the one
   value in that palette that leaves its published source.** `systemGray` is
   `#8E8E93`; it clears against the page at 3.26:1 and falls to 2.92:1 against
@@ -1051,7 +1072,7 @@ Two distinctions the names do not make obvious:
   it was not a better argument but a cheaper alternative. While the only way
   to evaluate a candidate tone was to go and find every fill a boundary lands
   on, defending the pair was less work than fixing it; once the census *is*
-  that list, "does this hex clear all four backdrops" is one test run, and
+  that list, "does this hex clear every backdrop" is one test run, and
   `#89898E` — five steps darker, indistinguishable by eye — clears them.
 
   The census outlives the shortfall it was built to record. Its
