@@ -131,6 +131,10 @@ async function devtoolsPort(profile) {
 }
 
 /** A single page target's CDP session, as a send(method, params) function. */
+// How long a DevTools call may take before the harness gives up on it. See
+// send.
+const CDP_TIMEOUT_MS = 15000;
+
 async function connect(wsURL) {
     const ws = new WebSocket(wsURL);
     await new Promise((resolve, reject) => {
@@ -156,10 +160,27 @@ async function connect(wsURL) {
     });
 
     return {
+        // Every round trip is bounded.
+        //
+        // A CDP call that never gets an answer is indistinguishable from one
+        // still in flight, so without this the harness's failure mode is a hang
+        // rather than a failure — and a hang is strictly worse: it is what a
+        // CI run does for its whole timeout instead of reporting in a minute.
+        // The number is generous next to a round trip that normally takes
+        // single-digit milliseconds; what it is sized against is a page that
+        // will never answer at all.
         send(method, params = {}) {
             const id = ++nextID;
             return new Promise((resolve, reject) => {
-                pending.set(id, { resolve, reject, method });
+                const timer = setTimeout(() => {
+                    pending.delete(id);
+                    reject(new Error(`${method}: no answer from the page in ${CDP_TIMEOUT_MS}ms`));
+                }, CDP_TIMEOUT_MS);
+                pending.set(id, {
+                    method,
+                    resolve: (v) => { clearTimeout(timer); resolve(v); },
+                    reject: (e) => { clearTimeout(timer); reject(e); },
+                });
                 ws.send(JSON.stringify({ id, method, params }));
             });
         },
@@ -203,6 +224,30 @@ const LISTBOX = {
             AccessibilitySelected: i === 0 ? "true" : "false",
         },
         Props: {},
+    })),
+};
+
+// A filter bar: a Row carrying role="toolbar" over three real <button> chips,
+// which is what components.ChipStrip renders and what a caller puts the role on.
+//
+// This is the fixture the tab-order claim needs a browser for, and it is a
+// stronger case than the tablist above. A tablist's members are <button
+// role="tab"> and their tab stops are governed by the same tabindex attribute;
+// what is new here is that the toolbar's members are not named by its role at
+// all — the runtime found them by walking for focusable controls — so this
+// check is the one that says the *walk* found the right three elements and not
+// merely that tabindex works.
+//
+// Deliberately no roles on the chips. A chip is a plain core.Button, so if
+// focusableMembers only recognised elements carrying a role it would find none
+// here and the strip would keep all three of its stops.
+const TOOLBAR = {
+    Type: "Row",
+    Style: { AccessibilityRole: "toolbar" },
+    Children: ["All", "Sermons", "Articles"].map((label, i) => ({
+        Type: "Button",
+        Style: {},
+        Props: { label, onClick: `cb_${i}` },
     })),
 };
 
@@ -314,8 +359,27 @@ async function main() {
             // particular lands after the event has been delivered — so a
             // single rAF reads the state before the thing being measured has
             // happened.
-            await evaluate(`new Promise((d) => setTimeout(
-                () => requestAnimationFrame(() => requestAnimationFrame(() => d(true))), 50))`);
+            //
+            // The wall-clock fallback beside it is not belt and braces. A key
+            // that changes NOTHING — no focus move, no scroll, no DOM edit —
+            // gives the browser no reason to paint, so requestAnimationFrame is
+            // never called back and a wait on it alone never returns. Which is
+            // precisely the case every check here is trying to detect: this
+            // harness asks "did the key do something", and waiting for a frame
+            // means waiting for the answer to be yes.
+            //
+            // That was not hypothetical. The toolbar check below hung for its
+            // whole timeout the first time its subject was broken, having
+            // passed every time its subject worked — a check that can only
+            // report success, which is the one result a check must not be able
+            // to guarantee itself. Resolving twice is harmless; the first
+            // settle wins.
+            await evaluate(`new Promise((d) => {
+                const done = () => d(true);
+                setTimeout(done, 400);
+                setTimeout(() => requestAnimationFrame(
+                    () => requestAnimationFrame(done)), 50);
+            })`);
         };
 
         // The element focus is on, described well enough to name in a failure.
@@ -414,6 +478,55 @@ async function main() {
             problems.push(`ArrowDown moved focus to ${state.focused}, want root/1 — the ` +
                 `listbox did not take the key at all, so nothing was prevented`);
         }
+        // ------------------------------------------------------------------
+        // 4. a toolbar of plain <button>s is one tab stop, and the arrows
+        //    reach the rest
+        // ------------------------------------------------------------------
+        // The claim the second member rule exists for, and the one the shim
+        // cannot make: there `tabindex` is a string nobody reads, so "the strip
+        // is one stop" restates the attribute the runtime just wrote. Here the
+        // tab order is walked by the browser's own focus algorithm, and a chip
+        // that was still in it lands between the strip and #after.
+        await mount(TOOLBAR);
+
+        const chipStops = await evaluate(
+            `[...document.getElementById("app").firstChild.children]
+                .map((c) => c.getAttribute("tabindex"))`);
+        if (String(chipStops) !== "0,-1,-1") {
+            problems.push(`the toolbar's roving tabindex is ${JSON.stringify(chipStops)}, ` +
+                `want ["0","-1","-1"] — focusableMembers did not find three plain ` +
+                `<button> chips, and the rest of this check measures something else`);
+        }
+
+        await evaluate(`document.getElementById("before").focus()`);
+        await key("Tab", 9);
+        const enteredBar = await focused();
+        if (!enteredBar.endsWith("(0)")) {
+            problems.push(`Tab entered the toolbar at ${enteredBar}, want the chip ` +
+                `holding tabindex="0"`);
+        }
+
+        await key("Tab", 9);
+        const leftBar = await focused();
+        if (leftBar !== "#after") {
+            problems.push(`a second Tab landed on ${leftBar}, want #after — a ` +
+                `twelve-chip filter bar is still twelve stops in the page's tab order, ` +
+                `which is the whole thing the toolbar keyboard was added to fix`);
+        }
+
+        // And the two chips Tab now skips are reachable by the arrows, which is
+        // the half that makes taking them out of the tab order legitimate.
+        await evaluate(`document.getElementById("before").focus()`);
+        await key("Tab", 9);
+        await key("ArrowRight", 39);
+        const arrowed = await focused();
+        await key("ArrowRight", 39);
+        const arrowedTwice = await focused();
+        if (arrowed === enteredBar || arrowedTwice === arrowed) {
+            problems.push(`ArrowRight left focus at ${arrowed} then ${arrowedTwice} — ` +
+                `the chips Tab no longer reaches are not reachable at all, which is ` +
+                `strictly worse than the three tab stops this replaced`);
+        }
     } finally {
         if (session) session.close();
         chrome.kill();
@@ -425,7 +538,7 @@ async function main() {
         for (const p of problems) console.error(`  ${p}`);
         process.exit(1);
     }
-    console.log("OK: roving tabindex, disabled focus and ArrowDown hold in a real browser");
+    console.log("OK: roving tabindex, disabled focus, ArrowDown and the toolbar walk\n    hold in a real browser");
 }
 
 await main();

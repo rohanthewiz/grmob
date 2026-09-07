@@ -790,6 +790,23 @@ private func grMobHeadingLevel(_ s: GrMobStyle) -> AccessibilityHeadingLevel {
 /// would silently turn every hand-built tab into a test handle and still
 /// announce nothing. mobile/verify/idref_test.go pins both halves.
 ///
+/// # AccessibilitySelectionFollowsFocus is not read here either
+///
+/// Go's flag says a composite widget should choose the member its arrow keys
+/// land on. It crosses the bridge and is deliberately unparsed, and the reason
+/// is the flat one: there are no arrow keys. VoiceOver crosses a collection by
+/// swipe, and a swipe moves the reader's cursor without moving focus at all —
+/// so "selection follows focus" describes a sequence that does not happen on
+/// this platform, rather than a behaviour SwiftUI spells differently.
+///
+/// The near miss is `.accessibilityRespondsToUserInteraction` or reaching for
+/// `AccessibilityFocusState`, and both would be wrong in the same way: they are
+/// about *whether* an element takes the reader's attention, where this is about
+/// what a widget does once the attention has already moved. Acting on the flag
+/// would mean firing the app's OnTap on every swipe past a row, which is a
+/// selection nobody asked for on the one platform where the user cannot see it
+/// coming. mobile/verify/followsfocus_test.go pins both halves.
+///
 /// # AccessibilityExpanded is not read here either, for a different reason
 ///
 /// Go's core.ExpandedState — whether a disclosure is open — crosses the bridge

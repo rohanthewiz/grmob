@@ -56,14 +56,24 @@ import (
 // vocabulary rather than from this table — see core/role.go — and a role that
 // does not exist needs no row here.
 //
-// `toolbar` is in the table and is *not* in the runtime's COMPOSITE_MEMBERS: it
-// takes the announcement and no keyboard. A toolbar's arrow-key pattern needs a
-// notion of which children are its controls, which ARIA leaves open (a toolbar
-// may hold buttons, groups, separators and inputs), where the two composite
-// pairs name their members in the role itself. components.ChipStrip is the one
-// toolbar here, it is a Row, and horizontal is what it announces either way —
-// so the row costs nothing today and is right for the vertical strip that
-// eventually asks.
+// `toolbar` is in the table and is not in the runtime's COMPOSITE_MEMBERS,
+// which for two releases meant it took the announcement and no keyboard: a
+// toolbar's arrow-key pattern needs a notion of which children are its
+// controls, and ARIA leaves that open — a toolbar may hold buttons, groups,
+// separators and inputs — where the two composite pairs name their members in
+// the role itself.
+//
+// The runtime has a second member rule now (COMPOSITE_FOCUSABLE and
+// focusableMembers in grmob-runtime.js), so what this row supplies is read at
+// both ends: a toolbar announces its axis here and the arrows follow that same
+// axis there. Nothing in this file changed for it, which is the argument for
+// the row having been written before the keyboard existed —
+// components.ChipStrip is a Row and horizontal was right either way.
+//
+// htmlout still writes no tabindex for a toolbar, on the rule that applies to
+// all three composites: a roving tabindex with no key handler to move it takes
+// every member but one out of the tab order and reaches none of them. See
+// wasm/verify/keynav_test.go.
 var ariaOrientations = map[string]string{
 	string(core.RoleListBox): "vertical",
 	string(core.RoleTabList): "horizontal",

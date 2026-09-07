@@ -13,6 +13,31 @@ defer core.SetDebugMode(false)
 The flag is process-wide and **zero-cost when off** — every check site guards
 with a single atomic load.
 
+That claim used to be unfalsifiable, and it is worth saying why. `upsertConcern`
+carries its own `IsDebugMode` test as a backstop, so deleting the guard at *any*
+of the three check sites leaves the behaviour identical: nothing is recorded,
+`Concerns()` stays empty, and every behavioural test goes on passing. What the
+guards buy is not silence, it is cost — and nothing measured it.
+
+`core/debug_cost_test.go` does, with `testing.AllocsPerRun`, which is the
+assertable form of the measurement (a benchmark reports a number and passes
+whatever the number is). With debug mode off:
+
+| check site | allocations |
+|---|---|
+| `core.AuditTree` — the accessibility and placement walk | **0** off, ~290 on for a 40-row tree |
+| `ctx.EndRenderPass()` — the hook-cursor audit | **0** off, 3 on |
+| the duplicate-key check inside `renderAll` | the guard saves exactly the check's own allocations |
+
+The third is a difference rather than an absolute, because the guard is at the
+call site and `renderAll` allocates on every path — building the child slice is
+its job. Each pair asserts the *on* side too: an assertion that a guarded call
+allocates nothing is vacuous if the thing behind the guard allocates nothing
+either, and would go on passing after the work it guards was deleted.
+
+`go test ./core/ -run=NONE -bench=DebugMode -benchmem` gives the wall-clock
+numbers when those are what is wanted.
+
 ## Concerns
 
 Findings are recorded as **concerns**, deduplicated by kind + detail with a

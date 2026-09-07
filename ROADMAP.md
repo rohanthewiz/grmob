@@ -184,6 +184,61 @@
       are exactly what a screen reader cannot convey (tutorial lesson 4.10)
 
 ### 🧬 Extensions
+- [x] **The ARIA fixture is generated** — `aria/verify/testdata/aria.json` is
+      produced by `aria/gen` from the W3C specification's own machine-readable
+      role definitions (`aria/spec` reads `bind`-shaped feature cells out of the
+      published HTML with no dependency). It was hand-transcribed for two
+      sessions and `doc.go` said at the time that a transcription can be wrong
+      in exactly the way the prose it replaces could be wrong. It was, in four
+      places — `list` requiring `group`, implicit orientations on `radiogroup`
+      and `treegrid` that ARIA 1.2 does not state, and `term`/`time` listed as
+      name-prohibited — and all four sat in near-miss rows, the entries that
+      exist so a guard has something to argue with and are therefore the ones
+      least likely to be argued with. `sh aria/fetch.sh` is the one thing here
+      that touches the network and nothing on a verification path depends on it:
+      the fixture is committed and the test that holds it to the spec skips
+      when no download is present
+- [x] **A toolbar has a keyboard** — the third composite, and the first whose
+      members ARIA does not name. `COMPOSITE_MEMBERS` maps a container role to a
+      member role, which is the whole rule for a listbox and a tablist and no
+      rule at all for a toolbar; the runtime has a second one now
+      (`COMPOSITE_FOCUSABLE`, `focusableMembers`): every focusable control not
+      inside a nested composite. `components.ChipStrip` is a `Row` of
+      `core.Button`s, so a twelve-chip filter bar was twelve stops in the page's
+      tab order where ARIA promises one. A nested composite stops the walk and
+      keeps its own stop, which is two stops rather than one and is the honest
+      outcome of a rule that will not guess. Checked in a real Chrome
+      (`browser.mjs`), where the claim is that the *walk* found the right
+      elements rather than that `tabindex` works
+- [x] **Selection follows focus** —
+      `core.AccessibilitySelectionFollowsFocus()` on a composite container makes
+      an arrow, `Home`, `End` or a typeahead match invoke the member's own
+      `OnTap`, which is ARIA's recommendation for a tab strip over cheap panels
+      and its warning for anything expensive. The standing argument against it
+      was that the framework could not make the choice because `aria-selected`
+      is rendered from Go state; the premise was the wrong half, since `Enter`
+      on a member has reached Go since the day the pattern was written.
+      Web-only, unreachable from the patch pass (a selection fired there would
+      call into Go, produce a patch, and fire again)
+- [x] **`components.CollapseBand`** — the disclosure the default band builds, on
+      its own, for a `GroupedList` `Header` override. `Collapse` reaches past an
+      override for the row emission and stops at it for the control, which left
+      the override author rebuilding a button, an `aria-expanded` and a heading
+      wrapper from an argument that lives in an unexported type
+- [x] **The three debug guards are measured** — each `IsDebugMode` guard is
+      unobservable (`upsertConcern` has its own backstop), so what they buy is
+      cost and nothing measured it. `testing.AllocsPerRun` is the assertable
+      form: `AuditTree` and `EndRenderPass` allocate exactly zero with debug
+      mode off, and `renderAll`'s guard saves exactly the duplicate-key check's
+      own allocations
+- [x] **The gobind type table reads gobind** — `gobindSwiftTypes` and the two
+      refusals beside it are read off `bind/genobjc.go` at the version `go.mod`
+      pins, rather than off a header a `gomobile bind` once produced. A returned
+      bound interface is no longer refused (`objcParamType` special-cases
+      `String` alone, so a protocol is `_Nullable` in both positions), and the
+      multi-result refusal now names which of gobind's three arms applies —
+      including that three or more results gobind refuses outright, which makes
+      it a Go signature to change rather than a row to add
 - [x] Animations & transitions (`Transition`, easing curves)
 - [x] `core.Rotate(deg)` — a paint transform on all four targets
       (`transform: rotate()`, `Modifier.rotate`, `.rotationEffect`), about the

@@ -261,7 +261,7 @@ transcripts against it, so the three targets stay in step.
 ```bash
 go test ./...            # the engine, the exporter and every source pin
 wasm/verify/run.sh       # the JS runtime, replayed — plus a headless-Chrome
-                         #   pass for the three keyboard facts a shimmed DOM
+                         #   pass for the four keyboard facts a shimmed DOM
                          #   cannot answer
 ios/verify/run.sh        # the Swift data layer, replayed and type-checked
 android/verify/run.sh    # the Kotlin decomposition, on a plain JVM
@@ -269,6 +269,21 @@ android/verify/run.sh    # the Kotlin decomposition, on a plain JVM
 
 None of them needs a simulator, a device, npm or the network; each skips
 rather than fails when the toolchain it wants is not installed.
+
+One optional step does use the network, and nothing above depends on it. The
+ARIA facts every accessibility guard is held to live in one generated fixture,
+`aria/verify/testdata/aria.json`, produced from the W3C specification's own
+machine-readable role definitions:
+
+```bash
+sh aria/fetch.sh         # the published spec — 1.4MB, deliberately not committed
+go run ./aria/gen        # -> aria/verify/testdata/aria.json
+```
+
+The fixture is committed, so `go test ./...` reads it and never fetches
+anything; the test that holds it to the specification skips when no download is
+present. Generating it the first time corrected four facts that had been
+hand-transcribed and that no test could contradict — see `aria/verify/doc.go`.
 
 ## 🏗 Building for Android and iOS
 

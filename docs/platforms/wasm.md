@@ -729,6 +729,83 @@ What the runtime does with that:
 | `Enter` / `Space` | runs the member's own `onClick` — but only for a member that is not already a control the browser activates for itself, since a `<button>` fires a real click on both keys and a synthesized one would run the handler twice |
 | anything else, `Tab` included | untouched. A listbox that swallowed `Tab` would trap a keyboard user inside it. |
 
+#### A toolbar, whose members no role names
+
+`toolbar` was in the orientation table and out of the keyboard for two releases:
+its axis was announced and no tab stop moved. The reason was real — ARIA calls a
+toolbar "a collection of commonly used function buttons or controls" and defines
+no `toolbaritem`, so unlike the two pairs above there is no role to look for.
+The cost was equally real: `components.ChipStrip` is a `Row` of `core.Button`s,
+so a twelve-chip filter bar was twelve stops in the page's tab order where ARIA
+promises one.
+
+The rule the absence forces is **every focusable control inside the container
+that is not inside a nested composite**, and "focusable control" is the two ways
+this framework builds one:
+
+| a member is | because |
+|---|---|
+| a `<button>`, `<a>`, `<input>`, `<select>` or `<textarea>` | the browser gives it a tab stop without being asked, which is the stop the toolbar is taking over |
+| a container carrying `role="button"` or `role="link"` *with* an `onClick` | that is the shape `core.RoleButton` exists for — a `Box` or `Row` with an `OnTap`, which has no tab stop of its own |
+
+Deliberately **not** "anything carrying `tabindex`": this section writes
+`tabindex` onto every member it finds, so a membership test that read the
+attribute would answer differently on the second sync than on the first.
+
+A nested composite stops the walk and does not become a member. The other walk
+descends *through* a composite of the other kind — an `option` below a `tablist`
+is still the listbox's option, because the roles say whose it is — and nothing
+says whose a `<button>` is. So a `tablist` inside a `toolbar` keeps its own
+roving `tabindex`: that shape is two tab stops rather than one, which is not what
+ARIA describes and is the honest outcome of a rule that will not guess. Every
+control stays reachable, which the alternatives lose.
+
+The two rules are two tables in `grmob-runtime.js` rather than one with a
+sentinel — `COMPOSITE_MEMBERS` is a fact about ARIA's vocabulary that
+`wasm/verify/keynav_test.go` pins against `core.Role`, and `COMPOSITE_FOCUSABLE`
+is a decision about a walk.
+
+#### Selection follows focus
+
+By default an arrow moves focus and chooses nothing, and the author's `onClick`
+runs on `Enter` or `Space`. That is the safe default: a hundred-option list whose
+selection fires a request must not fire a hundred because somebody held
+`ArrowDown`.
+
+ARIA's tabs pattern recommends the other behaviour outright — "tabs activate
+automatically when they receive focus as long as their associated tab panels are
+displayed without noticeable latency" — and its listbox pattern allows it for a
+single-select listbox. `core.AccessibilitySelectionFollowsFocus()` on the
+*container* asks for it:
+
+```go
+core.Row(core.AccessibilityRole(core.RoleTabList),
+    core.AccessibilitySelectionFollowsFocus(),
+    // …tabs…
+)
+```
+
+What runs is the newly focused member's own `OnTap` — the same callback `Enter`
+already invokes on it — so `aria-selected` arrives the way every other selection
+does, as a render pass from Go. The standing argument against this feature was
+that the framework could not make the choice *because* `aria-selected` is
+rendered from Go state; the premise was the part that was wrong, since `Enter` on
+a member has reached Go since the day this section was written.
+
+Two details are load-bearing:
+
+- It hangs off `moveCompositeFocus`, the single funnel for the arrows, `Home`,
+  `End` and a typeahead match — so a typed jump selects, which is the case that
+  named the gap.
+- It is unreachable from the patch pass. A selection fired from `syncComposite`
+  would call into Go, produce a patch, and fire again.
+
+There is no ARIA attribute for it — ARIA says what a widget *is* — so it rides as
+`data-grmob-selection-follows-focus`, written totally like every attribute beside
+it. `htmlout` writes nothing for it, on the argument that keeps the roving
+`tabindex` out of the static export, and neither native reads it: there are no
+arrow keys there, because VoiceOver and TalkBack cross a collection by swipe.
+
 The arrow pair was, for a while, read straight off the container's resolved
 `flex-direction` — correct, and unannounced. ARIA's default for a `tablist` is
 horizontal, so a strip laid out as a `Column` took Up/Down while telling a
@@ -803,10 +880,11 @@ than deriving the axis a second time, which is what closed the divergence
 described above. `htmlout/orientation.go` is the Go authority and
 `TestRuntimeOrientationTableMatchesGo` holds the two tables together.
 
-`toolbar` takes the announcement and no keyboard: a toolbar's members are not
-named by its role the way an `option` and a `tab` are — ARIA lets one hold
-buttons, groups, separators and inputs — so there is nothing for an arrow key to
-move between without a second claim about the container's contents.
+`toolbar` took the announcement and no keyboard for two releases, for the reason
+above: its members are not named by its role the way an `option` and a `tab` are.
+It has one now, off a second member rule — see "A toolbar, whose members no role
+names". Nothing in `htmlout/orientation.go` changed for it, which is the
+argument for the row having been written before the keyboard existed.
 
 ### The value of a valued control
 
@@ -855,7 +933,7 @@ What it cannot answer is anything that needs real rendering: whether
 one, or anything about layout. Those still need a browser, exactly as the
 iOS view layer still needs a simulator.
 
-### The three keyboard facts that do get a browser
+### The four keyboard facts that do get a browser
 
 `dom.mjs` is a faithful model of the runtime's *bookkeeping* and a poor model
 of a browser, which is fine until a claim is about the browser. Three of the
@@ -868,6 +946,11 @@ keyboard pattern's are:
 - `preventDefault` on `ArrowDown` really stops the page scrolling. A listbox
   that moved its active option *and* let the page scroll under it would be
   unusable.
+- A `toolbar` of plain `<button>` chips really collapses to one tab stop. This is
+  a stronger case than the first: what is being checked is that the *walk* found
+  the right three elements, since a toolbar's members are named by no role — and
+  the arrows are checked to reach the two that `Tab` now skips, which is what
+  makes taking them out of the tab order legitimate rather than a regression.
 
 No amount of widening the shim settles those, because a shim can only restate
 them: its `focus()` is an assignment and its `defaultPrevented` is a flag it
@@ -883,6 +966,14 @@ an unusual install.
 
 The split is worth knowing when something fails: `keynav_test.mjs` says the
 runtime made the right decision, `browser.mjs` says the browser honoured it.
+
+**A check that waits for a frame waits for its own subject to work.** The
+toolbar check hung for its whole timeout the first time its subject was broken,
+having passed every time it worked — because the wait after a key was a doubled
+`requestAnimationFrame`, and a key that changes *nothing* gives the browser no
+reason to paint. Which is precisely what these checks are trying to detect. The
+wait now races a wall clock beside the frames, and every DevTools round trip is
+bounded, so the harness's failure mode is a failure rather than a hang.
 
 ```
 $ sh wasm/verify/run.sh

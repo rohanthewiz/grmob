@@ -952,6 +952,35 @@ symmetric: a `string` parameter arrives as `String?` and a `string` result as
 `String`, and a stub that took `String` everywhere would accept shell code the
 real framework rejects.
 
+**The facts come from gobind, not from a header somebody once produced.**
+`golang.org/x/mobile` is in this module — held there by `go.mod`'s `tool` block,
+which pins the gobind the stub is written against — so the mapping is read off
+`bind/genobjc.go`: `objcParamType` for a parameter, `objcType` for every other
+position, `funcSummary` for the shape of a result clause. `gobindVersion` pins
+the version those readings were made at, and a bump fails until somebody looks.
+
+That provenance closed two refusals the table used to carry, both of which said
+in effect "read it off `Headers/Mobile.objc.h` and add the row" — which made the
+*next* bridge function of either shape blocked on somebody having run a
+`gomobile bind` at least once, on a Mac with Xcode, for a fact sitting in the
+module cache the whole time:
+
+- **A returned bound interface** is no longer refused. `objcParamType`
+  special-cases exactly one Go type, `String`, and falls through to `objcType`
+  for everything else — so the asymmetry the two columns exist for is `string`
+  and nothing else, and a returned protocol is `_Nullable` exactly as a
+  parameter is. Nothing returns one yet; that is now a fact about this bridge
+  rather than a hole in the table.
+- **A multi-result signature** is still refused, and the refusal now describes
+  what gobind does instead of asking someone to find out. `funcSummary` has
+  three arms, not two: a `(T, error)` pair where `T` is nullable becomes a Swift
+  `throws` function returning `T`; where `T` is not nullable it becomes a
+  `throws` function returning `Void` with `T` as an out-parameter; and **three
+  or more results gobind refuses outright**. That last one is not a gap in this
+  table — `gomobile bind` will not build the function — so the fix is to change
+  the Go signature, and reporting it as a missing mapping would send the next
+  person to read a header for a declaration that was never generated.
+
 The signature half was left out for a while, on the argument that a wrong
 signature fails the Swift type-check the moment the shell calls it. That
 assumed every declaration has a call site. Three do not — `MobileDataDir`,

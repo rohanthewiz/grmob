@@ -564,6 +564,21 @@ private fun dimensionModifier(value: String, horizontal: Boolean): Modifier {
  * it from an ARIA wiring string would make every hand-built tab a test handle
  * and announce nothing. Same treatment as the two levels above: the key is
  * deliberately not parsed, and mobile/verify/idref_test.go pins both halves.
+ *
+ * AccessibilitySelectionFollowsFocus is not read here either.
+ *
+ * Go's flag says a composite widget should choose the member its arrow keys
+ * land on. There are no arrow keys here: TalkBack crosses a collection by
+ * swipe, and a swipe moves the reader's cursor rather than focus, so the
+ * sequence the flag describes does not occur on this platform. It is not a
+ * behaviour Compose spells differently — it is one that has no occasion.
+ *
+ * The near miss is `focusable()` plus a FocusRequester, or acting on
+ * onFocusChanged. Both would be wrong the same way: they are about which node
+ * has the attention, where this is about what the widget does once it has
+ * moved. Taking either would fire the app's onTap on every swipe past a row —
+ * a selection nobody asked for, on the platform where the user is least able
+ * to see it coming. mobile/verify/followsfocus_test.go pins both halves.
  */
 fun SemanticsPropertyReceiver.grMobRole(kind: String) {
     when (kind) {

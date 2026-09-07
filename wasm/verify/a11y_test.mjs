@@ -658,19 +658,29 @@ test("a role on a node type that is not a stack falls back to ARIA's default", (
     assert.equal(at(1).getAttribute("aria-orientation"), "horizontal");
 });
 
-test("a toolbar takes the announcement and no keyboard", () => {
-    // ARIA defines aria-orientation for toolbar, and the runtime's
-    // COMPOSITE_MEMBERS deliberately does not carry it — a toolbar's members
-    // are not named by its role the way an option and a tab are. So the axis
-    // is announced and no tab stop moves.
+test("a toolbar announces its axis, and the axis is what its arrows follow", () => {
+    // For two releases this test asserted the opposite half — that a toolbar
+    // took the announcement and no keyboard — because COMPOSITE_MEMBERS is a
+    // container role to a member role and ARIA names no `toolbaritem`. The
+    // runtime has a second member rule now (focusableMembers), so the axis
+    // written here is read back by compositeIsVertical exactly as a listbox's
+    // is. See wasm/verify/keynav_test.mjs for the keyboard itself.
+    //
+    // What this file still owns is the announcement: the attribute is written
+    // from the container's own resolved direction, and the two claims are one
+    // string rather than two derivations of one fact.
     const { at } = mount([{
         Type: "Column",
         Style: { AccessibilityRole: "toolbar" },
-        Children: [{ Type: "Box", Style: { AccessibilityRole: "button" } }],
+        Children: [{
+            Type: "Box",
+            Style: { AccessibilityRole: "button" },
+            Props: { onClick: "cb_0" },
+        }],
     }]);
 
     assert.equal(at(0).getAttribute("aria-orientation"), "vertical");
-    assert.equal(at(0).children[0].getAttribute("tabindex"), null);
+    assert.equal(at(0).children[0].getAttribute("tabindex"), "0");
 });
 
 test("a role that is not oriented writes nothing", () => {

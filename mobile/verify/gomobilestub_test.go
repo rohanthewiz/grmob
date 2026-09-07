@@ -6,6 +6,7 @@ import (
 	"go/parser"
 	"go/token"
 	"io/fs"
+	"os"
 	"regexp"
 	"sort"
 	"strings"
@@ -268,8 +269,27 @@ func sortedNamesOf[V any](m map[string]V) []string {
 // --- The signatures --------------------------------------------------------
 
 // gobindSwiftTypes is the Go -> Swift mapping this bridge's surface uses,
-// transcribed from the generated header (Headers/Mobile.objc.h) and split by
-// position because gobind's nullability is not symmetric.
+// split by position because gobind's nullability is not symmetric.
+//
+// # Where the facts come from
+//
+// Read off gobind's own generator, not off a header somebody once produced.
+// `golang.org/x/mobile` is in this module — held there by go.mod's `tool`
+// block, which pins the gobind that ios/verify's stub is written against — so
+// the mapping is a file in the module cache rather than an artefact of a build
+// nobody can rerun without Xcode:
+//
+//	bind/genobjc.go, objcParamType   a parameter's ObjC type
+//	bind/genobjc.go, objcType        every other position, results included
+//	bind/genobjc.go, funcSummary     how a result clause is shaped
+//
+// That provenance is what closed two refusals this file used to carry. Both
+// said, in effect, "read it off Headers/Mobile.objc.h and add the row" — which
+// made the next bridge function of either shape blocked on somebody having run
+// a `gomobile bind` at least once, on a Mac with Xcode, for a fact that was
+// sitting in the module cache the whole time. See swiftType and swiftResult.
+//
+// gobindVersion below pins the version those readings were made against.
 //
 // # Why a table and not a translator
 //
@@ -299,10 +319,53 @@ func sortedNamesOf[V any](m map[string]V) []string {
 // no nullability at all. Copying that asymmetry is the point: a stub taking
 // `String` everywhere would accept shell code the real framework rejects,
 // which is precisely the drift this file exists to catch.
+//
+// The asymmetry is `string` and nothing else, which is worth stating because
+// two columns imply otherwise. objcParamType special-cases exactly one Go type
+// — String — and falls through to objcType for everything else, so every other
+// type in the language is spelled identically in both positions. That is what
+// makes the returned-interface row below answerable rather than a gap.
 var gobindSwiftTypes = map[string]struct{ param, result string }{
 	"string": {"String?", "String"},
 	"bool":   {"Bool", "Bool"},
 	"int":    {"Int", "Int"},
+}
+
+// gobindVersion is the golang.org/x/mobile the mapping above and the two result
+// rules in swiftResult were read out of.
+//
+// Pinned because the readings are of a *generator*, and a generator is a thing
+// that changes. The pin is not a claim that a newer gobind is wrong — it is the
+// moment at which somebody has to look, and the only such moment there is:
+// nothing else in this repository would notice that a version bump had changed
+// how a result clause is shaped, because the two shapes this file describes are
+// both refusals and no bound function has either.
+//
+// The version lives in go.mod, held there by the `tool` block rather than by an
+// import, which is also what keeps `go mod tidy` from dropping it.
+const gobindVersion = "v0.0.0-20251021151156-188f512ec823"
+
+// The pinned gobind is the one in go.mod.
+//
+// A one-line test for a one-line fact, and the fact is the whole warrant for
+// three of this file's tables. Reading go.mod rather than the module cache
+// deliberately: the cache may hold several versions, and the question is which
+// one this module builds against.
+func TestTheGobindReadingsArePinnedToTheModulesOwnVersion(t *testing.T) {
+	// nativeFile's own reach-up-two-levels, which lands on the module root
+	// because this package is two directories down from it.
+	raw, err := os.ReadFile(nativeFile("go.mod"))
+	if err != nil {
+		t.Fatalf("reading go.mod: %v", err)
+	}
+	if !strings.Contains(string(raw), "golang.org/x/mobile "+gobindVersion) {
+		t.Errorf("go.mod no longer requires golang.org/x/mobile %s.\n\n"+
+			"gobindSwiftTypes, swiftType's interface row and swiftResult's two result "+
+			"rules are all readings of that version's bind/genobjc.go — objcParamType, "+
+			"objcType and funcSummary. Re-read them against the new one and move this "+
+			"constant, or the stub is being checked against a mapping the toolchain no "+
+			"longer produces.", gobindVersion)
+	}
 }
 
 // swiftDecl matches any declaration line the stub can carry — a public
@@ -462,21 +525,54 @@ func swiftParams(sig *ast.FuncType, ifaces map[string]bool, label func(int, stri
 
 // swiftResult renders the return clause, which is empty for a void function.
 //
-// More than one result is rejected rather than mapped: gobind turns a
-// (T, error) pair into a throwing function and anything wider into an
-// out-parameter shape, and neither has ever crossed this bridge. A second
-// result is the signal that a new kind of value is being returned and that
-// the mapping needs a human — the same stance bindableGoTypes takes on
-// parameter types.
+// # More than one result
+//
+// Still refused, and the message is now a description of what gobind actually
+// does rather than a request to go and find out. The old one said gobind maps a
+// multi-result signature "onto a throwing function or an out-parameter", which
+// is half right and blurs a distinction that decides what a reader should do
+// next. funcSummary in bind/genobjc.go has three arms, not two:
+//
+//	(T, error), T nullable       s.ret = objcType(T), plus a trailing
+//	                             NSError** out-parameter — a Swift `throws`
+//	                             function returning T
+//	(T, error), T not nullable   s.ret = BOOL, and T becomes an out-parameter
+//	                             too. A Swift `throws` function returning Void,
+//	                             with T arriving through a pointer
+//	three or more                g.errorf("too many result values") — gobind
+//	                             REFUSES it. There is no mapping to transcribe
+//
+// That third arm is the one worth having written down. A three-result bridge
+// function is not a gap in this table: it is a function `gomobile bind` will
+// not build, so the fix is to change the Go signature rather than to add a row
+// here. Reporting it as a missing mapping would send the next person to read a
+// header for a declaration that was never generated.
+//
+// Both two-result shapes stay refused because neither has crossed this bridge.
+// The difference from before is that the refusal now names the shape a reader
+// would be transcribing, and says which of the two it would be.
 func swiftResult(sig *ast.FuncType, ifaces map[string]bool) (string, error) {
 	if sig.Results == nil || len(sig.Results.List) == 0 {
 		return "", nil
 	}
 	results := flattenParams(sig.Results)
-	if len(results) != 1 {
-		return "", fmt.Errorf("%d results; gobind maps a multi-result signature onto a "+
-			"throwing function or an out-parameter, neither of which this bridge has "+
-			"ever used. Add the mapping deliberately", len(results))
+	if len(results) > 2 {
+		return "", fmt.Errorf("%d results; gobind refuses more than two outright "+
+			"(bind/genobjc.go, funcSummary: \"too many result values\"), so this is not "+
+			"a mapping this table is missing — `gomobile bind` will not build the "+
+			"function at all. Change the Go signature", len(results))
+	}
+	if len(results) == 2 {
+		last, err := swiftType(results[1].expr, ifaces, true)
+		if err != nil {
+			last = "?"
+		}
+		return "", fmt.Errorf("2 results; gobind maps a (T, error) pair onto a Swift "+
+			"`throws` function — returning T when T is nullable, and returning Void "+
+			"with T as an out-parameter when it is not (bind/genobjc.go, funcSummary). "+
+			"No bridge function has done either, so the throwing spelling is "+
+			"transcribed nowhere. Second result reads as %s; add the row deliberately",
+			last)
 	}
 	typ, err := swiftType(results[0].expr, ifaces, true)
 	if err != nil {
@@ -486,6 +582,9 @@ func swiftResult(sig *ast.FuncType, ifaces map[string]bool) (string, error) {
 }
 
 // swiftType maps one Go type onto its Swift spelling, in the given position.
+//
+// The position matters for one type. See gobindSwiftTypes for why, and for
+// where the readings come from.
 func swiftType(expr ast.Expr, ifaces map[string]bool, isResult bool) (string, error) {
 	ident, ok := expr.(*ast.Ident)
 	if !ok {
@@ -499,14 +598,27 @@ func swiftType(expr ast.Expr, ifaces map[string]bool, isResult bool) (string, er
 		return m.param, nil
 	}
 	if ifaces[ident.Name] {
-		if isResult {
-			// Never yet emitted. Refused rather than guessed: the nullability
-			// of a returned protocol is a fact about the generated header,
-			// and this table is only allowed to hold facts read off one.
-			return "", fmt.Errorf("returns the bound interface %s; no bridge function has "+
-				"done that, so the return's nullability is not transcribed anywhere. "+
-				"Read it off Headers/Mobile.objc.h and add the row", ident.Name)
-		}
+		// The same spelling in both positions, which used to be a refusal.
+		//
+		// It was refused on the grounds that the nullability of a returned
+		// protocol is a fact about the generated header and this table may only
+		// hold facts read off one — a good rule that turned out to be pointing
+		// at the wrong document. The generator is in this module (see
+		// gobindVersion), and it settles the question in two lines:
+		//
+		//	objcParamType   special-cases exactly one Go type, String, and
+		//	                falls through to objcType for everything else
+		//	objcType        an implementable bound interface is
+		//	                `id<PrefixName> _Nullable`, in every position
+		//
+		// So the asymmetry this table's two columns exist for is `string` and
+		// nothing else, and a returned protocol is `_Nullable` — Swift
+		// `GrMobXProtocol?` — exactly as a parameter is.
+		//
+		// Still nothing returns one, and that is now a fact about this bridge
+		// rather than a hole in the table: the next function that does gets a
+		// checked declaration instead of a refusal telling it to go and run
+		// `gomobile bind` on a Mac first.
 		return gobindPrefix + ident.Name + "Protocol?", nil
 	}
 	return "", fmt.Errorf("type %s has no row in gobindSwiftTypes and is not a bound "+
@@ -703,4 +815,78 @@ func lowerFirst(s string) string {
 		return string(c+'a'-'A') + s[1:]
 	}
 	return s
+}
+
+// The two shapes this table used to refuse, exercised directly.
+//
+// Neither reaches the checks above, because no bridge function has either shape
+// — which is exactly why they need a test of their own. A resolved refusal with
+// no caller is indistinguishable from an unresolved one until something asks it
+// the question, and the whole point of resolving these was that the *next*
+// bridge function of either shape should get a checked declaration rather than
+// an instruction to go and run `gomobile bind` on a Mac.
+//
+// Both cases are read off bind/genobjc.go at the version gobindVersion pins; see
+// gobindSwiftTypes for the provenance and swiftResult for the three result arms.
+func TestTheTableDescribesTheShapesItUsedToRefuse(t *testing.T) {
+	ifaces := interfaceSet(t)
+	if len(ifaces) == 0 {
+		t.Fatal("mobile declares no bound interfaces; this test has nothing to ask about")
+	}
+	// Any one of them: the spelling is a function of the name, and which name
+	// is not the subject.
+	iface := sortedNamesOf(ifaces)[0]
+
+	// A returned bound interface. objcParamType special-cases String alone, so
+	// every other type — a protocol included — is spelled by objcType in both
+	// positions, and objcType makes an implementable interface _Nullable.
+	want := gobindPrefix + iface + "Protocol?"
+	for _, isResult := range []bool{false, true} {
+		got, err := swiftType(&ast.Ident{Name: iface}, ifaces, isResult)
+		if err != nil {
+			t.Errorf("swiftType(%s, isResult=%v) refused it: %v\n\n"+
+				"gobind spells a bound interface the same way in both positions; a "+
+				"refusal here is the old one that sent readers to a header",
+				iface, isResult, err)
+			continue
+		}
+		if got != want {
+			t.Errorf("swiftType(%s, isResult=%v) = %q, want %q", iface, isResult, got, want)
+		}
+	}
+
+	// The result arms, each asked with the signature it is about.
+	for _, tc := range []struct {
+		sig, want, mustSay string
+	}{
+		{"func()", "", ""},
+		{"func() string", " -> String", ""},
+		{"func() (string, error)", "", "throws"},
+		{"func() (string, int, error)", "", "refuses more than two"},
+	} {
+		expr, err := parser.ParseExpr(tc.sig)
+		if err != nil {
+			t.Fatalf("parsing %q: %v", tc.sig, err)
+		}
+		got, err := swiftResult(expr.(*ast.FuncType), ifaces)
+		if tc.mustSay == "" {
+			if err != nil {
+				t.Errorf("swiftResult(%s) refused it: %v", tc.sig, err)
+			} else if got != tc.want {
+				t.Errorf("swiftResult(%s) = %q, want %q", tc.sig, got, tc.want)
+			}
+			continue
+		}
+		if err == nil {
+			t.Errorf("swiftResult(%s) = %q and should have refused: no bridge function "+
+				"has that shape, so its Swift spelling is transcribed nowhere",
+				tc.sig, got)
+			continue
+		}
+		if !strings.Contains(err.Error(), tc.mustSay) {
+			t.Errorf("swiftResult(%s) refused it with %q, which does not mention %q — "+
+				"the refusal has to say which of gobind's three result arms this is, "+
+				"or the reader is back to guessing", tc.sig, err, tc.mustSay)
+		}
+	}
 }

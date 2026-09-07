@@ -209,6 +209,11 @@ func TestAnOrdinaryTreeIsSilent(t *testing.T) {
 // No behavioural test can distinguish the two, and one that claimed to would be
 // asserting something it had not measured. This asserts the part that is
 // observable and says so.
+//
+// The part that is not observable is now measured, next door:
+// TestTheAccessibilityAuditCostsNothingWithDebugModeOff in debug_cost_test.go
+// counts the allocations the guard saves, which is the only form the claim can
+// take and the only one that can fail.
 func TestTheAuditIsSilentWithDebugModeOff(t *testing.T) {
 	SetDebugMode(false)
 	ClearConcerns()

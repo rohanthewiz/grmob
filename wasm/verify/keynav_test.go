@@ -93,9 +93,112 @@ func TestRuntimeCompositeRolesMatchCore(t *testing.T) {
 	}
 }
 
+// The composites whose members ARIA does not name, and what the runtime takes
+// as a member instead.
+//
+// A second table rather than a third column on compositeRoles, because the two
+// are different kinds of answer: a row above is a fact about ARIA's vocabulary
+// — a listbox's members are options, and the fixture in aria/verify says so —
+// where this is a decision about a walk, made because ARIA defines no
+// `toolbaritem` and a toolbar therefore has to be told what its controls are.
+var focusableComposites = []core.Role{core.RoleToolbar}
+
+// The roles a Box may carry that make it one of a toolbar's controls.
+//
+// Pinned to core because the runtime spells them as bare strings. These are
+// exactly the two roles core.Role documents as "a tappable container — a Box or
+// a Row with an OnTap": a rename in core that did not reach the runtime would
+// leave a toolbar of icon boxes with one tab stop and nothing to arrow to, and
+// nothing would say so.
+var controlRoles = []core.Role{core.RoleButton, core.RoleLink}
+
+// The second member rule's tables, held to core the way COMPOSITE_MEMBERS is.
+//
+// Both are Sets rather than object literals, so they are matched whole — name
+// included — rather than through parseRuntimeTable.
+func TestTheFocusableCompositeTablesMatchCore(t *testing.T) {
+	src := runtimeSource(t)
+
+	for _, want := range []struct {
+		expr string
+		why  string
+	}{
+		{jsSet("COMPOSITE_FOCUSABLE", focusableComposites),
+			"a toolbar's members are not named by its role, so the runtime takes " +
+				"every focusable control inside it. A container role missing here " +
+				"is announced with an axis and given no keyboard, which is what a " +
+				"toolbar was for two releases"},
+		{jsSet("CONTROL_ROLES", controlRoles),
+			"the two roles core.Role documents as a tappable container. A Box " +
+				"carrying one, with an OnTap, is a control the browser gives no tab " +
+				"stop of its own — so a toolbar of icon boxes depends entirely on " +
+				"this set"},
+	} {
+		if !strings.Contains(src, want.expr) {
+			t.Errorf("grmob-runtime.js: %s not found — %s", want.expr, want.why)
+		}
+	}
+
+	// Every focusable composite must be an oriented role too, and for the same
+	// reason the two structural pairs must be: compositeIsVertical reads
+	// aria-orientation off the container, so a container role missing from that
+	// table takes the horizontal arrows by accident rather than by decision.
+	for _, role := range focusableComposites {
+		if _, ok := htmlout.AriaOrientationDefaults()[string(role)]; !ok {
+			t.Errorf("core.Role %q has a keyboard pattern but no aria-orientation "+
+				"default", role)
+		}
+	}
+
+	// The two member rules must not both claim a role. compositeMembersOf asks
+	// COMPOSITE_MEMBERS first, so a role in both tables would silently take the
+	// role-named walk and its focusable half would be dead.
+	for _, role := range focusableComposites {
+		for _, pair := range compositeRoles {
+			if pair.container == role {
+				t.Errorf("core.Role %q is in both member tables — compositeMembersOf "+
+					"asks the role-named one first, so the focusable rule would "+
+					"never run for it", role)
+			}
+		}
+	}
+}
+
+// jsSet renders the runtime's spelling of a role set, so the pin is the literal
+// source line rather than a parse of it.
+func jsSet(name string, roles []core.Role) string {
+	parts := make([]string, len(roles))
+	for i, r := range roles {
+		parts[i] = `"` + string(r) + `"`
+	}
+	return "const " + name + " = new Set([" + strings.Join(parts, ", ") + "]);"
+}
+
 // htmlout writes the semantics and stops there. See the file comment for why
 // this is the one two-web-target difference that is deliberate.
+//
+// The toolbar is checked beside the two structural pairs, and the argument
+// carries over unchanged: a static export has no key handler, so a roving
+// tabindex on a chip strip would take every chip but one out of the tab order
+// and reach none of them.
 func TestTheStaticExportWritesNoRovingTabindex(t *testing.T) {
+	for _, role := range focusableComposites {
+		out := htmlout.ExportHTML(&core.Node{
+			Type:  "Row",
+			Style: &core.Style{AccessibilityRole: role},
+			Children: []*core.Node{
+				{Type: "Button", Props: map[string]any{"label": "All", "onClick": "cb_0"}},
+				{Type: "Button", Props: map[string]any{"label": "Sermons", "onClick": "cb_1"}},
+			},
+		})
+		if strings.Contains(out, "tabindex") {
+			t.Errorf("htmlout wrote a tabindex for a %s:\n%s", role, out)
+		}
+		if !strings.Contains(out, `role="`+string(role)+`"`) {
+			t.Errorf("htmlout dropped role=%q:\n%s", role, out)
+		}
+	}
+
 	for _, pair := range compositeRoles {
 		container := &core.Node{
 			Type:  "Column",

@@ -35,3 +35,7 @@ materialwallet.html
 .idea/
 .vscode/
 *.swp
+
+# The ARIA specification, fetched by aria/fetch.sh for aria/gen and
+# aria/verify. Not committed: see aria/fetch.sh for why.
+aria/spec/testdata/

@@ -512,6 +512,22 @@ func AccessibilityHidden() StyleProp {
 	})
 }
 
+// AccessibilitySelectionFollowsFocus makes a composite widget choose the member
+// the arrow keys land on, by invoking that member's own OnTap.
+//
+// Set on the container — the listbox or the tablist — not on the members. See
+// Style.AccessibilitySelectionFollowsFocus for when it is right and when it is
+// the wrong thing to ask for.
+//
+// A no-arg flag rather than a bool, like AccessibilityHidden and unlike
+// Disabled: a caller does not have this in a variable, and there is no case for
+// forcing it back off — a widget that does not want it writes no prop.
+func AccessibilitySelectionFollowsFocus() StyleProp {
+	return styleFunc(func(s *Style) {
+		s.AccessibilitySelectionFollowsFocus = true
+	})
+}
+
 // Disabled hands the node to the platform's own disabled state: it stops
 // accepting taps, keystrokes and focus, and screen readers announce it as
 // disabled (Compose `enabled = false`, SwiftUI `.disabled(true)`, the HTML

@@ -86,6 +86,138 @@ func (c Collapse) collapsed(g Group) bool {
 // that is hidden always has a control announcing it as collapsed.
 func (c Collapse) hides(g Group) bool { return c.active() && c.collapsed(g) }
 
+// CollapseBand is the disclosure control the default band builds, on its own: a
+// heading wrapping a button that carries aria-expanded and toggles one group's
+// run. No Surface, no padding, no count badge — the chrome is the caller's.
+//
+// # The gap it closes
+//
+// GroupedList.Collapse reaches past a Header override for the row emission, so
+// an override's run still hides, and it stops at the override for the *control*,
+// because a band the widget also built would be a second control for the same
+// run. That division is right and it left the override author holding three
+// things at once: a button, an aria-expanded that has to be stated on every pass
+// open or shut, and a heading wrapper whose nesting order — heading around
+// button, named explicitly so the chevron never reaches it — is four paragraphs
+// of argument in components.disclosure, which is unexported.
+//
+// GroupHeader is still the answer when the whole default band will do; it takes
+// Expanded and OnToggle and builds all of it. This is the answer when it will
+// not:
+//
+//	Header: func(g components.Group) core.View {
+//	    return core.Row(
+//	        core.PaddingHorizontal(16),
+//	        components.CollapseBand{Collapse: shut, Group: g},
+//	        Avatar{Name: leader[g.Key]},
+//	        Badge{Text: strconv.Itoa(g.Count)},
+//	    )
+//	},
+//
+// The Collapse passed here is the caller's own — the same value handed to
+// GroupedList — which is what keeps the control and the row hiding answering to
+// one state. An override that built its control from a second Collapse would
+// have a chevron pointing one way and a run obeying the other.
+//
+// # An inactive Collapse builds a heading and no control
+//
+// The zero Collapse — and one with IsCollapsed and no OnToggle — produces the
+// label in a plain heading, exactly as GroupHeader's own non-disclosure branch
+// does. Not a button with a dead handler: an expansion stated with nothing to
+// toggle it is announced on both web targets, is silently nothing on Android,
+// and is what core.AuditTree reports as ConcernInertDisclosure. Building one
+// here would be building the thing the audit exists to find.
+type CollapseBand struct {
+	// Collapse is the caller's own collapse state — the same value given to
+	// GroupedList. The zero value builds a plain heading; see above.
+	Collapse Collapse
+
+	// Group is the run this control is about. Its Label names both the heading
+	// and the button unless Content replaces the words.
+	Group Group
+
+	// HeadingLevel is where the band sits in the screen's outline. Zero is
+	// level 2, the same default GroupHeader takes and for the same reason —
+	// see GroupHeader.HeadingLevel, which is the field this mirrors.
+	HeadingLevel int
+
+	// Content goes inside the button, after the chevron. Empty takes the
+	// group's Label in the band's own type, which is the common case and the
+	// reason this is a slice rather than a required field.
+	//
+	// Whatever goes here is presentational: a reader does not descend into a
+	// button's children, and the button's name comes from Group.Label. So an
+	// icon needs no aria-hidden and a count put here stops being announced —
+	// which is why the default band keeps its badge outside the control.
+	Content []core.View
+
+	// Style is applied to the heading wrapper, which is the node a caller's
+	// layout sees. GroupedList's own band puts core.FlexGrow(1) here so the
+	// count badge sits hard against the trailing edge; a caller arranging
+	// their own row decides that for themselves.
+	Style []core.StyleProp
+}
+
+func (b CollapseBand) Render(ctx *core.Context) *core.Node {
+	t := ctx.Theme()
+
+	// The same three declarations GroupHeader gives its label, so a control
+	// lifted out of the default band into a custom row does not change weight
+	// or ink on the way.
+	label := []core.StyleProp{
+		core.UseStyle(t.Typography.Caption),
+		core.FontWeight(core.Bold),
+		core.TextColor(t.Colors.TextSecondary),
+	}
+
+	content := b.Content
+	if len(content) == 0 {
+		content = []core.View{core.Text(b.Group.Label, label...)}
+	}
+
+	if !b.Collapse.active() {
+		// The heading props ride the words here rather than a wrapper, which
+		// is the division GroupHeader draws too: there is no button for the
+		// tier to sit outside of.
+		plain := append(label, headingProps(b.HeadingLevel, headingLevelSection)...)
+		box := make([]core.PropsAndChildren, 0, len(b.Style)+len(content)+1)
+		for _, sp := range b.Style {
+			box = append(box, sp)
+		}
+		if len(b.Content) == 0 {
+			box = append(box, core.Text(b.Group.Label, plain...))
+		} else {
+			// A caller who supplied their own content owns its typing; the
+			// tier still has to land somewhere, so it goes on the wrapper.
+			for _, sp := range headingProps(b.HeadingLevel, headingLevelSection) {
+				box = append(box, sp)
+			}
+			box = append(box, core.AccessibilityLabel(b.Group.Label))
+			for _, child := range content {
+				box = append(box, child)
+			}
+		}
+		return core.Box(box...).Render(ctx)
+	}
+
+	return disclosure{
+		Label:        b.Group.Label,
+		Hint:         "Expands or collapses the group",
+		Expanded:     !b.Collapse.collapsed(b.Group),
+		OnToggle:     func() { b.Collapse.OnToggle(b.Group) },
+		Heading:      true,
+		Level:        b.HeadingLevel,
+		OwnLevel:     headingLevelSection,
+		HeadingStyle: b.Style,
+		ChevronStyle: []core.StyleProp{core.UseStyle(t.Typography.Caption)},
+		ControlStyle: []core.StyleProp{
+			core.Gap(float64(t.Spacing.SM)),
+			core.AlignItemsProp(core.AlignItemsCenter),
+		},
+		Control: content,
+	}.view().Render(ctx)
+}
+
 // groupRun is one contiguous slice of items sharing a group key: items
 // [Start, End) belong to Group.
 type groupRun[T any] struct {

@@ -847,14 +847,92 @@ const GrMob = (() => {
     // "one tab stop and two unreachable items". tabindex here is behaviour,
     // not semantics, and it is only correct in the presence of the code below.
 
-    // The two structural pairs, container role to member role. Everything in
-    // this section is driven by this table and nothing else knows the words.
+    // # Two ways to be a composite, and why the second one had to exist
     //
-    // Kept to the two roles that have a keyboard pattern *and* a container
-    // that owns its children. `list`/`listitem` is content rather than a
-    // control and has no pattern; `menu`, `tree` and `grid` are patterns core
-    // has no roles for yet.
+    // A composite is a widget that holds ONE tab stop and moves it among its
+    // members with the arrow keys. Everything in this section is driven by the
+    // question "what are this container's members", and ARIA answers it two
+    // different ways depending on the role.
+    //
+    //	listbox, tablist   the role names its members. A listbox's members are
+    //	                   its options, a tablist's are its tabs, and the pair
+    //	                   is the whole rule.
+    //	toolbar            the role does not. ARIA says a toolbar is "a
+    //	                   collection of commonly used function buttons or
+    //	                   controls" and stops there: a toolbar may hold
+    //	                   buttons, links, groups, separators and inputs, and
+    //	                   there is no `toolbaritem`.
+    //
+    // The second rule is the one this whole section was restructured for. For
+    // two releases `toolbar` was in the orientation table and out of the
+    // keyboard: the axis was announced and no tab stop moved, which left
+    // components.ChipStrip a run of controls a keyboard crosses one Tab at a
+    // time — twelve stops on a twelve-chip filter bar, where ARIA promises one.
+    //
+    // The rule for a toolbar's members is the one the absence forces: every
+    // focusable control inside it that is not inside a nested composite. See
+    // focusableMembers.
+
+    // The two structural pairs, container role to member role.
+    //
+    // Kept to the two roles that name their members *and* own their children.
+    // `list`/`listitem` is content rather than a control and has no pattern.
+    //
+    // `menu`, `tree` and `grid` are the three patterns still absent, and they
+    // are absent for two different reasons that aria/verify/refusals_test.go
+    // now holds apart: `menu` and `tree` need member roles core does not carry
+    // (`menuitem`, `treeitem`), where `grid` needs no new member role at all —
+    // core already has `row` and `cell` — and needs a two-dimensional walk this
+    // one-dimensional machinery has no shape for.
     const COMPOSITE_MEMBERS = { listbox: "option", tablist: "tab" };
+
+    // Composites whose members ARIA does not name. See focusableMembers.
+    //
+    // A set rather than a second column on the table above, because the two
+    // are different *kinds* of answer rather than two values of one: a row in
+    // COMPOSITE_MEMBERS is a fact about ARIA's vocabulary that
+    // wasm/verify/keynav_test.go pins against core.Role, and membership here is
+    // a decision about a walk. Collapsing them into one table with a sentinel
+    // value would make the pin read a sentinel as a role name.
+    const COMPOSITE_FOCUSABLE = new Set(["toolbar"]);
+
+    // The member roles, derived rather than restated. compositeOf needs to know
+    // whether an element's own role makes it a named member of something —
+    // which decides which of the two walks out it takes — and deriving that
+    // from the table is what keeps a third structural pair from having to be
+    // remembered in two places.
+    const MEMBER_ROLES = new Set(Object.values(COMPOSITE_MEMBERS));
+
+    // What a toolbar counts as one of its controls.
+    //
+    // Two ways to be one, and they are the two ways this framework builds a
+    // control at all:
+    //
+    //	a natively focusable tag       core.Button, core.Input, core.Select,
+    //	                               core.TextArea, an anchor. The browser
+    //	                               gives these a tab stop without being
+    //	                               asked, which is exactly the tab stop the
+    //	                               toolbar is taking over.
+    //	a container that says it is    a Box or a Row carrying core.RoleButton
+    //	a control and has a handler    or core.RoleLink with an OnTap — the
+    //	                               shape core.RoleButton's own doc exists
+    //	                               for. It has no tab stop of its own until
+    //	                               this section gives it one.
+    //
+    // Deliberately NOT "anything carrying tabindex". This section writes
+    // tabindex onto every member it finds, so a membership test that read the
+    // attribute would answer differently on the second sync than on the first
+    // — every member would stay a member forever, including one whose role or
+    // tag had since changed.
+    //
+    // FOCUSABLE_TAGS is the same five tags as NATIVELY_ACTIVATED below and is
+    // deliberately a second set: that one is about which elements the browser
+    // fires a click on for Enter and Space, this one is about which elements it
+    // will focus. The two coincide today and are not one fact — an <a> with no
+    // href is activated and not focusable — so a single set would be a place
+    // for the two claims to drift into each other unnoticed.
+    const FOCUSABLE_TAGS = new Set(["BUTTON", "A", "INPUT", "SELECT", "TEXTAREA"]);
+    const CONTROL_ROLES = new Set(["button", "link"]);
 
     // Elements the browser already activates from the keyboard. A <button>
     // fires a real click on both Enter and Space and an <a href> on Enter, so
@@ -911,6 +989,39 @@ const GrMob = (() => {
         return COMPOSITE_MEMBERS[el.getAttribute("role")] || "";
     }
 
+    // Whether this element is a composite of either kind.
+    //
+    // The one question the walks ask about an *ancestor or a stranger*, as
+    // opposed to compositeMemberRole, which is the question a role-based walk
+    // asks about its own container. Both walks stop at this: a nested composite
+    // owns its members and its own tab stop, and pooling them would give one
+    // widget two.
+    function isComposite(el) {
+        if (!el || !el.getAttribute) return false;
+        const role = el.getAttribute("role");
+        return !!COMPOSITE_MEMBERS[role] || COMPOSITE_FOCUSABLE.has(role);
+    }
+
+    // A container's members, by whichever rule its role uses. The single entry
+    // point: nothing outside this function picks between the two walks.
+    function compositeMembersOf(container) {
+        const memberRole = compositeMemberRole(container);
+        if (memberRole) return compositeMembers(container, memberRole);
+        if (COMPOSITE_FOCUSABLE.has(container.getAttribute("role"))) {
+            return focusableMembers(container);
+        }
+        return [];
+    }
+
+    // Whether an element is one of the controls a toolbar takes over the tab
+    // stop of. See FOCUSABLE_TAGS and CONTROL_ROLES for the two ways.
+    function isFocusableControl(el) {
+        if (el.disabled) return false;
+        if (FOCUSABLE_TAGS.has(el.tagName)) return true;
+        return CONTROL_ROLES.has(el.getAttribute("role")) &&
+            !!el.dataset.listener_onClick;
+    }
+
     // The members of one composite, in document order.
     //
     // A subtree walk rather than a children scan, because nothing says a
@@ -954,22 +1065,80 @@ const GrMob = (() => {
         return out;
     }
 
+    // The other member walk: a toolbar's controls, in document order.
+    //
+    // Same subtree descent as compositeMembers and the same two prunings — an
+    // aria-hidden subtree is not in the accessibility tree, and a disabled form
+    // control cannot take the focus a tab stop implies. What differs is what
+    // ends the descent.
+    //
+    // # A nested composite stops the walk, and does not become a member
+    //
+    // compositeMembers descends *through* a composite of the other kind,
+    // because an option below a tablist is still the listbox's option — the
+    // roles say whose it is. Nothing says whose a button is. So a control
+    // inside a nested composite belongs to the nested one, and the walk stops
+    // there rather than pooling both sets.
+    //
+    // The consequence is worth stating rather than hiding: a tablist inside a
+    // toolbar keeps its own roving tabindex, so the toolbar has one tab stop
+    // and the tablist has a second, and the toolbar's arrows step over the
+    // whole strip. Two stops is not what ARIA describes for that shape, and it
+    // is the honest outcome of a rule that will not guess — it leaves every
+    // control reachable, which the alternatives do not. Nothing in this
+    // repository builds one.
+    //
+    // # A member is a leaf
+    //
+    // A control holding elements — a Button with an icon and a label — is one
+    // member, not two, so the walk does not descend into one it has found.
+    function focusableMembers(container, out = []) {
+        for (const child of container.children) {
+            if (!child.getAttribute) continue;
+            if (child.getAttribute("aria-hidden") === "true") continue;
+            if (isComposite(child)) continue;
+            if (isFocusableControl(child)) {
+                out.push(child);
+                continue;
+            }
+            focusableMembers(child, out);
+        }
+        return out;
+    }
+
     // The composite a member belongs to, or null. Walks out rather than
     // searching, so a member nested three containers deep finds the same
-    // answer compositeMembers reached it from.
+    // answer its container's walk reached it from.
     //
-    // The match is on the member's *own* role rather than on "the nearest
-    // composite of any kind", and the difference is the one thing that keeps
-    // this the inverse of compositeMembers. That walk descends through a
+    // Two rules again, and they are the inverses of the two walks in.
+    //
+    // For a role-named member the match is on the member's *own* role rather
+    // than on "the nearest composite of any kind", and the difference is what
+    // keeps this the inverse of compositeMembers. That walk descends through a
     // composite of the other kind — a tablist inside a listbox is not a
     // listbox's member and does not close it — so an option below one is still
     // the listbox's member, and a walk out that stopped at the tablist would
     // disagree with the walk in. Nobody writes that tree on purpose; the two
     // functions still have to answer the same question the same way.
+    //
+    // For a focusable member there is no role to match on, so the rule is the
+    // literal inverse of focusableMembers: the nearest composite of any kind,
+    // and it is only this member's owner if that composite is one of the ones
+    // that take focusable members. A button inside a listbox is not a member of
+    // anything — it is chrome the option walk stepped over — and answering
+    // "the listbox" here would put the toolbar keyboard on a widget that has
+    // its own.
     function compositeOf(member) {
         const role = member.getAttribute("role");
+        if (MEMBER_ROLES.has(role)) {
+            for (let el = member.parentNode; el && el.getAttribute; el = el.parentNode) {
+                if (compositeMemberRole(el) === role) return el;
+            }
+            return null;
+        }
         for (let el = member.parentNode; el && el.getAttribute; el = el.parentNode) {
-            if (compositeMemberRole(el) === role) return el;
+            if (!isComposite(el)) continue;
+            return COMPOSITE_FOCUSABLE.has(el.getAttribute("role")) ? el : null;
         }
         return null;
     }
@@ -1012,9 +1181,7 @@ const GrMob = (() => {
     // replace has no stamp and gets one, which is the case the stamp exists
     // for.
     function syncComposite(container) {
-        const memberRole = compositeMemberRole(container);
-        if (!memberRole) return;
-        const members = compositeMembers(container, memberRole);
+        const members = compositeMembersOf(container);
         if (members.length === 0) return;
 
         const active = activeMemberIndex(members);
@@ -1050,16 +1217,56 @@ const GrMob = (() => {
         return ARIA_ORIENTATIONS[container.getAttribute("role")] === "vertical";
     }
 
-    // Moves the tab stop to one member and puts focus on it.
+    // Moves the tab stop to one member and puts focus on it — and, when the
+    // widget asked for it, chooses that member.
     //
     // Focus and the stop move together, always: they are two statements of one
     // fact, and a browser that focused a member holding tabindex="-1" would
     // put the next Tab back at the top of the document.
-    function moveCompositeFocus(members, index) {
+    //
+    // # Selection follows focus
+    //
+    // The single funnel for every movement in this section — the arrows, Home
+    // and End, and a typeahead match — which is why the selection hook is here
+    // rather than in each of them. It is deliberately NOT reachable from
+    // syncComposite: that runs on every patch, and a selection fired from there
+    // would call back into Go, produce a patch, and fire again.
+    //
+    // The container is a parameter for this alone. Everything else here is
+    // derived from the member list.
+    function moveCompositeFocus(container, members, index) {
         members.forEach((member, i) => {
             member.setAttribute("tabindex", i === index ? "0" : "-1");
         });
         members[index].focus();
+        if (container.getAttribute("data-grmob-selection-follows-focus") === "true") {
+            selectCompositeMember(members[index]);
+        }
+    }
+
+    // Chooses a member, by invoking the author's own OnTap.
+    //
+    // The runtime does not write aria-selected and could not: that attribute is
+    // rendered from Go state, so the only way a keystroke reaches the selection
+    // is the same way a tap does. What arrives is an ordinary render pass, and
+    // the selected member is announced because Go said so — which is why this
+    // is three lines rather than a second selection model.
+    //
+    // # No NATIVELY_ACTIVATED guard, and that is the difference from activation
+    //
+    // activateCompositeMember returns early for a <button> or an <a>, because
+    // Enter and Space already make the browser fire a real click on those and
+    // synthesizing one would run the author's handler twice. An arrow key fires
+    // nothing on anything, so the guard would be wrong here in exactly the case
+    // that matters most: a tab strip is built out of <button> elements, and
+    // ARIA recommends selection-follows-focus for tabs above all.
+    //
+    // A member with no handler is focused and nothing else, the same rule
+    // activation follows.
+    function selectCompositeMember(member) {
+        const cbId = member.dataset.listener_onClick;
+        if (!cbId) return;
+        window.GoInvokeCallback(cbId, {});
     }
 
     // Enter and Space on a member that is not a control the browser activates
@@ -1164,7 +1371,7 @@ const GrMob = (() => {
         for (let i = 0; i < members.length; i++) {
             const idx = (from + i) % members.length;
             if (compositeMemberName(members[idx]).startsWith(query)) {
-                moveCompositeFocus(members, idx);
+                moveCompositeFocus(container, members, idx);
                 return true;
             }
         }
@@ -1186,7 +1393,7 @@ const GrMob = (() => {
         const member = e.currentTarget;
         const container = compositeOf(member);
         if (!container) return;
-        const members = compositeMembers(container, compositeMemberRole(container));
+        const members = compositeMembersOf(container);
         const at = members.indexOf(member);
         if (at < 0) return;
 
@@ -1222,7 +1429,7 @@ const GrMob = (() => {
         // and End jump it to the ends, and a widget that moved its own focus
         // while the document scrolled underneath is the same widget twice.
         e.preventDefault();
-        moveCompositeFocus(members, to);
+        moveCompositeFocus(container, members, to);
     }
 
     // Syncs every composite in a subtree, skipping anything already visited in
@@ -1235,7 +1442,7 @@ const GrMob = (() => {
     function syncCompositesIn(el, done, seen) {
         if (!el || !el.getAttribute || seen.has(el)) return;
         seen.add(el);
-        if (compositeMemberRole(el) && !done.has(el)) {
+        if (isComposite(el) && !done.has(el)) {
             done.add(el);
             syncComposite(el);
         }
@@ -1251,7 +1458,7 @@ const GrMob = (() => {
         const seen = new Set();
         for (const start of touched) {
             for (let el = start; el && el.getAttribute; el = el.parentNode) {
-                if (compositeMemberRole(el) && !done.has(el)) {
+                if (isComposite(el) && !done.has(el)) {
                     done.add(el);
                     syncComposite(el);
                 }
@@ -1428,6 +1635,26 @@ const GrMob = (() => {
         // it is used, so the keyboard and the announcement are one statement —
         // compositeIsVertical reads this attribute back. See ariaOrientation.
         setOrRemove(el, "aria-orientation", hidden ? "" : ariaOrientation(style, nodeType));
+        // Whether the widget chooses the member the arrows land on.
+        //
+        // The one thing this function writes that is NOT an ARIA attribute,
+        // and the reason is that ARIA has none: aria-* says what a widget is,
+        // and this says what its keyboard does. So it rides in the data
+        // channel, alongside data-tab-selected and data-stack-align — a fact
+        // one pass records for another to act on.
+        //
+        // Written here anyway, rather than read off the Style at the keystroke,
+        // because a keystroke has no Style: handleCompositeKey has an element
+        // and nothing else. Total like every attribute above, so a widget that
+        // stops asking for it stops getting it.
+        //
+        // Not suppressed for a non-composite role. A Box that carries the flag
+        // and no composite role has nobody reading the attribute, which is the
+        // same nothing that happens today; suppressing it would mean this
+        // function knowing the runtime's composite tables, and the tables would
+        // then be a fact in two places.
+        setOrRemove(el, "data-grmob-selection-follows-focus",
+            hidden ? "" : (style.AccessibilitySelectionFollowsFocus ? "true" : ""));
         // Both selection attributes are written on every call, not just the
         // one this role calls for. The role can change between passes — a
         // patch can turn a tab into a button — and the totality rule has to

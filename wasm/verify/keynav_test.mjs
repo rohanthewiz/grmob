@@ -100,6 +100,29 @@ function tablist({ selected = 0, count = 3 } = {}) {
     return mountTree(composite("tablist", members));
 }
 
+// A toolbar's control: a real <button>, which is what components.Chip renders
+// as and what FOCUSABLE_TAGS is about.
+function control(label, { onClick, disabled } = {}) {
+    const Style = {};
+    if (disabled) Style.Disabled = true;
+    const Props = { content: label };
+    if (onClick) Props.onClick = onClick;
+    return { Type: "Button", Style, Props };
+}
+
+// The filter bar, near enough: a Row carrying role="toolbar" over n chips.
+//
+// components.ChipStrip is a Row of components.Chip, each of which renders as a
+// core.Button, and the toolbar role is what a caller puts on the strip. So this
+// is the shipped shape rather than a shape invented for the test.
+function toolbar(children) {
+    return mountTree({
+        Type: "Row",
+        Style: { AccessibilityRole: "toolbar" },
+        Children: children,
+    });
+}
+
 // --------------------------------------------------------------------------
 // The roving tabindex
 // --------------------------------------------------------------------------
@@ -948,4 +971,433 @@ test("a search in another widget starts over", () => {
     second[0].focus();
     type(second[0], "e");
     assert.equal(rt.document.activeElement, second[1], "Easter, not a continued search");
+});
+
+// --------------------------------------------------------------------------
+// The toolbar: a composite whose members ARIA does not name
+// --------------------------------------------------------------------------
+//
+// The other two composites are told what their members are by their own role —
+// a listbox has options, a tablist has tabs. A toolbar is not: ARIA calls it "a
+// collection of commonly used function buttons or controls" and defines no
+// `toolbaritem`, which is exactly why it sat in the orientation table with no
+// keyboard for two releases. The rule below is what the absence forces: every
+// focusable control inside it that is not inside a nested composite.
+
+test("a toolbar is one tab stop over a run of controls", () => {
+    // The claim the whole thing exists for. components.ChipStrip is a Row of
+    // core.Buttons, so before this a twelve-chip filter bar was twelve stops in
+    // the page's tab order and ARIA promises one.
+    const tb = toolbar([
+        control("All", { onClick: "cb_0" }),
+        control("Sermons", { onClick: "cb_1" }),
+        control("Articles", { onClick: "cb_2" }),
+    ]);
+    assert.deepEqual(tb.tabindexes(), ["0", "-1", "-1"]);
+});
+
+test("a toolbar moves on Left and Right, because it is a Row", () => {
+    // Same derivation as the tablist: the arrow pair comes off
+    // aria-orientation, which applyAccessibility wrote from the container's own
+    // resolved flex-direction. A toolbar has been in that table since before it
+    // had a keyboard, which is why nothing had to be added for this.
+    const tb = toolbar([
+        control("All"), control("Sermons"), control("Articles"),
+    ]);
+    const chips = tb.root.children;
+    chips[0].focus();
+
+    chips[0].dispatch("keydown", { key: "ArrowRight" });
+    assert.equal(tb.focused(), chips[1]);
+    assert.deepEqual(tb.tabindexes(), ["-1", "0", "-1"]);
+
+    chips[1].dispatch("keydown", { key: "ArrowLeft" });
+    assert.equal(tb.focused(), chips[0]);
+
+    // Home and End come from the same switch and need no separate rule.
+    chips[0].dispatch("keydown", { key: "End" });
+    assert.equal(tb.focused(), chips[2]);
+});
+
+test("a toolbar laid out as a column takes the vertical arrows", () => {
+    // The vertical strip htmlout/orientation.go said the toolbar row was
+    // waiting for. Nothing here is toolbar-specific — it is the same
+    // compositeIsVertical read the other two composites do.
+    const tb = mountTree({
+        Type: "Column",
+        Style: { AccessibilityRole: "toolbar" },
+        Children: [control("Bold"), control("Italic")],
+    });
+    const chips = tb.root.children;
+    chips[0].focus();
+
+    chips[0].dispatch("keydown", { key: "ArrowDown" });
+    assert.equal(tb.focused(), chips[1]);
+});
+
+test("a control the framework built out of a Box is a member too", () => {
+    // The second half of the membership rule. core.RoleButton exists for "a
+    // tappable container — a Box or a Row with an OnTap", which every renderer
+    // draws as scenery, and a toolbar of icon boxes is an ordinary thing to
+    // build. A rule that only knew about <button> would give that toolbar one
+    // tab stop and nothing to move it to.
+    const tb = toolbar([
+        { Type: "Box", Style: { AccessibilityRole: "button" }, Props: { onClick: "cb_0" } },
+        { Type: "Box", Style: { AccessibilityRole: "link" }, Props: { onClick: "cb_1" } },
+    ]);
+    assert.deepEqual(tb.tabindexes(), ["0", "-1"]);
+});
+
+test("a Box that says it is a control and has no handler is not one", () => {
+    // The `&& listener_onClick` half. A Box carrying role="button" with nothing
+    // behind it is a labelling mistake rather than a control, and putting a tab
+    // stop on it would send a keyboard user to an element that does nothing.
+    const tb = toolbar([
+        control("All", { onClick: "cb_0" }),
+        { Type: "Box", Style: { AccessibilityRole: "button" } },
+    ]);
+    assert.deepEqual(tb.tabindexes(), ["0", null]);
+});
+
+test("the scenery between a toolbar's controls is not in the rotation", () => {
+    // A strip with a label, a separator and a count in it. Every one of those
+    // is a div this framework draws as scenery, and a walk that took "every
+    // child" would put three dead stops in the middle of the arrow order.
+    const tb = toolbar([
+        { Type: "Text", Props: { content: "Filter:" } },
+        control("All", { onClick: "cb_0" }),
+        { Type: "Box" },
+        control("Sermons", { onClick: "cb_1" }),
+    ]);
+    assert.deepEqual(tb.tabindexes(), [null, "0", null, "-1"]);
+
+    const chips = tb.root.children;
+    chips[1].focus();
+    chips[1].dispatch("keydown", { key: "ArrowRight" });
+    assert.equal(tb.focused(), chips[3], "the arrows step over the scenery");
+});
+
+test("a control buried inside a wrapper is still a member", () => {
+    // Same reason compositeMembers is a subtree walk: nothing says a member is
+    // a direct child, and a scrollable strip puts its buttons inside a scroller.
+    const tb = toolbar([
+        { Type: "Box", Children: [control("All", { onClick: "cb_0" })] },
+        { Type: "Box", Children: [control("Sermons", { onClick: "cb_1" })] },
+    ]);
+    const inner = [tb.root.children[0].children[0], tb.root.children[1].children[0]];
+    assert.equal(inner[0].getAttribute("tabindex"), "0");
+    assert.equal(inner[1].getAttribute("tabindex"), "-1");
+
+    inner[0].focus();
+    inner[0].dispatch("keydown", { key: "ArrowRight" });
+    assert.equal(tb.focused(), inner[1]);
+});
+
+test("a member is a leaf: a button with an icon inside it is one stop", () => {
+    // The walk does not descend into a control it has found. A Button holding a
+    // span and a label is one thing to Tab to, not three.
+    const tb = toolbar([
+        {
+            Type: "Button", Props: { onClick: "cb_0" },
+            Children: [
+                { Type: "Text", Props: { content: "★" } },
+                { Type: "Text", Props: { content: "Star" } },
+            ],
+        },
+        control("Sermons", { onClick: "cb_1" }),
+    ]);
+    assert.deepEqual(tb.tabindexes(), ["0", "-1"]);
+    assert.deepEqual(
+        tb.root.children[0].children.map((c) => c.getAttribute("tabindex")),
+        [null, null]);
+});
+
+test("a hidden control is not a member", () => {
+    // Same two prunings the other walk makes. aria-hidden is out of the
+    // accessibility tree, so arrowing to it would move focus somewhere a
+    // screen reader says nothing about.
+    const tb = toolbar([
+        control("All", { onClick: "cb_0" }),
+        { Type: "Button", Style: { AccessibilityHidden: true }, Props: { content: "x" } },
+        control("Sermons", { onClick: "cb_1" }),
+    ]);
+    assert.deepEqual(tb.tabindexes(), ["0", null, "-1"]);
+});
+
+test("a disabled control is not in the rotation", () => {
+    // The browser refuses a disabled <button> focus outright, so a tab stop on
+    // one is a stop no focus can follow — the same reason compositeMembers
+    // excludes a disabled form control.
+    const tb = toolbar([
+        control("All", { onClick: "cb_0" }),
+        control("Sermons", { onClick: "cb_1", disabled: true }),
+        control("Articles", { onClick: "cb_2" }),
+    ]);
+    assert.deepEqual(tb.tabindexes(), ["0", null, "-1"]);
+
+    const chips = tb.root.children;
+    chips[0].focus();
+    chips[0].dispatch("keydown", { key: "ArrowRight" });
+    assert.equal(tb.focused(), chips[2]);
+});
+
+test("a nested composite keeps its own controls, and keeps its own stop", () => {
+    // The one place the two member rules disagree, and the disagreement is
+    // deliberate. compositeMembers descends *through* a composite of the other
+    // kind, because the roles say whose an option is. Nothing says whose a
+    // button is, so the focusable walk stops at a nested composite instead of
+    // pooling both sets.
+    //
+    // The consequence, asserted rather than hidden: the tablist inside keeps
+    // its own roving tabindex, so this shape is two tab stops rather than one.
+    // Every control stays reachable, which is what the alternatives lose.
+    const tb = toolbar([
+        control("All", { onClick: "cb_0" }),
+        composite("tablist", [
+            member("tab", { selected: true, onClick: "cb_1", type: "Button" }),
+            member("tab", { onClick: "cb_2", type: "Button" }),
+        ]),
+        control("Articles", { onClick: "cb_3" }),
+    ]);
+    const [first, strip, last] = tb.root.children;
+    assert.deepEqual([first.getAttribute("tabindex"), last.getAttribute("tabindex")],
+        ["0", "-1"], "the toolbar's own two controls are its members");
+    assert.deepEqual(strip.children.map((c) => c.getAttribute("tabindex")), ["0", "-1"],
+        "and the strip inside still has a stop of its own");
+
+    // The arrows step over the whole strip rather than into it.
+    first.focus();
+    first.dispatch("keydown", { key: "ArrowRight" });
+    assert.equal(tb.focused(), last);
+});
+
+test("a button inside a listbox is chrome, not a toolbar member of anything", () => {
+    // The walk out has to agree with the walk in here too. A "Load more" button
+    // below a listbox's options is not a member of the listbox — that walk
+    // steps over it — and compositeOf must not answer "the listbox" for it,
+    // which would put the toolbar keyboard on a widget that already has one.
+    const lb = mountTree(composite("listbox", [
+        member("option", { selected: true, onClick: "cb_0" }),
+        member("option", { onClick: "cb_1" }),
+        control("Load more", { onClick: "cb_2" }),
+    ]));
+    const more = lb.root.children[2];
+    assert.equal(more.getAttribute("tabindex"), null,
+        "the button keeps its own place in the page's tab order");
+
+    // And its keys are its own: no listener was ever attached, so an arrow
+    // reaches the page.
+    const e = more.dispatch("keydown", { key: "ArrowDown" });
+    assert.equal(e.defaultPrevented, false);
+});
+
+test("a toolbar has no typeahead", () => {
+    // COMPOSITE_TYPEAHEAD is a listbox and nothing else, which is ARIA's own
+    // division: type-to-jump is part of the listbox pattern because a listbox
+    // can be a hundred long. A toolbar's controls are all on screen, and a
+    // toolbar that swallowed printable keys would take them from a page that
+    // may have a search shortcut on one.
+    const tb = toolbar([
+        control("All", { onClick: "cb_0" }),
+        control("Sermons", { onClick: "cb_1" }),
+    ]);
+    const chips = tb.root.children;
+    chips[0].focus();
+
+    const e = chips[0].dispatch("keydown", { key: "s" });
+    assert.equal(tb.focused(), chips[0]);
+    assert.equal(e.defaultPrevented, false);
+});
+
+test("an empty toolbar is left alone", () => {
+    // A strip whose chips have not arrived yet, and a toolbar of pure scenery.
+    // Neither is a widget with a tab stop to place.
+    const empty = toolbar([]);
+    assert.equal(empty.root.getAttribute("tabindex"), null);
+
+    const scenery = toolbar([{ Type: "Text", Props: { content: "Filter:" } }]);
+    assert.deepEqual(scenery.tabindexes(), [null]);
+});
+
+test("a control added by a patch joins the toolbar", () => {
+    // Same total re-sync every composite gets: syncTouchedComposites walks up
+    // from the touched element and down into it, and the whole member list is
+    // rewritten rather than appended to.
+    const tb = toolbar([control("All", { onClick: "cb_0" })]);
+    assert.deepEqual(tb.tabindexes(), ["0"]);
+
+    tb.rt.GrMob.patch(JSON.stringify([{
+        Type: "add-child",
+        TargetID: "root",
+        Changes: control("Sermons", { onClick: "cb_1" }),
+    }]));
+    tb.rt.drainFrames();
+    assert.deepEqual(tb.tabindexes(), ["0", "-1"]);
+
+    const chips = tb.root.children;
+    chips[0].focus();
+    chips[0].dispatch("keydown", { key: "ArrowRight" });
+    assert.equal(tb.focused(), chips[1], "the new control is wired, not just counted");
+});
+
+// --------------------------------------------------------------------------
+// Selection follows focus
+// --------------------------------------------------------------------------
+//
+// The half of ARIA's listbox and tabs patterns this section left out for two
+// releases, and the standing argument against it was that the framework could
+// not make the choice: aria-selected is rendered from Go state, and a keystroke
+// cannot reach Go state without a render pass.
+//
+// The conclusion was right and the premise was false. Enter and Space on a
+// member have always reached Go — activateCompositeMember calls
+// GoInvokeCallback — so a keystroke has had a way to change a selection since
+// the day this section was written. What was actually missing was a decision
+// about *when*, and that is not one the framework can make for an author:
+// ARIA recommends it for tabs over cheap panels and warns about it for anything
+// expensive, so it is a prop.
+
+// A composite carrying the flag.
+function following(role, members, opts = {}) {
+    const tree = composite(role, members, opts);
+    tree.Style.AccessibilitySelectionFollowsFocus = true;
+    return mountTree(tree);
+}
+
+test("the flag is written and is total", () => {
+    // It is not an ARIA attribute — ARIA says what a widget is, and this says
+    // what its keyboard does — so it rides in the data channel. Total like
+    // every attribute applyAccessibility writes: a widget that stops asking
+    // must stop getting it, or a strip that turned the behaviour off would keep
+    // firing selections for the life of the page.
+    const lb = following("listbox", [member("option", { selected: true })]);
+    assert.equal(lb.root.getAttribute("data-grmob-selection-follows-focus"), "true");
+
+    lb.rt.GrMob.patch(JSON.stringify([{
+        Type: "update-style",
+        TargetID: "root",
+        Changes: { AccessibilityRole: "listbox" },
+    }]));
+    lb.rt.drainFrames();
+    assert.equal(lb.root.getAttribute("data-grmob-selection-follows-focus"), null);
+});
+
+test("without the flag an arrow moves focus and chooses nothing", () => {
+    // The default, and it stays the default. A hundred-option list whose
+    // selection fires a request must not fire a hundred of them because
+    // somebody held ArrowDown.
+    const lb = listbox({ selected: 0 });
+    const items = lb.root.children;
+    items[0].focus();
+    items[0].dispatch("keydown", { key: "ArrowDown" });
+
+    assert.equal(lb.focused(), items[1]);
+    assert.deepEqual(lb.rt.dispatched, []);
+});
+
+test("an arrow chooses the member it lands on", () => {
+    const lb = following("listbox", [0, 1, 2].map((i) =>
+        member("option", { selected: i === 0, onClick: `cb_${i}` })));
+    const items = lb.root.children;
+    items[0].focus();
+
+    items[0].dispatch("keydown", { key: "ArrowDown" });
+    assert.equal(lb.focused(), items[1]);
+    assert.deepEqual(lb.rt.dispatched, [{ id: "cb_1", payload: {} }],
+        "the author's own OnTap is what runs — the runtime does not write " +
+        "aria-selected and could not, since that is rendered from Go state");
+});
+
+test("Home, End and a typeahead match choose too", () => {
+    // moveCompositeFocus is the single funnel for every movement here, which
+    // is why the hook is in it rather than in each key's arm. A version that
+    // handled only the arrows would leave a typed jump selecting nothing,
+    // which is the exact shape of the item this closes.
+    const lb = following("listbox", ["Alpha", "Beta", "Gamma"].map((label, i) => ({
+        Type: "Box",
+        Style: {
+            AccessibilityRole: "option",
+            AccessibilitySelected: i === 0 ? "true" : "false",
+        },
+        Props: { onClick: `cb_${i}`, content: label },
+    })));
+    const items = lb.root.children;
+    items[0].focus();
+
+    items[0].dispatch("keydown", { key: "End" });
+    assert.equal(lb.focused(), items[2]);
+
+    items[2].dispatch("keydown", { key: "b" });
+    assert.equal(lb.focused(), items[1], "the typeahead found Beta");
+
+    assert.deepEqual(lb.rt.dispatched.map((c) => c.id), ["cb_2", "cb_1"]);
+});
+
+test("a <button> tab is chosen too, which activation would have refused", () => {
+    // The one place this differs from activateCompositeMember, and it is the
+    // case that matters most. That function returns early for a <button>
+    // because Enter and Space already make the browser fire a real click, so
+    // synthesizing one would run the handler twice. An arrow key fires nothing
+    // on anything — and ARIA recommends selection-follows-focus for tabs above
+    // all, where every member is a <button>.
+    const tl = following("tablist", [0, 1, 2].map((i) => member("tab", {
+        selected: i === 0, onClick: `cb_${i}`, type: "Button",
+    })));
+    const tabs = tl.root.children;
+    tabs[0].focus();
+
+    tabs[0].dispatch("keydown", { key: "ArrowRight" });
+    assert.equal(tl.focused(), tabs[1]);
+    assert.deepEqual(tl.rt.dispatched, [{ id: "cb_1", payload: {} }]);
+});
+
+test("a member with no handler is focused and nothing else", () => {
+    // The same rule activation follows. A run of options where only some are
+    // tappable is an ordinary shape, and arrowing onto an inert one must not
+    // be an error.
+    const lb = following("listbox", [
+        member("option", { selected: true, onClick: "cb_0" }),
+        member("option"),
+    ]);
+    const items = lb.root.children;
+    items[0].focus();
+    items[0].dispatch("keydown", { key: "ArrowDown" });
+
+    assert.equal(lb.focused(), items[1]);
+    assert.deepEqual(lb.rt.dispatched, []);
+});
+
+test("a patch does not fire a selection, however much it moves", () => {
+    // The loop this would be. syncComposite runs on every patch and rewrites
+    // the whole roving tabindex; a selection fired from there would call back
+    // into Go, produce a patch, and fire again. So the hook is in
+    // moveCompositeFocus, which only a keystroke reaches, and this is the test
+    // that says so.
+    const lb = following("listbox", [
+        member("option", { selected: true, onClick: "cb_0" }),
+        member("option", { onClick: "cb_1" }),
+    ]);
+    lb.rt.GrMob.patch(JSON.stringify([{
+        Type: "update-style",
+        TargetID: "root/1",
+        Changes: { AccessibilityRole: "option", AccessibilitySelected: "true" },
+    }]));
+    lb.rt.drainFrames();
+
+    assert.deepEqual(lb.rt.dispatched, [],
+        "a selection the app changed must not be echoed back to the app");
+});
+
+test("the flag on a container that is not a composite does nothing", () => {
+    // applyAccessibility writes the attribute without consulting the composite
+    // tables, deliberately: knowing them there would put the tables in two
+    // places. The attribute on a `list` is read by nobody, which is the same
+    // nothing that happened before it existed.
+    const l = mountTree({
+        Type: "Column",
+        Style: { AccessibilityRole: "list", AccessibilitySelectionFollowsFocus: true },
+        Children: [member("listitem", { onClick: "cb_0" })],
+    });
+    assert.deepEqual(l.tabindexes(), [null]);
+    assert.deepEqual(l.rt.dispatched, []);
 });

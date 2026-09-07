@@ -1233,8 +1233,38 @@ The cost is that the badge is not part of the tap target.
 
 Unlike `StickyHeaders` and `HeadingLevel`, `Collapse` is *not* ignored under a
 `Header` override. The override owns the band; this owns whether the rows
-under it are emitted, which is not something a view you built can reach. Such
-a caller draws their own control and calls the same `OnToggle`.
+under it are emitted, which is not something a view you built can reach.
+
+That division left the override author holding three things at once: a button,
+an `aria-expanded` stated on every pass open or shut, and a heading wrapper
+whose nesting order is four paragraphs of argument in an unexported type — and
+the shape most likely to come out of that is one of the two `Accordion` tried
+and discarded, both of which look correct in an export.
+
+So there are two ways to get a correct control. `GroupHeader` is the answer when
+the whole default band will do; it is exported, takes `Expanded` and `OnToggle`,
+and builds all of it. `CollapseBand` is the answer when it will not — the
+disclosure alone, with no `Surface`, no padding and no count badge, for placing
+in a row of your own:
+
+```go
+Header: func(g components.Group) core.View {
+    return core.Row(
+        core.PaddingHorizontal(16),
+        components.CollapseBand{Collapse: shut, Group: g},
+        components.Avatar{Name: leader[g.Key]},
+        components.Badge{Text: strconv.Itoa(g.Count)},
+    )
+},
+```
+
+It takes your own `Collapse` — the same value handed to the list — which is what
+keeps the control and the row hiding answering to one state. `Content` replaces
+the words inside the button and never the announced name, because a button's
+children are presentational and the name comes from `Group.Label`. An inactive
+`Collapse` builds a plain heading rather than a control with nothing behind it:
+a stated expansion with no handler is what `core.AuditTree` reports as
+`ConcernInertDisclosure`.
 
 `DataTable` does not take it. A table's band sits inside the body's rowgroup,
 where ARIA has no reading for it even as a plain heading — making it a button

@@ -33,19 +33,56 @@
 //   - the WASM runtime's composite table names containers whose required
 //     children are the member roles it looks for
 //
-// # What this is not
+// # Where it comes from
 //
-// It is not generated. The ARIA specification publishes its role definitions in
-// a machine-readable form, and transcribing them by hand is a weaker thing than
-// reading that file at build time — a transcription can be wrong in exactly the
-// way the prose it replaces could be wrong.
+// It is generated, from the specification's own machine-readable role
+// definitions:
 //
-// What it buys anyway, and the reason it is worth having in this form, is that
-// the fact is now stated *once*. A wrong entry here is one wrong entry, and it
-// fails a test the moment a guard disagrees with it; a wrong sentence in a doc
-// comment was one of thirty restatements, and disagreed with nothing.
-// Regenerating this file from the spec's own JSON is a strictly better later
-// step and needs no change to anything that reads it.
+//	sh aria/fetch.sh      # the 1.4MB published HTML, not committed
+//	go run ./aria/gen     # -> testdata/aria.json
+//
+// It was hand-transcribed for two sessions, and this doc said at the time that
+// transcribing by hand was a weaker thing than reading the specification —
+// because a transcription can be wrong in exactly the way the prose it replaces
+// could be wrong. It was wrong, in four places, and generating it for the first
+// time is what said so:
+//
+//	list.requiredOwned held `group`      a listbox's allowance, not a list's
+//	radiogroup.orientation held a value  ARIA 1.1 had one, 1.2 removed it
+//	treegrid.orientation held a value    no version of ARIA states one
+//	nameProhibited held `term`, `time`   both take an author name in 1.2
+//
+// All four were in near-miss rows — the entries that exist so a guard has
+// something to argue with, and are therefore the entries least likely to be
+// argued with. Nothing failed when they were corrected, which is the finding:
+// the fixture's weak rows are exactly the ones no test reaches, so checking them
+// by hand was never going to be the fix.
+//
+// # What still is not generated
+//
+// Two lists in aria/spec, and the division between them and the facts is the
+// thing to hold on to. What ARIA *says* is read from ARIA. What this framework
+// *cares about* is chosen here:
+//
+//	spec.InScopeAttributes   the aria-* attributes some writer in this
+//	                         repository can emit. Nine of them. A tenth would
+//	                         widen every generated entry and add no guard.
+//	spec.NearMisses          the roles core deliberately does not carry, kept
+//	                         so `cell is not gridcell` is an assertion rather
+//	                         than a remark.
+//
+// Both are selections rather than claims, so neither can be wrong the way a
+// transcribed fact can. The roles in scope come from core.Roles() plus that
+// second list, so a role added to the vocabulary is in the fixture the next time
+// anyone generates it.
+//
+// # The offline promise is intact
+//
+// Nothing on a verification path fetches anything. `go test ./...`, run.sh and
+// the three platform harnesses all read the committed fixture. The conformance
+// test that holds the fixture to the specification skips when no download is
+// present — the stance ios/verify takes toward a missing iPhoneOS SDK — so the
+// check exists, costs nothing, and runs for anyone who wants it.
 //
 // It is also deliberately partial. Only the attributes this framework can write
 // are listed — the levels, the two selection spellings, the disclosure, the

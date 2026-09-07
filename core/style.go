@@ -476,6 +476,64 @@ type Style struct {
 	AccessibilityID       string
 	AccessibilityControls string
 
+	// AccessibilitySelectionFollowsFocus makes a composite widget choose the
+	// member the arrow keys land on, rather than only focusing it.
+	//
+	// Set on the *container* — the listbox or the tablist — not on the members.
+	// It is a statement about the widget's contract with the keyboard, and a
+	// per-member spelling would let a strip disagree with itself.
+	//
+	//	core.Row(core.AccessibilityRole(core.RoleTabList),
+	//	    core.AccessibilitySelectionFollowsFocus(),
+	//	    …tabs…
+	//	)
+	//
+	// # What it is for
+	//
+	// ARIA's tabs pattern recommends it outright: "tabs activate automatically
+	// when they receive focus as long as their associated tab panels are
+	// displayed without noticeable latency". Without it, a keyboard user
+	// crossing a three-tab strip presses Right, Right, Enter, and the two
+	// panels they arrowed past were never shown — which is a different
+	// experience from the one a mouse user gets, in a widget whose whole job is
+	// switching between things.
+	//
+	// ARIA's listbox pattern allows it for a single-select listbox and warns
+	// about it for anything expensive, which is why this is a prop and not the
+	// default. A strip of tabs over three local views should set it; a list
+	// whose selection fires a network request must not, because arrowing from
+	// the top of a hundred options to the bottom would fire a hundred.
+	//
+	// # It is the author's own OnTap that runs
+	//
+	// The runtime does not write aria-selected and could not: that attribute is
+	// rendered from Go state, and a keystroke has no way to reach Go state
+	// except through a callback. So this invokes the newly focused member's own
+	// OnTap — the same callback Enter and Space already invoke on it — and the
+	// selection then arrives the way every other selection does, as a render
+	// pass. A member with no handler is focused and nothing else, which is the
+	// same rule activation follows.
+	//
+	// That is worth stating because the obvious reading is that this is a
+	// *rendering* feature, and the standing argument against it was that the
+	// framework could not make the choice since aria-selected is written from
+	// Go. The premise was wrong rather than the conclusion: Enter on a member
+	// has always reached Go, and this is the same call on a different key.
+	//
+	// # Web only, and it is behaviour rather than semantics
+	//
+	// There is no ARIA attribute for it — it is a description of what a widget's
+	// keyboard does, and ARIA describes what a widget IS — so nothing is
+	// written into the DOM but a data attribute the runtime reads back.
+	//
+	// htmlout writes nothing for it, on exactly the argument that keeps the
+	// roving tabindex out of the static export: an exporter with no key handler
+	// has no focus to follow, so the flag would be a claim about behaviour that
+	// does not exist there. Both natives write nothing either, and for the
+	// original reason — VoiceOver and TalkBack cross a collection by swipe, so
+	// there is no arrow key for a selection to follow.
+	AccessibilitySelectionFollowsFocus bool
+
 	// Disabled marks the node inert: the renderers hand it to the platform's
 	// own disabled state rather than emulating one, so the control stops
 	// accepting input, loses focus eligibility, and — the part an emulation
@@ -723,6 +781,12 @@ func (s Style) applyTo(target *Style) {
 	}
 	if s.AccessibilityHidden {
 		target.AccessibilityHidden = true
+	}
+	// Same one-way merge as AccessibilityHidden and for the same reason: a
+	// false does not mean "turn it off", it means "this Style did not say". A
+	// widget that wants the flag off writes no prop.
+	if s.AccessibilitySelectionFollowsFocus {
+		target.AccessibilitySelectionFollowsFocus = true
 	}
 	if s.AccessibilityRole != RoleNone {
 		target.AccessibilityRole = s.AccessibilityRole

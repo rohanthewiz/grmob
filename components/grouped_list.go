@@ -290,6 +290,12 @@ type rowsSpec[T any] struct {
 	// half a Header override cannot own — a caller who builds their own band
 	// still gets a run that hides, and wires their control to the same
 	// OnToggle.
+	//
+	// components.CollapseBand is what an override wires it to. It is the
+	// disclosure the default band builds, on its own and without the band's
+	// chrome, so an override author places a correct control in a layout of
+	// their own instead of rebuilding a button, an aria-expanded and a heading
+	// wrapper from the argument in components.disclosure.
 	Collapse Collapse
 
 	// Wrap decorates each rendered row before it is keyed. DataTable uses it
@@ -352,6 +358,10 @@ func appendRows[T any](
 			// An override owns its own counting *and* its own control: the
 			// Group goes through untouched, trailing or not, and a collapsible
 			// band built here would be a second control for the same run.
+			//
+			// components.CollapseBand is how the override builds one that
+			// matches — it takes the caller's own Collapse, so the control and
+			// the row hiding below answer to one state rather than two.
 			h = spec.Header(group)
 		} else {
 			gh := GroupHeader{
