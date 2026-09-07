@@ -47,6 +47,16 @@ import (
 // commit. What stops it going further is that the same edit fails here the
 // moment anyone runs the fetch — and that the file now says GENERATED at the
 // top, with the command to regenerate it on the next line.
+//
+// # And a third way to be wrong, which is the download rather than the fixture
+//
+// The download is not committed and W3C keeps every revision at its own URL
+// forever, so what is on a machine is whatever it fetched, whenever it
+// fetched. A 1.1 copy is not a broken file — it is a perfectly good
+// specification that this repository does not read — and it regenerates a
+// fixture that differs from the committed one on four facts. Left to the
+// comparison below, that reads as a fixture error. So the edition is checked
+// first and reported as what it is.
 func TestTheFixtureIsWhatTheSpecificationSays(t *testing.T) {
 	root := repoRoot(t)
 
@@ -54,6 +64,24 @@ func TestTheFixtureIsWhatTheSpecificationSays(t *testing.T) {
 	if err != nil {
 		t.Skipf("no local copy of the ARIA specification (%s): run `sh aria/fetch.sh` "+
 			"to check the fixture against it", spec.LocalPath)
+	}
+
+	// The edition, before the content. A stale copy is the one way this test
+	// can fail while both of its subjects are correct: ARIA 1.1 is the same
+	// ReSpec output with different cells, so it parses cleanly to ~94 roles
+	// and regenerates a fixture differing on exactly the four facts 1.2
+	// changed. The report below would then name radiogroup's orientation as
+	// "the first difference" — a true statement about 1.1, printed as if
+	// somebody had mistyped a fixture nobody touched.
+	//
+	// A skip rather than a failure, for the same reason a missing download is
+	// one: what is on disk is a developer's own fetch, at whatever moment they
+	// ran it, and this test's promise is that it never asks the network. A
+	// checkout is not broken because the copy beside it is old.
+	if v := spec.SpecVersion(string(raw)); v != spec.Version {
+		t.Skipf("the local copy of the specification is WAI-ARIA %q and the fixture "+
+			"is generated from %s: re-run `sh aria/fetch.sh` to check it",
+			v, spec.Version)
 	}
 
 	doc, err := spec.Parse(string(raw))

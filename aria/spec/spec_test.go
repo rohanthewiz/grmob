@@ -1,6 +1,8 @@
 package spec
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -26,7 +28,14 @@ import (
 //	banned      an inherited attribute the role explicitly prohibits
 //	owner       a Required Owned Elements cell holding a path (group → thing)
 //	stub        a synonym with no feature table of its own
-const sample = `
+//
+// The title heading is here for a different reason from the sections: Parse
+// checks the document's edition before it believes anything else about it, so
+// without one every test below that goes through Parse would be exercising the
+// version guard rather than the thing it names. `specTitle` is the constant it
+// has to satisfy, spelled from Version so a bump does not silently turn these
+// into version-guard tests again.
+const sample = specHeading + `
 <section class="role notoc" id="widget">
   <div class="role-description"><p>A widget.</p></div>
   <table class="role-features"><tbody>
@@ -220,7 +229,7 @@ func TestAParseThatFoundAlmostNothingIsAnError(t *testing.T) {
 		t.Error("Parse accepted a six-role document — the role floor is not " +
 			"reached, so a markup change that dropped nine roles in ten would pass")
 	}
-	if _, err := Parse("<html><body>not the specification</body></html>"); err == nil {
+	if _, err := Parse(specHeading + "<html><body>not the specification</body></html>"); err == nil {
 		t.Error("Parse accepted a document with no role sections at all")
 	}
 
@@ -233,8 +242,124 @@ func TestAParseThatFoundAlmostNothingIsAnError(t *testing.T) {
 		b.WriteString(string(rune('a'+i/26)) + string(rune('a'+i%26)))
 		b.WriteString(`"><td class="role-namefrom">author</td></section>`)
 	}
-	if _, err := Parse(b.String()); err == nil {
+	if _, err := Parse(specHeading + b.String()); err == nil {
 		t.Error("Parse accepted 90 roles with no implicit orientation between " +
 			"them — every oriented role's default would silently become \"\"")
+	}
+}
+
+// The ReSpec title heading, at the edition this package reads.
+//
+// Built from Version rather than written out, so the constant is what these
+// tests agree with — a hand-typed "1.2" here would go on satisfying the guard
+// after a bump and would leave every test below exercising a version the
+// package no longer claims.
+const specHeading = `<h1 id="title" class="title">Accessible Rich Internet ` +
+	`Applications (WAI-ARIA) ` + Version + `</h1>`
+
+// A stale download is named as one, rather than reported as a fixture that
+// disagrees with the specification.
+//
+// This is the whole of the finding. The 1.1 and 1.2 documents are the same
+// ReSpec output with different content in the cells, so every other signal
+// this package has — the role count, the class names, the orientation sentence
+// — is identical between them, and a 1.1 copy parses cleanly to ~94 roles and
+// regenerates a fixture differing on exactly the four facts the revision
+// changed. What that produces downstream is aria/verify printing "aria.json is
+// not what aria/gen would write" and naming radiogroup's orientation as the
+// first difference: a true statement about 1.1 offered as a transcription
+// error in a file nobody touched.
+func TestAStaleDownloadIsRefusedBeforeItIsParsed(t *testing.T) {
+	stale := strings.Replace(sample,
+		"(WAI-ARIA) "+Version, "(WAI-ARIA) 1.1", 1)
+	if stale == sample {
+		t.Fatal("the sample's title heading no longer holds the version; update " +
+			"specHeading rather than deleting this test")
+	}
+	_, err := Parse(stale)
+	if err == nil {
+		t.Fatal("Parse accepted a WAI-ARIA 1.1 document: the fixture it would " +
+			"generate disagrees with the committed one on four facts, and the " +
+			"failure reads as a broken fixture rather than a stale download")
+	}
+	// The message has to name the download, because the reader arrives at it
+	// holding a fixture diff and a working checkout.
+	for _, want := range []string{"1.1", Version, "aria/fetch.sh"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("the refusal does not mention %q: %v", want, err)
+		}
+	}
+
+	// A document with no heading at all is refused too. It is the shape an
+	// error page or a partial download takes, and "no version" must not read
+	// as "the right version".
+	if _, err := Parse(strings.Replace(sample, specHeading, "", 1)); err == nil {
+		t.Error("Parse accepted a document that does not say which edition it is")
+	}
+}
+
+// The three places the edition is written must agree.
+//
+// Version is the Go constant, LocalPath derives its filename from it, and
+// aria/fetch.sh's URL is the third — a shell script, which cannot read a Go
+// constant and so is the one that drifts. The failure it produces is the
+// nastiest of the family: the script downloads 1.2 into a file whose name says
+// 1.3, or 1.3 into a file the guard then refuses, and either way the person
+// following the three commands in fetch.sh's own header gets an error about a
+// document they just fetched correctly.
+//
+// A source check because there is nothing else available: making the script
+// ask Go for the number would put a `go run` in front of a curl, and this is
+// the one thing in the repository that is allowed to need the network and
+// nothing else.
+func TestTheFetchScriptAgreesWithTheVersionConstant(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join("..", "fetch.sh"))
+	if err != nil {
+		t.Fatalf("reading aria/fetch.sh: %v", err)
+	}
+	src := string(raw)
+
+	wantURL := "https://www.w3.org/TR/wai-aria-" + Version + "/"
+	if !strings.Contains(src, wantURL) {
+		t.Errorf("aria/fetch.sh does not fetch %s — the script and spec.Version "+
+			"name different editions of ARIA, and whichever one the download lands "+
+			"as, one of them is about to refuse it", wantURL)
+	}
+
+	// And into the path this package reads it back from. LocalPath is stated
+	// from the module root; the script cd's into aria/ first, so what it must
+	// hold is the tail.
+	wantOut := strings.TrimPrefix(LocalPath, "aria/")
+	if !strings.Contains(src, wantOut) {
+		t.Errorf("aria/fetch.sh does not write %s — the fetch would succeed and "+
+			"every reader would go on skipping for want of a local copy", wantOut)
+	}
+}
+
+// SpecVersion reads the edition and nothing near it.
+//
+// Exported separately from Parse because the two callers want different
+// things: Parse folds it into a refusal, and aria/verify's conformance test
+// wants to skip with a sentence about the download rather than fail with a
+// diff. So it answers "" for a document that has no heading instead of
+// guessing, and it is not fooled by the fifteen other places the string
+// "wai-aria-1.1" appears in the published 1.2 document (its own change log
+// links to the previous revision throughout).
+func TestSpecVersionReadsTheTitleHeadingAlone(t *testing.T) {
+	if got := SpecVersion(sample); got != Version {
+		t.Errorf("SpecVersion(sample) = %q, want %q", got, Version)
+	}
+	if got := SpecVersion("<html><body>nothing</body></html>"); got != "" {
+		t.Errorf("SpecVersion of a document with no heading = %q, want \"\"", got)
+	}
+	// The trap the real document sets: a 1.2 copy links to
+	// https://www.w3.org/TR/wai-aria-1.1/ fifteen times, so anything scanning
+	// the body for a version string reads 1.1 out of a perfectly current file
+	// and refuses it.
+	linky := specHeading + `<p>See <a href="https://www.w3.org/TR/wai-aria-1.1/">` +
+		`WAI-ARIA 1.1</a> and <a href="https://www.w3.org/TR/wai-aria-1.0/">1.0</a>.</p>`
+	if got := SpecVersion(linky); got != Version {
+		t.Errorf("SpecVersion read %q out of a %s document that links to its own "+
+			"predecessors — the heading is the only statement of the edition", got, Version)
 	}
 }

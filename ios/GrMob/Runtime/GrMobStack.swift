@@ -24,8 +24,13 @@ import CoreGraphics
 ///
 /// What made that possible is GrMobStackLayer: a `LayoutSubview` is an opaque
 /// proxy a test can never construct, but the two things the layout asks one
-/// are a protocol two lines long. Renderer.swift now holds the conversion and
-/// the `place()` call, and nothing else.
+/// are a protocol two lines long. Renderer.swift now holds `subviews.map`, one
+/// `sizeThatFits` and the `place()` call, and nothing else — the conversion
+/// between `ProposedViewSize` and the proposal type below went to
+/// GrMobStackBridge.swift, which `ios/verify` also runs. It is a separate file
+/// rather than a second extension here for the reason this one gives about
+/// itself: it needs `import SwiftUI`, and the sentence above about importing
+/// CoreGraphics and nothing else has to stay true.
 ///
 /// # Why this exists at all
 ///
@@ -126,8 +131,9 @@ public func grMobStackAnchor(_ align: String) -> GrMobStackAnchor? {
 /// written in terms of `Subviews` is a rule that can only be checked by
 /// mounting the view in a running app. Written against a protocol instead,
 /// the same rules run on a plain macOS host against a fake that records what
-/// it was asked. Renderer.swift converts in both directions, in an adapter
-/// short enough to read.
+/// it was asked. GrMobStackBridge.swift converts in both directions, and
+/// `ios/verify` runs that conversion too — a `ProposedViewSize`, unlike a
+/// `LayoutSubview`, is an ordinary public struct a check can construct.
 public struct GrMobProposal: Equatable {
     /// nil is SwiftUI's `nil` dimension: unspecified, decide for yourself.
     public let width: CGFloat?

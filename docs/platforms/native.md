@@ -351,6 +351,34 @@ still packs. Rows keep their top-aligned default: the intrinsic-height
 measurement above has real costs inside a List, so nothing turns it on
 unasked.
 
+### A `Spacer`'s own `Style`
+
+`core.Spacer(n)` is a node whose size arrives as a **prop** rather than as a
+`Style` declaration, and that is what made it the one node type on both natives
+whose `Style` went missing entirely. Each arm was a single expression built from
+the prop — `Color.clear.frame(width:height:)` and `Spacer(Modifier.size(n.dp))`
+— with no call to the renderer's own box helper anywhere in it, so a
+hand-assembled Spacer carrying a `Background`, a `Margin`, an
+`AccessibilityLabel` or an `OnTap` got none of them. Both DOM targets had always
+applied it, so the same node was coloured in a browser and invisible on a phone.
+
+Both arms now build the node's box, and the size prop goes **underneath** the
+author's declarations — the rule every chassis in this framework follows, stated
+at `modalChassis` in `htmlout` and at `applySpacerChassis` in the WASM runtime.
+The two languages get there in opposite ways, which is worth knowing before
+moving either line:
+
+| | how the author wins |
+|---|---|
+| SwiftUI | later in a chain is further *out*, and an outer frame wins — so the chassis frame is written before `.grMobBox`. On an axis the `Style` claims it is not written at all (`nil`), which keeps `Color.clear` flexible there so the background fills the frame `grMobBox` puts around it |
+| Compose | constraints flow outside-in and an inner `size()` coerces itself into what it was handed, so `boxModifier` first and `.size()` after is the whole of it — per axis, and the background lands at the measured size |
+
+One divergence stays and is unreachable from Go: a hand-assembled Spacer's
+**children**. A Compose `Spacer` and a `Color.clear` are both leaves, where both
+DOM renderers emit a Spacer's children like any other element's, and
+`core.Spacer(n)` builds none. `mobile/verify/spacer_test.go` pins both halves —
+that the box is built at all, and that the chassis sits under the author.
+
 ### `ContentMode` on `Image`
 
 ```go
@@ -920,8 +948,23 @@ things the layout asks a subview are "how big are you if I offer you this" and
 SwiftUI's `ProposedViewSize` with the framework taken out, and
 `GrMobStackSolver.containerSize(layers:proposing:)` and `.placements(layers:in:)`
 are the decisions, run in `ios/verify` against a fake that records every offer
-it was made. What is left in `Renderer.swift` is the adapter and the `place()`
-call, neither of which has a decision in it.
+it was made.
+
+The *vocabulary* moved out too, and later. Converting between `ProposedViewSize`
+and `GrMobProposal` was three field-copying expressions inside `Renderer.swift`
+— "three lines with no decision in them", which was true and still left them on
+the half of this target that nothing runs. A swapped axis or a dimension dropped
+to `nil` compiles, draws, and is invisible to the source-text pin that catches a
+`Layout` computing a size itself. So both directions live in
+`GrMobStackBridge.swift` and `ios/verify` runs them: the obstacle was never
+SwiftUI, it was `LayoutSubview` in particular, and a `ProposedViewSize` is an
+ordinary public struct a check can construct. It is a separate file from
+`GrMobStack.swift` because it needs `import SwiftUI`, and that file's claim to
+import CoreGraphics and nothing else is what lets it be linked into a plain
+command-line binary.
+
+What is left in `Renderer.swift` is `subviews.map`, one `sizeThatFits` and one
+`place()`.
 
 What still needs a simulator is the assumption underneath: that a real
 `LayoutSubview` answers `sizeThatFits` the way the fake does. That is SwiftUI's

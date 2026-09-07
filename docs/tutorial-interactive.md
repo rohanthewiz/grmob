@@ -55,7 +55,7 @@ It also ships natively: the package registers itself with the mobile bridge
 | 1 · Views & Layout | Composition, text and typography, rows/columns, alignment and flex, surfaces |
 | 2 · State, Events & Lists | `NewState` mechanics, controlled inputs, conditionals, `For` + `Keyed` and why keys matter |
 | 3 · Hooks & Effects | `UseInterval`, `UseTimeout`, `UseEffect`, `UseMemo`, `UseReducer` — and the rules of hooks |
-| 4 · The Widget Library | Button variants × emphasis, badges/chips/segmented controls, `ListRow`, `Accordion`, `Tabs` |
+| 4 · The Widget Library | Button variants × emphasis, badges/chips/segmented controls, `ListRow`, `Accordion`, `Tabs`, `GroupedList` and `DataTable` — including a collapsible band built from a `Header` override and a `CollapseBand` |
 | 5 · Forms & Validation | Rules, reveal policies, focus and blur, `FormField` |
 | 6 · Navigation & Overlays | Push/Pop/Replace/Reset, modals, toasts |
 | 7 · Theming & Styling | The style pipeline, `UseStyle` merging, theme anatomy, a live switcher over every bundled palette, transitions |

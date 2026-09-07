@@ -92,7 +92,7 @@ struct RenderNode: View {
             // TestNativeZStackOverlaysItsChildren pins the arm to it.
             case "ZStack": GrMobZStack(node: node, grow: grow)
             case "List": GrMobList(node: node, grow: grow)
-            case "Spacer": Color.clear.frame(width: CGFloat(node.intProp("size")), height: CGFloat(node.intProp("size")))
+            case "Spacer": GrMobSpacer(node: node, grow: grow)
             case "Scroll": GrMobScroll(node: node, grow: grow)
             case "SafeArea":
                 // SwiftUI already lays out inside the safe area by default, so
@@ -428,6 +428,12 @@ private struct GrMobStackPlacement: LayoutValueKey {
 /// and the LayoutValueKey behind `anchor`. Everything either one is used *for*
 /// is decided next door, where it can be run.
 ///
+/// The size *vocabulary* moved next door too, and later: `proposedViewSize`
+/// and `GrMobProposal.init(_:)` are in GrMobStackBridge.swift, which
+/// `ios/verify` compiles and runs. They were three field-copying expressions
+/// written out here, which is code a reader checks by eye and a compiler
+/// agrees with whichever way round it is written — see that file.
+///
 /// A struct wrapping the proxy rather than an extension on `LayoutSubview`
 /// itself: the conformance would then be visible to anything in the module
 /// that happens to hold one, and this is a private detail of one layout.
@@ -435,7 +441,7 @@ private struct GrMobStackSubview: GrMobStackLayer {
     let subview: LayoutSubview
 
     func size(proposing proposal: GrMobProposal) -> CGSize {
-        subview.sizeThatFits(ProposedViewSize(width: proposal.width, height: proposal.height))
+        subview.sizeThatFits(proposal.proposedViewSize)
     }
 
     var anchor: GrMobStackAnchor? { subview[GrMobStackPlacement.self] }
@@ -449,8 +455,9 @@ private struct GrMobStackSubview: GrMobStackLayer {
 /// proposal each layer is measured with, whether the container may be clamped
 /// to it, and what a layer is offered at placement are all decided in
 /// GrMobStack.swift, and `ios/verify` runs them there against a recording
-/// fake. What is left here is the conversion and the `place()` call, neither
-/// of which has a decision in it.
+/// fake. The conversion between the two size vocabularies is run there too,
+/// out of GrMobStackBridge.swift. What is left here is `subviews.map`, one
+/// `sizeThatFits` and one `place()`.
 ///
 /// What still cannot be checked off-device is the assumption underneath: that
 /// a real `LayoutSubview` answers `sizeThatFits` the way the fake does. That
@@ -460,7 +467,7 @@ private struct GrMobStackLayout: Layout {
     func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
         GrMobStackSolver.containerSize(
             layers: subviews.map(GrMobStackSubview.init),
-            proposing: GrMobProposal(width: proposal.width, height: proposal.height))
+            proposing: GrMobProposal(proposal))
     }
 
     func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
@@ -474,8 +481,7 @@ private struct GrMobStackLayout: Layout {
             subview.place(
                 at: placement.origin,
                 anchor: .topLeading,
-                proposal: ProposedViewSize(width: placement.proposal.width,
-                                           height: placement.proposal.height))
+                proposal: placement.proposal.proposedViewSize)
         }
     }
 }
@@ -738,6 +744,83 @@ private struct GrMobFlexLayout: Layout {
 /// grows past it, scrolling, when the content is tall. That is what the DOM
 /// gives `flex-grow` under `overflow: auto` too.
 ///
+/// core.Spacer: a fixed void that does not give way.
+///
+/// # Why the node has a box at all
+///
+/// It used to be one expression — `Color.clear.frame(width:height:)` — with no
+/// `.grMobBox` on it, which made a Spacer the one node type on this target
+/// whose own Style was dropped whole. Both DOM renderers had always applied it
+/// (htmlout's `spacerChassis`, the WASM runtime's `applySpacerChassis`), so a
+/// hand-assembled Spacer carrying a `Background` was coloured in a browser and
+/// invisible on a phone, and the same divergence swallowed its accessibility
+/// props, its callback IDs and its margin.
+///
+/// `core.Spacer(n)` builds a node with a size prop and nothing else, so on
+/// every tree core produces this renders exactly what the old expression did.
+/// A node assembled by hand is the case that changed, and it changed toward
+/// what the other three targets already did.
+///
+/// # The chassis goes underneath the author's style, per axis
+///
+/// The size prop is the node *type's* fixed look, and everywhere else in this
+/// framework a type's look yields to the author's declarations rather than
+/// overriding them — `modalChassis` in htmlout says so in as many words, and
+/// `applySpacerChassis` records which of its three properties the author
+/// claimed for exactly this reason.
+///
+/// So `spacerExtent` returns nil on an axis the Style already pins, and nil is
+/// SwiftUI's "do not constrain this one". That is not merely tidier than
+/// letting `grMobBox`'s own frame sit outside a fixed one: `Color.clear` is a
+/// *flexible* view, and leaving the claimed axis unconstrained is what keeps
+/// it flexible there, so the background `grMobBox` paints inside its frame
+/// fills the whole of the box the author asked for. A fixed 10×10 clear inside
+/// a 200-wide frame would instead paint a 10-point square in a 200-point hole.
+///
+/// ```
+///   Style says nothing            Style says Width(200)
+///
+///   +--------+                    +--------------------------+
+///   | 10x10  |  frame(10, 10)     |        200 x 10          |  frame(nil, 10)
+///   +--------+                    +--------------------------+  + grMobBox's
+///                                                                 width frame
+/// ```
+///
+/// # What is still not honoured
+///
+/// A hand-assembled Spacer's *children*. Compose's `Spacer` and this
+/// `Color.clear` are both leaves, where both DOM renderers emit a Spacer's
+/// children like any other element's. `core.Spacer(n)` builds none, so the
+/// divergence is unreachable from Go and is named here rather than closed.
+private struct GrMobSpacer: View {
+    let node: GrMobNode
+    let grow: GrMobGrow
+
+    var body: some View {
+        let s = node.style
+        let size = node.intProp("size")
+        Color.clear
+            .frame(width: spacerExtent(size, stated: s?.width ?? ""),
+                   height: spacerExtent(size, stated: s?.height ?? ""))
+            .grMobBox(s, grow: grow,
+                        onTap: node.stringProp("onClick"),
+                        onLongPress: node.stringProp("onLongPress"))
+    }
+}
+
+/// One axis of the Spacer chassis, or nil where the Style already claims it.
+///
+/// "Claims it" is the same test `grMobDimension` applies: everything but the
+/// empty string and "auto" produces a frame there, including a value it cannot
+/// parse. That last case looks like a hole and is the agreeing answer — a
+/// declaration the CSS parser rejects also counts as authored on both DOM
+/// targets, because `applySpacerChassis` asks whether the style pass wrote the
+/// property rather than whether the browser kept it.
+private func spacerExtent(_ size: Int, stated: String) -> CGFloat? {
+    guard stated.isEmpty || stated == "auto" else { return nil }
+    return CGFloat(size)
+}
+
 /// Cross-axis stretch applies as in any vertical container: the Scroll is a
 /// flex column on the web, so its children fill its width unless they hug.
 private struct GrMobScroll: View {

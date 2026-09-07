@@ -610,3 +610,83 @@ func Roles() []Role {
 		RoleGroup,
 	}
 }
+
+// KeyboardComposites returns the container roles that get an ARIA keyboard
+// pattern — a roving tabindex, arrow movement, Home and End — from the WASM
+// runtime.
+//
+// # Why core states a fact about one target's runtime
+//
+// It is not a list of what the runtime happens to implement; it is the list of
+// roles for which *setting a composite-keyboard style prop means anything at
+// all*, and that is a question a caller asks of core. AuditTree is the first
+// reader: core.AccessibilitySelectionFollowsFocus is a statement about what a
+// widget's keyboard does, and on a role with no keyboard it is a claim about
+// nothing — which no exporter can notice, because knowing these three roles
+// where an attribute is written would put the list in two places.
+//
+// The runtime keeps the same three in two tables split by a different
+// question (whether ARIA names the members), and wasm/verify holds their union
+// to this function. So a fourth pattern is one edit here and a failing check
+// there, rather than a role that quietly gains a keyboard the audit still
+// calls inert.
+//
+// # Why these three and not the rest of ARIA's patterns
+//
+// `listbox` and `tablist` are the two ARIA structures that both name their
+// members and own their children, so the runtime can find a container's
+// members by role. `toolbar` names no member role — ARIA defines no
+// `toolbaritem` — and is here anyway because the pattern is real and the
+// runtime supplies the membership rule itself: a toolbar's controls are the
+// natively focusable tags plus the containers that say they are controls.
+//
+// `menu`, `menubar`, `tree`, `treegrid`, `grid` and `radiogroup` are the
+// patterns ARIA describes that this framework refuses, each for a stated
+// reason — aria/verify/refusals_test.go holds every refusal to what the
+// pattern actually requires. `list` is deliberately absent and is the near
+// miss worth naming: it is content rather than a control, and ARIA gives it no
+// keyboard at all.
+//
+// Container order matches Roles(); the members are not here, because being a
+// member is a fact about a role's parent rather than about the role.
+func KeyboardComposites() []Role {
+	return []Role{RoleListBox, RoleTabList, RoleToolbar}
+}
+
+// TappableContainerRoles returns the roles whose whole purpose is to make an
+// ordinary container announce itself as a control.
+//
+// These are the two the "Content roles" block above argues for in as many
+// words: a Box or a Row with an OnTap, which every renderer draws as inert
+// scenery and every screen reader announces as text until one of these says
+// otherwise. A core.Button needs neither — it is already a <button> on the web
+// and a real control on both natives.
+//
+// # Why it is a list and who reads it
+//
+// The WASM runtime's toolbar keyboard needs it. A toolbar's members are named
+// by no role (ARIA defines no `toolbaritem`), so the runtime has to be told
+// what a control is, and its answer is two rules: a natively focusable tag, or
+// a container carrying one of *these* roles together with an OnTap. That
+// second rule was a pair of bare strings in the runtime pinned against a pair
+// of constants hand-written in a test — three copies of one fact, none of
+// which was the fact itself.
+//
+// The fact is here now, and role_control_test.go is what makes it a property
+// rather than a fourth copy: every role core declares is either in this list
+// or in a table saying why it is not one, so a new role cannot be added
+// without somebody deciding. That was the actual hole — a future RoleCheckbox
+// would be a tappable container by exactly the argument above, and would
+// silently not be a toolbar member.
+//
+// # Why not "every role a screen reader calls a widget"
+//
+// Because the question is narrower than it looks: not "is this thing
+// interactive" but "does putting this role on a plain container make it a
+// control the browser should give a tab stop to". RoleOption and RoleTab are
+// interactive and are *not* here — they are members of a composite, whose tab
+// stop belongs to their container and not to them, and taking one as a
+// toolbar's control would put a second keyboard on a widget that has one.
+func TappableContainerRoles() []Role {
+	return []Role{RoleButton, RoleLink}
+}

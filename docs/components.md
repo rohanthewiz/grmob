@@ -1309,6 +1309,14 @@ would be a second claim on a structure that is already the wrong shape. The
 fix is per-band rowgroups, which is a change to the row emission both widgets
 share.
 
+Lesson 4.6 of the [interactive tutorial](tutorial-interactive.md) now builds
+one, which it did not before: `CollapseBand`'s only readers were its own tests,
+and the field whose whole justification is how a *real* custom band is assembled
+(`ControlStyle`) had never been assembled into one. The demo's bands all start
+shut, which is the half a `Header` override does not own — the run is withheld
+by the widget, not by anything in the header — and the badge sits outside the
+button, which is the half it does.
+
 See lessons 4.6 and 4.8 of the [interactive tutorial](tutorial-interactive.md)
 and the godoc for the full field list.
 

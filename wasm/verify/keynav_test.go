@@ -103,14 +103,68 @@ func TestRuntimeCompositeRolesMatchCore(t *testing.T) {
 // `toolbaritem` and a toolbar therefore has to be told what its controls are.
 var focusableComposites = []core.Role{core.RoleToolbar}
 
+// The two tables above are one list read through two questions, and core now
+// states that list: core.KeyboardComposites() is the roles for which asking
+// for a composite keyboard means anything.
+//
+// It exists because a *third* reader arrived. core.AuditTree reports a
+// selection-follows-focus flag on a role with no arrows, and it cannot get the
+// answer from the runtime — the runtime is JavaScript, and the one place that
+// writes the attribute deliberately does not consult these tables (knowing
+// them there would put them in two places). So the list moved to core, and
+// what this check does is keep the runtime's split-by-membership version and
+// core's split-by-nothing version from drifting: a fourth pattern implemented
+// in the runtime and not declared in core would be reported as inert by the
+// audit while working perfectly in a browser, and a fourth declared in core
+// and not implemented would be the reverse.
+//
+// The union, not either half: which of the two tables a role lands in is the
+// runtime's business (does ARIA name its members) and core has no opinion
+// about it, so imposing one here would be inventing a fact to check.
+func TestTheRuntimeCompositesAreTheOnesCoreDeclares(t *testing.T) {
+	runtime := map[core.Role]bool{}
+	for _, pair := range compositeRoles {
+		runtime[pair.container] = true
+	}
+	for _, r := range focusableComposites {
+		runtime[r] = true
+	}
+
+	declared := map[core.Role]bool{}
+	for _, r := range core.KeyboardComposites() {
+		declared[r] = true
+		if !runtime[r] {
+			t.Errorf("core.KeyboardComposites() names %q and the runtime has no "+
+				"keyboard for it — core.AuditTree would call a working widget's "+
+				"selection-follows-focus flag inert, and a container of that role "+
+				"would have no arrow keys", r)
+		}
+	}
+	for r := range runtime {
+		if !declared[r] {
+			t.Errorf("the runtime gives %q a keyboard and core does not declare it — "+
+				"core.AuditTree reports a selection-follows-focus flag on it as a "+
+				"claim about nothing, and it is not", r)
+		}
+	}
+}
+
 // The roles a Box may carry that make it one of a toolbar's controls.
 //
-// Pinned to core because the runtime spells them as bare strings. These are
-// exactly the two roles core.Role documents as "a tappable container — a Box or
-// a Row with an OnTap": a rename in core that did not reach the runtime would
-// leave a toolbar of icon boxes with one tab stop and nothing to arrow to, and
-// nothing would say so.
-var controlRoles = []core.Role{core.RoleButton, core.RoleLink}
+// Asked of core rather than written out here, which is the change that makes
+// this a pin rather than a third copy. It used to be a pair of constants in
+// this file, held against a pair of bare strings in the runtime: two spellings
+// of one fact, neither of which was the fact, and both of which a *new* role
+// would leave untouched. That is the failure that mattered — a future
+// RoleCheckbox is a tappable container by exactly the argument core.Role makes
+// for RoleButton, and it would have shipped as a role a toolbar steps over
+// with nothing anywhere disagreeing.
+//
+// core.TappableContainerRoles() is the fact, and core's own
+// role_control_test.go is what keeps it complete: every role in the vocabulary
+// is either in that list or has a stated reason for not being. What this file
+// still owns is the other half — that the runtime's copy says the same thing.
+func controlRoles() []core.Role { return core.TappableContainerRoles() }
 
 // The second member rule's tables, held to core the way COMPOSITE_MEMBERS is.
 //
@@ -128,7 +182,7 @@ func TestTheFocusableCompositeTablesMatchCore(t *testing.T) {
 				"every focusable control inside it. A container role missing here " +
 				"is announced with an axis and given no keyboard, which is what a " +
 				"toolbar was for two releases"},
-		{jsSet("CONTROL_ROLES", controlRoles),
+		{jsSet("CONTROL_ROLES", controlRoles()),
 			"the two roles core.Role documents as a tappable container. A Box " +
 				"carrying one, with an OnTap, is a control the browser gives no tab " +
 				"stop of its own — so a toolbar of icon boxes depends entirely on " +

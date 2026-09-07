@@ -768,6 +768,16 @@ this framework builds one:
 | a `<button>`, `<a>`, `<input>`, `<select>` or `<textarea>` | the browser gives it a tab stop without being asked, which is the stop the toolbar is taking over |
 | a container carrying `role="button"` or `role="link"` *with* an `onClick` | that is the shape `core.RoleButton` exists for — a `Box` or `Row` with an `OnTap`, which has no tab stop of its own |
 
+The role half of that second rule is `core.TappableContainerRoles()`, not a pair
+of strings this file happens to agree with. It used to be three copies of one
+fact — the runtime's `CONTROL_ROLES`, a pair of constants in a test, and this
+table — and a *new* role would have left all three untouched: a future
+`RoleCheckbox` is a tappable container by exactly the argument `core.Role` makes
+for `RoleButton`, and it would have shipped as a role a toolbar steps over.
+`core/role_control_test.go` holds every role in the vocabulary to one side of
+that question or the other, with a stated reason for each exclusion, so adding
+one now requires deciding.
+
 Deliberately **not** "anything carrying `tabindex`": this section writes
 `tabindex` onto every member it finds, so a membership test that read the
 attribute would answer differently on the second sync than on the first.
@@ -779,6 +789,16 @@ says whose a `<button>` is. So a `tablist` inside a `toolbar` keeps its own
 roving `tabindex`: that shape is two tab stops rather than one, which is not what
 ARIA describes and is the honest outcome of a rule that will not guess. Every
 control stays reachable, which the alternatives lose.
+
+ARIA describes one stop, by making the inner widget's *current* member the outer
+widget's member — which means two widgets writing `tabindex` onto one element
+and needs a rule about which of them owns the write when they disagree. There is
+no such rule, and inventing one silently is worse than the divergence. What the
+author is owed instead is knowing they built the two-stop version, so
+`core.AuditTree` reports it in debug mode as
+[`nested-composite`](../concepts/debug-mode.md#concerns) — in Go, where the tree
+was written, rather than in a browser console at the moment a keystroke arrives
+on a target they may not be running.
 
 The two rules are two tables in `grmob-runtime.js` rather than one with a
 sentinel — `COMPOSITE_MEMBERS` is a fact about ARIA's vocabulary that
@@ -825,6 +845,17 @@ There is no ARIA attribute for it — ARIA says what a widget *is* — so it rid
 it. `htmlout` writes nothing for it, on the argument that keeps the roving
 `tabindex` out of the static export, and neither native reads it: there are no
 arrow keys there, because VoiceOver and TalkBack cross a collection by swipe.
+
+It is written for **any** node that asks, composite or not. That is deliberate:
+suppressing it for a role with no keyboard would mean `applyAccessibility`
+knowing the composite tables, and the tables would then be a fact in two places.
+The cost is that the flag on a `list`, or on a `Box` whose role was never set,
+is a claim in the document that nothing reads — so `core.AuditTree` reports it
+in debug mode as [`inert-follows-focus`](../concepts/debug-mode.md#concerns).
+Which roles have a keyboard for a selection to follow is
+`core.KeyboardComposites()`; `wasm/verify/keynav_test.go` holds it to the union
+of `COMPOSITE_MEMBERS`' keys and `COMPOSITE_FOCUSABLE`, so the runtime and the
+audit cannot disagree about what is inert.
 
 The arrow pair was, for a while, read straight off the container's resolved
 `flex-direction` — correct, and unannounced. ARIA's default for a `tablist` is

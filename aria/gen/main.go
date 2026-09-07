@@ -14,6 +14,12 @@
 // So there are two ways this fixture can be wrong and both are covered: it can
 // disagree with the spec, which the conformance test catches, and it can
 // disagree with the code, which every other test in aria/verify catches.
+//
+// There is a third way to be wrong that is not about the fixture at all: the
+// *download* can be a different edition of ARIA from the one every fact here
+// came from. spec.Parse refuses that by name rather than regenerating from it
+// — see spec.Version — so this command fails with one line about the fetch
+// instead of silently rewriting four facts.
 package main
 
 import (

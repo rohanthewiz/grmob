@@ -917,6 +917,79 @@ func lessonCollections() Lesson {
 				},
 			}
 
+			// The banded demo's own state: which months are shut.
+			//
+			// A set held by the *screen*, which is the whole of components.
+			// Collapse's argument for being caller-owned — the widget calls no
+			// hook, so it could not keep this without becoming un-renderable
+			// inside a core.IfElse, and "which months are shut" is screen state
+			// that should survive a pager reload anyway.
+			// Every month starts shut, which is the half of Collapse a Header
+			// override does *not* own: the run is withheld by the widget, so
+			// this demo opens as four bands and nothing else, and a tap on one
+			// brings its rows back. Derived from the fixture rather than
+			// written out, so a month added to the archive is shut too instead
+			// of being the one run that opens for no stated reason.
+			allShut := make(map[string]bool, 4)
+			for _, e := range archive {
+				allShut[archiveMonth(e).Key] = true
+			}
+			shutMonths := core.NewState(ctx, allShut)
+			collapse := components.Collapse{
+				IsCollapsed: func(g components.Group) bool { return shutMonths.Get()[g.Key] },
+				OnToggle: func(g components.Group) {
+					// Cloned rather than mutated: core.State compares by
+					// reference to decide whether anything changed, so writing
+					// into the live map would toggle nothing on screen.
+					next := maps.Clone(shutMonths.Get())
+					next[g.Key] = !next[g.Key]
+					shutMonths.Set(next)
+				},
+			}
+
+			banded := components.GroupedList[archiveEntry]{
+				Items:    archive,
+				Key:      archiveKey,
+				GroupBy:  archiveMonth,
+				Collapse: collapse,
+				Row: func(e archiveEntry) core.View {
+					return components.ListRow{Title: e.title, Subtitle: e.speaker}
+				},
+				// The override, and the reason CollapseBand exists. Collapse
+				// reaches past a Header for the row hiding and stops at it for
+				// the *control*, because a band the widget also built would be
+				// a second control for the same run — so an override that
+				// wanted a collapsible band used to owe a button, an
+				// aria-expanded stated on every pass, and a heading wrapper.
+				Header: func(g components.Group) core.View {
+					return core.Row(
+						core.AlignItemsProp(core.AlignItemsCenter),
+						// No padding on the row. The insets are on the
+						// control instead, which is the point of
+						// ControlStyle: a band's padding on the row holding
+						// the button is dead space, since the button fills
+						// the box it was given and 16px of it would be a
+						// place a press does nothing.
+						core.Padding(0),
+						core.PaddingRight(16),
+						components.CollapseBand{
+							Collapse: collapse,
+							Group:    g,
+							// FlexGrow on the wrapper, so the tally sits hard
+							// against the trailing edge — the same thing the
+							// default band does with its own count badge.
+							Style: []core.StyleProp{core.FlexGrow(1)},
+							ControlStyle: []core.StyleProp{
+								core.PaddingLeft(16),
+								core.PaddingRight(8),
+								core.PaddingVertical(10),
+							},
+						},
+						components.Badge{Text: strconv.Itoa(g.Count)},
+					)
+				},
+			}
+
 			return core.Column(
 				core.Gap(14),
 				prose("An archive screen is always the same assembly: a keyed row per item over "+
@@ -990,6 +1063,57 @@ func lessonCollections() Lesson {
 				demoPanel("Load more reveals three rows at a time; the tail disappears when the archive is complete.",
 					grouped,
 				),
+				prose("Bands can collapse, and the state is yours: Collapse is a predicate and a "+
+					"handler, and the screen keeps the set of shut keys. Two fields rather than "+
+					"one because they are useless apart — a predicate with no handler hides rows "+
+					"behind a band nobody can operate, and a handler with no predicate announces "+
+					"a state it does not have. The widget owning the set instead would cost it "+
+					"the thing that makes it composable: GroupedList calls no hook, so it can be "+
+					"rendered inside a core.IfElse without moving anybody's hook cursor."),
+				prose("A Header override changes what that costs. Collapse reaches past your "+
+					"header for the row hiding — your run still collapses — and stops at it for "+
+					"the control, because a band the widget also built would be a second control "+
+					"for the same run. components.CollapseBand is that control on its own: the "+
+					"heading, the button, and the aria-expanded that has to be restated on every "+
+					"pass, with none of the default band's chrome. Its ControlStyle is where "+
+					"your insets go, and that is not a preference — padding put on the row "+
+					"around it is dead space, because the button fills the box it was handed and "+
+					"a press 16px into the margin does nothing."),
+				codeBlock(`shut := core.NewState(ctx, map[string]bool{})
+collapse := components.Collapse{
+    IsCollapsed: func(g components.Group) bool { return shut.Get()[g.Key] },
+    OnToggle: func(g components.Group) {
+        next := maps.Clone(shut.Get())
+        next[g.Key] = !next[g.Key]
+        shut.Set(next)
+    },
+}
+
+components.GroupedList[Entry]{
+    Items: entries, Key: entryKey, GroupBy: byMonth,
+    Collapse: collapse,
+    Header: func(g components.Group) core.View {
+        return core.Row(core.Padding(0), core.PaddingRight(16),
+            components.CollapseBand{
+                Collapse: collapse, Group: g,
+                Style:        []core.StyleProp{core.FlexGrow(1)},
+                ControlStyle: []core.StyleProp{core.PaddingLeft(16), core.PaddingVertical(10)},
+            },
+            components.Badge{Text: strconv.Itoa(g.Count)},
+        )
+    },
+}`),
+				demoPanel("Every month starts shut. Tap a band to open its run — the chevron and the aria-expanded are the control's, the badge beside it is the caller's own, kept outside the button so a reader is not told the count as part of its name.",
+					banded,
+				),
+				prose("Whatever goes inside the button is presentational — a reader does not "+
+					"descend into a control, and its name comes from Group.Label — which is why "+
+					"the tally sits outside it here and in the default band both. Hand the same "+
+					"CollapseBand a zero Collapse and it renders the label in a plain heading "+
+					"rather than a button with a dead handler: an expansion stated with nothing "+
+					"to toggle it is announced on both web targets, is silently nothing on "+
+					"Android, and is exactly what core.AuditTree reports as an inert "+
+					"disclosure."),
 				keyPoints(
 					"Both widgets are hook-free and fully controlled: Sort, Page and Compact live in your state; OnSort and OnChange report intent.",
 					"Give a column Less only when Rows is the whole set; when the server pages, use Sortable and put the sort in the query — a client-side sort of one page is a partial sort wearing a total one's header.",
@@ -998,6 +1122,9 @@ func lessonCollections() Lesson {
 					"HideTrailingCount hides the last group's badge while a pager has more to fetch: a closed group's count is final, an open one's is a number about to change.",
 					"LoadMore is the four-state tail every paged screen hand-rolls: nothing, Load more, Loading…, or the error with Retry — Loading wins over Err, Err over HasMore.",
 					"Key must be unique across the list and stable across renders; core.List keeps row state attached to it through reorders.",
+					"Collapse is one type with two functions because either alone is broken; the set of shut keys is screen state, so the widget stays hook-free.",
+					"A Header override keeps the row hiding and owns the control: place a components.CollapseBand in your own row rather than rebuilding a button, an aria-expanded and a heading wrapper.",
+					"Put your insets on CollapseBand.ControlStyle, not on the row around it — padding outside the button is a place a press does nothing.",
 				),
 			)
 		},

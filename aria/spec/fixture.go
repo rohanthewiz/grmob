@@ -261,7 +261,11 @@ func quote(s string) string {
 // generator and the check end up reading different files.
 const (
 	// LocalPath is where aria/fetch.sh puts the specification. Not committed.
-	LocalPath = "aria/spec/testdata/wai-aria-1.2.html"
+	//
+	// The revision is in the filename and comes from Version, so bumping the
+	// edition moves the download, the parser's guard and this path together
+	// rather than leaving a 1.2 filename holding a 1.3 document.
+	LocalPath = "aria/spec/testdata/wai-aria-" + Version + ".html"
 	// FixturePath is the generated fixture. Committed, and the only one of the
 	// two anything on a verification path reads.
 	FixturePath = "aria/verify/testdata/aria.json"

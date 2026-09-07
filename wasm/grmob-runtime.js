@@ -931,6 +931,12 @@ const GrMob = (() => {
     // will focus. The two coincide today and are not one fact — an <a> with no
     // href is activated and not focusable — so a single set would be a place
     // for the two claims to drift into each other unnoticed.
+    //
+    // The role half is core.TappableContainerRoles(), which is where the fact
+    // lives: core's own role_control_test.go holds every role in the
+    // vocabulary to one side of the question or the other, so a role added
+    // there cannot quietly turn out to be a control a toolbar steps over.
+    // wasm/verify/keynav_test.go pins these two strings to that list.
     const FOCUSABLE_TAGS = new Set(["BUTTON", "A", "INPUT", "SELECT", "TEXTAREA"]);
     const CONTROL_ROLES = new Set(["button", "link"]);
 
@@ -1717,6 +1723,13 @@ const GrMob = (() => {
         // same nothing that happens today; suppressing it would mean this
         // function knowing the runtime's composite tables, and the tables would
         // then be a fact in two places.
+        //
+        // What reports it instead is core.AuditTree, in debug mode, walking the
+        // finished tree — which is where a rule about a node's role in relation
+        // to a whole vocabulary belongs, and which needed the vocabulary to
+        // exist in Go: core.KeyboardComposites() is the union of
+        // COMPOSITE_MEMBERS' keys and COMPOSITE_FOCUSABLE, held to those two
+        // tables by wasm/verify's keynav_test.go.
         setOrRemove(el, "data-grmob-selection-follows-focus",
             hidden ? "" : (style.AccessibilitySelectionFollowsFocus ? "true" : ""));
         // Both selection attributes are written on every call, not just the

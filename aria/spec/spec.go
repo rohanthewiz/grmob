@@ -143,7 +143,61 @@ var (
 	// `presentation` — are mutual synonyms, and only one of the pair carries
 	// a feature table. See resolveSynonyms.
 	synonymRef = regexp.MustCompile(`synonym\s*<a href="#([a-z]+)"`)
+	// The document's own version, off the ReSpec title heading:
+	//
+	//	<h1 id="title" class="title">Accessible Rich Internet Applications
+	//	(WAI-ARIA) 1.2</h1>
+	//
+	// The <title> element carries the same string and either would do; the
+	// heading is used because it is the one a reader opening the file sees,
+	// and because a proxy or an archiving tool is far likelier to have
+	// rewritten the <title> than the document body.
+	specTitle = regexp.MustCompile(
+		`<h1 id="title" class="title">[^<]*\(WAI-ARIA\)\s+([0-9]+\.[0-9]+)</h1>`)
 )
+
+// Version is the ARIA revision this package reads, and the one every fact in
+// the committed fixture came from.
+//
+// # Why the parser refuses any other
+//
+// The download is not committed (aria/fetch.sh), so what is on a given
+// machine's disk is whatever that machine fetched, whenever it fetched it —
+// and W3C publishes each revision at its own URL that keeps working forever.
+// A checkout holding an ARIA 1.1 copy regenerates a *different* fixture, and
+// the conformance test would then report it as a fixture that disagrees with
+// the specification. That reading is exactly backwards: the fixture is right
+// and the download is stale, and the diff it prints (radiogroup's orientation,
+// `term` and `time` under nameProhibited — the very facts 1.2 changed) names
+// four true statements about 1.1 as if they were transcription errors.
+//
+// So the version is read off the document and checked before anything else is
+// believed about it. Costing one regexp, it turns the confusing failure into
+// the one-line one, and it is the only thing here that could: every other
+// signal a stale copy gives — role count, cell markup, the orientation
+// sentence — is *identical* across the two revisions, because the format did
+// not change between them. Only the content did.
+//
+// LocalPath spells the number too, and derives it from here so a bump is one
+// edit. aria/fetch.sh's URL is the third statement of it and cannot read a Go
+// constant; aria/spec's own test holds the script to this value instead.
+const Version = "1.2"
+
+// SpecVersion reads the ARIA revision the document declares, or "" if it
+// carries no ReSpec title heading at all.
+//
+// Exported because the failure it exists for is a *download* problem rather
+// than a parse problem, and the difference is worth being able to report
+// separately: Parse folds it into an error, and aria/verify's conformance test
+// wants to say "your copy is 1.1, re-run the fetch" rather than "the fixture
+// is wrong".
+func SpecVersion(html string) string {
+	m := specTitle.FindStringSubmatch(html)
+	if m == nil {
+		return ""
+	}
+	return m[1]
+}
 
 // cellPattern builds the matcher for one <td class="role-X"> feature cell.
 //
@@ -223,6 +277,28 @@ func refs(re *regexp.Regexp, frag string) []string {
 // aria/fetch.sh. Nothing else about the document is required, and no ordering
 // is assumed.
 func Parse(html string) (Doc, error) {
+	// Before the shape, the edition. A 1.1 copy parses perfectly and produces
+	// a fixture that disagrees with the committed one on four facts — see
+	// Version for why that failure has to be named here rather than left to
+	// the diff downstream.
+	//
+	// An unreadable heading is an error too, and for the reason the floors
+	// below are: this package's failures are all the quiet kind, and "the
+	// document does not say what it is" is not a document to generate a
+	// fixture from.
+	if v := SpecVersion(html); v != Version {
+		if v == "" {
+			return nil, fmt.Errorf("no <h1 id=\"title\"> naming a WAI-ARIA version — "+
+				"either this is not the ARIA specification, or ReSpec changed the "+
+				"heading markup; expected version %s", Version)
+		}
+		return nil, fmt.Errorf("this is the WAI-ARIA %s specification and every fact "+
+			"in the fixture comes from %s — the local copy is stale, and "+
+			"regenerating from it would rewrite four true statements about %s as if "+
+			"they were transcription errors.\n\nRe-run `sh aria/fetch.sh`", v,
+			Version, Version)
+	}
+
 	doc, orientations := parseDoc(html)
 	if len(doc) == 0 {
 		return nil, fmt.Errorf("no <section class=\"role…\"> in the document — " +

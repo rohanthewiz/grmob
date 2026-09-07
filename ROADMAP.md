@@ -930,6 +930,64 @@
       theming went on offering two. A hand-written list in a tutorial is worse
       than one in a test: the gap is not a missed assertion, it is a palette
       the reader is never told exists
+- [x] **A `Spacer`'s `Style` is honoured on all four targets** — its size
+      arrives as a *prop*, which is what made it the one node type on both
+      natives whose `Style` went missing whole: each arm was one expression
+      built from the prop, with no call to `grMobBox` or `boxModifier` anywhere
+      in it, so a hand-assembled Spacer's `Background`, `Margin`,
+      `AccessibilityLabel` and `OnTap` were dropped on a phone and honoured in
+      a browser. The chassis now goes underneath the author's declarations on
+      both, per axis, by opposite mechanisms — SwiftUI's outer frame wins so
+      the chassis is written inside it and omitted on a claimed axis; Compose's
+      constraints flow outside-in so `boxModifier` first is the whole of it
+- [x] **The overlay `Layout`'s adapter is executed rather than compiled**
+      (`ios/GrMob/Runtime/GrMobStackBridge.swift`) — converting between
+      `ProposedViewSize` and `GrMobProposal` was three field-copying
+      expressions in `Renderer.swift`, "three lines with no decision in them",
+      which was true and still left them on the half of the target that nothing
+      runs. A swapped axis compiles and draws. The obstacle was never SwiftUI —
+      it was `LayoutSubview` in particular, and a `ProposedViewSize` is an
+      ordinary struct `ios/verify` can construct
+- [x] **A stale ARIA download is named as one** — the spec is not committed and
+      W3C keeps every revision at its own URL forever, so a 1.1 copy parses
+      cleanly to ~94 roles and regenerates a fixture differing on exactly the
+      four facts 1.2 changed. Left to the diff that reads as a broken fixture.
+      `spec.Version` and the document's own title heading make it one line
+      about the fetch instead; `aria/fetch.sh`'s URL is held to the constant
+- [x] **`components.CollapseBand` is built by an example** — its only readers
+      were its own tests, and `ControlStyle`'s whole justification is how a
+      *real* custom band is assembled. Lesson 4.6 assembles one, with every
+      band starting shut so the half a `Header` override does not own — the
+      widget withholding the run — is visible rather than described
+- [x] **A keyboard contract on a widget with no keyboard is reported**
+      (`inert-follows-focus`) — the WASM runtime writes
+      `data-grmob-selection-follows-focus` for any node that asks, deliberately,
+      since consulting the composite tables where attributes are written would
+      put them in two places. `core.KeyboardComposites()` is that list in Go,
+      held to the runtime's two tables by `wasm/verify`, and `core.AuditTree`
+      is where the claim-about-nothing is reported
+- [x] **A composite inside a composite is reported** (`nested-composite`) —
+      both keep their own roving `tabindex`, so the pair is two tab stops where
+      ARIA describes one. It was stated in three comments and a documentation
+      section, all of them in the WASM target, where an author writing Go does
+      not read. ARIA's version needs two widgets writing `tabindex` onto one
+      element and an owner rule for when they disagree, which this framework
+      does not have — so the divergence stands and the author is told
+- [x] **`CONTROL_ROLES` is a property rather than a list**
+      (`core.TappableContainerRoles()`) — the two roles that make a plain
+      container a control were three copies of one fact, and a *new* role would
+      have left all three untouched: a future `RoleCheckbox` is one by exactly
+      the argument `core.Role` makes for `RoleButton`, and would have shipped
+      as a role a toolbar steps over. `core/role_control_test.go` holds every
+      role in the vocabulary to one side of the question, with a reason
+- [x] **The refusals table's shape is half derived** — `Blocked` was computed
+      from `core.Roles()` and checked; `Shape` sat beside it looking the same
+      and was a sentence nothing could contradict. ARIA's Required Owned
+      Elements row is the authority for one piece of it: whether a pattern's
+      members are the container's own (`listbox` owns `option`) or somebody
+      else's (`grid` owns `row`, and a `gridcell` is a row's), which is exactly
+      the difference between a walk this runtime does and the one it lacks.
+      That piece is `Nesting`, declared and derived; the rest is labelled prose
 
 ---
 

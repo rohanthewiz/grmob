@@ -210,7 +210,35 @@ private fun RenderNodeContent(node: GrMobNode, extra: Modifier) {
         // TestNativeZStackOverlaysItsChildren pins the arm to it.
         "ZStack" -> GrMobZStack(node, extra)
         "List" -> GrMobList(node, extra)
-        "Spacer" -> Spacer(Modifier.size(node.intProp("size").dp))
+        // core.Spacer: a fixed void that does not give way.
+        //
+        // This used to be `Spacer(Modifier.size(...))` with no boxModifier on
+        // it, which made a Spacer the one node type on this target whose own
+        // Style was dropped whole — both DOM renderers have always applied it
+        // (htmlout's spacerChassis, the WASM runtime's applySpacerChassis), so
+        // a hand-assembled Spacer carrying a Background was coloured in a
+        // browser and invisible on a phone, along with its margin, its
+        // accessibility props and its callback IDs.
+        //
+        // The size prop is the node type's fixed look and goes *inside* the
+        // author's box, which is what makes the author win: Compose resolves
+        // constraints outside-in, so a stated Width already fixes them by the
+        // time Modifier.size is reached and size() coerces itself into what it
+        // was given. That per-axis result is the rule applySpacerChassis
+        // states explicitly and htmlout gets from CSS declaration order, and it
+        // is why no per-axis test is needed here — one `.size()` is the whole
+        // of it. The background lands right for the same reason: boxModifier's
+        // fill is drawn at the node's measured size, which is the author's
+        // width by 10 rather than a 10x10 square in a 200-point hole.
+        //
+        // Still not honoured, and unreachable from Go: a hand-assembled
+        // Spacer's children. A Compose Spacer is a leaf, where both DOM
+        // renderers emit a Spacer's children like any other element's, and
+        // core.Spacer(n) builds none.
+        "Spacer" -> Spacer(
+            style.boxModifier(extra, gestureModifier(node))
+                .size(node.intProp("size").dp),
+        )
         "Scroll" -> GrMobScroll(node, extra)
 
         // The safe area is the system bars and the display cutout — not the

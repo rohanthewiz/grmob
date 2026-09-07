@@ -63,10 +63,14 @@ func run() -> Int32 {
     // This is the pass that pins what a ZStack sizes to, which was the one
     // documented cross-target divergence with nothing measuring it — plus the
     // three proposal decisions the Layout itself makes, which reach the solver
-    // through GrMobStackLayer and are run here against a recording fake.
+    // through GrMobStackLayer and are run here against a recording fake — and
+    // the adapter between SwiftUI's size vocabulary and the solver's, which
+    // was three unexecuted expressions in Renderer.swift until it moved into
+    // GrMobStackBridge.swift.
     let stackProblems = checkStackSolver()
     if stackProblems.isEmpty {
-        print("OK: stack solver sizes, places every anchor, and proposes as the Layout does")
+        print("OK: stack solver sizes, places every anchor, proposes as the Layout "
+            + "does, and converts both ways")
     } else {
         print("FAIL: \(stackProblems.count) stack solver difference(s)")
         for p in stackProblems { print("  " + p) }

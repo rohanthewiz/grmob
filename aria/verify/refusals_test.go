@@ -67,9 +67,44 @@ type refusal struct {
 	// so writing it down turns "somebody will notice when this changes" into a
 	// failing test that names the row.
 	Blocked string
-	// Shape is what the runtime's member walk would need beyond what it does
-	// for a listbox, or "" when a one-dimensional walk over a flat member list
-	// is the whole of it.
+	// Nesting is where ARIA puts the pattern's members relative to its
+	// container, in the one place the specification says so mechanically —
+	// the Required Owned Elements row:
+	//
+	//	"direct"    every member role is one the container itself owns.
+	//	            listbox owns option, tablist owns tab, and the runtime's
+	//	            walk is a descent looking for that one role.
+	//	"through"   a member is reachable only via an intermediate owned role
+	//	            that owns things itself. `grid` owns `row`, and a
+	//	            `gridcell` is a row's, so the members are laid out on two
+	//	            axes rather than in a run.
+	//
+	// Declared and then derived, which is the mechanism Blocked uses and the
+	// reason this field exists at all: it is the half of Shape below that has
+	// an authority. "A grid's arrows move by row and by column" was a sentence
+	// nothing could contradict; "gridcell is not in grid's requiredOwned and is
+	// reachable only through row" is the same claim, checked against the
+	// fixture.
+	//
+	// `group` is owned by half these containers and is not a level: ARIA uses
+	// it as a pure wrapper (it requires no owned elements of its own), so a
+	// walk descends through one and finds the same members. That falls out of
+	// the derivation rather than needing an exception — the question asked is
+	// whether the *member* is directly owned, and a wrapper beside it in the
+	// list does not change the answer.
+	Nesting string
+	// Shape is the rest of what the runtime's member walk would need beyond
+	// what it does for a listbox — the part with no authority — or "" when a
+	// one-dimensional walk over a flat member list is the whole of it.
+	//
+	// Prose, deliberately and with the cost stated: a submenu with its own
+	// Escape, and a tree's expand-in-place arrows, are facts about ARIA's
+	// *authoring practices* rather than about its role definitions, and the
+	// practices are not machine-readable in any form this repository fetches.
+	// So nothing here can contradict these sentences, and the honest thing is
+	// to say which field is checked and which is not rather than to leave them
+	// looking alike. Nesting above is what was extractable; this is what was
+	// left.
 	//
 	// Stated for every row, including the ones blocked on vocabulary first,
 	// because it is the blocker that outlives the other: adding a member role
@@ -84,6 +119,7 @@ var refusals = []refusal{
 		Role:    "menu",
 		Members: []string{"menuitem", "menuitemcheckbox", "menuitemradio"},
 		Blocked: "vocabulary",
+		Nesting: "direct",
 		Shape:   "submenus, which are menus inside menus with their own tab stop and their own Escape",
 		Why: "no widget here is a menu. core.Select's picker is a native <select> " +
 			"on the web and a platform picker on both natives, so the menu is drawn " +
@@ -95,6 +131,7 @@ var refusals = []refusal{
 		Role:    "menubar",
 		Members: []string{"menuitem", "menuitemcheckbox", "menuitemradio"},
 		Blocked: "vocabulary",
+		Nesting: "direct",
 		Shape:   "a menubar opens menus, so it needs everything menu needs and a second axis besides",
 		Why:     "the same absence as menu, one level up",
 	},
@@ -102,6 +139,7 @@ var refusals = []refusal{
 		Role:    "tree",
 		Members: []string{"treeitem"},
 		Blocked: "vocabulary",
+		Nesting: "direct",
 		Shape: "recursion, and an expansion state per node — a tree's arrows " +
 			"collapse and expand as well as move",
 		Why: "components.disclosure is the heading-around-button shape a twisty " +
@@ -115,6 +153,7 @@ var refusals = []refusal{
 		Role:    "treegrid",
 		Members: []string{"row"},
 		Blocked: "walk",
+		Nesting: "direct",
 		Shape:   "a grid's two axes and a tree's recursion at once",
 		Why: "the one refused pattern whose vocabulary is already complete, which " +
 			"is not something anyone would have guessed from the prose. ARIA's " +
@@ -128,6 +167,7 @@ var refusals = []refusal{
 		Role:    "grid",
 		Members: []string{"gridcell"},
 		Blocked: "vocabulary",
+		Nesting: "through",
 		Shape: "two dimensions. A grid's arrows move by row and by column, and " +
 			"Home/End mean the ends of a row rather than of a list",
 		Why: "components.Calendar is the widget that would be one — forty-two " +
@@ -142,6 +182,7 @@ var refusals = []refusal{
 		Role:    "radiogroup",
 		Members: []string{"radio"},
 		Blocked: "vocabulary",
+		Nesting: "direct",
 		Shape:   "",
 		Why: "the one pattern here whose walk this machinery could already do — " +
 			"a flat run of members, one selected, arrows between them, which is a " +
@@ -247,6 +288,100 @@ func TestEachRefusalKnowsWhichHalfIsStillInTheWay(t *testing.T) {
 			"not carry %s.\n\nA blocker came back: either a role was removed from the "+
 			"vocabulary, or the row named the wrong members.",
 			r.Role, strings.Join(absent, ", "))
+	}
+}
+
+// Where ARIA puts each pattern's members, derived from the fixture and
+// compared to what the row claims.
+//
+// # What this closes
+//
+// Blocked was derived and checked; Shape was not, and sat in the same struct
+// looking like it was. "Two dimensions", "a submenu with its own Escape" — a
+// reader has no way to tell which of the two fields is load-bearing, and the
+// one that is not is exactly the shape this whole directory exists to stop
+// producing: an entry no guard argues with is prose again with braces around
+// it.
+//
+// There is no authority for most of Shape and there is one for a piece of it.
+// ARIA's Required Owned Elements row says, mechanically, whether a pattern's
+// members are the container's own or somebody else's, and that is the whole of
+// the difference between a walk this runtime already does and the one it does
+// not have:
+//
+//	listbox  owns option                    a descent looking for one role
+//	tablist  owns tab                       the same descent
+//	grid     owns row, and a row owns        a walk over two axes, which is
+//	         gridcell                        the thing that is missing
+//
+// So the two-dimensionality claim is now derived from the same fixture every
+// other check here rests on, and what is left in Shape is labelled as what it
+// is.
+//
+// # Why the reachability half is asserted too
+//
+// A row claiming "through" has to be *reachable* through something, or the
+// claim is that the member belongs to a pattern it has nothing to do with. The
+// closure is one hop deep on purpose: two hops would let any role reach any
+// other through `row` and `group` and answer yes for everything, which is a
+// check that cannot fail.
+func TestEachRefusalsMembersSitWhereItSaysTheyDo(t *testing.T) {
+	spec := loadSpec(t)
+
+	for _, r := range refusals {
+		if r.Nesting != "direct" && r.Nesting != "through" {
+			t.Errorf("refusals[%q].Nesting = %q, want \"direct\" or \"through\"",
+				r.Role, r.Nesting)
+			continue
+		}
+		owned := map[string]bool{}
+		for _, o := range spec.Roles[r.Role].RequiredOwned {
+			owned[o] = true
+		}
+		if len(owned) == 0 {
+			t.Errorf("the fixture gives %q no required owned elements at all, so "+
+				"nothing here can be derived. A composite whose members ARIA does "+
+				"not name is a real thing — `toolbar` is one — and it is not a "+
+				"refusal, it is a pattern with a different membership rule",
+				r.Role)
+			continue
+		}
+
+		for _, m := range r.Members {
+			if owned[m] {
+				if r.Nesting == "through" {
+					t.Errorf("refusals[%q] says its members sit through an "+
+						"intermediate role, and ARIA has %q owning %q directly. A "+
+						"direct member is the flat run this runtime's walk already "+
+						"does, so that part of the refusal is over.",
+						r.Role, r.Role, m)
+				}
+				continue
+			}
+			if r.Nesting == "direct" {
+				t.Errorf("refusals[%q] says %q is one of its own owned roles and "+
+					"ARIA does not: the pattern's members are somebody else's, "+
+					"which is a second axis rather than a longer list, and the row's "+
+					"remaining blocker is bigger than it says.", r.Role, m)
+				continue
+			}
+			// "through" — and it must actually go through something.
+			reachable := false
+			for owner := range owned {
+				for _, deep := range spec.Roles[owner].RequiredOwned {
+					if deep == m {
+						reachable = true
+					}
+				}
+			}
+			if !reachable {
+				t.Errorf("refusals[%q] says %q is reached through an intermediate "+
+					"owned role, and none of %s owns it. Either the member is wrong "+
+					"or the pattern is not this container's at all.",
+					r.Role, m, strings.Join(spec.Roles[r.Role].RequiredOwned, ", "))
+				continue
+			}
+		}
 	}
 }
 

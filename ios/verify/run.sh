@@ -21,6 +21,7 @@ swiftc -o "$out/harness" -target arm64-apple-macos14.0 \
   selectmenu.swift \
   ../GrMob/Runtime/GrMobSelectMenu.swift \
   ../GrMob/Runtime/GrMobStack.swift \
+  ../GrMob/Runtime/GrMobStackBridge.swift \
   ../GrMob/Runtime/GrMobNode.swift \
   ../GrMob/Runtime/GrMobStyle.swift \
   ../GrMob/Runtime/GrMobFlex.swift \

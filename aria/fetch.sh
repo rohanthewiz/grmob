@@ -19,6 +19,11 @@
 set -e
 cd "$(dirname "$0")"
 
+# The edition, in two places that must agree with spec.Version — the parser
+# refuses any other revision by name, because a stale copy is the one failure
+# whose symptom (a fixture diff naming four true facts as errors) points at the
+# wrong file. aria/spec's TestTheFetchScriptAgreesWithTheVersionConstant holds
+# these two lines to the Go constant; a shell script cannot read one.
 url="https://www.w3.org/TR/wai-aria-1.2/"
 out="spec/testdata/wai-aria-1.2.html"
 

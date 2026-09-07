@@ -183,6 +183,128 @@ func TestADisclosureWithAHandlerIsNotReported(t *testing.T) {
 	}
 }
 
+// A keyboard contract on a widget with no keyboard.
+//
+// This is the only finding here whose subject is a *data* attribute rather
+// than an ARIA one, and the reason is that ARIA has no attribute for it:
+// aria-* says what a widget is, and selection-follows-focus says what its
+// keyboard does. So the WASM runtime writes it into its own namespace, on any
+// node that asks — deliberately, since consulting the composite tables at the
+// point attributes are written would put those tables in two places — and
+// nothing anywhere reads it back off a role that has no arrows.
+//
+// A `list` is the near miss and is why this is worth reporting at all: it is a
+// collection, it looks like the kind of thing arrow keys cross, and ARIA gives
+// it no keyboard because it is content rather than a control. The author who
+// set the flag on one wanted RoleListBox.
+func TestAFollowsFocusFlagOnARoleWithNoKeyboardIsReported(t *testing.T) {
+	for _, role := range []Role{RoleList, RoleGroup, RoleOption, RoleTab} {
+		found := auditWith(t, &Node{Type: "Box", Style: &Style{
+			AccessibilityRole:                  role,
+			AccessibilitySelectionFollowsFocus: true,
+		}})
+		requireKind(t, found, ConcernInertFollowsFocus, "root", string(role))
+	}
+
+	// No role at all is the commonest way to get here, and the one worth
+	// reporting most: the strip looks right, announces as a plain box, and has
+	// no arrow keys — the flag is the only evidence anyone meant a composite.
+	found := auditWith(t, &Node{Type: "Row", Style: &Style{
+		AccessibilitySelectionFollowsFocus: true,
+	}})
+	requireKind(t, found, ConcernInertFollowsFocus, "carries no AccessibilityRole")
+}
+
+// And every role that does have a keyboard is silent — derived from
+// core.KeyboardComposites() rather than listed, so a fourth pattern does not
+// arrive already being reported as inert.
+//
+// The member roles are checked in the other direction above: the flag is a
+// statement about a container's contract with the keyboard, and a per-member
+// spelling would let a strip disagree with itself (see the field's own doc).
+func TestAFollowsFocusFlagOnACompositeIsSilent(t *testing.T) {
+	for _, role := range KeyboardComposites() {
+		found := auditWith(t, &Node{Type: "Row", Style: &Style{
+			AccessibilityRole:                  role,
+			AccessibilitySelectionFollowsFocus: true,
+		}})
+		requireNoKind(t, found, ConcernInertFollowsFocus)
+	}
+}
+
+// One keyboard pattern inside another.
+//
+// The divergence is real and deliberate, and until now it was stated in three
+// comments and a documentation section — all of them in the WASM target, where
+// an author writing Go does not read. The runtime's own member walks stop at a
+// nested composite, so both containers keep a roving tabindex and the pair is
+// two tab stops; ARIA describes one, by making the inner widget's current
+// member the outer widget's member, which would need two widgets writing
+// tabindex onto one element and an owner rule for when they disagree.
+//
+// Every ordered pair is checked rather than the one shape that prompted it (a
+// tablist in a toolbar), because the two member walks reach the same outcome
+// by different routes: a toolbar's walk stops at any composite because nothing
+// names its members, and a listbox's stops at a nested listbox because the two
+// would pool their options. The finding is about the outcome.
+func TestOneCompositeInsideAnotherIsReported(t *testing.T) {
+	for _, outer := range KeyboardComposites() {
+		for _, inner := range KeyboardComposites() {
+			found := auditWith(t, &Node{
+				Type:  "Row",
+				Style: &Style{AccessibilityRole: outer},
+				Children: []*Node{
+					{Type: "Box", Style: &Style{AccessibilityRole: inner}},
+				},
+			})
+			requireKind(t, found, ConcernNestedComposite,
+				string(inner), string(outer), "two tab stops")
+		}
+	}
+}
+
+// The nesting is found however deep it is buried, which is the half a
+// direct-child check would miss: a strip inside a scroller inside a Box is the
+// same two tab stops, and the runtime's walks are subtree walks for exactly
+// that reason.
+func TestANestedCompositeIsFoundThroughOrdinaryContainers(t *testing.T) {
+	// The intermediates carry Styles of their own, which is the ordinary case
+	// and the one that exercises the line that matters: the walk only reaches
+	// this check for a node with a Style at all, so a version that forgot the
+	// ancestor at every non-composite would still find a strip buried under
+	// bare Boxes and would lose one under a padded scroller. Nearly every real
+	// container has a Style.
+	found := auditWith(t, &Node{
+		Type:  "Row",
+		Style: &Style{AccessibilityRole: RoleToolbar},
+		Children: []*Node{
+			{Type: "Box", Style: &Style{Padding: EdgeInsets{Left: 8}}, Children: []*Node{
+				{Type: "Scroll", Style: &Style{Overflow: "auto"}, Children: []*Node{
+					{Type: "Row", Style: &Style{AccessibilityRole: RoleTabList}},
+				}},
+			}},
+		},
+	})
+	requireKind(t, found, ConcernNestedComposite, "root/0/0/0", "tablist", "toolbar")
+}
+
+// Two composites that are siblings say nothing, which is the ordinary shape
+// and the one worth asserting: a tab strip over the region it switches is a
+// tablist beside a tabpanel, and that panel holds whatever a screen holds —
+// including another widget with a keyboard. The two are linked by
+// aria-controls rather than by containment, so a walk that reported on
+// *proximity* rather than on nesting would fire on every tabbed screen and be
+// worth nothing.
+func TestCompositesThatAreNotNestedAreSilent(t *testing.T) {
+	found := auditWith(t, &Node{Type: "Column", Children: []*Node{
+		{Type: "Row", Style: &Style{AccessibilityRole: RoleTabList}},
+		{Type: "Box", Style: &Style{AccessibilityRole: RoleTabPanel}, Children: []*Node{
+			{Type: "Column", Style: &Style{AccessibilityRole: RoleListBox}},
+		}},
+	}})
+	requireNoKind(t, found, ConcernNestedComposite)
+}
+
 // The zero value says nothing and is what every node in every tree carries, so
 // it cannot be a finding.
 func TestAnOrdinaryTreeIsSilent(t *testing.T) {

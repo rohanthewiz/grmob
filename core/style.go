@@ -483,6 +483,16 @@ type Style struct {
 	// It is a statement about the widget's contract with the keyboard, and a
 	// per-member spelling would let a strip disagree with itself.
 	//
+	// Only a role with a keyboard can have one followed, and which those are is
+	// core.KeyboardComposites(). On anything else — a list, a group, a Box
+	// whose role was never set — this is inert in the strongest sense: the WASM
+	// runtime writes the attribute for any node that asks, so the claim reaches
+	// the DOM and nothing ever reads it back. core.AuditTree reports that in
+	// debug mode as ConcernInertFollowsFocus, because no exporter can: the one
+	// that writes the attribute deliberately does not know the composite tables
+	// (see applyAccessibility), and knowing them there would put those tables
+	// in two places.
+	//
 	//	core.Row(core.AccessibilityRole(core.RoleTabList),
 	//	    core.AccessibilitySelectionFollowsFocus(),
 	//	    …tabs…

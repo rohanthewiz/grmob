@@ -460,6 +460,122 @@ func TestTabsDemoWiresTheStripToItsPanel(t *testing.T) {
 
 // --- 4.6 Collections --------------------------------------------------------
 
+// The banded demo: a Header override placing a components.CollapseBand.
+//
+// The lesson is the first thing in the repository that uses CollapseBand at
+// all — its only readers were its own tests, which is a slightly bigger hole
+// than an unused widget usually is, because its second field (ControlStyle)
+// exists to answer a question that only arises when somebody assembles a real
+// custom band. So this test is about the assembly rather than about the
+// control: the widget's own tests already say what a CollapseBand builds.
+//
+// Three claims, and each is a different half of the division GroupedList draws
+// between the widget and a Header override:
+//
+//	the run hides                   the widget's half, which reaches past the
+//	                                override — the rows are withheld by
+//	                                Collapse.hides, not by anything here
+//	the control toggles it          the override's half, wired to the *same*
+//	                                Collapse, so the chevron and the run
+//	                                cannot disagree
+//	the count sits outside it       the caller's own chrome, in a row the
+//	                                caller laid out
+func TestTheBandedDemoCollapsesUnderItsOwnHeader(t *testing.T) {
+	mgr := newApp(t)
+	openLesson(t, mgr, "Collections: GroupedList & DataTable")
+
+	// Every month starts shut, so a title that appears in no other demo on
+	// the page is the address for "the banded list's rows".
+	//
+	// "A Lamp on a Stand" is in January 2026, which the paged demo above
+	// reaches only after two Load more taps and the table only on its last
+	// page — so before either is touched, its presence is this list's alone.
+	cur := tree(t, mgr)
+	if hasText(cur, "A Lamp on a Stand") {
+		t.Fatal("the banded demo should open with every month shut")
+	}
+
+	band := findBand(cur, "January 2026")
+	if band == nil {
+		t.Fatal("no button for the January band — a shut run must still have a " +
+			"control announcing it, or the rows are gone with no way back")
+	}
+	if got := band.Style.AccessibilityExpanded; got != "false" {
+		t.Fatalf("the shut band announces AccessibilityExpanded %q, want "+
+			"\"false\" — the state has to be restated on every pass, so the two "+
+			"silent readings (unset, and set to the other value) must not be "+
+			"reachable here", got)
+	}
+
+	// The badge is the caller's own and lives outside the control, because a
+	// reader does not descend into a button: a count put inside it would stop
+	// being announced and would join the button's name if it were.
+	if hasText(band, "2") {
+		t.Fatal("the group's count is inside the button, where it is not announced")
+	}
+	if !hasText(cur, "2") {
+		t.Fatal("the January badge is not in the tree at all")
+	}
+
+	// The override's control and the widget's row hiding answer to one state.
+	mgr.DispatchCallback(band.Props["onClick"].(string))
+	cur = tree(t, mgr)
+	if !hasText(cur, "A Lamp on a Stand") {
+		t.Fatal("tapping the band did not bring its run back")
+	}
+	reopened := findBand(cur, "January 2026")
+	if reopened == nil {
+		t.Fatal("the band lost its control on the way to being open")
+	}
+	if got := reopened.Style.AccessibilityExpanded; got != "true" {
+		t.Fatalf("the open band announces AccessibilityExpanded %q, want \"true\"", got)
+	}
+
+	// And back, which is the assertion that a toggle is a toggle rather than a
+	// one-way reveal — the demo clones the set on every press.
+	mgr.DispatchCallback(reopened.Props["onClick"].(string))
+	if hasText(tree(t, mgr), "A Lamp on a Stand") {
+		t.Fatal("tapping the open band did not shut its run again")
+	}
+
+	// The insets are on the control, which is the whole subject of
+	// CollapseBand.ControlStyle: padding on the row around the button is dead
+	// space, because the button fills the box it was handed.
+	//
+	// The trailing inset and the vertical one, and deliberately not the
+	// leading 16. A disclosure's control is a core.Row, which arrives carrying
+	// the theme's own padding recipe — 16 horizontal, the same number the
+	// default band's bandInsets uses — so a leading-edge assertion of 16 is
+	// satisfied whether or not the demo asked for anything, which is a check
+	// that cannot fail. That is not hypothetical: it is what this assertion
+	// was, and a mutation deleting the demo's PaddingLeft passed it. The two
+	// numbers below are the demo's own and are not the theme's.
+	if got := band.Style.Padding.Right; got != 8 {
+		t.Errorf("the band's control is padded %d on the trailing edge, want 8 — "+
+			"ControlStyle is not reaching the button, so a caller's chrome would "+
+			"land on the row instead, where a press does nothing", got)
+	}
+	if got := band.Style.Padding.Vertical; got != 10 {
+		t.Errorf("the band's control is padded %d vertically, want 10 — same", got)
+	}
+	assertNoConcerns(t)
+}
+
+// The disclosure control of the band whose heading reads label.
+//
+// A node carrying core.RoleButton rather than a Button node: components.
+// disclosure builds the control as a styled Box, because ARIA's pattern nests
+// the button *inside* the heading and the two have to be separate nodes for
+// the tier and the name to land on the right one. Matching on the role is
+// also what keeps this test honest if the control ever becomes a real Button
+// — the claim is "a control announcing itself as one", not "this node type".
+func findBand(root *node, label string) *node {
+	return findNode(root, func(n *node) bool {
+		return n.Style != nil && n.Style.AccessibilityRole == "button" &&
+			hasText(n, label)
+	})
+}
+
 func TestCollectionsDemoSortsPagesAndLoadsMore(t *testing.T) {
 	mgr := newApp(t)
 	openLesson(t, mgr, "Collections: GroupedList & DataTable")

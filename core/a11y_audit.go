@@ -12,7 +12,7 @@ import (
 //
 // # Why a tree walk and not a guard in the exporters
 //
-// Three of the four findings below are about *relationships between elements*,
+// Four of the six findings below are about *relationships between elements*,
 // and no renderer can see one. htmlout writes an id as it walks past the node
 // carrying it and has no index of the document it is building; the WASM runtime
 // applies a patch to one element and has no index at all. Both say so in their
@@ -25,14 +25,17 @@ import (
 // third such check and the first about semantics rather than about the
 // framework's own bookkeeping.
 //
-// # Why these four and not a general ARIA validator
+// # Why these six and not a general ARIA validator
 //
 // Each of them is a failure with no symptom. A duplicate id resolves to
 // whichever element the browser saw first, so a tab strip switches the wrong
 // region and nothing errors. A dangling aria-controls announces a tab that
 // governs nothing, which sounds exactly like a tab. An id with a space in it is
 // invalid HTML that browsers accept and getElementById never finds. A
-// disclosure with no handler offers TalkBack an action nothing performs.
+// disclosure with no handler offers TalkBack an action nothing performs. A
+// selection-follows-focus flag on a role with no arrow keys is a contract
+// about a keyboard nobody has. A composite inside a composite is two tab stops
+// where ARIA describes one, and both widgets work.
 //
 // Everything else in ARIA that this vocabulary can express is already caught
 // where it is written: a state on a role that cannot carry it is dropped by
@@ -41,7 +44,7 @@ import (
 // make. The line is "would a reader be told something false, with nothing
 // anywhere saying so".
 //
-// # The fifth finding, which is not about accessibility
+// # The seventh finding, which is not about accessibility
 //
 // AuditTree's walk also carries ConcernInertPlacement — a core.StackAlign on a
 // node no overlay will place. It is a layout fact rather than a semantic one,
@@ -52,7 +55,7 @@ import (
 //
 // So the walk's subject is a little wider than this file's name: it is the
 // failures a finished tree can be asked about and a renderer cannot. The four
-// below were the first family, not the only one.
+// this file opened with were the first family, not the only one.
 //
 // # Cost
 //
@@ -62,8 +65,8 @@ import (
 // site in render.Manager. The placement check adds one map lookup per node.
 
 // Concern kinds for the accessibility audit. Declared here rather than beside
-// the others in debug.go so the four arrive with the walk that produces them.
-// The walk's fifth finding, ConcernInertPlacement, is declared in
+// the others in debug.go so the six arrive with the walk that produces them.
+// The walk's seventh finding, ConcernInertPlacement, is declared in
 // placement_audit.go for the same reason: beside the argument for it.
 const (
 	// ConcernDuplicateAccessibilityID: two elements in one tree carry the
@@ -94,9 +97,25 @@ const (
 	// and it is a rule stated only in a comment, where the equivalent web rule
 	// (a state on an unroled node is dropped) has a test on both targets.
 	ConcernInertDisclosure = "inert-disclosure"
+
+	// ConcernInertFollowsFocus: a node states
+	// core.Style.AccessibilitySelectionFollowsFocus and carries no role that
+	// has a keyboard for a selection to follow. The WASM runtime writes the
+	// data attribute on any node that asks — deliberately, since consulting
+	// the composite tables where an attribute is written would put those
+	// tables in two places — so the flag lands in the DOM and is read by
+	// nothing, and no other target writes anything for it at all.
+	ConcernInertFollowsFocus = "inert-follows-focus"
+
+	// ConcernNestedComposite: a container with an ARIA keyboard pattern sits
+	// inside another one. Both keep their own roving tabindex, so the pair is
+	// two tab stops where ARIA describes one — the outer widget's arrows step
+	// over the inner widget whole. It is deliberate and it is a divergence;
+	// see checkNestedComposite.
+	ConcernNestedComposite = "nested-composite"
 )
 
-// AuditTree runs the whole-tree checks over a finished render tree: the four
+// AuditTree runs the whole-tree checks over a finished render tree: the six
 // accessibility findings above and the placement finding beside them.
 //
 // Called by the render driver after the pass that produced the tree, beside
@@ -114,8 +133,10 @@ func AuditTree(root *Node) {
 		return
 	}
 	a := &a11yAudit{ids: make(map[string][]string)}
-	// "" is the placing container above the root: nothing. See placerFor.
-	a.walk(root, "root", "")
+	// "" is the placing container above the root: nothing. See placerFor. The
+	// zero compositeAncestor is the same statement about keyboards: nothing
+	// above the root has one.
+	a.walk(root, "root", "", compositeAncestor{})
 	a.report()
 }
 
@@ -145,7 +166,7 @@ type reference struct {
 // nearest ancestor that is not a grouping container. It is threaded rather
 // than looked up because a walk already knows it and a node does not carry a
 // parent pointer; see placerFor and placement_audit.go.
-func (a *a11yAudit) walk(n *Node, path, placer string) {
+func (a *a11yAudit) walk(n *Node, path, placer string, composite compositeAncestor) {
 	if n == nil {
 		return
 	}
@@ -158,12 +179,27 @@ func (a *a11yAudit) walk(n *Node, path, placer string) {
 			a.controls = append(a.controls, reference{s.AccessibilityControls, path})
 		}
 		a.checkDisclosure(n, path)
+		a.checkFollowsFocus(n, path)
 		reportInertPlacement(n, path, placer)
+		composite = a.checkNestedComposite(n, path, composite)
 	}
 	childPlacer := placerFor(n.Type, placer)
 	for i, child := range n.Children {
-		a.walk(child, fmt.Sprintf("%s/%d", path, i), childPlacer)
+		a.walk(child, fmt.Sprintf("%s/%d", path, i), childPlacer, composite)
 	}
+}
+
+// compositeAncestor is the nearest enclosing container that has a keyboard
+// pattern, or the zero value above the outermost one.
+//
+// Threaded down the walk rather than looked up, for the reason placer is: a
+// node carries no parent pointer, and the walk already knows the answer. Both
+// halves are kept because the finding needs to name where the outer widget is
+// as well as what it is — "a tablist inside a toolbar" is the fact, and
+// "root/2" is what makes it findable.
+type compositeAncestor struct {
+	role Role
+	path string
 }
 
 // checkID applies the two rules an AccessibilityID has to keep, both of which
@@ -245,6 +281,156 @@ func (a *a11yAudit) checkDisclosure(n *Node, path string) {
 			"handler to perform, so this is announced on the two web targets and is "+
 			"silently nothing on Android",
 		path, n.Style.AccessibilityExpanded))
+}
+
+// checkFollowsFocus flags a keyboard contract stated on a widget that has no
+// keyboard.
+//
+// core.AccessibilitySelectionFollowsFocus says what a composite's arrow keys
+// do — choose the member they land on, not merely focus it — and there are
+// exactly three container roles in this framework whose arrows do anything
+// (core.KeyboardComposites). On anything else the flag is inert in the
+// strongest sense available: the WASM runtime writes
+// data-grmob-selection-follows-focus for any node that asks, so the claim is
+// in the document and no code path ever reads it back, while htmlout and both
+// natives write nothing for it on purpose.
+//
+// # Why here rather than at the writer
+//
+// The runtime's applyAccessibility says why in as many words: it does not
+// consult the composite tables, because knowing them where attributes are
+// written would make the tables a fact in two places. That is the right call
+// and it leaves the flag unchecked everywhere — which is exactly the shape
+// this walk exists for, a claim that is silently true of nothing.
+//
+// # The empty role is not exempt
+//
+// A Box with the flag and no role at all is the commonest way to get here (a
+// tab strip whose core.AccessibilityRole was forgotten, or moved to a child),
+// and it is the case worth reporting most: the widget looks like a tab strip,
+// reads as a plain group, and has no arrow keys — so the missing role is the
+// bug and the flag is the only evidence anyone intended one.
+//
+// # A toolbar counts, and this is not an endorsement
+//
+// The runtime's arrow handler funnels every composite through one function, so
+// a toolbar carrying the flag does invoke its controls on arrow. Whether that
+// is a good idea for a toolbar is a separate judgement — ARIA recommends
+// selection-follows-focus for tabs, allows it for a single-select listbox and
+// says nothing about toolbars — and this check's subject is only whether
+// anything reads the flag. Reporting a role that does read it would be a
+// second, weaker claim wearing this one's name.
+func (a *a11yAudit) checkFollowsFocus(n *Node, path string) {
+	if !n.Style.AccessibilitySelectionFollowsFocus {
+		return
+	}
+	role := n.Style.AccessibilityRole
+	if hasKeyboard(role) {
+		return
+	}
+	stated := "carries no AccessibilityRole"
+	if role != "" {
+		stated = fmt.Sprintf("has AccessibilityRole %q", role)
+	}
+	upsertConcern(ConcernInertFollowsFocus, fmt.Sprintf(
+		"%s states AccessibilitySelectionFollowsFocus and %s: the flag is a "+
+			"statement about what a composite's arrow keys do, and only %s have "+
+			"one — so this is written into the DOM as "+
+			"data-grmob-selection-follows-focus, read by nothing, and written at "+
+			"all by no other target",
+		path, stated, joinRoles(KeyboardComposites())))
+}
+
+// checkNestedComposite flags one keyboard pattern inside another, and returns
+// the ancestor its own children should be told about.
+//
+// # The shape, and why it is two tab stops
+//
+// The WASM runtime finds a composite's members by walking its subtree, and
+// both member walks stop at a nested composite — for different reasons that
+// come to the same thing. A listbox's walk stops at a nested *listbox*,
+// because the two would otherwise pool their options. A toolbar's walk stops
+// at any composite, because a toolbar's members are named by no role at all
+// (ARIA defines no `toolbaritem`), so nothing says whose a button inside a
+// nested widget is.
+//
+// Either way the inner container keeps its own roving tabindex. So the pair is
+// two stops in the page's tab order, and the outer widget's arrows step over
+// the inner one whole:
+//
+//	Tab  -> [ All ] ( Sermons | Articles ) [ More ]     the toolbar's stop
+//	Tab  ->         (   ^ the strip's own stop   )      the tablist's
+//
+// ARIA describes one: the pattern makes the nested widget's *current* member
+// the outer widget's member, so a single Tab reaches the pair and the outer
+// arrows cross into the strip.
+//
+// # Why the framework diverges rather than fixing it
+//
+// Doing what ARIA describes means two composites writing tabindex onto one
+// element — the strip's selected tab would be both the tablist's stop and the
+// toolbar's member — and that needs a rule about which of them owns the write
+// when they disagree. There is no such rule, and inventing one silently is
+// worse than the divergence: what the framework does instead leaves every
+// control reachable, which every guess here can lose.
+//
+// # Why it is reported here and nowhere else
+//
+// It is a relationship between two elements, which is this walk's whole
+// subject. The runtime could see it — the walk is standing on both nodes when
+// it stops — but a runtime that reported it would be reporting it to a browser
+// console at the moment a keystroke arrives, on a target the author may not be
+// running. This is the pass whose job is telling an author, in Go, what their
+// finished tree amounts to.
+//
+// A concern rather than a refusal: the shape works, every control in it is
+// reachable, and nothing in this repository builds one. What the author is
+// owed is knowing they built the two-stop version on purpose.
+func (a *a11yAudit) checkNestedComposite(
+	n *Node, path string, outer compositeAncestor,
+) compositeAncestor {
+	role := n.Style.AccessibilityRole
+	if !hasKeyboard(role) {
+		// Not a composite: whatever the ancestor was, it still is. The walk
+		// does not stop at ordinary containers, which is the point — a strip
+		// buried three Boxes deep inside a toolbar is the same finding.
+		return outer
+	}
+	if outer.role != "" {
+		upsertConcern(ConcernNestedComposite, fmt.Sprintf(
+			"%s is a %q inside the %q at %s: both keep their own roving tabindex, "+
+				"so the pair is two tab stops and the outer widget's arrows step over "+
+				"the inner one whole. ARIA describes one stop — it makes the inner "+
+				"widget's current member the outer widget's member — and doing that "+
+				"means two widgets writing tabindex onto one element, which needs an "+
+				"owner rule this framework does not have. Every control stays "+
+				"reachable either way",
+			path, role, outer.role, outer.path))
+	}
+	return compositeAncestor{role: role, path: path}
+}
+
+// hasKeyboard reports whether a role is one of the containers with an ARIA
+// keyboard pattern. A loop over three values rather than a package-level set,
+// which any importer could write to — the same trade Roles() makes.
+func hasKeyboard(role Role) bool {
+	for _, composite := range KeyboardComposites() {
+		if role == composite {
+			return true
+		}
+	}
+	return false
+}
+
+// joinRoles renders a role list for a message. Small enough to inline and
+// separate because the list comes from core.KeyboardComposites(): spelling the
+// three roles into the sentence would be the fourth hand-written copy of them.
+func joinRoles(roles []Role) string {
+	out := make([]string, len(roles))
+	for i, r := range roles {
+		out[i] = string(r)
+	}
+	return strings.Join(out, ", ")
 }
 
 // report resolves what the walk collected. Both findings need the whole tree,

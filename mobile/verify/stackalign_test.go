@@ -158,39 +158,42 @@ func TestNativeZStacksPlaceEachLayer(t *testing.T) {
 	}
 }
 
-// The SwiftUI Layout hands both of its questions to the solver.
+// The SwiftUI Layout hands both of its questions to the solver, and does no
+// converting of its own on the way.
 //
-// This is the one piece of the overlay that no harness can run.
+// This is the piece of the overlay that no harness can run.
 // GrMobStackSolver's decisions moved into GrMobStack.swift precisely so
-// ios/verify could execute them against a recording fake, and what stayed
-// behind is the conversion between SwiftUI's vocabulary and the solver's plus
-// the place() call — three lines with no decision in them, and three lines a
-// simulator is still the only thing that exercises.
+// ios/verify could execute them against a recording fake; what stayed behind
+// is subviews.map, one sizeThatFits and the place() call, which a simulator is
+// still the only thing that exercises.
 //
 // So this is a source-text pin, which is the fallback this package uses
 // wherever a link can break silently and nothing off-device can see it (see
-// value_test.go's pair). What it catches is the shape that would put the
-// decisions back out of reach: a Layout that computes a size or an origin
-// itself rather than asking. It cannot catch a conversion that is subtly
-// wrong, and saying so is the honest limit — that half is what
-// TestNativeZStackOverlaysItsChildren and a simulator are for.
+// value_test.go's pair). What it catches is the shape that would put a rule
+// back out of reach, and there are two of those:
+//
+//	the Layout computes a size or an origin itself   the decisions
+//	the Layout converts a proposal itself            the vocabulary
+//
+// The second half used to be the honest limit here — "it cannot catch a
+// conversion that is subtly wrong" — and it is not any more, because the
+// conversion stopped being written here. GrMobStackBridge.swift holds both
+// directions and ios/verify runs them against real ProposedViewSize values, so
+// what this file needs to say is only that they are still being *called*: an
+// inlined `ProposedViewSize(width:height:)` anywhere in the Layout or its
+// adapter would type-check, would work, and would put the pairing of the two
+// axes back where nothing executes it.
+//
+// What no source check can reach is whether a real LayoutSubview answers
+// sizeThatFits the way the recording fake does. That is SwiftUI's behaviour
+// rather than this framework's, and TestNativeZStackOverlaysItsChildren plus a
+// simulator are what speak to it.
 func TestTheSwiftStackLayoutDelegatesToTheSolver(t *testing.T) {
 	// The whole struct, not declSource: both of its methods are declarations,
 	// so declSource stops at the first one and would read half the subject.
 	// A type's body ends at the first closing brace in column one, since
 	// everything inside it is indented.
-	src := readNative(t, swiftRenderer)
-	at := strings.Index(src, "private struct GrMobStackLayout: Layout {")
-	if at < 0 {
-		t.Fatalf("%s: no GrMobStackLayout — if it was renamed, update this test",
-			swiftRenderer)
-	}
-	rest := src[at:]
-	end := strings.Index(rest, "\n}\n")
-	if end < 0 {
-		t.Fatalf("%s: GrMobStackLayout is unterminated", swiftRenderer)
-	}
-	body := rest[:end]
+	body := swiftTypeBody(t, swiftRenderer, "private struct GrMobStackLayout: Layout {")
 
 	for _, pin := range []struct{ expr, question string }{
 		{"GrMobStackSolver.containerSize(",
@@ -220,4 +223,72 @@ func TestTheSwiftStackLayoutDelegatesToTheSolver(t *testing.T) {
 				banned.expr, banned.why)
 		}
 	}
+
+	// Nor the converting. Both spellings below are how the adapter read before
+	// it moved into GrMobStackBridge.swift, and each is one axis-swap away
+	// from being wrong in a way only a simulator would show — which is the
+	// whole reason it moved.
+	//
+	// GrMobStackSubview is checked alongside the Layout because it held the
+	// third of the three expressions: the Layout converted the incoming
+	// proposal and the outgoing placement, and the adapter converted back for
+	// sizeThatFits.
+	adapter := swiftTypeBody(t, swiftRenderer,
+		"private struct GrMobStackSubview: GrMobStackLayer {")
+	// The positive half, which is also what keeps the negative half from
+	// passing over a cut that read nothing: each converted direction is named
+	// where it is used, so a body that lost its call fails here rather than
+	// silently satisfying the bans below.
+	for _, pin := range []struct{ name, src, expr string }{
+		{"GrMobStackSubview", adapter, "subview.sizeThatFits(proposal.proposedViewSize)"},
+		{"GrMobStackLayout", body, "proposing: GrMobProposal(proposal)"},
+		{"GrMobStackLayout", body, "proposal: placement.proposal.proposedViewSize"},
+	} {
+		if !strings.Contains(pin.src, pin.expr) {
+			t.Errorf("%s: %s does not contain %q — the conversion ios/verify runs is "+
+				"not the one the Layout uses", swiftRenderer, pin.name, pin.expr)
+		}
+	}
+	for _, part := range []struct{ name, src string }{
+		{"GrMobStackLayout", body},
+		{"GrMobStackSubview", adapter},
+	} {
+		for _, banned := range []struct{ expr, why string }{
+			{"ProposedViewSize(width:",
+				"a proposal built here is a pairing of two optional axes that nothing " +
+					"runs; GrMobProposal.proposedViewSize is the one ios/verify checks"},
+			{"GrMobProposal(width:",
+				"same in the other direction — GrMobProposal.init(_ ProposedViewSize) " +
+					"is the converted-in half, and it is checked next to the other"},
+		} {
+			if strings.Contains(part.src, banned.expr) {
+				t.Errorf("%s: %s contains %q — %s", swiftRenderer, part.name,
+					banned.expr, banned.why)
+			}
+		}
+	}
+}
+
+// A whole Swift type declaration, from its opening line to the closing brace
+// in column one.
+//
+// declSource is the wrong cut for a type: its boundary is the next `func`, and
+// a type's own methods are funcs — so it would return the header and the
+// stored properties and stop before the bodies, which on these two types is
+// everything worth reading. A type's body is the one thing whose end is easy
+// to find exactly, because every line inside it is indented.
+func swiftTypeBody(t *testing.T, file, anchor string) string {
+	t.Helper()
+	src := readNative(t, file)
+	at := strings.Index(src, anchor)
+	if at < 0 {
+		t.Fatalf("%s: no %s — if it was renamed or restructured, update this test "+
+			"rather than deleting it", file, anchor)
+	}
+	rest := src[at:]
+	end := strings.Index(rest, "\n}\n")
+	if end < 0 {
+		t.Fatalf("%s: %s is unterminated", file, anchor)
+	}
+	return rest[:end]
 }

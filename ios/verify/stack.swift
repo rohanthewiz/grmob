@@ -23,7 +23,15 @@
 // Expected values are derived from what a Compose Box and a single-cell CSS
 // grid do, so a test failing means this renderer disagrees with the Android
 // renderer and the browser, not merely that the code changed.
+//
+// SwiftUI is imported for the third section alone — the adapter between
+// ProposedViewSize and GrMobProposal (GrMobStackBridge.swift). Importing it
+// here does not weaken what GrMobStack.swift claims about itself: that file
+// still imports CoreGraphics and nothing else, which is what lets it be linked
+// into a plain command-line binary. What SwiftUI contributes to this harness is
+// one struct with two optional fields, never a view.
 import CoreGraphics
+import SwiftUI
 
 private func nearPoint(_ a: CGPoint, _ b: CGPoint) -> Bool {
     abs(a.x - b.x) < 0.0001 && abs(a.y - b.y) < 0.0001
@@ -144,6 +152,7 @@ func checkStackSolver() -> [String] {
           CGPoint(x: -60, y: 50), into: &problems)
 
     problems += checkStackLayoutRules()
+    problems += checkStackProposalBridge()
     return problems
 }
 
@@ -300,6 +309,107 @@ func checkStackLayoutRules() -> [String] {
     if !GrMobStackSolver.placements(layers: empty, in: bounds).isEmpty {
         problems.append("placement: an empty stack produced placements")
     }
+
+    return problems
+}
+
+// --- The adapter, which used to be unexecuted ------------------------------
+//
+// `GrMobProposal.init(_ proposal: ProposedViewSize)` and `proposedViewSize`
+// are the whole of the conversion between SwiftUI's size vocabulary and the
+// solver's. They lived inside Renderer.swift as three field-copying
+// expressions, which put them on the one side of this target that nothing
+// runs — a swapped axis or a dimension dropped to nil compiles, draws, and is
+// invisible to `TestTheSwiftStackLayoutDelegatesToTheSolver`, whose subject is
+// a Layout that computes a size *itself*.
+//
+// They are checkable here for the reason GrMobStackLayer was written: the
+// obstacle was never SwiftUI, it was `LayoutSubview` in particular.
+// `ProposedViewSize` is an ordinary public struct with a public initializer,
+// so both directions can be handed real values and read back.
+//
+// Both stakes are visible in the table below, and they pull opposite ways:
+//
+//	an unspecified offer arriving as a number   every layer is sized against
+//	                                            a box nobody proposed
+//	a stated offer arriving as nil              every greedy background reports
+//	                                            its intrinsic size and stops
+//	                                            covering the stack
+
+private func check(
+    _ name: String, _ got: GrMobProposal, _ want: GrMobProposal, into problems: inout [String]
+) {
+    if got != want { problems.append("\(name): got \(got), want \(want)") }
+}
+
+private func check(
+    _ name: String, _ got: ProposedViewSize, _ want: ProposedViewSize,
+    into problems: inout [String]
+) {
+    if got != want {
+        problems.append("\(name): got (\(String(describing: got.width)), "
+            + "\(String(describing: got.height))), want (\(String(describing: want.width)), "
+            + "\(String(describing: want.height)))")
+    }
+}
+
+func checkStackProposalBridge() -> [String] {
+    var problems: [String] = []
+
+    // Asymmetric numbers on purpose: 100x50 catches a swap, 100x100 would not.
+    check("a stated offer reaches the solver",
+          GrMobProposal(ProposedViewSize(width: 100, height: 50)),
+          GrMobProposal(width: 100, height: 50), into: &problems)
+    check("a stated offer goes back to SwiftUI",
+          GrMobProposal(width: 100, height: 50).proposedViewSize,
+          ProposedViewSize(width: 100, height: 50), into: &problems)
+
+    // nil is a value in both vocabularies and means the same thing in both:
+    // "you decide". `.unspecified` is SwiftUI's own spelling of the pair.
+    check("an unspecified offer reaches the solver as nil",
+          GrMobProposal(ProposedViewSize.unspecified),
+          GrMobProposal(width: nil, height: nil), into: &problems)
+    check("an unspecified offer goes back as .unspecified",
+          GrMobProposal(width: nil, height: nil).proposedViewSize,
+          ProposedViewSize.unspecified, into: &problems)
+
+    // One axis stated and one not, both ways round. This is the case a swap
+    // survives the two symmetric checks above: a flex child measured on its
+    // cross axis alone is offered exactly this shape.
+    check("a half-stated offer keeps its axis (width)",
+          GrMobProposal(ProposedViewSize(width: 100, height: nil)),
+          GrMobProposal(width: 100, height: nil), into: &problems)
+    check("a half-stated offer keeps its axis (height)",
+          GrMobProposal(ProposedViewSize(width: nil, height: 50)),
+          GrMobProposal(width: nil, height: 50), into: &problems)
+    check("a half-stated offer goes back on its own axis",
+          GrMobProposal(width: nil, height: 50).proposedViewSize,
+          ProposedViewSize(width: nil, height: 50), into: &problems)
+
+    // Zero is a real offer and not an absence — a layer in a collapsed
+    // container is proposed it — so a conversion treating it as "unspecified"
+    // would hand a greedy background its intrinsic size in the one case where
+    // the stack has no room for it.
+    check("a zero offer is stated, not unspecified",
+          GrMobProposal(ProposedViewSize(width: 0, height: 0)),
+          GrMobProposal(width: 0, height: 0), into: &problems)
+
+    // The round trip, over the four nil combinations at once: whatever the
+    // solver was handed is what SwiftUI gets back when a layer is placed with
+    // it, which is the property placeSubviews rests on.
+    for offer in [ProposedViewSize(width: 200, height: 120),
+                  ProposedViewSize(width: 200, height: nil),
+                  ProposedViewSize(width: nil, height: 120),
+                  ProposedViewSize.unspecified] {
+        check("round trip", GrMobProposal(offer).proposedViewSize, offer, into: &problems)
+    }
+
+    // And the named initializer the placement rule uses: bounds.size is fully
+    // stated by construction, so `GrMobProposal(bounds.size).proposedViewSize`
+    // is what every layer is actually offered at placement.
+    check("bounds become a fully stated offer",
+          GrMobProposal(CGSize(width: 200, height: 120)).proposedViewSize,
+          ProposedViewSize(width: 200, height: 120), into: &problems)
 
     return problems
 }
