@@ -55,13 +55,38 @@ func TestSeparatorThicknessAndInset(t *testing.T) {
 	if n.Style.Background != "#FF0000" {
 		t.Errorf("Background = %q, want the override", n.Style.Background)
 	}
-	// EdgeInsets.Horizontal, which says what the field means rather than
-	// spelling it out per side. It used to be a Left/Right pair because the
-	// two web targets read the per-side fields only; both resolve the
-	// shorthand now (htmlout.EdgeCSS, edgeToCSS in the WASM runtime).
-	want := core.EdgeInsets{Horizontal: 16}
+	// core.MarginHorizontal, which writes the axis shorthand *and* the two
+	// explicit sides — the whole EdgeInsets, checked field by field, because
+	// the point of the prop over a hand-written EdgeInsets is which fields it
+	// leaves alone.
+	//
+	// The sides are not redundant with the shorthand: writing only the
+	// shorthand could never override a side a caller's Style had already set,
+	// which is the argument on core.PaddingHorizontal. The vertical pair must
+	// stay zero — an inset is a horizontal request, and the UseStyle this
+	// replaced would have cleared a caller's vertical margin along with it.
+	want := core.EdgeInsets{Horizontal: 16, Left: 16, Right: 16}
 	if n.Style.Margin != want {
 		t.Errorf("Margin = %+v, want %+v", n.Style.Margin, want)
+	}
+}
+
+// The inset must not reach the other axis, which is the failure the UseStyle
+// spelling made unavoidable: a whole EdgeInsets replaces Margin outright, so
+// a caller asking for a gap above the rule and an inset on it got the inset
+// alone — silently, and only when both were asked for.
+func TestASeparatorInsetLeavesTheCallersVerticalMarginAlone(t *testing.T) {
+	ctx := core.NewContext()
+	n := Separator{
+		Inset: 16,
+		Style: []core.StyleProp{core.MarginVertical(12)},
+	}.Render(ctx)
+
+	if n.Style.Margin.Top != 12 || n.Style.Margin.Bottom != 12 {
+		t.Errorf("Margin = %+v, want the caller's vertical 12 intact", n.Style.Margin)
+	}
+	if n.Style.Margin.Left != 16 || n.Style.Margin.Right != 16 {
+		t.Errorf("Margin = %+v, want the inset's horizontal 16", n.Style.Margin)
 	}
 }
 

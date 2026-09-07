@@ -181,8 +181,10 @@ func MessageBubble(m Message) core.View {
 	return core.Row(
 		core.Justify(side),
 		// The gap between consecutive messages; see MessageList for why it
-		// lives here rather than on the list container.
-		core.UseStyle(core.Style{Margin: core.EdgeInsets{Bottom: 8}}),
+		// lives here rather than on the list container. One side, one prop —
+		// the UseStyle this replaced also cleared the other three, which was
+		// harmless only because nothing else here sets a margin.
+		core.MarginBottom(8),
 		core.Column(
 			core.UseStyle(bubble),
 			// Only their messages are labelled: our own name on our own

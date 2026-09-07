@@ -513,3 +513,174 @@ func TestTheDividerRoleIsWhyTheFieldFrameIsSeparate(t *testing.T) {
 			"ColorPalette.Border's divider/boundary split should be revisited")
 	}
 }
+
+// --- The boundary census ---------------------------------------------------
+
+// Colors.ControlBorder, measured against every fill a bundled theme actually
+// paints under a control.
+//
+// # What this is for
+//
+// The field-frame test above asks whether *two named widgets* clear the floor
+// on *their own* backdrops. That is the right question for those two and it
+// answers nothing about the next widget, which is how the one shortfall in
+// this repository came to be argued in two prose blocks and asserted nowhere:
+// components.Chip draws its quiet ring in this role on a Surface fill, where
+// DefaultTheme's tone measures 2.92:1 rather than 3.26:1, and the reason that
+// is acceptable lives in chipRing's comment. A second widget drawing a
+// boundary on Surface would inherit the shortfall without inheriting the
+// argument — it would simply be under the floor, with nothing anywhere saying
+// so.
+//
+// So the census is over the *palette role and the theme's own fills* rather
+// than over widgets. Every pair a widget could reach is measured whether or
+// not one reaches it today, which is what turns "the chip happens to be fine"
+// into "these are the pairs, this is the one that falls short, and here is
+// why".
+//
+// # The backdrops
+//
+// The four light fills a control can be drawn on: the page, the Surface
+// panel, a Card, and a field's own fill. Components.Camera is deliberately
+// not among them — it is a viewfinder, its fill is black in both themes, and
+// nothing draws a control boundary on top of a camera preview. Excluded by
+// name rather than by a lightness test, because a rule that skipped dark
+// fills would also skip a dark theme's page.
+func boundaryBackdrops(theme *core.Theme) []struct{ what, hex string } {
+	return []struct{ what, hex string }{
+		{"Background", theme.Colors.Background},
+		{"Surface", theme.Colors.Surface},
+		{"Card fill", theme.Components.Card.Background},
+		{"Input fill", theme.Components.Input.Background},
+		{"TextArea fill", theme.Components.TextArea.Background},
+	}
+}
+
+// The pairs that do not clear 3:1, stated once with the reason attached.
+//
+// Transcribed rather than derived, and that is the point: an entry here is a
+// decision someone made and can defend, where a pair that merely happens to
+// fall short is a bug. A new pair that falls short fails the census until
+// somebody either fixes the theme or writes down why it is allowed.
+//
+// Keyed by theme name and backdrop, spelled exactly as boundaryBackdrops
+// names them.
+var knownBoundaryShortfalls = map[string]struct {
+	ratio  float64 // to 2dp, the number the argument was made about
+	reason string
+}{
+	"DefaultTheme/Surface": {
+		2.92,
+		"the quiet chip's ring against its own fill. A chip has two backdrops and " +
+			"the edge that identifies the pill is the outer one — the fill is 1.12:1 " +
+			"against the page and identifies nothing, so what a reader picks the " +
+			"control out by is the ring against the page, which clears at 3.26:1. " +
+			"This is the boundary between two parts of one control. Closing the last " +
+			"0.08 means darkening the tone past Apple's own systemGray; see chipRing " +
+			"and ColorPalette.ControlBorder",
+	},
+}
+
+// Every (theme, backdrop) pair either clears WCAG 1.4.11's 3:1 floor or is a
+// recorded shortfall whose number has not moved.
+//
+// The recorded ratio is compared, not just the key. A retint that left the
+// pair failing but changed how badly would slip past a bare exemption, and
+// the argument in knownBoundaryShortfalls is about a specific distance from
+// the floor — "the last 0.08" is a sentence that stops being true at 2.4:1.
+func TestEveryControlBoundaryPairIsAccountedFor(t *testing.T) {
+	const floor = 3.0
+
+	for name, theme := range map[string]*core.Theme{
+		"DefaultTheme":  core.DefaultTheme,
+		"MaterialTheme": core.MaterialTheme,
+	} {
+		edge, ok := relativeLuminance(theme.Colors.ControlBorderColor())
+		if !ok {
+			t.Errorf("%s: ControlBorder %q does not parse", name, theme.Colors.ControlBorderColor())
+			continue
+		}
+		for _, backdrop := range boundaryBackdrops(theme) {
+			if backdrop.hex == "" {
+				t.Errorf("%s: %s states no fill — a control boundary drawn on it lands on "+
+					"whatever is behind, which no test can measure", name, backdrop.what)
+				continue
+			}
+			lum, ok := relativeLuminance(backdrop.hex)
+			if !ok {
+				t.Errorf("%s: %s = %q does not parse", name, backdrop.what, backdrop.hex)
+				continue
+			}
+			r := contrastRatio(edge, lum)
+			known, exempt := knownBoundaryShortfalls[name+"/"+backdrop.what]
+			switch {
+			case r >= floor:
+				// Clears. If it is also recorded as a shortfall, the sibling
+				// test below is the one that reports it.
+			case !exempt:
+				t.Errorf("%s: ControlBorder %q is %.2f:1 against %s (%q), want at least "+
+					"%.1f:1 — WCAG 1.4.11 puts that floor under the boundary that "+
+					"identifies a control. Either retint, or record it in "+
+					"knownBoundaryShortfalls with the argument for why this pair is "+
+					"allowed to fall short", name, theme.Colors.ControlBorderColor(),
+					r, backdrop.what, backdrop.hex, floor)
+			case round2(r) != known.ratio:
+				t.Errorf("%s: ControlBorder against %s is %.2f:1, recorded as %.2f:1 — the "+
+					"exemption's argument was made about the recorded number (%s)",
+					name, backdrop.what, r, known.ratio, known.reason)
+			}
+		}
+	}
+}
+
+// The other direction: a recorded shortfall that has stopped being one is an
+// exemption with nothing to exempt, and it must be deleted rather than left
+// standing.
+//
+// Same shape as TestTheDividerRoleIsWhyTheFieldFrameIsSeparate one section
+// up, and for the same reason. An exemption nobody revisits is how a fixed
+// theme keeps carrying the paragraph explaining why it was not fixed — and
+// worse, how the next real shortfall gets waved through by an entry that
+// looks like precedent.
+func TestNoRecordedBoundaryShortfallHasQuietlyBeenFixed(t *testing.T) {
+	const floor = 3.0
+
+	byName := map[string]*core.Theme{
+		"DefaultTheme":  core.DefaultTheme,
+		"MaterialTheme": core.MaterialTheme,
+	}
+	for key := range knownBoundaryShortfalls {
+		name, what, found := strings.Cut(key, "/")
+		theme, ok := byName[name]
+		if !found || !ok {
+			t.Errorf("knownBoundaryShortfalls[%q] names no bundled theme", key)
+			continue
+		}
+		var hex string
+		for _, b := range boundaryBackdrops(theme) {
+			if b.what == what {
+				hex = b.hex
+			}
+		}
+		if hex == "" {
+			t.Errorf("knownBoundaryShortfalls[%q] names no backdrop the census measures — "+
+				"a spelling the loop above never reaches exempts nothing", key)
+			continue
+		}
+		edge, _ := relativeLuminance(theme.Colors.ControlBorderColor())
+		lum, _ := relativeLuminance(hex)
+		if contrastRatio(edge, lum) >= floor {
+			t.Errorf("%s clears %.1f:1 now — delete the entry from "+
+				"knownBoundaryShortfalls, and the argument in chipRing and "+
+				"ColorPalette.ControlBorder with it", key, floor)
+		}
+	}
+}
+
+// round2 rounds to the two decimal places the recorded ratios are written to.
+// Comparing floats directly would make the table a transcription of this
+// package's float64 arithmetic rather than of a number a human can check
+// against a contrast tool.
+func round2(f float64) float64 {
+	return math.Round(f*100) / 100
+}

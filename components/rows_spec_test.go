@@ -26,28 +26,58 @@ import (
 // wantRowsSpecFields is the census. It exists so that adding a knob to
 // rowsSpec fails here rather than silently reaching one widget, and the
 // failure message says what else to go and do.
+//
+// # The third column, and why it had to be added
+//
+// Most of these are forwarded by both widgets and are checked together by
+// TestBothWidgetsForwardEveryRowsSpecKnob. Two are not, and the count is now
+// the point: `Wrap` has always been DataTable's alone, and `Collapse` is
+// GroupedList's. Each single-owner field needs its own test, because the
+// shared one cannot assert an effect the other widget has no way to produce.
+//
+// Recording the owner per field rather than leaving the exceptions implicit
+// is the smallest honest fix. The alternative was a census whose failure
+// message says "forward it from both" when the right answer is sometimes
+// "forward it from one and say why here", which is advice that gets followed.
+//
+// It is also the count the Next list was watching. rowsSpec is shared by
+// exactly two widgets, and the open question about it was whether a
+// widget-specific knob belongs in a shared spec at all — a question worth
+// asking at the *third* such field. There are two.
 var wantRowsSpecFields = []struct {
-	name string
-	kind reflect.Kind
+	name  string
+	kind  reflect.Kind
+	owner string // "both", or the single widget that forwards it
 }{
-	{"Rows", reflect.Slice},
-	{"Key", reflect.Func},
-	{"Row", reflect.Func},
-	{"GroupBy", reflect.Func},
-	{"Header", reflect.Func},
-	{"HideTrailingCount", reflect.Bool},
-	{"StickyHeaders", reflect.Bool},
-	{"HeadingLevel", reflect.Int},
-	{"Dividers", reflect.Bool},
-	{"Wrap", reflect.Func},
+	{"Rows", reflect.Slice, "both"},
+	{"Key", reflect.Func, "both"},
+	{"Row", reflect.Func, "both"},
+	{"GroupBy", reflect.Func, "both"},
+	{"Header", reflect.Func, "both"},
+	{"HideTrailingCount", reflect.Bool, "both"},
+	{"StickyHeaders", reflect.Bool, "both"},
+	{"HeadingLevel", reflect.Int, "both"},
+	{"Dividers", reflect.Bool, "both"},
+	// GroupedList's alone. A DataTable band sits inside the body's rowgroup,
+	// where ARIA has no reading for it even as a plain heading (see
+	// DataTable.Render's note); making it a button would be a second claim on
+	// a structure that is already the wrong shape. The fix is per-band
+	// rowgroups, which is a change to this function that both widgets share
+	// and so not one to make on the way past.
+	{"Collapse", reflect.Struct, "GroupedList"},
+	// DataTable's alone: the tap target and the selection tint, which a
+	// GroupedList row (the caller's own view, emitted as it came back) has no
+	// use for.
+	{"Wrap", reflect.Func, "DataTable"},
 }
 
 func TestRowsSpecCensus(t *testing.T) {
 	rt := reflect.TypeOf(rowsSpec[sermon]{})
 	if rt.NumField() != len(wantRowsSpecFields) {
-		t.Fatalf("rowsSpec has %d fields, the census lists %d — a new knob must be "+
-			"forwarded by BOTH GroupedList.Render and DataTable.Render, asserted in "+
-			"TestBothWidgetsForwardEveryRowsSpecKnob, and added here",
+		t.Fatalf("rowsSpec has %d fields, the census lists %d — a new knob must be added "+
+			"here with its owner, and either forwarded by BOTH GroupedList.Render and "+
+			"DataTable.Render and asserted in TestBothWidgetsForwardEveryRowsSpecKnob, "+
+			"or forwarded by one with a test of its own and the reason recorded above",
 			rt.NumField(), len(wantRowsSpecFields))
 	}
 	for i, w := range wantRowsSpecFields {
@@ -55,6 +85,27 @@ func TestRowsSpecCensus(t *testing.T) {
 		if f.Name != w.name || f.Type.Kind() != w.kind {
 			t.Errorf("field %d = %s %s, want %s (%s)", i, f.Name, f.Type.Kind(), w.name, w.kind)
 		}
+	}
+}
+
+// A widget-specific knob in a shared spec is a trade, and the census records
+// the two it has made. A third is where the trade stops being obviously
+// right — the decoration would be worth moving into a wrapper around
+// appendRows' output, or the spec worth splitting — and nothing but this
+// would say so, since each individual addition looks like the two before it.
+//
+// A count rather than a ban: two is the state of the world and is fine.
+func TestRowsSpecHasNotAccumulatedMoreSingleWidgetKnobs(t *testing.T) {
+	var single []string
+	for _, w := range wantRowsSpecFields {
+		if w.owner != "both" {
+			single = append(single, w.name+" ("+w.owner+")")
+		}
+	}
+	if len(single) > 2 {
+		t.Errorf("rowsSpec now carries %d single-widget knobs (%s) — at three it is worth "+
+			"asking whether the decoration belongs in the spec or in a wrapper around "+
+			"appendRows' output", len(single), strings.Join(single, ", "))
 	}
 }
 

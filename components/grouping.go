@@ -13,6 +13,79 @@ type Group struct {
 	Count int
 }
 
+// Collapse is caller-owned collapse state for a banded collection: which
+// groups are shut, and what to do when one is pressed.
+//
+// # Why the caller holds it
+//
+// GroupedList calls no hook, which is what lets it be rendered conditionally
+// — inside a core.IfElse against a pager's loaded flag, say — without
+// disturbing the caller's hook cursor. Owning collapse state would end that,
+// and the widget is the wrong place for it anyway: which months are shut is
+// screen state, it usually wants to survive a pager reload, and a screen that
+// wants "collapse all" has no way to reach inside a widget's NewState.
+//
+// So the screen keeps a set and answers two questions:
+//
+//	shut := core.NewState(ctx, map[string]bool{})
+//	GroupedList[Sermon]{
+//	    GroupBy: byMonth,
+//	    Collapse: components.Collapse{
+//	        IsCollapsed: func(g components.Group) bool { return shut.Get()[g.Key] },
+//	        OnToggle: func(g components.Group) {
+//	            next := maps.Clone(shut.Get())
+//	            next[g.Key] = !next[g.Key]
+//	            shut.Set(next)
+//	        },
+//	    },
+//	}
+//
+// components.Accordion is the other answer to the same question and stays the
+// right one for a single section: it owns its state, and the hook obligations
+// that come with it are documented on the widget. A list of twenty bands is
+// where owning the state stops being a convenience — twenty independent
+// NewStates that a reorder cannot move, and no way to shut them all.
+//
+// # One type, two functions
+//
+// They are two halves of one fact and are useless apart, which is the same
+// argument core.ValueRange makes for its three numbers. As two fields on
+// GroupedList a caller could supply either alone: IsCollapsed without OnToggle
+// is a list with rows nobody can bring back, and OnToggle without IsCollapsed
+// is a control that announces a state it does not have. The zero value is
+// "nothing collapses", which is what every list that has never heard of this
+// keeps doing.
+type Collapse struct {
+	// IsCollapsed reports whether a group's run is hidden. Nil means no.
+	IsCollapsed func(Group) bool
+	// OnToggle is called with the group whose band was pressed. Nil leaves
+	// the bands as plain headings — see GroupHeader.Expanded.
+	OnToggle func(Group)
+}
+
+// active reports whether the bands should be built as disclosures. Keyed on
+// OnToggle rather than on IsCollapsed: a band with a handler and no predicate
+// is a disclosure that is always open, which is odd but coherent, while a
+// band with a predicate and no handler is a control nobody can operate.
+func (c Collapse) active() bool { return c.OnToggle != nil }
+
+// collapsed reports whether the predicate says this group is shut. Only
+// meaningful together with active; use hides for the question the row loop
+// asks.
+func (c Collapse) collapsed(g Group) bool {
+	return c.IsCollapsed != nil && c.IsCollapsed(g)
+}
+
+// hides reports whether this group's run should be withheld — the predicate
+// says shut *and* there is a control that can bring it back.
+//
+// Both halves, in one place, because the two callers would otherwise have to
+// agree: a predicate with no handler would hide rows behind a band with no
+// control, which is a feed that silently loses items and offers no way to
+// find them. The band's own state is derived from the same pair, so a run
+// that is hidden always has a control announcing it as collapsed.
+func (c Collapse) hides(g Group) bool { return c.active() && c.collapsed(g) }
+
 // groupRun is one contiguous slice of items sharing a group key: items
 // [Start, End) belong to Group.
 type groupRun[T any] struct {
@@ -92,6 +165,37 @@ type GroupHeader struct {
 	// ask for a heading with no tier at all.
 	HeadingLevel int
 
+	// Expanded and OnToggle turn the band into a disclosure: the label becomes
+	// a button carrying aria-expanded, with a chevron ahead of it, and the run
+	// beneath is the caller's to hide.
+	//
+	// # Both or neither
+	//
+	// OnToggle nil is the ordinary band, and Expanded is then ignored. That is
+	// not a silent drop of a stated fact — it is what core.ExpandedUnset
+	// means, and a caller who states one without the other is reported by
+	// core.SetDebugMode as ConcernInertDisclosure, because an expansion with
+	// no handler is announced on both web targets and is silently nothing on
+	// Android. See components.disclosure, which is where the pairing and the
+	// ARIA shape are argued.
+	//
+	// # The badge stays outside the button
+	//
+	// A button's children are presentational — a reader does not descend into
+	// them — so a count inside the control would stop being announced, and the
+	// count is real content rather than chrome. It therefore sits beside the
+	// button rather than within it, which is also what keeps the heading named
+	// "January 2026" instead of "January 2026 3".
+	//
+	// The cost is that the badge and the band's own padding are not part of
+	// the tap target: the button fills the space between the insets and stops
+	// where the count begins. That is the ordinary shape of a header row with
+	// a trailing badge, and the alternative — folding the count into the
+	// button's accessible name — would be assembling an English phrase in the
+	// renderer, which is the move Chip's ", selected" suffix was deleted for.
+	Expanded bool
+	OnToggle func()
+
 	// Style is applied to the band after its defaults.
 	Style []core.StyleProp
 }
@@ -133,14 +237,43 @@ func (h GroupHeader) Render(ctx *core.Context) *core.Node {
 		core.FontWeight(core.Bold),
 		core.TextColor(t.Colors.TextSecondary),
 	}
-	label = append(label, headingProps(h.HeadingLevel, headingLevelSection)...)
 
 	// The label grows so the badge sits hard against the trailing edge —
 	// the same FlexGrow-not-JustifyBetween pinning ListRow settled on.
-	items = append(items, core.Box(
-		core.FlexGrow(1),
-		core.Text(h.Group.Label, label...),
-	))
+	//
+	// Which node grows differs between the two shapes and the reason is the
+	// same in both: it has to be the band Row's own direct child, or the flex
+	// line has nothing to distribute. Plain, that is the Box around the label;
+	// as a disclosure, it is the heading wrapper the shape builds, and the
+	// growth is passed in as HeadingStyle for exactly that reason.
+	if h.OnToggle == nil {
+		label = append(label, headingProps(h.HeadingLevel, headingLevelSection)...)
+		items = append(items, core.Box(
+			core.FlexGrow(1),
+			core.Text(h.Group.Label, label...),
+		))
+	} else {
+		// No heading props on the words here: the tier rides the wrapper, and
+		// a heading inside a button is written into the document and pruned
+		// out of the accessibility tree by every browser. Same division
+		// Accordion draws, and for the same reason.
+		items = append(items, disclosure{
+			Label:        h.Group.Label,
+			Hint:         "Expands or collapses the group",
+			Expanded:     h.Expanded,
+			OnToggle:     h.OnToggle,
+			Heading:      true,
+			Level:        h.HeadingLevel,
+			OwnLevel:     headingLevelSection,
+			HeadingStyle: []core.StyleProp{core.FlexGrow(1)},
+			ChevronStyle: []core.StyleProp{core.UseStyle(t.Typography.Caption)},
+			ControlStyle: []core.StyleProp{
+				core.Gap(float64(t.Spacing.SM)),
+				core.AlignItemsProp(core.AlignItemsCenter),
+			},
+			Control: []core.View{core.Text(h.Group.Label, label...)},
+		}.view())
+	}
 	if !h.HideCount {
 		items = append(items, Badge{Text: itoa(h.Group.Count)})
 	}

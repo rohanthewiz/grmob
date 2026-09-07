@@ -53,10 +53,17 @@ type Separator struct {
 	// Inset indents the rule from both ends, in px. This is the list idiom
 	// where the rule starts under the text rather than under the leading
 	// avatar or checkbox, so the leading column reads as one continuous
-	// stripe. It is applied as EdgeInsets.Horizontal, which every renderer now
-	// resolves into the unset left and right sides; the field used to be
-	// spelled out as a Left/Right pair because the two web targets read the
-	// per-side fields only and dropped the shorthand.
+	// stripe.
+	//
+	// It is applied as core.MarginHorizontal, which writes the two explicit
+	// sides as well as the axis shorthand. The field has now been spelled
+	// three ways for one reason each: a Left/Right pair, because the two web
+	// targets once read the per-side fields only and dropped the shorthand; a
+	// bare EdgeInsets.Horizontal, once every renderer resolved the shorthand
+	// into the unset sides; and the prop, because a whole EdgeInsets through
+	// UseStyle replaces Margin outright and so clears any vertical gap the
+	// caller's Style below asked for. The prop touches one axis and leaves
+	// the other alone, which is what this field always meant.
 	Inset int
 
 	// Style is applied last, so every default above is overridable.
@@ -83,9 +90,7 @@ func (s Separator) Render(ctx *core.Context) *core.Node {
 		core.AccessibilityHidden(),
 	)
 	if s.Inset != 0 {
-		items = append(items, core.UseStyle(core.Style{
-			Margin: core.EdgeInsets{Horizontal: s.Inset},
-		}))
+		items = append(items, core.MarginHorizontal(s.Inset))
 	}
 	for _, sp := range s.Style {
 		items = append(items, sp)

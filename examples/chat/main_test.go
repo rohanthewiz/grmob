@@ -249,3 +249,28 @@ func TestNoDebugConcernsAcrossAConversation(t *testing.T) {
 		t.Fatalf("debug concerns raised:\n%s", core.DumpConcerns())
 	}
 }
+
+// The spacing between messages is a bottom margin on the bubble, and only a
+// bottom one.
+//
+// MessageList explains at length why the gap rides on the bubble rather than
+// on the Column's Gap — the spacing belongs to a message wherever one is
+// placed — and nothing measured it. That was survivable while the margin was
+// a whole core.EdgeInsets, because a whole EdgeInsets is hard to get partly
+// wrong; it is one prop now, and MarginTop is a plausible typo that moves
+// every gap to the wrong side of every bubble and changes nothing else about
+// the screen.
+//
+// The other three sides are asserted zero, which is the property the prop was
+// chosen for: a bubble states one gap and leaves the row's other edges to
+// whatever placed it.
+func TestTheGapBetweenMessagesIsOnTheBottomOfTheBubble(t *testing.T) {
+	ctx := core.NewContext()
+	ctx.BeginRenderPass()
+	row := MessageBubble(Message{ID: "1", From: "Ana", Text: "oi"}).Render(ctx)
+
+	want := core.EdgeInsets{Bottom: 8}
+	if row.Style == nil || row.Style.Margin != want {
+		t.Errorf("bubble row margin = %+v, want %+v", row.Style.Margin, want)
+	}
+}

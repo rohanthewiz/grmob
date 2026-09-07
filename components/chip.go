@@ -345,6 +345,15 @@ func (c Chip) stateStyle(t *core.Theme) []core.StyleProp {
 	// that last 0.08 would mean darkening the theme's boundary tone past
 	// Apple's own systemGray, which is the same repaint-the-theme's-choice
 	// move the on-light tones were added to avoid.
+	//
+	// That paragraph is now also a test fixture. knownBoundaryShortfalls in
+	// variant_test.go carries the pair, the number and a précis of this
+	// argument, and TestEveryControlBoundaryPairIsAccountedFor measures every
+	// (bundled tone, bundled fill) pair against the 3:1 floor. What that buys
+	// is not a check on this widget — the chip was always fine — but on the
+	// next one: a widget drawing a boundary on Surface used to inherit the
+	// shortfall silently, and now inherits a failing test that points here.
+	// The sibling test deletes the exemption if a retint ever closes the gap.
 	return []core.StyleProp{
 		core.BackgroundColor(t.Colors.Surface),
 		core.TextColor(t.Colors.TextPrimary),

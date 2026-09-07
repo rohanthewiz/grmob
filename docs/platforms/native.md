@@ -866,3 +866,40 @@ each: one arm per line, string literals first on the line, the catch-all last,
 and every value listed explicitly — including the ones the catch-all would have
 handled anyway. Those redundant arms are the point and must not be tidied away;
 a value that falls through is indistinguishable from one nobody considered.
+
+### The bridge stand-in
+
+Three files in `ios/GrMob/App` — the `@main` entry point among them — begin
+`import GrMob`, the module a `gomobile bind` produces, so they could not be
+type-checked without full Xcode and a gomobile toolchain. `ios/verify`
+compiles a hand-written stand-in module of that name instead
+(`ios/verify/gomobile_stub.swift`), and the app layer type-checks against it.
+
+A hand-written stand-in for generated code is a copy, and a drifted copy is
+worse than no check at all — the shell would keep type-checking green against
+a bridge Go no longer has. So `mobile/verify/gomobilestub_test.go` holds it to
+package `mobile`, in two directions and at two levels:
+
+- **The names.** Every bindable exported function and every exported interface
+  has a declaration, under gobind's naming (`Mobile` + the Go name, and
+  `…Protocol` for an interface, since Swift suffixes the protocol to break its
+  collision with the class of the same name). Nothing in the stub claims a Go
+  symbol that is not there.
+- **The signatures.** Each declaration is character-for-character what gobind
+  would emit — parameter types and order, argument labels, nullability and the
+  return — for the package functions and the protocols' methods alike. Adding
+  a bindable function without adding it here fails `go test ./...`, and so does
+  renaming one of its parameters.
+
+The type mapping is three rows and a protocol rule (`gobindSwiftTypes`), which
+is all this bridge's narrow surface can need — a Go type outside it already
+stops the bind. It is split by position because gobind's nullability is not
+symmetric: a `string` parameter arrives as `String?` and a `string` result as
+`String`, and a stub that took `String` everywhere would accept shell code the
+real framework rejects.
+
+The signature half was left out for a while, on the argument that a wrong
+signature fails the Swift type-check the moment the shell calls it. That
+assumed every declaration has a call site. Three do not — `MobileDataDir`,
+`MobileRenderAgain` and `MobileReportHostEvent` are all reachable from a shell
+that never touches them — and for those the type-check proved nothing.

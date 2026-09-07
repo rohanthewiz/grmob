@@ -116,6 +116,27 @@ type GroupedList[T any] struct {
 	// (not after the last row, where the next header or the footer follows).
 	Dividers bool
 
+	// Collapse turns the bands into disclosures whose runs the reader can
+	// shut, with the state held by the caller. The zero value is the list as
+	// it has always been.
+	//
+	//	Collapse: components.Collapse{
+	//	    IsCollapsed: func(g components.Group) bool { return shut.Get()[g.Key] },
+	//	    OnToggle:    func(g components.Group) { ... },
+	//	}
+	//
+	// It does nothing without GroupBy — there are no bands in a flat list to
+	// shut — on the same division StickyHeaders draws. Unlike StickyHeaders
+	// it is *not* ignored under a Header override: the override owns the
+	// band, and this owns whether the rows under it are emitted, which is not
+	// something a view the caller built can reach. Such a caller renders their
+	// own control and calls the same OnToggle.
+	//
+	// See Collapse for why the state is the caller's and why the two
+	// functions are one type, and GroupHeader.Expanded for the band's ARIA
+	// shape.
+	Collapse Collapse
+
 	// Empty is rendered in place of the rows when Items is empty. Nil renders
 	// an empty list.
 	Empty core.View
@@ -186,6 +207,7 @@ func (g GroupedList[T]) Render(ctx *core.Context) *core.Node {
 			StickyHeaders:     g.StickyHeaders,
 			HeadingLevel:      g.HeadingLevel,
 			Dividers:          g.Dividers,
+			Collapse:          g.Collapse,
 			// No Wrap: a GroupedList row is the caller's view, emitted as
 			// it came back. DataTable is the only decorator.
 		})
@@ -258,6 +280,18 @@ type rowsSpec[T any] struct {
 	// after the last one, where a band or the footer follows.
 	Dividers bool
 
+	// Collapse is the caller-owned collapse state, if the bands are
+	// disclosures. The zero value is "nothing collapses" and is what
+	// DataTable passes, for the reason its own type comment gives about band
+	// headings and rowgroups.
+	//
+	// It reaches two places rather than one: the default band, which becomes
+	// a button carrying aria-expanded, and the *row emission*, which is the
+	// half a Header override cannot own — a caller who builds their own band
+	// still gets a run that hides, and wires their control to the same
+	// OnToggle.
+	Collapse Collapse
+
 	// Wrap decorates each rendered row before it is keyed. DataTable uses it
 	// for the tap target and the selection tint; a nil Wrap emits the row as
 	// it came back from Row. It is the one field with no widget field behind
@@ -307,16 +341,31 @@ func appendRows[T any](
 	}
 	// ri, not i: the row loop below indexes spec.Rows and would shadow it.
 	for ri, run := range runs {
+		// Copied out of the range variable before the closure below captures
+		// it. Correct without the copy under Go 1.22's per-iteration scoping,
+		// and written this way anyway: the capture is the kind of thing that
+		// gets moved into a helper, where the scoping rule no longer applies.
+		group := run.Group
+
 		var h core.View
 		if spec.Header != nil {
-			// An override owns its own counting: the Group goes through
-			// untouched, trailing or not.
-			h = spec.Header(run.Group)
+			// An override owns its own counting *and* its own control: the
+			// Group goes through untouched, trailing or not, and a collapsible
+			// band built here would be a second control for the same run.
+			h = spec.Header(group)
 		} else {
 			gh := GroupHeader{
-				Group:        run.Group,
+				Group:        group,
 				HideCount:    spec.HideTrailingCount && ri == len(runs)-1,
 				HeadingLevel: spec.HeadingLevel,
+			}
+			if spec.Collapse.active() {
+				// Expanded, not collapsed: ARIA states the affirmative, and
+				// deriving it here rather than at the band keeps the widget's
+				// vocabulary ("which groups are shut") and ARIA's ("is this
+				// open") from having to agree in two places.
+				gh.Expanded = !spec.Collapse.collapsed(group)
+				gh.OnToggle = func() { spec.Collapse.OnToggle(group) }
 			}
 			if spec.StickyHeaders {
 				// Onto the band's own Style, not around it in a wrapper: the
@@ -327,7 +376,19 @@ func appendRows[T any](
 			}
 			h = gh
 		}
-		items = append(items, core.Keyed(groupHeaderKey(run.Group), h))
+		items = append(items, core.Keyed(groupHeaderKey(group), h))
+
+		// A shut run emits nothing at all — not hidden children, none. The
+		// band keeps its key across the toggle, so the reconciler patches the
+		// rows away and leaves the header alone, and a re-open costs one
+		// render rather than a remount of the band.
+		//
+		// Checked whether or not the band is the default one, which is the
+		// half of Collapse a Header override cannot own: the override draws a
+		// control, and this decides what the control is about.
+		if spec.Collapse.hides(group) {
+			continue
+		}
 		for i := run.Start; i < run.End; i++ {
 			emit(i, spec.Rows[i], i == run.End-1)
 		}

@@ -80,6 +80,25 @@ type ColorPalette struct {
 	// (against each theme's own white Background; see the two themes for the
 	// second backdrop each measures against.)
 	//
+	// # A control has more than one backdrop, and the census is the list
+	//
+	// The page is only the first of them. A boundary drawn on a Surface
+	// panel, a Card or a field's own fill is measured against that fill, and
+	// the tone is one hex for all of them — so "ControlBorder clears 3:1" is
+	// not a property of the tone, it is a property of a *pair*.
+	//
+	// Every pair a bundled theme can produce is enumerated and measured by
+	// TestEveryControlBoundaryPairIsAccountedFor in components/variant_test.go
+	// (the arithmetic lives there, beside the on-light census, for the reason
+	// that one gives). Exactly one falls short: DefaultTheme's tone on its own
+	// Surface, at 2.92:1, which is the quiet chip's ring against its own fill
+	// and is argued at length on chipRing. That argument is recorded in the
+	// census's knownBoundaryShortfalls table, which is the single place it is
+	// stated as a *fact* rather than as prose — a second widget drawing a
+	// boundary on Surface used to inherit the shortfall without inheriting
+	// the argument, and a new pair that falls short now fails the census
+	// until somebody retints or writes down why.
+	//
 	// # Why this arrived a session after the frames did
 	//
 	// Components.Input and Components.TextArea state their frame as a literal

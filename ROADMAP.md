@@ -327,6 +327,51 @@
       key: no such relationship exists in their vocabularies, and the near miss
       (`accessibilityIdentifier` / `testTag`) is a test selector rather than an
       accessibility property
+- [x] **A disclosure has a second consumer** (`components.Collapse`) — a
+      `GroupedList` band can be shut, and `Accordion` stopped being the only
+      widget in the package that says whether something is open. What the
+      second consumer bought is the shared shape: ARIA's disclosure
+      arrangement — a heading wrapping a button carrying `aria-expanded`, named
+      explicitly so the chevron never reaches the outline entry — took three
+      attempts to land, and both rejected versions looked correct in an export.
+      It is one value now (`components.disclosure`) and the two widgets are
+      rendered side by side and compared. The collapse state is the *caller's*,
+      which keeps `GroupedList` hook-free and is the right owner anyway: which
+      months are shut is screen state that wants to survive a pager reload. A
+      shut run emits no rows at all rather than hidden ones, and the band keeps
+      its key across the toggle, so re-opening patches rather than remounts
+- [x] **`Margin` has the four sides and the two axes**
+      (`core.MarginTop`/`Bottom`/`Left`/`Right`/`Horizontal`/`Vertical`) —
+      padding got its per-side props a session earlier and margin was left with
+      `Margin(all)` alone, so every single-sided gap went through a whole
+      `EdgeInsets` in a `UseStyle`. That is worse on this field than it was on
+      padding: `UseStyle` replaces `Margin` outright and a margin's other three
+      sides are usually zero, so the struct looks like it set one gap while
+      clearing the rest. Nothing in any renderer changed — the same
+      `EdgeInsets`, the same two settle helpers, the same resolution — and both
+      live workarounds (`components.Separator`'s inset, `examples/chat`'s
+      bubble gap) are one prop each
+- [x] **The bridge stand-in is pinned by signature, not just by name**
+      (`mobile/verify`) — `ios/verify` type-checks the iOS app layer against a
+      hand-written stand-in for the `gomobile bind` module, and the stand-in
+      was checked only for *which* symbols it declared. The argument for
+      stopping there — a wrong signature fails the Swift type-check the moment
+      the shell calls it — assumed every declaration has a call site, and three
+      do not. Each declaration is now compared character-for-character against
+      what gobind would emit for the Go signature behind it, off a three-row
+      type table that is all this deliberately narrow bridge can need. It keeps
+      gobind's nullability asymmetry, which is the point of copying it: a stub
+      taking `String` everywhere would accept shell code the framework rejects
+- [x] **Every control boundary is measured, not just the two named ones**
+      (`components/variant_test.go`) — `Colors.ControlBorder` clears WCAG
+      1.4.11's 3:1 floor against a page and falls 0.08 short against
+      `DefaultTheme`'s `Surface`, which is the quiet chip's own fill. That was
+      argued in two prose blocks and asserted nowhere, so a *second* widget
+      drawing a boundary on `Surface` would have inherited the shortfall
+      without inheriting the argument. A census now crosses each bundled tone
+      with every fill a control can sit on and requires each pair to clear or
+      to be recorded, with its number and its reason, in one exemption table —
+      and a sibling test deletes the exemption if a retint ever closes the gap
 - [x] **A composite announces the way it runs** (`aria-orientation`, both web
       targets) — the runtime read a container's resolved `flex-direction` to
       pick the arrow pair and nothing wrote the answer down, so a

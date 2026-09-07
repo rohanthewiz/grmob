@@ -1050,6 +1050,23 @@ A `Header` slot gets the button and its state and **no** heading, on the same
 division `Card.Title` / `Card.Header` draws: you replaced the content, so the
 widget will not stamp an outline entry named by a `Title` that is not on screen.
 
+### It is now a shared shape
+
+The arrangement above is `components.disclosure`, and the collapsible
+`GroupedList` band is built out of the same value. It moved there when the
+second consumer arrived: the argument took three attempts and both rejected
+ones looked correct in an export, so a hand-copied second version would have
+been checked only against its own expectations. `TestBothDisclosuresBuildTheSameShape`
+renders the two side by side and compares the tier, both names, the state and
+the chevron in both directions.
+
+The type also makes the pairing structural. `Expanded` and `OnToggle` are
+fields of one struct because a stated expansion with no handler is announced
+on both web targets and is silently nothing on Android — Compose wires its
+expand/collapse actions to the node's own click callback and offers neither
+without one. [Debug mode](concepts/debug-mode.md) reports that as an inert
+disclosure.
+
 ## Tabs
 
 The named-field facade over `core.TabView`:
@@ -1164,6 +1181,63 @@ rowgroup is load-bearing rather than decorative — ARIA reads the rows a table
 *owns*, and the body list is a container between the two, so without it the
 other four describe a table with no rows. A busy or empty table withholds the
 rowgroup, since what the body holds then is one placeholder and not rows.
+
+### Collapsible bands
+
+`GroupedList.Collapse` turns the bands into disclosures whose runs the reader
+can shut. The state is the caller's:
+
+```go
+shut := core.NewState(ctx, map[string]bool{})
+
+components.GroupedList[Entry]{
+    Items: entries, GroupBy: byMonth,
+    Collapse: components.Collapse{
+        IsCollapsed: func(g components.Group) bool { return shut.Get()[g.Key] },
+        OnToggle: func(g components.Group) {
+            next := maps.Clone(shut.Get())
+            next[g.Key] = !next[g.Key]
+            shut.Set(next)
+        },
+    },
+}
+```
+
+**Why the caller holds it.** `GroupedList` calls no hook, which is what lets
+it be rendered conditionally — inside a `core.IfElse` against a pager's loaded
+flag — without disturbing your hook cursor. Owning collapse state would end
+that, and the widget is the wrong place for it anyway: which months are shut
+is screen state, it usually wants to survive a pager reload, and a screen that
+wants "collapse all" has no way to reach inside a widget's `NewState`.
+`Accordion` is the other answer to the same question and stays the right one
+for a single section.
+
+The two functions are one type because they are useless apart: a predicate
+with no handler would hide rows behind a band nobody can open, so it hides
+nothing. The zero `Collapse` is the list exactly as it was.
+
+A collapsed run emits **no rows at all** — not hidden ones — so a shut month
+costs the reconciler nothing and reaches no document. The band keeps its key
+across the toggle, so re-opening patches the rows back rather than remounting
+the band.
+
+The band becomes [the disclosure shape](#it-is-now-a-shared-shape) `Accordion`
+uses: a heading wrapping a button that carries `aria-expanded`, with the
+chevron inside the control. The count badge stays **outside** the button — a
+button's children are presentational, and the count is content rather than
+chrome — which also keeps the heading named "March" rather than "March 12".
+The cost is that the badge is not part of the tap target.
+
+Unlike `StickyHeaders` and `HeadingLevel`, `Collapse` is *not* ignored under a
+`Header` override. The override owns the band; this owns whether the rows
+under it are emitted, which is not something a view you built can reach. Such
+a caller draws their own control and calls the same `OnToggle`.
+
+`DataTable` does not take it. A table's band sits inside the body's rowgroup,
+where ARIA has no reading for it even as a plain heading — making it a button
+would be a second claim on a structure that is already the wrong shape. The
+fix is per-band rowgroups, which is a change to the row emission both widgets
+share.
 
 See lessons 4.6 and 4.8 of the [interactive tutorial](tutorial-interactive.md)
 and the godoc for the full field list.

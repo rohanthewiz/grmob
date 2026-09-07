@@ -25,9 +25,17 @@
 // drifted copy is worse than no check: the shell would keep type-checking
 // against a bridge Go no longer has. So the declarations below are pinned to
 // the Go source they stand for by mobile/verify/gomobilestub_test.go, which
-// reads `mobile`'s exported functions and requires a matching declaration
-// here under gobind's naming rules. Adding a bindable function to
-// mobile/bridge.go without adding it here fails `go test ./...`.
+// reads `mobile`'s exported functions and interfaces and requires two things
+// of each: a declaration here under gobind's naming rules, and a signature
+// that matches character for character what gobind would emit for it —
+// parameter types and order, argument labels, nullability and the return.
+// Adding a bindable function to mobile/bridge.go without adding it here fails
+// `go test ./...`, and so does renaming one of its parameters.
+//
+// The signature half is why the nullability note at the end of this comment
+// is load-bearing rather than advisory: the test derives `String?` for a
+// `string` parameter and `String` for a `string` result, so a declaration
+// that took `String` everywhere is now a failure rather than a latitude.
 //
 // # The naming rules being imitated
 //

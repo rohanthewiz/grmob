@@ -71,3 +71,69 @@ func TestAZeroSidePropResolvesToZero(t *testing.T) {
 		t.Errorf("PaddingHorizontal(16) then PaddingLeft(0) = %q, want %q", got, want)
 	}
 }
+
+// The margin side props settle the same two axes with the same two helpers,
+// and the margin CSS comes out of the same EdgeCSS. Held here for the two
+// facts core's own tests cannot see.
+//
+// The first is that the transformation is resolution-preserving on this
+// field too. That follows from settleHorizontal/settleVertical being shared
+// verbatim and is not really in doubt — but "shared verbatim" is a fact
+// about today's source, and this is the assertion that would survive someone
+// giving margin its own copy of the helpers.
+//
+// The second is the payoff, and it is the one that could not be stated in
+// core at all: a zero margin side really does render a zero. That is what
+// the shorthand's "non-zero means set" rule made impossible before, and it
+// is why MarginLeft(0) is a prop a caller can rely on rather than one that
+// looks applied and resolves back to the theme's number.
+func TestSettlingAMarginAxisPreservesEveryResolvedSide(t *testing.T) {
+	cases := []struct {
+		name string
+		in   core.EdgeInsets
+		prop core.StyleProp
+	}{
+		{"left over a horizontal shorthand", core.EdgeInsets{Horizontal: 16}, core.MarginLeft(16)},
+		{"right over a horizontal shorthand", core.EdgeInsets{Horizontal: 16}, core.MarginRight(16)},
+		{"top over a vertical shorthand", core.EdgeInsets{Vertical: 6}, core.MarginTop(6)},
+		{"bottom over a vertical shorthand", core.EdgeInsets{Vertical: 6}, core.MarginBottom(6)},
+		{"left with both shorthands", core.EdgeInsets{Horizontal: 8, Vertical: 6}, core.MarginLeft(8)},
+		{"opposite side explicit", core.EdgeInsets{Horizontal: 8, Right: 20}, core.MarginLeft(8)},
+		{"per-side only", core.EdgeInsets{Top: 1, Right: 2, Bottom: 3, Left: 4}, core.MarginLeft(4)},
+	}
+	for _, c := range cases {
+		before := EdgeCSS(c.in)
+		s := core.Style{Margin: c.in}
+		c.prop.Apply(&s)
+		if after := EdgeCSS(s.Margin); after != before {
+			t.Errorf("%s: %+v resolved %q, settled to %+v resolving %q",
+				c.name, c.in, before, s.Margin, after)
+		}
+	}
+}
+
+// A zero margin side resolves to zero, and an axis prop resolves to the pair
+// it names — the two workaround shapes, at the level the renderers read.
+func TestTheMarginPropsResolveAsWritten(t *testing.T) {
+	for _, c := range []struct {
+		name  string
+		start core.EdgeInsets
+		props []core.StyleProp
+		want  string
+	}{
+		{"a zero side clears its shorthand", core.EdgeInsets{Horizontal: 16},
+			[]core.StyleProp{core.MarginLeft(0)}, "0px 16px 0px 0px"},
+		{"the inset rule", core.EdgeInsets{},
+			[]core.StyleProp{core.MarginHorizontal(16)}, "0px 16px 0px 16px"},
+		{"the bubble gap", core.EdgeInsets{},
+			[]core.StyleProp{core.MarginBottom(8)}, "0px 0px 8px 0px"},
+	} {
+		s := core.Style{Margin: c.start}
+		for _, p := range c.props {
+			p.Apply(&s)
+		}
+		if got := EdgeCSS(s.Margin); got != c.want {
+			t.Errorf("%s: %q, want %q", c.name, got, c.want)
+		}
+	}
+}

@@ -146,8 +146,23 @@ Ordering is the ordinary last-one-wins: a side prop after an axis prop narrows
 it, an axis prop after a side prop overwrites it, and `Padding(all)` clears
 everything including both shorthands.
 
-`Margin` has no per-side props yet; a single-side margin still goes through
-`UseStyle(core.Style{Margin: core.EdgeInsets{...}})`.
+`Margin` has the same six: `core.MarginTop`, `MarginBottom`, `MarginLeft`,
+`MarginRight`, `MarginHorizontal` and `MarginVertical`. They are the padding
+props with one identifier changed — the same `EdgeInsets`, the same two settle
+helpers, the same resolution in all four renderers — so everything above
+applies to them unchanged.
+
+The reason to reach for them is stronger than it was for padding. A margin's
+other three sides are usually zero, so a whole `EdgeInsets` through `UseStyle`
+looks like it set one gap while silently clearing the rest:
+
+```go
+core.UseStyle(core.Style{Margin: core.EdgeInsets{Bottom: 8}})  // also clears any top, left, right
+core.MarginBottom(8)                                            // one side, and only that side
+```
+
+A squashed row makes padding's version of that mistake obvious. Margin's shows
+up as two elements touching, three screens away.
 
 `Display` splits across two CSS properties on the web, matching what the
 natives do with it: `DisplayNone` removes the node entirely (no pixels, no
@@ -981,6 +996,31 @@ Two distinctions the names do not make obvious:
   like a text field still reads the `Input` base itself, which is how
   `DatePicker`'s trigger gets its radius, its fill and its edge in one prop;
   the role is for a widget that wants only the edge.
+
+  **A control has more than one backdrop.** The numbers above are against each
+  theme's page. The same hex also meets the `Surface` panel, a `Card` fill and
+  a field's own fill, so "`ControlBorder` clears 3:1" is a property of a
+  *pair* rather than of the tone. Every pair a bundled theme can produce is
+  enumerated and measured by `TestEveryControlBoundaryPairIsAccountedFor`, and
+  exactly one falls short:
+
+  | | page | `Surface` | `Card` | field fill |
+  |---|---|---|---|---|
+  | `DefaultTheme` | 3.26:1 | **2.92:1** | 3.26:1 | 3.26:1 |
+  | `MaterialTheme` | 4.61:1 | 4.23:1 | 4.61:1 | 4.41:1 |
+
+  That one is the quiet chip's ring against its own fill, and it is allowed:
+  a chip's fill is 1.12:1 against the page and identifies nothing, so the edge
+  a reader picks the control out by is the outer one, which clears. The inner
+  edge is the boundary between two parts of one control. Closing the last 0.08
+  would mean darkening the tone past Apple's own systemGray.
+
+  What is new is not the argument, which the chip has carried all along, but
+  where it lives: in the census's `knownBoundaryShortfalls` table, with the
+  pair and the number. A widget that draws a boundary on `Surface` used to
+  inherit the shortfall without inheriting the argument. Now a new pair under
+  3:1 fails until somebody retints or writes down why, and a sibling test
+  deletes the exemption if a retint ever closes the gap.
 
 `Border`, `Success` and `Warning` were added on 2026-08-31 and `ControlBorder`
 on 2026-09-06, after the other seven. A theme written before that leaves them
