@@ -38,8 +38,15 @@ struct GrMobMenuItem: Equatable {
 /// level of the list. That is a real section rather than an absence of one, so
 /// the drawing code is a single loop over sections with the wrapper as its
 /// only branch.
+///
+/// `isDisabled` is core.SelectOption.GroupDisabled, resolved: the whole run is
+/// unavailable. Every item of such a run is itself disabled — the propagation
+/// happens when the run is closed, below — so what this flag adds on this
+/// target is the *header*, which would otherwise stay as legible as the ones
+/// above it.
 struct GrMobMenuSection: Equatable {
     let heading: String
+    let isDisabled: Bool
     let items: [GrMobMenuItem]
 
     /// What identifies the section to `ForEach`. The heading cannot:
@@ -63,17 +70,36 @@ func grMobMenuSections(_ options: [[String: Any]]) -> [GrMobMenuSection] {
     // and would otherwise be indistinguishable from "nothing open yet".
     var heading = ""
     var items: [GrMobMenuItem] = []
+    var runDisabled = false
     var building = false
+
+    // Closing a run is two steps, not one. A run's disabled state is stated by
+    // *any* of its options (core.SelectOption.GroupDisabled), so it is not
+    // known until the run ends — and the items collected before it was known
+    // have to be marked on the way out. This is the half of the rule that is
+    // new since the flush; the flush itself is the older half.
+    func closeRun() {
+        let resolved = runDisabled
+            ? items.map { GrMobMenuItem(index: $0.index, value: $0.value,
+                                        label: $0.label, isDisabled: true) }
+            : items
+        sections.append(GrMobMenuSection(heading: heading, isDisabled: runDisabled,
+                                         items: resolved))
+    }
 
     for (i, option) in options.enumerated() {
         let group = option["group"] as? String ?? ""
         if !building || group != heading {
             if building {
-                sections.append(GrMobMenuSection(heading: heading, items: items))
+                closeRun()
             }
             heading = group
             items = []
+            runDisabled = false
             building = true
+        }
+        if (option["groupDisabled"] as? String ?? "") == "true" {
+            runDisabled = true
         }
         let value = option["value"] as? String ?? ""
         // The label defaulted to the value at core.Select's flattening seam,
@@ -91,7 +117,7 @@ func grMobMenuSections(_ options: [[String: Any]]) -> [GrMobMenuSection] {
         ))
     }
     if building {
-        sections.append(GrMobMenuSection(heading: heading, items: items))
+        closeRun()
     }
     return sections
 }

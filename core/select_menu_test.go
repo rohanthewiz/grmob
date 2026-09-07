@@ -151,3 +151,113 @@ func TestSelectMenuSectionsOfNothingIsRangeable(t *testing.T) {
 		t.Errorf("sections = %+v, want an empty slice", got)
 	}
 }
+
+// core.SelectOption.GroupDisabled: the run, not the option.
+
+func TestSelectMenuSectionsTakeADisabledRunFromAnyOptionInIt(t *testing.T) {
+	// The declaration is on the run's *last* option, which is the case that
+	// separates "read it when the run is closed" from "read it when the run is
+	// opened". The second reading passes every list whose first option happens
+	// to carry the flag, so a fixture that only ever writes it there would
+	// certify a transliteration nobody could rely on.
+	got := SelectMenuSections([]map[string]string{
+		{"value": "pro", "label": "Pro", "group": "Paid"},
+		{"value": "max", "label": "Max", "group": "Paid", "groupDisabled": "true"},
+	})
+
+	if len(got) != 1 {
+		t.Fatalf("%d sections, want 1: %+v", len(got), got)
+	}
+	if !got[0].Disabled {
+		t.Error("the run is not disabled — a declaration made on the second option " +
+			"was read when the run was opened, or not read at all")
+	}
+	// The propagation is the half two of the four targets depend on entirely:
+	// SwiftUI puts .disabled on the Button, Material's dropdown has no section
+	// construct, and neither can read a flag that stopped at the section.
+	for i, item := range got[0].Items {
+		if !item.Disabled {
+			t.Errorf("item %d (%q) is choosable inside a disabled run", i, item.Value)
+		}
+	}
+}
+
+func TestADisabledRunDoesNotReachTheNextOne(t *testing.T) {
+	// The state is per-run, so opening the next one has to clear it. A
+	// transliteration that hoists the flag out of the loop passes every case
+	// where the disabled run is last.
+	got := SelectMenuSections([]map[string]string{
+		{"value": "pro", "label": "Pro", "group": "Paid", "groupDisabled": "true"},
+		{"value": "free", "label": "Free", "group": "Free"},
+	})
+
+	if len(got) != 2 {
+		t.Fatalf("%d sections, want 2: %+v", len(got), got)
+	}
+	if !got[0].Disabled {
+		t.Error("the declared run is not disabled")
+	}
+	if got[1].Disabled {
+		t.Error("the run after a disabled one is disabled too — the flag outlived its run")
+	}
+	if got[1].Items[0].Disabled {
+		t.Error("an option after a disabled run is not choosable")
+	}
+}
+
+func TestADisabledRunNeverReEnablesAnOption(t *testing.T) {
+	// Disabling flows one way. An option that was already refused stays
+	// refused, and the run's declaration cannot be undone by an option's own
+	// "false" — which is the spelling core.Select never writes but a
+	// hand-assembled node can.
+	got := SelectMenuSections([]map[string]string{
+		{"value": "a", "label": "A", "group": "G", "groupDisabled": "true", "disabled": "true"},
+		{"value": "b", "label": "B", "group": "G", "disabled": "false"},
+	})
+
+	if len(got) != 1 {
+		t.Fatalf("%d sections, want 1: %+v", len(got), got)
+	}
+	for i, item := range got[0].Items {
+		if !item.Disabled {
+			t.Errorf("item %d (%q) is choosable inside a disabled run", i, item.Value)
+		}
+	}
+}
+
+func TestAnUngroupedRunCanStillBeDisabled(t *testing.T) {
+	// There is no heading to grey and, on the web, no <optgroup> to carry the
+	// attribute — so the declaration degrades to exactly "every option in the
+	// run is disabled". That is a real outcome rather than a special case, and
+	// it is the reason the refusal rides on the items everywhere.
+	got := SelectMenuSections([]map[string]string{
+		{"value": "a", "label": "A", "groupDisabled": "true"},
+		{"value": "b", "label": "B"},
+	})
+
+	if len(got) != 1 || got[0].Heading != "" {
+		t.Fatalf("want one headingless section, got %+v", got)
+	}
+	if !got[0].Disabled {
+		t.Error("an ungrouped run cannot be disabled")
+	}
+	for i, item := range got[0].Items {
+		if !item.Disabled {
+			t.Errorf("item %d (%q) is choosable inside a disabled run", i, item.Value)
+		}
+	}
+}
+
+func TestGroupDisabledIsSpelledLikeEveryOtherWireBool(t *testing.T) {
+	// "true" and nothing else, the spelling core.SelectedState uses and the
+	// one the DOM writes. Anything else is not a declaration — the same
+	// reading the "disabled" key gets one line over.
+	for _, spelling := range []string{"", "false", "1", "TRUE", "yes"} {
+		got := SelectMenuSections([]map[string]string{
+			{"value": "a", "group": "G", "groupDisabled": spelling},
+		})
+		if got[0].Disabled {
+			t.Errorf("groupDisabled=%q disabled the run; only \"true\" should", spelling)
+		}
+	}
+}

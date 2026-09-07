@@ -259,13 +259,20 @@ func TestNativeMenuDecompositionIsUIFree(t *testing.T) {
 // Both transliterations exist and say the same thing.
 //
 // core.SelectMenuSections is the authority; each native carries a copy because
-// neither can call into Go while drawing. The copies are checked differently —
-// the Swift one by ios/verify running it, the Kotlin one only by reading —
-// so what is worth pinning here is that the two have the same shape, since a
-// Kotlin copy that drifted would drift silently.
+// neither can call into Go while drawing. Both copies are now *executed*
+// against a table generated from that authority — ios/verify runs the Swift
+// one, android/verify the Kotlin one, both over internal/menufixture — so this
+// test is no longer the only thing standing between a drifting copy and a
+// silent wrong menu.
 //
-// Four facts, each one a property of core.SelectOption.Group or .Disabled that
-// a rewrite is most likely to lose.
+// It is kept anyway, and deliberately: those two harnesses are shell scripts
+// that need a Swift toolchain and a Kotlin compiler, and this runs under a
+// bare `go test ./...`. What it pins is the handful of lines whose deletion
+// changes the answer, so a copy that has been gutted fails here as well as
+// there.
+//
+// Five facts, each one a property of core.SelectOption.Group, .Disabled or
+// .GroupDisabled that a rewrite is most likely to lose.
 func TestNativeMenuDecompositionsAgree(t *testing.T) {
 	for _, pin := range []struct {
 		file string
@@ -275,29 +282,35 @@ func TestNativeMenuDecompositionsAgree(t *testing.T) {
 		// without which a run that ends the list is dropped. disabled is the
 		// wire spelling, and index is the identity a row is known by.
 		//
-		// flush carries the `return` with it on purpose. The same guard opens
-		// the loop's own append, so the condition alone matched a file whose
-		// flush had been deleted outright — the break-test that caught this
-		// pin being too weak is the same shape as the one that caught
-		// htmlout's trailing <optgroup>, which is not a coincidence: an
-		// end-of-loop flush is hard to check *because* it looks like the thing
-		// inside the loop.
-		runs, flush, disabled, index string
+		// flush carries the `return` with it on purpose. Closing a run is one
+		// named step now, called from two places — the loop's own close and
+		// the end-of-loop flush — so the call alone appears twice and matches
+		// a file whose flush has been deleted outright. The `return` is what
+		// makes this the flush and not the other one.
+		//
+		// The break-test that caught this pin being too weak is the same shape
+		// as the one that caught htmlout's trailing <optgroup>, which is not a
+		// coincidence: an end-of-loop flush is hard to check *because* it
+		// looks like the thing inside the loop.
+		//
+		// runDisable is the second half of closing a run, and the newer one: a
+		// run disabled by any of its options has to mark the items collected
+		// before that was known. See core.SelectOption.GroupDisabled.
+		runs, flush, runDisable, disabled, index string
 	}{
 		{swiftSelectMenu, "group != heading",
-			"    if building {\n" +
-				"        sections.append(GrMobMenuSection(heading: heading, items: items))\n" +
-				"    }\n    return sections",
-			`== "true"`, "index: i"},
+			"    if building {\n        closeRun()\n    }\n    return sections",
+			"runDisabled\n            ? items.map", `== "true"`, "index: i"},
 		{kotlinSelectMenu, "group != heading",
-			"    if (building) sections.add(GrMobMenuSection(heading, items))\n" +
-				"    return sections",
+			"    if (building) closeRun()\n    return sections",
+			"if (runDisabled) items.map { it.copy(isDisabled = true) }",
 			`== "true"`, "index = i"},
 	} {
 		src := readNative(t, pin.file)
 		for what, want := range map[string]string{
 			"close a run when the heading changes": pin.runs,
 			"flush a run that ends the list":       pin.flush,
+			"disable the items of a disabled run":  pin.runDisable,
 			"read the wire's disabled spelling":    pin.disabled,
 			"carry the option's index":             pin.index,
 		} {

@@ -484,9 +484,21 @@ func renderSelect(b *element.Builder, node *core.Node, attrs []string) {
 		for _, section := range core.SelectMenuSections(opts) {
 			// The ungrouped run has no wrapper: its options are children of
 			// the <select> itself, which is where every option lived before
-			// the field existed.
+			// the field existed. A disabled ungrouped run therefore has
+			// nowhere to put the attribute, which is why the refusal rides on
+			// the options rather than here — see SelectMenuSection.Disabled.
 			if section.Heading != "" {
-				group := b.Ele("optgroup", "label", section.Heading)
+				lead := []string{"label", section.Heading}
+				if section.Disabled {
+					// The bare boolean attribute, spelled the way every other
+					// one here is. <optgroup disabled> greys the heading and
+					// refuses the whole run in one attribute; the per-option
+					// disabled below is still written, because the two natives
+					// have no section-level control and core propagates it for
+					// them.
+					lead = append(lead, "disabled", "disabled")
+				}
+				group := b.Ele("optgroup", lead...)
 				renderSelectOptions(b, section.Items, value)
 				group.R()
 				continue

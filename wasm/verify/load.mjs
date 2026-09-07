@@ -19,6 +19,26 @@ import { newDOM } from "./dom.mjs";
 
 const RUNTIME = new URL("../grmob-runtime.js", import.meta.url);
 
+// run.sh generates gen.go's output and points here. The fallback is the same
+// path run.sh writes to, so `node --test wasm/verify` works on its own once
+// the suite has been run at least once — without ever writing into the repo.
+const TRANSCRIPT =
+    process.env.GRMOB_TRANSCRIPT ||
+    `${process.env.TMPDIR || "/tmp"}/grmob-wasm-verify/transcript.json`.replace("//", "/");
+
+/**
+ * loadTranscript reads gen.go's output.
+ *
+ * It holds two unrelated things — the replay scenarios and the picker-menu
+ * case table — because run.sh generates one file. Two suites read it, so the
+ * path resolution lives here rather than being spelled out in each.
+ *
+ * @returns {{scenarios: Array<object>, menuCases: Array<object>}}
+ */
+export function loadTranscript() {
+    return JSON.parse(readFileSync(TRANSCRIPT, "utf8"));
+}
+
 // The statement appended to the source. Named so a stack trace or a diff
 // makes it obvious this line is the harness's and not the runtime's.
 const EXPORT_SHIM = "\n;globalThis.__grmobExport = GrMob;\n";

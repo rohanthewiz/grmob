@@ -18,6 +18,20 @@
 // navigate a collection by swipe, and neither has a listbox in its semantics
 // vocabulary at all; htmlout is absent too, and its absence is asserted in
 // Go (wasm/verify/keynav_test.go) rather than here.
+//
+// # What is checked here and what needs a browser
+//
+// Everything below runs against dom.mjs, where `tabindex` is a string nobody
+// reads, `focus()` is an assignment and `defaultPrevented` is a flag the shim
+// set itself. That is the right model for the runtime's own bookkeeping —
+// which member the stop is on, which one focus moved to, which keys are
+// claimed — and it is the wrong one for the three browser facts the pattern
+// rests on: that tabindex="-1" really removes a <button> from the tab order,
+// that a disabled control refuses focus, and that preventDefault on ArrowDown
+// really stops the scroll. Those are in browser.mjs, against a real Chrome.
+//
+// The split is worth knowing when a test here fails: this file says the
+// runtime made the right decision, that one says the browser honoured it.
 
 import test from "node:test";
 import assert from "node:assert/strict";

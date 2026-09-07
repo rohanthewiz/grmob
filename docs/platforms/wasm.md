@@ -567,6 +567,32 @@ see, while the runtime's style pass never sees a prop — so `styleFromGrMob`
 absent property alone. That is the one hole in the totality rule, and it is
 what stops a restyle from slamming an open dialog shut.
 
+#### What a second exemption would have to satisfy
+
+"Abstain by deleting the key" is a technique available to any property now, so
+the rule for using it is written down rather than left to be inferred from the
+one case. Three conditions, and the second is the one that is easy to miss:
+
+1. **Some prop owns the property.** Totality is not being dropped, it is being
+   handed over — there has to be someone to hand it to, and it has to be a
+   prop, because a `Style` field would have been assigned by the function.
+2. **That owner writes the property in every state, not just the interesting
+   one.** `visible ? "flex" : "none"` qualifies; a prop that assigns only when
+   it is truthy does not, because the value it wrote last would then stand
+   forever — which is the stale-declaration bug totality exists to prevent,
+   moved one channel over rather than fixed.
+3. **The exemption is keyed on the node type,** so the property stays total for
+   every other node.
+
+`wasm/verify/totality_test.mjs` states the exemptions as a table and checks all
+three against it. The source scan there is the load-bearing part: an abstention
+deletes the key *before* the declarations reach the element, so a node built
+with the property in its `Style` never receives it either — which makes an
+exemption invisible to any test that does not drive the prop that owns it.
+Reading the source is what turns "somebody added a `delete`" into a failing
+change; the table is what says which deletions are answers rather than
+accidents.
+
 ### The reset is keyed by node type
 
 It is keyed by **node type**, not by tag, and the text fields are why. Five
@@ -828,6 +854,35 @@ What it cannot answer is anything that needs real rendering: whether
 `enterkeyhint` actually relabels a soft keyboard, whether `focus()` opens
 one, or anything about layout. Those still need a browser, exactly as the
 iOS view layer still needs a simulator.
+
+### The three keyboard facts that do get a browser
+
+`dom.mjs` is a faithful model of the runtime's *bookkeeping* and a poor model
+of a browser, which is fine until a claim is about the browser. Three of the
+keyboard pattern's are:
+
+- `tabindex="-1"` really takes a `<button>` out of the tab order. This is the
+  whole reason a tab strip is one stop rather than five — and in `dom.mjs` the
+  attribute is a string nobody reads.
+- A disabled control refuses focus.
+- `preventDefault` on `ArrowDown` really stops the page scrolling. A listbox
+  that moved its active option *and* let the page scroll under it would be
+  unusable.
+
+No amount of widening the shim settles those, because a shim can only restate
+them: its `focus()` is an assignment and its `defaultPrevented` is a flag it
+set itself. So `wasm/verify/browser.mjs` runs them in a real headless Chrome,
+driven over the DevTools protocol with Node's built-in `WebSocket` — no npm and
+no network, and keys go through `Input.dispatchKeyEvent`, so the tab order is
+walked by the browser's own focus algorithm and a scroll is a real scroll.
+
+It runs last in `run.sh` and **skips** when there is no Chrome to launch (or on
+a Node older than v21, which has no `WebSocket`), the same stance `ios/verify`
+takes toward a missing iPhoneOS SDK. Point `GRMOB_CHROME` at a binary to use
+an unusual install.
+
+The split is worth knowing when something fails: `keynav_test.mjs` says the
+runtime made the right decision, `browser.mjs` says the browser honoured it.
 
 ```
 $ sh wasm/verify/run.sh

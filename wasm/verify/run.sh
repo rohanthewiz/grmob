@@ -6,9 +6,15 @@
 # focus paths.
 #
 # Needs only Go and Node — no npm, no lockfile, no node_modules, no network.
-# This is the fast feedback loop for runtime changes; anything that depends on
+# This is the fast feedback loop for runtime changes; most of what depends on
 # real rendering (layout, whether enterkeyhint relabels a soft keyboard,
-# whether focus() opens one) still needs a browser.
+# whether focus() opens one) still needs a browser and stays out of scope.
+#
+# Three keyboard facts that were in that bucket are not any more: browser.mjs
+# drives a headless Chrome over the DevTools protocol at the end of this
+# script and checks them. It skips when there is no Chrome to launch, which
+# keeps the promise above intact — see that file for the three claims and why
+# no amount of widening dom.mjs would settle them.
 #
 # The .mjs extension is deliberate: it makes these files ES modules on every
 # Node from 12 onward, where a bare .js would depend on the module-detection
@@ -30,3 +36,8 @@ GRMOB_TRANSCRIPT="$out/transcript.json" \
 
 # Only reached when node exits 0, because of set -e above.
 echo "OK: grmob-runtime.js replays Go's transcripts and passes its unit tests"
+
+# The browser pass. Last, because it is the slow one (a Chrome launch) and
+# because everything above has to hold before a question about the tab order
+# is worth asking. It prints its own OK or SKIP.
+node ./browser.mjs

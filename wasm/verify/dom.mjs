@@ -22,7 +22,17 @@
 // element that owns the prop (see mapEventName's note on focus and blur), so
 // bubbling is not part of the contract under test. Anything that depends on
 // real rendering — whether enterkeyhint actually relabels a soft keyboard,
-// whether focus() opens it — is out of reach here and stays out of reach.
+// whether focus() opens it — is out of reach here.
+//
+// Three claims that used to be out of reach *and* load-bearing are not any
+// more, and they were the keyboard's: that tabindex="-1" takes a <button> out
+// of the tab order, that a disabled control refuses focus, and that
+// preventDefault on ArrowDown stops the page scrolling. Each is a claim about
+// what a browser does — here, `tabindex` is a string nobody reads, `focus()`
+// is an assignment, and `defaultPrevented` is a flag this file sets itself —
+// so widening the shim could only ever have restated them. browser.mjs drives
+// a real headless Chrome instead. This file is not the place to grow toward
+// that; where a fact needs a browser, it needs a browser.
 //
 // Where a behavior is deliberately simplified, the comment says so, because a
 // shim that quietly lies is worse than no shim at all.

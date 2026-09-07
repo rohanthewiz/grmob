@@ -19,11 +19,25 @@ package core
 // That is the shape of hole a shared decomposition removes rather than
 // documents.
 //
-// This is the authority. htmlout consumes it directly; the two native
+// This is the authority. htmlout consumes it directly; the other three
 // renderers each carry a transliteration (GrMobSelectMenu.swift,
-// GrMobSelectMenu.kt) because neither can call into Go while drawing, and
-// ios/verify runs the Swift one against cases generated from this file so the
-// transliteration is checked by behaviour rather than by reading the source.
+// GrMobSelectMenu.kt, selectMenuSections in wasm/grmob-runtime.js) because
+// none of them can call into Go while drawing.
+//
+// None of the three is trusted to be a faithful copy. One table of option
+// lists — internal/menufixture — is compiled into three harnesses, each of
+// which computes what this function says and compares it with what its own
+// target produced: ios/verify runs the Swift function directly, android/verify
+// runs the Kotlin one on a JVM, and wasm/verify mounts a picker and rebuilds
+// the sections back out of the DOM. So a transliteration is checked by
+// behaviour rather than by reading its source, and all three are checked
+// against the same statement of the rule.
+//
+// The WASM runtime was the fourth *copy* rather than a transliteration until
+// GroupDisabled arrived: appending to a live DOM needs no closing step, so
+// that target had no flush to forget. A rule that reads forward — any option
+// in a run can disable it, and the <optgroup> is created when the run opens —
+// is what ended the exemption. See selectMenuSections there.
 
 // SelectMenuItem is one choosable row of a picker's menu: an option, resolved
 // out of the flat wire map into the three things every renderer asks it.
@@ -50,7 +64,22 @@ type SelectMenuItem struct {
 // a loop with a special case in it.
 type SelectMenuSection struct {
 	Heading string
-	Items   []SelectMenuItem
+
+	// Disabled marks the whole run unavailable — core.SelectOption's
+	// GroupDisabled, resolved. See that field for what states it and why any
+	// one option in the run is enough.
+	//
+	// Every Item of a disabled section is itself Disabled, which is not a
+	// convenience: it is the only mechanism two of the four targets have.
+	// SwiftUI puts `.disabled` on the Button and never on the Section (see
+	// grMobMenuItems), Material's dropdown has no section construct at all,
+	// and on the web a run with no heading has no <optgroup> to carry the
+	// attribute. So this field is what a renderer reads to grey the *heading*
+	// — and, on the web, to write <optgroup disabled> once instead of the
+	// attribute N times — while the refusal itself always rides on the items.
+	Disabled bool
+
+	Items []SelectMenuItem
 }
 
 // First is the index of the section's first option, which is what identifies
@@ -80,6 +109,16 @@ func (s SelectMenuSection) First() int {
 // flushes the last one after the loop, which is the only bookkeeping the rule
 // needs. An empty list gives an empty slice rather than nil, so a renderer can
 // range over the result without a guard.
+//
+// # Why the flush is now more than an append
+//
+// A run's Disabled is a property of the *whole* run — any option carrying
+// core.SelectOption.GroupDisabled sets it — so it is not known until the run
+// is closed, and closing it has to walk back over the items already collected
+// to disable them. That is the second thing the flush does, and it is why
+// closing a run is a named step here rather than an inline append: a rule with
+// two halves that can be half-remembered is exactly the shape this file exists
+// to hold in one place.
 func SelectMenuSections(options []map[string]string) []SelectMenuSection {
 	sections := make([]SelectMenuSection, 0, len(options))
 	// The section currently being filled, and the heading it was opened with.
@@ -88,14 +127,32 @@ func SelectMenuSections(options []map[string]string) []SelectMenuSection {
 	// from "nothing open yet".
 	var open SelectMenuSection
 	building := false
+	// close finishes the run being built and appends it. The propagation runs
+	// here, once per run, rather than at each append: the run's state depends
+	// on options that may not have been read yet when an earlier item was
+	// collected.
+	closeRun := func() {
+		if open.Disabled {
+			for i := range open.Items {
+				open.Items[i].Disabled = true
+			}
+		}
+		sections = append(sections, open)
+	}
 	for i, o := range options {
 		heading := o["group"]
 		if !building || heading != open.Heading {
 			if building {
-				sections = append(sections, open)
+				closeRun()
 			}
 			open = SelectMenuSection{Heading: heading}
 			building = true
+		}
+		// Any option in the run is enough to disable it — see
+		// core.SelectOption.GroupDisabled for why the first option cannot be
+		// the one that decides.
+		if o["groupDisabled"] == "true" {
+			open.Disabled = true
 		}
 		// The label already defaulted to the value at core.Select's flattening
 		// seam, so no fallback belongs here — but a hand-assembled node can
@@ -120,7 +177,7 @@ func SelectMenuSections(options []map[string]string) []SelectMenuSection {
 	// The last run has no following option to close it. This line is the one
 	// the four copies each had to remember.
 	if building {
-		sections = append(sections, open)
+		closeRun()
 	}
 	return sections
 }

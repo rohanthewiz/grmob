@@ -55,6 +55,11 @@ indented HTML. Properties worth relying on:
   `core.SelectMenuSections`', the one statement of the rule that all four
   renderers follow — an `<optgroup>` per section that names a heading, and the
   options written straight into the `<select>` for the section that does not.
+  A run marked `GroupDisabled` becomes `<optgroup disabled>`, which is the one
+  thing this target can say that the two natives cannot: it greys the heading
+  as well as refusing the options. The per-option `disabled` is still written
+  beside it, because `core` resolves a disabled run onto its items for the
+  renderers that have no section-level control at all.
 - **A `TabView` gets its bar and its selection.** The `tabs` prop becomes a
   `role="tablist"` strip of `role="tab"` buttons ahead of the pages, carrying
   `data-ontabchange` and a `data-tab-index` per tab in the same spirit as the

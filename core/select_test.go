@@ -210,3 +210,32 @@ func TestAGroupedOptionStillDefaultsItsLabel(t *testing.T) {
 		t.Errorf("group = %q, want Sizes", opts[0]["group"])
 	}
 }
+
+// GroupDisabled crosses the wire on the same terms as the other two optional
+// keys: written only when it says something, so an ordinary option's flattened
+// map is unchanged and the WASM runtime's rebuild signature — the list as JSON
+// — does not shift the first time this ships.
+func TestSelectWritesGroupDisabledOnlyWhenSet(t *testing.T) {
+	ctx := NewContext()
+	ctx.BeginRenderPass()
+
+	n := Select("", []SelectOption{
+		{Value: "free", Label: "Free", Group: "Plans"},
+		{Value: "pro", Label: "Pro", Group: "Paid", GroupDisabled: true},
+	}, nil).Render(ctx)
+
+	opts := n.Props["options"].([]map[string]string)
+	if _, present := opts[0]["groupDisabled"]; present {
+		t.Error("an option in a live run carries a groupDisabled key")
+	}
+	if opts[1]["groupDisabled"] != "true" {
+		t.Errorf("groupDisabled = %q, want %q", opts[1]["groupDisabled"], "true")
+	}
+	// The declaration is about the run, so it does not imply the option's own
+	// Disabled. Resolving the two is SelectMenuSections' job, once, for all
+	// four renderers — this seam only carries what the caller wrote.
+	if _, present := opts[1]["disabled"]; present {
+		t.Error("GroupDisabled wrote the option's own disabled key at the flattening seam; " +
+			"the resolution belongs in SelectMenuSections, where every renderer gets it")
+	}
+}

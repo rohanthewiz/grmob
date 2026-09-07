@@ -14,7 +14,8 @@
 // and Renderer.swift's Menu is one ForEach over the result. This file runs it.
 //
 // The expectations come from Go — gen.go computes them with
-// core.SelectMenuSections, the authority htmlout calls directly — so what is
+// core.SelectMenuSections, the authority htmlout calls directly, over the case
+// table internal/menufixture holds for all three transliterations — so what is
 // compared here is the *transliteration*, which is the thing that can drift.
 // What is still out of reach is the last step, the one line that hands
 // `item.isDisabled` to `.disabled(_:)` and `item.value` to `textChanged`;
@@ -34,6 +35,7 @@ struct MenuCase: Decodable {
 struct WantSection: Decodable {
     let heading: String
     let first: Int
+    let disabled: Bool
     let items: [WantItem]
 }
 
@@ -70,6 +72,13 @@ func checkSelectMenu(_ cases: [MenuCase]) -> [String] {
             // only thing that can tell them apart.
             if g.first != w.first {
                 problems.append("\(c.name) section \(i): first \(g.first), Go says \(w.first)")
+            }
+            // core.SelectOption.GroupDisabled, resolved. The dangerous wrong
+            // answer is reading the declaration when the run is *opened*,
+            // which passes every case whose first option carries it — hence
+            // the fixture case that puts it on the last one.
+            if g.isDisabled != w.disabled {
+                problems.append("\(c.name) section \(i): disabled \(g.isDisabled), Go says \(w.disabled)")
             }
             if g.items.count != w.items.count {
                 problems.append("\(c.name) section \(i): \(g.items.count) options, Go says \(w.items.count)")

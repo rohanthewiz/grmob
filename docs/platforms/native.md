@@ -737,6 +737,16 @@ Both split by *runs*: consecutive options sharing a heading, in the order
 written. See `core.SelectOption.Group` for why a gather would be the wrong
 shape.
 
+`SelectOption.GroupDisabled` disables a whole run, and this is the one case
+where taking the Section down with it is the request rather than the accident:
+SwiftUI puts `.disabled` on the **Section**, so the header greys along with its
+rows. Compose needs nothing — its heading item is already `enabled = false` —
+and both targets get the refusal itself the same way, because
+`core.SelectMenuSections` marks every item of a disabled run before either
+renderer sees it. That propagation is not a convenience: Compose has no section
+construct to disable, and on the web a run with no heading has no `<optgroup>`
+to carry the attribute.
+
 #### The menu is invisible, so the decision was moved out of it
 
 A SwiftUI `Menu`'s content is a closure of views and a Compose `DropdownMenu`'s
@@ -750,16 +760,48 @@ The decision is out of the closure now. `GrMobSelectMenu.swift` and
 renderer's menu is a loop over the result, and both files import no UI at all
 — which is what makes them runnable off a device. `core.SelectMenuSections` is
 the authority both transliterate (and the one `htmlout` calls directly), and
-`ios/verify` compiles the Swift file into its harness and runs it against cases
-generated from that function, so the iOS decomposition is checked by behaviour.
+both are now *run* against cases generated from it:
 
-The Android half has no runner: the Android build's only check is
-`compileDebugKotlin`, so its decomposition is still held by source-text checks
-plus the shared authority. What no harness reaches on **either** platform is
-the last step — the line handing a row's value to `textChanged` and its
-disabled flag to the construct that refuses the tap. That is what
-`mobile/verify/select_test.go` is for now, and it is a much smaller surface
-than the one it used to cover.
+    ios/verify/run.sh       compiles GrMobSelectMenu.swift into its harness
+    android/verify/run.sh   compiles GrMobSelectMenu.kt and runs it on a JVM
+
+Neither harness needs a device, a simulator or gradle. `android/verify` is the
+newer of the two and is described below.
+
+What no harness reaches on **either** platform is the last step — the line
+handing a row's value to `textChanged` and its disabled flag to the construct
+that refuses the tap. That is what `mobile/verify/select_test.go` is for now,
+and it is a much smaller surface than the one it used to cover.
+
+#### `android/verify`: Kotlin without gradle
+
+`GrMobSelectMenu.kt` imports nothing — no Compose, no Android — precisely so a
+plain JVM could execute it. `android/verify/run.sh` is what finally does.
+
+The obvious shape for it, an `android/app/src/test` source set driven by
+`./gradlew test`, is the one it deliberately avoids. That needs JUnit resolved
+through gradle, and this repository's Android build runs `--offline` against
+whatever the local cache holds; a check that only runs on a machine which has
+already downloaded the right test dependencies is a check nobody runs. It would
+also drag the whole AGP pipeline in to execute a function that touches no
+Android API.
+
+So the script compiles two files and runs them:
+
+    android/verify/gen.go      the case table, as Kotlin source
+    android/verify/Harness.kt  the comparison, and main()
+
+The table crosses as **Kotlin source** rather than as JSON, which is the one
+place this harness differs from `ios/verify`. Swift decodes a JSON transcript
+with `Decodable` from its standard library; Kotlin's standard library has no
+JSON parser and neither does the JDK, so a JSON fixture here would mean either
+a dependency — the thing the harness exists to avoid — or a hand-written parser
+standing between the fixture and the code under test.
+
+The compiler is `kotlinc` if one is on `PATH`, and otherwise the compiler jars
+in the gradle cache the Android build already populates. If neither is present
+the pass **skips** rather than fails, the same stance `ios/verify` takes toward
+a missing iPhoneOS SDK.
 
 Whether the menu is **open** is the renderer's own state and nothing else's.
 There is no prop for it and no patch describes it; the *selection* stays

@@ -701,14 +701,67 @@
       decides whether the WASM runtime rebuilds an open drop-down) is
       unchanged
 - [x] `core.SelectMenuSections` — the one statement of how a flat option list
-      becomes the menu a person sees. `htmlout` calls it; the two natives carry
-      UI-free transliterations (`GrMobSelectMenu.swift` / `.kt`) so that the
-      decision leaves the view closure a menu cannot be read back out of, and
-      `ios/verify` compiles the Swift one into its harness and runs it against
-      cases generated from the Go function. Four copies of one rule were three
-      too many, and the edge each copy had to remember on its own — that a run
-      ending the list has nothing following it to close it — is exactly the one
-      `htmlout` shipped wrong for a release
+      becomes the menu a person sees. `htmlout` calls it; the other three
+      renderers carry transliterations (`GrMobSelectMenu.swift` / `.kt`,
+      `selectMenuSections` in `grmob-runtime.js`) because none of them can call
+      into Go while drawing. Four copies of one rule were three too many, and
+      the edge each copy had to remember on its own — that a run ending the
+      list has nothing following it to close it — is exactly the one `htmlout`
+      shipped wrong for a release
+- [x] `SelectOption.GroupDisabled` — a whole run marked unavailable, on all
+      four targets. **Any** option in the run states it, because a declaration
+      written on the second entry and quietly doing nothing would have no way
+      to be noticed: a menu is drawn behind a tap and there is no error channel
+      there. That reading is what makes a run's state unknowable until the run
+      is *closed*, so closing one is two steps now — the flush, and the walk
+      back over the items collected before the state was known. What it buys
+      over disabling each option by hand is the heading, which greys with its
+      rows (`<optgroup disabled>`, a disabled SwiftUI `Section`), and the
+      per-item propagation is what carries the refusal to the two targets with
+      no section construct to disable. A heading still cannot take an icon, and
+      that is a decision: an `<optgroup>`'s label is an attribute, so the web
+      can hold text and nothing else
+- [x] **One fixture, three transliterations** (`internal/menufixture`) — the
+      picker-menu case table, compiled into all three harnesses, with every
+      expected answer computed by `core.SelectMenuSections` rather than written
+      down. `ios/verify` runs the Swift function, `android/verify` runs the
+      Kotlin one on a JVM, `wasm/verify` mounts a picker and rebuilds the
+      sections back out of the DOM. The table has an admission test of its own:
+      the properties it exists to exercise are named with the predicate that
+      finds a case covering each, so a case cannot disappear while the count
+      stays plausible
+- [x] **`android/verify`** — the Kotlin decomposition, executed. `GrMobSelectMenu.kt`
+      imports nothing precisely so a plain JVM could run it, and nothing did:
+      the Android build's only check was `compileDebugKotlin`, which proves the
+      file parses. The obvious shape — a gradle test source set with JUnit — is
+      the one it avoids, because this repository's Android build runs
+      `--offline` and a check that needs a populated dependency cache is a
+      check nobody runs. It compiles two files with `kotlinc` or, failing that,
+      the compiler jars the gradle cache already holds, and skips when neither
+      is there. The case table crosses as **Kotlin source**, not JSON: Kotlin's
+      standard library has no JSON parser and neither does the JDK
+- [x] **`wasm/verify/browser.mjs`** — the three keyboard facts a shimmed DOM
+      cannot check, checked in a headless Chrome over the DevTools protocol
+      with Node's built-in `WebSocket` (no npm, no network). That `tabindex="-1"`
+      really removes a `<button>` from the tab order, that a disabled control
+      refuses focus, and that `preventDefault` on `ArrowDown` really stops the
+      page scrolling. Widening `dom.mjs` could only ever have restated them —
+      there, `tabindex` is a string nobody reads, `focus()` is an assignment and
+      `defaultPrevented` is a flag the shim set itself. Keys go through
+      `Input.dispatchKeyEvent`, so the tab order is walked by the browser's own
+      focus algorithm and a scroll is a real scroll; the pass skips when there
+      is no Chrome to launch
+- [x] **The rule for a second totality exemption** (`wasm/verify/totality_test.mjs`)
+      — `styleFromGrMob` deletes a `Modal`'s `display` rather than assigning
+      it, because the `visible` prop owns that property, and "abstain by
+      deleting the key" is now a technique available to any property. Three
+      conditions, stated and checked: a *prop* owns it, that owner writes it in
+      **every** state (the one easy to miss — an owner that assigns only when
+      truthy leaves the stale declaration totality exists to prevent, moved one
+      channel over), and the exemption is keyed on the node type. The source is
+      scanned for `delete out.X` and held to the table, because an abstention
+      deletes the key before the declarations reach the element and is
+      therefore invisible to any test that does not drive the owning prop
 - [x] `core.Slider` — a range control on all four targets, with a separate
       end-of-drag callback so a seek bar acts once
 - [x] `core.TextGrid` — a monospace grid of styled runs on all four targets,

@@ -22,6 +22,13 @@
 //	signup  examples/signup — the focus half: focus commands (focusEpoch /
 //	        focusAction), keyboard traversal (imeAction / onSubmit) and the
 //	        prop churn a validating form produces.
+//
+// The transcript carries one thing besides those: the picker-menu case table
+// (internal/menufixture), which has nothing to do with the replay and rides
+// along because the harness reads one file. It is the same table ios/verify
+// and android/verify run their transliterations against — this runtime carries
+// a fourth one, selectMenuSections in grmob-runtime.js, and select_test.mjs
+// rebuilds the sections back out of the DOM to compare with Go's answer.
 package main
 
 import (
@@ -32,6 +39,7 @@ import (
 	"github.com/rohanthewiz/grmob/core"
 	"github.com/rohanthewiz/grmob/examples/mobileapp"
 	"github.com/rohanthewiz/grmob/examples/signup"
+	"github.com/rohanthewiz/grmob/internal/menufixture"
 	"github.com/rohanthewiz/grmob/render"
 )
 
@@ -40,6 +48,18 @@ type scenario struct {
 	Initial string   `json:"initial"`
 	Steps   []string `json:"steps"`
 	Final   string   `json:"final"`
+}
+
+// transcript is what the harness reads: the replay scenarios plus the picker
+// menu cases.
+//
+// An object rather than the bare array of scenarios this used to emit,
+// because a second, unrelated table had to travel in the same file — the same
+// arrangement ios/verify's transcript already had, and for the same reason:
+// run.sh generates one file and every .mjs suite reads it.
+type transcript struct {
+	Scenarios []scenario         `json:"scenarios"`
+	MenuCases []menufixture.Case `json:"menuCases"`
 }
 
 // node mirrors just enough of core.Node's JSON to hunt down callback IDs.
@@ -241,7 +261,10 @@ func signupScenario() scenario {
 }
 
 func main() {
-	out, err := json.Marshal([]scenario{demoScenario(), signupScenario()})
+	out, err := json.Marshal(transcript{
+		Scenarios: []scenario{demoScenario(), signupScenario()},
+		MenuCases: menufixture.Cases(),
+	})
 	if err != nil {
 		fatal("marshal transcript: %v", err)
 	}

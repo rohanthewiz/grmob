@@ -327,7 +327,7 @@ rule; one without is declared with a leading empty option and a `Required`
 rule. Those are two different forms, and the widget takes no position on which
 is meant.
 
-An option can also carry a `Group` and a `Disabled`:
+An option can also carry a `Group`, a `Disabled` and a `GroupDisabled`:
 
 ```go
 form.Select("seat", []core.SelectOption{
@@ -335,6 +335,8 @@ form.Select("seat", []core.SelectOption{
     {Value: "aisle", Label: "Aisle", Group: "Front cabin"},
     {Value: "window", Label: "Window", Group: "Front cabin"},
     {Value: "exit", Label: "Exit row", Group: "Rear cabin", Disabled: true},
+    {Value: "1a", Label: "1A", Group: "First", GroupDisabled: true},
+    {Value: "1b", Label: "1B", Group: "First"},
 })
 ```
 
@@ -347,6 +349,21 @@ SwiftUI `Section`, an unclickable heading item in a Compose dropdown). `Disabled
 out without removing it, which is the point: an option that vanishes takes its
 explanation with it. Neither stops *Go* from setting the field to a disabled
 option's value — a `Select` shows whatever value it was passed.
+
+`GroupDisabled` disables the whole run — the paid tiers on a free account, a
+family that is not shipping yet. **Any** option in the run is enough to state
+it, which is why `1B` above is unavailable too: a declaration written on the
+second entry of a run and quietly doing nothing would have no way to be
+noticed, since a menu is drawn behind a tap. What it buys over marking each
+option `Disabled` by hand is the *heading*, which greys with its rows, and one
+`<optgroup disabled>` on the web instead of an attribute per option. On a run
+with no `Group` there is no heading to grey and no `<optgroup>` to carry the
+attribute, so it degrades to exactly "every option in the run is disabled".
+
+A heading still cannot carry an icon, and that is a decision rather than a gap:
+an `<optgroup>`'s label is an attribute, so the web can hold text and nothing
+else — a heading with an icon on two targets and without one on the other two
+is the divergence this widget refuses everywhere else.
 
 ## Prefilling and resetting
 

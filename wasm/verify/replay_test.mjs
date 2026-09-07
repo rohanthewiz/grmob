@@ -14,18 +14,12 @@
 
 import test from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 
-import { loadRuntime } from "./load.mjs";
+import { loadRuntime, loadTranscript } from "./load.mjs";
 
-// run.sh generates the transcript and points here. The fallback is the same
-// path run.sh writes to, so `node --test wasm/verify` works on its own once
-// the suite has been run at least once — without ever writing into the repo.
-const TRANSCRIPT =
-    process.env.GRMOB_TRANSCRIPT ||
-    `${process.env.TMPDIR || "/tmp"}/grmob-wasm-verify/transcript.json`.replace("//", "/");
-
-const scenarios = JSON.parse(readFileSync(TRANSCRIPT, "utf8"));
+// The replay half of gen.go's output. The same file also carries the
+// picker-menu case table, which select_test.mjs reads and this suite ignores.
+const scenarios = loadTranscript().scenarios;
 
 // The Go node type -> <input type>, restated from the contract for the same
 // reason the prop table below is: the runtime has its own copy of this table

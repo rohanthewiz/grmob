@@ -44,9 +44,19 @@ data class GrMobMenuItem(
  * level of the list. That is a real section rather than an absence of one, so
  * the drawing code is a single loop over sections with the heading item as its
  * only branch.
+ *
+ * [isDisabled] is core.SelectOption.GroupDisabled, resolved: the whole run is
+ * unavailable. Every item of such a run is itself disabled — the propagation
+ * happens when the run is closed, below — so on this target the flag adds
+ * nothing the renderer has to read: Material's dropdown has no section
+ * construct, and the heading item this renderer writes ahead of a run is
+ * already `enabled = false`, which is what makes it a label rather than a
+ * choice. It is carried because it is part of the shape core states, and a
+ * transliteration that drops a field cannot be compared with the authority.
  */
 data class GrMobMenuSection(
     val heading: String,
+    val isDisabled: Boolean,
     val items: List<GrMobMenuItem>,
 ) {
     /** The index the run starts at — what identifies it when a heading cannot,
@@ -71,16 +81,29 @@ fun grMobMenuSections(options: List<Map<String, Any?>>): List<GrMobMenuSection> 
     // and would otherwise be indistinguishable from "nothing open yet".
     var heading = ""
     var items = mutableListOf<GrMobMenuItem>()
+    var runDisabled = false
     var building = false
+
+    // Closing a run is two steps, not one. A run's disabled state is stated by
+    // *any* of its options (core.SelectOption.GroupDisabled), so it is not
+    // known until the run ends — and the items collected before it was known
+    // have to be marked on the way out. This is the half of the rule that is
+    // new since the flush; the flush itself is the older half.
+    fun closeRun() {
+        val resolved = if (runDisabled) items.map { it.copy(isDisabled = true) } else items
+        sections.add(GrMobMenuSection(heading, runDisabled, resolved))
+    }
 
     options.forEachIndexed { i, option ->
         val group = option["group"] as? String ?: ""
         if (!building || group != heading) {
-            if (building) sections.add(GrMobMenuSection(heading, items))
+            if (building) closeRun()
             heading = group
             items = mutableListOf()
+            runDisabled = false
             building = true
         }
+        if ((option["groupDisabled"] as? String ?: "") == "true") runDisabled = true
         val value = option["value"] as? String ?: ""
         // The label defaulted to the value at core.Select's flattening seam,
         // so this fallback is for a hand-assembled node that never went
@@ -98,6 +121,6 @@ fun grMobMenuSections(options: List<Map<String, Any?>>): List<GrMobMenuSection> 
             )
         )
     }
-    if (building) sections.add(GrMobMenuSection(heading, items))
+    if (building) closeRun()
     return sections
 }

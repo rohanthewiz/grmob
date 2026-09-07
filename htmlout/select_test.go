@@ -278,3 +278,70 @@ func TestSelectGroupLabelsAreEscaped(t *testing.T) {
 		t.Errorf("a group label escaped its attribute:\n%s", out)
 	}
 }
+
+// core.SelectOption.GroupDisabled: <optgroup disabled>, plus the per-option
+// attribute core resolves for the targets that have no section-level control.
+//
+// The web is the only one of the four that can refuse a whole run in one
+// place, and it still writes both — because the two are not alternatives here.
+// The attribute on the group is what greys the *heading*; the attribute on
+// each option is what core wrote for SwiftUI and Compose and what this
+// exporter has no reason to strip back out.
+func TestSelectWritesADisabledRunAsADisabledOptgroup(t *testing.T) {
+	ctx := core.NewContext()
+	ctx.BeginRenderPass()
+
+	out := ExportHTML(core.Select("free", []core.SelectOption{
+		{Value: "free", Label: "Free", Group: "Free"},
+		{Value: "pro", Label: "Pro", Group: "Paid"},
+		// Declared on the run's last option, which is where a renderer that
+		// reads the flag as it opens a group would miss it.
+		{Value: "max", Label: "Max", Group: "Paid", GroupDisabled: true},
+	}, nil).Render(ctx))
+
+	if !strings.Contains(out, `<optgroup label="Paid" disabled="disabled">`) {
+		t.Errorf("the disabled run's optgroup carries no disabled attribute:\n%s", out)
+	}
+	if strings.Contains(out, `<optgroup label="Free" disabled`) {
+		t.Errorf("a run nobody disabled was disabled anyway:\n%s", out)
+	}
+	// Both of the run's options, including the one that made no declaration
+	// of its own.
+	for _, want := range []string{
+		`<option value="pro" disabled="disabled">Pro</option>`,
+		`<option value="max" disabled="disabled">Max</option>`,
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("missing %s:\n%s", want, out)
+		}
+	}
+	if strings.Contains(out, `<option value="free" disabled`) {
+		t.Errorf("the declaration reached the run before it:\n%s", out)
+	}
+}
+
+// An ungrouped run has no <optgroup> to carry the attribute, so the
+// declaration degrades to exactly "every option in it is disabled". That is
+// the case the per-option propagation exists for, and the one a reader is most
+// likely to assume is unsupported.
+func TestADisabledUngroupedRunFallsBackToItsOptions(t *testing.T) {
+	ctx := core.NewContext()
+	ctx.BeginRenderPass()
+
+	out := ExportHTML(core.Select("", []core.SelectOption{
+		{Value: "a", Label: "A", GroupDisabled: true},
+		{Value: "b", Label: "B"},
+	}, nil).Render(ctx))
+
+	if strings.Contains(out, "<optgroup") {
+		t.Errorf("a headingless run grew a wrapper:\n%s", out)
+	}
+	for _, want := range []string{
+		`<option value="a" disabled="disabled">A</option>`,
+		`<option value="b" disabled="disabled">B</option>`,
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("missing %s:\n%s", want, out)
+		}
+	}
+}

@@ -1320,6 +1320,17 @@ private struct GrMobSelect: View {
                     Section(section.heading) {
                         grMobMenuItems(section.items, cb, runtime)
                     }
+                    // The one place a modifier lands on the Section rather
+                    // than on its buttons, and the only case where taking the
+                    // whole run down is what was asked for:
+                    // core.SelectOption.GroupDisabled. The buttons are already
+                    // refused — core propagates a disabled run onto its items,
+                    // because the two targets with no section construct have
+                    // nowhere else to read it — so what this line is for is
+                    // the header, which would otherwise stay as legible as the
+                    // ones above it. An ungrouped run has no header and takes
+                    // no branch here.
+                    .disabled(section.isDisabled)
                 }
             }
         } label: {
@@ -1337,8 +1348,10 @@ private struct GrMobSelect: View {
 ///
 /// A disabled option is still drawn and still announced — that is what
 /// disabling one buys over leaving it out — and `.disabled` is what stops the
-/// tap. It goes on the Button and never on the Section: disabling a Section
-/// would take its whole run with it. See core.SelectOption.Disabled.
+/// tap. It goes on the Button, which is the only granularity
+/// core.SelectOption.Disabled has: disabling a Section takes its whole run
+/// with it, and that is a different declaration (GroupDisabled) made one level
+/// up, where the Section is.
 ///
 /// The choice goes up as the option's *value*. core.Select registers a
 /// func(string), so the dispatch is the text channel; the index is the one

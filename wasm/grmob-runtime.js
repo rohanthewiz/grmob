@@ -2463,6 +2463,29 @@ const GrMob = (() => {
             // abstains: Object.assign leaves an absent property alone, so the
             // prop channel keeps sole ownership of it.
             //
+            // # What a second exemption would have to satisfy
+            //
+            // Three conditions, and the second is the one that is easy to
+            // miss. wasm/verify/totality_test.mjs states them as a table and
+            // checks each; the table is also what makes adding a `delete`
+            // here a failing change until a row is written for it.
+            //
+            //  1. Some *prop* owns the property. Totality is not being
+            //     dropped, it is being handed over — there has to be someone
+            //     to hand it to, and it has to be a prop, because a Style
+            //     field would have been assigned by this function.
+            //
+            //  2. That owner writes the property in EVERY state, not just the
+            //     interesting one. `visible ? "flex" : "none"` qualifies; a
+            //     prop that assigns only when it is truthy does not, because
+            //     the value it wrote last would then stand forever — which is
+            //     the exact failure totality exists to prevent, moved one
+            //     channel over rather than fixed.
+            //
+            //  3. The exemption is keyed on the node type, so the property
+            //     stays total for every other node. This one is inside the
+            //     `nodeType === "Modal"` block for that reason.
+            //
             // htmlout has no such split — it writes the whole declaration list
             // once from the props it can see, so its chassis carries the
             // display and this one does not.
@@ -2627,6 +2650,78 @@ const GrMob = (() => {
         }
     }
 
+    // A picker's option list, decomposed into the menu a person sees — the
+    // fourth transliteration of core.SelectMenuSections (core/select_menu.go),
+    // beside GrMobSelectMenu.swift and GrMobSelectMenu.kt.
+    //
+    // # It used to not exist, and that used to be defensible
+    //
+    // Appending to the DOM has no closing step: a run ended when the next
+    // option stopped being appended to the open <optgroup>, so this target
+    // alone had no end-of-loop flush to forget — which is exactly what
+    // htmlout, writing markup, did forget for a release. Building the runs
+    // first was work with nothing bought.
+    //
+    // core.SelectOption.GroupDisabled is what ended that. A run's disabled
+    // state is stated by *any* of its options, so it is not known until the
+    // run is closed — and the <optgroup> it is written on has to be created
+    // when the run is *opened*. No amount of appending gets past a rule that
+    // reads forward, so this target now decomposes like the other three, and
+    // is checked like them: wasm/verify drives every case from the same
+    // generated table ios/verify uses (menuCases, internal/menufixture) and
+    // rebuilds the sections back out of the DOM to compare.
+    //
+    // The shape is core's, transliterated: an item's `disabled` is already
+    // resolved here — a disabled run marks every option in it, because two of
+    // the four targets have no section-level control — so a caller of this
+    // reads `section.disabled` only for the heading.
+    function selectMenuSections(options) {
+        const sections = [];
+        // The run being filled and the heading it was opened with. `building`
+        // is separate from the heading because the empty heading is a
+        // legitimate one and would otherwise be indistinguishable from
+        // "nothing open yet".
+        let heading = "";
+        let items = [];
+        let runDisabled = false;
+        let building = false;
+
+        // Closing a run is two steps: the flush, and the walk back over the
+        // items collected before the run's state was known.
+        const closeRun = () => {
+            if (runDisabled) for (const it of items) it.disabled = true;
+            sections.push({ heading, disabled: runDisabled, items });
+        };
+
+        options.forEach((o, i) => {
+            const group = o.group ?? "";
+            if (!building || group !== heading) {
+                if (building) closeRun();
+                heading = group;
+                items = [];
+                runDisabled = false;
+                building = true;
+            }
+            if (o.groupDisabled === "true") runDisabled = true;
+            const value = o.value ?? "";
+            // The label defaulted to the value at core.Select's flattening
+            // seam, so this fallback is for a hand-assembled node that never
+            // went through it — a menu row with no text is worse than one
+            // showing its value.
+            const label = o.label ?? "";
+            items.push({
+                index: i,
+                value,
+                label: label === "" ? value : label,
+                // The wire carries the string "true", core.SelectedState's
+                // spelling one property over. Anything else is not disabled.
+                disabled: o.disabled === "true",
+            });
+        });
+        if (building) closeRun();
+        return sections;
+    }
+
     // A picker's options (core.Select). The list is a prop rather than child
     // nodes, so the <option> elements are this runtime's to build — the same
     // arrangement a TabView's bar has, one step simpler because a Select has
@@ -2652,58 +2747,51 @@ const GrMob = (() => {
         if (el.dataset.selectOptions !== signature) {
             el.dataset.selectOptions = signature;
             el.innerHTML = "";
-            // The open <optgroup>, if any, and the label it was opened with.
-            // core.SelectOption.Group makes *consecutive* options with the
-            // same heading one group, in the order they were written — see
-            // that field for why a gather would silently reorder the list —
-            // so the loop closes a run by simply stopping appending to it.
-            //
-            // core.SelectMenuSections is the authority for that split, and the
-            // three other renderers each follow it as a run of sections. This
-            // one is the exception, on purpose: a DOM append has no closing
-            // step. A run ends when the next option stops being appended to
-            // the element, so there is no end-of-loop flush here to forget —
-            // which is exactly what htmlout, writing markup, did forget.
-            let group = null;
-            let openLabel = "";
-            for (const o of list) {
-                const label = o.group ?? "";
-                if (label !== openLabel) {
-                    openLabel = label;
-                    group = null;
-                    if (label !== "") {
-                        group = document.createElement("optgroup");
-                        // Chrome like the options themselves, below.
-                        group.dataset.grmobChrome = "optgroup";
-                        // setAttribute, not textContent: an <optgroup>'s label
-                        // is an attribute, and htmlout writes it through
-                        // element's attribute path for the same reason.
-                        group.setAttribute("label", label);
-                        el.appendChild(group);
-                    }
+            for (const section of selectMenuSections(list)) {
+                // The ungrouped run has no wrapper: its options are children
+                // of the <select> itself, which is where every option lived
+                // before core.SelectOption.Group existed. htmlout makes the
+                // same branch on the same condition.
+                let parent = el;
+                if (section.heading !== "") {
+                    parent = document.createElement("optgroup");
+                    // Chrome like the options themselves, below.
+                    parent.dataset.grmobChrome = "optgroup";
+                    // setAttribute, not textContent: an <optgroup>'s label is
+                    // an attribute, and htmlout writes it through element's
+                    // attribute path for the same reason.
+                    parent.setAttribute("label", section.heading);
+                    // One attribute for the whole run, which is the thing this
+                    // target can do and the two natives cannot — it greys the
+                    // heading as well as refusing the options. The per-option
+                    // `disabled` below is still written, because core marks
+                    // every item of a disabled run for the renderers that have
+                    // no section-level control at all.
+                    if (section.disabled) parent.disabled = true;
+                    el.appendChild(parent);
                 }
-                const opt = document.createElement("option");
-                // Chrome, like a TabView's bar: an element the runtime draws
-                // that no node asked for. It carries no data-node-path, no
-                // patch is ever addressed to it, and the marker is what keeps
-                // the conformance replay from comparing it against a Go node
-                // that does not exist. Unlike the bar it is not counted by
-                // chromeOffset — nothing needs to be, since a Select has no
-                // node children for an option to sit ahead of.
-                opt.dataset.grmobChrome = "option";
-                opt.setAttribute("value", o.value ?? "");
-                // A disabled option is still drawn and still announced — that
-                // is what disabling one buys over leaving it out — it simply
-                // cannot be chosen. The wire carries the string "true", the
-                // spelling core.SelectedState uses one property over.
-                if (o.disabled === "true") {
-                    opt.disabled = true;
+                for (const item of section.items) {
+                    const opt = document.createElement("option");
+                    // Chrome, like a TabView's bar: an element the runtime
+                    // draws that no node asked for. It carries no
+                    // data-node-path, no patch is ever addressed to it, and
+                    // the marker is what keeps the conformance replay from
+                    // comparing it against a Go node that does not exist.
+                    // Unlike the bar it is not counted by chromeOffset —
+                    // nothing needs to be, since a Select has no node children
+                    // for an option to sit ahead of.
+                    opt.dataset.grmobChrome = "option";
+                    opt.setAttribute("value", item.value);
+                    // A disabled option is still drawn and still announced —
+                    // that is what disabling one buys over leaving it out — it
+                    // simply cannot be chosen.
+                    if (item.disabled) opt.disabled = true;
+                    // textContent, not innerHTML: an option's label is content
+                    // and is as user-originated as anything else here. htmlout
+                    // escapes the same string through element's TE.
+                    opt.textContent = item.label;
+                    parent.appendChild(opt);
                 }
-                // textContent, not innerHTML: an option's label is content and
-                // is as user-originated as anything else here. htmlout escapes
-                // the same string through element's TE.
-                opt.textContent = o.label ?? o.value ?? "";
-                (group ?? el).appendChild(opt);
             }
         }
         if (value !== undefined && el.value !== value) {

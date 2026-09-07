@@ -1,0 +1,233 @@
+// styleFromGrMob's totality rule, and the one exemption from it.
+//
+// The rule: every CSS property the function manages is assigned on every call
+// — a real value, or "", which removes the inline declaration. The wire
+// contract forces it. An update-style patch carries the WHOLE new Style
+// (reconcile/patch.go), so a zero field means "unset now" and not
+// "unmentioned"; and because the patch path reuses the live element, a guarded
+// `if (style.X)` leaves the old declaration standing whenever a field returns
+// to zero. core.BorderRadius(0) is the canonical victim — the corners stayed
+// rounded because nothing ever cleared them.
+//
+// The exemption: a Modal's `display` is deleted from the result rather than
+// assigned, because that property IS the dialog's open/closed state and the
+// `visible` prop owns it. Assigning anything would close an open modal on the
+// next update-style patch; assigning "" would open a closed one.
+//
+// # What this file is for
+//
+// The exemption was pinned by a test that asserted the line exists. What was
+// never written down is the test a *second* exemption has to pass — and
+// "abstain by deleting the key" is now a technique available to any property,
+// which makes the next one likely rather than hypothetical.
+//
+// So the exemptions are a table here, and three things are checked against it:
+// that the source makes exactly the deletions the table names, that each
+// exemption actually abstains, and that the prop said to own the property
+// writes it in every state. The last is the condition that is easy to miss and
+// the one that decides whether an exemption is safe at all: a prop that
+// assigns only when it is truthy leaves the value it wrote last standing
+// forever, which is the failure totality exists to prevent, moved one channel
+// over rather than fixed.
+//
+// The source scan is load-bearing rather than decorative, and the sweep below
+// says why it has to be there. An abstention deletes the key *before* the
+// declarations reach the element, so a node built with the property in its
+// Style never receives it either — which makes an exemption invisible to any
+// test that does not drive the prop that owns it. Reading the source is what
+// turns "somebody added a delete" into a failing change; the table is what
+// says which deletes are answers rather than accidents.
+//
+// This is the same shape as knownBoundaryShortfalls' entry-shape test,
+// rowsSpec's admission test and TestEverySharedKnobHasItsOwnEffectAssertion:
+// what a future addition must look like, written before it arrives.
+
+import test from "node:test";
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+
+import { loadRuntime, nodeAt } from "./load.mjs";
+
+const RUNTIME = new URL("../grmob-runtime.js", import.meta.url);
+
+/**
+ * Every property styleFromGrMob abstains from, and what owns it instead.
+ *
+ * - `nodeType` / `property`: the exemption itself. It is keyed on the node
+ *   type, so the property stays total for every other node — the third
+ *   condition, and the one the last test below holds.
+ * - `owner`: the prop that writes the property. Not a Style field: a Style
+ *   field would have been assigned by the function in the first place.
+ * - `states`: every value the owner can be given, with the CSS it must write.
+ *   The list has to be exhaustive, because that is the claim being made —
+ *   there is no state in which the property goes unwritten.
+ */
+const EXEMPTIONS = [
+    {
+        nodeType: "Modal",
+        property: "display",
+        owner: "visible",
+        // flex, not block: the overlay centres its content.
+        states: [[true, "flex"], [false, "none"]],
+    },
+];
+
+// A Style touching every property the mapping manages, used to prove the pass
+// clears what it set. The values are arbitrary; only "not the default" matters.
+const FULL_STYLE = {
+    FontSize: 14, FontWeight: 700, TextColor: "#111111", Align: "center",
+    Background: "#eeeeee",
+    Padding: { Top: 1, Right: 2, Bottom: 3, Left: 4 },
+    Margin: { Top: 1, Right: 2, Bottom: 3, Left: 4 },
+    BorderRadius: 6, Rotate: 10, Shadow: 4, LineHeight: 20,
+    Width: "10px", Height: "11px",
+    Gap: 5, JustifyContent: "center", AlignItems: "center",
+    FlexGrow: 1, Opacity: 0.5, BorderWidth: 1, BorderColor: "#000000",
+    Position: "absolute", Top: "1px", Right: "2px", Bottom: "3px", Left: "4px",
+    ZIndex: 3, FlexWrap: "wrap", AlignSelf: "center", FlexBasis: "5px",
+    FlexShrink: 2, RowGap: 2, ColumnGap: 3, ObjectFit: "cover",
+};
+
+// Every node type the runtime draws, minus one.
+//
+// Spacer is left out and the reason is worth stating rather than hiding: its
+// size is a prop, applySpacerSize writes width/height/flex-shrink from it, and
+// renderNode calls that *after* createElement — so a Spacer's own Style loses
+// those three properties to a prop that is not exempt from anything. That is a
+// separate question from this file's (it is a write ordering, not an
+// abstention: styleFromGrMob still manages all three), and putting Spacer in
+// the sweep would report it here, where nobody could act on it.
+const NODE_TYPES = [
+    "Box", "Column", "Row", "Card", "Scroll", "SafeArea", "List", "ZStack",
+    "Text", "Button", "Input", "InputPassword", "NumericInput", "Checkbox",
+    "Slider", "Select", "TextArea", "TextGrid", "GridRow", "Modal", "TabView",
+    "Image", "CameraView", "Fragment", "Theme",
+];
+
+function mountOne(type, style, props = {}) {
+    const rt = loadRuntime();
+    rt.GrMob.mount(JSON.stringify({
+        Type: "Column",
+        Children: [{ Type: type, Style: style, Props: props }],
+    }));
+    rt.drainFrames();
+    return { rt, el: nodeAt(rt.document, "root/0") };
+}
+
+function patchStyle(rt, changes) {
+    rt.GrMob.patch(JSON.stringify([{
+        Type: "update-style", TargetID: "root/0", Changes: changes,
+    }]));
+    rt.drainFrames();
+}
+
+test("the source deletes exactly the properties the table names", () => {
+    // `out` is styleFromGrMob's local name for the declaration object it
+    // builds, so this pattern is the abstention and nothing else — the
+    // runtime's other five `delete`s all address a dataset entry on a live
+    // element.
+    //
+    // This is what makes the table binding rather than descriptive: a new
+    // `delete out.something` fails here until a row explains it, and a row
+    // whose deletion has been removed fails too, so the table cannot outlive
+    // what it describes.
+    const src = readFileSync(RUNTIME, "utf8");
+    const deleted = [...src.matchAll(/delete\s+out\.(\w+)\s*;/g)].map((m) => m[1]);
+    const declared = EXEMPTIONS.map((e) => e.property);
+
+    assert.deepEqual(
+        [...deleted].sort(),
+        [...declared].sort(),
+        "styleFromGrMob abstains from a property EXEMPTIONS does not name, or names " +
+        "one it no longer abstains from — see the rule at the delete site",
+    );
+});
+
+test("after an empty style patch every node type is a freshly built styleless one", () => {
+    // Totality, stated as the property that actually matters: whatever a Style
+    // put on an element, sending an empty Style takes it all back off, leaving
+    // only the type-keyed defaults a node with no Style would have had anyway
+    // (the flex axis, the border reset, the overlay grid).
+    //
+    // This is the *guarded write* half of the rule — `if (style.X) out.X = …`,
+    // which leaves the old declaration standing when a field returns to zero.
+    // It is deliberately blind to an exemption: a deleted key never reaches
+    // the element on either mount, so an abstention looks exactly like a
+    // property that was never asked for. Exemptions are held by the source
+    // scan above and by the three tests below, which drive the owning prop.
+    //
+    // No props are set here, so an exempted property has nothing to hold and
+    // both mounts agree on it, which is what makes the sweep total over every
+    // node type rather than needing a prop table of its own.
+    for (const type of NODE_TYPES) {
+        const styleless = mountOne(type, null).el;
+        const { rt, el } = mountOne(type, FULL_STYLE);
+        patchStyle(rt, {});
+
+        const keys = new Set([...Object.keys(styleless.style), ...Object.keys(el.style)]);
+        for (const key of keys) {
+            assert.equal(
+                el.style[key] ?? "", styleless.style[key] ?? "",
+                `${type}: ${key} survived an empty Style patch — it is written ` +
+                `conditionally somewhere, so a stale declaration stands whenever the ` +
+                `field returns to zero (core.BorderRadius(0) is the canonical victim)`,
+            );
+        }
+    }
+});
+
+for (const e of EXEMPTIONS) {
+    test(`${e.nodeType}: the style pass abstains from ${e.property}`, () => {
+        // The abstention itself. Whatever the prop wrote has to survive a
+        // patch that rewrites the whole Style — the case that opens a dialog
+        // and then restyles anything inside it.
+        for (const [value, css] of e.states) {
+            const { rt, el } = mountOne(e.nodeType, FULL_STYLE, { [e.owner]: value });
+            assert.equal(el.style[e.property], css,
+                `${e.owner}=${value} did not write ${e.property}`);
+
+            patchStyle(rt, FULL_STYLE);
+            assert.equal(el.style[e.property], css,
+                `a style patch overwrote ${e.property}, which ${e.owner} owns`);
+
+            patchStyle(rt, {});
+            assert.equal(el.style[e.property], css,
+                `an empty style patch cleared ${e.property}, which ${e.owner} owns`);
+        }
+    });
+
+    test(`${e.nodeType}: ${e.owner} writes ${e.property} in every state`, () => {
+        // The condition an exemption is only safe under, and the one a
+        // candidate is most likely to fail.
+        //
+        // Abstaining hands a property to a prop. If that prop assigns only in
+        // its interesting state — sets "flex" when open and says nothing when
+        // closed — then the value it wrote last stands forever, and the bug is
+        // the same stale-declaration bug totality exists to prevent, moved one
+        // channel over. So every state is driven on ONE element, in sequence,
+        // which is what a live dialog does and what a fresh mount per state
+        // would not catch.
+        const { rt, el } = mountOne(e.nodeType, FULL_STYLE, { [e.owner]: e.states[0][0] });
+        for (const [value, css] of e.states) {
+            rt.GrMob.patch(JSON.stringify([{
+                Type: "update-props", TargetID: "root/0", Changes: { [e.owner]: value },
+            }]));
+            rt.drainFrames();
+            assert.equal(el.style[e.property], css,
+                `${e.owner}=${value} left ${e.property} at ${JSON.stringify(el.style[e.property])} ` +
+                `— the owner does not write this state, so the previous value stands`);
+        }
+    });
+
+    test(`${e.property} is still total for a node that is not a ${e.nodeType}`, () => {
+        // The exemption is keyed on the node type; the property is managed as
+        // normally as any other everywhere else. A Box is the plainest node
+        // there is, so if the abstention had leaked out of its `if` this is
+        // where it would show.
+        const { rt, el } = mountOne("Box", { ...FULL_STYLE, Display: "none" });
+        const built = el.style[e.property];
+        patchStyle(rt, {});
+        assert.equal(el.style[e.property], mountOne("Box", null).el.style[e.property],
+            `a Box's ${e.property} (${JSON.stringify(built)}) survived an empty Style patch`);
+    });
+}

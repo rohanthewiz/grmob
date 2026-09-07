@@ -258,6 +258,18 @@ patches to keep it current.
 Every renderer has a verify harness that replays the Go engine's own patch
 transcripts against it, so the three targets stay in step.
 
+```bash
+go test ./...            # the engine, the exporter and every source pin
+wasm/verify/run.sh       # the JS runtime, replayed — plus a headless-Chrome
+                         #   pass for the three keyboard facts a shimmed DOM
+                         #   cannot answer
+ios/verify/run.sh        # the Swift data layer, replayed and type-checked
+android/verify/run.sh    # the Kotlin decomposition, on a plain JVM
+```
+
+None of them needs a simulator, a device, npm or the network; each skips
+rather than fails when the toolchain it wants is not installed.
+
 ## 🏗 Building for Android and iOS
 
 Both shells take an app package as their argument. Any package whose `init`

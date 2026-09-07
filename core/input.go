@@ -137,6 +137,42 @@ type SelectOption struct {
 	// value shown is always the one Go passed. That is the same contract an
 	// out-of-list value lands under; see Select.
 	Disabled bool
+
+	// GroupDisabled marks this option's whole *run* unavailable: the paid
+	// plans on a free account, a shipping tier this address cannot use, a
+	// "Coming soon" family that is worth showing and not worth offering.
+	//
+	// # Any option in the run is enough
+	//
+	// The declaration is read off every option, not off the first one. A
+	// caller writing it on the second entry of a run and getting nothing would
+	// have no way to find that out — a menu is drawn behind a tap, there is no
+	// error channel here, and the option would look exactly like an option
+	// that had been read. Making any one of them decide is the reading with no
+	// silent failure in it.
+	//
+	// The cost is that a run's state is not known until the run is closed,
+	// which is real bookkeeping: SelectMenuSections walks back over the run's
+	// items when it flushes one. That is a cost paid once, in the authority,
+	// which is the reason the authority exists.
+	//
+	// # It is not the same as disabling every option by hand
+	//
+	// Marking each option Disabled refuses each tap and says nothing about the
+	// heading, which stays as legible as the ones above it. GroupDisabled
+	// carries to the section — SelectMenuSection.Disabled — so the *heading*
+	// can be greyed too, and so the web can write <optgroup disabled> once
+	// rather than an attribute per option.
+	//
+	// Every item of a disabled run is still marked Disabled on its way out, so
+	// the refusal reaches the two targets that have no section-level control
+	// at all. See SelectMenuSection.Disabled.
+	//
+	// On an ungrouped run (Group empty) there is no heading to grey and, on
+	// the web, no <optgroup> to carry the attribute — so it degrades to
+	// exactly "every option in the run is disabled", which is the honest
+	// answer rather than a special case.
+	GroupDisabled bool
 }
 
 // Option builds a SelectOption, mirroring Tab's constructor next door.
@@ -189,10 +225,18 @@ func Option(value, label string) SelectOption {
 //
 // # Grouped and disabled options
 //
-// SelectOption carries a Group and a Disabled beside its two required fields;
-// see the type. Both are drawn by every target — an <optgroup> and a disabled
-// <option> on the web, a Section and a disabled Button in the iOS menu, a
-// heading item and a disabled item in the Android dropdown.
+// SelectOption carries a Group, a Disabled and a GroupDisabled beside its two
+// required fields; see the type. All three are drawn by every target — an
+// <optgroup>, a disabled <option> and <optgroup disabled> on the web; a
+// Section and a disabled Button in the iOS menu; a heading item and a disabled
+// item in the Android dropdown.
+//
+// What a heading still cannot carry is an icon, and that is a decision rather
+// than a gap: an <optgroup>'s label is an attribute, so the web can hold text
+// and nothing else. A heading with an icon on two targets and without one on
+// the other two is the divergence this widget refuses everywhere else — the
+// same argument that keeps it off the platform picker controls, one property
+// down.
 //
 // Neither reaches this function as anything but a map key, which is the point:
 // the flattening below is the one place that knows what a SelectOption is, and
@@ -238,6 +282,14 @@ func Select(value string, options []SelectOption, onChange func(string), props .
 			}
 			if o.Disabled {
 				opt["disabled"] = "true"
+			}
+			// Written per option even though it describes the run, because
+			// the run is not a thing on the wire: the flat list is, and a
+			// renderer rebuilds the runs from it. See GroupDisabled for why
+			// any one option carrying it is enough, and select_menu.go for
+			// where the four renderers agree about that.
+			if o.GroupDisabled {
+				opt["groupDisabled"] = "true"
 			}
 			opts = append(opts, opt)
 		}
