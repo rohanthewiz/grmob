@@ -2,8 +2,10 @@ package verify
 
 import (
 	"bytes"
+	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/rohanthewiz/grmob/aria/spec"
@@ -57,31 +59,16 @@ import (
 // fixture that differs from the committed one on four facts. Left to the
 // comparison below, that reads as a fixture error. So the edition is checked
 // first and reported as what it is.
+//
+// That decision is localCopyGate, which is a function rather than four lines
+// here because two of its three answers had never executed on any machine —
+// see its own comment.
 func TestTheFixtureIsWhatTheSpecificationSays(t *testing.T) {
 	root := repoRoot(t)
 
 	raw, err := os.ReadFile(filepath.Join(root, spec.LocalPath))
-	if err != nil {
-		t.Skipf("no local copy of the ARIA specification (%s): run `sh aria/fetch.sh` "+
-			"to check the fixture against it", spec.LocalPath)
-	}
-
-	// The edition, before the content. A stale copy is the one way this test
-	// can fail while both of its subjects are correct: ARIA 1.1 is the same
-	// ReSpec output with different cells, so it parses cleanly to ~94 roles
-	// and regenerates a fixture differing on exactly the four facts 1.2
-	// changed. The report below would then name radiogroup's orientation as
-	// "the first difference" — a true statement about 1.1, printed as if
-	// somebody had mistyped a fixture nobody touched.
-	//
-	// A skip rather than a failure, for the same reason a missing download is
-	// one: what is on disk is a developer's own fetch, at whatever moment they
-	// ran it, and this test's promise is that it never asks the network. A
-	// checkout is not broken because the copy beside it is old.
-	if v := spec.SpecVersion(string(raw)); v != spec.Version {
-		t.Skipf("the local copy of the specification is WAI-ARIA %q and the fixture "+
-			"is generated from %s: re-run `sh aria/fetch.sh` to check it",
-			v, spec.Version)
+	if skip := localCopyGate(raw, err); skip != "" {
+		t.Skip(skip)
 	}
 
 	doc, err := spec.Parse(string(raw))
@@ -108,6 +95,143 @@ func TestTheFixtureIsWhatTheSpecificationSays(t *testing.T) {
 	t.Errorf("%s is not what aria/gen would write. Regenerate it:\n"+
 		"    go run ./aria/gen\n\nFirst difference:\n%s",
 		spec.FixturePath, firstDifference(got, want))
+}
+
+// localCopyGate decides what the comparison above does with whatever is on
+// disk: run, or skip with a reason. Empty means run.
+//
+// # Why this is a function and not four lines inline
+//
+// It was four lines inline, and two of its three branches had never executed.
+// The absent-copy branch runs on any machine without a download; the
+// wrong-edition branch runs on a machine holding a 1.1 copy, which is to say
+// nowhere, ever. Its *subject* was covered — aria/spec's
+// TestAStaleDownloadIsRefusedBeforeItIsParsed proves spec.Parse refuses a 1.1
+// document and names the download in the refusal — but that is a different
+// claim from this one. Parse *fails*; this guard exists precisely so the same
+// document produces a SKIP instead, because a checkout is not broken because
+// the copy beside it is old. A guard whose whole content is "turn that failure
+// into a skip" and which has never run is a guard nothing has checked.
+//
+// Extracting it is what makes the three outcomes reachable from a test: the
+// inputs are bytes and an error, so all three can be handed over directly
+// rather than arranged on somebody's filesystem.
+//
+// # The three outcomes
+//
+//	no copy on disk      skip. The specification is a 1.4MB download and this
+//	                     repository's promise is that verification never needs
+//	                     the network, so the fetch is a developer step.
+//	a copy of some other  skip, naming both editions. ARIA 1.1 is the same
+//	edition              ReSpec output with different cells: it parses cleanly
+//	                     to ~94 roles and regenerates a fixture differing on
+//	                     exactly the four facts 1.2 changed, so the comparison
+//	                     below would name radiogroup's orientation as "the
+//	                     first difference" — a true statement about 1.1,
+//	                     printed as if somebody had mistyped a fixture nobody
+//	                     touched.
+//	a copy that says      skip, and say that. An error page, a truncated
+//	nothing              download or a proxy's interstitial has no title
+//	                     heading, and "is WAI-ARIA \"\"" is not a sentence to
+//	                     hand somebody. This branch is the one exercising the
+//	                     guard turned up: it was folded in with the edition
+//	                     mismatch and reported as one.
+func localCopyGate(raw []byte, readErr error) string {
+	if readErr != nil {
+		return fmt.Sprintf("no local copy of the ARIA specification (%s): run "+
+			"`sh aria/fetch.sh` to check the fixture against it", spec.LocalPath)
+	}
+	switch v := spec.SpecVersion(string(raw)); v {
+	case spec.Version:
+		return ""
+	case "":
+		return fmt.Sprintf("the local copy of the specification (%s) does not say "+
+			"which edition it is — a truncated download or an error page reads "+
+			"this way: re-run `sh aria/fetch.sh`", spec.LocalPath)
+	default:
+		return fmt.Sprintf("the local copy of the specification is WAI-ARIA %q and "+
+			"the fixture is generated from %s: re-run `sh aria/fetch.sh` to check it",
+			v, spec.Version)
+	}
+}
+
+// The title heading the published document opens with, as spec.SpecVersion
+// reads it, for an edition of this test's choosing.
+//
+// Written out here rather than imported because aria/spec keeps its sample
+// unexported, and a second copy of a two-line literal is cheaper than an
+// export that exists for one caller. What keeps the copy honest is the first
+// assertion in the test below: the heading built for the *current* edition
+// must be one SpecVersion actually reads. If the regexp moves, that fails and
+// says so, rather than every case here quietly falling into the "says nothing"
+// branch and agreeing.
+func titleHeading(version string) string {
+	return `<h1 id="title" class="title">Accessible Rich Internet ` +
+		`Applications (WAI-ARIA) ` + version + `</h1>`
+}
+
+// All three outcomes, which is two more than the machine running this has ever
+// produced.
+func TestTheLocalCopyGateAnswersForEveryKindOfCopy(t *testing.T) {
+	current := titleHeading(spec.Version)
+	if got := spec.SpecVersion(current); got != spec.Version {
+		t.Fatalf("the heading this test builds reads as %q, not %q — spec.SpecVersion "+
+			"has moved and every case below would take the \"says nothing\" branch "+
+			"and agree with anything", got, spec.Version)
+	}
+
+	for _, c := range []struct {
+		name string
+		raw  string
+		err  error
+		// want are substrings the skip message must carry; an empty slice
+		// means the gate must return "" and let the comparison run.
+		want []string
+	}{
+		{
+			name: "no copy on disk",
+			err:  os.ErrNotExist,
+			want: []string{spec.LocalPath, "aria/fetch.sh"},
+		},
+		{
+			// The case the whole guard exists for, and the one no machine has
+			// ever run: a perfectly good specification that this repository
+			// does not read.
+			name: "a copy of the previous edition",
+			raw:  titleHeading("1.1") + "<html><body>roles</body></html>",
+			want: []string{"1.1", spec.Version, "aria/fetch.sh"},
+		},
+		{
+			name: "a copy with no title heading",
+			raw:  "<html><body>502 Bad Gateway</body></html>",
+			want: []string{"does not say which edition", "aria/fetch.sh"},
+		},
+		{
+			name: "the edition the fixture came from",
+			raw:  current + "<html><body>roles</body></html>",
+		},
+	} {
+		got := localCopyGate([]byte(c.raw), c.err)
+		if len(c.want) == 0 {
+			if got != "" {
+				t.Errorf("%s: the gate skipped with %q — a current copy is the one "+
+					"case that must reach the comparison, and a gate that skips on "+
+					"it makes this file's only check unreachable", c.name, got)
+			}
+			continue
+		}
+		if got == "" {
+			t.Errorf("%s: the gate let the comparison run — it would report the "+
+				"fixture as wrong about facts it is right about", c.name)
+			continue
+		}
+		for _, want := range c.want {
+			if !strings.Contains(got, want) {
+				t.Errorf("%s: the skip does not mention %q, which is what the reader "+
+					"needs to act on it: %s", c.name, want, got)
+			}
+		}
+	}
 }
 
 // firstDifference reports the first line the two files disagree on, with its

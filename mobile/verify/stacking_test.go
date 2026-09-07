@@ -4,6 +4,8 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+
+	"github.com/rohanthewiz/grmob/htmlout"
 )
 
 // The start of a type-dispatch arm in each renderer, used to find where the
@@ -254,5 +256,87 @@ func TestNativeTabViewIsAColumnStack(t *testing.T) {
 				"composite stacks along the row axis and the DOM targets' column row is wrong",
 				pin.file, pin.marker, pin.bar, pin.outer)
 		}
+	}
+}
+
+// A Spacer's children reach both natives, and reach them as a column.
+//
+// # What this closes
+//
+// core.Spacer(n) builds a node with a size prop and nothing else, so a Spacer
+// with children only ever arrives by hand-assembly — the same position
+// core.ModalNode is in, and the same position a Spacer's Style, accessibility
+// props, callback IDs and margin were all in before earlier passes moved them.
+// Those four were fixed and the children were named as still-open, on the
+// grounds that the divergence was unreachable from Go: a Compose `Spacer` and
+// a SwiftUI `Color.clear` are leaves, while both DOM renderers emit a Spacer's
+// children like any other element's.
+//
+// Unreachable from core is not unreachable. htmlout exports any *core.Node a
+// caller hands it, and the WASM runtime renders any tree the wire carries, so
+// the observable behaviour was a subtree that appeared in a browser and
+// vanished on a phone. Dropping content is the wrong side of a divergence to
+// be on, and the DOM side additionally cannot move: the runtime's patches are
+// addressed by data-node-path attributes written while walking node.Children,
+// so an element it declines to emit takes every patch beneath it with it (the
+// reason Fragment and Theme are boxed there — see tagForType).
+//
+// # Why the axis is checked and not just the presence
+//
+// A renderer that emits the children with a construct of its own choosing
+// re-opens the divergence one level down: a Compose Box and a SwiftUI ZStack
+// both draw two children on top of one another, where the DOM lays them out
+// one after another. That is the exact failure TestNativeContainersStack...
+// above records for Box and SafeArea. So the axis comes from one place —
+// htmlout's stackAxes, restated in the WASM runtime and pinned to it by
+// TestRuntimeStackAxesMatchGo — and each native is held to building the stack
+// that table names.
+//
+// The two natives are read at different depths because they are written at
+// different depths: Kotlin dispatches the whole node into GrMobColumn from the
+// arm, while Swift's arm names a composite (GrMobSpacer) that has geometry of
+// its own to keep — Color.clear is what makes a claimed axis fill, so the
+// stack is laid over it rather than replacing it. Reading GrMobSpacer's body
+// is what makes the Swift half a claim about the code that runs.
+func TestNativeSpacerChildrenAreStackedNotDropped(t *testing.T) {
+	if got := htmlout.StackAxisFor("Spacer"); got != "column" {
+		t.Fatalf("htmlout stacks a Spacer along %q, so the column stacks pinned below "+
+			"are answering to a table that no longer says column", got)
+	}
+
+	// Kotlin: the arm itself is the whole of it.
+	arm := dispatchArm(t, kotlinRenderer, `"Spacer" ->`, kotlinArmStart)
+	if !strings.Contains(arm, "GrMobColumn(") {
+		t.Errorf("%s: the Spacer arm does not route to GrMobColumn — its children are "+
+			"either dropped (a bare Compose Spacer is a leaf) or stacked by a second "+
+			"implementation no alignment or gap check reaches", kotlinRenderer)
+	}
+	if strings.Contains(arm, "Box(") {
+		t.Errorf("%s: the Spacer arm builds a Compose Box — its children would draw on "+
+			"top of one another where both DOM targets stack them", kotlinRenderer)
+	}
+
+	// Swift: the composite the arm names.
+	body := swiftTypeBody(t, swiftRenderer, "private struct GrMobSpacer")
+	for _, want := range []struct{ expr, why string }{
+		{"FlexChildren(node: node",
+			"the node's children are never rendered, so a hand-assembled Spacer's " +
+				"subtree is still dropped on this target alone"},
+		{"GrMobFlexStack(axis: .vertical",
+			"the children are laid out by something other than the column stack " +
+				"htmlout's stackAxes names for this type"},
+		{"Color.clear",
+			"the sized base is gone — grMobBox paints its background inside its own " +
+				"dimension frame, so an axis the Style claims is filled by the content " +
+				"asking for it, and an empty flex stack asks for nothing"},
+	} {
+		if !strings.Contains(body, want.expr) {
+			t.Errorf("%s: GrMobSpacer no longer contains %q — %s",
+				swiftRenderer, want.expr, want.why)
+		}
+	}
+	if strings.Contains(body, "ZStack(") {
+		t.Errorf("%s: GrMobSpacer builds a ZStack — its children would draw on top of "+
+			"one another where both DOM targets stack them", swiftRenderer)
 	}
 }

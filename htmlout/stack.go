@@ -81,7 +81,6 @@ import (
 //   - Modal carries its own fixed-overlay chassis on both DOM targets, and
 //     that chassis already sets display and flex-direction (and toggles
 //     display through the visible prop, which a default here would fight).
-//   - Spacer is a sized void, not a container: it has no children to stack.
 //   - Fragment and Theme are the known divergence: they stack in the runtime,
 //     which must box them to keep its positional patch addressing valid, and
 //     this exporter emits their children with no box at all (transparentTypes
@@ -96,6 +95,19 @@ var stackAxes = map[string]string{
 	"SafeArea": "column",
 	"List":     "column",
 	"TabView":  "column",
+	// A sized void that can nonetheless hold things. core.Spacer(n) builds no
+	// children, so this row is inert on every tree core produces — a childless
+	// flex box of fixed size lays out exactly as a childless block box of the
+	// same size, which is why adding it moves no existing pixel.
+	//
+	// It is here because the natives stopped dropping a hand-assembled
+	// Spacer's children (Renderer.kt's Spacer arm, Renderer.swift's
+	// GrMobSpacer), and a native stack beside DOM block flow is precisely the
+	// divergence this table exists to prevent: two Text children would run
+	// together on one line here and down the page on device. With the row, a
+	// Spacer with children is a Box with a fixed size on all four targets, and
+	// its gap, justify-content and align-items work like any other stack's.
+	"Spacer": "column",
 }
 
 // StackAxisFor returns the flex axis a node type stacks its children along,

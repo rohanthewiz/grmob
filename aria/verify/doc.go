@@ -32,6 +32,13 @@
 //     premise of the fallback both exporters supply
 //   - the WASM runtime's composite table names containers whose required
 //     children are the member roles it looks for
+//   - every core.Role is decided against the tappable-container question, and
+//     the *kind* of each answer agrees with the specification wherever the
+//     specification has one (tappable_test.go). Four of the seven kinds are
+//     derivable — from Required Owned Elements, from core.KeyboardComposites(),
+//     from core.CompositeMemberRole() and from the attribute list that gives a
+//     role a value range — and three are prose with the reason stated, which is
+//     the same split refusal.Nesting and refusal.Shape make
 //
 // # Where it comes from
 //

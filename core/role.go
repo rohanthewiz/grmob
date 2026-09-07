@@ -653,6 +653,87 @@ func KeyboardComposites() []Role {
 	return []Role{RoleListBox, RoleTabList, RoleToolbar}
 }
 
+// CompositeMemberRole returns the role ARIA gives the members of a composite
+// container, or "" for a composite whose members ARIA does not name.
+//
+//	listbox   option
+//	tablist   tab
+//	toolbar   ""      ARIA defines no `toolbaritem`
+//
+// It is the second half of what KeyboardComposites states — that list says
+// which containers have a keyboard, this says how each one recognises the
+// things the arrows move between — and it is here for the same reason the
+// list is: a caller (and AuditTree) asks core what a role means, and the
+// alternative is the fact living only in the WASM runtime's COMPOSITE_MEMBERS,
+// where no Go reader can consult it.
+//
+// The empty answer is a real answer and not a "not found". A toolbar has a
+// keyboard; what it does not have is a role that says "this is one of my
+// members", which is exactly why the runtime has to supply a membership rule
+// of its own (TappableContainerRoles is the Go half of that rule). Callers
+// distinguish the two cases by asking KeyboardComposites first — a role that
+// is not in that list has no keyboard at all, and this returns "" for it too.
+func CompositeMemberRole(container Role) Role {
+	switch container {
+	case RoleListBox:
+		return RoleOption
+	case RoleTabList:
+		return RoleTab
+	}
+	return ""
+}
+
+// CompositeWalkStopsAt reports what an outer composite's member walk does when
+// it meets a nested composite: stop there, or descend through it.
+//
+// # Why core states a rule about a walk in another language
+//
+// AuditTree is the reader. ConcernNestedComposite is a finding about a pair of
+// containers, and *what goes wrong* is not the same for every pair — so a
+// report that did not know this rule could only describe one of the two
+// outcomes, and would describe the other one wrongly. That is the same
+// argument KeyboardComposites makes one level up: the audit is the pass whose
+// job is telling a Go author what their finished tree amounts to, and it
+// cannot get the answer from a runtime written in JavaScript.
+//
+// # The rule
+//
+//	outer names no member role     stop. Nothing says whose a plain button is,
+//	(toolbar)                      so a control inside a nested composite
+//	                               belongs to the nested one.
+//
+//	inner has the same members     stop. Two listboxes pooling their options
+//	                               would let one widget's arrows walk out into
+//	                               the other's rows.
+//
+//	otherwise                      descend. An option below a tablist is still
+//	                               the listbox's option — the roles say whose
+//	                               it is, and stopping would lose a member the
+//	                               vocabulary has already assigned.
+//
+// Member roles are unique per container, so the middle case is the same set of
+// pairs as `inner == outer`; it is written against the member role because
+// that is the question the runtime's walk actually asks
+// (`compositeMemberRole(child) === memberRole`), and a fourth pattern sharing
+// a member role with a third would land here rather than in a surprise.
+//
+// # What descending costs, and why it is still right
+//
+// A descending pair is still two tab stops — both containers keep a roving
+// tabindex either way, which is the part of the finding that never varies.
+// What differs is the reach: where a stopping pair's outer arrows step over
+// the inner widget whole, a descending pair's outer arrows can land *inside*
+// it, on any element of the outer's member role buried in the inner's subtree.
+// Neither is what ARIA describes for nested composites, and the framework's
+// refusal to guess is documented at ConcernNestedComposite.
+func CompositeWalkStopsAt(outer, inner Role) bool {
+	members := CompositeMemberRole(outer)
+	if members == "" {
+		return true
+	}
+	return CompositeMemberRole(inner) == members
+}
+
 // TappableContainerRoles returns the roles whose whole purpose is to make an
 // ordinary container announce itself as a control.
 //

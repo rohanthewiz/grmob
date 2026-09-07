@@ -973,6 +973,47 @@
       not read. ARIA's version needs two widgets writing `tabindex` onto one
       element and an owner rule for when they disagree, which this framework
       does not have — so the divergence stands and the author is told
+- [x] **A hand-assembled `Spacer`'s children reach all four targets** — a
+      Compose `Spacer` and a SwiftUI `Color.clear` are leaves, where both DOM
+      renderers emit them like any other element's, so a subtree rendered in a
+      browser and vanished on a phone. It was left open as "unreachable from
+      Go", which was true of `core.Spacer(n)` and not of `*core.Node`; the DOM
+      side is also the side that cannot move, because the runtime addresses
+      patches by walking `node.Children`. Both natives stack them now, and the
+      axis is `htmlout`'s `stackAxes` rather than each renderer's guess — a
+      `Spacer` with children is a `Box` with a fixed size, and the row costs a
+      childless one nothing
+- [x] **The nested-composite finding says which of two things the outer arrows
+      do** — it reported "steps over the inner one whole" for all nine ordered
+      pairs, which is right for four. `compositeMembers` deliberately descends
+      through a composite of the other kind ("an option below a tablist is
+      still the listbox's option"), so for the other five the outer widget's
+      arrows can land *inside* the nested one. `core.CompositeWalkStopsAt` is
+      the rule, read by the audit's sentence and pinned to the runtime's two
+      walks; `keynav_test.mjs` runs a descending pair in a real DOM
+- [x] **The tappable-container census has an authority** — every `core.Role` is
+      decided against it and the reasons were prose top to bottom, with a
+      comment arguing that a reason string cannot be checked. Four of the seven
+      kinds are derivable — ARIA's Required Owned Elements,
+      `core.KeyboardComposites()`, `core.CompositeMemberRole()` and the
+      attribute list that gives a role a value range — so the table moved to
+      `aria/verify`, where the fixture is, and a role filed under the wrong
+      kind now fails instead of reading perfectly
+- [x] **`swiftTypeBody` cuts a Swift type where its braces close** — it ended a
+      declaration at the first `}` in column one, which is a claim about how
+      this repository indents rather than about Swift, and a short cut still
+      returns a string: every `strings.Contains` below it would have passed by
+      reading nothing. It uses the comment- and literal-skipping brace scanner
+      the Kotlin dispatch parse already had, which grew a `"""` arm for the
+      case that has no formatting fix
+- [x] **The stale-download skip is a branch a test can reach** — `aria/verify`
+      turns a 1.1 copy into a SKIP rather than a fixture diff, and that guard
+      had never executed on any machine: its subject (`spec.Parse` refusing
+      1.1) was covered, but "turn that failure into a skip" is a different
+      claim. Extracted as `localCopyGate`, whose three answers are now
+      exercised directly — and exercising it turned up a fourth: a truncated
+      download or an error page has no heading at all, and was being reported
+      as being of edition `""`
 - [x] **`CONTROL_ROLES` is a property rather than a list**
       (`core.TappableContainerRoles()`) — the two roles that make a plain
       container a control were three copies of one fact, and a *new* role would

@@ -18,7 +18,6 @@ import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.exclude
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -231,13 +230,34 @@ private fun RenderNodeContent(node: GrMobNode, extra: Modifier) {
         // fill is drawn at the node's measured size, which is the author's
         // width by 10 rather than a 10x10 square in a 200-point hole.
         //
-        // Still not honoured, and unreachable from Go: a hand-assembled
-        // Spacer's children. A Compose Spacer is a leaf, where both DOM
-        // renderers emit a Spacer's children like any other element's, and
-        // core.Spacer(n) builds none.
-        "Spacer" -> Spacer(
-            style.boxModifier(extra, gestureModifier(node))
-                .size(node.intProp("size").dp),
+        // A hand-assembled Spacer's children, which this arm used to drop.
+        //
+        // A Compose `Spacer` is a leaf and both DOM renderers emit a Spacer's
+        // children like any other element's, so a node core cannot build but
+        // Go can hand-assemble rendered its subtree in a browser and nothing
+        // at all on device. That is the last of the four properties this arm
+        // was silently discarding, and it goes the same way the other three
+        // did: toward what the DOM targets already do.
+        //
+        // GrMobColumn rather than a Box, for the reason the "Column", "Card",
+        // "Box" arm above gives — a Compose Box overlays, and the DOM stacks.
+        // Spacer is in htmlout's stackAxes on "column" so that both halves of
+        // this agreement are stated in one place rather than invented here:
+        // a Spacer with children is a Box with a fixed size.
+        //
+        // The modifier chain is unchanged. GrMobColumn applies
+        // `boxModifier(extra, gestureModifier(node)).then(outer)`, which is
+        // exactly what this arm spelled out, so a childless Spacer measures
+        // and paints as it did — an empty Column with a fixed size is the
+        // same box a Spacer with a fixed size was.
+        //
+        // One thing does change for a childless Spacer: GrMobColumn reads
+        // animatedStyle, so a Spacer carrying a Transition now animates its
+        // own style the way every other container does. It could not before,
+        // and nothing wanted the exception.
+        "Spacer" -> GrMobColumn(
+            node, extra,
+            outer = Modifier.size(node.intProp("size").dp),
         )
         "Scroll" -> GrMobScroll(node, extra)
 

@@ -373,11 +373,40 @@ moving either line:
 | SwiftUI | later in a chain is further *out*, and an outer frame wins — so the chassis frame is written before `.grMobBox`. On an axis the `Style` claims it is not written at all (`nil`), which keeps `Color.clear` flexible there so the background fills the frame `grMobBox` puts around it |
 | Compose | constraints flow outside-in and an inner `size()` coerces itself into what it was handed, so `boxModifier` first and `.size()` after is the whole of it — per axis, and the background lands at the measured size |
 
-One divergence stays and is unreachable from Go: a hand-assembled Spacer's
-**children**. A Compose `Spacer` and a `Color.clear` are both leaves, where both
-DOM renderers emit a Spacer's children like any other element's, and
-`core.Spacer(n)` builds none. `mobile/verify/spacer_test.go` pins both halves —
-that the box is built at all, and that the chassis sits under the author.
+#### And the children, which were the last thing dropped
+
+A hand-assembled Spacer's **children** used to go the same way its `Style` did.
+A Compose `Spacer` and a SwiftUI `Color.clear` are leaves, where both DOM
+renderers emit a Spacer's children like any other element's — so a subtree
+rendered in a browser and vanished on a phone. It was left open on the grounds
+that `core.Spacer(n)` builds no children, which is true and is not the same as
+unreachable: `htmlout` exports any `*core.Node` it is handed and the WASM
+runtime renders any tree the wire carries.
+
+The DOM side is also the side that cannot move. The runtime addresses patches by
+the `data-node-path` attributes it writes while walking `node.Children`, so an
+element it declines to emit takes every patch beneath it with it — the same
+reason `Fragment` and `Theme` are boxed there.
+
+So the natives emit them, as a **column**:
+
+| | how |
+|---|---|
+| Compose | the arm hands the node to `GrMobColumn` with the size as its `outer` modifier, which produces the identical chain (`boxModifier(...).then(size)`) the arm used to spell out |
+| SwiftUI | `Color.clear` stays as the thing that is *sized* and the flex stack is laid **over** it. `grMobBox` paints its background inside its own dimension frame, so an axis the `Style` claims is filled by whatever the content asks for — `Color.clear` is flexible and asks for all of it, an empty stack would ask for none |
+
+The axis is not each renderer's choice. `Spacer` is in `htmlout`'s `stackAxes`
+on `column`, which is the one place all four targets read it from; without that
+row two `Text` children would run together on one line in a browser and down the
+page on device, the exact divergence the table exists to prevent. **A Spacer with
+children is a `Box` with a fixed size**, and every tree `core` produces is
+unaffected — a childless flex box of fixed size lays out as a childless block
+box of the same size.
+
+`mobile/verify/spacer_test.go` pins that the box is built at all and that the
+chassis sits under the author; `mobile/verify/stacking_test.go` pins that the
+children are stacked rather than dropped, and that the axis is the one
+`stackAxes` names.
 
 ### `ContentMode` on `Image`
 

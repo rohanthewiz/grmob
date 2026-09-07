@@ -49,16 +49,20 @@ func TestStackContainersAreFlexWithANonLayoutStyle(t *testing.T) {
 // children — a Button's label is its text content — would be laid out as flex
 // items rather than as the inline content they are.
 //
-// Spacer and Modal are here as the two container-ish types the table
-// deliberately omits: Spacer is a sized void with no children, and Modal's
-// overlay chassis sets display itself and toggles it through the visible prop,
-// which a default here would fight.
+// Modal is here as the one container-ish type the table deliberately omits:
+// its overlay chassis sets display itself and toggles it through the visible
+// prop, which a default here would fight.
+//
+// Spacer used to sit beside it, on the grounds that a sized void has no
+// children to stack. It is in the table now, because the natives stopped
+// dropping a hand-assembled Spacer's children and block flow beside a native
+// stack is the divergence the table exists to close. Its childlessness is
+// still what makes the row free rather than what keeps it out.
 func TestNonStackTypesStayInBlockFlow(t *testing.T) {
 	cases := []*core.Node{
 		{Type: "Text", Props: map[string]any{"content": "hi"}},
 		{Type: "Button", Props: map[string]any{"label": "go"}},
 		{Type: "Image", Props: map[string]any{"src": "a.png"}},
-		{Type: "Spacer", Props: map[string]any{"size": 8}},
 		{Type: "Modal", Props: map[string]any{"visible": false}},
 	}
 	for _, n := range cases {

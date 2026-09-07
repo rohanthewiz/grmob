@@ -469,17 +469,9 @@ func quote(s string) string {
 //
 // # The shape, and why it is two tab stops
 //
-// The WASM runtime finds a composite's members by walking its subtree, and
-// both member walks stop at a nested composite — for different reasons that
-// come to the same thing. A listbox's walk stops at a nested *listbox*,
-// because the two would otherwise pool their options. A toolbar's walk stops
-// at any composite, because a toolbar's members are named by no role at all
-// (ARIA defines no `toolbaritem`), so nothing says whose a button inside a
-// nested widget is.
-//
-// Either way the inner container keeps its own roving tabindex. So the pair is
-// two stops in the page's tab order, and the outer widget's arrows step over
-// the inner one whole:
+// The WASM runtime finds a composite's members by walking its subtree. The
+// inner container keeps its own roving tabindex whatever the pair, so the
+// pair is always two stops in the page's tab order:
 //
 //	Tab  -> [ All ] ( Sermons | Articles ) [ More ]     the toolbar's stop
 //	Tab  ->         (   ^ the strip's own stop   )      the tablist's
@@ -487,6 +479,34 @@ func quote(s string) string {
 // ARIA describes one: the pattern makes the nested widget's *current* member
 // the outer widget's member, so a single Tab reaches the pair and the outer
 // arrows cross into the strip.
+//
+// # What the outer arrows then do, which is not one answer
+//
+// This used to be reported as one outcome — "the outer widget's arrows step
+// over the inner one whole" — on the strength of both member walks stopping at
+// a nested composite. Only one of them stops unconditionally. The rule is
+// core.CompositeWalkStopsAt, and it has three cases:
+//
+//	toolbar around anything      stops. Its members are named by no role at
+//	                             all (ARIA defines no `toolbaritem`), so
+//	                             nothing says whose a button inside a nested
+//	                             widget is.
+//	listbox in listbox,          stops. The two would otherwise pool their
+//	tablist in tablist           options, and one widget's arrows would walk
+//	                             out into the other's rows.
+//	listbox around tablist,      DESCENDS. An option below a tablist is still
+//	tablist around listbox,      the listbox's option — the roles say whose it
+//	either around a toolbar      is — so the walk carries on through.
+//
+// The finding says which, because the two are different bugs to go looking
+// for. A stopped pair loses the inner widget from the outer's rotation; a
+// descending pair gains members the author never offered the outer widget,
+// and the arrows land inside a widget they are not steering.
+//
+// Stated in core rather than derived here so that one rule answers for the
+// audit's sentence and for the runtime's two walks at once; wasm/verify's
+// keynav_test.go is what holds the runtime to it, and keynav_test.mjs
+// exercises a descending pair in a real DOM.
 //
 // # Why the framework diverges rather than fixing it
 //
@@ -520,15 +540,33 @@ func (a *a11yAudit) checkNestedComposite(
 		return outer
 	}
 	if outer.role != "" {
+		// The half that never varies, and the half that does. Both containers
+		// keep a roving tabindex whatever the pair, so it is always two tab
+		// stops; what the outer widget's arrows then do depends on whether its
+		// member walk stops at this node or descends through it, and that rule
+		// is core.CompositeWalkStopsAt — stated once, and pinned to the
+		// runtime's two walks by wasm/verify's keynav_test.go.
+		//
+		// Reporting the wrong one of these is worse than reporting neither: an
+		// author told the strip is "stepped over" will not go looking for the
+		// option of theirs that the outer widget's arrows can now land on.
+		reach := "the outer widget's arrows step over the inner one whole"
+		if !CompositeWalkStopsAt(outer.role, role) {
+			reach = fmt.Sprintf(
+				"the outer widget's walk descends through this one, so any %q of "+
+					"its own buried inside the %q is pooled into the outer widget's "+
+					"rotation and its arrows land inside a widget they are not "+
+					"steering",
+				CompositeMemberRole(outer.role), role)
+		}
 		upsertConcern(ConcernNestedComposite, fmt.Sprintf(
 			"%s is a %q inside the %q at %s: both keep their own roving tabindex, "+
-				"so the pair is two tab stops and the outer widget's arrows step over "+
-				"the inner one whole. ARIA describes one stop — it makes the inner "+
-				"widget's current member the outer widget's member — and doing that "+
-				"means two widgets writing tabindex onto one element, which needs an "+
-				"owner rule this framework does not have. Every control stays "+
-				"reachable either way",
-			path, role, outer.role, outer.path))
+				"so the pair is two tab stops and %s. ARIA describes one stop — it "+
+				"makes the inner widget's current member the outer widget's member — "+
+				"and doing that means two widgets writing tabindex onto one element, "+
+				"which needs an owner rule this framework does not have. Every "+
+				"control stays reachable either way",
+			path, role, outer.role, outer.path, reach))
 	}
 	return compositeAncestor{role: role, path: path}
 }

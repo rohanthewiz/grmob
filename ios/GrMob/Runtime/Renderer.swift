@@ -786,12 +786,44 @@ private struct GrMobFlexLayout: Layout {
 ///                                                                 width frame
 /// ```
 ///
-/// # What is still not honoured
+/// # The children, and why they are an overlay rather than the content
 ///
-/// A hand-assembled Spacer's *children*. Compose's `Spacer` and this
-/// `Color.clear` are both leaves, where both DOM renderers emit a Spacer's
-/// children like any other element's. `core.Spacer(n)` builds none, so the
-/// divergence is unreachable from Go and is named here rather than closed.
+/// A hand-assembled Spacer's children used to be dropped here: this was a bare
+/// `Color.clear`, a leaf, where both DOM renderers emit a Spacer's children
+/// like any other element's. `core.Spacer(n)` builds none, so every tree core
+/// produces is unaffected; a node assembled by hand is the case that changed,
+/// and it changed toward what the two DOM targets already did — the same
+/// direction the Style, the accessibility props, the callback IDs and the
+/// margin all moved in above.
+///
+/// They stack in a **vertical flex column**, not a ZStack, for the reason the
+/// `"Column", "Card", "Box"` arm gives: an overlay construct draws two
+/// children on top of one another while both DOM targets stack them down the
+/// page. Spacer is in htmlout's `stackAxes` on "column" so the axis is one
+/// stated fact both DOM renderers and both natives read, rather than a choice
+/// invented per target. A Spacer with children is a Box with a fixed size.
+///
+/// `Color.clear` stays, as the thing that is *sized*, with the stack laid over
+/// it — and that is load-bearing rather than incidental. `grMobBox` paints the
+/// background **inside** its own dimension frame (see its modifier order), so
+/// on an axis the Style claims, the fill covers only as much as the content
+/// asks for. `Color.clear` is flexible and asks for all of it; an empty flex
+/// stack is zero-sized and would ask for none, which would repaint the
+/// `Width(200)` case above as a fill of nothing. Overlaying leaves the whole
+/// of that argument untouched: the geometry of a childless Spacer is
+/// byte-for-byte what it was, and the children are drawn in the box it
+/// already had.
+///
+/// `.topLeading`, because a fixed box's children start at its leading edge in
+/// normal flow on both DOM targets and at TopStart in Compose. It only shows
+/// when the stack does not fill the box — a stack proposed the base's size
+/// takes it, so this is the degenerate case rather than the usual one.
+///
+/// The residual, named because it is the one thing that does not agree: a
+/// child taller than the void overflows here and on both DOM targets, and is
+/// measured into the size by Compose's `Modifier.size`. That is not a Spacer
+/// property — it is what every fixed-size container in this framework does on
+/// that target — so it is stated and not special-cased.
 private struct GrMobSpacer: View {
     let node: GrMobNode
     let grow: GrMobGrow
@@ -802,9 +834,15 @@ private struct GrMobSpacer: View {
         Color.clear
             .frame(width: spacerExtent(size, stated: s?.width ?? ""),
                    height: spacerExtent(size, stated: s?.height ?? ""))
+            .overlay(alignment: .topLeading) {
+                GrMobFlexStack(axis: .vertical, style: s) {
+                    FlexChildren(node: node, axis: .vertical)
+                }
+            }
             .grMobBox(s, grow: grow,
                         onTap: node.stringProp("onClick"),
-                        onLongPress: node.stringProp("onLongPress"))
+                        onLongPress: node.stringProp("onLongPress"),
+                        axis: .vertical)
     }
 }
 

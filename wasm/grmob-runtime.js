@@ -2430,6 +2430,11 @@ const GrMob = (() => {
             SafeArea: "column",
             List: "column",
             TabView: "column",
+            // A sized void that can hold things: core.Spacer builds no
+            // children, but a hand-assembled node can, and both natives now
+            // stack them. Without this row they would run together on one
+            // line here — see htmlout's stackAxes for the whole argument.
+            Spacer: "column",
             Fragment: "column",
             Theme: "column",
         }[nodeType] || "";

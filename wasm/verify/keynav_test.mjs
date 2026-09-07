@@ -562,6 +562,52 @@ test("a nested composite keeps its own members", () => {
     assert.equal(lb.focused(), inner.children[1]);
 });
 
+test("a nested composite of the OTHER kind does not stop the walk", () => {
+    // The other half of the stopping rule, and the one the Go audit used to
+    // describe wrongly. compositeMembers stops at a nested container whose
+    // members are its own — the test above — and descends through every other
+    // one, on the stated grounds that "an option below a tablist is still the
+    // listbox's option": the roles say whose it is.
+    //
+    // So an option buried inside a nested tablist is pooled into the OUTER
+    // listbox's rotation. That is deliberate and it is not what a reader would
+    // guess from "a nested composite keeps its own members", which is why
+    // core.CompositeWalkStopsAt now separates the two cases and the audit's
+    // finding says which one an author has built. This is the case that makes
+    // the rule discriminate; without it, a runtime that stopped at every
+    // composite would pass every other check in this file.
+    const lb = mountTree({
+        Type: "Column",
+        Style: { AccessibilityRole: "listbox" },
+        Children: [
+            member("option", { selected: true }),
+            composite("tablist", [
+                member("tab", { selected: true }),
+                // A stray option inside the strip. Contrived on purpose: it is
+                // the smallest tree that tells the two rules apart.
+                member("option"),
+            ]),
+        ],
+    });
+    const outerFirst = nodeAt(lb.rt.document, "root/0");
+    const strayOption = nodeAt(lb.rt.document, "root/1/1");
+
+    // The stray is in the outer listbox's rotation, not stepped over.
+    assert.equal(strayOption.getAttribute("tabindex"), "-1",
+        "the option inside the strip was not given a roving tabindex, so the " +
+        "outer walk stopped at the tablist after all");
+    outerFirst.focus();
+    outerFirst.dispatch("keydown", { key: "ArrowDown" });
+    assert.equal(lb.focused(), strayOption,
+        "the outer listbox's arrows stepped over the tablist whole — which is " +
+        "what the audit says only for a pair core.CompositeWalkStopsAt stops at");
+
+    // And the tablist still has a stop and a rotation of its own, so the pair
+    // is two tab stops either way. That half of the finding never varies.
+    const tab = nodeAt(lb.rt.document, "root/1/0");
+    assert.equal(tab.getAttribute("tabindex"), "0");
+});
+
 test("a hidden member is not one, and is not one for two reasons", () => {
     // A node pruned from the accessibility tree has no role a reader can see,
     // so it has nothing to be a member of. Upstream of this walk,

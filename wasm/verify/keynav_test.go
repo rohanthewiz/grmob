@@ -357,3 +357,124 @@ func TestTheTypeaheadIsScopedAndUntimered(t *testing.T) {
 			"timer outlives the widget that started it")
 	}
 }
+
+// The rule the audit's sentence and the runtime's two walks both answer to.
+//
+// # What was not held together
+//
+// core.KeyboardComposites() has been pinned to the runtime's two tables for a
+// while: the roles that get a keyboard are the same on both sides. What was
+// never pinned is what a walk *does when it meets one composite inside
+// another*, and core.AuditTree reports a finding whose text depends on it —
+// ConcernNestedComposite tells an author either that the outer widget's arrows
+// step over the inner one or that they can land inside it, and those are
+// different bugs to go looking for.
+//
+// The Go side had been asserting the first for every pair. It is true for four
+// of the nine and false for five, because compositeMembers deliberately
+// descends through a composite of the other kind — "an option below a tablist
+// is still the listbox's option", in its own words. So a Go author with a
+// tablist inside a listbox was being told the strip was stepped over, while
+// the runtime was pooling any option buried in it into the outer rotation.
+//
+// # What is checked
+//
+// Both halves of core's rule against both walks, at the source level, because
+// the rule is two lines of JavaScript and each line is one of core's cases:
+//
+//	compositeMembers   stops only where the nested container's member role is
+//	                   the walk's own — core.CompositeWalkStopsAt's second case
+//	focusableMembers   stops at any composite — its first case, which is what
+//	                   a container that names no member role must do
+//
+// A source pin rather than a behavioural one here because this is the Go half:
+// keynav_test.mjs runs a descending pair in a real DOM, and what this adds is
+// that the two lines it runs are the two lines core claims to be describing.
+// Either alone would let the pair drift — a behavioural test on one shape says
+// nothing about the other eight, and core's rule with no reader is prose.
+func TestTheRuntimeWalksStopWhereCoreSaysTheyDo(t *testing.T) {
+	src := runtimeSource(t)
+
+	// core's member-role table is the runtime's, read through the independent
+	// restatement above rather than through the runtime text — the point of
+	// compositeRoles is to be a second statement of COMPOSITE_MEMBERS, and
+	// core is now a third that has to agree with it.
+	for _, pair := range compositeRoles {
+		if got := core.CompositeMemberRole(pair.container); got != pair.member {
+			t.Errorf("core.CompositeMemberRole(%q) = %q, want %q — the audit would "+
+				"name the wrong member role in a nested-composite finding, and "+
+				"CompositeWalkStopsAt would put the pair in the wrong case",
+				pair.container, got, pair.member)
+		}
+	}
+	for _, r := range focusableComposites {
+		if got := core.CompositeMemberRole(r); got != "" {
+			t.Errorf("core.CompositeMemberRole(%q) = %q — this is a composite whose "+
+				"members ARIA does not name, and a member role here would make "+
+				"CompositeWalkStopsAt stop descending for the wrong reason", r, got)
+		}
+	}
+
+	// And the two lines the rule is a description of.
+	for _, pin := range []struct{ walk, stop, why string }{
+		{"function compositeMembers(container, memberRole",
+			"if (compositeMemberRole(child) === memberRole) continue;",
+			"a role-named composite stops at a nested container whose members are " +
+				"its own and descends through every other — core.CompositeWalkStopsAt " +
+				"compares the two member roles for exactly this line"},
+		{"function focusableMembers(container",
+			"if (isComposite(child)) continue;",
+			"a composite that names no member role stops at any nested composite — " +
+				"core.CompositeWalkStopsAt's first case, and the one that has no " +
+				"member role to compare"},
+	} {
+		at := strings.Index(src, pin.walk)
+		if at < 0 {
+			t.Errorf("grmob-runtime.js: no %s — if the walk was renamed, update this "+
+				"test rather than deleting it", pin.walk)
+			continue
+		}
+		body := src[at:]
+		if end := strings.Index(body, "\n    }\n"); end >= 0 {
+			body = body[:end]
+		}
+		if !strings.Contains(body, pin.stop) {
+			t.Errorf("grmob-runtime.js: %s no longer stops with %q — %s",
+				pin.walk, pin.stop, pin.why)
+		}
+	}
+}
+
+// Every ordered pair of composites lands in one of core's two outcomes, and
+// both outcomes are reachable.
+//
+// A rule that answered the same way for all nine pairs would pass every check
+// above — the source pins hold the runtime to two lines, not to what those
+// lines produce — and would put the audit back where it started, telling every
+// author the same sentence. This is the check that the rule discriminates.
+func TestBothNestedCompositeOutcomesAreReachable(t *testing.T) {
+	var stops, descends int
+	for _, outer := range core.KeyboardComposites() {
+		for _, inner := range core.KeyboardComposites() {
+			if core.CompositeWalkStopsAt(outer, inner) {
+				stops++
+			} else {
+				descends++
+			}
+			// Whatever the pair, a composite always stops at its own kind:
+			// pooling two listboxes' options is the case the runtime's walk
+			// was written to prevent.
+			if outer == inner && !core.CompositeWalkStopsAt(outer, inner) {
+				t.Errorf("a %q inside a %q descends — the two would pool their "+
+					"members and one widget's arrows would walk out into the "+
+					"other's rows", inner, outer)
+			}
+		}
+	}
+	if stops == 0 || descends == 0 {
+		t.Errorf("CompositeWalkStopsAt answered %d stop / %d descend over the %d "+
+			"ordered pairs — one outcome is unreachable, so the audit reports one "+
+			"sentence for every pair again", stops, descends,
+			len(core.KeyboardComposites())*len(core.KeyboardComposites()))
+	}
+}

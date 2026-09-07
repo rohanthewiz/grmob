@@ -45,10 +45,22 @@ func TestBothNativeSpacersBuildTheNodesOwnBox(t *testing.T) {
 		t.Errorf("%s: GrMobSpacer does not call grMobBox — %s", swiftRenderer, spacerWhy)
 	}
 
+	// The Compose arm reaches boxModifier through GrMobColumn now rather than
+	// spelling it — the same indirection the Swift half has always had, and
+	// for the same reason: the arm names a composite, and the composite builds
+	// the box. Both ends are checked, exactly as the Swift half checks the arm
+	// and then GrMobSpacer.
 	kotlin := dispatchArm(t, kotlinRenderer, `"Spacer" ->`,
 		regexp.MustCompile(`\n\s+"[A-Za-z]+"(, "[A-Za-z]+")* ->`))
-	if !strings.Contains(kotlin, "style.boxModifier(extra") {
-		t.Errorf("%s: the Spacer arm does not call boxModifier — %s",
+	if !strings.Contains(kotlin, "GrMobColumn(") {
+		t.Errorf("%s: the Spacer arm does not route through GrMobColumn — %s",
+			kotlinRenderer, spacerWhy)
+	}
+	if !strings.Contains(
+		dispatchArm(t, kotlinRenderer, "private fun GrMobColumn", kotlinCompositeStart),
+		"s.boxModifier(extra",
+	) {
+		t.Errorf("%s: GrMobColumn does not call boxModifier — %s",
 			kotlinRenderer, spacerWhy)
 	}
 }
@@ -100,18 +112,33 @@ func TestTheSpacerChassisSitsUnderTheAuthorsStyle(t *testing.T) {
 			"author's hole", swiftRenderer)
 	}
 
+	// The Compose half is now read in two pieces, because it is written in
+	// two. The arm used to spell the whole chain itself
+	// (`boxModifier(...).size(...)`); it hands the node to GrMobColumn so that
+	// a hand-assembled Spacer's children are stacked rather than dropped, and
+	// the chassis rides in as that composite's `outer` modifier. The ordering
+	// claim is unchanged and is still one `.then` — it just lives one call
+	// down, so both ends are checked or the pin would be satisfied by an arm
+	// that passed the size to a composite which applied it first.
 	kotlin := dispatchArm(t, kotlinRenderer, `"Spacer" ->`,
 		regexp.MustCompile(`\n\s+"[A-Za-z]+"(, "[A-Za-z]+")* ->`))
-	boxIdx := strings.Index(kotlin, "style.boxModifier(extra")
-	sizeIdx := strings.Index(kotlin, ".size(node.intProp(\"size\").dp)")
+	if !strings.Contains(kotlin, `outer = Modifier.size(node.intProp("size").dp)`) {
+		t.Fatalf("%s: the Spacer arm no longer hands the size in as GrMobColumn's "+
+			"outer modifier; update this test rather than deleting it:\n%s",
+			kotlinRenderer, kotlin)
+	}
+	column := dispatchArm(t, kotlinRenderer, "private fun GrMobColumn", kotlinCompositeStart)
+	boxIdx := strings.Index(column, "s.boxModifier(extra")
+	sizeIdx := strings.Index(column, ".then(outer)")
 	if boxIdx < 0 || sizeIdx < 0 {
-		t.Fatalf("%s: the Spacer arm was restructured; update this test rather "+
-			"than deleting it (box=%d size=%d)", kotlinRenderer, boxIdx, sizeIdx)
+		t.Fatalf("%s: GrMobColumn was restructured; update this test rather "+
+			"than deleting it (box=%d then=%d)", kotlinRenderer, boxIdx, sizeIdx)
 	}
 	if sizeIdx < boxIdx {
-		t.Errorf("%s: Modifier.size is applied before boxModifier, so the prop "+
-			"fixes the constraints and a Style that stated a Width is coerced "+
-			"into the chassis rather than the other way round", kotlinRenderer)
+		t.Errorf("%s: GrMobColumn applies its outer modifier before boxModifier, so "+
+			"a Spacer's size prop fixes the constraints and a Style that stated a "+
+			"Width is coerced into the chassis rather than the other way round",
+			kotlinRenderer)
 	}
 }
 

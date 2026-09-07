@@ -146,7 +146,7 @@ func (d dispatchSyntax) labels(t *testing.T) []string {
 	// been deleted. That is not a hypothetical: it is what the first version of
 	// this test did, and the mutation that deleted grMobScaled's `default` arm
 	// went uncaught because of it.
-	body = matchingBrace(t, d, body[open+len(d.open)-1:])
+	body = matchingBrace(t, d.file, d.fn+"'s dispatch block", body[open+len(d.open)-1:])
 
 	// Cutting at the catch-all before collecting arms does two jobs: it proves
 	// the catch-all still exists (the contract that an absent or unrecognized
@@ -325,7 +325,13 @@ var declStart = regexp.MustCompile(`(?m)^[ \t]*(?:[\w@]+[ \t]+)*(?:func|fun)[ \t
 // scanner serves both. Neither language's extras matter here: Swift's `\(…)`
 // interpolation nests parentheses rather than braces, and Kotlin's `${…}` is
 // balanced, so it counts a `{` and its `}` and comes out even.
-func matchingBrace(t *testing.T, d dispatchSyntax, src string) string {
+//
+// file and what name the source and the construct, and are used only to say
+// where an unterminated block was found. They were a dispatchSyntax when the
+// dispatch parser was the only caller; swiftTypeBody is the second, and a type
+// declaration is not a dispatch, so the two strings it actually needed are
+// what it takes now.
+func matchingBrace(t *testing.T, file, what, src string) string {
 	t.Helper()
 
 	depth := 0
@@ -341,9 +347,23 @@ func matchingBrace(t *testing.T, d dispatchSyntax, src string) string {
 		case strings.HasPrefix(src[i:], "/*"):
 			end := strings.Index(src[i+2:], "*/")
 			if end < 0 {
-				t.Fatalf("%s: unterminated block comment inside %s", d.file, d.fn)
+				t.Fatalf("%s: unterminated block comment inside %s", file, what)
 			}
 			i += 2 + end + 1
+		case strings.HasPrefix(src[i:], `"""`):
+			// A multi-line literal, which both languages spell this way and
+			// whose content is verbatim — so a line of it may legally begin
+			// with a brace in column one. Matched before the single-quote arm
+			// because that arm would read `"""` as an empty string followed by
+			// an opening quote, and would then take the first `"` of the
+			// *closing* delimiter as the end. That happens to come out even
+			// for content with no quote in it, and stops doing so for content
+			// with one.
+			end := strings.Index(src[i+3:], `"""`)
+			if end < 0 {
+				t.Fatalf("%s: unterminated multi-line string inside %s", file, what)
+			}
+			i += 3 + end + 2
 		case src[i] == '"':
 			// Escapes are honored so that a literal ending in \" does not read
 			// as still open, which would swallow the rest of the file.
@@ -364,7 +384,6 @@ func matchingBrace(t *testing.T, d dispatchSyntax, src string) string {
 			}
 		}
 	}
-	t.Fatalf("%s: %s's dispatch block is unterminated — the opening brace of %q has no match",
-		d.file, d.fn, d.open)
+	t.Fatalf("%s: %s is unterminated — its opening brace has no match", file, what)
 	return ""
 }

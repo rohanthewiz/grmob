@@ -243,10 +243,16 @@ func TestAFollowsFocusFlagOnACompositeIsSilent(t *testing.T) {
 // tabindex onto one element and an owner rule for when they disagree.
 //
 // Every ordered pair is checked rather than the one shape that prompted it (a
-// tablist in a toolbar), because the two member walks reach the same outcome
-// by different routes: a toolbar's walk stops at any composite because nothing
-// names its members, and a listbox's stops at a nested listbox because the two
-// would pool their options. The finding is about the outcome.
+// tablist in a toolbar), because two tab stops is what every pair has in
+// common and is the part of the finding that never varies.
+//
+// What varies is the reach, and it is checked here too. The pairs the outer
+// walk stops at lose the inner widget from the rotation; the pairs it descends
+// through gain members the author never offered the outer widget. Asserting
+// only the common half is how the wrong sentence went unnoticed for five of
+// the nine pairs — the report said "steps over" for all of them, and the
+// runtime pools an option out of a nested tablist (keynav_test.mjs runs that
+// tree). The rule is CompositeWalkStopsAt and it answers for both sides.
 func TestOneCompositeInsideAnotherIsReported(t *testing.T) {
 	for _, outer := range KeyboardComposites() {
 		for _, inner := range KeyboardComposites() {
@@ -259,6 +265,25 @@ func TestOneCompositeInsideAnotherIsReported(t *testing.T) {
 			})
 			requireKind(t, found, ConcernNestedComposite,
 				string(inner), string(outer), "two tab stops")
+
+			// The half that discriminates. "steps over" and "descends
+			// through" are opposite claims about where the outer widget's
+			// arrows can land, so each pair is checked for its own and
+			// against the other's — a message carrying both phrases, or the
+			// wrong one, is the bug this closes.
+			want, wrong := "descends through", "step over"
+			if CompositeWalkStopsAt(outer, inner) {
+				want, wrong = wrong, want
+			}
+			requireKind(t, found, ConcernNestedComposite, want)
+			for _, c := range found {
+				if c.Kind == ConcernNestedComposite && strings.Contains(c.Detail, wrong) {
+					t.Errorf("a %q inside a %q reports %q, and CompositeWalkStopsAt "+
+						"says the walk %s:\n%s", inner, outer, wrong,
+						map[bool]string{true: "stops", false: "descends"}[CompositeWalkStopsAt(outer, inner)],
+						c.Detail)
+				}
+			}
 		}
 	}
 }

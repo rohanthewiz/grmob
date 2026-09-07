@@ -269,14 +269,44 @@ func TestTheSwiftStackLayoutDelegatesToTheSolver(t *testing.T) {
 	}
 }
 
-// A whole Swift type declaration, from its opening line to the closing brace
-// in column one.
+// A whole Swift type declaration, from its opening line to the brace that
+// closes it.
 //
 // declSource is the wrong cut for a type: its boundary is the next `func`, and
 // a type's own methods are funcs — so it would return the header and the
-// stored properties and stop before the bodies, which on these two types is
-// everything worth reading. A type's body is the one thing whose end is easy
-// to find exactly, because every line inside it is indented.
+// stored properties and stop before the bodies, which on these types is
+// everything worth reading.
+//
+// # The cut this used to make, and what was wrong with it
+//
+// It looked for the first "\n}\n" — a closing brace in column one — on the
+// grounds that every line inside a type body is indented. That is true of
+// every Swift type in Renderer.swift and it is not true of Swift: indentation
+// carries no meaning in the language, so the cut was a claim about this file's
+// formatting standing in for a claim about its syntax. Three things would have
+// broken it, none of them exotic:
+//
+//	a body line starting in column one    a `#if os(iOS)` block, or a wrapped
+//	                                      expression an author did not indent
+//	a multi-line string literal           `"""` content is verbatim, so a line
+//	                                      of it may begin with `}`
+//	a nested type formatted flat          legal, and gofmt has no Swift twin
+//	                                      to prevent it
+//
+// The failure mode is the bad one: a short cut still returns a string, so
+// every `strings.Contains` below would go on running against a body that had
+// silently lost its second half, and the checks would pass by reading nothing.
+// That is the same hazard parseRuntimeTable's proof-of-braces guards against,
+// and the fix is the scanner this package already had for the other language's
+// dispatch blocks.
+//
+// matchingBrace counts braces while skipping comments and string literals, so
+// it answers the syntactic question directly and fails loudly when the block
+// is unterminated. What is left here is finding the declaration's opening
+// brace — the first one at or after the anchor, which for a type declaration
+// is the one that opens its body. A generic parameter list or a conformance
+// clause can sit in between (`struct GrMobFlexStack<Content: View>: View {`)
+// and neither contains a brace.
 func swiftTypeBody(t *testing.T, file, anchor string) string {
 	t.Helper()
 	src := readNative(t, file)
@@ -286,9 +316,97 @@ func swiftTypeBody(t *testing.T, file, anchor string) string {
 			"rather than deleting it", file, anchor)
 	}
 	rest := src[at:]
-	end := strings.Index(rest, "\n}\n")
-	if end < 0 {
-		t.Fatalf("%s: %s is unterminated", file, anchor)
+	open := strings.IndexByte(rest, '{')
+	if open < 0 {
+		t.Fatalf("%s: %s has no opening brace — the anchor is matching something "+
+			"that is not a declaration", file, anchor)
 	}
-	return rest[:end]
+	// The header is kept in the result, as it was: the checks below read the
+	// declaration line as well as the body.
+	return rest[:open] + matchingBrace(t, file, anchor, rest[open:])
+}
+
+// The three shapes the old column-one cut would have got wrong.
+//
+// swiftTypeBody used to end a declaration at the first line consisting of a
+// single `}`, which is a claim about how this repository indents rather than
+// about Swift. The scanner it uses now answers the syntactic question, and
+// these are the cases that tell the two apart — each one is a legal Swift type
+// whose body contains a brace in column one, and on each the old cut returned
+// a body missing everything after it while still returning a string, so every
+// `strings.Contains` run against it would have passed by reading nothing.
+//
+// Synthetic sources rather than the renderer, deliberately. The renderer is
+// formatted the way the old cut assumed, so it cannot exercise this — which is
+// precisely why the assumption survived. matchingBrace takes its source as an
+// argument, so the cases can be written out.
+func TestTheSwiftTypeCutIsSyntacticNotTypographic(t *testing.T) {
+	for _, c := range []struct{ name, src, want string }{
+		{
+			// A conditional-compilation directive, which Swift convention puts
+			// in column one, followed by an ordinary nested block.
+			name: "a directive in column one",
+			src: "{\n#if os(iOS)\n    var body: some View {\n        Text(\"a\")\n" +
+				"}\n#endif\n    let tail = 1\n}\n",
+			want: "let tail = 1",
+		},
+		{
+			// A multi-line string literal. Its content is verbatim, so a line
+			// of it may begin with a brace, and no amount of reformatting the
+			// file can move it.
+			name: "a brace inside a multi-line literal",
+			// The content carries an unpaired quote as well as the brace,
+			// which is what makes the case need a `"""` arm of its own. A
+			// scanner that knows only single-quoted strings pairs the three
+			// delimiter characters off two at a time and comes out even
+			// whenever the content holds an even number of quotes — so a
+			// fixture with none, or with a quoted word in it, passes either
+			// way and proves nothing. An odd one leaves the closing delimiter
+			// half-consumed and the brace exposed.
+			src:  "{\n    let s = \"\"\"\nan unpaired \" and then\n}\n\"\"\"\n    let tail = 2\n}\n",
+			want: "let tail = 2",
+		},
+		{
+			// A brace in a comment, which the scanner has always skipped and
+			// which is worth keeping in this table: it is the case that made
+			// the scanner exist for the other language's dispatch, and the
+			// same source now serves both cuts.
+			name: "a brace in a comment",
+			src:  "{\n    // one closes like this: }\n    let tail = 3\n}\n",
+			want: "let tail = 3",
+		},
+	} {
+		got := matchingBrace(t, "synthetic.swift", c.name, c.src)
+		if !strings.Contains(got, c.want) {
+			t.Errorf("%s: the cut stopped early — %q is inside the type and the "+
+				"body came back without it:\n%s", c.name, c.want, got)
+		}
+	}
+}
+
+// And the real declarations this package cuts come back balanced.
+//
+// The check above proves the scanner handles shapes the renderer does not
+// contain; this one proves the renderer's own declarations are cut where a
+// balanced count says they end, which is the property every `strings.Contains`
+// in this package silently depends on. A cut that stopped early would leave
+// more `{` than `}` in what it returned.
+func TestEverySwiftTypeCutComesBackBalanced(t *testing.T) {
+	for _, anchor := range []string{
+		"private struct GrMobStackLayout: Layout {",
+		"private struct GrMobSpacer",
+		"private struct GrMobColumn",
+		"struct GrMobFlexStack<Content: View>: View {",
+	} {
+		body := swiftTypeBody(t, swiftRenderer, anchor)
+		// Comments and literals are stripped the same way the scanner skips
+		// them, so the count is over code alone — the doc comments above these
+		// declarations are full of prose braces.
+		code := stringLiteral.ReplaceAllString(stripLineComments(body), `""`)
+		if open, close := strings.Count(code, "{"), strings.Count(code, "}"); open != close {
+			t.Errorf("%s: the cut of %q holds %d `{` and %d `}` — it ended somewhere "+
+				"other than the declaration's closing brace, and every check "+
+				"reading it is reading a fragment", swiftRenderer, anchor, open, close)
+		}
+	}
 }

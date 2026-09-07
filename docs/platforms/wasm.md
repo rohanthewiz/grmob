@@ -144,14 +144,21 @@ two. Block flow runs inline children together on one line (`Text` is a
 
 `htmlout/stack.go` is the authority. `stackAxisFor` answers both halves of the
 question at once — whether a type stacks, and along which axis — so `Row` maps
-to `row` and `Column`, `Card`, `Box`, `Scroll`, `SafeArea`, `List` and
-`TabView` to `column`. A type outside the table becomes a flex container only
+to `row` and `Column`, `Card`, `Box`, `Scroll`, `SafeArea`, `List`, `TabView`
+and `Spacer` to `column`. A type outside the table becomes a flex container only
 if its own `Style` asks, which is what keeps a `Text` carrying `Align` in its
 ordinary text role from being turned into a container by its own alignment.
 
-`Modal` and `Spacer` are absent on purpose: `Modal` carries a fixed-overlay
-chassis that sets `display` itself and toggles it through the `visible` prop,
-and `Spacer` is a sized void with no children.
+`Modal` is absent on purpose: it carries a fixed-overlay chassis that sets
+`display` itself and toggles it through the `visible` prop, which a default here
+would fight.
+
+`Spacer` used to be absent beside it, on the grounds that a sized void has no
+children to stack. `core.Spacer(n)` builds none, but a hand-assembled node can,
+and both natives now stack those rather than dropping them — so block flow here
+beside a native column would be the divergence this table exists to close. Its
+childlessness is what makes the row free (a childless flex box of fixed size
+lays out as a childless block box of the same size), not what keeps it out.
 
 `ZStack` is absent for a different reason: it is a container, and not a flex
 one. See the next section.
@@ -789,6 +796,18 @@ says whose a `<button>` is. So a `tablist` inside a `toolbar` keeps its own
 roving `tabindex`: that shape is two tab stops rather than one, which is not what
 ARIA describes and is the honest outcome of a rule that will not guess. Every
 control stays reachable, which the alternatives lose.
+
+**Two tab stops is the half that never varies; the reach is the half that does.**
+`core.CompositeWalkStopsAt` is the one statement of which, and it has three
+cases: a `toolbar` stops at anything (its members are named by no role), a
+container stops at a nested one with the same member role (two listboxes would
+pool their options), and everything else **descends**. A descending pair does not
+step over the inner widget — it can land *inside* it, on any element of the
+outer's member role buried in the inner's subtree. That is a different bug to go
+looking for, so `core.AuditTree` says which one an author has built rather than
+reporting the same sentence for all nine pairs, which is what it used to do.
+`wasm/verify/keynav_test.go` holds the runtime's two walks to core's rule and
+`keynav_test.mjs` runs a descending pair in a real DOM.
 
 ARIA describes one stop, by making the inner widget's *current* member the outer
 widget's member — which means two widgets writing `tabindex` onto one element
