@@ -37,6 +37,15 @@
 set -e
 cd "$(dirname "$0")"
 
+# The JVM harness gate, and its own tests first.
+#
+# The gate is a function of values (see gate.sh) precisely so its arms can be
+# reached without owning a machine that has the fault, and running the tests
+# here is what makes that true on every machine this pass runs on rather than on
+# one somebody remembered.
+. ./gate.sh
+sh ./gate_test.sh
+
 out="${TMPDIR:-/tmp}/grmob-android-verify"
 mkdir -p "$out"
 
@@ -46,14 +55,35 @@ go run . > "$out/Cases.kt"
 
 SRC="../app/src/main/java/com/grmob/runtime/GrMobSelectMenu.kt ../app/src/main/java/com/grmob/runtime/GrMobProgress.kt Harness.kt $out/Cases.kt"
 
-if command -v kotlinc >/dev/null; then
-  # shellcheck disable=SC2086
-  kotlinc $SRC -include-runtime -d "$out/harness.jar" -nowarn
-  java -jar "$out/harness.jar"
-  exit 0
-fi
+# The decision, once, before either path. See gate.sh: java is asked about
+# first because kotlinc is itself a JVM application, so the old order — kotlinc
+# first, java afterwards — turned a machine with a kotlinc and no JDK into a
+# failing pass rather than a skipped one.
+have() { command -v "$1" >/dev/null && echo yes || echo no; }
 
-# No kotlinc. Assemble the compiler out of the gradle cache the Android build
+# Whether the cache can supply a compiler is not known until the jars have been
+# looked for, which happens below; the gate is therefore consulted twice, and
+# the first call passes "no" for the jars deliberately. That is safe because the
+# jars only matter on the path this call cannot take — with a kotlinc on PATH
+# the verdict is "kotlinc" whatever they say, and without one the verdict here
+# would be a skip that the second call re-decides with the real answer.
+verdict="$(jvm_harness_verdict "$(have java)" "$(have kotlinc)" no)"
+case "${verdict%%:*}" in
+  skip)
+    if [ "$(have kotlinc)" = yes ] || [ "$(have java)" != yes ]; then
+      echo "SKIP: JVM harness (${verdict#*:})"
+      exit 0
+    fi
+    ;;
+  kotlinc)
+    # shellcheck disable=SC2086
+    kotlinc $SRC -include-runtime -d "$out/harness.jar" -nowarn
+    java -jar "$out/harness.jar"
+    exit 0
+    ;;
+esac
+
+# No kotlinc, and a java. Assemble the compiler out of the gradle cache the Android build
 # already populates. Six jars, because kotlin-compiler-embeddable is
 # deliberately *not* a fat jar: it expects the standard library, reflection,
 # the daemon client, coroutines and JetBrains' own annotations to be supplied
@@ -79,18 +109,18 @@ DAEMON=$(newest_jar org.jetbrains.kotlin/kotlin-daemon-embeddable)
 COROUTINES=$(newest_jar org.jetbrains.kotlinx/kotlinx-coroutines-core-jvm)
 ANNOTATIONS=$(newest_jar org.jetbrains/annotations)
 
-if ! command -v java >/dev/null; then
-  echo "SKIP: JVM harness (no java; install a JDK to check it)"
+# Now the jars are known, so the gate is asked again with the real answer. The
+# java arm has already been settled above and cannot change; what this decides
+# is the cache-versus-skip half.
+jars=yes
+for jar in "$KOTLINC_JAR" "$STDLIB" "$REFLECT" "$DAEMON" "$COROUTINES" "$ANNOTATIONS"; do
+  [ -z "$jar" ] && jars=no
+done
+verdict="$(jvm_harness_verdict "$(have java)" no "$jars")"
+if [ "${verdict%%:*}" = skip ]; then
+  echo "SKIP: JVM harness (${verdict#*:})"
   exit 0
 fi
-for jar in "$KOTLINC_JAR" "$STDLIB" "$REFLECT" "$DAEMON" "$COROUTINES" "$ANNOTATIONS"; do
-  if [ -z "$jar" ]; then
-    echo "SKIP: JVM harness (no kotlinc, and the gradle cache has no Kotlin"
-    echo "      compiler; run android/gradlew -p android compileDebugKotlin once"
-    echo "      to populate it, or install kotlinc)"
-    exit 0
-  fi
-done
 
 CP="$KOTLINC_JAR:$STDLIB:$REFLECT:$DAEMON:$COROUTINES:$ANNOTATIONS"
 

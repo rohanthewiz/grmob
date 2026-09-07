@@ -667,20 +667,42 @@ func KeyboardComposites() []Role {
 // alternative is the fact living only in the WASM runtime's COMPOSITE_MEMBERS,
 // where no Go reader can consult it.
 //
+// # Two different empty answers, and why the second return exists
+//
 // The empty answer is a real answer and not a "not found". A toolbar has a
 // keyboard; what it does not have is a role that says "this is one of my
 // members", which is exactly why the runtime has to supply a membership rule
-// of its own (TappableContainerRoles is the Go half of that rule). Callers
-// distinguish the two cases by asking KeyboardComposites first — a role that
-// is not in that list has no keyboard at all, and this returns "" for it too.
-func CompositeMemberRole(container Role) Role {
+// of its own (TappableContainerRoles is the Go half of that rule).
+//
+// A RoleHeading has neither — no keyboard, and so no members to name — and it
+// used to get the same "" back. The doc said callers separated the two by
+// asking KeyboardComposites first, which is a contract a doc comment cannot
+// enforce and which the one caller inside core got right by accident of never
+// being handed a non-composite. CompositeWalkStopsAt reads this answer and
+// returns "the walk stops here" for an empty one; handed a RoleHeading it
+// produced a confident statement about a walk that does not exist.
+//
+// So the two cases are separated where they are made:
+//
+//	CompositeMemberRole(RoleListBox)  -> RoleOption, true
+//	CompositeMemberRole(RoleToolbar)  -> "",         true   a keyboard, no
+//	                                                        member role
+//	CompositeMemberRole(RoleHeading)  -> "",         false  no keyboard at all
+//
+// `composite` is exactly membership of KeyboardComposites, and
+// role_control_test.go holds the two to each other — a container added to that
+// list and not here would report false for a role that has a keyboard, which is
+// the same class of quiet wrong answer one table over.
+func CompositeMemberRole(container Role) (member Role, composite bool) {
 	switch container {
 	case RoleListBox:
-		return RoleOption
+		return RoleOption, true
 	case RoleTabList:
-		return RoleTab
+		return RoleTab, true
+	case RoleToolbar:
+		return "", true
 	}
-	return ""
+	return "", false
 }
 
 // CompositeWalkStopsAt reports what an outer composite's member walk does when
@@ -727,11 +749,25 @@ func CompositeMemberRole(container Role) Role {
 // Neither is what ARIA describes for nested composites, and the framework's
 // refusal to guess is documented at ConcernNestedComposite.
 func CompositeWalkStopsAt(outer, inner Role) bool {
-	members := CompositeMemberRole(outer)
-	if members == "" {
+	members, composite := CompositeMemberRole(outer)
+	if !composite {
+		// No keyboard at all, so there is no walk for this to be about. "Stops"
+		// is the safe answer rather than the true one — the true one is that
+		// the question does not apply — and it is separated from the toolbar
+		// arm below deliberately: the two used to be one `members == ""` test,
+		// which meant a non-composite got a confident answer about a walk it
+		// does not have. AuditTree only ever asks about pairs it has already
+		// found to be composites; this is what stops the next caller relying
+		// on that.
 		return true
 	}
-	return CompositeMemberRole(inner) == members
+	if members == "" {
+		// A toolbar. It has a walk and names no member role, so nothing says
+		// whose a control inside a nested composite is, and the walk stops.
+		return true
+	}
+	innerMembers, _ := CompositeMemberRole(inner)
+	return innerMembers == members
 }
 
 // TappableContainerRoles returns the roles whose whole purpose is to make an

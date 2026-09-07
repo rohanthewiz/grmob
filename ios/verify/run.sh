@@ -7,6 +7,15 @@
 set -e
 cd "$(dirname "$0")"
 
+# The app-layer gate, and its own tests first.
+#
+# The gate is a function of values (see gate.sh) precisely so its arms can be
+# reached without owning a machine that has the fault, and running the tests
+# here is what makes that true on every machine this pass runs on rather than on
+# one somebody remembered.
+. ./gate.sh
+sh ./gate_test.sh
+
 out="${TMPDIR:-/tmp}/grmob-ios-verify"
 mkdir -p "$out"
 
@@ -59,7 +68,10 @@ echo "OK: view layer type-checks"
 # type-check like any others. See that file for what holds it to the Go
 # source it stands for.
 sdk="$(xcrun --sdk iphoneos --show-sdk-path 2>/dev/null || true)"
-if [ -n "$sdk" ] && [ -d "$sdk" ]; then
+sdk_there=no
+[ -n "$sdk" ] && [ -d "$sdk" ] && sdk_there=yes
+verdict="$(app_layer_verdict "$sdk" "$sdk_there")"
+if [ "${verdict%%:*}" = "run" ]; then
   # -emit-module only: nothing is linked, and the .swiftmodule is written to
   # the scratch directory rather than beside the sources so a stale one can
   # never shadow the real framework in an Xcode build.
@@ -73,5 +85,5 @@ if [ -n "$sdk" ] && [ -d "$sdk" ]; then
     ../GrMob/App/*.swift
   echo "OK: app layer type-checks against the iOS SDK"
 else
-  echo "SKIP: app layer (no iPhoneOS SDK; install Xcode to check it)"
+  echo "SKIP: app layer (${verdict#*:})"
 fi

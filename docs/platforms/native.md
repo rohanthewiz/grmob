@@ -1183,6 +1183,35 @@ than the answer: the census stops at three rows because Android delegates, and a
 renderer that stopped delegating would put the fourth answer back within reach
 and make it one of ours to be wrong about.
 
+### The gates, and why they are functions
+
+Every harness in this repository skips rather than fails when the machine is
+missing an optional toolchain — `ios/verify` without an iPhoneOS SDK,
+`android/verify` without a Kotlin compiler — and both of those were inline shell
+conditions whose arms could only be reached by *owning a machine with the
+fault*. On a Mac with Xcode the SKIP branch never ran; in a bare container the
+OK branch never did. A gate's failure mode is a swapped or misordered stance,
+and that is exactly the mutation that leaves a pass green.
+
+So each is a function of values now — `ios/verify/gate.sh`,
+`android/verify/gate.sh` — printing a verdict, with a `gate_test.sh` beside it
+that hands over every combination, run by `run.sh` before the pass itself. Same
+move `wasm/verify/startup.mjs` made for the browser pass and `localCopyGate`
+before it.
+
+**Extracting the Android one is what found the order was wrong.** The script
+asked for a `kotlinc` first and took that path, and only afterwards checked for
+a `java`. But `kotlinc` is a JVM application: on a machine with a Kotlin
+compiler and no JDK the pass did not skip, it ran `kotlinc`, which failed, and
+`set -e` turned an absent optional toolchain into a red pass. Java is decided
+first for both paths now, and the order is asserted directly rather than being a
+property of how the arms happen to be written.
+
+The iOS gate gained a distinction on the way past. `[ -n "$sdk" ] && [ -d "$sdk" ]`
+is two different machines with two different remedies — Xcode is not installed,
+or `xcrun` names an SDK that is not there, which is what a moved or half-removed
+Xcode leaves behind — and the combined test told them apart for nobody.
+
 ### The bridge stand-in
 
 Three files in `ios/GrMob/App` — the `@main` entry point among them — begin

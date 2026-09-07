@@ -544,6 +544,21 @@ const STICKY_ROWS = 6;
 // pass green while checking a pin the framework no longer writes.
 const STICKY_DECLARATIONS = { Position: "sticky", Top: "0", ZIndex: 1 };
 
+// core.ShrinkNone: how a core.Style spells a flex-shrink factor of ZERO.
+//
+// A mounted JSON tree carries the field as written, and a literal 0 there is
+// what the runtime reads as "nothing was set" — every other number in a
+// core.Style means unset by being zero, and flex-shrink is the one whose CSS
+// initial value is not. So `FlexShrink: 0` in a fixture is a declaration the
+// runtime discards, and the sticky fixture below carried exactly that for as
+// long as it has existed: its comment said the List must not be compressed and
+// the number saying so did nothing.
+//
+// Pinned rather than transcribed, by sticky_test.go, for the same reason the
+// three declarations above are: a fixture spelling a contract the framework has
+// changed is a pass that has stopped being about the framework.
+const SHRINK_NONE = -1;
+
 const STICKY = {
     Type: "Scroll",
     Style: {
@@ -552,13 +567,23 @@ const STICKY = {
     },
     Children: [{
         Type: "List",
-        // FlexShrink 0 because the Scroll is a flex column and its child would
-        // otherwise be compressed to fit rather than overflowing it — at which
-        // point there is nothing to scroll and the check would pass by having
-        // no subject. The control assertions below say so out loud.
+        // A shrink factor of zero because the Scroll is a flex column and its
+        // child would otherwise be compressed to fit rather than overflowing
+        // it — at which point there is nothing to scroll and the check would
+        // pass by having no subject. The control assertions below say so out
+        // loud.
+        //
+        // This said `FlexShrink: 0` for as long as it existed, and that number
+        // did nothing: the runtime read a literal zero as "unset" and wrote no
+        // declaration. It works now (see SHRINK_NONE above and core.ShrinkNone)
+        // and it is still not what produces the overflow — the List measures
+        // 400px in a 160px port with or without it, because a flex item's
+        // automatic minimum size is content-based and these rows carry text. It
+        // is kept as a statement of intent and the check no longer rests on it;
+        // the assertion in check 6 pins the arrangement directly.
         Style: {
             Padding: { Top: 0, Right: 0, Bottom: 0, Left: 0 }, Gap: 0,
-            FlexShrink: 0,
+            FlexShrink: SHRINK_NONE,
         },
         Children: [
             {
@@ -984,9 +1009,33 @@ const fixedSizeCase = (type, axis) => ({
     },
 });
 
+// And the same container with the child pinned, which is the whole subject of
+// core.ShrinkNone.
+//
+// The main-axis squeeze above is a flex item shrinking, so "do not shrink" is
+// exactly the declaration that should stop it — and until core.ShrinkNone there
+// was no way to write one: core.FlexShrink(0) stored a zero that Style.Merge,
+// htmlout and this runtime each read as "nothing was set". A break-test that
+// mutated a fixture's factor from 1 to 0 moved no pixel on any target, which is
+// how a declaration nobody can write announces itself.
+//
+// So this is the case that could not exist. The container is the same, the child
+// is the same, and the only difference is the factor — which makes the pair a
+// statement about the declaration rather than about the layout.
+const pinnedCase = (type, axis) => {
+    const c = fixedSizeCase(type, axis);
+    c.what = `a fixed-size core.${type} with the child pinned`;
+    c.pinned = true;
+    c.tree = JSON.parse(JSON.stringify(c.tree));
+    c.tree.Children[0].Style.FlexShrink = SHRINK_NONE;
+    return c;
+};
+
 const FIXED_SIZE_CASES = [
     fixedSizeCase("Box", "vertical"),
     fixedSizeCase("Row", "horizontal"),
+    pinnedCase("Box", "vertical"),
+    pinnedCase("Row", "horizontal"),
 ];
 
 // --------------------------------------------------------------------------
@@ -1377,6 +1426,42 @@ async function main() {
             problems.push(`the sticky fixture has ${scrollable.over}px of overflow in a ` +
                 `${scrollable.client}px port — there is nothing for the band to stay put ` +
                 `against, so the rest of this check proves nothing`);
+        }
+
+        // And the overflow is the one the fixture says it is.
+        //
+        // The control above passes on ANY overflow, and this fixture has two
+        // arrangements available to it. The recorded one is the List standing at
+        // its own content height inside a shorter Scroll. The other is the List
+        // compressed to the port with its rows spilling out of *it* — also a
+        // scroll, also green, and a different arrangement from the one the
+        // sticky band is a child of.
+        //
+        // # What this found out about the shrink factor beside it
+        //
+        // The List's `FlexShrink` said 0 for as long as this fixture existed and
+        // did nothing at all: a literal zero in a mounted tree is what every
+        // renderer reads as "nothing was set" (see core.ShrinkNone). It means
+        // what it says now — and the List is 400px tall in a 160px port either
+        // way, measured, so it never was the reason and it cannot be. A flex
+        // item's automatic minimum size is content-based, and these rows carry
+        // text, so the List could not be compressed below them whatever its
+        // shrink factor said.
+        //
+        // The declaration stays because it states the intent and is now true
+        // rather than inert — a fixture whose rows lost their text would need it
+        // — but the claim it used to carry, that it is what keeps this check
+        // from having no subject, was never true. This assertion is: it pins the
+        // arrangement itself rather than one of the mechanisms that could
+        // produce it.
+        const listHeight = await evaluate(
+            `document.querySelector('[data-node-path="root/0"]').getBoundingClientRect().height`);
+        if (listHeight <= scrollable.client) {
+            problems.push(`the sticky fixture's List is ${listHeight}px tall in a ` +
+                `${scrollable.client}px port, so it was compressed to fit and whatever ` +
+                `overflow the control above found is the rows spilling out of the List ` +
+                `rather than the List overflowing the Scroll. The band is pinned inside ` +
+                `an arrangement the fixture does not describe — see SHRINK_NONE`);
         }
 
         const rects = async () => evaluate(`(() => {
@@ -2195,6 +2280,32 @@ async function main() {
                 continue;
             }
 
+            // The pinned cases are the same measurement with the opposite
+            // expected answer on the main axis: a factor of 0 is an instruction
+            // not to shrink, so the child keeps its declared size and the
+            // container overflows on both axes.
+            if (c.pinned) {
+                if (!bandRenderSame(main.child, main.declared)) {
+                    problems.push(`${c.what}: its child declared ` +
+                        `${main.declared}px of ${main.name} with a shrink factor of ` +
+                        `zero and laid out at ${main.child.toFixed(2)}px. ` +
+                        `core.FlexShrink(0) is supposed to keep it at its own size and ` +
+                        `let the ${main.want}px container overflow — that instruction ` +
+                        `was unexpressible until core.ShrinkNone, because a zero in ` +
+                        `that field is what every guard in the framework reads as ` +
+                        `"nothing was set". A child that shrank anyway means this ` +
+                        `target has gone back to discarding it.`);
+                }
+                if (!bandRenderSame(cross.child, cross.declared)) {
+                    problems.push(`${c.what}: its child laid out at ` +
+                        `${cross.child.toFixed(2)}px of ${cross.name} rather than the ` +
+                        `${cross.declared}px it declared. Nothing shrinks across the ` +
+                        `line whatever the factor says, so the cross axis is supposed ` +
+                        `to be untouched by pinning the child`);
+                }
+                continue;
+            }
+
             // The main axis: squeezed. A flex item's shrink factor defaults to
             // 1 and this child is empty, so its automatic minimum size is 0 and
             // there is nothing to stop it being taken down to the container's
@@ -2246,8 +2357,10 @@ async function main() {
     ${BANDS.length} bands lay out identically in both inset arrangements at every
     offer — overflow included, which is where the SwiftUI solver does not —
     ${BAND_RENDERS.length} real bands span their own tap targets and are taller than
-    their badges with real glyphs in them, and ${FIXED_SIZE_CASES.length} fixed-size
-    containers squeeze their child along the main axis and let it spill across`);
+    their badges with real glyphs in them, and a fixed-size container squeezes its
+    child along the main axis and lets it spill across — unless the child is
+    pinned with core.FlexShrink(0), which until core.ShrinkNone was a declaration
+    nobody could write`);
 }
 
 await main();

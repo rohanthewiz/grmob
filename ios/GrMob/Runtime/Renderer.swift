@@ -526,6 +526,11 @@ private struct FlexChildren: View {
             let hugs = axis == .vertical && hugsContent(child.style)
             RenderNode(node: child, grow: fill(weight: weight, stretch: stretch && !hugs))
                 .layoutValue(key: GrMobFlexWeight.self, value: weight)
+                // The reading, not the raw field: core.FlexShrink(0) arrives as
+                // core.ShrinkNone and an absent declaration as 0, and
+                // shrinkFactor is the one place that knows which is which.
+                .layoutValue(key: GrMobFlexShrink.self,
+                             value: child.style?.shrinkFactor ?? 1)
                 .layoutValue(key: GrMobFlexHugs.self, value: hugs)
         }
     }
@@ -550,6 +555,16 @@ private struct FlexChildren: View {
 /// mis-align the moment SwiftUI flattened a Group or dropped an empty view.
 private struct GrMobFlexWeight: LayoutValueKey {
     static let defaultValue: CGFloat = 0
+}
+
+/// Per-child flex-shrink factor, carried the same way and for the same reason.
+///
+/// The default is 1, not 0: this is the one flex property whose CSS initial
+/// value is not zero, and a subview SwiftUI hands the layout without one of
+/// these — there should be none, but a default is a default — must shrink like
+/// every child always did rather than refuse to.
+private struct GrMobFlexShrink: LayoutValueKey {
+    static let defaultValue: CGFloat = 1
 }
 
 /// Whether a child of a stretched Column keeps its own width (see
@@ -628,7 +643,8 @@ private struct GrMobFlexLayout: Layout {
         let weights = subviews.map { $0[GrMobFlexWeight.self] }
         let offered = mainOf(proposal)
         let main = solver.containerMain(offered: offered, bases: bases, weights: weights)
-        let resolved = solver.resolve(main: main, bases: bases, weights: weights)
+        let resolved = solver.resolve(main: main, bases: bases, weights: weights,
+                                      shrinks: subviews.map { $0[GrMobFlexShrink.self] })
 
         // Cross size is re-measured at each child's *final* main size: a Text
         // that had to shrink wraps to more lines, and asking it before the
@@ -647,7 +663,8 @@ private struct GrMobFlexLayout: Layout {
         let containerCross = crossOf(bounds.size)
         let bases = baseMains(subviews, crossBound: containerCross)
         let weights = subviews.map { $0[GrMobFlexWeight.self] }
-        let resolved = solver.resolve(main: mainOf(bounds.size), bases: bases, weights: weights)
+        let resolved = solver.resolve(main: mainOf(bounds.size), bases: bases, weights: weights,
+                                      shrinks: subviews.map { $0[GrMobFlexShrink.self] })
         // The same read FlexChildren makes, and it has to be the same one:
         // an unset value stretches on the vertical axis (the CSS default the
         // DOM targets have always drawn) and packs on the horizontal one.

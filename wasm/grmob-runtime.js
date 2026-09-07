@@ -2736,7 +2736,15 @@ const GrMob = (() => {
         // Flex *item* properties, joining flexGrow above.
         out.alignSelf = style.AlignSelf || "";
         out.flexBasis = style.FlexBasis || "";
-        out.flexShrink = style.FlexShrink ? `${style.FlexShrink}` : "";
+        // core.ShrinkNone (-1) is how the Go side spells a shrink factor of
+        // ZERO, because every other number in a core.Style means "unset" by
+        // being zero and flex-shrink is the one whose CSS initial value is not
+        // zero. A truthiness test alone — which is what this was — turns "do
+        // not shrink" into no declaration at all, which is the opposite
+        // instruction. See core.ShrinkNone and Style.ShrinkFactor.
+        out.flexShrink = style.FlexShrink === -1
+            ? "0"
+            : style.FlexShrink ? `${style.FlexShrink}` : "";
 
         // The Modal overlay chassis, on exactly the same terms as the grid's
         // and for the same two reasons: it is the fixed look of a node *type*,

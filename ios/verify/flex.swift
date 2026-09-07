@@ -75,6 +75,38 @@ func checkFlexSolver() -> [String] {
           plain.resolve(main: 100, bases: [100, 100], weights: [1, 1]).mains,
           [50, 50], into: &problems)
 
+    // A shrink factor of 0 keeps a child at its base and moves the whole
+    // deficit onto its neighbours, which is CSS's scaled-base rule with the
+    // factors no longer all equal to 1.
+    //
+    // This arm was unreachable until core.ShrinkNone: `core.FlexShrink(0)`
+    // wrote a zero that Style.Merge, htmlout and the WASM runtime all read as
+    // "unset", so "do not shrink" was a declaration nobody could write and the
+    // solver had no reason to take a factor at all. 300 of content into 200,
+    // with the first child pinned: the second absorbs all 100.
+    check("a zero shrink factor keeps its base and the rest absorb the deficit",
+          plain.resolve(main: 200, bases: [100, 200], weights: [0, 0],
+                        shrinks: [0, 1]).mains,
+          [100, 100], into: &problems)
+
+    // And the default is still 1: passing the factors explicitly must produce
+    // exactly what passing nothing does, or every call site that does not care
+    // has quietly changed meaning.
+    check("all-ones shrinks are the same as none",
+          plain.resolve(main: 200, bases: [100, 200], weights: [0, 0],
+                        shrinks: [1, 1]).mains,
+          plain.resolve(main: 200, bases: [100, 200], weights: [0, 0]).mains,
+          into: &problems)
+
+    // Every child pinned: nothing shrinks and the container overflows, which
+    // is the instruction rather than a failure to follow one. The guard that
+    // makes this work is the same one that stops a division by zero when every
+    // base is zero, so it is worth having a case that reaches it deliberately.
+    check("every child pinned means nothing shrinks",
+          plain.resolve(main: 100, bases: [100, 200], weights: [0, 0],
+                        shrinks: [0, 0]).mains,
+          [100, 200], into: &problems)
+
     // No child may be assigned a negative size, whatever the overflow. The
     // spacing is what makes this reachable: shrinking content alone can only
     // reach zero (each child gives up its own share of a deficit that is at

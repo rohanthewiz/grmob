@@ -64,6 +64,28 @@ struct GrMobStyle: Equatable {
     var justifyContent: String = ""
     var alignItems: String = ""
     var flexGrow: CGFloat = 0
+
+    /// core.Style.FlexShrink, as written — which is NOT the shrink factor.
+    ///
+    /// Zero means "unset" here, as it does for every other number in a
+    /// core.Style, and flex-shrink is the one property whose CSS initial value
+    /// is not zero. So the Go side spells a factor of zero as core.ShrinkNone
+    /// (-1) and this field carries that verbatim; `shrinkFactor` is the
+    /// reading. Storing the raw number rather than the reading keeps this
+    /// struct a decode of the JSON and puts the one rule in one place.
+    var flexShrink: CGFloat = 0
+
+    /// The shrink factor this style asks for: 1 when nothing was set (the CSS
+    /// initial value), 0 for core.ShrinkNone, and the number otherwise.
+    ///
+    /// The mirror of core.Style.ShrinkFactor, and the only place in this
+    /// runtime that knows what -1 means.
+    var shrinkFactor: CGFloat {
+        if flexShrink == 0 { return 1 }
+        if flexShrink == -1 { return 0 }
+        return flexShrink
+    }
+
     /// core.FlexWrap: "wrap" or "nowrap" (empty when unset). Read by GrMobRow only.
     var flexWrap: String = ""
     /// core.FlexDirection: "row" or "column" (empty when unset). Read by
@@ -181,6 +203,7 @@ struct GrMobStyle: Equatable {
         s.justifyContent = str("JustifyContent")
         s.alignItems = str("AlignItems")
         s.flexGrow = num("FlexGrow")
+        s.flexShrink = num("FlexShrink")
         s.flexWrap = str("FlexWrap")
         s.flexDirection = str("FlexDirection")
         s.position = str("Position")

@@ -1565,8 +1565,13 @@ func styleValue(s *core.Style, nodeType string) string {
 	if s.FlexBasis != "" {
 		styles = append(styles, "flex-basis:"+s.FlexBasis)
 	}
-	if s.FlexShrink != 0 {
-		styles = append(styles, fmt.Sprintf("flex-shrink:%g", s.FlexShrink))
+	// Through the resolver, not off the field: core.FlexShrink(0) stores
+	// core.ShrinkNone because zero already means "unset" for every other
+	// number in a Style, and flex-shrink is the one whose CSS initial value is
+	// not zero. A guard spelled `!= 0` here — which is what this was — made
+	// "do not shrink" write nothing at all.
+	if shrink, declared := s.ShrinkFactor(); declared {
+		styles = append(styles, fmt.Sprintf("flex-shrink:%g", shrink))
 	}
 	return strings.Join(styles, "; ")
 }

@@ -245,7 +245,7 @@ func TestTheFourDerivableKindsAgreeWithTheSpecification(t *testing.T) {
 	members := map[core.Role]bool{}
 	for _, c := range core.KeyboardComposites() {
 		composites[c] = true
-		if m := core.CompositeMemberRole(c); m != "" {
+		if m, _ := core.CompositeMemberRole(c); m != "" {
 			members[m] = true
 		}
 	}
@@ -346,7 +346,7 @@ func TestNoTappableContainerIsSomethingElsesMember(t *testing.T) {
 	spec := loadSpec(t)
 	for _, r := range core.TappableContainerRoles() {
 		for _, c := range core.KeyboardComposites() {
-			if core.CompositeMemberRole(c) == r {
+			if m, _ := core.CompositeMemberRole(c); m == r {
 				t.Errorf("core.TappableContainerRoles() names %q, and it is the "+
 					"member role of %q — a toolbar walking onto one would be the "+
 					"second widget writing a tabindex on it", r, c)

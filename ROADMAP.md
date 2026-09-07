@@ -1206,6 +1206,50 @@
       must be classified — spelled, or refused with a reason — so a bridge
       function using an unspelled one fails by name instead of dropping out of
       the check
+- [x] **`core.FlexShrink(0)` means something now** — every optional number in a
+      `core.Style` means "unset" by being zero, and flex-shrink is the one whose
+      CSS initial value is not zero, so `Style.Merge`, `htmlout.Export` and the
+      WASM runtime each discarded "do not shrink" as nothing having been said.
+      The prop compiled, applied, serialised and did nothing, and it was found
+      by a break-test that could not break. `core.ShrinkNone` is the sentinel
+      (-1, which CSS forbids, so no author can produce one), `Style.ShrinkFactor`
+      is the single reading, and it is honoured by both DOM targets and by
+      `GrMobFlexSolver` — whose shrink arm is now CSS's scaled-base rule rather
+      than the one factor the Go side used to be able to express. Compose has no
+      proportional shrink to honour it with
+- [x] **The sticky fixture's shrink factor, and what it was really resting on**
+      — the same inert `FlexShrink: 0`, in a mounted tree. It works now, and the
+      List measures 400px in a 160px port either way: a flex item's automatic
+      minimum size is content-based and those rows carry text, so the
+      declaration never was the reason and could not be. The check asserts the
+      arrangement itself instead of one of the mechanisms that could produce it
+- [x] **Whether any real screen can produce a nested composite** — the five
+      descending pairs `core.CompositeWalkStopsAt` sorts had an example nobody
+      called realistic. Nothing in `components` declares a composite *container*
+      role: `RoleOption` and `RoleTab` are member roles, and every listbox,
+      tablist and toolbar is a container the caller built and roled themselves.
+      So the pair needs two deliberate declarations by one author — reachable,
+      and not something composition falls into — and a widget that started
+      declaring one now fails the test that says so
+- [x] **`swiftTypeBody`'s anchor is syntactic at both ends** — the cut was, and
+      finding the declaration was `strings.Index`. Every declaration in these
+      renderers carries a doc comment and several name their neighbours, so an
+      anchor could match a mention and hand every check a paragraph of English
+      to search. The anchor must now match at the start of a line, in code, and
+      two matches are refused rather than resolved silently
+- [x] **`core.CompositeMemberRole` no longer returns "" for two reasons** — a
+      toolbar has a keyboard and no member role ARIA names; a `RoleHeading` has
+      neither, and both got the same empty answer. The doc said callers separate
+      them by asking `KeyboardComposites` first, which a doc cannot enforce and
+      which the one caller inside core got right by never being handed a
+      non-composite. It is comma-ok now, and the flag is held to
+      `KeyboardComposites()` in both directions
+- [x] **The two shell gates are functions with their own tests** —
+      `ios/verify` skipping on a missing iPhoneOS SDK and `android/verify` on a
+      missing Kotlin compiler were inline conditions whose arms needed a machine
+      with the fault. Extracting the Android one found the order was wrong:
+      `kotlinc` is a JVM application, so a machine with a compiler and no JDK
+      ran it and failed under `set -e` instead of skipping
 
 ---
 

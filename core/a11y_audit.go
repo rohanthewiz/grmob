@@ -551,13 +551,18 @@ func (a *a11yAudit) checkNestedComposite(
 		// author told the strip is "stepped over" will not go looking for the
 		// option of theirs that the outer widget's arrows can now land on.
 		reach := "the outer widget's arrows step over the inner one whole"
+		// The second return is discarded here and only here: this branch runs
+		// for a pair AuditTree has already established are both composites, so
+		// the answer is known to be true. Spelling it out is what keeps the
+		// discard a statement rather than a habit.
+		outerMembers, _ := CompositeMemberRole(outer.role)
 		if !CompositeWalkStopsAt(outer.role, role) {
 			reach = fmt.Sprintf(
 				"the outer widget's walk descends through this one, so any %q of "+
 					"its own buried inside the %q is pooled into the outer widget's "+
 					"rotation and its arrows land inside a widget they are not "+
 					"steering",
-				CompositeMemberRole(outer.role), role)
+				outerMembers, role)
 		}
 		upsertConcern(ConcernNestedComposite, fmt.Sprintf(
 			"%s is a %q inside the %q at %s: both keep their own roving tabindex, "+

@@ -7,8 +7,20 @@ func FlexGrow(value float64) StyleProp {
 		s.FlexGrow = value
 	})
 }
+
+// FlexShrink sets a flex item's shrink factor. Zero means "do not shrink", and
+// it is stored as core.ShrinkNone — see that constant for why this one number
+// cannot use the zero-means-unset convention every other number in Style does.
+//
+// The mapping lives here rather than in Style.Merge because this is the only
+// door into the field: a caller writes core.FlexShrink(0) and a renderer reads
+// Style.ShrinkFactor(), and nothing in between has to know about the sentinel.
 func FlexShrink(value float64) StyleProp {
 	return styleFunc(func(s *Style) {
+		if value == 0 {
+			s.FlexShrink = ShrinkNone
+			return
+		}
 		s.FlexShrink = value
 	})
 }

@@ -310,11 +310,7 @@ func TestTheSwiftStackLayoutDelegatesToTheSolver(t *testing.T) {
 func swiftTypeBody(t *testing.T, file, anchor string) string {
 	t.Helper()
 	src := readNative(t, file)
-	at := strings.Index(src, anchor)
-	if at < 0 {
-		t.Fatalf("%s: no %s — if it was renamed or restructured, update this test "+
-			"rather than deleting it", file, anchor)
-	}
+	at := swiftDeclIndex(t, file, src, anchor)
 	rest := src[at:]
 	open := strings.IndexByte(rest, '{')
 	if open < 0 {
@@ -324,6 +320,255 @@ func swiftTypeBody(t *testing.T, file, anchor string) string {
 	// The header is kept in the result, as it was: the checks below read the
 	// declaration line as well as the body.
 	return rest[:open] + matchingBrace(t, file, anchor, rest[open:])
+}
+
+// swiftDeclIndex finds where a declaration the anchor names actually begins.
+//
+// # Why finding it was the half still done by substring
+//
+// The *cut* is syntactic — matchingBrace counts braces while skipping comments
+// and literals, so it ends a declaration where Swift ends it rather than where
+// this repository happens to indent. Finding the declaration's start was still
+// `strings.Index`, which is the same class of assumption one step earlier: an
+// anchor is a plain substring, and a substring matches a mention of the type as
+// readily as the type.
+//
+// That is not exotic in this codebase. Every declaration here carries a doc
+// comment, several of those comments name neighbouring types, and a comment
+// like
+//
+//	/// A sibling of `private struct GrMobSpacer`, which ...
+//	/// ...
+//	private struct GrMobSpacer: View {
+//
+// makes the cut start inside the comment. The first `{` after that point is
+// whatever the comment's prose contains or, failing that, the real one — and
+// the returned "header" then holds a paragraph of English. Every
+// `strings.Contains` below would still run, against a body that is not the
+// declaration's, which is the same silent-fragment hazard the scanner replaced
+// and the reason it is worth closing at both ends.
+//
+// # The rule
+//
+// A declaration begins at the start of a line, in code. So the anchor has to
+// match at a position whose line holds nothing but whitespace before it, and
+// which is not inside a comment or a string literal. Both halves are needed:
+// the line-start test alone still admits a `///` comment line that begins with
+// the anchor text, and the code test alone still admits a match halfway along
+// a line of code.
+//
+// # Why an ambiguous anchor is a failure
+//
+// Two declaration-position matches means the cut is choosing one silently. That
+// cannot happen for a Swift type in one file (the language forbids the
+// redeclaration) but it can for an anchor that is a prefix — "private struct
+// GrMobColumn" matches both `GrMobColumn` and a `GrMobColumnHeader` — and the
+// caller who wrote the shorter string is the one who would never find out.
+func swiftDeclIndex(t *testing.T, file, src, anchor string) int {
+	t.Helper()
+
+	found := swiftDeclIndices(src, anchor)
+	switch len(found) {
+	case 0:
+		t.Fatalf("%s: no declaration begins with %q — if it was renamed or "+
+			"restructured, update this test rather than deleting it.\n\n"+
+			"A mention of it in a doc comment does not count: this looks for the "+
+			"anchor at the start of a line, in code, because that is where a Swift "+
+			"declaration begins and a substring match on a comment would hand every "+
+			"check below a paragraph of English to search.", file, anchor)
+	case 1:
+		return found[0]
+	}
+	t.Fatalf("%s: %d declarations begin with %q, and the cut would take the first "+
+		"silently. Anchors here are prefixes, so this is what a name that is the "+
+		"beginning of another name looks like — lengthen it until it names one.",
+		file, len(found), anchor)
+	return 0
+}
+
+// swiftDeclIndices is the decision, as a function of two strings: every offset
+// in src where a declaration begins with the anchor.
+//
+// Split from the t.Fatalf above so the answers can be handed over directly.
+// Both of the interesting ones — a mention that must not count, and two matches
+// that must not be resolved silently — are otherwise reachable only by owning a
+// source file with the fault in it, and the renderers this package reads are
+// written the way the old substring assumed. That is the same argument
+// startupVerdict and localCopyGate were extracted on.
+func swiftDeclIndices(src, anchor string) []int {
+	code := maskSwiftNonCode(src)
+	var found []int
+	for at := 0; ; {
+		i := strings.Index(code[at:], anchor)
+		if i < 0 {
+			return found
+		}
+		i += at
+		at = i + 1
+		// In code: the mask blanks comment and literal characters, so an anchor
+		// that survived it is code. (A blanked run cannot match a non-blank
+		// anchor, and every anchor here has non-space characters.)
+		line := strings.LastIndexByte(code[:i], '\n') + 1
+		if strings.TrimSpace(code[line:i]) != "" {
+			continue // something else on the line first: not a declaration
+		}
+		found = append(found, i)
+	}
+}
+
+// maskSwiftNonCode returns src with every comment and string-literal character
+// replaced by a space, and the same length.
+//
+// Same length is the whole point: offsets in the mask are offsets in the
+// source, so a match found here can be used there. It is matchingBrace's own
+// scanner with the brace counting removed — the two share the question "what
+// in this file is code" and would be a bug apiece if they answered it
+// differently, which is why the arms are in the same order and spelled the same
+// way.
+func maskSwiftNonCode(src string) string {
+	out := []byte(src)
+	blank := func(from, to int) {
+		for i := from; i < to && i < len(out); i++ {
+			if out[i] != '\n' {
+				out[i] = ' '
+			}
+		}
+	}
+	for i := 0; i < len(src); i++ {
+		switch {
+		case strings.HasPrefix(src[i:], "//"):
+			nl := strings.IndexByte(src[i:], '\n')
+			if nl < 0 {
+				blank(i, len(src))
+				return string(out)
+			}
+			blank(i, i+nl)
+			i += nl
+		case strings.HasPrefix(src[i:], "/*"):
+			end := strings.Index(src[i+2:], "*/")
+			if end < 0 {
+				blank(i, len(src))
+				return string(out)
+			}
+			blank(i, i+2+end+2)
+			i += 2 + end + 1
+		case strings.HasPrefix(src[i:], `"""`):
+			end := strings.Index(src[i+3:], `"""`)
+			if end < 0 {
+				blank(i, len(src))
+				return string(out)
+			}
+			blank(i, i+3+end+3)
+			i += 3 + end + 2
+		case src[i] == '"':
+			j := i + 1
+			for j < len(src) && src[j] != '"' {
+				if src[j] == '\\' {
+					j++
+				}
+				j++
+			}
+			blank(i, j+1)
+			i = j
+		}
+	}
+	return string(out)
+}
+
+// A doc comment that names a type does not start it.
+//
+// The half of swiftTypeBody that was still typographic, and the one that
+// survives a scanner: the cut is syntactic, and finding the declaration to cut
+// was `strings.Index` — a plain substring, which matches a mention of the type
+// as readily as the type. Every declaration in these renderers carries a doc
+// comment and several of them name their neighbours, so this is not an exotic
+// shape; it is the shape the file is already full of.
+//
+// The failure is the same silent-fragment one the scanner was written to end. A
+// cut starting inside a comment still returns a string, the first brace after it
+// is whatever the prose happens to contain, and every `strings.Contains` below
+// goes on running against a paragraph of English.
+//
+// Synthetic sources, for the reason the table below gives: the renderers are
+// written the way the old code assumed, which is exactly why the assumption
+// survived.
+func TestASwiftAnchorMustStartADeclarationAndNotMentionOne(t *testing.T) {
+	const decl = "private struct GrMobSpacer"
+
+	for _, c := range []struct{ name, src, want string }{
+		{
+			// The case that motivated it: a doc comment naming the type it
+			// documents, above the type.
+			name: "a doc comment naming the type above it",
+			src: "/// A sibling of private struct GrMobSpacer, which does the\n" +
+				"/// same job one axis over.\n" +
+				"private struct GrMobSpacer: View {\n    let tail = 1\n}\n",
+			want: "let tail = 1",
+		},
+		{
+			// A block comment whose continuation line begins in column one,
+			// which is the case the line-start test alone cannot tell from a
+			// declaration — and the reason the mask exists rather than just a
+			// "starts a line" rule.
+			name: "a block comment whose line begins with the type",
+			src: "/*\nprivate struct GrMobSpacer is documented here\n*/\n" +
+				"private struct GrMobSpacer: View {\n    let tail = 2\n}\n",
+			want: "let tail = 2",
+		},
+		{
+			// The same shape in a multi-line literal, whose content is verbatim
+			// and so may begin a line with anything at all. The other half of
+			// what only the mask can reject.
+			name: "a multi-line literal whose line begins with the type",
+			src: "let note = \"\"\"\nprivate struct GrMobSpacer\n\"\"\"\n" +
+				"private struct GrMobSpacer: View {\n    let tail = 3\n}\n",
+			want: "let tail = 3",
+		},
+		{
+			// And a mention mid-line in code, which is what only the line-start
+			// test rejects: the mask leaves it alone, because it IS code.
+			name: "a mention part-way along a line of code",
+			src: "let kind = describing(private struct GrMobSpacer.self)\n" +
+				"private struct GrMobSpacer: View {\n    let tail = 4\n}\n",
+			want: "let tail = 4",
+		},
+	} {
+		at := swiftDeclIndex(t, "synthetic.swift", c.src, decl)
+		rest := c.src[at:]
+		open := strings.IndexByte(rest, '{')
+		if open < 0 {
+			t.Errorf("%s: the anchor landed somewhere with no brace after it", c.name)
+			continue
+		}
+		body := matchingBrace(t, "synthetic.swift", c.name, rest[open:])
+		if !strings.Contains(body, c.want) {
+			t.Errorf("%s: the cut did not reach the declaration — %q is its whole "+
+				"body and what came back was:\n%s", c.name, c.want, body)
+		}
+	}
+}
+
+// An anchor that names two declarations is a failure, not a coin toss.
+//
+// Anchors here are prefixes, so "private struct GrMobColumn" would match a
+// `GrMobColumnHeader` beside it. The cut taking the first silently is the shape
+// where the person who wrote the short anchor never finds out, so swiftDeclIndex
+// refuses it. The count is what this asserts: the refusal itself is a t.Fatalf,
+// which is why the decision is a separate function taking two strings.
+func TestAnAmbiguousSwiftAnchorIsRefused(t *testing.T) {
+	src := "private struct GrMobColumn: View {\n    let a = 1\n}\n" +
+		"private struct GrMobColumnHeader: View {\n    let b = 2\n}\n"
+
+	if got := swiftDeclIndices(src, "private struct GrMobColumn"); len(got) != 2 {
+		t.Errorf("the prefix anchor found %d declarations, want 2 — it names both "+
+			"GrMobColumn and GrMobColumnHeader, and swiftDeclIndex refuses that "+
+			"rather than taking whichever comes first in the file", len(got))
+	}
+	// And the longer anchor names one, which is what the failure tells the
+	// caller to write.
+	if got := swiftDeclIndices(src, "private struct GrMobColumnHeader"); len(got) != 1 {
+		t.Errorf("the unambiguous anchor found %d declarations, want 1", len(got))
+	}
 }
 
 // The three shapes the old column-one cut would have got wrong.

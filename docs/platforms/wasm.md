@@ -1396,6 +1396,23 @@ axis is which follows from the container, so the check mounts a `core.Box` and a
 `core.Row` — with one container, "the main axis is the one that shrinks" cannot
 be told apart from "height is the one that shrinks".
 
+**And the one instruction that could not be given.** The main-axis squeeze is a
+flex item shrinking, so "do not shrink" is exactly the declaration that should
+stop it — and there was no way to write one. `core.FlexShrink(0)` stored a zero,
+and every optional number in a `core.Style` means *unset* by being zero:
+`Style.Merge`, `htmlout.Export` and the runtime's style mapping each guarded on
+`FlexShrink != 0`, which is correct for every other number in the struct and
+wrong for the one whose CSS initial value is 1. The prop compiled, applied,
+serialised and did nothing.
+
+It was found by a break-test that could not break — mutating a fixture's factor
+from 1 to 0 moved no pixel on any target. `core.FlexShrink(0)` now stores
+`core.ShrinkNone` (-1, a value CSS forbids, so no author can produce one by
+accident and no renderer can be handed one legitimately), `Style.ShrinkFactor()`
+is the one place that reading lives, and the check above mounts the same two
+containers again with the child pinned: it keeps its declared size and the
+container overflows on both axes.
+
 `htmlout` emits the same three declarations for the same tree and inherits the
 answer rather than being measured again; that bridge is
 `TestAFixedSizeBoxExportsTheDeclarationsTheBrowserMeasured`, and it also refuses

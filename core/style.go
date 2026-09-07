@@ -86,8 +86,15 @@ type Style struct {
 	FlexWrap       string
 	AlignSelf      AlignItems
 	FlexBasis      string
-	FlexShrink     float64
-	FlexGrow       float64
+
+	// FlexShrink is a flex item's shrink factor, and it is the one number in
+	// this struct whose zero is not its own value. Read it through
+	// ShrinkFactor rather than off the field; write it through
+	// core.FlexShrink, which is what puts the sentinel here.
+	//
+	// See ShrinkNone for the whole of why.
+	FlexShrink float64
+	FlexGrow   float64
 
 	// StackAlign is where this node sits inside the core.ZStack it is a layer
 	// of: the per-layer opt-out from the stack's centre-on-both-axes contract.
@@ -761,6 +768,10 @@ func (s Style) applyTo(target *Style) {
 	if s.FlexGrow != 0 {
 		target.FlexGrow = s.FlexGrow
 	}
+	// Unchanged by the sentinel, and worth saying so: ShrinkNone is a non-zero
+	// value, so "do not shrink" now overrides a base the way every other
+	// declaration does. Before it, core.FlexShrink(0) wrote a zero this line
+	// read as "nothing was set" — which is why the prop did nothing at all.
 	if s.FlexShrink != 0 {
 		target.FlexShrink = s.FlexShrink
 	}
@@ -1005,3 +1016,79 @@ const (
 //		s.Responsive[breakpoint] = style
 //	})
 //}
+
+// ShrinkNone is what core.FlexShrink(0) stores, and what every renderer must
+// read as a shrink factor of zero.
+//
+// # Why a sentinel
+//
+// Every optional number in Style means "unset" by being zero: Style.Merge
+// copies a field only when it is non-zero, so a component default's Gap
+// survives a caller who did not mention one. That trade is right for every
+// other number here, because their CSS initial value IS zero — an unset Gap and
+// a Gap of 0 lay out identically, so nothing is lost by conflating them.
+//
+// flex-shrink is the exception. Its CSS initial value is 1, so zero and unset
+// are two different layouts:
+//
+//	unset       the item shrinks under pressure, in proportion to its base
+//	zero        the item keeps its size and the container overflows
+//
+// So core.FlexShrink(0) wrote a zero that Style.Merge read as "nothing was
+// set", htmlout.Export read as "write no declaration", and the WASM runtime
+// read as the empty string — three independent guards, all spelled
+// `FlexShrink != 0`, all correct for every other field and all wrong for this
+// one. "Do not shrink this item" was unexpressible, and it failed silently:
+// the prop compiled, applied, serialised and did nothing.
+//
+// It was found by a break-test that could not break. Mutating a fixture's
+// FlexShrink from 1 to 0 changed no pixel on any target, which is how a
+// declaration nobody can write announces itself.
+//
+// # Why -1
+//
+// CSS forbids a negative flex-shrink — the property's grammar is
+// <number [0,∞]> — so no renderer can ever be handed one legitimately, and no
+// author can write one by accident: core.FlexShrink is the only way into the
+// field and it maps 0 here. That makes the sentinel unambiguous in the one
+// place ambiguity would cost the most, which is the JSON that crosses into
+// three other runtimes: core.Style has no field tags, so every renderer sees
+// the number as written and needs exactly one rule to read it.
+//
+// # What each target does with it
+//
+//	htmlout        writes flex-shrink:0
+//	WASM runtime   writes flexShrink "0"
+//	SwiftUI        GrMobFlexSolver takes a per-item shrink factor and gives a
+//	               zero one none of the deficit
+//	Compose        nothing. A Compose Row has no proportional shrink at all —
+//	               an unweighted child is measured with what is left of the
+//	               main axis and a weighted one gets a share of it — so there
+//	               is no factor for this to be. See docs/platforms/native.md.
+const ShrinkNone = -1
+
+// ShrinkFactor returns the effective flex-shrink and whether one was declared.
+//
+// The two returns are the two questions a renderer has, and they are separate
+// because a renderer that writes nothing for an undeclared factor is right: the
+// CSS initial value is 1, so an omitted declaration and an explicit 1 lay out
+// the same, and omitting keeps the output the size it was.
+//
+//	declared == false   nothing was set. Write no declaration.
+//	declared == true    write the factor, which may be 0.
+//
+// It exists so the ShrinkNone rule is stated once rather than in each renderer.
+// The two DOM renderers spell their guards independently — that is deliberate
+// elsewhere in this framework — but the mapping from a stored number to a
+// meaning is not a spelling, it is the contract, and three copies of it is how
+// this field got into trouble in the first place.
+func (s Style) ShrinkFactor() (factor float64, declared bool) {
+	switch s.FlexShrink {
+	case 0:
+		return 0, false
+	case ShrinkNone:
+		return 0, true
+	default:
+		return s.FlexShrink, true
+	}
+}

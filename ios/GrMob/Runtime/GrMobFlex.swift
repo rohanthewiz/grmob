@@ -11,16 +11,23 @@ import CoreGraphics
 /// on a plain macOS host.
 ///
 /// The model is CSS Flexbox with `flex-basis: auto` (a child's base size is
-/// its content size) and the default `flex-shrink: 1`:
+/// its content size):
 ///
 /// ```
 /// base_i    = subview ideal size along the axis
 /// natural   = sum(base_i) + spacing * (n - 1)
 /// free      = container - natural
-/// free > 0  -> size_i = base_i + free * weight_i / sum(weight)   [grow]
-/// free < 0  -> size_i = base_i + free * base_i   / sum(base)     [shrink]
+/// free > 0  -> size_i = base_i + free * weight_i / sum(weight)          [grow]
+/// free < 0  -> size_i = base_i + free * s_i*base_i / sum(s_j*base_j)  [shrink]
 /// leftover  -> distributed by justify-content as offsets, not sizes
 /// ```
+///
+/// `s_i` is the child's flex-shrink factor, and it used to be 1 for every child
+/// because 1 was the only value the Go side could express: `core.FlexShrink(0)`
+/// wrote a zero that every renderer read as "unset". That is fixed (see
+/// core.ShrinkNone), so the shrink arm is now the scaled-base rule CSS actually
+/// states, and a child with a factor of 0 keeps its base size while the others
+/// absorb the whole deficit.
 struct GrMobFlexSolver {
     let spacing: CGFloat
     let justify: String
@@ -87,7 +94,15 @@ struct GrMobFlexSolver {
         ["center", "flex-end", "space-between", "space-around", "space-evenly"].contains(justify)
     }
 
-    func resolve(main: CGFloat, bases: [CGFloat], weights: [CGFloat]) -> Resolved {
+    /// `shrinks` is one flex-shrink factor per child; nil means the CSS
+    /// default of 1 for every one of them.
+    ///
+    /// Defaulted rather than required because most callers have no per-child
+    /// factor to give and "all 1" is what every one of them meant before the
+    /// parameter existed — a required argument would have turned a behaviour
+    /// that did not change into a diff at every call site.
+    func resolve(main: CGFloat, bases: [CGFloat], weights: [CGFloat],
+                 shrinks: [CGFloat]? = nil) -> Resolved {
         let n = bases.count
         guard n > 0 else { return Resolved(mains: [], leading: 0, gap: 0) }
 
@@ -102,14 +117,23 @@ struct GrMobFlexSolver {
             return Resolved(mains: mains, leading: 0, gap: 0)
         }
         if free < 0 {
-            // Overflow: shrink in proportion to base size, which is what
-            // `flex-shrink: 1` (the CSS default, and the only value the Go
-            // DSL's renderers honor) computes. A run of zero-width bases
-            // cannot shrink, so the guard also avoids dividing by zero.
-            let totalBase = bases.reduce(0, +)
-            if totalBase > 0 {
+            // Overflow: shrink in proportion to the child's base size SCALED BY
+            // its shrink factor, which is what CSS states. With every factor at
+            // 1 — the default, and what a nil `shrinks` means — the factors
+            // cancel and this is the plain proportional-to-base rule it used to
+            // be, which is why no existing case moves.
+            //
+            // A run whose scaled bases are all zero cannot shrink: either every
+            // child has a zero factor (they all keep their size and the
+            // container overflows, which is the instruction) or every base is
+            // zero (there is nothing to take). The guard covers both and also
+            // avoids dividing by zero.
+            let factors = shrinks ?? Array(repeating: 1, count: n)
+            let scaled = (0..<n).map { bases[$0] * (factors.count > $0 ? factors[$0] : 1) }
+            let totalScaled = scaled.reduce(0, +)
+            if totalScaled > 0 {
                 for i in 0..<n {
-                    mains[i] = max(0, bases[i] + free * bases[i] / totalBase)
+                    mains[i] = max(0, bases[i] + free * scaled[i] / totalScaled)
                 }
             }
             return Resolved(mains: mains, leading: 0, gap: 0)

@@ -400,18 +400,34 @@ func TestTheRuntimeWalksStopWhereCoreSaysTheyDo(t *testing.T) {
 	// compositeRoles is to be a second statement of COMPOSITE_MEMBERS, and
 	// core is now a third that has to agree with it.
 	for _, pair := range compositeRoles {
-		if got := core.CompositeMemberRole(pair.container); got != pair.member {
+		got, composite := core.CompositeMemberRole(pair.container)
+		if got != pair.member {
 			t.Errorf("core.CompositeMemberRole(%q) = %q, want %q — the audit would "+
 				"name the wrong member role in a nested-composite finding, and "+
 				"CompositeWalkStopsAt would put the pair in the wrong case",
 				pair.container, got, pair.member)
 		}
+		if !composite {
+			t.Errorf("core.CompositeMemberRole(%q) reports it is not a keyboard "+
+				"composite, and the runtime gives it a roving tabindex", pair.container)
+		}
 	}
 	for _, r := range focusableComposites {
-		if got := core.CompositeMemberRole(r); got != "" {
+		got, composite := core.CompositeMemberRole(r)
+		if got != "" {
 			t.Errorf("core.CompositeMemberRole(%q) = %q — this is a composite whose "+
 				"members ARIA does not name, and a member role here would make "+
 				"CompositeWalkStopsAt stop descending for the wrong reason", r, got)
+		}
+		// The second return is the whole difference between this empty answer
+		// and the one a RoleHeading gets. A false here would put a container
+		// that HAS a keyboard in the "no walk at all" arm of
+		// CompositeWalkStopsAt, which answers a question about a walk that
+		// exists with the reasoning for one that does not.
+		if !composite {
+			t.Errorf("core.CompositeMemberRole(%q) reports it is not a keyboard "+
+				"composite. It names no member role, which is a different fact — "+
+				"and the two used to be the same empty answer", r)
 		}
 	}
 
