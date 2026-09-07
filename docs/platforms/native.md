@@ -1226,13 +1226,52 @@ drawn spilling out of a box its parent still believes it fits inside.
                          └──── reports 200 ────┘      └ offered 0 ┘
 ```
 
-What still diverges is the siblings. CSS shares the deficit among the items that
-*can* shrink, in proportion to their bases; a Compose `Row` gave the earlier
-children what they asked for and offers the later ones what is left, which after
-an overflow is nothing. That is the no-proportional-shrink divergence, unchanged
-— but the pinned child's own size, which is what the declaration is *about*, now
-agrees on all four targets. Order does not matter to it either: `remaining` is
-ignored whether the pin is the first child or the last.
+What still diverges is the siblings, and that sentence used to be the end of the
+matter. `internal/pinfixture` turns it into numbers: one overflowing `Row`, three
+children, the pin moved through all three positions, plus the control with no pin
+at all. `GrMobFlexSolver` solves each one (`ios/verify/pin.swift`), and the
+Compose column is a **transcription** of `foundation-layout`'s zero-weight
+measure loop — not androidx's code, and labelled as such wherever it appears.
+
+| | CSS | Compose |
+|---|---|---|
+| no pin | 24, 80, 16 | 60, 60, 0 |
+| pin first `[P,A,B]` | **200**, 0, 0 | **200**, 0, 0 |
+| pin middle `[A,P,B]` | 0, **200**, 0 | 60, **200**, 0 |
+| pin last `[A,B,P]` | 0, 0, **200** | 60, 40, **200** |
+
+Three things are readable there and none of them was before. The pinned child is
+200 in every row and on both targets, so the declaration means one thing
+everywhere — including on the target that had no way to express it — and order
+does not matter to it: `remaining` is ignored whether the pin is first or last.
+The control row is what makes that a statement about `core.FlexShrink(0)` rather
+than about a `Row` with a big child in it: same container, same children, one
+factor apart, and that child is 80 instead of 200. And the divergence is the
+*siblings*: CSS shares the deficit among the items that can shrink, in proportion
+to their bases, so a flex line's sizes do not depend on the order; a Compose `Row`
+gives each child what the ones before it left, so its answer does.
+
+The pin-first row is the one where the two agree, and it is asserted as an
+agreement for the reason the band census asserts an unbadged band — an "it
+diverges" with no case that does not is a claim about whatever happened. The
+agreement is a coincidence of two rules rather than a shared one: CSS clamps the
+shrinkable children to zero because the deficit exceeds their bases, and Compose
+offers them nothing because the pinned child had already taken more than the
+`Row` had.
+
+One consequence falls out of the same two lines and no census row had stated it.
+`mainAxisLayoutSize` is `max(content, mainAxisMin)` and is never coerced *down*
+to `mainAxisMax`, and `Size.kt`'s own node reports `layout(placeable.width, …)`
+unclamped — so a fixed-width `Row` whose children overflow is measured wider than
+it was told to be (200, 260, 300 above) rather than clipping. That is what makes
+the pin an overflow on this target rather than a clip, which is what
+`overflow: visible` does on the other three. The spacing collapses with it:
+`spaceAfterLastNoWeight` is `min(spacing, what is left)`, so a `Row` that has
+spent its main axis inserts no gap after the child that spent it.
+
+What none of this is, is a measurement of Compose. The transcription's weakest
+link is that somebody read androidx's loop and wrote it out; every other link is
+checked, and `internal/pinfixture`'s header names them.
 
 Only the zero is read. `GrMobStyle.kt`'s `shrinkFactor` maps the sentinel the
 way every other runtime does (`wasm/verify`'s `shrink_test.go` pins all four
@@ -1253,7 +1292,14 @@ browser is a browser. Compose's `Row` is neither — a `FlexGrow` child is hande
 `android/verify` runs Kotlin on a plain JVM, which is what made it look like the
 place to ask, and the thing it can run is Kotlin that *imports nothing*;
 a Compose measure policy measures `Measurable`s into `Placeable`s through
-`compose-ui`, which needs the Android runtime.
+`compose-ui`, which needs the Android runtime — and `Placeable` has `internal`
+abstract members, so the interfaces cannot even be implemented from another
+module, runtime or no runtime.
+
+That is why `internal/pinfixture` transcribes the zero-weight branch rather than
+running it, and why it transcribes only that branch: the weighted half is what
+this section is about, and modelling it would be putting the band's fourth answer
+in a Go file and calling it measured.
 
 What the derivation says is that Compose agrees with the web, for a third reason
 again: its `Row` has no proportional shrink at all, an unweighted child is

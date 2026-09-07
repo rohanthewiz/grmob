@@ -46,6 +46,47 @@ cd "$(dirname "$0")"
 . ./gate.sh
 sh ./gate_test.sh
 
+# The Compose census's source half, reported here rather than skipped in
+# silence.
+#
+# mobile/verify reads two claims about foundation-layout's own arithmetic —
+# Modifier.width sets a maximum, and a Row measures an unweighted child against
+# what is left — out of the sources jar for the version the BOM resolves. That
+# jar is not fetched by any build: `./gradlew :app:fetchComposeLayoutSources`
+# puts it in the cache once, and until somebody runs it the check skips.
+#
+# `go test` prints a skip only under -v, so the check most likely to catch an
+# androidx release change was also the one least likely to be noticed missing.
+# This runs it by name and says which of the two happened, next to the other
+# SKIPs in this pass. It is here rather than after the harness because the
+# harness's arms each exit, and because this needs no compiler of any kind.
+#
+# Not a fetch. Every other thing this pass touches is already in a cache the app
+# build filled, and a verify script that reaches the network would stop being
+# runnable in the `--offline` position the rest of it is written for. Naming the
+# gap is what was missing; closing it is one command, and the message carries it.
+if command -v go >/dev/null; then
+  census_test=TestTheComposeCensusClaimsAreWhatTheSourceSays
+  if census=$( (cd ../.. && go test ./mobile/verify/ -run "^$census_test\$" -v) 2>&1 ); then
+    case "$census" in
+      *"--- SKIP"*)
+        echo "SKIP: the Compose census's source half — foundation-layout's sources are"
+        echo "      not cached, so androidx's own arithmetic is unread on this machine."
+        echo "      ./gradlew :app:fetchComposeLayoutSources  (once; it is a network call)"
+        ;;
+      *)
+        echo "OK: the Compose census's claims were read out of foundation-layout's sources"
+        ;;
+    esac
+  else
+    echo "$census"
+    echo "FAIL: the Compose census no longer matches foundation-layout's source"
+    exit 1
+  fi
+else
+  echo "SKIP: the Compose census's source half (no go on PATH to run it with)"
+fi
+
 out="${TMPDIR:-/tmp}/grmob-android-verify"
 mkdir -p "$out"
 

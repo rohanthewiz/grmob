@@ -2,6 +2,7 @@ package verify
 
 import (
 	"archive/zip"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -142,12 +143,16 @@ func TestTheComposeCensusClaimsAreWhatTheSourceSays(t *testing.T) {
 	}
 	jar := gradleCachedFile(t, "androidx.compose.foundation", composeLayoutArtifact,
 		version, composeLayoutArtifact+"-"+version+"-sources.jar")
-	if jar == "" {
-		t.Skipf("foundation-layout %s's sources are not in this machine's gradle "+
-			"cache, so the census's Compose row cannot be read here.\n\n"+
-			"    cd android && ./gradlew :app:fetchComposeLayoutSources\n\n"+
-			"fetches them once; it is a network call, which is why this skips rather "+
-			"than fails. The version check above runs either way.", version)
+	run, fail, why := composeSourcesVerdict(jar != "", os.Getenv(composeSourcesEnv))
+	if !run {
+		// Named on the way out either way. A machine that cannot read the
+		// source is the normal case and not an error, but it is also the case
+		// where this check is doing nothing, and a silent nothing is what
+		// android/verify's step exists to end.
+		if fail {
+			t.Fatalf("foundation-layout %s: %s", version, why)
+		}
+		t.Skipf("foundation-layout %s: %s", version, why)
 	}
 
 	for _, claim := range []struct {
@@ -299,4 +304,111 @@ func jarEntry(t *testing.T, jar, name string) string {
 			"claim about it is now unchecked.", jar, name)
 	}
 	return found
+}
+
+// The gradle cache is the one input to this pass that a machine may simply not
+// have, and how that is reported is a decision of its own.
+//
+// # Why it is a decision and not an `if`
+//
+// The census's source half is the check most likely to catch an androidx
+// change and the least likely to run: it needs a sources jar that no build
+// fetches on its own, so a machine that has only ever built the app skips it —
+// silently, because `go test` prints a skip only under -v. That is the honest
+// state of a check whose subject has to be downloaded, and it is also exactly
+// the shape of a check that quietly stops existing.
+//
+// So the skip is a value rather than a control-flow accident. Three things
+// consume it:
+//
+//	go test ./...        skips, as before, and now with a reason that names
+//	                     the fetch command rather than describing the cache.
+//	android/verify       runs this check by name and prints the verdict as its
+//	                     own step, so an Android pass that read nothing SAYS it
+//	                     read nothing, beside the other SKIPs.
+//	GRMOB_COMPOSE_SOURCES=required
+//	                     turns the skip into a failure, for a machine that has
+//	                     been set up to have the sources and would rather hear
+//	                     about it than be quietly excused.
+//
+// This is the same shape as gate.sh's jvm_harness_verdict and browser.mjs's
+// startupVerdict: a function of values, so its arms can be reached without
+// owning a machine in each state.
+const composeSourcesEnv = "GRMOB_COMPOSE_SOURCES"
+
+// composeSourcesRequired is the one value the variable takes. Spelled out
+// rather than "any non-empty value is truthy" so that a typo is a failure that
+// names itself instead of a setting that silently did nothing.
+const composeSourcesRequired = "required"
+
+// composeSourcesVerdict decides whether the source half runs, and what to say
+// when it does not.
+//
+// cached is whether the sources jar is in this machine's gradle cache; setting
+// is GRMOB_COMPOSE_SOURCES as the environment spells it.
+func composeSourcesVerdict(cached bool, setting string) (run, fail bool, why string) {
+	const fetch = "    cd android && ./gradlew :app:fetchComposeLayoutSources\n\n"
+
+	switch setting {
+	case "", composeSourcesRequired:
+	default:
+		// Refused rather than treated as "not required", because the two
+		// spellings a reader would reach for — "1" and "yes" — would otherwise
+		// disable the very thing they were typed to enable.
+		return false, true, fmt.Sprintf("%s is set to %q, which is not a value it takes. "+
+			"The only one is %q; unset it to let a machine without the sources skip.",
+			composeSourcesEnv, setting, composeSourcesRequired)
+	}
+	if cached {
+		return true, false, "read out of the sources jar in this machine's gradle cache"
+	}
+	if setting == composeSourcesRequired {
+		return false, true, "its sources are not in this machine's gradle cache, and " +
+			composeSourcesEnv + "=" + composeSourcesRequired + " says this machine is " +
+			"one that should have them.\n\n" + fetch +
+			"fetches them once. Unset the variable to go back to skipping."
+	}
+	return false, false, "its sources are not in this machine's gradle cache, so the " +
+		"census's Compose row cannot be read here.\n\n" + fetch +
+		"fetches them once; it is a network call, which is why this skips rather than " +
+		"fails. The version check above runs either way, and android/verify prints this " +
+		"line as a step of its own so the gap is visible rather than merely honest."
+}
+
+// And the four states it can be in, none of which this machine can be put into
+// by running the tests.
+func TestTheComposeSourcesVerdictNamesEveryState(t *testing.T) {
+	for _, c := range []struct {
+		what      string
+		cached    bool
+		setting   string
+		run, fail bool
+		mentions  string
+	}{
+		{what: "cached, unset", cached: true, run: true,
+			mentions: "gradle cache"},
+		{what: "cached, required", cached: true, setting: composeSourcesRequired, run: true,
+			mentions: "gradle cache"},
+		{what: "absent, unset", cached: false,
+			mentions: "fetchComposeLayoutSources"},
+		{what: "absent, required", cached: false, setting: composeSourcesRequired, fail: true,
+			mentions: "fetchComposeLayoutSources"},
+		{what: "a spelling the variable does not take", cached: true, setting: "1", fail: true,
+			mentions: composeSourcesRequired},
+	} {
+		run, fail, why := composeSourcesVerdict(c.cached, c.setting)
+		if run != c.run || fail != c.fail {
+			t.Errorf("%s: run=%v fail=%v, want run=%v fail=%v", c.what, run, fail, c.run, c.fail)
+		}
+		if !strings.Contains(why, c.mentions) {
+			t.Errorf("%s: the verdict does not mention %q, so a reader is told the state "+
+				"without being told what to do about it:\n%s", c.what, c.mentions, why)
+		}
+		// A verdict that both runs and fails would run the check and then
+		// refuse its result; one that does neither would be the silent nothing
+		// this exists to end.
+		if run && fail {
+			t.Errorf("%s: the verdict says to run the check AND to fail", c.what)
+		}
+	}
 }

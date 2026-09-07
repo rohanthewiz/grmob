@@ -1391,15 +1391,26 @@ private fun RowScope.RowChildren(node: GrMobNode) {
  * # Where it still differs from CSS, and why that is not this function's doing
  *
  * The siblings. In CSS the deficit is shared out among the items that *can*
- * shrink, in proportion to their bases; in a Compose Row the child before the
+ * shrink, in proportion to their bases, so a flex line's sizes do not depend on
+ * the order the children are written in; in a Compose Row the child before the
  * overflow already took what it asked for and the ones after it are offered
  * what is left, which is nothing. That is the no-proportional-shrink
  * divergence the census records, and it is a property of the measure policy
  * rather than of this modifier — the pinned child's own size, which is what
- * the declaration is about, now agrees on all four targets.
+ * the declaration is about, agrees on all four targets.
  *
  * Order does not matter to the pinned child: `remaining` is ignored whether it
  * is the first child or the last, so a pin is honoured wherever it sits.
+ *
+ * Both of those sentences are now numbers rather than claims.
+ * internal/pinfixture states one overflowing Row with the pin in each of the
+ * three positions and a control with none, transcribes foundation-layout's
+ * zero-weight measure loop over it, and ios/verify/pin.swift solves the same
+ * Row through GrMobFlexSolver — so the agreement about the pinned child and the
+ * disagreement about its siblings are both asserted, on one fixture. What that
+ * arrangement can and cannot say is written down in internal/pinfixture's
+ * header; the short version is that nothing here runs androidx's code, and the
+ * transcription is the one link in the chain no test checks.
  *
  * @param horizontal true in a Row (the main axis is the width), false in a
  * Column. The cross axis is passed through untouched — flex-shrink is a

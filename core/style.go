@@ -1073,7 +1073,13 @@ const (
 // expressible: Modifier.pinMainAxis in Renderer.kt is that, and it is why
 // core.FlexShrink(0) is a declaration that means the same thing on all four
 // targets while core.FlexShrink(0.5) means something on three.
-// See docs/platforms/native.md.
+//
+// "The same thing on all four targets" is measured rather than argued:
+// internal/pinfixture carries one overflowing Row with the pin in each position
+// and a control with none, and ios/verify/pin.swift solves it through
+// GrMobFlexSolver against a transcription of Compose's own measure loop. The
+// pinned child keeps its base on both; its SIBLINGS do not agree, and that
+// divergence is asserted too. See docs/platforms/native.md.
 const ShrinkNone = -1
 
 // ShrinkFactor returns the effective flex-shrink and whether one was declared.

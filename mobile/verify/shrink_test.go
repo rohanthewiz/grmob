@@ -36,6 +36,22 @@ import (
 //	          size. That is Modifier.pinMainAxis, and it is what makes
 //	          core.FlexShrink(0) mean the same thing on the fourth target as
 //	          on the other three.
+//
+// # And what the call-site pins are the other end of
+//
+// A call site is not an arithmetic. internal/pinfixture transcribes
+// foundation-layout's zero-weight measure loop and the two lines below, runs
+// one overflowing Row through it with the pin in each position, and
+// ios/verify/pin.swift solves the same Row through GrMobFlexSolver — so the
+// numbers core.FlexShrink(0) produces are now compared across the two targets
+// rather than asserted about either.
+//
+// Which makes THESE checks the link that transcription hangs from. Nothing in
+// this repository can run androidx's measure policy, so what stands between the
+// fixture and the renderer is the pair of pins below: the renderer applies the
+// modifier on the right axis from both loops, and the modifier measures
+// unbounded and reports what it measured. Change either and the fixture goes on
+// producing the same numbers about code that no longer exists.
 
 // The SwiftUI renderer must hand the solver the reading, not the raw field.
 //
@@ -131,24 +147,21 @@ func TestTheComposePinMeasuresUnboundedAndReportsWhatItMeasured(t *testing.T) {
 	}
 }
 
-// codeOf is declSource with the prose taken out.
+// codeOf is declSource with the string literals taken out as well.
 //
-// Every check in this file asks whether a renderer *does* something, and
-// declSource's cut is deliberately coarse — it runs from an anchor to the next
-// declaration, so it carries that declaration's doc comment along with it. In
-// this file that coarseness was not merely untidy: Modifier.pinMainAxis's own
-// doc comment sits between RowChildren and pinMainAxis, it explains that the
-// renderer reads `shrinkPinned`, and a `strings.Contains(body, "shrinkPinned")`
-// was satisfied by the explanation. Deleting the call and keeping the comment
-// passed.
+// declSource already blanks the comments for every caller (see its own
+// header, and the break-test that put them there). This is the stronger mask,
+// and the checks in this file are what it is for: every one of them asks
+// whether a renderer *does* something — attaches a layout value, applies a
+// modifier, calls layout() with the size it measured — and a string literal
+// naming any of those would satisfy a strings.Contains just as a doc comment
+// did. Nothing here reads a dispatch's arms, which is the one thing the
+// literals are ever the subject of.
 //
-// That is the same failure swiftDeclIndices was written for one file over — an
-// anchor matching a mention rather than a declaration — and it has the same
-// answer: mask the comments and the string literals first, and ask the question
-// of what is left. maskSwiftNonCode is named for Swift and is not specific to
-// it; Kotlin spells line comments, block comments and both kinds of string
-// literal identically, which is the same argument matchingBrace makes for
-// serving both languages with one scanner.
+// maskSwiftNonCode is named for Swift and is not specific to it; Kotlin spells
+// line comments, block comments and both kinds of string literal identically,
+// which is the same argument matchingBrace makes for serving both languages
+// with one scanner.
 func codeOf(t *testing.T, file, anchor string) string {
 	t.Helper()
 	return maskSwiftNonCode(declSource(t, file, anchor))

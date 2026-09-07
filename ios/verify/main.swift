@@ -18,6 +18,42 @@ struct Transcript: Decodable {
     /// The band-inset cases, which have even less to do with the replay: they
     /// are pure geometry solved through GrMobFlexSolver. See band.swift.
     let bandCases: [BandCase]
+    /// The pinned-Row cases: one overflowing Row with core.FlexShrink(0) in
+    /// three positions, plus the control with none, each carrying the answer a
+    /// Compose Row gives it. See pin.swift and internal/pinfixture.
+    let pinCases: [PinCase]
+}
+
+/// One unweighted child of a pinned Row. `pinned` is core.FlexShrink(0),
+/// which reaches this solver as a shrink factor of 0 and reaches Compose as
+/// Modifier.pinMainAxis — one declaration, two spellings.
+struct PinChild: Decodable {
+    let name: String
+    let base: CGFloat
+    let pinned: Bool
+}
+
+/// What internal/pinfixture's transcription of foundation-layout's measure
+/// policy produces for the Row. Not measured on this machine and not claimed
+/// to be androidx's own code — see internal/pinfixture for the chain that
+/// holds it up.
+struct PinCompose: Decodable {
+    let offered: [CGFloat]
+    let mains: [CGFloat]
+    let rowMain: CGFloat
+}
+
+/// One Row, both targets. See internal/pinfixture.
+struct PinCase: Decodable {
+    let what: String
+    let offer: CGFloat
+    let gap: CGFloat
+    let children: [PinChild]
+    let compose: PinCompose
+    /// Whether the two targets land on the same extents for this Row. Asserted
+    /// in both directions by checkPinnedRow, for the reason BandCase states
+    /// sharesADeficit.
+    let mainsAgreeWithCSS: Bool
 }
 
 /// One band arrangement: which node carries the chrome.
@@ -154,6 +190,21 @@ func run() -> Int32 {
     } else {
         print("FAIL: \(bandProblems.count) band inset difference(s)")
         for p in bandProblems { print("  " + p) }
+        return 1
+    }
+
+    // The pinned Row, before the replay and for the reason the two above are:
+    // pure arithmetic over the transcript's own table. This is the pass that
+    // asks whether core.FlexShrink(0) means the same thing on this target as
+    // on Compose, and where the answers part company.
+    let pinProblems = checkPinnedRow(transcript.pinCases)
+    if pinProblems.isEmpty {
+        print("OK: \(transcript.pinCases.count) pinned Rows keep the pinned child at "
+            + "its own size on both targets, and divide what is left between the "
+            + "siblings the two different ways they are recorded to")
+    } else {
+        print("FAIL: \(pinProblems.count) pinned Row difference(s)")
+        for p in pinProblems { print("  " + p) }
         return 1
     }
 

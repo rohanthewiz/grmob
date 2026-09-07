@@ -26,6 +26,7 @@ import (
 
 	"github.com/rohanthewiz/grmob/internal/bandfixture"
 	"github.com/rohanthewiz/grmob/internal/menufixture"
+	"github.com/rohanthewiz/grmob/internal/pinfixture"
 	"github.com/rohanthewiz/grmob/mobile"
 
 	// Imported for its init: registers the demo app with the bridge, the same
@@ -49,6 +50,14 @@ type transcript struct {
 	// internal/bandfixture for what they claim and why this renderer is the
 	// one being asked.
 	BandCases []bandfixture.Case `json:"bandCases"`
+
+	// The pinned-Row cases, the third piece of geometry riding in this file.
+	// Each carries a Row, a core.FlexShrink(0) somewhere in it, and the answer
+	// a Compose Row gives — so pin.swift can solve the same Row through
+	// GrMobFlexSolver and compare the two targets on one fixture. See
+	// internal/pinfixture, which is also where the Compose column comes from
+	// and where the honest limits of it are written down.
+	PinCases []pinfixture.Case `json:"pinCases"`
 }
 
 // recorder collects patch batches in arrival order. Sync trigger returns are
@@ -156,12 +165,23 @@ func main() {
 	// sneak in was recorded as a step and is part of the final tree anyway).
 	final := mobile.RenderInitial()
 
+	// The pin fixture states what would make it vacuous, and it is asked here
+	// rather than in the Swift harness: a Row that does not overflow squeezes
+	// nobody, a pinned child in it is indistinguishable from an unpinned one,
+	// and both targets would go on agreeing about nothing. Refusing to WRITE
+	// such a transcript is stronger than refusing to read one, because it is
+	// the side that owns the numbers.
+	if err := pinfixture.Validate(); err != nil {
+		fatal("the pinned-Row fixture is vacuous: %v", err)
+	}
+
 	rec.mu.Lock()
 	defer rec.mu.Unlock()
 	out, err := json.Marshal(transcript{
 		Initial: initial, Steps: rec.steps, Final: final,
 		MenuCases: menufixture.Cases(),
 		BandCases: bandfixture.Cases(),
+		PinCases:  pinfixture.Cases(),
 	})
 	if err != nil {
 		fatal("marshal transcript: %v", err)

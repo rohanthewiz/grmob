@@ -417,7 +417,8 @@ func swiftDeclIndices(src, anchor string) []int {
 }
 
 // maskSwiftNonCode returns src with every comment and string-literal character
-// replaced by a space, and the same length.
+// replaced by a space, and the same length; maskComments blanks the comments
+// and leaves the literals where they are.
 //
 // Same length is the whole point: offsets in the mask are offsets in the
 // source, so a match found here can be used there. It is matchingBrace's own
@@ -425,13 +426,59 @@ func swiftDeclIndices(src, anchor string) []int {
 // in this file is code" and would be a bug apiece if they answered it
 // differently, which is why the arms are in the same order and spelled the same
 // way.
-func maskSwiftNonCode(src string) string {
+//
+// # Why there are two levels rather than one
+//
+// The checks in this package ask two different questions of a renderer, and
+// they want opposite things from a string literal:
+//
+//	does it CALL this          `strings.Contains(body, "pinMainAxis(")`. A doc
+//	                           comment saying the renderer calls it satisfies
+//	                           that, which is the failure codeOf was written
+//	                           for — and so would a string literal naming it.
+//	                           Both go.
+//
+//	does it LIST this VALUE    a dispatch's arms are string literals ("center",
+//	                           "flex-end"), and they are the subject. Blanking
+//	                           them would delete the thing being read and leave
+//	                           a parse that finds nothing, which is the one
+//	                           result a check here must never produce quietly.
+//
+// Comments are noise to both, so that half is unconditional and every caller
+// gets it. The literal half is the caller's choice, and each of the two
+// spellings is named after what it keeps.
+func maskSwiftNonCode(src string) string { return maskNonCode(src, true) }
+
+// maskComments is the weaker mask: prose out, literals in.
+//
+// This is what declSource applies to every region it hands out, so that the
+// doc comment its deliberately coarse cut carries along cannot answer a
+// question about code. See declSource for why the cut is coarse and why the
+// comment that rides on it was a real defect rather than an untidiness.
+func maskComments(src string) string { return maskNonCode(src, false) }
+
+// maskNonCode is the scanner both spellings are.
+//
+// A literal is always *scanned* — its extent has to be known either way, or a
+// `//` or a brace inside one would be read as code — and `literals` decides
+// only whether it is also blanked. That asymmetry is the reason this is one
+// function with a flag rather than two scanners: the two differ by a single
+// conditional, and a second copy would be the third answer to "what in this
+// file is code" in a package that already has two.
+func maskNonCode(src string, literals bool) string {
 	out := []byte(src)
 	blank := func(from, to int) {
 		for i := from; i < to && i < len(out); i++ {
 			if out[i] != '\n' {
 				out[i] = ' '
 			}
+		}
+	}
+	// The literal arms call this instead, so that skipping and blanking stay
+	// one decision made in one place.
+	blankLiteral := func(from, to int) {
+		if literals {
+			blank(from, to)
 		}
 	}
 	for i := 0; i < len(src); i++ {
@@ -455,10 +502,10 @@ func maskSwiftNonCode(src string) string {
 		case strings.HasPrefix(src[i:], `"""`):
 			end := strings.Index(src[i+3:], `"""`)
 			if end < 0 {
-				blank(i, len(src))
+				blankLiteral(i, len(src))
 				return string(out)
 			}
-			blank(i, i+3+end+3)
+			blankLiteral(i, i+3+end+3)
 			i += 3 + end + 2
 		case src[i] == '"':
 			j := i + 1
@@ -468,7 +515,7 @@ func maskSwiftNonCode(src string) string {
 				}
 				j++
 			}
-			blank(i, j+1)
+			blankLiteral(i, j+1)
 			i = j
 		}
 	}
