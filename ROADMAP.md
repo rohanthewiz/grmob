@@ -1112,6 +1112,42 @@
       diverge in two recorded places: under overflow (shrink is proportional
       to a base that includes the child's own padding) and for a badge taller
       than the control, which no real band has
+- [x] **The band's insets are asked of a browser too, and the divergence is
+      real** — `internal/bandfixture` rides in `wasm/verify`'s transcript and
+      `browser.mjs` lays out both arrangements at every offer in a real Chrome.
+      They agree everywhere, overflow included: CSS distributes shrink over the
+      *inner* flex base size, where `GrMobFlexSolver`'s base includes the
+      child's own padding. So the `ios/verify` difference is a cross-target
+      divergence rather than an artefact, and both targets assert their own
+      answer. The overflow arm carries its own control — a flex item's automatic
+      minimum size would otherwise leave both arrangements at their natural
+      width, agreeing by never reaching the arithmetic
+- [x] **The value-range verdict is reachable from a unit test** — half of it
+      could never fail on a machine with a shipping browser: the
+      `parses: false` rows are a *pinned divergence*, reported only if a
+      browser starts applying ARIA's defaults to a value that is not a number.
+      `valueRangeProblem(row, ax)` moved beside the table in `valuerange.mjs`,
+      so `valuerange_test.mjs` hands it all four answers — including the one no
+      browser gives
+- [x] **`browser.mjs`'s two preconditions state their two stances once** —
+      `startup.mjs`. A missing Chrome is a fact about the machine (SKIP); a
+      missing `GRMOB_TRANSCRIPT` is a fact about the invocation (FAIL), decided
+      first, because the other order turns a forgotten variable into a green run
+      on a machine with no Chrome. Inline guards could only be reached by
+      arranging a machine that had the fault; this one takes three booleans and
+      a string
+- [x] **A widget's boundary *provenance* has a pixel** —
+      `TestEachWidgetReadsTheAuthorityItNames` renders `gen.go`'s own widget
+      builders through a throwaway theme whose `Colors.ControlBorder` and
+      `Components.Input.BorderColor` are deliberately different hexes. In every
+      bundled theme the two hold the same value, so a chip that had started
+      reading the field base — or a field that had started reading the role —
+      passed every pixel and every hex comparison in the repository
+- [x] **The widget swatches are one page and one screenshot** — six mounts,
+      six screenshots and six PNG decodes became one of each, laid out as a
+      grid. The trees go in unmodified; all that changes is that a theme's page
+      fill is a sibling's rather than the document's, which no sample was ever
+      reading
 
 ---
 

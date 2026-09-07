@@ -223,9 +223,9 @@ func TestTheValueTableReachesBothSidesOfTheBrowserDivergence(t *testing.T) {
 	}
 }
 
-// Every reading core has is one browser.mjs knows how to check.
+// Every reading core has is one the browser pass knows how to check.
 //
-// browser.mjs decides what to assert about a bar by switching on the row's
+// axAgreesWithGo decides what to assert about a bar by switching on the row's
 // reading, and a reading with no arm is a bar nothing is asserted about — a
 // silent pass rather than an error, since the row still mounts and still gets
 // looked up. A fifth member of core.ProgressReading would arrive exactly that
@@ -233,17 +233,25 @@ func TestTheValueTableReachesBothSidesOfTheBrowserDivergence(t *testing.T) {
 // TestTheTableReachesEveryReading requires one), the pin above would carry it
 // into the table, and the browser would walk straight past it.
 //
+// The switch lives in valuerange.mjs beside the table rather than in
+// browser.mjs, because half of the verdict it feeds cannot fail on a machine
+// with a shipping browser and had to be reachable from a unit test — see the
+// note there and valuerange_test.mjs. This reads the file it moved to; a
+// substring search of browser.mjs would now find the readings nowhere and
+// report four failures, or worse, find them in a comment and report none.
+//
 // Held in Go because Go is where the vocabulary is. A source check because the
 // alternative is teaching a Node harness to enumerate a Go type.
 func TestEveryReadingIsOneTheBrowserChecks(t *testing.T) {
-	src := browserSource(t)
+	src := valueRangeMJS(t)
 	for _, reading := range []core.ProgressReading{
 		core.ProgressUnstated, core.ProgressIndeterminate,
 		core.ProgressDeterminate, core.ProgressEmptyRange,
 	} {
 		if !strings.Contains(src, fmt.Sprintf("%q", string(reading))) {
-			t.Errorf("browser.mjs has no arm for the %q reading — a row carrying it "+
-				"mounts, is found, and has nothing asserted about it", reading)
+			t.Errorf("valuerange.mjs's axAgreesWithGo has no arm for the %q reading — "+
+				"a row carrying it mounts, is found, and has nothing asserted about it",
+				reading)
 		}
 	}
 }

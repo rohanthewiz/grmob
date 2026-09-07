@@ -1,12 +1,12 @@
 // The facts a shimmed DOM cannot check, checked in a browser: four about the
-// keyboard, two about paint, one about layout, and one about what a browser
+// keyboard, two about paint, two about layout, and one about what a browser
 // does with an accessibility value nobody here resolves.
 //
 // wasm/verify's other suites run the real grmob-runtime.js against dom.mjs — a
 // few hundred lines that model element trees, attributes, listeners and which
 // element holds focus. That is enough for almost everything, and its limits
 // are stated in its own header: there is no layout, no bubbling, and `focus()`
-// is an assignment, and nothing is ever painted. Seven claims sit exactly in
+// is an assignment, and nothing is ever painted. Eight claims sit exactly in
 // that blind spot, and no amount of widening the shim would settle them,
 // because each one is a claim about what a *browser* does:
 //
@@ -51,6 +51,18 @@
 //      *looked* at the result. This one paints the pairs and reads the pixels
 //      back out of a screenshot, which is the only place an alpha channel, a
 //      colour profile or a hairline antialiased into a tint can be caught.
+//   8. Two arrangements of the same band lay out the same way, overflow
+//      included. components.GroupHeader moved its padding from the Row onto
+//      the growing control inside it so that a press lands on the whole band,
+//      and the warrant for the move is that it costs nothing. ios/verify checks
+//      that through GrMobFlexSolver and records one place it is not free: under
+//      an offer narrower than the band, that solver shrinks each child in
+//      proportion to a base that *includes* the child's own padding, so the
+//      same 16 points is inside the proportion in one arrangement and outside
+//      it in the other. CSS distributes shrink over the inner flex base size
+//      instead, which is a different rule — and the comment recording that had
+//      never been asked of a browser. This asks one, and the answer is a
+//      genuine cross-target divergence rather than an artefact.
 //
 // # How
 //
@@ -83,7 +95,8 @@ import http from "node:http";
 import zlib from "node:zlib";
 
 import { PALETTES } from "./palette.mjs";
-import { VALUE_RANGES } from "./valuerange.mjs";
+import { VALUE_RANGES, axRange, valueRangeProblem } from "./valuerange.mjs";
+import { startupVerdict } from "./startup.mjs";
 
 // The widget swatches come from the transcript rather than from a .mjs table,
 // because they are real components rendered by Go: gen.go builds the trees and
@@ -91,25 +104,21 @@ import { VALUE_RANGES } from "./valuerange.mjs";
 // widgetCase there). run.sh generates that file and points every consumer at
 // it, this one included.
 //
-// A hard requirement rather than an optional extra. The other checks here skip
-// when the machine has no Chrome, which is a fact about the machine; a missing
-// transcript is a fact about how this script was invoked, and a pass that
-// quietly dropped a third of itself for that would be worth less than one that
-// says so.
+// A hard requirement rather than an optional extra, and the reason startup.mjs
+// exists: the other checks here skip when the machine has no Chrome, which is a
+// fact about the machine, and a missing transcript is a fact about how this
+// script was invoked. The two stances and their order are stated there, where a
+// test can reach every answer without arranging a machine that has the fault.
 const TRANSCRIPT = process.env.GRMOB_TRANSCRIPT;
-if (!TRANSCRIPT || !existsSync(TRANSCRIPT)) {
-    console.error("FAIL: browser.mjs needs the transcript gen.go writes.\n" +
-        "  Run wasm/verify/run.sh, which generates it and sets GRMOB_TRANSCRIPT,\n" +
-        "  or set GRMOB_TRANSCRIPT to the output of `go run ./wasm/verify`.");
-    process.exit(1);
-}
-const WIDGETS = JSON.parse(readFileSync(TRANSCRIPT, "utf8")).widgets || [];
-if (WIDGETS.length === 0) {
-    console.error("FAIL: the transcript carries no widget swatches — gen.go's " +
-        "widgetCases() produced nothing, so the half of the palette check that " +
-        "goes through `components` would pass by having no subject.");
-    process.exit(1);
-}
+const TRANSCRIPT_EXISTS = Boolean(TRANSCRIPT) && existsSync(TRANSCRIPT);
+const TRANSCRIPT_JSON = TRANSCRIPT_EXISTS
+    ? JSON.parse(readFileSync(TRANSCRIPT, "utf8"))
+    : {};
+const WIDGETS = TRANSCRIPT_JSON.widgets || [];
+// internal/bandfixture, for check 8. Same file, same reason: a real
+// components.GroupHeader's geometry, read off the rendered band by Go, which is
+// not something a table of numbers in a .mjs file could be.
+const BANDS = TRANSCRIPT_JSON.bands || [];
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const RUNTIME = join(HERE, "..", "grmob-runtime.js");
@@ -129,9 +138,17 @@ function findChrome() {
     return CHROME_CANDIDATES.find((p) => existsSync(p)) || null;
 }
 
-function skip(why) {
-    console.log(`SKIP: browser keyboard pass (${why})`);
-    process.exit(0);
+// Carry out startup.mjs's decision. The stances live there; what is here is
+// the exit code and the stream each one is written to.
+function actOn(verdict) {
+    if (verdict.action === "fail") {
+        console.error(`FAIL: ${verdict.why}`);
+        process.exit(1);
+    }
+    if (verdict.action === "skip") {
+        console.log(`SKIP: browser keyboard pass (${verdict.why})`);
+        process.exit(0);
+    }
 }
 
 // --------------------------------------------------------------------------
@@ -600,76 +617,220 @@ const SWATCHES = {
 const swatchPath = (i) =>
     `root/${Math.floor(i / SWATCHES_PER_ROW)}/${i % SWATCHES_PER_ROW}`;
 
-// The numbers a browser resolved one aria-value* family to, or null when it
-// has no progressbar of that name at all.
+// The widget swatches, all of them, on one page.
 //
-// Read off Chrome's own accessibility tree rather than off the DOM, which is
-// the entire point: the attributes are what this runtime wrote, and what is
-// being asked is what the browser made of them. valuemin and valuemax are
-// serialized as node properties and the position is the node's value, which is
-// absent — not zero — for a bar with no aria-valuenow.
+// Each of gen.go's trees is already a page: a Box carrying its theme's own
+// Colors.Background, 24px of padding and a 240px width, with the widget alone
+// inside it. They were mounted one at a time and screenshot one at a time,
+// which is three CDP round trips and a PNG decode per case — the slowest thing
+// in this file by a wide margin, and it doubled the day the Input swatch was
+// added. Laid out as a grid they are one mount, one screenshot and one decode
+// for the whole census.
 //
-// aria-valuetext is deliberately outside the comparison. It is words rather
-// than a number, core.Progress ignores it by design (its reading must not
-// depend on a string that is announced instead of the digits), and Chrome does
-// not surface it as a node property here in any case.
-function axRange(nodes, name) {
-    const n = nodes.find((n) =>
-        n.name?.value === name && n.role?.value === "progressbar");
-    if (!n) return null;
-    const props = Object.fromEntries(
-        (n.properties || []).map((p) => [p.name, p.value?.value]));
-    return { value: n.value?.value, min: props.valuemin, max: props.valuemax };
-}
+// The trees themselves are untouched, which is the part that matters: what is
+// asserted is that each widget's *own* declarations reach the screen, and a
+// tree this file had edited would be a different widget. What changes is only
+// where they sit. The theme's page fill is now a sibling's fill rather than the
+// document's, and every sample here was already taken inside a rect the browser
+// reported — the page inside its own 24px padding, the widget's fill in its
+// leading padding, the ring on its own horizontal edges — so none of them was
+// ever reading the document behind it.
+//
+// Three per row keeps the grid inside the 800px viewport (3 x 240 = 720, and
+// --hide-scrollbars means nothing takes a column back), which is what
+// captureBeyondViewport: false requires: a swatch below the fold has a rect and
+// no pixels.
+const WIDGETS_PER_ROW = 3;
 
-// Whether the browser's answer is core.Progress's answer, or null for a
-// reading this function has no arm for.
+const WIDGET_GRID = {
+    Type: "Column",
+    Style: { Padding: { Top: 0, Right: 0, Bottom: 0, Left: 0 }, Gap: 0 },
+    Children: Array.from(
+        { length: Math.ceil(WIDGETS.length / WIDGETS_PER_ROW) },
+        (_, r) => ({
+            Type: "Row",
+            // AlignItems flex-start so a short swatch beside a tall one keeps
+            // its own height. Under the default stretch the two page boxes in a
+            // row would be the same height, which paints more of a theme's
+            // Background than the theme asked for — harmless to every sample
+            // taken here, and still a layout no widgetCase describes.
+            Style: {
+                Padding: { Top: 0, Right: 0, Bottom: 0, Left: 0 }, Gap: 0,
+                AlignItems: "flex-start",
+            },
+            Children: WIDGETS
+                .slice(r * WIDGETS_PER_ROW, (r + 1) * WIDGETS_PER_ROW)
+                .map((w) => JSON.parse(w.tree)),
+        })),
+};
+
+// Where widget i's page box sits in that grid, and its widget one level in.
+const widgetPath = (i) =>
+    `root/${Math.floor(i / WIDGETS_PER_ROW)}/${i % WIDGETS_PER_ROW}`;
+
+// --------------------------------------------------------------------------
+// The bands
+// --------------------------------------------------------------------------
 //
-// What counts as agreement is different per reading, and each difference is
-// the reading's own meaning rather than a concession:
+// components.GroupHeader's two inset arrangements, laid out by a real browser
+// at every offer internal/bandfixture states.
 //
-//	determinate    all three numbers, since that is the whole claim
-//	indeterminate  no position at all. The bounds are not compared: ARIA's
-//	unstated       0..100 is what a browser reports for a progressbar whether
-//	               or not one was written, so a comparison there would pass
-//	               for the wrong reason — and core.Progress returns zeros for
-//	               both of these readings precisely because they are not a
-//	               position.
-//	empty-range    the bounds as stated. The position is not compared because
-//	               there is nowhere for it to be: Chrome clamps it to whichever
-//	               end it can reach and core.Progress reports it unclamped, and
-//	               both are honest answers to a range that is not one.
+// # The claim, and the one target that had never been asked
 //
-// wasm/verify/valuerange_test.go holds this switch to core.ProgressReading, so
-// a fifth reading arrives as a Go failure rather than as rows nothing asserts.
-function axAgreesWithGo(ax, row) {
-    switch (row.reading) {
-        case "determinate":
-            return ax.value === row.now && ax.min === row.min && ax.max === row.max;
-        case "indeterminate":
-        case "unstated":
-            return ax.value === undefined;
-        case "empty-range":
-            return ax.min === row.min && ax.max === row.max;
+// The band's padding used to be on the Row and is now on the growing control
+// inside it, so that a press lands on the whole band rather than on a strip in
+// the middle of it. The warrant for the move is that it costs nothing: padding
+// on a stretched child fills exactly the space the same padding on its parent
+// held.
+//
+// That was verified on the web by the pixels it did not move — by hand, once,
+// by a person looking at a screen. ios/verify turned it into a check, solving
+// both arrangements through GrMobFlexSolver, and found the one place it is not
+// free: under an offer narrower than the band's own content, that solver shrinks
+// each child in proportion to a *base that includes the child's own padding*, so
+// the control's insets are inside the proportion in one arrangement and outside
+// it in the other and the label ends up with different room.
+//
+//	120pt offered, a 100pt label and a 24pt badge
+//	  the SwiftUI solver   insets on the control  63.14   insets on the Row  64.52
+//
+// The note beside that arithmetic says CSS distributes shrink over the inner
+// flex base size rather than the outer one, so a browser may well agree where
+// this does not — and that nothing in the repository had asked one. This is the
+// asking. It is the cheapest kind of check to have been missing: wasm/verify
+// already mounts trees through a real runtime and already reads rects back.
+//
+// # The two modelling decisions, and why each is the faithful one
+//
+// min-width: 0 on both flex items. CSS gives a flex item an automatic minimum
+// size — it will not shrink below its own min-content width — and the fixture's
+// label is a synthetic box with a *declared* width, so its min-content is that
+// whole width and nothing would shrink at all. Both arrangements would then
+// agree by never reaching the arithmetic, which is agreement with no subject.
+// A real band's label is text, whose min-content is its longest word, so
+// clearing the automatic minimum is what restores the behaviour the fixture is
+// standing in for. It is also what the SwiftUI solver does: it has no notion of
+// a content-based floor.
+//
+// An indefinite offer becomes width: max-content. bandfixture spells "no
+// definite offer" as a negative number, which is SwiftUI probing for an ideal
+// size; max-content is the same question in CSS, and the two arrangements have
+// to agree about what they hug to as well.
+const bandEdges = (i) => ({ Top: i.top, Right: i.right, Bottom: i.bottom, Left: i.left });
+
+const bandPx = (n) => `${n}px`;
+
+// One band, one arrangement, one offer.
+//
+// The shape mirrors solveBand in ios/verify/band.swift exactly: a Row carrying
+// the arrangement's own padding and gap, a growing control carrying the
+// arrangement's control padding with the label inside it, and a badge beside it
+// when the case has one.
+function bandTree(a, c, offer) {
+    const children = [{
+        Type: "Box",
+        Style: {
+            Padding: bandEdges(a.control),
+            FlexGrow: a.grow,
+            FlexShrink: 1,
+            MinWidth: "0",
+        },
+        Children: [{
+            Type: "Box",
+            Style: { Width: bandPx(c.label.w), Height: bandPx(c.label.h) },
+        }],
+    }];
+    if (c.badge.w > 0) {
+        children.push({
+            Type: "Box",
+            Style: {
+                Width: bandPx(c.badge.w), Height: bandPx(c.badge.h),
+                // Shrinkable, because the solver this is compared with shrinks
+                // it too: its growth weight is 0 and its shrink share is its
+                // base like everything else's. The cleared minimum is a
+                // statement of that intent rather than a load-bearing
+                // declaration — this box is empty, so its own automatic
+                // minimum is already 0, where the control's is the whole of
+                // the label it wraps.
+                FlexShrink: 1, MinWidth: "0",
+            },
+        });
     }
-    return null;
+    return {
+        Type: "Row",
+        Style: {
+            // The offer is what the band is *given*, and a Row here is a
+            // content box — this runtime writes no box-sizing — so an offer
+            // has to have the Row's own padding taken off it before it becomes
+            // a declared width. That subtraction is band.swift's own line:
+            // `inner = offer - chrome`, the proposal a SwiftUI Layout receives
+            // after its container's padding has been removed. Without it the
+            // two arrangements are handed different outer widths (the one with
+            // padding on the Row is 32px wider) and every comparison below is
+            // between two bands of different sizes.
+            //
+            // max-content needs no such adjustment: it is a content-box
+            // keyword already, and the padding lands outside it in both
+            // arrangements alike.
+            Width: offer < 0
+                ? "max-content"
+                : bandPx(offer - a.row.left - a.row.right),
+            Padding: bandEdges(a.row),
+            Gap: a.gap,
+            AlignItems: a.align,
+        },
+        Children: children,
+    };
 }
 
-const showRange = (r) =>
-    `value ${r.value === undefined ? "(none)" : r.value}, min ${r.min}, max ${r.max}`;
+// Every band the check mounts, flattened, so the whole table is one mount and
+// one round trip of rects — the same economy the widget grid above is built on.
+// Each entry carries the case, the arrangement and the offer it was built for,
+// so a failure can name all three.
+function bandMounts() {
+    const out = [];
+    for (const c of BANDS) {
+        for (const offer of c.offers) {
+            for (const a of [c.now, c.before]) {
+                out.push({ c, a, offer, tree: bandTree(a, c, offer) });
+            }
+        }
+    }
+    return out;
+}
+
+// The band's natural width in one arrangement: everything laid out at its own
+// size, with nothing shrunk. Both arrangements hold the same chrome, so this is
+// the same number for both — which is what makes "one overflows and the other
+// does not" a failure rather than a case.
+function bandNatural(a, c) {
+    const hasBadge = c.badge.w > 0;
+    return a.row.left + a.row.right +
+        a.control.left + a.control.right + c.label.w +
+        (hasBadge ? a.gap + c.badge.w : 0);
+}
+
+// Rects are LayoutUnits — sixty-fourths of a pixel — and two arrangements that
+// arrive at the same number by different routes can land on adjacent ones. The
+// divergence this check is about is over a point wide, so the tolerance is far
+// below anything it could hide.
+const BAND_EPSILON = 0.05;
+const bandSame = (a, b) => Math.abs(a - b) <= BAND_EPSILON;
 
 // --------------------------------------------------------------------------
 // The checks
 // --------------------------------------------------------------------------
 
 async function main() {
-    if (typeof WebSocket !== "function") {
-        skip("this Node has no WebSocket global; v21 or newer has one");
-    }
     const chromePath = findChrome();
-    if (!chromePath) {
-        skip("no Chrome or Chromium found; set GRMOB_CHROME to point at one");
-    }
+    actOn(startupVerdict({
+        transcriptPath: TRANSCRIPT,
+        transcriptExists: TRANSCRIPT_EXISTS,
+        widgets: WIDGETS.length,
+        bands: BANDS.length,
+        hasWebSocket: typeof WebSocket === "function",
+        chromePath,
+    }));
 
     // The server. It answers exactly two paths, because a directory server
     // would be a second thing to get right and this needs no more than the
@@ -1144,28 +1305,53 @@ async function main() {
         // on one side under a partial override — paints exactly that. The
         // two-tone styles (`inset`, `outset`) are caught by either edge on its
         // own; the one-sided case is caught by neither unless both are read.
-        for (const w of WIDGETS) {
-            const where = `${w.theme}/${w.what}`;
-            await mount(JSON.parse(w.tree));
+        //
+        // # One page, not six
+        //
+        // Every swatch mounts together and is measured out of a single
+        // screenshot. See WIDGET_GRID: the trees are gen.go's, unmodified, and
+        // all this changes is that a theme's page fill is a sibling's fill
+        // rather than the document's — which no sample here was ever reading,
+        // since each is taken inside a rect the browser reported for the node
+        // that declares the colour.
+        await mount(WIDGET_GRID);
 
-            const rects = await evaluate(`(() => {
-                const at = (path) => {
-                    const el = document.querySelector('[data-node-path="' + path + '"]');
-                    if (!el) return null;
-                    const r = el.getBoundingClientRect();
-                    return { x: r.left, y: r.top, w: r.width, h: r.height };
-                };
-                return { page: at("root"), widget: at("root/0") };
-            })()`);
+        const widgetRects = await evaluate(`${JSON.stringify(
+            WIDGETS.map((_, i) => widgetPath(i)))}.map((p) => {
+            const at = (path) => {
+                const el = document.querySelector('[data-node-path="' + path + '"]');
+                if (!el) return null;
+                const r = el.getBoundingClientRect();
+                return { x: r.left, y: r.top, w: r.width, h: r.height };
+            };
+            return { page: at(p), widget: at(p + "/0") };
+        })`);
+
+        const gridShot = await session.send("Page.captureScreenshot",
+            { format: "png", captureBeyondViewport: false });
+        const wImg = decodePNG(Buffer.from(gridShot.data, "base64"));
+
+        for (let i = 0; i < WIDGETS.length; i++) {
+            const w = WIDGETS[i];
+            const where = `${w.theme}/${w.what}`;
+            const rects = widgetRects[i];
             if (!rects.page || !rects.widget || rects.widget.w === 0) {
                 problems.push(`${where}: the widget was not laid out — nothing below ` +
                     `measured anything`);
                 continue;
             }
-
-            const wShot = await session.send("Page.captureScreenshot",
-                { format: "png", captureBeyondViewport: false });
-            const wImg = decodePNG(Buffer.from(wShot.data, "base64"));
+            // A swatch the grid pushed off the bottom of the viewport has a
+            // rect and no pixels, and pixelAt would answer null for every
+            // sample below — three failures naming colours, none of them
+            // saying the swatch was never on screen. Said once, here.
+            if (rects.page.y + rects.page.h > wImg.height / dpr + 0.5) {
+                problems.push(`${where}: the swatch grid runs past the bottom of the ` +
+                    `viewport (this one ends at ${Math.round(rects.page.y + rects.page.h)}px ` +
+                    `of a ${Math.round(wImg.height / dpr)}px screenshot), so nothing was ` +
+                    `painted where its rect says it is — WIDGETS_PER_ROW or the window ` +
+                    `size needs to grow with the census`);
+                continue;
+            }
 
             // The page, sampled inside its own 24px padding and so clear of
             // the widget. This is the ring's outer backdrop, and it is the
@@ -1257,38 +1443,281 @@ async function main() {
         await session.send("Accessibility.enable");
         const { nodes: axNodes } = await session.send("Accessibility.getFullAXTree");
 
+        // The verdict is valuerange.mjs's, not this file's. Its two halves
+        // point in opposite directions and only one of them can fail on a
+        // machine with a shipping browser, so the decision lives beside the
+        // table where valuerange_test.mjs can hand it all four answers
+        // directly — see the note there. What is left here is the round trip.
         for (const row of VALUE_RANGES) {
-            const ax = axRange(axNodes, row.name);
-            if (!ax) {
-                problems.push(`no progressbar named "${row.name}" in the browser's ` +
-                    `accessibility tree — the row mounted and the browser did not ` +
-                    `compute it as a progress bar, so nothing below was asked about it`);
+            const problem = valueRangeProblem(row, axRange(axNodes, row.name));
+            if (problem) problems.push(problem);
+        }
+
+
+        // ------------------------------------------------------------------
+        // 8. two arrangements of the same band lay out the same way
+        // ------------------------------------------------------------------
+        //
+        // See bandMounts above for the claim and for the two modelling
+        // decisions. What is new here is the target: ios/verify solves this
+        // through GrMobFlexSolver and records a divergence under overflow that
+        // it attributes to shrinking in proportion to a base that includes the
+        // child's own padding. CSS shrinks in proportion to the *inner* flex
+        // base size, which excludes it — so the prediction is that a browser
+        // agrees at every offer, including the ones where the SwiftUI solver
+        // does not, and that the recorded difference is a real cross-target
+        // divergence rather than an artefact of either implementation.
+        //
+        // Asserted in both directions, like the pinned divergence in check 7: a
+        // browser that started disagreeing is a failure somebody reads, and so
+        // is one that stopped reaching the overflow arm at all.
+        const mounts = bandMounts();
+        await mount({
+            Type: "Column",
+            Style: {
+                Padding: { Top: 0, Right: 0, Bottom: 0, Left: 0 }, Gap: 0,
+                // flex-start so a 120px band beside a 360px one keeps its own
+                // declared width rather than being stretched to the column's.
+                // A declared Width already wins over stretch; this says so.
+                AlignItems: "flex-start",
+            },
+            Children: mounts.map((m) => m.tree),
+        });
+
+        // One round trip for the whole table. The control is the Row's first
+        // child and the badge, where there is one, its second — the shape
+        // bandTree builds and the shape band.swift solves.
+        const bandRects = await evaluate(`${JSON.stringify(
+            mounts.map((_, i) => `root/${i}`))}.map((p) => {
+            const at = (path) => {
+                const el = document.querySelector('[data-node-path="' + path + '"]');
+                if (!el) return null;
+                const r = el.getBoundingClientRect();
+                return { x: r.left, y: r.top, w: r.width, h: r.height };
+            };
+            return { row: at(p), control: at(p + "/0"), badge: at(p + "/1") };
+        })`);
+
+        // The measures band.swift takes, in the Row's own coordinates. A rect
+        // is a border box and these boxes carry no border, so a control's width
+        // is its content plus its own padding — which is exactly the solver's
+        // "used outer size", and why the label's room is that width less the
+        // arrangement's insets.
+        const bandLayout = (m, r) => ({
+            width: r.row.w,
+            height: r.row.h,
+            controlX: r.control.x - r.row.x,
+            controlWidth: r.control.w,
+            controlHeight: r.control.h,
+            labelX: r.control.x - r.row.x + m.a.control.left,
+            labelWidth: r.control.w - m.a.control.left - m.a.control.right,
+            badgeX: r.badge ? r.badge.x - r.row.x : null,
+            badgeWidth: r.badge ? r.badge.w : null,
+        });
+
+        // Paired back up by (case, offer): bandMounts emits `now` then `before`
+        // for each, which is the order this walks in twos.
+        let sawBandSlack = false, sawBandOverflow = false;
+        for (let i = 0; i < mounts.length; i += 2) {
+            const nowM = mounts[i], beforeM = mounts[i + 1];
+            const c = nowM.c;
+            const at = nowM.offer < 0
+                ? "an indefinite proposal" : `${nowM.offer}px`;
+            const where = `${c.what} at ${at}`;
+
+            const nowR = bandRects[i], beforeR = bandRects[i + 1];
+            if (!nowR.row || !beforeR.row || nowR.row.w === 0) {
+                problems.push(`${where}: the band was not laid out — nothing below ` +
+                    `measured anything`);
                 continue;
             }
-            const agrees = axAgreesWithGo(ax, row);
-            if (agrees === null) {
-                problems.push(`"${row.name}" reads as ${row.reading}, which ` +
-                    `axAgreesWithGo has no arm for — the bar mounted, was found, and ` +
-                    `had nothing asserted about it`);
+            if (Boolean(nowR.badge) !== (c.badge.w > 0)) {
+                problems.push(`${where}: the band mounted with ` +
+                    `${nowR.badge ? "a badge" : "no badge"} and the case says ` +
+                    `${c.badge.w > 0 ? "it has one" : "it has none"} — bandTree and the ` +
+                    `fixture have drifted apart`);
                 continue;
             }
-            if (row.parses && !agrees) {
-                problems.push(`"${row.name}": the browser resolved ` +
-                    `${JSON.stringify(row.wire)} to ${showRange(ax)}, and ` +
-                    `core.ValueRange.Progress says ${row.reading} at ` +
-                    `${showRange({ value: row.now, min: row.min, max: row.max })}. ` +
-                    `Every number here parses, so this is a disagreement about ARIA's ` +
-                    `own defaulting or clamping — and the web exporters implement ` +
-                    `neither, they rely on the browser for both`);
+
+            const now = bandLayout(nowM, nowR);
+            const before = bandLayout(beforeM, beforeR);
+
+            // The control assertion first, because everything else is a
+            // comparison between two bands and this is what says they are two.
+            // An arrangement that had not actually moved its insets would make
+            // every measure below a comparison between two copies of one band.
+            // And that the Row is centring its children rather than stretching
+            // them, which is what the height comparison at the bottom rests on:
+            // a Row's height is its tallest child plus its own vertical padding
+            // only while a child is free to be shorter than the line. The
+            // fixture reads the alignment off the real widget (Arrangement.Align)
+            // and band.swift refuses a case that is not centred; here the
+            // browser does the laying out, so the same fact is available as a
+            // measurement — a stretched control is as tall as the line, and a
+            // centred one is as tall as its own content plus its own insets.
+            //
+            // The oversized-badge case is the one that can tell the difference.
+            // In every real band the padded control is already the tallest
+            // child, so stretching it changes nothing; the fixture carries a
+            // taller badge precisely so that something is taller than it.
+            for (const [m, l] of [[nowM, now], [beforeM, before]]) {
+                const want = c.label.h + m.a.control.top + m.a.control.bottom;
+                if (!bandSame(l.controlHeight, want)) {
+                    problems.push(`${where}: with the insets ${m.a.what} the control is ` +
+                        `${l.controlHeight.toFixed(2)}px tall and its content plus its ` +
+                        `own insets is ${want}px. The band states align-items ` +
+                        `${m.a.align}, and a control stretched to the line makes the ` +
+                        `height comparison below a claim about a layout the widget does ` +
+                        `not build`);
+                }
             }
-            if (!row.parses && agrees) {
-                problems.push(`"${row.name}": the browser now agrees with ` +
-                    `core.ValueRange.Progress about a range holding a value that is ` +
-                    `not a number. That is good news and it is still a failure: the ` +
-                    `divergence is written down in valuerange.mjs, in core.ValueRange` +
-                    `.Unparsed and in core.AuditTree's ConcernUnusableValueRange, and ` +
-                    `all three now say something that is no longer true of this browser`);
+
+            const grew = now.controlWidth - before.controlWidth;
+            const wantGrew = c.now.control.left + c.now.control.right;
+            if (!bandSame(grew, wantGrew)) {
+                problems.push(`${where}: the control is ${grew.toFixed(2)}px wider with ` +
+                    `the insets on it and the insets it carries total ${wantGrew}px. The ` +
+                    `target is supposed to have absorbed exactly the chrome that left ` +
+                    `the Row, and if it did not, every comparison below is between two ` +
+                    `copies of one band`);
             }
+            if (!bandSame(now.controlX, c.now.row.left)) {
+                problems.push(`${where}: the control starts ${now.controlX.toFixed(2)}px ` +
+                    `into the band with the insets on it, and the Row's own leading ` +
+                    `inset is ${c.now.row.left}px. The whole point of the move is that a ` +
+                    `press lands on the band's leading edge rather than 16px into it`);
+            }
+
+            // Overflow is decided once, from the `now` arrangement, which is
+            // only legitimate while the two hold the same chrome — the claim
+            // internal/bandfixture's Rewind is supposed to conserve. Checked
+            // rather than assumed: a Rewind that had stopped conserving it
+            // would put one arrangement in the shrink arm and the other in the
+            // grow arm, and every comparison below would be between two
+            // different questions.
+            const natural = bandNatural(nowM.a, c);
+            const naturalBefore = bandNatural(beforeM.a, c);
+            if (!bandSame(natural, naturalBefore)) {
+                problems.push(`${where}: the band's natural width is ${natural}px with ` +
+                    `the insets ${c.now.what} and ${naturalBefore}px with them ` +
+                    `${c.before.what}. The two are supposed to hold the same chrome, so ` +
+                    `internal/bandfixture's Rewind has stopped conserving it and the ` +
+                    `two arrangements are no longer the same band`);
+                continue;
+            }
+            const overflowed = nowM.offer >= 0 && nowM.offer < natural - BAND_EPSILON;
+            if (overflowed) sawBandOverflow = true; else sawBandSlack = true;
+
+            // The control the overflow arm needs, and it is not a formality.
+            // CSS gives a flex item an automatic minimum size, so an item that
+            // refused to shrink would leave both arrangements at their natural
+            // width, overflowing the container — and they would agree, because
+            // neither had done any arithmetic. That is agreement with no
+            // subject, and it is exactly what dropping the min-width: 0 in
+            // bandTree produces: the fixture's label is a box with a declared
+            // width, whose min-content is the whole of it.
+            //
+            // So under overflow the label must have ended up with *less* room
+            // than it asked for, in both arrangements, before their agreement
+            // means anything.
+            if (overflowed) {
+                for (const [what, got] of [
+                    [c.now.what, now.labelWidth], [c.before.what, before.labelWidth],
+                ]) {
+                    if (got >= c.label.w - BAND_EPSILON) {
+                        problems.push(`${where}: with the insets ${what} the label still ` +
+                            `has ${got.toFixed(2)}px for ${c.label.w}px of content, in a ` +
+                            `band offered less than its natural ${natural}px. Nothing ` +
+                            `shrank — the flex item's automatic minimum size is still in ` +
+                            `force — so the two arrangements agree by never reaching the ` +
+                            `arithmetic this check is about`);
+                    }
+                }
+                // And the badge shares the deficit, which is what makes this the
+                // same problem the SwiftUI solver is given: there the badge's
+                // growth weight is 0 and its shrink share is its base like
+                // everything else's. A badge pinned at its own width would move
+                // the whole deficit onto the control — the two arrangements
+                // would still agree, for the reason they always do, but the
+                // numbers this check measures would no longer be the numbers
+                // ios/verify's are being compared with.
+                for (const [what, got] of [
+                    [c.now.what, now.badgeWidth], [c.before.what, before.badgeWidth],
+                ]) {
+                    if (got !== null && got >= c.badge.w - BAND_EPSILON) {
+                        problems.push(`${where}: with the insets ${what} the badge is ` +
+                            `still its whole ${c.badge.w}px wide in a band that overflows, ` +
+                            `so the control is absorbing the entire deficit. ` +
+                            `ios/verify/band.swift divides it between both children, and ` +
+                            `the two passes are no longer solving the same problem`);
+                    }
+                }
+            }
+
+            // Every measure, at every offer, in both arrangements. There is no
+            // separate overflow arm here and that IS the finding: on this
+            // target the deficit is divided the same way in both arrangements,
+            // so the identity that holds with slack goes on holding without it.
+            const measures = [
+                ["the band's width", now.width, before.width],
+                ["the label's leading edge", now.labelX, before.labelX],
+                ["the label's width", now.labelWidth, before.labelWidth],
+            ];
+            if (now.badgeX !== null && before.badgeX !== null) {
+                measures.push(["the badge's leading edge", now.badgeX, before.badgeX]);
+            }
+            for (const [what, a, b] of measures) {
+                if (bandSame(a, b)) continue;
+                problems.push(`${where}: ${what} is ${a.toFixed(2)}px with the insets ` +
+                    `${c.now.what} and ${b.toFixed(2)}px with them ${c.before.what}. ` +
+                    (overflowed
+                        ? `This is the overflow arm, and a browser agreeing here is the ` +
+                          `recorded cross-target divergence: CSS distributes shrink over ` +
+                          `the inner flex base size, which excludes a child's own ` +
+                          `padding, where GrMobFlexSolver's base includes it (see ` +
+                          `ios/verify/band.swift, which asserts the disagreement). A ` +
+                          `browser that has stopped agreeing means that rule has ` +
+                          `changed, and the note in band.swift is now wrong about the web`
+                        : `Moving the band's padding onto its control is supposed to be ` +
+                          `the same pixels one node in, and in a browser it is not`));
+            }
+
+            // The cross axis, which is where the two arrangements genuinely
+            // differ and the fixture says which way. With align-items centre a
+            // Row's height is its tallest child plus its own vertical padding,
+            // so moving that padding onto one child stops it being added to the
+            // other — invisible while the padded control is the taller child,
+            // which every real band is, and visible in the fixture's one
+            // deliberately oversized badge. Asked of a browser for the first
+            // time here: the model is CSS's own, and ios/verify was checking a
+            // transliteration of it.
+            const sameHeight = bandSame(now.height, before.height);
+            if (sameHeight !== c.sameHeight) {
+                problems.push(`${where}: the band is ${now.height.toFixed(2)}px tall with ` +
+                    `the insets ${c.now.what} and ${before.height.toFixed(2)}px with them ` +
+                    `${c.before.what}, and internal/bandfixture says the two ` +
+                    `${c.sameHeight ? "agree" : "differ"}. ` +
+                    (c.sameHeight
+                        ? `A band whose padded control is its tallest child keeps its ` +
+                          `height across the move, so either the Row has stopped ` +
+                          `centring its children or a child is taller than the fixture ` +
+                          `thinks`
+                        : `A badge taller than the padded control loses the Row's ` +
+                          `vertical padding when that padding moves; heights that now ` +
+                          `agree mean a real band's agreement holds for a different ` +
+                          `reason than the one recorded`));
+            }
+        }
+        // Both arms have to have run, for the reason band.swift gives about its
+        // own: a table whose offers all had slack would assert the identity and
+        // never reach the arithmetic this check was added for.
+        if (!sawBandSlack || !sawBandOverflow) {
+            problems.push(`the band offers reached ` +
+                (sawBandSlack ? "" : "no case with slack ") +
+                (sawBandOverflow ? "" : "no case that overflows ") +
+                `— internal/bandfixture is supposed to carry both, and the half of ` +
+                `this check that asks whether the insets survive overflow is asserted ` +
+                `over nothing`);
         }
 
     } finally {
@@ -1305,8 +1734,10 @@ async function main() {
     console.log(`OK: roving tabindex, disabled focus, ArrowDown and the toolbar walk
     hold in a real browser, ${PALETTES.length} palette swatches paint the
     hexes the contrast census measures, ${WIDGETS.length} real widgets draw
-    their own boundary tones on both edges, a sticky band pins, and ${VALUE_RANGES.length}
-    value ranges resolve the way core.Progress says a browser resolves them`);
+    their own boundary tones on both edges, a sticky band pins, ${VALUE_RANGES.length}
+    value ranges resolve the way core.Progress says a browser resolves them, and
+    ${BANDS.length} bands lay out identically in both inset arrangements at every
+    offer — overflow included, which is where the SwiftUI solver does not`);
 }
 
 await main();

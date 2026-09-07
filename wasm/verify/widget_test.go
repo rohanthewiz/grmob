@@ -100,20 +100,24 @@ func TestEveryBundledThemeHasAWidgetSwatch(t *testing.T) {
 // written to prevent. Reading the tone off the rendered node and comparing it
 // with the role is what keeps that argument true rather than remembered.
 //
-// # What it cannot catch, and why nothing here can
+// # What it cannot catch on a bundled theme
 //
 // Precisely that swap. Components.Input.BorderColor holds the same hex as the
 // role in all three bundled themes — core/theme_test.go's
 // TestBundledFieldFramesAreTheControlBorderRole is what makes that true — so a
 // chip that read the field base instead would render an identical tone and
-// pass this comparison, every pixel in the browser, and every other test here.
-// It is a difference in *provenance* with no observable consequence until
-// somebody restyles their text fields, which is the day the argument in
-// chipRing is about.
+// pass this comparison, every pixel in the browser, and every other test that
+// renders a shipped palette. It is a difference in *provenance* with no
+// observable consequence until somebody restyles their text fields, which is
+// the day the argument in chipRing is about.
 //
-// A hex comparison cannot see that, and neither can a screenshot. What this
-// test does catch is the whole of the rest: a tone that is neither, a fallback
-// taken, a Style override, a theme whose role moved and whose widget did not.
+// A hex comparison cannot see that on a theme where the two agree, and neither
+// can a screenshot. TestEachWidgetReadsTheAuthorityItNames below is what does:
+// it renders the same two widgets through a theme whose role and field base are
+// deliberately different hexes, which is the one arrangement where provenance
+// has a pixel. This test keeps the whole of the rest, on the palettes that
+// actually ship — a tone that is neither, a fallback taken, a Style override, a
+// theme whose role moved and whose widget did not.
 func TestTheWidgetSwatchRingIsThePaletteRole(t *testing.T) {
 	// RingFrom -> the value it names, read out of the theme. A spelling not in
 	// this map is a case whose authority nothing here knows, which is a
@@ -217,6 +221,105 @@ func TestTheWidgetSwatchRatiosAreThePaletteArithmetic(t *testing.T) {
 						"%.2f:1", name, what, pair.got, pair.what, want)
 				}
 			}
+		}
+	}
+}
+
+// Each widget reads the authority its case names, told apart by a theme that
+// splits the two.
+//
+// # The gap this closes, and why it needed a made-up theme
+//
+// TestTheWidgetSwatchRingIsThePaletteRole above states what it cannot see, and
+// this is it: Components.Input.BorderColor holds the same hex as
+// Colors.ControlBorder in all three bundled themes (core/theme_test.go's
+// TestBundledFieldFramesAreTheControlBorderRole is what makes that true), so
+// the comparison passes whichever of the two a case names. A chip that had
+// started reading the field base — the exact drift components.chipRing's
+// argument was written to prevent — renders an identical tone, paints an
+// identical pixel, and satisfies every check in this file and in browser.mjs.
+// The failure only becomes visible on the day somebody restyles their fields,
+// which is the day the argument is about.
+//
+// Both directions are invisible, not one. A field frame that had started
+// reading the role would be equally undetectable, and it is the likelier of the
+// two: "the role is the thing both of them name" reads like an instruction to
+// use it everywhere.
+//
+// A fourth bundled theme that split them would sharpen the whole family, and it
+// would be a palette added to the framework for a test. This does the same work
+// with a theme that never leaves this function: the two values are set to two
+// hexes nothing else in the repository uses, both widgets are rendered through
+// it by gen.go's own builders, and each case's ring must be the value its
+// RingFrom names.
+//
+// # Why it renders rather than reading widgetCases()
+//
+// widgetCases() is bundled themes only, and every bundled theme is one where
+// the two agree. Rendering through gen.go's widgetBuilders is what makes this a
+// statement about the widgets the browser pass actually mounts rather than
+// about a second pair built here.
+func TestEachWidgetReadsTheAuthorityItNames(t *testing.T) {
+	// Two hexes chosen only to be different from each other and from anything
+	// a theme ships, so a ring that matched one of them matched it by being
+	// read from there. Both parse, because renderWidgetCase computes the
+	// census's ratios over them.
+	const (
+		splitRole      = "#010203"
+		splitInputBase = "#040506"
+	)
+	// A copy, not a mutation: core.DefaultTheme is a package-level pointer that
+	// every other test in this binary renders through.
+	split := *core.DefaultTheme
+	split.Colors.ControlBorder = splitRole
+	split.Components.Input.BorderColor = splitInputBase
+
+	// The guard the whole test rests on. If the two ever resolved to the same
+	// hex again — a resolver that ignored the field, a component default that
+	// started deriving from the role — every assertion below would pass for
+	// the reason this test exists to remove.
+	if got := split.Colors.ControlBorderColor(); got != splitRole {
+		t.Fatalf("the split theme's role resolves to %q, not the %q it was set to — "+
+			"ControlBorderColor is not reading the field this test moves, so the two "+
+			"authorities are not actually split and nothing below discriminates",
+			got, splitRole)
+	}
+	if split.Colors.ControlBorderColor() == split.Components.Input.BorderColor {
+		t.Fatal("the split theme's role and Input base hold the same hex, which is " +
+			"the state this test exists to escape")
+	}
+
+	want := map[string]string{
+		ringFromRole:      splitRole,
+		ringFromInputBase: splitInputBase,
+	}
+	// The other spelling, for the failure message: a ring that came from the
+	// wrong place is much easier to read as "it took the field base" than as
+	// "it was #040506".
+	name := map[string]string{splitRole: ringFromRole, splitInputBase: ringFromInputBase}
+
+	for _, w := range widgetBuilders {
+		c, err := renderWidgetCase("a theme whose role and field base differ", &split, w)
+		if err != nil {
+			t.Fatalf("rendering the %s swatch: %v", w.what, err)
+		}
+		expect, known := want[c.RingFrom]
+		if !known {
+			t.Errorf("%s names %q as the source of its boundary tone, which is not a "+
+				"spelling this test can read", c.What, c.RingFrom)
+			continue
+		}
+		if c.Ring != expect {
+			from := name[c.Ring]
+			if from == "" {
+				from = "neither authority — " + c.Ring
+			}
+			t.Errorf("%s says its boundary comes from %s and it drew %s. Every bundled "+
+				"theme holds the same hex in both, so this widget paints the right "+
+				"pixel today and will paint the wrong one for the first theme that "+
+				"styles its fields separately — which is the whole reason the two are "+
+				"read from different places",
+				c.What, c.RingFrom, from)
 		}
 	}
 }

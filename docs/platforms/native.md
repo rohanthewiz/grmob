@@ -1076,15 +1076,21 @@ the check was worth:
   insets on the control and 64.52pt with them on the `Row`. It needs a second
   child to show: with the count hidden the control is alone on the line and is
   clamped to the container either way. CSS distributes shrink over the *inner*
-  flex base size rather than the outer one, so a browser may well agree where
-  this does not — nothing here has asked one.
+  flex base size rather than the outer one — and a browser **has** now been
+  asked: `wasm/verify/browser.mjs` mounts the same fixture in a real Chrome and
+  measures 64.52pt in *both* arrangements, at every offer. So this is a genuine
+  cross-target divergence — one renderer's shrink proportion counts a child's
+  padding and the other's does not — rather than an artefact of either
+  implementation, and each target asserts its own answer.
 - **A badge taller than the control would change the band's height.** With
   children centred, a `Row`'s height is its tallest child plus its own vertical
   padding, so moving that padding onto one child stops it being added to the
   other. It cannot happen to the real band — the control carries more vertical
   padding than the badge and both wrap the same caption type — so it is a case
   with a made-up badge, asserted in the *other* direction so the agreement of
-  the real ones is not holding for a reason nobody stated.
+  the real ones is not holding for a reason nobody stated. The browser agrees
+  about this one: it is CSS's own rule, and the SwiftUI `Layout` was checking a
+  transliteration of it.
 
 `mobile/verify` needs even less — just Go. It holds the checks that have to
 hold in *both* native renderers at once, which is why they live under

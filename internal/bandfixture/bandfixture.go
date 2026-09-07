@@ -33,6 +33,13 @@
 // same transcript internal/menufixture's picker cases ride in, and ios/verify's
 // band.swift solves both arrangements and compares.
 //
+// It rides in wasm/verify's transcript too, and for the half ios/verify cannot
+// settle: browser.mjs lays both arrangements out in a real Chrome at the same
+// offers and measures the rects. That is the target the original "verified by
+// the pixels the change did not move" claim was about, made into a check — and
+// it is what turned the solver's overflow difference from a suspected artefact
+// into a recorded divergence between two renderers. See SharesADeficit.
+//
 // # Why the numbers are read off a rendered band
 //
 // A transcribed 16 is a copy, and the whole point is to check the arrangement
@@ -213,6 +220,14 @@ type Case struct {
 	// So a banded case diverges and an unbadged one does not, and band.swift
 	// asserts both — the second is what keeps the first from being "whatever
 	// happened".
+	//
+	// It is a claim about the SwiftUI solver alone. wasm/verify/browser.mjs
+	// mounts these same arrangements in a real Chrome, and CSS shrinks in
+	// proportion to the *inner* flex base size — which excludes the child's own
+	// padding — so there the badged case agrees under overflow like every
+	// other. Both directions are asserted on both targets, so the divergence is
+	// a recorded difference between two renderers rather than a defect in
+	// either.
 	SharesADeficit bool `json:"sharesADeficit"`
 }
 

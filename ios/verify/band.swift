@@ -132,11 +132,18 @@ private func solveBand(_ a: BandArrangement, label: BandSize, badge: BandSize,
 // (SharesADeficit) and both are asserted. An "it diverges" with no case that
 // does not would be a claim about whatever happened.
 //
-// It is a fact about *this* solver. CSS distributes shrink over the inner flex
-// base size rather than the outer one, so a browser may well agree where this
-// does not, and nothing in this repository has asked one. Asserted rather than
-// skipped so that a solver which started agreeing is a failure somebody reads
-// and not a silent improvement.
+// It is a fact about *this* solver, and that is now measured rather than
+// suspected. CSS distributes shrink over the inner flex base size rather than
+// the outer one, and wasm/verify/browser.mjs mounts the same fixture in a real
+// Chrome and reads the rects back: there the two arrangements agree at every
+// offer, overflow included, down to the LayoutUnit. So the difference below is
+// a genuine cross-target divergence — one renderer's shrink proportion counts a
+// child's padding and the other's does not — rather than an artefact of either
+// implementation.
+//
+// Asserted rather than skipped so that a solver which started agreeing is a
+// failure somebody reads and not a silent improvement. The browser's half is
+// asserted in the other direction for the same reason.
 //
 // It is also the narrowest possible case: a band this narrow is one whose label
 // is already being truncated.

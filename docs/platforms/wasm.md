@@ -1034,12 +1034,22 @@ a Node older than v21, which has no `WebSocket`), the same stance `ios/verify`
 takes toward a missing iPhoneOS SDK. Point `GRMOB_CHROME` at a binary to use
 an unusual install.
 
+A **missing transcript is a failure, not a skip**, and the two stances live
+together in `wasm/verify/startup.mjs`. A missing Chrome is a fact about the
+machine; a missing `GRMOB_TRANSCRIPT` is a fact about how the script was
+invoked, and skipping there would quietly drop the checks that need real
+components rendered by Go and still print success. The invocation fault is
+decided *first*, because on a machine with no Chrome the other order turns a
+forgotten variable into a green run. All of it is one function taking three
+booleans and a string, so `startup_test.mjs` reaches every answer — including
+the arms no developer's laptop and no headless container can both produce.
+
 The split is worth knowing when something fails: `keynav_test.mjs` says the
 runtime made the right decision, `browser.mjs` says the browser honoured it.
 
-Four of the eight checks are not about the keyboard at all — two about paint,
-one about layout, one about what a browser does with an ARIA value range — and
-all four are below.
+Five of the nine checks are not about the keyboard at all — two about paint,
+two about layout, one about what a browser does with an ARIA value range — and
+all five are below.
 
 ### The palette, on a screenshot
 
@@ -1125,6 +1135,16 @@ Three sampling details are the check's own history and are worth keeping:
   `outset`) are caught by either edge alone; the one-sided case is caught by
   neither unless both are read.
 
+All of them mount on **one page**, in a grid three swatches wide, and are
+measured out of a single screenshot. The trees themselves are `gen.go`'s and go
+in unmodified — what is asserted is that each widget's *own* declarations reach
+the screen, and a tree this harness had edited would be a different widget. What
+changes is only that a theme's page fill is now a sibling's fill rather than the
+document's, which no sample was ever reading: each is taken inside a rect the
+browser reported for the node that declares the colour. A swatch pushed below
+the fold would have a rect and no pixels, so the check says that in one line
+rather than as three failures naming colours.
+
 What the browser cannot check is whether those three hexes are the ones the
 census measured — it is handed three colours and compares three colours.
 `wasm/verify/widget_test.go` is that half, in Go: each case names the Go
@@ -1132,6 +1152,18 @@ authority its boundary is supposed to come from (`widgetCase.RingFrom`, and a
 spelling the test does not know is a failure rather than a skip), both backdrops
 must be fills `internal/palette` derives from `core.ComponentDefaults`, and the
 ratios carried across must be `palette.Ratio`'s.
+
+**And one thing no bundled theme can show: which of the two authorities a widget
+actually read.** `Components.Input.BorderColor` holds the same hex as
+`Colors.ControlBorder` in all three shipped palettes, so a chip that had started
+reading the field base — the exact drift `chipRing`'s argument was written to
+prevent — renders an identical tone, paints an identical pixel, and passes every
+check above. So does a field frame that had started reading the role, which is
+the likelier of the two. A fourth bundled theme that split them would be a
+palette added to the framework for a test; instead `TestEachWidgetReadsTheAuthorityItNames` renders `gen.go`'s own widget builders through a **throwaway
+theme whose role and field base are deliberately different hexes**, which is the
+one arrangement where provenance has a pixel, and holds each case to the
+authority its `RingFrom` names.
 
 ### A pinned band, and the first layout question
 
@@ -1201,6 +1233,74 @@ hear about it.
 
 `core.AuditTree` reports the same shape in Go, as `unusable-value-range`, so an
 author is told before it reaches any of the three.
+
+**Only one of those two halves can fail on a machine with a shipping browser.**
+The `parses: false` half is a pinned divergence — it reports only if a browser
+*starts* applying ARIA's defaults to a value that is not a number — so the
+branch that would say so had never executed anywhere, and a dropped `!` or a
+swapped arm was invisible to every pass. The verdict therefore lives beside the
+table in `valuerange.mjs` rather than inside the round trip, as
+`valueRangeProblem(row, ax)`: its inputs are two plain objects, so
+`valuerange_test.mjs` hands it all four answers, the browser's and the one no
+browser gives. `browser.mjs` supplies the second object from a real
+accessibility tree and does nothing else.
+
+### The band's insets, under overflow
+
+The ninth check is the second layout question, and the first that exists to
+settle a disagreement between two renderers.
+
+`components.GroupHeader` moved its padding from the band `Row` onto the growing
+control inside it, so that a press lands on the whole band rather than on a
+strip in the middle of it. The warrant is that the move costs nothing: padding
+on a stretched child fills exactly the space the same padding on its parent
+held. On the web that was "verified" by the pixels the change did not move —
+by a person, once. `ios/verify` turned it into a check, solving both
+arrangements through `GrMobFlexSolver`, and found one place it is not free:
+
+| 120pt offered, a 100pt label, a 24pt badge | label's room |
+|---|---|
+| SwiftUI solver, insets on the control | 63.14 |
+| SwiftUI solver, insets on the Row | 64.52 |
+| **Chrome, both arrangements** | **64.52** |
+
+Under overflow that solver shrinks each child in proportion to a base that
+*includes* the child's own padding, so the control's insets are inside the
+proportion in one arrangement and outside it in the other. **CSS distributes
+shrink over the inner flex base size, which excludes padding** — and until this
+check that difference was a sentence in a comment that had never been put to a
+browser.
+
+So `internal/bandfixture` now rides in `wasm/verify`'s transcript too, and
+`browser.mjs` lays out every case in both arrangements at every offer — one
+mount, one round trip of rects — and compares the band's width, the label's
+leading edge and room, the badge's leading edge and the band's height. There is
+no separate overflow arm, and that is the finding: on this target the identity
+holds at every offer. The difference `ios/verify` records is a genuine
+cross-target divergence rather than an artefact of either implementation, and
+both targets assert their own answer, so either one changing its mind is a
+failure somebody reads.
+
+Two modelling decisions make the comparison the right one, and both are the
+faithful choice rather than a convenience:
+
+- **`min-width: 0` on the flex items.** CSS will not shrink a flex item below
+  its own min-content width, and the fixture's label is a synthetic box with a
+  *declared* width — so without this nothing shrinks, both arrangements sit at
+  their natural width, and they agree by never reaching the arithmetic. A real
+  band's label is text, whose min-content is its longest word. The check asserts
+  the shrink actually happened before their agreement counts for anything.
+- **An indefinite offer becomes `width: max-content`.** `bandfixture` spells "no
+  definite offer" as a negative number, which is SwiftUI probing for an ideal
+  size; `max-content` is the same question in CSS, and the two arrangements have
+  to agree about what they hug to as well.
+
+The offer is also converted to an *inner* width (`offer - row.left -
+row.right`), because this runtime writes no `box-sizing` and a `Row` is
+therefore a content box. That subtraction is `band.swift`'s own line — the
+proposal a SwiftUI `Layout` receives after its container's padding is removed —
+and without it the arrangement with padding on the `Row` is handed a band 32px
+wider than the other.
 
 **A check that waits for a frame waits for its own subject to work.** The
 toolbar check hung for its whole timeout the first time its subject was broken,

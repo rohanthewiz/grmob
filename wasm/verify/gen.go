@@ -23,12 +23,20 @@
 //	        focusAction), keyboard traversal (imeAction / onSubmit) and the
 //	        prop churn a validating form produces.
 //
-// The transcript carries one thing besides those: the picker-menu case table
-// (internal/menufixture), which has nothing to do with the replay and rides
-// along because the harness reads one file. It is the same table ios/verify
-// and android/verify run their transliterations against — this runtime carries
-// a fourth one, selectMenuSections in grmob-runtime.js, and select_test.mjs
-// rebuilds the sections back out of the DOM to compare with Go's answer.
+// The transcript carries three things besides those, none of which has anything
+// to do with the replay; they ride along because the harness reads one file:
+//
+//	menuCases  internal/menufixture, the picker-menu case table ios/verify and
+//	           android/verify run their transliterations against. This runtime
+//	           carries a fourth one, selectMenuSections in grmob-runtime.js, and
+//	           select_test.mjs rebuilds the sections back out of the DOM to
+//	           compare with Go's answer.
+//	widgets    real components.Chip and core.Input trees rendered through every
+//	           bundled theme, for the browser pass to paint and sample. See
+//	           widgetCase.
+//	bands      internal/bandfixture, components.GroupHeader's two inset
+//	           arrangements, for the browser pass to lay out and measure against
+//	           the answers ios/verify's flex solver gives.
 package main
 
 import (
@@ -42,6 +50,7 @@ import (
 	"github.com/rohanthewiz/grmob/core"
 	"github.com/rohanthewiz/grmob/examples/mobileapp"
 	"github.com/rohanthewiz/grmob/examples/signup"
+	"github.com/rohanthewiz/grmob/internal/bandfixture"
 	"github.com/rohanthewiz/grmob/internal/menufixture"
 	"github.com/rohanthewiz/grmob/internal/palette"
 	"github.com/rohanthewiz/grmob/jsonout"
@@ -70,6 +79,17 @@ type transcript struct {
 	// this file, and for the same reason as the second — run.sh generates one
 	// file and every consumer reads it.
 	Widgets []widgetCase `json:"widgets"`
+	// Bands are components.GroupHeader's two inset arrangements, for the
+	// browser pass to lay out and measure. The fourth table, same reason.
+	//
+	// ios/verify already solves these through GrMobFlexSolver and records that
+	// the two arrangements divide an overflow deficit differently there,
+	// because that solver shrinks in proportion to a base that includes the
+	// child's own padding. CSS distributes shrink over the *inner* flex base
+	// size, which is a different rule — and until this the repository had
+	// stated that in a comment and never asked a browser. browser.mjs mounts
+	// them and measures the rects.
+	Bands []bandfixture.Case `json:"bands"`
 }
 
 // node mirrors just enough of core.Node's JSON to hunt down callback IDs.
@@ -275,6 +295,7 @@ func main() {
 		Scenarios: []scenario{demoScenario(), signupScenario()},
 		MenuCases: menufixture.Cases(),
 		Widgets:   widgetCases(),
+		Bands:     bandfixture.Cases(),
 	})
 	if err != nil {
 		fatal("marshal transcript: %v", err)
@@ -401,73 +422,111 @@ func widgetCases() []widgetCase {
 	}
 	sort.Strings(names)
 
-	// One entry per widget, so a case added here is added for every theme and
-	// the two loops cannot drift apart. The view is built inside a theme's
-	// context, which is why it is a function rather than a value.
-	widgets := []struct {
-		what     string
-		ringFrom string
-		build    func(*core.Theme) core.View
-	}{
-		{"quiet Chip", ringFromRole, func(*core.Theme) core.View {
-			return components.Chip{Label: "Sermons"}
-		}},
-		// Empty value and no handler: what is under test is the frame, and a
-		// field with text in it puts ink near the fill sample. The placeholder
-		// is empty for the same reason — placeholder ink is drawn inside the
-		// padding, which is exactly where the fill is read.
-		{"Input frame", ringFromInputBase, func(*core.Theme) core.View {
-			return core.Input("", "", nil)
-		}},
-	}
-
-	out := make([]widgetCase, 0, len(names)*len(widgets))
+	out := make([]widgetCase, 0, len(names)*len(widgetBuilders))
 	for _, name := range names {
-		theme := byName[name]
-		for _, w := range widgets {
-			ctx := core.NewContext().WithTheme(theme)
-			ctx.BeginRenderPass()
-			page := core.Box(
-				core.BackgroundColor(theme.Colors.Background),
-				core.Padding(24),
-				core.Width("240px"),
-				w.build(theme),
-			).Render(ctx)
-
-			if len(page.Children) != 1 {
-				fatal("%s/%s: the page box rendered %d children, want the widget alone",
-					name, w.what, len(page.Children))
+		for _, w := range widgetBuilders {
+			c, err := renderWidgetCase(name, byName[name], w)
+			if err != nil {
+				fatal("%v", err)
 			}
-			widget := page.Children[0]
-			if page.Style == nil || widget.Style == nil {
-				fatal("%s/%s: a widget swatch rendered a node with no Style", name, w.what)
-			}
-
-			c := widgetCase{
-				Theme: name, What: w.what,
-				Tree:     jsonout.Export(page),
-				Page:     page.Style.Background,
-				Fill:     widget.Style.Background,
-				Ring:     widget.Style.BorderColor,
-				RingFrom: w.ringFrom,
-			}
-			c.RatioOnPage = ratioBetween(name, c.Ring, c.Page)
-			c.RatioOnFill = ratioBetween(name, c.Ring, c.Fill)
 			out = append(out, c)
 		}
 	}
 	return out
 }
 
+// widgetBuilder is one widget the census paints, in every theme.
+type widgetBuilder struct {
+	what     string
+	ringFrom string
+	// build takes the theme so a widget that needs one can read it. The view
+	// is built inside a theme's render context, which is why this is a
+	// function rather than a value.
+	build func(*core.Theme) core.View
+}
+
+// widgetBuilders is one entry per widget, so a case added here is added for
+// every theme and the two loops cannot drift apart.
+//
+// A package-level var rather than a local, because widget_test.go renders these
+// same two builders through a theme of its own — one whose ControlBorder role
+// and Input base are deliberately different hexes, which is the one arrangement
+// that can tell each widget's *provenance* from its pixels. See
+// TestEachWidgetReadsTheAuthorityItNames there. A second list in the test would
+// be a second set of widgets, and the provenance it proved would be theirs.
+var widgetBuilders = []widgetBuilder{
+	{"quiet Chip", ringFromRole, func(*core.Theme) core.View {
+		return components.Chip{Label: "Sermons"}
+	}},
+	// Empty value and no handler: what is under test is the frame, and a
+	// field with text in it puts ink near the fill sample. The placeholder
+	// is empty for the same reason — placeholder ink is drawn inside the
+	// padding, which is exactly where the fill is read.
+	{"Input frame", ringFromInputBase, func(*core.Theme) core.View {
+		return core.Input("", "", nil)
+	}},
+}
+
+// renderWidgetCase renders one widget through one theme and reads the three
+// colours off the resulting nodes.
+//
+// It returns an error rather than calling fatal so a test can drive it: a
+// widget whose rendered shape has changed must stop a `go run` and fail a
+// `go test`, and os.Exit does the first and takes the whole test binary down
+// doing the second.
+//
+// `name` labels the theme in messages and is not read from it — the caller is
+// the one with the map key, and widget_test.go builds a theme that has no name
+// in core at all.
+func renderWidgetCase(name string, theme *core.Theme, w widgetBuilder) (widgetCase, error) {
+	ctx := core.NewContext().WithTheme(theme)
+	ctx.BeginRenderPass()
+	page := core.Box(
+		core.BackgroundColor(theme.Colors.Background),
+		core.Padding(24),
+		core.Width("240px"),
+		w.build(theme),
+	).Render(ctx)
+
+	if len(page.Children) != 1 {
+		return widgetCase{}, fmt.Errorf(
+			"%s/%s: the page box rendered %d children, want the widget alone",
+			name, w.what, len(page.Children))
+	}
+	widget := page.Children[0]
+	if page.Style == nil || widget.Style == nil {
+		return widgetCase{}, fmt.Errorf(
+			"%s/%s: a widget swatch rendered a node with no Style", name, w.what)
+	}
+
+	c := widgetCase{
+		Theme: name, What: w.what,
+		Tree:     jsonout.Export(page),
+		Page:     page.Style.Background,
+		Fill:     widget.Style.Background,
+		Ring:     widget.Style.BorderColor,
+		RingFrom: w.ringFrom,
+	}
+	var err error
+	if c.RatioOnPage, err = ratioBetween(name, c.Ring, c.Page); err != nil {
+		return widgetCase{}, err
+	}
+	if c.RatioOnFill, err = ratioBetween(name, c.Ring, c.Fill); err != nil {
+		return widgetCase{}, err
+	}
+	return c, nil
+}
+
 // ratioBetween is the census's own arithmetic, through internal/palette, so
 // the number travelling to the browser is the number components/variant_test.go
-// measures. A colour that does not parse is fatal rather than zero: a ratio of
-// 0 would print in a failure as a claim somebody made.
-func ratioBetween(theme, a, b string) float64 {
+// measures. A colour that does not parse is an error rather than zero: a ratio
+// of 0 would print in a failure as a claim somebody made.
+func ratioBetween(theme, a, b string) (float64, error) {
 	la, oka := palette.Luminance(a)
 	lb, okb := palette.Luminance(b)
 	if !oka || !okb {
-		fatal("%s: a widget swatch declares an unparseable colour (%q, %q)", theme, a, b)
+		return 0, fmt.Errorf("%s: a widget swatch declares an unparseable colour (%q, %q)",
+			theme, a, b)
 	}
-	return math.Round(palette.Ratio(la, lb)*100) / 100
+	return math.Round(palette.Ratio(la, lb)*100) / 100, nil
 }
