@@ -43,6 +43,11 @@ cd "$(dirname "$0")"
 # reached without owning a machine that has the fault, and running the tests
 # here is what makes that true on every machine this pass runs on rather than on
 # one somebody remembered.
+#
+# The harness gate_test.sh counts with is shared with ios/verify's, so it gets
+# the same treatment one layer out: its arms only run when a gate is WRONG, and
+# a helper that had stopped counting would take both gate tests green with it.
+sh ../../internal/gateharness/harness_test.sh
 . ./gate.sh
 sh ./gate_test.sh
 

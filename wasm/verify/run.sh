@@ -12,7 +12,7 @@
 #
 # Some of what was in that bucket is not any more: browser.mjs drives a
 # headless Chrome over the DevTools protocol at the end of this script and
-# checks four keyboard facts, two about paint, four about layout and one about
+# checks four keyboard facts, two about paint, five about layout and one about
 # ARIA's value rules — that every bundled palette's ControlBorder reaches the
 # screen as the hex the contrast census did its arithmetic about, that a real
 # components.Chip still draws that tone, that a sticky band pins, that
@@ -21,7 +21,10 @@
 # do not), that a real band's tap target spans the band and its control is
 # taller than its badge once there are glyphs in both, that a fixed-size
 # container squeezes its child along its main axis and lets it spill across,
-# and that a browser resolves a value range the way core.Progress says it does.
+# that a Row honours core.FlexShrink(0) wherever the pinned child sits — which
+# is what puts a browser behind the CSS column of the pin census instead of one
+# solver — and that a browser resolves a value range the way core.Progress says
+# it does.
 # It skips when there is no Chrome to launch, which keeps the promise above
 # intact — see that file for the claims and why no amount of widening dom.mjs
 # would settle them.

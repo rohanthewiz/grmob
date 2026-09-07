@@ -472,6 +472,23 @@ var declStart = regexp.MustCompile(`(?m)^[ \t]*(?:[\w@]+[ \t]+)*(?:func|fun)[ \t
 // interpolation nests parentheses rather than braces, and Kotlin's `${…}` is
 // balanced, so it counts a `{` and its `}` and comes out even.
 //
+// # Why the skipping is not here
+//
+// It used to be: four arms, in the same order and with the same words as
+// maskNonCode's, one directory over — because "skip comments and literals" and
+// "blank comments and literals" are one question asked twice. Each file carried
+// a comment asking the two to agree, and a comment is not a mechanism. The
+// failure of a drifted copy is the quiet one: a counter that mishandled `"""`
+// ends the block early, still returns a string, and every `strings.Contains`
+// below it goes on running against half a declaration.
+//
+// So the count runs over the MASK. maskNonCode blanks every comment and literal
+// character to a space and preserves length, so offsets in the mask are offsets
+// in the source, and a brace that survives it is a brace in code. What is left
+// here is the counting, which is the part that was never shared, and the result
+// is sliced out of the original source — the callers below read literals, and a
+// body handed back blanked would answer "does it LIST this value" with nothing.
+//
 // file and what name the source and the construct, and are used only to say
 // where an unterminated block was found. They were a dispatchSyntax when the
 // dispatch parser was the only caller; swiftTypeBody is the second, and a type
@@ -480,50 +497,18 @@ var declStart = regexp.MustCompile(`(?m)^[ \t]*(?:[\w@]+[ \t]+)*(?:func|fun)[ \t
 func matchingBrace(t *testing.T, file, what, src string) string {
 	t.Helper()
 
+	// literals blanked, because a brace inside one is not a brace.
+	code, unterminated := maskNonCode(src, true)
+	if unterminated != "" {
+		t.Fatalf("%s: unterminated %s inside %s", file, unterminated, what)
+	}
+
 	depth := 0
-	for i := 0; i < len(src); i++ {
-		switch {
-		case strings.HasPrefix(src[i:], "//"):
-			nl := strings.IndexByte(src[i:], '\n')
-			if nl < 0 {
-				i = len(src)
-				continue
-			}
-			i += nl
-		case strings.HasPrefix(src[i:], "/*"):
-			end := strings.Index(src[i+2:], "*/")
-			if end < 0 {
-				t.Fatalf("%s: unterminated block comment inside %s", file, what)
-			}
-			i += 2 + end + 1
-		case strings.HasPrefix(src[i:], `"""`):
-			// A multi-line literal, which both languages spell this way and
-			// whose content is verbatim — so a line of it may legally begin
-			// with a brace in column one. Matched before the single-quote arm
-			// because that arm would read `"""` as an empty string followed by
-			// an opening quote, and would then take the first `"` of the
-			// *closing* delimiter as the end. That happens to come out even
-			// for content with no quote in it, and stops doing so for content
-			// with one.
-			end := strings.Index(src[i+3:], `"""`)
-			if end < 0 {
-				t.Fatalf("%s: unterminated multi-line string inside %s", file, what)
-			}
-			i += 3 + end + 2
-		case src[i] == '"':
-			// Escapes are honored so that a literal ending in \" does not read
-			// as still open, which would swallow the rest of the file.
-			j := i + 1
-			for j < len(src) && src[j] != '"' {
-				if src[j] == '\\' {
-					j++
-				}
-				j++
-			}
-			i = j
-		case src[i] == '{':
+	for i := 0; i < len(code); i++ {
+		switch code[i] {
+		case '{':
 			depth++
-		case src[i] == '}':
+		case '}':
 			depth--
 			if depth == 0 {
 				return src[1:i]

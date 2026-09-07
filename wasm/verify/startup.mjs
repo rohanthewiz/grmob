@@ -57,13 +57,13 @@
  *	"skip"  the machine cannot answer the question. Print `why` and exit 0.
  *	"run"   go ahead; `why` is empty.
  *
- * `widgets`, `bands` and `bandRenders` are how many of each table the transcript
- * carried, and are only meaningful when it was readable at all — a transcript
- * that exists and carries an empty table is its own failure, because the check
- * that reads it would then pass by having no subject.
+ * `widgets`, `bands`, `bandRenders` and `pins` are how many of each table the
+ * transcript carried, and are only meaningful when it was readable at all — a
+ * transcript that exists and carries an empty table is its own failure, because
+ * the check that reads it would then pass by having no subject.
  */
 export function startupVerdict({
-    transcriptPath, transcriptExists, widgets, bands, bandRenders,
+    transcriptPath, transcriptExists, widgets, bands, bandRenders, pins,
     hasWebSocket, chromePath,
 }) {
     // The invocation first. See the note above: on a machine with no Chrome the
@@ -99,6 +99,14 @@ export function startupVerdict({
                 "produced nothing, so the checks that ask whether the disclosure band's " +
                 "tap target spans it and whether its control is its tallest child have " +
                 "no subject.",
+        };
+    }
+    if (!pins) {
+        return {
+            action: "fail",
+            why: "the transcript carries no pinned-Row cases — internal/pinfixture " +
+                "produced nothing, so the check that asks a browser what " +
+                "core.FlexShrink(0) does to an overflowing Row has no subject.",
         };
     }
     if (!hasWebSocket) {

@@ -5,18 +5,6 @@ plugins {
     id 'org.jetbrains.kotlin.plugin.compose'
 }
 
-// The foundation-layout release the fixed-size census's Compose row is read
-// from — see the composeLayoutSources configuration below.
-//
-// It must equal what the Compose BOM in `dependencies` resolves
-// foundation-layout to, and it is spelled separately because the resolution
-// that would derive it cannot be asked for a sources jar without dragging in
-// the whole Compose graph. mobile/verify's
-// TestTheComposeSourcesAreTheVersionTheBOMResolves is what holds the two
-// together: it reads the BOM's own pom out of the gradle cache and fails if
-// this number is not the one listed there.
-ext.composeLayoutVersion = '1.6.8'
-
 android {
     // Properties are assigned with '=' throughout. The Groovy space-assignment
     // form ('namespace "x"') is deprecated and removed in Gradle 10.
@@ -62,15 +50,12 @@ kotlin {
 // runtime classpath: they are documentation this repository checks, not code
 // it builds against.
 //
-// transitive = false because nothing here wants foundation-layout's
-// dependencies — only its own text. Without it the resolution drags in the
-// whole Compose graph including the desktop artifacts, whose skiko dependency
-// publishes two runtime variants and cannot be chosen between by a
-// configuration carrying no attributes.
+// Nothing turns transitivity off HERE, and that is deliberate — see the
+// dependency declaration below, which turns it off on itself. A configuration
+// carrying `transitive = false` also drops the BOM's constraints, which are
+// the whole mechanism that gives the sources jar its version.
 configurations {
-    composeLayoutSources {
-        transitive = false
-    }
+    composeLayoutSources
 }
 
 tasks.register('fetchComposeLayoutSources') {
@@ -103,19 +88,67 @@ dependencies {
     // proportional shrink anywhere). Both are readings of foundation-layout,
     // and until this configuration existed they were readings of whatever
     // version happened to be in the machine's gradle cache — which is not the
-    // version this module builds against.
+    // version this module builds against. internal/pinfixture executes the
+    // second of those readings, so four more lines of the same file are held
+    // here too.
     //
     // Nothing compiles against these; they exist so mobile/verify can hold the
-    // prose to the source. The version is the BOM's, by construction: the
-    // platform below is the same one the implementation dependencies get, so
-    // the sources cannot be for a different release than the .aar.
+    // prose to the source.
     //
     //     ./gradlew :app:fetchComposeLayoutSources
     //
     // is the one-shot fetch, and it is a network call — which is why the
     // checks that read the jar skip rather than fail when it is absent.
-    composeLayoutSources "androidx.compose.foundation:foundation-layout-android:" +
-        "$composeLayoutVersion:sources@jar"
+    //
+    // # No version, on purpose
+    //
+    // This used to name one, as `ext.composeLayoutVersion = '1.6.8'` at the top
+    // of the file, with a Go test holding that number to the BOM's own pom. The
+    // number was right and the arrangement was not: a reader of this file saw
+    // two versions and no mechanism, and the one thing that made them agree
+    // lived in another language in another tree.
+    //
+    // So the BOM resolves this the way it resolves every other Compose
+    // artifact here, and there is one version in this file again. Three details
+    // are what make it work, and each of them is the reason the previous
+    // arrangement gave for not doing it:
+    //
+    //	the platform, on THIS      a BOM constrains the configuration it is
+    //	configuration              declared in. Without this line the coordinate
+    //	                           below has no version at all and does not
+    //	                           resolve.
+    //
+    //	transitive = false, on     nothing here wants foundation-layout's
+    //	the DEPENDENCY rather      dependencies — only its own text — and without
+    //	than the configuration     it the resolution drags in the whole Compose
+    //	                           graph including the desktop artifacts, whose
+    //	                           skiko dependency publishes two runtime
+    //	                           variants a configuration carrying no
+    //	                           attributes cannot choose between. Putting it
+    //	                           on the configuration instead ALSO drops the
+    //	                           BOM's constraints, which is what made this
+    //	                           look impossible.
+    //
+    //	an artifact block          `:sources@jar` is artifact-only notation: it
+    //	rather than `@jar`         skips the module metadata, so the BOM has
+    //	                           nothing to constrain and a version has to be
+    //	                           written out. Declaring the classifier this way
+    //	                           keeps metadata in the resolution and takes one
+    //	                           artifact out of it.
+    //
+    // mobile/verify's TestTheComposeSourcesTakeTheirVersionFromTheBOM holds
+    // this shape, because the failure of losing it is silent: a version written
+    // back in resolves perfectly and is simply not checked against anything.
+    composeLayoutSources composeBom
+    composeLayoutSources('androidx.compose.foundation:foundation-layout-android') {
+        transitive = false
+        artifact {
+            name = 'foundation-layout-android'
+            type = 'jar'
+            classifier = 'sources'
+            extension = 'jar'
+        }
+    }
 
     implementation 'androidx.activity:activity-compose:1.9.0'
     implementation 'androidx.compose.foundation:foundation'

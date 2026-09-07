@@ -1,12 +1,12 @@
 // The facts a shimmed DOM cannot check, checked in a browser: four about the
-// keyboard, two about paint, four about layout, and one about what a browser
+// keyboard, two about paint, five about layout, and one about what a browser
 // does with an accessibility value nobody here resolves.
 //
 // wasm/verify's other suites run the real grmob-runtime.js against dom.mjs — a
 // few hundred lines that model element trees, attributes, listeners and which
 // element holds focus. That is enough for almost everything, and its limits
 // are stated in its own header: there is no layout, no bubbling, and `focus()`
-// is an assignment, and nothing is ever painted. Eleven claims sit exactly in
+// is an assignment, and nothing is ever painted. Twelve claims sit exactly in
 // that blind spot, and no amount of widening the shim would settle them,
 // because each one is a claim about what a *browser* does:
 //
@@ -88,6 +88,17 @@
 //      blanket one assumed: squeezed along the main axis (a flex item's shrink
 //      factor defaults to 1 and an empty box has no automatic minimum to stop
 //      at), and spilling across the cross one.
+//  12. a pinned child keeps its base in a browser, and the siblings do not
+//      depend on the order. internal/pinfixture pairs a Compose column with a
+//      CSS one over one overflowing Row, and the CSS column is
+//      GrMobFlexSolver's — this repository's own flex arithmetic, which check 9
+//      just caught disagreeing with a real Chrome about how an overflow deficit
+//      is divided when a child has padding. The pin fixture's children have
+//      none, so the two rules coincide and the solver's answer is the web's: a
+//      piece of reasoning about whether a known divergence applies, made by the
+//      person who wrote the fixture and asked of nobody. This asks, and
+//      recomputes nothing — every claim is one the fixture states, held against
+//      measured pixels.
 //
 // The numbering is one sequence, and it is the order the checks run in rather
 // than the order they were written. It is also load-bearing: a dozen comments
@@ -157,6 +168,10 @@ const BANDS = TRANSCRIPT_JSON.bands || [];
 // the two band claims that are measurements of a rendered widget with glyphs in
 // it rather than of a distribution, and neither has a target but this one.
 const BAND_RENDERS = TRANSCRIPT_JSON.bandRenders || [];
+// internal/pinfixture, for check 12. One overflowing Row in four arrangements,
+// with the answer a Compose Row gives already computed — the same table
+// ios/verify solves through GrMobFlexSolver. Here it is laid out by a browser.
+const PINS = TRANSCRIPT_JSON.pins || [];
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const RUNTIME = join(HERE, "..", "grmob-runtime.js");
@@ -1069,6 +1084,129 @@ const FIXED_SIZE_CASES = [
 ];
 
 // --------------------------------------------------------------------------
+// The pinned Row
+// --------------------------------------------------------------------------
+//
+// core.FlexShrink(0) on an overflowing Row, laid out by a browser, over the
+// fixture the pin census is built on.
+//
+// # The sentence this replaces
+//
+// internal/pinfixture states one Row four ways and pairs two columns: a Compose
+// one, which is a transcription of foundation-layout's measure loop, and a CSS
+// one, which ios/verify produces by solving the same Row through
+// GrMobFlexSolver. That solver is this repository's own flex arithmetic, split
+// out so it can run without a simulator — it is not a browser.
+//
+// Check 9 above is where that distinction stopped being academic: under an
+// offer narrower than the band, GrMobFlexSolver shrinks each child in
+// proportion to a base that INCLUDES the child's own padding, and CSS
+// distributes shrink over the inner flex base size, which excludes it. A real
+// divergence, recorded in ios/verify/band.swift and confirmed by a browser one
+// check up.
+//
+// The pin fixture's children have no padding, so the two rules coincide and the
+// solver's column is CSS's — which is a piece of reasoning, made by whoever
+// wrote the fixture, about whether a known divergence applies. Nothing had
+// asked. This asks: the same four Rows, mounted, measured.
+//
+// # What is compared, and why none of it is a second transcription
+//
+// The one thing this must not do is compute the CSS answer in JavaScript. That
+// would be a third spelling of a flex line — after the solver and the browser —
+// and the check would then be about whether two transcriptions agree.
+//
+// So every claim here is one the FIXTURE states, held against measured pixels:
+//
+//	the declaration        a pinned child lays out at its own base, in every
+//	                       arrangement. That is what core.FlexShrink(0) says and
+//	                       what the Compose column shows; a browser is the third
+//	                       target to be asked.
+//	agreement, both ways   `mainsAgreeWithCSS` says whether these three extents
+//	                       are the Compose ones. Both arms are asserted, for the
+//	                       reason the fixture gives about deriving the flag: a
+//	                       check that only ever confirmed a divergence would pass
+//	                       just as well if the divergence quietly went away.
+//	order does not matter  the three pinned rows are permutations of one set of
+//	                       children, and a CSS flex line's sizes do not depend on
+//	                       position. This is the CSS half of "the siblings
+//	                       diverge" — the half ios/verify asserts of the solver —
+//	                       and it is what makes Compose's order-dependence a
+//	                       divergence rather than a coincidence.
+//	the control shrinks    the no-pin row's 200px child comes back smaller, and
+//	                       the line adds up to exactly the offer. One declaration
+//	                       apart from the row above it.
+//
+// Those four pin three of the four rows to the exact numbers the census records
+// — the pinned rows are determined by "the pin keeps its base" plus agreement
+// with Compose on the first plus order-independence across all three. The
+// control row's proportional split (24/80/16) is the one thing still stated by
+// GrMobFlexSolver alone, and it is not transcribed here; what is asserted about
+// it is that every child shrank and the line fits.
+//
+// # The modelling, and the one declaration that is NOT load-bearing
+//
+// The Row declares the offer as a width and has no padding and no gap, which is
+// the fixture's own shape: every number below is a child's extent against the
+// container's, with nothing for the reader to subtract.
+//
+// Every child carries `min-width: 0`, and unlike bandTree's control it does
+// nothing here. That is measured rather than assumed — a break-test removed it
+// and the four rows laid out identically — and the reason is the one bandTree's
+// badge already states about itself: CSS's automatic minimum for a flex item is
+// min(its specified size, its content size), and these children are empty
+// boxes, so their content size is 0 and their automatic minimum is 0 already.
+// It is bandTree's *control* the declaration matters to, because that child
+// wraps a label with a declared width.
+//
+// So it is kept as a statement of intent — the fixture is standing in for a
+// child that can be squeezed, and GrMobFlexSolver has no content-based floor
+// either — and named as inert, because an inert declaration a reader believes
+// is load-bearing is worse than no declaration at all. Nothing in
+// controls_test.go pins it, for the same reason: a control has to have a
+// subject.
+const PIN_EPSILON = 0.05;
+const pinSame = (a, b) => Math.abs(a - b) <= PIN_EPSILON;
+
+// One pinned-Row case as a tree. The pin is core.FlexShrink(0), which reaches
+// this runtime as the same declaration the fixed-size cases above use.
+function pinTree(c) {
+    return {
+        Type: "Row",
+        Style: {
+            Width: `${c.offer}px`,
+            Padding: { Top: 0, Right: 0, Bottom: 0, Left: 0 },
+            Gap: c.gap,
+            AlignItems: "flex-start",
+        },
+        Children: c.children.map((child) => ({
+            Type: "Box",
+            Style: {
+                Width: `${child.base}px`,
+                Height: "20px",
+                FlexGrow: 0,
+                FlexShrink: child.pinned ? SHRINK_NONE : 1,
+                // Intent rather than mechanism: these boxes are empty, so
+                // their automatic minimum is already 0. See PIN_GRID.
+                MinWidth: "0",
+            },
+        })),
+    };
+}
+
+// Every pinned Row, in one Column, so the whole table is one mount and one
+// round trip of rects — the same economy the widget grid and the band table are
+// built on.
+const PIN_GRID = {
+    Type: "Column",
+    Style: {
+        Padding: { Top: 0, Right: 0, Bottom: 0, Left: 0 }, Gap: 0,
+        AlignItems: "flex-start",
+    },
+    Children: PINS.map(pinTree),
+};
+
+// --------------------------------------------------------------------------
 
 async function main() {
     const chromePath = findChrome();
@@ -1078,6 +1216,7 @@ async function main() {
         widgets: WIDGETS.length,
         bands: BANDS.length,
         bandRenders: BAND_RENDERS.length,
+        pins: PINS.length,
         hasWebSocket: typeof WebSocket === "function",
         chromePath,
     }));
@@ -2504,6 +2643,134 @@ async function main() {
             }
         }
 
+        // ------------------------------------------------------------------
+        // 12. a pinned child keeps its base in a browser, and the siblings do
+        //     not depend on the order
+        // ------------------------------------------------------------------
+        //
+        // See PIN_GRID for the fixture, for what each claim rests on, and for
+        // why nothing here recomputes a flex line.
+        await mount(PIN_GRID);
+
+        const pinRects = await evaluate(`${JSON.stringify(
+            PINS.map((c, i) => c.children.map((_, j) => `root/${i}/${j}`)))}.map((paths) =>
+            paths.map((p) => {
+                const el = document.querySelector('[data-node-path="' + p + '"]');
+                return el ? el.getBoundingClientRect().width : null;
+            }))`);
+
+        // Each child's extent, by name, across the three arrangements that have
+        // a pin. The order claim spans cases, so it is collected as they are
+        // read and compared after all of them — the same shape pin.swift's
+        // pinnedExtent/unpinnedExtent pair has.
+        const pinnedRowExtent = {};
+        let sawAgreement = false, sawDivergence = false;
+
+        for (let i = 0; i < PINS.length; i++) {
+            const c = PINS[i], mains = pinRects[i];
+            const where = `the pinned Row, ${c.what}`;
+            if (mains.some((w) => w === null)) {
+                problems.push(`${where}: a child was not laid out`);
+                continue;
+            }
+
+            // The declaration, on the target that has always had flex-shrink.
+            // Compose needed Modifier.pinMainAxis to express this at all; a
+            // browser needs one number, and this is the first time anything has
+            // watched it arrive.
+            c.children.forEach((child, j) => {
+                if (child.pinned && !pinSame(mains[j], child.base)) {
+                    problems.push(`${where}: the pinned child ${child.name} declared ` +
+                        `${child.base}px with core.FlexShrink(0) and laid out at ` +
+                        `${mains[j].toFixed(2)}px. That declaration is the whole subject ` +
+                        `of the pin census — a browser that shrinks it anyway means the ` +
+                        `CSS column of that table is describing something else`);
+                }
+            });
+
+            // Agreement with the Compose column, both ways. The fixture derives
+            // which it is (see agreesWithCSS), so this is the browser being
+            // held to a stated fact rather than to whatever it produced.
+            const agrees = mains.every((w, j) => pinSame(w, c.compose.mains[j]));
+            if (c.mainsAgreeWithCSS) sawAgreement = true; else sawDivergence = true;
+            if (agrees !== c.mainsAgreeWithCSS) {
+                problems.push(`${where}: a browser lays the children out at ` +
+                    `[${mains.map((w) => w.toFixed(2)).join(", ")}] and ` +
+                    `internal/pinfixture's Compose column is ` +
+                    `[${c.compose.mains.join(", ")}], which it says the two ` +
+                    `${c.mainsAgreeWithCSS ? "agree" : "differ"} about. ` +
+                    (c.mainsAgreeWithCSS
+                        ? `They agree only where the pinned child comes first, and by ` +
+                          `two different routes — CSS clamps the shrinkable children to ` +
+                          `zero because the deficit exceeds their bases, Compose offers ` +
+                          `them nothing because the pin already took more than the Row ` +
+                          `had. A browser that has stopped agreeing means one of those ` +
+                          `two rules is not what the fixture says it is`
+                        : `Compose gives each child what the ones before it left and CSS ` +
+                          `shares the deficit over every child that can shrink; a ` +
+                          `browser that now AGREES means the divergence this fixture ` +
+                          `exists to record has gone, and ios/verify is asserting it ` +
+                          `against a solver rather than against the web`));
+            }
+
+            // The order. Collected here, compared below.
+            if (c.children.some((child) => child.pinned)) {
+                c.children.forEach((child, j) => {
+                    const seen = pinnedRowExtent[child.name];
+                    if (seen === undefined) {
+                        pinnedRowExtent[child.name] = { w: mains[j], what: c.what };
+                        return;
+                    }
+                    if (!pinSame(seen.w, mains[j])) {
+                        problems.push(`the pinned Row: ${child.name} is ` +
+                            `${seen.w.toFixed(2)}px wide with ${seen.what} and ` +
+                            `${mains[j].toFixed(2)}px with ${c.what}. A CSS flex line's ` +
+                            `sizes do not depend on where a child sits, which is the ` +
+                            `whole of what makes Compose's answer a DIVERGENCE rather ` +
+                            `than a second way of arriving at the same table — and it ` +
+                            `is the property that pins the census's CSS column for the ` +
+                            `two rows nothing else determines`);
+                    }
+                });
+                continue;
+            }
+
+            // The control row: nothing pinned, so every child shrinks and the
+            // line fits exactly. One declaration apart from the row above it,
+            // which is what makes the pin load-bearing rather than decorative.
+            const total = mains.reduce((a, w) => a + w, 0);
+            if (!pinSame(total, c.offer)) {
+                problems.push(`${where}: its children lay out at ` +
+                    `[${mains.map((w) => w.toFixed(2)).join(", ")}], which comes to ` +
+                    `${total.toFixed(2)}px in a ${c.offer}px Row. With nothing pinned ` +
+                    `and a deficit smaller than what the children have to give, a flex ` +
+                    `line shrinks to fit exactly — a total that is not the offer means ` +
+                    `either a child refused to shrink or the fixture stopped ` +
+                    `overflowing`);
+            }
+            c.children.forEach((child, j) => {
+                if (!(mains[j] < child.base - PIN_EPSILON)) {
+                    problems.push(`${where}: ${child.name} declared ${child.base}px ` +
+                        `with no pin and laid out at ${mains[j].toFixed(2)}px. This is ` +
+                        `the control for every pinned row: the same three children one ` +
+                        `declaration apart, and a child that keeps its base here means ` +
+                        `the pin is not what is keeping it in the rows above`);
+                }
+            });
+        }
+
+        // Both arms have to have run, for the reason band.swift gives about its
+        // own table: a fixture where every row diverged would assert the
+        // divergence and never reach the agreement, and the check would pass
+        // just as well against a browser that had stopped agreeing anywhere.
+        if (!sawAgreement || !sawDivergence) {
+            problems.push(`the pinned Row: internal/pinfixture carried ` +
+                (sawAgreement ? "" : "no case where CSS and Compose agree ") +
+                (sawDivergence ? "" : "no case where they diverge ") +
+                `— it is supposed to carry both, and half of what this check asserts ` +
+                `is asserted over nothing`);
+        }
+
     } finally {
         if (session) session.close();
         chrome.kill();
@@ -2525,10 +2792,13 @@ async function main() {
     hug their own natural width under every intrinsic keyword,
     ${BAND_RENDERS.length} real bands span their own tap targets, paint their own
     fill and are taller than
-    their badges with real glyphs in them, and a fixed-size container squeezes its
+    their badges with real glyphs in them, a fixed-size container squeezes its
     child along the main axis and lets it spill across — unless the child is
     pinned with core.FlexShrink(0), which until core.ShrinkNone was a declaration
-    nobody could write`);
+    nobody could write — and ${PINS.length} arrangements of one overflowing Row
+    honour that same pin wherever the child sits, agreeing with Compose in the
+    one case internal/pinfixture says they agree and differing in the three it
+    says they differ`);
 }
 
 await main();

@@ -14,7 +14,7 @@ import (
 //
 // What a container of a declared size does with a child bigger than it has four
 // answers, and until now nothing anywhere had asked for any of them.
-// wasm/verify/browser.mjs asks a real Chrome (check 10) and gets a per-axis
+// wasm/verify/browser.mjs asks a real Chrome (check 11) and gets a per-axis
 // answer sharper than anyone had assumed: the child is SQUEEZED along the
 // container's main axis, because it is a flex item whose shrink factor defaults
 // to 1 and whose automatic minimum, being empty, is 0 — and it SPILLS across
@@ -52,7 +52,7 @@ func TestAFixedSizeBoxExportsTheDeclarationsTheBrowserMeasured(t *testing.T) {
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("a fixed-size core.Box exports without %q:\n%s\n\n"+
-				"wasm/verify/browser.mjs check 10 measures a real browser laying out "+
+				"wasm/verify/browser.mjs check 11 measures a real browser laying out "+
 				"exactly this box, and this target inherits that answer only while it "+
 				"emits the same declarations.", want, out)
 		}

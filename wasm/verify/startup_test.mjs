@@ -9,7 +9,7 @@
 // pass green: a skip where a failure belongs turns "a third of this check did
 // not run" into a line nobody reads.
 //
-// So the inputs are two booleans, three counts and a string. See startup.mjs
+// So the inputs are two booleans, four counts and a string. See startup.mjs
 // for why the stances differ and why the invocation fault is decided first.
 
 import test from "node:test";
@@ -25,6 +25,7 @@ const ok = {
     widgets: 6,
     bands: 3,
     bandRenders: 9,
+    pins: 4,
     hasWebSocket: true,
     chromePath: "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
 };
@@ -72,6 +73,15 @@ test("a transcript with no rendered bands is a failure", () => {
     const v = verdict({ bandRenders: 0 });
     assert.equal(v.action, "fail");
     assert.match(v.why, /bandRenders/);
+});
+
+// The pin cases are a third subject again: one overflowing Row in four
+// arrangements, which is the only place a browser is asked what
+// core.FlexShrink(0) does rather than told by a solver.
+test("a transcript with no pinned-Row cases is a failure", () => {
+    const v = verdict({ pins: 0 });
+    assert.equal(v.action, "fail");
+    assert.match(v.why, /pinfixture/);
 });
 
 // --------------------------------------------------------------------------

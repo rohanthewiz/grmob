@@ -6,19 +6,23 @@ import (
 	"testing"
 
 	"github.com/rohanthewiz/grmob/internal/bandfixture"
+	"github.com/rohanthewiz/grmob/internal/pinfixture"
 )
 
 // browser.mjs's controls, pinned from outside the file they live in.
 //
 // # What a control is, and the hole in it
 //
-// Three checks in the browser pass open by proving they have a subject. The
+// Four checks in the browser pass open by proving they have a subject. The
 // ArrowDown check scrolls the page with nothing focused, because a document
 // that cannot scroll would pass whether or not the key was consumed. The sticky
 // check measures the scroller's overflow, because a band with nothing to stay
 // put against stays put trivially. The band check asks whether the label ended
 // up with less room than it wanted, because two arrangements that never reached
-// the arithmetic agree by not having done any.
+// the arithmetic agree by not having done any. The pinned-Row check asks whether
+// the fixture carries a case where CSS and Compose agree AND one where they do
+// not, because a table with only one kind of row would assert that kind twice
+// and never notice the other going missing.
 //
 // Each of those is a runtime assertion about a fixture in the same file. So the
 // pair is deletable: drop the control AND the declaration that gives it its
@@ -47,11 +51,15 @@ import (
 //
 // # The limit
 //
-// This table is written out, not derived. A fourth control added to browser.mjs
-// is not pinned until somebody adds a row here, and nothing detects that —
-// "which assertions in this file are controls" is a question about intent, and
-// the alternative (a naming convention the checks must obey) would be this test
+// This table is written out, not derived. A control added to browser.mjs is not
+// pinned until somebody adds a row here, and nothing detects that — "which
+// assertions in this file are controls" is a question about intent, and the
+// alternative (a naming convention the checks must obey) would be this test
 // dictating how the pass is written to buy a totality it still could not prove.
+//
+// The limit is not theoretical: check 12 arrived with a control of its own, and
+// this table said so before anybody wrote the row. It is written now, and the
+// next one will be in the same position.
 
 // The numbers browser.mjs states about the two fixtures whose subject is a
 // size. Each is a single-line literal in a file this package does not otherwise
@@ -152,7 +160,12 @@ func TestTheBandControlStillHasADeficitToDivide(t *testing.T) {
 	// Both flex items: the growing control and the badge beside it. One of the
 	// two would leave the other pinned at its own content width, which is the
 	// same vacuous agreement one level down.
-	if got := len(clearedMinRe.FindAllString(src, -1)); got != 2 {
+	//
+	// Counted inside bandTree rather than over the whole file, which is what
+	// this used to do. That was a proxy, and check 12's fixture — which needs
+	// the same declaration for the same reason — is what made it wrong: the
+	// count went to three and the failure said bandTree had grown a child.
+	if got := len(clearedMinRe.FindAllString(regionOf(t, src, "function bandTree(", "function bandMounts("), -1)); got != 2 {
 		t.Errorf("%s: bandTree clears the automatic flex minimum on %d children, want 2 "+
 			"(the growing control and the badge). CSS will not shrink a flex item below "+
 			"its own min-content width, and the fixture's label is a box with a declared "+
@@ -184,6 +197,78 @@ func TestTheBandControlStillHasADeficitToDivide(t *testing.T) {
 			"unmeasured. The control in browser.mjs guards the arithmetic once it is " +
 			"reached; this is whether it is reached at all.")
 	}
+}
+
+// The pinned Row's control: a fixture that carries both answers.
+//
+// # What is derived, and why this one is not a substring
+//
+// Check 12 asserts agreement with the Compose column where internal/pinfixture
+// says the two agree and disagreement where it says they differ, and it guards
+// against a table that had grown only one kind of row — the same guard check 9
+// makes about its own offers. That guard lives in the browser pass, and its
+// subject is the FIXTURE, which is Go this package can simply run. So it is
+// counted here rather than pinned: the flag is not read off the case, the cases
+// are.
+//
+// # The two halves that needed nothing
+//
+// The overflow. pinfixture.Validate states what would make the fixture vacuous,
+// and both writers of it — ios/verify's gen.go and wasm/verify's — refuse to
+// emit a transcript that fails it. That is a stronger place for the rule than
+// either reader.
+//
+// The cleared flex minimum, which is check 9's subject one check over and is
+// NOT this one's. pinTree carries `MinWidth: "0"` and a break-test that removed
+// it moved nothing: the pin fixture's children are empty boxes, so CSS's
+// automatic minimum — min(specified size, content size) — is already 0. It is
+// there as intent and browser.mjs says so; a row here would be a control with
+// no subject, which is the shape this whole file exists to refuse.
+func TestThePinControlStillHasBothAnswersToTellApart(t *testing.T) {
+	agree, differ := 0, 0
+	for _, c := range pinfixture.Cases() {
+		if c.MainsAgreeWithCSS {
+			agree++
+		} else {
+			differ++
+		}
+	}
+	if agree == 0 || differ == 0 {
+		t.Errorf("internal/pinfixture carries %d cases where CSS and Compose agree and "+
+			"%d where they differ, and check 12 asserts both. A table with only one "+
+			"kind of row would assert that kind and never reach the other — which for "+
+			"the divergence means a browser that had quietly started agreeing would "+
+			"pass, and for the agreement means the one case the two targets land on "+
+			"the same three numbers is asserted over nothing.", agree, differ)
+	}
+}
+
+// regionOf cuts browser.mjs between two anchors, both required.
+//
+// A coarse cut, and deliberately: what is counted inside it is one exact
+// literal, so the region only has to be small enough that a neighbouring
+// declaration's copy of that literal is outside it. Anything finer would mean
+// a JavaScript brace-counter living in a Go test — a third answer to "what in
+// this file is code", in a repository that has just finished getting down to
+// one.
+//
+// Both anchors are fatal when missing, because a cut that silently found
+// nothing would count zero of something and report the wrong number of it.
+func regionOf(t *testing.T, src, from, to string) string {
+	t.Helper()
+	at := strings.Index(src, from)
+	if at < 0 {
+		t.Fatalf("%s no longer contains %q. A control's subject is counted inside that "+
+			"declaration; if it was renamed, re-point this rather than widening the "+
+			"cut back to the whole file.", browserChecks, from)
+	}
+	rest := src[at+len(from):]
+	end := strings.Index(rest, to)
+	if end < 0 {
+		t.Fatalf("%s has %q with no %q after it, so the region this counts in runs to "+
+			"the end of the file.", browserChecks, from, to)
+	}
+	return rest[:end]
 }
 
 // jsConcat is a string literal continued on the next line: `…text ` + `more…`,

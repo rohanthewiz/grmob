@@ -40,6 +40,9 @@
 //	bandRenders real components.GroupHeaders, one per bundled theme per shape,
 //	           for the two band questions that are measurements of a rendered
 //	           widget rather than arithmetic over numbers. See bandRender.
+//	pins       internal/pinfixture, one overflowing Row in four arrangements,
+//	           for the browser to lay out so that the CSS half of the pin census
+//	           is a measurement of a browser rather than of one solver.
 package main
 
 import (
@@ -56,6 +59,7 @@ import (
 	"github.com/rohanthewiz/grmob/internal/bandfixture"
 	"github.com/rohanthewiz/grmob/internal/menufixture"
 	"github.com/rohanthewiz/grmob/internal/palette"
+	"github.com/rohanthewiz/grmob/internal/pinfixture"
 	"github.com/rohanthewiz/grmob/jsonout"
 	"github.com/rohanthewiz/grmob/render"
 )
@@ -105,6 +109,16 @@ type transcript struct {
 	// question about text (is the padded control really the band's tallest
 	// child once real glyphs are in it). See bandRender.
 	BandRenders []bandRender `json:"bandRenders"`
+	// Pins are internal/pinfixture's four arrangements of one overflowing Row.
+	// The sixth table, same reason as the rest.
+	//
+	// ios/verify already solves these through GrMobFlexSolver and compares them
+	// with the Compose column the fixture carries. That solver is this
+	// repository's CSS arithmetic rather than a browser's, and the band census
+	// two fields up records one place where it and a real Chrome part company
+	// — so "these children have no padding, therefore the two agree" was a
+	// sentence with nothing behind it. browser.mjs mounts the same Rows.
+	Pins []pinfixture.Case `json:"pins"`
 }
 
 // node mirrors just enough of core.Node's JSON to hunt down callback IDs.
@@ -306,12 +320,22 @@ func signupScenario() scenario {
 }
 
 func main() {
+	// The pin fixture states what would make it vacuous, and it is asked on the
+	// side that owns the numbers: a Row that does not overflow squeezes nobody,
+	// so a pinned child in it is indistinguishable from an unpinned one and
+	// every comparison downstream would pass by never reaching the arithmetic.
+	// ios/verify's gen.go asks the same question for the same reason — this is
+	// a second writer of the same fixture, not a second copy of the rule.
+	if err := pinfixture.Validate(); err != nil {
+		fatal("the pinned-Row fixture is vacuous: %v", err)
+	}
 	out, err := json.Marshal(transcript{
 		Scenarios:   []scenario{demoScenario(), signupScenario()},
 		MenuCases:   menufixture.Cases(),
 		Widgets:     widgetCases(),
 		Bands:       bandfixture.Cases(),
 		BandRenders: bandRenders(),
+		Pins:        pinfixture.Cases(),
 	})
 	if err != nil {
 		fatal("marshal transcript: %v", err)

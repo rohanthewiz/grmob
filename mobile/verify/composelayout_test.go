@@ -41,28 +41,40 @@ import (
 // Two things that were missing, and neither is a network call at test time:
 //
 //	the version    android/app/build.gradle declares a composeLayoutSources
-//	               configuration for the sources jar, and the version it uses
-//	               is derived here rather than trusted: the BOM's own pom is in
-//	               the gradle cache, it lists foundation-layout, and that
-//	               listing is what the gradle file's number is held to.
+//	               configuration for the sources jar, and names no version for
+//	               it: the Compose BOM is on that configuration and resolves it,
+//	               the same way it resolves every other Compose artifact the app
+//	               builds against. So the source read cannot be a different
+//	               release from the source built against — not because a test
+//	               compares two numbers, but because there is one number.
 //
 //	the source     `./gradlew :app:fetchComposeLayoutSources` puts the sources
 //	               jar in the cache once, and the claims below are then read
 //	               out of it. Machines that have never run it skip that half
 //	               with the command in the failure text — which is the honest
-//	               state for a check whose subject has to be downloaded, and is
-//	               why the version half is separate: THAT one runs everywhere
-//	               the BOM's pom is cached, which is every machine that has
-//	               ever built this app.
+//	               state for a check whose subject has to be downloaded.
+//
+// # What this file derives, and why it derives the same thing gradle does
+//
+// The checks below need the version to find the jar, and they get it the way
+// gradle does: out of the BOM's own pom, which any `./gradlew` run against
+// android/ leaves in the cache. That is a second derivation of one fact rather
+// than a second spelling of it — if it disagreed with gradle's, the jar it
+// looked for would not be there and the check would say so, where two spellings
+// of a version agree right up until somebody bumps one.
 const composeLayoutArtifact = "foundation-layout-android"
 
-// The BOM coordinate and the sources version, as android/app/build.gradle
-// spells them. Both are single-line declarations in a Groovy file this package
-// does not otherwise parse.
-var (
-	composeBOMCoord    = regexp.MustCompile(`androidx\.compose:compose-bom:([0-9.]+)`)
-	composeSourcesVers = regexp.MustCompile(`ext\.composeLayoutVersion = '([0-9.]+)'`)
-)
+// The BOM coordinate, as android/app/build.gradle spells it. A single-line
+// declaration in a Groovy file this package does not otherwise parse.
+var composeBOMCoord = regexp.MustCompile(`androidx\.compose:compose-bom:([0-9.]+)`)
+
+// The sources coordinate, with whatever follows the artifact name captured.
+//
+// What is being looked at is the part after `foundation-layout-android`: a bare
+// closing quote is a coordinate with no version, which is the shape that lets
+// the BOM resolve it, and anything else is a version written back in.
+var composeSourcesCoord = regexp.MustCompile(
+	`androidx\.compose\.foundation:foundation-layout-android([^'"]*)['"]`)
 
 // bomEntry matches one dependencyManagement entry of the BOM's pom. The pom is
 // XML that lists a few hundred artifacts as three-line blocks, so a regexp over
@@ -73,23 +85,88 @@ var bomEntry = regexp.MustCompile(
 
 var appGradle = nativeFile("android", "app", "build.gradle")
 
-// The sources jar's version must be what the BOM resolves.
+// The sources jar has no version of its own; the BOM gives it one.
 //
-// This is the half that runs on any machine that has ever built the Android
-// app, because the BOM's pom is cached by that build whether or not anyone has
-// asked for sources. It is what stops the census going stale in the way it
-// already had: a BOM bump moves foundation-layout, and nothing else in this
-// repository would notice.
-func TestTheComposeSourcesAreTheVersionTheBOMResolves(t *testing.T) {
-	gradle := readNative(t, appGradle)
+// # What this replaced
+//
+// android/app/build.gradle used to carry `ext.composeLayoutVersion = '1.6.8'`
+// and this test compared it with the BOM's pom. The number was right and the
+// arrangement was not: a reader of the gradle file saw two versions and no
+// mechanism, and the only thing making them agree was a Go test in another
+// tree. The fetch now resolves through the BOM like every other Compose
+// artifact in that file, so there is one version and it is the app's.
+//
+// # Why the shape still needs a check, when gradle is the one enforcing it
+//
+// Most of the shape does not. Take the platform off the configuration, or move
+// `transitive = false` onto the configuration instead of onto the dependency,
+// or go back to `:sources@jar` — and `./gradlew :app:fetchComposeLayoutSources`
+// fails immediately and says why. Those are loud.
+//
+// Writing a version back into the coordinate is the one change that is not. It
+// resolves perfectly, the jar is the right jar today, and the derivation is
+// simply gone — which is the state this whole arrangement was moved out of. So
+// that is what is asserted, and it is asserted as text because there is nothing
+// else to ask: a resolved version looks the same either way.
+//
+// It runs on any machine with the repository, no gradle cache required, which
+// is the other half of why it is separate from the reading below.
+func TestTheComposeSourcesTakeTheirVersionFromTheBOM(t *testing.T) {
+	// Comments blanked, literals kept — the same mask the checks on the two
+	// renderers use, and needed for the same reason. The paragraph in the
+	// gradle file explaining this arrangement quotes the declaration it
+	// replaced, so a check reading the file raw would find `composeLayoutVersion`
+	// in the very comment that says it is gone. Groovy spells `//` and `/* */`
+	// the way Swift and Kotlin do.
+	gradle := maskComments(readNative(t, appGradle))
 
-	bom := oneMatch(t, appGradle, gradle, composeBOMCoord, "the Compose BOM coordinate")
-	sources := oneMatch(t, appGradle, gradle, composeSourcesVers,
-		"ext.composeLayoutVersion, the version of the sources jar")
-	if bom == "" || sources == "" {
-		return
+	m := composeSourcesCoord.FindStringSubmatch(gradle)
+	if m == nil {
+		t.Fatalf("%s no longer names %s where this looks for it (%s). If the sources "+
+			"configuration was removed, the census's Compose row is back to being "+
+			"prose about a version nobody stated.",
+			appGradle, composeLayoutArtifact, composeSourcesCoord)
 	}
+	if m[1] != "" {
+		t.Errorf("%s asks for the sources jar as %q — the coordinate carries %q after "+
+			"the artifact name, which is a version of its own.\n\n"+
+			"The BOM on the composeLayoutSources configuration is what gives this "+
+			"artifact its version, so that the source the census is read from is the "+
+			"source the app is built against. A version written here resolves fine and "+
+			"is held to nothing, which is exactly the arrangement this replaced.",
+			appGradle, m[0], m[1])
+	}
+	// And the platform that supplies it. Without this line the coordinate above
+	// has no version at all — gradle says so loudly — but the pair is what the
+	// paragraph in the gradle file is about, and half a mechanism stated is
+	// worse than none.
+	if !strings.Contains(gradle, "composeLayoutSources composeBom") {
+		t.Errorf("%s no longer puts the Compose BOM on the composeLayoutSources "+
+			"configuration. That is what resolves the versionless coordinate above; "+
+			"without it the fetch cannot run at all.", appGradle)
+	}
+	// The old spelling, refused by name. It is the thing a reader reaching for
+	// "which version is this?" would add back.
+	if strings.Contains(gradle, "composeLayoutVersion") {
+		t.Errorf("%s declares a composeLayoutVersion again. The version is the BOM's; "+
+			"a second spelling of it is a fact that can go stale, which is what this "+
+			"file used to hold to the pom instead of removing.", appGradle)
+	}
+}
 
+// composeLayoutVersion derives the release the sources jar will be, the way
+// gradle derives it: out of the Compose BOM's own pom.
+//
+// Returns "" after reporting or skipping, so a caller that got nothing has
+// already said why.
+func composeLayoutVersion(t *testing.T) string {
+	t.Helper()
+
+	gradle := readNative(t, appGradle)
+	bom := oneMatch(t, appGradle, gradle, composeBOMCoord, "the Compose BOM coordinate")
+	if bom == "" {
+		return ""
+	}
 	pom := gradleCachedFile(t, "androidx.compose", "compose-bom", bom,
 		"compose-bom-"+bom+".pom")
 	if pom == "" {
@@ -103,29 +180,23 @@ func TestTheComposeSourcesAreTheVersionTheBOMResolves(t *testing.T) {
 	}
 	m := bomEntry.FindStringSubmatch(string(raw))
 	if m == nil {
-		t.Fatalf("%s lists no foundation-layout. This test derives the version out "+
-			"of the BOM's dependencyManagement block; if the artifact was renamed, "+
-			"the census's Compose row is about a module that no longer exists.", pom)
+		t.Fatalf("%s lists no foundation-layout. This derives the version out of the "+
+			"BOM's dependencyManagement block; if the artifact was renamed, the "+
+			"census's Compose row is about a module that no longer exists.", pom)
 	}
-	if m[1] != sources {
-		t.Errorf("compose-bom %s resolves foundation-layout to %s, and "+
-			"android/app/build.gradle asks for sources %s.\n\n"+
-			"The census's Compose row is a reading of foundation-layout's source, and "+
-			"the whole point of deriving the version is that the source read is the "+
-			"source built against. Move ext.composeLayoutVersion to %s, run "+
-			"`./gradlew :app:fetchComposeLayoutSources`, and re-read Size.kt and "+
-			"RowColumnMeasurementHelper.kt against it — the check below is what says "+
-			"whether the paragraph still holds.",
-			bom, m[1], sources, m[1])
-	}
+	return m[1]
 }
 
-// And the two claims the census's Compose row makes, read out of that source.
+// And every claim this repository makes about that source, read out of it.
 //
-// Both are load-bearing sentences in docs/platforms/native.md, and both are
-// about somebody else's code, which is exactly the kind of claim that rots
-// silently: nothing in this repository compiles against them and no test could
-// notice a Compose release changing either one.
+// All of them are about somebody else's code, which is exactly the kind of
+// claim that rots silently: nothing here compiles against them and no test
+// could notice a Compose release changing one.
+//
+// # Two readers, and why the table serves both
+//
+// docs/platforms/native.md's fixed-size census is prose, and two of its
+// sentences are readings of foundation-layout:
 //
 //	Modifier.width sets a MAXIMUM   this is the whole of the Compose
 //	                                divergence. The other three targets impose
@@ -134,10 +205,43 @@ func TestTheComposeSourcesAreTheVersionTheBOMResolves(t *testing.T) {
 //	a Row has no proportional       this is why core.FlexShrink's fractional
 //	shrink                          factors mean nothing here, and why
 //	                                Modifier.pinMainAxis exists for the zero.
+//
+// internal/pinfixture is the same source EXECUTED — a transcription of the
+// zero-weight measure loop, so that what core.FlexShrink(0) does on Compose is
+// a set of numbers rather than a paragraph. Its header states the chain each
+// line hangs from and names its own weakest link: somebody read androidx's loop
+// and wrote it out in Go.
+//
+// That link was weaker than it looked. The transcription quotes four decisions
+// and only ONE of them — `mainAxisMax - fixedSpace` — was read out of the jar
+// by anything. The other three were quoted in a Go comment and held to nothing:
+//
+//	the floor on the offer      `.coerceAtLeast(0)`, which is why a child after
+//	                            an overflow is offered 0 rather than a negative
+//	                            number
+//	the gap collapses too       spaceAfterLastNoWeight is min(spacing, what is
+//	                            left), so a Row that has overflowed inserts no
+//	                            spacing after a child
+//	the Row overflows itself    mainAxisLayoutSize is max(content, mainAxisMin)
+//	                            with no upper bound anywhere, and SizeNode
+//	                            reports `layout(placeable.width, …)` unclamped
+//	                            — which is what makes a pin an overflow on this
+//	                            target rather than a clip
+//
+// So the table lists them. Each row names what would be wrong if the reading
+// changed, in the words of whichever document rests on it, and MeasureCompose's
+// branches now each have a row here.
+//
+// # The negative claim
+//
+// One of the four is an ABSENCE — nothing coerces the Row's own size down to
+// the space it was offered — and an absence cannot be read as a substring. It
+// is a notWant over a window tight enough to be the expression itself, which is
+// the only honest way to say "and there is nothing else here": a clamp added
+// three lines further down would be a different claim, and the row says which
+// window it is speaking about.
 func TestTheComposeCensusClaimsAreWhatTheSourceSays(t *testing.T) {
-	gradle := readNative(t, appGradle)
-	version := oneMatch(t, appGradle, gradle, composeSourcesVers,
-		"ext.composeLayoutVersion, the version of the sources jar")
+	version := composeLayoutVersion(t)
 	if version == "" {
 		return
 	}
@@ -157,10 +261,16 @@ func TestTheComposeCensusClaimsAreWhatTheSourceSays(t *testing.T) {
 
 	for _, claim := range []struct {
 		file string
-		// anchor cuts the declaration the claim is about; want is what the
-		// census says is in it.
-		anchor string
-		want   []string
+		// anchor cuts the region the claim is about; want is what a document in
+		// this repository says is in it and notWant is what it says is not.
+		anchor  string
+		want    []string
+		notWant []string
+		// window bounds the region, in bytes from the anchor. Zero takes the
+		// default, which is chosen against the longest positive claim; a row
+		// with a notWant sets its own, because "this is absent" is only a
+		// statement about a region somebody has drawn.
+		window int
 		why    string
 	}{
 		{
@@ -175,13 +285,99 @@ func TestTheComposeCensusClaimsAreWhatTheSourceSays(t *testing.T) {
 		{
 			file:   "RowColumnMeasurementHelper.kt",
 			anchor: "// First measure children with zero weight.",
-			want:   []string{"mainAxisMax - fixedSpace"},
+			want: []string{
+				// What is left, with no factor in it. The census's sentence and
+				// MeasureCompose's `remaining`.
+				"mainAxisMax - fixedSpace",
+				// Floored, which is what makes a child after an overflow get an
+				// offer of 0 instead of a negative one. MeasureCompose's max(…, 0).
+				"(mainAxisMax - fixedSpace).coerceAtLeast(0).toInt()",
+				// The offer's MINIMUM is cleared. Without this a child would be
+				// forced to fill what it was offered, and SizeNode's
+				// constrain(base) would come back as the offer rather than as
+				// min(base, offer) — the whole of what an unpinned child does.
+				"mainAxisMin = 0,",
+				// The branch the transcription does not carry. Every case in
+				// internal/pinfixture gives the Row a definite width, so this
+				// arm is unreachable there and MeasureCompose says so rather
+				// than modelling it; the quote in its header is elided at this
+				// line and names the elision.
+				"if (mainAxisMax == Constraints.Infinity)",
+				// The spacing after a child is itself clamped to what is left,
+				// so an overflowing Row inserts none. MeasureCompose's
+				// spaceAfterLastNoWeight.
+				"spaceAfterLastNoWeight = min(",
+				"(mainAxisMax - fixedSpace - placeable.mainAxisSize())",
+				// And what the next child's offer is subtracted from.
+				"fixedSpace += placeable.mainAxisSize() + spaceAfterLastNoWeight",
+			},
 			why: "the census says a Row measures each unweighted child against the " +
 				"main-axis space the ones before it did not take — no factor, no " +
 				"proportion, just what is left. That is why core.FlexShrink's " +
 				"fractional values have nothing to mean on this target and why " +
 				"Modifier.pinMainAxis (Renderer.kt) is the only shrink declaration " +
-				"Compose can honour",
+				"Compose can honour. internal/pinfixture's MeasureCompose is this " +
+				"loop transcribed into Go and executed, which is where the census's " +
+				"Compose column comes from",
+		},
+		{
+			file:   "RowColumnMeasurementHelper.kt",
+			anchor: "// fixedSpace contains an extra spacing after the last non-weight child.",
+			want:   []string{"fixedSpace -= spaceAfterLastNoWeight"},
+			window: 200,
+			why: "internal/pinfixture's MeasureCompose takes the trailing spacing back " +
+				"off after the loop, on the strength of this line and of the fact that " +
+				"none of its children is weighted. A Row that kept it would be one gap " +
+				"wider than the fixture says, in every case that has a gap",
+		},
+		{
+			file:   "RowColumnMeasurementHelper.kt",
+			anchor: "val mainAxisLayoutSize = max(",
+			want: []string{
+				"(fixedSpace + weightedSpace).coerceAtLeast(0).toInt()",
+				"constraints.mainAxisMin",
+			},
+			// The absence that makes a pin an overflow.
+			//
+			// The window is the expression plus the room a clamp appended to it
+			// would take. The expression itself ends 142 bytes past the anchor,
+			// and `).coerceAtMost(constraints.mainAxisMax)` — the shortest
+			// plausible way to write the thing this refuses — is 38 more; 220
+			// leaves margin for a longer spelling without reaching anything that
+			// mentions a main-axis maximum for another reason. A window sized to
+			// the expression alone was the first attempt and it was useless: the
+			// clamp lands one byte past the end of what it was measuring, so the
+			// break-test that appended one passed.
+			notWant: []string{"mainAxisMax", "coerceAtMost"},
+			window:  220,
+			why: "internal/pinfixture says a fixed-width Row whose children overflow " +
+				"reports the OVERFLOWING width rather than clipping to its own, and " +
+				"that this is what makes core.FlexShrink(0) an overflow on Compose " +
+				"rather than a clip. The claim is that the size is raised to the Row's " +
+				"minimum and never lowered to its maximum. A clamp added here would " +
+				"make the pinned child spill out of a box the Row believed it fitted " +
+				"inside, which is the spelling mobile/verify refuses in Renderer.kt",
+		},
+		{
+			file:   "Size.kt",
+			anchor: "val wrappedConstraints = targetConstraints.let { targetConstraints ->",
+			want: []string{
+				// enforceIncoming, which every fixed-size Box in both harnesses
+				// gets: the declared size clamped into the incoming range, so an
+				// offer of `remaining` gives min(base, remaining).
+				"constraints.constrain(targetConstraints)",
+				// And the report, unconstrained on the way out. This is the
+				// other half of the overflow: the node hands back what it
+				// measured rather than what it was offered.
+				"return layout(placeable.width, placeable.height)",
+			},
+			window: 1600,
+			why: "both harnesses mount a fixed-size Box, so this node is what every " +
+				"child in internal/pinfixture is. Its unpinned branch is " +
+				"min(base, offered) because of the constrain above, and the pinned " +
+				"branch of Renderer.kt's Modifier.pinMainAxis is a copy of the layout " +
+				"call below it — measure unbounded, report what was measured. A " +
+				"constrained report here would mean the Row never overflowed",
 		},
 	} {
 		src := jarEntry(t, jar, claim.file)
@@ -197,17 +393,31 @@ func TestTheComposeCensusClaimsAreWhatTheSourceSays(t *testing.T) {
 		}
 		// A window rather than the whole file, so a phrase that happens to
 		// appear elsewhere in a 40KB source file cannot stand in for the
-		// declaration this claim is about. 1500 bytes is chosen against the
-		// longer of the two subjects: the zero-weight measure branch reaches
-		// its constraint arithmetic about 850 bytes past the comment that opens
+		// declaration this claim is about. 1500 bytes is the default and is a
+		// bound rather than a measurement: the zero-weight measure branch runs
+		// to its last claimed line about 1350 bytes past the comment that opens
 		// it, and the SizeElement literal is inside 150. A window this size can
-		// still only reach a few declarations either way, which is the property
-		// that matters — it is a bound, not a measurement.
-		window := src[at:min(at+1500, len(src))]
+		// still only reach a few declarations either way.
+		//
+		// Rows that state an ABSENCE set their own, because a notWant is a
+		// claim about a region and a loose region would make it a claim about
+		// the file.
+		size := claim.window
+		if size == 0 {
+			size = 1500
+		}
+		window := src[at:min(at+size, len(src))]
 		for _, want := range claim.want {
 			if !strings.Contains(window, want) {
 				t.Errorf("foundation-layout %s: %s's %q no longer contains %q.\n\n%s",
 					version, claim.file, claim.anchor, want, claim.why)
+			}
+		}
+		for _, notWant := range claim.notWant {
+			if strings.Contains(window, notWant) {
+				t.Errorf("foundation-layout %s: %s's %q has grown a %q, and this claim "+
+					"is that there is none within %d bytes of the anchor.\n\n%s",
+					version, claim.file, claim.anchor, notWant, size, claim.why)
 			}
 		}
 	}

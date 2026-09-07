@@ -1170,22 +1170,32 @@ releases ago.
 
 Two pieces close that, and neither costs a network call at test time:
 
-- **The version is derived.** `android/app/build.gradle` declares a
-  `composeLayoutSources` configuration, and
-  `TestTheComposeSourcesAreTheVersionTheBOMResolves` reads the BOM's own pom out
-  of the gradle cache, finds `foundation-layout` in its dependency management,
-  and fails if the configuration asks for a different release. That check runs
-  on any machine that has ever built the app, because that build caches the pom.
+- **There is only one version.** `android/app/build.gradle` declares a
+  `composeLayoutSources` configuration for the sources jar and names *no*
+  version for it: the Compose BOM sits on that configuration and resolves it,
+  exactly as it resolves the artifacts the app compiles against. So the source
+  read cannot be a different release from the source built against — not
+  because something compares two numbers, but because there is one number.
+  `TestTheComposeSourcesTakeTheirVersionFromTheBOM` holds that shape, since the
+  one way to lose it is silent: a version written back into the coordinate
+  resolves perfectly and is then checked against nothing.
 - **The claims are read from the source.**
   `./gradlew :app:fetchComposeLayoutSources` puts the sources jar in the cache
   once, and `TestTheComposeCensusClaimsAreWhatTheSourceSays` then reads
-  `Size.kt` and `RowColumnMeasurementHelper.kt` out of it: that
-  `Modifier.width` is `SizeElement(minWidth = width, maxWidth = width,
-  enforceIncoming = true)`, and that the zero-weight measure branch offers a
-  child `mainAxisMax - fixedSpace`. Machines that have never fetched skip that
-  half, with the command in the skip message — which is the honest state for a
-  check whose subject has to be downloaded, and is why the version half is
-  separate.
+  `Size.kt` and `RowColumnMeasurementHelper.kt` out of it at the version the BOM
+  gives. Six readings, not two: that `Modifier.width` is
+  `SizeElement(minWidth = width, maxWidth = width, enforceIncoming = true)`;
+  that the zero-weight measure branch offers a child
+  `(mainAxisMax - fixedSpace).coerceAtLeast(0)` against a cleared minimum; that
+  the spacing after a child is clamped to what is left; that the trailing
+  spacing comes back off after the loop; that `mainAxisLayoutSize` is raised to
+  the Row's minimum and *never* lowered to its maximum; and that `SizeNode`
+  reports `layout(placeable.width, placeable.height)` unclamped. The last four
+  are what `internal/pinfixture`'s transcription of that loop rests on, and
+  until they were listed here only the first `mainAxisMax - fixedSpace` was read
+  out of the jar by anything. Machines that have never fetched skip that half,
+  with the command in the skip message — which is the honest state for a check
+  whose subject has to be downloaded.
 
 The call site pins stay either way: they are about *this* repository's code,
 which no reading of androidx can answer for.
@@ -1229,9 +1239,10 @@ drawn spilling out of a box its parent still believes it fits inside.
 What still diverges is the siblings, and that sentence used to be the end of the
 matter. `internal/pinfixture` turns it into numbers: one overflowing `Row`, three
 children, the pin moved through all three positions, plus the control with no pin
-at all. `GrMobFlexSolver` solves each one (`ios/verify/pin.swift`), and the
-Compose column is a **transcription** of `foundation-layout`'s zero-weight
-measure loop — not androidx's code, and labelled as such wherever it appears.
+at all. `GrMobFlexSolver` solves each one (`ios/verify/pin.swift`), a real Chrome
+lays the same four `Row`s out (`wasm/verify`'s check 12), and the Compose column
+is a **transcription** of `foundation-layout`'s zero-weight measure loop — not
+androidx's code, and labelled as such wherever it appears.
 
 | | CSS | Compose |
 |---|---|---|
@@ -1268,6 +1279,21 @@ the pin an overflow on this target rather than a clip, which is what
 `overflow: visible` does on the other three. The spacing collapses with it:
 `spaceAfterLastNoWeight` is `min(spacing, what is left)`, so a `Row` that has
 spent its main axis inserts no gap after the child that spent it.
+
+The CSS column is a browser's, and for a while it was not. `GrMobFlexSolver` is
+this repository's own flex arithmetic rather than a browser's, and the band
+census one section down records a place the two part company — under overflow,
+when a child has padding, the solver shrinks in proportion to a base that
+includes that padding and CSS does not. The pin fixture's children have none, so
+the two rules coincide; that sentence was reasoning, made by whoever wrote the
+fixture and asked of nobody. `wasm/verify`'s check 12 mounts the four `Row`s and
+measures them, and a browser produces the CSS column above exactly. It recomputes
+nothing — every claim it makes is one the fixture states, held against pixels:
+the pinned child keeps its base, the extents match the Compose column precisely
+where `mainsAgreeWithCSS` says they do, and a child's width does not depend on
+where it sits. Those three pin the three pinned rows to their exact numbers; the
+control row's proportional split is still the solver's alone, because a flex line
+transcribed into JavaScript would only ask whether two transcriptions agree.
 
 What none of this is, is a measurement of Compose. The transcription's weakest
 link is that somebody read androidx's loop and wrote it out; every other link is

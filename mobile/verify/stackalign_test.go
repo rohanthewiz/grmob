@@ -421,11 +421,14 @@ func swiftDeclIndices(src, anchor string) []int {
 // and leaves the literals where they are.
 //
 // Same length is the whole point: offsets in the mask are offsets in the
-// source, so a match found here can be used there. It is matchingBrace's own
-// scanner with the brace counting removed — the two share the question "what
-// in this file is code" and would be a bug apiece if they answered it
-// differently, which is why the arms are in the same order and spelled the same
-// way.
+// source, so a match found here can be used there. It is also what lets
+// matchingBrace count braces over the mask rather than carrying a scanner of
+// its own — see maskNonCode, which is where the two used to be a copy apiece of
+// one answer to "what in this file is code".
+//
+// Both spellings drop the scan's second return. It names an unterminated
+// comment or literal, which is the counter's concern: these two are applied to
+// files a compiler has already accepted.
 //
 // # Why there are two levels rather than one
 //
@@ -447,7 +450,7 @@ func swiftDeclIndices(src, anchor string) []int {
 // Comments are noise to both, so that half is unconditional and every caller
 // gets it. The literal half is the caller's choice, and each of the two
 // spellings is named after what it keeps.
-func maskSwiftNonCode(src string) string { return maskNonCode(src, true) }
+func maskSwiftNonCode(src string) string { masked, _ := maskNonCode(src, true); return masked }
 
 // maskComments is the weaker mask: prose out, literals in.
 //
@@ -455,17 +458,47 @@ func maskSwiftNonCode(src string) string { return maskNonCode(src, true) }
 // doc comment its deliberately coarse cut carries along cannot answer a
 // question about code. See declSource for why the cut is coarse and why the
 // comment that rides on it was a real defect rather than an untidiness.
-func maskComments(src string) string { return maskNonCode(src, false) }
+func maskComments(src string) string { masked, _ := maskNonCode(src, false); return masked }
 
-// maskNonCode is the scanner both spellings are.
+// maskNonCode is the scanner every question about "what in this file is code"
+// goes through.
 //
 // A literal is always *scanned* — its extent has to be known either way, or a
 // `//` or a brace inside one would be read as code — and `literals` decides
 // only whether it is also blanked. That asymmetry is the reason this is one
 // function with a flag rather than two scanners: the two differ by a single
-// conditional, and a second copy would be the third answer to "what in this
-// file is code" in a package that already has two.
-func maskNonCode(src string, literals bool) string {
+// conditional.
+//
+// # The third caller, and why it is not a third scanner
+//
+// matchingBrace used to be one. It counted braces while skipping comments and
+// literals, which is this scan with the counting folded in — same four arms, in
+// the same order, spelled the same way — and the two files each carried a
+// comment asking the copies to agree. Nothing made them, and the failure of a
+// drifted copy is the silent one: a brace-counter that mishandled `"""` would
+// end a block early and hand every `strings.Contains` below it a fragment,
+// still returning a string.
+//
+// So the counting is now done OVER the mask rather than beside it. Blanking
+// preserves offsets and length, so an index into the mask is an index into the
+// source, and a brace that survived the mask is a brace in code. That is the
+// whole of the merge: matchingBrace holds the brace arms, this holds the
+// not-code arms, and there is one answer to the question again.
+//
+// # unterminated
+//
+// The one thing the counter needs that a mask does not. A file that ends inside
+// a block comment or a multi-line literal is a fault matchingBrace has always
+// reported by name — the alternative is a mask that quietly blanks the rest of
+// the file and a count that comes out wherever it comes out — so the scan names
+// what was left open and the caller decides. The two mask spellings ignore it:
+// their inputs are files a compiler has already accepted, and an unterminated
+// construct there is a build failure long before it is a test failure.
+//
+// A `//` running to end of file is not one of these. It terminates at EOF by
+// definition, and so does a single-quoted literal as far as this scan is
+// concerned — matchingBrace never reported either.
+func maskNonCode(src string, literals bool) (masked, unterminated string) {
 	out := []byte(src)
 	blank := func(from, to int) {
 		for i := from; i < to && i < len(out); i++ {
@@ -487,7 +520,7 @@ func maskNonCode(src string, literals bool) string {
 			nl := strings.IndexByte(src[i:], '\n')
 			if nl < 0 {
 				blank(i, len(src))
-				return string(out)
+				return string(out), ""
 			}
 			blank(i, i+nl)
 			i += nl
@@ -495,19 +528,26 @@ func maskNonCode(src string, literals bool) string {
 			end := strings.Index(src[i+2:], "*/")
 			if end < 0 {
 				blank(i, len(src))
-				return string(out)
+				return string(out), "block comment"
 			}
 			blank(i, i+2+end+2)
 			i += 2 + end + 1
 		case strings.HasPrefix(src[i:], `"""`):
+			// Matched before the single-quote arm because that arm would read
+			// `"""` as an empty string followed by an opening quote, and would
+			// then take the first `"` of the *closing* delimiter as the end.
+			// That happens to come out even for content with no quote in it,
+			// and stops doing so for content with one.
 			end := strings.Index(src[i+3:], `"""`)
 			if end < 0 {
 				blankLiteral(i, len(src))
-				return string(out)
+				return string(out), "multi-line string"
 			}
 			blankLiteral(i, i+3+end+3)
 			i += 3 + end + 2
 		case src[i] == '"':
+			// Escapes are honored so that a literal ending in \" does not read
+			// as still open, which would swallow the rest of the file.
 			j := i + 1
 			for j < len(src) && src[j] != '"' {
 				if src[j] == '\\' {
@@ -519,7 +559,106 @@ func maskNonCode(src string, literals bool) string {
 			i = j
 		}
 	}
-	return string(out)
+	return string(out), ""
+}
+
+// The mask and the brace counter are one scanner, and this is what says so.
+//
+// They were two. maskNonCode blanked comments and literals; matchingBrace
+// skipped them while counting braces — four arms apiece, in the same order,
+// with the same words — and each carried a comment asking the other to agree.
+// A comment cannot make two copies agree, and the way they come apart is
+// silent: the counter is the one whose mistakes still return a string.
+//
+// The counter now counts over the mask, so the agreement holds by construction.
+// This is the statement of it, and it is what fails if somebody gives either
+// side a scanner of its own again. Each case hides the same two things in the
+// same construct — a `}` the counter must not count, and an anchor the mask
+// must not find — so a construct one side handles and the other does not is a
+// failure on that row rather than a divergence nobody looks for.
+func TestTheMaskAndTheBraceCounterAgreeAboutWhatIsCode(t *testing.T) {
+	// The anchor is hidden inside the construct and then declared for real
+	// below it, so "found once, at the declaration" and "the block runs to the
+	// end" are the same claim about the same characters.
+	const anchor = "private struct GrMobHidden"
+
+	for _, c := range []struct{ name, hidden string }{
+		{
+			name:   "a line comment",
+			hidden: "    // private struct GrMobHidden closes like this: }\n",
+		},
+		{
+			name:   "a block comment",
+			hidden: "    /*\nprivate struct GrMobHidden }\n*/\n",
+		},
+		{
+			// Verbatim content, so it may legally begin a line with either.
+			//
+			// The unpaired quote before the hidden text is what makes this row
+			// discriminate, and it is the same trick
+			// TestTheSwiftTypeCutIsSyntacticNotTypographic uses: a scanner that
+			// knows only single-quoted strings pairs the three delimiter
+			// characters off two at a time and comes out even whenever the
+			// content holds an even number of quotes — so a fixture with none
+			// has its content blanked by accident and passes either way. An odd
+			// one leaves everything after it exposed.
+			name:   "a multi-line literal",
+			hidden: "    let s = \"\"\"\nan unpaired \" then private struct GrMobHidden }\n\"\"\"\n",
+		},
+		{
+			name:   "a single-quoted literal",
+			hidden: "    let s = \"private struct GrMobHidden }\"\n",
+		},
+	} {
+		src := "{\n" + c.hidden + "    let tail = 1\n}\n" +
+			anchor + ": View {\n    let real = 2\n}\n"
+
+		// The counter: the hidden `}` is not the block's, so the block still
+		// holds everything up to the real one.
+		if body := matchingBrace(t, "synthetic.swift", c.name, src); !strings.Contains(body, "let tail = 1") {
+			t.Errorf("%s: the brace counter ended the block at the hidden `}` — its "+
+				"whole body is %q and what came back was:\n%s",
+				c.name, "let tail = 1", body)
+		}
+
+		// The mask: the hidden anchor is not a declaration, so exactly the one
+		// below it is found. Two would mean the mask read the construct as
+		// code; zero would mean it blanked more than the construct.
+		if found := swiftDeclIndices(src, anchor); len(found) != 1 {
+			t.Errorf("%s: the mask found %d declarations of %q and there is one — the "+
+				"other is inside the construct this row hides it in, which the brace "+
+				"counter skipped and the mask did not",
+				c.name, len(found), anchor)
+		}
+	}
+}
+
+// A file that ends inside a comment or a literal is a fault with a name.
+//
+// It is also the half of the scan that only the counter ever cared about:
+// matchingBrace has always refused an unterminated `/*` or `"""` rather than
+// counting whatever braces happened to follow, and folding the skipping into
+// the mask would have thrown that away if the mask could not report it. So it
+// reports it, and this is the arm — reachable as a value now, where before it
+// was a t.Fatalf inside the scanner and could only be checked by owning a
+// source file with the fault.
+//
+// The two that are NOT faults are here for the same reason the two that are:
+// a `//` running to end of file terminates at EOF by definition, and so does a
+// single-quoted literal as far as this scan is concerned. Reporting either
+// would turn an ordinary last line into a failure.
+func TestTheScanNamesWhatWasLeftOpen(t *testing.T) {
+	for _, c := range []struct{ name, src, want string }{
+		{name: "an unterminated block comment", src: "{\n/* on and on", want: "block comment"},
+		{name: "an unterminated multi-line literal", src: "{\nlet s = \"\"\"\nand on", want: "multi-line string"},
+		{name: "a line comment at end of file", src: "{\n// the last line", want: ""},
+		{name: "a single-quoted literal at end of file", src: "{\nlet s = \"and on", want: ""},
+		{name: "an ordinary block", src: "{\n    let a = 1\n}\n", want: ""},
+	} {
+		if _, got := maskNonCode(c.src, true); got != c.want {
+			t.Errorf("%s: the scan reported %q, want %q", c.name, got, c.want)
+		}
+	}
 }
 
 // A doc comment that names a type does not start it.
@@ -691,10 +830,13 @@ func TestEverySwiftTypeCutComesBackBalanced(t *testing.T) {
 		"struct GrMobFlexStack<Content: View>: View {",
 	} {
 		body := swiftTypeBody(t, swiftRenderer, anchor)
-		// Comments and literals are stripped the same way the scanner skips
-		// them, so the count is over code alone — the doc comments above these
-		// declarations are full of prose braces.
-		code := stringLiteral.ReplaceAllString(stripLineComments(body), `""`)
+		// Counted over the mask, which is the same scan matchingBrace made the
+		// cut with — so this is the cut's own answer to "what is code" checked
+		// against itself rather than a fourth one. It matters: the doc comments
+		// above these declarations are full of prose braces, and the two
+		// constructs an ad-hoc strip misses (a block comment, a `"""`) are
+		// exactly the ones a hand-written count gets wrong.
+		code := maskSwiftNonCode(body)
 		if open, close := strings.Count(code, "{"), strings.Count(code, "}"); open != close {
 			t.Errorf("%s: the cut of %q holds %d `{` and %d `}` — it ended somewhere "+
 				"other than the declaration's closing brace, and every check "+

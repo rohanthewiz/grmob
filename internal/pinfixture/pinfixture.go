@@ -31,17 +31,30 @@
 //	                    reads them out of the sources jar. A release that
 //	                    changes them fails there, by name, and sends the reader
 //	                    here.
-//	that version        TestTheComposeSourcesAreTheVersionTheBOMResolves derives
-//	                    it from the BOM's own pom, so the source read is the
-//	                    source the app builds against.
+//	that version        is the BOM's, and there is no second spelling of it:
+//	                    android/app/build.gradle asks for the sources jar with
+//	                    no version at all and lets the platform resolve it, so
+//	                    the source read is the source the app builds against.
 //	the renderer's half TestTheComposeChildrenLoopsPinOnTheirOwnAxis and
 //	                    TestTheComposePinMeasuresUnboundedAndReportsWhatItMeasured
 //	                    hold Renderer.kt to the two lines PinnedChild below is
 //	                    a transcription of.
 //
-// So the weakest link is stated rather than hidden: somebody read androidx's
-// loop and wrote it out here, and if they read it wrong no test in this
-// repository would know. Every other link is checked.
+// # The link that used to be weaker than the list above made it look
+//
+// "Every branch names the source line it mirrors" was true, and for a while
+// only ONE of those lines was read out of the jar by anything —
+// `mainAxisMax - fixedSpace`. The floor on it, the spacing clamp, the missing
+// upper bound on the Row's own size and SizeNode's unclamped report were quoted
+// in this comment and held to nothing, which is a chain with one link drawn in.
+// They are rows in that claims table now, so a release that changes any of them
+// fails by name and sends the reader to the branch it belongs to.
+//
+// What is still nobody's but the reader's: the transcription is Go somebody
+// wrote from those lines. The lines are pinned; that they add up to this
+// arithmetic is a reading. That is the last link, it is stated rather than
+// hidden, and nothing short of running androidx's measure policy would close
+// it — see above for why that cannot happen here.
 //
 // # The fixture, and what each case is for
 //
@@ -98,12 +111,29 @@
 // than in a check somebody has to remember: adding one is a change to the
 // fixture's shape, which is a change a reader sees.
 //
-// The browser. The DOM's answer for this Row is not measured anywhere;
-// GrMobFlexSolver is this repository's CSS arithmetic and the census already
-// records that it and a real Chrome diverge under overflow when a child has
-// padding of its own. These children have none, so the two should agree — which
-// is a sentence with nothing behind it, and is why the fixture carries no
-// padding rather than carrying some and hand-waving the difference.
+// Padding. The fixture carries none, which is what keeps its CSS column
+// comparable rather than hand-waved: GrMobFlexSolver shrinks each child in
+// proportion to a base that INCLUDES the child's own padding, and CSS
+// distributes shrink over the inner flex base size, which excludes it — a
+// divergence ios/verify/band.swift records and wasm/verify's check 9 has since
+// watched a real Chrome confirm. With no padding anywhere the two rules
+// coincide.
+//
+// That used to be the end of the paragraph, and it was reasoning rather than a
+// measurement: "the known difference does not apply here", said by whoever
+// wrote the fixture and asked of nobody. wasm/verify's check 12 mounts these
+// four Rows in a browser now and holds it to what this file states — a pinned
+// child keeps its base, the extents match the Compose column exactly where
+// MainsAgreeWithCSS says they do and differ where it says they differ, and a
+// child's width does not depend on where it sits. A browser lays them out at
+// 24/80/16, 200/0/0, 0/200/0 and 0/0/200: the CSS column of the table above,
+// measured.
+//
+// Three of those four rows are pinned to their exact numbers by those claims
+// together. The control row's proportional split is still GrMobFlexSolver's
+// alone, and check 12 deliberately does not recompute it — a flex line
+// transcribed into JavaScript would make that check about whether two
+// transcriptions agree.
 package pinfixture
 
 import "fmt"
@@ -152,13 +182,23 @@ type Measured struct {
 //	val placeable = placeables[i] ?: child.measure(
 //	    constraints.copy(
 //	        mainAxisMin = 0,
-//	        mainAxisMax = (mainAxisMax - fixedSpace).coerceAtLeast(0).toInt(),
+//	        mainAxisMax = if (mainAxisMax == Constraints.Infinity) {
+//	            Constraints.Infinity
+//	        } else {
+//	            (mainAxisMax - fixedSpace).coerceAtLeast(0).toInt()
+//	        },
 //	        crossAxisMin = 0
 //	    ).toBoxConstraints(orientation)
 //	)
 //	spaceAfterLastNoWeight = min(arrangementSpacingPx.toInt(),
 //	    (mainAxisMax - fixedSpace - placeable.mainAxisSize()).coerceAtLeast(0).toInt())
 //	fixedSpace += placeable.mainAxisSize() + spaceAfterLastNoWeight
+//
+// The Infinity arm is a Row that was itself offered no definite width. Every
+// case here gives one, so MeasureCompose does not carry that branch — an
+// unreachable arm transcribed is a second thing to keep true. It is quoted
+// rather than elided because a quote with a branch quietly taken out of it is
+// how a reader ends up believing the else arm is the whole rule.
 //
 // and, after the loop, for a Row with no weighted children at all:
 //

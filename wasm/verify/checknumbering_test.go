@@ -119,15 +119,43 @@ func TestTheBrowserChecksAreOneNumberedSequence(t *testing.T) {
 	// the line breaks rather than the sentence.
 	checkTallies(t, headerProse(lines), len(header))
 
-	// Every citation, everywhere. The number means nothing on its own; what
-	// makes it an address is that it resolves.
+	// Every citation, in every file this knows about. The number means nothing
+	// on its own; what makes it an address is that it resolves.
+	//
+	// The list is written out, which is a stated limit rather than a claim of
+	// totality — the same one controls_test.go makes about its own table. Two
+	// files were missing from it and are here now: htmlout/fixedsize_test.go and
+	// controls_test.go, which cite the sequence twice and three times.
+	//
+	// # What this catches, and what caught the one real stale citation
+	//
+	// Worth separating, because adding those two files did not find the fault
+	// that prompted it. htmlout/fixedsize_test.go cited the fixed-size check as
+	// `check 10` after it had become 11, and `check 10` is a check — a range
+	// test cannot tell a citation that points at the wrong one from a citation
+	// that points at the right one. Somebody reading found that; this finds a
+	// citation to a check that does not EXIST, which is what a renumbering that
+	// shortens the sequence produces.
+	//
+	// Holding a citation to the check it means would need each site to say which
+	// check it means in words, and then this would be comparing two prose
+	// descriptions. The number is an address and this asserts the address is in
+	// the map; that the reader is in the right house is theirs.
+	//
+	// A file that cites a check and is not listed is unchecked until somebody
+	// adds it. Walking the repository would close that, and would have to decide
+	// what to do about core/debug.go, whose "Check 1", "Check 2" and "Check 3"
+	// are its own numbered sections and have nothing to do with a browser.
 	for _, file := range []string{
 		browserChecks,
 		"gen.go",
 		"fixedsize_test.go",
+		"controls_test.go",
 		"../../mobile/verify/fixedsize_test.go",
+		"../../htmlout/fixedsize_test.go",
 		"../../ios/verify/flex.swift",
 		"../../internal/bandfixture/bandfixture.go",
+		"../../internal/pinfixture/pinfixture.go",
 	} {
 		for _, cite := range citations(readFixtureFile(t, file)) {
 			if cite < 1 || cite > len(header) {
