@@ -261,3 +261,86 @@ func TestGroupDisabledIsSpelledLikeEveryOtherWireBool(t *testing.T) {
 		}
 	}
 }
+
+// An empty section is unreachable, which is the one thing the run-based
+// reading cannot express — and is a property, not a fact about these inputs.
+//
+// SelectMenuSection.First reads Items[0] and its doc says the read is total
+// because of this; core.SelectOption.Group's doc sends a caller to a disabled
+// placeholder row instead and argues why that is the better answer anyway.
+// Both of those are claims about this function, so this is where they are
+// held.
+//
+// The sweep is over shapes rather than over the shared fixture, because the
+// fixture is a table somebody chose: what is being asserted is that no option
+// list *at all* opens a section it does not fill, including the shapes a
+// caller would reach for if they were trying to write an empty one.
+func TestAnEmptySectionIsUnreachable(t *testing.T) {
+	for _, c := range []struct {
+		name    string
+		options []map[string]string
+	}{
+		{"nothing at all", nil},
+		{"an empty list", []map[string]string{}},
+		// The sentinel a caller would try: an entry carrying a heading and
+		// nothing else. It is an option with a blank label, not a heading —
+		// which is exactly why it is not the mechanism.
+		{"an option that is only a group", []map[string]string{
+			{"group": "Archive"},
+		}},
+		{"a blank option between two runs", []map[string]string{
+			{"value": "a", "label": "A", "group": "One"},
+			{"group": "Empty"},
+			{"value": "b", "label": "B", "group": "Two"},
+		}},
+		// Every option refused. "No choosable rows" is the state a renderer
+		// might optimise into "no section", and the authority must not.
+		{"a run where everything is disabled", []map[string]string{
+			{"value": "a", "label": "A", "group": "Paid", "groupDisabled": "true"},
+		}},
+		{"the placeholder shape Group's doc recommends", []map[string]string{
+			{"value": "", "label": "Nothing archived yet", "group": "Archive",
+				"disabled": "true"},
+		}},
+	} {
+		for i, sec := range SelectMenuSections(c.options) {
+			if len(sec.Items) == 0 {
+				t.Errorf("%s: section %d (%q) has no items — SelectMenuSection.First "+
+					"reads Items[0] and core.SelectOption.Group's doc says this cannot "+
+					"happen", c.name, i, sec.Heading)
+			}
+		}
+	}
+}
+
+// And the recommended shape actually carries: a heading, one row, refused.
+// The point of the placeholder is that a person sees the category and is told
+// why it is empty, so all three have to survive the decomposition.
+func TestThePlaceholderRowKeepsItsHeadingAndItsRefusal(t *testing.T) {
+	got := SelectMenuSections([]map[string]string{
+		{"value": "sf", "label": "San Francisco", "group": "Offices"},
+		{"value": "", "label": "Nothing archived yet", "group": "Archive",
+			"disabled": "true"},
+	})
+	if len(got) != 2 {
+		t.Fatalf("got %d sections, want 2", len(got))
+	}
+	empty := got[1]
+	if empty.Heading != "Archive" {
+		t.Errorf("heading = %q, want %q", empty.Heading, "Archive")
+	}
+	if len(empty.Items) != 1 || !empty.Items[0].Disabled {
+		t.Fatalf("want one refused row, got %+v", empty.Items)
+	}
+	if empty.Items[0].Label != "Nothing archived yet" {
+		t.Errorf("the placeholder's words are what the category is for: %q",
+			empty.Items[0].Label)
+	}
+	// Not GroupDisabled: the heading itself stays legible. A greyed heading
+	// over a greyed row reads as "this whole category is unavailable", which
+	// is a different claim from "this category is empty".
+	if empty.Disabled {
+		t.Error("the placeholder should not disable its own heading — see " +
+			"SelectOption.GroupDisabled for the claim that would make")
+	}
+}

@@ -1248,6 +1248,24 @@ declared pair is 7.56:1.
     has become observable under a bundled theme is one whose fixture may have
     stopped being load-bearing.
 
+    Each row also states **what its witnesses amount to** — a bundled theme,
+    the fixture alone, or nothing — and the test derives the same value from
+    the list and compares. That column is not bookkeeping: before it existed
+    the file's own prose said two rules rested on the fixture alone while the
+    table beside it already listed `AmberTheme` for both, which was true when
+    it was written and wrong the moment a palette was added. A row that does
+    not rest on a shipped palette owes a sentence saying why, exactly as
+    `internal/palette`'s backdrop exclusions do.
+
+    The census is read down its columns as well as across its rows, because a
+    new palette adds a column and the two extremes of one mean opposite things:
+    a theme that witnesses **nothing** adds no evidence to any row and so can
+    never be the answer when a witness is lost, while a theme that witnesses
+    **everything** has just made every fixture-only row a bundled one. Both are
+    legal, both look like ordinary row diffs, and
+    `TestEveryKnownThemeLandsSomewhereStated` makes each cost a named entry
+    with a reason.
+
     That failure is not hypothetical. The evidence for the two-step ink rule
     *used* to be `DefaultTheme` itself, and it was lost to the retint two
     paragraphs up: a straightforward palette improvement that quietly cost an

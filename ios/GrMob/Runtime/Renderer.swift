@@ -421,37 +421,61 @@ private struct GrMobStackPlacement: LayoutValueKey {
     static let defaultValue: GrMobStackAnchor? = nil
 }
 
+/// One SwiftUI subview, as GrMobStack.swift's arithmetic sees it.
+///
+/// The whole of the adapter, and the whole of what SwiftUI contributes to the
+/// two questions the solver asks: `sizeThatFits` behind `size(proposing:)`,
+/// and the LayoutValueKey behind `anchor`. Everything either one is used *for*
+/// is decided next door, where it can be run.
+///
+/// A struct wrapping the proxy rather than an extension on `LayoutSubview`
+/// itself: the conformance would then be visible to anything in the module
+/// that happens to hold one, and this is a private detail of one layout.
+private struct GrMobStackSubview: GrMobStackLayer {
+    let subview: LayoutSubview
+
+    func size(proposing proposal: GrMobProposal) -> CGSize {
+        subview.sizeThatFits(ProposedViewSize(width: proposal.width, height: proposal.height))
+    }
+
+    var anchor: GrMobStackAnchor? { subview[GrMobStackPlacement.self] }
+}
+
 /// The overlay's layout: measure every layer, size to the largest, place each
 /// one at its own anchor.
 ///
-/// The arithmetic is GrMobStackSolver's (GrMobStack.swift), which is pure and
-/// therefore checkable off-device; what stays here is the part that needs
-/// SwiftUI — proposing sizes to subviews and placing them.
+/// Both methods are two lines because both are the same shape — convert the
+/// subviews, ask GrMobStackSolver, do the one thing only SwiftUI can do. Which
+/// proposal each layer is measured with, whether the container may be clamped
+/// to it, and what a layer is offered at placement are all decided in
+/// GrMobStack.swift, and `ios/verify` runs them there against a recording
+/// fake. What is left here is the conversion and the `place()` call, neither
+/// of which has a decision in it.
 ///
-/// Children are measured with the *incoming* proposal rather than an
-/// unspecified one, which is what a SwiftUI ZStack does and what keeps a
-/// greedy layer greedy: a background that states `maxWidth: .infinity` reports
-/// the proposal and so makes the stack fill, exactly as it did before. What
-/// changed is that the layout no longer imposes that on a layer which never
-/// asked for it.
+/// What still cannot be checked off-device is the assumption underneath: that
+/// a real `LayoutSubview` answers `sizeThatFits` the way the fake does. That
+/// is SwiftUI's behaviour rather than this framework's, and a simulator is the
+/// only thing that can say.
 private struct GrMobStackLayout: Layout {
     func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
-        GrMobStackSolver.containerSize(children: subviews.map { $0.sizeThatFits(proposal) })
+        GrMobStackSolver.containerSize(
+            layers: subviews.map(GrMobStackSubview.init),
+            proposing: GrMobProposal(width: proposal.width, height: proposal.height))
     }
 
     func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
-        // Proposed the size actually being drawn into rather than `proposal`:
-        // the parent is free to hand over a different size than the one
-        // sizeThatFits asked for, and every layer of an overlay is offered the
-        // whole box. Same rule GrMobFlexLayout states at its own placeSubviews.
-        let offer = ProposedViewSize(bounds.size)
-        for subview in subviews {
-            let anchor = subview[GrMobStackPlacement.self] ?? .center
-            let size = subview.sizeThatFits(offer)
+        // `bounds`, not `proposal`: the parent is free to hand over a size it
+        // never asked sizeThatFits about. The plan carries the offer each
+        // layer was measured with so the same one is proposed at placement —
+        // see GrMobStackSolver.placements.
+        let plan = GrMobStackSolver.placements(
+            layers: subviews.map(GrMobStackSubview.init), in: bounds)
+        for (subview, placement) in zip(subviews, plan) {
             subview.place(
-                at: GrMobStackSolver.origin(child: size, in: bounds, anchor: anchor),
+                at: placement.origin,
                 anchor: .topLeading,
-                proposal: offer)
+                proposal: ProposedViewSize(width: placement.proposal.width,
+                                           height: placement.proposal.height))
         }
     }
 }

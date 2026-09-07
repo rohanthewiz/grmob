@@ -88,20 +88,26 @@ const FULL_STYLE = {
     FlexShrink: 2, RowGap: 2, ColumnGap: 3, ObjectFit: "cover",
 };
 
-// Every node type the runtime draws, minus one.
+// Every node type the runtime draws.
 //
-// Spacer is left out and the reason is worth stating rather than hiding: its
-// size is a prop, applySpacerSize writes width/height/flex-shrink from it, and
-// renderNode calls that *after* createElement — so a Spacer's own Style loses
-// those three properties to a prop that is not exempt from anything. That is a
-// separate question from this file's (it is a write ordering, not an
-// abstention: styleFromGrMob still manages all three), and putting Spacer in
-// the sweep would report it here, where nobody could act on it.
+// Spacer used to be left out, and the exclusion is worth recording because of
+// how it ended. Its size is a prop; applySpacerSize wrote width, height and
+// flex-shrink from it; and renderNode called that *after* createElement — so a
+// Spacer's own Style lost those three properties to a prop that was not exempt
+// from anything. That is a write ordering rather than an abstention, so
+// reporting it here would have been reporting it where nobody could act on it.
+//
+// It is fixed: applySpacerChassis writes each of the three only where the
+// style pass left the property empty, which is the same "author wins" rule the
+// Modal chassis states one file over. So the type belongs in this sweep like
+// any other — the sweep mounts it without a size prop, where the chassis is
+// inert, and the chassis's own behaviour is checked by name in
+// runtime_test.mjs.
 const NODE_TYPES = [
     "Box", "Column", "Row", "Card", "Scroll", "SafeArea", "List", "ZStack",
     "Text", "Button", "Input", "InputPassword", "NumericInput", "Checkbox",
     "Slider", "Select", "TextArea", "TextGrid", "GridRow", "Modal", "TabView",
-    "Image", "CameraView", "Fragment", "Theme",
+    "Image", "CameraView", "Fragment", "Theme", "Spacer",
 ];
 
 function mountOne(type, style, props = {}) {

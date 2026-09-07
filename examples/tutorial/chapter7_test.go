@@ -1,6 +1,7 @@
 package tutorial
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/rohanthewiz/grmob/core"
@@ -122,6 +123,36 @@ func TestUseStyleMergesAndCannotClear(t *testing.T) {
 
 // --- 7.3 Theme anatomy -------------------------------------------------------
 
+// Every palette the package ships is offered by both theme lessons.
+//
+// The miss this is for had already shipped: AmberTheme was added to core and
+// the chapter whose entire subject is theming went on offering two, because
+// both lessons wrote their list out by hand. bundledThemes() fixes today; this
+// is what keeps it fixed, and it asks core.BundledThemes() rather than naming
+// three palettes — a test that listed them would go stale by exactly the route
+// the lessons did.
+func TestBothThemeLessonsOfferEveryBundledTheme(t *testing.T) {
+	for _, lesson := range []string{"Inside a Theme", "Two themes, one tree"} {
+		mgr := newApp(t)
+		openLesson(t, mgr, lesson)
+		cur := tree(t, mgr)
+		for name := range core.BundledThemes() {
+			label := strings.TrimSuffix(name, "Theme")
+			// A Button carrying the label, which is what tap() needs: the
+			// picker's segments are buttons, so this asserts an operable
+			// control rather than the word appearing somewhere on the page.
+			seg := findNode(cur, func(n *node) bool {
+				return n.Type == "Button" && n.Props["label"] == label
+			})
+			if seg == nil {
+				t.Errorf("lesson %q offers no %q button — a palette that ships and is "+
+					"absent from the theming chapter is one the reader is never told "+
+					"exists", lesson, label)
+			}
+		}
+	}
+}
+
 func TestThemeInspectorReadsBothBundledThemes(t *testing.T) {
 	mgr := newApp(t)
 	openLesson(t, mgr, "Inside a Theme")
@@ -151,6 +182,17 @@ func TestThemeInspectorReadsBothBundledThemes(t *testing.T) {
 	}
 	if !hasTextContaining(cur, "radius 4") {
 		t.Fatal("the Material button base line should read radius 4")
+	}
+
+	// And the third palette, which is the one this test was extended for: the
+	// rows are the same rows and the data is Amber's.
+	tap(t, mgr, "Amber")
+	cur = tree(t, mgr)
+	if !hasText(cur, core.AmberTheme.Colors.Primary) {
+		t.Fatal("the Amber palette should list its Primary hex")
+	}
+	if !hasTextContaining(cur, core.AmberTheme.Components.Button.Background) {
+		t.Fatal("the Amber button base line should read its amber fill")
 	}
 
 	// And back — the inspector is plain state over plain data.
@@ -195,6 +237,18 @@ func TestThemeSwitcherReskinsOnlyTheWrappedSubtree(t *testing.T) {
 		t.Fatalf("under Material the preview button should be %s/r%.0f, got %s/r%.0f",
 			mat.Background, mat.BorderRadius, got.Background, got.BorderRadius)
 	}
+
+	// The third palette re-skins the same subtree — asserted because a picker
+	// that renders a button and wires it to nothing looks identical in a tree
+	// dump to one that works.
+	tap(t, mgr, "Amber")
+	amb := core.AmberTheme.Components.Button
+	if got := followBtn(tree(t, mgr), "Follow").Style; got.Background != amb.Background {
+		t.Fatalf("under Amber the preview button should be %s, got %s",
+			amb.Background, got.Background)
+	}
+	tap(t, mgr, "Material")
+	cur = tree(t, mgr)
 
 	// The scoping claim: the lesson's own footer sits OUTSIDE the wrapper and
 	// must still wear the app's DefaultTheme.

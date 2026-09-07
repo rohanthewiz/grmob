@@ -185,16 +185,27 @@ func TestRowsSpecHasNotAccumulatedMoreSingleWidgetKnobs(t *testing.T) {
 
 // The output a wrapper would have to work on, asserted rather than argued.
 //
-// This is the evidence under the admission rule on wantRowsSpecFields. Two
-// separate things make appendRows' result opaque, and each is one of the
+// This is the evidence under the admission rule on wantRowsSpecFields. Three
+// separate things stand between a caller and a row, and each is one of the
 // reasons a per-row knob cannot live outside the loop:
 //
+//   - what comes back is not a list of children. appendRows appends into the
+//     container's own argument list and returns it, so the slice is the
+//     caller's props followed by the rows — which is the shape both widgets
+//     really have, and is why this test hands it a prefix rather than nil;
 //   - a band, a separator and a row are the same dynamic type, so nothing
-//     type-switches a row out of the slice;
+//     type-switches a row out of the part that is children;
 //   - that type is a closure with no fields, so neither the key nor the item
 //     is reachable from the value — the key is assigned during Render, which
 //     means even prefix-sniffing costs a render of a child the container is
 //     about to render itself.
+//
+// The first leg is what makes the other two careful rather than obvious. A
+// core prop is a closure too — styleFunc is a func(*Style), behaviorFunc a
+// func(*Context, *Node) — so "it is a func" identifies nothing, and a wrapper
+// that reached for reflect.Kind first would take the container's Padding for
+// a row. The one sound separator is the core.View assertion, so that is
+// asserted in both directions before the children are looked at.
 //
 // Together those are why Wrap is a spec field rather than something DataTable
 // does to the slice it gets back.
@@ -202,26 +213,70 @@ func TestAppendRowsOutputIsOpaqueToItsCaller(t *testing.T) {
 	ctx := core.NewContext()
 	ctx.BeginRenderPass()
 
+	// The prefix GroupedList.Render has already appended by the time it calls
+	// appendRows: the two theme defaults it sheds, the edge sensor, and a
+	// caller's own Style prop. This is what a wrapper would be handed.
+	prefix := []core.PropsAndChildren{
+		core.Padding(0),
+		core.Gap(0),
+		core.OnEndReached(func() {}),
+		core.BackgroundColor("#FFFFFF"),
+	}
+
 	// A grouped, divided run, so the slice holds all three kinds of child:
 	// three bands, five rows and two separators.
-	out := appendRows(ctx, nil, rowsSpec[sermon]{
+	out := appendRows(ctx, append([]core.PropsAndChildren(nil), prefix...), rowsSpec[sermon]{
 		Rows: sermons, Key: sermonKey, Row: sermonRow, GroupBy: byMonth,
 		Dividers: true,
 	})
-	if len(out) != 10 {
-		t.Fatalf("appendRows emitted %d children, want 10 (3 bands, 5 rows, 2 separators) "+
-			"— the fixture this test reasons about has changed", len(out))
+	if len(out) != len(prefix)+10 {
+		t.Fatalf("appendRows returned %d items, want %d (%d props, then 3 bands, 5 rows "+
+			"and 2 separators) — the fixture this test reasons about has changed",
+			len(out), len(prefix)+10, len(prefix))
+	}
+
+	// The props are still in front of the children, and they are closures as
+	// well — which is the whole of why the filter below has to be an interface
+	// assertion and not a Kind test.
+	var propFuncs int
+	for i, p := range out[:len(prefix)] {
+		if _, isView := p.(core.View); isView {
+			t.Fatalf("prop %d in the returned slice satisfies core.View — the assertion "+
+				"below is the only way a wrapper can find the children among the props, "+
+				"and it has stopped separating them", i)
+		}
+		if reflect.TypeOf(p).Kind() == reflect.Func {
+			propFuncs++
+		}
+	}
+	if propFuncs == 0 {
+		t.Errorf("no prop in the prefix is a closure — this test's first leg is that " +
+			"reflect.Kind cannot tell a core prop from a keyed child, and the fixture " +
+			"no longer demonstrates it")
+	}
+
+	// So the filter is the interface, and it finds exactly the ten appended
+	// children and nothing the caller put there itself.
+	var children []core.PropsAndChildren
+	for _, item := range out {
+		if _, ok := item.(core.View); ok {
+			children = append(children, item)
+		}
+	}
+	if len(children) != 10 {
+		t.Fatalf("core.View picks %d items out of the returned slice, want the 10 "+
+			"children appendRows appended", len(children))
 	}
 
 	// One type for all ten. A wrapper cannot ask "is this a row".
 	kinds := map[reflect.Type]int{}
-	for _, c := range out {
+	for _, c := range children {
 		kinds[reflect.TypeOf(c)]++
 	}
 	if len(kinds) != 1 {
 		t.Fatalf("appendRows' children have %d distinct types %v — if a row is now "+
 			"distinguishable from a band by type, the admission rule on "+
-			"wantRowsSpecFields has lost its first leg and a per-row wrapper around "+
+			"wantRowsSpecFields has lost its second leg and a per-row wrapper around "+
 			"this slice may have become possible", len(kinds), kinds)
 	}
 

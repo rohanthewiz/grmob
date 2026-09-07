@@ -128,6 +128,19 @@ var lists = []struct {
 	}},
 	// No heading means no <optgroup> and no header, so the run's state has
 	// nowhere to be drawn and degrades to "every option in it is disabled".
+	// The nearest thing to an empty section this widget can express, and the
+	// shape core.SelectOption.Group's doc sends a caller to. A heading with
+	// literally nothing under it is unwritable — Group is a property of an
+	// option, so a section with no options has nothing to declare it — and
+	// what a caller actually wants there is a row that says so. It has to
+	// survive all four transliterations, because a single-item run that is
+	// entirely unavailable is also the run most likely to be optimised away
+	// by a renderer that treats "no choosable rows" as "no section".
+	{"a heading whose only row is a placeholder", []map[string]string{
+		{"value": "sf", "label": "San Francisco", "group": "Offices"},
+		{"value": "", "label": "Nothing archived yet", "group": "Archive",
+			"disabled": "true"},
+	}},
 	{"a disabled run with no heading", []map[string]string{
 		{"value": "a", "label": "A", "groupDisabled": "true"},
 		{"value": "b", "label": "B"},

@@ -2010,3 +2010,59 @@ func TestHiddenBeatsTheValue(t *testing.T) {
 		t.Errorf("a hidden bar stated a range:\n%s", out)
 	}
 }
+
+// The author's word beats the framework's, for a Spacer as for a Modal.
+//
+// The three declarations used to be written by a branch that returned before
+// the shared attribute assembly, so a Spacer's own Style was dropped whole —
+// by the size prop, which is the one place in this exporter where a type
+// default outranked an author. core.Spacer(n) builds no Style, so this shape
+// only arrives by hand; that is the same position core.ModalNode is in, and
+// modalChassis already resolved it the other way.
+func TestASpacersOwnStyleOutranksItsChassis(t *testing.T) {
+	n := &core.Node{
+		Type:  "Spacer",
+		Props: map[string]any{"size": 20},
+		Style: &core.Style{Width: "80px"},
+	}
+	out := ExportHTML(n)
+	// CSS is last-wins within a declaration list, so "the author wins" is a
+	// statement about order: the chassis has to come first.
+	w, a := strings.Index(out, "width:20px"), strings.Index(out, "width:80px")
+	if w < 0 || a < 0 {
+		t.Fatalf("expected both widths in order, chassis then author:\n%s", out)
+	}
+	if a < w {
+		t.Errorf("the author's width is written before the chassis's, so the chassis "+
+			"wins — modalChassis states the opposite rule:\n%s", out)
+	}
+	// The two the author said nothing about are still the chassis's.
+	if !strings.Contains(out, "height:20px") || !strings.Contains(out, "flex-shrink:0") {
+		t.Errorf("a named width should not cost the other two declarations:\n%s", out)
+	}
+}
+
+// And the four things a Spacer was the only node type not to get, each of
+// which the WASM runtime has always given the same node. Asserted together
+// because they were lost together, to one early return.
+func TestASpacerReachesTheSharedAssembly(t *testing.T) {
+	n := &core.Node{
+		Type:  "Spacer",
+		Props: map[string]any{"size": 20, "onClick": "cb-7"},
+		Style: &core.Style{AccessibilityLabel: "gap"},
+		Children: []*core.Node{
+			{Type: "Text", Props: map[string]any{"content": "inside"}},
+		},
+	}
+	out := ExportHTML(n)
+	for _, want := range []string{
+		`aria-label="gap"`,    // accessibility attributes
+		`data-onclick="cb-7"`, // the callback ID
+		"inside",              // the children
+		"width:20px",          // and still a Spacer
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("a Spacer no longer emits %q:\n%s", want, out)
+		}
+	}
+}

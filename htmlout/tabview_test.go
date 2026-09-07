@@ -263,10 +263,15 @@ func TestTabViewKeepsItsOwnBox(t *testing.T) {
 	}
 }
 
-// Spacer takes an early return, before the shared attribute assembly, so it is
-// the one node type that could silently ignore what its parent imposed on it.
 // A Spacer page is an odd thing to build, but "every page but one is hidden"
 // has to be true of every page.
+//
+// This used to be the one node type that could silently ignore what its parent
+// imposed: the size was written by a branch that returned before the shared
+// attribute assembly, and it carried `from` by hand. The branch is now a
+// chassis in that assembly (spacerChassis), so the imposition arrives the way
+// it does for every other type — which is what this test keeps true, from the
+// other side.
 func TestASpacerPageIsStillHidden(t *testing.T) {
 	n := tabViewNode(0, "")
 	n.Children[1] = &core.Node{Type: "Spacer", Props: map[string]any{"size": 40}}
@@ -550,9 +555,10 @@ func TestNoTabsMeansNoPanels(t *testing.T) {
 	}
 }
 
-// Spacer takes an early return, before the shared attribute assembly, so it is
-// the one node type whose element could silently ignore what its parent put on
-// it — the hiding *and* the wiring travel through the same channel.
+// The wiring half of the same fact: the hiding and the panel wiring travel
+// through the same channel, and a Spacer page used to reach that channel by a
+// hand-carried copy rather than through the shared assembly. See
+// TestASpacerPageIsStillHidden.
 func TestASpacerPageIsStillWired(t *testing.T) {
 	n := tabViewNode(0, "")
 	n.Children[1] = &core.Node{Type: "Spacer", Props: map[string]any{"size": 40}}

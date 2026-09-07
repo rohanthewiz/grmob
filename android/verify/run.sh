@@ -1,7 +1,13 @@
 #!/bin/sh
-# Data-layer conformance check for the Kotlin runtime: Go generates the picker
-# menu case table (gen.go), Kotlin runs the real GrMobSelectMenu.kt against it
-# on a plain JVM and compares (Harness.kt).
+# Data-layer conformance check for the Kotlin runtime: Go generates the case
+# tables (gen.go), Kotlin runs the real runtime files against them on a plain
+# JVM and compares (Harness.kt).
+#
+# Two decisions are checked, and both are here for the same reason — a Kotlin
+# file that imports nothing can be executed off a device:
+#
+#   GrMobSelectMenu.kt  how a flat option list becomes a picker menu
+#   GrMobProgress.kt    what a core.ValueRange's three numbers amount to
 #
 # This is the Android analog of ios/verify's selectmenu pass, and it closes the
 # gap that file's own doc used to record: GrMobSelectMenu.kt imports nothing
@@ -38,7 +44,7 @@ mkdir -p "$out"
 # the repo — the same arrangement ios/verify's transcript has.
 go run . > "$out/Cases.kt"
 
-SRC="../app/src/main/java/com/grmob/runtime/GrMobSelectMenu.kt Harness.kt $out/Cases.kt"
+SRC="../app/src/main/java/com/grmob/runtime/GrMobSelectMenu.kt ../app/src/main/java/com/grmob/runtime/GrMobProgress.kt Harness.kt $out/Cases.kt"
 
 if command -v kotlinc >/dev/null; then
   # shellcheck disable=SC2086
@@ -74,12 +80,12 @@ COROUTINES=$(newest_jar org.jetbrains.kotlinx/kotlinx-coroutines-core-jvm)
 ANNOTATIONS=$(newest_jar org.jetbrains/annotations)
 
 if ! command -v java >/dev/null; then
-  echo "SKIP: picker menu (no java; install a JDK to check it)"
+  echo "SKIP: JVM harness (no java; install a JDK to check it)"
   exit 0
 fi
 for jar in "$KOTLINC_JAR" "$STDLIB" "$REFLECT" "$DAEMON" "$COROUTINES" "$ANNOTATIONS"; do
   if [ -z "$jar" ]; then
-    echo "SKIP: picker menu (no kotlinc, and the gradle cache has no Kotlin"
+    echo "SKIP: JVM harness (no kotlinc, and the gradle cache has no Kotlin"
     echo "      compiler; run android/gradlew -p android compileDebugKotlin once"
     echo "      to populate it, or install kotlinc)"
     exit 0

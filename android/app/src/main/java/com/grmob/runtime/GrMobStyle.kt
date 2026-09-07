@@ -288,13 +288,19 @@ data class GrMobStyle(
          * Each number is parsed independently and independently nullable,
          * because ARIA lets a bar state its position without its bounds (they
          * default to 0 and 100) and lets it state bounds without a position
-         * (an indeterminate bar inside a known range). toFloatOrNull rather
-         * than a 0f default for the same reason the field is nullable: a value
-         * that failed to parse must not read as a bar at the start.
+         * (an indeterminate bar inside a known range). Null rather than a 0f
+         * default for the same reason the field is nullable: a value that
+         * failed to parse must not read as a bar at the start.
+         *
+         * The parse is [grMobProgressNumber] rather than a bare
+         * `toFloatOrNull` so that one rule decides what counts as a number —
+         * it also refuses the non-finite spellings Kotlin's parser accepts,
+         * which no range property can hold — and so that the rule is one an
+         * off-device harness can run.
          */
         private fun parseValueRange(obj: JSONObject?): ValueRange {
             if (obj == null) return ValueRange(null, null, null, "")
-            fun num(name: String): Float? = obj.optString(name).toFloatOrNull()
+            fun num(name: String): Float? = grMobProgressNumber(obj.optString(name))
             return ValueRange(
                 now = num("Now"),
                 min = num("Min"),
@@ -681,7 +687,7 @@ fun SemanticsPropertyReceiver.grMobRole(kind: String) {
  * things; Compose does not, and the framework is not stricter than the
  * platform it is talking to.
  *
- * # The three-way branch on the numbers is ARIA's indeterminate bar
+ * # The branch on the numbers lives next door
  *
  * A bar with bounds and no position is *running with no idea how far*, which
  * is a state Compose can only spell as `ProgressBarRangeInfo.Indeterminate`.
@@ -690,27 +696,38 @@ fun SemanticsPropertyReceiver.grMobRole(kind: String) {
  * nothing numeric at all leaves the property alone — a `text` on an ordinary
  * node must not turn it into a progress bar.
  *
+ * Those rules are ARIA's rather than Compose's and they are resolved by
+ * [grMobProgressOf], in GrMobProgress.kt, which imports nothing and is
+ * therefore runnable: android/verify compares it against Go's
+ * core.ValueRange.Progress over internal/valuefixture's table. Until it moved
+ * there the branch was checked by mobile/verify looking for the word
+ * `Indeterminate` somewhere in this file — which would have stayed green for
+ * a branch that reached it on the wrong condition.
+ *
  * The parameter is `range` and not `value` for the reason grMobRole's is
  * `kind`: the surrounding lambda is a SemanticsPropertyReceiver, and a name
  * that shadows one of its properties stops the assignment compiling.
  */
 fun SemanticsPropertyReceiver.grMobValue(range: GrMobStyle.ValueRange) {
     if (range.text.isNotEmpty()) stateDescription = range.text
-    val now = range.now
-    if (now != null) {
-        // ARIA's own defaults for an unstated bound, which is what makes a
-        // bare position announce as a percentage on every target.
-        val min = range.min ?: 0f
-        val max = range.max ?: 100f
-        // Compose requires a non-empty range; a caller that inverted the two
-        // (or stated one bound equal to the other) would otherwise crash the
-        // render rather than mis-announce it, which is the wrong trade for an
-        // accessibility annotation.
-        if (max > min) {
-            progressBarRangeInfo = ProgressBarRangeInfo(now.coerceIn(min, max), min..max)
-        }
-    } else if (range.min != null || range.max != null) {
-        progressBarRangeInfo = ProgressBarRangeInfo.Indeterminate
+    // The decision is grMobProgressOf's, in a file that imports nothing, so
+    // android/verify can run it on a JVM against core.ValueRange.Progress.
+    // What is left here is the assignment, which is the only part that needs
+    // a semantics scope — and it is a `when` over four named readings rather
+    // than a branch whose conditions have to be read to be understood.
+    val p = grMobProgressOf(range.now, range.min, range.max)
+    when (p.reading) {
+        GRMOB_PROGRESS_DETERMINATE ->
+            progressBarRangeInfo = ProgressBarRangeInfo(p.now, p.min..p.max)
+        GRMOB_PROGRESS_INDETERMINATE ->
+            progressBarRangeInfo = ProgressBarRangeInfo.Indeterminate
+        // Unstated and empty-range both leave the property alone, and they do
+        // it for different reasons: nothing numeric was claimed, versus a
+        // claim Compose cannot hold — ProgressBarRangeInfo throws on an empty
+        // range, and crashing a render over an accessibility annotation is
+        // the wrong trade. Written as arms rather than as an `else` so the
+        // second one is visible here instead of being an absence.
+        GRMOB_PROGRESS_UNSTATED, GRMOB_PROGRESS_EMPTY_RANGE -> {}
     }
 }
 

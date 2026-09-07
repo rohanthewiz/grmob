@@ -58,7 +58,7 @@ It also ships natively: the package registers itself with the mobile bridge
 | 4 · The Widget Library | Button variants × emphasis, badges/chips/segmented controls, `ListRow`, `Accordion`, `Tabs` |
 | 5 · Forms & Validation | Rules, reveal policies, focus and blur, `FormField` |
 | 6 · Navigation & Overlays | Push/Pop/Replace/Reset, modals, toasts |
-| 7 · Theming & Styling | The style pipeline, `UseStyle` merging, theme anatomy, a live Default ↔ Material switcher, transitions |
+| 7 · Theming & Styling | The style pipeline, `UseStyle` merging, theme anatomy, a live switcher over every bundled palette, transitions |
 | 8 · Robustness | Error boundaries, handler panic guards, [debug mode](concepts/debug-mode.md)'s live concern inspector, [`Cached`](concepts/caching.md) |
 
 Progress is tracked in-app: the contents screen shows how many lessons you

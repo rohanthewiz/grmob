@@ -860,6 +860,76 @@
       end-of-drag callback so a seek bar acts once
 - [x] `core.TextGrid` — a monospace grid of styled runs on all four targets,
       rows as children so a terminal diff patches one row, not the grid
+- [x] **The overlay `Layout`'s three decisions are run off-device**
+      (`ios/GrMob/Runtime/GrMobStack.swift`, `ios/verify/stack.swift`) — the
+      arithmetic was already checkable; what stayed inside the SwiftUI `Layout`
+      was which proposal each layer is measured with, whether the container may
+      be clamped to it, and what a layer is offered at placement. None is
+      arithmetic, all three are load-bearing, and a type-check was the only
+      thing reading them. A `LayoutSubview` is an opaque proxy no test can
+      construct, but the two things the layout asks one are a two-method
+      protocol — so the decisions moved next door and now run against a fake
+      that records every offer. What still needs a simulator is SwiftUI's own
+      behaviour, not this framework's
+- [x] **`core.ValueRange.Progress` — the numeric reading has an authority**
+      (`core/value.go`, `internal/valuefixture`,
+      `android/app/src/main/java/com/grmob/runtime/GrMobProgress.kt`) — the
+      three-way branch on a range's numbers existed only in Kotlin, inside an
+      extension on `SemanticsPropertyReceiver`, and was checked by searching
+      the file for the word `Indeterminate`. The rules are ARIA's and were
+      already written in prose on `core.ValueRange`'s fields; naming them makes
+      them executable. Four readings, not three — an empty range is a claim
+      Compose cannot hold and has to be told apart from "nothing was stated"
+      before the property is assigned — and `android/verify` now runs a
+      second import-free Kotlin file against Go over a shared table
+- [x] **A `Spacer`'s own `Style` outranks its size prop**
+      (`wasm/grmob-runtime.js`, `htmlout/export.go`) — the three declarations
+      were written after the style pass on one DOM target and instead of it on
+      the other, which made a `Spacer` the one node type where a type default
+      beat an author. Both now state the chassis underneath the author's style,
+      as `modalChassis` already did; the runtime records which of the three the
+      author claimed rather than reading the live property back, since a size
+      change arrives with no `Style` beside it. Moving `htmlout`'s out of an
+      early return gave a `Spacer` back its accessibility attributes, its
+      callback IDs, its children and its own style — four things the other DOM
+      renderer had been giving the same node all along
+- [x] **A picker heading with nothing under it, answered rather than left
+      open** (`core/input.go`, `core/select_menu.go`) — `Group` is a field on
+      an option, so an empty section is unwritable, and that is now stated
+      where a caller reads it, pinned as a property of `SelectMenuSections`,
+      and answered: a disabled placeholder row says *why* the category is
+      empty, which an empty `<optgroup>` cannot. The shape is in
+      `internal/menufixture`, so all four picker menus are held to it
+- [x] **The browser pass asks its first layout question**
+      (`wasm/verify/browser.mjs`) — five checks in, everything it asked could
+      have been asked of a page with no geometry. `core.StickyHeader()`'s three
+      declarations are exactly the kind a shimmed DOM can only restate, and the
+      box around them is what defeats a pin in practice. The band is scrolled
+      and asked twice: through the rects the browser reports, and through the
+      pixels at a point an unpinned band would have left a row behind
+- [x] **The wrapper test is asked about the slice callers really get**
+      (`components/rows_spec_test.go`) — `appendRows` appends into the
+      container's own argument list and returns it, so the admission rule was
+      being answered against a fixture that held children alone. It now takes
+      the prop prefix both widgets pass, and the first leg is that a core prop
+      is a closure too: `reflect.Kind` cannot tell one from a keyed child, so
+      the only sound filter is the `core.View` assertion, checked in both
+      directions before the children are looked at
+- [x] **The witness census is read down its columns as well as across its
+      rows** (`components/palette_witness_test.go`) — a row now states what its
+      witnesses amount to (a bundled theme, the fixture alone, or nothing) and
+      the test derives the same value and compares, which caught the file's own
+      prose already claiming two fixture-only rules that `AmberTheme` had
+      witnessed for a release. A new palette adds a column, and its two
+      extremes — witnessing nothing, witnessing everything — look alike in a
+      row diff and mean opposite things, so each costs a named entry with a
+      reason, the road `internal/palette`'s backdrop exclusions took
+- [x] **The tutorial's theme chapter offers every bundled palette**
+      (`examples/tutorial/chapter7.go`) — both lessons wrote their list out by
+      hand, so `AmberTheme` shipped and the chapter whose whole subject is
+      theming went on offering two. A hand-written list in a tutorial is worse
+      than one in a test: the gap is not a missed assertion, it is a palette
+      the reader is never told exists
 
 ---
 

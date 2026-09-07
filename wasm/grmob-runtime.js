@@ -1484,11 +1484,63 @@ const GrMob = (() => {
     // A missing or zero size clears all three, which is what makes this safe
     // to call from the update path: a Spacer whose size prop goes away falls
     // back to nothing rather than keeping the last size it was handed.
+    //
+    // # The size is remembered on the element
+    //
+    // Because the two channels that own these three declarations arrive
+    // separately. The size is a *prop*; the three properties are also Style
+    // fields (Width, Height, FlexShrink), and styleFromGrMob is total — it
+    // assigns all three on every pass — so an update-style patch on a Spacer
+    // would clear the gap and nothing would put it back. That is the failure
+    // the Modal chassis comment warns about ("a chassis set only at creation
+    // would be wiped by the first update-style patch"), and a Spacer had it.
+    //
+    // So the size is recorded here and re-applied by applyStyle, which is the
+    // one function both channels go through.
     function applySpacerSize(el, size) {
-        const px = Number(size) > 0 ? `${Number(size)}px` : "";
-        el.style.width = px;
-        el.style.height = px;
-        el.style.flexShrink = px ? "0" : "";
+        const n = Number(size);
+        el.dataset.spacerSize = n > 0 ? String(n) : "";
+        applySpacerChassis(el);
+    }
+
+    // The Spacer's chassis, written where the author's own Style has not
+    // spoken.
+    //
+    // Same rule as the Modal chassis in styleFromGrMob and as htmlout's
+    // spacerChassis: the fixed look of a node *type* goes underneath the
+    // author's style rather than over it. It used to go over it — renderNode
+    // called applySpacerSize after createElement and the three assignments
+    // were unconditional — so a hand-assembled Spacer carrying a Width lost it
+    // to a prop, which is the one place in this runtime where a type default
+    // outranked an author.
+    //
+    // It cannot live in styleFromGrMob with Modal's, for one reason: that
+    // function never sees a prop, and the size is one. So applyStyle runs it
+    // immediately after the style assignment instead — the same position in
+    // the sequence — and records there which of the three the author claimed.
+    //
+    // Which of the three, and not "is the property currently empty". The two
+    // channels arrive on different patches: a size change is an update-props
+    // patch with no Style in it, and reading the live property then would find
+    // the chassis's *own* last write and mistake it for an author's. That is
+    // not hypothetical — it is the first thing this fix got wrong, and the
+    // resize test caught it.
+    //
+    // The assignment is unconditional for every property the author has not
+    // claimed, which is what keeps it total in the same sense styleFromGrMob
+    // is: a Spacer whose size drops to zero clears the gap rather than keeping
+    // the last one it was handed.
+    //
+    // core.Spacer(n) carries no Style at all, so on every tree core builds
+    // this is the whole of a Spacer's look; a hand-assembled node that does
+    // carry one is the case the authored list is for.
+    function applySpacerChassis(el) {
+        const n = Number(el.dataset.spacerSize);
+        const px = n > 0 ? `${n}px` : "";
+        const authored = (el.dataset.spacerAuthored || "").split(" ");
+        if (!authored.includes("width")) el.style.width = px;
+        if (!authored.includes("height")) el.style.height = px;
+        if (!authored.includes("flexShrink")) el.style.flexShrink = px ? "0" : "";
     }
 
     // Applies a Go Style to a live element. Split from styleFromGrMob because
@@ -1501,6 +1553,18 @@ const GrMob = (() => {
     function applyStyle(el, style, nodeType) {
         const css = styleFromGrMob(style, nodeType);
         Object.assign(el.style, css);
+        // The Spacer's three declarations, restored under whatever the style
+        // pass just wrote. Here rather than in styleFromGrMob because the size
+        // is a prop and that function sees only a Style — see
+        // applySpacerChassis, which is also where the shape of this list is
+        // argued. styleFromGrMob is total, so an empty string in css is
+        // exactly "the author said nothing about this one".
+        if (nodeType === "Spacer") {
+            el.dataset.spacerAuthored = ["width", "height", "flexShrink"]
+                .filter((k) => css[k])
+                .join(" ");
+            applySpacerChassis(el);
+        }
         // The display this element would have with nothing hiding it, kept
         // because hiding a tab page overwrites el.style.display and putting the
         // page back means restoring what the style pass computed — not clearing

@@ -61,6 +61,16 @@ import (
 // witness also fails, because a rule that has become observable under a
 // bundled theme is a rule whose fixture may no longer be load-bearing, and
 // that is worth a human looking at rather than a silent pass.
+//
+// # It is read in both directions
+//
+// A (rule, theme) matrix has two axes and the edits that reach it come down
+// each. A retint moves a *row*, which is what wantWitnesses records and
+// TestEveryPaletteRuleStillHasAWitness checks. A new palette adds a *column*,
+// and its two extremes — a theme that witnesses nothing and one that witnesses
+// everything — produce row diffs that look alike and mean opposite things, so
+// they are checked separately by TestEveryKnownThemeLandsSomewhereStated
+// against two exception tables that each cost a sentence.
 
 // paletteRule is one behaviour and the question "can this theme show it".
 type paletteRule struct {
@@ -157,41 +167,166 @@ func onLightRule(role string, get func(core.ColorPalette) string) paletteRule {
 	}
 }
 
-// knownThemes is every theme this package can measure a rule against: the two
+// knownTheme is a palette this package can put a rule to, and whether it is
+// one a real app can install.
+//
+// The flag is the census's load-bearing distinction — evidence from a shipped
+// theme and evidence from a test fixture are worth different things — and it
+// is derived rather than remembered: core.BundledThemes() is the authority, so
+// a fixture promoted to a shipped palette, or a palette withdrawn, moves this
+// bit with nobody editing a list.
+type knownTheme struct {
+	theme   *core.Theme
+	bundled bool
+}
+
+// knownThemes is every theme this package can measure a rule against: the
 // bundled palettes and the fixture that carries what they have lost.
 //
 // midTonePrimaryTheme is in here on equal footing deliberately. It is not a
 // bundled theme and the census's whole subject is that this matters — but a
-// list that excluded it would report "no witness" for two rules that do in
+// list that excluded it would report "no witness" for a rule that does in
 // fact have one, and the distinction that matters is recorded below, in the
-// expected table, where a reader can see which rows rest on the fixture alone.
-func knownThemes() map[string]*core.Theme {
-	themes := map[string]*core.Theme{"midTonePrimary": midTonePrimaryTheme()}
+// rests column, where it is derived from this flag rather than from a reader
+// knowing which of the names is the fixture.
+func knownThemes() map[string]knownTheme {
 	// The bundled ones come from core's own census rather than being listed
 	// again here: a fourth palette that this file never asked the questions of
 	// would not fail anything, it would simply be absent — which is the exact
 	// shape of miss this census exists to report one level up.
+	themes := map[string]knownTheme{"midTonePrimary": {theme: midTonePrimaryTheme()}}
 	for name, theme := range core.BundledThemes() {
-		themes[name] = theme
+		themes[name] = knownTheme{theme: theme, bundled: true}
 	}
 	return themes
 }
 
-// wantWitnesses is the census: for each rule, the themes that can currently
-// show it, sorted.
+// restsOn is what a row's witness list amounts to, in the only three states a
+// list of themes can be in.
 //
-// Two rows rest on the fixture alone — "the declaration outranks the
-// measurement" and "OnLight moves the Primary role" — and those two are the
-// Next-list item this file was written for. The other three are witnessed by
-// a bundled theme and need nothing.
-var wantWitnesses = map[string][]string{
-	"the declaration outranks the measurement": {"AmberTheme", "midTonePrimary"},
-	"the declaration flips the ink pole":       {"midTonePrimary"},
-	"OnLight moves the Primary role":           {"AmberTheme", "midTonePrimary"},
-	"OnLight moves the Error role":             {"DefaultTheme", "midTonePrimary"},
-	"OnLight moves the Success role":           {"DefaultTheme"},
-	"OnLight moves the Warning role":           {"AmberTheme", "DefaultTheme", "MaterialTheme"},
+// Stated in the table and derived by the test, which is the whole point: the
+// column is a claim about the row that the row itself can falsify. Before it
+// existed this file's own prose said two rules rested on the fixture alone
+// while the table beside it listed AmberTheme for both — true when it was
+// written, wrong the moment a palette was added, and nothing could tell.
+type restsOn string
+
+const (
+	// A shipped palette shows the rule. Nothing is owed: an app can be pointed
+	// at a theme where the behaviour is visible.
+	restsOnBundled restsOn = "a bundled theme"
+	// Only the fixture shows it. Legal and sometimes unavoidable — see the
+	// pole flip — and it needs an argument, because a fixture is a thing
+	// somebody edits while tidying a test helper.
+	restsOnFixture restsOn = "the fixture alone"
+	// Nothing shows it. The rule is one an implementation could delete with
+	// every test in the repository still passing, so this needs an argument
+	// saying why it is being kept anyway rather than restored to a witness.
+	restsOnNothing restsOn = "nothing"
+)
+
+// restsOnWitnesses derives the column above from a witness list.
+//
+// Bundled beats fixture: a row with both is a row whose evidence survives the
+// fixture being deleted, which is the question the column is asked.
+func restsOnWitnesses(names []string, themes map[string]knownTheme) restsOn {
+	if len(names) == 0 {
+		return restsOnNothing
+	}
+	for _, n := range names {
+		if themes[n].bundled {
+			return restsOnBundled
+		}
+	}
+	return restsOnFixture
 }
+
+// witnessRow is one rule's evidence.
+type witnessRow struct {
+	rule   string
+	themes []string // sorted; the themes that can currently show the rule
+	rests  restsOn  // what that list amounts to — derived and compared
+	// why is required when rests is not restsOnBundled. Same rule
+	// internal/palette's backdrop exclusions follow: an entry that only
+	// records a state is a state nobody argued for, and evidence going quiet
+	// is this file's entire subject.
+	why string
+}
+
+// wantWitnesses is the census: for each rule, the themes that can currently
+// show it, and what that list is worth.
+//
+// # Adding a theme
+//
+// A new palette is asked every rule the moment core.BundledThemes() returns
+// it, and its answers arrive here as a diff. Both extremes are legal and they
+// mean opposite things, which is why neither is silent:
+//
+//	in no row     the palette witnesses nothing. Legal — most themes carry a
+//	              few rules — but a palette that shows none of them is one the
+//	              census cannot use, so it is named in quietThemes with a
+//	              reason.
+//	in every row  the palette witnesses everything, which means every
+//	              fixture-only row has just gained a bundled witness and those
+//	              fixtures may have stopped being load-bearing. Named in
+//	              universalThemes with a reason, and the fixtures re-read.
+//
+// Anything between the two is the ordinary case: add the name to the rows it
+// witnesses, and let the rests column be re-derived. A row moving from
+// "the fixture alone" to "a bundled theme" is the good news this file exists
+// to notice — and it is also the moment to check whether the fixture is still
+// carrying anything.
+var wantWitnesses = []witnessRow{
+	{
+		rule:   "the declaration outranks the measurement",
+		themes: []string{"AmberTheme", "midTonePrimary"},
+		rests:  restsOnBundled,
+	},
+	{
+		rule:   "the declaration flips the ink pole",
+		themes: []string{"midTonePrimary"},
+		rests:  restsOnFixture,
+		why: "no bundled palette can host one: a declaration that loses the " +
+			"measurement is the lower-contrast ink, and the AA floor leaves it a band " +
+			"1.8% wide — see TestThePoleFlipBandIsTooNarrowToShip",
+	},
+	{
+		rule:   "OnLight moves the Primary role",
+		themes: []string{"AmberTheme", "midTonePrimary"},
+		rests:  restsOnBundled,
+	},
+	{
+		rule:   "OnLight moves the Error role",
+		themes: []string{"DefaultTheme", "midTonePrimary"},
+		rests:  restsOnBundled,
+	},
+	{
+		rule:   "OnLight moves the Success role",
+		themes: []string{"DefaultTheme"},
+		rests:  restsOnBundled,
+	},
+	{
+		rule:   "OnLight moves the Warning role",
+		themes: []string{"AmberTheme", "DefaultTheme", "MaterialTheme"},
+		rests:  restsOnBundled,
+	},
+}
+
+// The two degenerate columns of the matrix, as data with arguments rather
+// than as states the census refuses to describe.
+//
+// Both are empty today and that is the honest starting point: every theme the
+// package knows about witnesses some rules and not others. What an entry costs
+// is a sentence saying why the extreme is acceptable, which is the same price
+// internal/palette charges a backdrop exclusion — and the reason the price is
+// worth paying is that both extremes look, in a diff, exactly like a theme
+// somebody forgot to finish adding.
+var (
+	// theme -> why it is allowed to witness no rule at all.
+	quietThemes = map[string]string{}
+	// theme -> why it is allowed to witness every rule.
+	universalThemes = map[string]string{}
+)
 
 func TestEveryPaletteRuleStillHasAWitness(t *testing.T) {
 	themes := knownThemes()
@@ -202,35 +337,166 @@ func TestEveryPaletteRuleStillHasAWitness(t *testing.T) {
 			len(paletteRules), len(wantWitnesses))
 	}
 
+	rows := map[string]witnessRow{}
+	for _, r := range wantWitnesses {
+		if _, dup := rows[r.rule]; dup {
+			t.Fatalf("two rows named %q — the count above would still agree while one "+
+				"rule went unrecorded", r.rule)
+		}
+		rows[r.rule] = r
+	}
+
 	for _, rule := range paletteRules {
 		var got []string
-		for name, theme := range themes {
-			if rule.witnesses(theme) {
+		for name, kt := range themes {
+			if rule.witnesses(kt.theme) {
 				got = append(got, name)
 			}
 		}
 		sort.Strings(got)
 
-		want, recorded := wantWitnesses[rule.name]
+		row, recorded := rows[rule.name]
 		if !recorded {
 			t.Errorf("rule %q has no row in wantWitnesses — record the themes that can "+
-				"show it, or none if it has become unobservable", rule.name)
+				"show it, with the rests column that list implies", rule.name)
 			continue
 		}
 
-		if len(got) == 0 {
-			t.Errorf("rule %q now has no witness in any known theme. Nothing can show it "+
-				"working, which means %s. Either a theme moved and should move back, or "+
-				"the fixture that carried it has been edited — see midTonePrimaryTheme",
-				rule.name, rule.deletable)
-			continue
+		if strings.Join(got, ",") != strings.Join(row.themes, ",") {
+			gained, lost := diffThemes(got, row.themes)
+			t.Errorf("rule %q is witnessed by %v, recorded as %v (gained %v, lost %v) — "+
+				"if a theme was just added to core.BundledThemes(), put its name in the "+
+				"rows it witnesses and see wantWitnesses' \"Adding a theme\" note; if a "+
+				"witness was lost, %s", rule.name, got, row.themes, gained, lost,
+				rule.deletable)
 		}
-		if strings.Join(got, ",") != strings.Join(want, ",") {
-			t.Errorf("rule %q is witnessed by %v, recorded as %v — a palette or fixture "+
-				"edit has changed what this rule's evidence rests on. If a witness was "+
-				"lost, check whether the remaining ones are fixtures; if one was gained, "+
-				"the fixture carrying this rule may no longer be load-bearing. Then "+
-				"update wantWitnesses", rule.name, got, want)
+
+		// The column, derived. A stale rests is the failure this census had
+		// before the column existed: the list said one thing and the prose
+		// above it said another.
+		if want := restsOnWitnesses(got, themes); want != row.rests {
+			t.Errorf("rule %q now rests on %s, recorded as %s — %s", rule.name,
+				want, row.rests, restsAdvice(want, row.rests, rule))
+		}
+		if row.rests != restsOnBundled && row.why == "" {
+			t.Errorf("rule %q rests on %s and gives no reason. A row that does not rest "+
+				"on a shipped palette is a row somebody has to defend — say why the "+
+				"evidence is where it is, as the pole-flip row does", rule.name, row.rests)
+		}
+	}
+}
+
+// restsAdvice says what a moved rests column means, which is a different
+// thing in each direction and is the reason the column is worth having.
+func restsAdvice(got, recorded restsOn, rule paletteRule) string {
+	switch {
+	case got == restsOnNothing:
+		return "nothing can show it working, which means " + rule.deletable +
+			". Either a theme moved and should move back, or the fixture that carried " +
+			"it has been edited — see midTonePrimaryTheme"
+	case got == restsOnBundled && recorded == restsOnFixture:
+		return "a shipped palette now shows it, which is good news and is also the " +
+			"moment to check whether the fixture is still carrying anything — see " +
+			"TestTheFixtureStillCarriesWhatNoBundledThemeCan"
+	case got == restsOnFixture && recorded == restsOnBundled:
+		return "the shipped palette that used to show it no longer does, so the rule's " +
+			"only evidence is now a test fixture. That is the drift this file was " +
+			"written for: " + rule.deletable
+	default:
+		return "update the column, and check the reason beside it still describes the row"
+	}
+}
+
+// diffThemes reports what a row gained and lost, so the failure message can
+// tell "a theme was added to core" apart from "a palette was retinted" —
+// which are the two edits that reach this test and want opposite responses.
+func diffThemes(got, want []string) (gained, lost []string) {
+	in := func(names []string, n string) bool {
+		for _, x := range names {
+			if x == n {
+				return true
+			}
+		}
+		return false
+	}
+	for _, g := range got {
+		if !in(want, g) {
+			gained = append(gained, g)
+		}
+	}
+	for _, w := range want {
+		if !in(got, w) {
+			lost = append(lost, w)
+		}
+	}
+	return gained, lost
+}
+
+// Where a newly added theme lands, read down the matrix's columns rather than
+// across its rows.
+//
+// The row test above catches a palette that changed what it witnesses. It
+// cannot catch the shape of a theme, because a theme that witnesses nothing
+// and one that witnesses everything both produce ordinary-looking row diffs —
+// a handful of names appearing, or none appearing at all — and the two mean
+// opposite things about the census as a whole.
+func TestEveryKnownThemeLandsSomewhereStated(t *testing.T) {
+	themes := knownThemes()
+
+	// Both exception tables are held to the theme list in the other direction,
+	// for the reason internal/palette holds its backdrop exclusions to
+	// core.ComponentDefaults: an entry naming a theme that no longer exists is
+	// an argument for nothing, and it would sit here looking like coverage.
+	for _, table := range []struct {
+		name    string
+		entries map[string]string
+	}{
+		{"quietThemes", quietThemes},
+		{"universalThemes", universalThemes},
+	} {
+		for name, why := range table.entries {
+			if _, known := themes[name]; !known {
+				t.Errorf("%s names %q, which is not a theme this package measures — "+
+					"the entry argues for nothing", table.name, name)
+			}
+			if why == "" {
+				t.Errorf("%s[%q] gives no reason; the reason is the entry", table.name, name)
+			}
+		}
+	}
+
+	for name, kt := range themes {
+		var carried []string
+		for _, rule := range paletteRules {
+			if rule.witnesses(kt.theme) {
+				carried = append(carried, rule.name)
+			}
+		}
+		switch {
+		case len(carried) == 0:
+			if _, allowed := quietThemes[name]; !allowed {
+				t.Errorf("%s witnesses no palette rule at all. That is legal and it is "+
+					"not nothing: a palette the census cannot use adds no evidence to "+
+					"any row, so it cannot be the answer when a witness is lost. If it "+
+					"is a theme being added, record it in quietThemes with the reason "+
+					"its palette shows none of these rules", name)
+			}
+		case len(carried) == len(paletteRules):
+			if _, allowed := universalThemes[name]; !allowed {
+				t.Errorf("%s witnesses every palette rule, including the ones that "+
+					"rested on the fixture. Check whether midTonePrimaryTheme is still "+
+					"carrying anything before recording it in universalThemes with a "+
+					"reason — see TestTheFixtureStillCarriesWhatNoBundledThemeCan", name)
+			}
+		default:
+			if _, quiet := quietThemes[name]; quiet {
+				t.Errorf("%s is recorded in quietThemes and witnesses %d rules %v",
+					name, len(carried), carried)
+			}
+			if _, all := universalThemes[name]; all {
+				t.Errorf("%s is recorded in universalThemes and witnesses %d of %d rules",
+					name, len(carried), len(paletteRules))
+			}
 		}
 	}
 }

@@ -157,3 +157,67 @@ func TestNativeZStacksPlaceEachLayer(t *testing.T) {
 		}
 	}
 }
+
+// The SwiftUI Layout hands both of its questions to the solver.
+//
+// This is the one piece of the overlay that no harness can run.
+// GrMobStackSolver's decisions moved into GrMobStack.swift precisely so
+// ios/verify could execute them against a recording fake, and what stayed
+// behind is the conversion between SwiftUI's vocabulary and the solver's plus
+// the place() call — three lines with no decision in them, and three lines a
+// simulator is still the only thing that exercises.
+//
+// So this is a source-text pin, which is the fallback this package uses
+// wherever a link can break silently and nothing off-device can see it (see
+// value_test.go's pair). What it catches is the shape that would put the
+// decisions back out of reach: a Layout that computes a size or an origin
+// itself rather than asking. It cannot catch a conversion that is subtly
+// wrong, and saying so is the honest limit — that half is what
+// TestNativeZStackOverlaysItsChildren and a simulator are for.
+func TestTheSwiftStackLayoutDelegatesToTheSolver(t *testing.T) {
+	// The whole struct, not declSource: both of its methods are declarations,
+	// so declSource stops at the first one and would read half the subject.
+	// A type's body ends at the first closing brace in column one, since
+	// everything inside it is indented.
+	src := readNative(t, swiftRenderer)
+	at := strings.Index(src, "private struct GrMobStackLayout: Layout {")
+	if at < 0 {
+		t.Fatalf("%s: no GrMobStackLayout — if it was renamed, update this test",
+			swiftRenderer)
+	}
+	rest := src[at:]
+	end := strings.Index(rest, "\n}\n")
+	if end < 0 {
+		t.Fatalf("%s: GrMobStackLayout is unterminated", swiftRenderer)
+	}
+	body := rest[:end]
+
+	for _, pin := range []struct{ expr, question string }{
+		{"GrMobStackSolver.containerSize(",
+			"which proposal each layer is measured with, and whether the result may " +
+				"be clamped to it"},
+		{"GrMobStackSolver.placements(",
+			"what every layer is re-measured and placed with, which is bounds.size " +
+				"rather than the incoming proposal"},
+	} {
+		if !strings.Contains(body, pin.expr) {
+			t.Errorf("%s: GrMobStackLayout never calls %s — it is deciding %s for "+
+				"itself, where ios/verify cannot reach it", swiftRenderer, pin.expr,
+				pin.question)
+		}
+	}
+
+	// And it does not do the arithmetic on the way past. Both of these are
+	// how the decisions were spelled before they moved, so both are what a
+	// reinlining would look like.
+	for _, banned := range []struct{ expr, why string }{
+		{".max()", "taking the largest child here is the container-sizing rule, and it " +
+			"belongs where a test can run it"},
+		{"bounds.minX", "computing an origin here is the placement rule, same"},
+	} {
+		if strings.Contains(body, banned.expr) {
+			t.Errorf("%s: GrMobStackLayout contains %q — %s", swiftRenderer,
+				banned.expr, banned.why)
+		}
+	}
+}

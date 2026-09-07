@@ -1056,6 +1056,54 @@ test("a Spacer resizes on the patch path", () => {
     assert.equal(at(0).style.height, "40px");
 });
 
+// The author's word beats the framework's, which is the rule everywhere else
+// in this runtime and was not the rule here: the three declarations were
+// written unconditionally after createElement, so a hand-assembled Spacer
+// carrying a Width lost it to the size prop. core.Spacer(n) builds no Style,
+// so this shape only arrives by hand — the same position core.ModalNode is in,
+// and the Modal chassis already resolved it the other way.
+test("a Spacer's own Style outranks its size prop", () => {
+    const { at } = mount([{
+        Type: "Spacer",
+        Props: { size: 20 },
+        Style: { Width: "80px", FlexShrink: 3 },
+    }]);
+
+    assert.equal(at(0).style.width, "80px");
+    // Only the property the author named. The other two are still the
+    // chassis's, which is what makes this a default rather than an all-or-
+    // nothing switch.
+    assert.equal(at(0).style.height, "20px");
+    assert.equal(at(0).style.flexShrink, "3");
+});
+
+// styleFromGrMob is total — it assigns all three of these on every pass — so a
+// chassis written once at creation is wiped by the first update-style patch
+// that touches the node. That is the failure the Modal chassis comment warns
+// about, and a Spacer had it: the size lives in Props, an update-style patch
+// carries no props, and nothing put the gap back.
+test("a Spacer keeps its gap across an update-style patch", () => {
+    const { rt, at } = mount([{ Type: "Spacer", Props: { size: 20 } }]);
+
+    rt.GrMob.patch(JSON.stringify([{
+        Type: "update-style", TargetID: "root/0", Changes: { Background: "#ff0000" },
+    }]));
+
+    assert.equal(at(0).style.background, "#ff0000");
+    assert.equal(at(0).style.width, "20px");
+    assert.equal(at(0).style.height, "20px");
+    assert.equal(at(0).style.flexShrink, "0");
+
+    // And a patch that states one of the three still wins it, on the same
+    // pass: the chassis fills what the style left empty rather than what it
+    // disagrees with.
+    rt.GrMob.patch(JSON.stringify([{
+        Type: "update-style", TargetID: "root/0", Changes: { Height: "5px" },
+    }]));
+    assert.equal(at(0).style.height, "5px");
+    assert.equal(at(0).style.width, "20px");
+});
+
 // --------------------------------------------------------------------------
 // Toasts
 // --------------------------------------------------------------------------

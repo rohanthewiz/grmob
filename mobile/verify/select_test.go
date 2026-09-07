@@ -220,13 +220,13 @@ func TestSwiftMenuItemsDisableTheButtonAndNotTheSection(t *testing.T) {
 
 // The decomposition files import no UI, on either platform.
 //
-// This is what makes the Swift half runnable at all: ios/verify compiles
-// GrMobSelectMenu.swift into a plain macOS executable, and a single `import
-// SwiftUI` would end that — the harness would stop building, and the fallback
-// would be the source-text checks this file used to be made of. The Kotlin
-// twin has no runner yet, so the check there is about keeping one possible:
-// a decomposition that reached for a Compose type could only ever be checked
-// on a device.
+// This is what makes both halves runnable at all: ios/verify compiles
+// GrMobSelectMenu.swift into a plain macOS executable and android/verify
+// compiles GrMobSelectMenu.kt for a JVM, and a single `import SwiftUI` or
+// `import androidx.compose...` would end either — the harness would stop
+// building, and the fallback would be the source-text checks this file used to
+// be made of. mobile/verify/value_test.go states the same rule for
+// GrMobProgress.kt, which is the second file to earn it.
 //
 // Stated as an absence of imports rather than of any particular symbol,
 // because it is the whole dependency that matters and a new UI framework

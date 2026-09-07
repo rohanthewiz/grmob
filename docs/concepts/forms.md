@@ -360,6 +360,27 @@ option `Disabled` by hand is the *heading*, which greys with its rows, and one
 with no `Group` there is no heading to grey and no `<optgroup>` to carry the
 attribute, so it degrades to exactly "every option in the run is disabled".
 
+A heading with **nothing under it** cannot be written either, and that one is a
+property of the design rather than of any renderer. `Group` is a field on an
+*option*, so a section with no options has nothing to declare it, and
+`SelectMenuSections` therefore never produces an empty one. Declaring a heading
+independently would mean a second list beside the options and a rule for
+matching the two — which headings are in use, what an unmatched heading does,
+what an option naming a heading that is not in the list does — and the
+run-based reading was chosen precisely to have no matching problem in it.
+
+What to write instead is a placeholder row, disabled:
+
+```go
+{Group: "Archive", Label: "Nothing archived yet", Disabled: true}
+```
+
+That is better than an empty section rather than merely possible. An
+`<optgroup>` with no `<option>`, a SwiftUI `Section` with no `Button` and a
+Compose heading with no rows are each a label a reader announces and a pointer
+cannot reach, and none of them says *why* the category is empty. A disabled row
+says it in your own words, where a person is already looking.
+
 A heading still cannot carry an icon, and that is a decision rather than a gap:
 an `<optgroup>`'s label is an attribute, so the web can hold text and nothing
 else — a heading with an icon on two targets and without one on the other two

@@ -3,7 +3,15 @@ package verify
 import (
 	"strings"
 	"testing"
+
+	"github.com/rohanthewiz/grmob/core"
 )
+
+// The Kotlin file holding the numeric reading. Split out of GrMobStyle.kt so
+// that it imports nothing and android/verify can run it on a JVM — see
+// TestTheKotlinValueReadingIsUIFree.
+var kotlinProgress = nativeFile("android", "app", "src", "main", "java", "com", "grmob",
+	"runtime", "GrMobProgress.kt")
 
 // core.Style.AccessibilityValue, held against both native renderers.
 //
@@ -59,10 +67,16 @@ func TestKotlinKeepsAnUnstatedNumberUnstated(t *testing.T) {
 	for _, pin := range []struct{ expr, why string }{
 		{"val now: Float?,", "a nullable position, because 0 is a real one"},
 		// The whole line, terminator included. A prefix match would still
-		// stand over `toFloatOrNull() ?: 0f`, which is exactly the fix
-		// somebody reaches for to make the type non-null — and which
-		// reintroduces the bug the nullable field exists to prevent.
-		{"fun num(name: String): Float? = obj.optString(name).toFloatOrNull()\n",
+		// stand over `?: 0f`, which is exactly the fix somebody reaches for to
+		// make the type non-null — and which reintroduces the bug the nullable
+		// field exists to prevent.
+		//
+		// The parse goes through grMobProgressNumber rather than calling
+		// toFloatOrNull here, so that one rule decides what counts as a number
+		// and android/verify can run it: the parse is half of what the reading
+		// depends on, and a harness given pre-parsed floats would be checking
+		// the half that cannot go wrong.
+		{"fun num(name: String): Float? = grMobProgressNumber(obj.optString(name))\n",
 			"parsing to null rather than to a 0 default — a value that failed to " +
 				"parse must not read as a bar at the start"},
 		{"ProgressBarRangeInfo.Indeterminate",
@@ -96,6 +110,69 @@ func TestKotlinAppliesTheValueThroughItsSemanticsPrimitives(t *testing.T) {
 	if src := readNative(t, kotlinStyle); !strings.Contains(src, "grMobValue(valueRange)") {
 		t.Errorf("%s: boxModifier never calls grMobValue — the mapping exists and "+
 			"nothing invokes it", kotlinStyle)
+	}
+
+	// The third link, and the one this file used to *be*: the numeric reading
+	// itself. It is grMobProgressOf's now, in a file android/verify runs
+	// against core.ValueRange.Progress, so what is left to check here is that
+	// grMobValue still asks it — a branch reinlined into this lambda would be
+	// correct-looking, unrunnable, and checked by nothing.
+	if !strings.Contains(body, "grMobProgressOf(range.now, range.min, range.max)") {
+		t.Errorf("%s: grMobValue does not delegate to grMobProgressOf — the three-way "+
+			"reading is only checkable while it lives in a file that imports nothing "+
+			"(GrMobProgress.kt); inlined here it can only be exercised on a device",
+			kotlinStyle)
+	}
+	// Both silent readings are named rather than reached by a catch-all. They
+	// are different facts — nothing was claimed, versus a claim Compose cannot
+	// hold — and an `else` arm would make the second one an absence again,
+	// which is the state this whole item started in.
+	for _, reading := range []string{"GRMOB_PROGRESS_UNSTATED", "GRMOB_PROGRESS_EMPTY_RANGE"} {
+		if !strings.Contains(body, reading) {
+			t.Errorf("%s: grMobValue does not name %s — the two readings that assign "+
+				"nothing say different things and both belong in the when", kotlinStyle, reading)
+		}
+	}
+}
+
+// The numeric reading imports nothing, which is what makes android/verify able
+// to run it.
+//
+// Same rule TestNativeMenuDecompositionIsUIFree states for GrMobSelectMenu.kt,
+// and the second file to earn it. A single Compose import here would end the
+// JVM pass, and the fallback would be exactly the substring search over
+// GrMobStyle.kt that this file used to rely on: a check that the word
+// `Indeterminate` appears somewhere, which is green for a branch that reaches
+// it on the wrong condition.
+func TestTheKotlinValueReadingIsUIFree(t *testing.T) {
+	for _, line := range strings.Split(readNative(t, kotlinProgress), "\n") {
+		if strings.HasPrefix(strings.TrimSpace(line), "import ") {
+			t.Errorf("%s: %q — the reading has to stay runnable off a device, which "+
+				"means importing nothing at all", kotlinProgress, strings.TrimSpace(line))
+		}
+	}
+}
+
+// The four readings are spelled the same on both sides.
+//
+// android/verify compares the values, which is the real check; this is what
+// makes that comparison possible to write, because the harness compares
+// strings rather than mapping between two vocabularies. A rename on either
+// side would otherwise turn every case into a difference that looks like a
+// logic bug.
+func TestTheReadingNamesAgreeWithCore(t *testing.T) {
+	src := readNative(t, kotlinProgress)
+	for _, reading := range []core.ProgressReading{
+		core.ProgressUnstated,
+		core.ProgressIndeterminate,
+		core.ProgressDeterminate,
+		core.ProgressEmptyRange,
+	} {
+		if want := `"` + string(reading) + `"`; !strings.Contains(src, want) {
+			t.Errorf("%s: no constant spelled %s — core.ProgressReading is a string type "+
+				"so the two sides can compare values, and a Kotlin literal that drifts "+
+				"turns every android/verify case into a difference", kotlinProgress, want)
+		}
 	}
 }
 

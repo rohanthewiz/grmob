@@ -97,31 +97,6 @@ func renderNode(b *element.Builder, node *core.Node, from imposed, path string) 
 		return
 	}
 
-	// Spacer is pure layout: a fixed square void, no children, no other props.
-	//
-	// Both axes, not just height. core.Spacer(n) is size x size on both
-	// natives (Compose Spacer(Modifier.size(n.dp)), SwiftUI Color.clear
-	// .frame(width:height:)), so a Spacer inside a Row separated its siblings
-	// by n points on device and by nothing at all in the browser, where a
-	// zero-width box between two flex items is invisible.
-	//
-	// flex-shrink:0 is the other half: a flex item's default is to shrink
-	// under pressure, and a gap whose whole job is to hold a fixed distance
-	// must not be the thing that gives way. The natives have fixed frames and
-	// no equivalent to shrink, so this is what reproduces their behavior
-	// rather than adding to it.
-	if node.Type == "Spacer" {
-		if size, ok := node.Props["size"].(int); ok {
-			// What the parent imposed still applies: this branch returns
-			// before the shared attribute assembly below, so a Spacer used as
-			// a tab page would otherwise be the one node type that could
-			// neither be hidden nor named as a panel.
-			decls := fmt.Sprintf("width:%dpx; height:%dpx; flex-shrink:0", size, size)
-			b.Div(append([]string{"style", addDecl(decls, from.decl)}, from.attrs...)...).R()
-			return
-		}
-	}
-
 	// Grouping nodes are emitted as their children, with no box of their own.
 	// Which types those are, why a wrapper for them is a layout bug rather
 	// than a redundant element, and why the WASM runtime is the one DOM
@@ -161,6 +136,11 @@ func renderNode(b *element.Builder, node *core.Node, from imposed, path string) 
 	}
 	if node.Type == "GridRow" {
 		sv = addDecl(gridRowChassis, sv)
+	}
+	// The Spacer's chassis, ahead of the author's style for the same reason
+	// as the three above.
+	if node.Type == "Spacer" {
+		sv = addDecl(spacerChassis(node.Props), sv)
 	}
 	if node.Style != nil && node.Style.Disabled && !isFormControl(node.Type) {
 		// HTML's disabled attribute is only valid on form controls, so a
@@ -645,6 +625,48 @@ func getStr(v any) string {
 // display, not visibility: a closed modal must take no space and swallow no
 // clicks, which is display:none's meaning and not visibility:hidden's. That is
 // the same split styleValue makes for DisplayNone against DisplayHidden.
+// spacerChassis is the fixed look of a Spacer: a square void that does not
+// give way.
+//
+// Both axes, not just height. core.Spacer(n) is size x size on both natives
+// (Compose Spacer(Modifier.size(n.dp)), SwiftUI Color.clear
+// .frame(width:height:)), so a Spacer inside a Row separated its siblings by n
+// points on device and by nothing at all in the browser, where a zero-width
+// box between two flex items is invisible.
+//
+// flex-shrink:0 is the other half: a flex item's default is to shrink under
+// pressure, and a gap whose whole job is to hold a fixed distance must not be
+// the thing that gives way. The natives have fixed frames and no equivalent to
+// shrink, so this reproduces their behavior rather than adding to it.
+//
+// # Why it is a chassis and no longer an early return
+//
+// These three declarations used to be written by a branch that returned before
+// the shared attribute assembly, which made a Spacer the one node type whose
+// own Style was dropped entirely — and it was dropped *by* the size, which is
+// backwards: everywhere else in this file a type's fixed look goes ahead of
+// the author's style so the author still wins (modalChassis says so in as many
+// words, and core.ModalNode is the same shape — a node core builds with no
+// Style of its own, reachable with one only by hand).
+//
+// Four other things came back with the move, each of which the WASM runtime
+// had been doing all along for the same node: a Spacer's accessibility
+// attributes, its callback IDs, its children, and its own style declarations.
+// core.Spacer(n) builds none of them, so on every tree core produces the
+// output is byte-for-byte what the early return emitted; a hand-assembled node
+// is the case that changed, and it changed toward what the other DOM renderer
+// already did.
+//
+// An empty string when there is no int size, which is the case that already
+// fell through to the shared path before the branch moved into it.
+func spacerChassis(props map[string]any) string {
+	size, ok := props["size"].(int)
+	if !ok {
+		return ""
+	}
+	return fmt.Sprintf("width:%dpx; height:%dpx; flex-shrink:0", size, size)
+}
+
 func modalChassis(props map[string]any) string {
 	display := "none"
 	if v, ok := props["visible"].(bool); ok && v {

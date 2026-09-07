@@ -559,6 +559,26 @@ own `Style` loses. It used to be worse than that: the chassis was assigned at
 creation, the total pass cleared position, centring and z-index straight back
 off, and nothing put them back.
 
+`Spacer` is the same shape and had the same bug in the other direction. Its
+three declarations — `width`, `height` and `flex-shrink:0`, all from the `size`
+*prop* — were written by `applySpacerSize` **after** `createElement`, so a
+hand-assembled `Spacer` carrying a `Width` lost it to a prop: the one place in
+the runtime where a node-type default outranked an author. They could not move
+into `styleFromGrMob` with `Modal`'s, because that function never sees a prop,
+so `applyStyle` runs `applySpacerChassis` immediately after the style
+assignment instead — the same position in the sequence — writing each of the
+three only where the author has not claimed it. Which of the three the author
+claimed is recorded on the element at that moment rather than read back off the
+live properties later: a size change arrives as an update-props patch with no
+`Style` in it, and reading the property then finds the chassis's own last write
+and mistakes it for an author's. The same move fixed the latent half — an
+update-style patch on a `Spacer` used to clear the gap with nothing to put it
+back, which is exactly what `Modal`'s chassis had already taught. `htmlout`'s
+`spacerChassis` is the mirror, and moving it into the shared attribute assembly
+gave a `Spacer` back four things it was the only node type not to get there:
+its accessibility attributes, its callback IDs, its children, and its own
+style.
+
 `display` is the exemption, on both targets and for the same reason from
 opposite directions. It is the open/closed state, written from the `visible`
 prop; `htmlout` writes the whole declaration list at once from props it can
@@ -967,6 +987,9 @@ an unusual install.
 The split is worth knowing when something fails: `keynav_test.mjs` says the
 runtime made the right decision, `browser.mjs` says the browser honoured it.
 
+Two of the six checks are not about the keyboard at all — one about paint, one
+about layout — and both are below.
+
 ### The palette, on a screenshot
 
 The fifth check is not about the keyboard. `core.ColorPalette.ControlBorder`
@@ -995,6 +1018,28 @@ composite, a guard that drops the frame, a colour profile. It does *not* catch
 a border declared narrower than a device pixel — Chrome snaps a solid sub-pixel
 border up to one full-strength pixel at dpr 1, so that mutation changes nothing
 on screen, which is the honest reason the check stays quiet for it.
+
+### A pinned band, and the first layout question
+
+The sixth check is the first that is about neither the keyboard nor a colour.
+`core.StickyHeader()` writes three declarations — `position:sticky`, `top:0`,
+`z-index:1` — and the framework's claim for them is that a `List` child stays
+put while the rows scroll under it. `dom.mjs` can say the three landed on the
+element and nothing further, because it has no layout at all; and "the property
+is written" is precisely what stays true when the box around it defeats the
+pin. An ancestor with `overflow` other than `visible`, a flex item shrunk to
+its container instead of overflowing it, a containing block that is not the
+scroller: each leaves the declarations exactly as authored and the band
+scrolling away.
+
+So `browser.mjs` mounts a scroller, scrolls it, and asks twice. Once through
+the rects the browser reports — the rows moved by the full distance, the band
+did not — and once through the pixels, sampling the middle of the band's
+rectangle in a screenshot. The second is not a duplicate of the first: a rect
+is what the browser laid out, and the sample is what it put on the screen
+there, which differ whenever something is drawn over the band. A control step
+comes first, as it does for the `ArrowDown` check: a scroller with nothing to
+scroll would pass every assertion by never moving anything.
 
 **A check that waits for a frame waits for its own subject to work.** The
 toolbar check hung for its whole timeout the first time its subject was broken,

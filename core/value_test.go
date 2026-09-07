@@ -101,3 +101,92 @@ func TestTheZeroRangeIsUnstated(t *testing.T) {
 		}
 	}
 }
+
+// --- Progress: what the three numbers amount to ----------------------------
+
+// The authority, pinned by hand.
+//
+// Everything else that checks this reading — internal/valuefixture,
+// android/verify's JVM pass — compares a transliteration *against* Progress,
+// so this is the one place the answers themselves are written down rather than
+// derived. A wrong rule here would propagate silently to every one of them and
+// they would all agree.
+func TestProgressReadsTheThreeNumbers(t *testing.T) {
+	for _, c := range []struct {
+		name      string
+		in        ValueRange
+		want      ProgressReading
+		n, lo, hi float64
+	}{
+		// ARIA's implicit bounds, which is what makes a bare position
+		// announce as a percentage on every target.
+		{"a bare position defaults to 0..100", ValueRange{Now: "45"},
+			ProgressDeterminate, 45, 0, 100},
+		{"only a max still defaults the min", ValueRange{Now: "3", Max: "5"},
+			ProgressDeterminate, 3, 0, 5},
+		{"only a min still defaults the max", ValueRange{Now: "3", Min: "1"},
+			ProgressDeterminate, 3, 1, 100},
+		// A stated zero is a bar at the start of an upload. The whole reason
+		// these fields are strings.
+		{"a stated zero is a position", ValueRange{Now: "0", Min: "0", Max: "100"},
+			ProgressDeterminate, 0, 0, 100},
+		// Clamped, both ways: a live counter that overshot must not announce
+		// a number outside its own range.
+		{"a position above the max is clamped", ValueRange{Now: "150", Min: "0", Max: "100"},
+			ProgressDeterminate, 100, 0, 100},
+		{"a position below the min is clamped", ValueRange{Now: "-4", Min: "0", Max: "100"},
+			ProgressDeterminate, 0, 0, 100},
+		// Bounds and no position: ARIA's indeterminate bar, which is a state
+		// rather than a missing one.
+		{"bounds with no position", ValueRange{Min: "0", Max: "100"},
+			ProgressIndeterminate, 0, 0, 0},
+		{"one bound with no position", ValueRange{Max: "100"},
+			ProgressIndeterminate, 0, 0, 0},
+		// Nothing numeric. The text must not turn an ordinary node into a bar.
+		{"the zero range", ValueRange{}, ProgressUnstated, 0, 0, 0},
+		{"words alone", ValueRange{Text: "almost done"}, ProgressUnstated, 0, 0, 0},
+		{"words beside a position", ValueRange{Now: "45", Text: "almost done"},
+			ProgressDeterminate, 45, 0, 100},
+		// A range that is not one, kept apart from "nothing was stated"
+		// because a platform may need to tell them apart — Compose throws on
+		// an empty range and so has to catch this before it assigns.
+		{"an empty range", ValueRange{Now: "5", Min: "5", Max: "5"},
+			ProgressEmptyRange, 5, 5, 5},
+		{"an inverted range", ValueRange{Now: "5", Min: "9", Max: "1"},
+			ProgressEmptyRange, 5, 9, 1},
+		// Unparseable and non-finite are both "no position", which is a state
+		// ARIA already has a meaning for.
+		{"an unparseable position", ValueRange{Now: "half", Min: "0", Max: "100"},
+			ProgressIndeterminate, 0, 0, 0},
+		{"an unparseable bound falls back to the default",
+			ValueRange{Now: "45", Max: "lots"}, ProgressDeterminate, 45, 0, 100},
+		{"NaN is not a position", ValueRange{Now: "NaN", Min: "0", Max: "100"},
+			ProgressIndeterminate, 0, 0, 0},
+		{"an infinite bound is not a bound", ValueRange{Now: "45", Min: "0", Max: "Inf"},
+			ProgressDeterminate, 45, 0, 100},
+		{"fractions survive", ValueRange{Now: "45.5", Min: "0", Max: "100"},
+			ProgressDeterminate, 45.5, 0, 100},
+		{"a negative range", ValueRange{Now: "-5", Min: "-10", Max: "0"},
+			ProgressDeterminate, -5, -10, 0},
+	} {
+		got := c.in.Progress()
+		want := Progress{Reading: c.want, Now: c.n, Min: c.lo, Max: c.hi}
+		if got != want {
+			t.Errorf("%s: %#v.Progress() = %+v, want %+v", c.name, c.in, got, want)
+		}
+	}
+}
+
+// Stated and Progress answer different questions, and the gap between them is
+// deliberate: a range carrying only words has said something (so it merges,
+// and its text is announced) and has claimed no number.
+func TestAWordOnlyRangeIsStatedAndUnreadable(t *testing.T) {
+	v := ValueRange{Text: "almost done"}
+	if !v.Stated() {
+		t.Error("a range with words says nothing at all")
+	}
+	if got := v.Progress().Reading; got != ProgressUnstated {
+		t.Errorf("reading = %q, want %q — a text on an ordinary node must not turn it "+
+			"into a progress bar", got, ProgressUnstated)
+	}
+}

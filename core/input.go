@@ -119,6 +119,36 @@ type SelectOption struct {
 	// Which options form which run is decided once, by SelectMenuSections
 	// (select_menu.go), and not by each renderer — see that file for what four
 	// copies of this rule cost.
+	//
+	// # A heading with nothing under it cannot be written
+	//
+	// This field is a property of an *option*, so a section with no options
+	// has nothing to declare it: a run exists because some option named it.
+	// SelectMenuSections therefore never produces an empty section, which
+	// SelectMenuSection.First relies on and TestAnEmptySectionIsUnreachable
+	// pins.
+	//
+	// That is a limit rather than an oversight. Declaring a heading
+	// independently means a second list beside the options, and then a rule
+	// for matching the two — which headings are in use, what a heading with no
+	// matching option does, what an option naming a heading that is not in the
+	// list does. The run-based reading was chosen precisely to have no
+	// matching problem in it, and an empty section is the one thing that
+	// reading cannot express. Nothing has asked for it: every real request has
+	// been "this category is empty, say so", which is not an empty section at
+	// all.
+	//
+	// What to write instead is a placeholder option, disabled:
+	//
+	//	{Group: "Archive", Label: "Nothing archived yet", Disabled: true}
+	//
+	// It is better than an empty section on every target rather than merely
+	// possible: an <optgroup> with no <option> in it, a SwiftUI Section with
+	// no Button and a Compose heading with no rows are each a label a screen
+	// reader announces and a pointer cannot reach, and none of them says why
+	// the category is empty. A disabled row says it in the caller's own words,
+	// in the place a person is already looking. internal/menufixture carries
+	// the shape, so all four picker menus are checked against it.
 	Group string
 
 	// Disabled greys this option out: visible, announced, and not choosable.

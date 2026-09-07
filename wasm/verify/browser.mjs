@@ -1,11 +1,11 @@
 // The facts a shimmed DOM cannot check, checked in a browser: four about the
-// keyboard, and one about paint.
+// keyboard, one about paint, and one about layout.
 //
 // wasm/verify's other suites run the real grmob-runtime.js against dom.mjs — a
 // few hundred lines that model element trees, attributes, listeners and which
 // element holds focus. That is enough for almost everything, and its limits
 // are stated in its own header: there is no layout, no bubbling, and `focus()`
-// is an assignment, and nothing is ever painted. Four claims sit exactly in
+// is an assignment, and nothing is ever painted. Five claims sit exactly in
 // that blind spot, and no amount of widening the shim would settle them,
 // because each one is a claim about what a *browser* does:
 //
@@ -17,7 +17,14 @@
 //   3. preventDefault on ArrowDown stops the page scrolling. A listbox that
 //      moved its selection *and* scrolled the page under it would be unusable,
 //      and defaultPrevented in a shim is a flag the shim set itself.
-//   4. The palette reaches the screen. core.ColorPalette.ControlBorder has
+//   4. A sticky band stays put while the rows scroll under it.
+//      core.StickyHeader() writes position:sticky, top:0 and z-index:1, and
+//      dom.mjs can say those three landed on the element and nothing more: it
+//      has no layout at all. "The property is written" is exactly what stays
+//      true when the box around it defeats the pin — an ancestor with overflow
+//      other than visible, a flex item shrunk to its container, a containing
+//      block that is not the scroller.
+//   5. The palette reaches the screen. core.ColorPalette.ControlBorder has
 //      WCAG 1.4.11's 3:1 floor under it and components/variant_test.go
 //      measures every pair — as arithmetic over hex strings, which is all Go
 //      can do. Two retints and a whole third palette later, no pass had ever
@@ -409,6 +416,65 @@ const BUTTONS = {
 // A `role` row has no backdrop, so its swatch is the tone alone and only the
 // centre is sampled. It is what makes the tone's own hex a measured fact
 // rather than something inferred from a border that happened to look right.
+// A pinned band over rows that scroll under it — the first thing this pass
+// asks that is about *layout* rather than about the keyboard or a colour.
+//
+// core.StickyHeader() writes three declarations (position:sticky, top:0,
+// z-index:1) and the framework's claim for them is that a List child stays put
+// while the rows move. Nothing in wasm/verify could ever have looked at that:
+// dom.mjs has no layout at all, so a suite there can assert the three
+// properties were written and nothing more — which is a check on the style
+// mapping, not on the pin. position:sticky is also the property most likely to
+// be silently defeated by the box around it: an ancestor with overflow other
+// than visible, a flex item shrunk to its container, a containing block that
+// is not the scroller. Every one of those leaves the declarations exactly as
+// written and the band scrolling away.
+//
+// Two colours because the pin is checked twice: once through the rects the
+// browser reports, and once through the pixels, at a point where an unpinned
+// band would have left a row behind. A rect can be right while nothing is on
+// screen at it.
+const BAND_FILL = "#123456";
+const ROW_FILL = "#ABCDEF";
+const STICKY_ROWS = 6;
+
+const STICKY = {
+    Type: "Scroll",
+    Style: {
+        Width: "300px", Height: "160px", Overflow: "auto",
+        Padding: { Top: 0, Right: 0, Bottom: 0, Left: 0 }, Gap: 0,
+    },
+    Children: [{
+        Type: "List",
+        // FlexShrink 0 because the Scroll is a flex column and its child would
+        // otherwise be compressed to fit rather than overflowing it — at which
+        // point there is nothing to scroll and the check would pass by having
+        // no subject. The control assertions below say so out loud.
+        Style: {
+            Padding: { Top: 0, Right: 0, Bottom: 0, Left: 0 }, Gap: 0,
+            FlexShrink: 0,
+        },
+        Children: [
+            {
+                Type: "Box",
+                Style: {
+                    Height: "40px", Background: BAND_FILL,
+                    // core.StickyHeader()'s three declarations, written out
+                    // rather than imported: this file mounts JSON trees, and
+                    // what is being checked is what those three do in a
+                    // browser. core/list_test.go is what holds the Go prop to
+                    // this spelling.
+                    Position: "sticky", Top: "0", ZIndex: 1,
+                },
+            },
+            ...Array.from({ length: STICKY_ROWS }, () => ({
+                Type: "Box",
+                Style: { Height: "60px", Background: ROW_FILL },
+            })),
+        ],
+    }],
+};
+
 const SWATCHES_PER_ROW = 6;
 
 const SWATCHES = {
@@ -808,6 +874,86 @@ async function main() {
                     `can see the difference`);
             }
         }
+        // ------------------------------------------------------------------
+        // 6. a sticky band stays put while the rows scroll under it
+        // ------------------------------------------------------------------
+        // The first question here that is about layout. Checks 1-4 are about
+        // the keyboard and check 5 is about a colour; all five could be asked
+        // of a page with no geometry at all. This one cannot be asked anywhere
+        // else in wasm/verify: dom.mjs has no layout, so its suites can assert
+        // that position:sticky was written and stop there — and "the property
+        // is on the element" is exactly what stays true when the box around it
+        // defeats the pin.
+        await mount(STICKY);
+
+        // The control. A scroller with nothing to scroll would pass every
+        // assertion below by never moving anything, which is the same trap
+        // check 3 opens with.
+        const scroller = `document.querySelector('[data-node-path="root"]')`;
+        const scrollable = await evaluate(`(() => {
+            const el = ${scroller};
+            return { over: el.scrollHeight - el.clientHeight, client: el.clientHeight };
+        })()`);
+        if (!(scrollable.over > 80)) {
+            problems.push(`the sticky fixture has ${scrollable.over}px of overflow in a ` +
+                `${scrollable.client}px port — there is nothing for the band to stay put ` +
+                `against, so the rest of this check proves nothing`);
+        }
+
+        const rects = async () => evaluate(`(() => {
+            const at = (p) => {
+                const el = document.querySelector('[data-node-path="' + p + '"]');
+                const r = el.getBoundingClientRect();
+                return { x: r.left, y: r.top, w: r.width, h: r.height };
+            };
+            return { port: at("root"), band: at("root/0/0"), row: at("root/0/1"),
+                     scrollTop: ${scroller}.scrollTop };
+        })()`);
+
+        const before = await rects();
+        await evaluate(`${scroller}.scrollTop = 120;`);
+        const after = await rects();
+
+        if (after.scrollTop !== 120) {
+            problems.push(`the port did not scroll (scrollTop ${after.scrollTop}) — ` +
+                `nothing below measures a pin`);
+        }
+        // The rows moved by the full scroll distance, which is what says the
+        // band's staying put is a pin rather than a page that did not move.
+        const rowMoved = before.row.y - after.row.y;
+        if (Math.abs(rowMoved - 120) > 1) {
+            problems.push(`the first row moved ${rowMoved}px for a 120px scroll — the ` +
+                `fixture is not behaving like a scroller`);
+        }
+        if (Math.abs(after.band.y - after.port.y) > 1) {
+            problems.push(`the band sits ${(after.band.y - after.port.y).toFixed(1)}px ` +
+                `from the top of the port after a 120px scroll, want 0 — position:sticky ` +
+                `is written on the element and the box around it is defeating it, which ` +
+                `is what no shimmed DOM can tell you`);
+        }
+
+        // And the pixels, at a point the band now covers and would not have if
+        // it had scrolled away. A rect is what the browser says it laid out;
+        // this is what it painted there. The two differ whenever something is
+        // drawn over the band — which is the failure z-index:1 is the third of
+        // core.StickyHeader()'s declarations for.
+        const stickyShot = await session.send("Page.captureScreenshot",
+            { format: "png", captureBeyondViewport: false });
+        const stickyImg = decodePNG(Buffer.from(stickyShot.data, "base64"));
+        const sample = pixelAt(stickyImg,
+            (after.band.x + after.band.w / 2) * dpr,
+            (after.band.y + after.band.h / 2) * dpr);
+        if (sample !== BAND_FILL) {
+            const why = sample === null
+                ? "the band's own rect is off the screenshot, so it is not pinned at all"
+                : sample === ROW_FILL
+                    ? "a row is on screen where the band's rect says the band is"
+                    : "something else is drawn over it";
+            problems.push(`the middle of the pinned band painted as ${sample}, not ` +
+                `${BAND_FILL} — ${why}. A rect is what the browser laid out; this is ` +
+                `what it put on the screen there`);
+        }
+
     } finally {
         if (session) session.close();
         chrome.kill();
@@ -820,8 +966,8 @@ async function main() {
         process.exit(1);
     }
     console.log(`OK: roving tabindex, disabled focus, ArrowDown and the toolbar walk
-    hold in a real browser, and ${PALETTES.length} palette swatches paint the
-    hexes the contrast census measures`);
+    hold in a real browser, ${PALETTES.length} palette swatches paint the
+    hexes the contrast census measures, and a sticky band pins`);
 }
 
 await main();

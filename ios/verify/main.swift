@@ -61,10 +61,12 @@ func run() -> Int32 {
 
     // The overlay arithmetic, on the same footing and for the same reason.
     // This is the pass that pins what a ZStack sizes to, which was the one
-    // documented cross-target divergence with nothing measuring it.
+    // documented cross-target divergence with nothing measuring it — plus the
+    // three proposal decisions the Layout itself makes, which reach the solver
+    // through GrMobStackLayer and are run here against a recording fake.
     let stackProblems = checkStackSolver()
     if stackProblems.isEmpty {
-        print("OK: stack solver sizes to the largest child and places every anchor")
+        print("OK: stack solver sizes, places every anchor, and proposes as the Layout does")
     } else {
         print("FAIL: \(stackProblems.count) stack solver difference(s)")
         for p in stackProblems { print("  " + p) }

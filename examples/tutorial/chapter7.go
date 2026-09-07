@@ -2,6 +2,8 @@ package tutorial
 
 import (
 	"fmt"
+	"sort"
+	"strings"
 
 	"github.com/rohanthewiz/grmob/components"
 	"github.com/rohanthewiz/grmob/core"
@@ -306,6 +308,48 @@ func swatchRow(role, hex string) core.View {
 	})
 }
 
+// bundledThemes is the list of installable palettes the two theme lessons
+// offer, derived from core.BundledThemes() rather than written out.
+//
+// Both lessons used to spell the list by hand, as `[]*core.Theme{DefaultTheme,
+// MaterialTheme}`. That is the failure core.BundledThemes' own doc describes
+// one level down and it had already happened here: AmberTheme shipped, and the
+// chapter whose whole subject is theming went on offering two. A hand-written
+// list in a *tutorial* is worse than one in a test, because the gap is not a
+// missed assertion — it is a palette the reader is never told exists.
+//
+// The map is keyed by Go identifier and Go randomises map iteration, so an
+// order has to be imposed. DefaultTheme leads because it is the fallback every
+// other lesson refers to and both demos open on it; the rest are alphabetical,
+// so a fourth palette lands somewhere a reader can predict rather than
+// wherever the runtime felt like putting it.
+func bundledThemes() (names []string, themes []*core.Theme) {
+	all := core.BundledThemes()
+	for name := range all {
+		if name != "DefaultTheme" {
+			names = append(names, name)
+		}
+	}
+	sort.Strings(names)
+	names = append([]string{"DefaultTheme"}, names...)
+	for _, name := range names {
+		themes = append(themes, all[name])
+	}
+	return names, themes
+}
+
+// themeLabels are the picker's captions: the Go identifiers without the
+// suffix every one of them carries ("DefaultTheme" -> "Default"). Derived for
+// the same reason the list is — a label written by hand is a fourth palette
+// named "" on the day somebody adds one.
+func themeLabels(names []string) []string {
+	labels := make([]string, len(names))
+	for i, n := range names {
+		labels[i] = strings.TrimSuffix(n, "Theme")
+	}
+	return labels
+}
+
 func lessonThemeAnatomy() Lesson {
 	return Lesson{
 		Title:   "Inside a Theme",
@@ -316,7 +360,7 @@ func lessonThemeAnatomy() Lesson {
 			// context, which is exactly the boundary between this lesson and
 			// the next.
 			inspect := core.NewState(ctx, 0)
-			bundled := []*core.Theme{core.DefaultTheme, core.MaterialTheme}
+			names, bundled := bundledThemes()
 			th := bundled[inspect.Get()]
 
 			// Roles in the docs' order: brand pair, grounds, inks, status
@@ -373,8 +417,9 @@ core.BorderColor(t.Colors.BorderColor()) // late roles resolve through methods`)
 					"minimum: ComponentDefaults has no resolvers, and a missing base is "+
 					"genuinely no styling."),
 				prose("One thing Border does not name: the edge of a control. A rule between "+
-					"rows is decoration and both bundled themes spend a very pale hex on it "+
-					"(1.26:1 and 1.32:1), while the edge that says this rectangle is something "+
+					"rows is decoration and all three bundled themes spend a very pale hex on "+
+					"it (1.26:1 for Default, 1.32:1 for the other two), while the edge that "+
+					"says this rectangle is something "+
 					"you can operate is the only thing identifying it — WCAG 1.4.11 puts a 3:1 "+
 					"floor under that, and neither Border passes it. ControlBorder is the other "+
 					"half, and the swatches above show how far apart the two sit. It arrived a "+
@@ -387,7 +432,7 @@ core.BorderColor(t.Colors.BorderColor()) // late roles resolve through methods`)
 				demoPanel("Pick a bundled theme and read its data — nothing is installed here; installing is the next lesson.",
 					components.SegmentedControl{
 						Style:     segWrap,
-						Labels:    []string{"Default", "Material"},
+						Labels:    themeLabels(names),
 						Selected:  inspect.Get(),
 						OnSelect:  func(i int) { inspect.Set(i) },
 						KeyPrefix: "inspect-",
@@ -475,7 +520,7 @@ func lessonThemeSwitch() Lesson {
 			// re-themed subtree.
 			pick := core.NewState(ctx, 0)
 			following := core.NewState(ctx, false)
-			installed := []*core.Theme{core.DefaultTheme, core.MaterialTheme}
+			installedNames, installed := bundledThemes()
 
 			return core.Column(
 				core.Gap(14),
@@ -492,20 +537,26 @@ ctx := core.NewContext().WithTheme(core.DefaultTheme)
 core.WithTheme(core.MaterialTheme, settingsPanel)
 
 // A LIVE switcher is nothing more than the theme held as state:
-installed := []*core.Theme{core.DefaultTheme, core.MaterialTheme}
+installed := []*core.Theme{core.DefaultTheme, core.MaterialTheme, core.AmberTheme}
 pick := core.NewState(ctx, 0)
-core.WithTheme(installed[pick.Get()], preview)`),
+core.WithTheme(installed[pick.Get()], preview)
+
+// ...or let the list derive itself, which is what this demo does:
+core.BundledThemes() // every palette the package ships, keyed by identifier`),
 				prose("Because which theme a node sees is decided at render time, a live "+
 					"switcher needs no framework machinery at all: hold the choice as state, "+
 					"hand the chosen theme to the wrapper, and the flip is an ordinary render "+
-					"whose changes ship as update-style patches. The swap only reaches what "+
+					"whose changes ship as update-style patches. The three buttons above are "+
+					"core.BundledThemes() rather than a list typed out here, which is the "+
+					"habit worth copying: a palette added to the package should appear in "+
+					"your switcher without anybody remembering to add it. The swap only reaches what "+
 					"was written in roles — 7.3's habit pays out here. The tutorial's code "+
 					"blocks keep their fixed editor palette under any theme for exactly that "+
 					"reason: a literal is a promise the theme can't touch."),
 				demoPanel("Flip the card between themes — then notice the chips you're tapping don't change.",
 					components.SegmentedControl{
 						Style:     segWrap,
-						Labels:    []string{"Default", "Material"},
+						Labels:    themeLabels(installedNames),
 						Selected:  pick.Get(),
 						OnSelect:  func(i int) { pick.Set(i) },
 						KeyPrefix: "installed-",

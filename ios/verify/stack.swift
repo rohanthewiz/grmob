@@ -3,9 +3,11 @@
 //
 // The solver was split out of the SwiftUI Layout precisely so it could be
 // checked here: a Layout can only be exercised by mounting it in a view
-// hierarchy, which needs a simulator, while both rules an overlay has — what
-// the container sizes to, and where a placed layer lands — are functions from
-// numbers to numbers.
+// hierarchy, which needs a simulator, while the rules an overlay follows are
+// decisions the solver can make on its own. The first half of this file is the
+// arithmetic — what the container sizes to, and where a placed layer lands.
+// The second half is the three decisions the Layout used to keep to itself,
+// reached through GrMobStackLayer; see checkStackLayoutRules.
 //
 // # What this is the check for
 //
@@ -140,6 +142,164 @@ func checkStackSolver() -> [String] {
           GrMobStackSolver.origin(child: CGSize(width: 260, height: 20), in: bounds,
                                   anchor: grMobStackAnchor("end")!),
           CGPoint(x: -60, y: 50), into: &problems)
+
+    problems += checkStackLayoutRules()
+    return problems
+}
+
+// --- The three decisions the Layout used to keep to itself -----------------
+//
+// Everything above is arithmetic: numbers in, numbers out, and it was always
+// checkable. What follows is the part that lived in Renderer.swift's `Layout`
+// conformance until GrMobStackLayer existed, where a type-check was the only
+// thing looking at it. None of the three is arithmetic and all three are
+// load-bearing:
+//
+//	the incoming proposal reaches each layer   or a greedy background stops
+//	                                           covering anything
+//	the container is not clamped to it         or the divergence this whole
+//	                                           file exists for comes back
+//	placement re-proposes bounds.size          or a layer is sized against an
+//	                                           offer the stack did not get
+//
+// What is being checked is what the *framework* decides, not what SwiftUI
+// does with it: a real LayoutSubview answering sizeThatFits differently from
+// RecordingLayer is a question only a simulator can settle, and it is a
+// question about SwiftUI rather than about this code.
+
+/// A layer that reports a fixed size and remembers every offer it was made.
+///
+/// A class, so the recording survives being handed to the solver by value —
+/// and because a stack of identical struct layers could not be told apart
+/// afterwards, which is exactly what the order check below needs.
+private final class RecordingLayer: GrMobStackLayer {
+    let reported: CGSize
+    let anchor: GrMobStackAnchor?
+    private(set) var offers: [GrMobProposal] = []
+
+    init(_ reported: CGSize, anchor: GrMobStackAnchor? = nil) {
+        self.reported = reported
+        self.anchor = anchor
+    }
+
+    func size(proposing proposal: GrMobProposal) -> CGSize {
+        offers.append(proposal)
+        return reported
+    }
+}
+
+/// A layer that takes whatever it is offered — a background stating
+/// `maxWidth: .infinity`, which is the one shape the proposal decision is
+/// about. An unspecified dimension falls back to its intrinsic size, exactly
+/// as such a view does.
+private final class GreedyLayer: GrMobStackLayer {
+    let intrinsic: CGSize
+    let anchor: GrMobStackAnchor?
+
+    init(_ intrinsic: CGSize, anchor: GrMobStackAnchor? = nil) {
+        self.intrinsic = intrinsic
+        self.anchor = anchor
+    }
+
+    func size(proposing proposal: GrMobProposal) -> CGSize {
+        CGSize(width: proposal.width ?? intrinsic.width,
+               height: proposal.height ?? intrinsic.height)
+    }
+}
+
+func checkStackLayoutRules() -> [String] {
+    var problems: [String] = []
+
+    // --- Sizing: every layer is measured with the offer the stack got ------
+    let offered = GrMobProposal(width: 100, height: 50)
+    let small = RecordingLayer(CGSize(width: 40, height: 20))
+    let wide = RecordingLayer(CGSize(width: 300, height: 10))
+    let sized = GrMobStackSolver.containerSize(layers: [small, wide], proposing: offered)
+
+    for (i, layer) in [small, wide].enumerated() {
+        if layer.offers != [offered] {
+            problems.append("sizing: layer \(i) was offered \(layer.offers), want "
+                + "exactly one \(offered) — a layout that measures with .unspecified "
+                + "makes every greedy background report its intrinsic size and stop "
+                + "covering the stack")
+        }
+    }
+
+    // And the result is the content, not the offer. This is the divergence
+    // GrMobStack.swift was written for, stated as the clamp that must not
+    // happen: 300 wide under a 100-wide proposal.
+    check("sizing is not clamped to the proposal", sized,
+          CGSize(width: 300, height: 20), into: &problems)
+
+    // An unspecified offer travels through unchanged rather than being
+    // substituted for a number somewhere in the middle.
+    let unspecified = GrMobProposal(width: nil, height: nil)
+    let asked = RecordingLayer(CGSize(width: 12, height: 8))
+    _ = GrMobStackSolver.containerSize(layers: [asked], proposing: unspecified)
+    if asked.offers != [unspecified] {
+        problems.append("sizing: an unspecified proposal reached the layer as "
+            + "\(asked.offers) — nil is SwiftUI's \"you decide\" and inventing a "
+            + "number for it would size every layer against a box nobody offered")
+    }
+
+    // A greedy layer still fills, which is the property the pass-through is
+    // for: the stack around it is as big as the offer.
+    check("a greedy layer still makes the stack fill",
+          GrMobStackSolver.containerSize(
+              layers: [GreedyLayer(CGSize(width: 10, height: 10))], proposing: offered),
+          CGSize(width: 100, height: 50), into: &problems)
+
+    // --- Placement: the bounds are the offer -------------------------------
+    let bounds = CGRect(x: 30, y: 45, width: 200, height: 120)
+    let box = GrMobProposal(bounds.size)
+    let corner = RecordingLayer(CGSize(width: 40, height: 20),
+                                anchor: grMobStackAnchor("bottom-end"))
+    let middle = RecordingLayer(CGSize(width: 40, height: 20))
+    let plan = GrMobStackSolver.placements(layers: [corner, middle], in: bounds)
+
+    if plan.count != 2 {
+        problems.append("placement: \(plan.count) placements for 2 layers")
+        return problems
+    }
+
+    for (i, layer) in [corner, middle].enumerated() {
+        if layer.offers != [box] {
+            problems.append("placement: layer \(i) was measured with \(layer.offers), "
+                + "want exactly one \(box) — the parent may hand over a size it never "
+                + "asked sizeThatFits about, so the offer that decides a layer's size "
+                + "has to be the box it is actually being drawn into")
+        }
+        if plan[i].proposal != box {
+            problems.append("placement: layer \(i) is placed with proposal "
+                + "\(plan[i].proposal), want \(box) — a layer measured at one size and "
+                + "placed with another is free to draw at the second")
+        }
+    }
+
+    // In subview order, and each at its own anchor. Two layers of identical
+    // size with different anchors, so a plan that reversed them or applied one
+    // anchor to both is caught.
+    check("placement keeps subview order (anchored layer)", plan[0].origin,
+          CGPoint(x: 30 + 160, y: 45 + 100), into: &problems)
+    check("placement keeps subview order (unanchored layer)", plan[1].origin,
+          CGPoint(x: 30 + 80, y: 45 + 50), into: &problems)
+
+    // A greedy layer placed in the box fills it and therefore lands at the
+    // origin whatever anchor it carries — zero slack, so the anchor cannot
+    // move it. The case that would fail if placement re-proposed the *sizing*
+    // proposal instead of the bounds.
+    let greedyPlan = GrMobStackSolver.placements(
+        layers: [GreedyLayer(CGSize(width: 10, height: 10),
+                             anchor: grMobStackAnchor("bottom-end"))], in: bounds)
+    check("a greedy layer fills the bounds and cannot be anchored away",
+          greedyPlan[0].origin, CGPoint(x: 30, y: 45), into: &problems)
+
+    // No layers is no placements, and no crash. An overlay with nothing in it
+    // is a real tree — core.For over an empty slice.
+    let empty: [RecordingLayer] = []
+    if !GrMobStackSolver.placements(layers: empty, in: bounds).isEmpty {
+        problems.append("placement: an empty stack produced placements")
+    }
 
     return problems
 }

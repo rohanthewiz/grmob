@@ -1,6 +1,9 @@
 package core
 
-import "strconv"
+import (
+	"math"
+	"strconv"
+)
 
 // ValueRange is where a valued control sits inside its range — the fraction an
 // upload has finished, the step a wizard is on.
@@ -112,6 +115,119 @@ func ValueOf(now, min, max float64) ValueRange {
 func (v ValueRange) WithText(text string) ValueRange {
 	v.Text = text
 	return v
+}
+
+// ProgressReading is what a ValueRange's three numbers amount to once
+// somebody has to act on them.
+//
+// # Why core owns this and the web exporters do not use it
+//
+// The two DOM targets hand aria-valuenow/-min/-max to a browser verbatim, and
+// a browser applies ARIA's rules itself: the implicit 0..100, the reading of a
+// missing position as an indeterminate bar. That pass-through is right and it
+// is also why this reading had nowhere to live — the only code in the
+// repository applying those rules was Kotlin, in a three-way branch inside a
+// Compose semantics lambda, checked by looking for substrings in the file.
+//
+// The rules are ARIA's and this type's, though, not Compose's: both of them are
+// already stated in prose on the fields below, and the Kotlin is a
+// transliteration of that prose. Naming them here makes the transliteration
+// comparable — android/verify runs GrMobProgress.kt against this function over
+// internal/valuefixture's table — which is the same relationship
+// core.SelectMenuSections has with the four picker menus.
+//
+// Text has no part in it. The words are a separate claim on a separate
+// property (aria-valuetext, stateDescription, accessibilityValue) and they are
+// announced on nodes that carry no range at all, so a reading about the numbers
+// must not depend on them.
+type ProgressReading string
+
+const (
+	// Nothing numeric was stated. A `text` on an ordinary node must not turn
+	// it into a progress bar, so this is the reading that leaves a platform's
+	// range property untouched.
+	ProgressUnstated ProgressReading = "unstated"
+
+	// Bounds and no position: a bar that is running with no idea how far.
+	// ARIA spells it by omitting aria-valuenow; Compose has a name for it.
+	ProgressIndeterminate ProgressReading = "indeterminate"
+
+	// A position inside a real range. Min and Max carry ARIA's own defaults
+	// of 0 and 100 when unstated, which is what makes a bare Now announce as
+	// a percentage, and Now is clamped into the range.
+	ProgressDeterminate ProgressReading = "determinate"
+
+	// A position inside a range that is not one — Max at or below Min. It is
+	// separated from Unstated because the two are different mistakes and a
+	// platform may want to treat them differently: Compose cannot express it
+	// at all (ProgressBarRangeInfo requires a non-empty range and throws), so
+	// it drops the property rather than crashing a render over an
+	// accessibility annotation.
+	ProgressEmptyRange ProgressReading = "empty-range"
+)
+
+// Progress is a ValueRange's numbers, resolved.
+//
+// Now, Min and Max are meaningful when Reading is ProgressDeterminate. For
+// ProgressEmptyRange they are the numbers as stated, unclamped, so a caller
+// reporting the problem can name them; for the other two readings they are
+// zero, which is not a position.
+type Progress struct {
+	Reading       ProgressReading
+	Now, Min, Max float64
+}
+
+// Progress resolves the three numbers into the one claim they make.
+//
+// The parse is deliberately strict about what counts as a number: an empty
+// string is unstated, and so is anything that does not parse — including the
+// non-finite spellings ("NaN", "Inf") that Go's and Kotlin's parsers both
+// accept and that no range property on any platform can hold. A bar whose
+// position failed to parse is a bar with no position, which is a state ARIA
+// already has a meaning for.
+func (v ValueRange) Progress() Progress {
+	now, hasNow := parseValue(v.Now)
+	min, hasMin := parseValue(v.Min)
+	max, hasMax := parseValue(v.Max)
+
+	if !hasNow {
+		if hasMin || hasMax {
+			return Progress{Reading: ProgressIndeterminate}
+		}
+		return Progress{Reading: ProgressUnstated}
+	}
+	// ARIA's own defaults for an unstated bound, which is what makes a bare
+	// position announce as a percentage on every target.
+	if !hasMin {
+		min = 0
+	}
+	if !hasMax {
+		max = 100
+	}
+	if max <= min {
+		return Progress{Reading: ProgressEmptyRange, Now: now, Min: min, Max: max}
+	}
+	if now < min {
+		now = min
+	}
+	if now > max {
+		now = max
+	}
+	return Progress{Reading: ProgressDeterminate, Now: now, Min: min, Max: max}
+}
+
+// parseValue is the wire-string-to-number rule, in one place because three
+// callers have to agree on it: this file, GrMobStyle.kt's parser (through
+// grMobProgressNumber) and GrMobStyle.swift's.
+func parseValue(s string) (float64, bool) {
+	if s == "" {
+		return 0, false
+	}
+	f, err := strconv.ParseFloat(s, 64)
+	if err != nil || math.IsNaN(f) || math.IsInf(f, 0) {
+		return 0, false
+	}
+	return f, true
 }
 
 // Stated reports whether this range says anything at all. The zero value says

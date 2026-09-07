@@ -659,6 +659,41 @@ after parsing — nullable `Float`s rather than a `0f` default — or it would
 reintroduce the same bug one layer down and could not tell an indeterminate bar
 from one that has not started.
 
+#### The reading has an authority now
+
+The three arms above — determinate, indeterminate, nothing claimed — used to
+exist only in Kotlin, in a branch inside `grMobValue`, which is an extension on
+`SemanticsPropertyReceiver`: reaching it means constructing a Compose semantics
+scope, which means a device. What checked it instead was `mobile/verify`
+searching `GrMobStyle.kt` for the word `Indeterminate`, which is green for a
+branch that reaches the word on the wrong condition.
+
+The rules are ARIA's, not Compose's — the implicit `0..100`, the missing
+position that means "running with no idea how far" — and both were already
+written in prose on `core.ValueRange`'s own fields. `ValueRange.Progress` makes
+that prose executable. It returns one of four readings, because the branch was
+really four: the two above, plus an *empty range* (`Max` at or below `Min`),
+which Compose cannot hold at all — `ProgressBarRangeInfo` throws on one — and
+which must therefore be told apart from "nothing was claimed" before the
+property is assigned. Both silent readings are named arms in the `when` rather
+than an `else`, so the second one is visible rather than an absence.
+
+The web exporters do not call it, and that is the honest reason it lives in
+`core` rather than beside them: they hand the three attributes to a browser,
+which applies the same rules itself. Its consumers are the transliteration and
+the harness that compares them.
+
+    core/value.go                    ValueRange.Progress — the authority
+    internal/valuefixture            the shared table of wire ranges
+    GrMobProgress.kt                 the Kotlin reading, importing nothing
+    android/verify                   runs one against the other on a JVM
+
+The parse is inside what is compared, not beside it: `grMobProgressNumber`
+takes the wire string, so "half", `""` and `NaN` are all checked to be *no
+position* rather than assumed to be. `GrMobProgress.kt` is the second file to
+earn `TestNativeMenuDecompositionIsUIFree`'s rule — an import there would end
+the JVM pass and send the check back to searching source text.
+
 ### The field with a widget spending it
 
 The field now has a widget spending it — `components.ListRow`'s `NestingLevel`,
@@ -786,10 +821,15 @@ already downloaded the right test dependencies is a check nobody runs. It would
 also drag the whole AGP pipeline in to execute a function that touches no
 Android API.
 
-So the script compiles two files and runs them:
+So the script compiles the runtime files it can run, plus two of its own:
 
-    android/verify/gen.go      the case table, as Kotlin source
-    android/verify/Harness.kt  the comparison, and main()
+    android/verify/gen.go      the case tables, as Kotlin source
+    android/verify/Harness.kt  the comparisons, and main()
+
+Two decisions go through it now, both for the same reason — a Kotlin file that
+imports nothing can be executed off a device. `GrMobSelectMenu.kt` is how a
+flat option list becomes a picker menu; `GrMobProgress.kt` is what a
+`core.ValueRange`'s three numbers amount to.
 
 The table crosses as **Kotlin source** rather than as JSON, which is the one
 place this harness differs from `ios/verify`. Swift decodes a JSON transcript
@@ -860,6 +900,32 @@ view hierarchy to exercise and a function from numbers to numbers does not. So
 child on each axis independently, all nine anchors against a known box, the
 bounds' origin being added, an oversized layer overhanging rather than being
 clamped — where before it could only check that the file compiled.
+
+#### Where the line between the two files is
+
+It started at the arithmetic, because that part was obviously testable, and
+that left three decisions on the far side of it with a type-check as their only
+reader: measuring children with the **incoming** proposal rather than an
+unspecified one, refusing to **clamp** the container to that proposal, and
+**re-proposing `bounds.size`** at placement. None of the three is arithmetic
+and all three are load-bearing — the first decides whether a greedy background
+still covers anything, the second *is* the divergence above — so the line moved
+to take them in.
+
+What made that possible is a two-method protocol. A `LayoutSubview` is an
+opaque proxy with no public initializer, so a test can never construct one and
+every rule written in terms of `Subviews` needs a running app; but the only two
+things the layout asks a subview are "how big are you if I offer you this" and
+"where did you ask to sit". `GrMobStackLayer` is those two, `GrMobProposal` is
+SwiftUI's `ProposedViewSize` with the framework taken out, and
+`GrMobStackSolver.containerSize(layers:proposing:)` and `.placements(layers:in:)`
+are the decisions, run in `ios/verify` against a fake that records every offer
+it was made. What is left in `Renderer.swift` is the adapter and the `place()`
+call, neither of which has a decision in it.
+
+What still needs a simulator is the assumption underneath: that a real
+`LayoutSubview` answers `sizeThatFits` the way the fake does. That is SwiftUI's
+behaviour rather than this framework's.
 
 Both mappings return "no placement" for the centre rather than the platform's
 own centre constant, so "said nothing" and "asked for the centre" stay one state
