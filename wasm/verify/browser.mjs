@@ -1,5 +1,5 @@
 // The facts a shimmed DOM cannot check, checked in a browser: four about the
-// keyboard, two about paint, two about layout, and one about what a browser
+// keyboard, two about paint, four about layout, and one about what a browser
 // does with an accessibility value nobody here resolves.
 //
 // wasm/verify's other suites run the real grmob-runtime.js against dom.mjs — a
@@ -63,6 +63,27 @@
 //      instead, which is a different rule — and the comment recording that had
 //      never been asked of a browser. This asks one, and the answer is a
 //      genuine cross-target divergence rather than an artefact.
+//   9. A real band's tap target spans it, and its control is its tallest child.
+//      Check 8 is the band as arithmetic over synthetic sizes, which is the
+//      right shape for a distribution and cannot reach two things. One is
+//      cross-axis: the disclosure branch puts the insets on a button one level
+//      inside the Row's growing heading wrapper, so whether a press lands on
+//      the whole band depends on whether a non-growing child fills a growing
+//      parent, and GrMobFlexSolver is a main-axis distributor. The other is
+//      about text: every SameHeight case rests on the padded control being the
+//      band's tallest child, half of which is "a bold caption is no shorter
+//      than a plain one" — a measurement no Go test can take. gen.go renders
+//      real components.GroupHeaders through every bundled theme and this mounts
+//      them with real glyphs in them.
+//  10. A fixed-size container squeezes its child along its main axis and lets
+//      it spill across. core.Spacer became "a Box with a fixed size", and the
+//      note closing that work recorded that Compose constrains a child to the
+//      declared size where the DOM was believed to let it spill — for every
+//      fixed-size container, not just a Spacer — with nothing anywhere having
+//      asked. This asks, and the DOM's answer is per-axis rather than the
+//      blanket one assumed: squeezed along the main axis (a flex item's shrink
+//      factor defaults to 1 and an empty box has no automatic minimum to stop
+//      at), and spilling across the cross one.
 //
 // # How
 //
@@ -119,6 +140,12 @@ const WIDGETS = TRANSCRIPT_JSON.widgets || [];
 // components.GroupHeader's geometry, read off the rendered band by Go, which is
 // not something a table of numbers in a .mjs file could be.
 const BANDS = TRANSCRIPT_JSON.bands || [];
+// Real components.GroupHeaders, for check 9. Same file, same reason as the
+// three tables above it — and a different subject from BANDS, which is the same
+// band as arithmetic over synthetic sizes. See bandRender in gen.go: these are
+// the two band claims that are measurements of a rendered widget with glyphs in
+// it rather than of a distribution, and neither has a target but this one.
+const BAND_RENDERS = TRANSCRIPT_JSON.bandRenders || [];
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const RUNTIME = join(HERE, "..", "grmob-runtime.js");
@@ -820,6 +847,149 @@ const bandSame = (a, b) => Math.abs(a - b) <= BAND_EPSILON;
 // --------------------------------------------------------------------------
 // The checks
 // --------------------------------------------------------------------------
+// The rendered bands
+// --------------------------------------------------------------------------
+//
+// Real components.GroupHeaders, laid out with real glyphs in them, for the two
+// band claims that are not arithmetic.
+//
+// # The tap target (the cross-axis question)
+//
+// The band's chrome is padding on the growing control rather than on the Row,
+// so that a press lands on the whole band rather than on a strip in the middle
+// of it. On the plain branch the growing child *is* the control and the claim
+// is a main-axis one, which check 8 settles. On the disclosure branch it is
+// not: the Row's growing child is a heading wrapper with no chrome at all, and
+// the button carrying the insets sits inside it with no weight of its own.
+//
+//	 Row ─────────────────────────────────────────────────
+//	│┌ Box grow:1 ─────────────────────────┐  ┌───┐       │
+//	││┌ Row role=button ─────────────────┐ │  │ 3 │ 16px  │
+//	│││  16px  ▾ January 2026       8px  │ │  └───┘       │
+//	││└──────────────────────────────────┘ │              │
+//	│└─────────────────────────────────────┘              │
+//	 ─────────────────────────────────────────────────────
+//
+// Whether the inner box reaches the outer one's edges is a question about the
+// *cross* axis of a vertical container, and GrMobFlexSolver — the arithmetic
+// ios/verify checks the band with — is a main-axis distributor. It has no
+// answer, and internal/bandfixture's arrangementOf renders the plain band
+// deliberately to stay out of its way. So the picture in components.bandInsets
+// has been assuming it. A browser can be asked, and this asks one.
+//
+// # The taller child (the question about text)
+//
+// internal/bandfixture's third case — a badge taller than the control — is the
+// one place the two inset arrangements disagree, and the reason it cannot
+// happen to a real band is given as two facts: the control's vertical insets
+// are larger than the badge's, and both wrap the same caption type. The first
+// is arithmetic and bandfixture_test.go checks it. The second is a claim about
+// glyphs: the label is a *bold* caption and the badge's text is a plain one at
+// the same tier, and "no shorter" is a text measurement no Go test can take.
+//
+// It is not a formality. The insets differ by 4 points, so a bold caption
+// shorter than a plain one by more than that would make the badge the tallest
+// child of a real band — and every SameHeight case in the fixture would then be
+// describing a layout the framework does not build.
+//
+// # Why the whole table is one mount
+//
+// The same economy the widget grid and the band table are built on: nine trees
+// in one Column, one round trip of rects. Nothing here reads a pixel, so unlike
+// the widget grid there is no fold to stay above — a rect is reported for a node
+// the screenshot would never have covered.
+const BAND_RENDER_GRID = {
+    Type: "Column",
+    Style: {
+        Padding: { Top: 0, Right: 0, Bottom: 0, Left: 0 }, Gap: 0,
+        // Each page declares its own width; flex-start keeps it rather than
+        // stretching every band to the widest one in the column.
+        AlignItems: "flex-start",
+    },
+    Children: BAND_RENDERS.map((b) => JSON.parse(b.tree)),
+};
+
+// gen.go's paths are relative to a mount whose root is the case's own page box.
+// Nested in the grid, that box is root/i, so every path gains one level.
+const bandRenderPath = (i, path) => path ? path.replace(/^root/, `root/${i}`) : null;
+
+// The tolerance check 8 uses, for the same reason: rects are LayoutUnits, and
+// two edges that arrive at the same place by different routes can land on
+// adjacent ones.
+const bandRenderSame = (a, b) => Math.abs(a - b) <= BAND_EPSILON;
+
+// --------------------------------------------------------------------------
+// The fixed-size boxes
+// --------------------------------------------------------------------------
+//
+// What a container of a declared size does with a child bigger than it.
+//
+// # Why this is a question at all
+//
+// core.Spacer became "a Box with a fixed size" so that all four targets would
+// lay a Spacer's children out the same way, and the note that closed that work
+// recorded a difference nobody had measured: Compose's Modifier.width/height set
+// a child's minimum AND maximum, so a child bigger than the void is squeezed
+// where the DOM was believed to let it spill. It is not a Spacer property — it
+// is what every fixed-size container on that target does — and nothing anywhere
+// had asked whether the four targets agree about it for ANY fixed-size box.
+//
+// This is the DOM half of that question, and the answer it gives is not the one
+// the note assumed. A browser does not simply let the child spill:
+//
+//	the container's MAIN axis    the child is a flex item, its flex-shrink
+//	                             defaults to 1, and an empty box's automatic
+//	                             minimum is 0 — so it is SQUEEZED to the
+//	                             container's extent
+//	the container's CROSS axis   a declared size beats align-items: stretch, and
+//	                             nothing shrinks across the line — so it SPILLS
+//
+// Which axis is which follows from the container: a core.Box stacks vertically,
+// so it squeezes height and spills width, and a core.Row does exactly the
+// opposite. Both are mounted, because "the main axis is the one that shrinks" is
+// the claim, and a check with one container cannot tell it from "height is the
+// one that shrinks".
+//
+// So the four targets do not agree, and they do not disagree the way the note
+// said either: the DOM and Compose agree on the main axis and differ on the
+// cross one. See docs/platforms/native.md for the whole census, and
+// mobile/verify's TestTheNativesFixedSizeArmsAreTheOnesTheCensusDescribes for
+// the two native call sites this rests on.
+const VOID_W = 120, VOID_H = 40;
+const OVERSIZE_W = 200, OVERSIZE_H = 80;
+
+// One fixed-size container with one child too big for it, in both directions.
+//
+// The child declares a size on both axes and exceeds the container on both, so
+// a single mount shows the squeeze and the spill at once and neither answer has
+// to be inferred from the other's absence.
+const fixedSizeCase = (type, axis) => ({
+    what: `a fixed-size core.${type}`,
+    // The container's main axis: what a child is laid out along, and therefore
+    // the axis a flex item's shrink factor applies to.
+    axis,
+    tree: {
+        Type: type,
+        Style: {
+            Width: `${VOID_W}px`, Height: `${VOID_H}px`,
+            // No padding and no gap: every number below is the container's own
+            // extent against the child's, and chrome would make each comparison
+            // a subtraction the reader has to do.
+            Padding: { Top: 0, Right: 0, Bottom: 0, Left: 0 }, Gap: 0,
+        },
+        Children: [{
+            Type: "Box",
+            Style: { Width: `${OVERSIZE_W}px`, Height: `${OVERSIZE_H}px` },
+        }],
+    },
+});
+
+const FIXED_SIZE_CASES = [
+    fixedSizeCase("Box", "vertical"),
+    fixedSizeCase("Row", "horizontal"),
+];
+
+// --------------------------------------------------------------------------
 
 async function main() {
     const chromePath = findChrome();
@@ -828,6 +998,7 @@ async function main() {
         transcriptExists: TRANSCRIPT_EXISTS,
         widgets: WIDGETS.length,
         bands: BANDS.length,
+        bandRenders: BAND_RENDERS.length,
         hasWebSocket: typeof WebSocket === "function",
         chromePath,
     }));
@@ -1720,6 +1891,342 @@ async function main() {
                 `over nothing`);
         }
 
+
+        // ------------------------------------------------------------------
+        // 9. a real band's tap target spans it, and its control is its tallest
+        //    child
+        // ------------------------------------------------------------------
+        //
+        // See BAND_RENDER_GRID for both claims and for why neither is reachable
+        // from the arithmetic fixture check 8 runs on. In short: one is a
+        // cross-axis question a main-axis solver cannot answer, and the other is
+        // a measurement of text.
+        await mount(BAND_RENDER_GRID);
+
+        const renderRects = await evaluate(`${JSON.stringify(
+            BAND_RENDERS.map((b, i) => ({
+                band: bandRenderPath(i, b.band),
+                wrapper: bandRenderPath(i, b.wrapper),
+                control: bandRenderPath(i, b.control),
+                badge: bandRenderPath(i, b.badge),
+                label: bandRenderPath(i, b.label),
+                chevron: bandRenderPath(i, b.chevron),
+            })))}.map((paths) => {
+            const at = (path) => {
+                if (!path) return null;
+                const el = document.querySelector('[data-node-path="' + path + '"]');
+                if (!el) return null;
+                const r = el.getBoundingClientRect();
+                return { x: r.left, y: r.top, w: r.width, h: r.height };
+            };
+            const out = {};
+            for (const k of Object.keys(paths)) out[k] = at(paths[k]);
+            return out;
+        })`);
+
+        // Keyed by theme so the two branches can be held against each other
+        // below: adding a handler to a band is supposed to hand the caller a
+        // control and not a relayout.
+        const byTheme = new Map();
+        for (let i = 0; i < BAND_RENDERS.length; i++) {
+            const b = BAND_RENDERS[i], r = renderRects[i];
+            const where = `${b.theme}/${b.what}`;
+
+            if (!r.band || !r.control || r.band.w === 0) {
+                problems.push(`${where}: the band was not laid out — gen.go's paths ` +
+                    `name nodes this mount does not have, so nothing below measured ` +
+                    `anything`);
+                continue;
+            }
+            if (Boolean(r.wrapper) !== Boolean(b.wrapper)) {
+                problems.push(`${where}: gen.go ${b.wrapper ? "found" : "found no"} ` +
+                    `heading wrapper and the mount ${r.wrapper ? "has" : "has no"} node ` +
+                    `at that path — the two have drifted apart`);
+                continue;
+            }
+            if (Boolean(r.badge) !== Boolean(b.badge)) {
+                problems.push(`${where}: gen.go ${b.badge ? "found" : "found no"} badge ` +
+                    `and the mount ${r.badge ? "has" : "has no"} node at that path`);
+                continue;
+            }
+
+            // The control assertion, and it is the one that makes the rest mean
+            // anything. Both branches reach the band's trailing edge below, and
+            // a control with a grow weight of its own would reach it for a
+            // reason that has nothing to do with the question — on the
+            // disclosure branch it would be filling the wrapper by growing into
+            // it rather than by being stretched to it.
+            if (b.controlGrows) {
+                problems.push(`${where}: the control declares a grow weight of its own. ` +
+                    `The plain branch's control grows because it IS the band Row's ` +
+                    `growing child; the disclosure's button is supposed to have none, ` +
+                    `and everything measured here would otherwise be true for the wrong ` +
+                    `reason`);
+            }
+
+            // The band's leading edge is the control's, which is the whole move:
+            // the insets came off the Row so that a press lands on the leading
+            // edge rather than 16px into it.
+            const lead = r.control.x - r.band.x;
+            if (!bandRenderSame(lead, b.rowLeft)) {
+                problems.push(`${where}: the control starts ${lead.toFixed(2)}px into ` +
+                    `the band and the Row's own leading inset is ${b.rowLeft}px. A press ` +
+                    `on the first ${lead.toFixed(2)}px of this band lands on nothing`);
+            }
+
+            // And its trailing edge stops where the band's content does: at the
+            // badge when there is one, at the Row's own trailing inset when
+            // there is not. This is the half check 8 cannot see on the
+            // disclosure branch, because it is the wrapper that is distributed
+            // to and the button that has to fill it.
+            const wantRight = r.band.x + r.band.w - b.rowRight -
+                (r.badge ? r.badge.w + b.gap : 0);
+            const gotRight = r.control.x + r.control.w;
+            if (!bandRenderSame(gotRight, wantRight)) {
+                problems.push(`${where}: the control's trailing edge is at ` +
+                    `${gotRight.toFixed(2)}px and the band's content ends at ` +
+                    `${wantRight.toFixed(2)}px — ${(wantRight - gotRight).toFixed(2)}px ` +
+                    `of the band is not part of the tap target. ` +
+                    (b.wrapper
+                        ? `The button carries no weight of its own, so it reaches the ` +
+                          `growing wrapper's edge only by being stretched to it; a ` +
+                          `wrapper that stopped stretching its child makes the picture ` +
+                          `in components.bandInsets wrong about this branch`
+                        : `The control is the band Row's growing child, so this is the ` +
+                          `distribution check 8 measures, in a band with real text`));
+            }
+
+            // The mechanism, on the branch that has one. Stated separately from
+            // the edge above because the two fail together and mean different
+            // things: an edge that stops short with a wrapper that the button
+            // fills is a band whose wrapper stopped growing, and one the button
+            // does not fill is the cross-axis stretch going away.
+            if (r.wrapper) {
+                if (!bandRenderSame(r.control.w, r.wrapper.w) ||
+                    !bandRenderSame(r.control.x, r.wrapper.x)) {
+                    problems.push(`${where}: the button is ${r.control.w.toFixed(2)}px ` +
+                        `wide at x=${r.control.x.toFixed(2)} inside a heading wrapper ` +
+                        `${r.wrapper.w.toFixed(2)}px wide at x=${r.wrapper.x.toFixed(2)}. ` +
+                        `A non-growing child of a vertical container is supposed to be ` +
+                        `stretched to it — that is the cross-axis fallback core.Box and ` +
+                        `core.SafeArea both document — and it is the only thing making ` +
+                        `the disclosure band's tap target span the band`);
+                }
+            }
+
+            // The taller child, with glyphs in it. Both halves of the reason are
+            // named, because the failure is a fact about a font and the reader
+            // has to know which of the two claims it broke.
+            if (r.badge && !(r.control.h > r.badge.h)) {
+                problems.push(`${where}: the control is ${r.control.h.toFixed(2)}px tall ` +
+                    `and the badge is ${r.badge.h.toFixed(2)}px. ` +
+                    `internal/bandfixture's SameHeight cases rest on the padded control ` +
+                    `being the band's tallest child, for two reasons: its vertical ` +
+                    `insets are larger than the badge's (checked in Go) and a bold ` +
+                    `caption is no shorter than a plain one at the same tier (checked ` +
+                    `here, and nowhere else). A badge that is the taller child makes ` +
+                    `every SameHeight case a claim about a layout this framework does ` +
+                    `not build`);
+            }
+
+            // Keyed by branch AND by whether the count is showing, because the
+            // parity comparison below is between two bands of the same shape: a
+            // count-hidden band's trailing inset is its control's rather than
+            // its badge's, so pairing one with a badged band would compare two
+            // trailing edges that are supposed to sit in different places.
+            const seen = byTheme.get(b.theme) || {};
+            seen[(b.collapsible ? "disclosure" : "plain") + (b.badge ? "" : "NoCount")] =
+                { b, r };
+            byTheme.set(b.theme, seen);
+        }
+
+        // The two branches are the same band — and the measurement is what says
+        // in what sense.
+        //
+        // components.GroupHeader spells its insets once for both branches, on
+        // the argument that "a caller who adds OnToggle to a GroupHeader gets a
+        // control and not a relayout". Held to pixels, that is true of the
+        // chrome and NOT true of the height: the disclosure band is a point
+        // taller in every bundled theme, because its button holds a chevron the
+        // plain band does not and a control's height is its tallest child plus
+        // its own insets. The glyph's line box exceeds the caption's, which is a
+        // fact about a font stack rather than about this framework.
+        //
+        // So the height is checked as an *equation* rather than as an equality,
+        // and it is the equation that says the difference is content:
+        //
+        //	disclosure band - plain band  =  max(0, chevron line box - label's)
+        //
+        // Both directions fail. A difference larger than that is chrome that has
+        // drifted between the branches, which is the thing the shared bandInsets
+        // exists to prevent; a difference smaller is a chevron whose line box
+        // stopped exceeding the words', which would make this comment wrong
+        // about why the two differ.
+        //
+        // Only the two badged shapes are paired. The count-hidden band is a
+        // different band — its trailing inset is the control's rather than the
+        // badge's — and comparing it with either would be comparing two widths
+        // that are supposed to differ.
+        let sawBranchPair = false;
+        for (const [theme, seen] of byTheme) {
+            if (!seen.plain || !seen.disclosure) continue;
+            sawBranchPair = true;
+            const p = seen.plain.r, d = seen.disclosure.r;
+
+            if (!d.chevron || !d.label || !p.label) {
+                problems.push(`${theme}: the branch pair is missing a text rect ` +
+                    `(chevron ${Boolean(d.chevron)}, disclosure label ${Boolean(d.label)}, ` +
+                    `plain label ${Boolean(p.label)}) — gen.go locates all three by the ` +
+                    `words they carry, so the band's content has changed shape`);
+                continue;
+            }
+            const overhang = Math.max(0, d.chevron.h - d.label.h);
+            const taller = d.band.h - p.band.h;
+            if (!bandRenderSame(taller, overhang)) {
+                problems.push(`${theme}: the disclosure band is ` +
+                    `${taller.toFixed(2)}px taller than the plain one and its chevron's ` +
+                    `line box exceeds the label's by ${overhang.toFixed(2)}px ` +
+                    `(chevron ${d.chevron.h.toFixed(2)}px, words ${d.label.h.toFixed(2)}px). ` +
+                    `The two branches carry the same insets around the same caption tier, ` +
+                    `so the whole of the difference is supposed to be the one child the ` +
+                    `plain band does not have. ` +
+                    (taller > overhang
+                        ? `More than that is chrome that has drifted between the two ` +
+                          `branches, which is exactly what spelling bandInsets once for ` +
+                          `both was meant to prevent`
+                        : `Less than that means a control is no longer as tall as its ` +
+                          `tallest child plus its own insets, so the height half of ` +
+                          `internal/bandfixture's SameHeight cases is modelling ` +
+                          `something else`));
+            }
+
+            // The chrome, which is the half the promise is actually about and
+            // the half that holds exactly.
+            if (!bandRenderSame(p.control.x - p.band.x, d.control.x - d.band.x)) {
+                problems.push(`${theme}: the plain band's control starts ` +
+                    `${(p.control.x - p.band.x).toFixed(2)}px into it and the ` +
+                    `disclosure's starts ${(d.control.x - d.band.x).toFixed(2)}px in. ` +
+                    `Both branches take the same bandInsets, so the label moves on the ` +
+                    `day a caller adds a handler`);
+            }
+            const pRight = p.band.x + p.band.w - (p.control.x + p.control.w);
+            const dRight = d.band.x + d.band.w - (d.control.x + d.control.w);
+            if (!bandRenderSame(pRight, dRight)) {
+                problems.push(`${theme}: the plain band's control stops ` +
+                    `${pRight.toFixed(2)}px short of the trailing edge and the ` +
+                    `disclosure's stops ${dRight.toFixed(2)}px short. The two branches ` +
+                    `are the same band, so the tap target's trailing edge is not ` +
+                    `supposed to move when a handler arrives`);
+            }
+        }
+        if (BAND_RENDERS.length && !sawBranchPair) {
+            problems.push(`no theme rendered both a plain band and a disclosure band, so ` +
+                `the branch-parity comparison above ran over nothing — ` +
+                `bandRenderBuilders in gen.go is supposed to carry both`);
+        }
+
+
+
+
+        // ------------------------------------------------------------------
+        // 10. a fixed-size container squeezes its child along its main axis
+        //     and lets it spill across
+        // ------------------------------------------------------------------
+        //
+        // See FIXED_SIZE_CASES for the question and for why it has two
+        // containers rather than one.
+        await mount({
+            Type: "Column",
+            Style: {
+                Padding: { Top: 0, Right: 0, Bottom: 0, Left: 0 }, Gap: 0,
+                AlignItems: "flex-start",
+            },
+            Children: FIXED_SIZE_CASES.map((c) => c.tree),
+        });
+        const voidRects = await evaluate(`${JSON.stringify(
+            FIXED_SIZE_CASES.map((_, i) => i))}.map((i) => {
+            const at = (path) => {
+                const el = document.querySelector('[data-node-path="' + path + '"]');
+                if (!el) return null;
+                const r = el.getBoundingClientRect();
+                return { x: r.left, y: r.top, w: r.width, h: r.height };
+            };
+            return { box: at("root/" + i), child: at("root/" + i + "/0") };
+        })`);
+
+        for (let i = 0; i < FIXED_SIZE_CASES.length; i++) {
+            const c = FIXED_SIZE_CASES[i], r = voidRects[i];
+            if (!r.box || !r.child) {
+                problems.push(`${c.what}: the container or its child was not laid out`);
+                continue;
+            }
+
+            // The container keeps the size it declared, whatever its child
+            // does. This is the half that is the same on all four targets and
+            // it is asserted first, because every claim below is stated
+            // relative to it — a container that had itself grown to fit its
+            // child would make "the child spills" and "the child fits"
+            // indistinguishable.
+            if (!bandRenderSame(r.box.w, VOID_W) || !bandRenderSame(r.box.h, VOID_H)) {
+                problems.push(`${c.what}: the container is ` +
+                    `${r.box.w.toFixed(2)}x${r.box.h.toFixed(2)} and it declared ` +
+                    `${VOID_W}x${VOID_H}. A fixed size that a child can enlarge is not ` +
+                    `a fixed size, and nothing below is measuring what it says it is`);
+                continue;
+            }
+
+            const main = c.axis === "vertical"
+                ? { name: "height", box: r.box.h, child: r.child.h, want: VOID_H,
+                    declared: OVERSIZE_H }
+                : { name: "width", box: r.box.w, child: r.child.w, want: VOID_W,
+                    declared: OVERSIZE_W };
+            const cross = c.axis === "vertical"
+                ? { name: "width", child: r.child.w, declared: OVERSIZE_W, box: r.box.w }
+                : { name: "height", child: r.child.h, declared: OVERSIZE_H, box: r.box.h };
+
+            // The control: the child has to be asking for more than it can
+            // have on both axes, or one of the two answers below is being
+            // read off a child that fit.
+            if (main.declared <= main.want || cross.declared <= cross.box) {
+                problems.push(`${c.what}: the child asks for ` +
+                    `${OVERSIZE_W}x${OVERSIZE_H} in a ${VOID_W}x${VOID_H} container, ` +
+                    `which does not exceed it on both axes — one of the two answers ` +
+                    `below is about a child that fits`);
+                continue;
+            }
+
+            // The main axis: squeezed. A flex item's shrink factor defaults to
+            // 1 and this child is empty, so its automatic minimum size is 0 and
+            // there is nothing to stop it being taken down to the container's
+            // own extent.
+            if (!bandRenderSame(main.child, main.want)) {
+                problems.push(`${c.what}: its child declared ${main.declared}px of ` +
+                    `${main.name} — the container's main axis — and laid out at ` +
+                    `${main.child.toFixed(2)}px in a ${main.want}px container. A ` +
+                    `browser is supposed to shrink it to the line: the child is a flex ` +
+                    `item with the default shrink factor and, being empty, no automatic ` +
+                    `minimum to stop at. ` +
+                    (main.child > main.want
+                        ? `A child that keeps its main-axis size means the DOM has ` +
+                          `stopped agreeing with Compose about the one axis they agreed ` +
+                          `on, and the census in docs/platforms/native.md is wrong`
+                        : `A child smaller than the container is not overflow at all`));
+            }
+
+            // The cross axis: spills. A declared size beats align-items:
+            // stretch, and nothing shrinks a flex item across the line — so the
+            // child keeps its own size and hangs out of the box.
+            if (!bandRenderSame(cross.child, cross.declared)) {
+                problems.push(`${c.what}: its child declared ${cross.declared}px of ` +
+                    `${cross.name} — the container's cross axis — and laid out at ` +
+                    `${cross.child.toFixed(2)}px. Nothing shrinks a flex item across ` +
+                    `the line, so it is supposed to keep the size it asked for and ` +
+                    `spill out of a ${cross.box}px container. A browser that clipped or ` +
+                    `shrank it here would agree with Compose on both axes, and the ` +
+                    `recorded divergence would be gone`);
+            }
+        }
+
     } finally {
         if (session) session.close();
         chrome.kill();
@@ -1735,9 +2242,12 @@ async function main() {
     hold in a real browser, ${PALETTES.length} palette swatches paint the
     hexes the contrast census measures, ${WIDGETS.length} real widgets draw
     their own boundary tones on both edges, a sticky band pins, ${VALUE_RANGES.length}
-    value ranges resolve the way core.Progress says a browser resolves them, and
+    value ranges resolve the way core.Progress says a browser resolves them,
     ${BANDS.length} bands lay out identically in both inset arrangements at every
-    offer — overflow included, which is where the SwiftUI solver does not`);
+    offer — overflow included, which is where the SwiftUI solver does not —
+    ${BAND_RENDERS.length} real bands span their own tap targets and are taller than
+    their badges with real glyphs in them, and ${FIXED_SIZE_CASES.length} fixed-size
+    containers squeeze their child along the main axis and let it spill across`);
 }
 
 await main();

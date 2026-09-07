@@ -9,8 +9,8 @@
 // pass green: a skip where a failure belongs turns "a third of this check did
 // not run" into a line nobody reads.
 //
-// So the inputs are three booleans and a string. See startup.mjs for why the
-// stances differ and why the invocation fault is decided first.
+// So the inputs are two booleans, three counts and a string. See startup.mjs
+// for why the stances differ and why the invocation fault is decided first.
 
 import test from "node:test";
 import assert from "node:assert/strict";
@@ -24,6 +24,7 @@ const ok = {
     transcriptExists: true,
     widgets: 6,
     bands: 3,
+    bandRenders: 9,
     hasWebSocket: true,
     chromePath: "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
 };
@@ -62,6 +63,15 @@ test("a transcript with no band cases is a failure", () => {
     const v = verdict({ bands: 0 });
     assert.equal(v.action, "fail");
     assert.match(v.why, /bandfixture/);
+});
+
+// The two band tables are separate preconditions because they are separate
+// subjects: one is the band as arithmetic and the other is the rendered widget,
+// and an empty one of either silences a different pair of claims.
+test("a transcript with no rendered bands is a failure", () => {
+    const v = verdict({ bandRenders: 0 });
+    assert.equal(v.action, "fail");
+    assert.match(v.why, /bandRenders/);
 });
 
 // --------------------------------------------------------------------------

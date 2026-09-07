@@ -85,6 +85,16 @@ const gobindPrefix = "Mobile" // the bound package name, capitalized
 // native.md), so a parameter type outside this set is the signal that a new
 // kind of value is crossing the bridge and that the mapping needs a human,
 // not that this list wants extending on reflex.
+//
+// Short, but no longer *open*. What was outside this set used to be decided by
+// hand, and the standard was "does this bridge use it" — which is the wrong
+// question, because the cost of leaving a type out is paid by a bridge function
+// that grows one later, and paid in silence. Every type gobind carries is now
+// classified: spelled here, or refused with a reason in gobindCarriesUnused,
+// and the set itself is read out of gobind's own isSupported by
+// TestEveryTypeGobindCarriesIsClassified. A type in neither table fails that
+// test, and a bridge function using a refused one fails by name — so the
+// position `error` sat in is a position nothing can occupy again.
 var bindableGoTypes = map[string]bool{
 	"string": true,
 	"bool":   true,
@@ -100,6 +110,12 @@ var bindableGoTypes = map[string]bool{
 	// `BOOL F(NSError**)`, and `func F(e error)` as `void F(NSError*)`; both
 	// were verified against a real `gomobile bind` rather than reasoned about.
 	// See swiftResults for what a signature carrying one turns into.
+	//
+	// It is also the reason gobindCarriesUnused exists rather than a fourth,
+	// fifth and sixth row here. `error` was findable because somebody thought
+	// to look; the fixed-width numerics and []byte are in exactly its old
+	// position, and the answer is not to guess their spellings but to make a
+	// function that uses one fail loudly until somebody runs a bind.
 	"error": true,
 }
 
@@ -179,7 +195,15 @@ func bindableFuncs(t *testing.T) []string {
 			if !ok || fn.Recv != nil || !fn.Name.IsExported() {
 				continue
 			}
-			if bindableSignature(fn.Type) {
+			ok, refuse := bindableSignature(fn.Type)
+			if refuse != "" {
+				t.Errorf("mobile.%s carries a type `gomobile bind` binds and this file "+
+					"cannot spell, so it is about to be dropped out of the stub check "+
+					"without a word — the shape `error` was in.\n\n%s",
+					fn.Name.Name, refuse)
+				continue
+			}
+			if ok {
 				out = append(out, fn.Name.Name)
 			}
 		}
@@ -189,15 +213,30 @@ func bindableFuncs(t *testing.T) []string {
 }
 
 // bindableSignature reports whether every parameter and result is a type
-// gobind can carry: one of bindableGoTypes, or an interface declared in this
-// package (which binds as a protocol).
-func bindableSignature(sig *ast.FuncType) bool {
+// gobind can carry AND this file can spell: one of bindableGoTypes, or an
+// interface declared in this package (which binds as a protocol).
+//
+// The second return is the reason a signature gobind *does* carry cannot be
+// checked here, and it is the whole difference between this and the two-valued
+// version it replaces. See gobindCarriesUnused: a type in that table is bound
+// by `gomobile bind`, so the symbol exists and the stub owes a declaration for
+// it — and answering "not bindable" for one would drop the function out of both
+// halves of this file without a word. That is the shape `error` was in.
+func bindableSignature(sig *ast.FuncType) (bool, string) {
 	ok := true
+	refuse := ""
 	fields := append([]*ast.Field{}, sig.Params.List...)
 	if sig.Results != nil {
 		fields = append(fields, sig.Results.List...)
 	}
 	for _, f := range fields {
+		if spelled, why := carriedButUnspelled(f.Type); spelled {
+			ok = false
+			if refuse == "" {
+				refuse = why
+			}
+			continue
+		}
 		name, isIdent := f.Type.(*ast.Ident)
 		if !isIdent {
 			// A pointer, a func, a map, a qualified type from another
@@ -209,8 +248,129 @@ func bindableSignature(sig *ast.FuncType) bool {
 			ok = false
 		}
 	}
-	return ok
+	return ok, refuse
 }
+
+// carriedButUnspelled reports whether a parameter or result type is one
+// `gomobile bind` carries and this file declines to spell, and why.
+//
+// Two shapes, because gobind carries two: a named basic type (uint8 today) and
+// []byte, which is the one slice its generators handle.
+func carriedButUnspelled(expr ast.Expr) (bool, string) {
+	switch t := expr.(type) {
+	case *ast.Ident:
+		why, listed := gobindCarriesUnused[t.Name]
+		return listed, why
+	case *ast.ArrayType:
+		if t.Len != nil {
+			return false, "" // an array, which gobind does not carry
+		}
+		elem, ok := t.Elt.(*ast.Ident)
+		if !ok {
+			return false, ""
+		}
+		if elem.Name != "byte" && elem.Name != "uint8" {
+			return false, ""
+		}
+		return true, gobindCarriesUnused[goByteSlice]
+	}
+	return false, ""
+}
+
+// goByteSlice is how the one slice type gobind carries is keyed in
+// gobindCarriesUnused. A key rather than a special case so the totality test
+// below can hold it to gen.go's own Slice arm like every other row.
+const goByteSlice = "[]byte"
+
+// gobindCarriesUnused names every type `gomobile bind` carries that this file
+// does not spell, and why not.
+//
+// # Why this table has to exist
+//
+// bindableGoTypes is deliberately short: this bridge is written to a narrow
+// surface, and a parameter type outside that set is meant to be the signal that
+// a new kind of value is crossing the FFI. What "outside that set" used to mean
+// was "bindableSignature says false", which is the same answer it gives to a
+// *core.Context — and those are not the same situation at all:
+//
+//	gobind cannot carry it     the generated header says "skipped function ...
+//	                           with unsupported parameter or return types".
+//	                           There is no symbol. A stub declaring one would be
+//	                           offering the shell a call that cannot exist.
+//
+//	gobind carries it and      `gomobile bind` produces the symbol. The stub is
+//	this file cannot spell it  never asked to declare it, GomobileBridge.swift
+//	                           silently drops out of the type-check for it, and
+//	                           nothing in this repository says so.
+//
+// The second is exactly what happened to `error`, which was in neither table on
+// the reasonable-looking grounds that no bridge function returns one. The
+// difference now is that "reasonable-looking grounds" is no longer how the
+// question is settled: TestEveryTypeGobindCarriesIsClassified derives the
+// carried set from gobind's own isSupported and requires every member to be in
+// one table or the other, so the next type in `error`'s position is a failure
+// on the day gen.go is read rather than on the day somebody notices.
+//
+// # Why these are unspelled rather than spelled
+//
+// Every reading in this file was taken off gobind's own source or its golden
+// output, never derived (see gobindSwiftTypes). The rows below are the types
+// where that source does not settle the answer, and inventing one is how a stub
+// check starts agreeing with itself instead of with the toolchain.
+//
+// A bridge function using one of these does not go quietly: bindableSignature
+// returns the reason, and the tests refuse the function by name and say what to
+// do about it.
+var gobindCarriesUnused = map[string]string{
+	"uint8": "bind/genobjc.go's objcType maps Go uint8 to a bare `byte`, and " +
+		"nothing gobind emits declares that type — it is in no golden header in " +
+		"bind/testdata and Universe.objc.h does not define it. What Swift makes of " +
+		"the result is therefore not readable from the generator, and every other " +
+		"spelling in this file was",
+	goByteSlice: "gobind maps []byte to NSData* _Nullable in both positions " +
+		"(bind/testdata/basictypes.objc.h.golden: `NSData* _Nullable " +
+		"BasictypesByteArrays(NSData* _Nullable x)`), which Swift imports as Data?. " +
+		"The spelling is legible; what is not is the two-result split — a nullable " +
+		"first result stays the return where a scalar moves into an out-pointer, " +
+		"and no golden exercises ([]byte, error). Add the row from a real bind",
+	// The aliases, classified beside the kinds they name because
+	// bindableSignature reads the identifier a signature actually writes: a
+	// parameter spelled `byte` is a uint8 and one spelled `rune` is an int32,
+	// and a table that knew only the canonical spellings would let either
+	// through as "not carried".
+	"byte": "an alias for uint8, which gobind spells as a bare `byte` nothing " +
+		"it emits declares — see the uint8 row",
+	"rune": "an alias for int32, which is a fixed-width C scalar — see the " +
+		"int32 row",
+
+	"int8":    gobindScalarWhy,
+	"int16":   gobindScalarWhy,
+	"int32":   gobindScalarWhy,
+	"int64":   gobindScalarWhy,
+	"float32": gobindScalarWhy,
+	"float64": gobindScalarWhy,
+}
+
+// The reason the fixed-width numerics are unspelled, which is one reason and
+// not six.
+//
+// Their parameter spellings are legible — bind/testdata/basictypes.objc.h.golden
+// has `BasictypesInts(int8_t x, int16_t y, int32_t z, int64_t t, long u)`, and
+// the Swift importer's names for those are not in doubt. Their RESULT spellings
+// are the gap: a C scalar is not nullable, so funcSummary moves a (value, error)
+// pair's first result into an out-parameter and makes the return BOOL, and the
+// Swift spelling of that pointer is what gobindErrorOutPointer holds. Both rows
+// in it — UnsafeMutablePointer<Int> for long*, UnsafeMutablePointer<ObjCBool>
+// for BOOL* — were read off a real bind, and ObjCBool is precisely why: it is
+// not what a plain BOOL parameter imports as, and no rule stated anywhere here
+// would have predicted it. Deriving the other six from the two would be
+// assuming the case that already surprised us once.
+const gobindScalarWhy = "gobind spells it as a fixed-width C scalar " +
+	"(bind/testdata/basictypes.objc.h.golden), which is legible; its out-pointer " +
+	"spelling for a (value, error) result is not — gobindErrorOutPointer's two " +
+	"rows were read off a real bind, and one of them is UnsafeMutablePointer" +
+	"<ObjCBool>, which no rule here would have predicted. Bind a package with " +
+	"this shape and add the rows from what it produced"
 
 // boundInterfaces returns the exported interface types in `mobile`. Each
 // becomes a protocol the shell can conform to — the only way a callback
@@ -895,7 +1055,10 @@ func bindableFuncDecls(t *testing.T) []*ast.FuncDecl {
 			if !ok || fn.Recv != nil || !fn.Name.IsExported() {
 				continue
 			}
-			if bindableSignature(fn.Type) {
+			// The refusal is reported by bindableFuncs, which every test
+			// calling this one also calls; reporting it twice would name the
+			// same function in two failures.
+			if ok, _ := bindableSignature(fn.Type); ok {
 				out = append(out, fn)
 			}
 		}
@@ -1614,4 +1777,275 @@ func checkStubResultRule(t *testing.T, r stubRule, ifaces map[string]bool) {
 		t.Errorf("%s: the header says %q binds as\n\t%s\nand the checker produces\n\t%s",
 			gomobileStub, sig, want, got)
 	}
+}
+
+// --- What gobind carries, read out of gobind ---------------------------------
+
+// gobindBasicKinds maps a go/types Basic kind, as gobind's own isSupported
+// spells it, onto the Go type names a signature can write for it.
+//
+// Two things make this a table rather than a lowercasing:
+//
+//	the aliases      byte is uint8 and rune is int32, and bindableSignature
+//	                 reads the identifier a signature actually spells. gobind's
+//	                 switch names the kinds (with `// types.Byte` and
+//	                 `// types.Rune` in the comments); a Go author writes either.
+//
+//	the untyped ones isSupported admits UntypedBool, UntypedInt, UntypedRune,
+//	                 UntypedFloat and UntypedString, and none of them can appear
+//	                 in a declared signature — they are what a constant
+//	                 expression has before assignment, which is why gobind lists
+//	                 them (it binds exported constants too). They map to no type
+//	                 name, and that is a statement rather than an omission: a
+//	                 kind missing from this table is a hard failure below.
+var gobindBasicKinds = map[string][]string{
+	"Bool":    {"bool"},
+	"Int":     {"int"},
+	"Int8":    {"int8"},
+	"Uint8":   {"uint8", "byte"},
+	"Int16":   {"int16"},
+	"Int32":   {"int32", "rune"},
+	"Int64":   {"int64"},
+	"Float32": {"float32"},
+	"Float64": {"float64"},
+	"String":  {"string"},
+
+	"UntypedBool":   nil,
+	"UntypedInt":    nil,
+	"UntypedRune":   nil,
+	"UntypedFloat":  nil,
+	"UntypedString": nil,
+}
+
+// Every type gobind carries is in exactly one of the two tables.
+//
+// # The hole this closes
+//
+// bindableGoTypes decides which functions the stub is *required* to declare.
+// Until here, what it did NOT contain was decided by hand, and the standard was
+// "does this bridge use it" — which is the wrong question, because the cost of
+// omitting a type is paid by a bridge function that grows one later. `error`
+// was left out on exactly that reasoning and the omission was invisible: gobind
+// binds it, so a function returning one would have produced a symbol, gone
+// undeclared in the stub, and taken GomobileBridge.swift's type-check with it,
+// with nothing in the repository saying so.
+//
+// The fix is not a longer hand-written list, because a longer hand-written list
+// has the same failure mode one type further along. It is to stop deciding: the
+// carried set is read out of `bind/gen.go`'s own isSupported, and every member
+// of it has to be classified — spelled (bindableGoTypes) or refused with a
+// reason (gobindCarriesUnused). A type in neither fails here.
+//
+// # Why isSupported and not objcType
+//
+// They disagree, and isSupported is the gate. genobjc.go's objcType can spell
+// uint16, uint32 and uint64; isSupported does not admit them, so a function
+// carrying one is skipped before any spelling is asked for. Deriving the set
+// from the speller rather than the gate would demand classifications for three
+// types `gomobile bind` will not bind.
+//
+// # What is not derived here
+//
+// The two non-basic carriers that are not slices: `error`, which isSupported
+// admits through isErrorType before the switch, and exported named interfaces
+// and pointers, which it admits through validPkg. Both are in bindableSignature
+// already — error by name, the named types by ast.IsExported — and neither is a
+// set that can grow a member without somebody writing it in this package.
+func TestEveryTypeGobindCarriesIsClassified(t *testing.T) {
+	src, ok := gobindSource(t, "bind", "gen.go")
+	if !ok {
+		return
+	}
+
+	basic, slices := gobindSupportedKinds(t, src)
+
+	for _, kind := range basic {
+		names, known := gobindBasicKinds[kind]
+		if !known {
+			t.Errorf("bind/gen.go's isSupported admits types.%s at gobind %s and "+
+				"gobindBasicKinds cannot name it. gobind has grown a Go type it can "+
+				"carry that nothing here has classified, which is `error`'s position "+
+				"exactly: a bridge function using it would bind, go undeclared in the "+
+				"stub, and stop being type-checked without a word.", kind, gobindVersion)
+			continue
+		}
+		for _, name := range names {
+			_, spelled := bindableGoTypes[name]
+			_, refused := gobindCarriesUnused[name]
+			switch {
+			case spelled && refused:
+				t.Errorf("%q is in bindableGoTypes and in gobindCarriesUnused. The two "+
+					"say opposite things — one requires a stub declaration and the "+
+					"other refuses to check one — and swiftType would build a spelling "+
+					"for a type this file has said it cannot spell", name)
+			case !spelled && !refused:
+				t.Errorf("`gomobile bind` carries Go %s (bind/gen.go isSupported, "+
+					"types.%s) and neither bindableGoTypes nor gobindCarriesUnused "+
+					"mentions it.\n\n"+
+					"A bridge function using it binds to a real symbol, is never asked "+
+					"for a stub declaration, and takes GomobileBridge.swift's "+
+					"type-check with it. That is what happened to `error`.\n\n"+
+					"Add it to bindableGoTypes with its spellings in gobindSwiftTypes "+
+					"(both read off a real bind, never derived), or to "+
+					"gobindCarriesUnused with the reason its spelling is not readable "+
+					"from the generator.", name, kind)
+			}
+		}
+	}
+
+	// The one slice gobind carries. Pinned as a set rather than looked for,
+	// because the failure that matters is gobind growing a second one: a
+	// []string parameter that started binding would be carried, unclassified
+	// and — since bindableSignature reads an *ast.ArrayType only for a byte
+	// element — silently skipped.
+	if len(slices) != 1 || slices[0] != "Uint8" {
+		t.Errorf("bind/gen.go's isSupported admits slices of %v at gobind %s, and this "+
+			"file is written for []byte alone: carriedButUnspelled recognises a byte "+
+			"element and nothing else, so any other slice type is carried and silently "+
+			"skipped. Classify it and teach carriedButUnspelled to see it.",
+			slices, gobindVersion)
+	}
+	if _, refused := gobindCarriesUnused[goByteSlice]; !refused {
+		if _, spelled := bindableGoTypes[goByteSlice]; !spelled {
+			t.Errorf("gobind carries []byte and neither table mentions it")
+		}
+	}
+}
+
+// gobindSupportedKinds reads isSupported's two switches: the go/types Basic
+// kinds it admits, and the slice element kinds.
+//
+// Parsed rather than grepped. The kinds are spelled `types.Bool` in a case
+// clause and `types.Uint8` in a comparison, and a regexp over the file would
+// also collect the kinds objcType spells — which are a different, larger set
+// (see the test above), so the derivation would demand classifications for
+// types gobind will not bind.
+func gobindSupportedKinds(t *testing.T, src string) (basic, slices []string) {
+	t.Helper()
+
+	file, err := parser.ParseFile(token.NewFileSet(), "gen.go", src, 0)
+	if err != nil {
+		t.Fatalf("parsing the pinned gobind's bind/gen.go: %v", err)
+	}
+
+	var body *ast.BlockStmt
+	for _, decl := range file.Decls {
+		fn, isFunc := decl.(*ast.FuncDecl)
+		if isFunc && fn.Name.Name == "isSupported" && fn.Recv != nil {
+			body = fn.Body
+		}
+	}
+	if body == nil {
+		t.Fatalf("bind/gen.go at gobind %s has no (*Generator).isSupported. It is the "+
+			"gate that decides which Go types `gomobile bind` will carry, and the whole "+
+			"of what makes bindableGoTypes' completeness checkable rather than "+
+			"believed. Find where the decision moved to and re-point this.", gobindVersion)
+	}
+
+	// The type switch inside it has one case per shape gobind handles. The
+	// Basic case holds a second switch over kinds; the Slice case compares an
+	// element's kind. Both are "every types.X mentioned under this case", which
+	// is one walk with the case as the boundary.
+	ast.Inspect(body, func(n ast.Node) bool {
+		clause, isClause := n.(*ast.CaseClause)
+		if !isClause || len(clause.List) != 1 {
+			return true
+		}
+		star, isStar := clause.List[0].(*ast.StarExpr)
+		if !isStar {
+			return true
+		}
+		sel, isSel := star.X.(*ast.SelectorExpr)
+		if !isSel {
+			return true
+		}
+		switch sel.Sel.Name {
+		case "Basic":
+			// The kinds are the inner switch's own case lists:
+			//
+			//	case types.Bool, types.UntypedBool,
+			//		types.Int,
+			//		types.Int8, types.Uint8, // types.Byte
+			basic = append(basic, caseListKinds(clause.Body)...)
+		case "Slice":
+			// The element kind is a comparison instead:
+			//
+			//	case *types.Basic:
+			//		return e.Kind() == types.Uint8
+			//
+			// Read from the comparison rather than from every types.X under
+			// the clause, which would also collect the `*types.Basic` the
+			// element is switched on and report it as a carried kind.
+			slices = append(slices, comparedKinds(clause.Body)...)
+		}
+		return true
+	})
+
+	if len(basic) == 0 {
+		t.Fatalf("bind/gen.go at gobind %s: isSupported's *types.Basic case names no "+
+			"kinds, so the carried set this test derives is empty and every "+
+			"classification below would pass over nothing", gobindVersion)
+	}
+	sort.Strings(basic)
+	sort.Strings(slices)
+	return basic, slices
+}
+
+// caseListKinds collects the `types.X` a switch's case clauses select on.
+func caseListKinds(body []ast.Stmt) []string {
+	c := kindCollector{seen: map[string]bool{}}
+	inspectStmts(body, func(n ast.Node) bool {
+		clause, isClause := n.(*ast.CaseClause)
+		if !isClause {
+			return true
+		}
+		for _, expr := range clause.List {
+			c.add(expr)
+		}
+		return true
+	})
+	return c.out
+}
+
+// comparedKinds collects the `types.X` a node compares something against with
+// ==, which is how gobind spells the one element kind its Slice arm admits.
+func comparedKinds(body []ast.Stmt) []string {
+	c := kindCollector{seen: map[string]bool{}}
+	inspectStmts(body, func(n ast.Node) bool {
+		bin, isBin := n.(*ast.BinaryExpr)
+		if !isBin || bin.Op != token.EQL {
+			return true
+		}
+		c.add(bin.X)
+		c.add(bin.Y)
+		return true
+	})
+	return c.out
+}
+
+// inspectStmts is ast.Inspect over a case clause's body, which the AST gives as
+// a bare statement slice rather than as a node.
+func inspectStmts(body []ast.Stmt, f func(ast.Node) bool) {
+	for _, stmt := range body {
+		ast.Inspect(stmt, f)
+	}
+}
+
+// kindCollector gathers `types.X` selector names, deduplicated and in order.
+type kindCollector struct {
+	seen map[string]bool
+	out  []string
+}
+
+func (c *kindCollector) add(expr ast.Expr) {
+	sel, isSel := expr.(*ast.SelectorExpr)
+	if !isSel {
+		return
+	}
+	pkg, isIdent := sel.X.(*ast.Ident)
+	if !isIdent || pkg.Name != "types" || c.seen[sel.Sel.Name] {
+		return
+	}
+	c.seen[sel.Sel.Name] = true
+	c.out = append(c.out, sel.Sel.Name)
 }

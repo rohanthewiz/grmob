@@ -37,6 +37,9 @@
 //	bands      internal/bandfixture, components.GroupHeader's two inset
 //	           arrangements, for the browser pass to lay out and measure against
 //	           the answers ios/verify's flex solver gives.
+//	bandRenders real components.GroupHeaders, one per bundled theme per shape,
+//	           for the two band questions that are measurements of a rendered
+//	           widget rather than arithmetic over numbers. See bandRender.
 package main
 
 import (
@@ -90,6 +93,18 @@ type transcript struct {
 	// stated that in a comment and never asked a browser. browser.mjs mounts
 	// them and measures the rects.
 	Bands []bandfixture.Case `json:"bands"`
+	// BandRenders are real components.GroupHeaders, rendered through every
+	// bundled theme, for the browser to lay out with real glyphs in them. The
+	// fifth table, same reason as the fourth.
+	//
+	// Not a duplicate of Bands. That table is the band as arithmetic — two
+	// arrangements of the same chrome over synthetic content — and it is the
+	// right shape for the question it answers and cannot reach two others: a
+	// cross-axis one (does the disclosure's button fill the growing wrapper it
+	// sits in, which is whether a press lands on the whole band) and a
+	// question about text (is the padded control really the band's tallest
+	// child once real glyphs are in it). See bandRender.
+	BandRenders []bandRender `json:"bandRenders"`
 }
 
 // node mirrors just enough of core.Node's JSON to hunt down callback IDs.
@@ -292,10 +307,11 @@ func signupScenario() scenario {
 
 func main() {
 	out, err := json.Marshal(transcript{
-		Scenarios: []scenario{demoScenario(), signupScenario()},
-		MenuCases: menufixture.Cases(),
-		Widgets:   widgetCases(),
-		Bands:     bandfixture.Cases(),
+		Scenarios:   []scenario{demoScenario(), signupScenario()},
+		MenuCases:   menufixture.Cases(),
+		Widgets:     widgetCases(),
+		Bands:       bandfixture.Cases(),
+		BandRenders: bandRenders(),
 	})
 	if err != nil {
 		fatal("marshal transcript: %v", err)
@@ -529,4 +545,324 @@ func ratioBetween(theme, a, b string) (float64, error) {
 			theme, a, b)
 	}
 	return math.Round(palette.Ratio(la, lb)*100) / 100, nil
+}
+
+// --- The rendered bands -----------------------------------------------------
+
+// bandRender is one real components.GroupHeader, rendered through one bundled
+// theme, with the paths of the nodes a browser has to measure.
+//
+// # The two questions the arithmetic fixture cannot reach
+//
+// internal/bandfixture carries the band as *numbers* — insets, a gap, a grow
+// weight and synthetic content sizes — because the thing it is checking is
+// arithmetic, and arithmetic over made-up sizes is still the same arithmetic.
+// That is the right shape for the question it answers (do two arrangements of
+// the same chrome resolve to the same geometry) and it is the wrong shape for
+// two others:
+//
+//	the tap target   the disclosure branch puts the band's insets on a *button*
+//	                 one level inside the Row's growing heading wrapper, so
+//	                 whether a press lands on the whole band depends on whether
+//	                 a non-growing child fills a growing parent. That is a
+//	                 CROSS-axis question, and GrMobFlexSolver is a main-axis
+//	                 distributor: it has no answer, and bandfixture's own
+//	                 arrangementOf renders the plain band precisely to stay out
+//	                 of its way. The picture in components.bandInsets assumes
+//	                 the answer.
+//
+//	the taller child bandfixture's third case turns on the padded control being
+//	                 taller than the badge, and the reason given is that the
+//	                 control's vertical insets are larger AND that both wrap the
+//	                 same caption type — the first half is checked in Go, and
+//	                 the second is a claim about *text*, which is a measurement
+//	                 no Go test can take. A bold caption shorter than a plain
+//	                 one by more than the 4pt the insets differ by would make
+//	                 the badge the tallest child in a real band, and every
+//	                 SameHeight case downstream would be describing a layout
+//	                 nothing builds.
+//
+// Both are measurements of a rendered band with real glyphs in it, which is
+// exactly what this pass already has and nothing else in the repository does.
+// So these are real GroupHeaders — the widget, not a model of it — exported the
+// way the widget swatches are, and browser.mjs mounts and measures them.
+//
+// # Why the paths travel with the tree
+//
+// The browser addresses nodes by the data-node-path the runtime writes while
+// walking Children, so "the control" is an index chain. Computed here by
+// *finding* the node — the growing child of the band Row, and the button
+// inside it where there is one — rather than spelled as a literal in the
+// harness: a band whose shape changed would then move the paths with it, or
+// fail here where the shape is known, instead of silently measuring whatever
+// node had inherited the index.
+type bandRender struct {
+	Theme string `json:"theme"`
+	What  string `json:"what"`
+	// Tree is the page holding the band, as JSON, ready for GrMob.mount.
+	Tree string `json:"tree"`
+
+	// Band is the band Row's path, Control the node a finger lands on, and
+	// Wrapper the growing heading wrapper between them — empty on the plain
+	// branch, where the growing child *is* the control. Badge is empty on a
+	// band with the count hidden.
+	Band    string `json:"band"`
+	Control string `json:"control"`
+	Wrapper string `json:"wrapper"`
+	Badge   string `json:"badge"`
+
+	// Label is the run of words inside the control, and Chevron the glyph the
+	// disclosure branch puts before it — empty on the plain branch, which has
+	// none.
+	//
+	// They are here because the two branches turn out NOT to be the same
+	// height, and the difference is content rather than chrome: a control's
+	// height is its tallest child plus its own insets, the insets are the same
+	// in both branches, and the disclosure has one child the plain band does
+	// not. Carrying both paths is what lets the browser state that as an
+	// equation instead of a tolerance. See check 9.
+	Label   string `json:"label"`
+	Chevron string `json:"chevron"`
+
+	// RowLeft and RowRight are the band Row's own horizontal insets. The
+	// leading one is 0 — that is the move, and the browser measures it rather
+	// than assuming it — and the trailing one is the badge's breathing room,
+	// the one inset that never went onto the control, so the browser can say
+	// where the control's trailing edge is supposed to stop.
+	RowLeft  float64 `json:"rowLeft"`
+	RowRight float64 `json:"rowRight"`
+	// Gap is the band Row's own gap, which is 0 today and is carried rather
+	// than assumed for the same reason.
+	Gap float64 `json:"gap"`
+
+	// ControlGrows reports whether the control declares a grow weight of its
+	// own. It is false on both branches and that is the point: on the plain
+	// branch the growing child IS the control, and on the disclosure branch
+	// the control is a non-growing child of a growing wrapper. A control that
+	// started growing would make the browser's answer true for a reason that
+	// has nothing to do with the question.
+	ControlGrows bool `json:"controlGrows"`
+
+	// Collapsible separates the two branches, which are asked different
+	// things: only the disclosure has a wrapper to fill.
+	Collapsible bool `json:"collapsible"`
+}
+
+// bandRenderBuilders is one entry per band shape, so a shape added here is
+// added for every bundled theme.
+//
+// Three shapes, and each earns its place. The plain band with a badge is the
+// baseline the disclosure is compared against — the two branches are supposed
+// to be the same band geometrically, which is what
+// components.GroupHeader.ControlStyle promises a caller who adds a handler. The
+// disclosure with a badge is the tap-target case. The disclosure with the count
+// hidden is the one where the control's trailing edge is the band's own
+// trailing inset rather than the gap before a badge, which is the asymmetric
+// side components.bandInsets' `trailing` parameter exists for.
+var bandRenderBuilders = []struct {
+	what        string
+	collapsible bool
+	build       func() components.GroupHeader
+}{
+	{"a plain band", false, func() components.GroupHeader {
+		return components.GroupHeader{Group: bandRenderGroup}
+	}},
+	{"a disclosure band", true, func() components.GroupHeader {
+		return components.GroupHeader{
+			Group: bandRenderGroup, Expanded: true, OnToggle: func() {},
+		}
+	}},
+	{"a disclosure band, count hidden", true, func() components.GroupHeader {
+		return components.GroupHeader{
+			Group: bandRenderGroup, Expanded: true, OnToggle: func() {},
+			HideCount: true,
+		}
+	}},
+}
+
+// The group every rendered band titles. The same one internal/bandfixture
+// reads its numbers off, so the two tables are describing one band.
+var bandRenderGroup = components.Group{Key: "2026-01", Label: "January 2026", Count: 3}
+
+// bandRenderWidth is the page the bands are laid out in.
+//
+// Wide enough that the label has slack to grow into — the grow weight is the
+// whole subject, and a band squeezed to its content would answer the tap-target
+// question with "yes, because there was nowhere else to go".
+const bandRenderWidth = 320
+
+func bandRenders() []bandRender {
+	byName := core.BundledThemes()
+	names := make([]string, 0, len(byName))
+	for name := range byName {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+
+	out := make([]bandRender, 0, len(names)*len(bandRenderBuilders))
+	for _, name := range names {
+		for _, b := range bandRenderBuilders {
+			c, err := renderBandCase(name, byName[name], b.what, b.collapsible, b.build())
+			if err != nil {
+				fatal("%v", err)
+			}
+			out = append(out, c)
+		}
+	}
+	return out
+}
+
+// renderBandCase renders one band through one theme and locates the nodes the
+// browser measures.
+//
+// An error rather than fatal, for the same reason renderWidgetCase returns one:
+// a band whose rendered shape has changed must stop a `go run` and fail a
+// `go test`, and os.Exit does the first and takes the whole test binary down
+// doing the second.
+func renderBandCase(name string, theme *core.Theme, what string, collapsible bool,
+	band components.GroupHeader) (bandRender, error) {
+
+	ctx := core.NewContext().WithTheme(theme)
+	ctx.BeginRenderPass()
+	// A page with no padding of its own: the band is supposed to span its
+	// container edge to edge (that is what its own fill is for), and an inset
+	// page would make every leading-edge measurement below relative to a
+	// margin the widget knows nothing about.
+	page := core.Box(
+		core.BackgroundColor(theme.Colors.Background),
+		core.Width(fmt.Sprintf("%dpx", bandRenderWidth)),
+		band,
+	).Render(ctx)
+
+	if len(page.Children) != 1 {
+		return bandRender{}, fmt.Errorf(
+			"%s/%s: the page box rendered %d children, want the band alone",
+			name, what, len(page.Children))
+	}
+	row := page.Children[0]
+	if row.Style == nil {
+		return bandRender{}, fmt.Errorf("%s/%s: the band Row rendered with no Style",
+			name, what)
+	}
+
+	c := bandRender{
+		Theme: name, What: what, Tree: jsonout.Export(page),
+		Band:     "root/0",
+		RowLeft:  float64(row.Style.Padding.Left),
+		RowRight: float64(row.Style.Padding.Right),
+		Gap:      row.Style.Gap,
+		// The count is the last child when there is one; hidden, the growing
+		// child is all there is.
+		Collapsible: collapsible,
+	}
+
+	// The growing child, found rather than indexed. There must be exactly one:
+	// the band pins its badge to the trailing edge with a grow weight on the
+	// heading rather than with JustifyContent (see GroupHeader.Render), and a
+	// second growing child would divide the slack and move the badge inward.
+	grow := -1
+	for i, child := range row.Children {
+		if child.Style != nil && child.Style.FlexGrow > 0 {
+			if grow >= 0 {
+				return bandRender{}, fmt.Errorf(
+					"%s/%s: the band has more than one growing child (%d and %d) — "+
+						"the badge is pinned by a single grow weight, and two of them "+
+						"share the slack", name, what, grow, i)
+			}
+			grow = i
+		}
+	}
+	if grow < 0 {
+		return bandRender{}, fmt.Errorf(
+			"%s/%s: no child of the band grows — the whole tap-target question is "+
+				"about padding on a *stretched* child", name, what)
+	}
+	if grow != 0 {
+		return bandRender{}, fmt.Errorf(
+			"%s/%s: the growing child is at index %d and the leading edge is index 0 — "+
+				"the label is supposed to come first", name, what, grow)
+	}
+
+	if len(row.Children) > 2 {
+		return bandRender{}, fmt.Errorf(
+			"%s/%s: the band rendered %d children and this fixture reads at most two",
+			name, what, len(row.Children))
+	}
+	if len(row.Children) == 2 {
+		c.Badge = "root/0/1"
+	}
+
+	// Where the insets are, and therefore what a finger lands on. On the plain
+	// branch the growing child carries them itself; as a disclosure it is a
+	// wrapper with no chrome at all and the button inside it is the target.
+	growing := row.Children[grow]
+	if collapsible {
+		if len(growing.Children) != 1 {
+			return bandRender{}, fmt.Errorf(
+				"%s/%s: the heading wrapper holds %d children, want the button alone",
+				name, what, len(growing.Children))
+		}
+		control := growing.Children[0]
+		if control.Style == nil {
+			return bandRender{}, fmt.Errorf(
+				"%s/%s: the band's button rendered with no Style", name, what)
+		}
+		if control.Props["onClick"] == nil {
+			return bandRender{}, fmt.Errorf(
+				"%s/%s: the node inside the heading wrapper has no handler, so it is "+
+					"not the thing a press lands on", name, what)
+		}
+		// The wrapper must be geometrically invisible, or "the button fills the
+		// wrapper" would be a claim about a box with chrome of its own and the
+		// tap target would stop short of the band by however much it carries.
+		if p := growing.Style.Padding; p != (core.EdgeInsets{}) {
+			return bandRender{}, fmt.Errorf(
+				"%s/%s: the heading wrapper carries padding %+v — it is supposed to be "+
+					"geometrically invisible, and chrome on it is chrome the tap target "+
+					"does not reach", name, what, p)
+		}
+		c.Wrapper, c.Control = "root/0/0", "root/0/0/0"
+		c.ControlGrows = control.Style.FlexGrow > 0
+		// Two children, in order: the chevron then the words. Located by
+		// content rather than by index — an arm that swapped them would
+		// otherwise have the browser comparing the label's line box with
+		// itself.
+		if len(control.Children) != 2 {
+			return bandRender{}, fmt.Errorf(
+				"%s/%s: the button holds %d children, want the chevron and the words",
+				name, what, len(control.Children))
+		}
+		for i, child := range control.Children {
+			path := fmt.Sprintf("%s/%d", c.Control, i)
+			if child.Props["content"] == band.Group.Label {
+				c.Label = path
+			} else {
+				c.Chevron = path
+			}
+		}
+		if c.Label == "" || c.Chevron == "" {
+			return bandRender{}, fmt.Errorf(
+				"%s/%s: the button's children are not a chevron and the group's label — "+
+					"the height comparison in check 9 is an equation over exactly those two",
+				name, what)
+		}
+	} else {
+		c.Control = "root/0/0"
+		if len(growing.Children) != 1 {
+			return bandRender{}, fmt.Errorf(
+				"%s/%s: the plain band's control holds %d children, want the words alone",
+				name, what, len(growing.Children))
+		}
+		if growing.Children[0].Props["content"] != band.Group.Label {
+			return bandRender{}, fmt.Errorf(
+				"%s/%s: the plain band's control does not hold the group's label",
+				name, what)
+		}
+		c.Label = "root/0/0/0"
+		// The plain branch's growing child IS the control, so of course it
+		// grows; the field means "the control has a weight of its own beyond
+		// being the growing child", which on this branch it cannot.
+		c.ControlGrows = false
+	}
+	return c, nil
 }

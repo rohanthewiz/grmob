@@ -1302,6 +1302,108 @@ proposal a SwiftUI `Layout` receives after its container's padding is removed �
 and without it the arrangement with padding on the `Row` is handed a band 32px
 wider than the other.
 
+### The band as a widget, not as arithmetic
+
+The check above is the band as **numbers** — two arrangements of the same chrome
+over synthetic content sizes — and that is the right shape for a distribution
+and out of reach of two other things.
+
+**The tap target is a cross-axis question.** On the plain branch the node
+carrying the band's insets *is* the `Row`'s growing child, so "the button owns
+the insets" is main-axis and the arithmetic settles it. The disclosure branch is
+not that shape:
+
+```
+ Row ─────────────────────────────────────────────────
+│┌ Box grow:1 ─────────────────────────┐  ┌───┐       │
+││┌ Row role=button ─────────────────┐ │  │ 3 │ 16px  │
+│││  16px  ▾ January 2026       8px  │ │  └───┘       │
+││└──────────────────────────────────┘ │              │
+│└─────────────────────────────────────┘              │
+ ─────────────────────────────────────────────────────
+```
+
+The `Row`'s growing child is a heading wrapper with no chrome at all, and the
+button carrying the insets sits inside it with **no weight of its own**. Whether
+it reaches the wrapper's edges is a question about the *cross* axis of a vertical
+container, and `GrMobFlexSolver` — the arithmetic `ios/verify` runs — is a
+main-axis distributor. The picture in `components.bandInsets` had been assuming
+the answer.
+
+**The taller child is a question about text.** Every `SameHeight` case in
+`internal/bandfixture` rests on the padded control being the band's tallest
+child, and the reason has two halves: the control's vertical insets are larger
+than the badge's, and both wrap the same caption tier. The first is arithmetic
+and is checked in Go. The second is "a bold caption is no shorter than a plain
+one", which is a measurement of glyphs. The insets differ by four points, so a
+bold caption shorter than a plain one by more than that would make the badge the
+tallest child of a real band, and every `SameHeight` case would be describing a
+layout the framework does not build.
+
+So `gen.go` renders **real** `components.GroupHeader`s — three shapes (plain with
+a badge, a disclosure with a badge, a disclosure with the count hidden) through
+each of the three bundled themes — and emits the paths of the nodes to measure
+alongside each tree, found by walking the rendered nodes rather than spelled as
+indices. `browser.mjs` mounts all nine at once and reads the rects.
+
+The button does fill the wrapper. The tap target spans the band, and it does so
+because of a cross-axis default rather than because of anything the widget
+declares — a wrapper that stopped stretching its child would leave the target at
+the label's own width with the rest of the band dead.
+
+**And the two branches are not quite the same band.**
+`components.GroupHeader.ControlStyle` promises that "a caller who adds
+`OnToggle` gets a control and not a relayout", and measured against pixels that
+is exactly true of the chrome and false of the height by one point, in every
+bundled theme: the disclosure's button holds a chevron the plain band does not,
+a control is as tall as its tallest child plus its own insets, and `▾`'s line box
+exceeds the caption's in the font stacks Chrome resolves. That is content, not
+chrome, so it is checked as the equation it is rather than waved at —
+
+```
+disclosure band − plain band  =  max(0, chevron line box − label's)
+```
+
+— which fails in both directions. More than that is chrome drifting between the
+branches, which spelling `bandInsets` once for both was meant to prevent; less is
+a control that is no longer as tall as its tallest child.
+
+### A fixed-size box, on four targets
+
+`core.Spacer` became "a `Box` with a fixed size" so that all four targets would
+lay a Spacer's children out the same way, and the note closing that work recorded
+a difference nobody had measured: Compose's `Modifier.width`/`height` set a
+child's minimum *and* maximum, so a child bigger than the void is squeezed where
+the DOM was believed to let it spill. It is not a `Spacer` property — it is what
+every fixed-size container on that target does — and nothing anywhere had asked
+whether the four targets agree about overflow for **any** fixed-size box.
+
+A browser was asked, and the DOM's answer is per-axis rather than the blanket one
+assumed:
+
+| | main axis | cross axis |
+|---|---|---|
+| WASM runtime | **squeezed** | **spills** |
+| htmlout | squeezed | spills |
+| SwiftUI | squeezed | spills |
+| Compose | squeezed | **squeezed** |
+
+The child is squeezed along the container's main axis because it is a flex item
+whose shrink factor defaults to 1 and whose automatic minimum, being empty, is 0.
+It keeps its own size across the cross axis because a declared size beats
+`align-items: stretch` and nothing shrinks a flex item across the line. Which
+axis is which follows from the container, so the check mounts a `core.Box` and a
+`core.Row` — with one container, "the main axis is the one that shrinks" cannot
+be told apart from "height is the one that shrinks".
+
+`htmlout` emits the same three declarations for the same tree and inherits the
+answer rather than being measured again; that bridge is
+`TestAFixedSizeBoxExportsTheDeclarationsTheBrowserMeasured`, and it also refuses
+an `overflow`, a `min-width` or a `min-height`, each of which would change the
+answer on that target alone and silently. The two native rows are derived from
+the platform call each renderer makes, and `mobile/verify` holds the renderers
+to those calls — see [the native harness](native.md#a-fixed-size-box-on-four-targets).
+
 **A check that waits for a frame waits for its own subject to work.** The
 toolbar check hung for its whole timeout the first time its subject was broken,
 having passed every time it worked — because the wait after a key was a doubled

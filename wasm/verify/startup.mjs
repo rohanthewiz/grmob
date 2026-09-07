@@ -10,8 +10,9 @@
 //	                  through GRMOB_TRANSCRIPT. It carries the widget swatches —
 //	                  real components.Chip and core.Input trees rendered by Go —
 //	                  which is the half of the palette check no table of hexes
-//	                  in a .mjs file can reach, and the band cases, which are a
-//	                  real components.GroupHeader's own geometry.
+//	                  in a .mjs file can reach, the band cases, which are a real
+//	                  components.GroupHeader's own geometry, and the rendered
+//	                  bands, which are the widget itself.
 //
 //	a Chrome, and a   the browser to drive and the WebSocket global to drive it
 //	Node with         over. Node grew one in v21; before that there is no way to
@@ -56,13 +57,14 @@
  *	"skip"  the machine cannot answer the question. Print `why` and exit 0.
  *	"run"   go ahead; `why` is empty.
  *
- * `widgets` and `bands` are how many of each table the transcript carried, and
- * are only meaningful when it was readable at all — a transcript that exists and
- * carries an empty table is its own failure, because the check that reads it
- * would then pass by having no subject.
+ * `widgets`, `bands` and `bandRenders` are how many of each table the transcript
+ * carried, and are only meaningful when it was readable at all — a transcript
+ * that exists and carries an empty table is its own failure, because the check
+ * that reads it would then pass by having no subject.
  */
 export function startupVerdict({
-    transcriptPath, transcriptExists, widgets, bands, hasWebSocket, chromePath,
+    transcriptPath, transcriptExists, widgets, bands, bandRenders,
+    hasWebSocket, chromePath,
 }) {
     // The invocation first. See the note above: on a machine with no Chrome the
     // other order turns a forgotten environment variable into a green run.
@@ -88,6 +90,15 @@ export function startupVerdict({
             why: "the transcript carries no band cases — internal/bandfixture produced " +
                 "nothing, so the check that asks a browser whether the band's insets " +
                 "survive overflow has no subject.",
+        };
+    }
+    if (!bandRenders) {
+        return {
+            action: "fail",
+            why: "the transcript carries no rendered bands — gen.go's bandRenders() " +
+                "produced nothing, so the checks that ask whether the disclosure band's " +
+                "tap target spans it and whether its control is its tallest child have " +
+                "no subject.",
         };
     }
     if (!hasWebSocket) {

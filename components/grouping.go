@@ -497,6 +497,17 @@ type GroupHeader struct {
 	// branches are the same band geometrically, and a knob that silently did
 	// nothing on one of them would be a relayout the first time a caller
 	// added a handler.
+	//
+	// "The same band geometrically" is a claim about the chrome, and it is
+	// exact: browser.mjs measures both branches in every bundled theme and the
+	// control's leading and trailing edges are identical. The band's HEIGHT is
+	// not, by one point — the disclosure's button holds a chevron the plain
+	// band does not, a control is as tall as its tallest child plus its own
+	// insets, and that glyph's line box exceeds the caption's in the font stacks
+	// Chrome resolves. That is content, not chrome, and it is checked as the
+	// equation it is rather than waved at: the difference between the two bands
+	// must equal the chevron's overhang over the words exactly, so chrome
+	// drifting between the branches still fails.
 	ControlStyle []core.StyleProp
 }
 
@@ -544,6 +555,26 @@ type GroupHeader struct {
 // when a badge follows, the band's own trailing inset when nothing does.
 // trailing is 0 for "whatever the leading inset is", which is what a band
 // with nothing after its control wants.
+//
+// # The picture used to assume the disclosure branch, and now it is measured
+//
+// On the plain branch the node carrying these insets *is* the Row's growing
+// child, so "the button owns the insets" is a main-axis fact and the flex
+// arithmetic ios/verify runs settles it. On the disclosure branch it is not:
+// the growing child is a heading wrapper with no chrome of its own, and the
+// button sits inside it with no weight at all (see disclosure.view). Whether
+// the target reaches the wrapper's edges is a CROSS-axis question — a
+// non-growing child of a vertical container is stretched to it, which is the
+// fallback core.Box and core.SafeArea both document — and a main-axis
+// distributor has no answer to it.
+//
+// wasm/verify/browser.mjs now mounts real bands of both branches in every
+// bundled theme and measures the rects. The button does fill the wrapper, so
+// the picture above is right about the disclosure too, and it is right because
+// of a cross-axis default rather than because of anything this widget declares.
+// A wrapper that stopped stretching its child would leave the tap target at the
+// label's own width with the rest of the band dead, which is the shape the move
+// was made to end.
 func bandInsets(t *core.Theme, trailing int) []core.StyleProp {
 	insets := []core.StyleProp{
 		core.PaddingHorizontal(t.Spacing.MD),

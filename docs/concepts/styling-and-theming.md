@@ -1059,7 +1059,6 @@ Two distinctions the names do not make obvious:
       Input  Style `backdrop:"a field's own interior, enclosed by its own frame …"`
       …
       Camera Style `notbackdrop:"a viewfinder: its fill is black in every theme …"`
-      Text   Style `notbackdrop:"a run of words, not a region. core.Text is a leaf …"`
   }
   ```
 
@@ -1093,12 +1092,37 @@ Two distinctions the names do not make obvious:
   which is the difference between *"`ControlBorder` is 2.9:1 on `Card`"* and
   *"a `FormField`'s frame inside a `Card` is 2.9:1"*.
 
-  Classifying `Text` cost the census two pairs, and that is the payoff rather
-  than a loss. `core.Text` is a leaf — it takes content and style props and
+  Classifying `Text` cost the census two pairs, and that was the payoff rather
+  than a loss: `core.Text` is a leaf — it takes content and style props and
   never children — so nothing can be nested inside one and no control boundary
-  can land on its fill; two bundled themes give it a white `Background` and the
-  census was dutifully measuring a boundary against it. Nothing in the framework
-  even reads `Components.Text`.
+  can land on its fill, and two bundled themes gave it a white `Background` the
+  census was dutifully measuring a boundary against.
+
+  **The field itself is gone now, and the tag is why it was found.** Writing
+  down *why* nothing draws a boundary on a text run — "`core.Text` is a leaf and
+  takes no children" — is one sentence away from the larger fact, which is that
+  nothing read `Components.Text` at all. `core.Text` builds its `Style` from its
+  own props and never touches the theme, so the two bundled themes stating one
+  were describing a widget that does not exist; the cost was a theme author who
+  filled it in and watched nothing happen, and that is the whole cost an inert
+  default ever has, which is why it survived. The theme's authority over a run
+  of words is `Typography`, which widgets spend explicitly, so this was a second
+  authority for something that already had one rather than a feature with a
+  missing implementation.
+
+  It was removed rather than wired. Giving `core.Text` an unconditional theme
+  base would put a white fill and twelve points of padding behind every glyph in
+  the framework, and stating an ink on every text node would override the
+  inheritance a label inside a filled control depends on — so the honest
+  spelling of "this field means nothing" is not to have it.
+
+  `TestEveryComponentDefaultReachesAWidget` (in `core`) is what makes the next
+  one fail on the day it lands. It renders a real widget per field through a
+  theme whose base for that one field carries a marker no widget sets for
+  itself, and looks for the marker on the node that comes back: a field whose
+  widget stopped merging its base fails, and so does a field added with nothing
+  behind it. It is the same shape as the tags above — a list of "fields that are
+  read" would be one more claim nobody executes.
 
   **And the pairs are painted.** All of the above is arithmetic over hex
   strings: it proves the number and cannot prove the colour ever reaches a

@@ -1107,6 +1107,82 @@ and every value listed explicitly — including the ones the catch-all would hav
 handled anyway. Those redundant arms are the point and must not be tidied away;
 a value that falls through is indistinguishable from one nobody considered.
 
+### A fixed-size box, on four targets
+
+`core.Spacer` became "a `Box` with a fixed size" so that all four targets would
+lay a Spacer's children out the same way, and the note closing that work
+recorded a difference nobody had measured: Compose constrains a child to the
+declared size where the DOM was believed to let it spill. It is not a `Spacer`
+property — it is what every fixed-size container on that target does — and
+nothing anywhere had asked whether the four targets agree about overflow for
+**any** fixed-size box.
+
+| | main axis | cross axis | how |
+|---|---|---|---|
+| WASM runtime | squeezed | spills | measured |
+| htmlout | squeezed | spills | inherited |
+| SwiftUI | squeezed | spills | derived |
+| Compose | squeezed | **squeezed** | derived |
+
+The DOM row was measured, in a real Chrome, and it is not the blanket "spills"
+the note assumed — see [the WASM
+harness](wasm.md#a-fixed-size-box-on-four-targets) for that half. The two native
+rows are derived from the platform call each renderer makes, and
+`mobile/verify/fixedsize_test.go` is what holds the renderers to those calls:
+
+- **SwiftUI.** `.frame(width:)` / `.frame(height:)` *proposes* a size to its
+  content and reports the fixed size to its parent; content that insists on
+  being larger keeps its size and is drawn overflowing, and nothing clips it
+  (`Renderer.swift` spends `.clipped()` on exactly two image content modes).
+  The main-axis squeeze is not the frame's doing at all — it is
+  `GrMobFlexSolver`, this repository's own CSS flex arithmetic, which is why
+  that column matches the DOM's.
+- **Compose.** `Modifier.width(n)` / `Modifier.height(n)` set the child's
+  **minimum and maximum alike**. A maximum is what the other three do not
+  impose, and it is the whole of the divergence.
+
+The two things a check has to refuse are the near-misses, not the far ones:
+`Modifier.requiredSize` ignores the incoming constraints entirely and
+`Modifier.sizeIn` sets a range, and either would leave the mapping compiling
+with this target's row silently wrong. On the Swift side it is `.clipped()`,
+which would compile, look tidier, and make one target hide an overflow the other
+three show.
+
+**Why the Compose half is derived and not read.** The reading above is of
+`foundation-layout` 1.10.0, which is what a gradle cache happens to hold;
+`android/app/build.gradle` pins the Compose BOM at `2024.06.00`, which resolves
+`foundation-layout` to 1.6.8, and 1.6.8's sources are not cached — only its
+`.aar`. A pin against the wrong version is the mistake `gobindVersion` exists to
+prevent one file over, and fetching the right sources is a network call no
+harness here makes. So the call site is what is pinned, and the platform's rule
+travels beside it as prose.
+
+### Why the band's census has three rows
+
+The same limit decides where `internal/bandfixture` stops. The band's two inset
+arrangements are checked against a real browser and against `GrMobFlexSolver`,
+and both are executable for the same reason: the arithmetic is ours, or the
+browser is a browser. Compose's `Row` is neither — a `FlexGrow` child is handed
+`Modifier.weight` and androidx's own measure policy does the distributing — so
+"do the two arrangements agree on Compose" is a question about androidx's code.
+`android/verify` runs Kotlin on a plain JVM, which is what made it look like the
+place to ask, and the thing it can run is Kotlin that *imports nothing*;
+a Compose measure policy measures `Measurable`s into `Placeable`s through
+`compose-ui`, which needs the Android runtime.
+
+What the derivation says is that Compose agrees with the web, for a third reason
+again: its `Row` has no proportional shrink at all, an unweighted child is
+measured with what is left and a weighted one gets `(available − fixed) / total
+weight`, and the band's badge is unweighted — so the whole deficit lands on the
+growing control in both arrangements, the badge keeps its width where both other
+renderers shrink it, and the two arrangements come out equal because the
+control's padding is inside its weighted extent either way.
+
+`TestTheComposeRowDelegatesItsDistributionToCompose` holds the *premise* rather
+than the answer: the census stops at three rows because Android delegates, and a
+renderer that stopped delegating would put the fourth answer back within reach
+and make it one of ours to be wrong about.
+
 ### The bridge stand-in
 
 Three files in `ios/GrMob/App` — the `@main` entry point among them — begin

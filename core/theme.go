@@ -426,8 +426,30 @@ type ComponentDefaults struct {
 	Camera   Style `notbackdrop:"a viewfinder: its fill is black in every theme because it is what shows for the frame before the first camera frame arrives, and nothing draws a control boundary on top of a preview. Excluded by name rather than by a lightness test, because a rule that skipped dark fills would also skip a dark theme's page"`
 	CheckBox Style `backdrop:"the box's own interior, enclosed by its own boundary — the same by-construction pair as Input. Two of the three bundled themes state a fill here and the third does not, so the pair exists in some palettes and not others, which is what a derived census handles and a hand-written list does not"`
 	TextArea Style `backdrop:"a field's own interior, as Input, one tag over. The two are separate fields because a theme may want a taller field to read differently, and they are separate rows in the census for the same reason"`
-	Text     Style `notbackdrop:"a run of words, not a region. core.Text is a leaf — it takes content and style props and never children (core/text.go), so no node can be nested inside one and no control boundary can land on its fill. A theme that fills Text is drawing behind glyphs, which is the one fill in this struct that is not a surface at all. Excluded because the pair is unreachable, not because it is close"`
 }
+
+// # The field that used to be here
+//
+// Components.Text was a ninth field and nothing read it. core.Text builds its
+// Style from its own props and never touches the theme (core/text.go), so the
+// two bundled themes that stated one — a size, an ink, a white Background,
+// twelve points of padding and a radius, copied from the field base beside it —
+// were describing a widget that does not exist. It cost a theme author who
+// filled it in and watched nothing happen, and it could not cost anything else,
+// which is exactly why it survived: an inert default is invisible.
+//
+// It was also a second authority for something that already had one. A run of
+// words takes its type from Typography, which widgets spend explicitly
+// (core.UseStyle(t.Typography.Caption)) and which the type scale exists to be.
+// So the field was removed rather than wired: giving core.Text an unconditional
+// theme base would put a white fill and twelve points of padding behind every
+// glyph in the framework, and stating an ink on every text node would override
+// the inheritance a label inside a filled control depends on.
+//
+// TestEveryComponentDefaultReachesAWidget is what makes the next one of these
+// fail on the day it lands: every field above renders a witness through a theme
+// carrying a marker, and a field no widget merges has nowhere for the marker to
+// arrive.
 
 func WithTheme(theme *Theme, children ...View) View {
 	return ComponentFunc(func(ctx *Context) *Node {
@@ -635,15 +657,6 @@ var DefaultTheme = &Theme{
 		Camera: Style{
 			Background: "#000000",
 			Display:    DisplayBlock,
-		},
-		Text: Style{
-			FontSize:     17,
-			FontWeight:   Normal,
-			TextColor:    "#000000",
-			Background:   "#FFFFFF",
-			Padding:      EdgeInsets{Top: 12, Bottom: 12, Left: 12, Right: 12},
-			BorderRadius: 6,
-			Display:      DisplayBlock,
 		},
 	},
 }
@@ -935,15 +948,6 @@ var AmberTheme = &Theme{
 		Camera: Style{
 			Background: "#000000",
 			Display:    DisplayBlock,
-		},
-		Text: Style{
-			FontSize:     16,
-			FontWeight:   Normal,
-			TextColor:    "#1C1B1F",
-			Background:   "#FFFFFF",
-			Padding:      EdgeInsets{Top: 12, Bottom: 12, Left: 12, Right: 12},
-			BorderRadius: 8,
-			Display:      DisplayBlock,
 		},
 	},
 }

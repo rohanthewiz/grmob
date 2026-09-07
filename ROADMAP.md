@@ -1148,6 +1148,64 @@
       grid. The trees go in unmodified; all that changes is that a theme's page
       fill is a sibling's rather than the document's, which no sample was ever
       reading
+- [x] **The disclosure band's tap target spans the band, measured** — the
+      collapsible branch puts the insets on a button one level inside the Row's
+      growing heading wrapper, so whether a press lands on the whole band is a
+      *cross-axis* question and `GrMobFlexSolver` is a main-axis distributor.
+      `gen.go` renders real `components.GroupHeader`s through every bundled
+      theme and `browser.mjs` measures the rects: the button does fill the
+      wrapper, and it does so by a cross-axis default rather than by anything
+      the widget declares. The picture in `components.bandInsets` had been
+      assuming it
+- [x] **The two band branches are the same chrome and not the same height** —
+      measured against pixels, `GroupHeader.ControlStyle`'s "a control and not a
+      relayout" is exact for the leading and trailing edges and off by a point
+      for the height, in every bundled theme: the disclosure's button holds a
+      chevron the plain band does not, and that glyph's line box exceeds the
+      caption's. Checked as the equation it is — the difference must equal the
+      chevron's overhang over the words — so chrome drifting between the
+      branches still fails
+- [x] **A bold caption is no shorter than a plain one, checked** — every
+      `SameHeight` case in `internal/bandfixture` rests on the padded control
+      being the band's tallest child, and half the reason was a claim about
+      glyphs that no Go test can take. The rendered bands measure it, in three
+      themes, with real text
+- [x] **What a fixed-size container does with an oversized child, on four
+      targets** — nothing anywhere had asked. A browser's answer turns out to be
+      per-axis rather than the blanket "spills" that was assumed: the child is
+      squeezed along the container's main axis (a flex item's shrink factor
+      defaults to 1, and an empty box has no automatic minimum to stop at) and
+      spills across the cross one. `htmlout` emits the same declarations and
+      inherits the answer; the two natives are derived from the platform call
+      each renderer makes and pinned at those call sites. Compose is the odd one
+      out — `Modifier.width`/`height` set the child's minimum *and* maximum, so
+      it squeezes on both axes
+- [x] **Why the band's cross-target census has three rows and not four** — the
+      web and the SwiftUI solver are executable because the arithmetic is ours
+      or the browser is a browser; Compose's `Row` is androidx's code and needs
+      the Android runtime to measure anything, and its sources are not cached at
+      the version this build pins. The derived answer (Compose agrees with the
+      web, for a third reason: no proportional shrink at all) is recorded, and
+      what is *tested* is the premise — that Android still delegates its
+      distribution, so a renderer that stopped would put the answer back within
+      reach
+- [x] **`core.ComponentDefaults.Text` is gone, and the next inert default
+      fails** — `core.Text` builds its Style from its own props and never
+      touched the theme, so two bundled themes described a widget that does not
+      exist and a theme author filling it in saw nothing happen. A run of words
+      already has an authority (`Typography`), so the field was removed rather
+      than wired. `TestEveryComponentDefaultReachesAWidget` renders a witness per
+      field through a theme carrying a marker no widget sets for itself: a field
+      nothing merges now has nowhere for the marker to arrive
+- [x] **`bindableGoTypes` is total over what gobind carries** — `error` was left
+      out of it on the grounds that no bridge function returns one, and the
+      omission was invisible: gobind binds it, so such a function would have
+      produced a symbol, gone undeclared in the stub, and taken
+      `GomobileBridge.swift`'s type-check with it. The carried set is now derived
+      from gobind's own `isSupported` in the pinned module cache and every member
+      must be classified — spelled, or refused with a reason — so a bridge
+      function using an unspelled one fails by name instead of dropping out of
+      the check
 
 ---
 

@@ -66,6 +66,26 @@
 // deliberately oversized height, because that is the one place the two
 // arrangements do *not* agree.
 //
+// # The half made-up sizes cannot reach, and where it is checked instead
+//
+// Synthetic sizes are right for the arithmetic and they take one claim out of
+// reach. Every SameHeight case rests on the padded control being the band's
+// tallest child, and the reason has two halves: the control's vertical insets
+// are larger than the badge's, and both wrap the same caption tier. The first
+// is arithmetic and bandfixture_test.go checks it. The second is a statement
+// about glyphs — the label is a *bold* caption and the badge's text a plain one
+// — and "no shorter" is a measurement nothing in Go can take.
+//
+// It is not a formality: the insets differ by four points, so a bold caption
+// shorter than a plain one by more than that would make the badge the tallest
+// child of a real band, and every SameHeight case here would be describing a
+// layout the framework does not build.
+//
+// wasm/verify's gen.go renders real components.GroupHeaders through every
+// bundled theme and browser.mjs measures them with real glyphs in them (see
+// bandRender there, and check 9). That is where this half is checked, and it is
+// the only place it can be.
+//
 // It lives under internal/ for the reason menufixture does: it is not part of
 // the framework's API, it is a fact this repository's own harnesses share.
 package bandfixture
@@ -228,6 +248,29 @@ type Case struct {
 	// other. Both directions are asserted on both targets, so the divergence is
 	// a recorded difference between two renderers rather than a defect in
 	// either.
+	//
+	// # The third renderer, and why it is derived rather than measured
+	//
+	// Compose is the target this field has no row for. Its Row has no
+	// proportional shrink at all: an unweighted child is measured with what is
+	// left of the main axis, a weighted one gets (available - fixed) / total
+	// weight, and this band's badge is unweighted. So the whole deficit lands
+	// on the growing control in both arrangements — the badge keeps its width
+	// where both other renderers shrink it — and the two arrangements come out
+	// equal, because the control's padding is inside its weighted extent
+	// either way. Three renderers, three different reasons, and only one of
+	// them (the SwiftUI solver) makes the two arrangements differ.
+	//
+	// That paragraph is a derivation and not a measurement, and the difference
+	// matters enough to say twice. The other two answers are executable because
+	// the arithmetic is ours or the browser is a browser; Compose's Row is
+	// androidx's code, needs the Android runtime to measure anything, and
+	// cannot even be pinned by reading — this repository's Compose BOM resolves
+	// foundation-layout to a version whose sources a gradle cache does not
+	// hold. mobile/verify's TestTheComposeRowDelegatesItsDistributionToCompose
+	// holds the premise instead: the census stops at three rows because Android
+	// delegates, and a renderer that stopped delegating puts the answer back
+	// within reach and makes it ours to be wrong about.
 	SharesADeficit bool `json:"sharesADeficit"`
 }
 
