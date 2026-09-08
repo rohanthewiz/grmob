@@ -2281,6 +2281,253 @@ const INK_OWN_MAY_DIFFER = {
     "perspective-origin": INK_OWN_USED_SIZE,
 };
 
+// Which of its two jobs a path is doing.
+//
+// # The two questions one path was answering
+//
+// A path here names an element, and the checks ask two quite different things
+// of one. WHERE the pixels are — a rect to scan, a point to sample a fill at,
+// a window to look for digits in. And WHOSE declaration is in question — the
+// computed style the probe's copy is compared against, and the chain above the
+// element whose glyphs are being drawn.
+//
+// For a box that draws its own glyphs those are the same element and the
+// distinction never surfaces. For a box with the glyphs somewhere INSIDE it
+// they are not, and reading the second question at the first question's path
+// answers it about the wrong element. That is not hypothetical: the
+// antialiasing probes did exactly this for as long as they existed.
+// `inkProbePath` names the white Box because the Box is the rect the
+// screenshot scan reads, and `probeOwn` and `probeAncestry` followed it there
+// — so the comparison that licenses the whole ink scan was being made against
+// a box that declares a background, a width and no typography at all, and
+// twenty-five properties differed for no reason but the mix-up.
+//
+// # What is held, and where the badge sits
+//
+// A path used as a DECLARATION SUBJECT has to name the element that draws the
+// glyphs: no element children, and text of its own. Measured on this grid, all
+// three subjects are (20 labels, 8 counts, 11 probe text nodes), every one a
+// span with no element child and direct text.
+//
+// The count is the interesting one. It reads as a pill with digits inside it,
+// and it is not: components.Badge is `core.Text` with a fill, a radius and
+// paddings on it, so the pill and the digits are ONE element and reading
+// `badgeOwn` at the pill is reading it at the digits. That was true by
+// accident — nothing said it, and a badge that grew an icon beside its number
+// would become a Box with a Text in it, the pill path would go on naming the
+// Box, and `badgeOwn` would quietly start comparing a container against a
+// probe built from the digits' Style. Held here, that refactor fails by name.
+//
+// The complement is held too, at the one place the file has a path for each
+// job: the probe's sample rect must NOT be a glyph-drawing leaf. It is the
+// white ground the fringe is measured against, and it has to be a box with
+// exactly one child — which is what makes `inkProbeTextPath`'s `/0` a
+// derivation rather than an index somebody typed.
+function inkSubjectShape(read) {
+    return `a <${read.tag}> with ` +
+        (read.elements === 0 ? "no element children" :
+            `${read.elements} element ${read.elements === 1 ? "child" : "children"}`) +
+        ` and ${read.directText ? "text of its own" : "no text of its own"}`;
+}
+
+// Returns null when the element at a subject path is the one drawing the
+// glyphs, which is every path this grid reads a declaration at today.
+function inkSubjectFault(where, subject, read) {
+    if (!read) {
+        return `${where}: nothing was found at the path ${subject} are read at, so ` +
+            `the declaration this scan is about was read off no element at all`;
+    }
+    if (read.elements === 0 && read.directText) return null;
+    return `${where}: ${subject} are read at ${inkSubjectShape(read)}, which is a box ` +
+        `with the glyphs somewhere inside it rather than the element drawing them.\n\n` +
+        `Every declaration this scan compares — the computed style the antialiasing ` +
+        `probe is held to, and the chain swept above it — is a question about the ` +
+        `element that paints the run. Asked of a container, the answer is about the ` +
+        `container: it inherits the page's typography, resolves none of what the run ` +
+        `resolves, and the comparison passes or fails for reasons that have nothing ` +
+        `to do with how these glyphs are drawn. See the note above inkSubjectShape: ` +
+        `this is the ` +
+        `fault the probes shipped with, and the path that names the rect to scan is ` +
+        `not in general the path that names the declaration to ask about`;
+}
+
+// And the other side of the pair, for the probe's white ground.
+//
+// Returns null when the sample rect is a container with exactly one child and
+// no text of its own — which is what gen.go's inkProbeFor builds and what
+// makes inkProbeTextPath's `/0` the element inside it.
+function inkProbeBoxFault(where, read) {
+    if (!read) {
+        return `${where}: nothing was found at the probe's own path, so the rect the ` +
+            `fringe is measured in was read off no element at all`;
+    }
+    if (read.elements === 1 && !read.directText) return null;
+    return `${where}: the probe's sample rect is ${inkSubjectShape(read)}, and ` +
+        `inkProbeFor builds it as a white Box holding exactly one Text.\n\n` +
+        `Those two facts are what make inkProbeTextPath — the probe path plus "/0" — ` +
+        `the element that draws the probe's glyphs rather than an index somebody ` +
+        `typed. A probe with text of its own would be painting glyphs into the ground ` +
+        `the fringe is measured against; a probe with a second child would leave "/0" ` +
+        `naming one of two, and every declaration compared below would be one of them ` +
+        `chosen by position`;
+}
+
+// Which browser's enumeration the table above was written against.
+//
+// # A list of exceptions has a build behind it
+//
+// inkOwnDiff compares every computed property the browser enumerates, and
+// INK_OWN_MAY_DIFFER is the list of the ones that may differ. That list was
+// assembled by running the grid, reading what differed, and giving each entry a
+// reason — so it is a list of exceptions to ONE build's enumeration, and
+// nothing recorded which.
+//
+// The widening is the point of the design: a property that ships in a later
+// Chrome joins the comparison without anybody editing this file, and if the
+// probe and the box it answers for resolve it differently that is a real
+// finding. It is also, on the first run on a newer browser, a failure that
+// arrives with no context at all — a property name nobody here has heard of,
+// differing for a reason nobody has thought about, in the middle of a check
+// about antialiasing. The message below says which build the table was measured
+// against and how many more properties this one exposes, so a reader can tell
+// "the two declarations came apart" from "this browser grew a property".
+//
+// `props` is the count, not the list. The list would be four hundred names in a
+// source file and would have to be regenerated on every Chrome; the count is
+// the one number that separates the two causes, and the delta is what the
+// message reports.
+//
+// The dpr is not recorded here, and the machine is not either. A computed style
+// is in CSS pixels, so nothing in this comparison moves with the device ratio —
+// the ink scan's SAMPLE POINTS do, and those are multiplied by a dpr this file
+// reads back rather than assumes. What a different machine could change is the
+// font the face resolves to, and that is INK_OWN_MAY_DIFFER's business only
+// insofar as both sides resolve it alike, which they do by being one page.
+const INK_OWN_MEASURED_ON = {
+    browser: "Chrome/152.0.7977.83",
+    props: 476,
+};
+
+// The sentence the message adds when this browser is not that one. Returns ""
+// when the enumeration matches, because then the delta explains nothing.
+function inkOwnBuildNote(read, browser) {
+    const same = browser === INK_OWN_MEASURED_ON.browser;
+    const delta = read - INK_OWN_MEASURED_ON.props;
+    if (same && delta === 0) return "";
+    return `\n\nINK_OWN_MAY_DIFFER was measured against ` +
+        `${INK_OWN_MEASURED_ON.browser}, which enumerated ` +
+        `${INK_OWN_MEASURED_ON.props} computed properties; this is ${browser} and it ` +
+        `enumerates ${read}` +
+        (delta === 0 ? `, the same number` :
+            `, ${Math.abs(delta)} ${delta > 0 ? "more" : "fewer"}`) +
+        `. ` +
+        (delta > 0
+            ? `Properties this browser has and that one did not were never looked at ` +
+              `when the table was written, so a name nobody here recognises is more ` +
+              `likely to be one of those than a declaration coming apart — check it ` +
+              `against the table's argument and add it with a reason, or find out why ` +
+              `these two elements resolve it differently.`
+            : `The table was written against a wider enumeration than this one, so ` +
+              `every entry in it may no longer be reachable — the permission census ` +
+              `below is the check that notices that.`);
+}
+
+// Which face drew the glyphs, asked of the one party that knows.
+//
+// # The gap the two width answers leave
+//
+// inkRunRectFault holds the run rect's width to the advance the same face
+// gives for the same string, and calls that two answers. It is two answers to
+// the arithmetic and one answer to the shaping: Chrome's canvas text
+// measurement and Chrome's layout go through the same shaper, so a face that
+// resolved to something other than what was asked for moves BOTH numbers
+// together and they agree about the wrong face. What that pair catches is
+// arithmetic done to the rect after shaping, which is the class the injected
+// defect belongs to; what it cannot see is the resolution itself.
+//
+// Nothing on the page can see it either. A computed `font-family` is the
+// REQUEST — a list, with the UA default at the end of it — and neither the
+// canvas nor `getComputedStyle` reports which entry the browser reached. So
+// this is read over the DevTools protocol instead:
+// `CSS.getPlatformFontsForNode` is the compositor's own record of the faces it
+// laid a node's glyphs out with, one entry per face with the number of glyphs
+// that face drew. It is a third party to a question the other two agree on by
+// construction.
+//
+// # What is held
+//
+// One face per run. A run drawn by two is a run with fallback in it, and every
+// number the ink scan takes is then an average over faces: the ascent the band
+// rows are fractions of came from `measureText` under one font shorthand, and
+// the advance the rect is held to is a sum the layout took over several.
+//
+// One glyph per character. Measured on this grid, every run's glyph count is
+// exactly its string length — twelve for "January 2026", twenty-six for the
+// long title, one for a count's digit, six for the probe's own text. That is
+// the third answer to "was the string on the page the string that was
+// measured": `measureText(e.textContent)` reads the DOM's characters and this
+// counts the compositor's glyphs. A face that substituted a ligature for two
+// characters would break it, which for ASCII digits and Latin words in a UA
+// default is a finding rather than a false alarm — and if a fixture ever wants
+// a string where it is not, the fixture is the thing to change.
+//
+// The same family as the probe. The probe's whole claim is that its grey box
+// is this box's antialiasing; a probe drawn by a different face is measuring a
+// different face's edges, and neither the ancestry sweep nor the computed-style
+// comparison can see it — `font-family` agrees on both sides precisely because
+// it is the request they share.
+function inkFaceList(faces) {
+    return faces.map((f) => `${f.family} (${f.glyphs} glyph` +
+        `${f.glyphs === 1 ? "" : "s"})`).join(", ");
+}
+
+// Returns null when one face drew the whole run, drew a glyph per character,
+// and is the face the probe was drawn with.
+function inkFaceFault(where, subject, what, faces, text, probeFaces) {
+    if (!faces || faces.length === 0) {
+        return `${where}: the browser reports no platform font for ${subject}, so ` +
+            `which face drew those glyphs is unknown. The run's width is checked ` +
+            `against an advance from the same shaper that laid it out, and that pair ` +
+            `agrees about whatever face was resolved — see the note above ` +
+            `inkFaceList. This read is the only thing here that looks at the ` +
+            `resolution rather than at the request`;
+    }
+    if (faces.length > 1) {
+        return `${where}: ${subject} are drawn by ${faces.length} faces — ` +
+            `${inkFaceList(faces)} — so part of this run fell back.\n\n` +
+            `Every measurement the ink scan takes over this box is a single face's: ` +
+            `the ascent the three sampled rows are fractions of comes from one font ` +
+            `shorthand handed to a canvas, and the advance the run rect is held to is ` +
+            `that same face's for the whole string. With two faces in the run those ` +
+            `are averages, and the antialiasing probe — one declaration, one face — ` +
+            `answers for neither`;
+    }
+    const glyphs = faces[0].glyphs;
+    const chars = text === null || text === undefined ? null : [...text].length;
+    if (chars !== null && glyphs !== chars) {
+        return `${where}: ${subject} are ${chars} characters ("${text}") and ` +
+            `${faces[0].family} drew ${glyphs} glyphs for them.\n\n` +
+            `The run rect's width is held to \`measureText(textContent)\`, which is an ` +
+            `advance for the DOM's CHARACTERS; this is a count of the compositor's ` +
+            `GLYPHS. They match on every run in this grid, and a mismatch means the ` +
+            `face is substituting — a ligature, a composed form — so the string that ` +
+            `was measured and the string that was drawn are not the same sequence, ` +
+            `and both width answers are about the former`;
+    }
+    if (probeFaces && probeFaces.length === 1 &&
+        probeFaces[0].family !== faces[0].family) {
+        return `${where}: ${subject} are drawn by ${faces[0].family} and the ` +
+            `antialiasing probe for ${what} is drawn by ${probeFaces[0].family}.\n\n` +
+            `The probe's grey box is offered as this box's antialiasing, and an edge ` +
+            `is a property of the face that drew it. Neither of the other two guards ` +
+            `can see this: the ancestry sweep is about what sits above the elements, ` +
+            `and the computed-style comparison finds \`font-family\` identical on both ` +
+            `sides — that list is the request the two share, and this is the answer ` +
+            `they got`;
+    }
+    return null;
+}
+
 // One chain, reported.
 //
 // Returns null when every ancestor is neutral, which is every mount this grid
@@ -2367,7 +2614,7 @@ function inkOwnDiff(box, probe) {
 
 // Returns null when the two agree everywhere they are required to, which is
 // every mount this grid makes today.
-function inkOwnFault(where, subject, what, box, probe) {
+function inkOwnFault(where, subject, what, box, probe, browser) {
     if (!box || !probe) {
         return `${where}: ${!box ? subject + " resolve" : "the antialiasing probe for " +
             what + " resolves"} no computed properties at all — nothing was read from ` +
@@ -2401,7 +2648,8 @@ function inkOwnFault(where, subject, what, box, probe) {
         `see INK_OWN_MAY_DIFFER. ${first} is not one of them, so either the two ` +
         `declarations have come apart, or that property belongs in the table with an ` +
         `argument beside it saying why a probe may resolve it differently and still be ` +
-        `measuring this box's rendering path`;
+        `measuring this box's rendering path` +
+        inkOwnBuildNote(read, browser);
 }
 
 // --------------------------------------------------------------------------
@@ -2819,9 +3067,19 @@ async function main() {
     // here because the OK line is printed after the try block and a number
     // recited from inside it would be BAND_RENDERS.length again — see `asked`,
     // where the argument is.
-    const asked = { words: 0, counts: 0 };
+    const asked = { targets: 0, insets: 0, fills: 0, words: 0, counts: 0 };
     try {
         const port = await devtoolsPort(profile);
+        // Which browser this is, read before anything is measured in it.
+        //
+        // See INK_OWN_MEASURED_ON: the exception table is a list of properties
+        // that differ, taken against ONE build's enumeration, and a build that
+        // enumerates more brings properties into the comparison that nobody has
+        // had an opinion about. That is the right failure and a confusing one
+        // to meet, so the failure message gets to say which build the table was
+        // written against and how far this one is from it.
+        const versionInfo = await getJSON(`http://127.0.0.1:${port}/json/version`);
+        const browserBuild = versionInfo.Browser || "an unidentified browser";
         const targets = await getJSON(`http://127.0.0.1:${port}/json/list`);
         const page = targets.find((t) => t.type === "page");
         if (!page) throw new Error("Chrome opened no page target");
@@ -3929,6 +4187,24 @@ async function main() {
                 }
                 return got;
             };
+            // Whether the element at a path is the one DRAWING the glyphs, or
+            // a box with the glyphs somewhere inside it.
+            //
+            // See inkSubjectFault. Reported rather than decided, so the fault
+            // message can say what it found: how many element children the
+            // node has, whether any of its direct child nodes is text, and the
+            // tag, which is what a reader needs to recognise the box.
+            const subject = (path) => {
+                const e = el(path);
+                if (!e) return null;
+                return {
+                    tag: e.tagName.toLowerCase(),
+                    elements: e.childElementCount,
+                    directText: [...e.childNodes].some((n) =>
+                        n.nodeType === 3 && n.textContent.trim() !== ""),
+                    text: e.textContent,
+                };
+            };
             const out = {};
             for (const k of Object.keys(paths)) out[k] = at(paths[k]);
             if (paths.label) out.labelBand = band(paths.label, "x");
@@ -3943,6 +4219,10 @@ async function main() {
             if (paths.label) out.labelOwn = own(paths.label);
             if (paths.badge) out.badgeOwn = own(paths.badge);
             if (paths.probeText) out.probeOwn = own(paths.probeText);
+            if (paths.label) out.labelSubject = subject(paths.label);
+            if (paths.badge) out.badgeSubject = subject(paths.badge);
+            if (paths.probeText) out.probeSubject = subject(paths.probeText);
+            if (paths.probe) out.probeBoxSubject = subject(paths.probe);
             return out;
         })`);
         // The grid's own box rides last and the probes before it, so the band
@@ -3968,6 +4248,44 @@ async function main() {
             { format: "png", captureBeyondViewport: false });
         const bandImg = decodePNG(Buffer.from(bandShot.data, "base64"));
         const bandDpr = await evaluate(`window.devicePixelRatio`);
+
+        // Which platform face actually drew each run.
+        //
+        // See inkFaceFault. This is the one answer the page cannot give: a
+        // computed `font-family` is the request, not the resolution, and both
+        // of the run's width answers come from the same shaper working on
+        // whatever it resolved. CSS.getPlatformFontsForNode is the compositor's
+        // own record of what it laid the glyphs out with — family name and
+        // glyph count per face — so it is a THIRD party to a question the other
+        // two agree on by construction.
+        //
+        // One DOM.getDocument for the tree and one querySelector per path. The
+        // reads are batched here, with the rects and the screenshot, because
+        // they are about this layout: a face read after another mount would be
+        // describing a page this one no longer is.
+        await session.send("DOM.enable");
+        await session.send("CSS.enable");
+        const domRoot = (await session.send("DOM.getDocument", { depth: 0 })).root.nodeId;
+        const facesAt = async (path) => {
+            if (!path) return null;
+            const { nodeId } = await session.send("DOM.querySelector",
+                { nodeId: domRoot, selector: `[data-node-path="${path}"]` });
+            if (!nodeId) return null;
+            const { fonts } = await session.send("CSS.getPlatformFontsForNode", { nodeId });
+            return fonts.map((f) => ({ family: f.familyName, glyphs: f.glyphCount }));
+        };
+        const bandFaces = [];
+        for (let i = 0; i < BAND_RENDERS.length; i++) {
+            const b = BAND_RENDERS[i];
+            bandFaces.push({
+                label: await facesAt(bandRenderPath(i, b.label)),
+                badge: await facesAt(bandRenderPath(i, b.badge)),
+            });
+        }
+        const probeFaces = [];
+        for (let i = 0; i < INK_PROBES.length; i++) {
+            probeFaces.push(await facesAt(inkProbeTextPath(i)));
+        }
 
         // Whether the grid as a whole is on the screen, asked once.
         //
@@ -4054,6 +4372,13 @@ async function main() {
             probeSelf.set(INK_PROBES[i].key, {
                 what: INK_PROBES[i].what,
                 own: probeReads[i] ? probeReads[i].probeOwn : null,
+                // The face the compositor actually drew this probe's glyphs
+                // with, and the string it drew — see inkFaceFault. A probe
+                // whose greys are another face's greys is a measurement of
+                // another face's antialiasing.
+                faces: probeFaces[i],
+                text: probeReads[i] && probeReads[i].probeSubject
+                    ? probeReads[i].probeSubject.text : null,
             });
         }
         if (INK_PROBES.length === 0) {
@@ -4081,6 +4406,11 @@ async function main() {
         // properties this is a census of.
         const inkOwnSpent = new Set();
         let inkOwnPairs = 0;
+        // How wide this browser's enumeration actually is, kept so the census
+        // below can say it. See INK_OWN_MEASURED_ON: a permission that has
+        // stopped being reachable and a browser that has stopped exposing the
+        // property are two different findings with one message.
+        let inkOwnRead = 0;
         for (let i = 0; i < BAND_RENDERS.length; i++) {
             const b = BAND_RENDERS[i], r = renderRects[i];
             if (!r) continue;
@@ -4089,7 +4419,9 @@ async function main() {
                 const self = probeSelf.get(key);
                 if (!own || !self || !self.own) continue;
                 inkOwnPairs++;
-                for (const prop of inkOwnDiff(own, self.own).used) inkOwnSpent.add(prop);
+                const diff = inkOwnDiff(own, self.own);
+                inkOwnRead = Math.max(inkOwnRead, diff.read);
+                for (const prop of diff.used) inkOwnSpent.add(prop);
             }
         }
         if (INK_PROBES.length > 0 && inkOwnPairs === 0) {
@@ -4118,7 +4450,8 @@ async function main() {
                     `seen. Either the grid stopped mounting the case that earned it ` +
                     `(the count pill is what earns background-color, and it is the only ` +
                     `thing that does), or the reason beside it has stopped being true ` +
-                    `and the entry belongs out of the table`);
+                    `and the entry belongs out of the table` +
+                    inkOwnBuildNote(inkOwnRead, browserBuild));
             }
         }
         for (let i = 0; !gridClipped && i < INK_PROBES.length; i++) {
@@ -4184,12 +4517,45 @@ async function main() {
             // a runtime mapping of Background, Width or FlexShrink that nobody
             // here has thought about — sat between the probe's glyphs and every
             // box this sweep looked at, and nothing asked.
+            //
+            // And before that, that the two paths this probe uses are the two
+            // elements they are supposed to be: a white Box holding exactly
+            // one Text, sampled at the Box and asked about at the Text. See
+            // inkSubjectFault for the confusion this pair is the fix for — it
+            // is the probes' own, and holding it here is what keeps the "/0"
+            // in inkProbeTextPath a derivation from the shape gen.go builds
+            // rather than an index that happens to land on the right child.
+            const probeShape = inkProbeBoxFault(
+                `the antialiasing probe for ${p.what}`,
+                probeReads[i].probeBoxSubject) ||
+                inkSubjectFault(`the antialiasing probe for ${p.what}`,
+                    "the probe's glyphs", probeReads[i].probeSubject);
+            if (probeShape) {
+                problems.push(probeShape);
+                probeVerdict.set(p.key, "a shape inkProbeFor does not build");
+                continue;
+            }
             const probeAncestry = inkAncestryFault(
                 `the antialiasing probe for ${p.what}`, "the probe's glyphs",
                 probeReads[i].probeAncestry);
             if (probeAncestry) {
                 problems.push(probeAncestry);
                 probeVerdict.set(p.key, "an ancestor that decides how glyphs are drawn");
+                continue;
+            }
+            // And the face this probe's own glyphs were drawn with, held to
+            // being one face drawing a glyph per character. The boxes it
+            // answers for are compared against it (inkFaceFault's last arm);
+            // this is the arm that says the probe's own edges are a single
+            // face's to begin with, which is what makes that comparison mean
+            // anything.
+            const probeFace = inkFaceFault(
+                `the antialiasing probe for ${p.what}`, "the probe's glyphs", p.what,
+                probeFaces[i], probeReads[i].probeSubject
+                    ? probeReads[i].probeSubject.text : null, null);
+            if (probeFace) {
+                problems.push(probeFace);
+                probeVerdict.set(p.key, "a face the ink scan cannot rest on");
                 continue;
             }
             let worst = 0, fringe = null;
@@ -4266,7 +4632,15 @@ async function main() {
         // reporting "a third colour in the label" under a rendering mode that
         // puts one there would be the failure this whole apparatus exists to
         // keep from being reported as a palette fault.
-        const inkUnreadable = (where, subject, key, ancestry, own) => {
+        const inkUnreadable = (where, subject, key, ancestry, own, read, faces) => {
+            // First, whether the two questions below are even being asked of
+            // the right element. Both of them — the chain above the glyphs and
+            // the declaration the probe copies — are about the box that PAINTS
+            // the run, and a path that names a container answers them about
+            // the container. See inkSubjectFault; this is asked before either
+            // because a wrong element makes both answers wrong quietly.
+            const wrongElement = inkSubjectFault(where, subject, read);
+            if (wrongElement) return wrongElement;
             // The scanned box's own ancestry, asked before the probe's verdict
             // is consulted: a band under a composited ancestor is a box the
             // probe never answered for, whatever the probe measured. See
@@ -4291,8 +4665,16 @@ async function main() {
             // two elements, because one was built from the other's Style. A
             // Style is not what a browser resolves. See inkOwnFault.
             const self = probeSelf.get(key);
-            return inkOwnFault(where, subject, self ? self.what : key, own,
-                self ? self.own : null);
+            const declaration = inkOwnFault(where, subject, self ? self.what : key, own,
+                self ? self.own : null, browserBuild);
+            if (declaration) return declaration;
+            // And last of all, which face the compositor reached for. Last
+            // because it is the only one of these read outside the page: the
+            // three above are about what the document says, and this is about
+            // what the font stack resolved the document's request to. See
+            // inkFaceFault.
+            return inkFaceFault(where, subject, self ? self.what : key, faces,
+                read ? read.text : null, self ? self.faces : null);
         };
 
         // What a scan with no edge clearance would be reading, one box at a
@@ -4325,7 +4707,30 @@ async function main() {
         // than the constant. The gap this closes is item 4's — a run that
         // reports "one message and a PASS for everything rect-shaped in the
         // same breath" now says how much of the pass was asked.
+        //
+        // # The three the census left behind
+        //
+        // Closing that gap for the words and the counts left the other three
+        // claims in the same sentence still reciting BAND_RENDERS.length: the
+        // tap target, the declared inset and the band's own fill. Two of them
+        // are rect assertions that genuinely do run for every band, and the
+        // argument for leaving them was that their skips are loud.
+        //
+        // The fill's is not: it is sampled inside `if (!gridClipped)` and
+        // skipped with every other pixel read, so a run on a short window
+        // recited twenty painted fills having read none. That is exactly the
+        // shape of the label's skip, which had the same argument until it
+        // turned out not to hold — so all five are counted now, and the
+        // argument is retired rather than reapplied.
+        //
+        // A rect claim's count is over the bands that got as far as being
+        // measured; the inset's is over the bands whose leading child gen.go
+        // names, because a band with none is a band the claim is not about and
+        // says so with its own message.
         const declared = {
+            targets: BAND_RENDERS.length,
+            insets: BAND_RENDERS.filter((b) => b.leading).length,
+            fills: BAND_RENDERS.length,
             words: BAND_RENDERS.filter((b) => b.label).length,
             counts: BAND_RENDERS.filter((b) => b.badge).length,
         };
@@ -4399,6 +4804,11 @@ async function main() {
                 }
                 const bandFill = pixelAt(bandImg,
                     (r.band.x + 6) * bandDpr, (r.band.y + r.band.h / 2) * bandDpr);
+                if (bandFill === b.fill) {
+                    // Counted here, on the one path that actually read the
+                    // pixel. Everything above this line is a rect.
+                    asked.fills++;
+                }
                 if (bandFill !== b.fill) {
                     problems.push(`${where}: the band painted as ${bandFill}, and its ` +
                         `own Style declares ${b.fill} (the page behind it is ` +
@@ -4471,7 +4881,7 @@ async function main() {
                 // to, which is what makes every reading below arithmetic
                 // rather than a guess. See inkUnreadable.
                 const unreadable = inkUnreadable(where, "the label's words", b.labelProbe,
-                    r.labelAncestry, r.labelOwn);
+                    r.labelAncestry, r.labelOwn, r.labelSubject, bandFaces[i].label);
                 const confusable = unreadable ? null : confusableInk(want, b);
                 if (unreadable) {
                     problems.push(unreadable);
@@ -4719,7 +5129,7 @@ async function main() {
                 // being built twice to be tested and then reported.
                 const digitsUnreadable = inkUnreadable(
                     where, "the count's digits", b.badgeProbe, r.badgeAncestry,
-                    r.badgeOwn);
+                    r.badgeOwn, r.badgeSubject, bandFaces[i].badge);
                 const badgeFill = pixelAt(bandImg,
                     (r.badge.x + b.badgePadLeft / 2) * bandDpr,
                     (r.badge.y + r.badge.h / 2) * bandDpr);
@@ -4862,8 +5272,16 @@ async function main() {
             // The band's leading edge is the control's, which is the whole move:
             // the insets came off the Row so that a press lands on the leading
             // edge rather than 16px into it.
+            // Whether this band's tap target came out whole, which is the
+            // three assertions below taken together — the leading edge, the
+            // trailing edge, and on the disclosure branch the stretch that puts
+            // the button across the wrapper. Any one of them failing means the
+            // target did not span the band, so the census counts the
+            // conjunction rather than three separate claims.
+            let targetWhole = true;
             const lead = r.control.x - r.band.x;
             if (!bandRenderSame(lead, b.rowLeft)) {
+                targetWhole = false;
                 problems.push(`${where}: the control starts ${lead.toFixed(2)}px into ` +
                     `the band and the Row's own leading inset is ${b.rowLeft}px. A press ` +
                     `on the first ${lead.toFixed(2)}px of this band lands on nothing`);
@@ -4896,6 +5314,7 @@ async function main() {
             // is declared anywhere.
             if (r.leading) {
                 const inset = r.leading.x - r.control.x;
+                if (bandRenderSame(inset, b.controlPadLeft)) asked.insets++;
                 if (!bandRenderSame(inset, b.controlPadLeft)) {
                     problems.push(`${where}: the control's content starts ` +
                         `${inset.toFixed(2)}px into it and the control's own leading ` +
@@ -4927,6 +5346,7 @@ async function main() {
                 (r.badge ? r.badge.w + b.gap : 0);
             const gotRight = r.control.x + r.control.w;
             if (!bandRenderSame(gotRight, wantRight)) {
+                targetWhole = false;
                 problems.push(`${where}: the control's trailing edge is at ` +
                     `${gotRight.toFixed(2)}px and the band's content ends at ` +
                     `${wantRight.toFixed(2)}px — ${(wantRight - gotRight).toFixed(2)}px ` +
@@ -4948,6 +5368,7 @@ async function main() {
             if (r.wrapper) {
                 if (!bandRenderSame(r.control.w, r.wrapper.w) ||
                     !bandRenderSame(r.control.x, r.wrapper.x)) {
+                    targetWhole = false;
                     problems.push(`${where}: the button is ${r.control.w.toFixed(2)}px ` +
                         `wide at x=${r.control.x.toFixed(2)} inside a heading wrapper ` +
                         `${r.wrapper.w.toFixed(2)}px wide at x=${r.wrapper.x.toFixed(2)}. ` +
@@ -4957,6 +5378,9 @@ async function main() {
                         `the disclosure band's tap target span the band`);
                 }
             }
+            // The three above are the whole of the tap-target claim, so this is
+            // where it is counted.
+            if (targetWhole) asked.targets++;
 
             // The taller child, with glyphs in it. Both halves of the reason are
             // named, because the failure is a fact about a font and the reader
@@ -5006,17 +5430,23 @@ async function main() {
         //
         // It is a census and not a second failure. Every path that suppresses a
         // scan has already said why; what none of them said is how many.
-        for (const [what, subject] of [["words", "their words in their own ink"],
-                                       ["counts", "their counts as digits"]]) {
+        for (const [what, population, subject] of [
+            ["targets", "bands in this grid",
+                "a tap target measured across the whole band"],
+            ["insets", "bands whose leading child gen.go names",
+                "their content held to their own declared inset"],
+            ["fills", "bands in this grid", "their own fill read off the screenshot"],
+            ["words", "bands that declare a label", "their words in their own ink"],
+            ["counts", "bands that declare a count", "their counts as digits"],
+        ]) {
             if (asked[what] >= declared[what]) continue;
             problems.push(`${declared[what] - asked[what]} of the ${declared[what]} ` +
-                `bands that declare ${what === "words" ? "a label" : "a count"} were ` +
-                `not scanned for ${subject} — ${asked[what]} were.
+                `${population} did not get ${subject} — ${asked[what]} did.
 
 ` +
                 `The reasons are among the messages above; this is the count, which ` +
-                `none of them carries. The line this check prints when it passes ` +
-                `recites the size of gen.go's table, so without this a run could ` +
+                `none of them carries. The line this check prints when it passes used ` +
+                `to recite the size of gen.go's table, so without this a run could ` +
                 `suppress every pixel read in the grid, report the one message that ` +
                 `says so, and pass every rect-shaped assertion in the same breath — ` +
                 `and a reader who skimmed the tail would find twenty bands recited ` +
@@ -5556,11 +5986,12 @@ async function main() {
     ${BANDS.length} bands lay out identically in both inset arrangements at every
     offer — overflow included, which is where the SwiftUI solver does not — and
     hug their own natural width under every intrinsic keyword,
-    ${BAND_RENDERS.length} real bands span their own tap targets, indent their own
-    content by their own declared inset and paint their own
+    ${asked.targets} real bands span their own tap targets, ${asked.insets} indent their
+    own content by their own declared inset and ${asked.fills} paint their own
     fill, ${asked.words} of them their words in their own ink and ${asked.counts}
-    their counts as digits inside their own pills — counted where the scans ran
-    rather than off the size of gen.go's table, and held to it — on three rows
+    their counts as digits inside their own pills — every one of those five counted
+    where its own check ran rather than off the size of gen.go's table, and held to
+    it — on three rows
     taken as fractions of the ink band of the
     face this browser resolved for that very element, far enough off both its edges
     that a device row of rounding leaves them on the ink, and inside a band whose
@@ -5569,10 +6000,14 @@ async function main() {
     over a run rect the paint reaches the ends of with the rest of the box held to
     the backdrop, behind ${INK_PROBES.length} antialiasing probes, one per text
     declaration any of it reads, every one of them and every box they answer for
-    under an ancestry that decides nothing about how a glyph is drawn and
+    read at the element that draws the glyphs rather than at the box around it,
+    drawn by one platform face this browser names — a glyph per character, and the
+    same face the probe was drawn with — under an ancestry that decides nothing
+    about how a glyph is drawn, and
     resolving every computed property its probe's own text node resolves except
     the ${Object.keys(INK_OWN_MAY_DIFFER).length} INK_OWN_MAY_DIFFER gives a reason
-    for, each of which some box in the grid spends — and are taller
+    for — measured against ${INK_OWN_MEASURED_ON.browser}, and each spent by some box
+    in the grid — and are taller
     than their badges with real glyphs in them, a fixed-size container squeezes its
     child along the main axis and lets it spill across — unless the child is
     pinned with core.FlexShrink(0), which until core.ShrinkNone was a declaration

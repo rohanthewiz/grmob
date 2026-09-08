@@ -719,10 +719,43 @@ var pinConsumers = map[string]string{
 // these, and TestEveryConsumerIsALanguageTheNormaliserFits holds it to that.
 // Adding a harness in another language is then a decision somebody makes on
 // purpose, with the normaliser in front of them.
-var pinFreeForm = map[string]string{
-	".mjs":   "JavaScript: whitespace between tokens is insignificant, and a newline ends a statement only where the parser would already have ended it",
-	".js":    "JavaScript, as above",
-	".swift": "Swift: whitespace between tokens is insignificant; a newline ends a statement and never changes what a previous line means",
+//
+// # Two properties, not one
+//
+// The row used to be a sentence about whitespace, because pinStripSpace was the
+// only thing standing on the extension. It is not any more: pinCodeOnly lexes
+// the source so that a citation is looked for in the harness's CODE rather than
+// in the comment above it, and that lexer makes its own assumptions about the
+// language — what opens a comment, what opens a string, whether either nests.
+// Those assumptions were in the lexer's switch and nowhere else, which is the
+// same shape of thing the whitespace sentence was written to end.
+//
+// So a row is two sentences. Whitespace is what pinStripSpace needs; Lexis is
+// what pinCodeOnly needs, spelled out for the extension rather than for the
+// family, because that is where the two languages differ.
+type pinLanguage struct {
+	// Whitespace is why deleting a space that is not between two word
+	// characters preserves what an expression in this language means.
+	Whitespace string
+
+	// Lexis is the comment and literal syntax pinCodeOnly blanks, and anything
+	// about this language that it deliberately does not lex.
+	Lexis string
+}
+
+var pinFreeForm = map[string]pinLanguage{
+	".mjs": {
+		Whitespace: "JavaScript: whitespace between tokens is insignificant, and a newline ends a statement only where the parser would already have ended it",
+		Lexis:      "JavaScript: // to end of line, /* */ which does not nest, and three string forms — ' \" and the backtick template, all with backslash escapes, the first two ending at the line. The regular-expression literal is not lexed: telling it from division needs the parser's context, and a quote inside one can open a string that was never opened — bounded to a line, and covered by pinCodeOnly's floor",
+	},
+	".js": {
+		Whitespace: "JavaScript, as above",
+		Lexis:      "JavaScript, as above",
+	},
+	".swift": {
+		Whitespace: "Swift: whitespace between tokens is insignificant; a newline ends a statement and never changes what a previous line means",
+		Lexis:      "Swift: // to end of line, /* */ which DOES nest, \" strings and the \"\"\" multi-line string, with backslash escapes. No single-quoted literal — an apostrophe here is prose — and a backtick quotes an identifier rather than opening anything",
+	},
 }
 
 // pinBoth is a reading both harnesses make, with each one's own citation. Most

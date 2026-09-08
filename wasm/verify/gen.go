@@ -1302,35 +1302,142 @@ func themeDifferences(a, b reflect.Value, path string) []string {
 	return []string{strings.TrimSuffix(path, ".")}
 }
 
+// How far from a real leaf a path may be and still be reported as a probable
+// typo of it.
+//
+// # The number, and where it comes from
+//
+// The near-miss answer used to be case-insensitive equality and nothing else,
+// which reaches exactly one kind of slip. A transposition, a doubled letter and
+// a singular written for a plural are all typos and all further out than that,
+// and every one of them was reported as "a name that was never right" — a
+// confident diagnosis of a deliberate choice, made about a slip.
+//
+// A distance covers all three and needs a threshold, and the honest way to pick
+// one is to measure the struct it is asked about rather than to pick a number
+// that looks reasonable. Two measurements, both in
+// TestThemeNearMissThresholdIsDerivedFromCoreTheme:
+//
+//	the smallest distance between      1 — Spacing.XS and Spacing.XL
+//	two sibling leaves
+//	the most siblings within 1 of      1 — so an answer at this distance is
+//	any leaf                               at most two names
+//	the most siblings within 2         4 — so the next threshold out turns
+//	                                       the answer into a list of five
+//
+// The first of those is the interesting one and it settles the shape of the
+// message rather than the size of the number: core.Theme HAS a pair of leaves
+// one edit apart, so at any threshold at all a path can be one edit from two
+// real names, and "this is what was meant" is a claim this function is not in a
+// position to make. It names every candidate instead.
+//
+// The second and third make 1 the threshold: at one edit the answer stays a
+// pair, at two it becomes five, and a wall of names is the thing this whole
+// function exists not to print.
+const themeNearMissEdits = 1
+
+// themeEditDistance is the optimal string alignment distance — an insert, a
+// delete, a substitution or a swap of two ADJACENT characters, each costing
+// one.
+//
+// The transposition is why this is not plain Levenshtein, and it is the reason
+// the threshold can stay at 1: swapping two letters is the most common typo
+// there is and costs two edits without it, which would have needed a threshold
+// of 2 and the five-name answer the note above measures.
+//
+// Case is folded by the caller, so a leaf differing only in case is at distance
+// zero and is reported as the separate, stronger thing it is.
+func themeEditDistance(a, b string) int {
+	d := make([][]int, len(a)+1)
+	for i := range d {
+		d[i] = make([]int, len(b)+1)
+		d[i][0] = i
+	}
+	for j := 0; j <= len(b); j++ {
+		d[0][j] = j
+	}
+	for i := 1; i <= len(a); i++ {
+		for j := 1; j <= len(b); j++ {
+			cost := 1
+			if a[i-1] == b[j-1] {
+				cost = 0
+			}
+			best := d[i-1][j-1] + cost
+			if v := d[i-1][j] + 1; v < best {
+				best = v
+			}
+			if v := d[i][j-1] + 1; v < best {
+				best = v
+			}
+			// The adjacent swap, which the two single-character edits above
+			// would otherwise charge twice for.
+			if i > 1 && j > 1 && a[i-1] == b[j-2] && a[i-2] == b[j-1] {
+				if v := d[i-2][j-2] + 1; v < best {
+					best = v
+				}
+			}
+			d[i][j] = best
+		}
+	}
+	return d[len(a)][len(b)]
+}
+
 // themeNearMiss is what a path that names no leaf was probably trying to say.
 //
-// A core.Style has seventy leaves under it and a core.Theme has several
-// hundred; printing them all is the wall this repository keeps deciding not to
-// produce. So the answer is narrowed to the ones a typo actually reaches: the
-// same path in another case, or a leaf under the same parent whose own name
-// differs only in case. Anything further out is a path somebody meant to be
-// new, and the useful thing to say then is how many leaves the parent has —
-// which says "the name is wrong" without pretending to know the right one.
+// A core.Style has seventy leaves under it and a core.Theme has 872; printing
+// them all is the wall this repository keeps deciding not to produce. So the
+// answer is narrowed to the ones a typo actually reaches: a leaf under the same
+// parent that differs only in case, or one within themeNearMissEdits of it.
+//
+// The two are reported separately because they are different strengths of
+// claim. A name that differs only in case is almost certainly the one that was
+// meant; a name one edit away is a candidate, and core.Theme has a pair of
+// siblings one edit apart, so it may not be the only one — see
+// themeNearMissEdits, where the measurement is.
+//
+// With nothing within an edit, what is said is how many leaves the parent has
+// and what one edit covers, rather than a verdict on whether the name was ever
+// right. That verdict was the previous version's and it was stated with more
+// confidence than case-insensitive equality could support.
 func themeNearMiss(leaves map[string]bool, path string) string {
-	parent := path[:strings.LastIndex(path, ".")+1]
-	near, under := []string{}, 0
+	cut := strings.LastIndex(path, ".") + 1
+	parent, want := path[:cut], strings.ToLower(path[cut:])
+	same, near, under := []string{}, []string{}, 0
 	for leaf := range leaves {
 		if !strings.HasPrefix(leaf, parent) {
 			continue
 		}
 		under++
-		if strings.EqualFold(leaf, path) {
+		switch d := themeEditDistance(strings.ToLower(leaf[cut:]), want); {
+		case d == 0:
+			same = append(same, leaf)
+		case d <= themeNearMissEdits:
 			near = append(near, leaf)
 		}
 	}
+	sort.Strings(same)
 	sort.Strings(near)
-	if len(near) > 0 {
+	if len(same) > 0 {
 		return fmt.Sprintf("%s differs from it only in case, and is probably what "+
-			"was meant", strings.Join(near, " and "))
+			"was meant", strings.Join(same, " and "))
 	}
-	return fmt.Sprintf("nothing under %s differs from it only in case, and that "+
-		"prefix has %d leaves — so this is a name that was never right rather than "+
-		"one that has drifted", strings.TrimSuffix(parent, "."), under)
+	if len(near) == 1 {
+		return fmt.Sprintf("%s is one edit from it — a letter added, dropped or "+
+			"changed, or two adjacent letters swapped — and is probably what was meant",
+			near[0])
+	}
+	if len(near) > 1 {
+		return fmt.Sprintf("%s are each one edit from it, and which was meant is not "+
+			"something this can say: core.Theme has sibling leaves one edit apart "+
+			"(Spacing.XS and Spacing.XL), so a name at this distance can belong to "+
+			"more than one of them", strings.Join(near, " and "))
+	}
+	return fmt.Sprintf("nothing under %s is within one edit of it, case ignored, and "+
+		"that prefix has %d leaves. One edit covers a letter added, dropped or "+
+		"changed and two adjacent letters swapped — a doubled letter, a singular for "+
+		"a plural, a transposition — so a slip of that kind is ruled out. Two "+
+		"independent slips are not, and neither is a name that was never right",
+		strings.TrimSuffix(parent, "."), under)
 }
 
 // themeLeafPaths is every leaf path a core.Theme has, in the spelling

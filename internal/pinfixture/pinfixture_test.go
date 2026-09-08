@@ -7,6 +7,7 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+	"unicode"
 )
 
 // The Compose half of the pin, executed.
@@ -959,6 +960,14 @@ func TestEveryReadingNamesAHarnessThatSpellsTheNumber(t *testing.T) {
 	// they are looked for. That is what makes a phrase survive a reformat: an
 	// indent, a line-wrap, a space after a comma are all gone from both sides,
 	// so what is left to match is the comparison itself.
+	//
+	// And stripped of prose first. See pinCodeOnly: a citation is a claim that
+	// the harness still ASSERTS something, and both of these files explain
+	// every assertion in a comment above it, so a phrase looked for in the
+	// whole file can be satisfied by the sentence describing an assertion that
+	// is no longer there. Lexed, 16.8% of browser.mjs and 17.3% of pin.swift
+	// are code, which is the measure of how much of the search space that
+	// sentence was competing with.
 	source := map[string]string{}
 	for name, path := range pinConsumers {
 		b, err := os.ReadFile(filepath.Join(root, path))
@@ -969,7 +978,28 @@ func TestEveryReadingNamesAHarnessThatSpellsTheNumber(t *testing.T) {
 				"the ones that set the floor ios/verify and browser.mjs both hold their "+
 				"tolerances to.", path, name, err)
 		}
-		source[name] = pinStripSpace(string(b))
+		code := pinCodeOnly(string(b), filepath.Ext(path))
+		// The lexer is a lexer and not a parser, and the one construct it
+		// declines to guess at — JavaScript's regex literal — can open a
+		// string that was never opened. That damage is bounded to a line by
+		// construction, so a run-away shows up as a file with almost nothing
+		// left rather than as a file with one assertion missing; this is the
+		// reading that would say so. Measured at 16.8% and 17.3%; a floor of a
+		// twentieth is far below either and far above what a lexer that lost
+		// its place would leave.
+		const floor = 0.05
+		whole, kept := pinDense(string(b)), pinDense(code)
+		if whole > 0 && float64(kept)/float64(whole) < floor {
+			t.Errorf("pinCodeOnly kept %d of %s's %d non-space bytes (%.1f%%), and the "+
+				"two consumers measure 16.8%% and 17.3%%.\n\n"+
+				"Every citation below is looked for in what is left, so a lexer that "+
+				"lost its place reports a table full of deleted assertions. The one "+
+				"construct it does not lex is JavaScript's regular-expression literal — "+
+				"a quote inside one opens a string nothing closes — and that is bounded "+
+				"to a line, so a reading this low is something else again.",
+				kept, name, whole, 100*float64(kept)/float64(whole))
+		}
+		source[name] = pinStripSpace(code)
 	}
 
 	// Which consumers anything credits at all. A harness in the closed set that
@@ -1127,11 +1157,21 @@ func TestEveryConsumerIsALanguageTheNormaliserFits(t *testing.T) {
 				"harness needs a normaliser of its own.", name, path, ext)
 			continue
 		}
-		if why == "" {
-			t.Errorf("pinFreeForm covers %q with no reason written down, and the "+
-				"reason is the whole of what it is for: the extension is a proxy for a "+
-				"property of the language, and a row with no sentence under it is the "+
-				"proxy standing on its own.", ext)
+		for _, half := range []struct{ what, sentence, needs string }{
+			{"Whitespace", why.Whitespace, "pinStripSpace deletes every space that is " +
+				"not between two word characters, and rests on this half"},
+			{"Lexis", why.Lexis, "pinCodeOnly blanks this language's comments and " +
+				"literals so that a citation is looked for in the harness's code, and " +
+				"rests on this half"},
+		} {
+			if half.sentence != "" {
+				continue
+			}
+			t.Errorf("pinFreeForm covers %q and its %s is empty.\n\n"+
+				"The sentence is the whole of what the row is for: the extension is a "+
+				"proxy for a property of a grammar, and a row with nothing under it is "+
+				"the proxy standing on its own. %s.",
+				ext, half.what, half.needs)
 		}
 	}
 }
@@ -1168,6 +1208,232 @@ func TestNoCitationQuotesALiteral(t *testing.T) {
 			}
 		}
 	}
+}
+
+// pinCodeOnly blanks out every character of a source that is inside a comment
+// or a string literal, leaving the code.
+//
+// # The half of the language the extension was standing in for
+//
+// pinFreeForm records, per extension, that whitespace between tokens is
+// insignificant in that language — the property pinStripSpace needs. That is
+// one property of a grammar used as a proxy for the grammar, and the note above
+// TestEveryConsumerIsALanguageTheNormaliserFits already says which spans it is
+// wrong about: the ones inside a literal, where a run of spaces is data.
+//
+// That was held at the citation — no row here quotes a literal — and not at the
+// source, which leaves the more interesting direction open. A phrase with no
+// quote in it can still MATCH inside a literal or, far more likely in these two
+// files, inside a comment: both harnesses are written in prose as much as in
+// code, and every one of these assertions is discussed somewhere above itself.
+// A row whose phrase survives only in the sentence explaining the assertion is
+// a row that would go on passing after the assertion was deleted — which is the
+// exact rot this table exists to catch, arriving through the door the citation
+// check was watching from the other side.
+//
+// So the source is lexed, and a citation has to be spelled in the code.
+//
+// # What this lexes, and what it deliberately does not
+//
+// The two languages in pinFreeForm share the C family's comment syntax and
+// double-quoted strings with backslash escapes, which is the bulk of it. The
+// differences that matter are named per language below. What is NOT handled is
+// JavaScript's regular-expression literal: telling `/` the division operator
+// from `/` the start of a regex needs the parser's context, and guessing wrong
+// in the swallowing direction would blank out real code and turn a live
+// citation into a false failure. A regex containing a quote character could
+// therefore open a spurious string — which is why the two invariants below are
+// asserted rather than assumed.
+//
+// Characters are replaced with spaces rather than removed, so pinStripSpace
+// still sees a token boundary where a literal used to be: `f("x")` becomes
+// `f(   )` and then `f()`, and `a"x"b` stays two identifiers rather than
+// becoming one.
+func pinCodeOnly(src, ext string) string {
+	// Swift nests block comments; JavaScript does not, and treating /* */ as
+	// nesting there would swallow everything after a `/*` inside a comment.
+	nested := ext == ".swift"
+	// A backtick opens a template literal in JavaScript, where a run of spaces
+	// is data; in Swift it quotes an identifier that would otherwise be a
+	// keyword, which is code.
+	tick := ext != ".swift"
+	// Swift has no single-quoted string: `'` there is an ordinary punctuation
+	// character (and appears in prose, in apostrophes, constantly).
+	single := ext != ".swift"
+
+	out := []byte(src)
+	blank := func(i int) {
+		if out[i] != '\n' {
+			out[i] = ' '
+		}
+	}
+	for i := 0; i < len(src); {
+		switch {
+		case src[i] == '/' && i+1 < len(src) && src[i+1] == '/':
+			for ; i < len(src) && src[i] != '\n'; i++ {
+				blank(i)
+			}
+		case src[i] == '/' && i+1 < len(src) && src[i+1] == '*':
+			depth := 1
+			blank(i)
+			blank(i + 1)
+			i += 2
+			for i < len(src) && depth > 0 {
+				if nested && src[i] == '/' && i+1 < len(src) && src[i+1] == '*' {
+					depth++
+					blank(i)
+					blank(i + 1)
+					i += 2
+					continue
+				}
+				if src[i] == '*' && i+1 < len(src) && src[i+1] == '/' {
+					depth--
+					blank(i)
+					blank(i + 1)
+					i += 2
+					continue
+				}
+				blank(i)
+				i++
+			}
+		case src[i] == '"' || (single && src[i] == '\'') || (tick && src[i] == '`'):
+			q := src[i]
+			// Swift's multi-line string, whose delimiter is three of them.
+			// Handled first because `"""` also parses as an empty string
+			// followed by a quote, which would leave the body as code.
+			long := q == '"' && strings.HasPrefix(src[i:], `"""`)
+			n := 1
+			if long {
+				n = 3
+			}
+			for k := 0; k < n; k++ {
+				blank(i + k)
+			}
+			i += n
+			for i < len(src) {
+				if src[i] == '\\' && i+1 < len(src) {
+					blank(i)
+					blank(i + 1)
+					i += 2
+					continue
+				}
+				if long && strings.HasPrefix(src[i:], `"""`) {
+					blank(i)
+					blank(i + 1)
+					blank(i + 2)
+					i += 3
+					break
+				}
+				if !long && src[i] == q {
+					blank(i)
+					i++
+					break
+				}
+				// A single-quoted or double-quoted literal ends at the line in
+				// both languages, and stopping here is what keeps an
+				// apostrophe in a comment... which is already blanked... from
+				// running to the end of the file. It also bounds the damage a
+				// regex literal's quote can do to one line.
+				if !long && q != '`' && src[i] == '\n' {
+					break
+				}
+				blank(i)
+				i++
+			}
+		default:
+			i++
+		}
+	}
+	return string(out)
+}
+
+// pinCodeOnly does what pinFreeForm's Lexis sentences say, per language.
+//
+// The lexer is the thing standing between a citation and a comment that quotes
+// it, and the two consumers cannot demonstrate it: they are correct today, so
+// running it over them shows only that nothing was broken. These are the spans
+// it has to get right, one construct at a time, with the two languages'
+// disagreements as separate rows — a nesting block comment, an apostrophe, a
+// backtick — because those are the places a single C-family lexer would be
+// wrong about one of them.
+//
+// `want` is what has to SURVIVE and `gone` what must not. Both directions,
+// because a lexer that blanked everything would satisfy the second on its own.
+func TestPinCodeOnlyBlanksWhatEachLanguageCallsProse(t *testing.T) {
+	for _, c := range []struct {
+		what, ext, src string
+		want, gone     []string
+	}{
+		{"a line comment", ".mjs", "keep(1) // gone(2)\nkeep(3)",
+			[]string{"keep(1)", "keep(3)"}, []string{"gone(2)"}},
+		{"a block comment", ".mjs", "keep(1) /* gone(2)\ngone(3) */ keep(4)",
+			[]string{"keep(1)", "keep(4)"}, []string{"gone(2)", "gone(3)"}},
+		{"a double-quoted string", ".mjs", `keep(1, "gone(2)")`,
+			[]string{"keep(1,"}, []string{"gone(2)"}},
+		{"a single-quoted string", ".mjs", "keep(1, 'gone(2)')",
+			[]string{"keep(1,"}, []string{"gone(2)"}},
+		{"a template literal", ".mjs", "keep(1, `gone(2)\ngone(3)`)",
+			[]string{"keep(1,"}, []string{"gone(2)", "gone(3)"}},
+		{"an escaped quote inside a string", ".mjs", `f("a\"gone(1)") keep(2)`,
+			[]string{"keep(2)"}, []string{"gone(1)"}},
+		// JavaScript's block comment does not nest, so the FIRST */ ends it and
+		// what follows is code again. A lexer that nested here would swallow
+		// the rest of the file.
+		{"a block comment that does not nest", ".mjs",
+			"/* gone(1) /* gone(2) */ keep(3)",
+			[]string{"keep(3)"}, []string{"gone(1)", "gone(2)"}},
+		// And Swift's does, so the same text is comment all the way to the
+		// second closer.
+		{"a block comment that nests", ".swift",
+			"/* gone(1) /* gone(2) */ gone(3) */ keep(4)",
+			[]string{"keep(4)"}, []string{"gone(1)", "gone(2)", "gone(3)"}},
+		// An apostrophe in Swift is prose, not a string opener. Treated as one,
+		// everything to the end of the line would be blanked.
+		{"an apostrophe outside a comment", ".swift", "keep(1) // it's here\nkeep(2)",
+			[]string{"keep(1)", "keep(2)"}, []string{"here"}},
+		{"a multi-line string", ".swift",
+			"keep(1)\n\"\"\"\ngone(2)\n\"\"\"\nkeep(3)",
+			[]string{"keep(1)", "keep(3)"}, []string{"gone(2)"}},
+		// A backtick quotes an identifier in Swift. Read as a template opener
+		// it would blank from there to the next one, or to the end of the file.
+		{"a backtick-quoted identifier", ".swift", "keep(`class`) keep(2)",
+			[]string{"keep(", "class", "keep(2)"}, nil},
+	} {
+		got := pinCodeOnly(c.src, c.ext)
+		for _, w := range c.want {
+			if !strings.Contains(got, w) {
+				t.Errorf("%s (%s): pinCodeOnly blanked %q, which is code.\n\n"+
+					"pinFreeForm[%q].Lexis is what this lexer is held to, and code that "+
+					"does not survive it is a citation that cannot be found — every row "+
+					"of caseNumbers naming a harness in this language would report a "+
+					"deleted assertion.\n\nsource: %q\ncode:   %q",
+					c.what, c.ext, w, c.ext, c.src, got)
+			}
+		}
+		for _, g := range c.gone {
+			if strings.Contains(got, g) {
+				t.Errorf("%s (%s): pinCodeOnly kept %q, which is prose.\n\n"+
+					"That is the direction this lexer exists for: a citation looked for "+
+					"in a file that still carries its comments can be satisfied by the "+
+					"sentence ABOVE an assertion that has been deleted, which is the rot "+
+					"caseNumbers' citations are there to catch.\n\nsource: %q\ncode:   %q",
+					c.what, c.ext, g, c.src, got)
+			}
+		}
+	}
+}
+
+// pinDense counts the bytes of a source that are not whitespace, which is the
+// measure pinCodeOnly's floor is taken in: blanking a literal replaces it with
+// spaces, so a count of every byte would not move at all.
+func pinDense(s string) int {
+	n := 0
+	for i := 0; i < len(s); i++ {
+		if !unicode.IsSpace(rune(s[i])) {
+			n++
+		}
+	}
+	return n
 }
 
 // pinStripSpace canonicalises whitespace out of a source or a phrase, keeping

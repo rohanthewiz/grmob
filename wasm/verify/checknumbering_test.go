@@ -257,25 +257,65 @@ func checkCitationsResolve(t *testing.T, checks int) {
 	}
 
 	// The exemptions, in the two ways one can outlive its reason.
+	//
+	// The decision is citationExemptVerdict's for the reason citationVerdict and
+	// citationReport are functions: it has three arms and this walk reaches one
+	// of them. Every exemption in the table is reached and still cites a check,
+	// so both failing arms are unreachable from any repository this test can be
+	// pointed at, and the sentence each one carries was prose nobody could ask a
+	// question of.
 	for path, why := range citationExempt {
-		if _, reached := considered[path]; !reached {
-			t.Errorf("%s is exempted from the citation check (%s) and the enumeration "+
-				"(%s) does not reach it at all.\n\n"+
-				"citationSkipDirs classifies PREFIXES and is asked of git; this table "+
-				"classifies FILES and was asked of nothing. A renamed or deleted path "+
-				"leaves a row here that can never be satisfied, and the failure it "+
-				"produces is the one below — \"this file no longer cites a check\" — "+
-				"which sends the reader to look at an exemption when what happened was "+
-				"a rename.", path, why, from)
-			continue
-		}
-		if !seenExempt[path] {
-			t.Errorf("%s is exempted from the citation check (%s) and no longer cites a "+
-				"check at all. An exemption outlives its reason silently: it goes on "+
-				"telling the next reader that this file numbers things of its own, and "+
-				"the day it starts citing browser.mjs instead nothing looks.", path, why)
+		_, reached := considered[path]
+		if v := citationExemptVerdict(path, why, from, reached, seenExempt[path]); v != "" {
+			t.Error(v)
 		}
 	}
+}
+
+// Whether one row of citationExempt still means what it says, and if not, which
+// of the two ways it stopped.
+//
+// # The two failures are one sentence apart and send the reader to two places
+//
+// An exemption is a claim about a file: this one numbers things of its own, so
+// a `check N` in it is not a citation of browser.mjs's sequence. That claim can
+// go stale in two ways, and telling them apart is the whole value of reporting
+// either.
+//
+// NOT REACHED means the enumeration never saw the path — a rename, a delete, or
+// a prefix that citationSkipDirs now excludes. The row can never be satisfied,
+// and the file it was written about may be sitting somewhere else citing checks
+// with nobody looking.
+//
+// REACHED AND SILENT means the file is still there and has stopped citing
+// anything. The exemption is now dead weight: it goes on telling the next
+// reader that this file numbers things of its own, and the day it starts citing
+// browser.mjs's sequence instead, this table waves it through.
+//
+// Reported in that order, because "not reached" subsumes "did not cite": a path
+// the walk never opened has no citations by construction, and reporting the
+// second would send the reader to look at an exemption when what happened was a
+// rename.
+//
+// Returns "" when the row is doing its job, which is every row today.
+func citationExemptVerdict(path, why, from string, reached, cited bool) string {
+	switch {
+	case !reached:
+		return fmt.Sprintf("%s is exempted from the citation check (%s) and the "+
+			"enumeration (%s) does not reach it at all.\n\n"+
+			"citationSkipDirs classifies PREFIXES and is asked of git; this table "+
+			"classifies FILES and was asked of nothing. A renamed or deleted path "+
+			"leaves a row here that can never be satisfied, and the failure it "+
+			"produces is the other one — \"this file no longer cites a check\" — "+
+			"which sends the reader to look at an exemption when what happened was "+
+			"a rename.", path, why, from)
+	case !cited:
+		return fmt.Sprintf("%s is exempted from the citation check (%s) and no longer "+
+			"cites a check at all. An exemption outlives its reason silently: it goes "+
+			"on telling the next reader that this file numbers things of its own, and "+
+			"the day it starts citing browser.mjs instead nothing looks.", path, why)
+	}
+	return ""
 }
 
 // What each sense of "this repository's file" costs whoever reads a failure.
@@ -513,6 +553,75 @@ func TestCitationReportChoosesItsReporterFromTheVerdict(t *testing.T) {
 			if !slices.Equal(rec.logs, tc.logs) {
 				t.Errorf("citationReport(%q, fails=%v) reported %q as logs, want %q.\n\n"+
 					"%s", tc.say, tc.fails, rec.logs, tc.logs, tc.what)
+			}
+		})
+	}
+}
+
+// All four inputs citationExemptVerdict can be handed, and which of them says
+// something.
+//
+// Three arms, and the walk above reaches one: every row of citationExempt names
+// a file the enumeration finds and that still cites a check, so the two failing
+// arms are unreachable from any repository this test can be pointed at. That is
+// the same position citationVerdict and citationReport were in, and the same
+// answer — the decision is a function and the inputs are arguments.
+//
+// The fourth input is the one the ORDER decides rather than the conditions: a
+// path that was not reached and did not cite is both failures at once, and has
+// to report the rename, because a walk that never opened a file cannot have
+// seen a citation in it.
+func TestCitationExemptVerdictTellsARenameFromASilentFile(t *testing.T) {
+	const path, why, from = "wasm/verify/gen.go", "it numbers its own probes", "git"
+	for _, tc := range []struct {
+		what             string
+		reached, cited   bool
+		wantSay          bool
+		wantSubstring    string
+		wantNotSubstring string
+	}{
+		{
+			what:    "a row doing its job says nothing",
+			reached: true, cited: true,
+		},
+		{
+			what:    "a file the enumeration never reached is a rename",
+			cited:   true,
+			wantSay: true, wantSubstring: "does not reach it at all",
+		},
+		{
+			what:    "a file still there and no longer citing is dead weight",
+			reached: true,
+			wantSay: true, wantSubstring: "no longer cites a check at all",
+		},
+		{
+			what:    "neither reached nor citing reports the rename, which is the arm the order decides",
+			wantSay: true, wantSubstring: "does not reach it at all",
+			wantNotSubstring: "no longer cites a check at all",
+		},
+	} {
+		t.Run(tc.what, func(t *testing.T) {
+			got := citationExemptVerdict(path, why, from, tc.reached, tc.cited)
+			if (got != "") != tc.wantSay {
+				t.Errorf("citationExemptVerdict(reached=%v, cited=%v) returned %q, and "+
+					"this input is supposed to say %s.\n\n%s",
+					tc.reached, tc.cited, got,
+					map[bool]string{true: "something", false: "nothing"}[tc.wantSay],
+					tc.what)
+				return
+			}
+			if tc.wantSubstring != "" && !strings.Contains(got, tc.wantSubstring) {
+				t.Errorf("citationExemptVerdict(reached=%v, cited=%v) said %q, which "+
+					"does not carry %q.\n\nThe two failures send the reader to two "+
+					"different places — a path that moved, and a file that stopped "+
+					"citing — so which sentence comes back is the whole of what the "+
+					"report is for.\n\n%s",
+					tc.reached, tc.cited, got, tc.wantSubstring, tc.what)
+			}
+			if tc.wantNotSubstring != "" && strings.Contains(got, tc.wantNotSubstring) {
+				t.Errorf("citationExemptVerdict(reached=%v, cited=%v) said %q, which "+
+					"carries %q and should not.\n\n%s",
+					tc.reached, tc.cited, got, tc.wantNotSubstring, tc.what)
 			}
 		})
 	}
