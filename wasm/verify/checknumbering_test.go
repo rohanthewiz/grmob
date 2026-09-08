@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -246,17 +247,12 @@ func checkCitationsResolve(t *testing.T, checks int) {
 		for _, cite := range f.cites {
 			// The decision is citationVerdict's, so that both of its arms are
 			// held by a fixture rather than one of them being reachable only by
-			// editing citationSenses. All this loop does with the answer is
-			// choose which of the testing package's two reporters carries it,
-			// because that choice is the one thing a pure function cannot make.
+			// editing citationSenses. Choosing which reporter carries the answer
+			// is citationReport's, for the same reason one level up: the three
+			// arms of that choice are not reachable from any repository this
+			// walk can be pointed at either.
 			say, fails := citationVerdict(f.path, f.sense, cite, checks, act)
-			switch {
-			case say == "":
-			case fails:
-				t.Error(say)
-			default:
-				t.Log(say)
-			}
+			citationReport(t, say, fails)
 		}
 	}
 
@@ -421,6 +417,105 @@ func citationVerdict(path, sense string, cite, checks int, act citationSense) (s
 		"citation was not moved when the sequence was renumbered, or it names a check "+
 		"that no longer exists.\n\n"+
 		"%s", path, sense, cite, checks, act.Act), act.Fails
+}
+
+// citationReporter is the half of the loop above that no pure function can be:
+// which of the testing package's two reporters a verdict is handed to.
+//
+// Two methods, because two is what the choice makes. testing.TB has these and a
+// great deal else, and a fake of the whole of it would be a page of methods
+// nothing calls; *testing.T satisfies this as it stands, which the declaration
+// below asserts at compile time.
+type citationReporter interface {
+	Error(args ...any)
+	Log(args ...any)
+}
+
+var _ citationReporter = (*testing.T)(nil)
+
+// citationReport hands one verdict to the reporter it asks for.
+//
+// # Why this is a function and not three lines in the loop
+//
+// The same argument citationVerdict carries, one level up, and the last note on
+// this file said so: `switch { case say == "": ; case fails: Error; default:
+// Log }` was three lines inside a walk of the repository, and no fixture
+// reached two of the three. Every sense in citationSenses fails, so the Log arm
+// had never run; and a `default` that called Error instead would have passed
+// every test in this file, because no shipped row gets there.
+//
+// The silent arm is the one worth stating rather than reading off the switch.
+// An empty sentence reaches NEITHER reporter, whatever fails says: a citation
+// in range has nothing wrong with it, an Error there would fail every run, and
+// a Log there would print one line for every citation in the repository. The
+// ordering of the arms is what decides that, and until this function had a test
+// the ordering was a fact about three lines nobody could ask a question of.
+func citationReport(rep citationReporter, say string, fails bool) {
+	switch {
+	case say == "":
+	case fails:
+		rep.Error(say)
+	default:
+		rep.Log(say)
+	}
+}
+
+// citationRecorder is a citationReporter that remembers rather than reports.
+type citationRecorder struct {
+	errors []string
+	logs   []string
+}
+
+func (r *citationRecorder) Error(args ...any) {
+	r.errors = append(r.errors, fmt.Sprint(args...))
+}
+
+func (r *citationRecorder) Log(args ...any) {
+	r.logs = append(r.logs, fmt.Sprint(args...))
+}
+
+// All four inputs citationReport can be handed, and what each does.
+//
+// Two of the four are states this repository cannot produce — a sentence with
+// fails false needs a sense citationSenses does not have — and the pair with an
+// empty sentence is the one the switch's ORDER decides rather than its
+// conditions. Asked here, where the inputs are arguments.
+func TestCitationReportChoosesItsReporterFromTheVerdict(t *testing.T) {
+	const say = "a stale citation, said once"
+	for _, tc := range []struct {
+		what   string
+		say    string
+		fails  bool
+		errors []string
+		logs   []string
+	}{
+		{what: "a citation in range says nothing and reaches neither reporter"},
+		{
+			what:  "an empty sentence stays silent even where the sense fails, which is the arm the switch's order decides",
+			fails: true,
+		},
+		{
+			what: "a sentence from a failing sense is an error", say: say,
+			fails: true, errors: []string{say},
+		},
+		{
+			what: "a sentence from a sense that is merely reported is a log", say: say,
+			logs: []string{say},
+		},
+	} {
+		t.Run(tc.what, func(t *testing.T) {
+			var rec citationRecorder
+			citationReport(&rec, tc.say, tc.fails)
+			if !slices.Equal(rec.errors, tc.errors) {
+				t.Errorf("citationReport(%q, fails=%v) reported %q as errors, want %q.\n\n"+
+					"%s", tc.say, tc.fails, rec.errors, tc.errors, tc.what)
+			}
+			if !slices.Equal(rec.logs, tc.logs) {
+				t.Errorf("citationReport(%q, fails=%v) reported %q as logs, want %q.\n\n"+
+					"%s", tc.say, tc.fails, rec.logs, tc.logs, tc.what)
+			}
+		})
+	}
 }
 
 // Both verdicts, over the inputs the repository cannot produce.

@@ -1082,6 +1082,94 @@ func TestEveryReadingNamesAHarnessThatSpellsTheNumber(t *testing.T) {
 	}
 }
 
+// The two things pinStripSpace is allowed to assume, held to.
+//
+// The normaliser is a lexer's job done by a rule of thumb: it keeps a space
+// only between two word characters, which is where a space carries meaning in a
+// free-form syntax and is not where it carries meaning in every syntax. The
+// last session's note put the honest bound on that plainly — it canonicalises
+// two specific files, and pinConsumers is the closed set that makes it true —
+// and nothing tied the rule to the set. This is the tie, in two halves.
+//
+// # The language
+//
+// Every consumer's extension has to be one pinFreeForm names. That is where the
+// assumption lives: a harness written in a language where an indent is a
+// statement boundary would go through the same normaliser and the same
+// pinSpells, and a phrase would match a source it is not really in.
+//
+// # The literals
+//
+// And within those languages there is one place a run of spaces still means
+// something the normaliser flattens: inside a string, character or regular
+// expression literal. Both sides are flattened the same way, so this never
+// turns a present phrase into a missing one — it makes the citation WEAKER than
+// it reads, because two sources that differ only inside a literal canonicalise
+// to one string and either would satisfy the row.
+//
+// No citation quotes a literal today. Held here so that the first one that does
+// is a decision rather than a quietly softer claim.
+func TestEveryConsumerIsALanguageTheNormaliserFits(t *testing.T) {
+	for name, path := range pinConsumers {
+		ext := filepath.Ext(path)
+		why, ok := pinFreeForm[ext]
+		if !ok {
+			t.Errorf("pinConsumers names %q (%s), whose extension %q is not one "+
+				"pinFreeForm covers.\n\n"+
+				"pinStripSpace deletes every space that is not between two word "+
+				"characters, from the harness source and from the phrase looked for in "+
+				"it. That is sound where whitespace between tokens does nothing else, "+
+				"and it is not sound where an indent is a statement boundary or a "+
+				"newline changes what the line above it meant. Under this normaliser a "+
+				"phrase from such a file could match a source it is not in, which is a "+
+				"row reporting a reading nobody makes. Either the language belongs in "+
+				"pinFreeForm with a sentence saying why the rule holds for it, or this "+
+				"harness needs a normaliser of its own.", name, path, ext)
+			continue
+		}
+		if why == "" {
+			t.Errorf("pinFreeForm covers %q with no reason written down, and the "+
+				"reason is the whole of what it is for: the extension is a proxy for a "+
+				"property of the language, and a row with no sentence under it is the "+
+				"proxy standing on its own.", ext)
+		}
+	}
+}
+
+// And the other half: no cited phrase carries a literal. See the test above for
+// why this is the one place the normaliser's flattening softens a claim.
+func TestNoCitationQuotesALiteral(t *testing.T) {
+	// The three literal openers the two languages in pinFreeForm share. A
+	// backtick is JavaScript's template literal, where a run of spaces is data
+	// as surely as it is inside a quoted string.
+	const openers = "\"'`"
+	for _, c := range Cases() {
+		for _, r := range caseNumbers(c) {
+			for by, cited := range r.By {
+				for _, part := range []struct{ what, text string }{
+					{"phrase", cited.Phrase}, {"field", cited.Field},
+				} {
+					if !strings.ContainsAny(part.text, openers) {
+						continue
+					}
+					t.Errorf("%q: caseNumbers cites %q as the %s %s spells %s, and it "+
+						"contains a string, character or template literal.\n\n"+
+						"pinStripSpace flattens a run of spaces to one and drops a space "+
+						"that is not between two word characters — inside a literal that "+
+						"is data, not layout. Both the source and this phrase go through "+
+						"it, so the phrase will not go missing; what happens instead is "+
+						"that two sources differing only inside the literal canonicalise "+
+						"to the same string and either satisfies this row. The claim is "+
+						"quietly weaker than it reads. Quote the comparison around the "+
+						"literal instead, or give the normaliser a rule for literals and "+
+						"say what it is.",
+						c.What, part.text, part.what, by, r.What)
+				}
+			}
+		}
+	}
+}
+
 // pinStripSpace canonicalises whitespace out of a source or a phrase, keeping
 // only the whitespace that separates one identifier from another.
 //

@@ -695,6 +695,36 @@ var pinConsumers = map[string]string{
 	"pin.swift":   "ios/verify/pin.swift",
 }
 
+// pinFreeForm is the property pinStripSpace needs of a harness's language, and
+// the file extensions this repository has decided carry it.
+//
+// # What the normaliser assumes, said out loud
+//
+// pinStripSpace deletes every space that does not sit between two word
+// characters, on both the harness source and the phrase looked for in it. That
+// is sound exactly where whitespace inside an expression does nothing but
+// separate one token from the next — a free-form, C-family syntax. It is not
+// sound where an indent is a statement boundary (Python, YAML), where a newline
+// ends a statement in a way a following line changes (a bare-newline language),
+// or where a run of spaces inside a literal is data.
+//
+// The rule was written for JavaScript and Swift because those are the two files
+// in pinConsumers, and nothing said so. A third harness in a language where an
+// indent means something would be normalised by the same function, and the
+// failure would be a phrase that matched a source it is not really in — a
+// citation that reports a reading nobody makes, which is the one direction this
+// whole table exists to rule out.
+//
+// So the closed set has a second half: a consumer's extension has to be one of
+// these, and TestEveryConsumerIsALanguageTheNormaliserFits holds it to that.
+// Adding a harness in another language is then a decision somebody makes on
+// purpose, with the normaliser in front of them.
+var pinFreeForm = map[string]string{
+	".mjs":   "JavaScript: whitespace between tokens is insignificant, and a newline ends a statement only where the parser would already have ended it",
+	".js":    "JavaScript, as above",
+	".swift": "Swift: whitespace between tokens is insignificant; a newline ends a statement and never changes what a previous line means",
+}
+
 // pinBoth is a reading both harnesses make, with each one's own citation. Most
 // rows are one of these.
 //

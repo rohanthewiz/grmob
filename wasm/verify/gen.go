@@ -1196,21 +1196,51 @@ func bandRenderThemes() map[string]*core.Theme {
 	// that is not happening — and a list with slack in it is one that would go
 	// on passing after the derivation above stopped making the change, because
 	// "differs only where permitted" is satisfied by differing nowhere.
-	unused := []string{}
+	//
+	// And an unused permission has two quite different causes, which used to
+	// arrive as one message pointing at the derivation. A path can go unmoved
+	// because the assignments above stopped making that change, or because the
+	// path does not name a leaf of core.Theme at all — a field renamed under
+	// it, or a typo in this list — in which case the derivation is fine and the
+	// reader has been sent to look at it. They separate on the struct: the
+	// first names a real leaf, the second names nothing. Same shape as
+	// pinfixture's deleted-versus-reworded pair, and the same reason for
+	// bothering — the diagnosis is what the message is for.
+	leaves := map[string]bool{}
+	for _, path := range themeLeafPaths(reflect.ValueOf(*base), "") {
+		leaves[path] = true
+	}
+	unused, unknown := []string{}, []string{}
 	for _, path := range bandRenderTallVaries {
-		if !allowed[path] {
-			unused = append(unused, path)
+		if allowed[path] {
+			continue
 		}
+		if leaves[path] {
+			unused = append(unused, path)
+		} else {
+			unknown = append(unknown, path)
+		}
+	}
+	if len(unknown) > 0 {
+		fatal("bandRenderTallVaries permits the tall-caption theme to differ at %v, "+
+			"and core.Theme has no leaf by that name.\n\n"+
+			"themeDifferences walks the struct and spells a leaf by its dotted path "+
+			"from the Theme down, so a path nothing in that walk can ever produce is "+
+			"a permission that can never be spent — and the failure it produces on "+
+			"its own is \"the theme does not differ there\", which sends the reader "+
+			"to the two assignments above when what happened was a rename in "+
+			"core.Theme or a typo here. The derivation is not the thing to look "+
+			"at.\n\n%s.", unknown, themeNearMiss(leaves, unknown[0]))
 	}
 	if len(unused) > 0 {
 		fatal("bandRenderTallVaries permits the tall-caption theme to differ from %s at "+
-			"%v, and it does not differ there.\n\n"+
+			"%v — leaves core.Theme does have — and it does not differ there.\n\n"+
 			"The list is the exact set of leaves this theme is a copy-with-one-change "+
 			"at, so a path in it that nothing moves is a permission standing open for "+
-			"a change nobody makes. Either the derivation above stopped making it — in "+
-			"which case this is a fourth copy of %s and the grid pays for twenty bands "+
-			"to ask fifteen questions — or the list has a path in it that the "+
-			"derivation never had.", bandRenderTallBase, unused, bandRenderTallBase)
+			"a change nobody makes. The path is real, so this is the derivation above "+
+			"having stopped making it — in which case this is a fourth copy of %s and "+
+			"the grid pays for twenty bands to ask fifteen questions.",
+			bandRenderTallBase, unused, bandRenderTallBase)
 	}
 
 	out[bandRenderTallName] = &tall
@@ -1235,7 +1265,12 @@ func bandRenderThemes() map[string]*core.Theme {
 // permission has to be as narrow as the claim, so it is the claim.
 //
 // Both directions are held below — nothing outside this list may differ, and
-// everything in it must.
+// everything in it must. And the second of those has two causes that used to
+// arrive as one message: a path that names a real leaf and does not move is the
+// derivation having stopped making the change, and a path that names no leaf at
+// all is a rename in core.Theme or a typo here. The first sends a reader to the
+// two assignments; the second sends them to the wrong place, which is why they
+// are told apart.
 var bandRenderTallVaries = []string{
 	"Typography.Caption.FontSize",
 	"Typography.Caption.LineHeight",
@@ -1264,6 +1299,55 @@ func themeDifferences(a, b reflect.Value, path string) []string {
 	}
 	// The trailing dot goes: this is a leaf, and the prefix a caller compares
 	// against carries its own.
+	return []string{strings.TrimSuffix(path, ".")}
+}
+
+// themeNearMiss is what a path that names no leaf was probably trying to say.
+//
+// A core.Style has seventy leaves under it and a core.Theme has several
+// hundred; printing them all is the wall this repository keeps deciding not to
+// produce. So the answer is narrowed to the ones a typo actually reaches: the
+// same path in another case, or a leaf under the same parent whose own name
+// differs only in case. Anything further out is a path somebody meant to be
+// new, and the useful thing to say then is how many leaves the parent has —
+// which says "the name is wrong" without pretending to know the right one.
+func themeNearMiss(leaves map[string]bool, path string) string {
+	parent := path[:strings.LastIndex(path, ".")+1]
+	near, under := []string{}, 0
+	for leaf := range leaves {
+		if !strings.HasPrefix(leaf, parent) {
+			continue
+		}
+		under++
+		if strings.EqualFold(leaf, path) {
+			near = append(near, leaf)
+		}
+	}
+	sort.Strings(near)
+	if len(near) > 0 {
+		return fmt.Sprintf("%s differs from it only in case, and is probably what "+
+			"was meant", strings.Join(near, " and "))
+	}
+	return fmt.Sprintf("nothing under %s differs from it only in case, and that "+
+		"prefix has %d leaves — so this is a name that was never right rather than "+
+		"one that has drifted", strings.TrimSuffix(parent, "."), under)
+}
+
+// themeLeafPaths is every leaf path a core.Theme has, in the spelling
+// themeDifferences produces.
+//
+// The same walk with the comparison taken out, so the two cannot disagree about
+// what a path looks like. It exists to tell two failures apart that arrived as
+// one: see where it is called.
+func themeLeafPaths(v reflect.Value, path string) []string {
+	if v.Kind() == reflect.Struct {
+		var out []string
+		for i := 0; i < v.NumField(); i++ {
+			out = append(out,
+				themeLeafPaths(v.Field(i), path+v.Type().Field(i).Name+".")...)
+		}
+		return out
+	}
 	return []string{strings.TrimSuffix(path, ".")}
 }
 

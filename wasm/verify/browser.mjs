@@ -596,9 +596,15 @@ const INK_EDGE_CLEARANCE = 1;
 // The x-height end. A row placed there has ASCENDERS above it — a cap, a `J`, a
 // digit — so its outward neighbour comes back between 0.000 and 0.348, and this
 // floor separates nothing at that end. What rules that row out is the other
-// argument, and it is structural rather than measured: a row above the x-height
-// misses every round letter beside the ascender, which is why the band is the
-// x-height band and why INK_ROWS is a set of fractions strictly inside it.
+// argument: a row above the x-height misses every round letter beside the
+// ascender, which is why the band is the x-height band and why INK_ROWS is a
+// set of fractions strictly inside it.
+//
+// That argument used to end here, as a sentence with no number under it — which
+// is the same shape as the floor it stands in for, one paragraph up, before
+// anybody read a pixel for it. It has one now: INK_ASCENDER_SEPARATION
+// partitions the run's columns and measures what a row up there would actually
+// be reading, and holds it in both directions.
 const INK_ROW_ROUNDING = 0.15;
 
 // Where those fractions actually land, in device pixels, for one measured band.
@@ -786,6 +792,106 @@ function inkRowCoverage(img, dpr, y, x0, x1, fill) {
     return read === 0 ? null : ink / read;
 }
 
+// What separates a row that reads the words from a row that reads only the
+// ascenders.
+//
+// INK_ROW_ROUNDING is a floor on how much ink a device row of movement costs,
+// and its own comment records that it separates the BASELINE end of the band
+// and separates nothing at the x-height end: an ascender puts the outward
+// neighbour of a scanned row anywhere between 0.000 and 0.348, so no floor
+// drawn up there is a bound at all. What actually rules out a scan row at or
+// above the x-height line is a structural argument — a row up there misses
+// every round letter beside the ascender — and that argument had no number
+// attached to it.
+//
+// Here it is a number. Partition the run's columns into the ones whose ink
+// reaches above the x-height (the ascenders and the capitals) and the rest, and
+// ask what fraction of THE REST has ink on a given row:
+//
+//	at the x-height line       0.708 to 0.947 across the twenty bands
+//	one device row above it    0.011 to 0.154
+//
+// A row above the line reads a tenth of the round letters. The line itself
+// reads three quarters of them and more. INK_ASCENDER_SEPARATION is the
+// midpoint of those two brackets, so the margin is the same on each side
+// (0.276 below it, 0.278 above), and it is held in BOTH directions: the row
+// above must be under it and the line itself must be over it.
+//
+// The second direction is not decoration. On its own the first is satisfied by
+// a title with no round letters in it — "Illinois" set in ascenders would score
+// nothing anywhere and pass — and the whole claim is that these two rows are
+// looking at different things.
+const INK_ASCENDER_SEPARATION = 0.43;
+
+// How far above the x-height line a column's ink has to reach for that column
+// to be an ascender.
+//
+// Not one device row. Round letters are drawn with an optical overshoot — an
+// `o` is cut a hair taller than an `x` so the two look the same height — so a
+// partition taken one row up puts the tops of o, e, a and c on the ascender
+// side of it. Measured: that row still finds ink in up to 15% of the columns
+// the partition below calls non-ascender, which is precisely those overshoots.
+// Two rows is clear of them.
+const INK_ASCENDER_PROBE = 2;
+
+// The measurement, one box at a time.
+//
+// Returns { problem } or null. Asked of the label's words and not of the
+// count's digits: a partition into ascenders and round letters is a fact about
+// lower-case text, and a run of digits is cut to one height with no round
+// letters below it to miss.
+function inkAscenderVerdict(where, subject, img, dpr, m, x0, x1, fill) {
+    const top = Math.round(m.bandTop * dpr);
+    const from = Math.round(x0 * dpr), to = Math.round(x1 * dpr);
+    const inked = (y, x) => {
+        const got = pixelAt(img, x, y);
+        return got !== null && channelDistance(got, fill) > INK_EPSILON;
+    };
+    // The partition, and then the two readings over one half of it.
+    const plain = [];
+    for (let x = from; x < to; x++) {
+        if (!inked(top - INK_ASCENDER_PROBE, x)) plain.push(x);
+    }
+    const coverage = (y) => plain.filter((x) => inked(y, x)).length / plain.length;
+    if (plain.length === 0) {
+        return { problem: `${where}: every one of the ${to - from} columns of ` +
+            `${subject} has ink ${INK_ASCENDER_PROBE} device rows above the x-height ` +
+            `line, so there are no non-ascender columns to measure and the argument ` +
+            `that keeps INK_ROWS off that line cannot be made about this run.\n\n` +
+            `That argument is that a row at or above the x-height reads the ascenders ` +
+            `and misses the round letters; a title with nothing but ascenders in it ` +
+            `has no round letters to miss, and the fractions INK_ROWS are taken at ` +
+            `would be resting on a sentence this grid no longer demonstrates` };
+    }
+    const above = coverage(top - 1), at = coverage(top);
+    if (above >= INK_ASCENDER_SEPARATION) {
+        return { problem: `${where}: one device row above the x-height line, ` +
+            `${(above * 100).toFixed(1)}% of ${subject}' ${plain.length} ` +
+            `non-ascender columns still have ink — against ` +
+            `${(INK_ASCENDER_SEPARATION * 100).toFixed(0)}%.\n\n` +
+            `INK_ROWS are three fractions strictly inside the band, and what keeps ` +
+            `them off the x-height line is not INK_ROW_ROUNDING — that floor separates ` +
+            `the baseline end and separates nothing here, because an ascender puts the ` +
+            `outward neighbour anywhere up to 0.348. It is this: a row up there reads ` +
+            `the ascenders and misses the round letters, so it is not a reading of the ` +
+            `words. With the two rows scoring alike, that has stopped being true of ` +
+            `this face and the fractions are a preference again` };
+    }
+    if (at <= INK_ASCENDER_SEPARATION) {
+        return { problem: `${where}: at the x-height line itself only ` +
+            `${(at * 100).toFixed(1)}% of ${subject}' ${plain.length} non-ascender ` +
+            `columns have ink — against ` +
+            `${(INK_ASCENDER_SEPARATION * 100).toFixed(0)}%, and ` +
+            `${(above * 100).toFixed(1)}% one row above it.\n\n` +
+            `This is the other half of the same bracket, and it is what stops the ` +
+            `first half being satisfied for the wrong reason: "a row above the line ` +
+            `reads few of the round letters" is trivially true of a run that has few ` +
+            `round letters. The line itself is supposed to read most of them, and a ` +
+            `run where it does not is one this comparison says nothing about` };
+    }
+    return null;
+}
+
 // What one device row of rounding would cost the scan, read off the screenshot.
 //
 // See INK_ROW_ROUNDING. inkBandRows holds the outermost scanned rows a device
@@ -881,6 +987,242 @@ function inkRoundingVerdict(where, subject, img, dpr, band, x0, x1, fill) {
 // with a pixel of margin — against a surplus 180px wide on the narrowest shape,
 // and against the tens of pixels a rect in the wrong place would be out by.
 const INK_RUN_GUTTER = 2;
+
+// The layout's own quantum, in CSS pixels.
+//
+// Chrome stores lengths as LayoutUnits of a 64th of a CSS pixel, and a run's
+// client rect is its advance width rounded up to one of them. That is not a
+// tolerance chosen against a measurement: it is the size of the grid the two
+// numbers live on, and it is what says how far apart they may legitimately be.
+const LAYOUT_UNIT = 1 / 64;
+
+// --------------------------------------------------------------------------
+// The windows the ink scan reads, held to the layout that produced them
+// --------------------------------------------------------------------------
+//
+// # The failure that does not look like one
+//
+// Removing a guard turns a pass into a failure, and a break-test for that is
+// easy: take the guard out and watch the check fire. The surplus/extent pair
+// fails the other way round. inkExtent reads the columns of the label's rect
+// that are not the band's fill and calls the first and last of them the ends of
+// the words. Widen the run rect by six pixels AND paint something in those six
+// pixels, and the extent moves with the paint, the comparison is about a
+// different quantity, and the check that exists for exactly that defect PASSES.
+// Nineteen failures either way — the count is identical on both sides — and
+// only the surplused band's own message tells the two runs apart.
+//
+// The general shape is worth naming, because nothing here had looked for it: a
+// check can be made to pass BY a defect when the quantity it measures is
+// derived from a value that nothing holds. Ordering it after a check that
+// happens to constrain that value — which is what the `else` in the label scan
+// does — makes the PAIR sound and leaves the value itself unheld. The pair is
+// still worth having; it is not a substitute for holding the value.
+//
+// # So the values are held
+//
+// Every window this scan reads is a rect or an offset that came from somewhere,
+// and each of them is now a claim of its own, made against the layout and
+// before a single pixel is read:
+//
+//	the label's run rect   Range.getClientRects on the text node. Held to
+//	                       starting at the leading edge of the label's own
+//	                       content box and to ending inside it —
+//	                       inkRunRectFault.
+//	the digit window       r.badge.x plus gen.go's badgePadLeft, which is
+//	                       Go's reading of the pill's Style. Held to the
+//	                       padding the BROWSER resolved on that same element —
+//	                       inkBadgePadFault.
+//	the three rows         fractions of a band measured off the face this
+//	                       browser resolved. Already held, by inkRowsFault,
+//	                       inkBandRows and INK_EDGE_CLEARANCE.
+//
+// None of the three reads a pixel, so no amount of paint can move any of them,
+// and none of them depends on another check having run first.
+
+// One computed length, as a number.
+//
+// getComputedStyle serialises a resolved length as "8px". Anything else — a
+// keyword, an empty string from an element nothing was read from — is a value
+// this arithmetic cannot use, and null says so rather than letting parseFloat
+// hand back a NaN that compares false against everything and reports nothing.
+function inkLength(own, prop) {
+    const raw = own ? own[prop] : undefined;
+    if (typeof raw !== "string" || !raw.endsWith("px")) return null;
+    const n = parseFloat(raw);
+    return Number.isFinite(n) ? n : null;
+}
+
+// The label's run rect, held to the box it is supposed to be a rect inside.
+//
+// The run rect is the browser's answer to "where are the glyphs" and it is the
+// origin of every reading the label scan makes. This is the layout's own answer
+// to the same question, from the other side: the element's border box less its
+// border and padding is where its inline content may be, and a single-line run
+// under `text-align: start` begins exactly at the leading edge of it.
+//
+// Both directions matter and they catch different defects.
+//
+//	the leading edge, exactly    a run displaced into the empty half of a
+//	                             stretched box. Nothing else asks: the rows,
+//	                             the scan and the surplus are all measured
+//	                             FROM the rect, and a displaced rect satisfies
+//	                             all three.
+//	the trailing edge, inside    a rect that has grown past its own box.
+//	the width, independently      a rect wider than the words. The containment
+//	                             bound above cannot see this one: a stretched
+//	                             label leaves up to 218px of slack, so six
+//	                             extra pixels of run are still comfortably
+//	                             inside the box. The second answer is the
+//	                             advance width the same face gives for the same
+//	                             string, measured through the canvas — the
+//	                             layout's arithmetic checked against the font's,
+//	                             which is two answers rather than one.
+//
+// Measured: the run starts exactly at the label's content edge in all twenty
+// bands (a difference of 0.000 in every one) and ends between 0 and 218px short
+// of the trailing edge, depending on whether the branch stretches its label or
+// hugs it. So the leading claim is an equality and the trailing one is a bound.
+//
+// And the rect is wider than the advance by 0.0044 to 0.0137px across the
+// twenty — every one of them positive, and every one of them exactly
+// `ceil(advance * 64) / 64 - advance`, which is the layout rounding the width up
+// to a LayoutUnit. So the bound on that difference is LAYOUT_UNIT and comes from
+// the derivation rather than from the measurements: any string may land anywhere
+// in that quantum. It is held two-sided, because which way a disagreement in a
+// double's last bits would fall is not worth betting on and the second side
+// costs a 64th of a pixel — against a defect that has to move the rect by a
+// whole one to change any verdict downstream.
+//
+// Written for one writing direction, and it says so rather than quietly
+// measuring the wrong edge: under `direction: rtl` a start-aligned run begins at
+// the box's RIGHT content edge, and this arithmetic would report every band as
+// displaced by its own trailing slack.
+function inkRunRectFault(where, box, own, m) {
+    const runX = m.runX, runW = m.runW;
+    const dir = own ? own["direction"] : undefined;
+    if (dir !== "ltr") {
+        return `${where}: the label resolves direction as ${dir === undefined
+            ? "nothing that was read" : dir}, and the run-rect arithmetic below is ` +
+            `written for ltr — it asks whether the words begin at the LEFT content ` +
+            `edge of their box. Under any other writing direction a correct band ` +
+            `would be reported as displaced by however much trailing slack its ` +
+            `branch leaves, so the check refuses rather than measuring the wrong edge`;
+    }
+    const parts = [
+        ["border-left-width", inkLength(own, "border-left-width")],
+        ["padding-left", inkLength(own, "padding-left")],
+        ["border-right-width", inkLength(own, "border-right-width")],
+        ["padding-right", inkLength(own, "padding-right")],
+    ];
+    const unread = parts.filter(([, v]) => v === null);
+    if (unread.length > 0) {
+        return `${where}: the label resolves ${unread.map(([n]) => n).join(", ")} as ` +
+            `${unread.map(([n]) => JSON.stringify(own ? own[n] : undefined)).join(", ")}, ` +
+            `and the content box those numbers describe is where the run's rect is ` +
+            `held to be. Every reading of this box is taken from that rect, so a ` +
+            `content edge nothing could compute is a rect nothing is behind`;
+    }
+    const [, bl] = parts[0], [, pl] = parts[1], [, br] = parts[2], [, pr] = parts[3];
+    const lead = box.x + bl + pl;
+    const trail = box.x + box.w - br - pr;
+    const why = `\n\nThe three ink rows are fractions of a band measured off that ` +
+        `rect's top, the ink scan sweeps it, and surplusInk holds everything outside ` +
+        `it to the backdrop — all three are taken FROM the rect, so none of them is a ` +
+        `statement about where the rect is. This one is, and it is made against the ` +
+        `layout rather than against the paint: it needs no pixel, so nothing painted ` +
+        `in this box can move it.`;
+    if (!bandRenderSame(runX, lead)) {
+        return `${where}: the label's box starts at x=${box.x.toFixed(2)} with ` +
+            `${bl}px of border and ${pl}px of padding, so its content begins at ` +
+            `${lead.toFixed(2)} — and the browser puts the run of words at ` +
+            `${runX.toFixed(2)}, ${Math.abs(runX - lead).toFixed(2)}px ` +
+            `${runX > lead ? "further in" : "before it"}.` + why;
+    }
+    if (runX + runW > trail + BAND_EPSILON) {
+        return `${where}: the label's content box ends at x=${trail.toFixed(2)} ` +
+            `(${box.x.toFixed(2)} + ${box.w.toFixed(2)} less ${br}px of border and ` +
+            `${pr}px of padding) and the browser puts the end of the run at ` +
+            `${(runX + runW).toFixed(2)}, ${(runX + runW - trail).toFixed(2)}px past ` +
+            `it. A run that has grown out of its own box is a rect nothing below can ` +
+            `be a statement about.` + why;
+    }
+    // And the width, against the only other thing that knows it.
+    //
+    // The containment bound above is slack by construction on the stretched
+    // branches — the widest of them leaves 218px between the words and the end
+    // of the box — so a run rect a few pixels too wide is entirely inside it.
+    // This is the answer that does not come from the layout at all.
+    if (typeof m.runAdvance !== "number" || !Number.isFinite(m.runAdvance)) {
+        return `${where}: the run's rect is ${runW.toFixed(4)}px wide and the face ` +
+            `this browser resolved reports no advance for the same string, so there ` +
+            `is one answer again. Every reading of this box is taken from that rect ` +
+            `and nothing else knows how wide the words are.` + why;
+    }
+    const off = runW - m.runAdvance;
+    if (Math.abs(off) >= LAYOUT_UNIT) {
+        return `${where}: the browser's layout makes the run of words ` +
+            `${runW.toFixed(4)}px wide and the same face's own advance for the same ` +
+            `string is ${m.runAdvance.toFixed(4)}px — ${Math.abs(off).toFixed(4)}px ` +
+            `${off > 0 ? "wider" : "narrower"}, against a LayoutUnit of ` +
+            `${LAYOUT_UNIT}.\n\nThe rect is the advance rounded up to one of those, ` +
+            `so the two are the same number on two grids and may differ by less than ` +
+            `one quantum. A larger difference is a rect that is not the width of ` +
+            `these words — which is the defect the surplus/extent pair can be made to ` +
+            `MISS rather than to report: widen the rect and paint something in the ` +
+            `extra columns, and inkExtent finds ink out there, agrees with the rect, ` +
+            `and passes. The count of failures is identical on both sides of that ` +
+            `injection. This asks the question the other way round, without a pixel.`;
+    }
+    return null;
+}
+
+// And the digit window, held the same way.
+//
+// The window the count is scanned in is `r.badge.x + badgePadLeft` to
+// `r.badge.x + r.badge.w - badgePadRight`: one number from the browser's layout
+// and two from gen.go, which read them off the pill's core.Style. The two
+// halves have never been compared. A padding that reached the element through a
+// stylesheet, a UA default or a runtime mapping — the same list inkOwnFault
+// exists for — moves the window without moving either number gen.go sent, and
+// the scan goes on reporting about a rect that is not the one it names.
+//
+// Which way it fails is worth stating. A window too NARROW reads digits and
+// passes on fewer of them; a window too WIDE reaches the pill's 999-radius
+// corner, where every pixel is a blend with the band rather than with the pill,
+// and reports a third colour for painting that is correct. Both are the scan
+// measuring a different quantity than the one its message names.
+function inkBadgePadFault(where, own, padLeft, padRight) {
+    const sides = [
+        ["padding-left", padLeft, "badgePadLeft"],
+        ["padding-right", padRight, "badgePadRight"],
+    ];
+    for (const [prop, sent, field] of sides) {
+        const got = inkLength(own, prop);
+        if (got === null) {
+            return `${where}: the count pill resolves ${prop} as ` +
+                `${JSON.stringify(own ? own[prop] : undefined)}, and the digit window ` +
+                `is that padding in from the pill's own rect. gen.go sends ` +
+                `${sent}px for it, read off the node's core.Style; with the browser's ` +
+                `answer unreadable the two cannot be compared and the window is a ` +
+                `number nothing is behind`;
+        }
+        if (!bandRenderSame(got, sent)) {
+            return `${where}: gen.go read ${sent}px of ${field} off the count pill's ` +
+                `core.Style and the browser resolves ${prop} as ${got}px.\n\n` +
+                `The digits are scanned between those two paddings, so the window is ` +
+                `Go's arithmetic applied to the browser's rect and the two have come ` +
+                `apart. A padding that arrived through a stylesheet, a UA default or a ` +
+                `runtime mapping is on the element and in no Style — the same gap ` +
+                `inkOwnFault exists for — and it moves this window without moving ` +
+                `anything gen.go sent. Too narrow and the scan reports about fewer ` +
+                `digits than it names; too wide and it reaches the pill's 999-radius ` +
+                `corner, where every pixel blends with the BAND rather than the pill ` +
+                `and correct painting reads as a third colour`;
+        }
+    }
+    return null;
+}
 
 // Where the ink in a box actually starts and ends, read off the screenshot.
 //
@@ -1734,6 +2076,28 @@ const INK_PROBE_GRID = {
 // bands keep theirs, and a probe is a box inside it.
 const inkProbePath = (i) => `root/${BAND_RENDERS.length}/${i}`;
 
+// And the element inside it that actually draws the glyphs.
+//
+// A probe is a white Box with one Text child carrying the scanned node's Style
+// (gen.go's inkProbeFor). The Box is what the screenshot scan reads — it is the
+// rect with the ground and the fringe in it — and it is NOT the element whose
+// rendering path is in question: the Box declares a background, a width and a
+// flex-shrink and no typography at all, so it inherits the page's 16px/400 and
+// resolves nothing the label resolves.
+//
+// Comparing the label's text node against that Box was comparing two different
+// kinds of thing, and it showed: twenty-five properties differed for no reason
+// but the mix-up — display, flex-direction, font-size, font-weight,
+// line-height, height, every padding and every border-radius. Read here
+// instead, the two agree on all of them, which is the comparison the probe's
+// whole argument wanted to make.
+//
+// It also puts the Box itself INTO the ancestry sweep, where it belongs. As a
+// strict ancestor of the element being scanned it is now held to
+// INK_PATH_PROPS like every other box above it, rather than being neutral by
+// construction and unmeasured.
+const inkProbeTextPath = (i) => `${inkProbePath(i)}/0`;
+
 // How far apart a pixel's channels may be before it is a coloured fringe rather
 // than a grey.
 //
@@ -1829,6 +2193,94 @@ const INK_PATH_PROPS = {
     textRendering: "auto",
 };
 
+// What the probe and the box it answers for are allowed to disagree about.
+//
+// # Why this is a list of exceptions and not a list of coverage
+//
+// INK_PATH_PROPS is twelve properties chosen by argument, and an argument is
+// the wrong instrument for the second half of the question. That list was
+// assembled from what is known to composite a subtree or to change a glyph's
+// rendering mode. A property added to CSS after it was written, or one already
+// there that nobody thought of — `font-synthesis`, `font-variation-settings`,
+// `text-size-adjust` — lands on one of these two elements and not the other,
+// and a twelve-property comparison says nothing at all about it. The list can
+// only be as wide as somebody remembered to make it, and a browser widens the
+// space it is drawn from without asking.
+//
+// So the comparison stopped being a list. Both elements' ENTIRE computed style
+// is read — every longhand the browser enumerates, 476 of them in the Chrome
+// this was measured on, plus any custom property in effect — and THIS is the
+// set that may differ, with the reason each entry is on it. A property nobody
+// has heard of is now a failure by default rather than a silence by default,
+// which is the direction that a browser release can only widen.
+//
+// # What was measured
+//
+// Read against the probe's own text element (see inkProbeTextPath — the white
+// Box around it is not the thing drawing glyphs, and reading that instead was
+// putting twenty-five extra properties in this table), the twenty-eight scanned
+// boxes in this grid differ from their probes on exactly these twenty-two
+// properties and on nothing else.
+//
+// Everything else agrees: display, flex-direction, flex-shrink, font-size,
+// font-weight, line-height, height, block-size, all eight paddings and all
+// eight border radii. That agreement is the statement worth having — it is what
+// says the probe really is a copy of the declaration it answers for, measured
+// rather than asserted, and it is a statement the twelve-property comparison
+// could not make at all.
+//
+// # Held in both directions
+//
+// Nothing outside this set may differ on any box, and every property in it must
+// differ on SOME box in the run (see the permission census below). The second
+// direction is its own fault: a permission nothing spends is slack in the list,
+// and "differs only where permitted" is satisfied by differing nowhere.
+const INK_OWN_INK =
+    "the probe repaints the declared ink as black at the same alpha, which is " +
+    "the whole of what makes its screenshot readable as greys (gen.go's " +
+    "inkProbeColor)";
+const INK_OWN_FOLLOWS_INK =
+    INK_OWN_INK + ", and this property takes its value from the element's own " +
+    "`color` while nothing sets it, which nothing in either tree does";
+const INK_OWN_BACKDROP =
+    "inkProbeFor clears the run's own Background, because a probe reads its " +
+    "whole rect and a fill on the text would be a second colour in it — the " +
+    "count pill declares one and the label does not";
+const INK_OWN_USED_SIZE =
+    "the probe is a fixed-width box painting inkProbeText and the scanned box " +
+    "is as wide as its own words, so this is the used inline size, or a " +
+    "percentage resolved against it";
+const INK_OWN_MAY_DIFFER = {
+    // The ink itself, and everything that follows it.
+    "color": INK_OWN_INK,
+    "-webkit-text-fill-color": INK_OWN_FOLLOWS_INK,
+    "-webkit-text-stroke-color": INK_OWN_FOLLOWS_INK,
+    "caret-color": INK_OWN_FOLLOWS_INK,
+    "text-decoration-color": INK_OWN_FOLLOWS_INK,
+    "text-emphasis-color": INK_OWN_FOLLOWS_INK,
+    "outline-color": INK_OWN_FOLLOWS_INK,
+    "column-rule-color": INK_OWN_FOLLOWS_INK,
+    "row-rule-color": INK_OWN_FOLLOWS_INK,
+    "border-top-color": INK_OWN_FOLLOWS_INK,
+    "border-right-color": INK_OWN_FOLLOWS_INK,
+    "border-bottom-color": INK_OWN_FOLLOWS_INK,
+    "border-left-color": INK_OWN_FOLLOWS_INK,
+    "border-inline-start-color": INK_OWN_FOLLOWS_INK,
+    "border-inline-end-color": INK_OWN_FOLLOWS_INK,
+    "border-block-start-color": INK_OWN_FOLLOWS_INK,
+    "border-block-end-color": INK_OWN_FOLLOWS_INK,
+    // The ground the probe stands on.
+    "background-color": INK_OWN_BACKDROP,
+    // And the size, which is the one thing a probe deliberately does not copy:
+    // inkProbeFor clears Width and Height so the probe is the declared box.
+    // transform-origin and perspective-origin are percentages of the border
+    // box, so they are that same size restated rather than a second fact.
+    "width": INK_OWN_USED_SIZE,
+    "inline-size": INK_OWN_USED_SIZE,
+    "transform-origin": INK_OWN_USED_SIZE,
+    "perspective-origin": INK_OWN_USED_SIZE,
+};
+
 // One chain, reported.
 //
 // Returns null when every ancestor is neutral, which is every mount this grid
@@ -1889,26 +2341,51 @@ function inkAncestryFault(where, subject, chain) {
 // say the resolved path is the same on both sides, which is the whole of what
 // makes the probe's grey box a statement about the band.
 //
-// Returns null when the two agree on every property, which is every mount this
-// grid makes today.
-function inkOwnFault(where, subject, what, box, probe) {
-    if (!box || !probe) {
-        return `${where}: ${!box ? subject + " resolve" : "the antialiasing probe for " +
-            what + " resolves"} none of INK_PATH_PROPS' properties — nothing was read ` +
-            `from that element at all. The probe answers for this box on the argument ` +
-            `that the two resolve the same rendering path, and with one side unread ` +
-            `that is an assumption again`;
-    }
+// # Equal on what
+//
+// On everything. The comparison used to be INK_PATH_PROPS' twelve, which made
+// this check exactly as wide as a list somebody assembled by argument; it is
+// now every computed property the browser enumerates, minus the twenty-two
+// INK_OWN_MAY_DIFFER gives a reason for. See that table for the reasons and for
+// why the exception list is the sound direction to write it in.
+//
+// Returns { read, off, used } rather than deciding: `read` is how many
+// properties were compared, `off` is the ones that differ with no permission,
+// and `used` is the permissions this pair spends — which the census below needs
+// from every pair, including the ones some other guard has already suppressed.
+function inkOwnDiff(box, probe) {
     // The union, so a property present on one side and absent on the other is a
     // difference rather than a key nobody iterated.
     const props = [...new Set([...Object.keys(box), ...Object.keys(probe)])].sort();
-    const off = props.filter((prop) => box[prop] !== probe[prop]);
+    const differ = props.filter((prop) => box[prop] !== probe[prop]);
+    return {
+        read: props.length,
+        off: differ.filter((prop) => !(prop in INK_OWN_MAY_DIFFER)),
+        used: differ.filter((prop) => prop in INK_OWN_MAY_DIFFER),
+    };
+}
+
+// Returns null when the two agree everywhere they are required to, which is
+// every mount this grid makes today.
+function inkOwnFault(where, subject, what, box, probe) {
+    if (!box || !probe) {
+        return `${where}: ${!box ? subject + " resolve" : "the antialiasing probe for " +
+            what + " resolves"} no computed properties at all — nothing was read from ` +
+            `that element. The probe answers for this box on the argument that the two ` +
+            `resolve the same rendering path, and with one side unread that is an ` +
+            `assumption again` +
+            (box ? `. The probe's own text node is the element inside its white Box ` +
+                `(see inkProbeTextPath); a Box with no child there is a probe that ` +
+                `paints no glyphs` : "");
+    }
+    const { read, off } = inkOwnDiff(box, probe);
     if (off.length === 0) return null;
     const first = off[0];
     return `${where}: ${subject} resolve ${first} as ${box[first]}, and the ` +
         `antialiasing probe for ${what} resolves it as ${probe[first]}` +
-        (off.length > 1 ? ` (and ${off.length - 1} more of INK_PATH_PROPS' properties ` +
-            `differ)` : "") + `.
+        (off.length > 1 ? ` (and ${off.length - 1} more of the ${read} computed ` +
+            `properties differ without a permission: ${off.slice(1).join(", ")})` : "") +
+        `.
 
 ` +
         `The probe is gen.go's copy of this element's core.Style, and the reason its ` +
@@ -1916,10 +2393,15 @@ function inkOwnFault(where, subject, what, box, probe) {
         `declaration. A Style is not what a browser resolves: a property that reaches ` +
         `an element through a stylesheet, a UA default or a runtime mapping is on the ` +
         `element and in no Style, so it lands on one of these two and not the other ` +
-        `while every ancestor of both stays neutral. Each of INK_PATH_PROPS' twelve ` +
-        `decides whether the subtree is composited or which rendering mode its glyphs ` +
-        `are drawn in, so a pair that disagrees on one of them is a probe measuring a ` +
-        `path this box is not on`;
+        `while every ancestor of both stays neutral.
+
+` +
+        `All ${read} of this browser's computed properties are compared, and ` +
+        `${Object.keys(INK_OWN_MAY_DIFFER).length} of them have a reason to differ — ` +
+        `see INK_OWN_MAY_DIFFER. ${first} is not one of them, so either the two ` +
+        `declarations have come apart, or that property belongs in the table with an ` +
+        `argument beside it saying why a probe may resolve it differently and still be ` +
+        `measuring this box's rendering path`;
 }
 
 // --------------------------------------------------------------------------
@@ -2333,6 +2815,11 @@ async function main() {
 
     let session;
     const problems = [];
+    // The two counts the tail recites, filled in by the band grid. Declared out
+    // here because the OK line is printed after the try block and a number
+    // recited from inside it would be BAND_RENDERS.length again — see `asked`,
+    // where the argument is.
+    const asked = { words: 0, counts: 0 };
     try {
         const port = await devtoolsPort(profile);
         const targets = await getJSON(`http://127.0.0.1:${port}/json/list`);
@@ -3324,7 +3811,9 @@ async function main() {
                 label: bandRenderPath(i, b.label),
                 chevron: bandRenderPath(i, b.chevron),
                 leading: bandRenderPath(i, b.leading),
-            })).concat(INK_PROBES.map((p, i) => ({ probe: inkProbePath(i) })))
+            })).concat(INK_PROBES.map((p, i) => ({
+                  probe: inkProbePath(i), probeText: inkProbeTextPath(i),
+              })))
               .concat([{ grid: "root" }]))}.map((paths) => {
             const el = (path) => path
                 ? document.querySelector('[data-node-path="' + path + '"]') : null;
@@ -3372,6 +3861,14 @@ async function main() {
                     // measured for the RUN — see the label scan for why the two
                     // halves have to be looking at the same rect.
                     runX: rects[0].left, runW: rects[0].width,
+                    // And the same width from the other side. The rect is the
+                    // LAYOUT's answer to "how wide is this run"; this is the
+                    // same face's own advance for the same string, measured
+                    // through the canvas that is already open for the ascent
+                    // above and already held to having parsed the shorthand.
+                    // See inkRunRectFault: two answers, so a rect that reported
+                    // the wrong width is a disagreement rather than a fact.
+                    runAdvance: cx.measureText(e.textContent).width,
                 };
             };
             // What every element ABOVE this one contributes to the way its
@@ -3403,24 +3900,32 @@ async function main() {
                 }
                 return found;
             };
-            // And what the element ITSELF resolves for those same properties,
-            // which is the other half of the same question. gen.go's probe
-            // copies the scanned node's core.Style, and what a browser resolves
-            // is CSS: a property that arrived through a stylesheet, a UA
-            // default or a runtime mapping this file has never heard of sits on
-            // the element and not in the Style, so it can be on one of the two
-            // and not the other. Read on both sides and compared — see
-            // inkOwnFault.
+            // And what the element ITSELF resolves, which is the other half
+            // of the same question. gen.go's probe copies the scanned node's
+            // core.Style, and what a browser resolves is CSS: a property that
+            // arrived through a stylesheet, a UA default or a runtime mapping
+            // this file has never heard of sits on the element and not in the
+            // Style, so it can be on one of the two and not the other. Read on
+            // both sides and compared — see inkOwnFault.
+            //
+            // EVERY property, not pathProps' twelve. The declaration is
+            // supposed to be the same on both sides, so the honest question is
+            // "do these two elements resolve the same CSS" and the list of
+            // exceptions is INK_OWN_MAY_DIFFER's, up here where it can carry an
+            // argument. Enumerating the object rather than keying it off a list
+            // is the point: cs.length is every longhand this build of the
+            // browser exposes plus every custom property in effect, so a
+            // property that ships in a later Chrome joins the comparison
+            // without anybody editing this file.
             const own = (path) => {
                 const e = el(path);
                 if (!e) return null;
                 const cs = getComputedStyle(e);
                 const got = {};
-                for (const prop of Object.keys(pathProps)) {
-                    // A property this browser does not support reads as
-                    // undefined and is dropped by JSON, so it is absent on both
-                    // sides rather than being a difference between them.
-                    if (cs[prop] !== undefined) got[prop] = cs[prop];
+                // getPropertyValue takes the dashed name the index yields, and
+                // is the only accessor that reaches a custom property at all.
+                for (let i = 0; i < cs.length; i++) {
+                    got[cs[i]] = cs.getPropertyValue(cs[i]);
                 }
                 return got;
             };
@@ -3430,10 +3935,14 @@ async function main() {
             if (paths.badge) out.badgeBand = band(paths.badge, "0");
             if (paths.label) out.labelAncestry = ancestry(paths.label);
             if (paths.badge) out.badgeAncestry = ancestry(paths.badge);
-            if (paths.probe) out.probeAncestry = ancestry(paths.probe);
+            // Both of the probe's reads are taken at its text node rather
+            // than at the white Box around it — see inkProbeTextPath. That is
+            // the element drawing the glyphs, and it puts the Box into its own
+            // ancestry sweep instead of leaving it neutral by construction.
+            if (paths.probeText) out.probeAncestry = ancestry(paths.probeText);
             if (paths.label) out.labelOwn = own(paths.label);
             if (paths.badge) out.badgeOwn = own(paths.badge);
-            if (paths.probe) out.probeOwn = own(paths.probe);
+            if (paths.probeText) out.probeOwn = own(paths.probeText);
             return out;
         })`);
         // The grid's own box rides last and the probes before it, so the band
@@ -3532,14 +4041,85 @@ async function main() {
         if (rowsFault) problems.push(rowsFault);
 
         const probeVerdict = new Map();
-        // And what each probe's own element resolves for INK_PATH_PROPS, kept
-        // so the box it answers for can be compared with it. See inkOwnFault.
+        // And what each probe's own text element resolves, kept so the boxes it
+        // answers for can be compared with it. See inkOwnFault.
+        //
+        // Populated here rather than inside the scan below, because it is a
+        // fact about the element and not about the capture: a computed style is
+        // the same whether or not the screenshot reached the box. That matters
+        // for the permission census, which has to see every pair in the grid
+        // even on a run where a short window suppressed all the pixel reads.
         const probeSelf = new Map();
+        for (let i = 0; i < INK_PROBES.length; i++) {
+            probeSelf.set(INK_PROBES[i].key, {
+                what: INK_PROBES[i].what,
+                own: probeReads[i] ? probeReads[i].probeOwn : null,
+            });
+        }
         if (INK_PROBES.length === 0) {
             problems.push(`no antialiasing probes came with the transcript, and every ` +
                 `ink assertion below rests on one. gen.go builds a probe per text ` +
                 `declaration the scan reads (see inkProbe); an empty table is a scan ` +
                 `about to trust a rendering mode nothing measured`);
+        }
+
+        // Which of INK_OWN_MAY_DIFFER's permissions this grid actually spends.
+        //
+        // inkOwnFault holds every scanned box to differing from its probe
+        // NOWHERE outside that table, and a claim of that shape is satisfied by
+        // a pair that differs nowhere at all. So a permission no box in the
+        // grid needs is slack in the list: it would go on licensing a
+        // difference nobody has seen, and the day something started resolving
+        // it differently for a reason that is not the one written beside it,
+        // this check would stay silent. That is item 7's argument, applied to a
+        // struct a browser owns rather than one this repository does.
+        //
+        // Asked once per run and over every (box, probe) pair the transcript
+        // names, independently of the fold and of every other guard: a computed
+        // style is the same whether or not the screenshot reached the box, and
+        // a pair whose scan some other failure suppressed still resolved the
+        // properties this is a census of.
+        const inkOwnSpent = new Set();
+        let inkOwnPairs = 0;
+        for (let i = 0; i < BAND_RENDERS.length; i++) {
+            const b = BAND_RENDERS[i], r = renderRects[i];
+            if (!r) continue;
+            for (const [own, key] of [[r.labelOwn, b.labelProbe],
+                                      [r.badgeOwn, b.badgeProbe]]) {
+                const self = probeSelf.get(key);
+                if (!own || !self || !self.own) continue;
+                inkOwnPairs++;
+                for (const prop of inkOwnDiff(own, self.own).used) inkOwnSpent.add(prop);
+            }
+        }
+        if (INK_PROBES.length > 0 && inkOwnPairs === 0) {
+            problems.push(`not one of the ${BAND_RENDERS.length} bands in this grid ` +
+                `could be compared with the probe that answers for it — either the ` +
+                `scanned boxes or the probes' own text nodes resolved nothing. The ` +
+                `whole of what makes a probe's grey box a statement about a band is ` +
+                `that the two elements resolve the same CSS, and with no pair read that ` +
+                `is unasked rather than true`);
+        } else {
+            const unused = Object.keys(INK_OWN_MAY_DIFFER)
+                .filter((prop) => !inkOwnSpent.has(prop));
+            if (unused.length > 0) {
+                problems.push(`INK_OWN_MAY_DIFFER permits ` +
+                    `${Object.keys(INK_OWN_MAY_DIFFER).length} properties to differ ` +
+                    `between a scanned box and its antialiasing probe, and ` +
+                    `${unused.length} of them differ nowhere in the ${inkOwnPairs} ` +
+                    `pairs this grid measured: ${unused.join(", ")}.
+
+` +
+                    `The reason on file for ${unused[0]} is that ` +
+                    `${INK_OWN_MAY_DIFFER[unused[0]]} — and no pair in this grid needs ` +
+                    `it. An unspent permission is slack: "the two differ only where ` +
+                    `permitted" is satisfied by a pair that differs nowhere, so a ` +
+                    `permission nothing exercises licenses a difference nobody has ` +
+                    `seen. Either the grid stopped mounting the case that earned it ` +
+                    `(the count pill is what earns background-color, and it is the only ` +
+                    `thing that does), or the reason beside it has stopped being true ` +
+                    `and the entry belongs out of the table`);
+            }
         }
         for (let i = 0; !gridClipped && i < INK_PROBES.length; i++) {
             const p = INK_PROBES[i], rect = probeRects[i];
@@ -3596,6 +4176,14 @@ async function main() {
             // question its own Style cannot carry. See INK_PATH_PROPS: a probe
             // under a composited ancestor is measuring a path the bands are not
             // on, and its verdict stops being about them.
+            //
+            // Swept from the probe's text node (inkProbeTextPath), so the white
+            // Box that gen.go wraps it in is one of the ancestors measured. It
+            // used to be the starting point instead, which left it neutral by
+            // construction: a compositing property arriving on that Box — from
+            // a runtime mapping of Background, Width or FlexShrink that nobody
+            // here has thought about — sat between the probe's glyphs and every
+            // box this sweep looked at, and nothing asked.
             const probeAncestry = inkAncestryFault(
                 `the antialiasing probe for ${p.what}`, "the probe's glyphs",
                 probeReads[i].probeAncestry);
@@ -3604,12 +4192,8 @@ async function main() {
                 probeVerdict.set(p.key, "an ancestor that decides how glyphs are drawn");
                 continue;
             }
-            // Kept for the boxes this probe answers for, which are held to
-            // resolving the same twelve properties it does. Recorded before the
-            // pixels are read because it is a fact about the element rather
-            // than about what the probe measured.
-            probeSelf.set(p.key, { what: p.what, own: probeReads[i].probeOwn });
             let worst = 0, fringe = null;
+
             for (let y = 0; y < Math.round(rect.h * bandDpr); y++) {
                 for (let x = 0; x < Math.round(rect.w * bandDpr); x++) {
                     const got = pixelAt(bandImg,
@@ -3716,6 +4300,36 @@ async function main() {
         // separating something. See INK_ROW_ROUNDING and inkRoundingVerdict.
         const inkOutsideBand = [];
 
+        // What the tail of this check is allowed to recite.
+        //
+        // # A pass for a question nobody asked
+        //
+        // The OK line at the bottom of this file says twenty real bands paint
+        // their words in their own ink and their counts in digits inside their
+        // pills. Both numbers came from BAND_RENDERS.length — the size of the
+        // table gen.go sent — and neither came from the work. Every path that
+        // suppresses a scan does push a problem, so the line is never printed
+        // over a suppression today; what it means is that the counts are true
+        // by a property of the code around them rather than by having been
+        // counted, and a skip added later that pushed nothing would leave the
+        // recitation intact.
+        //
+        // There is already one such skip. `if (r.label && ...)` drops the whole
+        // ink scan for a band whose label node the mount does not have, and
+        // unlike the badge and the heading wrapper a step above, nothing
+        // compares that against what gen.go declared. A label that vanished
+        // took twenty bands' worth of recitation with it and said nothing.
+        //
+        // So the two are counted where they are actually asked, held against
+        // what the transcript declared, and the tail recites the count rather
+        // than the constant. The gap this closes is item 4's — a run that
+        // reports "one message and a PASS for everything rect-shaped in the
+        // same breath" now says how much of the pass was asked.
+        const declared = {
+            words: BAND_RENDERS.filter((b) => b.label).length,
+            counts: BAND_RENDERS.filter((b) => b.badge).length,
+        };
+
         // Keyed by theme so the two branches can be held against each other
         // below: adding a handler to a band is supposed to hand the caller a
         // control and not a relayout.
@@ -3739,6 +4353,18 @@ async function main() {
             if (Boolean(r.badge) !== Boolean(b.badge)) {
                 problems.push(`${where}: gen.go ${b.badge ? "found" : "found no"} badge ` +
                     `and the mount ${r.badge ? "has" : "has no"} node at that path`);
+                continue;
+            }
+            // The same question about the label, which nothing had asked. The
+            // ink scan below is guarded on `r.label` alone, so a band whose
+            // label node the mount does not have skipped every reading of its
+            // words in silence — see `asked` for what that cost the tail.
+            if (Boolean(r.label) !== Boolean(b.label)) {
+                problems.push(`${where}: gen.go ${b.label ? "found" : "found no"} label ` +
+                    `and the mount ${r.label ? "has" : "has no"} node at that path. ` +
+                    `Everything this check says about a band's words is guarded on that ` +
+                    `node being there, so the two disagreeing is a run of assertions ` +
+                    `that would not have been made and would not have been missed`);
                 continue;
             }
 
@@ -3905,6 +4531,16 @@ async function main() {
                     // outside its words.
                     const runFrom = r.labelBand.runX;
                     const runTo = r.labelBand.runX + r.labelBand.runW;
+                    // And whether that rect is inside the box it was measured
+                    // in — asked first, because everything below is taken from
+                    // it and none of the three readings can tell. See
+                    // inkRunRectFault for the pair this closes.
+                    const runRect = inkRunRectFault(where, r.label, r.labelOwn,
+                        r.labelBand);
+                    if (runRect) {
+                        problems.push(runRect);
+                        continue;
+                    }
                     const scan = scanInk(bandImg, bandDpr, rows,
                         runFrom, runTo, b.fill, want);
                     if (scan.columns < 1) {
@@ -3916,6 +4552,12 @@ async function main() {
                     // What a rounding of one device row would cost this scan,
                     // which is the magnitude INK_EDGE_CLEARANCE's argument is
                     // about and nothing had read. See inkRoundingVerdict.
+                    // And what keeps those fractions off the x-height line,
+                    // which is a structural argument rather than that floor.
+                    // See INK_ASCENDER_SEPARATION.
+                    const ascender = inkAscenderVerdict(where, "the label's words",
+                        bandImg, bandDpr, r.labelBand, runFrom, runTo, b.fill);
+                    if (ascender) problems.push(ascender.problem);
                     const rounding = inkRoundingVerdict(where, "the label's words",
                         bandImg, bandDpr, band, runFrom, runTo, b.fill);
                     if (rounding.problem) {
@@ -4042,6 +4684,10 @@ async function main() {
                             `colour, which is what a label that lost its declaration and ` +
                             `inherited one looks like`);
                     }
+                    // Reached only with every reading above taken: the rows
+                    // measured, the run rect held, the surplus swept and the
+                    // three verdicts decided. See `asked`.
+                    asked.words++;
                 }
             }
 
@@ -4105,6 +4751,17 @@ async function main() {
                             `components.Badge picks the ink against the fill ` +
                             `(Variant.Ink) precisely so this does not happen`);
                     } else {
+                        // The two numbers the window is built from, held to
+                        // what the browser resolved on that same element. See
+                        // inkBadgePadFault: until this line the window was Go's
+                        // arithmetic applied to the browser's rect, and nothing
+                        // had asked whether the two agreed about the padding.
+                        const badgePad = inkBadgePadFault(where, r.badgeOwn,
+                            b.badgePadLeft, b.badgePadRight);
+                        if (badgePad) {
+                            problems.push(badgePad);
+                            continue;
+                        }
                         const from = r.badge.x + b.badgePadLeft;
                         const to = r.badge.x + r.badge.w - b.badgePadRight;
                         const band = inkBandRows(where, "the count's digits",
@@ -4176,6 +4833,13 @@ async function main() {
                                     `another colour, which is what a count that lost ` +
                                     `its declaration and inherited one looks like`);
                             }
+                            // Not credited when the window came back empty: the
+                            // three verdicts above all ran, and every one of
+                            // them is a statement about no pixels. The label's
+                            // equivalent leaves the loop at that point; this one
+                            // goes on to say what it found in nothing, so the
+                            // ledger is what has to decline it. See `asked`.
+                            if (scan.columns >= 1) asked.counts++;
                         }
                     }
                 }
@@ -4327,6 +4991,36 @@ async function main() {
                 seen[b.collapsible ? "disclosure" : "plain"] = { b, r };
                 byTheme.set(key, seen);
             }
+        }
+
+        // How much of what the tail recites was actually asked.
+        //
+        // See `asked`. The two numbers below are counted at the end of each
+        // scan's own success path, so they say how many boxes were read rather
+        // than how many the transcript declared. A shortfall means some band's
+        // words or count went unscanned, and the reason is one of the messages
+        // above — which is the point: on a run where the grid was clipped, or a
+        // probe came back coloured, or a label's node was missing, the reader
+        // gets one line saying how much of the recitation below is not a
+        // statement about anything.
+        //
+        // It is a census and not a second failure. Every path that suppresses a
+        // scan has already said why; what none of them said is how many.
+        for (const [what, subject] of [["words", "their words in their own ink"],
+                                       ["counts", "their counts as digits"]]) {
+            if (asked[what] >= declared[what]) continue;
+            problems.push(`${declared[what] - asked[what]} of the ${declared[what]} ` +
+                `bands that declare ${what === "words" ? "a label" : "a count"} were ` +
+                `not scanned for ${subject} — ${asked[what]} were.
+
+` +
+                `The reasons are among the messages above; this is the count, which ` +
+                `none of them carries. The line this check prints when it passes ` +
+                `recites the size of gen.go's table, so without this a run could ` +
+                `suppress every pixel read in the grid, report the one message that ` +
+                `says so, and pass every rect-shaped assertion in the same breath — ` +
+                `and a reader who skimmed the tail would find twenty bands recited ` +
+                `and no way to tell how many had been looked at`);
         }
 
         // And what the floor those scans were held to actually separates.
@@ -4863,16 +5557,22 @@ async function main() {
     offer — overflow included, which is where the SwiftUI solver does not — and
     hug their own natural width under every intrinsic keyword,
     ${BAND_RENDERS.length} real bands span their own tap targets, indent their own
-    content by their own declared inset, paint their own
-    fill, their own words in their own ink and their counts in digits inside
-    their own pills — on three rows taken as fractions of the ink band of the
+    content by their own declared inset and paint their own
+    fill, ${asked.words} of them their words in their own ink and ${asked.counts}
+    their counts as digits inside their own pills — counted where the scans ran
+    rather than off the size of gen.go's table, and held to it — on three rows
+    taken as fractions of the ink band of the
     face this browser resolved for that very element, far enough off both its edges
-    that a device row of rounding leaves them on the ink,
+    that a device row of rounding leaves them on the ink, and inside a band whose
+    own top reads three quarters of the round letters where the row above it reads
+    a tenth,
     over a run rect the paint reaches the ends of with the rest of the box held to
     the backdrop, behind ${INK_PROBES.length} antialiasing probes, one per text
     declaration any of it reads, every one of them and every box they answer for
     under an ancestry that decides nothing about how a glyph is drawn and
-    resolving the same twelve of those properties as the probe itself — and are taller
+    resolving every computed property its probe's own text node resolves except
+    the ${Object.keys(INK_OWN_MAY_DIFFER).length} INK_OWN_MAY_DIFFER gives a reason
+    for, each of which some box in the grid spends — and are taller
     than their badges with real glyphs in them, a fixed-size container squeezes its
     child along the main axis and lets it spill across — unless the child is
     pinned with core.FlexShrink(0), which until core.ShrinkNone was a declaration
