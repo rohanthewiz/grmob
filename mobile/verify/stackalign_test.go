@@ -450,7 +450,7 @@ func swiftDeclIndices(src, anchor string) []int {
 // Comments are noise to both, so that half is unconditional and every caller
 // gets it. The literal half is the caller's choice, and each of the two
 // spellings is named after what it keeps.
-func maskSwiftNonCode(src string) string { masked, _ := maskNonCode(src, true); return masked }
+func maskSwiftNonCode(src string) string { masked, _, _ := maskNonCode(src, true); return masked }
 
 // maskComments is the weaker mask: prose out, literals in.
 //
@@ -458,7 +458,7 @@ func maskSwiftNonCode(src string) string { masked, _ := maskNonCode(src, true); 
 // doc comment its deliberately coarse cut carries along cannot answer a
 // question about code. See declSource for why the cut is coarse and why the
 // comment that rides on it was a real defect rather than an untidiness.
-func maskComments(src string) string { masked, _ := maskNonCode(src, false); return masked }
+func maskComments(src string) string { masked, _, _ := maskNonCode(src, false); return masked }
 
 // maskNonCode is the scanner every question about "what in this file is code"
 // goes through.
@@ -501,6 +501,22 @@ func maskComments(src string) string { masked, _ := maskNonCode(src, false); ret
 // not one either, and for a stronger reason: that arm declines to read it as a
 // literal at all, so nothing is blanked and nothing is left open.
 //
+// # comments
+//
+// The other thing a mask cannot say, and the reason proseSourceOf asked for it.
+//
+// Blanking preserves offsets and length, which is what makes an index into the
+// mask an index into the source — and it throws away one distinction on the
+// way: a line that is EMPTY inside a block comment is blank in the mask, and so
+// is a line that is empty because it separates two paragraphs. Those are
+// opposite answers to "does this declaration's note continue above here", and
+// a walk that reads the mask alone gets the second one for both.
+//
+// So the scan says where its comments were. It is the same shape `unterminated`
+// is — one more thing the scan already knows and the mask cannot carry — rather
+// than a second pass over the file, which is the arrangement this whole
+// function exists to be instead of.
+//
 // # The fourth language
 //
 // Three of the four this serves spell their literals identically — Swift,
@@ -515,8 +531,16 @@ func maskComments(src string) string { masked, _ := maskNonCode(src, false); ret
 // the risk was never a check that failed, it was a check whose subject is a
 // string literal in a language the scan believed had none — a coordinate quoted
 // in a comment satisfying a question asked under a reader named for code.
-func maskNonCode(src string, literals bool) (masked, unterminated string) {
+//
+// Groovy has a THIRD form, and it is here for that reason rather than because
+// anything writes one. `$/…/$` is the dollar-slashy string: multi-line,
+// backslash-free, and the form somebody reaches for the day a coordinate or a
+// path in build.gradle needs one. Nothing in this repository uses it — which is
+// precisely the state the apostrophe was in, and the argument for adding the
+// arm before rather than after a file starts depending on it.
+func maskNonCode(src string, literals bool) (masked, unterminated string, comments []span) {
 	out := []byte(src)
+	comment := func(from, to int) { comments = append(comments, span{from, to}) }
 	blank := func(from, to int) {
 		for i := from; i < to && i < len(out); i++ {
 			if out[i] != '\n' {
@@ -537,17 +561,21 @@ func maskNonCode(src string, literals bool) (masked, unterminated string) {
 			nl := strings.IndexByte(src[i:], '\n')
 			if nl < 0 {
 				blank(i, len(src))
-				return string(out), ""
+				comment(i, len(src))
+				return string(out), "", comments
 			}
 			blank(i, i+nl)
+			comment(i, i+nl)
 			i += nl
 		case strings.HasPrefix(src[i:], "/*"):
 			end := strings.Index(src[i+2:], "*/")
 			if end < 0 {
 				blank(i, len(src))
-				return string(out), "block comment"
+				comment(i, len(src))
+				return string(out), "block comment", comments
 			}
 			blank(i, i+2+end+2)
+			comment(i, i+2+end+2)
 			i += 2 + end + 1
 		case strings.HasPrefix(src[i:], `"""`):
 			// Matched before the single-quote arm because that arm would read
@@ -558,7 +586,7 @@ func maskNonCode(src string, literals bool) (masked, unterminated string) {
 			end := strings.Index(src[i+3:], `"""`)
 			if end < 0 {
 				blankLiteral(i, len(src))
-				return string(out), "multi-line string"
+				return string(out), "multi-line string", comments
 			}
 			blankLiteral(i, i+3+end+3)
 			i += 3 + end + 2
@@ -574,6 +602,42 @@ func maskNonCode(src string, literals bool) (masked, unterminated string) {
 			}
 			blankLiteral(i, j+1)
 			i = j
+		case strings.HasPrefix(src[i:], "$/"):
+			// Groovy's dollar-slashy string, which is the third literal form
+			// and the one nothing here writes today. That is the state `'...'`
+			// was in until somebody looked: the risk a mask runs is not a check
+			// that fails, it is a check whose subject is a literal the scan
+			// believes is code.
+			//
+			// Multi-line by construction — it exists so a regexp or a path can
+			// carry backslashes and newlines unescaped — so it is bounded at
+			// `/$` rather than at the newline, and an unterminated one is named
+			// the way the other two multi-line forms are.
+			//
+			// The escapes are the dollar's: `$$` is a dollar and `$/` is a
+			// slash, and both are honored for the reason the double-quote arm
+			// honors a backslash. Without that, content holding an escaped
+			// slash would end the literal early and leave the rest of it read
+			// as code.
+			j := i + 2
+			closed := false
+			for j < len(src) {
+				if src[j] == '$' && j+1 < len(src) && (src[j+1] == '$' || src[j+1] == '/') {
+					j += 2
+					continue
+				}
+				if src[j] == '/' && j+1 < len(src) && src[j+1] == '$' {
+					closed = true
+					break
+				}
+				j++
+			}
+			if !closed {
+				blankLiteral(i, len(src))
+				return string(out), "dollar-slashy string", comments
+			}
+			blankLiteral(i, j+2)
+			i = j + 1
 		case strings.HasPrefix(src[i:], "'''"):
 			// Groovy's multi-line literal, matched before the apostrophe arm
 			// for the reason the triple-double-quote arm is matched before the
@@ -582,7 +646,7 @@ func maskNonCode(src string, literals bool) (masked, unterminated string) {
 			end := strings.Index(src[i+3:], "'''")
 			if end < 0 {
 				blankLiteral(i, len(src))
-				return string(out), "multi-line string"
+				return string(out), "multi-line string", comments
 			}
 			blankLiteral(i, i+3+end+3)
 			i += 3 + end + 2
@@ -614,7 +678,7 @@ func maskNonCode(src string, literals bool) (masked, unterminated string) {
 			i = j
 		}
 	}
-	return string(out), ""
+	return string(out), "", comments
 }
 
 // The mask and the brace counter are one scanner, and this is what says so.
@@ -682,6 +746,27 @@ func TestTheMaskAndTheBraceCounterAgreeAboutWhatIsCode(t *testing.T) {
 			name:   "a Groovy multi-line literal",
 			hidden: "    def s = '''\nan unpaired ' then private struct GrMobHidden }\n'''\n",
 		},
+		{
+			// Groovy's third form. The content carries an unpaired apostrophe
+			// AND an unpaired quote, so a scan that fell through to either of
+			// the delimiter arms would take one of them as an opening
+			// delimiter and run somewhere else entirely — which is the failure
+			// this row is meant to be able to see.
+			name:   "a dollar-slashy literal",
+			hidden: "    def s = $/\nan unpaired ' and \" then private struct GrMobHidden }\n/$\n",
+		},
+		{
+			// The escapes, which are what keep the arm from ending the literal
+			// early. Content holding the two characters `/$` is written `$/$$`
+			// — the slash escaped as `$/`, the dollar escaped as `$$` — and the
+			// middle two characters of that are a terminator to anything not
+			// reading the dollars. A scan without them closes the literal four
+			// bytes in and leaves the brace and the anchor standing as code,
+			// which is the same failure the unpaired-quote rows above are
+			// about, one escape convention over.
+			name:   "a dollar-slashy literal with an escaped terminator",
+			hidden: "    def s = $/a$/$$b private struct GrMobHidden }\n/$\n",
+		},
 	} {
 		src := "{\n" + c.hidden + "    let tail = 1\n}\n" +
 			anchor + ": View {\n    let real = 2\n}\n"
@@ -730,6 +815,17 @@ func TestTheScanNamesWhatWasLeftOpen(t *testing.T) {
 		{name: "a double-quoted literal at end of file", src: "{\nlet s = \"and on", want: ""},
 		{name: "an unterminated Groovy multi-line literal", src: "{\ndef s = '''\nand on",
 			want: "multi-line string"},
+		// The third form is multi-line by construction, so an unclosed one is
+		// the same kind of fault as an unclosed `'''` and gets a name of its
+		// own rather than the shared one: the two are bounded by different
+		// delimiters, and a reader told "multi-line string" would go looking
+		// for the wrong character.
+		{name: "an unterminated dollar-slashy literal", src: "{\ndef s = $/and on",
+			want: "dollar-slashy string"},
+		// And a dollar at end of file, which is not one. The arm needs two
+		// characters to open at all, so a trailing `$` is code — the same
+		// direction the apostrophe arm fails in, and for the same reason.
+		{name: "a dollar at end of file", src: "{\ndef s = a$", want: ""},
 		// The arm that reports nothing rather than reporting a fault. An
 		// apostrophe with no partner on its line is not a literal, so the scan
 		// leaves the line as code and has nothing to name — which is what keeps
@@ -738,7 +834,7 @@ func TestTheScanNamesWhatWasLeftOpen(t *testing.T) {
 		{name: "an apostrophe with no partner", src: "{\ndef s = it's fine\n}\n", want: ""},
 		{name: "an ordinary block", src: "{\n    let a = 1\n}\n", want: ""},
 	} {
-		if _, got := maskNonCode(c.src, true); got != c.want {
+		if _, got, _ := maskNonCode(c.src, true); got != c.want {
 			t.Errorf("%s: the scan reported %q, want %q", c.name, got, c.want)
 		}
 	}
@@ -927,3 +1023,11 @@ func TestEverySwiftTypeCutComesBackBalanced(t *testing.T) {
 		}
 	}
 }
+
+// span is a half-open byte range of the source, [from, to).
+//
+// One shape for the one thing maskNonCode reports positionally. Kept beside the
+// scanner rather than beside its caller because it is the scanner's answer: the
+// arms know where each construct began and ended, and everything downstream
+// only ever asks whether an offset is inside one.
+type span struct{ from, to int }

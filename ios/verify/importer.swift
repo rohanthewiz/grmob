@@ -69,6 +69,13 @@ let grMobImportData: (Data?) -> Data? = GrMobImportData
 // over in Go, and importer.h for the C these read.
 //
 // Nothing runs any of them. This file is type-checked and never linked.
+//
+// Held to the Go side the way the type rows above are, by
+// TestEveryErrorConventionArmIsSettledByADeclaration: the arms are enumerated
+// over the whole closed space of bound method signatures, and an arm with no
+// function here fails, as does a function here no arm reaches. Without that,
+// this section settled three arms because three is how many there were the day
+// it was written.
 
 // 1. A NULLABLE object return: the method throws, and the import LOSES the
 // optional. nil is what signals the error, so it can no longer also be a value.

@@ -279,22 +279,65 @@ func declSourceOf(src, anchor string) (string, bool) {
 // makes both walks cheap: maskComments blanks a comment without moving
 // anything, so "this line is comment or blank" is "this line is blank in the
 // mask", and the same index cuts the raw file.
+//
+// # The blank line that is not a separator
+//
+// "Up to the first blank line" is a rule about the SOURCE, and it was applied
+// to a file whose comments the mask had already flattened. Those are two
+// different questions wherever one comment construct spans a blank line, and
+// exactly one construct here does: `/* … */`. A Kotlin KDoc or a Swift block
+// comment with an empty line between its paragraphs is a single thing the
+// scanner blanks whole, and the walk read that line as the end of the note —
+// so the region began in the middle of a comment, with the top half of the
+// paragraph outside it and nothing saying so.
+//
+// The direction is the silent one. The check that follows is a
+// strings.Contains over the region, and a region missing its first paragraph
+// still returns a string: a phrase that moved into the half that was cut off
+// reads as a phrase that was deleted, and a note rewritten around a blank line
+// fails a check about wording that did not change.
+//
+// So the walk asks the scanner where the comments were, rather than inferring
+// it from blankness. A line inside a comment span continues the note whatever
+// it looks like; a blank line outside one ends it, which is the rule the
+// paragraph above states and now the rule this implements.
 func proseSourceOf(src, anchor string) (string, bool) {
-	code := maskComments(src)
+	// maskNonCode directly rather than maskComments, which is the same call with
+	// the same argument: the two named spellings return the mask alone, and the
+	// spans are the whole reason this walk is correct. Reaching past the name
+	// is worth a line of explanation and not a third spelling — "prose out,
+	// literals in" is still exactly what `false` asks for.
+	code, _, comments := maskNonCode(src, false)
 
 	at := strings.Index(code, anchor)
 	if at < 0 {
 		return "", false
 	}
 
+	// inComment reports whether an offset falls inside one of the scanner's
+	// comments. Linear over a handful of spans per call and called once per
+	// line walked, which is a few dozen times for the region this cuts — the
+	// alternative is a sorted search over a slice that is usually shorter than
+	// the search's own setup.
+	inComment := func(i int) bool {
+		for _, c := range comments {
+			if i >= c.from && i < c.to {
+				return true
+			}
+		}
+		return false
+	}
+
 	// commentBlockStart walks back from the beginning of the line at `from`
 	// over the contiguous run of comment-only lines. A blank line ends the run:
-	// it is what separates one declaration's note from the paragraph above it.
+	// it is what separates one declaration's note from the paragraph above it
+	// — unless the blank line is INSIDE a comment, in which case it separates
+	// two paragraphs of one note and the run continues through it.
 	commentBlockStart := func(from int) int {
 		for from > 0 {
 			prev := lineStart(src, from-1)
 			line := src[prev : from-1]
-			if strings.TrimSpace(line) == "" {
+			if strings.TrimSpace(line) == "" && !inComment(prev) {
 				break // a blank line: the note starts below it
 			}
 			if strings.TrimSpace(code[prev:from-1]) != "" {
@@ -359,11 +402,19 @@ func TestProseOfCutsTheNoteThatBelongsToTheDeclaration(t *testing.T) {
 			// convenience: a note about the NEXT declaration answering a
 			// question about this one is exactly the failure a whole-file read
 			// already had, moved five lines.
+			//
+			// The phrase is the neighbour's OWN wording rather than a
+			// restatement of this declaration's. It was the latter, and that
+			// made the row unfalsifiable: the fixture read "Nothing here has a
+			// word for the off state either" and the row refused "no word for
+			// the off state", which is not a substring of it — so the
+			// assertion held whatever the cut did, including when the cut
+			// carried the whole neighbour along.
 			name: "the next declaration's note stays out",
 			src: "private func grMobSelectedTrait(_ s: String) -> Traits {\n    []\n}\n\n" +
-				"/// Nothing here has a word for the off state either.\n" +
+				"/// The neighbour's own note, about the off state.\n" +
 				"private func grMobOther() {}\n",
-			unwanted: "no word for the off state",
+			unwanted: "neighbour's own note",
 		},
 		{
 			// A blank line ends the note. Without that rule the walk back would
@@ -384,6 +435,43 @@ func TestProseOfCutsTheNoteThatBelongsToTheDeclaration(t *testing.T) {
 				"/// Go's core.SelectedState as a trait.\n" +
 				"private func grMobSelectedTrait(_ s: String) -> Traits {\n    []\n}\n",
 			unwanted: "grMobRole",
+		},
+		{
+			// One comment, with a blank line in the middle of it. This is the
+			// case the old rule got backwards: the walk stopped at the blank
+			// line, so the region started four characters into a construct the
+			// scanner treats as one — the top paragraph outside it, and a
+			// strings.Contains below still returning a string.
+			name: "a doc comment with a blank line inside it",
+			src: "/**\n * Go's core.SelectedState as a trait.\n\n" +
+				" * SwiftUI has no word for the off state.\n */\n" +
+				"private func grMobSelectedTrait(_ s: String) -> Traits {\n    []\n}\n",
+			want: "core.SelectedState as a trait",
+		},
+		{
+			// And the same construct at the OTHER end. The end walk is the same
+			// function, so a next declaration whose note holds a blank line
+			// would have had its bottom half carried into this region — the
+			// coarse-cut failure the end walk exists to prevent, arriving
+			// through the half of the note the walk could not see.
+			name: "the next declaration's note stays out, blank line and all",
+			src: "private func grMobSelectedTrait(_ s: String) -> Traits {\n    []\n}\n\n" +
+				"/**\n * The neighbour's own note, about the off state.\n\n" +
+				" * A second paragraph, so the blank line is inside the note.\n */\n" +
+				"private func grMobOther() {}\n",
+			unwanted: "neighbour's own note",
+		},
+		{
+			// The rule the one above must not have swallowed. A blank line
+			// between two SEPARATE comments is outside both of them, so it goes
+			// on ending the note — which is what keeps "this declaration's
+			// note" from meaning "every comment above it".
+			name: "a blank line between two block comments still ends the note",
+			src: "/* Some other function's note about the off state. */\n" +
+				"\n" +
+				"/* Go's core.SelectedState as a trait. */\n" +
+				"private func grMobSelectedTrait(_ s: String) -> Traits {\n    []\n}\n",
+			unwanted: "other function's note",
 		},
 		{
 			// The anchor is looked for in the MASK even though the raw source
@@ -670,7 +758,7 @@ func matchingBrace(t *testing.T, file, what, src string) string {
 	t.Helper()
 
 	// literals blanked, because a brace inside one is not a brace.
-	code, unterminated := maskNonCode(src, true)
+	code, unterminated, _ := maskNonCode(src, true)
 	if unterminated != "" {
 		t.Fatalf("%s: unterminated %s inside %s", file, unterminated, what)
 	}

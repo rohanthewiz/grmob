@@ -2602,3 +2602,215 @@ func TestTheSwiftSpellingsAreReadOffTheImporter(t *testing.T) {
 		}
 	}
 }
+
+// The error convention's arms, and the Swift declarations that settle them.
+//
+// # The pairing the type tables have and this did not
+//
+// Every SPELLING in gobindSwiftTypes and gobindErrorOutPointer is held to a
+// line of ios/verify/importer.swift, in both directions, by the test above: a
+// row with no reading fails, and a reading with no row fails. The three arms of
+// swiftResults' method branch had the other half of that arrangement and not
+// this one. They are settled by a compiler — three functions on one protocol,
+// each annotated so that the arm applying is the only thing that type-checks —
+// and which arms exist was a fact about a Go function that nothing compared
+// with them.
+//
+// So a fourth arm added in Go compiles, generates declarations, and
+// importer.swift goes on settling three. The failure is the one this whole file
+// is about: a stub declaration the shell cannot call, produced by a rule
+// nothing outside this package has agreed to.
+//
+// # What an arm IS, and why it is these three fields
+//
+// The convention is a rewrite of a trailing NSError**, and what it did to a
+// method is legible from the Swift declaration alone in exactly three ways: the
+// error became a `throws`, or it survived as a parameter, and the method either
+// still returns something or does not. Three booleans, and the arms are the
+// combinations that occur.
+//
+// gobind's own two-result split — the `ret0_` out-pointer a C scalar moves into
+// — is deliberately NOT one of the fields. That is a question about
+// nullability in the header, decided before the convention sees the method and
+// already settled by gobindErrorOutPointer against its own importer lines. A
+// method returning `(error)` and one returning `(int, error)` differ by that
+// pointer and are the same thing to the convention, which is why they share a
+// row here and share a declaration over there.
+type conventionArm struct {
+	// throws is the NSError** rewritten into Swift's error handling.
+	throws bool
+	// errParam is the NSError** left alone, as a declared parameter.
+	errParam bool
+	// returns is whether the Swift declaration still has a result.
+	returns bool
+}
+
+// armOf reads the arm off a rendered declaration.
+//
+// Off the resultShape rather than off swiftResults' branches, because the
+// branches are what this is checking: a reading of the code that produces an
+// answer would agree with it by construction. What a declaration SHOWS is the
+// only thing importer.swift can be annotated against.
+func armOf(r resultShape) conventionArm {
+	arm := conventionArm{throws: r.throws, returns: r.ret != ""}
+	for _, p := range r.outParams {
+		if strings.Contains(p, "NSErrorPointer") {
+			arm.errParam = true
+		}
+	}
+	return arm
+}
+
+// Every arm, with the declaration that settles it and the annotation that
+// discriminates.
+//
+// Written out rather than derived, for the reason importerSymbols is: this is
+// the third statement of the pairing, and a derived one would agree with
+// whichever side it came from.
+var errorConventionArms = map[conventionArm]struct{ symbol, what string }{
+	{throws: true}: {
+		"grMobImportErrorConventionDropsABoolReturn",
+		"a BOOL return: the convention's textbook shape, where the return IS the " +
+			"error signal and disappears. `() throws -> Void`",
+	},
+	{throws: true, returns: true}: {
+		"grMobImportErrorConventionDropsTheOptional",
+		"a _Nullable object return: the method throws and the import drops the " +
+			"optional, because nil is what signals the error. `let value: Data`",
+	},
+	{errParam: true, returns: true}: {
+		"grMobImportErrorConventionKeepsTheErrorParameter",
+		"a _Nonnull object return: the convention declines to rewrite the method " +
+			"at all, so the NSError** stays a parameter. `(NSErrorPointer) -> String`",
+	},
+}
+
+// One settled arm: `func grMobImportErrorConventionDropsTheOptional(`.
+//
+// A regexp for the reason importerLine is one — the file is written to be read
+// this way, one declaration per line — and over the MASKED source, so that the
+// paragraph above each function naming its own symbol cannot stand in for the
+// declaration.
+var conventionDecl = regexp.MustCompile(
+	`(?m)^func (grMobImportErrorConvention\w+)\(`)
+
+// conventionProbeInterface is a bound-interface name for the enumeration below.
+//
+// Synthetic, and it has to be: the arm a `(Iface, error)` method takes is
+// reachable only from a signature returning one, and no bound function in
+// `mobile` does. That is the same reason importer.swift exists at all — the
+// arms worth checking are the ones nothing has used yet.
+const conventionProbeInterface = "GrMobConventionProbe"
+
+// Every arm swiftResults can produce for a method, against every arm a
+// declaration settles.
+//
+// # Why the enumeration is exhaustive and not a list
+//
+// A table of "the shapes we expect" would be the thing it is checking, written
+// twice. What makes this a check is that the INPUT space is closed: gobind
+// refuses three or more results and refuses a second result that is not an
+// error, so a bound method's results are one of `()`, `(T)`, `(error)` or
+// `(T, error)` — and T ranges over bindableGoTypes and the bound interfaces,
+// both of which are enumerable here. The first two carry no error and reach no
+// convention arm; the rest are generated below, one signature apiece.
+//
+// So an arm added to swiftResults is an arm this loop produces, and an arm this
+// loop produces with no row is a failure that names the signature that reached
+// it.
+func TestEveryErrorConventionArmIsSettledByADeclaration(t *testing.T) {
+	ifaces := interfaceSet(t)
+	ifaces[conventionProbeInterface] = true
+
+	// The result lists that carry an error, which are the only ones the
+	// convention has anything to say about.
+	results := []string{goErrorType}
+	for name := range bindableGoTypes {
+		if name == goErrorType {
+			continue
+		}
+		results = append(results, name+", "+goErrorType)
+	}
+	for name := range ifaces {
+		results = append(results, name+", "+goErrorType)
+	}
+	sort.Strings(results)
+
+	// Which signature reached each arm, so an arm nothing reaches can be told
+	// from an arm nothing declares.
+	reached := map[conventionArm]string{}
+	for _, r := range results {
+		expr, err := parser.ParseExpr("func() (" + r + ")")
+		if err != nil {
+			t.Fatalf("building a probe signature for (%s): %v", r, err)
+		}
+		shape, err := swiftResults(expr.(*ast.FuncType), ifaces, true)
+		if err != nil {
+			t.Errorf("a bound method returning (%s) is refused by swiftResults: %v.\n\n"+
+				"Every type in this loop is one bindableGoTypes admits or one bound "+
+				"interface, so a refusal here is a signature the stub generator is "+
+				"required to declare and cannot.", r, err)
+			continue
+		}
+		arm := armOf(shape)
+		if _, declared := errorConventionArms[arm]; !declared {
+			t.Errorf("a bound method returning (%s) declares `func x(%s)%s`, and no row "+
+				"in errorConventionArms describes what the error convention did to "+
+				"it.\n\n"+
+				"The arm is %+v — whether the NSError** became a `throws`, whether it "+
+				"survived as a parameter, and whether the method still returns "+
+				"something. Each arm is settled by a function in %s, annotated so that "+
+				"only the arm that applies type-checks. An arm with no such function is "+
+				"a Swift declaration this package hands the stub generator on the "+
+				"strength of a paragraph.",
+				r, joinParams("", shape.outParams), shape.clause(), arm, importerReading)
+			continue
+		}
+		if reached[arm] == "" {
+			reached[arm] = r
+		}
+	}
+
+	// An arm nothing can reach. It reads as a rule about this bridge and is a
+	// rule about nothing — the same dead weight the citation walk's stale
+	// exemptions are, and the reason that walk asserts its own.
+	for arm, row := range errorConventionArms {
+		if reached[arm] == "" {
+			t.Errorf("errorConventionArms describes %s (%s) and no bound method shape "+
+				"reaches it. The input space is closed — every type bindableGoTypes "+
+				"admits, every bound interface, with and without an error — so an "+
+				"unreached arm is one swiftResults no longer produces, and %s is "+
+				"type-checking a claim about a declaration nothing generates.",
+				row.symbol, row.what, importerReading)
+		}
+	}
+
+	// And the Swift side, both ways.
+	src := codeIn(t, importerReading)
+	settled := map[string]bool{}
+	for _, m := range conventionDecl.FindAllStringSubmatch(src, -1) {
+		settled[m[1]] = true
+	}
+	if len(settled) == 0 {
+		t.Fatalf("%s declares no grMobImportErrorConvention function where this looks "+
+			"for one (%s). A parse that finds nothing must not read as a pass: it would "+
+			"agree with every row above.", importerReading, conventionDecl)
+	}
+	for arm, row := range errorConventionArms {
+		if !settled[row.symbol] {
+			t.Errorf("errorConventionArms says %s settles %s, and %s declares no such "+
+				"function.\n\n"+
+				"A row with no declaration is the position the two result rules were in "+
+				"before that file existed: prose about what a compiler does, held to "+
+				"nothing. The arm is reached by a method returning (%s).",
+				row.symbol, row.what, importerReading, reached[arm])
+		}
+		delete(settled, row.symbol)
+	}
+	for symbol := range settled {
+		t.Errorf("%s declares %s and no row in errorConventionArms names it. A settled "+
+			"arm the generator cannot produce is a compiler agreeing with a claim "+
+			"nothing makes — and it reads, to the next person, as the arm their new "+
+			"signature will take.", importerReading, symbol)
+	}
+}

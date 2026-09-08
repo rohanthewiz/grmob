@@ -123,10 +123,27 @@ var bomEntry = regexp.MustCompile(
 // claim with no floor, and an absence a notWant would not catch is a floor for
 // a spelling this row cannot see anyway.
 //
-// One row states an absence today. Its window is 220 bytes, its positive claims
-// end 132 in, and the spelling it refuses is 39 — so it has 88 where it needs
-// 39, which is a floor that fires on a window that has stopped being a window
-// rather than on ordinary drift.
+// # And a row can refuse more than one thing
+//
+// The list is the same argument one level down. A single spelling per row made
+// the floor a fact about the row, which is right, and made it a fact about ONE
+// of the things the row refuses, which is not: a second notWant is a second
+// subject, refused in a different number of characters, and the requirement a
+// row needs is the LONGEST of them. Nothing said so, and the single-string
+// version had no way to. It would have accepted one spelling holding both marks
+// — a string that is not how either thing would actually be written, sized
+// against a sentence nobody would put in the file.
+//
+// So each entry is one thing refused, and the pairing is held per entry: every
+// mark is carried by some spelling, and every spelling carries some mark. The
+// second direction is new with the list and is the one it introduces — a
+// spelling with no mark raises the floor and refuses nothing, so the row reads
+// as the strictest in the table while being the emptiest.
+//
+// One row states an absence today, and it states one. Its window is 220 bytes,
+// its positive claims end 132 in, and the spelling it refuses is 39 — so it has
+// 88 where it needs 39, which is a floor that fires on a window that has
+// stopped being a window rather than on ordinary drift.
 
 var appGradle = nativeFile("android", "app", "build.gradle")
 
@@ -351,7 +368,15 @@ func TestTheComposeCensusClaimsAreWhatTheSourceSays(t *testing.T) {
 		// own positive claims. Set exactly when notWant is: see the paragraph
 		// above the table for why the requirement cannot be one number for
 		// every row.
-		absence string
+		//
+		// A LIST, because a row can refuse more than one thing. One row
+		// refusing two different subjects needs room for whichever of the two
+		// is longer, and a single string could only say that by being one
+		// spelling that happened to contain both marks — which is not a
+		// spelling of anything and would size the window against a sentence
+		// nobody would write. Each entry is one thing this row refuses; the
+		// floor is the longest of them.
+		absence []string
 		why     string
 	}{
 		{
@@ -437,7 +462,7 @@ func TestTheComposeCensusClaimsAreWhatTheSourceSays(t *testing.T) {
 			// to the expression is inside the region rather than one byte past
 			// its end, which is exactly how the first version of this row
 			// passed a break-test.
-			absence: ").coerceAtMost(constraints.mainAxisMax)",
+			absence: []string{").coerceAtMost(constraints.mainAxisMax)"},
 			why: "internal/pinfixture says a fixed-width Row whose children overflow " +
 				"reports the OVERFLOWING width rather than clipping to its own, and " +
 				"that this is what makes core.FlexShrink(0) an overflow on Compose " +
@@ -509,28 +534,47 @@ func TestTheComposeCensusClaimsAreWhatTheSourceSays(t *testing.T) {
 		//	                            notWants are how it would be recognised.
 		//	                            A mark that is not in the spelling means
 		//	                            they have come apart.
-		if (len(claim.notWant) > 0) != (claim.absence != "") {
-			t.Errorf("foundation-layout %s: %s's %q states %d notWant marks and %s.\n\n"+
+		if (len(claim.notWant) > 0) != (len(claim.absence) > 0) {
+			t.Errorf("foundation-layout %s: %s's %q states %d notWant marks and %d "+
+				"absences.\n\n"+
 				"A row that refuses something states the shortest plausible SPELLING of "+
 				"it, and that spelling's length is the slack its window must have past "+
 				"its own positive claims. Without the pair, the requirement falls back "+
 				"to whatever some other row's subject happened to need — which is what "+
 				"a single windowSlack constant was.",
-				version, claim.file, claim.anchor, len(claim.notWant),
-				map[bool]string{
-					true:  fmt.Sprintf("an absence of %q", claim.absence),
-					false: "no absence",
-				}[claim.absence != ""])
+				version, claim.file, claim.anchor, len(claim.notWant), len(claim.absence))
 		}
+		// Every mark belongs to some spelling, and every spelling carries some
+		// mark. The two directions are the two ways a list can rot where a
+		// single string could not:
+		//
+		//	a mark in no spelling      the row is sized against one thing and
+		//	                           looking for another, which is the same
+		//	                           failure the single-string version had
+		//	a spelling with no mark    a floor for something this row has no way
+		//	                           to recognise. It raises the requirement
+		//	                           and refuses nothing, so it reads as the
+		//	                           strictest row in the table while being
+		//	                           the emptiest.
 		for _, notWant := range claim.notWant {
-			if claim.absence != "" && !strings.Contains(claim.absence, notWant) {
-				t.Errorf("foundation-layout %s: %s's %q refuses %q and states its "+
-					"absence as %q, which does not contain it.\n\n"+
-					"The two are one claim read two ways: the absence is what this row "+
+			if len(claim.absence) > 0 && !containsAny(claim.absence, notWant) {
+				t.Errorf("foundation-layout %s: %s's %q refuses %q and none of its "+
+					"absences (%q) contains it.\n\n"+
+					"The two are one claim read two ways: an absence is what this row "+
 					"says is not there, and the marks are how the check would recognise "+
-					"it. A mark the spelling would not carry means the row is sized "+
-					"against one thing and looking for another.",
+					"it. A mark no spelling would carry means the row is sized against "+
+					"one thing and looking for another.",
 					version, claim.file, claim.anchor, notWant, claim.absence)
+			}
+		}
+		for _, absence := range claim.absence {
+			if len(claim.notWant) > 0 && !anyContainedIn(claim.notWant, absence) {
+				t.Errorf("foundation-layout %s: %s's %q states an absence of %q and no "+
+					"notWant mark (%q) appears in it.\n\n"+
+					"A spelling this row cannot recognise is a floor and nothing else: "+
+					"it makes the window requirement longer without making the row "+
+					"refuse anything, which is a strictness that answers no question.",
+					version, claim.file, claim.anchor, absence, claim.notWant)
 			}
 		}
 
@@ -549,7 +593,18 @@ func TestTheComposeCensusClaimsAreWhatTheSourceSays(t *testing.T) {
 				reach = end
 			}
 		}
-		if allFound && claim.absence != "" && size-reach < len(claim.absence) {
+		// The longest of the row's spellings, because the window has to hold
+		// whichever of the things this row refuses would take the most room to
+		// write back in. A floor set by the shortest would leave the longest
+		// one landing past the end of the window, which is the failure that is
+		// silent.
+		floor, longest := 0, ""
+		for _, absence := range claim.absence {
+			if len(absence) > floor {
+				floor, longest = len(absence), absence
+			}
+		}
+		if allFound && floor > 0 && size-reach < floor {
 			t.Errorf("foundation-layout %s: %s's %q window is %d bytes and its furthest "+
 				"claim ends %d bytes in, leaving %d.\n\n"+
 				"Every one of these numbers was arrived at by measuring androidx's file "+
@@ -560,14 +615,15 @@ func TestTheComposeCensusClaimsAreWhatTheSourceSays(t *testing.T) {
 				"negative direction it is silent, and it is the direction that matters, "+
 				"because a notWant is a claim about a REGION: a window too short to hold "+
 				"the thing it refuses finds no clamp and passes.\n\n"+
-				"%d bytes is this row's floor: it is the length of %q, the shortest "+
-				"plausible way to write the thing this row refuses, so a window with "+
-				"less than that past its own positive claims could not see it appended "+
-				"even in principle. The floor is the row's own rather than a constant "+
-				"because it is a fact about what the row refuses. Widen this row's "+
-				"window.",
+				"%d bytes is this row's floor: it is the length of %q, the longest of "+
+				"the shortest plausible ways to write the things this row refuses, so a "+
+				"window with less than that past its own positive claims could not see "+
+				"that one appended even in principle. The floor is the row's own rather "+
+				"than a constant because it is a fact about what the row refuses, and it "+
+				"is the LONGEST of them because a window that can hold the shortest is "+
+				"still blind to the rest. Widen this row's window.",
 				version, claim.file, claim.anchor, size, reach, size-reach,
-				len(claim.absence), claim.absence)
+				floor, longest)
 		}
 		for _, notWant := range claim.notWant {
 			if strings.Contains(window, notWant) {
@@ -648,6 +704,21 @@ var receiptVersion = regexp.MustCompile(
 //
 // A function of values, so both arms are reachable without owning a machine in
 // each state — the same shape composeSourcesVerdict and importerVerdict have.
+//
+// # Where it fires, which used to be a narrower place than it looks
+//
+// The verdict was reached only from inside checkResolutionAgrees, which the
+// census test calls after deriving a version out of the BOM's pom. So the whole
+// of it sat behind that derivation: a machine with no gradle cache at all — no
+// pom, and therefore no receipt either — skipped before the receipt was ever
+// mentioned, and the state the verdict exists to name is the one that machine
+// is most deeply in. GRMOB_COMPOSE_SOURCES=required could not reach it there,
+// which makes the switch's own sentence false for exactly the machine that
+// needed it.
+//
+// It is its own test now, holding one file's presence and nothing else, and the
+// census's call is a comparison that has nothing to compare rather than a
+// report. Two callers of one verdict, each asking the question it can answer.
 func receiptVerdict(present bool, setting string) (fail bool, why string) {
 	if present {
 		return false, ""
@@ -711,6 +782,66 @@ func TestTheReceiptVerdictNamesEveryState(t *testing.T) {
 	}
 }
 
+// containsAny reports whether any of the spellings carries the mark, and
+// anyContainedIn whether any of the marks is in the spelling.
+//
+// The two halves of "a row's absences and its notWants are one claim", written
+// as two functions because they are asked in opposite directions and each names
+// a different way the pair comes apart. See the loops that call them.
+func containsAny(spellings []string, mark string) bool {
+	for _, s := range spellings {
+		if strings.Contains(s, mark) {
+			return true
+		}
+	}
+	return false
+}
+
+func anyContainedIn(marks []string, spelling string) bool {
+	for _, m := range marks {
+		if strings.Contains(spelling, m) {
+			return true
+		}
+	}
+	return false
+}
+
+// The receipt's own check, and the only one that runs everywhere.
+//
+// # Why it is not part of the census test
+//
+// It was, and being part of it was a narrowing nobody had noticed.
+// TestTheComposeCensusClaimsAreWhatTheSourceSays derives a version out of the
+// BOM's pom before it does anything else, and skips when the pom is not cached
+// — so on a machine that has never run `./gradlew`, the report "no fetch has
+// run here" was unreachable. That is the machine the report is most about, and
+// it was the one machine that could not hear it.
+//
+// The subject here is one file's presence and nothing else: no cache, no
+// version, no jar. Which is what makes it run everywhere, and what makes
+// GRMOB_COMPOSE_SOURCES=required mean what it says — "this machine settles
+// these claims" is a sentence about the machine, and a machine that cannot
+// reach the sentence is not answering it.
+//
+// # And the arms it is in
+//
+// A skip rather than a pass when the receipt is absent and the switch is unset,
+// because that is what happened: nothing was settled. A pass would be this
+// check telling a machine with no receipt the same thing it tells a machine
+// with one.
+func TestTheFetchWroteDownWhatItResolved(t *testing.T) {
+	path := nativeFile("android", "app", "build", composeSourcesReceipt)
+	_, err := os.Stat(path)
+
+	fail, why := receiptVerdict(err == nil, os.Getenv(composeSourcesEnv))
+	if fail {
+		t.Fatalf("%s: %s", path, why)
+	}
+	if why != "" {
+		t.Skipf("%s: %s", path, why)
+	}
+}
+
 // checkResolutionAgrees holds the derived version to the one gradle resolved,
 // when a fetch on this machine has said what that was.
 //
@@ -730,14 +861,17 @@ func checkResolutionAgrees(t *testing.T, version, jar string) {
 	raw, err := os.ReadFile(path)
 	if err != nil {
 		// No fetch has been run here, so gradle has not resolved anything on
-		// this machine and there is nothing to disagree with. Named on the way
-		// past rather than returned from silently: see receiptVerdict.
-		fail, why := receiptVerdict(false, os.Getenv(composeSourcesEnv))
-		if fail {
-			t.Errorf("%s: %s", path, why)
-		} else {
-			t.Logf("%s: %s", path, why)
-		}
+		// this machine and there is nothing to disagree with.
+		//
+		// Returned from without a verdict, because this is not where the
+		// verdict belongs: reporting it here made "you have no receipt"
+		// conditional on getting this far, and getting this far means having a
+		// gradle cache. TestTheFetchWroteDownWhatItResolved holds it instead
+		// and runs on every machine. What is left here is the ordinary reading
+		// of it: absent, so nothing to compare.
+		t.Logf("%s is not here, so gradle's own resolution is not being compared with "+
+			"the derived version. TestTheFetchWroteDownWhatItResolved is the check "+
+			"about that, and it says what to do.", path)
 		return
 	}
 	got := string(raw)

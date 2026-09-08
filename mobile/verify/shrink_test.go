@@ -358,7 +358,7 @@ func TestEveryNativeReadNamesItsQuestion(t *testing.T) {
 			// Through the scanner this whole exercise is about: the prose
 			// above names both primitives, and so does every doc comment that
 			// explains which reader to use.
-			code, _ := maskNonCode(string(raw), true)
+			code, _, _ := maskNonCode(string(raw), true)
 			found += strings.Count(code, c.primitive)
 		}
 		if found != c.want {

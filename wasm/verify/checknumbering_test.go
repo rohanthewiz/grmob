@@ -5,8 +5,10 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"testing"
@@ -161,18 +163,49 @@ func checkCitationsResolve(t *testing.T, checks int) {
 	t.Helper()
 
 	root := filepath.Join("..", "..")
-	files, err := citingFiles(root)
-	if err != nil {
-		t.Fatalf("walking the repository for citations: %v", err)
+
+	// The enumeration git succeeded at and produced nothing from, which is not
+	// the same fault as having no git and must not be told as if it were.
+	//
+	// A `git ls-files` that exits 0 with an empty listing describes a
+	// repository containing no files, and this one contains this test. So it is
+	// a fault in the question rather than in the answer — the wrong directory,
+	// a repository that is not this one — and falling back to the walk would
+	// hand the reader a passing check and the other story.
+	//
+	// Asked separately from the enumeration below, and so git runs twice. That
+	// is deliberate rather than an oversight: citingFiles reports which
+	// enumeration answered and not why, because for every other purpose the two
+	// are one answer, and folding this state into its return would make the
+	// common path carry a case only this line cares about.
+	if listed, err := repositoryFiles(root); err == nil && len(listed) == 0 {
+		t.Fatalf("`git ls-files` succeeded in %s and listed no files at all.\n\n"+
+			"That is not a machine without git — this check falls back to a filesystem "+
+			"walk for that, and says so. It is git answering about a repository with "+
+			"nothing in it, which this one is not: the enumeration is being run "+
+			"somewhere other than the working tree, and every citation in the "+
+			"repository is invisible to it.", root)
 	}
-	// A walk that found nothing must not read as a pass. browser.mjs alone
-	// carries a dozen of them, so anything near zero means the walk is not
+
+	files, from, err := citingFiles(root)
+	if err != nil {
+		t.Fatalf("enumerating the repository for citations (%s): %v", from, err)
+	}
+	// An enumeration that found nothing must not read as a pass. browser.mjs
+	// alone carries a dozen of them, so anything near zero means it is not
 	// reaching the tree.
 	if len(files) < 5 {
-		t.Fatalf("the walk found citations in %d files. browser.mjs, its own gen.go and "+
+		t.Fatalf("%s found citations in %d files. browser.mjs, its own gen.go and "+
 			"the census in docs/ all carry several apiece, so a number this small means "+
-			"the walk is looking somewhere else or skipping everything.", len(files))
+			"the enumeration is looking somewhere else or skipping everything.",
+			from, len(files))
 	}
+	// Which set was actually searched. The two cover different things — git
+	// leaves out anything it is ignoring, the walk leaves out five prefixes —
+	// so a reader looking at a failure below needs to know which of them
+	// produced the list, and a reader looking at a PASS needs to know the check
+	// was not quietly running in its weaker form.
+	t.Logf("citations enumerated by %s: %d files", from, len(files))
 
 	seenExempt := map[string]bool{}
 	for _, f := range files {
@@ -217,6 +250,13 @@ var citationExempt = map[string]string{
 //
 // Kept as path prefixes rather than as base names so that a directory named
 // `build` somewhere else in the tree is not skipped by accident.
+//
+// Four of the five are reached only by the fallback enumeration. git excludes
+// the build directories itself, because the two platform .gitignore files
+// already name them — so on any machine with git these entries are a second
+// statement of something already stated, kept for the walk that runs when there
+// is no git to ask. `docs/site` is load-bearing in both paths, and `ai_docs` is
+// a decision no mechanism could make.
 var citationSkipDirs = []string{
 	".git",
 	// Saved sessions and plans are a RECORD of what was true when they were
@@ -238,15 +278,64 @@ type citing struct {
 	cites []int
 }
 
-// citingFiles walks the repository and returns every text file carrying a
-// citation, with the repository-relative slash path a failure names.
+// repositoryFiles asks git which files are this working tree's.
 //
-// Binary files are skipped by looking for a NUL byte rather than by extension:
-// an extension list is a second thing to keep current, and the one property
-// that actually matters here — "a regexp over this is meaningless" — is exactly
-// what a NUL is evidence of.
-func citingFiles(root string) ([]citing, error) {
-	var out []citing
+// # Why git rather than the disk
+//
+// The enumeration below used to be a filesystem walk minus five directory
+// prefixes, and that list was the whole of what stood between the citation
+// check and a `node_modules` somebody adds: a vendored dependency carrying the
+// words "check 3" in a changelog is a failure naming a file nobody here wrote,
+// and the fix would have been a sixth prefix, and then a seventh.
+//
+// `git ls-files --cached --others --exclude-standard` is every tracked file
+// plus every untracked one git would offer to add. That is exactly the set a
+// person here writes, and it keeps the property the walk was adopted for —
+// `--others` covers a file written five minutes ago, so a new document is
+// checked before it is committed.
+//
+// What remains outside it is a dependency vendored by COMMITTING it, which is
+// this repository's file by every mechanical test there is. That failure is
+// loud and names the file, and saying so is better than an enumeration
+// pretending to cover it.
+//
+// # The three answers, which are three different things
+//
+// A non-nil error is "there is no git here, or it would not answer" — the
+// caller falls back to the walk and says so. A nil error with an empty listing
+// is a different fault and not a smaller one: git SUCCEEDED and reported a
+// repository with no files in it, which is not a state this tree can be in, and
+// falling back would tell the reader the first story about the second
+// situation. So the two are returned distinguishably and the caller separates
+// them.
+func repositoryFiles(root string) ([]string, error) {
+	cmd := exec.Command("git", "-C", root, "ls-files", "--cached", "--others",
+		"--exclude-standard", "-z")
+	out, err := cmd.Output()
+	if err != nil {
+		return nil, err
+	}
+	// NUL-separated, which is what -z buys: a path with a newline or a quote in
+	// it is a path git would otherwise escape and this would have to unescape.
+	var files []string
+	for _, p := range strings.Split(string(out), "\x00") {
+		if p != "" {
+			files = append(files, p)
+		}
+	}
+	sort.Strings(files)
+	return files, nil
+}
+
+// walkedFiles is the enumeration for a machine with no git: every regular file
+// under root, minus the skip prefixes.
+//
+// Kept rather than deleted, and it is not dead weight — a source tarball, a
+// container image built by copying the tree in, and `go test` run from an
+// export all reach it. What it cannot do is the thing git does for free, which
+// is why the caller announces which enumeration it used.
+func walkedFiles(root string) ([]string, error) {
+	var out []string
 	err := filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
@@ -267,29 +356,77 @@ func citingFiles(root string) ([]citing, error) {
 		if !d.Type().IsRegular() {
 			return nil
 		}
-		info, err := d.Info()
-		if err != nil {
-			return err
+		out = append(out, rel)
+		return nil
+	})
+	return out, err
+}
+
+// citingFiles returns every text file of the repository carrying a citation,
+// with the repository-relative slash path a failure names.
+//
+// `from` says which enumeration answered, so the caller can tell the reader
+// what the check was able to see. It is not decoration: the two enumerations
+// cover different sets, and a failure that lists a vendored file means
+// something different depending on which one produced it.
+//
+// Binary files are skipped by looking for a NUL byte rather than by extension:
+// an extension list is a second thing to keep current, and the one property
+// that actually matters here — "a regexp over this is meaningless" — is exactly
+// what a NUL is evidence of.
+func citingFiles(root string) (found []citing, from string, err error) {
+	files, gitErr := repositoryFiles(root)
+	from = "git ls-files"
+	if gitErr != nil {
+		from = fmt.Sprintf("a filesystem walk (git could not answer: %v)", gitErr)
+		if files, err = walkedFiles(root); err != nil {
+			return nil, from, err
+		}
+	}
+
+	for _, rel := range files {
+		// The skip prefixes apply to both enumerations. Under git they are
+		// mostly redundant — see citationSkipDirs — and `ai_docs` is not: it is
+		// tracked, and being tracked is precisely why it has to be named here.
+		skipped := false
+		for _, skip := range citationSkipDirs {
+			if rel == skip || strings.HasPrefix(rel, skip+"/") {
+				skipped = true
+				break
+			}
+		}
+		if skipped {
+			continue
+		}
+		p := filepath.Join(root, filepath.FromSlash(rel))
+		info, statErr := os.Stat(p)
+		if statErr != nil {
+			// git lists the index, and an index entry can name a file that is
+			// not on disk right now — a deleted-but-unstaged path, a sparse
+			// checkout. Not this check's business either way.
+			continue
+		}
+		if !info.Mode().IsRegular() {
+			continue
 		}
 		// A bound rather than a measurement: nothing in this repository that a
 		// person writes citations into is anywhere near it, and it keeps a
 		// stray large artifact out of memory.
 		if info.Size() > 4<<20 {
-			return nil
+			continue
 		}
-		raw, err := os.ReadFile(p)
-		if err != nil {
-			return err
+		raw, readErr := os.ReadFile(p)
+		if readErr != nil {
+			return nil, from, readErr
 		}
 		if bytes.IndexByte(raw, 0) >= 0 {
-			return nil
+			continue
 		}
 		if cites := citations(string(raw)); len(cites) > 0 {
-			out = append(out, citing{path: rel, cites: cites})
+			found = append(found, citing{path: rel, cites: cites})
 		}
-		return nil
-	})
-	return out, err
+	}
+	return found, from, nil
 }
 
 // headerProse is the opening comment with its markers stripped and its lines

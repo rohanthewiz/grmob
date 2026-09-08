@@ -424,11 +424,97 @@ const INK_MARGIN = 4;
 //
 // Three rows over the middle fifth of the box. They are all inside the x-height
 // band (an ascender or a descender would read backdrop where a lowercase word
-// has none), they are far enough apart to sit in different rows of a glyph's
-// bitmap at caption sizes, and three horizontal passes over one rect is the
-// same arithmetic run three times — the scan is already the cheapest thing in
-// this check.
+// has none), and three horizontal passes over one rect is the same arithmetic
+// run three times — the scan is already the cheapest thing in this check.
+//
+// "Far enough apart to sit in different rows of a glyph's bitmap" was the third
+// thing said here, and it was the same kind of sentence the tolerance's bound
+// used to be: a claim about a font and a display, in a file that chooses
+// neither. inkRows resolves the fractions and the scan refuses a box where two
+// of them land on one device pixel, so the spacing is a check rather than an
+// assurance.
 const INK_ROWS = [0.4, 0.5, 0.6];
+
+// Where those fractions actually land, in device pixels, for one box.
+//
+// The fractions are of the label's LINE BOX and the redundancy they buy is
+// three rows of a glyph's bitmap, and those are two different things joined by
+// a box height and a device pixel ratio. 0.4/0.5/0.6 are a tenth of the box
+// apart, so the three become three distinct rows only while a tenth of the box
+// is at least one device pixel: at 16 CSS px and dpr 2 they are 3.2 device
+// pixels apart and the argument holds comfortably, and at a caption of 6 px on
+// a dpr-1 machine all three round to the same y and the scan is one row run
+// three times — reporting the redundancy it does not have.
+//
+// A function of the box and the ratio rather than a claim about either, for the
+// reason the fold guard is: what a font metric or a display does to a layout is
+// not something this file gets to assume.
+function inkRows(top, height, dpr) {
+    return INK_ROWS.map((f) => Math.round((top + height * f) * dpr));
+}
+
+// How far a scanned pixel may sit off the line between the band's fill and the
+// label's composited ink.
+//
+// See offSegment for what the line is. The number is INK_EPSILON itself rather
+// than one of its own, and that is the argument for it: a pixel within the ink
+// tolerance of the composite is accepted AS the ink two lines below, so the
+// distance at which "off the line" starts mattering is exactly the distance at
+// which the scan stops being able to tell. A looser tolerance here would admit
+// pixels the ink test is already willing to call ink; a tighter one would be a
+// second number nothing decides.
+//
+// It is a bound the bundled themes clear by a wide margin, which is the other
+// half of the claim: the nine bands come in at 1.2 channels off the line at the
+// worst — DefaultTheme's translucent secondary ink, whose blend has the most
+// rounding to do — against a floor of 3. Antialiasing is exact arithmetic on
+// this line (see offSegment), so what is being absorbed is a browser's
+// eight-bit rounding and nothing else.
+const OFF_SEGMENT_EPSILON = INK_EPSILON;
+
+// How far a pixel is from being a blend of the two colours the label's box is
+// declared to hold.
+//
+// # Why a segment and not a set of colours
+//
+// confusableInk asks whether the composite is far from the three colours the
+// band DECLARES, and a screenshot holds more than three: the chevron's tint, a
+// focus ring, a pressed state, anything a future band draws inside the label's
+// rect. None of them is in the fixture today and each is a colour a pixel in
+// that box could be, so the guarantee "this scan can tell the ink from
+// everything else here" was a claim about the declaration rather than about the
+// capture.
+//
+// This is the other direction, and it is the one the capture can answer.
+// Antialiasing is linear: a glyph pixel at coverage c is drawn as
+// `fill + c * (want - fill)`, exactly — the alpha in a translucent ink
+// multiplies into c and comes out on the same line — so every legitimate pixel
+// in the label's box lies ON the segment between the fill and the composited
+// ink. A pixel off that segment is a colour neither of them blends into, which
+// is a third thing drawn inside the rect, which is a colour confusableInk was
+// never given the chance to rule out.
+//
+// Returned as a distance rather than a boolean so the caller can name the worst
+// one, which is the only thing a reader can act on.
+function offSegment(got, fill, want) {
+    const rgb = (hex) => [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16));
+    const p = rgb(got), a = rgb(fill), b = rgb(want);
+    const d = [b[0] - a[0], b[1] - a[1], b[2] - a[2]];
+    const len2 = d[0] * d[0] + d[1] * d[1] + d[2] * d[2];
+    // The projection's parameter, clamped: a pixel "past" either end is not a
+    // blend of the two, and clamping measures it against the end it is past
+    // rather than against a point outside the segment.
+    let t = 0;
+    if (len2 > 0) {
+        t = ((p[0] - a[0]) * d[0] + (p[1] - a[1]) * d[1] + (p[2] - a[2]) * d[2]) / len2;
+        t = Math.max(0, Math.min(1, t));
+    }
+    let worst = 0;
+    for (let i = 0; i < 3; i++) {
+        worst = Math.max(worst, Math.abs(p[i] - (a[i] + t * d[i])));
+    }
+    return worst;
+}
 
 // Whether a composited ink is too close to something else the band paints for
 // the scan to tell them apart, and if so which.
@@ -440,6 +526,14 @@ const INK_ROWS = [0.4, 0.5, 0.6];
 // DECLARATIONS, and the thing this scan reads is a composite. An eight-digit
 // ink at a low enough alpha lands arbitrarily close to its own backdrop while
 // the two declarations stay different strings.
+//
+// "Everything a pixel inside a band can legitimately be" is a claim about what
+// the band DECLARES, and a screenshot holds whatever was painted: a chevron's
+// tint, a focus ring, a pressed state. None is in the fixture today and each is
+// a colour a label pixel could be, so this guard would clear a case whose box
+// contains something it was never shown. offSegment is the other side of that
+// — it asks the capture whether the box holds anything but blends of these two
+// colours — and the pair is what makes the tolerance mean what it says.
 //
 // Returns null when the case discriminates, which is every bundled theme.
 function confusableInk(want, b) {
@@ -2496,7 +2590,14 @@ async function main() {
             //
             // Scanned across three rows near the label's vertical middle, which
             // is where a glyph's x-height band is: not an ascender, not a
-            // descender. See INK_ROWS for why one row was not enough.
+            // descender. See INK_ROWS for why one row was not enough, and
+            // inkRows for what has to be true of this box before three
+            // fractions are three rows.
+            //
+            // And every pixel the scan touches is held to being a blend of the
+            // two colours the band declares for that box — see offSegment,
+            // which is confusableInk's claim asked of the capture rather than
+            // of the declaration.
             if (r.label) {
                 // What the ink is supposed to LOOK like, which is not always
                 // what it is declared as. DefaultTheme's TextSecondary is
@@ -2530,11 +2631,33 @@ async function main() {
                         `further apart than that (${INK_EPSILON * INK_MARGIN}). A theme ` +
                         `this close is one where the words are not readable either`);
                 } else {
+                    // And the second thing the rows have to be before any of
+                    // them is read: three rows. INK_ROWS is three fractions of
+                    // a box, and whether they resolve to three device pixels is
+                    // a fact about this label's height and this display —
+                    // neither of which this file chooses. A configuration where
+                    // two of them round together is a scan reporting a
+                    // redundancy it does not have, which is the same shape as a
+                    // tolerance whose margin nothing measured.
+                    const rows = inkRows(r.label.y, r.label.h, bandDpr);
+                    if (new Set(rows).size !== rows.length) {
+                        problems.push(`${where}: the label's box is ${r.label.h} ` +
+                            `device-independent pixels tall at dpr ${bandDpr}, and ` +
+                            `INK_ROWS (${INK_ROWS.join(", ")}) resolves to rows ` +
+                            `${rows.join(", ")} — two of them are the same row of ` +
+                            `pixels. The three exist because the middle of a label is ` +
+                            `only the row "most likely" to cross a stem, and a scan ` +
+                            `that reads one row twice has one chance, not three. Move ` +
+                            `the fractions apart or ask why the label is this short`);
+                        continue;
+                    }
                     let ink = false, notFill = false, darkest = null, best = -1;
+                    // The worst pixel that is not a blend of the two colours
+                    // this band declares for the label's box. See offSegment.
+                    let offBy = 0, stranger = null;
                     const x0 = Math.round(r.label.x * bandDpr);
                     const width = Math.round(r.label.w * bandDpr);
-                    for (const f of INK_ROWS) {
-                        const y = Math.round((r.label.y + r.label.h * f) * bandDpr);
+                    for (const y of rows) {
                         for (let dx = 0; dx < width; dx++) {
                             const got = pixelAt(bandImg, x0 + dx, y);
                             if (got === null) continue;
@@ -2547,7 +2670,24 @@ async function main() {
                             const away = channelDistance(got, b.fill);
                             if (away > best) { best = away; darkest = got; }
                             if (channelDistance(got, want) <= INK_EPSILON) ink = true;
+                            const off = offSegment(got, b.fill, want);
+                            if (off > offBy) { offBy = off; stranger = got; }
                         }
+                    }
+                    if (offBy > OFF_SEGMENT_EPSILON) {
+                        problems.push(`${where}: a pixel in the label's box is ` +
+                            `${stranger}, which is ${offBy.toFixed(1)} channels off ` +
+                            `the line ` +
+                            `between the band's fill ${b.fill} and the label's ` +
+                            `composited ink ${want}. Every pixel a glyph antialiases ` +
+                            `is on that line — coverage blends the two and nothing ` +
+                            `else — so this is a THIRD colour drawn inside the rect ` +
+                            `the scan reads. confusableInk cleared this case against ` +
+                            `the three colours the band declares, and a colour it was ` +
+                            `never shown is a colour it could not rule the ink out ` +
+                            `against: either something is being painted here that ` +
+                            `should not be, or the band fixture has to declare it so ` +
+                            `the tolerance can be checked against it too`);
                     }
                     if (!notFill) {
                         problems.push(`${where}: every pixel on all ${INK_ROWS.length} ` +
