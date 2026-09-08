@@ -517,6 +517,48 @@ function inkRowsFault() {
     return null;
 }
 
+// How many device pixels of the band the outermost scanned rows must keep
+// clear of its two edges.
+//
+// # The argument this replaces
+//
+// INK_ROWS is a quarter, a half and three quarters, and the case for the two
+// outer ones was a sentence: a quarter of the band is enough clearance that
+// they are not sitting on the baseline or on the x-height line, where a
+// rounding either way lands on a horizontal edge of every glyph in the run at
+// once. That is the "most likely" argument the three rows replaced, in the
+// coordinate system that replaced it — an assertion about a distance nothing
+// measured, in a file that now measures the band it is a fraction of.
+//
+// A quarter of a band is a fraction; what a rounding has to survive is DEVICE
+// PIXELS, and the two are joined by a font size and a display. The tall-caption
+// theme in this grid is here precisely because that join moves.
+//
+// # Measured
+//
+// Across the twenty bands and their eight count pills, at dpr 1:
+//
+//	band              height   clear of the two edges
+//	Material label    5.53px   1 and 2, or 2 and 1, by branch
+//	Default label     5.99px   1 and 2, or 2 and 1, by branch
+//	Default count     8.73px   2 and 2, or 2 and 3
+//	tall label        8.75px   2 and 2
+//	tall count       12.77px   3 and 4
+//
+// The tightest is one device pixel, on the two bundled palettes' labels — a
+// 5.5px band with three rows a quarter apart has nowhere else to put them. So
+// the floor is 1: a row must be OFF both edges, and a band too short for that
+// is one where a quarter of it buys no clearance at all.
+//
+// Deliberately not 2. That would fail two of the three bundled palettes this
+// grid exists to check, which would make it a number chosen against nothing
+// rather than a claim about rounding — the shape of thing the last several of
+// these have been about. What 1 rules out is the case the argument was really
+// against: a band short enough, or a display coarse enough, that a quarter
+// rounds onto the edge itself and all three rows share a glyph's horizontal
+// boundary.
+const INK_EDGE_CLEARANCE = 1;
+
 // Where those fractions actually land, in device pixels, for one measured band.
 //
 // The fractions are of the band and the redundancy they buy is three rows of a
@@ -609,6 +651,28 @@ function inkBandRows(where, subject, m, dpr, why) {
             `pixel, so either the type is smaller than anything this grid was built ` +
             `for or the display is coarser` };
     }
+    // And how far the outermost rows actually sit from the two edges of the
+    // band, which was a quarter by assertion until this line. See
+    // INK_EDGE_CLEARANCE.
+    const top = Math.round(m.bandTop * dpr), bottom = Math.round(m.bandBottom * dpr);
+    const clear = [
+        ["the x-height line", rows[0] - top],
+        ["the baseline", bottom - rows[rows.length - 1]],
+    ].filter(([, d]) => d < INK_EDGE_CLEARANCE);
+    if (clear.length > 0) {
+        return { problem: `${where}: ${subject} have ink between ` +
+            `y=${m.bandTop.toFixed(2)} and ${m.bandBottom.toFixed(2)}, and INK_ROWS ` +
+            `(${INK_ROWS.join(", ")}) of that at dpr ${dpr} puts the outermost rows ` +
+            `at ${rows[0]} and ${rows[rows.length - 1]} — ` +
+            clear.map(([edge, d]) => `${d} device pixel${d === 1 ? "" : "s"} clear of ` +
+                edge).join(" and ") + `, against ${INK_EDGE_CLEARANCE}.\n\n` +
+            `${why}. The fractions are inside (0, 1), so the rows are inside the band ` +
+            `by construction — and "inside" is not the claim. A row on the baseline or ` +
+            `on the x-height line sits on a horizontal edge of every glyph in the run ` +
+            `at once, where one rounding takes all three rows off the ink together and ` +
+            `the redundancy they exist for goes with them. A quarter of the band was ` +
+            `argued to be enough room for that; this is the same band measured` };
+    }
     return { rows };
 }
 
@@ -652,30 +716,90 @@ function scanInk(img, dpr, rows, x0, x1, fill, want) {
     return { notFill, ink, darkest, offBy, stranger, columns: to - from };
 }
 
-// How much of the label's box on either side of its run of words is left
-// unasserted, in device-independent pixels.
+// How far the paint and the run's own client rect may part company at either
+// end of the words, in device-independent pixels.
 //
-// The run's client rect is where the browser says the glyphs are, and ink
-// crosses it in two ways. The small one is the glyph's own: an italic's side
-// bearing, the outer half of an antialiased stem, a face whose advance width is
-// narrower than its outline. The larger one is a ROUNDING — a client rect ends
-// at a fraction of a CSS pixel and the device pixel containing that fraction is
-// part glyph and part backdrop, and it belongs to neither window.
+// # One quantity with two signs
 //
-// Measured rather than assumed, which is the difference between this and the
-// tolerance one screen up: with no gutter at all, five of the twenty bands
-// report the pixel at the run's own trailing edge (AmberTheme's plain band ends
-// its words at x=99.48 and the device pixel spanning 99 to 100 is half a stem
-// and half backdrop, and belongs to neither window), and one device pixel of
-// gutter clears every band in the grid. Two is that measurement with a pixel of
-// margin, against a surplus that is 180px wide on the narrowest shape — so what
-// is given up is a two-pixel band on either side of the words, and what is kept
-// is every column of the rest of the rect.
+// The run's client rect is where the browser says the glyphs are, and the paint
+// is where they turn out to be. The two disagree at each end by a little, in
+// either direction, and for the same reasons: the glyph's own bearings (an
+// italic's, the outer half of an antialiased stem, a face whose advance width
+// is wider or narrower than its outline) and a ROUNDING — a client rect ends at
+// a fraction of a CSS pixel and the device pixel containing that fraction is
+// part glyph and part backdrop, belonging to neither side.
 //
-// What surplusInk asserts is therefore "the far side of this box is backdrop"
-// rather than "the run's rect is exact to the pixel", which is not a claim a
-// client rect can support.
+// Both signs are read, and this is the bound on both:
+//
+//	outward   surplusInk holds everything in the element's box beyond the run
+//	          ±this to the band's own fill. What it asserts is therefore "the
+//	          far side of the box is backdrop" rather than "the rect is exact
+//	          to the pixel", which is not a claim a client rect can support.
+//	inward    inkExtent reads the paint's own leading and trailing edge and
+//	          holds the rect to reaching within this of each. That is the half
+//	          that says the rect is where the words ARE, rather than that the
+//	          columns around it are empty.
+//
+// # Measured, in both directions
+//
+// With no gutter at all, five of the twenty bands report the pixel at the run's
+// own trailing edge — AmberTheme's plain band ends its words at x=99.48 and the
+// device pixel spanning 99 to 100 is half a stem and half backdrop. Across the
+// whole grid the paint and the rect part company by at most 0.52px outward
+// (AmberTheme's plain band) and 0.71px inward (the tall-caption theme's long
+// title, whose last glyph's advance runs past its outline), so one device pixel
+// of gutter clears every band in either direction and two is that measurement
+// with a pixel of margin — against a surplus 180px wide on the narrowest shape,
+// and against the tens of pixels a rect in the wrong place would be out by.
 const INK_RUN_GUTTER = 2;
+
+// Where the ink in a box actually starts and ends, read off the screenshot.
+//
+// # The rect nothing was behind
+//
+// The run's client rect is the browser's own answer to "where are the glyphs",
+// and every reading the label scan makes is taken relative to it: the three
+// rows are fractions of a band measured from that rect's top, the ink scan
+// sweeps it, and surplusInk holds everything outside it to the backdrop. Those
+// are two halves of one number, and a rect that reported the wrong PLACE
+// satisfies both of them — put it over half the words and the half it covers
+// has ink in it (scanInk is happy) while the half it does not is outside the
+// window and holds ink (surplusInk fires, but naming a colour rather than a
+// rect); put it beside them and the ink is all "surplus". Neither half is a
+// statement that the rect is where the words are, because both are taken FROM
+// the rect.
+//
+// This is the other source. A screenshot knows where the glyphs are without
+// asking the layout: the columns of the element's box that are not the band's
+// own fill are the ones a glyph reached. Holding the client rect to that is the
+// browser's arithmetic checked against the browser's paint, which is two
+// answers rather than one — and it is what makes the run rect a measurement
+// instead of a premise.
+//
+// Half-open on the right in CSS pixels: `to` is the far edge of the last device
+// column with ink in it, so a rect and an extent that agree exactly come back
+// as the same pair of numbers.
+//
+// Returns null when the box holds no ink at all, which scanInk's own notFill
+// verdict reports in its own words.
+function inkExtent(img, dpr, rows, x0, x1, fill) {
+    const from = Math.round(x0 * dpr), to = Math.round(x1 * dpr);
+    let first = null, last = null;
+    for (const y of rows) {
+        for (let x = from; x < to; x++) {
+            const got = pixelAt(img, x, y);
+            if (got === null) continue;
+            // The same predicate surplusInk uses, so "ink" means one thing on
+            // both sides of the comparison: a pixel within the tolerance of the
+            // fill is the backdrop, and anything else is a glyph.
+            if (channelDistance(got, fill) <= INK_EPSILON) continue;
+            if (first === null || x < first) first = x;
+            if (last === null || x > last) last = x;
+        }
+    }
+    if (first === null) return null;
+    return { from: first / dpr, to: (last + 1) / dpr };
+}
 
 // Whether anything in a box but outside a window is something other than the
 // backdrop, and if so where.
@@ -1496,6 +1620,104 @@ const SUBPIXEL_EPSILON = 1;
 // is subpixel antialiasing and the whole ink scan is unsound; between the two
 // is a page that is still grey and an explanation that is not.
 const SUBPIXEL_FLOOR = 0;
+
+// What an ANCESTOR can do to the way an element's glyphs are drawn, and what
+// each property reads as when it is doing nothing.
+//
+// # The half of the question a probe cannot copy
+//
+// gen.go's probes carry the scanned node's own Style, copied whole, so every
+// declaration the element makes about itself travels with it. What no copy of a
+// declaration can reproduce is what sits ABOVE the element: a transform, an
+// opacity below one, a filter, a `will-change` anywhere up the chain puts the
+// subtree on a compositing layer, and a browser draws text on a composited
+// layer by a different route than text painted straight into the page. The
+// probe would stay on the old route and go on reporting a grey box while the
+// band it answers for had moved.
+//
+// That is the same shape as the fault the per-declaration probes replaced —
+// one measurement standing in for boxes it was not taken of — one level up, and
+// it was recorded as a known gap and checked by nothing.
+//
+// # Why neutrality rather than a comparison
+//
+// The two chains are not the same shape and cannot be: a band's label sits
+// inside a control inside a Row inside a page box, and a probe sits in the
+// probe Row. Holding one chain to the other would be comparing two structures
+// that have no reason to match. What CAN be said of both, and is the thing the
+// probe's argument actually needs, is that neither chain contributes anything:
+// with every ancestor neutral on all of these, the declaration is the whole of
+// what decides the rendering path, and copying the declaration copies the
+// question.
+//
+// So both sides are held to it — the scanned boxes and the probes. A band whose
+// ancestry stopped being neutral suppresses its own scan (the probe no longer
+// answers for it); a probe whose ancestry stopped being neutral suppresses
+// every box it answers for (the probe is no longer measuring the path the bands
+// are on).
+//
+// The values are Chrome's computed-style defaults for a box that declares none
+// of this. `opacity` is the string "1" because a computed opacity is serialised
+// as a number-valued string; the rest are keywords.
+const INK_PATH_PROPS = {
+    // Each of these puts the subtree on its own compositing layer, or asks the
+    // browser to prepare to.
+    transform: "none",
+    perspective: "none",
+    filter: "none",
+    backdropFilter: "none",
+    willChange: "auto",
+    // Below 1 the subtree is composited and then blended, which is the same
+    // move by another name.
+    opacity: "1",
+    // Blending and isolation both force a stacking context and a separate
+    // buffer for the subtree to be composited out of.
+    mixBlendMode: "normal",
+    isolation: "auto",
+    transformStyle: "flat",
+    // `contain: paint` (and the strict/content shorthands) is another way to
+    // ask for one.
+    contain: "none",
+    // And the two that ask for a rendering mode outright. Both inherit, so an
+    // ancestor setting either reaches the glyphs without appearing on the
+    // element's own declaration at all — which is precisely the shape of thing
+    // a copied Style cannot carry.
+    webkitFontSmoothing: "auto",
+    textRendering: "auto",
+};
+
+// One chain, reported.
+//
+// Returns null when every ancestor is neutral, which is every mount this grid
+// makes today: the band grid and the probe Row are plain boxes and rows with
+// fills and paddings, and none of INK_PATH_PROPS' properties is anything
+// core.Style can even spell on them.
+//
+// A null chain — the element was not found — is itself a fault, because the
+// alternative is reporting "the ancestry is neutral" about an element nothing
+// looked at.
+function inkAncestryFault(where, subject, chain) {
+    if (chain === null || chain === undefined) {
+        return `${where}: nothing could be read about what sits above ${subject}, so ` +
+            `whether an ancestor is deciding how those glyphs are drawn is unknown. ` +
+            `The antialiasing probe copies the element's own declaration and can ` +
+            `reproduce nothing above it — see INK_PATH_PROPS`;
+    }
+    if (chain.length === 0) return null;
+    const first = chain[0];
+    return `${where}: ${subject} sit under ${first.at}, whose ${first.prop} is ` +
+        `${first.got} rather than ${first.neutral}` +
+        (chain.length > 1 ? ` (and ${chain.length - 1} more)` : "") + `.\n\n` +
+        `The antialiasing probe that licenses every ink reading over that box is a ` +
+        `copy of the element's own Style on a white ground. It reproduces the ` +
+        `declaration and it cannot reproduce an ancestor: a transform, an opacity, a ` +
+        `filter or a will-change up the chain composites the subtree, and a browser ` +
+        `draws text into a composited layer by a different route than text painted ` +
+        `straight into the page. The probe would stay on the old route and go on ` +
+        `reporting a grey box for a band that had moved off it.\n\n` +
+        `Either that ancestor comes back out of this grid, or the probes stop being ` +
+        `a statement about the boxes they answer for`;
+}
 
 // --------------------------------------------------------------------------
 // The checks
@@ -2948,16 +3170,48 @@ async function main() {
                     runX: rects[0].left, runW: rects[0].width,
                 };
             };
+            // What every element ABOVE this one contributes to the way its
+            // glyphs are drawn. See INK_PATH_PROPS for the list and for why a
+            // probe cannot reproduce any of it.
+            //
+            // Strict ancestors: the element's own declaration is the thing the
+            // probe copies, so a transform on the label itself travels to the
+            // probe with the rest of the Style and is not this question. Every
+            // ancestor up to the document element, because a compositing layer
+            // three boxes up decides a rendering path just as well as the
+            // parent does.
+            const pathProps = ${JSON.stringify(INK_PATH_PROPS)};
+            const ancestry = (path) => {
+                const e = el(path);
+                if (!e) return null;
+                const found = [];
+                for (let p = e.parentElement; p; p = p.parentElement) {
+                    const cs = getComputedStyle(p);
+                    for (const prop of Object.keys(pathProps)) {
+                        const neutral = pathProps[prop];
+                        const got = cs[prop];
+                        if (got === undefined || got === neutral) continue;
+                        found.push({
+                            at: p.getAttribute("data-node-path") || p.tagName.toLowerCase(),
+                            prop, got, neutral,
+                        });
+                    }
+                }
+                return found;
+            };
             const out = {};
             for (const k of Object.keys(paths)) out[k] = at(paths[k]);
             if (paths.label) out.labelBand = band(paths.label, "x");
             if (paths.badge) out.badgeBand = band(paths.badge, "0");
+            if (paths.label) out.labelAncestry = ancestry(paths.label);
+            if (paths.badge) out.badgeAncestry = ancestry(paths.badge);
+            if (paths.probe) out.probeAncestry = ancestry(paths.probe);
             return out;
         })`);
         // The probes ride at the end of the same array, so the band loop below
         // still indexes by case.
-        const probeRects = renderRects.splice(BAND_RENDERS.length)
-            .map((r) => r.probe);
+        const probeReads = renderRects.splice(BAND_RENDERS.length);
+        const probeRects = probeReads.map((r) => r.probe);
 
         // And the paint, which this grid did not read at all until now.
         //
@@ -3028,6 +3282,45 @@ async function main() {
                 probeVerdict.set(p.key, "squeezed");
                 continue;
             }
+            // And the other way a probe can have a rect and no pixels, which
+            // until this line was the one that reported nothing at all.
+            //
+            // The bands each run foldVerdict before they are sampled; the probe
+            // Row mounts after all twenty of them and was checked only for its
+            // width. A viewport that fit every band and clipped the probes was
+            // not the "not laid out" case above — a box past the bottom of the
+            // window has a perfectly good rect — it was the pixel loop below
+            // reading null for every sample, leaving `worst` at 0 and `fringe`
+            // at null, and passing. Eleven probes silently measuring nothing,
+            // under twenty bands whose ink readings all rest on them.
+            //
+            // So the same guard the bands get, with the same knob named: the
+            // grid's height is what pushed the probes off, and the window size
+            // is what a reader turns.
+            const probeFold = foldVerdict({
+                what: `the antialiasing probe for ${p.what}`,
+                bottom: rect.y + rect.h,
+                screen: bandImg.height / bandDpr,
+                knob: "the window size, or the number of themes and shapes the " +
+                    "grid mounts",
+            });
+            if (probeFold) {
+                problems.push(probeFold);
+                probeVerdict.set(p.key, "past the bottom of the viewport");
+                continue;
+            }
+            // What is above the probe, which is the half of the rendering
+            // question its own Style cannot carry. See INK_PATH_PROPS: a probe
+            // under a composited ancestor is measuring a path the bands are not
+            // on, and its verdict stops being about them.
+            const probeAncestry = inkAncestryFault(
+                `the antialiasing probe for ${p.what}`, "the probe's glyphs",
+                probeReads[i].probeAncestry);
+            if (probeAncestry) {
+                problems.push(probeAncestry);
+                probeVerdict.set(p.key, "an ancestor that decides how glyphs are drawn");
+                continue;
+            }
             let worst = 0, fringe = null;
             for (let y = 0; y < Math.round(rect.h * bandDpr); y++) {
                 for (let x = 0; x < Math.round(rect.w * bandDpr); x++) {
@@ -3043,7 +3336,22 @@ async function main() {
                     if (fringe === null || spread > worst) { worst = spread; fringe = got; }
                 }
             }
-            if (worst > SUBPIXEL_EPSILON) {
+            if (fringe === null) {
+                // Every sample came back null with the rect on screen and at
+                // its declared width, which pixelAt only answers when the
+                // capture itself is short of the rect. Reported rather than
+                // read as "no fringe": a probe nobody could look at is not a
+                // probe that came back grey.
+                problems.push(`the antialiasing probe for ${p.what} lies at ` +
+                    `${rect.x.toFixed(0)},${rect.y.toFixed(0)} and not one of its ` +
+                    `${Math.round(rect.w * bandDpr)}×${Math.round(rect.h * bandDpr)} ` +
+                    `device pixels is in the screenshot, which is ` +
+                    `${bandImg.width}×${bandImg.height}. The rect is on screen and at ` +
+                    `its declared width, so this is the capture and not the layout — ` +
+                    `and with no pixel read, "no coloured fringe" is a statement about ` +
+                    `nothing`);
+                probeVerdict.set(p.key, "no pixel of it was in the screenshot");
+            } else if (worst > SUBPIXEL_EPSILON) {
                 probeVerdict.set(p.key, `the pixel ${fringe}, ${worst} channels apart`);
                 problems.push(`the antialiasing probe for ${p.what} contains the pixel ` +
                     `${fringe}, whose channels are ${worst} apart. That probe paints ` +
@@ -3086,7 +3394,13 @@ async function main() {
         // reporting "a third colour in the label" under a rendering mode that
         // puts one there would be the failure this whole apparatus exists to
         // keep from being reported as a palette fault.
-        const inkUnreadable = (where, subject, key) => {
+        const inkUnreadable = (where, subject, key, ancestry) => {
+            // The scanned box's own ancestry, asked before the probe's verdict
+            // is consulted: a band under a composited ancestor is a box the
+            // probe never answered for, whatever the probe measured. See
+            // INK_PATH_PROPS.
+            const above = inkAncestryFault(where, subject, ancestry);
+            if (above) return above;
             if (!key) {
                 return `${where}: the transcript names no antialiasing probe for ` +
                     `${subject}, and the ink assertions over that box rest on one. ` +
@@ -3222,7 +3536,8 @@ async function main() {
                 // And the rendering mode this box's own declaration resolves
                 // to, which is what makes every reading below arithmetic
                 // rather than a guess. See inkUnreadable.
-                const unreadable = inkUnreadable(where, "the label's words", b.labelProbe);
+                const unreadable = inkUnreadable(where, "the label's words", b.labelProbe,
+                    r.labelAncestry);
                 const confusable = unreadable ? null : confusableInk(want, b);
                 if (unreadable) {
                     problems.push(unreadable);
@@ -3312,6 +3627,54 @@ async function main() {
                             `painted in the label's rect and outside its words, which is ` +
                             `a colour the run's own scan sweeps past and never sees`);
                     }
+
+                    // And whether the run's rect is where the words are.
+                    //
+                    // Everything above is taken from that rect: the rows are
+                    // fractions of a band measured off its top, the scan sweeps
+                    // it, and the surplus is what it leaves over. None of the
+                    // three says the rect is in the right PLACE, because each
+                    // is measured from it.
+                    //
+                    // The surplus check bounds one direction of that on its
+                    // own: paint outside the rect is a colour where the
+                    // backdrop should be, so a rect that had shrunk onto half
+                    // the words fails there. What nothing saw is the other
+                    // direction — a rect wider than the words, or displaced
+                    // into the empty half of a stretched box, whose extra
+                    // columns are backdrop and answer nothing either way. This
+                    // is that half, and it is the paint's own answer rather
+                    // than another reading of the layout's: see inkExtent. The
+                    // two together hold the rect and the ink to within a gutter
+                    // of each other at both ends.
+                    const extent = inkExtent(bandImg, bandDpr, rows,
+                        r.label.x, r.label.x + r.label.w, b.fill);
+                    if (extent) {
+                        const short = [
+                            ["starts", extent.from - runFrom],
+                            ["ends", runTo - extent.to],
+                        ].filter(([, d]) => d > INK_RUN_GUTTER);
+                        if (short.length > 0) {
+                            problems.push(`${where}: the browser puts the label's run of ` +
+                                `words at x=${runFrom.toFixed(2)} to ${runTo.toFixed(2)}, ` +
+                                `and the ink in that box runs from ` +
+                                `${extent.from.toFixed(2)} to ${extent.to.toFixed(2)} — ` +
+                                short.map(([end, d]) =>
+                                    `the paint ${end} ${d.toFixed(2)}px inside the rect`)
+                                    .join(", ") + `, against a gutter of ` +
+                                `${INK_RUN_GUTTER}px.\n\n` +
+                                `The rows scanned here are fractions of a band measured ` +
+                                `off that rect's own top, the ink scan sweeps it, and ` +
+                                `surplusInk holds everything outside it to the ` +
+                                `backdrop — all three are taken FROM the rect, so none ` +
+                                `of them says the words are in it. surplusInk catches a ` +
+                                `rect the paint spills OUT of; this is the other ` +
+                                `direction, read off the screenshot: a rect the paint ` +
+                                `does not reach the end of is one wider than the words ` +
+                                `or sitting beside them, in columns that are backdrop ` +
+                                `and answer nothing either way`);
+                        }
+                    }
                     if (scan.offBy > OFF_SEGMENT_EPSILON) {
                         problems.push(`${where}: a pixel in the label's box is ` +
                             `${scan.stranger}, which is ${scan.offBy.toFixed(1)} ` +
@@ -3369,6 +3732,10 @@ async function main() {
             // before any of this existed. A number cannot be sampled at a point
             // any more than a word can.
             if (r.badge) {
+                // Computed once: it is the same sentence either way, and it was
+                // being built twice to be tested and then reported.
+                const digitsUnreadable = inkUnreadable(
+                    where, "the count's digits", b.badgeProbe, r.badgeAncestry);
                 const badgeFill = pixelAt(bandImg,
                     (r.badge.x + b.badgePadLeft / 2) * bandDpr,
                     (r.badge.y + r.badge.h / 2) * bandDpr);
@@ -3377,8 +3744,8 @@ async function main() {
                         `its own Style declares ${b.badgeFill} (the band behind it is ` +
                         `${b.fill}). A badge with no pill is a number sitting on the band, ` +
                         `which lays out identically and is a different widget`);
-                } else if (inkUnreadable(where, "the count's digits", b.badgeProbe)) {
-                    problems.push(inkUnreadable(where, "the count's digits", b.badgeProbe));
+                } else if (digitsUnreadable) {
+                    problems.push(digitsUnreadable);
                 } else {
                     // The digits' own box: between the pill's two paddings, and
                     // nothing else. Outside them are the pill's leading and
@@ -4111,10 +4478,11 @@ async function main() {
     content by their own declared inset, paint their own
     fill, their own words in their own ink and their counts in digits inside
     their own pills — on three rows taken as fractions of the ink band of the
-    face this browser resolved for that very element, over the run's own rect
-    with the rest of the box held to
+    face this browser resolved for that very element, clear of both its edges,
+    over a run rect the paint reaches the ends of with the rest of the box held to
     the backdrop, behind ${INK_PROBES.length} antialiasing probes, one per text
-    declaration any of it reads — and are taller
+    declaration any of it reads, every one of them and every box they answer for
+    under an ancestry that decides nothing about how a glyph is drawn — and are taller
     than their badges with real glyphs in them, a fixed-size container squeezes its
     child along the main axis and lets it spill across — unless the child is
     pinned with core.FlexShrink(0), which until core.ShrinkNone was a declaration

@@ -215,6 +215,7 @@ func checkCitationsResolve(t *testing.T, checks int) {
 	// equal — it is the question never having been asked, and a third sense
 	// arriving (the walk's, on a machine with no git) would have slipped
 	// through the same way. See citationSenses.
+	present := map[string]bool{}
 	for path, sense := range considered {
 		if _, classified := citationSenses[sense]; !classified {
 			t.Errorf("%s came back as %q and citationSenses has no row for it.\n\n"+
@@ -224,6 +225,12 @@ func checkCitationsResolve(t *testing.T, checks int) {
 				path, sense)
 			break
 		}
+		present[sense] = true
+	}
+	// And whether what the table decides about those senses leaves this run able
+	// to fail at all. See citationSenseVerdict.
+	if v := citationSenseVerdict(present); v != "" {
+		t.Error(v)
 	}
 
 	seenExempt := map[string]bool{}
@@ -238,11 +245,18 @@ func checkCitationsResolve(t *testing.T, checks int) {
 		}
 		for _, cite := range f.cites {
 			if cite < 1 || cite > checks {
-				t.Errorf("%s (%s) cites check %d, and browser.mjs has %d. Either the "+
+				// Which of the two the table says this sense gets. Today every
+				// row fails; the branch is here because the decision is a field
+				// now rather than the shape of this loop.
+				say := t.Errorf
+				if !act.Fails {
+					say = t.Logf
+				}
+				say("%s (%s) cites check %d, and browser.mjs has %d. Either the "+
 					"citation was not moved when the sequence was renumbered, or it "+
 					"names a check that no longer exists.\n\n"+
 					"%s",
-					f.path, f.sense, cite, checks, act)
+					f.path, f.sense, cite, checks, act.Act)
 			}
 		}
 	}
@@ -293,21 +307,87 @@ func checkCitationsResolve(t *testing.T, checks int) {
 // the same rule, which is a choice rather than an oversight. And the next sense
 // added to the enumeration fails here until somebody makes the same choice for
 // it, rather than inheriting one.
-var citationSenses = map[string]string{
-	senseTracked: "The parenthesis is which sense of \"this repository's file\" the " +
+// citationSense is what one sense decides, and what it tells the reader.
+//
+// # The decision, and where it used to live
+//
+// The three sentences were the whole of this table, and the check read them
+// only to paste one into a failure it was going to produce anyway. So "all
+// three senses fail" was not a row anybody could point at: it was the absence
+// of a branch. The sameness was the argument's conclusion and also its
+// mechanism, and a row that changed its mind — an untracked citation as a
+// warning, say, while somebody is mid-edit — had nowhere to say so.
+//
+// Fails is that branch, made into data. It reads the same today, because the
+// decision is the same and it is argued above: a bad address is a bad address
+// whether or not it has been committed. What has changed is that the decision
+// is now written down where it can be changed, and that the check consults it
+// instead of not having one.
+type citationSense struct {
+	// Fails is whether a citation that names no check is an error in a file
+	// reached this way, rather than something a reader is merely told about.
+	//
+	// True in all three rows. See citationSenseVerdict for the guard that keeps
+	// a table of falses from being a walk that cannot fail.
+	Fails bool
+	// Act is what whoever reads the failure has to do about it, which is the
+	// part that really does differ between the three.
+	Act string
+}
+
+var citationSenses = map[string]citationSense{
+	senseTracked: {true, "The parenthesis is which sense of \"this repository's file\" the " +
 		"enumeration used. This one is tracked: the citation is in the history, so " +
-		"fixing it is a commit.",
-	senseUntracked: "The parenthesis is which sense of \"this repository's file\" the " +
+		"fixing it is a commit."},
+	senseUntracked: {true, "The parenthesis is which sense of \"this repository's file\" the " +
 		"enumeration used. This one is not committed yet: the citation is an edit in " +
 		"the working tree of whoever is running this, and fixing it is a save. It " +
 		"fails here rather than waiting for the commit, because a citation that is " +
-		"wrong now is wrong when it lands.",
-	senseOnDisk: "The parenthesis is which sense of \"this repository's file\" the " +
+		"wrong now is wrong when it lands."},
+	senseOnDisk: {true, "The parenthesis is which sense of \"this repository's file\" the " +
 		"enumeration used. This one came from the filesystem walk, which runs where " +
 		"git could not answer and cannot say whether this file is the repository's " +
 		"at all — a source tarball, a container image, an export. It is held to the " +
 		"same rule as the other two: a `check N` that names nothing is wrong wherever " +
-		"the file came from.",
+		"the file came from."},
+}
+
+// Whether the senses this run actually met can produce a failure at all.
+//
+// The table is allowed to decide that a sense is reported and not failed — that
+// is the point of Fails being a field. What it must not be allowed to decide is
+// that every sense in front of it today is one of those, because then the walk
+// runs, finds every bad citation in the repository and reports a pass.
+//
+// Asked of the senses the ENUMERATION produced rather than of the whole table,
+// which is the sharper question: on a machine with no git every file comes back
+// as senseOnDisk, so a single row flipped to false would empty this check on
+// exactly the machines that have the weakest enumeration to begin with, and the
+// table would still look like two thirds of a check.
+//
+// Returns "" while at least one sense present can fail.
+func citationSenseVerdict(present map[string]bool) string {
+	can := []string{}
+	for sense := range present {
+		if citationSenses[sense].Fails {
+			can = append(can, sense)
+		}
+	}
+	if len(can) > 0 {
+		return ""
+	}
+	got := make([]string, 0, len(present))
+	for sense := range present {
+		got = append(got, sense)
+	}
+	sort.Strings(got)
+	return fmt.Sprintf("every file this enumeration reached came back as one of %v, "+
+		"and citationSenses marks none of those as failing.\n\n"+
+		"That is a walk that reads every `check N` in the repository, finds the ones "+
+		"naming checks that do not exist, and reports a pass. A sense is allowed to "+
+		"be reported rather than failed — that is what the Fails field is for — but "+
+		"not every sense a run can see, or this check is only telling somebody "+
+		"something it has already decided not to act on.", got)
 }
 
 // The files whose `check N` is not an address into browser.mjs, and why.

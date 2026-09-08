@@ -50,7 +50,9 @@ import (
 	"fmt"
 	"math"
 	"os"
+	"reflect"
 	"sort"
+	"strings"
 
 	"github.com/rohanthewiz/grmob/components"
 	"github.com/rohanthewiz/grmob/core"
@@ -1137,8 +1139,85 @@ func bandRenderThemes() map[string]*core.Theme {
 			bandRenderTallBase, base.Typography.Caption.FontSize,
 			base.Typography.Caption.LineHeight)
 	}
+	// And that it differs in NOTHING ELSE, which is the other half of the same
+	// sentence and the half nothing was holding.
+	//
+	// "A copy of a bundled theme with its caption tier changed and nothing else"
+	// is what makes this a fourth palette in name and a second type scale in
+	// fact — and it is what the grid's account of itself rests on. The bands
+	// read captions, so a theme that also moved a colour would be varying two
+	// things at once through checks that cannot tell them apart: the ink scan
+	// would be looking at a new palette and the metric question would be
+	// answered by whichever of the two the failure happened to name.
+	//
+	// Reflective, and over the whole Theme, so a tier or a role added to
+	// core.Theme is covered without anybody remembering. A field this file has
+	// never heard of is exactly the kind that would be copied silently.
+	drifted := themeDifferences(reflect.ValueOf(*base), reflect.ValueOf(tall), "")
+	varies, off := []string{}, []string{}
+	for _, path := range drifted {
+		if strings.HasPrefix(path, bandRenderTallVaries) {
+			varies = append(varies, path)
+		} else {
+			off = append(off, path)
+		}
+	}
+	if len(off) > 0 {
+		fatal("the tall-caption theme is derived from %s and differs from it at %v, "+
+			"outside %s.\n\n"+
+			"It is in this grid to be one palette at two type scales — the bands read "+
+			"captions, so that is the one departure their checks can attribute. A "+
+			"second difference makes it a fourth palette, and every failure it "+
+			"produces names whichever of the two changes the check happened to be "+
+			"looking at.", bandRenderTallBase, off,
+			strings.TrimSuffix(bandRenderTallVaries, "."))
+	}
+	// And that the walk found the departure it is supposed to permit. Two lines
+	// above have just insisted the caption tier differs in both size and
+	// leading; a walk that reports no difference at all is not agreeing with
+	// them, it is not looking — and "it differs in nothing else" would then be
+	// a sentence produced by a function that never returns anything.
+	if len(varies) == 0 {
+		fatal("themeDifferences finds the tall-caption theme identical to %s under %s, "+
+			"and the two checks above have just held it to differing there in both size "+
+			"and leading. The walk that says this theme varies nothing but its caption "+
+			"tier is reporting that it varies nothing, which is not the same claim",
+			bandRenderTallBase, strings.TrimSuffix(bandRenderTallVaries, "."))
+	}
+
 	out[bandRenderTallName] = &tall
 	return out
+}
+
+// Where the tall-caption theme is allowed to differ from the theme it copies.
+//
+// A path prefix into core.Theme, in the spelling themeDifferences produces.
+const bandRenderTallVaries = "Typography.Caption."
+
+// themeDifferences is every leaf path at which two themes disagree.
+//
+// Structs are walked; anything else is compared whole with reflect.DeepEqual,
+// which is what makes this cover a field nobody here has read: a new tier is a
+// struct and gets walked, a new role is a string and gets compared.
+//
+// The path is dotted from the Theme down — "Typography.Caption.FontSize" — so a
+// caller can ask about a subtree with a prefix.
+func themeDifferences(a, b reflect.Value, path string) []string {
+	if a.Kind() == reflect.Struct {
+		var out []string
+		for i := 0; i < a.NumField(); i++ {
+			name := a.Type().Field(i).Name
+			out = append(out,
+				themeDifferences(a.Field(i), b.Field(i), path+name+".")...)
+		}
+		return out
+	}
+	if reflect.DeepEqual(a.Interface(), b.Interface()) {
+		return nil
+	}
+	// The trailing dot goes: this is a leaf, and the prefix a caller compares
+	// against carries its own.
+	return []string{strings.TrimSuffix(path, ".")}
 }
 
 const (

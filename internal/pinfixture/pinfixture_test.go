@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"regexp"
 	"strings"
 	"testing"
 )
@@ -899,4 +900,181 @@ func walkPinNumbers(t *testing.T, path string, v reflect.Value, out map[string][
 			walkPinNumbers(t, at, v.Field(i), out)
 		}
 	}
+}
+
+// Every reading names a harness, and every harness named still spells the
+// assertion.
+//
+// # The half of caseNumbers that was prose
+//
+// resolution derives the floor two harnesses hold their tolerances to, over the
+// numbers those harnesses are asked to tell apart, and caseNumbers is where
+// "which numbers those are" is written down. The test above holds that table to
+// the STRUCT in both directions: a field with no reading fails, a reading with
+// no field fails. Nothing held it to the two files it is actually about.
+//
+// That is the direction the table goes wrong in. A row here is a claim that
+// somebody, somewhere, in another language, compares a measurement against this
+// number — and the day that assertion is deleted the row stays, still saying it
+// is read, still tightening a bound the other harness also obeys. The failure
+// would never arrive on its own: a floor that is too tight is a floor nothing
+// violates.
+//
+// # What is asked
+//
+// Each reading names its consumers and the phrase each one's assertion is
+// spelled with, and this asks that consumer's source for the phrase.
+//
+// A phrase rather than the field's own name, because a field name is not
+// evidence. browser.mjs mounts internal/bandfixture as well, whose cases have
+// an Offer of their own read as `c.offer` some two thousand lines before the pin
+// check does the same — so deleting the pin check's comparison outright leaves
+// the token behind and this test would pass. It was tried: it does. The phrase
+// is the comparison, and it goes when the comparison goes.
+//
+// Whitespace in a phrase matches any run of whitespace, so a reformat or a
+// line-wrap keeps the claim; a rewrite of the comparison breaks it, which is
+// the point at which somebody has to look at whether the number is still read.
+//
+// # What it is worth
+//
+// It says the harness still spells that comparison, not that the comparison
+// still holds a measurement to this number. That is the claim a search can
+// support — the same one wasm/verify's citation walk makes about a `check N` —
+// and it catches the way this table actually rots.
+//
+// The other direction is not checked and is not a gap of the same kind: a
+// harness that STARTED reading a number nothing credits it with leaves the
+// floor exactly where it was, because the floor is a union over the readings
+// and any one consumer is enough to keep a number in it. What that would cost
+// is a sentence naming the wrong file in a failure nobody has seen yet.
+func TestEveryReadingNamesAHarnessThatSpellsTheNumber(t *testing.T) {
+	root := filepath.Join("..", "..")
+
+	// Each consumer's source, read once. A path that does not resolve is a
+	// consumer nobody can go and look at, which is worse than an unchecked
+	// claim: the table would name a file that is not there and this test would
+	// have nothing to say about any row citing it.
+	// Stripped of whitespace, and the phrases are stripped the same way before
+	// they are looked for. That is what makes a phrase survive a reformat: an
+	// indent, a line-wrap, a space after a comma are all gone from both sides,
+	// so what is left to match is the comparison itself.
+	source := map[string]string{}
+	for name, path := range pinConsumers {
+		b, err := os.ReadFile(filepath.Join(root, path))
+		if err != nil {
+			t.Fatalf("pinConsumers says %q is the harness %q and it cannot be read: %v.\n\n"+
+				"Every row of caseNumbers that names this consumer is a claim about that "+
+				"file, and with the file gone the claims are about nothing — including "+
+				"the ones that set the floor ios/verify and browser.mjs both hold their "+
+				"tolerances to.", path, name, err)
+		}
+		source[name] = pinStripSpace(string(b))
+	}
+
+	// Which consumers anything credits at all. A harness in the closed set that
+	// no reading names is either one that has stopped reading this fixture — in
+	// which case its row in pinConsumers is dead weight and every claim above
+	// about it is vacuous — or a table that forgot to credit it.
+	credited := map[string]bool{}
+
+	for _, c := range Cases() {
+		for _, r := range caseNumbers(c) {
+			if r.Read == "" {
+				// An unread number carries no consumers, and must not: a row
+				// that named one would be claiming a reading it also says does
+				// not happen.
+				if len(r.By) > 0 {
+					t.Errorf("%q: %s has no Read sentence and still names %d consumers. "+
+						"An unread number is one no tolerance has to tell from its "+
+						"neighbour, and a consumer beside it is two answers to the same "+
+						"question", c.What, r.What, len(r.By))
+				}
+				continue
+			}
+			if len(r.By) == 0 {
+				t.Errorf("%q: %s is read (%s) and names no consumer.\n\n"+
+					"The sentence is what a failure carries and the consumers are what "+
+					"hold it to the harnesses. Without them this row is back to being a "+
+					"claim about two files in two other languages, made in a package that "+
+					"reads neither.", c.What, r.What, r.Read)
+				continue
+			}
+			for by, phrase := range r.By {
+				path, known := pinConsumers[by]
+				if !known {
+					t.Errorf("%q: %s says it is read by %q and pinConsumers has no such "+
+						"harness. The set is closed so that a reading cannot name a "+
+						"consumer nobody can go and look at", c.What, r.What, by)
+					continue
+				}
+				credited[by] = true
+				if phrase == "" {
+					t.Errorf("%q: %s names %s as a consumer and gives no phrase to find "+
+						"the assertion by. The name alone is the prose this pair replaced",
+						c.What, r.What, by)
+					continue
+				}
+				if pinSpells(source[by], phrase) {
+					continue
+				}
+				t.Errorf("%q: caseNumbers says %s is read by %s (%s), and %s does not "+
+					"contain %q.\n\n"+
+					"An assertion deleted from a harness leaves this row still saying the "+
+					"number is read, and resolution goes on deriving a floor over it — a "+
+					"bound BOTH tolerances obey, for a distinction one of them has stopped "+
+					"being asked to make. Either the reading comes out of this table, or "+
+					"the assertion goes back into that file; if it was only reworded, this "+
+					"row's phrase has to be reworded with it.",
+					c.What, r.What, by, r.Read, path, phrase)
+			}
+		}
+	}
+
+	for name, path := range pinConsumers {
+		if !credited[name] {
+			t.Errorf("pinConsumers names %q (%s) and no reading in caseNumbers says it "+
+				"reads anything.\n\n"+
+				"A consumer in the closed set that nothing cites is either a harness that "+
+				"has stopped reading this fixture — in which case the row is dead weight "+
+				"and every claim about it here is vacuous — or a table that forgot to "+
+				"credit it.", name, path)
+		}
+	}
+}
+
+// pinStripSpace removes every space, tab and newline.
+//
+// Both the harness source and the phrase looked for in it go through this, so
+// the comparison is about what the assertion says rather than how it is laid
+// out. A reformat that wraps `pinSame(measured, c.gap)` over four lines leaves
+// the same string on both sides; a rewrite that changes what is compared does
+// not, and that is the edit somebody has to look at.
+func pinStripSpace(s string) string {
+	return strings.Join(strings.Fields(s), "")
+}
+
+// pinSpells reports whether stripped source contains the phrase as a whole
+// token rather than as the head of a longer one.
+//
+// The boundary is asked only at an end that is a word character, because most
+// of these phrases end in a bracket: `pinSame(total,c.offer)` has nothing a
+// word boundary could match after it, and `c.compose.offered` renamed to
+// `c.compose.offeredX` would otherwise go on satisfying the row that says the
+// original is read.
+func pinSpells(stripped, phrase string) bool {
+	want := regexp.QuoteMeta(pinStripSpace(phrase))
+	if word(pinStripSpace(phrase)[0]) {
+		want = `\b` + want
+	}
+	if last := pinStripSpace(phrase); word(last[len(last)-1]) {
+		want += `\b`
+	}
+	return regexp.MustCompile(want).MatchString(stripped)
+}
+
+// word reports whether a byte is one Go's regexp counts inside \b.
+func word(b byte) bool {
+	return b == '_' || ('0' <= b && b <= '9') ||
+		('a' <= b && b <= 'z') || ('A' <= b && b <= 'Z')
 }

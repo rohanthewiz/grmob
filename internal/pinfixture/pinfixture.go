@@ -596,6 +596,66 @@ type pinReading struct {
 	// not tighten the floor: a tolerance has no reason to be able to tell it
 	// from its neighbour.
 	Read string
+	// By is each harness that reads this number, and the phrase that harness's
+	// own assertion is spelled with. Empty on an unread number, along with
+	// Read.
+	//
+	// # Why the prose grew a machine-readable half
+	//
+	// Read is a sentence, and a sentence is what a reader of a failure needs.
+	// It was also the whole of what tied this table to the two files it
+	// describes: an assertion deleted from pin.swift or browser.mjs left a row
+	// here still saying the number is read, and the floor stayed tightened for
+	// a distinction nobody makes any more. The coverage between this table and
+	// the STRUCT is checked in both directions and always has been; the
+	// coverage between it and the two consumers was prose.
+	//
+	// This is the same claim in a form a test can ask of the harnesses. See
+	// TestEveryReadingNamesAHarnessThatSpellsTheNumber, and pinConsumers for
+	// the closed set of names.
+	//
+	// # Why a phrase and not the field's name
+	//
+	// Both harnesses read the fixture out of one JSON transcript, so `c.offer`
+	// is how both of them spell the offer — and browser.mjs also mounts
+	// internal/bandfixture, whose cases have an Offer of their own, read as
+	// `c.offer` forty pages earlier in the same file. A field name is therefore
+	// not evidence that THIS fixture's number is read there: deleting the pin
+	// check's assertion outright leaves the token behind in another check.
+	//
+	// So each entry is the assertion's own phrase — `pinSame(total, c.offer)` —
+	// which belongs to one comparison and disappears with it. Whitespace in it
+	// matches any run of whitespace, so a reformat or a line-wrap does not
+	// break the claim; a rewrite of the comparison does, which is the point.
+	//
+	// What the check is worth, exactly: it says the harness still spells that
+	// comparison, not that the comparison still holds anything to the number.
+	// That is the claim a search can support — the same one wasm/verify's
+	// citation walk makes about a `check N` — and it catches the way this table
+	// actually rots, which is a reading outliving its consumer.
+	By map[string]string
+}
+
+// pinConsumers is every harness that reads this fixture: the name caseNumbers
+// calls it by, and where its source sits relative to the repository root.
+//
+// A closed set, so a reading cannot name a consumer nobody can go and look at,
+// and so a consumer that stopped being named by anything is a row somebody has
+// to delete on purpose.
+var pinConsumers = map[string]string{
+	"browser.mjs": "wasm/verify/browser.mjs",
+	"pin.swift":   "ios/verify/pin.swift",
+}
+
+// pinBoth is a reading both harnesses make, with the phrase each spells its own
+// assertion with. Most rows are one of these.
+//
+// pin.swift's side is the bare field in every row: that file is the pin check
+// and nothing else, so the fixture's own spelling belongs to one comparison
+// there. browser.mjs holds seven other checks and two other fixtures, so its
+// side names the comparison.
+func pinBoth(browser, swift string) map[string]string {
+	return map[string]string{"browser.mjs": browser, "pin.swift": swift}
 }
 
 // caseNumbers is every number a Case carries, with the assertion that reads it.
@@ -621,37 +681,61 @@ type pinReading struct {
 // Every number is read today, so the floor is the same number it was. What has
 // changed is that it is now derived from a statement instead of from an
 // assumption, and a fixture that grows an unread column will say so.
+//
+// # And the statement is asked of the harnesses
+//
+// The sentence in each row is what a failure carries, and for a while it was
+// also the only thing joining this table to the two files it is about. That
+// direction was checked by nobody: an assertion deleted from pin.swift or
+// browser.mjs leaves a row here saying the number is still read, and the floor
+// goes on being tightened for a distinction that has stopped being made. The
+// coverage between the table and the STRUCT is reflective and runs both ways;
+// the coverage between the table and its two CONSUMERS was prose.
+//
+// So each row also names the consumers by id and the token they spell the
+// number with. See pinReading's Field and By, pinConsumers for the closed set,
+// and TestEveryReadingNamesAHarnessThatSpellsTheNumber for what is asked of
+// them — in both directions, so a harness that started reading a number it is
+// not credited with fails as well as one that stopped.
 func caseNumbers(c Case) []pinReading {
 	out := []pinReading{
 		{c.Offer, "the offer", "browser.mjs sums the control row's extents and holds " +
-			"the total to it; pin.swift holds GrMobFlexSolver's containerMain to it"},
+			"the total to it; pin.swift holds GrMobFlexSolver's containerMain to it",
+			pinBoth("pinSame(total, c.offer)", "c.offer")},
 		{c.Gap, "the Row's gap", "browser.mjs measures the space between each " +
 			"adjacent pair and holds it to this; both harnesses hold every entry of " +
-			"the Compose column's gaps to it"},
+			"the Compose column's gaps to it",
+			pinBoth("pinSame(measured, c.gap)", "c.gap")},
 		{c.Compose.RowMain, "the Compose Row's own extent",
 			"pin.swift holds it to being no smaller than the offer — the measure " +
-				"policy does not clamp mainAxisLayoutSize to the maximum it was given"},
+				"policy does not clamp mainAxisLayoutSize to the maximum it was given",
+			map[string]string{"pin.swift": "c.compose.rowMain"}},
 	}
 	for i, ch := range c.Children {
 		out = append(out, pinReading{ch.Base, ch.Name + "'s base",
 			"browser.mjs holds a pinned child's measured extent to it and an " +
 				"unpinned one's to being strictly under it; pin.swift holds both " +
-				"columns to it"})
+				"columns to it",
+			pinBoth("pinSame(mains[j], child.base)", "child.base")})
 		out = append(out, pinReading{c.CSS[i], ch.Name + "'s CSS extent",
 			"browser.mjs holds the browser's measured extent to it; pin.swift holds " +
-				"GrMobFlexSolver's to it"})
+				"GrMobFlexSolver's to it",
+			pinBoth("c.css.forEach", "c.css")})
 		out = append(out, pinReading{c.Compose.Mains[i], ch.Name + "'s Compose extent",
 			"both harnesses compare the CSS extent against it, which is the " +
-				"agreement MainsAgreeWithCSS states"})
+				"agreement MainsAgreeWithCSS states",
+			pinBoth("pinSame(w, c.compose.mains[j])", "c.compose.mains")})
 		out = append(out, pinReading{c.Compose.Gaps[i],
 			"the Compose spacing after " + ch.Name,
 			"both harnesses compare it against the Row's gap, which is the " +
-				"agreement GapsAgreeWithCSS states"})
+				"agreement GapsAgreeWithCSS states",
+			pinBoth("pinSame(c.compose.gaps[j], c.gap)", "c.compose.gaps")})
 		out = append(out, pinReading{c.Compose.Offered[i],
 			"what the Compose Row offered " + ch.Name,
 			"pin.swift holds it under a pinned child's base wherever the pin is not " +
 				"first — a Row that offered the pin what it wanted is a row where the " +
-				"pin did nothing"})
+				"pin did nothing",
+			map[string]string{"pin.swift": "c.compose.offered"}})
 	}
 	return out
 }
