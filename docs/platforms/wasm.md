@@ -1340,11 +1340,45 @@ bold caption shorter than a plain one by more than that would make the badge the
 tallest child of a real band, and every `SameHeight` case would be describing a
 layout the framework does not build.
 
-So `gen.go` renders **real** `components.GroupHeader`s — three shapes (plain with
-a badge, a disclosure with a badge, a disclosure with the count hidden) through
-each of the three bundled themes — and emits the paths of the nodes to measure
-alongside each tree, found by walking the rendered nodes rather than spelled as
-indices. `browser.mjs` mounts all nine at once and reads the rects.
+So `gen.go` renders **real** `components.GroupHeader`s — five shapes (a plain
+band with a badge, a disclosure with a badge, each of those two again with the
+count hidden, and one plain band indented through `ControlStyle` under a title
+long enough to be most of the band) through each of four palettes — and emits
+the paths of the nodes to measure alongside each tree, found by walking the
+rendered nodes rather than spelled as indices. `browser.mjs` mounts all twenty
+at once and reads the rects, and then reads the pixels.
+
+The fourth palette is a bundled one with its caption tier changed and nothing
+else. The three bundled themes all set `Typography.Caption` to a normal weight
+at twelve or thirteen points with no line height of their own, so every band in
+the grid had a label line box of about the same height — and what the ink scan
+below is, is three rows placed relative to a font's metrics inside a line box.
+Three palettes at one type scale is a scan that has only ever been asked one
+question about metrics.
+
+**The pixels, not just the rects.** A band is a fill, a run of words and a
+count, and a grid that measured only geometry would pass a band that laid out
+perfectly and painted nothing. The fill is a point sample; the words and the
+digits cannot be, because a glyph is a few stems in a field of backdrop. So each
+is scanned across three rows taken as fractions of the band that run has ink in
+— from its baseline up by the ink height of the shortest glyph its content can
+contain, measured off the element's own inline text box and the canvas metrics
+for its resolved face. Three rows rather than one because the middle of a run is
+only the row *most likely* to cross a stem; fractions of the measured band
+rather than of the line box because where that band sits inside a line box is a
+relationship between a theme's leading and a font's metrics, and this is a check
+that chooses neither.
+
+All of it rests on antialiasing being linear — a glyph pixel at coverage `c` is
+`fill + c·(want − fill)`, which is grayscale antialiasing's arithmetic and not
+LCD subpixel antialiasing's. Headless Chrome disables subpixel rendering, and
+Chrome picks a text rendering path *per element*. So the mode is measured rather
+than assumed, and measured per declaration: `gen.go` emits one probe per
+distinct text declaration the scan reads — that node's own style, in black at
+its own alpha, on white — and each band names the probe that answers for its
+label and for its count. Every blend of two greys is a grey, so a probe pixel
+whose channels differ is a subpixel-rendered one, and a coloured probe suppresses
+the boxes that share its declaration rather than the whole grid.
 
 The button does fill the wrapper. The tap target spans the band, and it does so
 because of a cross-axis default rather than because of anything the widget

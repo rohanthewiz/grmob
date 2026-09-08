@@ -2744,13 +2744,62 @@ func armFromAnnotation(params, throwsKeyword, result string) conventionArm {
 // arms worth checking are the ones nothing has used yet.
 const conventionProbeInterface = "GrMobConventionProbe"
 
-// The parameter list every arm is probed behind as well as in front of.
+// The parameter lists every result shape is probed behind as well as in front
+// of.
 //
-// One of each kind a bound method can take: a scalar, the object type whose
-// nullability differs by position, and the byte slice whose does not. Every
-// entry is a bindableGoTypes row, so a refusal on one of these signatures is a
-// refusal the stub generator would meet in earnest.
-const conventionProbeParams = "a int, b string, c []byte"
+// # Why this is an enumeration and not a list
+//
+// It was one list: `a int, b string, c []byte` — "one of each kind a bound
+// method can take", chosen by hand. That is the same shape as the three arms
+// this test exists to close: a description of today's members rather than of
+// the space they come from, true the day it was written and silent afterwards.
+// The point of the probe is that swiftResults is DOCUMENTED as reading a
+// signature's results and nothing else, and a rule that started looking at a
+// parameter would be caught only if the parameter it looked at happened to be
+// one of the three somebody picked.
+//
+// The input space is closed and the result half already ranges over it: gobind
+// carries the types in bindableGoTypes and the bound interfaces, and nothing
+// else reaches a bound method's signature at all. So the parameter half ranges
+// over the same space:
+//
+//	""                the bare probe — the shape the enumeration compares
+//	                  against, and the one swiftResults' documentation says
+//	                  every other one has to match
+//	one of each type  every bindableGoTypes row and every bound interface,
+//	                  alone, so a rule that fires on one type is met by a
+//	                  signature carrying only that type
+//	all of them       every type at once, because a rule that fires on a
+//	                  COMBINATION — two reference types, a nullable beside a
+//	                  scalar — is invisible to any list of singletons
+//
+// The last one is why "each type alone" is not the whole enumeration: a
+// parameter list is a sequence, and the properties gobind reads off one (how
+// many pointers it already carries, where the NSError** lands) are properties
+// of the sequence.
+func conventionProbeParamLists(ifaces map[string]bool) []string {
+	types := []string{}
+	for name := range bindableGoTypes {
+		types = append(types, name)
+	}
+	for name := range ifaces {
+		types = append(types, name)
+	}
+	sort.Strings(types)
+
+	// The bare probe first, so a failure reads as "with these parameters" set
+	// against "with none".
+	lists := []string{""}
+	all := make([]string, 0, len(types))
+	for i, name := range types {
+		lists = append(lists, fmt.Sprintf("p%d %s", i, name))
+		all = append(all, fmt.Sprintf("p%d %s", i, name))
+	}
+	if len(all) > 1 {
+		lists = append(lists, strings.Join(all, ", "))
+	}
+	return lists
+}
 
 // Whether two rendered declarations are the same declaration.
 //
@@ -2831,43 +2880,53 @@ func TestEveryErrorConventionArmIsSettledByADeclaration(t *testing.T) {
 
 	// Which signature reached each arm, so an arm nothing reaches can be told
 	// from an arm nothing declares.
+	//
+	// The parameter half of the space, enumerated the way the result half is.
+	//
+	// swiftResults reads a signature's RESULTS and nothing else, so a nullary
+	// probe covers every bound method — today. That is a fact about the
+	// function rather than about the space it is being enumerated over, and it
+	// is the same shape as the three arms this test exists to close: true the
+	// day somebody wrote it, and silent afterwards. A rule that started looking
+	// at a parameter — a bound interface passed in, a nullable annotation on an
+	// argument — would be enumerated against nothing, and every arm below would
+	// go on describing methods that take none.
+	//
+	// So every result list is built behind every parameter list and the shapes
+	// must all be the bare one's. See conventionProbeParamLists: the lists are
+	// drawn from the same closed space the results are, so a refusal on one of
+	// them is a refusal the stub generator would meet in earnest.
+	paramLists := conventionProbeParamLists(ifaces)
 	reached := map[conventionArm]string{}
 	for _, r := range results {
-		shape, ok := probeShape(t, "func("+conventionProbeParams+") ("+r+")", r, ifaces)
-		if !ok {
-			continue
-		}
-		// The same results behind a parameter list, which is the other half of
-		// the space.
-		//
-		// swiftResults reads a signature's RESULTS and nothing else, so a
-		// nullary probe covers every bound method — today. That is a fact about
-		// the function rather than about the space it is being enumerated over,
-		// and it is the same shape as the three arms this test exists to close:
-		// true the day somebody wrote it, and silent afterwards. A rule that
-		// started looking at a parameter — a bound interface passed in, a
-		// nullable annotation on an argument — would be enumerated against
-		// nothing, and every arm below would go on describing methods that take
-		// none.
-		//
-		// So both are built and the shapes must be identical. The parameters
-		// are drawn from bindableGoTypes and the bound interfaces, so they are
-		// types the generator is required to declare rather than types it would
-		// refuse for a reason of their own.
 		bare, ok := probeShape(t, "func() ("+r+")", r, ifaces)
 		if !ok {
 			continue
 		}
-		if !sameResultShape(shape, bare) {
-			t.Errorf("a bound method returning (%s) renders as `func x(%s)%s` with no "+
-				"parameters and `func x(%s)%s` with (%s).\n\n"+
-				"swiftResults is documented as reading a signature's results and "+
-				"nothing else, and the enumeration below builds one probe per result "+
-				"list on the strength of that. It has stopped being true: the arms are "+
-				"now a function of the parameters too, and the space this test closes "+
-				"is no longer the space the generator ranges over.",
-				r, joinParams("", bare.outParams), bare.clause(),
-				joinParams("", shape.outParams), shape.clause(), conventionProbeParams)
+		shape := bare
+		differed := false
+		for _, params := range paramLists {
+			if params == "" {
+				continue
+			}
+			got, ok := probeShape(t, "func("+params+") ("+r+")", r, ifaces)
+			if !ok {
+				continue
+			}
+			if !sameResultShape(got, bare) {
+				t.Errorf("a bound method returning (%s) renders as `func x(%s)%s` with "+
+					"no parameters and `func x(%s)%s` with (%s).\n\n"+
+					"swiftResults is documented as reading a signature's results and "+
+					"nothing else, and the enumeration below builds one probe per "+
+					"result list on the strength of that. It has stopped being true: "+
+					"the arms are now a function of the parameters too, and the space "+
+					"this test closes is no longer the space the generator ranges over.",
+					r, joinParams("", bare.outParams), bare.clause(),
+					joinParams("", got.outParams), got.clause(), params)
+				differed = true
+			}
+		}
+		if differed {
 			continue
 		}
 		arm := armOf(shape)

@@ -109,6 +109,12 @@ type transcript struct {
 	// question about text (is the padded control really the band's tallest
 	// child once real glyphs are in it). See bandRender.
 	BandRenders []bandRender `json:"bandRenders"`
+	// InkProbes are the antialiasing probes the band grid's ink assertions
+	// rest on — one per distinct text declaration those assertions read, each
+	// naming the boxes it answers for. See inkProbe: the rendering mode used to
+	// be asked once for the whole page, and what one probe licensed was a claim
+	// about thirty boxes it did not paint.
+	InkProbes []inkProbe `json:"inkProbes"`
 	// Pins are internal/pinfixture's four arrangements of one overflowing Row.
 	// The sixth table, same reason as the rest.
 	//
@@ -329,12 +335,14 @@ func main() {
 	if err := pinfixture.Validate(); err != nil {
 		fatal("the pinned-Row fixture is vacuous: %v", err)
 	}
+	renders, probes := bandRenders()
 	out, err := json.Marshal(transcript{
 		Scenarios:   []scenario{demoScenario(), signupScenario()},
 		MenuCases:   menufixture.Cases(),
 		Widgets:     widgetCases(),
 		Bands:       bandfixture.Cases(),
-		BandRenders: bandRenders(),
+		BandRenders: renders,
+		InkProbes:   probes,
 		Pins:        pinfixture.Cases(),
 	})
 	if err != nil {
@@ -635,6 +643,40 @@ type bandRender struct {
 	Wrapper string `json:"wrapper"`
 	Badge   string `json:"badge"`
 
+	// Leading is the control's FIRST child — the words on the plain branch,
+	// the chevron on the disclosure — and ControlPadLeft the control's own
+	// leading padding, which is what separates the two.
+	//
+	// # What they close
+	//
+	// The band with a caller's own indent (see bandRenderBuilders) exists so
+	// the ink scan meets a label rect the other shapes never produce, and
+	// every assertion over it was one the other four also make. Nothing said
+	// the label had actually MOVED: a ControlStyle that stopped reaching the
+	// control would render the theme's own inset, the browser would measure
+	// that inset, and the shape would pass while exercising nothing.
+	//
+	// So the indent is stated by the fixture rather than read back off the
+	// node it is supposed to have set (renderBandCase checks the rendered
+	// padding against the constant the builder declared), and the browser
+	// holds the content's leading edge to it in pixels. The tap target's own
+	// leading edge is asserted separately and must NOT move — that is the
+	// difference between padding on the control and padding on the Row, and
+	// the reason ControlStyle is a safe thing to hand a caller.
+	//
+	// The first child rather than the label, because the disclosure branch
+	// puts the chevron in front of the words: `label.x - control.x` is the
+	// padding on one branch and the padding plus a glyph and a gap on the
+	// other, and only one of those is a declaration.
+	Leading        string  `json:"leading"`
+	ControlPadLeft float64 `json:"controlPadLeft"`
+	// ControlIndent is the indent this shape declared through ControlStyle, or
+	// 0 for a shape that declares none and takes the theme's own band inset.
+	// Carried so a failure can name which of the two the number is: the same
+	// pixel measurement means "the caller's indent did not arrive" on one shape
+	// and "the band's chrome did not arrive" on the other four.
+	ControlIndent float64 `json:"controlIndent"`
+
 	// Label is the run of words inside the control, and Chevron the glyph the
 	// disclosure branch puts before it — empty on the plain branch, which has
 	// none.
@@ -761,6 +803,170 @@ type bandRender struct {
 	// declaration reaches the screen.
 	BadgeInk      string  `json:"badgeInk"`
 	BadgePadRight float64 `json:"badgePadRight"`
+
+	// LabelProbe and BadgeProbe name the antialiasing probe that answers for
+	// each of the two scanned boxes. See inkProbe.
+	LabelProbe string `json:"labelProbe"`
+	BadgeProbe string `json:"badgeProbe"`
+}
+
+// inkProbe is one text declaration, reproduced in black on white so the
+// rendering mode it resolves to can be read as a colour.
+//
+// # The one measurement that stood in for thirty
+//
+// The whole band ink scan rests on antialiasing being LINEAR: a glyph pixel at
+// coverage c is `fill + c*(want - fill)`, so every legitimate pixel in a text
+// box is on the segment between the two colours (browser.mjs's offSegment) and
+// a stem's interior is the declared colour exactly (its INK_EPSILON). That is
+// grayscale antialiasing's arithmetic. LCD subpixel antialiasing gives each
+// channel its own coverage, and under it ordinary correct text is off that line
+// by tens of channels.
+//
+// The mode was asked once — black words on a white page, one size, one weight,
+// one box — and what that licensed was a claim about every label and every
+// count in the grid, in colours the probe did not paint, at weights it did not
+// set, at whatever alpha a theme's ink carries. Chrome picks a text rendering
+// path PER ELEMENT: a translucent ink, a transform, a compositing ancestor can
+// each move one box off the path its neighbour took. So one measurement stood
+// in for thirty, and the thirty are the ones the tolerance is spent on.
+//
+// # What a probe is, and what it can and cannot reproduce
+//
+// Each probe carries the scanned node's OWN Style — every field of it, so a
+// declaration this file has never thought about (a LineHeight, a Rotate, a
+// Transition) travels with it — over a white box, with the text colour
+// replaced by black at the same alpha. Black at any alpha over white is a grey,
+// so the verdict stays the one a screenshot can state without begging the
+// question: under grayscale antialiasing every blend of two greys is a grey, so
+// a pixel whose channels differ is a subpixel-rendered one. Asking the probe in
+// the band's own colours instead would be asking offSegment, which is the thing
+// this exists to license.
+//
+// What it reproduces is the declaration and its immediate backdrop. What it
+// cannot reproduce is an ancestor — a band that acquired a transform or a
+// compositing layer would move its own text's path without moving its probe's.
+// That is a smaller gap than one probe for the whole page, and it is a gap:
+// the probes answer for declarations, and the day something above a band starts
+// deciding how its glyphs are drawn, this stops being the right question.
+//
+// # Why they are deduplicated
+//
+// Two bands that declare the same words in the same face at the same alpha are
+// one question, and the grid is a fold budget — the bands have to stay above
+// the bottom of the viewport for any of them to be scanned at all. Key is the
+// declaration itself, so a theme that stopped differing from another silently
+// shares its answer instead of paying for a second one.
+type inkProbe struct {
+	// Key is the probe's identity: the declaration it reproduces, rendered.
+	// Two boxes with the same key are the same question.
+	Key string `json:"key"`
+	// What names the declarations this probe answers for, so a failure can say
+	// which parts of the grid it invalidates rather than only which box was
+	// coloured.
+	What string `json:"what"`
+	// Tree is the probe box, as JSON, ready to be mounted alongside the bands.
+	Tree string `json:"tree"`
+	// Width is the box's declared width in device-independent pixels. The
+	// browser holds the rendered rect to it: probes are laid out in one Row to
+	// keep the grid's height, and a Row that ran out of width would squeeze
+	// them into slivers and the scan would report a grey page because it read
+	// almost none of one.
+	Width float64 `json:"width"`
+
+	// subject is which of a band's two scanned boxes this probe was built for.
+	// Unexported: it is how bandRenders knows which field of the case to put
+	// the key in, and the browser reads the key rather than the reason.
+	subject inkProbeSubject
+}
+
+// inkProbeSubject is which scanned box a probe answers for.
+type inkProbeSubject int
+
+const (
+	inkProbeLabel inkProbeSubject = iota
+	inkProbeBadge
+)
+
+// The run of glyphs every probe paints.
+//
+// Nothing but vertical strokes with gaps between them, which is the shape that
+// produces the most antialiased edge per pixel scanned — and a fringe, when
+// there is one, lives on an edge.
+const inkProbeText = "illlim"
+
+// How wide a probe box is, in device-independent pixels.
+//
+// Enough for inkProbeText at any caption size a theme sets, and small enough
+// that the probes fit on one line of bandRenderWidth beside each other. The
+// browser checks the rendered width against this rather than trusting it.
+const inkProbeWidth = 56
+
+// inkProbeFor builds the probe that answers for one scanned text node.
+//
+// Returns the probe and its key. The key is the rendered declaration, so
+// two nodes that declare the same thing produce the same probe.
+func inkProbeFor(text *core.Node, subject inkProbeSubject, what string) (inkProbe, error) {
+	if text == nil || text.Style == nil {
+		return inkProbe{}, fmt.Errorf(
+			"%s: no styled text node to build an antialiasing probe from", what)
+	}
+	// The node's own Style, copied whole. A field this file has never heard of
+	// is a field that might change how Chrome draws the glyphs, and the probe
+	// is only worth anything while it is drawing them the same way.
+	style := *text.Style
+	ink, err := inkProbeColor(style.TextColor)
+	if err != nil {
+		return inkProbe{}, fmt.Errorf("%s: %w", what, err)
+	}
+	style.TextColor = ink
+	// The box's own paint, not the text's: a probe reads its whole rect, and a
+	// background on the run would be a second colour in it.
+	style.Background = ""
+	style.Width = ""
+	style.Height = ""
+
+	box := &core.Node{
+		Type: "Box",
+		Style: &core.Style{
+			Background: "#FFFFFF",
+			Width:      fmt.Sprintf("%dpx", inkProbeWidth),
+			// A flex item in the probe Row below. Without this a Row narrower
+			// than its probes shrinks them all, and a probe read across two
+			// device pixels is a page that looks grey because almost none of
+			// it was looked at.
+			FlexShrink: core.ShrinkNone,
+		},
+		Children: []*core.Node{{
+			Type:  "Text",
+			Props: map[string]any{"content": inkProbeText},
+			Style: &style,
+		}},
+	}
+	tree := jsonout.Export(box)
+	return inkProbe{
+		Key: tree, What: what, Tree: tree, Width: inkProbeWidth, subject: subject,
+	}, nil
+}
+
+// inkProbeColor is black at the alpha the declared ink carries.
+//
+// The alpha travels because it is one of the things that can move an element
+// onto another rendering path, and because it costs nothing to keep: black at
+// any alpha over white composites to a grey, which is the property the whole
+// probe rests on.
+func inkProbeColor(ink string) (string, error) {
+	switch len(ink) {
+	case 7:
+		return "#000000", nil
+	case 9:
+		return "#000000" + ink[7:], nil
+	}
+	return "", fmt.Errorf(
+		"the text is declared in %q, which is neither #RRGGBB nor #RRGGBBAA. The "+
+			"antialiasing probe repaints it as black at the same alpha so the "+
+			"screenshot can be read as greys, and a colour it cannot take apart is a "+
+			"declaration it cannot stand in for", ink)
 }
 
 // bandRenderBuilders is one entry per band shape, so a shape added here is
@@ -803,32 +1009,42 @@ var bandRenderBuilders = []struct {
 	// for a shape that is in none. Each named pair must have exactly one plain
 	// and one disclosure band — checked in bandRenders, because a pair with
 	// one half is a comparison that silently does not run.
-	pair  string
-	build func() components.GroupHeader
+	pair string
+	// indent is the leading padding this shape's ControlStyle declares, or 0
+	// for a shape that declares none and takes the theme's own band inset.
+	//
+	// Stated here rather than read back off the rendered node, which is the
+	// whole point of it: renderBandCase holds the control's rendered padding
+	// to this number, so a ControlStyle that stopped reaching the control is a
+	// failure here rather than a shape that quietly exercises nothing. See
+	// bandRender.Leading for the pixel half of the same claim.
+	indent int
+	build  func() components.GroupHeader
 }{
-	{"a plain band", false, "badged", func() components.GroupHeader {
+	{"a plain band", false, "badged", 0, func() components.GroupHeader {
 		return components.GroupHeader{Group: bandRenderGroup}
 	}},
-	{"a disclosure band", true, "badged", func() components.GroupHeader {
+	{"a disclosure band", true, "badged", 0, func() components.GroupHeader {
 		return components.GroupHeader{
 			Group: bandRenderGroup, Expanded: true, OnToggle: func() {},
 		}
 	}},
-	{"a plain band, count hidden", false, "unbadged", func() components.GroupHeader {
+	{"a plain band, count hidden", false, "unbadged", 0, func() components.GroupHeader {
 		return components.GroupHeader{Group: bandRenderGroup, HideCount: true}
 	}},
-	{"a disclosure band, count hidden", true, "unbadged", func() components.GroupHeader {
+	{"a disclosure band, count hidden", true, "unbadged", 0, func() components.GroupHeader {
 		return components.GroupHeader{
 			Group: bandRenderGroup, Expanded: true, OnToggle: func() {},
 			HideCount: true,
 		}
 	}},
-	{"a plain band, indented, long title, no count", false, "", func() components.GroupHeader {
-		return components.GroupHeader{
-			Group: bandRenderLongGroup, HideCount: true,
-			ControlStyle: []core.StyleProp{core.PaddingLeft(bandRenderIndent)},
-		}
-	}},
+	{"a plain band, indented, long title, no count", false, "", bandRenderIndent,
+		func() components.GroupHeader {
+			return components.GroupHeader{
+				Group: bandRenderLongGroup, HideCount: true,
+				ControlStyle: []core.StyleProp{core.PaddingLeft(bandRenderIndent)},
+			}
+		}},
 }
 
 // The group every rendered band titles. The same one internal/bandfixture
@@ -860,8 +1076,82 @@ const bandRenderIndent = 40
 // question with "yes, because there was nowhere else to go".
 const bandRenderWidth = 320
 
-func bandRenders() []bandRender {
-	byName := core.BundledThemes()
+// bandRenderThemes is the set of palettes the grid mounts every shape through:
+// the bundled ones, and one derived from a bundled one that differs in the only
+// way none of them do.
+//
+// # What three palettes were not varying
+//
+// The five shapes differ from each other in geometry, and every theme paints
+// them the same way: what a bundled theme changes is the PALETTE. Every one of
+// them sets Typography.Caption to a normal weight at twelve or thirteen points
+// with no line height of its own, so every band in the grid has a label line
+// box of about the same height, and every fraction of it lands in about the
+// same place.
+//
+// That matters because the ink scan is three fractions of a line box measured
+// against a font's x-height band, and the whole of what makes those fractions
+// safe is the relationship between the two. A theme with a taller caption tier
+// — a larger size, an explicit LineHeight — moves the band inside the box, and
+// nothing in the grid was ever laid out in one. Three palettes at one type
+// scale is a scan that has only ever been asked one question about metrics.
+//
+// # The derived theme
+//
+// A copy of a bundled theme with its caption tier changed and nothing else, so
+// the difference between it and the theme it came from is exactly the thing
+// being varied. Both departures at once, because they move the band by
+// different mechanisms and a check has no reason to meet them separately:
+// FontSize scales the glyphs (and with them the x-height the band is), and
+// LineHeight adds leading around them without touching either — which is the
+// one that pushes the x-height band DOWN inside the box while leaving the
+// fractions where they were.
+//
+// It is a real theme by construction rather than a hand-written palette: the
+// contrast the ink scan needs, the pill's own ink, every colour the other
+// checks read, all come from the theme it copies.
+func bandRenderThemes() map[string]*core.Theme {
+	out := map[string]*core.Theme{}
+	for name, t := range core.BundledThemes() {
+		out[name] = t
+	}
+	base, ok := out[bandRenderTallBase]
+	if !ok {
+		fatal("bandRenderThemes derives its tall-caption theme from %q and "+
+			"core.BundledThemes has no such theme", bandRenderTallBase)
+	}
+	tall := *base
+	tall.Typography.Caption.FontSize = base.Typography.Caption.FontSize + 6
+	tall.Typography.Caption.LineHeight = int(base.Typography.Caption.FontSize) + 16
+	// The derived theme has to actually differ, or it is a fourth copy of the
+	// third and the grid pays for twenty bands to ask fifteen questions. Both
+	// halves, because either alone would leave the other unvaried.
+	if tall.Typography.Caption.FontSize == base.Typography.Caption.FontSize ||
+		tall.Typography.Caption.LineHeight == base.Typography.Caption.LineHeight {
+		fatal("the tall-caption theme's Caption is %gpx over a line height of %d and "+
+			"%s's is %gpx over %d — they have to differ in BOTH, which is the only "+
+			"reason this theme is in the grid: a size scales the glyphs and with them "+
+			"the x-height band, and leading moves that band inside the line box "+
+			"without touching it",
+			tall.Typography.Caption.FontSize, tall.Typography.Caption.LineHeight,
+			bandRenderTallBase, base.Typography.Caption.FontSize,
+			base.Typography.Caption.LineHeight)
+	}
+	out[bandRenderTallName] = &tall
+	return out
+}
+
+const (
+	// The theme the tall-caption one is a copy of, and the name it goes under.
+	// Named so a failure in the grid says which of the two it is, and so the
+	// pair reads as "this palette, at another type scale" rather than as a
+	// fourth palette.
+	bandRenderTallBase = "DefaultTheme"
+	bandRenderTallName = "DefaultTheme+tallCaption"
+)
+
+func bandRenders() ([]bandRender, []inkProbe) {
+	byName := bandRenderThemes()
 	names := make([]string, 0, len(byName))
 	for name := range byName {
 		names = append(names, name)
@@ -893,17 +1183,76 @@ func bandRenders() []bandRender {
 	}
 
 	out := make([]bandRender, 0, len(names)*len(bandRenderBuilders))
+	// The probes, deduplicated by the declaration they reproduce and kept in
+	// the order they were first met so the transcript is stable. See inkProbe.
+	probes := []inkProbe{}
+	seen := map[string]int{}
+	// Every shape's rendered control padding, per theme, so the indented shape
+	// can be held to having actually moved something.
+	padByTheme := map[string]map[string]float64{}
 	for _, name := range names {
+		padByTheme[name] = map[string]float64{}
 		for _, b := range bandRenderBuilders {
-			c, err := renderBandCase(name, byName[name], b.what, b.collapsible, b.build())
+			c, built, err := renderBandCase(
+				name, byName[name], b.what, b.collapsible, b.indent, b.build())
 			if err != nil {
 				fatal("%v", err)
 			}
 			c.Pair = b.pair
+			for _, p := range built {
+				at, ok := seen[p.Key]
+				if !ok {
+					at = len(probes)
+					seen[p.Key] = at
+					probes = append(probes, p)
+				} else {
+					// A second declaration answered by the same probe. Both
+					// names ride along, because a coloured probe invalidates
+					// every box that shares it and the failure has to say so.
+					probes[at].What += "; " + p.What
+				}
+				if p.subject == inkProbeLabel {
+					c.LabelProbe = p.Key
+				} else {
+					c.BadgeProbe = p.Key
+				}
+			}
+			padByTheme[name][b.what] = c.ControlPadLeft
 			out = append(out, c)
 		}
 	}
-	return out
+
+	// The indented shape's control padding must differ from the shapes that
+	// declare none, in every theme.
+	//
+	// renderBandCase already holds it to the number the builder declared, which
+	// says the ControlStyle reached the control. This says the number is worth
+	// declaring: an indent that happened to equal the theme's own band inset
+	// would put the label exactly where the other four shapes put it, and the
+	// shape that exists to give the ink scan a rect it has not met would be
+	// handing it the same rect again.
+	for _, name := range names {
+		for _, b := range bandRenderBuilders {
+			if b.indent == 0 {
+				continue
+			}
+			for _, other := range bandRenderBuilders {
+				if other.indent != 0 {
+					continue
+				}
+				if padByTheme[name][b.what] == padByTheme[name][other.what] {
+					fatal("%s: %q indents its control to %g and %q renders the same "+
+						"%g without asking. The indented shape is in this grid to put "+
+						"the label's rect somewhere the others never do, and at this "+
+						"inset it is the same rect — raise bandRenderIndent above every "+
+						"bundled theme's band inset", name, b.what,
+						padByTheme[name][b.what], other.what,
+						padByTheme[name][other.what])
+				}
+			}
+		}
+	}
+	return out, probes
 }
 
 // renderBandCase renders one band through one theme and locates the nodes the
@@ -914,7 +1263,7 @@ func bandRenders() []bandRender {
 // `go test`, and os.Exit does the first and takes the whole test binary down
 // doing the second.
 func renderBandCase(name string, theme *core.Theme, what string, collapsible bool,
-	band components.GroupHeader) (bandRender, error) {
+	indent int, band components.GroupHeader) (bandRender, []inkProbe, error) {
 
 	ctx := core.NewContext().WithTheme(theme)
 	ctx.BeginRenderPass()
@@ -929,13 +1278,13 @@ func renderBandCase(name string, theme *core.Theme, what string, collapsible boo
 	).Render(ctx)
 
 	if len(page.Children) != 1 {
-		return bandRender{}, fmt.Errorf(
+		return bandRender{}, nil, fmt.Errorf(
 			"%s/%s: the page box rendered %d children, want the band alone",
 			name, what, len(page.Children))
 	}
 	row := page.Children[0]
 	if row.Style == nil {
-		return bandRender{}, fmt.Errorf("%s/%s: the band Row rendered with no Style",
+		return bandRender{}, nil, fmt.Errorf("%s/%s: the band Row rendered with no Style",
 			name, what)
 	}
 
@@ -957,13 +1306,13 @@ func renderBandCase(name string, theme *core.Theme, what string, collapsible boo
 	}
 
 	if c.Fill == "" {
-		return bandRender{}, fmt.Errorf(
+		return bandRender{}, nil, fmt.Errorf(
 			"%s/%s: the band Row declares no background. Its fill is why a band may span "+
 				"its container edge to edge, and with none there is nothing for the "+
 				"browser to read back", name, what)
 	}
 	if c.Fill == c.Page {
-		return bandRender{}, fmt.Errorf(
+		return bandRender{}, nil, fmt.Errorf(
 			"%s/%s: the band's fill and the page behind it are both %s, so a pixel taken "+
 				"inside the band agrees with either answer and the paint check cannot "+
 				"fail. A theme whose Surface equals its Background needs a different "+
@@ -978,7 +1327,7 @@ func renderBandCase(name string, theme *core.Theme, what string, collapsible boo
 	for i, child := range row.Children {
 		if child.Style != nil && child.Style.FlexGrow > 0 {
 			if grow >= 0 {
-				return bandRender{}, fmt.Errorf(
+				return bandRender{}, nil, fmt.Errorf(
 					"%s/%s: the band has more than one growing child (%d and %d) — "+
 						"the badge is pinned by a single grow weight, and two of them "+
 						"share the slack", name, what, grow, i)
@@ -987,18 +1336,18 @@ func renderBandCase(name string, theme *core.Theme, what string, collapsible boo
 		}
 	}
 	if grow < 0 {
-		return bandRender{}, fmt.Errorf(
+		return bandRender{}, nil, fmt.Errorf(
 			"%s/%s: no child of the band grows — the whole tap-target question is "+
 				"about padding on a *stretched* child", name, what)
 	}
 	if grow != 0 {
-		return bandRender{}, fmt.Errorf(
+		return bandRender{}, nil, fmt.Errorf(
 			"%s/%s: the growing child is at index %d and the leading edge is index 0 — "+
 				"the label is supposed to come first", name, what, grow)
 	}
 
 	if len(row.Children) > 2 {
-		return bandRender{}, fmt.Errorf(
+		return bandRender{}, nil, fmt.Errorf(
 			"%s/%s: the band rendered %d children and this fixture reads at most two",
 			name, what, len(row.Children))
 	}
@@ -1006,7 +1355,7 @@ func renderBandCase(name string, theme *core.Theme, what string, collapsible boo
 		c.Badge = "root/0/1"
 		badge := row.Children[1]
 		if badge.Style == nil || badge.Style.Background == "" {
-			return bandRender{}, fmt.Errorf(
+			return bandRender{}, nil, fmt.Errorf(
 				"%s/%s: the count badge declares no background. It is a pill, and a "+
 					"pill with no fill is a number sitting on the band — which is a "+
 					"different widget and one no pixel here could tell apart from a "+
@@ -1022,7 +1371,7 @@ func renderBandCase(name string, theme *core.Theme, what string, collapsible boo
 		// the first digit, and either one fails while describing a colour
 		// rather than a cause.
 		if c.BadgePadLeft < 2 {
-			return bandRender{}, fmt.Errorf(
+			return bandRender{}, nil, fmt.Errorf(
 				"%s/%s: the count pill's leading padding is %gpx. The browser samples "+
 					"the pill's fill half a padding in — the leading edge itself is the "+
 					"apex of a 999-radius curve and every pixel there is a blend — so a "+
@@ -1030,7 +1379,7 @@ func renderBandCase(name string, theme *core.Theme, what string, collapsible boo
 					"not digit", name, what, c.BadgePadLeft)
 		}
 		if c.BadgeFill == c.Fill {
-			return bandRender{}, fmt.Errorf(
+			return bandRender{}, nil, fmt.Errorf(
 				"%s/%s: the badge and the band behind it are both %s, so a pixel taken "+
 					"inside the pill agrees with either answer and the paint check "+
 					"cannot fail", name, what, c.BadgeFill)
@@ -1039,7 +1388,7 @@ func renderBandCase(name string, theme *core.Theme, what string, collapsible boo
 		// the scan below existed. Everything asserted about the label's ink is
 		// asserted about this one, and for the same reasons.
 		if c.BadgeInk == "" {
-			return bandRender{}, fmt.Errorf(
+			return bandRender{}, nil, fmt.Errorf(
 				"%s/%s: the count pill declares no text colour, so what a browser draws "+
 					"the number in is whatever it inherits and there is nothing to read "+
 					"back. components.Badge resolves an ink against its own fill "+
@@ -1048,7 +1397,7 @@ func renderBandCase(name string, theme *core.Theme, what string, collapsible boo
 				name, what)
 		}
 		if c.BadgeInk == c.BadgeFill {
-			return bandRender{}, fmt.Errorf(
+			return bandRender{}, nil, fmt.Errorf(
 				"%s/%s: the count's digits and the pill behind them are both %s, so the "+
 					"number is invisible and a scan that found the digits would be "+
 					"finding the pill", name, what, c.BadgeInk)
@@ -1058,7 +1407,7 @@ func renderBandCase(name string, theme *core.Theme, what string, collapsible boo
 		// empty and "no digit found" would be a fact about the arithmetic
 		// rather than about the paint.
 		if c.BadgePadRight < 2 {
-			return bandRender{}, fmt.Errorf(
+			return bandRender{}, nil, fmt.Errorf(
 				"%s/%s: the count pill's trailing padding is %gpx. The digit scan reads "+
 					"the box between the two paddings — the pill's own edges are the "+
 					"apexes of a 999-radius curve and every pixel there is a blend with "+
@@ -1070,20 +1419,25 @@ func renderBandCase(name string, theme *core.Theme, what string, collapsible boo
 	// Where the insets are, and therefore what a finger lands on. On the plain
 	// branch the growing child carries them itself; as a disclosure it is a
 	// wrapper with no chrome at all and the button inside it is the target.
+	//
+	// controlNode and labelNode are the two the branches disagree about, kept
+	// so the code after them can ask one question of both: the control's own
+	// leading inset, and the antialiasing probe the label's declaration needs.
 	growing := row.Children[grow]
+	var controlNode, labelNode *core.Node
 	if collapsible {
 		if len(growing.Children) != 1 {
-			return bandRender{}, fmt.Errorf(
+			return bandRender{}, nil, fmt.Errorf(
 				"%s/%s: the heading wrapper holds %d children, want the button alone",
 				name, what, len(growing.Children))
 		}
 		control := growing.Children[0]
 		if control.Style == nil {
-			return bandRender{}, fmt.Errorf(
+			return bandRender{}, nil, fmt.Errorf(
 				"%s/%s: the band's button rendered with no Style", name, what)
 		}
 		if control.Props["onClick"] == nil {
-			return bandRender{}, fmt.Errorf(
+			return bandRender{}, nil, fmt.Errorf(
 				"%s/%s: the node inside the heading wrapper has no handler, so it is "+
 					"not the thing a press lands on", name, what)
 		}
@@ -1091,7 +1445,7 @@ func renderBandCase(name string, theme *core.Theme, what string, collapsible boo
 		// wrapper" would be a claim about a box with chrome of its own and the
 		// tap target would stop short of the band by however much it carries.
 		if p := growing.Style.Padding; p != (core.EdgeInsets{}) {
-			return bandRender{}, fmt.Errorf(
+			return bandRender{}, nil, fmt.Errorf(
 				"%s/%s: the heading wrapper carries padding %+v — it is supposed to be "+
 					"geometrically invisible, and chrome on it is chrome the tap target "+
 					"does not reach", name, what, p)
@@ -1103,7 +1457,7 @@ func renderBandCase(name string, theme *core.Theme, what string, collapsible boo
 		// otherwise have the browser comparing the label's line box with
 		// itself.
 		if len(control.Children) != 2 {
-			return bandRender{}, fmt.Errorf(
+			return bandRender{}, nil, fmt.Errorf(
 				"%s/%s: the button holds %d children, want the chevron and the words",
 				name, what, len(control.Children))
 		}
@@ -1116,7 +1470,7 @@ func renderBandCase(name string, theme *core.Theme, what string, collapsible boo
 			}
 		}
 		if c.Label == "" || c.Chevron == "" {
-			return bandRender{}, fmt.Errorf(
+			return bandRender{}, nil, fmt.Errorf(
 				"%s/%s: the button's children are not a chevron and the group's label — "+
 					"the height comparison in check 10 is an equation over exactly those two",
 				name, what)
@@ -1124,17 +1478,24 @@ func renderBandCase(name string, theme *core.Theme, what string, collapsible boo
 		for _, child := range control.Children {
 			if child.Props["content"] == band.Group.Label && child.Style != nil {
 				c.LabelInk = child.Style.TextColor
+				labelNode = child
 			}
 		}
+		controlNode = control
+		// The control's first child, whatever it is. On this branch it is the
+		// chevron, and the browser holds ITS leading edge to the control's own
+		// padding — `label.x - control.x` here is the padding plus a glyph and
+		// a gap, which is not a declaration anything states.
+		c.Leading = fmt.Sprintf("%s/0", c.Control)
 	} else {
 		c.Control = "root/0/0"
 		if len(growing.Children) != 1 {
-			return bandRender{}, fmt.Errorf(
+			return bandRender{}, nil, fmt.Errorf(
 				"%s/%s: the plain band's control holds %d children, want the words alone",
 				name, what, len(growing.Children))
 		}
 		if growing.Children[0].Props["content"] != band.Group.Label {
-			return bandRender{}, fmt.Errorf(
+			return bandRender{}, nil, fmt.Errorf(
 				"%s/%s: the plain band's control does not hold the group's label",
 				name, what)
 		}
@@ -1142,27 +1503,84 @@ func renderBandCase(name string, theme *core.Theme, what string, collapsible boo
 		if growing.Children[0].Style != nil {
 			c.LabelInk = growing.Children[0].Style.TextColor
 		}
+		labelNode = growing.Children[0]
+		controlNode = growing
+		// On this branch the control's first child IS the words, so the two
+		// paths are the same node — which is what makes the indent's effect
+		// directly visible on this shape.
+		c.Leading = c.Label
 		// The plain branch's growing child IS the control, so of course it
 		// grows; the field means "the control has a weight of its own beyond
 		// being the growing child", which on this branch it cannot.
 		c.ControlGrows = false
 	}
 
+	// The control's own leading padding, and whether the shape's declared
+	// indent reached it.
+	//
+	// Read off the rendered node for the reason every other number here is —
+	// what the browser is asked is whether the widget's own declaration reached
+	// the screen — and then held to the number bandRenderBuilders DECLARED,
+	// which is the half that reading it back cannot do. A ControlStyle that
+	// stopped being applied would render the theme's own inset, this would
+	// carry that inset, and the browser would confirm it: two readings of one
+	// side of the comparison, agreeing.
+	c.ControlPadLeft = float64(controlNode.Style.Padding.Left)
+	c.ControlIndent = float64(indent)
+	if indent > 0 && c.ControlPadLeft != float64(indent) {
+		return bandRender{}, nil, fmt.Errorf(
+			"%s/%s: the shape declares ControlStyle PaddingLeft(%d) and the control "+
+				"rendered with %g. That style is the caller's own indent — the one thing "+
+				"this shape is in the grid to exercise — and a band whose ControlStyle "+
+				"stopped reaching the control lays out exactly like the four shapes that "+
+				"declare none", name, what, indent, c.ControlPadLeft)
+	}
+	if c.ControlPadLeft <= 0 {
+		return bandRender{}, nil, fmt.Errorf(
+			"%s/%s: the control carries no leading padding. The band's chrome is on the "+
+				"control rather than on the Row precisely so a press lands on the whole "+
+				"band, and with none there is no inset between the tap target's edge and "+
+				"its content for the browser to measure", name, what)
+	}
+
 	// The ink, on whichever branch found it. Both branches give the label the
 	// same three declarations (GroupHeader spells them once), so this is one
 	// check rather than two.
 	if c.LabelInk == "" {
-		return bandRender{}, fmt.Errorf(
+		return bandRender{}, nil, fmt.Errorf(
 			"%s/%s: the band's label declares no text colour, so what a browser paints "+
 				"the words in is whatever it inherits and there is nothing to read back. "+
 				"GroupHeader gives the label core.TextColor(TextSecondary) — a band that "+
 				"stopped would still lay out identically", name, what)
 	}
 	if c.LabelInk == c.Fill {
-		return bandRender{}, fmt.Errorf(
+		return bandRender{}, nil, fmt.Errorf(
 			"%s/%s: the label's ink and the band behind it are both %s, so the words are "+
 				"invisible and a check that found the ink would be finding the fill",
 			name, what, c.LabelInk)
 	}
-	return c, nil
+
+	// The antialiasing probes: one per box this case's ink assertions read.
+	//
+	// Built from the scanned nodes themselves rather than from the theme, so a
+	// declaration that moved between the widget and the palette travels with
+	// the box that carries it. bandRenders deduplicates them — two bands that
+	// declare the same words in the same face at the same alpha are one
+	// question. See inkProbe.
+	var probes []inkProbe
+	labelProbe, err := inkProbeFor(labelNode, inkProbeLabel,
+		fmt.Sprintf("%s/%s's label", name, what))
+	if err != nil {
+		return bandRender{}, nil, err
+	}
+	probes = append(probes, labelProbe)
+	if c.Badge != "" {
+		badgeProbe, err := inkProbeFor(row.Children[1], inkProbeBadge,
+			fmt.Sprintf("%s/%s's count", name, what))
+		if err != nil {
+			return bandRender{}, nil, err
+		}
+		probes = append(probes, badgeProbe)
+	}
+	return c, probes, nil
 }

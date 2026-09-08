@@ -581,7 +581,83 @@ func build(what string, gap int, css []int, children ...Child) Case {
 	return c
 }
 
-// resolution is the smallest distance apart any two of this case's numbers are.
+// pinReading is one number a case carries, and what holds a measurement to it.
+//
+// See resolution: the floor a tolerance has to stay under is derived over the
+// numbers a check has to be able to TELL APART, and "which numbers those are"
+// is a fact about the two harnesses rather than about this table.
+type pinReading struct {
+	// Value is the number.
+	Value int
+	// What names it, so a floor can say which pair of numbers set it.
+	What string
+	// Read is the assertion that holds a measurement to this number, or empty
+	// for a number no check compares anything against. An unread number does
+	// not tighten the floor: a tolerance has no reason to be able to tell it
+	// from its neighbour.
+	Read string
+}
+
+// caseNumbers is every number a Case carries, with the assertion that reads it.
+//
+// # Why this is written out
+//
+// resolution used to range over every number in the case — offer, gap, both
+// columns, every base, every measured extent — on the argument that some
+// assertion somewhere compares a measurement against each of them. That
+// argument is TRUE today, and it is an argument rather than a statement: it is
+// a claim about two harnesses, made in a package that reads neither, and the
+// day the fixture carried a number no check reads it would go on tightening a
+// bound for no reason. A floor that is safe by superset is safe and is not the
+// question anybody asked.
+//
+// So each number says which check reads it. That turns "the smallest distance
+// between any two of these" into "the smallest distinction a harness is asked
+// to make", which is what the tolerances are actually held to — and it makes
+// adding a number to the fixture a decision: a field with no row here fails
+// TestEveryNumberInACaseSaysWhichCheckReadsIt rather than silently moving a
+// bound that two other languages read.
+//
+// Every number is read today, so the floor is the same number it was. What has
+// changed is that it is now derived from a statement instead of from an
+// assumption, and a fixture that grows an unread column will say so.
+func caseNumbers(c Case) []pinReading {
+	out := []pinReading{
+		{c.Offer, "the offer", "browser.mjs sums the control row's extents and holds " +
+			"the total to it; pin.swift holds GrMobFlexSolver's containerMain to it"},
+		{c.Gap, "the Row's gap", "browser.mjs measures the space between each " +
+			"adjacent pair and holds it to this; both harnesses hold every entry of " +
+			"the Compose column's gaps to it"},
+		{c.Compose.RowMain, "the Compose Row's own extent",
+			"pin.swift holds it to being no smaller than the offer — the measure " +
+				"policy does not clamp mainAxisLayoutSize to the maximum it was given"},
+	}
+	for i, ch := range c.Children {
+		out = append(out, pinReading{ch.Base, ch.Name + "'s base",
+			"browser.mjs holds a pinned child's measured extent to it and an " +
+				"unpinned one's to being strictly under it; pin.swift holds both " +
+				"columns to it"})
+		out = append(out, pinReading{c.CSS[i], ch.Name + "'s CSS extent",
+			"browser.mjs holds the browser's measured extent to it; pin.swift holds " +
+				"GrMobFlexSolver's to it"})
+		out = append(out, pinReading{c.Compose.Mains[i], ch.Name + "'s Compose extent",
+			"both harnesses compare the CSS extent against it, which is the " +
+				"agreement MainsAgreeWithCSS states"})
+		out = append(out, pinReading{c.Compose.Gaps[i],
+			"the Compose spacing after " + ch.Name,
+			"both harnesses compare it against the Row's gap, which is the " +
+				"agreement GapsAgreeWithCSS states"})
+		out = append(out, pinReading{c.Compose.Offered[i],
+			"what the Compose Row offered " + ch.Name,
+			"pin.swift holds it under a pinned child's base wherever the pin is not " +
+				"first — a Row that offered the pin what it wanted is a row where the " +
+				"pin did nothing"})
+	}
+	return out
+}
+
+// resolution is the smallest distance apart any two of the numbers some check
+// has to tell apart are.
 //
 // # What it is for
 //
@@ -607,31 +683,29 @@ func build(what string, gap int, css []int, children ...Child) Case {
 // checking, and each holds its own number to it. That is one claim in one place
 // with two consumers, rather than two numbers nobody could compare.
 //
-// # Why every number and not the compared pairs
+// # Over the numbers checks read, and not over every number
 //
 // Which pairs a harness actually distinguishes differs between the two — the
 // browser measures gaps the Swift solver has no equivalent for — and a floor
-// derived per-consumer would be two floors again. Every number in the case is a
-// number some assertion on some target compares a measurement against, so the
-// smallest gap between any two of them is the bound that serves both.
+// derived per-consumer would be two floors again. So it is derived over the
+// UNION, and caseNumbers is where that union is written down: every number the
+// case carries, each naming the assertion that holds a measurement to it.
+//
+// It used to be derived over every number full stop, which is a superset of
+// that union and therefore safe, and it was safe by an argument rather than by
+// a statement. See caseNumbers.
 func resolution(c Case) int {
-	seen := map[int]bool{c.Offer: true, c.Gap: true}
-	for _, ch := range c.Children {
-		seen[ch.Base] = true
+	seen := map[int]string{}
+	for _, r := range caseNumbers(c) {
+		// A number nothing compares anything against is a number no tolerance
+		// has to be able to tell from its neighbour.
+		if r.Read == "" {
+			continue
+		}
+		if _, ok := seen[r.Value]; !ok {
+			seen[r.Value] = r.What
+		}
 	}
-	for _, n := range c.CSS {
-		seen[n] = true
-	}
-	for _, n := range c.Compose.Mains {
-		seen[n] = true
-	}
-	for _, n := range c.Compose.Gaps {
-		seen[n] = true
-	}
-	for _, n := range c.Compose.Offered {
-		seen[n] = true
-	}
-	seen[c.Compose.RowMain] = true
 
 	nums := make([]int, 0, len(seen))
 	for n := range seen {

@@ -187,7 +187,7 @@ func checkCitationsResolve(t *testing.T, checks int) {
 			"repository is invisible to it.", root)
 	}
 
-	files, from, err := citingFiles(root)
+	files, considered, from, err := citingFiles(root)
 	if err != nil {
 		t.Fatalf("enumerating the repository for citations (%s): %v", from, err)
 	}
@@ -207,27 +207,59 @@ func checkCitationsResolve(t *testing.T, checks int) {
 	// was not quietly running in its weaker form.
 	t.Logf("citations enumerated by %s: %d files", from, len(files))
 
+	// Every sense the enumeration produced has to be one somebody classified.
+	//
+	// The senses used to reach a failure message and no assertion: repoFile
+	// carried them so a reader could be told who has to act, and nothing in the
+	// check turned on which one it was. That is not the same as their being
+	// equal — it is the question never having been asked, and a third sense
+	// arriving (the walk's, on a machine with no git) would have slipped
+	// through the same way. See citationSenses.
+	for path, sense := range considered {
+		if _, classified := citationSenses[sense]; !classified {
+			t.Errorf("%s came back as %q and citationSenses has no row for it.\n\n"+
+				"A sense is how the enumeration knows this file is the repository's, "+
+				"and citationSenses is where what that costs the reader is decided. An "+
+				"unclassified one is a file being held to a rule nobody chose for it.",
+				path, sense)
+			break
+		}
+	}
+
 	seenExempt := map[string]bool{}
 	for _, f := range files {
 		if _, exempt := citationExempt[f.path]; exempt {
 			seenExempt[f.path] = true
 			continue
 		}
+		act, classified := citationSenses[f.sense]
+		if !classified {
+			continue // already reported above
+		}
 		for _, cite := range f.cites {
 			if cite < 1 || cite > checks {
 				t.Errorf("%s (%s) cites check %d, and browser.mjs has %d. Either the "+
 					"citation was not moved when the sequence was renumbered, or it "+
 					"names a check that no longer exists.\n\n"+
-					"The parenthesis is which sense of \"this repository's file\" the "+
-					"enumeration used, and it says who has to act: a tracked path is a "+
-					"citation the history carries, and an uncommitted one is an edit in "+
-					"the working tree of whoever is reading this.",
-					f.path, f.sense, cite, checks)
+					"%s",
+					f.path, f.sense, cite, checks, act)
 			}
 		}
 	}
 
+	// The exemptions, in the two ways one can outlive its reason.
 	for path, why := range citationExempt {
+		if _, reached := considered[path]; !reached {
+			t.Errorf("%s is exempted from the citation check (%s) and the enumeration "+
+				"(%s) does not reach it at all.\n\n"+
+				"citationSkipDirs classifies PREFIXES and is asked of git; this table "+
+				"classifies FILES and was asked of nothing. A renamed or deleted path "+
+				"leaves a row here that can never be satisfied, and the failure it "+
+				"produces is the one below — \"this file no longer cites a check\" — "+
+				"which sends the reader to look at an exemption when what happened was "+
+				"a rename.", path, why, from)
+			continue
+		}
 		if !seenExempt[path] {
 			t.Errorf("%s is exempted from the citation check (%s) and no longer cites a "+
 				"check at all. An exemption outlives its reason silently: it goes on "+
@@ -235,6 +267,47 @@ func checkCitationsResolve(t *testing.T, checks int) {
 				"the day it starts citing browser.mjs instead nothing looks.", path, why)
 		}
 	}
+}
+
+// What each sense of "this repository's file" costs whoever reads a failure.
+//
+// # The decision nobody had made
+//
+// repoFile carries the sense so a failure can say who has to act, and until
+// this table that was the whole of it: the phrase reached a message and no
+// assertion. A citation in a committed file and one in a file still on
+// somebody's desk were the same failure at the same severity — which may well
+// be right, and was not a decision anybody made. It was the enumeration
+// happening to tell the reader something and nothing downstream caring.
+//
+// It is a decision now, and the decision is that all three fail. The check
+// exists so that every `check N` in the repository is an address into
+// browser.mjs, and a bad address is a bad address whether or not it has been
+// committed yet — an untracked one is a citation about to become a committed
+// one, and the moment to fix it is now. What differs is who acts and where, and
+// that is what the row says.
+//
+// The value of writing it down is the third sense. senseOnDisk comes from the
+// walk, which runs on a machine with no git and cannot say whether the file is
+// the repository's at all; it reads as the weakest of the three and is held to
+// the same rule, which is a choice rather than an oversight. And the next sense
+// added to the enumeration fails here until somebody makes the same choice for
+// it, rather than inheriting one.
+var citationSenses = map[string]string{
+	senseTracked: "The parenthesis is which sense of \"this repository's file\" the " +
+		"enumeration used. This one is tracked: the citation is in the history, so " +
+		"fixing it is a commit.",
+	senseUntracked: "The parenthesis is which sense of \"this repository's file\" the " +
+		"enumeration used. This one is not committed yet: the citation is an edit in " +
+		"the working tree of whoever is running this, and fixing it is a save. It " +
+		"fails here rather than waiting for the commit, because a citation that is " +
+		"wrong now is wrong when it lands.",
+	senseOnDisk: "The parenthesis is which sense of \"this repository's file\" the " +
+		"enumeration used. This one came from the filesystem walk, which runs where " +
+		"git could not answer and cannot say whether this file is the repository's " +
+		"at all — a source tarball, a container image, an export. It is held to the " +
+		"same rule as the other two: a `check N` that names nothing is wrong wherever " +
+		"the file came from.",
 }
 
 // The files whose `check N` is not an address into browser.mjs, and why.
@@ -557,16 +630,25 @@ func walkedFiles(root string) ([]repoFile, error) {
 // an extension list is a second thing to keep current, and the one property
 // that actually matters here — "a regexp over this is meaningless" — is exactly
 // what a NUL is evidence of.
-func citingFiles(root string) (found []citing, from string, err error) {
+func citingFiles(root string) (found []citing, considered map[string]string,
+	from string, err error) {
+
 	files, gitErr := repositoryFiles(root)
 	from = "git ls-files"
 	if gitErr != nil {
 		from = fmt.Sprintf("a filesystem walk (git could not answer: %v)", gitErr)
 		if files, err = walkedFiles(root); err != nil {
-			return nil, from, err
+			return nil, nil, from, err
 		}
 	}
 
+	// Every path this enumeration actually looked inside, with the sense it
+	// came back under. Returned alongside the citations because the two tables
+	// above ask different questions of it: citationExempt names paths and has
+	// to know they still exist (a renamed file leaves a row nothing can ever
+	// satisfy), and citationSenses classifies senses and has to know which ones
+	// were produced.
+	considered = map[string]string{}
 	for _, f := range files {
 		rel := f.path
 		// The skip prefixes apply to both enumerations, and which of them each
@@ -602,16 +684,17 @@ func citingFiles(root string) (found []citing, from string, err error) {
 		}
 		raw, readErr := os.ReadFile(p)
 		if readErr != nil {
-			return nil, from, readErr
+			return nil, nil, from, readErr
 		}
 		if bytes.IndexByte(raw, 0) >= 0 {
 			continue
 		}
+		considered[rel] = f.sense
 		if cites := citations(string(raw)); len(cites) > 0 {
 			found = append(found, citing{path: rel, sense: f.sense, cites: cites})
 		}
 	}
-	return found, from, nil
+	return found, considered, from, nil
 }
 
 // headerProse is the opening comment with its markers stripped and its lines

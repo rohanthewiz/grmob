@@ -3,6 +3,7 @@ package pinfixture
 import (
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -447,13 +448,17 @@ func TestTheResolutionIsTheClosestTwoNumbersCome(t *testing.T) {
 
 	// And every case is checked against its own numbers rather than against
 	// this one reading of them.
+	//
+	// Over caseNumbers' READ entries, which is what the derivation ranges over
+	// — spelled here as a second walk of the same table rather than as a second
+	// list of fields, so this stays a check of the arithmetic and the coverage
+	// question belongs to the test below.
 	for _, c := range Cases() {
-		nums := append([]int{c.Offer, c.Gap, c.Compose.RowMain}, c.CSS...)
-		nums = append(nums, c.Compose.Mains...)
-		nums = append(nums, c.Compose.Gaps...)
-		nums = append(nums, c.Compose.Offered...)
-		for _, ch := range c.Children {
-			nums = append(nums, ch.Base)
+		var nums []int
+		for _, r := range caseNumbers(c) {
+			if r.Read != "" {
+				nums = append(nums, r.Value)
+			}
 		}
 		closest := 0
 		for i := range nums {
@@ -755,4 +760,143 @@ func joinInts(v []int) string {
 		parts[i] = itoa(n)
 	}
 	return strings.Join(parts, ", ")
+}
+
+// Every number a Case carries says which check reads it.
+//
+// # The gap this closes
+//
+// resolution derives the floor two harnesses hold their tolerances to, and it
+// used to derive it over every number in the case: offer, gap, both columns,
+// every base, every measured extent. The argument for that was a sentence —
+// "every number in the case is a number some assertion on some target compares
+// a measurement against" — and it is a claim about two files in two other
+// languages, made in a package that reads neither.
+//
+// True today, and true by nobody's decision tomorrow. A column added to
+// Measured for a reader's benefit, a second offer, an intrinsic size stated for
+// documentation: each would tighten a bound that ios/verify and browser.mjs
+// both read, for a distinction no check is asked to make. And the failure would
+// arrive as two harnesses being told their tolerances are too loose, in a file
+// that says nothing about either.
+//
+// So caseNumbers names every number and the assertion that holds a measurement
+// to it, and this holds that table to the struct. The walk is reflective on
+// purpose: a field added to Case, Child or Measured appears here without
+// anybody remembering to add it, which is the whole point — the failure is
+// "somebody has to say whether a check reads this", which is a decision, and
+// the alternative is a floor that moves on its own.
+func TestEveryNumberInACaseSaysWhichCheckReadsIt(t *testing.T) {
+	// Which numeric fields of a Case caseNumbers is supposed to cover, and the
+	// one it deliberately does not.
+	//
+	// The value is whether the field is one of the numbers a harness compares
+	// against. A field marked false is a number in the fixture that nothing
+	// reads as a distinction, and it must not tighten the floor.
+	covered := map[string]bool{
+		"Offer":             true,
+		"Gap":               true,
+		"Children[].Base":   true,
+		"CSS[]":             true,
+		"Compose.Offered[]": true,
+		"Compose.Mains[]":   true,
+		"Compose.Gaps[]":    true,
+		"Compose.RowMain":   true,
+		// The floor itself, derived FROM the readings. A number that described
+		// the others would be one of them, and this one is their answer.
+		"Resolution": false,
+	}
+
+	for _, c := range Cases() {
+		found := map[string][]int{}
+		walkPinNumbers(t, "", reflect.ValueOf(c), found)
+
+		for path := range found {
+			if _, stated := covered[path]; !stated {
+				t.Errorf("a Case carries the number %s and nothing says whether a check "+
+					"reads it.\n\n"+
+					"resolution derives the floor ios/verify's pinEpsilon and "+
+					"browser.mjs's PIN_EPSILON are both held to, over the numbers some "+
+					"assertion compares a measurement against. A new number is either "+
+					"one of those — in which case caseNumbers has to name the assertion "+
+					"— or it is not, in which case saying so here is what keeps it from "+
+					"tightening a bound two other languages read for a distinction "+
+					"nobody makes.", path)
+			}
+		}
+		for path := range covered {
+			if _, ok := found[path]; !ok {
+				t.Errorf("this test says %s is one of a Case's numbers and the struct no "+
+					"longer has it. A stale row here is a coverage claim about a field "+
+					"that is gone", path)
+			}
+		}
+
+		// And the two directions between the fields and the readings, which is
+		// what makes "covered" a fact rather than a list.
+		read := map[int]bool{}
+		for _, r := range caseNumbers(c) {
+			if r.Read != "" {
+				read[r.Value] = true
+			}
+		}
+		for path, values := range found {
+			if !covered[path] {
+				continue
+			}
+			for _, v := range values {
+				if !read[v] {
+					t.Errorf("%q carries %s = %d and caseNumbers produces no read entry "+
+						"with that value. The table is what resolution ranges over, so a "+
+						"number it does not carry is a distinction the floor does not "+
+						"protect — and both harnesses would widen past it.",
+						c.What, path, v)
+				}
+			}
+		}
+		inFields := map[int]bool{}
+		for path, values := range found {
+			if !covered[path] {
+				continue
+			}
+			for _, v := range values {
+				inFields[v] = true
+			}
+		}
+		for _, r := range caseNumbers(c) {
+			if r.Read != "" && !inFields[r.Value] {
+				t.Errorf("%q: caseNumbers reads %s as %d and no covered field of the "+
+					"Case holds that number. A reading with no field behind it is a "+
+					"distinction invented in the derivation, and it tightens the floor "+
+					"for nothing.", c.What, r.What, r.Value)
+			}
+		}
+	}
+}
+
+// walkPinNumbers collects every int a Case reaches, by the path it sits at.
+//
+// Ints and slices of ints only: a bool is a flag rather than a distinction, and
+// a string is a name. A slice contributes one path with every element's value
+// under it, because a per-element path would make the coverage table above a
+// function of how many children a case has.
+func walkPinNumbers(t *testing.T, path string, v reflect.Value, out map[string][]int) {
+	t.Helper()
+	switch v.Kind() {
+	case reflect.Int:
+		out[path] = append(out[path], int(v.Int()))
+	case reflect.Slice:
+		for i := 0; i < v.Len(); i++ {
+			walkPinNumbers(t, path+"[]", v.Index(i), out)
+		}
+	case reflect.Struct:
+		for i := 0; i < v.NumField(); i++ {
+			name := v.Type().Field(i).Name
+			at := name
+			if path != "" {
+				at = path + "." + name
+			}
+			walkPinNumbers(t, at, v.Field(i), out)
+		}
+	}
 }
