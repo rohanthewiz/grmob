@@ -341,12 +341,12 @@ func TestListStretchFillReadsTheAlignFallback(t *testing.T) {
 		{kotlinRenderer, "fun ColumnScope.ColumnChildren(", "isColumnStretch(node.style)",
 			"fun isColumnStretch(", "ifEmpty { s.align }"},
 	} {
-		if !strings.Contains(declSource(t, pin.file, pin.list), pin.helperCall) {
+		if !strings.Contains(codeOf(t, pin.file, pin.list), pin.helperCall) {
 			t.Errorf("%s: %s's fill binding does not read %s — the stretch equality has come apart "+
 				"from the placement dispatch again, so Align: stretch with AlignItems unset places "+
 				"the rows at the start edge and fills nothing", pin.file, pin.list, pin.helperCall)
 		}
-		if !strings.Contains(declSource(t, pin.file, pin.helper), pin.fallbackRead) {
+		if !strings.Contains(valuesOf(t, pin.file, pin.helper), pin.fallbackRead) {
 			t.Errorf("%s: %s no longer reads %s — the Style.Align fallback is gone from the helper "+
 				"the fill binding relies on, so Align: stretch with AlignItems unset stretches "+
 				"nothing while the placement dispatch still claims it is handled",

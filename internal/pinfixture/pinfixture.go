@@ -58,20 +58,31 @@
 //
 // # The fixture, and what each case is for
 //
-// One Row, one set of children, four arrangements. The Row is 120 wide and the
+// One Row, one set of children, five arrangements. The Row is 120 wide and the
 // children want 60, 200 and 40, so the deficit (180) is larger than what the
 // two shrinkable children have to give (100) — which is forced, not chosen: a
 // pinned child whose base exceeds the container makes it arithmetically
 // unavoidable, and a pinned child whose base does NOT exceed the container is
 // not pinned against anything when it comes first.
 //
-//	                      CSS (GrMobFlexSolver, ios/verify)   Compose (below)
-//	no pin                24, 80, 16                          60, 60,  0
-//	pin first  [P,A,B]   200,  0,  0                         200,  0,  0
-//	pin middle [A,P,B]     0,200,  0                          60,200,  0
-//	pin last   [A,B,P]     0,  0,200                          60, 40,200
+//	                          CSS (Case.CSS)   Compose (MeasureCompose)
+//	no pin                    24, 80, 16       60, 60,  0
+//	pin first      [P,A,B]   200,  0,  0      200,  0,  0
+//	pin middle     [A,P,B]     0,200,  0       60,200,  0
+//	pin last       [A,B,P]     0,  0,200       60, 40,200
+//	pin middle+gap [A,P,B]     0,200,  0       60,200,  0   gaps 8,8 / 8,0
 //
-// Three claims come out of that table, and each needs a different row to be
+// BOTH columns are fields now, and that is newer than the rest of this. The CSS
+// one used to be three numbers in this comment, beside two mechanisms that
+// produce them and neither of which was ever compared with it — so the control
+// row's 24/80/16 was the one row nothing derived from a stated claim, and a
+// reader who trusted those numbers was trusting a paragraph. Nothing here
+// computes them: a flex line transcribed into Go would be a third spelling
+// after GrMobFlexSolver and a browser, and every comparison would become a
+// question about whether two transcriptions agree. What changed is that the
+// claim is now a value, so a solver and a browser can be held to it.
+//
+// Four claims come out of that table, and each needs a different row to be
 // visible:
 //
 //	the declaration means the same thing   the pinned child is 200 in every
@@ -92,6 +103,23 @@
 //	                                       every child that can shrink, so the
 //	                                       same three children get the same three
 //	                                       sizes in any order.
+//
+//	the SPACING diverges too               the last row is the pin-middle row
+//	                                       with an 8px gap, and both its columns
+//	                                       of extents are that row's unchanged —
+//	                                       a gap is used space in a flex line,
+//	                                       and the shrinkable children were
+//	                                       clamped to zero already. What differs
+//	                                       is underneath:
+//	                                       spaceAfterLastNoWeight is
+//	                                       min(spacing, what is left), so the
+//	                                       Row charges 8 after the lead child
+//	                                       and nothing after the pin, where a
+//	                                       flex line charges both. Every case
+//	                                       here carried gap 0 until that row, so
+//	                                       the line MeasureCompose implements had
+//	                                       never been put in front of a browser
+//	                                       or a solver.
 //
 // The pin-first row is the one where they agree, and it is here for the reason
 // bandfixture states an unbadged band: an "it diverges" with no case that does
@@ -122,18 +150,20 @@
 // That used to be the end of the paragraph, and it was reasoning rather than a
 // measurement: "the known difference does not apply here", said by whoever
 // wrote the fixture and asked of nobody. wasm/verify's check 12 mounts these
-// four Rows in a browser now and holds it to what this file states — a pinned
+// Rows in a browser now and holds them to what this file states — a pinned
 // child keeps its base, the extents match the Compose column exactly where
-// MainsAgreeWithCSS says they do and differ where it says they differ, and a
-// child's width does not depend on where it sits. A browser lays them out at
-// 24/80/16, 200/0/0, 0/200/0 and 0/0/200: the CSS column of the table above,
-// measured.
+// MainsAgreeWithCSS says they do and differ where it says they differ, a
+// child's width does not depend on where it sits, and the spacing between two
+// adjacent children is the Row's gap wherever the fixture says a flex line
+// keeps it.
 //
-// Three of those four rows are pinned to their exact numbers by those claims
-// together. The control row's proportional split is still GrMobFlexSolver's
-// alone, and check 12 deliberately does not recompute it — a flex line
-// transcribed into JavaScript would make that check about whether two
-// transcriptions agree.
+// And the CSS column itself, which is what closed the last of it. Those claims
+// pin three of the four ungapped rows to their exact numbers; the control row's
+// proportional split was determined by none of them and was three numbers in
+// this comment. It is Case.CSS now — still stated rather than computed, for the
+// reason that field gives — so GrMobFlexSolver and a browser are each held to
+// the whole column, the control row included, and the census's table is a claim
+// two executable things fail on rather than a paragraph beside them.
 package pinfixture
 
 import "fmt"
@@ -162,6 +192,16 @@ type Measured struct {
 	Offered []int `json:"offered"`
 	// Mains is the main-axis extent each child came back at.
 	Mains []int `json:"mains"`
+	// Gaps is the spacing the Row actually inserted after each child —
+	// spaceAfterLastNoWeight, per child, with the trailing one taken back off
+	// the way the measure policy takes it off fixedSpace.
+	//
+	// It is a separate answer from Mains and not a restatement of the Row's
+	// own Gap, which is the whole point: min(spacing, what is left) means an
+	// overflowing Row inserts NO spacing after the child that spent the axis,
+	// and a CSS flex line inserts it regardless. Three documents repeat that
+	// sentence and until this field nothing measured it.
+	Gaps []int `json:"gaps"`
 	// RowMain is the measure policy's mainAxisLayoutSize — the Row's own extent
 	// — which is NOT clamped to the maximum it was given. See MeasureCompose.
 	RowMain int `json:"rowMain"`
@@ -252,6 +292,7 @@ func MeasureCompose(offer, gap int, children []Child) Measured {
 	m := Measured{
 		Offered: make([]int, len(children)),
 		Mains:   make([]int, len(children)),
+		Gaps:    make([]int, len(children)),
 	}
 
 	// The Row's own constraint. Both the minimum and the maximum, because a
@@ -286,11 +327,17 @@ func MeasureCompose(offer, gap int, children []Child) Measured {
 		// The spacing after this child is itself clamped to what is left, so a
 		// Row that has already overflowed inserts none.
 		spaceAfterLastNoWeight = min(gap, max(mainAxisMax-fixedSpace-size, 0))
+		m.Gaps[i] = spaceAfterLastNoWeight
 		fixedSpace += size + spaceAfterLastNoWeight
 	}
 	// No weighted children, so the trailing spacing counted by the loop is not
-	// part of the Row.
+	// part of the Row. Taken off the record as well as off the total: a gap
+	// after the last child is not a gap anybody can measure, and leaving it in
+	// Gaps would make the sum below disagree with the Row's own extent.
 	fixedSpace -= spaceAfterLastNoWeight
+	if len(children) > 0 {
+		m.Gaps[len(children)-1] = 0
+	}
 
 	// weightedSpace is 0 here. Note the absence of any upper bound: this is
 	// where the overflow becomes the Row's own size.
@@ -309,6 +356,28 @@ type Case struct {
 	// Compose is MeasureCompose's answer for this case.
 	Compose Measured `json:"compose"`
 
+	// CSS is the main-axis extent a CSS flex line gives each child.
+	//
+	// # Why it is stated here and computed nowhere
+	//
+	// This package deliberately does not solve a flex line. Two things already
+	// do — GrMobFlexSolver, which ios/verify runs, and a real browser, which
+	// wasm/verify's check 12 mounts — and a third spelling in Go would make
+	// every comparison a question about whether two transcriptions agree.
+	//
+	// So this is the CLAIM, and both of those hold it. That is the same
+	// arrangement the Compose column has with the census's prose: the table is
+	// what the repository says, and the executable things are what say whether
+	// it is true.
+	//
+	// It used to live only in this package's header, as three numbers in a
+	// comment beside two mechanisms that produce them. The control row's
+	// 24/80/16 was the sharpest case — the one row nothing derived from a
+	// stated claim, so a reader who trusted those three numbers was trusting a
+	// comment. It is a field now, and a wrong number here fails on a solver and
+	// on a browser.
+	CSS []int `json:"css"`
+
 	// MainsAgreeWithCSS is whether the Compose extents are the same numbers a
 	// CSS flex line produces for these children. Stated by the fixture and
 	// asserted in BOTH directions by whoever solves the CSS half, for the
@@ -319,6 +388,19 @@ type Case struct {
 	// It is a fact about the case rather than a flag somebody set, and the
 	// fixture's own test derives it — see TestTheAgreementIsWhetherThePinComesFirst.
 	MainsAgreeWithCSS bool `json:"mainsAgreeWithCSS"`
+
+	// GapsAgreeWithCSS is whether the Row inserted the spacing a CSS flex line
+	// inserts: Gap between every adjacent pair, whatever happened to the
+	// children.
+	//
+	// It is false exactly where the Row overflowed before it reached the last
+	// gap, which is a divergence of the same kind as MainsAgreeWithCSS and
+	// entirely separate from it — the gapped case below has the SAME extents on
+	// both targets as its ungapped twin and different spacing. Asserted in both
+	// directions by whoever measures the CSS half, for the reason the other
+	// flag is: a check that only ever confirmed a collapse would pass just as
+	// well against a target that had stopped collapsing.
+	GapsAgreeWithCSS bool `json:"gapsAgreeWithCSS"`
 }
 
 // The Row every case is a rearrangement of.
@@ -337,12 +419,15 @@ type Case struct {
 //	                       deficit in proportion to the bases, so equal ones
 //	                       would make a proportional answer indistinguishable
 //	                       from an even split.
-//	no padding, no gap     every number below is a child's extent against the
+//	no padding             every number below is a child's extent against the
 //	                       container's, with no subtraction for the reader to
-//	                       do — and gap 0 keeps the solver's spacing out of a
-//	                       comparison that is about shrink. MeasureCompose
-//	                       implements the spacing line anyway and this package's
-//	                       own test exercises it.
+//	                       do.
+//	gap 0, except once     four of the five rows carry none, which keeps the
+//	                       solver's spacing out of a comparison that is about
+//	                       shrink. The fifth carries 8 and is about spacing
+//	                       alone — it is the pin-middle row again, with extents
+//	                       chosen so that neither column moves, so the only
+//	                       thing it can be measuring is the gap.
 const (
 	rowOffer   = 120
 	rowGap     = 0
@@ -350,6 +435,20 @@ const (
 	pinnedBase = 200
 	tailBase   = 40
 )
+
+// spacedGap is the one case that has spacing, and the size is chosen rather
+// than picked.
+//
+// Small enough that adding it changes no child's extent — the deficit already
+// exceeds what the shrinkable children have to give, so CSS clamps them to zero
+// with or without it, and Compose's offers are past zero by the time the second
+// gap would be charged. That is what makes the spacing row a statement about
+// SPACING: its two columns of extents are identical to the ungapped row it
+// sits beside, and the only thing that differs is the gaps.
+//
+// Large enough to be a whole point of layout, so a browser measuring 8 against
+// 0 is not measuring a rounding.
+const spacedGap = 8
 
 // Cases returns the four arrangements, in the order the table in this package's
 // header lists them.
@@ -366,24 +465,63 @@ func Cases() []Case {
 	unpinned.Pinned = false
 
 	return []Case{
-		build("no pin: every child shrinks", lead, unpinned, tail),
-		build("the pinned child first", pin, lead, tail),
-		build("the pinned child between its siblings", lead, pin, tail),
-		build("the pinned child last", lead, tail, pin),
+		build("no pin: every child shrinks", rowGap, []int{24, 80, 16}, lead, unpinned, tail),
+		build("the pinned child first", rowGap, []int{200, 0, 0}, pin, lead, tail),
+		build("the pinned child between its siblings", rowGap, []int{0, 200, 0}, lead, pin, tail),
+		build("the pinned child last", rowGap, []int{0, 0, 200}, lead, tail, pin),
+
+		// And the one with spacing. Same three children in the same order as
+		// the pin-middle row above, so the pair is one declaration apart the
+		// way the control row is: both columns of extents are identical and
+		// the gaps are not.
+		//
+		// The CSS column is that row's, unchanged, and saying why is the whole
+		// content of this case. A flex line's gaps are used space like any
+		// other: the deficit grows by 16 and both shrinkable children were
+		// already clamped to zero, so nothing moves. Compose's does not move
+		// either, for its own reason — the first child was offered the whole
+		// Row and the pin ignores what it is offered. What differs is
+		// underneath: `spaceAfterLastNoWeight` is min(spacing, what is left),
+		// so the Row inserts 8 after the lead child and nothing after the pin,
+		// where CSS inserts 8 in both places.
+		build("the pinned child between its siblings, with spacing", spacedGap,
+			[]int{0, 200, 0}, lead, pin, tail),
 	}
 }
 
-// build measures one arrangement and states whether CSS would agree with it.
-func build(what string, children ...Child) Case {
+// build measures one arrangement, states the CSS extents a flex line gives it,
+// and derives the two flags.
+func build(what string, gap int, css []int, children ...Child) Case {
 	c := Case{
 		What:     what,
 		Offer:    rowOffer,
-		Gap:      rowGap,
+		Gap:      gap,
 		Children: children,
-		Compose:  MeasureCompose(rowOffer, rowGap, children),
+		Compose:  MeasureCompose(rowOffer, gap, children),
+		CSS:      css,
 	}
-	c.MainsAgreeWithCSS = agreesWithCSS(children)
+	c.MainsAgreeWithCSS = agreesWithCSS(gap, children)
+	c.GapsAgreeWithCSS = gapsAgreeWithCSS(gap, c.Compose.Gaps)
 	return c
+}
+
+// gapsAgreeWithCSS is whether the Row inserted the spacing CSS inserts.
+//
+// A CSS flex line puts `gap` between every adjacent pair whatever happened to
+// the children's sizes; a Compose Row clamps each one to what was left. So this
+// is the whole rule, and it is derived from the measured gaps rather than from
+// the position of the pin — the collapse depends on where the axis ran out,
+// which is arithmetic and not a property of the arrangement.
+func gapsAgreeWithCSS(gap int, gaps []int) bool {
+	// The last entry is the trailing spacing the measure policy takes back off,
+	// and CSS has no such gap either: with n children there are n-1 places a
+	// gap can go.
+	for i := 0; i+1 < len(gaps); i++ {
+		if gaps[i] != gap {
+			return false
+		}
+	}
+	return true
 }
 
 // agreesWithCSS is the rule the table in this package's header shows.
@@ -412,7 +550,7 @@ func build(what string, children ...Child) Case {
 // proportion to its base and Compose hands out what is left in order, so an
 // overflowing row with more than one shrinkable child cannot come out the same.
 // The control row is what that looks like — 24/80/16 against 60/60/0.
-func agreesWithCSS(children []Child) bool {
+func agreesWithCSS(gap int, children []Child) bool {
 	if len(children) == 0 || !children[0].Pinned {
 		return false
 	}
@@ -423,6 +561,11 @@ func agreesWithCSS(children []Child) bool {
 			shrinkable += c.Base
 		}
 	}
+	// The gaps are used space in a flex line, so they are part of the deficit.
+	// Nothing in this fixture turns on it — the deficit clears the shrinkable
+	// total either way — and it is written out because leaving it out would
+	// make the rule right about these numbers and wrong about the next ones.
+	natural += gap * max(len(children)-1, 0)
 	// The premise: CSS clamps every shrinkable child to zero. Without it the
 	// rule above is about a fixture this is not.
 	return natural-rowOffer >= shrinkable
@@ -458,6 +601,17 @@ func validate(cases []Case) error {
 				"child both before and after the pin, and 'what the ones before it "+
 				"left' stops being a different number from 'everything'",
 				c.What, len(c.Children))
+		}
+		// And the stated CSS column is a claim about THESE children. A column
+		// of the wrong length is one about a different Row, and it would
+		// otherwise reach both harnesses and fail there as an index error or
+		// as a silence, depending on which read it first. Last of the three
+		// because the two above are about the Row and this is about the claim
+		// printed beside it.
+		if len(c.CSS) != len(c.Children) {
+			return fmt.Errorf("%q states %d CSS extents for %d children, so the column "+
+				"the census prints and the row it prints it for are about different Rows",
+				c.What, len(c.CSS), len(c.Children))
 		}
 	}
 	return nil

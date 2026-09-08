@@ -66,11 +66,11 @@ func TestBothShellsDispatchThePermissionEvent(t *testing.T) {
 			attachIn: kotlinMainActivity,
 		},
 	} {
-		if src := readNative(t, pin.file); !strings.Contains(src, pin.dispatch) {
+		if src := valuesIn(t, pin.file); !strings.Contains(src, pin.dispatch) {
 			t.Errorf("%s: no arm for the \"permission\" event — permission.Check is dropped "+
 				"here and every screen gated on one sits on Unknown forever", pin.file)
 		}
-		if src := readNative(t, pin.attachIn); !strings.Contains(src, pin.attach) {
+		if src := codeIn(t, pin.attachIn); !strings.Contains(src, pin.attach) {
 			t.Errorf("%s: the permission host's report channel is never attached, so the "+
 				"platform's answer has nowhere to go", pin.attachIn)
 		}
@@ -89,7 +89,7 @@ func TestBothHostsAnswerCheckAndRequest(t *testing.T) {
 		{swiftPermissions, `case "check": check(kind)`, `case "request": request(kind)`},
 		{kotlinPermissions, `"check" -> send(kind, status(kind))`, `"request" -> request(kind)`},
 	} {
-		src := readNative(t, pin.file)
+		src := valuesIn(t, pin.file)
 		if !strings.Contains(src, pin.check) {
 			t.Errorf("%s: no arm for the check command — a screen can never read a "+
 				"permission without prompting for it", pin.file)
@@ -114,7 +114,7 @@ func TestBothHostsCoverEveryPermission(t *testing.T) {
 		{swiftPermissions, `case %q`},
 		{kotlinPermissions, `%q to `},
 	} {
-		src := readNative(t, pin.file)
+		src := valuesIn(t, pin.file)
 		for _, p := range permission.Permissions() {
 			if !strings.Contains(src, sprintfArm(pin.arm, string(p))) {
 				t.Errorf("%s: no arm for permission.Permission %q — the kind is dropped, "+
@@ -147,7 +147,7 @@ func TestBothHostsReportOnlyDeclaredStatuses(t *testing.T) {
 		{swiftPermissions, []string{`send(kind, "`, `send("location", `, `return "`}},
 		{kotlinPermissions, []string{`send(kind, "`, `return "`}},
 	} {
-		src := readNative(t, pin.file)
+		src := codeIn(t, pin.file)
 		for _, literal := range quotedAfter(src, pin.calls) {
 			// The kind arguments are quoted too and are not statuses; a
 			// permission name is never a status name, so membership in either
@@ -169,7 +169,7 @@ func TestBothHostsReportOnlyDeclaredStatuses(t *testing.T) {
 // at the exact moment the feature is first exercised, which is the moment
 // after everything looked fine.
 func TestTheIOSShellDeclaresAUsageDescriptionPerPermission(t *testing.T) {
-	src := readNative(t, iosProjectSpec)
+	src := codeIn(t, iosProjectSpec)
 	for _, key := range []string{
 		"NSCameraUsageDescription",
 		"NSMicrophoneUsageDescription",
@@ -194,7 +194,7 @@ func TestTheIOSShellDeclaresAUsageDescriptionPerPermission(t *testing.T) {
 // "unavailable", which is honest — and useless if the entries are simply
 // absent, because then every permission is unavailable.
 func TestTheAndroidShellDeclaresEveryRuntimePermission(t *testing.T) {
-	src := readNative(t, androidManifest)
+	src := valuesIn(t, androidManifest)
 	for _, name := range []string{
 		// Matched as the attribute rather than as a bare substring, so a
 		// permission merely *named in a comment* — which several are, right
@@ -287,7 +287,7 @@ func quotedAfter(src string, prefixes []string) []string {
 // only check is that the file compiles. The reasoning is in Permissions.kt's
 // class doc under "The flag is on disk" and "Auto-reset".
 func TestTheAndroidAskedFlagSurvivesARestart(t *testing.T) {
-	src := readNative(t, kotlinPermissions)
+	src := valuesIn(t, kotlinPermissions)
 
 	for _, pin := range []struct{ needle, why string }{
 		{"getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)",

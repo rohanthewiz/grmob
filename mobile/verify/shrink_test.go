@@ -1,6 +1,7 @@
 package verify
 
 import (
+	"os"
 	"strings"
 	"testing"
 )
@@ -147,22 +148,186 @@ func TestTheComposePinMeasuresUnboundedAndReportsWhatItMeasured(t *testing.T) {
 	}
 }
 
-// codeOf is declSource with the string literals taken out as well.
+// The five ways this package reads a native file, named for the question each
+// one answers.
 //
-// declSource already blanks the comments for every caller (see its own
-// header, and the break-test that put them there). This is the stronger mask,
-// and the checks in this file are what it is for: every one of them asks
-// whether a renderer *does* something — attaches a layout value, applies a
-// modifier, calls layout() with the size it measured — and a string literal
-// naming any of those would satisfy a strings.Contains just as a doc comment
-// did. Nothing here reads a dispatch's arms, which is the one thing the
-// literals are ever the subject of.
+// # The decision that nobody used to make
 //
-// maskSwiftNonCode is named for Swift and is not specific to it; Kotlin spells
-// line comments, block comments and both kinds of string literal identically,
-// which is the same argument matchingBrace makes for serving both languages
-// with one scanner.
+// There is one scanner now (maskNonCode) and it has two levels — comments out,
+// or comments and string literals out. Which level a check got was decided by
+// which HELPER it happened to call, and the helpers were named for what they
+// read rather than for what they were being asked:
+//
+//	readNative   the whole file, raw. 53 call sites, and most of them asked
+//	             "does the renderer call this" — a question a doc comment
+//	             mentioning the call satisfies, which is the exact defect that
+//	             put the mask into declSource in the first place.
+//	declSource   one declaration, comments blanked. Better, and still open on
+//	             the other half: a string literal naming a call satisfies it.
+//	codeOf       one declaration, comments and literals blanked. Used by
+//	             shrink_test.go and nowhere else.
+//
+// So the strongest reader existed, was correct for a good deal of the package,
+// and was used by one file. That is not a fault in any particular check; it is
+// a decision made by accident 74 times.
+//
+// It was also not a decision anybody could have made correctly by inspection.
+// Converting every call site to the code-level reader and running the suite
+// moved 43 checks — more than half — and what moved them was the compiler and
+// the tests rather than a reading: a check whose subject is a dispatch arm
+// fails loudly when the arm is blanked, and a check whose subject is a note
+// fails loudly when the note is. The distribution that came out is
+//
+//	codeIn / codeOf       44   does the renderer DO this
+//	valuesIn / valuesOf   33   does it LIST this value
+//	proseIn               11   does the file SAY this
+//
+// which is not a shape anybody would have guessed, and is the reason the answer
+// had to be per question rather than per file.
+//
+// # What replaces it
+//
+// The question is the name. A call site says which of three things it is asking
+// and gets the mask that suits it, and the two primitives are no longer called
+// anywhere else — TestEveryNativeReadNamesItsQuestion holds that.
+//
+//	codeIn / codeOf       does the renderer DO this: attach a modifier, call a
+//	                      function, read a field. Comments and literals both
+//	                      blanked, because either can spell the thing being
+//	                      looked for without doing it.
+//	valuesIn / valuesOf   does the renderer LIST this VALUE: a dispatch's arms
+//	                      are string literals ("center", "flex-end") and they
+//	                      ARE the subject. Comments blanked, literals kept.
+//	proseIn               does the file SAY this: a refusal's own wording, a
+//	                      paragraph a reader is sent to. The subject is the
+//	                      prose, so nothing is blanked — and naming it is what
+//	                      keeps "I want the comments" from being the accidental
+//	                      default it used to be.
+//
+// The `In` suffix takes a whole file and `Of` cuts one declaration; that half of
+// the choice was already deliberate and is unchanged.
+//
+// maskSwiftNonCode is named for Swift and is not specific to it; Kotlin, Groovy
+// and Java spell line comments, block comments and both kinds of string literal
+// identically, which is the same argument matchingBrace makes for serving both
+// languages with one scanner.
 func codeOf(t *testing.T, file, anchor string) string {
 	t.Helper()
 	return maskSwiftNonCode(declSource(t, file, anchor))
+}
+
+// codeIn is codeOf over a whole file, for the checks whose subject is not one
+// declaration — a call that must appear twice, a spelling that must appear
+// nowhere.
+func codeIn(t *testing.T, file string) string {
+	t.Helper()
+	return maskSwiftNonCode(readNative(t, file))
+}
+
+// valuesOf is one declaration with its literals intact: a dispatch's arms are
+// the subject, and blanking them would delete the thing being read and leave a
+// parse that finds nothing.
+func valuesOf(t *testing.T, file, anchor string) string {
+	t.Helper()
+	return declSource(t, file, anchor)
+}
+
+// valuesIn is the same over a whole file.
+func valuesIn(t *testing.T, file string) string {
+	t.Helper()
+	return maskComments(readNative(t, file))
+}
+
+// proseIn is the file as written, for the checks whose subject is a comment: a
+// refusal's own wording, a paragraph a reader is sent to.
+//
+// It is the weakest reader and the only one a comment can satisfy, which is why
+// it has a name of its own rather than being what a caller gets for not
+// choosing.
+func proseIn(t *testing.T, file string) string {
+	t.Helper()
+	return readNative(t, file)
+}
+
+// Every read of a native file goes through one of the five, and this is what
+// says so.
+//
+// # Why a scan and not a convention
+//
+// The whole of item 2 was that "which mask does this check get" was answered by
+// which helper somebody reached for, and the helpers were named after what they
+// read. Renaming them fixes the 74 call sites that exist; it does nothing about
+// the 75th. A new check written next week reaches for the nearest thing that
+// returns a string, and the nearest thing is whatever the file above it used.
+//
+// So the two primitives are closed. readNative and declSource are the raw read
+// and the declaration cut; they are called by the five readers and nowhere
+// else, which means a new call site has to name its question to get a string at
+// all. That is the difference between a rule and a convention.
+//
+// # The recursion, which is deliberate
+//
+// This scans the package's own source through maskNonCode — the same scanner
+// the readers are about. It has to: this file's own comment names both
+// primitives repeatedly, and so does the paragraph above. A check that read its
+// own explanation as a call site would fail on the sentence describing what it
+// enforces, which is the failure wasm/verify's citation walk exempts itself
+// from for the same reason.
+//
+// Counting rather than locating, because the count is the claim: each primitive
+// is called exactly as many times as there are readers that need it, and a
+// sixth call is a call site that has not chosen.
+func TestEveryNativeReadNamesItsQuestion(t *testing.T) {
+	entries, err := os.ReadDir(".")
+	if err != nil {
+		t.Fatalf("reading this package: %v", err)
+	}
+
+	for _, c := range []struct {
+		primitive string
+		// want is how many call sites there should be, and by is which readers
+		// they are — named so a failure says what the budget is spent on.
+		want int
+		by   string
+		why  string
+	}{
+		{
+			primitive: "readNative(t,", want: 3,
+			by: "codeIn, valuesIn and proseIn",
+			why: "the raw read. A check calling it directly is one whose subject can " +
+				"be satisfied by a comment, and that is the defect the mask was put " +
+				"into declSource for in the first place",
+		},
+		{
+			primitive: "declSource(t,", want: 2,
+			by:  "codeOf and valuesOf",
+			why: "the declaration cut, which blanks comments and leaves literals",
+		},
+	} {
+		found := 0
+		for _, e := range entries {
+			if e.IsDir() || !strings.HasSuffix(e.Name(), ".go") {
+				continue
+			}
+			raw, err := os.ReadFile(e.Name())
+			if err != nil {
+				t.Fatalf("reading %s: %v", e.Name(), err)
+			}
+			// Through the scanner this whole exercise is about: the prose
+			// above names both primitives, and so does every doc comment that
+			// explains which reader to use.
+			code, _ := maskNonCode(string(raw), true)
+			found += strings.Count(code, c.primitive)
+		}
+		if found != c.want {
+			t.Errorf("%s is called %d times in this package and should be called %d, by "+
+				"%s.\n\n%s\n\nA check reads a native file by naming the question it is "+
+				"asking — does the renderer DO this (codeIn/codeOf), does it LIST this "+
+				"VALUE (valuesIn/valuesOf), or does the file SAY this (proseIn) — and "+
+				"gets the mask that suits it. A call to the primitive is a call site "+
+				"that has not chosen, which is how the strongest reader in this package "+
+				"came to be used by one file out of twenty-five.",
+				c.primitive, found, c.want, c.by, c.why)
+		}
+	}
 }

@@ -34,7 +34,7 @@ func TestBothNativeParsersReadTheSelectedField(t *testing.T) {
 		{swiftStyle, `str("AccessibilitySelected")`},
 		{kotlinStyle, `optString("AccessibilitySelected")`},
 	} {
-		if src := readNative(t, pin.file); !strings.Contains(src, pin.key) {
+		if src := valuesIn(t, pin.file); !strings.Contains(src, pin.key) {
 			t.Errorf("%s: never parses %s — core.AccessibilitySelected reaches both web "+
 				"targets and does nothing on this platform", pin.file, pin.key)
 		}
@@ -47,7 +47,7 @@ func TestBothNativeParsersReadTheSelectedField(t *testing.T) {
 // silently: a mapping nothing calls compiles, and a call into a mapping that
 // sets nothing compiles too.
 func TestBothNativesApplyTheSelectedStateThroughTheirSemanticsPrimitive(t *testing.T) {
-	swift := readNative(t, swiftStyle)
+	swift := codeIn(t, swiftStyle)
 	for _, pin := range []struct{ expr, why string }{
 		{"private func grMobSelectedTrait(", "the mapping from core.SelectedState onto a trait"},
 		{".isSelected", "the SwiftUI trait itself — the one thing VoiceOver can be told here"},
@@ -60,7 +60,7 @@ func TestBothNativesApplyTheSelectedStateThroughTheirSemanticsPrimitive(t *testi
 		}
 	}
 
-	kotlin := readNative(t, kotlinStyle)
+	kotlin := codeIn(t, kotlinStyle)
 	for _, pin := range []struct{ expr, why string }{
 		{"fun SemanticsPropertyReceiver.grMobSelected(", "the mapping onto Compose semantics"},
 		{"selected = true", "the on arm, which is the property TalkBack reads"},
@@ -86,7 +86,7 @@ func TestBothNativesApplyTheSelectedStateThroughTheirSemanticsPrimitive(t *testi
 // reached, because a chip that carries a state and no label, hint, role or
 // disabled flag would take the else branch and get no semantics at all.
 func TestKotlinOpensItsSemanticsLambdaForASelectedStateAlone(t *testing.T) {
-	src := declSource(t, kotlinStyle, "fun GrMobStyle?.boxModifier(")
+	src := codeOf(t, kotlinStyle, "fun GrMobStyle?.boxModifier(")
 	if !strings.Contains(src, "selectedState.isNotEmpty()") {
 		t.Errorf("%s: boxModifier's semantics guard does not include the selected state — "+
 			"a node whose only semantics are a selection would fall to the else branch "+
@@ -107,7 +107,7 @@ func TestSwiftWritesDownTheUnselectedGap(t *testing.T) {
 	// readNative rather than declSource: the note is a doc comment, and
 	// declSource cuts from the declaration line down. Same reason
 	// TestKotlinWritesDownTheHeadingLevelGap reads the whole file.
-	src := readNative(t, swiftStyle)
+	src := proseIn(t, swiftStyle)
 	for _, phrase := range []string{"no word for the *off* state", "not selectable"} {
 		if !strings.Contains(src, phrase) {
 			t.Errorf("%s: grMobSelectedTrait no longer explains that SwiftUI cannot state "+

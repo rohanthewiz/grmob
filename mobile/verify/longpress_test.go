@@ -43,7 +43,7 @@ func TestBothNativeButtonsWireLongPress(t *testing.T) {
 			gesture: "onLongClick =",
 		},
 	} {
-		src := declSource(t, pin.file, pin.decl)
+		src := valuesOf(t, pin.file, pin.decl)
 		if !strings.Contains(src, pin.read) {
 			t.Errorf("%s: %s never reads %s — core.OnLongPress on a Button does nothing on this platform",
 				pin.file, pin.decl, pin.read)
@@ -64,7 +64,7 @@ func TestBothNativeButtonsWireLongPress(t *testing.T) {
 // a long press plus a click. (The DOM runtime does the same thing with a
 // dataset flag; wasm/verify pins that half.)
 func TestSwiftButtonSuppressesTheTapAfterALongPress(t *testing.T) {
-	src := declSource(t, swiftRenderer, "private struct GrMobButton")
+	src := codeOf(t, swiftRenderer, "private struct GrMobButton")
 	if !strings.Contains(src, "longPressFired") {
 		t.Errorf("%s: GrMobButton no longer tracks whether a long press fired, so releasing "+
 			"a long press runs onLongPress and then onClick for one gesture", swiftRenderer)

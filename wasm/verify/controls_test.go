@@ -243,17 +243,43 @@ func TestThePinControlStillHasBothAnswersToTellApart(t *testing.T) {
 	}
 }
 
-// regionOf cuts browser.mjs between two anchors, both required.
+// regionOf cuts one top-level declaration out of browser.mjs.
 //
-// A coarse cut, and deliberately: what is counted inside it is one exact
-// literal, so the region only has to be small enough that a neighbouring
-// declaration's copy of that literal is outside it. Anything finer would mean
-// a JavaScript brace-counter living in a Go test — a third answer to "what in
-// this file is code", in a repository that has just finished getting down to
-// one.
+// # What the cut used to be, and the thing it could not see
 //
-// Both anchors are fatal when missing, because a cut that silently found
-// nothing would count zero of something and report the wrong number of it.
+// It ran from one anchor to the next — `function bandTree(` to
+// `function bandMounts(` — and everything between them was the region. That is
+// a claim about two declarations being adjacent, which the file states nowhere,
+// and it is the shape this repository has just finished removing everywhere
+// else: a second answer to "where does this declaration end". A helper written
+// between the two, carrying a `MinWidth: "0"` of its own for its own reason,
+// would have been counted as bandTree's — and the failure would have said
+// bandTree had grown a child.
+//
+// # What it is now
+//
+// The region runs from the anchor to the first line that is exactly `}` at
+// column zero. browser.mjs writes its declarations at the left margin, so that
+// line is the end of the declaration the anchor opened, and nothing written
+// between the two anchors can be inside it any more.
+//
+// This is still not a brace counter, and deliberately not: a JavaScript scanner
+// living in a Go test would be a third answer to the same question, in a
+// repository that has just got down to one. It is a rule about FORMATTING
+// rather than about syntax, and it is worth being honest about which — a `}` at
+// column zero inside a template literal would end the region early, and
+// browser.mjs's literals are all indented. What makes that safe to rely on is
+// the direction it fails in: an early end drops declarations and the count
+// comes out LOW, which is a failure. There is no way for the region to run
+// long, which is the direction the old cut failed in and the direction that is
+// silent.
+//
+// # And the neighbour, still asserted
+//
+// `to` is no longer where the region ends; it is the claim that the declaration
+// being counted inside really is the one before it. Keeping it means a
+// restructure that moved bandMounts above bandTree fails and says so, rather
+// than quietly making this a region about something else.
 func regionOf(t *testing.T, src, from, to string) string {
 	t.Helper()
 	at := strings.Index(src, from)
@@ -263,13 +289,38 @@ func regionOf(t *testing.T, src, from, to string) string {
 			"cut back to the whole file.", browserChecks, from)
 	}
 	rest := src[at+len(from):]
-	end := strings.Index(rest, to)
-	if end < 0 {
-		t.Fatalf("%s has %q with no %q after it, so the region this counts in runs to "+
-			"the end of the file.", browserChecks, from, to)
+
+	end := declEnd.FindStringIndex(rest)
+	if end == nil {
+		t.Fatalf("%s has %q and no line after it that is a bare `}` at column zero, so "+
+			"the declaration this counts inside has no end and the region would run to "+
+			"the end of the file. browser.mjs writes its declarations at the left "+
+			"margin; if that has changed, this cut needs a different rule rather than a "+
+			"wider one.", browserChecks, from)
 	}
-	return rest[:end]
+	region := rest[:end[0]]
+
+	next := strings.Index(rest, to)
+	if next < 0 {
+		t.Fatalf("%s has %q with no %q after it. The region is cut at the declaration's "+
+			"own closing brace and no longer needs this anchor to end it — what the "+
+			"anchor says now is that these two declarations are still in this order, so "+
+			"the thing being counted is counted in the one a reader would expect.",
+			browserChecks, from, to)
+	}
+	if next < end[0] {
+		t.Fatalf("%s has %q INSIDE the declaration %q opens, and the cut takes it for a "+
+			"later top-level declaration. Either the file was restructured or the "+
+			"column-zero `}` this ends at is not that declaration's.",
+			browserChecks, to, from)
+	}
+	return region
 }
+
+// declEnd is a line that is exactly `}` at column zero: browser.mjs's spelling
+// of the end of a top-level declaration. See regionOf for why a formatting rule
+// is the right size of answer here, and for what it cannot see.
+var declEnd = regexp.MustCompile(`(?m)^\}$`)
 
 // jsConcat is a string literal continued on the next line: `…text ` + `more…`,
 // which is how every message in browser.mjs longer than a line is written.

@@ -21,7 +21,7 @@ func TestBothNativeParsersReadRotate(t *testing.T) {
 		{swiftStyle, `num("Rotate")`},
 		{kotlinStyle, `optDouble("Rotate"`},
 	} {
-		if src := readNative(t, pin.file); !strings.Contains(src, pin.key) {
+		if src := valuesIn(t, pin.file); !strings.Contains(src, pin.key) {
 			t.Errorf("%s: does not parse %s — core.Rotate crosses the bridge and "+
 				"is dropped on this target", pin.file, pin.key)
 		}
@@ -31,7 +31,7 @@ func TestBothNativeParsersReadRotate(t *testing.T) {
 // Reading it is half the job; each renderer must also hand it to the
 // platform's own rotation modifier.
 func TestBothNativeRenderersApplyRotate(t *testing.T) {
-	swift := readNative(t, swiftStyle)
+	swift := codeIn(t, swiftStyle)
 	if !strings.Contains(swift, "rotationEffect(.degrees(degrees), anchor: .center)") {
 		t.Errorf("%s: no .rotationEffect — the angle parses and never turns anything",
 			swiftStyle)
@@ -40,7 +40,7 @@ func TestBothNativeRenderersApplyRotate(t *testing.T) {
 		t.Errorf("%s: grMobRotate is not in grMobBox's chain", swiftStyle)
 	}
 
-	kotlin := readNative(t, kotlinStyle)
+	kotlin := codeIn(t, kotlinStyle)
 	if !strings.Contains(kotlin, "import androidx.compose.ui.draw.rotate") {
 		t.Errorf("%s: Modifier.rotate is not imported", kotlinStyle)
 	}
@@ -60,7 +60,7 @@ func TestBothNativeRenderersApplyRotate(t *testing.T) {
 // (`transform` always turns the whole border box), so the natives are the only
 // two targets where the mistake is even available.
 func TestRotationWrapsThePaintedBoxOnBothNatives(t *testing.T) {
-	kotlin := readNative(t, kotlinStyle)
+	kotlin := codeIn(t, kotlinStyle)
 	rotateAt := strings.Index(kotlin, "m = m.rotate(rotate)")
 	bgAt := strings.Index(kotlin, "background?.let { m = m.background(it) }")
 	borderAt := strings.Index(kotlin, "m = m.border(borderWidth.dp")
@@ -76,7 +76,7 @@ func TestRotationWrapsThePaintedBoxOnBothNatives(t *testing.T) {
 			"only the content turns and the box stays square", kotlinStyle)
 	}
 
-	swift := readNative(t, swiftStyle)
+	swift := codeIn(t, swiftStyle)
 	rotAt := strings.Index(swift, ".grMobRotate(")
 	marginAt := strings.Index(swift, ".padding((s?.margin ?? .zero).insets)")
 	shadowAt := strings.Index(swift, ".grMobShadow(s?.shadow ?? 0)")

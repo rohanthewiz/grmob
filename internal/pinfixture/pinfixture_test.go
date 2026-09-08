@@ -32,23 +32,41 @@ func TestTheFixtureIsTheTableInTheHeader(t *testing.T) {
 		what    string
 		offered []int
 		mains   []int
+		gaps    []int
 		rowMain int
+		css     []int
 		agrees  bool
+		// gapsAgree is whether the Row inserted the spacing CSS inserts. It is
+		// vacuously true wherever the Row's own gap is 0, which is every row
+		// but the last — and the last is the only reason the column exists.
+		gapsAgree bool
 	}{
 		// The control. Nothing is pinned, and the divergence from CSS
 		// (24/80/16) is already here: Compose gives the first child everything
 		// it asked for and the last one nothing.
-		{"no pin: every child shrinks", []int{120, 60, 0}, []int{60, 60, 0}, 120, false},
+		{"no pin: every child shrinks", []int{120, 60, 0}, []int{60, 60, 0},
+			[]int{0, 0, 0}, 120, []int{24, 80, 16}, false, true},
 		// The pin first. `fixedSpace` passes the Row's maximum on the first
 		// child, so both siblings are offered 0 — which is the same three
 		// numbers CSS produces, by a different route.
-		{"the pinned child first", []int{120, 0, 0}, []int{200, 0, 0}, 200, true},
+		{"the pinned child first", []int{120, 0, 0}, []int{200, 0, 0},
+			[]int{0, 0, 0}, 200, []int{200, 0, 0}, true, true},
 		// The pin in the middle: offered 60 and ignoring it.
-		{"the pinned child between its siblings", []int{120, 60, 0}, []int{60, 200, 0}, 260, false},
+		{"the pinned child between its siblings", []int{120, 60, 0}, []int{60, 200, 0},
+			[]int{0, 0, 0}, 260, []int{0, 200, 0}, false, true},
 		// The pin last: offered 20 and ignoring it. The most direct statement
 		// of "remaining is ignored", since the number ignored is neither the
 		// whole offer nor nothing.
-		{"the pinned child last", []int{120, 60, 20}, []int{60, 40, 200}, 300, false},
+		{"the pinned child last", []int{120, 60, 20}, []int{60, 40, 200},
+			[]int{0, 0, 0}, 300, []int{0, 0, 200}, false, true},
+		// The spacing row. Both columns of extents are the pin-middle row's,
+		// unchanged, which is what makes this a statement about spacing: the
+		// Row charges 8 after the lead child and nothing after the pin, and a
+		// CSS flex line charges 8 in both places. The Row is therefore 8 wider
+		// than its children and 8 narrower than a flex line laying the same
+		// three out.
+		{"the pinned child between its siblings, with spacing", []int{120, 52, 0},
+			[]int{60, 200, 0}, []int{8, 0, 0}, 268, []int{0, 200, 0}, false, false},
 	}
 
 	cases := Cases()
@@ -71,6 +89,17 @@ func TestTheFixtureIsTheTableInTheHeader(t *testing.T) {
 			t.Errorf("%s: the children came back at %v, and the table says %v", c.What,
 				c.Compose.Mains, w.mains)
 		}
+		if !equal(c.Compose.Gaps, w.gaps) {
+			t.Errorf("%s: the Row inserted %v of spacing and the table says %v. "+
+				"spaceAfterLastNoWeight is min(spacing, what is left), which is the one "+
+				"line of the measure policy nothing measured until there was a case "+
+				"with a gap in it.", c.What, c.Compose.Gaps, w.gaps)
+		}
+		if !equal(c.CSS, w.css) {
+			t.Errorf("%s: the fixture states the CSS extents as %v and the table says "+
+				"%v. Nothing here computes them — a solver and a browser do — so this "+
+				"literal is the claim both of them are held to.", c.What, c.CSS, w.css)
+		}
 		if c.Compose.RowMain != w.rowMain {
 			t.Errorf("%s: the Row reports %d, and the table says %d", c.What,
 				c.Compose.RowMain, w.rowMain)
@@ -78,6 +107,10 @@ func TestTheFixtureIsTheTableInTheHeader(t *testing.T) {
 		if c.MainsAgreeWithCSS != w.agrees {
 			t.Errorf("%s: MainsAgreeWithCSS is %v and the table says %v", c.What,
 				c.MainsAgreeWithCSS, w.agrees)
+		}
+		if c.GapsAgreeWithCSS != w.gapsAgree {
+			t.Errorf("%s: GapsAgreeWithCSS is %v and the table says %v", c.What,
+				c.GapsAgreeWithCSS, w.gapsAgree)
 		}
 	}
 }
@@ -96,12 +129,19 @@ func TestTheFixtureIsTheTableInTheHeader(t *testing.T) {
 func TestThePinnedChildKeepsItsBaseWhereverItSits(t *testing.T) {
 	refused := 0
 	positions := 0
+	// Which index the pin sits at, across the whole fixture. Counted as a SET
+	// rather than as a total, because the fixture now holds more pinned rows
+	// than there are positions — the spacing row is the pin-middle row again
+	// with a gap — and "one in each of the three positions" is the claim, not
+	// "three pinned children".
+	at := map[int]bool{}
 	for _, c := range Cases() {
 		for i, child := range c.Children {
 			if !child.Pinned {
 				continue
 			}
 			positions++
+			at[i] = true
 			if got := c.Compose.Mains[i]; got != child.Base {
 				t.Errorf("%s: the pinned child came back at %d and its base is %d. "+
 					"core.FlexShrink(0) is a refusal to shrink, and on this target it is "+
@@ -115,9 +155,11 @@ func TestThePinnedChildKeepsItsBaseWhereverItSits(t *testing.T) {
 			}
 		}
 	}
-	if positions != 3 {
-		t.Errorf("%d pinned children across the fixture, and the point of it is one in "+
-			"each of the three positions", positions)
+	if len(at) != 3 {
+		t.Errorf("the fixture pins a child at %d of the three positions (%d pinned rows "+
+			"in all), and the point of it is one in each: first, between its siblings "+
+			"and last. `remaining` is ignored wherever the pin sits, and a position "+
+			"nothing occupies is a position nothing says that about.", len(at), positions)
 	}
 	if refused < 2 {
 		t.Errorf("the pin refused a smaller offer in only %d of %d positions. In the "+
@@ -169,6 +211,8 @@ func TestWithoutThePinTheSameChildIsSqueezed(t *testing.T) {
 //	                     three different sets of sizes
 func TestComposeMeasuresEachChildAgainstWhatIsLeft(t *testing.T) {
 	for _, c := range Cases() {
+		// What the children before this one took: their extents AND the spacing
+		// charged after each of them, which is what fixedSpace accumulates.
 		taken := 0
 		for i := range c.Children {
 			if want := max(c.Offer-taken, 0); c.Compose.Offered[i] != want {
@@ -184,7 +228,7 @@ func TestComposeMeasuresEachChildAgainstWhatIsLeft(t *testing.T) {
 					"enforceIncoming, which clamps into the incoming range.",
 					c.What, i, c.Compose.Mains[i])
 			}
-			taken += c.Compose.Mains[i]
+			taken += c.Compose.Mains[i] + c.Compose.Gaps[i]
 		}
 	}
 
@@ -192,9 +236,14 @@ func TestComposeMeasuresEachChildAgainstWhatIsLeft(t *testing.T) {
 	// against. The three pinned rows hold the same three children; if their
 	// answers ever coincide, either the transcription has stopped depending on
 	// order or the fixture has stopped being an overflow.
+	//
+	// Grouped by the Row's own spacing, because the fixture holds one row that
+	// is a REPEAT of an order rather than a new one: the spacing case is the
+	// pin-middle case with a gap, and its extents are deliberately identical.
+	// Comparing it with its twin would report the thing it was added to show.
 	seen := map[string]string{}
 	for _, c := range Cases()[1:] {
-		key := sizesByName(c)
+		key := itoa(c.Gap) + "|" + sizesByName(c)
 		if prev, ok := seen[key]; ok {
 			t.Errorf("%q and %q produce the same sizes (%s). The whole of the recorded "+
 				"divergence is that Compose's answer depends on the order and CSS's does "+
@@ -220,9 +269,11 @@ func TestComposeMeasuresEachChildAgainstWhatIsLeft(t *testing.T) {
 func TestTheRowReportsTheOverflowRatherThanClippingIt(t *testing.T) {
 	overflowed := 0
 	for _, c := range Cases() {
+		// The children and the spacing that survived the clamp — fixedSpace,
+		// which is what mainAxisLayoutSize is the max of.
 		content := 0
-		for _, m := range c.Compose.Mains {
-			content += m
+		for i, m := range c.Compose.Mains {
+			content += m + c.Compose.Gaps[i]
 		}
 		if want := max(content, c.Offer); c.Compose.RowMain != want {
 			t.Errorf("%s: the Row reports %d, and its children occupy %d of an offered "+
@@ -235,10 +286,11 @@ func TestTheRowReportsTheOverflowRatherThanClippingIt(t *testing.T) {
 			overflowed++
 		}
 	}
-	if overflowed != 3 {
-		t.Errorf("%d of the four rows overflow their container, and the three pinned "+
-			"ones are supposed to: a pinned child whose base exceeds the Row's extent "+
-			"cannot fit inside it by construction", overflowed)
+	if want := len(Cases()) - 1; overflowed != want {
+		t.Errorf("%d of the %d rows overflow their container, and every pinned one is "+
+			"supposed to: a pinned child whose base exceeds the Row's extent cannot fit "+
+			"inside it by construction, and the control is the only row without one",
+			overflowed, len(Cases()))
 	}
 }
 
@@ -297,6 +349,29 @@ func TestTheAgreementIsWhetherThePinComesFirst(t *testing.T) {
 				shrinkable += ch.Base
 			}
 		}
+		// The gaps are used space in a flex line and belong in the deficit.
+		// Nothing in this fixture turns on it — the deficit clears the
+		// shrinkable total either way — and it is here because a rule that is
+		// right about these numbers by omission is not the rule.
+		natural += c.Gap * max(len(c.Children)-1, 0)
+
+		// And the flag against the two columns it is about. This is the join
+		// the fixture did not used to have: the CSS extents were three numbers
+		// in a comment, the Compose ones came out of MeasureCompose, and the
+		// flag was derived from the pin's position — three statements, no two
+		// of which were ever compared. A wrong literal in the CSS column now
+		// fails here, before a solver or a browser ever sees it.
+		if got := equal(c.CSS, c.Compose.Mains); got != c.MainsAgreeWithCSS {
+			t.Errorf("%s: the stated CSS extents are %v and Compose measures %v, which "+
+				"%s — and MainsAgreeWithCSS says %v.\n\n"+
+				"The flag is derived from where the pin sits and the columns are stated "+
+				"and computed. All three are supposed to be about one Row; two of them "+
+				"agreeing is not enough, because the third is what a solver and a "+
+				"browser are held to.",
+				c.What, c.CSS, c.Compose.Mains,
+				map[bool]string{true: "are the same numbers", false: "are not"}[got],
+				c.MainsAgreeWithCSS)
+		}
 		// Two conditions, and the flag is their conjunction. The first is the
 		// position; the second is the premise that makes the position mean
 		// what the header says it means — CSS clamps every shrinkable child to
@@ -344,13 +419,26 @@ func TestValidateRefusesAFixtureThatCannotOverflow(t *testing.T) {
 			name:     "a Row wide enough for its children",
 			mentions: "nothing overflows",
 			bad: Case{What: "roomy", Offer: 1000, Children: []Child{
-				{Base: 60}, {Base: 200, Pinned: true}, {Base: 40}}},
+				{Base: 60}, {Base: 200, Pinned: true}, {Base: 40}},
+				CSS: []int{60, 200, 40}},
 		},
 		{
 			name:     "a Row with nobody on either side of the pin",
 			mentions: "fewer than three",
 			bad: Case{What: "lonely", Offer: 120, Children: []Child{
-				{Base: 60}, {Base: 200, Pinned: true}}},
+				{Base: 60}, {Base: 200, Pinned: true}},
+				CSS: []int{0, 200}},
+		},
+		{
+			// The stated column, about a different Row from the one it is
+			// printed beside. Both harnesses index it against the children, so
+			// this arrives there as a crash or as a comparison that quietly
+			// runs short — and the census prints it either way.
+			name:     "a CSS column that is not about these children",
+			mentions: "CSS extents",
+			bad: Case{What: "mismatched", Offer: 120, Children: []Child{
+				{Base: 60}, {Base: 200, Pinned: true}, {Base: 40}},
+				CSS: []int{0, 200}},
 		},
 	} {
 		err := validate([]Case{c.bad})
@@ -436,10 +524,11 @@ func TestTheCensusTableIsTheFixture(t *testing.T) {
 	// a reader would (`pin first [P,A,B]`) and the fixture names them the way
 	// the code does.
 	rows := map[string]string{
-		"no pin: every child shrinks":           "| no pin |",
-		"the pinned child first":                "| pin first `[P,A,B]` |",
-		"the pinned child between its siblings": "| pin middle `[A,P,B]` |",
-		"the pinned child last":                 "| pin last `[A,B,P]` |",
+		"no pin: every child shrinks":                         "| no pin |",
+		"the pinned child first":                              "| pin first `[P,A,B]` |",
+		"the pinned child between its siblings":               "| pin middle `[A,P,B]` |",
+		"the pinned child last":                               "| pin last `[A,B,P]` |",
+		"the pinned child between its siblings, with spacing": "| pin middle, 8px gap `[A,P,B]` |",
 	}
 
 	for _, c := range Cases() {
@@ -459,34 +548,81 @@ func TestTheCensusTableIsTheFixture(t *testing.T) {
 		}
 		row := doc[at : at+strings.IndexByte(doc[at:], '\n')]
 
-		// Only the Compose column is held here. The CSS column is
-		// GrMobFlexSolver's answer and this package does not compute it — that
-		// is ios/verify/pin.swift's half, and transcribing it into Go to check
-		// the doc would be writing the number a third time.
-		compose := composeCell(row)
-		if got := joinInts(c.Compose.Mains); compose != got {
+		// Both columns, which is newer than the rest of this and is the point
+		// of the CSS field existing.
+		//
+		// The Compose column has always been held here: this package computes
+		// it, so the comparison is between a doc and the code that produced the
+		// number. The CSS column is not computed here and is not going to be —
+		// a flex line transcribed into Go would be a third spelling after the
+		// solver and the browser. What made it holdable is that the fixture now
+		// STATES it, so this compares the census's prose with the claim two
+		// executable things are held to, rather than with nothing.
+		if got, want := cellAt(row, 1), joinInts(c.CSS); got != want {
+			t.Errorf("%s: the census's CSS column reads %q and the fixture states %q.\n\n"+
+				"Nothing in Go computes these — ios/verify solves them through "+
+				"GrMobFlexSolver and wasm/verify's check 12 measures them in a browser — "+
+				"so the fixture's field is the claim and this is whether the census "+
+				"prints it. The control row is the sharpest case: 24/80/16 is the one "+
+				"row no other claim determines.", c.What, got, want)
+		}
+		if got, want := cellAt(row, 2), joinInts(c.Compose.Mains); got != want {
 			t.Errorf("%s: the census's Compose column reads %q and the fixture measures "+
 				"%q.\n\nThe table is the whole content of that section and nothing "+
 				"compiles against it, so a number that drifts there is a paragraph "+
-				"describing a layout no target produces.", c.What, compose, got)
+				"describing a layout no target produces.", c.What, got, want)
 		}
+	}
+
+	// And the spacing table below it, which is one row about one case.
+	spacing := Cases()[len(Cases())-1]
+	if spacing.Gap == 0 {
+		t.Fatalf("the last case (%q) has no spacing, and the census prints a spacing "+
+			"table derived from it", spacing.What)
+	}
+	const lead = "| spacing after each child, 8px gap |"
+	at := strings.Index(doc, lead)
+	if at < 0 {
+		t.Fatalf("docs/platforms/native.md has no row beginning %q. The gap collapse is "+
+			"a sentence three documents repeat and this is the only place it is written "+
+			"as numbers.", lead)
+	}
+	row := doc[at : at+strings.IndexByte(doc[at:], '\n')]
+
+	// CSS charges the gap between every adjacent pair whatever happened to the
+	// children, so its cell is the Row's own gap repeated. Written out from the
+	// fixture rather than as a literal, so a gap changed there moves the claim
+	// rather than making this test wrong about it.
+	cssGaps := make([]int, len(spacing.Children)-1)
+	for i := range cssGaps {
+		cssGaps[i] = spacing.Gap
+	}
+	if got, want := cellAt(row, 1), joinInts(cssGaps); got != want {
+		t.Errorf("the census's spacing table gives CSS %q and a flex line charges %q — "+
+			"its gap between every adjacent pair, whatever the children did", got, want)
+	}
+	if got, want := cellAt(row, 2), joinInts(spacing.Compose.Gaps[:len(cssGaps)]); got != want {
+		t.Errorf("the census's spacing table gives Compose %q and the fixture measures "+
+			"%q. spaceAfterLastNoWeight is min(spacing, what is left); the whole content "+
+			"of that row is that the second one is 0.", got, want)
 	}
 }
 
-// composeCell pulls the last cell out of a markdown table row and strips the
-// bold markers the census uses to point at the pinned child.
+// cellAt pulls one cell out of a markdown table row and strips the bold markers
+// the census uses to point at the pinned child.
 //
-// Deliberately positional — the census's table has exactly three columns and the
-// Compose answer is the last — because a general markdown parser is not what this
-// needs and would be far more code than the thing it checks. A table that grew a
-// column would land here as a mismatch that names the row, which is the failure
-// a reader can act on.
-func composeCell(row string) string {
+// Deliberately positional — the census's tables have exactly three columns, the
+// row's name then CSS then Compose — because a general markdown parser is not
+// what this needs and would be far more code than the thing it checks. It used
+// to take the LAST cell, which was the same thing while only one column was
+// held; indexing says which column a failure is about, and a table that grew one
+// lands here as a mismatch naming the row rather than as a silent shift.
+func cellAt(row string, i int) string {
 	cells := strings.Split(strings.Trim(row, "|"), "|")
-	if len(cells) == 0 {
+	if i < 0 || i >= len(cells) {
 		return ""
 	}
-	return strings.TrimSpace(strings.ReplaceAll(cells[len(cells)-1], "**", ""))
+	return strings.TrimSpace(strings.ReplaceAll(cells[i], "**", ""))
 }
 
 // joinInts spells a case's extents the way the census's cells do.

@@ -65,7 +65,7 @@ import (
 // reach AND make it something this repository is responsible for. Either way
 // somebody has to look, and this is where they are told to.
 func TestTheComposeRowDelegatesItsDistributionToCompose(t *testing.T) {
-	body := declSource(t, kotlinRenderer, "private fun RowScope.RowChildren(node: GrMobNode)")
+	body := codeOf(t, kotlinRenderer, "private fun RowScope.RowChildren(node: GrMobNode)")
 
 	if !strings.Contains(body, "Modifier.weight(grow)") {
 		t.Errorf("%s: RowChildren no longer hands a FlexGrow child Modifier.weight.\n\n"+

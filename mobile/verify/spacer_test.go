@@ -149,7 +149,7 @@ func TestTheSpacerChassisSitsUnderTheAuthorsStyle(t *testing.T) {
 // and still contains both halves of the mechanism.
 func spacerView(t *testing.T) string {
 	t.Helper()
-	src := readNative(t, swiftRenderer)
+	src := valuesIn(t, swiftRenderer)
 	at := strings.Index(src, "private struct GrMobSpacer: View {")
 	if at < 0 {
 		t.Fatalf("%s: no GrMobSpacer — if it was renamed, update this test rather "+

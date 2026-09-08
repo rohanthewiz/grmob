@@ -54,3 +54,32 @@ let grMobImportOutFloat64: (UnsafeMutablePointer<Double>?) -> Bool = GrMobImport
 // a real bind answers, this is the line that would say so.
 let grMobImportOutInt: (UnsafeMutablePointer<Int>?) -> Bool = GrMobImportOutInt
 let grMobImportOutBool: (UnsafeMutablePointer<ObjCBool>?) -> Bool = GrMobImportOutBool
+
+// MARK: - the nullable OBJECT result, and what the error convention does to it
+
+// []byte, in both positions. `NSData* _Nullable` either way — unlike NSString*,
+// whose nullability gobind chooses per position — so there is no asymmetry to
+// record and one line settles both columns.
+let grMobImportData: (Data?) -> Data? = GrMobImportData
+
+// And the arm that had been prose since somebody ran a bind once: an
+// Objective-C method returning a nullable object alongside a trailing NSError**
+// throws, and the imported return LOSES its optional. nil is what signals the
+// error, so it can no longer also be a value.
+//
+// That is the arm a `([]byte, error)` result lands in, and the arm
+// `(Iface, error)` already used. Both were read off one bind and written down;
+// this is the compiler agreeing, on a machine that has no gomobile.
+//
+// Spelled as an annotated VALUE rather than an annotated return, because that
+// is the form the compiler discriminates on: `try p.dataOrError()` is accepted
+// where a `Data?` is asked for, since Swift widens on the way out — so
+// annotating this function's own return would prove nothing. `let value: Data`
+// fails if the import kept the optional.
+//
+// Nothing runs it. This file is type-checked and never linked.
+func grMobImportErrorConventionDropsTheOptional(
+    _ p: any GrMobImportErrorConvention) throws {
+    let value: Data = try p.dataOrError()
+    _ = value
+}

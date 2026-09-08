@@ -47,15 +47,32 @@
  *
  * # What is deliberately not here
  *
- * NSString* and id<Protocol>, which mobile/verify's table also spells. Those
- * carry nullability annotations that gobind chooses per position, and the
- * choice — not the import — is the fact worth reading; genobjc.go's
- * objcParamType is where it is read, and it is read there. This file is for the
- * types whose C spelling is unambiguous and whose *Swift* name was the gap.
+ * NSString*, whose nullability gobind chooses per position — and the choice,
+ * not the import, is the fact worth reading; genobjc.go's objcParamType is
+ * where it is read, and it is read there. This file is for the types whose C
+ * spelling is unambiguous and whose *Swift* name was the gap.
+ *
+ * # The protocol at the end, which is a different question
+ *
+ * Everything above asks "what is this C type called in Swift". The last
+ * declaration asks something else: what Clang's ERROR CONVENTION does to an
+ * Objective-C method that returns a nullable object and takes a trailing
+ * NSError**. mobile/verify's swiftResults has an arm for exactly that shape —
+ * it throws, and the imported return loses its optional, because nil is what
+ * signals the error and so can no longer also be a value — and that arm was
+ * read off one real `gomobile bind` and has been prose ever since.
+ *
+ * It is the arm a `([]byte, error)` result lands in, which is why it is here
+ * now. `NSData*` is _Nullable in gobind's own golden
+ * (bind/testdata/basictypes.objc.h.golden, line 24) in both positions, so
+ * funcSummary leaves it as the return rather than moving it into an
+ * out-pointer — and a bound interface method returning it is a nullable object
+ * return, which is the convention's other usable shape. Both halves of that
+ * are readings; the second one is the compiler's now.
  */
 
 #include <stdint.h>
-#include <objc/objc.h>
+#import <Foundation/Foundation.h>
 
 /* Parameters, as `void MobileF(T x)`: the plain scalar position. */
 int8_t GrMobImportInt8(int8_t x);
@@ -83,3 +100,24 @@ BOOL GrMobImportOutInt(long* ret0_);
 BOOL GrMobImportOutFloat32(float* ret0_);
 BOOL GrMobImportOutFloat64(double* ret0_);
 BOOL GrMobImportOutBool(BOOL* ret0_);
+
+/*
+ * []byte, in the two positions it can appear in. gobind's own golden:
+ *
+ *   FOUNDATION_EXPORT NSData* _Nullable BasictypesByteArrays(NSData* _Nullable x);
+ *
+ * Nullable in both, unlike NSString*, which is why a ([]byte, error) result
+ * stays the return where an int moves into an out-pointer.
+ */
+NSData* _Nullable GrMobImportData(NSData* _Nullable x);
+
+/*
+ * And the error convention, on the one shape it rewrites that this bridge can
+ * produce: a method returning a nullable object alongside a trailing NSError**.
+ * Declared as a protocol because the convention applies to Objective-C methods
+ * and not to C functions — which is itself one of mobile/verify's readings, and
+ * the reason a package-level func does not throw.
+ */
+@protocol GrMobImportErrorConvention
+- (nullable NSData *)dataOrError:(NSError * _Nullable * _Nullable)error;
+@end

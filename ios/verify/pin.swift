@@ -69,6 +69,10 @@ func checkPinnedRow(_ cases: [PinCase]) -> [String] {
     // one flag moving. Counted across the whole fixture rather than per row,
     // because it is the SET of rows that says what it says.
     var agreed = 0, diverged = 0
+    // The same count for the spacing, which is a separate divergence: the
+    // fixture's last case has the same extents on both targets and different
+    // gaps.
+    var gapsAgreed = 0, gapsDiverged = 0
     // The same child's extent with and without the pin, keyed by name. Filled
     // as the rows are solved and compared after all of them, because the pair
     // it is about spans two cases.
@@ -107,10 +111,75 @@ func checkPinnedRow(_ cases: [PinCase]) -> [String] {
             continue
         }
 
+        if c.css.count != bases.count {
+            problems.append("\(c.what): the fixture states \(c.css.count) CSS extents "
+                + "for \(bases.count) children, so the column the census prints is about "
+                + "a different Row")
+            continue
+        }
+
         let rowHasAPin = c.children.contains { $0.pinned }
         let solver = GrMobFlexSolver(spacing: c.gap, justify: "")
         let css = solver.resolve(main: c.offer, bases: bases, weights: weights,
                                  shrinks: shrinks).mains
+
+        // --- the census's CSS column ----------------------------------------
+        //
+        // The whole column, not just the pinned child. internal/pinfixture
+        // STATES these numbers and computes none of them — a flex line
+        // transcribed into Go would be a third spelling after this solver and a
+        // browser — so the claim only means anything while something is held to
+        // it, and this is one of the two things that are.
+        //
+        // The control row is why it matters. Three of the four rows are pinned
+        // down by other assertions below (the pin keeps its base, the extents
+        // match Compose where the fixture says they do, a child's width does
+        // not depend on where it sits). The no-pin row's 24/80/16 is determined
+        // by nothing else at all: it is the scaled-base rule producing three
+        // particular numbers, and until the fixture carried them a reader who
+        // trusted that row was trusting a comment.
+        for i in 0..<bases.count where abs(css[i] - c.css[i]) > pinEpsilon {
+            let got = (0..<bases.count).map { "\(c.children[$0].name) \(css[$0])" }
+                .joined(separator: ", ")
+            problems.append("\(c.what): GrMobFlexSolver lays the children out at "
+                + "[\(got)] and internal/pinfixture states the CSS column as "
+                + "\(c.css).\n"
+                + "      That column is the one the census prints, and nothing computes "
+                + "it: the fixture states it and this solver and a browser are what hold "
+                + "it. The control row is the sharpest case — its 24/80/16 is the "
+                + "scaled-base rule's answer and no other assertion here determines it")
+            break
+        }
+
+        // --- the spacing ----------------------------------------------------
+        //
+        // A CSS flex line's gap is used space: it is charged between every
+        // adjacent pair whatever the children did, and this solver takes it out
+        // of the free space in `natural` before any shrinking happens. A
+        // Compose Row clamps each gap to what was left, so an overflowing Row
+        // inserts none after the child that spent the axis.
+        //
+        // That sentence is repeated in three documents and, until the fixture
+        // grew a case with a gap in it, was measured by nothing. Both arms are
+        // asserted, because a fixture where every row collapsed would asserted
+        // the collapse and never reach the agreement.
+        var gapsSame = true
+        for i in 0..<max(bases.count - 1, 0)
+        where abs(c.compose.gaps[i] - c.gap) > pinEpsilon {
+            gapsSame = false
+        }
+        if gapsSame != c.gapsAgreeWithCSS {
+            problems.append("\(c.what): the Row's own spacing is \(c.gap)pt and the "
+                + "Compose column inserts \(c.compose.gaps), which \(gapsSame ? "is" : "is not") "
+                + "what a flex line inserts — and the fixture says gapsAgreeWithCSS="
+                + "\(c.gapsAgreeWithCSS).\n"
+                + "      This solver charges `spacing` between every adjacent pair before "
+                + "it distributes anything, so CSS's answer is the gap repeated. "
+                + "spaceAfterLastNoWeight is min(spacing, what is left), so Compose's is "
+                + "not, once the Row has overflowed. A fixture that had stopped carrying "
+                + "both kinds of row would assert one of them twice")
+        }
+        if gapsSame { gapsAgreed += 1 } else { gapsDiverged += 1 }
 
         // --- the declaration ------------------------------------------------
         //
@@ -244,6 +313,17 @@ func checkPinnedRow(_ cases: [PinCase]) -> [String] {
         problems.append("no case in the fixture has the two targets disagreeing, so "
             + "nothing here is measuring the no-proportional-shrink divergence the "
             + "census records")
+    }
+    if gapsAgreed == 0 {
+        problems.append("no case in the fixture inserts the spacing a flex line "
+            + "inserts. Four of the five rows carry no gap at all, which agrees "
+            + "vacuously and is what bounds the one that does not")
+    }
+    if gapsDiverged == 0 {
+        problems.append("no case in the fixture has the spacing collapsing, so the one "
+            + "line of the measure policy nothing used to measure — "
+            + "spaceAfterLastNoWeight is min(spacing, what is left) — is unmeasured "
+            + "again. internal/pinfixture is supposed to carry a row with a gap in it")
     }
     return problems
 }

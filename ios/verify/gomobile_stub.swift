@@ -121,6 +121,7 @@
 //	type     rune        | Int32                 | Int32
 //	type     float32     | Float                 | Float
 //	type     float64     | Double                | Double
+//	type     []byte      | Data?                 | Data?
 //	type     <interface> | Mobile<Name>Protocol? | Mobile<Name>Protocol?
 //	results  func    func()                       | public func F()
 //	results  func    func(s string) string        | public func F(_ s: String?) -> String
@@ -132,6 +133,8 @@
 //	results  method  func() (string, error)       | func m(error: NSErrorPointer) -> String
 //	results  method  func() (int, error)          | func m(ret0_: UnsafeMutablePointer<Int>?) throws
 //	results  method  func() (bool, error)         | func m(ret0_: UnsafeMutablePointer<ObjCBool>?) throws
+//	results  func    func() ([]byte, error)       | public func F(_ error: NSErrorPointer) -> Data?
+//	results  method  func() ([]byte, error)       | func m() throws -> Data
 //	results  refused func() (string, string)      | second is not an error
 //	results  refused func() (string, int, error)  | refuses more than two
 //	--- end ---

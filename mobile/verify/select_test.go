@@ -243,7 +243,7 @@ func TestNativeMenuDecompositionIsUIFree(t *testing.T) {
 		{swiftSelectMenu, "import Foundation", []string{"import "}},
 		{kotlinSelectMenu, "", []string{"import "}},
 	} {
-		for _, line := range strings.Split(readNative(t, pin.file), "\n") {
+		for _, line := range strings.Split(codeIn(t, pin.file), "\n") {
 			line = strings.TrimSpace(line)
 			for _, prefix := range pin.prefixes {
 				if !strings.HasPrefix(line, prefix) || line == pin.allowed {
@@ -306,7 +306,7 @@ func TestNativeMenuDecompositionsAgree(t *testing.T) {
 			"if (runDisabled) items.map { it.copy(isDisabled = true) }",
 			`== "true"`, "index = i"},
 	} {
-		src := readNative(t, pin.file)
+		src := valuesIn(t, pin.file)
 		for what, want := range map[string]string{
 			"close a run when the heading changes": pin.runs,
 			"flush a run that ends the list":       pin.flush,

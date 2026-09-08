@@ -40,7 +40,7 @@ func TestBothShellsDispatchTheSensorEvent(t *testing.T) {
 			attach:   "HeadingSensor.attach(appContext, runtime::hostEvent)",
 		},
 	} {
-		src := readNative(t, pin.file)
+		src := valuesIn(t, pin.file)
 		if !strings.Contains(src, pin.dispatch) {
 			t.Errorf("%s: no arm for the \"sensor\" event — core.StartHeading is "+
 				"dropped here and the app waits on a reading nobody asked for",
@@ -73,7 +73,7 @@ func TestBothHostsReportAnAbsentCompass(t *testing.T) {
 			report: `put("available", false)`,
 		},
 	} {
-		src := readNative(t, pin.file)
+		src := valuesIn(t, pin.file)
 		if !strings.Contains(src, pin.guard) {
 			t.Errorf("%s: no availability guard (%s)", pin.file, pin.guard)
 		}
@@ -92,7 +92,7 @@ func TestBothHostsThrottleTheirSensorStream(t *testing.T) {
 		{swiftHeading, "minInterval"},
 		{kotlinHeading, "MIN_INTERVAL_MS"},
 	} {
-		if src := readNative(t, pin.file); !strings.Contains(src, pin.marker) {
+		if src := codeIn(t, pin.file); !strings.Contains(src, pin.marker) {
 			t.Errorf("%s: no throttle (%s) — a 60Hz sensor drives 60 render passes "+
 				"a second", pin.file, pin.marker)
 		}
@@ -108,7 +108,7 @@ func TestBothHostsThrottleTheirSensorStream(t *testing.T) {
 // own smoothing filter — so what is pinned is that the conversion it does is
 // the unit one and the fold is left to Go.
 func TestAndroidConvertsUnitsButLeavesTheFoldToGo(t *testing.T) {
-	src := readNative(t, kotlinHeading)
+	src := valuesIn(t, kotlinHeading)
 	if !strings.Contains(src, "Math.toDegrees(orientation[0].toDouble())") {
 		t.Errorf("%s: the azimuth is not converted from radians — Go would read "+
 			"a bearing of at most 6 degrees", kotlinHeading)

@@ -40,7 +40,7 @@ func TestBothNativesWriteDownTheIDRefGap(t *testing.T) {
 		{kotlinStyle, "AccessibilityID and AccessibilityControls are not read here either",
 			"above grMobRole, beside the two level notes it repeats the shape of"},
 	} {
-		if !strings.Contains(readNative(t, pin.file), pin.note) {
+		if !strings.Contains(proseIn(t, pin.file), pin.note) {
 			t.Errorf("%s: %q not found — the note belongs %s, and a field a renderer simply "+
 				"ignored is indistinguishable from one nobody had heard of",
 				pin.file, pin.note, pin.why)
@@ -60,7 +60,7 @@ func TestBothNativesNameTheTestSelectorTheyAreNotUsing(t *testing.T) {
 		{swiftStyle, "`accessibilityIdentifier`"},
 		{kotlinStyle, "`testTag`"},
 	} {
-		if !strings.Contains(readNative(t, pin.file), pin.property) {
+		if !strings.Contains(proseIn(t, pin.file), pin.property) {
 			t.Errorf("%s: the IDREF note does not name %s — that property is the near miss "+
 				"this field must not be mapped onto, and naming it is the whole warning",
 				pin.file, pin.property)
@@ -73,7 +73,7 @@ func TestBothNativesNameTheTestSelectorTheyAreNotUsing(t *testing.T) {
 // say this is not.
 func TestNeitherNativeParsesTheIDRefPair(t *testing.T) {
 	for _, file := range []string{kotlinStyle, swiftStyle} {
-		src := readNative(t, file)
+		src := codeIn(t, file)
 		for _, key := range []string{`AccessibilityID"`, `AccessibilityControls"`} {
 			if strings.Contains(src, key) {
 				t.Errorf("%s: parses %s — if the platform grew a way to state that one "+

@@ -78,7 +78,11 @@
 //      band's tallest child, half of which is "a bold caption is no shorter
 //      than a plain one" — a measurement no Go test can take. gen.go renders
 //      real components.GroupHeaders through every bundled theme and this mounts
-//      them with real glyphs in them.
+//      them with real glyphs in them. It reads three colours as well as the
+//      rects: the band's own fill, the ink its words are set in, and its count
+//      pill. A band is those three things, and for a while only the first was
+//      sampled — so a band painting its fill over an invisible label passed
+//      every rect below it.
 //  11. a fixed-size container squeezes its child along its main axis and lets
 //      it spill across. core.Spacer became "a Box with a fixed size", and the
 //      note closing that work recorded that Compose constrains a child to the
@@ -98,7 +102,13 @@
 //      piece of reasoning about whether a known divergence applies, made by the
 //      person who wrote the fixture and asked of nobody. This asks, and
 //      recomputes nothing — every claim is one the fixture states, held against
-//      measured pixels.
+//      measured pixels. The fixture states the CSS column outright now, so the
+//      control row's 24/80/16 is held here too: three of its rows were pinned
+//      by the claims below and that one was determined by nothing. It also
+//      states the SPACING each Row inserts, which is where the two targets part
+//      company a second time — a flex line charges its gap between every
+//      adjacent pair and a Compose Row clamps each one to what is left, and
+//      every case carried gap 0 until one of them did not.
 //
 // The numbering is one sequence, and it is the order the checks run in rather
 // than the order they were written. It is also load-bearing: a dozen comments
@@ -140,6 +150,7 @@ import zlib from "node:zlib";
 import { PALETTES } from "./palette.mjs";
 import { VALUE_RANGES, axRange, valueRangeProblem } from "./valuerange.mjs";
 import { startupVerdict } from "./startup.mjs";
+import { foldVerdict } from "./fold.mjs";
 
 // The widget swatches come from the transcript rather than from a .mjs table,
 // because they are real components rendered by Go: gen.go builds the trees and
@@ -340,6 +351,45 @@ function pixelAt(img, x, y) {
     if (img.channels <= 2) return `#${hex2(d[i])}${hex2(d[i])}${hex2(d[i])}`;
     return `#${hex2(d[i])}${hex2(d[i + 1])}${hex2(d[i + 2])}`;
 }
+
+// How far apart two "#RRGGBB" strings are, as the largest single-channel
+// difference. A maximum rather than a sum, so a tolerance means the same thing
+// whatever the colour: three channels each two off is as close as one channel
+// two off, and both are the same rounding.
+function channelDistance(a, b) {
+    if (!a || !b) return 255;
+    let worst = 0;
+    for (let i = 1; i < 7; i += 2) {
+        const d = Math.abs(parseInt(a.slice(i, i + 2), 16) - parseInt(b.slice(i, i + 2), 16));
+        if (d > worst) worst = d;
+    }
+    return worst;
+}
+
+// A colour composited over a backdrop, for the themes whose ink carries an
+// alpha channel.
+//
+// DefaultTheme's TextSecondary is #3C3C4399 — eight digits — so what a
+// screenshot holds where the words are is not the declared colour but the
+// declared colour at 60% over the band's fill. A six-digit colour is returned
+// unchanged, which is every other bundled theme.
+function over(color, backdrop) {
+    if (!color || color.length !== 9) return color;
+    const a = parseInt(color.slice(7, 9), 16) / 255;
+    let out = "#";
+    for (let i = 1; i < 7; i += 2) {
+        const fg = parseInt(color.slice(i, i + 2), 16);
+        const bg = parseInt(backdrop.slice(i, i + 2), 16);
+        out += hex2(Math.round(fg * a + bg * (1 - a)));
+    }
+    return out;
+}
+
+// How far a sampled pixel may sit from the ink it is supposed to be. Text is
+// antialiased and the composite above is arithmetic this file does rather than
+// the browser, so an exact match is asking two roundings to agree; three is far
+// below the distance to any other colour in a band.
+const INK_EPSILON = 3;
 
 // --------------------------------------------------------------------------
 // CDP
@@ -1118,10 +1168,23 @@ const FIXED_SIZE_CASES = [
 //
 // So every claim here is one the FIXTURE states, held against measured pixels:
 //
+//	the census's column    the fixture STATES the CSS extents for every row, and
+//	                       a browser lays them out. That is the claim the census
+//	                       prints, and it is why the field exists: the three
+//	                       claims below determine the pinned rows and determine
+//	                       nothing at all about the control row, whose 24/80/16
+//	                       was three numbers in a comment beside two mechanisms
+//	                       that produce them.
 //	the declaration        a pinned child lays out at its own base, in every
 //	                       arrangement. That is what core.FlexShrink(0) says and
 //	                       what the Compose column shows; a browser is the third
 //	                       target to be asked.
+//	the spacing            a flex line charges its gap between every adjacent
+//	                       pair, whatever the children ended up at; a Compose
+//	                       Row clamps each one to what is left. The fixture's
+//	                       last row is the only case with a gap in it, and until
+//	                       it existed the sentence three documents repeat was
+//	                       measured by nothing. Both arms, like the agreement.
 //	agreement, both ways   `mainsAgreeWithCSS` says whether these three extents
 //	                       are the Compose ones. Both arms are asserted, for the
 //	                       reason the fixture gives about deriving the flag: a
@@ -1137,12 +1200,14 @@ const FIXED_SIZE_CASES = [
 //	                       the line adds up to exactly the offer. One declaration
 //	                       apart from the row above it.
 //
-// Those four pin three of the four rows to the exact numbers the census records
-// — the pinned rows are determined by "the pin keeps its base" plus agreement
-// with Compose on the first plus order-independence across all three. The
-// control row's proportional split (24/80/16) is the one thing still stated by
-// GrMobFlexSolver alone, and it is not transcribed here; what is asserted about
-// it is that every child shrank and the line fits.
+// The last four pin the pinned rows to the exact numbers the census records —
+// "the pin keeps its base" plus agreement with Compose on the first plus
+// order-independence across all three. The control row is determined by none of
+// them, which is what the stated column is for: 24/80/16 is the scaled-base
+// rule's answer and nothing else here produces it. Its own two assertions —
+// every child shrank, and the line fits exactly — are kept beside it, because
+// they say WHY the three numbers are what they are and the column only says
+// that they are.
 //
 // # The modelling, and the one declaration that is NOT load-bearing
 //
@@ -1769,12 +1834,12 @@ async function main() {
             // rect and no pixels, and pixelAt would answer null for every
             // sample below — three failures naming colours, none of them
             // saying the swatch was never on screen. Said once, here.
-            if (rects.page.y + rects.page.h > wImg.height / dpr + 0.5) {
-                problems.push(`${where}: the swatch grid runs past the bottom of the ` +
-                    `viewport (this one ends at ${Math.round(rects.page.y + rects.page.h)}px ` +
-                    `of a ${Math.round(wImg.height / dpr)}px screenshot), so nothing was ` +
-                    `painted where its rect says it is — WIDGETS_PER_ROW or the window ` +
-                    `size needs to grow with the census`);
+            const fold = foldVerdict({
+                what: where, bottom: rects.page.y + rects.page.h,
+                screen: wImg.height / dpr, knob: "WIDGETS_PER_ROW or the window size",
+            });
+            if (fold) {
+                problems.push(fold);
                 continue;
             }
 
@@ -2320,12 +2385,13 @@ async function main() {
             // Vertically centred for the widget grid's reason: a horizontal edge
             // at mid-height is clear of any glyph and of any corner the band
             // might grow.
-            if (r.band.y + r.band.h > bandImg.height / bandDpr + 0.5) {
-                problems.push(`${where}: the band grid runs past the bottom of the ` +
-                    `viewport (this one ends at ${Math.round(r.band.y + r.band.h)}px of a ` +
-                    `${Math.round(bandImg.height / bandDpr)}px screenshot), so nothing was ` +
-                    `painted where its rect says it is — the grid or the window size ` +
-                    `needs to grow with the number of themes`);
+            const bandFold = foldVerdict({
+                what: where, bottom: r.band.y + r.band.h,
+                screen: bandImg.height / bandDpr,
+                knob: "the window size, or the number of themes bundled",
+            });
+            if (bandFold) {
+                problems.push(bandFold);
                 continue;
             }
             const bandFill = pixelAt(bandImg,
@@ -2338,6 +2404,95 @@ async function main() {
                     `rect below is blind to — this grid measured nine real bands and read ` +
                     `no pixels at all until this line`);
                 continue;
+            }
+
+            // The words, which the fill alone says nothing about.
+            //
+            // A band is a fill, a run of words and a count, and until this line
+            // two of the three were unread: a band painting its own fill over
+            // an invisible label passed every assertion here. That is the gap
+            // the widget grid does not have — it reads a fill AND scans both
+            // boundary edges, on the argument that either single edge is
+            // consistent with a correct frame.
+            //
+            // Text cannot be sampled at a point the way a fill can: a glyph is
+            // a few stems in a field of backdrop, and where they land depends
+            // on the font. So the label's rect is scanned and the two things
+            // that could be wrong are asked separately:
+            //
+            //	there is ink     some pixel in the label's box is not the band's
+            //	                 fill. A label rendered in the fill colour, or
+            //	                 not rendered at all, has none.
+            //	it is THIS ink   some pixel is exactly the colour the widget
+            //	                 declares. A stem's interior is unblended at any
+            //	                 size a caption is set at, so the declared colour
+            //	                 is present when it is the colour being used —
+            //	                 and a label drawn in the theme's other ink role
+            //	                 would satisfy the first claim and fail this one.
+            //
+            // Scanned at the label's vertical middle, across its width, which is
+            // the row most likely to cross a stem: an x-height band rather than
+            // an ascender or a descender.
+            if (r.label) {
+                // What the ink is supposed to LOOK like, which is not always
+                // what it is declared as. DefaultTheme's TextSecondary is
+                // #3C3C4399 — eight digits, so the words are drawn at 60%
+                // opacity over the band and a screenshot holds the composite.
+                // Ignoring the alpha would compare against a colour nothing
+                // paints; reading it and compositing is the same arithmetic a
+                // browser does, and it is worth doing rather than falling back
+                // to "some pixel differs from the fill" because the theme with
+                // the translucent ink is the one where that fallback would be
+                // the whole check.
+                const want = over(b.labelInk, b.fill);
+                const y = Math.round((r.label.y + r.label.h / 2) * bandDpr);
+                let ink = false, notFill = false, darkest = null, best = -1;
+                for (let dx = 0; dx < Math.round(r.label.w * bandDpr); dx++) {
+                    const got = pixelAt(bandImg, Math.round(r.label.x * bandDpr) + dx, y);
+                    if (got === null) continue;
+                    if (got !== b.fill) notFill = true;
+                    // A stem's interior is unblended, so the pixel furthest
+                    // from the backdrop is the ink itself. Compared with a
+                    // tolerance because the composite above is done in eight
+                    // bits and a browser's rounding is its own.
+                    const away = channelDistance(got, b.fill);
+                    if (away > best) { best = away; darkest = got; }
+                    if (channelDistance(got, want) <= INK_EPSILON) ink = true;
+                }
+                if (!notFill) {
+                    problems.push(`${where}: every pixel across the middle of the label's ` +
+                        `box is ${b.fill}, the band's own fill. The words are not there — ` +
+                        `and until this scan a band that painted its fill over them passed ` +
+                        `every assertion in this check, because a rect is the same either ` +
+                        `way`);
+                } else if (!ink) {
+                    problems.push(`${where}: the label's box has ink in it and the pixel ` +
+                        `furthest from the band's ${b.fill} is ${darkest}. ` +
+                        `components.GroupHeader declares ${b.labelInk} for the words ` +
+                        `(core.TextColor(TextSecondary)), which over this band composites ` +
+                        `to ${want}. Something is drawn there in another colour, which is ` +
+                        `what a label that lost its declaration and inherited one looks ` +
+                        `like`);
+                }
+            }
+
+            // And the count pill, which is a fill and can be sampled like one.
+            //
+            // Five device-independent pixels in and vertically centred: the
+            // pill's radius is 999, so its leftmost point is the apex of a
+            // curve and every pixel there is an antialiased blend — the same
+            // trap the widget grid's ring scan records. At mid-height the box
+            // is at its widest and 5px in is inside the pill's own leading
+            // padding, which is 8, so it is fill and not digit.
+            if (r.badge) {
+                const badgeFill = pixelAt(bandImg,
+                    (r.badge.x + 5) * bandDpr, (r.badge.y + r.badge.h / 2) * bandDpr);
+                if (badgeFill !== b.badgeFill) {
+                    problems.push(`${where}: the count pill painted as ${badgeFill}, and ` +
+                        `its own Style declares ${b.badgeFill} (the band behind it is ` +
+                        `${b.fill}). A badge with no pill is a number sitting on the band, ` +
+                        `which lays out identically and is a different widget`);
+                }
             }
 
             // The control assertion, and it is the one that makes the rest mean
@@ -2652,11 +2807,16 @@ async function main() {
         // why nothing here recomputes a flex line.
         await mount(PIN_GRID);
 
+        // Widths AND leading edges. The edges are what the spacing claim is
+        // read out of: a gap is not a node, so the only way to ask a browser
+        // what it inserted between two children is to subtract.
         const pinRects = await evaluate(`${JSON.stringify(
             PINS.map((c, i) => c.children.map((_, j) => `root/${i}/${j}`)))}.map((paths) =>
             paths.map((p) => {
                 const el = document.querySelector('[data-node-path="' + p + '"]');
-                return el ? el.getBoundingClientRect().width : null;
+                if (!el) return null;
+                const r = el.getBoundingClientRect();
+                return { w: r.width, x: r.left };
             }))`);
 
         // Each child's extent, by name, across the three arrangements that have
@@ -2665,13 +2825,84 @@ async function main() {
         // pinnedExtent/unpinnedExtent pair has.
         const pinnedRowExtent = {};
         let sawAgreement = false, sawDivergence = false;
+        let sawGapAgreement = false, sawGapDivergence = false;
 
         for (let i = 0; i < PINS.length; i++) {
-            const c = PINS[i], mains = pinRects[i];
+            const c = PINS[i], boxes = pinRects[i];
             const where = `the pinned Row, ${c.what}`;
-            if (mains.some((w) => w === null)) {
+            if (boxes.some((b) => b === null)) {
                 problems.push(`${where}: a child was not laid out`);
                 continue;
+            }
+            const mains = boxes.map((b) => b.w);
+            if (c.css.length !== mains.length) {
+                problems.push(`${where}: internal/pinfixture states ${c.css.length} CSS ` +
+                    `extents for ${mains.length} children, so the column the census ` +
+                    `prints is about a different Row`);
+                continue;
+            }
+
+            // The census's CSS column, measured.
+            //
+            // This is the one claim here that is about the table rather than
+            // about the pin, and it is why the column became a field. Three of
+            // the rows are pinned to their numbers by the assertions below —
+            // the pin keeps its base, the extents match Compose where the
+            // fixture says they do, a child's width does not depend on where it
+            // sits. The control row's 24/80/16 is determined by none of them:
+            // it is the scaled-base rule producing three particular numbers,
+            // and a reader who trusted them was trusting a comment.
+            //
+            // Nothing is recomputed. The fixture STATES the column and this
+            // reads pixels; a flex line written in JavaScript would make the
+            // check about whether two transcriptions agree, which is the thing
+            // this whole mount exists not to be.
+            c.css.forEach((want, j) => {
+                if (!pinSame(mains[j], want)) {
+                    problems.push(`${where}: ${c.children[j].name} laid out at ` +
+                        `${mains[j].toFixed(2)}px and internal/pinfixture states the CSS ` +
+                        `column as [${c.css.join(", ")}]. That column is what the census ` +
+                        `prints; nothing computes it, so a browser and GrMobFlexSolver ` +
+                        `are the two things holding it — and the control row is the one ` +
+                        `no other claim here determines`);
+                }
+            });
+
+            // The spacing, which is a gap between two edges rather than a node.
+            //
+            // A CSS flex line charges its gap between every adjacent pair
+            // whatever happened to the children — it is used space, taken out
+            // before anything is distributed. A Compose Row clamps each one to
+            // what is left, so an overflowing Row inserts none after the child
+            // that spent the axis. Three documents repeat that sentence and
+            // every case in the fixture carried gap 0 until one of them did
+            // not, so nothing had ever measured it.
+            //
+            // Both arms, for the reason the extents' agreement has both: four
+            // of the five rows have no gap and agree vacuously, which is what
+            // bounds the one that does not.
+            let gapsSame = true;
+            for (let j = 0; j + 1 < mains.length; j++) {
+                const measured = boxes[j + 1].x - (boxes[j].x + mains[j]);
+                if (!pinSame(measured, c.gap)) {
+                    problems.push(`${where}: a browser leaves ${measured.toFixed(2)}px ` +
+                        `between ${c.children[j].name} and ${c.children[j + 1].name}, and ` +
+                        `the Row declares a ${c.gap}px gap. A flex line's gap is used ` +
+                        `space: it comes off the free space before anything is shrunk and ` +
+                        `is charged between every adjacent pair, whatever the children ` +
+                        `ended up at`);
+                }
+                if (!pinSame(c.compose.gaps[j], c.gap)) gapsSame = false;
+            }
+            if (gapsSame) sawGapAgreement = true; else sawGapDivergence = true;
+            if (gapsSame !== c.gapsAgreeWithCSS) {
+                problems.push(`${where}: internal/pinfixture's Compose column inserts ` +
+                    `[${c.compose.gaps.join(", ")}] of spacing in a Row whose gap is ` +
+                    `${c.gap}px, which ${gapsSame ? "is" : "is not"} what the browser ` +
+                    `above was just measured doing — and the fixture says ` +
+                    `gapsAgreeWithCSS=${c.gapsAgreeWithCSS}. spaceAfterLastNoWeight is ` +
+                    `min(spacing, what is left); a fixture that had stopped carrying a ` +
+                    `row with a gap in it would assert one arm of that twice`);
             }
 
             // The declaration, on the target that has always had flex-shrink.
@@ -2770,6 +3001,13 @@ async function main() {
                 `— it is supposed to carry both, and half of what this check asserts ` +
                 `is asserted over nothing`);
         }
+        if (!sawGapAgreement || !sawGapDivergence) {
+            problems.push(`the pinned Row: internal/pinfixture carried ` +
+                (sawGapAgreement ? "" : "no case whose spacing survives ") +
+                (sawGapDivergence ? "" : "no case whose spacing collapses ") +
+                `— four of its five rows have no gap at all and the fifth is the only ` +
+                `thing that has ever measured min(spacing, what is left)`);
+        }
 
     } finally {
         if (session) session.close();
@@ -2791,14 +3029,17 @@ async function main() {
     offer — overflow included, which is where the SwiftUI solver does not — and
     hug their own natural width under every intrinsic keyword,
     ${BAND_RENDERS.length} real bands span their own tap targets, paint their own
-    fill and are taller than
-    their badges with real glyphs in them, a fixed-size container squeezes its
+    fill, their own words in their own ink and their count pills, and are taller
+    than their badges with real glyphs in them, a fixed-size container squeezes its
     child along the main axis and lets it spill across — unless the child is
     pinned with core.FlexShrink(0), which until core.ShrinkNone was a declaration
     nobody could write — and ${PINS.length} arrangements of one overflowing Row
-    honour that same pin wherever the child sits, agreeing with Compose in the
-    one case internal/pinfixture says they agree and differing in the three it
-    says they differ`);
+    honour that same pin wherever the child sits and lay their siblings out at
+    the extents the pin census prints, agreeing with Compose in the
+    ${PINS.filter((c) => c.mainsAgreeWithCSS).length} case internal/pinfixture says
+    they agree and differing in the ${PINS.filter((c) => !c.mainsAgreeWithCSS).length}
+    it says they differ, and charging the spacing a flex line charges where a
+    Compose Row charges none`);
 }
 
 await main();

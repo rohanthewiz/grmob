@@ -50,7 +50,7 @@ func TestBothNativeParsersReadTheGapLonghands(t *testing.T) {
 		{file: swiftStyle, keys: []string{`num("RowGap")`, `num("ColumnGap")`}},
 		{file: kotlinStyle, keys: []string{`optDouble("RowGap"`, `optDouble("ColumnGap"`}},
 	} {
-		src := readNative(t, pin.file)
+		src := valuesIn(t, pin.file)
 		for _, key := range pin.keys {
 			if !strings.Contains(src, key) {
 				t.Errorf("%s: never parses %s — core.RowGap/core.ColumnGap render on the web "+
@@ -104,7 +104,7 @@ func TestNativeContainersSpaceAlongTheirOwnAxis(t *testing.T) {
 		{file: kotlinRenderer, decl: "private fun packedHorizontally(", want: "horizontalGap", reject: "verticalGap"},
 		{file: kotlinRenderer, decl: "private fun packedVertically(", want: "verticalGap", reject: "horizontalGap"},
 	} {
-		src := declSource(t, pin.file, pin.decl)
+		src := codeOf(t, pin.file, pin.decl)
 		if !strings.Contains(src, pin.want) {
 			t.Errorf("%s: %s does not read %s — it spaces its children along the wrong axis, "+
 				"or ignores the gap longhands entirely", pin.file, pin.decl, pin.want)
@@ -133,7 +133,7 @@ func TestNativeScrollDoesNotHardCodeZeroSpacing(t *testing.T) {
 		// pin is that the argument is present at all.
 		{kotlinRenderer, "private fun GrMobScroll(", ""},
 	} {
-		src := declSource(t, pin.file, pin.decl)
+		src := codeOf(t, pin.file, pin.decl)
 		if pin.zero != "" && strings.Contains(src, pin.zero) {
 			t.Errorf("%s: %s stacks with %q — core.Gap on a Scroll is dropped on this platform",
 				pin.file, pin.decl, pin.zero)

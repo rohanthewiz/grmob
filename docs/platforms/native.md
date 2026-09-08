@@ -1250,6 +1250,7 @@ androidx's code, and labelled as such wherever it appears.
 | pin first `[P,A,B]` | **200**, 0, 0 | **200**, 0, 0 |
 | pin middle `[A,P,B]` | 0, **200**, 0 | 60, **200**, 0 |
 | pin last `[A,B,P]` | 0, 0, **200** | 60, 40, **200** |
+| pin middle, 8px gap `[A,P,B]` | 0, **200**, 0 | 60, **200**, 0 |
 
 Three things are readable there and none of them was before. The pinned child is
 200 in every row and on both targets, so the declaration means one thing
@@ -1279,6 +1280,23 @@ the pin an overflow on this target rather than a clip, which is what
 `overflow: visible` does on the other three. The spacing collapses with it:
 `spaceAfterLastNoWeight` is `min(spacing, what is left)`, so a `Row` that has
 spent its main axis inserts no gap after the child that spent it.
+
+That last sentence is what the fifth row is for, and it is the reason its two
+columns of extents are the fourth row's twice over. A gap is used space in a
+flex line like any other, so adding 8px to a `Row` whose shrinkable children
+were already clamped to zero moves no child on either target — and underneath,
+the two are doing different things:
+
+| | CSS | Compose |
+|---|---|---|
+| spacing after each child, 8px gap | 8, 8 | 8, 0 |
+
+The `Row` charges its spacing after the lead child, has nothing left after the
+pin, and charges none. A flex line charges both regardless, and is 8px wider for
+it. Until that row existed every case in `internal/pinfixture` carried `gap: 0`,
+so the sentence three documents repeat had never been put in front of a browser
+or a solver — `MeasureCompose` implemented the line and nothing compared it with
+anything.
 
 The CSS column is a browser's, and for a while it was not. `GrMobFlexSolver` is
 this repository's own flex arithmetic rather than a browser's, and the band
@@ -1445,6 +1463,7 @@ of the generator and not reasoning about Clang:
 | `error` | `(_ error: NSErrorPointer) -> Bool` | `throws` |
 | `(string, error)` | `(_ error: NSErrorPointer) -> String` | `(error: NSErrorPointer) -> String` |
 | `(Iface, error)` | `(_ error: NSErrorPointer) -> MobileXProtocol?` | `throws -> MobileXProtocol` |
+| `([]byte, error)` | `(_ error: NSErrorPointer) -> Data?` | `throws -> Data` |
 | `(int, error)` | `(_ ret0: UnsafeMutablePointer<Int>?, _ error: NSErrorPointer) -> Bool` | `(ret0_: UnsafeMutablePointer<Int>?) throws` |
 | `(bool, error)` | `(_ ret0: UnsafeMutablePointer<ObjCBool>?, _ error: NSErrorPointer) -> Bool` | `(ret0_: UnsafeMutablePointer<ObjCBool>?) throws` |
 
@@ -1468,6 +1487,31 @@ failure: `BOOL`, or a nullable object. A `(string, error)` method returns
 and does not throw. A `(Iface, error)` method returns a nullable object, throws,
 *and loses the optional* — `nil` is the error signal, so it can no longer also
 be a value.
+
+That last row is about the **annotation** and not about the Go type, and the
+`[]byte` row is what made the difference matter. `[]byte` was refused for two
+releases: its C spelling was legible (`NSData* _Nullable` in both positions, on
+one line of gobind's own golden) and the gap named in the refusal was the
+two-result split — "a nullable first result stays the return where a scalar
+moves into an out-pointer, and no golden exercises `([]byte, error)`". The split
+is `isNullableType`, one line of `bind/types.go`, and it is nullable because
+`nil` is assignable to a slice. So the value stays the return, and what remained
+were two questions for a compiler rather than for a bind: what `NSData*` is
+called in Swift, and what the convention does to a *method* that returns one.
+`ios/verify/importer.h` declares both — a C function and a protocol method — and
+`importer.swift` states the answers as types. The refusal that remains is `uint8`
+and its alias, and it is about the C rather than about the Swift: gobind spells a
+bare `byte` that nothing it emits declares, so there is no C to hand the importer
+at all.
+
+The reading behind that file used to run only where Swift does. `mobile/verify`
+holds its two type tables to what `importer.swift` *says*, and `swiftc` is what
+holds that file to the truth — so on any machine that is not a Mac the pairing
+was verified, the reading behind it was not, and a green `go test ./...` could
+not tell you which. It runs the typecheck itself now, skips with a named reason
+where it cannot, and `GRMOB_IMPORTER=required` turns that skip into a failure for
+a machine that is supposed to have the toolchain. `ios/verify/run.sh` calls the
+same test rather than spelling the command a second time.
 
 **Two shapes are still refused, and they are gobind's refusals rather than this
 table's.** It stops with `too many result values` for three or more, and

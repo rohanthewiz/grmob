@@ -1,7 +1,11 @@
 package main
 
 import (
+	"bytes"
 	"fmt"
+	"io/fs"
+	"os"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
@@ -38,7 +42,10 @@ import (
 //	                            and a later line counts them outright; both must
 //	                            come to N
 //	every citation resolves     `check K` anywhere in the repository is a K the
-//	                            sequence actually has
+//	                            sequence actually has. "Anywhere" is literal: the
+//	                            tree is walked, and the few files that number
+//	                            things of their own are named with the reason
+//	                            (see citationExempt)
 //
 // It lives in Go rather than in the pass itself for the reason switchlabels
 // does one directory over: a comment is not executed, so the only thing that
@@ -119,52 +126,170 @@ func TestTheBrowserChecksAreOneNumberedSequence(t *testing.T) {
 	// the line breaks rather than the sentence.
 	checkTallies(t, headerProse(lines), len(header))
 
-	// Every citation, in every file this knows about. The number means nothing
+	// Every citation, everywhere in the repository. The number means nothing
 	// on its own; what makes it an address is that it resolves.
-	//
-	// The list is written out, which is a stated limit rather than a claim of
-	// totality — the same one controls_test.go makes about its own table. Two
-	// files were missing from it and are here now: htmlout/fixedsize_test.go and
-	// controls_test.go, which cite the sequence twice and three times.
-	//
-	// # What this catches, and what caught the one real stale citation
-	//
-	// Worth separating, because adding those two files did not find the fault
-	// that prompted it. htmlout/fixedsize_test.go cited the fixed-size check as
-	// `check 10` after it had become 11, and `check 10` is a check — a range
-	// test cannot tell a citation that points at the wrong one from a citation
-	// that points at the right one. Somebody reading found that; this finds a
-	// citation to a check that does not EXIST, which is what a renumbering that
-	// shortens the sequence produces.
-	//
-	// Holding a citation to the check it means would need each site to say which
-	// check it means in words, and then this would be comparing two prose
-	// descriptions. The number is an address and this asserts the address is in
-	// the map; that the reader is in the right house is theirs.
-	//
-	// A file that cites a check and is not listed is unchecked until somebody
-	// adds it. Walking the repository would close that, and would have to decide
-	// what to do about core/debug.go, whose "Check 1", "Check 2" and "Check 3"
-	// are its own numbered sections and have nothing to do with a browser.
-	for _, file := range []string{
-		browserChecks,
-		"gen.go",
-		"fixedsize_test.go",
-		"controls_test.go",
-		"../../mobile/verify/fixedsize_test.go",
-		"../../htmlout/fixedsize_test.go",
-		"../../ios/verify/flex.swift",
-		"../../internal/bandfixture/bandfixture.go",
-		"../../internal/pinfixture/pinfixture.go",
-	} {
-		for _, cite := range citations(readFixtureFile(t, file)) {
-			if cite < 1 || cite > len(header) {
+	checkCitationsResolve(t, len(header))
+}
+
+// The repository, walked, and every `check N` in it held to the sequence.
+//
+// # What this replaced
+//
+// A hand-written list of nine files. It was a stated limit rather than a claim
+// of totality, and the limit was real in both the ways a list is: two files that
+// cited the sequence were missing from it and were added when somebody noticed,
+// and docs/platforms/native.md — the census the whole numbering exists to serve
+// — cited check 12 twice and was never in it at all.
+//
+// A walk has no such gap. A file that starts citing a check is covered the day
+// it is written rather than the day somebody remembers this list.
+//
+// # The inversion, and why it is the whole of the improvement
+//
+// The list used to say which files OPT IN. It says now which files opt OUT, and
+// each entry carries the reason it is not about browser.mjs. That is a much
+// smaller thing to keep true: an omission from an opt-in list is a file nobody
+// checks, and an omission from an opt-out list is a failure that names the file.
+//
+// # And the exemptions are held too
+//
+// Every entry below must still have a citation in it. An exemption that stopped
+// being needed is the same kind of dead weight the old list's missing entries
+// were, one direction over — it reads as "this file is known to cite checks of
+// its own" long after it stopped doing so, and the next reader trusts it.
+func checkCitationsResolve(t *testing.T, checks int) {
+	t.Helper()
+
+	root := filepath.Join("..", "..")
+	files, err := citingFiles(root)
+	if err != nil {
+		t.Fatalf("walking the repository for citations: %v", err)
+	}
+	// A walk that found nothing must not read as a pass. browser.mjs alone
+	// carries a dozen of them, so anything near zero means the walk is not
+	// reaching the tree.
+	if len(files) < 5 {
+		t.Fatalf("the walk found citations in %d files. browser.mjs, its own gen.go and "+
+			"the census in docs/ all carry several apiece, so a number this small means "+
+			"the walk is looking somewhere else or skipping everything.", len(files))
+	}
+
+	seenExempt := map[string]bool{}
+	for _, f := range files {
+		if _, exempt := citationExempt[f.path]; exempt {
+			seenExempt[f.path] = true
+			continue
+		}
+		for _, cite := range f.cites {
+			if cite < 1 || cite > checks {
 				t.Errorf("%s cites check %d, and browser.mjs has %d. Either the citation "+
 					"was not moved when the sequence was renumbered, or it names a check "+
-					"that no longer exists.", file, cite, len(header))
+					"that no longer exists.", f.path, cite, checks)
 			}
 		}
 	}
+
+	for path, why := range citationExempt {
+		if !seenExempt[path] {
+			t.Errorf("%s is exempted from the citation check (%s) and no longer cites a "+
+				"check at all. An exemption outlives its reason silently: it goes on "+
+				"telling the next reader that this file numbers things of its own, and "+
+				"the day it starts citing browser.mjs instead nothing looks.", path, why)
+		}
+	}
+}
+
+// The files whose `check N` is not an address into browser.mjs, and why.
+//
+// Keyed by repository-relative path with forward slashes. Every entry is
+// asserted to still carry a citation — see checkCitationsResolve.
+var citationExempt = map[string]string{
+	"core/debug.go": "its \"Check 1\", \"Check 2\" and \"Check 3\" are that file's own " +
+		"numbered sections — a development-mode audit that has nothing to do with a " +
+		"browser pass, and predates it",
+	"wasm/verify/checknumbering_test.go": "this file's own prose quotes citations as " +
+		"examples, the stale `check 10` that prompted the walk among them. A test " +
+		"that read its own explanation as an address would fail on the sentence " +
+		"describing the failure it exists to catch",
+}
+
+// The directories a citation walk does not enter, and why.
+//
+// Kept as path prefixes rather than as base names so that a directory named
+// `build` somewhere else in the tree is not skipped by accident.
+var citationSkipDirs = []string{
+	".git",
+	// Saved sessions and plans are a RECORD of what was true when they were
+	// written. A renumbering does not make last week's session doc wrong, and
+	// rewriting one to keep a test green would be falsifying the record.
+	"ai_docs",
+	// Build output: generated sources, jars, and a wasm binary, none of it
+	// written by anybody here.
+	"android/build",
+	"android/.gradle",
+	"android/app/build",
+	"ios/build",
+	"docs/site",
+}
+
+// citing is one file and the check numbers it names.
+type citing struct {
+	path  string
+	cites []int
+}
+
+// citingFiles walks the repository and returns every text file carrying a
+// citation, with the repository-relative slash path a failure names.
+//
+// Binary files are skipped by looking for a NUL byte rather than by extension:
+// an extension list is a second thing to keep current, and the one property
+// that actually matters here — "a regexp over this is meaningless" — is exactly
+// what a NUL is evidence of.
+func citingFiles(root string) ([]citing, error) {
+	var out []citing
+	err := filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		rel, relErr := filepath.Rel(root, p)
+		if relErr != nil {
+			return relErr
+		}
+		rel = filepath.ToSlash(rel)
+		if d.IsDir() {
+			for _, skip := range citationSkipDirs {
+				if rel == skip {
+					return fs.SkipDir
+				}
+			}
+			return nil
+		}
+		if !d.Type().IsRegular() {
+			return nil
+		}
+		info, err := d.Info()
+		if err != nil {
+			return err
+		}
+		// A bound rather than a measurement: nothing in this repository that a
+		// person writes citations into is anywhere near it, and it keeps a
+		// stray large artifact out of memory.
+		if info.Size() > 4<<20 {
+			return nil
+		}
+		raw, err := os.ReadFile(p)
+		if err != nil {
+			return err
+		}
+		if bytes.IndexByte(raw, 0) >= 0 {
+			return nil
+		}
+		if cites := citations(string(raw)); len(cites) > 0 {
+			out = append(out, citing{path: rel, cites: cites})
+		}
+		return nil
+	})
+	return out, err
 }
 
 // headerProse is the opening comment with its markers stripped and its lines

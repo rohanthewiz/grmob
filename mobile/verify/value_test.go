@@ -46,7 +46,7 @@ func TestBothNativeParsersReadTheValueField(t *testing.T) {
 		{swiftStyle, `obj["AccessibilityValue"] as? [String: Any]`, "the parse"},
 		{swiftStyle, "var accessibilityValue: ValueRange", "the field it parses into"},
 	} {
-		if src := readNative(t, pin.file); !strings.Contains(src, pin.expr) {
+		if src := valuesIn(t, pin.file); !strings.Contains(src, pin.expr) {
 			t.Errorf("%s: %q not found — %s. core.ValueRange reaches both web targets, "+
 				"and a key no renderer parses is indistinguishable from one nobody "+
 				"had heard of", pin.file, pin.expr, pin.why)
@@ -63,7 +63,7 @@ func TestBothNativeParsersReadTheValueField(t *testing.T) {
 // the bug one layer down: a Float with a 0f default cannot tell an indeterminate
 // bar from one at the start.
 func TestKotlinKeepsAnUnstatedNumberUnstated(t *testing.T) {
-	src := readNative(t, kotlinStyle)
+	src := codeIn(t, kotlinStyle)
 	for _, pin := range []struct{ expr, why string }{
 		{"val now: Float?,", "a nullable position, because 0 is a real one"},
 		// The whole line, terminator included. A prefix match would still
@@ -95,7 +95,7 @@ func TestKotlinKeepsAnUnstatedNumberUnstated(t *testing.T) {
 // and a call into a mapping that sets nothing compiles too. Same pair
 // selected_test.go and role_test.go pin.
 func TestKotlinAppliesTheValueThroughItsSemanticsPrimitives(t *testing.T) {
-	body := declSource(t, kotlinStyle, "fun SemanticsPropertyReceiver.grMobValue(")
+	body := codeOf(t, kotlinStyle, "fun SemanticsPropertyReceiver.grMobValue(")
 	for _, pin := range []struct{ expr, why string }{
 		{"progressBarRangeInfo = ProgressBarRangeInfo(",
 			"the numeric half — the one mapping in this file that gets a localized " +
@@ -107,7 +107,7 @@ func TestKotlinAppliesTheValueThroughItsSemanticsPrimitives(t *testing.T) {
 			t.Errorf("%s: grMobValue never reaches %s — %s", kotlinStyle, pin.expr, pin.why)
 		}
 	}
-	if src := readNative(t, kotlinStyle); !strings.Contains(src, "grMobValue(valueRange)") {
+	if src := codeIn(t, kotlinStyle); !strings.Contains(src, "grMobValue(valueRange)") {
 		t.Errorf("%s: boxModifier never calls grMobValue — the mapping exists and "+
 			"nothing invokes it", kotlinStyle)
 	}
@@ -145,7 +145,7 @@ func TestKotlinAppliesTheValueThroughItsSemanticsPrimitives(t *testing.T) {
 // `Indeterminate` appears somewhere, which is green for a branch that reaches
 // it on the wrong condition.
 func TestTheKotlinValueReadingIsUIFree(t *testing.T) {
-	for _, line := range strings.Split(readNative(t, kotlinProgress), "\n") {
+	for _, line := range strings.Split(codeIn(t, kotlinProgress), "\n") {
 		if strings.HasPrefix(strings.TrimSpace(line), "import ") {
 			t.Errorf("%s: %q — the reading has to stay runnable off a device, which "+
 				"means importing nothing at all", kotlinProgress, strings.TrimSpace(line))
@@ -161,7 +161,7 @@ func TestTheKotlinValueReadingIsUIFree(t *testing.T) {
 // side would otherwise turn every case into a difference that looks like a
 // logic bug.
 func TestTheReadingNamesAgreeWithCore(t *testing.T) {
-	src := readNative(t, kotlinProgress)
+	src := valuesIn(t, kotlinProgress)
 	for _, reading := range []core.ProgressReading{
 		core.ProgressUnstated,
 		core.ProgressIndeterminate,
@@ -179,12 +179,12 @@ func TestTheReadingNamesAgreeWithCore(t *testing.T) {
 // --- SwiftUI: the words reach a modifier -----------------------------------
 
 func TestSwiftAppliesTheValueTextThroughAccessibilityValue(t *testing.T) {
-	body := declSource(t, swiftStyle, "fileprivate func grMobValueText(")
+	body := codeOf(t, swiftStyle, "fileprivate func grMobValueText(")
 	if !strings.Contains(body, "accessibilityValue(Text(") {
 		t.Errorf("%s: grMobValueText never reaches accessibilityValue — the words are "+
 			"parsed and then dropped", swiftStyle)
 	}
-	if src := readNative(t, swiftStyle); !strings.Contains(src, ".grMobValueText(s)") {
+	if src := codeIn(t, swiftStyle); !strings.Contains(src, ".grMobValueText(s)") {
 		t.Errorf("%s: grMobBox's chain never applies grMobValueText — the mapping "+
 			"exists and nothing invokes it", swiftStyle)
 	}
@@ -206,7 +206,7 @@ func TestSwiftDoesNotInventWordsForTheNumbers(t *testing.T) {
 	// this file's own prose names the numbers repeatedly, and a pin that
 	// matched the explanation rather than the code is the failure mode two
 	// sessions of flush-pin misses have already produced.
-	body := declSource(t, swiftStyle, "fileprivate func grMobValueText(")
+	body := codeOf(t, swiftStyle, "fileprivate func grMobValueText(")
 	for _, member := range []string{".now", ".min", ".max"} {
 		if strings.Contains(body, "accessibilityValue"+member) ||
 			strings.Contains(body, "\\(s?.accessibilityValue"+member) {
@@ -217,7 +217,7 @@ func TestSwiftDoesNotInventWordsForTheNumbers(t *testing.T) {
 				"words", swiftStyle, member)
 		}
 	}
-	src := readNative(t, swiftStyle)
+	src := proseIn(t, swiftStyle)
 	for _, pin := range []struct{ expr, why string }{
 		{"SwiftUI has no numeric",
 			"the note saying which property this platform is missing rather than " +

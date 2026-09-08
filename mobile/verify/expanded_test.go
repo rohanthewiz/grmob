@@ -34,7 +34,7 @@ import (
 // dropped this line would compile, run, and offer TalkBack no way to open any
 // accordion in the app.
 func TestKotlinParsesTheExpandedField(t *testing.T) {
-	src := readNative(t, kotlinStyle)
+	src := valuesIn(t, kotlinStyle)
 	for _, pin := range []struct{ expr, why string }{
 		{`optString("AccessibilityExpanded")`, "the parse"},
 		{"val accessibilityExpanded: String,", "the field it parses into"},
@@ -63,7 +63,7 @@ func TestKotlinParsesTheExpandedField(t *testing.T) {
 // Renderer.kt's gesture layer. Moving it next to its siblings would put it
 // somewhere the click ID cannot be reached.
 func TestKotlinMapsTheDisclosureOntoItsSemanticsActions(t *testing.T) {
-	src := readNative(t, kotlinRenderer)
+	src := valuesIn(t, kotlinRenderer)
 	for _, pin := range []struct{ expr, why string }{
 		{"private fun Modifier.grMobDisclosure(", "the mapping from core.ExpandedState"},
 		{"import androidx.compose.ui.semantics.expand", "the expand action's import"},
@@ -92,7 +92,7 @@ func TestKotlinMapsTheDisclosureOntoItsSemanticsActions(t *testing.T) {
 // checks for `expand` and `collapse` would pass on the swapped version, so the
 // state literal and its action are matched here as one string.
 func TestKotlinOffersTheActionTheStateCallsFor(t *testing.T) {
-	src := declSource(t, kotlinRenderer, "private fun Modifier.grMobDisclosure(")
+	src := valuesOf(t, kotlinRenderer, "private fun Modifier.grMobDisclosure(")
 	for _, pin := range []struct{ expr, why string }{
 		{`"false" -> this.semantics { expand`,
 			"a closed disclosure offers *expand*. Offering collapse here announces a shut " +
@@ -165,7 +165,7 @@ func requireExpandedCoverage(t *testing.T, file, fn string, arms []string) {
 // than parsed and dropped, on the rule nesting_level_test.go states: a field
 // read into a property nothing spends looks like support to the next reader.
 func TestSwiftDoesNotParseTheExpandedField(t *testing.T) {
-	src := readNative(t, swiftStyle)
+	src := codeIn(t, swiftStyle)
 	for _, absent := range []string{
 		`str("AccessibilityExpanded")`,
 		"accessibilityExpanded",
@@ -186,7 +186,7 @@ func TestSwiftDoesNotParseTheExpandedField(t *testing.T) {
 // arrives at the trait table, and what has to be there is the sentence saying
 // it does not.
 func TestSwiftWritesDownTheExpandedGap(t *testing.T) {
-	src := readNative(t, swiftStyle)
+	src := proseIn(t, swiftStyle)
 	if !strings.Contains(src, "AccessibilityExpanded is not read here") {
 		t.Errorf("%s: the note explaining why the disclosure state is dropped is gone. "+
 			"A dropped field with no note is indistinguishable from one nobody implemented",
@@ -209,7 +209,7 @@ func TestSwiftWritesDownTheExpandedGap(t *testing.T) {
 // A note that said only "no equivalent" would leave the next person to find
 // accessibilityValue and think they had found the equivalent.
 func TestSwiftNamesTheValueChannelItIsNotUsing(t *testing.T) {
-	src := readNative(t, swiftStyle)
+	src := proseIn(t, swiftStyle)
 	// Backticked, the way the other native notes spell a property they turn
 	// down: a bare "accessibilityValue" also matches prose about values
 	// elsewhere in the file, which is a pin weak enough to survive the note

@@ -58,6 +58,12 @@ configurations {
     composeLayoutSources
 }
 
+// The BOM coordinate, named once and used twice: it constrains the app's own
+// Compose dependencies below, and it is written into the fetch's receipt so
+// that a receipt from an older BOM can be told apart from a derivation that is
+// wrong. See fetchComposeLayoutSources.
+def composeBomCoord = 'androidx.compose:compose-bom:2024.06.00'
+
 tasks.register('fetchComposeLayoutSources') {
     group = 'verification'
     description = 'Downloads the foundation-layout sources jar that ' +
@@ -66,8 +72,33 @@ tasks.register('fetchComposeLayoutSources') {
     // than the project, which is what lets it run under the configuration
     // cache.
     def sources = configurations.composeLayoutSources
+    def bom = composeBomCoord
+    // The receipt: what gradle actually resolved, written where mobile/verify
+    // can read it.
+    //
+    // # Why gradle has to say
+    //
+    // mobile/verify finds the sources jar by DERIVING the version the same way
+    // gradle does — out of the BOM's own pom, in the local cache — and then
+    // globbing for it. That is a second derivation of one fact rather than a
+    // second spelling of it, which is the right shape, and it has one failure
+    // mode that is silent: if the two ever disagreed (a different entry
+    // winning, a platform enforced somewhere else), the Go side would look for
+    // a jar that is not there and SKIP. The quiet answer, for the one thing the
+    // arrangement exists to make loud.
+    //
+    // So the resolution writes itself down. The BOM rides along because a
+    // receipt from a previous BOM is a different situation from a derivation
+    // that is wrong, and only one of them is anybody's fault.
+    def receipt = layout.buildDirectory.file('composeLayoutSources.txt')
+    outputs.file(receipt)
     doLast {
-        sources.files.each { println it }
+        def resolved = sources.files
+        resolved.each { println it }
+        def out = receipt.get().asFile
+        out.parentFile.mkdirs()
+        out.text = "bom=" + bom + "\n" +
+            resolved.collect { "sources=" + it.absolutePath }.join("\n") + "\n"
     }
 }
 
@@ -75,7 +106,7 @@ dependencies {
     // The Go core + app, bound by gomobile. Produced by ../build.sh.
     implementation files('libs/grmob.aar')
 
-    def composeBom = platform('androidx.compose:compose-bom:2024.06.00')
+    def composeBom = platform(composeBomCoord)
     implementation composeBom
 
     // The sources for the one Compose artifact this repository makes written

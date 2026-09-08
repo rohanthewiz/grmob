@@ -35,7 +35,7 @@ import (
 // exactly the silent case the notes say this is not.
 func TestNeitherNativeParsesSelectionFollowsFocus(t *testing.T) {
 	for _, file := range []string{kotlinStyle, swiftStyle} {
-		if src := readNative(t, file); strings.Contains(src, `AccessibilitySelectionFollowsFocus"`) {
+		if src := codeIn(t, file); strings.Contains(src, `AccessibilitySelectionFollowsFocus"`) {
 			t.Errorf("%s: parses AccessibilitySelectionFollowsFocus — if the platform "+
 				"grew a notion of focus moving through a collection under the user's "+
 				"control, the note that says it has none has to go with it", file)
@@ -50,7 +50,7 @@ func TestBothNativesWriteDownTheFollowsFocusGap(t *testing.T) {
 		{swiftStyle, "AccessibilitySelectionFollowsFocus is not read here either"},
 		{kotlinStyle, "AccessibilitySelectionFollowsFocus is not read here either"},
 	} {
-		if !strings.Contains(readNative(t, pin.file), pin.note) {
+		if !strings.Contains(proseIn(t, pin.file), pin.note) {
 			t.Errorf("%s: %q not found — a field a renderer simply ignored is "+
 				"indistinguishable from one nobody had heard of", pin.file, pin.note)
 		}
@@ -65,7 +65,7 @@ func TestBothNativesNameTheFocusAPITheyAreNotUsing(t *testing.T) {
 		{swiftStyle, "AccessibilityFocusState"},
 		{kotlinStyle, "onFocusChanged"},
 	} {
-		if !strings.Contains(readNative(t, pin.file), pin.api) {
+		if !strings.Contains(proseIn(t, pin.file), pin.api) {
 			t.Errorf("%s: the follows-focus note does not name %s — that is the API this "+
 				"field must not be mapped onto, and naming it is the whole warning",
 				pin.file, pin.api)

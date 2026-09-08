@@ -33,7 +33,7 @@ func TestBothNativesWriteDownTheNestingLevelGap(t *testing.T) {
 			"beside grMobHeadingLevel, since SwiftUI does map the heading third and the " +
 				"obvious question on reading it is what happened to the other two"},
 	} {
-		if !strings.Contains(readNative(t, pin.file), pin.note) {
+		if !strings.Contains(proseIn(t, pin.file), pin.note) {
 			t.Errorf("%s: %q not found — the note belongs %s, and a field a renderer simply "+
 				"ignored is indistinguishable from one nobody had heard of",
 				pin.file, pin.note, pin.why)
@@ -47,7 +47,7 @@ func TestBothNativesWriteDownTheNestingLevelGap(t *testing.T) {
 // test is what hands the person adding the mapping the paragraphs to rewrite.
 func TestNeitherNativeParsesTheNestingLevel(t *testing.T) {
 	for _, file := range []string{kotlinStyle, swiftStyle} {
-		if strings.Contains(readNative(t, file), "AccessibilityNestingLevel\"") {
+		if strings.Contains(codeIn(t, file), "AccessibilityNestingLevel\"") {
 			t.Errorf("%s: parses AccessibilityNestingLevel — if the platform grew a "+
 				"nesting-depth property, the note that says it cannot has to go with it",
 				file)

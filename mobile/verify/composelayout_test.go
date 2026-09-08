@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -83,6 +84,30 @@ var composeSourcesCoord = regexp.MustCompile(
 var bomEntry = regexp.MustCompile(
 	`<artifactId>foundation-layout</artifactId>\s*<version>([0-9.]+)</version>`)
 
+// windowSlack is how much room a claim's window must have past its own
+// furthest positive claim.
+//
+// The windows below are byte counts, and every one of them was derived by
+// measuring foundation-layout's source as it is shipped today. That makes them
+// measurements of a file this repository does not control, which is fine while
+// they are generous and quietly wrong when they are not — and the way they go
+// wrong has a direction. A window that has become too SHORT for a `want` drops
+// the substring off its end and the row fails by name. A window that has become
+// too short for a `notWant` finds nothing and passes, which is the same thing a
+// correct file looks like.
+//
+// That is not hypothetical: the mainAxisLayoutSize row was first written with a
+// window sized to the expression itself, and the break-test that appended a
+// clamp to androidx's source passed — the clamp landed one byte past the end of
+// what the window was measuring.
+//
+// 38 is the length of `).coerceAtMost(constraints.mainAxisMax)`, the shortest
+// plausible spelling of the thing that row refuses. 40 rounds it up and is a
+// floor rather than a target: the five rows currently have 1358, 151, 79, 88
+// and 82 bytes of slack, so this fires on a window that has stopped being a
+// window and not on ordinary drift.
+const windowSlack = 40
+
 var appGradle = nativeFile("android", "app", "build.gradle")
 
 // The sources jar has no version of its own; the BOM gives it one.
@@ -112,13 +137,20 @@ var appGradle = nativeFile("android", "app", "build.gradle")
 // It runs on any machine with the repository, no gradle cache required, which
 // is the other half of why it is separate from the reading below.
 func TestTheComposeSourcesTakeTheirVersionFromTheBOM(t *testing.T) {
-	// Comments blanked, literals kept — the same mask the checks on the two
-	// renderers use, and needed for the same reason. The paragraph in the
-	// gradle file explaining this arrangement quotes the declaration it
-	// replaced, so a check reading the file raw would find `composeLayoutVersion`
-	// in the very comment that says it is gone. Groovy spells `//` and `/* */`
-	// the way Swift and Kotlin do.
-	gradle := maskComments(readNative(t, appGradle))
+	// valuesIn: comments blanked, literals kept, and both halves matter here.
+	//
+	// The comments, because the paragraph in the gradle file explaining this
+	// arrangement quotes the declaration it replaced — a check reading the file
+	// raw would find `composeLayoutVersion` in the very comment that says it is
+	// gone. Groovy spells `//` and `/* */` the way Swift and Kotlin do.
+	//
+	// The literals, because every subject below IS one: a gradle coordinate is
+	// a quoted string, so this is the "does it LIST this value" question and
+	// not the "does it DO this" one. Worth stating rather than left to work by
+	// accident — maskNonCode does not know Groovy's single quotes, so the
+	// stronger reader would have left these coordinates standing and answered
+	// the wrong question while passing.
+	gradle := valuesIn(t, appGradle)
 
 	m := composeSourcesCoord.FindStringSubmatch(gradle)
 	if m == nil {
@@ -159,10 +191,19 @@ func TestTheComposeSourcesTakeTheirVersionFromTheBOM(t *testing.T) {
 //
 // Returns "" after reporting or skipping, so a caller that got nothing has
 // already said why.
+//
+// # The skip, and what it now honours
+//
+// A machine with no gradle cache cannot derive anything, and that is not an
+// error in the code being checked. It used to be an unconditional skip, which
+// put it out of reach of GRMOB_COMPOSE_SOURCES=required — so a machine that had
+// been set up to have the sources and had lost its cache was excused by the one
+// switch that exists to refuse exactly that. It goes through the same verdict
+// the sources half does now.
 func composeLayoutVersion(t *testing.T) string {
 	t.Helper()
 
-	gradle := readNative(t, appGradle)
+	gradle := valuesIn(t, appGradle)
 	bom := oneMatch(t, appGradle, gradle, composeBOMCoord, "the Compose BOM coordinate")
 	if bom == "" {
 		return ""
@@ -170,9 +211,14 @@ func composeLayoutVersion(t *testing.T) string {
 	pom := gradleCachedFile(t, "androidx.compose", "compose-bom", bom,
 		"compose-bom-"+bom+".pom")
 	if pom == "" {
-		t.Skipf("compose-bom %s is not in this machine's gradle cache, so the "+
-			"version foundation-layout resolves to cannot be derived here. Any "+
+		why := fmt.Sprintf("compose-bom %s is not in this machine's gradle cache, so "+
+			"the version foundation-layout resolves to cannot be derived here. Any "+
 			"`./gradlew` run against android/ populates it.", bom)
+		if os.Getenv(composeSourcesEnv) == composeSourcesRequired {
+			t.Fatalf("%s\n\n%s=%s says this machine is one that should have them.",
+				why, composeSourcesEnv, composeSourcesRequired)
+		}
+		t.Skip(why)
 	}
 	raw, err := os.ReadFile(pom)
 	if err != nil {
@@ -247,6 +293,10 @@ func TestTheComposeCensusClaimsAreWhatTheSourceSays(t *testing.T) {
 	}
 	jar := gradleCachedFile(t, "androidx.compose.foundation", composeLayoutArtifact,
 		version, composeLayoutArtifact+"-"+version+"-sources.jar")
+	// And gradle's own answer, where a fetch has left one. See
+	// composeSourcesReceipt: this is the one thing the derivation above cannot
+	// check about itself.
+	checkResolutionAgrees(t, version, jar)
 	run, fail, why := composeSourcesVerdict(jar != "", os.Getenv(composeSourcesEnv))
 	if !run {
 		// Named on the way out either way. A machine that cannot read the
@@ -407,11 +457,39 @@ func TestTheComposeCensusClaimsAreWhatTheSourceSays(t *testing.T) {
 			size = 1500
 		}
 		window := src[at:min(at+size, len(src))]
+		// How far into the window the furthest positive claim reaches, so the
+		// window can be held to being a window rather than a coincidence. See
+		// windowSlack.
+		reach, allFound := 0, true
 		for _, want := range claim.want {
-			if !strings.Contains(window, want) {
+			i := strings.Index(window, want)
+			if i < 0 {
+				allFound = false
 				t.Errorf("foundation-layout %s: %s's %q no longer contains %q.\n\n%s",
 					version, claim.file, claim.anchor, want, claim.why)
+				continue
 			}
+			if end := i + len(want); end > reach {
+				reach = end
+			}
+		}
+		if allFound && size-reach < windowSlack {
+			t.Errorf("foundation-layout %s: %s's %q window is %d bytes and its furthest "+
+				"claim ends %d bytes in, leaving %d.\n\n"+
+				"Every one of these numbers was arrived at by measuring androidx's file "+
+				"as it is shipped, so a release that reformats this declaration — one "+
+				"line wrapped differently, one comment grown — moves the claims down "+
+				"inside a window that did not move with them. In the positive direction "+
+				"that is loud: the substring falls off the end and the row fails. In the "+
+				"negative direction it is silent, and it is the direction that matters, "+
+				"because a notWant is a claim about a REGION: a window too short to hold "+
+				"the thing it refuses finds no clamp and passes.\n\n"+
+				"%d bytes is the floor because that is about what the shortest plausible "+
+				"spelling of the absence below takes — `).coerceAtMost("+
+				"constraints.mainAxisMax)` is 38 — so a window with less than that past "+
+				"its own positive claims could not see one appended even in principle. "+
+				"Widen this row's window.",
+				version, claim.file, claim.anchor, size, reach, size-reach, windowSlack)
 		}
 		for _, notWant := range claim.notWant {
 			if strings.Contains(window, notWant) {
@@ -422,6 +500,256 @@ func TestTheComposeCensusClaimsAreWhatTheSourceSays(t *testing.T) {
 		}
 	}
 }
+
+// The receipt android/app/build.gradle's fetch leaves behind, and what it is
+// for.
+//
+// # The one thing the derivation cannot check about itself
+//
+// composeLayoutVersion reads the BOM's pom the way gradle reads it. That is a
+// second DERIVATION of one fact rather than a second spelling of it, and the
+// argument for it is that a disagreement shows up as a jar that is not there.
+// It does — and "not there" is spelled SKIP, which is the quiet answer for the
+// one thing this whole arrangement exists to make loud. A platform enforced
+// somewhere else, a different dependencyManagement entry winning, a classifier
+// resolving to another module: each of them lands as a machine that "has not
+// fetched the sources yet", on a machine that has.
+//
+// So `fetchComposeLayoutSources` writes down what it resolved, and this
+// compares. It is not a third spelling of the version — nothing here reads a
+// number a person typed; it is gradle's own resolution, in gradle's own words.
+//
+// # The BOM rides along, and that is what keeps the failure honest
+//
+// A receipt written before a BOM bump names the old version, and that is
+// nobody's mistake: it means the fetch has not been re-run. Only a receipt for
+// the SAME BOM can accuse the derivation, so the two situations get two
+// different messages and only one of them is a failure.
+const composeSourcesReceipt = "composeLayoutSources.txt"
+
+var receiptBOM = regexp.MustCompile(`(?m)^bom=(.+)$`)
+var receiptSources = regexp.MustCompile(`(?m)^sources=(.+)$`)
+
+// The version out of a resolved sources jar's own file name. gradle writes the
+// path it resolved; what is compared is the release, because that is what
+// composeLayoutVersion derives and the only thing it can be wrong about.
+var receiptVersion = regexp.MustCompile(
+	`foundation-layout-android-([0-9.]+)-sources\.jar$`)
+
+// checkResolutionAgrees holds the derived version to the one gradle resolved,
+// when a fetch on this machine has said what that was.
+//
+// version is what composeLayoutVersion derived and jar is the file the glob
+// found for it, which is "" when there is none — the case this exists for.
+//
+// The comparison is between two VERSIONS rather than between two paths, and
+// deliberately: a path is about a particular cache, and this check has to stay
+// meaningful when GRADLE_USER_HOME points somewhere else — which is how the
+// required arm is exercised (see TestTheRequiredArmFailsAPassRatherThanSkipping).
+// The release is also the only thing the derivation produces, so it is the only
+// thing it can get wrong.
+func checkResolutionAgrees(t *testing.T, version, jar string) {
+	t.Helper()
+
+	path := nativeFile("android", "app", "build", composeSourcesReceipt)
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		// No fetch has been run here, so gradle has not resolved anything on
+		// this machine and there is nothing to disagree with. Not a skip: the
+		// check below has its own verdict and it says more.
+		return
+	}
+	got := string(raw)
+
+	bom := receiptBOM.FindStringSubmatch(got)
+	sources := receiptSources.FindAllStringSubmatch(got, -1)
+	if bom == nil || len(sources) == 0 {
+		t.Errorf("%s does not carry a bom= line and a sources= line where this looks "+
+			"for them (%s, %s). It is written by :app:fetchComposeLayoutSources and read "+
+			"here; if its shape changed, gradle's own answer is no longer being "+
+			"compared with the version this file derives.", path, receiptBOM, receiptSources)
+		return
+	}
+
+	// A receipt from a previous BOM is a stale fetch rather than a wrong
+	// derivation, and saying which is the whole reason the coordinate is in it.
+	wantBOM := oneMatch(t, appGradle, valuesIn(t, appGradle), composeBOMCoord,
+		"the Compose BOM coordinate")
+	if wantBOM == "" {
+		return
+	}
+	if !strings.HasSuffix(strings.TrimSpace(bom[1]), ":"+wantBOM) {
+		t.Logf("%s was written for %s and android/app/build.gradle now names "+
+			"compose-bom %s, so gradle's answer is not about this BOM and is not "+
+			"compared. Re-run:\n\n    cd android && ./gradlew "+
+			":app:fetchComposeLayoutSources\n", path, strings.TrimSpace(bom[1]), wantBOM)
+		return
+	}
+
+	if len(sources) != 1 {
+		t.Errorf("%s names %d resolved sources jars, and the configuration is declared "+
+			"non-transitive precisely so it resolves one. Every claim below is read out "+
+			"of a single file.", path, len(sources))
+		return
+	}
+	resolved := strings.TrimSpace(sources[0][1])
+	m := receiptVersion.FindStringSubmatch(resolved)
+	if m == nil {
+		t.Errorf("%s names %q as the resolved sources jar, and this cannot read a "+
+			"version out of that name (%s). The receipt is gradle's own answer to the "+
+			"question composeLayoutVersion derives; a name this does not recognise means "+
+			"the two are no longer being compared at all.", path, resolved, receiptVersion)
+		return
+	}
+	if m[1] == version {
+		return
+	}
+	t.Errorf("gradle resolved foundation-layout %s\n\n    %s\n\nand this file derived "+
+		"%q from the BOM's pom, which %s.\n\n"+
+		"The derivation is meant to be a second way of arriving at gradle's answer, "+
+		"and its failure mode is silent: a version nothing resolves to is a jar that "+
+		"is not in the cache, which reads as 'this machine has not fetched the "+
+		"sources' on a machine that has. That is why the fetch writes down what it "+
+		"resolved.\n\n"+
+		"The BOM is the same one this receipt was written for, so this is not a stale "+
+		"fetch. The derivation in composeLayoutVersion no longer matches how gradle "+
+		"resolves this configuration, and every claim below is being read out of the "+
+		"wrong release — or out of nothing at all.",
+		m[1], resolved, version,
+		map[bool]string{
+			true:  fmt.Sprintf("is the file %s", jar),
+			false: "is a jar this machine's cache does not hold",
+		}[jar != ""])
+}
+
+// And the required arm, run as a pass rather than as a table of values.
+//
+// # What was missing
+//
+// composeSourcesVerdict is a function of values so that its arms can be reached
+// without owning a machine in each state, and
+// TestTheComposeSourcesVerdictNamesEveryState reaches all five. That settles
+// what the verdict SAYS. What nothing settled is whether the census check acts
+// on it: GRMOB_COMPOSE_SOURCES=required is a switch whose whole purpose is to
+// turn a skip into a failure, and the arm that does the turning had never run.
+// A `t.Skipf` written where a `t.Fatalf` belongs passes that unit test and
+// leaves the switch inert — silently, since a machine with the switch set and
+// the sources present takes the same arm as one with the switch unset.
+//
+// # Why a subprocess
+//
+// The state the arm is about is a machine WITHOUT the sources, and this machine
+// may well have them. GRADLE_USER_HOME is the one input that decides, and it is
+// read at the point of use — so a cache with the pom in it and no sources jar
+// is a directory this test can build, and the check is then run against it for
+// real. In-process would mean setting an environment variable a test in the
+// same binary reads, and reading a t.Skip out of a helper rather than out of a
+// pass.
+//
+// Three states, and the pair is what makes each one mean anything: the same
+// doctored cache, with and without the variable, has to produce a failure and a
+// skip. A check that failed either way would be one this arm had nothing to do
+// with.
+func TestTheRequiredArmFailsAPassRatherThanSkipping(t *testing.T) {
+	if _, err := exec.LookPath("go"); err != nil {
+		t.Skipf("no go on PATH to run the census check as a pass with: %v", err)
+	}
+
+	// The BOM's pom, which composeLayoutVersion needs before the sources half
+	// is reached at all. Taken from this machine's real cache, because a
+	// hand-written one would be a fixture of somebody else's file format.
+	gradle := valuesIn(t, appGradle)
+	bom := oneMatch(t, appGradle, gradle, composeBOMCoord, "the Compose BOM coordinate")
+	if bom == "" {
+		return
+	}
+	pomName := "compose-bom-" + bom + ".pom"
+	pom := gradleCachedFile(t, "androidx.compose", "compose-bom", bom, pomName)
+	if pom == "" {
+		t.Skipf("compose-bom %s is not in this machine's gradle cache, so a cache "+
+			"holding the pom and no sources jar cannot be built from it. Any "+
+			"`./gradlew` run against android/ populates it.", bom)
+	}
+	raw, err := os.ReadFile(pom)
+	if err != nil {
+		t.Fatalf("reading %s: %v", pom, err)
+	}
+
+	// A gradle cache with the BOM in it and nothing else. The hash directory is
+	// part of the layout gradleCachedFile globs past; any name will do, and a
+	// literal one says so.
+	home := t.TempDir()
+	dir := filepath.Join(home, "caches", "modules-2", "files-2.1",
+		"androidx.compose", "compose-bom", bom, "0000000000000000000000000000000000000000")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatalf("building a gradle cache to run against: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, pomName), raw, 0o644); err != nil {
+		t.Fatalf("writing the BOM's pom into it: %v", err)
+	}
+
+	// An empty one as well, for the arm one step earlier: with no pom there is
+	// no version to look a jar up by, and that skip is under the same switch.
+	empty := t.TempDir()
+
+	for _, c := range []struct {
+		what     string
+		home     string
+		required bool
+		// wantFail is whether the pass must fail; mentions is what its output
+		// has to say, because a failure for another reason would satisfy the
+		// first half on its own.
+		wantFail bool
+		mentions string
+	}{
+		{
+			what: "the sources absent, and the switch unset", home: home,
+			wantFail: false, mentions: "SKIP",
+		},
+		{
+			what: "the sources absent, and the switch set", home: home, required: true,
+			wantFail: true, mentions: "fetchComposeLayoutSources",
+		},
+		{
+			what: "no gradle cache at all, and the switch set", home: empty, required: true,
+			wantFail: true, mentions: "compose-bom",
+		},
+	} {
+		cmd := exec.Command("go", "test", "./mobile/verify/",
+			"-run", "^"+censusTest+"$", "-count=1", "-v")
+		cmd.Dir = filepath.Join("..", "..")
+		cmd.Env = append(os.Environ(), "GRADLE_USER_HOME="+c.home)
+		if c.required {
+			cmd.Env = append(cmd.Env, composeSourcesEnv+"="+composeSourcesRequired)
+		} else {
+			// Inherited from whatever ran this, and the pair is the whole
+			// point: the same cache has to answer differently.
+			cmd.Env = append(cmd.Env, composeSourcesEnv+"=")
+		}
+		out, err := cmd.CombinedOutput()
+
+		if (err != nil) != c.wantFail {
+			t.Errorf("%s: the census check %s, and it is supposed to %s.\n\n"+
+				"%s=%s exists to turn a machine's missing sources from a skip into a "+
+				"failure. The verdict function's arms are covered by a table one test "+
+				"up; this is whether the check acts on them.\n\n%s",
+				c.what,
+				map[bool]string{true: "failed", false: "passed"}[err != nil],
+				map[bool]string{true: "fail", false: "skip"}[c.wantFail],
+				composeSourcesEnv, composeSourcesRequired, out)
+			continue
+		}
+		if !strings.Contains(string(out), c.mentions) {
+			t.Errorf("%s: the census check's output does not mention %q, so a reader is "+
+				"told the state without being told what happened:\n\n%s",
+				c.what, c.mentions, out)
+		}
+	}
+}
+
+// censusTest is the check the pass above runs, named once so the -run pattern
+// and the check cannot drift apart.
+const censusTest = "TestTheComposeCensusClaimsAreWhatTheSourceSays"
 
 // oneMatch pulls a single captured group out of a file, reporting rather than
 // returning on a miss: a derivation that silently found nothing would make
@@ -540,6 +868,16 @@ func jarEntry(t *testing.T, jar, name string) string {
 //	                     turns the skip into a failure, for a machine that has
 //	                     been set up to have the sources and would rather hear
 //	                     about it than be quietly excused.
+//	go test ./...        a fourth consumer, and the one that was missing: the
+//	                     arm that does the TURNING had never run outside the
+//	                     table below. A `t.Skipf` written where a `t.Fatalf`
+//	                     belongs passes that table and leaves the switch inert,
+//	                     silently — a machine with the switch set and the
+//	                     sources present takes the same arm as one without it.
+//	                     TestTheRequiredArmFailsAPassRatherThanSkipping builds a
+//	                     gradle cache holding the BOM's pom and no sources jar
+//	                     and runs the census check against it, with the switch
+//	                     and without.
 //
 // This is the same shape as gate.sh's jvm_harness_verdict and browser.mjs's
 // startupVerdict: a function of values, so its arms can be reached without

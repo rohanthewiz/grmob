@@ -36,7 +36,7 @@ func TestBothNativeParsersReadTheCollectionStyleFields(t *testing.T) {
 		{file: swiftStyle, keys: []string{`str("FlexDirection")`, `str("Position")`}},
 		{file: kotlinStyle, keys: []string{`optString("FlexDirection")`, `optString("Position")`}},
 	} {
-		src := readNative(t, pin.file)
+		src := valuesIn(t, pin.file)
 		for _, key := range pin.keys {
 			if !strings.Contains(src, key) {
 				t.Errorf("%s: never parses %s — core.Horizontal and core.StickyHeader render "+
@@ -61,7 +61,7 @@ func TestNativeScrollHonoursTheHorizontalAxis(t *testing.T) {
 		{kotlinRenderer, "private fun GrMobScroll(",
 			`flexDirection == "row"`, "horizontalScroll("},
 	} {
-		src := declSource(t, pin.file, pin.decl)
+		src := valuesOf(t, pin.file, pin.decl)
 		if !strings.Contains(src, pin.reads) {
 			t.Errorf("%s: %s never tests %s — core.Horizontal() pans a strip in the browser "+
 				"and stacks it down the screen here", pin.file, pin.decl, pin.reads)
@@ -94,7 +94,7 @@ func TestNativeListPinsStickyHeaders(t *testing.T) {
 		{kotlinRenderer, "fun isStickyHeader(",
 			[]string{`position == "sticky"`}},
 	} {
-		src := declSource(t, pin.file, pin.decl)
+		src := valuesOf(t, pin.file, pin.decl)
 		for _, want := range pin.wants {
 			if !strings.Contains(src, want) {
 				t.Errorf("%s: %s does not contain %q — core.StickyHeader pins a group band in "+
@@ -123,7 +123,7 @@ func TestNativeListReportsTheEndReachedEdge(t *testing.T) {
 		{swiftRenderer, "func rowView(", "dispatch?(endReached)"},
 		{kotlinRenderer, "fun EndReachedReporter(", "runtime.click(callbackId)"},
 	} {
-		src := declSource(t, pin.file, pin.decl)
+		src := valuesOf(t, pin.file, pin.decl)
 		if !strings.Contains(src, `stringProp("onEndReached")`) {
 			t.Errorf("%s: %s never reads onEndReached — an infinite feed loads its first page "+
 				"and then stops on this platform", pin.file, pin.decl)

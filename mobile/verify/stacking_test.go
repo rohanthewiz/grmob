@@ -50,7 +50,7 @@ var (
 func dispatchArm(t *testing.T, file, marker string, next *regexp.Regexp) string {
 	t.Helper()
 
-	src := readNative(t, file)
+	src := valuesIn(t, file)
 	at := strings.Index(src, marker)
 	if at < 0 {
 		t.Fatalf("%s: no %s — if it was renamed or restructured, update this test", file, marker)

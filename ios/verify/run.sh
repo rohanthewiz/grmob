@@ -66,12 +66,31 @@ echo "OK: view layer type-checks"
 # produced.
 #
 # importer.h declares the C, importer.swift states what Swift is expected to
-# import it as, and this settles it. Nothing is linked: the symbols are declared
-# and never defined, which is what a question about declarations wants.
-# Typecheck-only against the macOS target, so this needs no more than the
-# Command Line Tools the passes above already need.
-swiftc -typecheck -target arm64-apple-macos14.0 \
-  -import-objc-header importer.h importer.swift
+# import it as, and a typecheck settles it. Nothing is linked: the symbols are
+# declared and never defined, which is what a question about declarations wants.
+#
+# Run through `go test` rather than by calling swiftc here, so there is ONE
+# spelling of that command and it is in the package whose tables it settles.
+# The reason is the gap it closes: mobile/verify holds two type tables to what
+# importer.swift SAYS, and until that test existed the only thing that ever held
+# importer.swift to a compiler was this line — so on any machine that is not a
+# Mac the pairing was verified, the reading behind it was not, and nothing said
+# which. It says now, and a Mac with a Go toolchain settles it in
+# `go test ./...` without running this script at all.
+#
+# GRMOB_IMPORTER=required, because this pass only runs where the toolchain is:
+# a skip here would mean swiftc had gone missing between the typechecks above
+# and this line, which is a broken machine rather than a machine without Xcode.
+# This is the same arrangement android/verify has with the Compose census, one
+# notch stricter because that check's subject is a download and this one's is
+# the compiler this script has already used four times.
+importer_test=TestTheImporterReadingIsSettledByACompiler
+if ! importer=$( (cd ../.. && GRMOB_IMPORTER=required \
+    go test ./mobile/verify/ -run "^$importer_test\$" -count=1) 2>&1 ); then
+  echo "$importer"
+  echo "FAIL: the Swift importer disagrees with mobile/verify's type tables"
+  exit 1
+fi
 
 echo "OK: the Swift importer spells gobind's C the way mobile/verify says"
 

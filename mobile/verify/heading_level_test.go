@@ -26,7 +26,7 @@ import (
 // links are checked because breaking any one of them leaves a renderer that
 // compiles and silently flattens every heading on the platform.
 func TestSwiftCarriesTheHeadingLevelThrough(t *testing.T) {
-	src := readNative(t, swiftStyle)
+	src := valuesIn(t, swiftStyle)
 	for _, pin := range []struct{ expr, why string }{
 		{`int("AccessibilityHeadingLevel")`,
 			"the JSON key. An unread key is not a type error in Swift — the renderer would " +
@@ -45,7 +45,7 @@ func TestSwiftCarriesTheHeadingLevelThrough(t *testing.T) {
 	// heading. It is ARIA's scoping and both web exporters apply it too; a
 	// Swift mapping that skipped it would put a heading level on a table cell
 	// whose Style happened to carry one.
-	body := declSource(t, swiftStyle, "private func grMobHeadingLevel(")
+	body := valuesOf(t, swiftStyle, "private func grMobHeadingLevel(")
 	if !strings.Contains(body, `s.accessibilityRole == "`+string(core.RoleHeading)+`"`) {
 		t.Errorf("%s: grMobHeadingLevel does not gate on the heading role — a level would "+
 			"reach nodes that are not headings, which the two web targets refuse to emit",
@@ -68,7 +68,7 @@ func TestSwiftCarriesTheHeadingLevelThrough(t *testing.T) {
 // level property, this test fails, and the person adding the mapping is
 // handed the paragraph that has to be rewritten.
 func TestKotlinWritesDownTheHeadingLevelGap(t *testing.T) {
-	src := readNative(t, kotlinStyle)
+	src := proseIn(t, kotlinStyle)
 	if !strings.Contains(src, "AccessibilityHeadingLevel is not read here, and cannot be") {
 		t.Errorf("%s: the heading-level gap is not documented beside the role dispatch — a "+
 			"field this file simply ignored is indistinguishable from one nobody had heard of",

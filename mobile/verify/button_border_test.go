@@ -40,7 +40,7 @@ import (
 // rebuilds it out of both take a `border` slot, and both have to use it: an
 // outlined button must not lose its rule the moment it grows an OnLongPress.
 func TestKotlinGivesAButtonItsBorder(t *testing.T) {
-	src := readNative(t, kotlinRenderer)
+	src := codeIn(t, kotlinRenderer)
 
 	if !strings.Contains(src, "private fun borderStroke(s: GrMobStyle?): BorderStroke?") {
 		t.Fatalf("%s: no borderStroke helper — if it was renamed, update this test rather "+
@@ -58,7 +58,7 @@ func TestKotlinGivesAButtonItsBorder(t *testing.T) {
 	// The guard, which is boxModifier's restated: both halves are required on
 	// every target, so a Button must not be the one place where a width with
 	// no color draws something.
-	body := declSource(t, kotlinRenderer, "private fun borderStroke(s: GrMobStyle?): BorderStroke?")
+	body := codeOf(t, kotlinRenderer, "private fun borderStroke(s: GrMobStyle?): BorderStroke?")
 	for _, expr := range []string{
 		"if (s == null) return null",
 		"val color = s.borderColor ?: return null",
@@ -76,7 +76,7 @@ func TestKotlinGivesAButtonItsBorder(t *testing.T) {
 // radius rather than through grMobBox, which this view is handed a stripped
 // style for.
 func TestSwiftGivesAButtonItsBorder(t *testing.T) {
-	src := readNative(t, swiftRenderer)
+	src := codeIn(t, swiftRenderer)
 	for _, pin := range []struct{ expr, why string }{
 		{"borderColor: s?.borderColor,",
 			"the color reaching the button style. marginAndSizeOnly clears it before " +
@@ -97,7 +97,7 @@ func TestSwiftGivesAButtonItsBorder(t *testing.T) {
 	// is per *file*, so this is not a formality: making it fileprivate again
 	// would break the build, but making a second copy of the strokeBorder
 	// logic here would not, and that is the outcome worth pinning against.
-	style := readNative(t, swiftStyle)
+	style := codeIn(t, swiftStyle)
 	if strings.Contains(style, "fileprivate func grMobBorder(") {
 		t.Errorf("%s: grMobBorder is fileprivate again — Renderer.swift's GrMobButtonStyle "+
 			"needs the same stroke, and a second copy of it would be a second border rule "+

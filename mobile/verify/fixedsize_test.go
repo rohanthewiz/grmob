@@ -92,7 +92,7 @@ const fixedSizeWhy = "the four-target answer for a child bigger than a " +
 // contrasts the two), and Modifier.sizeIn sets a range. Either would leave the
 // mapping compiling and the census wrong.
 func TestTheComposeFixedDimensionSetsAMaximum(t *testing.T) {
-	body := declSource(t, kotlinStyle,
+	body := codeOf(t, kotlinStyle,
 		"private fun dimensionModifier(value: String, horizontal: Boolean): Modifier")
 	for _, want := range []string{"Modifier.width(", "Modifier.height("} {
 		if !strings.Contains(body, want) {
@@ -120,7 +120,7 @@ func TestTheComposeFixedDimensionSetsAMaximum(t *testing.T) {
 // target hide an overflow the DOM shows — which is a divergence in the opposite
 // direction from Compose's and one no test would have reported.
 func TestTheSwiftUIFixedDimensionProposesAndDoesNotClip(t *testing.T) {
-	body := declSource(t, swiftStyle,
+	body := codeOf(t, swiftStyle,
 		"@ViewBuilder fileprivate func grMobDimension(")
 	for _, want := range []string{"frame(width:", "frame(height:"} {
 		if !strings.Contains(body, want) {

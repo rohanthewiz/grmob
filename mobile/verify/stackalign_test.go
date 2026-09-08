@@ -69,7 +69,7 @@ func TestBothNativeParsersReadTheStackAlignment(t *testing.T) {
 		{file: swiftStyle, key: `str("StackAlign")`},
 		{file: kotlinStyle, key: `optString("StackAlign")`},
 	} {
-		src := readNative(t, pin.file)
+		src := valuesIn(t, pin.file)
 		if !strings.Contains(src, pin.key) {
 			t.Errorf("%s: never parses %s — core.StackAlign places a layer on the web and "+
 				"does nothing on this platform", pin.file, pin.key)
@@ -309,7 +309,7 @@ func TestTheSwiftStackLayoutDelegatesToTheSolver(t *testing.T) {
 // and neither contains a brace.
 func swiftTypeBody(t *testing.T, file, anchor string) string {
 	t.Helper()
-	src := readNative(t, file)
+	src := codeIn(t, file)
 	at := swiftDeclIndex(t, file, src, anchor)
 	rest := src[at:]
 	open := strings.IndexByte(rest, '{')

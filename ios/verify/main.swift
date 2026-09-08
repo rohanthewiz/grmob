@@ -40,6 +40,11 @@ struct PinChild: Decodable {
 struct PinCompose: Decodable {
     let offered: [CGFloat]
     let mains: [CGFloat]
+    /// The spacing the Row actually inserted after each child. Not a
+    /// restatement of the Row's own gap: spaceAfterLastNoWeight is
+    /// min(spacing, what is left), so an overflowing Row inserts none after
+    /// the child that spent the axis and a CSS flex line inserts it anyway.
+    let gaps: [CGFloat]
     let rowMain: CGFloat
 }
 
@@ -50,10 +55,25 @@ struct PinCase: Decodable {
     let gap: CGFloat
     let children: [PinChild]
     let compose: PinCompose
+    /// The main-axis extent a CSS flex line gives each child, as
+    /// internal/pinfixture states it.
+    ///
+    /// Stated rather than computed there, on purpose: this solver and a real
+    /// browser are the two things that produce the number, and a third spelling
+    /// in Go would make every comparison a question about whether two
+    /// transcriptions agree. So the fixture carries the CLAIM and this is one
+    /// of the two things held to it — which is what the census's CSS column
+    /// rests on, the control row's 24/80/16 above all, since that is the one
+    /// row no other assertion determines.
+    let css: [CGFloat]
     /// Whether the two targets land on the same extents for this Row. Asserted
     /// in both directions by checkPinnedRow, for the reason BandCase states
     /// sharesADeficit.
     let mainsAgreeWithCSS: Bool
+    /// And whether they insert the same spacing, which is a separate
+    /// divergence: the fixture's last case has the same extents on both targets
+    /// and different gaps. Asserted in both directions for the same reason.
+    let gapsAgreeWithCSS: Bool
 }
 
 /// One band arrangement: which node carries the chrome.
@@ -200,8 +220,10 @@ func run() -> Int32 {
     let pinProblems = checkPinnedRow(transcript.pinCases)
     if pinProblems.isEmpty {
         print("OK: \(transcript.pinCases.count) pinned Rows keep the pinned child at "
-            + "its own size on both targets, and divide what is left between the "
-            + "siblings the two different ways they are recorded to")
+            + "its own size on both targets, lay their siblings out at the extents the "
+            + "census prints for CSS, divide what is left the two different ways they "
+            + "are recorded to, and charge their spacing where a flex line charges it "
+            + "and a Compose Row does not")
     } else {
         print("FAIL: \(pinProblems.count) pinned Row difference(s)")
         for p in pinProblems { print("  " + p) }

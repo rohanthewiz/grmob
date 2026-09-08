@@ -688,6 +688,30 @@ type bandRender struct {
 	// that passes.
 	Fill string `json:"fill"`
 	Page string `json:"page"`
+
+	// LabelInk is the colour the band's own words are declared in, and
+	// BadgeFill the count pill's background.
+	//
+	// # Why one pixel was not enough
+	//
+	// The grid read exactly one colour per band: the Row's own fill, six
+	// device-independent pixels in and vertically centred, which lands in the
+	// control's leading padding where there is no ink. That answers "did the
+	// band paint" and nothing else — a band that painted its fill over an
+	// invisible label passes it, and so does one whose count pill has stopped
+	// drawing a pill.
+	//
+	// The widget grid does not have that shape: it reads a fill AND scans both
+	// boundary edges, on the argument that either single edge is consistent
+	// with a correct frame. The same argument applies here. A band is a fill, a
+	// run of words and a count, and two of the three were unread.
+	//
+	// Read off the rendered nodes rather than off the theme, for the reason
+	// Fill is: what a browser is asked is whether the widget's OWN declaration
+	// reaches the screen, and a colour taken from theme.Colors would still be
+	// there after the widget stopped declaring it.
+	LabelInk  string `json:"labelInk"`
+	BadgeFill string `json:"badgeFill"`
 }
 
 // bandRenderBuilders is one entry per band shape, so a shape added here is
@@ -852,6 +876,21 @@ func renderBandCase(name string, theme *core.Theme, what string, collapsible boo
 	}
 	if len(row.Children) == 2 {
 		c.Badge = "root/0/1"
+		badge := row.Children[1]
+		if badge.Style == nil || badge.Style.Background == "" {
+			return bandRender{}, fmt.Errorf(
+				"%s/%s: the count badge declares no background. It is a pill, and a "+
+					"pill with no fill is a number sitting on the band — which is a "+
+					"different widget and one no pixel here could tell apart from a "+
+					"badge that failed to paint", name, what)
+		}
+		c.BadgeFill = badge.Style.Background
+		if c.BadgeFill == c.Fill {
+			return bandRender{}, fmt.Errorf(
+				"%s/%s: the badge and the band behind it are both %s, so a pixel taken "+
+					"inside the pill agrees with either answer and the paint check "+
+					"cannot fail", name, what, c.BadgeFill)
+		}
 	}
 
 	// Where the insets are, and therefore what a finger lands on. On the plain
@@ -908,6 +947,11 @@ func renderBandCase(name string, theme *core.Theme, what string, collapsible boo
 					"the height comparison in check 10 is an equation over exactly those two",
 				name, what)
 		}
+		for _, child := range control.Children {
+			if child.Props["content"] == band.Group.Label && child.Style != nil {
+				c.LabelInk = child.Style.TextColor
+			}
+		}
 	} else {
 		c.Control = "root/0/0"
 		if len(growing.Children) != 1 {
@@ -921,10 +965,30 @@ func renderBandCase(name string, theme *core.Theme, what string, collapsible boo
 				name, what)
 		}
 		c.Label = "root/0/0/0"
+		if growing.Children[0].Style != nil {
+			c.LabelInk = growing.Children[0].Style.TextColor
+		}
 		// The plain branch's growing child IS the control, so of course it
 		// grows; the field means "the control has a weight of its own beyond
 		// being the growing child", which on this branch it cannot.
 		c.ControlGrows = false
+	}
+
+	// The ink, on whichever branch found it. Both branches give the label the
+	// same three declarations (GroupHeader spells them once), so this is one
+	// check rather than two.
+	if c.LabelInk == "" {
+		return bandRender{}, fmt.Errorf(
+			"%s/%s: the band's label declares no text colour, so what a browser paints "+
+				"the words in is whatever it inherits and there is nothing to read back. "+
+				"GroupHeader gives the label core.TextColor(TextSecondary) — a band that "+
+				"stopped would still lay out identically", name, what)
+	}
+	if c.LabelInk == c.Fill {
+		return bandRender{}, fmt.Errorf(
+			"%s/%s: the label's ink and the band behind it are both %s, so the words are "+
+				"invisible and a check that found the ink would be finding the fill",
+			name, what, c.LabelInk)
 	}
 	return c, nil
 }
