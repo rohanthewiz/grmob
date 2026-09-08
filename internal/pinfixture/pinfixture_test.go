@@ -976,6 +976,10 @@ func TestEveryReadingNamesAHarnessThatSpellsTheNumber(t *testing.T) {
 	// difference between "gone from the file" and "gone from the code" decides
 	// what the reader is sent to look at.
 	wholeSource := map[string]string{}
+	// The same files as they were read, line breaks and all. Only the
+	// blind-spot arm of the deletion report reads this, and only to turn "one
+	// of these lines" into "this line". See pinPhraseLines.
+	rawSource := map[string]string{}
 	openBy := map[string][]int{}
 	for name, path := range pinConsumers {
 		b, err := os.ReadFile(filepath.Join(root, path))
@@ -1043,6 +1047,12 @@ func TestEveryReadingNamesAHarnessThatSpellsTheNumber(t *testing.T) {
 		// is a different finding from one that is gone altogether, and it is
 		// the finding the blind spot produces.
 		wholeSource[name] = pinStripSpace(string(b))
+		// And unstripped, for the same report to say WHERE. Stripping is what
+		// makes a phrase survive a reformat and it is also what throws the line
+		// numbers away, so the arm that has to compare a phrase's line against
+		// the lexer's own list keeps the file as it was read. See
+		// pinPhraseLines.
+		rawSource[name] = string(b)
 	}
 
 	// Which consumers anything credits at all. A harness in the closed set that
@@ -1142,14 +1152,52 @@ func TestEveryReadingNamesAHarnessThatSpellsTheNumber(t *testing.T) {
 				note := ""
 				switch {
 				case inFile && len(openBy[by]) > 0:
+					// Where the surviving string actually is, rather than a
+					// list for the reader to check it against.
+					//
+					// The lexer's blind spot is a line-shaped fault — a regex
+					// literal with an odd quote blanks the rest of ITS OWN line
+					// — and the lines it can have happened on are already
+					// known. So "check those first" was asking the reader to do
+					// a search and a comparison that the two values in hand
+					// settle: the phrase's offset in the raw file is one match
+					// away and the line it falls on is one count away. Asked of
+					// the phrase, and of the field when the phrase is the one
+					// that is gone from the file too.
+					at := pinPhraseLines(rawSource[by], cited.Phrase)
+					what := "the phrase"
+					if at == nil {
+						at, what = pinPhraseLines(rawSource[by], cited.Field), "the field"
+					}
+					on := []int{}
+					for _, line := range at {
+						if slices.Contains(openBy[by], line) {
+							on = append(on, line)
+						}
+					}
+					verdict := ""
+					switch {
+					case len(on) > 0:
+						verdict = fmt.Sprintf("%s is on %v, which %s among them — so "+
+							"this failure is pinCodeOnly's and not the harness's: the "+
+							"assertion is there and the lexer blanked it.",
+							what, on, map[bool]string{true: "is", false: "are"}[len(on) == 1])
+					case at != nil:
+						verdict = fmt.Sprintf("%s is on %v, which %s among them — so "+
+							"the blind spot is ruled out and what survives at that "+
+							"line is prose.", what, at,
+							map[bool]string{true: "is not", false: "are not"}[len(at) == 1])
+					default:
+						verdict = "neither string could be put on a line of the file, " +
+							"which means the surviving copy is broken across lines in a " +
+							"way pinPhraseLines cannot place — check those lines by hand."
+					}
 					note = fmt.Sprintf("\n\nBoth strings are still SOMEWHERE in %s, and "+
 						"the lexer ended inside an unterminated string on %d of its "+
-						"lines (%v). Check those first: a regular-expression literal "+
-						"carrying an odd number of quotes blanks the rest of its own "+
-						"line, and an assertion spelled there arrives here as a "+
-						"deletion. If the phrase is on one of them, this failure is "+
-						"pinCodeOnly's and not the harness's.", path,
-						len(openBy[by]), openBy[by])
+						"lines (%v). A regular-expression literal carrying an odd number "+
+						"of quotes blanks the rest of its own line, and an assertion "+
+						"spelled there arrives here as a deletion — %s", path,
+						len(openBy[by]), openBy[by], verdict)
 				case inFile:
 					note = fmt.Sprintf("\n\nOne of the two strings is still somewhere in "+
 						"%s and pinCodeOnly did not leave it in the code, so what is "+
@@ -1593,6 +1641,57 @@ func TestPinCodeOnlyBlanksWhatEachLanguageCallsProse(t *testing.T) {
 	}
 }
 
+// The blind-spot note's verdict rests on putting a phrase back on a line of the
+// file it was read out of, and the whole difficulty is that the search runs
+// over a string with the whitespace canonicalised out of it. This holds the
+// index to the four shapes that can go wrong.
+//
+// The wrapped case is the interesting one: a phrase whose bytes came from two
+// lines is reported on both, because "the assertion is on line 6167, which is
+// one of them" is a sentence about a run of lines and not about a point, and a
+// wrap that put half an assertion on a blanked line is exactly the case the
+// note exists for.
+func TestAPhraseIsPutBackOnTheLinesItCameFrom(t *testing.T) {
+	const src = "one\n  if (!pinSame(total, c.offer)) {\n three\n a = pinSame(x,\n   y)\n"
+	for _, c := range []struct {
+		what   string
+		phrase string
+		want   []int
+	}{
+		{"a phrase on one line", "pinSame(total, c.offer)", []int{2}},
+		{"the same phrase spelled without its spaces", "pinSame(total,c.offer)", []int{2}},
+		{"a phrase broken across a line", "pinSame(x, y)", []int{4, 5}},
+		{"a phrase that is not there at all", "pinSame(nothing)", nil},
+	} {
+		if got := pinPhraseLines(src, c.phrase); !slices.Equal(got, c.want) {
+			t.Errorf("%s: pinPhraseLines(%q) is %v, want %v.\n\n"+
+				"The deletion report's blind-spot arm turns \"the lexer lost its place "+
+				"on these lines\" into \"the surviving assertion is on this one, which "+
+				"is among them\", and that verdict is this index. A phrase placed on "+
+				"the wrong line sends the reader to look at code that is fine and "+
+				"clears a lexer that is not.", c.what, c.phrase, got, c.want)
+		}
+	}
+	// And the property the index rests on, which no row above can show: the
+	// string the lines are indexed against is byte-for-byte the one pinSpells
+	// searches. Two walks that disagreed by a byte would put every phrase after
+	// the disagreement on the wrong line, and every row above would still pass
+	// because they are all near the top.
+	stripped, lines := pinStripSpaceLines(src)
+	if stripped != pinStripSpace(src) {
+		t.Errorf("pinStripSpaceLines returns %q and pinStripSpace returns %q.\n\n"+
+			"The index is one entry per byte of the first and the search runs over "+
+			"the second, so the two being the same string is what makes an offset in "+
+			"one a line in the other.", stripped, pinStripSpace(src))
+	}
+	if len(lines) != len(stripped) {
+		t.Errorf("pinStripSpaceLines returns %d bytes and %d line numbers.\n\n"+
+			"They are one array indexed two ways: a phrase's match is a byte range in "+
+			"the string and the lines it fell on are that same range in the index.",
+			len(stripped), len(lines))
+	}
+}
+
 // pinDense counts the bytes of a source that are not whitespace, which is the
 // measure pinCodeOnly's floor is taken in: blanking a literal replaces it with
 // spaces, so a count of every byte would not move at all.
@@ -1630,18 +1729,89 @@ func pinDense(s string) int {
 // `pinSame(total,c.offer)` canonicalise to one string, and `where abs` and
 // `whereabs` stay two.
 func pinStripSpace(s string) string {
-	f := strings.Join(strings.Fields(s), " ")
-	var b strings.Builder
-	for i := 0; i < len(f); i++ {
-		if f[i] == ' ' && i > 0 && i+1 < len(f) && word(f[i-1]) && word(f[i+1]) {
-			b.WriteByte(' ')
+	stripped, _ := pinStripSpaceLines(s)
+	return stripped
+}
+
+// pinStripSpaceLines is pinStripSpace with the raw line every surviving byte
+// came from, one entry per byte of the returned string.
+//
+// The index is what lets a phrase found in the stripped text be put back on a
+// line of the file it was read out of. See pinPhraseLines and the deletion
+// report's blind-spot note: naming the lines a lexer lost its place on is a
+// list to check, and saying whether the surviving string is ON one of them is
+// the verdict that list was standing in for.
+//
+// Written as a walk rather than as Fields+Join because the join is where the
+// positions were being thrown away. Line numbers are 1-based and count "\n",
+// which is what a reader's editor counts; the field split is unicode.IsSpace's,
+// which is strings.Fields', so the two passes below produce exactly the string
+// the previous version did.
+func pinStripSpaceLines(s string) (string, []int) {
+	// Pass one: the fields, joined by a single space.
+	var joined []byte
+	var jline []int
+	line, inField := 1, false
+	for i, r := range s {
+		if unicode.IsSpace(r) {
+			if r == '\n' {
+				line++
+			}
+			inField = false
 			continue
 		}
-		if f[i] != ' ' {
-			b.WriteByte(f[i])
+		if !inField && len(joined) > 0 {
+			// The separator belongs to the field it precedes: a phrase that
+			// wraps is reported at the line its first byte is on and at the
+			// line its last byte is on, and a separator credited backwards
+			// would put the wrap on the earlier line twice.
+			joined = append(joined, ' ')
+			jline = append(jline, line)
+		}
+		inField = true
+		n := len(string(r))
+		joined = append(joined, s[i:i+n]...)
+		for k := 0; k < n; k++ {
+			jline = append(jline, line)
 		}
 	}
-	return b.String()
+	// Pass two: a space survives only between two word characters, which is
+	// pinStripSpace's rule and the reason it has one. See the note above.
+	var out []byte
+	var oline []int
+	for i := 0; i < len(joined); i++ {
+		if joined[i] == ' ' {
+			if i > 0 && i+1 < len(joined) && word(joined[i-1]) && word(joined[i+1]) {
+				out = append(out, ' ')
+				oline = append(oline, jline[i])
+			}
+			continue
+		}
+		out = append(out, joined[i])
+		oline = append(oline, jline[i])
+	}
+	return string(out), oline
+}
+
+// pinPhraseLines is the lines of a raw file the phrase occupies, or nil when
+// the phrase is not in it.
+//
+// Asked of the RAW file rather than of what pinCodeOnly left, because the one
+// caller is the arm that has already established the phrase is gone from the
+// code and still somewhere in the file. What it wants to know is where.
+func pinPhraseLines(raw, phrase string) []int {
+	stripped, lines := pinStripSpaceLines(raw)
+	loc := pinSpellsPattern(phrase).FindStringIndex(stripped)
+	if loc == nil {
+		return nil
+	}
+	var out []int
+	for i := loc[0]; i < loc[1] && i < len(lines); i++ {
+		if len(out) == 0 || out[len(out)-1] != lines[i] {
+			out = append(out, lines[i])
+		}
+	}
+	return out
 }
 
 // pinSpells reports whether stripped source contains the phrase as a whole
@@ -1653,6 +1823,16 @@ func pinStripSpace(s string) string {
 // `c.compose.offeredX` would otherwise go on satisfying the row that says the
 // original is read.
 func pinSpells(stripped, phrase string) bool {
+	return pinSpellsPattern(phrase).MatchString(stripped)
+}
+
+// pinSpellsPattern is the expression pinSpells matches with.
+//
+// Split out so pinPhraseLines can ask WHERE with the same expression that
+// decides WHETHER. Two spellings of one pattern would be two answers about one
+// phrase, and the second caller's job is to locate the very match the first
+// one found.
+func pinSpellsPattern(phrase string) *regexp.Regexp {
 	want := regexp.QuoteMeta(pinStripSpace(phrase))
 	if word(pinStripSpace(phrase)[0]) {
 		want = `\b` + want
@@ -1660,7 +1840,7 @@ func pinSpells(stripped, phrase string) bool {
 	if last := pinStripSpace(phrase); word(last[len(last)-1]) {
 		want += `\b`
 	}
-	return regexp.MustCompile(want).MatchString(stripped)
+	return regexp.MustCompile(want)
 }
 
 // word reports whether a byte is one Go's regexp counts inside \b.

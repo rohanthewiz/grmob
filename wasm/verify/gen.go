@@ -117,6 +117,12 @@ type transcript struct {
 	// be asked once for the whole page, and what one probe licensed was a claim
 	// about thirty boxes it did not paint.
 	InkProbes []inkProbe `json:"inkProbes"`
+	// InkLigatures are the character pairs inkGlyphPerCharacter refuses,
+	// mounted in one of the declarations the ink scan reads so the browser can
+	// ask the face it actually resolved which of them it draws as one glyph.
+	// See inkLigature: the refusal is a superset by design, and this is the
+	// only thing that measures it.
+	InkLigatures []inkLigature `json:"inkLigatures"`
 	// Pins are internal/pinfixture's four arrangements of one overflowing Row.
 	// The sixth table, same reason as the rest.
 	//
@@ -337,15 +343,16 @@ func main() {
 	if err := pinfixture.Validate(); err != nil {
 		fatal("the pinned-Row fixture is vacuous: %v", err)
 	}
-	renders, probes := bandRenders()
+	renders, probes, ligatures := bandRenders()
 	out, err := json.Marshal(transcript{
-		Scenarios:   []scenario{demoScenario(), signupScenario()},
-		MenuCases:   menufixture.Cases(),
-		Widgets:     widgetCases(),
-		Bands:       bandfixture.Cases(),
-		BandRenders: renders,
-		InkProbes:   probes,
-		Pins:        pinfixture.Cases(),
+		Scenarios:    []scenario{demoScenario(), signupScenario()},
+		MenuCases:    menufixture.Cases(),
+		Widgets:      widgetCases(),
+		Bands:        bandfixture.Cases(),
+		BandRenders:  renders,
+		InkProbes:    probes,
+		InkLigatures: ligatures,
+		Pins:         pinfixture.Cases(),
 	})
 	if err != nil {
 		fatal("marshal transcript: %v", err)
@@ -880,6 +887,13 @@ type inkProbe struct {
 	// Unexported: it is how bandRenders knows which field of the case to put
 	// the key in, and the browser reads the key rather than the reason.
 	subject inkProbeSubject
+
+	// style is the declaration this probe's own Text node carries, kept so the
+	// ligature row can be drawn in one of the declarations the scan actually
+	// reads rather than in whatever the page inherits. Unexported for the same
+	// reason as subject: it never crosses to the browser, which reads the
+	// rendered tree. See inkLigatureRow.
+	style core.Style
 }
 
 // inkProbeSubject is which scanned box a probe answers for.
@@ -1025,7 +1039,66 @@ func inkProbeFor(text *core.Node, subject inkProbeSubject, what string) (inkProb
 	tree := jsonout.Export(box)
 	return inkProbe{
 		Key: tree, What: what, Tree: tree, Width: inkProbeWidth, subject: subject,
+		style: style,
 	}, nil
+}
+
+// inkLigature is one of the pairs inkGlyphPerCharacter refuses, mounted so the
+// question can be put to the face this build actually resolved.
+//
+// # A superset that was never measured
+//
+// inkLigatureSeeds is nine pairs chosen from what serif faces commonly carry,
+// and the refusal is deliberately a superset: what it has to rule out is a
+// fixture string whose glyph count is a question about which optional
+// ligatures a particular build shipped with. That argument is about faces in
+// general, and it was the whole of what stood behind the list — while the one
+// party that can answer for THIS face was already on the line. browser.mjs
+// reads CSS.getPlatformFontsForNode for every scanned run in the grid, and a
+// glyph count is exactly the answer to "does this face draw 'st' as one
+// glyph".
+//
+// So the pairs are mounted and asked. Two characters drawn as one glyph is a
+// refusal this build earns; two drawn as two is a refusal carried for a build
+// that is not this one, which is a fair thing to carry and a different thing
+// to say. The census in browser.mjs says which, and neither answer is a
+// failure: the list stays a superset, and it stops being an unmeasured one.
+type inkLigature struct {
+	// Pair is the two characters, which is also what the mounted node says.
+	Pair string `json:"pair"`
+	// Tree is the Text node, as JSON, ready to be mounted alongside the probes.
+	Tree string `json:"tree"`
+}
+
+// inkLigatureRow builds the mounted question, one Text per refused pair.
+//
+// Drawn in a scanned run's own declaration rather than in whatever the page
+// inherits, because ligation is a property of the resolved FACE and the face
+// is what a declaration resolves to. The probe's copy of that declaration is
+// the one used: it is the same Style the scanned node carries with the ink
+// replaced by black, and browser.mjs already holds every scanned box and its
+// probe to being drawn by one family — so a row drawn in it is a row drawn in
+// the grid's face, and browser.mjs checks that rather than assuming it.
+func inkLigatureRow(style core.Style) []inkLigature {
+	out := make([]inkLigature, 0, len(inkLigatureSeeds))
+	for _, pair := range inkLigatureSeeds {
+		// The declaration whole, minus the box-shaped fields: these are bare
+		// Text nodes in a Row and a declared width or ground would be laying
+		// out a box rather than asking about a face.
+		s := style
+		s.Background = ""
+		s.Width = ""
+		s.Height = ""
+		out = append(out, inkLigature{
+			Pair: pair,
+			Tree: jsonout.Export(&core.Node{
+				Type:  "Text",
+				Props: map[string]any{"content": pair},
+				Style: &s,
+			}),
+		})
+	}
+	return out
 }
 
 // inkProbeColor is black at the alpha the declared ink carries.
@@ -1477,6 +1550,20 @@ type themeLeafSet struct {
 	// so a test that disagrees with the derivation can say where.
 	crowdAt, crowdBeyond int
 	atWorst, beyondWorst string
+
+	// cappedByReach is true when the search stopped at themeNearMissReach
+	// rather than at this struct's own crowding — that is, when these names
+	// could have carried a wider threshold and a judgement refused them one.
+	//
+	// The two are different facts with one number in front of them, and
+	// nothing recorded which. core.Theme measures 1 against a ceiling of 3, so
+	// the ceiling is slack over everything this repository asks about and the
+	// distinction costs nothing here; a sparser struct lands ON the ceiling and
+	// gets a threshold that is a judgement about typing accidents wearing a
+	// measurement's clothes. The message says which, because "nothing is within
+	// 3 edits of it" invites a reader to try 4, and whether that is available
+	// is exactly what this flag knows.
+	cappedByReach bool
 }
 
 // themeLeaves reads a struct's leaves and measures the near-miss threshold over
@@ -1573,10 +1660,17 @@ func themeLeafSetOf(paths []string) themeLeafSet {
 	// prints, because "several names are one edit from this" is a true and
 	// useful thing to say and a silently narrowed threshold is not.
 	set.edits = 1
+	// Which of the two stopped the search, recorded where it is known rather
+	// than inferred afterwards from the number. Inferring it would need
+	// crowdBeyond, and crowdBeyond is measured at edits+1 for BOTH exits — a
+	// struct whose crowding stopped the search exactly at the ceiling would be
+	// indistinguishable from one the ceiling stopped. See cappedByReach.
+	set.cappedByReach = true
 	for set.edits < themeNearMissReach {
 		n, worst := crowd(set.edits + 1)
 		if n > 1 {
 			set.crowdBeyond, set.beyondWorst = n, worst
+			set.cappedByReach = false
 			break
 		}
 		set.edits++
@@ -1692,12 +1786,24 @@ func themeNearMiss(set themeLeafSet, path string) string {
 			"a name at this distance can belong to more than one of them",
 			strings.Join(near, " and "), edits, set.closestD, set.closest)
 	}
+	// Where the threshold came from, on the one arm that invites the reader to
+	// wonder whether a wider one would have found something. It would have: a
+	// capped set is one whose names are not crowded at the ceiling either, and
+	// what stopped the search is the judgement written above
+	// themeNearMissReach rather than anything about these leaves.
+	why := ""
+	if set.cappedByReach {
+		why = fmt.Sprintf(" That threshold is themeNearMissReach and not this "+
+			"struct's own crowding — these names are far enough apart to carry a "+
+			"wider one, and %d edits is where a slip stops reading as one slip.",
+			themeNearMissReach)
+	}
 	return fmt.Sprintf("nothing under %s is within %s of it, case ignored, and "+
 		"that prefix has %d leaves. One edit covers a letter added, dropped or "+
 		"changed and two adjacent letters swapped — a doubled letter, a singular for "+
 		"a plural, a transposition — so a slip of that kind is ruled out. Two "+
-		"independent slips are not, and neither is a name that was never right",
-		strings.TrimSuffix(parent, "."), edits, under)
+		"independent slips are not, and neither is a name that was never right.%s",
+		strings.TrimSuffix(parent, "."), edits, under, why)
 }
 
 // themeLeafPaths is every leaf path a core.Theme has, in the spelling
@@ -1727,7 +1833,7 @@ const (
 	bandRenderTallName = "DefaultTheme+tallCaption"
 )
 
-func bandRenders() ([]bandRender, []inkProbe) {
+func bandRenders() ([]bandRender, []inkProbe, []inkLigature) {
 	byName := bandRenderThemes()
 	names := make([]string, 0, len(byName))
 	for name := range byName {
@@ -1829,7 +1935,21 @@ func bandRenders() ([]bandRender, []inkProbe) {
 			}
 		}
 	}
-	return out, probes
+
+	// And the question the refusal in inkGlyphPerCharacter has been making
+	// without asking anybody. See inkLigatureRow.
+	//
+	// Drawn in the first probe's declaration. Any of them would do — every
+	// scanned box and the probe that answers for it are held to one resolved
+	// family in browser.mjs, so the grid has one face until that check says
+	// otherwise — and the first is the one that does not need a rule for
+	// choosing. An empty probe table means the grid reads no text at all,
+	// which is a failure browser.mjs already reports by name.
+	var ligatures []inkLigature
+	if len(probes) > 0 {
+		ligatures = inkLigatureRow(probes[0].style)
+	}
+	return out, probes, ligatures
 }
 
 // renderBandCase renders one band through one theme and locates the nodes the

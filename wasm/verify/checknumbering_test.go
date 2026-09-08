@@ -208,6 +208,49 @@ func checkCitationsResolve(t *testing.T, checks int) {
 	// was not quietly running in its weaker form.
 	t.Logf("citations enumerated by %s: %d files", from, len(files))
 
+	// And that the two things citingFiles returns are two questions.
+	//
+	// citationExemptInputs takes `considered` and `files` and reads one lookup
+	// out of each, and a fixture holds it to the four ways those two can
+	// answer. What produces them is still ONE loop in citingFiles that appends
+	// to `found` only inside the branch that has just written `considered` —
+	// correct, and the only thing making them different questions rather than
+	// two names for one set. A loop that stopped recording the paths it opened
+	// and nothing else, or a `considered` narrowed to the citing paths as a
+	// tidy-up, would leave every row of that fixture passing while the walk
+	// below could no longer reach the case the fixture exists to separate: an
+	// exemption whose file is still there and has stopped citing anything.
+	//
+	// So the property is asked here, of the real tree. Both halves: every
+	// citing path was opened (or `cited` is true where `reached` is false, a
+	// pair citationExemptVerdict has no arm for), and something was opened
+	// that cites nothing (or the two maps are the same set and the separating
+	// case is unreachable from this repository).
+	for _, f := range files {
+		if _, opened := considered[f.path]; !opened {
+			t.Errorf("%s carries citations and is not among the %d paths the "+
+				"enumeration recorded opening.\n\n"+
+				"citationExemptInputs reads `reached` out of that table and `cited` out "+
+				"of this list, and the ORDER of citationExemptVerdict's two arms rests "+
+				"on a citing path always having been reached — a file that cites "+
+				"without having been opened is a pair that function has no arm for and "+
+				"would diagnose as a rename.", f.path, len(considered))
+			break
+		}
+	}
+	if len(considered) <= len(files) {
+		t.Errorf("the enumeration opened %d files and %d of them carry citations, so "+
+			"nothing it looked inside is silent.\n\n"+
+			"citingFiles returns the two as separate answers because they are separate "+
+			"questions — citationExempt has to know a path still EXISTS and "+
+			"citationSenses has to know which senses were produced — and the case that "+
+			"tells them apart is a path the walk opened and found no citation in. With "+
+			"the two sets equal that case is unreachable here: TestCitationExempt"+
+			"InputsComeFromTheTwoEnumerations would go on passing over a fixture, and "+
+			"an exemption that had simply gone quiet would report as a rename against "+
+			"a file still sitting on disk.", len(considered), len(files))
+	}
+
 	// Every sense the enumeration produced has to be one somebody classified.
 	//
 	// The senses used to reach a failure message and no assertion: repoFile

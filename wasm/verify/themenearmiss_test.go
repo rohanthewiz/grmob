@@ -166,6 +166,21 @@ func TestThemeNearMissThresholdIsDerivedFromCoreTheme(t *testing.T) {
 			"constraint, and the number reported is then a decision nobody made about "+
 			"this struct.", set.edits, themeNearMissReach)
 	}
+	// And that the derivation SAYS so, which is the half the number cannot
+	// carry. The line above reads the answer and infers what stopped the
+	// search from its size; that inference is only available while the ceiling
+	// is slack, and it is the reader of a struct sitting ON the ceiling who
+	// needs to be told. See cappedByReach.
+	if set.cappedByReach {
+		t.Errorf("themeLeaves measures core.Theme's threshold at %d under a ceiling "+
+			"of %d and reports that the ceiling is what stopped the search.\n\n"+
+			"It is not: crowding is, and the reading that says so is %d siblings "+
+			"within %d edits of %s. A set that reports the wrong stopping condition "+
+			"puts a sentence about themeNearMissReach into a message whose number came "+
+			"from these names, which sends a reader to raise a constant that is not "+
+			"binding.", set.edits, themeNearMissReach, beyond, set.edits+1,
+			beyondWorst)
+	}
 
 	t.Logf("core.Theme: %d parents, closest sibling pair %d apart (%s); "+
 		"within %d edits at most %d sibling, within %d at most %d",
@@ -212,6 +227,17 @@ func TestTheNearMissThresholdMovesWithTheNamesItIsMeasuredOver(t *testing.T) {
 			sparse.edits, themeNearMissReach)
 	}
 
+	if !sparse.cappedByReach {
+		t.Errorf("the sparse set measures %d, which is the ceiling, and reports that "+
+			"its own crowding stopped the search.\n\n"+
+			"Nothing in it crowds at any distance, so what stopped the search is "+
+			"themeNearMissReach — the one judgement left in this derivation. A set "+
+			"that does not know which of the two bound it cannot say so in its "+
+			"message, and \"nothing is within %d edits of it\" then invites a reader "+
+			"to try four with no answer about whether four was available.",
+			sparse.edits, sparse.edits)
+	}
+
 	// And the other direction: names one edit apart in a crowd cannot widen,
 	// whatever the ceiling says.
 	crowded := themeLeafSetOf([]string{
@@ -242,6 +268,29 @@ func TestTheNearMissThresholdMovesWithTheNamesItIsMeasuredOver(t *testing.T) {
 			"The function reads the threshold off the set it is given. If this answer "+
 			"is core.Theme's, the number is travelling with the code rather than with "+
 			"the names.", sparse.edits, got)
+	}
+
+	// And that the message names what capped the threshold, on the arm where
+	// it matters: a reader told "nothing is within three edits" will wonder
+	// about four, and whether four was available is the difference between a
+	// struct that is not crowded and a judgement that refused to look further.
+	miss := themeNearMiss(sparse, "Palette.Zulu")
+	if !strings.Contains(miss, "themeNearMissReach") {
+		t.Errorf("themeNearMiss over the sparse set finds nothing for Palette.Zulu "+
+			"and does not say the threshold was the ceiling.\n\n"+
+			"It said: %s\n\n"+
+			"That set's names could have carried a wider threshold and a constant "+
+			"refused them one. A message that reports the number without its origin "+
+			"reads as a measurement over these leaves, which it is not.", miss)
+	}
+	if crowdedMiss := themeNearMiss(crowded, "Weight.Zzz"); strings.Contains(
+		crowdedMiss, "themeNearMissReach") {
+		t.Errorf("themeNearMiss over the crowded set says the ceiling capped its "+
+			"threshold.\n\n"+
+			"It said: %s\n\n"+
+			"That set is at the floor because five names sit one edit apart, which is "+
+			"a fact about the names. Citing the ceiling there sends a reader to raise "+
+			"a constant that would change nothing.", crowdedMiss)
 	}
 }
 
