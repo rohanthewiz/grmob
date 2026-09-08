@@ -415,6 +415,73 @@ func TestTheAgreementIsWhetherThePinComesFirst(t *testing.T) {
 // be reached through Cases(), which is the point of testing it against rows
 // built to have the fault: a guard nothing can fail is a guard nobody has
 // checked.
+// The resolution is the smallest gap between two of a case's numbers, and it is
+// what two harnesses' two different tolerances are both held to.
+//
+// # Why this needs a test of its own
+//
+// The value is consumed on two targets and produced here, and its whole job is
+// to be a FLOOR. A resolution that came out too large would raise the ceiling
+// under both tolerances silently — every check would go on passing, and the one
+// property either tolerance has ("it cannot confuse two of the fixture's own
+// numbers") would have stopped being held. So the derivation is asked directly:
+// against the numbers of the case the reader can see, and against a case built
+// to have a resolution nobody would want.
+func TestTheResolutionIsTheClosestTwoNumbersCome(t *testing.T) {
+	// The partial-spacing row is the tightest, and the reason is the middle arm
+	// of the collapse: it charges a gap of 4 where the Row declares 16 and a
+	// fully collapsed gap would be 0. Those three numbers are what every
+	// tolerance over this fixture has to be able to tell apart.
+	var tightest Case
+	for _, c := range Cases() {
+		if tightest.What == "" || c.Resolution < tightest.Resolution {
+			tightest = c
+		}
+	}
+	if tightest.Resolution != 4 {
+		t.Errorf("the tightest case is %q at %d and the fixture's closest pair of "+
+			"numbers is the partial gap 4 against the 0 beside it. A floor larger than "+
+			"the real one lets both harnesses widen past what they can actually "+
+			"resolve.", tightest.What, tightest.Resolution)
+	}
+
+	// And every case is checked against its own numbers rather than against
+	// this one reading of them.
+	for _, c := range Cases() {
+		nums := append([]int{c.Offer, c.Gap, c.Compose.RowMain}, c.CSS...)
+		nums = append(nums, c.Compose.Mains...)
+		nums = append(nums, c.Compose.Gaps...)
+		nums = append(nums, c.Compose.Offered...)
+		for _, ch := range c.Children {
+			nums = append(nums, ch.Base)
+		}
+		closest := 0
+		for i := range nums {
+			for j := range nums {
+				d := nums[i] - nums[j]
+				if d < 0 {
+					d = -d
+				}
+				if d == 0 {
+					continue
+				}
+				if closest == 0 || d < closest {
+					closest = d
+				}
+			}
+		}
+		if c.Resolution != closest {
+			t.Errorf("%q states a resolution of %d and the closest two of its numbers "+
+				"come is %d", c.What, c.Resolution, closest)
+		}
+		if c.Resolution <= 0 {
+			t.Errorf("%q resolves nothing (%d), so any tolerance at all is within a "+
+				"factor of it and both harnesses' guards pass on arithmetic rather than "+
+				"on a measurement", c.What, c.Resolution)
+		}
+	}
+}
+
 func TestValidateRefusesAFixtureThatCannotOverflow(t *testing.T) {
 	if err := Validate(); err != nil {
 		t.Fatalf("the fixture itself does not validate: %v", err)

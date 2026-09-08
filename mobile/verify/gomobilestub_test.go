@@ -2685,14 +2685,56 @@ var errorConventionArms = map[conventionArm]struct{ symbol, what string }{
 	},
 }
 
-// One settled arm: `func grMobImportErrorConventionDropsTheOptional(`.
+// One settled arm: the function's name, and the annotation that settles it.
+//
+//	func grMobImportErrorConventionDropsTheOptional(
+//	    _ p: any GrMobImportErrorConvention) {
+//	    let arm: () throws -> Data = p.dataOrError
+//
+// # Why the annotation and not just the name
+//
+// Both halves of this pairing used to be about EXISTENCE: a row with no
+// function failed and a function with no row failed. Swap the names of two rows
+// and both directions still pass — three rows, three functions, every one of
+// them present — while the compiler goes on settling the arms under the wrong
+// descriptions. That is precisely the readable-and-wrong state importerLine
+// avoids by parsing the annotation rather than trusting the symbol, and this is
+// the same move for the same reason.
+//
+// The three groups are the arm itself: the parameter list (an NSErrorPointer
+// that survived), the `throws` the convention put in its place, and the result.
+// armFromAnnotation turns them into the same conventionArm armOf reads off a
+// generated declaration, and the two are compared.
 //
 // A regexp for the reason importerLine is one — the file is written to be read
-// this way, one declaration per line — and over the MASKED source, so that the
-// paragraph above each function naming its own symbol cannot stand in for the
-// declaration.
+// this way — and over the MASKED source, so that the paragraph above each
+// function naming its own symbol cannot stand in for the declaration. `[^{]*`
+// crosses the line break in the parameter list and stops at the body's brace,
+// so a function whose annotation is not the first line of its body does not
+// match and is reported as an unreadable arm rather than silently paired with
+// the next function's line.
 var conventionDecl = regexp.MustCompile(
-	`(?m)^func (grMobImportErrorConvention\w+)\(`)
+	`(?m)^func (grMobImportErrorConvention\w+)\([^{]*\{\n +let arm: ` +
+		`\(([^)]*)\)( throws)? -> (\S+) = `)
+
+// armFromAnnotation reads a conventionArm off importer.swift's annotation.
+//
+// The same three booleans armOf reads off a rendered Go declaration, taken from
+// the other side: this is what the Swift compiler was asked, and armOf is what
+// the generator produces. A check comparing two readings of the same source
+// would agree with itself.
+func armFromAnnotation(params, throwsKeyword, result string) conventionArm {
+	return conventionArm{
+		throws: throwsKeyword != "",
+		// The Swift spelling of the NSError** that survived the convention.
+		// Its presence in the parameter list IS the arm that declined to be
+		// rewritten.
+		errParam: strings.Contains(params, "NSErrorPointer"),
+		// `Void` is the convention having consumed the return; anything else,
+		// optional or not, is a result the caller still gets.
+		returns: result != "Void",
+	}
+}
 
 // conventionProbeInterface is a bound-interface name for the enumeration below.
 //
@@ -2701,6 +2743,57 @@ var conventionDecl = regexp.MustCompile(
 // `mobile` does. That is the same reason importer.swift exists at all — the
 // arms worth checking are the ones nothing has used yet.
 const conventionProbeInterface = "GrMobConventionProbe"
+
+// The parameter list every arm is probed behind as well as in front of.
+//
+// One of each kind a bound method can take: a scalar, the object type whose
+// nullability differs by position, and the byte slice whose does not. Every
+// entry is a bindableGoTypes row, so a refusal on one of these signatures is a
+// refusal the stub generator would meet in earnest.
+const conventionProbeParams = "a int, b string, c []byte"
+
+// Whether two rendered declarations are the same declaration.
+//
+// Written out rather than compared with reflect.DeepEqual so that a field added
+// to resultShape has to be considered here: a new field left out of this
+// comparison is a difference the parameter probe would stop seeing.
+func sameResultShape(a, b resultShape) bool {
+	if a.throws != b.throws || a.ret != b.ret || len(a.outParams) != len(b.outParams) {
+		return false
+	}
+	for i := range a.outParams {
+		if a.outParams[i] != b.outParams[i] {
+			return false
+		}
+	}
+	return true
+}
+
+// probeShape parses one probe signature and renders it, reporting a refusal as
+// the failure it is.
+//
+// Every type in the enumeration is one bindableGoTypes admits or one bound
+// interface, so a refusal here is a signature the stub generator is required to
+// declare and cannot.
+func probeShape(t *testing.T, signature, results string,
+	ifaces map[string]bool) (resultShape, bool) {
+
+	t.Helper()
+	expr, err := parser.ParseExpr(signature)
+	if err != nil {
+		t.Fatalf("building the probe signature %q: %v", signature, err)
+	}
+	shape, err := swiftResults(expr.(*ast.FuncType), ifaces, true)
+	if err != nil {
+		t.Errorf("a bound method %q is refused by swiftResults: %v.\n\n"+
+			"Every type in this loop is one bindableGoTypes admits or one bound "+
+			"interface, so a refusal here is a signature the stub generator is "+
+			"required to declare and cannot. The results are (%s).",
+			signature, err, results)
+		return resultShape{}, false
+	}
+	return shape, true
+}
 
 // Every arm swiftResults can produce for a method, against every arm a
 // declaration settles.
@@ -2740,16 +2833,41 @@ func TestEveryErrorConventionArmIsSettledByADeclaration(t *testing.T) {
 	// from an arm nothing declares.
 	reached := map[conventionArm]string{}
 	for _, r := range results {
-		expr, err := parser.ParseExpr("func() (" + r + ")")
-		if err != nil {
-			t.Fatalf("building a probe signature for (%s): %v", r, err)
+		shape, ok := probeShape(t, "func("+conventionProbeParams+") ("+r+")", r, ifaces)
+		if !ok {
+			continue
 		}
-		shape, err := swiftResults(expr.(*ast.FuncType), ifaces, true)
-		if err != nil {
-			t.Errorf("a bound method returning (%s) is refused by swiftResults: %v.\n\n"+
-				"Every type in this loop is one bindableGoTypes admits or one bound "+
-				"interface, so a refusal here is a signature the stub generator is "+
-				"required to declare and cannot.", r, err)
+		// The same results behind a parameter list, which is the other half of
+		// the space.
+		//
+		// swiftResults reads a signature's RESULTS and nothing else, so a
+		// nullary probe covers every bound method — today. That is a fact about
+		// the function rather than about the space it is being enumerated over,
+		// and it is the same shape as the three arms this test exists to close:
+		// true the day somebody wrote it, and silent afterwards. A rule that
+		// started looking at a parameter — a bound interface passed in, a
+		// nullable annotation on an argument — would be enumerated against
+		// nothing, and every arm below would go on describing methods that take
+		// none.
+		//
+		// So both are built and the shapes must be identical. The parameters
+		// are drawn from bindableGoTypes and the bound interfaces, so they are
+		// types the generator is required to declare rather than types it would
+		// refuse for a reason of their own.
+		bare, ok := probeShape(t, "func() ("+r+")", r, ifaces)
+		if !ok {
+			continue
+		}
+		if !sameResultShape(shape, bare) {
+			t.Errorf("a bound method returning (%s) renders as `func x(%s)%s` with no "+
+				"parameters and `func x(%s)%s` with (%s).\n\n"+
+				"swiftResults is documented as reading a signature's results and "+
+				"nothing else, and the enumeration below builds one probe per result "+
+				"list on the strength of that. It has stopped being true: the arms are "+
+				"now a function of the parameters too, and the space this test closes "+
+				"is no longer the space the generator ranges over.",
+				r, joinParams("", bare.outParams), bare.clause(),
+				joinParams("", shape.outParams), shape.clause(), conventionProbeParams)
 			continue
 		}
 		arm := armOf(shape)
@@ -2785,11 +2903,12 @@ func TestEveryErrorConventionArmIsSettledByADeclaration(t *testing.T) {
 		}
 	}
 
-	// And the Swift side, both ways.
+	// And the Swift side, both ways — and, for each function, WHICH arm its
+	// annotation settles rather than only that it exists.
 	src := codeIn(t, importerReading)
-	settled := map[string]bool{}
+	settled := map[string]conventionArm{}
 	for _, m := range conventionDecl.FindAllStringSubmatch(src, -1) {
-		settled[m[1]] = true
+		settled[m[1]] = armFromAnnotation(m[2], m[3], m[4])
 	}
 	if len(settled) == 0 {
 		t.Fatalf("%s declares no grMobImportErrorConvention function where this looks "+
@@ -2797,20 +2916,32 @@ func TestEveryErrorConventionArmIsSettledByADeclaration(t *testing.T) {
 			"agree with every row above.", importerReading, conventionDecl)
 	}
 	for arm, row := range errorConventionArms {
-		if !settled[row.symbol] {
+		got, declared := settled[row.symbol]
+		if !declared {
 			t.Errorf("errorConventionArms says %s settles %s, and %s declares no such "+
-				"function.\n\n"+
+				"function with an arm annotation this can read.\n\n"+
 				"A row with no declaration is the position the two result rules were in "+
 				"before that file existed: prose about what a compiler does, held to "+
 				"nothing. The arm is reached by a method returning (%s).",
 				row.symbol, row.what, importerReading, reached[arm])
+			continue
+		}
+		if got != arm {
+			t.Errorf("errorConventionArms pairs %+v with %s, and that function's "+
+				"annotation in %s settles %+v.\n\n"+
+				"The row says %s. The compiler is being asked something else, so this "+
+				"arm — reached by a method returning (%s) — is settled by a declaration "+
+				"describing a different one, and the arm the annotation really settles "+
+				"is claimed by whichever row names it. Two rows whose symbols were "+
+				"swapped both still exist and both still type-check; only the pairing "+
+				"says so.", arm, row.symbol, importerReading, got, row.what, reached[arm])
 		}
 		delete(settled, row.symbol)
 	}
-	for symbol := range settled {
-		t.Errorf("%s declares %s and no row in errorConventionArms names it. A settled "+
-			"arm the generator cannot produce is a compiler agreeing with a claim "+
-			"nothing makes — and it reads, to the next person, as the arm their new "+
-			"signature will take.", importerReading, symbol)
+	for symbol, arm := range settled {
+		t.Errorf("%s declares %s, settling %+v, and no row in errorConventionArms names "+
+			"it. A settled arm the generator cannot produce is a compiler agreeing with "+
+			"a claim nothing makes — and it reads, to the next person, as the arm their "+
+			"new signature will take.", importerReading, symbol, arm)
 	}
 }

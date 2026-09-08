@@ -180,7 +180,10 @@
 // two executable things fail on rather than a paragraph beside them.
 package pinfixture
 
-import "fmt"
+import (
+	"fmt"
+	"sort"
+)
 
 // Child is one unweighted child of the Row.
 //
@@ -415,6 +418,18 @@ type Case struct {
 	// flag is: a check that only ever confirmed a collapse would pass just as
 	// well against a target that had stopped collapsing.
 	GapsAgreeWithCSS bool `json:"gapsAgreeWithCSS"`
+
+	// Resolution is the smallest distance apart any two of this case's numbers
+	// are, and therefore the finest distinction a harness checking it has to be
+	// able to make. See resolution: it is what the two harnesses' two different
+	// tolerances are both held to, and until it existed neither of them was
+	// held to anything.
+	//
+	// Derived rather than stated, unlike the CSS column beside it. That column
+	// is a claim about a flex line and has to be written down by somebody who
+	// knows one; this is a property of the numbers already on the page, and a
+	// stated copy of it would be a second thing to keep true.
+	Resolution int `json:"resolution"`
 }
 
 // The Row every case is a rearrangement of.
@@ -562,7 +577,78 @@ func build(what string, gap int, css []int, children ...Child) Case {
 	}
 	c.MainsAgreeWithCSS = agreesWithCSS(gap, children)
 	c.GapsAgreeWithCSS = gapsAgreeWithCSS(gap, c.Compose.Gaps)
+	c.Resolution = resolution(c)
 	return c
+}
+
+// resolution is the smallest distance apart any two of this case's numbers are.
+//
+// # What it is for
+//
+// Two harnesses compare measurements against these numbers and each carries a
+// tolerance of its own: ios/verify's pinEpsilon is 0.0001, because what it
+// compares is GrMobFlexSolver's CGFloat arithmetic against integers, and
+// browser.mjs's PIN_EPSILON is 0.05, because what IT compares is a real
+// browser's LayoutUnits — sixty-fourths of a pixel — against the same integers.
+// Two numbers, four hundred apart, for one fixture, and nothing anywhere said
+// what either had to be true of.
+//
+// They are not supposed to be equal: they bound different errors, and a
+// tolerance is only ever a claim about the machinery on ONE side of a
+// comparison. What they share is the other side, which is this table, and the
+// property that makes either of them safe is the same: a tolerance must be far
+// below the smallest distinction the fixture asks a harness to make. Above it,
+// a check accepts one of the fixture's numbers where another was meant — the
+// partial-spacing case charges a gap of 4 against a Row that declares 16 and
+// against the 0 a collapsed one would give, and a tolerance of 4 makes those
+// three the same answer.
+//
+// So the fixture states the floor, both harnesses read it off the case they are
+// checking, and each holds its own number to it. That is one claim in one place
+// with two consumers, rather than two numbers nobody could compare.
+//
+// # Why every number and not the compared pairs
+//
+// Which pairs a harness actually distinguishes differs between the two — the
+// browser measures gaps the Swift solver has no equivalent for — and a floor
+// derived per-consumer would be two floors again. Every number in the case is a
+// number some assertion on some target compares a measurement against, so the
+// smallest gap between any two of them is the bound that serves both.
+func resolution(c Case) int {
+	seen := map[int]bool{c.Offer: true, c.Gap: true}
+	for _, ch := range c.Children {
+		seen[ch.Base] = true
+	}
+	for _, n := range c.CSS {
+		seen[n] = true
+	}
+	for _, n := range c.Compose.Mains {
+		seen[n] = true
+	}
+	for _, n := range c.Compose.Gaps {
+		seen[n] = true
+	}
+	for _, n := range c.Compose.Offered {
+		seen[n] = true
+	}
+	seen[c.Compose.RowMain] = true
+
+	nums := make([]int, 0, len(seen))
+	for n := range seen {
+		nums = append(nums, n)
+	}
+	sort.Ints(nums)
+	// A case with one distinct number cannot be told apart from anything, which
+	// validate refuses long before this by insisting the children overflow the
+	// offer. Reported as zero so that a harness holding a positive tolerance to
+	// it fails rather than dividing by nothing.
+	smallest := 0
+	for i := 1; i < len(nums); i++ {
+		if d := nums[i] - nums[i-1]; smallest == 0 || d < smallest {
+			smallest = d
+		}
+	}
+	return smallest
 }
 
 // gapsAgreeWithCSS is whether the Row inserted the spacing CSS inserts.

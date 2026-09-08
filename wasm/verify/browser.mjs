@@ -78,11 +78,14 @@
 //      band's tallest child, half of which is "a bold caption is no shorter
 //      than a plain one" — a measurement no Go test can take. gen.go renders
 //      real components.GroupHeaders through every bundled theme and this mounts
-//      them with real glyphs in them. It reads three colours as well as the
-//      rects: the band's own fill, the ink its words are set in, and its count
-//      pill. A band is those three things, and for a while only the first was
-//      sampled — so a band painting its fill over an invisible label passed
-//      every rect below it.
+//      them with real glyphs in them. It reads the paint as well as the rects:
+//      the band's own fill, the ink its words are set in, the count pill, and
+//      the digits inside it. A band is those things, and for a while only the
+//      first was sampled — so a band painting its fill over an invisible label
+//      passed every rect below it, and later a pill that rendered no number
+//      did too. Where the rows it scans fall is measured against the face the
+//      browser resolved rather than assumed, and the grayscale antialiasing
+//      every one of those readings rests on is probed before any of them.
 //  11. a fixed-size container squeezes its child along its main axis and lets
 //      it spill across. core.Spacer became "a Box with a fixed size", and the
 //      note closing that work recorded that Compose constrains a child to the
@@ -412,8 +415,7 @@ const INK_EPSILON = 3;
 // ordinary theming.
 const INK_MARGIN = 4;
 
-// Where across the label's box the ink is looked for, as fractions of its
-// height.
+// Where across a text box the ink is looked for, as fractions of its height.
 //
 // One row was not enough, and the argument for it said so out loud: the label's
 // vertical middle is the row "most likely" to cross a stem. Likely is not a
@@ -422,35 +424,176 @@ const INK_MARGIN = 4;
 // fails in the safe direction and is still a failure, on whichever machine's
 // Chrome picked that fallback face.
 //
-// Three rows over the middle fifth of the box. They are all inside the x-height
-// band (an ascender or a descender would read backdrop where a lowercase word
-// has none), and three horizontal passes over one rect is the same arithmetic
-// run three times — the scan is already the cheapest thing in this check.
+// Three rows, and two things have to be true of them. Both were sentences here
+// and both are checks now, because both are claims about a font and a display
+// in a file that chooses neither:
 //
-// "Far enough apart to sit in different rows of a glyph's bitmap" was the third
-// thing said here, and it was the same kind of sentence the tolerance's bound
-// used to be: a claim about a font and a display, in a file that chooses
-// neither. inkRows resolves the fractions and the scan refuses a box where two
-// of them land on one device pixel, so the spacing is a check rather than an
-// assurance.
-const INK_ROWS = [0.4, 0.5, 0.6];
+//	three ROWS       a tenth of the box apart is three rows of a glyph's bitmap
+//	                 only while a tenth of the box is at least one device pixel.
+//	                 See inkRows.
+//	inside the INK   "they are all inside the x-height band (an ascender or a
+//	                 descender would read backdrop where a lowercase word has
+//	                 none)" was the reason the fractions read ink at all rather
+//	                 than backdrop, and it is a relationship between a line box
+//	                 and a font's metrics. See inkBandFault.
+//
+// The second of those moved the fractions. They were 0.4/0.5/0.6 — "the middle
+// fifth of the box" — and the x-height band is not centred on a line box's
+// middle: it runs from the baseline UP by an x-height, and the baseline sits
+// well below centre. Measured against the caption face Chrome resolves here,
+// 0.4 lands 0.014px ABOVE the top of the x-height band, so the topmost row was
+// outside the band the whole argument rested on and read ink only because this
+// label happens to carry capitals and digits. A word in lower case would have
+// been scanned by two rows and a row of backdrop.
+//
+// 0.5/0.6/0.7 is the same tenth-of-a-box spacing centred on the band instead of
+// on the box: for this face the band spans 0.40 to 0.80 of the line box, so the
+// three sit inside it with a tenth of the box of margin at each end. The check
+// is what makes that a measurement rather than a second sentence.
+const INK_ROWS = [0.5, 0.6, 0.7];
 
 // Where those fractions actually land, in device pixels, for one box.
 //
-// The fractions are of the label's LINE BOX and the redundancy they buy is
-// three rows of a glyph's bitmap, and those are two different things joined by
-// a box height and a device pixel ratio. 0.4/0.5/0.6 are a tenth of the box
-// apart, so the three become three distinct rows only while a tenth of the box
-// is at least one device pixel: at 16 CSS px and dpr 2 they are 3.2 device
-// pixels apart and the argument holds comfortably, and at a caption of 6 px on
-// a dpr-1 machine all three round to the same y and the scan is one row run
-// three times — reporting the redundancy it does not have.
+// The fractions are of the text's BOX and the redundancy they buy is three rows
+// of a glyph's bitmap, and those are two different things joined by a box
+// height and a device pixel ratio. The three are a tenth of the box apart, so
+// they become three distinct rows only while a tenth of the box is at least one
+// device pixel: at 16 CSS px and dpr 2 they are 3.2 device pixels apart and the
+// argument holds comfortably, and at a caption of 6 px on a dpr-1 machine all
+// three round to the same y and the scan is one row run three times — reporting
+// the redundancy it does not have.
 //
 // A function of the box and the ratio rather than a claim about either, for the
 // reason the fold guard is: what a font metric or a display does to a layout is
 // not something this file gets to assume.
 function inkRows(top, height, dpr) {
     return INK_ROWS.map((f) => Math.round((top + height * f) * dpr));
+}
+
+// Whether the rows a scan will read are inside the band where this text has
+// ink, and if not, which one is not and by how far.
+//
+// # The claim this replaces
+//
+// INK_ROWS' second sentence: the rows are "all inside the x-height band (an
+// ascender or a descender would read backdrop where a lowercase word has
+// none)". That is a relationship between a line box's height and a font's
+// vertical metrics, and this file chooses neither of them — a theme with a
+// taller line-height, or a machine whose Chrome resolves a different fallback
+// face, moves the band out from under the fractions and every band then fails
+// saying the words are not there.
+//
+// # What the band is, and why the probe glyph decides it
+//
+// The band runs from the baseline UP by the ink height of the SHORTEST glyph
+// the content can contain, because a row is only worth scanning if every glyph
+// in the run reaches it:
+//
+//	a word    "x" — a lowercase letter with no ascender and no descender is the
+//	          shortest thing a word can be made of, and its ink height is the
+//	          font's x-height. A row above it crosses an ascender and misses
+//	          every round letter beside it.
+//	a count   "0" — digits in every face this could resolve are lining figures,
+//	          all of one height, so the band is that height and there is no
+//	          shorter member to spoil it.
+//
+// Measured off the browser rather than derived: the page reports the inline
+// text box (which is the font's content area, so its top is the baseline less
+// the ascent) and the canvas metrics for the probe glyph in the element's own
+// resolved font. Both come back in page coordinates, so a scanned device row
+// is compared against them directly with no leading arithmetic in between.
+//
+// Returns null when every row is inside.
+function inkBandFault(rows, dpr, metrics) {
+    for (const y of rows) {
+        const at = y / dpr;
+        if (at >= metrics.bandTop && at <= metrics.bandBottom) continue;
+        return {
+            at, above: at < metrics.bandTop,
+            by: at < metrics.bandTop ? metrics.bandTop - at : at - metrics.bandBottom,
+        };
+    }
+    return null;
+}
+
+// inkBandFault, phrased. Returns null when the rows are where they should be.
+//
+// Here rather than at the call sites because the three ways it can go wrong —
+// the metrics never arrived, the run wrapped, a row is outside the band — are
+// one question asked of two boxes, and the only thing that differs between them
+// is what the content is and why its band is the band it is.
+function inkBandProblem(where, subject, m, rows, dpr, box, why) {
+    if (!m) {
+        return `${where}: no font metrics came back for ${subject}, so where the ` +
+            `scanned rows fall relative to the glyphs is unknown. The three fractions ` +
+            `are only ink-bearing rows while they land between a baseline and an ` +
+            `x-height, and nothing here can say that they do`;
+    }
+    if (m.wanted) {
+        return `${where}: the canvas would not take ${subject}' resolved font ` +
+            `(${m.wanted}) and stayed on ${m.font}, so every metric below would be ` +
+            `another face's. The band the rows have to sit in is this face's x-height ` +
+            `over this face's baseline, and a fallback's numbers are not that`;
+    }
+    if (m.lines !== 1) {
+        return `${where}: ${subject} occupy ${m.lines} line boxes` +
+            (m.text ? ` (${JSON.stringify(m.text)})` : "") + `. INK_ROWS is three ` +
+            `fractions of ONE line box: over two, the middle of the element is the gap ` +
+            `between the lines, and the scan would read backdrop and report that the ` +
+            `words are not there. Either the run has grown past the band's width or the ` +
+            `band has narrowed under it`;
+    }
+    const fault = inkBandFault(rows, dpr, m);
+    if (!fault) return null;
+    return `${where}: a scanned row lands at y=${fault.at.toFixed(2)}, which is ` +
+        `${fault.by.toFixed(2)}px ${fault.above ? "above" : "below"} the band ` +
+        `${subject} have ink in (${m.bandTop.toFixed(2)} to ` +
+        `${m.bandBottom.toFixed(2)}, measured from the "${m.probe}" of ${m.font} on ` +
+        `this element's own inline box).\n\n` +
+        `${why}. The box is ${box.h}px tall and INK_ROWS is ` +
+        `(${INK_ROWS.join(", ")}) of it, so a line-height or a resolved face has ` +
+        `moved the band out from under the fractions. This is the failure that would ` +
+        `otherwise arrive as every band in the grid reporting words that are not there`;
+}
+
+// One box, scanned across the given rows between two x positions, for one ink
+// over one fill.
+//
+// The three questions are asked in one pass because they are three readings of
+// the same pixel, and separating them would be three passes over one rect:
+//
+//	notFill   some pixel is not the backdrop. A run of words rendered in the
+//	          fill colour, or not rendered at all, has none.
+//	ink       some pixel IS the declared ink. A stem's interior is unblended at
+//	          any size a caption is set at, so the declared colour is present
+//	          when it is the colour being used.
+//	offBy     the worst pixel that is not a blend of the two. See offSegment.
+//
+// x0 and x1 are CSS pixels and half-open, so a caller can hand it a window
+// narrower than the element — which the count pill's does, because a pill's own
+// leading and trailing edges are the apexes of a 999-radius curve and every
+// pixel there is a blend with the band behind it.
+function scanInk(img, dpr, rows, x0, x1, fill, want) {
+    const from = Math.round(x0 * dpr), to = Math.round(x1 * dpr);
+    let notFill = false, ink = false, darkest = null, best = -1;
+    let offBy = 0, stranger = null;
+    for (const y of rows) {
+        for (let x = from; x < to; x++) {
+            const got = pixelAt(img, x, y);
+            if (got === null) continue;
+            if (got !== fill) notFill = true;
+            // A stem's interior is unblended, so the pixel furthest from the
+            // backdrop is the ink itself. Compared with a tolerance because the
+            // composite is done in eight bits here and a browser's rounding is
+            // its own.
+            const away = channelDistance(got, fill);
+            if (away > best) { best = away; darkest = got; }
+            if (channelDistance(got, want) <= INK_EPSILON) ink = true;
+            const off = offSegment(got, fill, want);
+            if (off > offBy) { offBy = off; stranger = got; }
+        }
+    }
+    return { notFill, ink, darkest, offBy, stranger, columns: to - from };
 }
 
 // How far a scanned pixel may sit off the line between the band's fill and the
@@ -465,11 +608,13 @@ function inkRows(top, height, dpr) {
 // second number nothing decides.
 //
 // It is a bound the bundled themes clear by a wide margin, which is the other
-// half of the claim: the nine bands come in at 1.2 channels off the line at the
-// worst — DefaultTheme's translucent secondary ink, whose blend has the most
-// rounding to do — against a floor of 3. Antialiasing is exact arithmetic on
-// this line (see offSegment), so what is being absorbed is a browser's
-// eight-bit rounding and nothing else.
+// half of the claim: the fifteen bands and their count pills come in at 0.9
+// channels off the line at the worst — DefaultTheme's translucent secondary
+// ink, whose blend has the most rounding to do — against a floor of 3.
+// Antialiasing is exact arithmetic on this line (see offSegment, and
+// SUBPIXEL_PROBE for the rendering mode that makes it so), and a blend of two
+// eight-bit colours rounded to eight bits is at most half a channel off it, so
+// what is being absorbed is the browser's rounding and nothing else.
 const OFF_SEGMENT_EPSILON = INK_EPSILON;
 
 // How far a pixel is from being a blend of the two colours the label's box is
@@ -494,25 +639,62 @@ const OFF_SEGMENT_EPSILON = INK_EPSILON;
 // is a third thing drawn inside the rect, which is a colour confusableInk was
 // never given the chance to rule out.
 //
+// # One metric, and it used to be two
+//
+// Every tolerance in this file is a MAX-CHANNEL distance — channelDistance's
+// metric, chosen there so that a number means the same thing whatever the
+// colour. This function used to project the pixel onto the segment with the
+// EUCLIDEAN dot product and then report the max-channel distance from that
+// point, which is two metrics in four lines: the t it picked was the one
+// minimising a quantity nobody compares anything against, and the number handed
+// to OFF_SEGMENT_EPSILON was therefore not the number the projection had
+// minimised. They agree about zero and disagree about everything else, so a
+// pixel could be reported as further off the line than the line's own closest
+// max-channel point is.
+//
+// So the minimisation is done in the metric the answer is expressed in. Each
+// channel's signed error is affine in t, the max of their absolute values is
+// convex and piecewise linear, and the minimum of such a function over [0, 1]
+// is at an endpoint or where two of its pieces cross — which is a short list to
+// enumerate exactly rather than a search to converge.
+//
 // Returned as a distance rather than a boolean so the caller can name the worst
 // one, which is the only thing a reader can act on.
 function offSegment(got, fill, want) {
     const rgb = (hex) => [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16));
     const p = rgb(got), a = rgb(fill), b = rgb(want);
-    const d = [b[0] - a[0], b[1] - a[1], b[2] - a[2]];
-    const len2 = d[0] * d[0] + d[1] * d[1] + d[2] * d[2];
-    // The projection's parameter, clamped: a pixel "past" either end is not a
-    // blend of the two, and clamping measures it against the end it is past
-    // rather than against a point outside the segment.
-    let t = 0;
-    if (len2 > 0) {
-        t = ((p[0] - a[0]) * d[0] + (p[1] - a[1]) * d[1] + (p[2] - a[2]) * d[2]) / len2;
-        t = Math.max(0, Math.min(1, t));
-    }
-    let worst = 0;
+    // The blend at t is a + t*(b - a), so channel i is off by
+    // `base[i] + slope[i]*t` — affine in t, and the answer is the largest of
+    // the three in absolute value.
+    const base = [0, 1, 2].map((i) => p[i] - a[i]);
+    const slope = [0, 1, 2].map((i) => -(b[i] - a[i]));
+    const at = (t) => Math.max(
+        Math.abs(base[0] + slope[0] * t),
+        Math.abs(base[1] + slope[1] * t),
+        Math.abs(base[2] + slope[2] * t));
+
+    // The six affine pieces: each channel's error and its negation, since the
+    // absolute value of an affine function is the max of the two.
+    const pieces = [];
     for (let i = 0; i < 3; i++) {
-        worst = Math.max(worst, Math.abs(p[i] - (a[i] + t * d[i])));
+        pieces.push([base[i], slope[i]]);
+        pieces.push([-base[i], -slope[i]]);
     }
+    // The endpoints, and every crossing of two pieces. A pixel "past" either
+    // end of the segment is not a blend of the two colours at all, so t is
+    // confined to [0, 1] and such a pixel is measured against the end it is
+    // past rather than against a point outside the segment.
+    const candidates = [0, 1];
+    for (let j = 0; j < pieces.length; j++) {
+        for (let k = j + 1; k < pieces.length; k++) {
+            const dm = pieces[j][1] - pieces[k][1];
+            if (dm === 0) continue;
+            const t = (pieces[k][0] - pieces[j][0]) / dm;
+            if (t > 0 && t < 1) candidates.push(t);
+        }
+    }
+    let worst = Infinity;
+    for (const t of candidates) worst = Math.min(worst, at(t));
     return worst;
 }
 
@@ -1116,6 +1298,63 @@ function bandNatural(a, c) {
 const BAND_EPSILON = 0.05;
 const bandSame = (a, b) => Math.abs(a - b) <= BAND_EPSILON;
 
+// Black words on a white page, mounted with the bands and read off the same
+// screenshot.
+//
+// # The rendering mode the whole ink scan rests on
+//
+// offSegment's argument is that antialiasing is linear: a glyph pixel at
+// coverage c is `fill + c * (want - fill)`, exactly, so every legitimate pixel
+// in a text box is ON the segment between the two colours. That is GRAYSCALE
+// antialiasing's arithmetic. LCD subpixel antialiasing gives each channel its
+// own coverage — that is the entire point of it — so an ordinary glyph edge
+// gets a coloured fringe and lands well off the line, and INK_EPSILON's exact
+// match on a stem's interior is resting on the same thing.
+//
+// Headless Chrome turns subpixel antialiasing off, which is why nine bands come
+// in at a fraction of a channel off a line they have no business being on. No
+// line of this file said so. If a Chrome ever arrived with it on, or a flag
+// here changed, the failure would be nine bands each reporting a third colour
+// inside the label's box — nine messages about a palette, for a cause that is
+// not a palette at all.
+//
+// So the mode is asked directly, once, before any band is scanned. Black over
+// white is where a fringe is most visible and easiest to state: under grayscale
+// antialiasing every blend of #000000 and #FFFFFF is a grey, so the three
+// channels of every pixel in this box are equal, and a pixel whose channels
+// differ is a subpixel-rendered one. One probe, one verdict, and the nine bands
+// keep their own failures for their own faults.
+//
+// A run of narrow stems rather than a word: `illlim` is nothing but vertical
+// strokes with gaps between them, which is the shape that produces the most
+// edge per pixel scanned.
+const SUBPIXEL_PROBE = {
+    Type: "Box",
+    Style: {
+        Background: "#FFFFFF", Width: "320px",
+        Padding: { Top: 0, Right: 0, Bottom: 0, Left: 0 },
+    },
+    Children: [{
+        Type: "Text",
+        Props: { content: "illlim illlim" },
+        Style: { TextColor: "#000000", FontSize: 13, Display: "block" },
+    }],
+};
+
+// The probe's own path in the grid: the last child, so the bands keep theirs.
+const SUBPIXEL_PROBE_PATH = `root/${BAND_RENDERS.length}/0`;
+
+// How far apart a pixel's channels may be before it is a coloured fringe rather
+// than a grey.
+//
+// Zero would be the arithmetic answer — a blend of two greys is a grey in exact
+// arithmetic — and one absorbs the browser's eight-bit rounding, which can round
+// three identical values to two different integers only if they were not
+// identical to begin with. A real subpixel fringe is not near this: the whole
+// mechanism exists to put one channel at full coverage while another is at
+// none, and it lands tens of channels apart.
+const SUBPIXEL_EPSILON = 1;
+
 // --------------------------------------------------------------------------
 // The checks
 // --------------------------------------------------------------------------
@@ -1184,12 +1423,13 @@ const BAND_RENDER_GRID = {
         // stretching every band to the widest one in the column.
         AlignItems: "flex-start",
     },
-    Children: BAND_RENDERS.map((b) => JSON.parse(b.tree)),
+    Children: BAND_RENDERS.map((b) => JSON.parse(b.tree)).concat([SUBPIXEL_PROBE]),
 };
 
 // gen.go's paths are relative to a mount whose root is the case's own page box.
 // Nested in the grid, that box is root/i, so every path gains one level.
 const bandRenderPath = (i, path) => path ? path.replace(/^root/, `root/${i}`) : null;
+
 
 // The tolerance check 9 uses, for the same reason: rects are LayoutUnits, and
 // two edges that arrive at the same place by different routes can land on
@@ -1388,8 +1628,34 @@ const FIXED_SIZE_CASES = [
 // is load-bearing is worse than no declaration at all. Nothing in
 // controls_test.go pins it, for the same reason: a control has to have a
 // subject.
+//
+// # What the number is held to
+//
+// There is a second tolerance over this same fixture: ios/verify/pin.swift's
+// pinEpsilon is 0.0001, four hundred times finer, because what IT compares is
+// GrMobFlexSolver's own doubles rather than a browser's LayoutUnits. Two
+// numbers for one table, each argued for on its own page, and until
+// Case.resolution neither was held to anything.
+//
+// They are not supposed to agree. A tolerance bounds the machinery on one side
+// of a comparison and the two sides here are Chrome and a Swift solver; what
+// they share is the other side, which is internal/pinfixture, and what that
+// side requires is the same of both. Case.resolution is the smallest distance
+// apart any two of a case's numbers are — a tolerance at or above it accepts
+// one of the fixture's numbers where another was meant — so both harnesses read
+// it and each keeps its own value an order below.
 const PIN_EPSILON = 0.05;
 const pinSame = (a, b) => Math.abs(a - b) <= PIN_EPSILON;
+
+// How far below a case's resolution the tolerance has to stay.
+//
+// INK_MARGIN's argument, applied to a different tolerance: what is claimed is a
+// RATIO, so this is a factor rather than an absolute, and four is the smallest
+// factor that is unambiguously an order. The bundled fixture clears it by a wide
+// margin — the tightest case resolves 4 pixels against a tolerance of 0.05 — so
+// this fires on numbers that have crowded together or on a tolerance somebody
+// widened to make a failure go away.
+const PIN_MARGIN = 4;
 
 // One pinned-Row case as a tree. The pin is core.FlexShrink(0), which reaches
 // this runtime as the same declaration the fixed-size cases above use.
@@ -2464,6 +2730,14 @@ async function main() {
         // a measurement of text.
         await mount(BAND_RENDER_GRID);
 
+        // The rects, and for the two boxes that get scanned for ink, the
+        // metrics that say where in them a glyph actually is.
+        //
+        // The metrics come back with the rects rather than in a second round
+        // trip because they are read off the same layout: a measurement taken
+        // after another mount would be describing a page this one no longer is.
+        // See inkBandFault for what the numbers are and why the probe glyph
+        // decides the band.
         const renderRects = await evaluate(`${JSON.stringify(
             BAND_RENDERS.map((b, i) => ({
                 band: bandRenderPath(i, b.band),
@@ -2472,18 +2746,58 @@ async function main() {
                 badge: bandRenderPath(i, b.badge),
                 label: bandRenderPath(i, b.label),
                 chevron: bandRenderPath(i, b.chevron),
-            })))}.map((paths) => {
+            })).concat([{ probe: SUBPIXEL_PROBE_PATH }]))}.map((paths) => {
+            const el = (path) => path
+                ? document.querySelector('[data-node-path="' + path + '"]') : null;
             const at = (path) => {
-                if (!path) return null;
-                const el = document.querySelector('[data-node-path="' + path + '"]');
-                if (!el) return null;
-                const r = el.getBoundingClientRect();
+                const e = el(path);
+                if (!e) return null;
+                const r = e.getBoundingClientRect();
                 return { x: r.left, y: r.top, w: r.width, h: r.height };
+            };
+            // Where this element's glyphs have ink, in page coordinates.
+            //
+            // The inline text box is the font's content area, so its top is the
+            // baseline less the ascent — which is the one number no computed
+            // style reports and no leading arithmetic here has to guess at. A
+            // run that wrapped reports more than one box, and that is returned
+            // rather than averaged: three fractions of a two-line box are three
+            // rows of nothing in particular.
+            const band = (path, probe) => {
+                const e = el(path);
+                if (!e) return null;
+                const cs = getComputedStyle(e);
+                const cx = document.createElement("canvas").getContext("2d");
+                cx.font = cs.fontStyle + " " + cs.fontWeight + " " + cs.fontSize +
+                    " " + cs.fontFamily;
+                // An unparsed font shorthand leaves the canvas on its own
+                // default, and every number below would then be another face's.
+                if (!cx.font.includes(cs.fontSize)) {
+                    return { font: cx.font, wanted: cs.fontSize, lines: 0 };
+                }
+                const range = document.createRange();
+                range.selectNodeContents(e);
+                const rects = [...range.getClientRects()];
+                if (rects.length !== 1) {
+                    return { font: cx.font, lines: rects.length, text: e.textContent };
+                }
+                const m = cx.measureText(probe);
+                const baseline = rects[0].top + m.fontBoundingBoxAscent;
+                return {
+                    font: cx.font, lines: 1, probe,
+                    bandTop: baseline - m.actualBoundingBoxAscent,
+                    bandBottom: baseline,
+                };
             };
             const out = {};
             for (const k of Object.keys(paths)) out[k] = at(paths[k]);
+            if (paths.label) out.labelBand = band(paths.label, "x");
+            if (paths.badge) out.badgeBand = band(paths.badge, "0");
             return out;
         })`);
+        // The probe rides at the end of the same array, so the band loop below
+        // still indexes by case.
+        const probeRect = renderRects.pop().probe;
 
         // And the paint, which this grid did not read at all until now.
         //
@@ -2502,6 +2816,49 @@ async function main() {
             { format: "png", captureBeyondViewport: false });
         const bandImg = decodePNG(Buffer.from(bandShot.data, "base64"));
         const bandDpr = await evaluate(`window.devicePixelRatio`);
+
+        // The rendering mode every ink assertion below rests on. See
+        // SUBPIXEL_PROBE for the argument; here it is one pass over one rect.
+        //
+        // Read before any band, and reported as one problem rather than nine:
+        // subpixel antialiasing puts ordinary text off offSegment's line, so
+        // with this unasked the failure would be nine bands each naming a third
+        // colour in its label's box, and the cause is not a colour at all.
+        let subpixel = null;
+        if (!probeRect || probeRect.w === 0) {
+            problems.push(`the antialiasing probe was not laid out — SUBPIXEL_PROBE ` +
+                `mounts at the end of the band grid, and every ink assertion below is ` +
+                `resting on the rendering mode it exists to read`);
+        } else {
+            let worst = 0, fringe = null;
+            for (let y = 0; y < Math.round(probeRect.h * bandDpr); y++) {
+                for (let x = 0; x < Math.round(probeRect.w * bandDpr); x++) {
+                    const got = pixelAt(bandImg,
+                        Math.round(probeRect.x * bandDpr) + x,
+                        Math.round(probeRect.y * bandDpr) + y);
+                    if (got === null) continue;
+                    const ch = [1, 3, 5].map((i) => parseInt(got.slice(i, i + 2), 16));
+                    const spread = Math.max(...ch) - Math.min(...ch);
+                    if (spread > worst) { worst = spread; fringe = got; }
+                }
+            }
+            subpixel = worst > SUBPIXEL_EPSILON ? { worst, fringe } : null;
+            if (subpixel) {
+                problems.push(`black words on a white page contain the pixel ` +
+                    `${fringe}, whose channels are ${worst} apart. Every blend of ` +
+                    `#000000 and #FFFFFF is a grey, so a coloured pixel in that box is ` +
+                    `LCD subpixel antialiasing: each channel gets its own coverage.\n\n` +
+                    `That is the arithmetic the whole band ink scan is built on. ` +
+                    `offSegment holds every pixel in a label's box to the line between ` +
+                    `the fill and the ink on the argument that coverage is one scalar, ` +
+                    `and INK_EPSILON's exact match on a stem's interior rests on the ` +
+                    `same thing. With subpixel rendering on, ordinary correct text is ` +
+                    `off that line and all ${BAND_RENDERS.length} bands would each ` +
+                    `report a third colour. ` +
+                    `Headless Chrome disables it; something about this browser or its ` +
+                    `flags has changed.`);
+            }
+        }
 
         // Keyed by theme so the two branches can be held against each other
         // below: adding a handler to a band is supposed to hand the caller a
@@ -2631,14 +2988,22 @@ async function main() {
                         `further apart than that (${INK_EPSILON * INK_MARGIN}). A theme ` +
                         `this close is one where the words are not readable either`);
                 } else {
-                    // And the second thing the rows have to be before any of
-                    // them is read: three rows. INK_ROWS is three fractions of
-                    // a box, and whether they resolve to three device pixels is
-                    // a fact about this label's height and this display —
-                    // neither of which this file chooses. A configuration where
-                    // two of them round together is a scan reporting a
-                    // redundancy it does not have, which is the same shape as a
-                    // tolerance whose margin nothing measured.
+                    // And the two things the rows have to be before any of them
+                    // is read.
+                    //
+                    // Three ROWS: INK_ROWS is three fractions of a box, and
+                    // whether they resolve to three device pixels is a fact
+                    // about this label's height and this display — neither of
+                    // which this file chooses. A configuration where two of them
+                    // round together is a scan reporting a redundancy it does
+                    // not have, which is the same shape as a tolerance whose
+                    // margin nothing measured.
+                    //
+                    // And three rows INSIDE THE INK: the fractions are where
+                    // they are because the x-height band is there, and where
+                    // that band falls in a line box is a relationship between a
+                    // theme's line-height and a font's metrics. See
+                    // inkBandFault.
                     const rows = inkRows(r.label.y, r.label.h, bandDpr);
                     if (new Set(rows).size !== rows.length) {
                         problems.push(`${where}: the label's box is ${r.label.h} ` +
@@ -2651,33 +3016,28 @@ async function main() {
                             `the fractions apart or ask why the label is this short`);
                         continue;
                     }
-                    let ink = false, notFill = false, darkest = null, best = -1;
-                    // The worst pixel that is not a blend of the two colours
-                    // this band declares for the label's box. See offSegment.
-                    let offBy = 0, stranger = null;
-                    const x0 = Math.round(r.label.x * bandDpr);
-                    const width = Math.round(r.label.w * bandDpr);
-                    for (const y of rows) {
-                        for (let dx = 0; dx < width; dx++) {
-                            const got = pixelAt(bandImg, x0 + dx, y);
-                            if (got === null) continue;
-                            if (got !== b.fill) notFill = true;
-                            // A stem's interior is unblended, so the pixel
-                            // furthest from the backdrop is the ink itself.
-                            // Compared with a tolerance because the composite
-                            // above is done in eight bits and a browser's
-                            // rounding is its own.
-                            const away = channelDistance(got, b.fill);
-                            if (away > best) { best = away; darkest = got; }
-                            if (channelDistance(got, want) <= INK_EPSILON) ink = true;
-                            const off = offSegment(got, b.fill, want);
-                            if (off > offBy) { offBy = off; stranger = got; }
-                        }
+                    const bandFault = inkBandProblem(where, "the label's words",
+                        r.labelBand, rows, bandDpr, r.label,
+                        `A word set in lower case has ink only between its baseline ` +
+                        `and its x-height, so a row outside that band reads the ` +
+                        `backdrop and the scan reports words that are there`);
+                    if (bandFault) {
+                        problems.push(bandFault);
+                        continue;
                     }
-                    if (offBy > OFF_SEGMENT_EPSILON) {
+
+                    // The whole of the label's box, which is wider than the
+                    // words on the branches where the run of text is stretched:
+                    // a column of backdrop is on the segment at t=0 and says
+                    // nothing either way, and narrowing the window to the
+                    // glyphs would be measuring where they are with a number
+                    // taken from where they are.
+                    const scan = scanInk(bandImg, bandDpr, rows,
+                        r.label.x, r.label.x + r.label.w, b.fill, want);
+                    if (scan.offBy > OFF_SEGMENT_EPSILON) {
                         problems.push(`${where}: a pixel in the label's box is ` +
-                            `${stranger}, which is ${offBy.toFixed(1)} channels off ` +
-                            `the line ` +
+                            `${scan.stranger}, which is ${scan.offBy.toFixed(1)} ` +
+                            `channels off the line ` +
                             `between the band's fill ${b.fill} and the label's ` +
                             `composited ink ${want}. Every pixel a glyph antialiases ` +
                             `is on that line — coverage blends the two and nothing ` +
@@ -2689,15 +3049,15 @@ async function main() {
                             `should not be, or the band fixture has to declare it so ` +
                             `the tolerance can be checked against it too`);
                     }
-                    if (!notFill) {
+                    if (!scan.notFill) {
                         problems.push(`${where}: every pixel on all ${INK_ROWS.length} ` +
                             `scanned rows of the label's box is ${b.fill}, the band's own ` +
                             `fill. The words are not there — and until this scan a band ` +
                             `that painted its fill over them passed every assertion in ` +
                             `this check, because a rect is the same either way`);
-                    } else if (!ink) {
+                    } else if (!scan.ink) {
                         problems.push(`${where}: the label's box has ink in it and the ` +
-                            `pixel furthest from the band's ${b.fill} is ${darkest}. ` +
+                            `pixel furthest from the band's ${b.fill} is ${scan.darkest}. ` +
                             `components.GroupHeader declares ${b.labelInk} for the words ` +
                             `(core.TextColor(TextSecondary)), which over this band ` +
                             `composites to ${want}. Something is drawn there in another ` +
@@ -2707,14 +3067,14 @@ async function main() {
                 }
             }
 
-            // And the count pill, which is a fill and can be sampled like one.
+            // And the count pill, which is a fill AND a number.
             //
-            // Half the pill's OWN leading padding in, and vertically centred:
-            // the pill's radius is 999, so its leftmost point is the apex of a
-            // curve and every pixel there is an antialiased blend — the same
-            // trap the widget grid's ring scan records. At mid-height the box
-            // is at its widest, and half a padding in is clear of that curve
-            // and short of the first digit.
+            // The fill is sampled at a point, half the pill's OWN leading
+            // padding in and vertically centred: the pill's radius is 999, so
+            // its leftmost point is the apex of a curve and every pixel there
+            // is an antialiased blend — the same trap the widget grid's ring
+            // scan records. At mid-height the box is at its widest, and half a
+            // padding in is clear of that curve and short of the first digit.
             //
             // It was a literal 5, which is inside the 8px padding the pill
             // carries today and is a number chosen against a widget's current
@@ -2722,6 +3082,14 @@ async function main() {
             // else's file. gen.go reads the padding off the rendered node and
             // refuses a pill with too little of it to sample inside, so this
             // point moves when the widget does.
+            //
+            // The DIGITS are scanned, for the reason the label's words are.
+            // "A band is a fill, a run of words and a count" is the argument
+            // this whole scan was added for, and the count was two thirds
+            // unread: a pill that painted itself and rendered no number passed
+            // every assertion here, which is exactly the state the label was in
+            // before any of this existed. A number cannot be sampled at a point
+            // any more than a word can.
             if (r.badge) {
                 const badgeFill = pixelAt(bandImg,
                     (r.badge.x + b.badgePadLeft / 2) * bandDpr,
@@ -2731,6 +3099,89 @@ async function main() {
                         `its own Style declares ${b.badgeFill} (the band behind it is ` +
                         `${b.fill}). A badge with no pill is a number sitting on the band, ` +
                         `which lays out identically and is a different widget`);
+                } else {
+                    // The digits' own box: between the pill's two paddings, and
+                    // nothing else. Outside them are the pill's leading and
+                    // trailing edges, which are the apexes of a 999-radius
+                    // curve and therefore blends with the BAND rather than with
+                    // the pill — a third colour to the segment test, and the
+                    // one place in this scan where that would be correct
+                    // painting rather than a fault.
+                    const ink = over(b.badgeInk, b.badgeFill);
+                    const confusable = channelDistance(ink, b.badgeFill);
+                    if (confusable <= INK_EPSILON * INK_MARGIN) {
+                        problems.push(`${where}: the count's ink ${b.badgeInk} composites ` +
+                            `over its pill to ${ink}, which is ${confusable} channels ` +
+                            `from the pill's own ${b.badgeFill}. The scan below accepts a ` +
+                            `pixel within ${INK_EPSILON} of the composite and is only ` +
+                            `worth anything while the two colours are an order further ` +
+                            `apart than that (${INK_EPSILON * INK_MARGIN}) — and a count ` +
+                            `this close to its pill is one nobody can read either. ` +
+                            `components.Badge picks the ink against the fill ` +
+                            `(Variant.Ink) precisely so this does not happen`);
+                    } else {
+                        const rows = inkRows(r.badge.y, r.badge.h, bandDpr);
+                        const from = r.badge.x + b.badgePadLeft;
+                        const to = r.badge.x + r.badge.w - b.badgePadRight;
+                        const fault = new Set(rows).size !== rows.length
+                            ? `${where}: the count pill is ${r.badge.h} ` +
+                              `device-independent pixels tall at dpr ${bandDpr}, and ` +
+                              `INK_ROWS resolves to rows ${rows.join(", ")} — two of ` +
+                              `them are the same row of pixels, so the digit scan has ` +
+                              `one chance and reports three`
+                            : inkBandProblem(where, "the count's digits", r.badgeBand,
+                                rows, bandDpr, r.badge,
+                                `Digits are lining figures — every one of them runs from ` +
+                                `the baseline to the same cap height — so a row outside ` +
+                                `that band reads pill and reports a count that is there`);
+                        if (fault) {
+                            problems.push(fault);
+                        } else {
+                            const scan = scanInk(bandImg, bandDpr, rows, from, to,
+                                b.badgeFill, ink);
+                            if (scan.columns < 1) {
+                                // The window is what is left of the pill after
+                                // its own two paddings, and an empty one makes
+                                // every verdict below a statement about no
+                                // pixels: "the number is not there" would fire
+                                // whatever the pill painted.
+                                problems.push(`${where}: the count pill is ` +
+                                    `${r.badge.w}px wide and its own paddings are ` +
+                                    `${b.badgePadLeft} and ${b.badgePadRight}, which ` +
+                                    `leaves no column between them for the digits to be ` +
+                                    `scanned in. Every reading below would be about an ` +
+                                    `empty window`);
+                            } else if (scan.offBy > OFF_SEGMENT_EPSILON) {
+                                problems.push(`${where}: a pixel in the count's own box ` +
+                                    `is ${scan.stranger}, ${scan.offBy.toFixed(1)} ` +
+                                    `channels off the line between the pill's ` +
+                                    `${b.badgeFill} and its composited ink ${ink}. ` +
+                                    `Between the pill's two paddings there is nothing ` +
+                                    `but fill and digit, so a third colour there is ` +
+                                    `either something else being drawn inside the pill ` +
+                                    `or the scan reaching past a padding and into the ` +
+                                    `curve of the pill's own edge`);
+                            }
+                            if (!scan.notFill) {
+                                problems.push(`${where}: every pixel on all ` +
+                                    `${INK_ROWS.length} scanned rows between the count ` +
+                                    `pill's paddings is ${b.badgeFill}, the pill's own ` +
+                                    `fill. The number is not there. A band is a fill, a ` +
+                                    `run of words and a count, and until this scan the ` +
+                                    `count was the one of the three read as a colour ` +
+                                    `and never as digits — a pill that painted itself ` +
+                                    `over an empty box passed every assertion here`);
+                            } else if (!scan.ink) {
+                                problems.push(`${where}: the count pill has ink in it ` +
+                                    `and the pixel furthest from its ${b.badgeFill} is ` +
+                                    `${scan.darkest}. components.Badge declares ` +
+                                    `${b.badgeInk} for the digits, which over the pill ` +
+                                    `composites to ${ink}. Something is drawn there in ` +
+                                    `another colour, which is what a count that lost ` +
+                                    `its declaration and inherited one looks like`);
+                            }
+                        }
+                    }
                 }
             }
 
@@ -2813,15 +3264,24 @@ async function main() {
                     `not build`);
             }
 
-            // Keyed by branch AND by whether the count is showing, because the
-            // parity comparison below is between two bands of the same shape: a
-            // count-hidden band's trailing inset is its control's rather than
-            // its badge's, so pairing one with a badged band would compare two
-            // trailing edges that are supposed to sit in different places.
-            const seen = byTheme.get(b.theme) || {};
-            seen[(b.collapsible ? "disclosure" : "plain") + (b.badge ? "" : "NoCount")] =
-                { b, r };
-            byTheme.set(b.theme, seen);
+            // Keyed by theme and by the parity group gen.go names, because the
+            // comparison below is between two bands that file says are one
+            // band with and without a handler.
+            //
+            // The grouping used to be worked out here from two booleans — the
+            // branch, and whether a count was showing — which was the same
+            // claim while there were exactly three shapes and one of them had
+            // no partner. It is a fact about the fixture rather than about the
+            // rects, so the fixture states it: a shape with no pair (the
+            // indented long-titled band) is measured on its own and compared
+            // with nothing, and adding a fourth shape does not silently start
+            // or stop a comparison.
+            if (b.pair) {
+                const key = `${b.theme}\u0000${b.pair}`;
+                const seen = byTheme.get(key) || {};
+                seen[b.collapsible ? "disclosure" : "plain"] = { b, r };
+                byTheme.set(key, seen);
+            }
         }
 
         // The two branches are the same band — and the measurement is what says
@@ -2851,14 +3311,23 @@ async function main() {
         // different band — its trailing inset is the control's rather than the
         // badge's — and comparing it with either would be comparing two widths
         // that are supposed to differ.
-        let sawBranchPair = false;
-        for (const [theme, seen] of byTheme) {
-            if (!seen.plain || !seen.disclosure) continue;
-            sawBranchPair = true;
+        let pairsRun = 0;
+        for (const [key, seen] of byTheme) {
+            const [theme, pair] = key.split("\u0000");
+            const where = `${theme}/${pair}`;
+            if (!seen.plain || !seen.disclosure) {
+                problems.push(`${where}: only the ` +
+                    `${seen.plain ? "plain" : "disclosure"} half of this parity pair was ` +
+                    `measured, so the comparison did not run. gen.go refuses a pair with ` +
+                    `one branch, so this is the mount losing a band rather than the ` +
+                    `fixture declaring one`);
+                continue;
+            }
+            pairsRun++;
             const p = seen.plain.r, d = seen.disclosure.r;
 
             if (!d.chevron || !d.label || !p.label) {
-                problems.push(`${theme}: the branch pair is missing a text rect ` +
+                problems.push(`${where}: the branch pair is missing a text rect ` +
                     `(chevron ${Boolean(d.chevron)}, disclosure label ${Boolean(d.label)}, ` +
                     `plain label ${Boolean(p.label)}) — gen.go locates all three by the ` +
                     `words they carry, so the band's content has changed shape`);
@@ -2867,7 +3336,7 @@ async function main() {
             const overhang = Math.max(0, d.chevron.h - d.label.h);
             const taller = d.band.h - p.band.h;
             if (!bandRenderSame(taller, overhang)) {
-                problems.push(`${theme}: the disclosure band is ` +
+                problems.push(`${where}: the disclosure band is ` +
                     `${taller.toFixed(2)}px taller than the plain one and its chevron's ` +
                     `line box exceeds the label's by ${overhang.toFixed(2)}px ` +
                     `(chevron ${d.chevron.h.toFixed(2)}px, words ${d.label.h.toFixed(2)}px). ` +
@@ -2887,7 +3356,7 @@ async function main() {
             // The chrome, which is the half the promise is actually about and
             // the half that holds exactly.
             if (!bandRenderSame(p.control.x - p.band.x, d.control.x - d.band.x)) {
-                problems.push(`${theme}: the plain band's control starts ` +
+                problems.push(`${where}: the plain band's control starts ` +
                     `${(p.control.x - p.band.x).toFixed(2)}px into it and the ` +
                     `disclosure's starts ${(d.control.x - d.band.x).toFixed(2)}px in. ` +
                     `Both branches take the same bandInsets, so the label moves on the ` +
@@ -2896,17 +3365,28 @@ async function main() {
             const pRight = p.band.x + p.band.w - (p.control.x + p.control.w);
             const dRight = d.band.x + d.band.w - (d.control.x + d.control.w);
             if (!bandRenderSame(pRight, dRight)) {
-                problems.push(`${theme}: the plain band's control stops ` +
+                problems.push(`${where}: the plain band's control stops ` +
                     `${pRight.toFixed(2)}px short of the trailing edge and the ` +
                     `disclosure's stops ${dRight.toFixed(2)}px short. The two branches ` +
                     `are the same band, so the tap target's trailing edge is not ` +
                     `supposed to move when a handler arrives`);
             }
         }
-        if (BAND_RENDERS.length && !sawBranchPair) {
-            problems.push(`no theme rendered both a plain band and a disclosure band, so ` +
-                `the branch-parity comparison above ran over nothing — ` +
-                `bandRenderBuilders in gen.go is supposed to carry both`);
+        // And every pair the fixture declares was actually compared. A
+        // comparison that runs over nothing reports nothing, which is the one
+        // result that reads the same as a pass.
+        const wantPairs = new Set(BAND_RENDERS.filter((b) => b.pair)
+            .map((b) => `${b.theme}\u0000${b.pair}`)).size;
+        if (wantPairs !== pairsRun) {
+            problems.push(`gen.go declares ${wantPairs} theme-and-shape parity pairs and ` +
+                `${pairsRun} were compared. The pairing is what holds "a caller who adds ` +
+                `OnToggle gets a control and not a relayout" to pixels, and a pair that ` +
+                `does not run says nothing at all`);
+        }
+        if (BAND_RENDERS.length && wantPairs === 0) {
+            problems.push(`no band shape declares a parity pair, so the branch ` +
+                `comparison ran over nothing — bandRenderBuilders in gen.go is supposed ` +
+                `to carry a plain band and a disclosure band for each one`);
         }
 
 
@@ -3080,6 +3560,20 @@ async function main() {
             const where = `the pinned Row, ${c.what}`;
             if (boxes.some((b) => b === null)) {
                 problems.push(`${where}: a child was not laid out`);
+                continue;
+            }
+            // Before anything is compared: this pass's tolerance is finer than
+            // the finest distinction the fixture asks it to make. See
+            // PIN_EPSILON — internal/pinfixture derives the floor and
+            // ios/verify/pin.swift holds its own, different tolerance to it.
+            if (!(c.resolution > PIN_EPSILON * PIN_MARGIN)) {
+                problems.push(`${where}: the fixture's numbers come as close together as ` +
+                    `${c.resolution} and every comparison below uses a tolerance of ` +
+                    `${PIN_EPSILON}. A tolerance within a factor of ${PIN_MARGIN} of a ` +
+                    `case's resolution can accept one of the fixture's own numbers where ` +
+                    `another was meant — the partial-spacing row charges 4 against a Row ` +
+                    `declaring 16 and against the 0 a fully collapsed gap would give, and ` +
+                    `at that tolerance the three are one answer`);
                 continue;
             }
             const mains = boxes.map((b) => b.w);
@@ -3291,7 +3785,9 @@ async function main() {
     offer — overflow included, which is where the SwiftUI solver does not — and
     hug their own natural width under every intrinsic keyword,
     ${BAND_RENDERS.length} real bands span their own tap targets, paint their own
-    fill, their own words in their own ink and their count pills, and are taller
+    fill, their own words in their own ink and their counts in digits inside
+    their own pills — on rows measured to be inside the ink of the face this
+    browser resolved — and are taller
     than their badges with real glyphs in them, a fixed-size container squeezes its
     child along the main axis and lets it spill across — unless the child is
     pinned with core.FlexShrink(0), which until core.ShrinkNone was a declaration

@@ -56,13 +56,52 @@ import Foundation
 /// integers and the solver divides by a total, so an exact comparison would be
 /// asking floating point a question it does not answer; anything larger than
 /// this would let a whole point of layout through.
+///
+/// # What it is held to
+///
+/// "Anything larger than this would let a whole point of layout through" was a
+/// judgement about this number and about nothing else, and there is a second
+/// tolerance over the SAME fixture: browser.mjs's PIN_EPSILON is 0.05, four
+/// hundred times this, because what it compares is a real browser's LayoutUnits
+/// rather than a solver's doubles. Two numbers for one table, each argued for
+/// on its own page, and no statement anywhere of what either had to be true of.
+///
+/// They are not supposed to be equal — a tolerance bounds the machinery on one
+/// side of a comparison, and the two sides are a Swift solver and Chrome. What
+/// they share is the other side, and PinCase.resolution is what it requires: the
+/// smallest distance apart any two of a case's numbers are. A tolerance at or
+/// above that accepts one of the fixture's numbers where another was meant, so
+/// both are held to the same floor and each keeps its own value below it.
 private let pinEpsilon: CGFloat = 0.0001
+
+/// How far below a case's resolution the tolerance has to stay.
+///
+/// The same shape as browser.mjs's INK_MARGIN and the same argument: what is
+/// being claimed is a RATIO, so a factor rather than an absolute. Four is the
+/// smallest factor that is unambiguously an order, and this solver clears it by
+/// an enormous margin — the tightest case resolves 4 points and the tolerance is
+/// a ten-thousandth of one. It fires on a fixture whose numbers have crowded
+/// together, or on a tolerance somebody loosened to make a failure go away.
+private let pinMargin: CGFloat = 4
 
 func checkPinnedRow(_ cases: [PinCase]) -> [String] {
     var problems: [String] = []
     if cases.isEmpty {
         return ["the transcript carries no pinned-Row cases — internal/pinfixture "
                 + "produced nothing, so this pass has no subject"]
+    }
+
+    // Before any case is solved: this harness's tolerance is finer than the
+    // finest distinction the fixture asks it to make. See pinEpsilon.
+    for c in cases where c.resolution <= pinEpsilon * pinMargin {
+        problems.append("\(c.what): the fixture's numbers come as close together as "
+            + "\(c.resolution) and this pass compares with a tolerance of \(pinEpsilon). "
+            + "A tolerance within a factor of \(pinMargin) of a case's resolution is one "
+            + "that can accept one of the fixture's own numbers where another was meant — "
+            + "the partial-spacing row charges 4 against a Row declaring 16 and against "
+            + "the 0 a fully collapsed gap would give, and at that tolerance the three "
+            + "are one answer. internal/pinfixture derives the resolution and "
+            + "browser.mjs holds its own, different tolerance to the same floor.")
     }
 
     // The claim each row is a rearrangement of: three children, one Row, and

@@ -671,6 +671,13 @@ type bandRender struct {
 	// things: only the disclosure has a wrapper to fill.
 	Collapsible bool `json:"collapsible"`
 
+	// Pair names the parity comparison this shape is one half of, empty for a
+	// shape in none. See bandRenderBuilders: the browser pairs the two halves
+	// by this name rather than working out from Collapsible and Badge which two
+	// shapes are supposed to be the same band, which stopped being a question
+	// two booleans could answer the moment a second count-hidden shape arrived.
+	Pair string `json:"pair"`
+
 	// Fill is the band Row's own background and Page the fill of the box it
 	// sits on, both read off the rendered nodes the way the widget grid reads
 	// its three.
@@ -729,36 +736,97 @@ type bandRender struct {
 	// therefore antialiased, and short of the first digit. Both ends of that
 	// are why renderBandCase refuses a padding too small to sample inside.
 	BadgePadLeft float64 `json:"badgePadLeft"`
+
+	// BadgeInk is the colour the count's DIGITS are declared in, and
+	// BadgePadRight the pill's trailing padding.
+	//
+	// # Why a pill's fill was not the whole of a count
+	//
+	// "A band is a fill, a run of words and a count" is the argument the ink
+	// scan was added for, and only two thirds of it were ever read. The label
+	// got a scan; the count got the same single point sample the band's fill
+	// gets, taken inside the pill's own leading padding — which is a run of
+	// fill with no digit in it by construction. A pill that painted itself
+	// perfectly and rendered no number at all passed, which is precisely the
+	// state the LABEL was in before any of this existed.
+	//
+	// So the digits are scanned the way the words are, and the two paddings say
+	// where: the pill's radius is 999, so its leading and trailing edges are
+	// the apexes of a curve and every pixel there is a blend with the band
+	// behind it. Between the two paddings is the digits' own box — the one
+	// region of the pill that is fill and digit and nothing else.
+	//
+	// Read off the rendered node rather than off the theme, for the reason Fill
+	// and LabelInk are: what a browser is asked is whether the widget's OWN
+	// declaration reaches the screen.
+	BadgeInk      string  `json:"badgeInk"`
+	BadgePadRight float64 `json:"badgePadRight"`
 }
 
 // bandRenderBuilders is one entry per band shape, so a shape added here is
 // added for every bundled theme.
 //
-// Three shapes, and each earns its place. The plain band with a badge is the
-// baseline the disclosure is compared against — the two branches are supposed
-// to be the same band geometrically, which is what
-// components.GroupHeader.ControlStyle promises a caller who adds a handler. The
-// disclosure with a badge is the tap-target case. The disclosure with the count
-// hidden is the one where the control's trailing edge is the band's own
-// trailing inset rather than the gap before a badge, which is the asymmetric
-// side components.bandInsets' `trailing` parameter exists for.
+// # The two branches, twice, and one shape that is neither
+//
+// The plain band with a badge is the baseline the disclosure is compared
+// against — the two branches are supposed to be the same band geometrically,
+// which is what components.GroupHeader.ControlStyle promises a caller who adds
+// a handler. The disclosure with a badge is the tap-target case. Hiding the
+// count is the asymmetric side components.bandInsets' `trailing` parameter
+// exists for: the control's trailing edge becomes the band's own inset rather
+// than the gap before a badge.
+//
+// The count-hidden band used to exist on the disclosure branch only, which made
+// the parity comparison a claim about badged bands and left the OTHER shape's
+// two branches uncompared. `pair` groups the two halves of each comparison, so
+// the browser pairs what this file says is one band rather than inferring the
+// pairing from two booleans — and both pairs are now checked.
+//
+// # And a shape that exists to move the label
+//
+// Every shape above puts the label's rect in the same place: hard against the
+// band's own leading inset, at a width the same string always takes. The ink
+// scan therefore read one rect nine times, so a scan that worked only for a
+// label sitting exactly there would have passed nine times over.
+//
+// The last entry is the one that is somewhere else, and it is three departures
+// at once because the point is the rect and not any one of them: a caller's own
+// indent through ControlStyle (which is what that field is for — a nested
+// band's label — and which must NOT move the tap target), no badge, and a title
+// long enough that the run of words is most of the band. If it ever grew long
+// enough to wrap, the scan's own row check says so by name rather than
+// reporting a label with no ink in it.
 var bandRenderBuilders = []struct {
 	what        string
 	collapsible bool
-	build       func() components.GroupHeader
+	// pair names the parity comparison this shape is one half of, or is empty
+	// for a shape that is in none. Each named pair must have exactly one plain
+	// and one disclosure band — checked in bandRenders, because a pair with
+	// one half is a comparison that silently does not run.
+	pair  string
+	build func() components.GroupHeader
 }{
-	{"a plain band", false, func() components.GroupHeader {
+	{"a plain band", false, "badged", func() components.GroupHeader {
 		return components.GroupHeader{Group: bandRenderGroup}
 	}},
-	{"a disclosure band", true, func() components.GroupHeader {
+	{"a disclosure band", true, "badged", func() components.GroupHeader {
 		return components.GroupHeader{
 			Group: bandRenderGroup, Expanded: true, OnToggle: func() {},
 		}
 	}},
-	{"a disclosure band, count hidden", true, func() components.GroupHeader {
+	{"a plain band, count hidden", false, "unbadged", func() components.GroupHeader {
+		return components.GroupHeader{Group: bandRenderGroup, HideCount: true}
+	}},
+	{"a disclosure band, count hidden", true, "unbadged", func() components.GroupHeader {
 		return components.GroupHeader{
 			Group: bandRenderGroup, Expanded: true, OnToggle: func() {},
 			HideCount: true,
+		}
+	}},
+	{"a plain band, indented, long title, no count", false, "", func() components.GroupHeader {
+		return components.GroupHeader{
+			Group: bandRenderLongGroup, HideCount: true,
+			ControlStyle: []core.StyleProp{core.PaddingLeft(bandRenderIndent)},
 		}
 	}},
 }
@@ -766,6 +834,24 @@ var bandRenderBuilders = []struct {
 // The group every rendered band titles. The same one internal/bandfixture
 // reads its numbers off, so the two tables are describing one band.
 var bandRenderGroup = components.Group{Key: "2026-01", Label: "January 2026", Count: 3}
+
+// The group the odd shape titles: the same band, named at a length a real feed
+// produces, so the label's rect is most of the band rather than a short run at
+// its leading edge.
+//
+// Short enough to stay on one line inside bandRenderWidth at a caption size —
+// the scan reads three rows of ONE line box — and long enough that its rect
+// bears no resemblance to the other four.
+var bandRenderLongGroup = components.Group{
+	Key: "2026-01-long", Label: "January 2026, week by week", Count: 3,
+}
+
+// How far the odd shape indents its control, in device-independent pixels.
+//
+// Larger than the band's own horizontal inset in every bundled theme, so the
+// label's rect is unmistakably somewhere the other shapes never put it, and
+// small enough that the words still have most of the band to occupy.
+const bandRenderIndent = 40
 
 // bandRenderWidth is the page the bands are laid out in.
 //
@@ -782,6 +868,30 @@ func bandRenders() []bandRender {
 	}
 	sort.Strings(names)
 
+	// Each parity pair must have exactly one plain band and one disclosure
+	// band. The comparison in check 10 runs only where both halves are present,
+	// so a pair with one half is a comparison that does not happen and reports
+	// nothing — the same silence an opt-in list produces one level up.
+	branches := map[string][]string{}
+	for _, b := range bandRenderBuilders {
+		if b.pair == "" {
+			continue
+		}
+		branch := "plain"
+		if b.collapsible {
+			branch = "disclosure"
+		}
+		branches[b.pair] = append(branches[b.pair], branch)
+	}
+	for pair, got := range branches {
+		sort.Strings(got)
+		if len(got) != 2 || got[0] != "disclosure" || got[1] != "plain" {
+			fatal("bandRenderBuilders' pair %q holds %v — a parity pair is one plain "+
+				"band and one disclosure band, and check 10 compares only the pairs it "+
+				"finds both halves of", pair, got)
+		}
+	}
+
 	out := make([]bandRender, 0, len(names)*len(bandRenderBuilders))
 	for _, name := range names {
 		for _, b := range bandRenderBuilders {
@@ -789,6 +899,7 @@ func bandRenders() []bandRender {
 			if err != nil {
 				fatal("%v", err)
 			}
+			c.Pair = b.pair
 			out = append(out, c)
 		}
 	}
@@ -903,6 +1014,8 @@ func renderBandCase(name string, theme *core.Theme, what string, collapsible boo
 		}
 		c.BadgeFill = badge.Style.Background
 		c.BadgePadLeft = float64(badge.Style.Padding.Left)
+		c.BadgePadRight = float64(badge.Style.Padding.Right)
+		c.BadgeInk = badge.Style.TextColor
 		// The sample point is half of this, so a pill with less than two
 		// device-independent pixels of leading padding has no interior for the
 		// browser to read: the sample lands on the corner's antialiasing or on
@@ -921,6 +1034,36 @@ func renderBandCase(name string, theme *core.Theme, what string, collapsible boo
 				"%s/%s: the badge and the band behind it are both %s, so a pixel taken "+
 					"inside the pill agrees with either answer and the paint check "+
 					"cannot fail", name, what, c.BadgeFill)
+		}
+		// The digits, which are the other half of a count and were unread until
+		// the scan below existed. Everything asserted about the label's ink is
+		// asserted about this one, and for the same reasons.
+		if c.BadgeInk == "" {
+			return bandRender{}, fmt.Errorf(
+				"%s/%s: the count pill declares no text colour, so what a browser draws "+
+					"the number in is whatever it inherits and there is nothing to read "+
+					"back. components.Badge resolves an ink against its own fill "+
+					"(Variant.Ink) precisely so the digits are legible on it — a pill "+
+					"that stopped declaring one would still lay out identically",
+				name, what)
+		}
+		if c.BadgeInk == c.BadgeFill {
+			return bandRender{}, fmt.Errorf(
+				"%s/%s: the count's digits and the pill behind them are both %s, so the "+
+					"number is invisible and a scan that found the digits would be "+
+					"finding the pill", name, what, c.BadgeInk)
+		}
+		// The scan's window is what lies between the two paddings, and a pill
+		// whose paddings meet has no such window: the digits' own box would be
+		// empty and "no digit found" would be a fact about the arithmetic
+		// rather than about the paint.
+		if c.BadgePadRight < 2 {
+			return bandRender{}, fmt.Errorf(
+				"%s/%s: the count pill's trailing padding is %gpx. The digit scan reads "+
+					"the box between the two paddings — the pill's own edges are the "+
+					"apexes of a 999-radius curve and every pixel there is a blend with "+
+					"the band behind it — so a padding this small leaves the scan reading "+
+					"the corner rather than the number", name, what, c.BadgePadRight)
 		}
 	}
 

@@ -74,6 +74,15 @@ struct PinCase: Decodable {
     /// divergence: the fixture's last case has the same extents on both targets
     /// and different gaps. Asserted in both directions for the same reason.
     let gapsAgreeWithCSS: Bool
+    /// The smallest distance apart any two of this case's numbers are, and so
+    /// the finest distinction a harness checking it has to be able to make.
+    ///
+    /// Derived by the fixture and read by both harnesses, because both carry a
+    /// tolerance and the two are four hundred apart — see pinEpsilon, and
+    /// PIN_EPSILON over in wasm/verify/browser.mjs. They are not supposed to be
+    /// equal (each bounds a different machine's arithmetic) and neither was
+    /// held to anything at all until this field.
+    let resolution: CGFloat
 }
 
 /// One band arrangement: which node carries the chrome.

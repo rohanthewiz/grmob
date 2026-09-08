@@ -215,9 +215,14 @@ func checkCitationsResolve(t *testing.T, checks int) {
 		}
 		for _, cite := range f.cites {
 			if cite < 1 || cite > checks {
-				t.Errorf("%s cites check %d, and browser.mjs has %d. Either the citation "+
-					"was not moved when the sequence was renumbered, or it names a check "+
-					"that no longer exists.", f.path, cite, checks)
+				t.Errorf("%s (%s) cites check %d, and browser.mjs has %d. Either the "+
+					"citation was not moved when the sequence was renumbered, or it "+
+					"names a check that no longer exists.\n\n"+
+					"The parenthesis is which sense of \"this repository's file\" the "+
+					"enumeration used, and it says who has to act: a tracked path is a "+
+					"citation the history carries, and an uncommitted one is an edit in "+
+					"the working tree of whoever is reading this.",
+					f.path, f.sense, cite, checks)
 			}
 		}
 	}
@@ -246,39 +251,202 @@ var citationExempt = map[string]string{
 		"describing the failure it exists to catch",
 }
 
-// The directories a citation walk does not enter, and why.
+// Every skip prefix's relationship to git, asked of git.
+//
+// citationSkipDirs says of each entry whether git already leaves it out and
+// how. That is the kind of claim that is true the day it is written and stays
+// on the page afterwards: a .gitignore is a file somebody edits, and an entry
+// that moved from "a second statement of something already stated" to "the only
+// thing keeping generated sources out of this check" reads exactly the same.
+//
+// The failure this is against is silent in both directions. A redundant entry
+// that has become load-bearing is a check resting on a line documented as
+// decorative — the next person deleting it as dead weight would be deleting the
+// guard. A load-bearing entry that has become redundant is dead weight that
+// reads as a guard, which is the same thing citationExempt's own assertion
+// exists to catch one level up.
+//
+// git is the authority on both halves and answers cheaply: `check-ignore` for
+// the rules, and the listing itself for what those rules produce. On a machine
+// with no git there is nothing to ask and the check says so rather than
+// passing — it is a claim ABOUT git, and the fallback walk it does not describe.
+func TestTheCitationSkipsGitAlreadyMakes(t *testing.T) {
+	root := filepath.Join("..", "..")
+
+	files, err := repositoryFiles(root)
+	if err != nil {
+		t.Skipf("git could not enumerate %s (%v), and every claim here is about what "+
+			"git's own rules do. The citation walk falls back to the filesystem on this "+
+			"machine and says so; this check has nothing to ask.", root, err)
+	}
+	if len(files) == 0 {
+		t.Fatalf("`git ls-files` succeeded in %s and listed no files, so \"git lists "+
+			"nothing under this prefix\" is true of every prefix below and the whole "+
+			"table would pass on a repository that is not this one", root)
+	}
+
+	// Which prefixes git actually offers something under. A prefix git lists
+	// files for is one the enumeration would read if this table did not stop
+	// it.
+	listed := map[string]repoFile{}
+	for _, f := range files {
+		for _, skip := range citationSkipDirs {
+			if f.path == skip.prefix || strings.HasPrefix(f.path, skip.prefix+"/") {
+				if _, seen := listed[skip.prefix]; !seen {
+					listed[skip.prefix] = f
+				}
+			}
+		}
+	}
+
+	for _, skip := range citationSkipDirs {
+		// `check-ignore` exits 0 when a path matches an exclude rule and 1 when
+		// it does not, and it answers for a path that does not exist — which is
+		// the case that matters, since a build directory is absent on a clean
+		// checkout and its entry has to be checkable there too.
+		ignored := exec.Command("git", "-C", root, "check-ignore", "-q",
+			skip.prefix).Run() == nil
+
+		switch skip.kind {
+		case gitNeverLists:
+			if got, any := listed[skip.prefix]; any {
+				t.Errorf("citationSkipDirs calls %s gitNeverLists (%s) and `git ls-files` "+
+					"lists %s (%s) under it. git does not enumerate its own store, so "+
+					"this prefix is now naming something else — and whatever that is, it "+
+					"is being skipped by an entry whose reason does not describe it.",
+					skip.prefix, skip.why, got.path, got.sense)
+			}
+		case gitIgnores:
+			if !ignored {
+				t.Errorf("citationSkipDirs calls %s gitIgnores (%s) and `git check-ignore` "+
+					"says no rule excludes it.\n\n"+
+					"That entry is documented as a second statement of something the "+
+					"platform .gitignore files already say, kept for the fallback walk. "+
+					"It is not: git would offer these files, so the prefix is the only "+
+					"thing keeping generated sources out of the citation check on every "+
+					"machine. Either restore the ignore rule or move this entry to "+
+					"gitWouldList, where a reader will not delete it as decoration.",
+					skip.prefix, skip.why)
+			}
+			if got, any := listed[skip.prefix]; any {
+				t.Errorf("citationSkipDirs calls %s gitIgnores and git lists %s (%s) "+
+					"under it anyway. An ignored path git still lists is a file that was "+
+					"committed before the rule arrived; an unignored one is the rule "+
+					"having gone. Either way the entry is classified by an effect it no "+
+					"longer has.", skip.prefix, got.path, got.sense)
+			}
+		case gitWouldList:
+			if ignored {
+				t.Errorf("citationSkipDirs calls %s gitWouldList (%s) and `git check-ignore` "+
+					"says a rule already excludes it. The entry is documented as "+
+					"load-bearing under git and is not — it is now dead weight that "+
+					"reads as a guard, which is exactly what an outlived citationExempt "+
+					"row is one level up.", skip.prefix, skip.why)
+			}
+		}
+	}
+}
+
+// The directories a citation walk does not enter, and why — and, for each one,
+// how it relates to git's own enumeration.
 //
 // Kept as path prefixes rather than as base names so that a directory named
 // `build` somewhere else in the tree is not skipped by accident.
 //
-// Four of the five are reached only by the fallback enumeration. git excludes
-// the build directories itself, because the two platform .gitignore files
-// already name them — so on any machine with git these entries are a second
-// statement of something already stated, kept for the walk that runs when there
-// is no git to ask. `docs/site` is load-bearing in both paths, and `ai_docs` is
-// a decision no mechanism could make.
-var citationSkipDirs = []string{
-	".git",
+// # Why each entry carries a kind
+//
+// This list used to say, in prose, that four of its entries were redundant
+// under git and two were load-bearing. Both halves were assumptions. git
+// excludes a build directory because a .gitignore names it, and a .gitignore is
+// a file somebody edits: the day `app/build/` came out of android/.gitignore,
+// that entry would go from a second statement of something already stated to
+// the only thing keeping generated sources out of the citation check — the
+// enumeration still right, for a reason that had moved, and nothing anywhere
+// saying so.
+//
+// So the relationship is declared per entry and asked of git by
+// TestTheCitationSkipsGitAlreadyMakes. The kinds are the three that exist:
+//
+//	gitNeverLists   git's own directory. No rule excludes it; `ls-files` does
+//	                not enumerate it, and only the disk walk can reach it.
+//	gitIgnores      a .gitignore names it, so git leaves it out. These entries
+//	                exist for the walk, which has no exclude rules to read.
+//	gitWouldList    git does NOT ignore it, so `--cached` or `--others` offers
+//	                the files under it and this prefix is the only thing that
+//	                keeps them out of the check. Load-bearing in both paths.
+var citationSkipDirs = []skipDir{
+	{".git", gitNeverLists, "git's own store"},
 	// Saved sessions and plans are a RECORD of what was true when they were
 	// written. A renumbering does not make last week's session doc wrong, and
 	// rewriting one to keep a test green would be falsifying the record.
-	"ai_docs",
+	//
+	// Tracked, and being tracked is exactly why the prefix is needed: no
+	// mechanism could make this decision, which is the other half of what
+	// gitWouldList means.
+	{"ai_docs", gitWouldList, "saved sessions are a record, not a claim about today's numbering"},
 	// Build output: generated sources, jars, and a wasm binary, none of it
-	// written by anybody here.
-	"android/build",
-	"android/.gradle",
-	"android/app/build",
-	"ios/build",
-	"docs/site",
+	// written by anybody here. Named by the two platform .gitignore files, so
+	// under git these four are a second statement of something already stated
+	// and are kept for the walk.
+	{"android/build", gitIgnores, "Gradle build output"},
+	{"android/.gradle", gitIgnores, "Gradle's own state"},
+	{"android/app/build", gitIgnores, "the app module's build output"},
+	{"ios/build", gitIgnores, "Xcode build state"},
+	// mkdocs output. Nothing ignores it — it does not exist until somebody
+	// runs a build, and when it does git offers every generated page under it
+	// as an untracked file — so this prefix is what keeps a rendered copy of
+	// the census from being read as a second citation of every check it
+	// quotes.
+	{"docs/site", gitWouldList, "mkdocs renders the whole of docs/ into it"},
 }
 
-// citing is one file and the check numbers it names.
+// How a skip prefix relates to git's own enumeration. See citationSkipDirs.
+type skipKind int
+
+const (
+	gitNeverLists skipKind = iota
+	gitIgnores
+	gitWouldList
+)
+
+// skipDir is one prefix the citation enumeration does not descend into.
+type skipDir struct {
+	prefix string
+	kind   skipKind
+	why    string
+}
+
+// citing is one file and the check numbers it names, with the sense in which
+// the enumeration says the file is this repository's. See repoFile.
 type citing struct {
 	path  string
+	sense string
 	cites []int
 }
 
-// repositoryFiles asks git which files are this working tree's.
+// repoFile is one path and the sense in which git calls it this repository's.
+//
+// The two senses are not decoration. `--cached` is a file the history has, and
+// `--others --exclude-standard` is a file somebody wrote and has not added yet;
+// a citation failure naming the first is a commit that has to be fixed, and one
+// naming the second is an edit still on the desk of whoever is running the test.
+// The enumeration knows which, and until this type it threw the answer away and
+// handed every failure the same sentence.
+type repoFile struct {
+	path string
+	// sense is the phrase a failure carries. The walk has a third one,
+	// because a filesystem cannot answer this question at all.
+	sense string
+}
+
+const (
+	senseTracked   = "tracked"
+	senseUntracked = "written here and not committed yet"
+	senseOnDisk    = "on disk; the walk cannot say whether git knows it"
+)
+
+// repositoryFiles asks git which files are this working tree's, in the two
+// senses git has of the question.
 //
 // # Why git rather than the disk
 //
@@ -288,16 +456,23 @@ type citing struct {
 // words "check 3" in a changelog is a failure naming a file nobody here wrote,
 // and the fix would have been a sixth prefix, and then a seventh.
 //
-// `git ls-files --cached --others --exclude-standard` is every tracked file
-// plus every untracked one git would offer to add. That is exactly the set a
-// person here writes, and it keeps the property the walk was adopted for —
-// `--others` covers a file written five minutes ago, so a new document is
-// checked before it is committed.
+// `git ls-files --cached` plus `git ls-files --others --exclude-standard` is
+// every tracked file plus every untracked one git would offer to add. That is
+// exactly the set a person here writes, and it keeps the property the walk was
+// adopted for — `--others` covers a file written five minutes ago, so a new
+// document is checked before it is committed.
 //
 // What remains outside it is a dependency vendored by COMMITTING it, which is
 // this repository's file by every mechanical test there is. That failure is
 // loud and names the file, and saying so is better than an enumeration
 // pretending to cover it.
+//
+// # Two invocations rather than one
+//
+// `--cached --others` in one command returns one list, and which flag produced
+// a given path is not recoverable from it. Asking twice is what makes the sense
+// a fact the caller can print; `--others` already excludes anything tracked, so
+// the two lists are disjoint and no path needs reconciling.
 //
 // # The three answers, which are three different things
 //
@@ -308,22 +483,29 @@ type citing struct {
 // falling back would tell the reader the first story about the second
 // situation. So the two are returned distinguishably and the caller separates
 // them.
-func repositoryFiles(root string) ([]string, error) {
-	cmd := exec.Command("git", "-C", root, "ls-files", "--cached", "--others",
-		"--exclude-standard", "-z")
-	out, err := cmd.Output()
-	if err != nil {
-		return nil, err
-	}
-	// NUL-separated, which is what -z buys: a path with a newline or a quote in
-	// it is a path git would otherwise escape and this would have to unescape.
-	var files []string
-	for _, p := range strings.Split(string(out), "\x00") {
-		if p != "" {
-			files = append(files, p)
+func repositoryFiles(root string) ([]repoFile, error) {
+	var files []repoFile
+	for _, listing := range []struct {
+		args  []string
+		sense string
+	}{
+		{[]string{"ls-files", "--cached", "-z"}, senseTracked},
+		{[]string{"ls-files", "--others", "--exclude-standard", "-z"}, senseUntracked},
+	} {
+		out, err := exec.Command("git", append([]string{"-C", root}, listing.args...)...).Output()
+		if err != nil {
+			return nil, err
+		}
+		// NUL-separated, which is what -z buys: a path with a newline or a
+		// quote in it is a path git would otherwise escape and this would have
+		// to unescape.
+		for _, p := range strings.Split(string(out), "\x00") {
+			if p != "" {
+				files = append(files, repoFile{path: p, sense: listing.sense})
+			}
 		}
 	}
-	sort.Strings(files)
+	sort.Slice(files, func(i, j int) bool { return files[i].path < files[j].path })
 	return files, nil
 }
 
@@ -333,9 +515,10 @@ func repositoryFiles(root string) ([]string, error) {
 // Kept rather than deleted, and it is not dead weight — a source tarball, a
 // container image built by copying the tree in, and `go test` run from an
 // export all reach it. What it cannot do is the thing git does for free, which
-// is why the caller announces which enumeration it used.
-func walkedFiles(root string) ([]string, error) {
-	var out []string
+// is why the caller announces which enumeration it used — and why every file it
+// produces carries senseOnDisk rather than one of git's two answers.
+func walkedFiles(root string) ([]repoFile, error) {
+	var out []repoFile
 	err := filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
@@ -347,7 +530,7 @@ func walkedFiles(root string) ([]string, error) {
 		rel = filepath.ToSlash(rel)
 		if d.IsDir() {
 			for _, skip := range citationSkipDirs {
-				if rel == skip {
+				if rel == skip.prefix {
 					return fs.SkipDir
 				}
 			}
@@ -356,7 +539,7 @@ func walkedFiles(root string) ([]string, error) {
 		if !d.Type().IsRegular() {
 			return nil
 		}
-		out = append(out, rel)
+		out = append(out, repoFile{path: rel, sense: senseOnDisk})
 		return nil
 	})
 	return out, err
@@ -384,13 +567,15 @@ func citingFiles(root string) (found []citing, from string, err error) {
 		}
 	}
 
-	for _, rel := range files {
-		// The skip prefixes apply to both enumerations. Under git they are
-		// mostly redundant — see citationSkipDirs — and `ai_docs` is not: it is
-		// tracked, and being tracked is precisely why it has to be named here.
+	for _, f := range files {
+		rel := f.path
+		// The skip prefixes apply to both enumerations, and which of them each
+		// prefix is actually doing work in is a fact about git's exclude rules
+		// rather than a standing assumption — see citationSkipDirs and
+		// TestTheCitationSkipsGitAlreadyMakes.
 		skipped := false
 		for _, skip := range citationSkipDirs {
-			if rel == skip || strings.HasPrefix(rel, skip+"/") {
+			if rel == skip.prefix || strings.HasPrefix(rel, skip.prefix+"/") {
 				skipped = true
 				break
 			}
@@ -423,7 +608,7 @@ func citingFiles(root string) (found []citing, from string, err error) {
 			continue
 		}
 		if cites := citations(string(raw)); len(cites) > 0 {
-			found = append(found, citing{path: rel, cites: cites})
+			found = append(found, citing{path: rel, sense: f.sense, cites: cites})
 		}
 	}
 	return found, from, nil

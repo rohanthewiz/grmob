@@ -77,20 +77,42 @@ let grMobImportData: (Data?) -> Data? = GrMobImportData
 // this section settled three arms because three is how many there were the day
 // it was written.
 
+// # The one form all three are written in
+//
+// Each arm is a METHOD REFERENCE with a function-type annotation:
+//
+//	let arm: <the imported signature> = p.<the selector>
+//
+// The annotation carries all three things the convention decides — whether the
+// NSError** became a `throws`, whether it survived as a parameter, and whether
+// the method still returns anything — and it carries them where one expression
+// can be read. That is not a formatting preference. mobile/verify reads the arm
+// off this line and compares it with the row that names the function, so a row
+// and a declaration that had been swapped is a failure rather than two things
+// that both still exist; before this shape, every check was about EXISTENCE and
+// the compiler went on settling the arms under the wrong descriptions.
+//
+// The first arm was previously written as a call with a value annotation
+// (`let value: Data = try p.dataOrError()`), on the argument that annotating
+// the function's own return proves nothing because Swift widens a `Data` into a
+// `Data?` on the way out. That argument is about a RETURN annotation. A
+// function-type annotation is not one: `() throws -> Data?` does not convert to
+// `() throws -> Data` in either direction, so the reference form fails just as
+// the call form did if the import kept the optional — and it says the other two
+// thirds of the arm out loud instead of leaving them to the absence of an
+// argument.
+
 // 1. A NULLABLE object return: the method throws, and the import LOSES the
 // optional. nil is what signals the error, so it can no longer also be a value.
 // This is the arm a `([]byte, error)` result lands in, and the arm
 // `(Iface, error)` already used.
 //
-// Spelled as an annotated VALUE rather than an annotated return, because that
-// is the form the compiler discriminates on: `try p.dataOrError()` is accepted
-// where a `Data?` is asked for, since Swift widens on the way out — so
-// annotating this function's own return would prove nothing. `let value: Data`
-// fails if the import kept the optional.
+// `() throws -> Data` is the whole arm: no error parameter left, a `throws` in
+// its place, and a result that is not optional.
 func grMobImportErrorConventionDropsTheOptional(
-    _ p: any GrMobImportErrorConvention) throws {
-    let value: Data = try p.dataOrError()
-    _ = value
+    _ p: any GrMobImportErrorConvention) {
+    let arm: () throws -> Data = p.dataOrError
+    _ = arm
 }
 
 // 2. A _Nonnull object return: the convention DECLINES to rewrite the method.
@@ -99,15 +121,13 @@ func grMobImportErrorConventionDropsTheOptional(
 // `(string, error)` lands in, because genobjc.go's objcType annotates a
 // returned NSString* non-null.
 //
-// Spelled as an annotated METHOD REFERENCE rather than a call, because the
-// claim is about the method's SHAPE and half of that shape is the parameter
-// that survived. `(NSErrorPointer) -> String` is the arm applying to nothing;
-// the alternative — the convention applying after all — would be
-// `() throws -> String`, which does not convert to it in either direction.
+// `(NSErrorPointer) -> String` is the arm applying to nothing; the alternative
+// — the convention applying after all — would be `() throws -> String`, which
+// does not convert to it in either direction.
 func grMobImportErrorConventionKeepsTheErrorParameter(
     _ p: any GrMobImportErrorConvention) {
-    let method: (NSErrorPointer) -> String = p.nameOrError
-    _ = method
+    let arm: (NSErrorPointer) -> String = p.nameOrError
+    _ = arm
 }
 
 // 3. A BOOL return: the convention's textbook shape. The return IS the signal,
@@ -116,12 +136,12 @@ func grMobImportErrorConventionKeepsTheErrorParameter(
 // the value has already moved into an out-pointer by then, and what is left for
 // the convention to read is the BOOL.
 //
-// A method reference again, and the annotation discriminates in both of the
-// ways that matter: a return of `Bool` would not convert to `Void`, and a
-// method the convention had declined to rewrite would be
-// `(NSErrorPointer) -> Bool`, which is not a throwing nullary function.
+// The annotation discriminates in both of the ways that matter: a return of
+// `Bool` would not convert to `Void`, and a method the convention had declined
+// to rewrite would be `(NSErrorPointer) -> Bool`, which is not a throwing
+// nullary function.
 func grMobImportErrorConventionDropsABoolReturn(
-    _ p: any GrMobImportErrorConvention) throws {
-    let method: () throws -> Void = p.storeOrError
-    try method()
+    _ p: any GrMobImportErrorConvention) {
+    let arm: () throws -> Void = p.storeOrError
+    _ = arm
 }
