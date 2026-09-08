@@ -1154,9 +1154,14 @@ func bandRenderThemes() map[string]*core.Theme {
 	// core.Theme is covered without anybody remembering. A field this file has
 	// never heard of is exactly the kind that would be copied silently.
 	drifted := themeDifferences(reflect.ValueOf(*base), reflect.ValueOf(tall), "")
+	allowed := map[string]bool{}
+	for _, path := range bandRenderTallVaries {
+		allowed[path] = false
+	}
 	varies, off := []string{}, []string{}
 	for _, path := range drifted {
-		if strings.HasPrefix(path, bandRenderTallVaries) {
+		if _, ok := allowed[path]; ok {
+			allowed[path] = true
 			varies = append(varies, path)
 		} else {
 			off = append(off, path)
@@ -1164,13 +1169,12 @@ func bandRenderThemes() map[string]*core.Theme {
 	}
 	if len(off) > 0 {
 		fatal("the tall-caption theme is derived from %s and differs from it at %v, "+
-			"outside %s.\n\n"+
+			"which is not one of %v.\n\n"+
 			"It is in this grid to be one palette at two type scales — the bands read "+
 			"captions, so that is the one departure their checks can attribute. A "+
 			"second difference makes it a fourth palette, and every failure it "+
 			"produces names whichever of the two changes the check happened to be "+
-			"looking at.", bandRenderTallBase, off,
-			strings.TrimSuffix(bandRenderTallVaries, "."))
+			"looking at.", bandRenderTallBase, off, bandRenderTallVaries)
 	}
 	// And that the walk found the departure it is supposed to permit. Two lines
 	// above have just insisted the caption tier differs in both size and
@@ -1178,21 +1182,64 @@ func bandRenderThemes() map[string]*core.Theme {
 	// them, it is not looking — and "it differs in nothing else" would then be
 	// a sentence produced by a function that never returns anything.
 	if len(varies) == 0 {
-		fatal("themeDifferences finds the tall-caption theme identical to %s under %s, "+
-			"and the two checks above have just held it to differing there in both size "+
-			"and leading. The walk that says this theme varies nothing but its caption "+
-			"tier is reporting that it varies nothing, which is not the same claim",
-			bandRenderTallBase, strings.TrimSuffix(bandRenderTallVaries, "."))
+		fatal("themeDifferences finds the tall-caption theme identical to %s at every "+
+			"one of %v, and the two checks above have just held it to differing there "+
+			"in both size and leading. The walk that says this theme varies nothing but "+
+			"its caption tier is reporting that it varies nothing, which is not the "+
+			"same claim", bandRenderTallBase, bandRenderTallVaries)
+	}
+	// And that every path the list permits is one the theme actually takes.
+	//
+	// The two directions are different faults. Above: a departure nobody
+	// permitted, which is the theme varying more than the grid can attribute.
+	// Here: a permission nothing uses, which is the list claiming a departure
+	// that is not happening — and a list with slack in it is one that would go
+	// on passing after the derivation above stopped making the change, because
+	// "differs only where permitted" is satisfied by differing nowhere.
+	unused := []string{}
+	for _, path := range bandRenderTallVaries {
+		if !allowed[path] {
+			unused = append(unused, path)
+		}
+	}
+	if len(unused) > 0 {
+		fatal("bandRenderTallVaries permits the tall-caption theme to differ from %s at "+
+			"%v, and it does not differ there.\n\n"+
+			"The list is the exact set of leaves this theme is a copy-with-one-change "+
+			"at, so a path in it that nothing moves is a permission standing open for "+
+			"a change nobody makes. Either the derivation above stopped making it — in "+
+			"which case this is a fourth copy of %s and the grid pays for twenty bands "+
+			"to ask fifteen questions — or the list has a path in it that the "+
+			"derivation never had.", bandRenderTallBase, unused, bandRenderTallBase)
 	}
 
 	out[bandRenderTallName] = &tall
 	return out
 }
 
-// Where the tall-caption theme is allowed to differ from the theme it copies.
+// Where the tall-caption theme is allowed to differ from the theme it copies:
+// the exact leaves, in the spelling themeDifferences produces.
 //
-// A path prefix into core.Theme, in the spelling themeDifferences produces.
-const bandRenderTallVaries = "Typography.Caption."
+// # Why a set of leaves and not the tier's prefix
+//
+// It was "Typography.Caption.", matched with strings.HasPrefix, and the two
+// agreed by construction: the prefix was compared against paths this same file
+// produces, so a typo in it made every caption difference "off" and failed
+// loudly. What it could not say is WHICH caption fields are allowed to move.
+//
+// core.Theme's Caption is a core.Style — a struct with a great many leaves —
+// and this theme moves two of them. A third changed alongside them satisfied a
+// prefix perfectly, and the comment beside the derivation went on naming two:
+// the grid would be varying a colour, a weight or a letter-spacing through
+// checks whose account of themselves says it varies a type scale. The
+// permission has to be as narrow as the claim, so it is the claim.
+//
+// Both directions are held below — nothing outside this list may differ, and
+// everything in it must.
+var bandRenderTallVaries = []string{
+	"Typography.Caption.FontSize",
+	"Typography.Caption.LineHeight",
+}
 
 // themeDifferences is every leaf path at which two themes disagree.
 //

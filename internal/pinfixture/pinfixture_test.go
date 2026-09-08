@@ -1000,7 +1000,7 @@ func TestEveryReadingNamesAHarnessThatSpellsTheNumber(t *testing.T) {
 					"reads neither.", c.What, r.What, r.Read)
 				continue
 			}
-			for by, phrase := range r.By {
+			for by, cited := range r.By {
 				path, known := pinConsumers[by]
 				if !known {
 					t.Errorf("%q: %s says it is read by %q and pinConsumers has no such "+
@@ -1009,24 +1009,63 @@ func TestEveryReadingNamesAHarnessThatSpellsTheNumber(t *testing.T) {
 					continue
 				}
 				credited[by] = true
-				if phrase == "" {
+				if cited.Phrase == "" {
 					t.Errorf("%q: %s names %s as a consumer and gives no phrase to find "+
 						"the assertion by. The name alone is the prose this pair replaced",
 						c.What, r.What, by)
 					continue
 				}
-				if pinSpells(source[by], phrase) {
+				if cited.Field == "" {
+					t.Errorf("%q: %s cites %s as %q and names no field.\n\n"+
+						"The field is what tells a reworded assertion from a deleted one "+
+						"when the phrase goes missing, and without it both edits arrive "+
+						"here as the same failure — which is the state this half was "+
+						"added to end.", c.What, r.What, by, cited.Phrase)
 					continue
 				}
-				t.Errorf("%q: caseNumbers says %s is read by %s (%s), and %s does not "+
-					"contain %q.\n\n"+
-					"An assertion deleted from a harness leaves this row still saying the "+
-					"number is read, and resolution goes on deriving a floor over it — a "+
-					"bound BOTH tolerances obey, for a distinction one of them has stopped "+
-					"being asked to make. Either the reading comes out of this table, or "+
-					"the assertion goes back into that file; if it was only reworded, this "+
-					"row's phrase has to be reworded with it.",
-					c.What, r.What, by, r.Read, path, phrase)
+				// The two halves have to be about the same number. A field that
+				// is not IN the phrase would let a missing phrase be reported as
+				// a reword on the strength of a token belonging to some other
+				// reading — the wrong diagnosis, delivered confidently.
+				if !strings.Contains(pinStripSpace(cited.Phrase), pinStripSpace(cited.Field)) {
+					t.Errorf("%q: %s cites %s as %q and gives its field as %q, which does "+
+						"not appear in it.\n\n"+
+						"The phrase is the assertion that reads this number and the field "+
+						"is the fixture's own spelling inside it. Two strings that are not "+
+						"about the same number make the second question meaningless: a "+
+						"phrase that had gone would be diagnosed by a token this row never "+
+						"had a claim on.", c.What, r.What, by, cited.Phrase, cited.Field)
+					continue
+				}
+				if pinSpells(source[by], cited.Phrase) {
+					continue
+				}
+				// The phrase is gone. Which edit that was is the second
+				// question, and the field answers it: an assertion deleted
+				// outright takes the fixture's field with it, a reworded one
+				// almost never moves it. See pinCite.
+				if pinSpells(source[by], cited.Field) {
+					t.Errorf("%q: caseNumbers says %s is read by %s (%s), and %s does not "+
+						"contain %q — but it does still spell %q.\n\n"+
+						"That is a REWORDED assertion rather than a deleted one: the "+
+						"harness still names this number, so nothing here is stale and "+
+						"resolution's floor is still derived over a distinction somebody "+
+						"is still asked to make. Requote the phrase and change nothing "+
+						"else. (The field is the weaker of the two claims and is only ever "+
+						"asked after the phrase, because another fixture in the same file "+
+						"can spell the same token — see pinCite.)",
+						c.What, r.What, by, r.Read, path, cited.Phrase, cited.Field)
+					continue
+				}
+				t.Errorf("%q: caseNumbers says %s is read by %s (%s), and %s contains "+
+					"neither %q nor %q.\n\n"+
+					"That is a DELETED assertion: the harness has stopped naming this "+
+					"number at all. This row still says it is read, and resolution goes "+
+					"on deriving a floor over it — a bound BOTH tolerances obey, for a "+
+					"distinction one of them has stopped being asked to make. Either the "+
+					"reading comes out of this table, or the assertion goes back into "+
+					"that file.",
+					c.What, r.What, by, r.Read, path, cited.Phrase, cited.Field)
 			}
 		}
 	}
@@ -1043,15 +1082,42 @@ func TestEveryReadingNamesAHarnessThatSpellsTheNumber(t *testing.T) {
 	}
 }
 
-// pinStripSpace removes every space, tab and newline.
+// pinStripSpace canonicalises whitespace out of a source or a phrase, keeping
+// only the whitespace that separates one identifier from another.
 //
 // Both the harness source and the phrase looked for in it go through this, so
 // the comparison is about what the assertion says rather than how it is laid
 // out. A reformat that wraps `pinSame(measured, c.gap)` over four lines leaves
 // the same string on both sides; a rewrite that changes what is compared does
 // not, and that is the edit somebody has to look at.
+//
+// # Why a space between two word characters survives
+//
+// It used to remove every space, tab and newline, and that is one character too
+// many: it glues neighbouring tokens together, so `where abs(css[i]` becomes
+// `...countwhereabs(css[i]`, and pinSpells' leading word boundary — which is
+// there to stop `pinSame(…)` matching inside `myPinSame(…)` — then fails
+// against a phrase that IS present. Every phrase this table happened to carry
+// began just after a bracket or a `!`, so the boundary held by luck and the
+// first phrase quoted from a `where abs(…)` broke it.
+//
+// A space is deleted unless a word character sits on both sides of it, which is
+// exactly the case where it is carrying meaning: `pinSame(total, c.offer)` and
+// `pinSame(total,c.offer)` canonicalise to one string, and `where abs` and
+// `whereabs` stay two.
 func pinStripSpace(s string) string {
-	return strings.Join(strings.Fields(s), "")
+	f := strings.Join(strings.Fields(s), " ")
+	var b strings.Builder
+	for i := 0; i < len(f); i++ {
+		if f[i] == ' ' && i > 0 && i+1 < len(f) && word(f[i-1]) && word(f[i+1]) {
+			b.WriteByte(' ')
+			continue
+		}
+		if f[i] != ' ' {
+			b.WriteByte(f[i])
+		}
+	}
+	return b.String()
 }
 
 // pinSpells reports whether stripped source contains the phrase as a whole

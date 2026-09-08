@@ -596,9 +596,8 @@ type pinReading struct {
 	// not tighten the floor: a tolerance has no reason to be able to tell it
 	// from its neighbour.
 	Read string
-	// By is each harness that reads this number, and the phrase that harness's
-	// own assertion is spelled with. Empty on an unread number, along with
-	// Read.
+	// By is each harness that reads this number, and how that harness spells
+	// the assertion — see pinCite. Empty on an unread number, along with Read.
 	//
 	// # Why the prose grew a machine-readable half
 	//
@@ -633,8 +632,57 @@ type pinReading struct {
 	// That is the claim a search can support — the same one wasm/verify's
 	// citation walk makes about a `check N` — and it catches the way this table
 	// actually rots, which is a reading outliving its consumer.
-	By map[string]string
+	By map[string]pinCite
 }
+
+// pinCite is one harness's citation of one number: the phrase its assertion is
+// spelled with, and the token that same file spells the fixture's own FIELD
+// with.
+//
+// # Two pieces of evidence, because there are two edits
+//
+// The phrase alone answers one question — is this comparison still in that
+// file — and a "no" has two quite different causes:
+//
+//	deleted     the check stopped reading the number. The row here is stale,
+//	            resolution is deriving a floor over a distinction one harness
+//	            no longer makes, and the fix is to take the reading out of this
+//	            table (or put the assertion back).
+//	reworded    the check still reads the number and spells the comparison
+//	            differently. Nothing is stale, no floor is wrong, and the fix
+//	            is to requote the phrase.
+//
+// Both arrive as the same failure while a phrase is the only thing looked for,
+// and the reader has to open the harness to find out which of the two they are
+// holding. They are separable without opening it: deleting the assertion takes
+// the fixture's field with it, and rewording one almost never does. So the
+// citation carries the field too, the test looks for it when the phrase is
+// gone, and the failure says which edit it is looking at.
+//
+// # Why the field is not enough on its own, still
+//
+// It was the first thing tried and it is too weak to be the whole citation:
+// browser.mjs mounts internal/bandfixture as well, whose cases have an Offer of
+// their own read as `c.offer` two thousand lines before the pin check does the
+// same, so the token survives the pin check's deletion. That is exactly why it
+// is the SECOND question and never the first. A field found after a phrase was
+// not is evidence about which edit happened, not evidence that the number is
+// still read.
+//
+// Field must appear in Phrase, which TestEveryReadingNamesAHarnessThatSpells‑
+// TheNumber checks: a citation whose two halves are about different numbers
+// would report a reword for a file that never mentioned this one.
+type pinCite struct {
+	// Phrase is the assertion's own spelling, quoted exactly enough to belong
+	// to one comparison. Whitespace in it matches any run of whitespace.
+	Phrase string
+	// Field is how that file spells the fixture field this number comes out of,
+	// as a substring of Phrase.
+	Field string
+}
+
+// cite is one consumer's half of a reading. See pinCite.
+func cite(phrase, field string) pinCite { return pinCite{Phrase: phrase, Field: field} }
 
 // pinConsumers is every harness that reads this fixture: the name caseNumbers
 // calls it by, and where its source sits relative to the repository root.
@@ -647,15 +695,20 @@ var pinConsumers = map[string]string{
 	"pin.swift":   "ios/verify/pin.swift",
 }
 
-// pinBoth is a reading both harnesses make, with the phrase each spells its own
-// assertion with. Most rows are one of these.
+// pinBoth is a reading both harnesses make, with each one's own citation. Most
+// rows are one of these.
 //
-// pin.swift's side is the bare field in every row: that file is the pin check
-// and nothing else, so the fixture's own spelling belongs to one comparison
-// there. browser.mjs holds seven other checks and two other fixtures, so its
-// side names the comparison.
-func pinBoth(browser, swift string) map[string]string {
-	return map[string]string{"browser.mjs": browser, "pin.swift": swift}
+// Both sides quote a comparison rather than a field, and pin.swift's side did
+// not always: that file is the pin check and nothing else, so a bare
+// `c.compose.gaps` there belongs to one assertion already and was taken as the
+// citation. It is a weaker claim than browser.mjs's for the same reason a bare
+// field was rejected there — it says the number is mentioned, not that anything
+// is held to it — and it made pinCite's second question vacuous on that half,
+// because a phrase that IS the field cannot go missing while the field stays.
+// So both sides quote the `abs(... ) > pinEpsilon` they are actually spelled
+// with, and the field is stated beside it.
+func pinBoth(browser, swift pinCite) map[string]pinCite {
+	return map[string]pinCite{"browser.mjs": browser, "pin.swift": swift}
 }
 
 // caseNumbers is every number a Case carries, with the assertion that reads it.
@@ -701,41 +754,51 @@ func caseNumbers(c Case) []pinReading {
 	out := []pinReading{
 		{c.Offer, "the offer", "browser.mjs sums the control row's extents and holds " +
 			"the total to it; pin.swift holds GrMobFlexSolver's containerMain to it",
-			pinBoth("pinSame(total, c.offer)", "c.offer")},
+			pinBoth(cite("pinSame(total, c.offer)", "c.offer"),
+				cite("abs(container - c.offer) > pinEpsilon", "c.offer"))},
 		{c.Gap, "the Row's gap", "browser.mjs measures the space between each " +
 			"adjacent pair and holds it to this; both harnesses hold every entry of " +
 			"the Compose column's gaps to it",
-			pinBoth("pinSame(measured, c.gap)", "c.gap")},
+			pinBoth(cite("pinSame(measured, c.gap)", "c.gap"),
+				cite("abs(c.compose.gaps[i] - c.gap) > pinEpsilon", "c.gap"))},
 		{c.Compose.RowMain, "the Compose Row's own extent",
 			"pin.swift holds it to being no smaller than the offer — the measure " +
 				"policy does not clamp mainAxisLayoutSize to the maximum it was given",
-			map[string]string{"pin.swift": "c.compose.rowMain"}},
+			map[string]pinCite{"pin.swift": cite(
+				"c.compose.rowMain < c.offer - pinEpsilon", "c.compose.rowMain")}},
 	}
 	for i, ch := range c.Children {
 		out = append(out, pinReading{ch.Base, ch.Name + "'s base",
 			"browser.mjs holds a pinned child's measured extent to it and an " +
 				"unpinned one's to being strictly under it; pin.swift holds both " +
 				"columns to it",
-			pinBoth("pinSame(mains[j], child.base)", "child.base")})
+			pinBoth(cite("pinSame(mains[j], child.base)", "child.base"),
+				cite("abs(css[i] - child.base) > pinEpsilon", "child.base"))})
 		out = append(out, pinReading{c.CSS[i], ch.Name + "'s CSS extent",
 			"browser.mjs holds the browser's measured extent to it; pin.swift holds " +
 				"GrMobFlexSolver's to it",
-			pinBoth("c.css.forEach", "c.css")})
+			pinBoth(cite("c.css.forEach", "c.css"),
+				cite("abs(css[i] - c.css[i]) > pinEpsilon", "c.css"))})
 		out = append(out, pinReading{c.Compose.Mains[i], ch.Name + "'s Compose extent",
 			"both harnesses compare the CSS extent against it, which is the " +
 				"agreement MainsAgreeWithCSS states",
-			pinBoth("pinSame(w, c.compose.mains[j])", "c.compose.mains")})
+			pinBoth(cite("pinSame(w, c.compose.mains[j])", "c.compose.mains"),
+				cite("abs(css[i] - c.compose.mains[i]) > pinEpsilon",
+					"c.compose.mains"))})
 		out = append(out, pinReading{c.Compose.Gaps[i],
 			"the Compose spacing after " + ch.Name,
 			"both harnesses compare it against the Row's gap, which is the " +
 				"agreement GapsAgreeWithCSS states",
-			pinBoth("pinSame(c.compose.gaps[j], c.gap)", "c.compose.gaps")})
+			pinBoth(cite("pinSame(c.compose.gaps[j], c.gap)", "c.compose.gaps"),
+				cite("abs(c.compose.gaps[i] - c.gap) > pinEpsilon",
+					"c.compose.gaps"))})
 		out = append(out, pinReading{c.Compose.Offered[i],
 			"what the Compose Row offered " + ch.Name,
 			"pin.swift holds it under a pinned child's base wherever the pin is not " +
 				"first — a Row that offered the pin what it wanted is a row where the " +
 				"pin did nothing",
-			map[string]string{"pin.swift": "c.compose.offered"}})
+			map[string]pinCite{"pin.swift": cite(
+				"c.compose.offered[i] >= child.base", "c.compose.offered")}})
 	}
 	return out
 }

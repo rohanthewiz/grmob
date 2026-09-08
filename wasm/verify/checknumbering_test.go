@@ -244,19 +244,18 @@ func checkCitationsResolve(t *testing.T, checks int) {
 			continue // already reported above
 		}
 		for _, cite := range f.cites {
-			if cite < 1 || cite > checks {
-				// Which of the two the table says this sense gets. Today every
-				// row fails; the branch is here because the decision is a field
-				// now rather than the shape of this loop.
-				say := t.Errorf
-				if !act.Fails {
-					say = t.Logf
-				}
-				say("%s (%s) cites check %d, and browser.mjs has %d. Either the "+
-					"citation was not moved when the sequence was renumbered, or it "+
-					"names a check that no longer exists.\n\n"+
-					"%s",
-					f.path, f.sense, cite, checks, act.Act)
+			// The decision is citationVerdict's, so that both of its arms are
+			// held by a fixture rather than one of them being reachable only by
+			// editing citationSenses. All this loop does with the answer is
+			// choose which of the testing package's two reporters carries it,
+			// because that choice is the one thing a pure function cannot make.
+			say, fails := citationVerdict(f.path, f.sense, cite, checks, act)
+			switch {
+			case say == "":
+			case fails:
+				t.Error(say)
+			default:
+				t.Log(say)
 			}
 		}
 	}
@@ -327,8 +326,10 @@ type citationSense struct {
 	// Fails is whether a citation that names no check is an error in a file
 	// reached this way, rather than something a reader is merely told about.
 	//
-	// True in all three rows. See citationSenseVerdict for the guard that keeps
-	// a table of falses from being a walk that cannot fail.
+	// True in all three rows, so only one arm of the branch it decides has ever
+	// executed against a real repository. Both are held as values by
+	// TestCitationVerdictsAreDecidedByValues; see citationSenseVerdict for the
+	// guard that keeps a table of falses from being a walk that cannot fail.
 	Fails bool
 	// Act is what whoever reads the failure has to do about it, which is the
 	// part that really does differ between the three.
@@ -388,6 +389,117 @@ func citationSenseVerdict(present map[string]bool) string {
 		"be reported rather than failed — that is what the Fails field is for — but "+
 		"not every sense a run can see, or this check is only telling somebody "+
 		"something it has already decided not to act on.", got)
+}
+
+// One citation, judged: the sentence to report about it, and whether reporting
+// it is a failure. Returns "" while the number is an address browser.mjs has.
+//
+// # Why this is a function and not four lines in the loop
+//
+// It was four lines in the loop, and the loop is inside a check that walks the
+// repository: the failing arm runs whenever a `check N` is stale, and the other
+// arm runs when citationSenses says a sense is reported rather than failed —
+// which no row says and no enumeration can bring about. It was reachable by
+// editing a row, which is how it was tested, and an arm whose only fixture is
+// somebody's uncommitted edit is an arm nobody has checked.
+//
+// As a function of values both arms are two rows of a table. Same move as
+// fold.mjs's foldVerdict, gate.sh's jvm_harness_verdict, browser.mjs's
+// startupVerdict and mobile/verify's composeSourcesVerdict — the decision
+// stated where it can be handed its inputs, and the test that holds it not
+// having to arrange a repository to get there.
+//
+// checks is how many the sequence has, so a citation is in range when it is
+// between 1 and that. Zero and negatives are out of range like anything else:
+// `check 0` is not an address either, and a walk that produced one is reporting
+// a number it read rather than one it invented.
+func citationVerdict(path, sense string, cite, checks int, act citationSense) (string, bool) {
+	if cite >= 1 && cite <= checks {
+		return "", false
+	}
+	return fmt.Sprintf("%s (%s) cites check %d, and browser.mjs has %d. Either the "+
+		"citation was not moved when the sequence was renumbered, or it names a check "+
+		"that no longer exists.\n\n"+
+		"%s", path, sense, cite, checks, act.Act), act.Fails
+}
+
+// Both verdicts, over the inputs the repository cannot produce.
+//
+// citationSenses says every sense fails, and the argument for that is written
+// above the table. The consequence is that two decisions in this file have an
+// arm no run reaches: citationVerdict's reported-not-failed arm, and
+// citationSenseVerdict's refusal. Both are functions of their arguments, so
+// both arms are rows here — the same reason fold_test.mjs exists for a guard
+// nine bands have never tripped.
+//
+// What this does NOT do is assert that the shipped table has a false in it. It
+// asserts what the code would do if it did, which is the half that stops being
+// true silently.
+func TestCitationVerdictsAreDecidedByValues(t *testing.T) {
+	fails := citationSense{Fails: true, Act: "commit the fix"}
+	reports := citationSense{Fails: false, Act: "somebody is mid-edit"}
+
+	for _, c := range []struct {
+		what      string
+		cite      int
+		checks    int
+		act       citationSense
+		wantSay   bool
+		wantFails bool
+	}{
+		{"the first check", 1, 12, fails, false, false},
+		{"the last check", 12, 12, fails, false, false},
+		{"one past the last", 13, 12, fails, true, true},
+		{"check 0, which is not an address", 0, 12, fails, true, true},
+		{"a negative, which a renumbering cannot produce and a parser can",
+			-1, 12, fails, true, true},
+		// The arm citationSenses has never taken. A sense the table reports
+		// rather than fails still produces the sentence — the reader is told —
+		// and the test does not fail on it.
+		{"out of range under a sense that only reports", 13, 12, reports, true, false},
+		{"in range under a sense that only reports", 3, 12, reports, false, false},
+	} {
+		say, got := citationVerdict("some/file.go", "tracked", c.cite, c.checks, c.act)
+		if (say != "") != c.wantSay {
+			t.Errorf("%s: citationVerdict said %q, wanted a sentence: %v", c.what, say, c.wantSay)
+			continue
+		}
+		if got != c.wantFails {
+			t.Errorf("%s: citationVerdict reports fails=%v, want %v.\n\n"+
+				"Whether a stale citation is an error is citationSenses' decision and "+
+				"this function's to carry. An arm that stopped being carried would show "+
+				"up nowhere else: every row of the shipped table fails, so the "+
+				"reported-not-failed path is never taken by a real run.",
+				c.what, got, c.wantFails)
+		}
+		if say != "" && !strings.Contains(say, c.act.Act) {
+			t.Errorf("%s: the sentence does not carry the sense's Act. That sentence is "+
+				"the whole of what the reader is told to do about it", c.what)
+		}
+	}
+
+	// And the guard over the senses a run actually met.
+	for _, c := range []struct {
+		what    string
+		present map[string]bool
+		refuse  bool
+	}{
+		{"the three senses this repository produces",
+			map[string]bool{senseTracked: true, senseUntracked: true, senseOnDisk: true}, false},
+		{"only the walk's sense, which is every machine without git",
+			map[string]bool{senseOnDisk: true}, false},
+		{"a sense with no row at all, which classifies as not failing",
+			map[string]bool{"invented": true}, true},
+		// The state the guard exists for: everything the enumeration met is a
+		// sense somebody marked as reported-only, so the walk reads every bad
+		// citation in the repository and returns a pass.
+		{"nothing present, which only a fixture can arrange",
+			map[string]bool{}, true},
+	} {
+		if got := citationSenseVerdict(c.present) != ""; got != c.refuse {
+			t.Errorf("%s: citationSenseVerdict refuses=%v, want %v", c.what, got, c.refuse)
+		}
+	}
 }
 
 // The files whose `check N` is not an address into browser.mjs, and why.
