@@ -55,31 +55,66 @@ let grMobImportOutFloat64: (UnsafeMutablePointer<Double>?) -> Bool = GrMobImport
 let grMobImportOutInt: (UnsafeMutablePointer<Int>?) -> Bool = GrMobImportOutInt
 let grMobImportOutBool: (UnsafeMutablePointer<ObjCBool>?) -> Bool = GrMobImportOutBool
 
-// MARK: - the nullable OBJECT result, and what the error convention does to it
+// MARK: - the OBJECT results, and what the error convention does to them
 
 // []byte, in both positions. `NSData* _Nullable` either way — unlike NSString*,
 // whose nullability gobind chooses per position — so there is no asymmetry to
 // record and one line settles both columns.
 let grMobImportData: (Data?) -> Data? = GrMobImportData
 
-// And the arm that had been prose since somebody ran a bind once: an
-// Objective-C method returning a nullable object alongside a trailing NSError**
-// throws, and the imported return LOSES its optional. nil is what signals the
-// error, so it can no longer also be a value.
+// The three arms of swiftResults' method branch, which had been prose since
+// somebody ran a bind once. Each is what Clang's error convention does to a
+// bound method carrying a trailing NSError**, and which one applies is decided
+// by gobind's nullability annotation on the return — see nullableObjectResult
+// over in Go, and importer.h for the C these read.
 //
-// That is the arm a `([]byte, error)` result lands in, and the arm
-// `(Iface, error)` already used. Both were read off one bind and written down;
-// this is the compiler agreeing, on a machine that has no gomobile.
+// Nothing runs any of them. This file is type-checked and never linked.
+
+// 1. A NULLABLE object return: the method throws, and the import LOSES the
+// optional. nil is what signals the error, so it can no longer also be a value.
+// This is the arm a `([]byte, error)` result lands in, and the arm
+// `(Iface, error)` already used.
 //
 // Spelled as an annotated VALUE rather than an annotated return, because that
 // is the form the compiler discriminates on: `try p.dataOrError()` is accepted
 // where a `Data?` is asked for, since Swift widens on the way out — so
 // annotating this function's own return would prove nothing. `let value: Data`
 // fails if the import kept the optional.
-//
-// Nothing runs it. This file is type-checked and never linked.
 func grMobImportErrorConventionDropsTheOptional(
     _ p: any GrMobImportErrorConvention) throws {
     let value: Data = try p.dataOrError()
     _ = value
+}
+
+// 2. A _Nonnull object return: the convention DECLINES to rewrite the method.
+// There is no way to signal failure through a return annotated non-null, so the
+// NSError** stays an ordinary parameter and nothing throws. This is the arm
+// `(string, error)` lands in, because genobjc.go's objcType annotates a
+// returned NSString* non-null.
+//
+// Spelled as an annotated METHOD REFERENCE rather than a call, because the
+// claim is about the method's SHAPE and half of that shape is the parameter
+// that survived. `(NSErrorPointer) -> String` is the arm applying to nothing;
+// the alternative — the convention applying after all — would be
+// `() throws -> String`, which does not convert to it in either direction.
+func grMobImportErrorConventionKeepsTheErrorParameter(
+    _ p: any GrMobImportErrorConvention) {
+    let method: (NSErrorPointer) -> String = p.nameOrError
+    _ = method
+}
+
+// 3. A BOOL return: the convention's textbook shape. The return IS the signal,
+// so it disappears entirely and the method becomes a plain `throws` with no
+// result at all. This is the arm every SCALAR (value, error) result reaches —
+// the value has already moved into an out-pointer by then, and what is left for
+// the convention to read is the BOOL.
+//
+// A method reference again, and the annotation discriminates in both of the
+// ways that matter: a return of `Bool` would not convert to `Void`, and a
+// method the convention had declined to rewrite would be
+// `(NSErrorPointer) -> Bool`, which is not a throwing nullary function.
+func grMobImportErrorConventionDropsABoolReturn(
+    _ p: any GrMobImportErrorConvention) throws {
+    let method: () throws -> Void = p.storeOrError
+    try method()
 }

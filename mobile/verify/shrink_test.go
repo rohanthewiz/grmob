@@ -148,7 +148,7 @@ func TestTheComposePinMeasuresUnboundedAndReportsWhatItMeasured(t *testing.T) {
 	}
 }
 
-// The five ways this package reads a native file, named for the question each
+// The six ways this package reads a native file, named for the question each
 // one answers.
 //
 // # The decision that nobody used to make
@@ -198,19 +198,26 @@ func TestTheComposePinMeasuresUnboundedAndReportsWhatItMeasured(t *testing.T) {
 //	valuesIn / valuesOf   does the renderer LIST this VALUE: a dispatch's arms
 //	                      are string literals ("center", "flex-end") and they
 //	                      ARE the subject. Comments blanked, literals kept.
-//	proseIn               does the file SAY this: a refusal's own wording, a
+//	proseIn / proseOf     does the file SAY this: a refusal's own wording, a
 //	                      paragraph a reader is sent to. The subject is the
 //	                      prose, so nothing is blanked — and naming it is what
 //	                      keeps "I want the comments" from being the accidental
 //	                      default it used to be.
 //
 // The `In` suffix takes a whole file and `Of` cuts one declaration; that half of
-// the choice was already deliberate and is unchanged.
+// the choice was already deliberate. Prose had no `Of` at first, and that was a
+// gap in the cut rather than in the naming: declSource blanks the comments
+// before it looks and then runs from the declaration line DOWN, and a
+// declaration's note is written above it. proseOf is the cut that goes the
+// other way — see proseSourceOf — so a question about one function's note is
+// asked of that function rather than of a thousand-line renderer.
 //
-// maskSwiftNonCode is named for Swift and is not specific to it; Kotlin, Groovy
-// and Java spell line comments, block comments and both kinds of string literal
-// identically, which is the same argument matchingBrace makes for serving both
-// languages with one scanner.
+// maskSwiftNonCode is named for Swift and is not specific to it. Kotlin and
+// Java spell line comments, block comments and both kinds of double-quoted
+// literal identically, which is the same argument matchingBrace makes for
+// serving two languages with one scanner; Groovy adds an apostrophe string and
+// a tripled one, which the scan knows too — that was the one place a reader
+// here was stronger than the scanner behind it.
 func codeOf(t *testing.T, file, anchor string) string {
 	t.Helper()
 	return maskSwiftNonCode(declSource(t, file, anchor))
@@ -247,6 +254,41 @@ func valuesIn(t *testing.T, file string) string {
 func proseIn(t *testing.T, file string) string {
 	t.Helper()
 	return readNative(t, file)
+}
+
+// proseOf is one declaration and the note above it, prose intact.
+//
+// # The reader that was missing
+//
+// Every other question here had both an `In` and an `Of`, and prose had only
+// the file. That was not a gap in the naming, it was a gap in the CUT:
+// declSource blanks the comments before it looks for the anchor and then runs
+// from the declaration line DOWN, and a declaration's note is written above it.
+// So a check about "grMobSelectedTrait explains that SwiftUI has no word for
+// the off state" had to be a check about GrMobStyle.swift, and two sites were —
+// each with a comment saying it would rather not be.
+//
+// The difference that makes is the same one every `Of` makes, and it is larger
+// here than anywhere else: proseIn is satisfied by the phrase appearing
+// ANYWHERE in a 1,000-line renderer, so a note moved to another declaration, or
+// left behind after the declaration it explained was deleted, goes on passing.
+// A note is exactly the kind of thing that gets left behind.
+//
+// See proseSourceOf for where the region starts and stops. Both ends are the
+// comment block, which is what makes this a cut about a note rather than a cut
+// that happens to keep them.
+func proseOf(t *testing.T, file, anchor string) string {
+	t.Helper()
+	src, ok := proseSourceOf(readNative(t, file), anchor)
+	if !ok {
+		t.Fatalf("%s: no %s found in code — if it was renamed or restructured, "+
+			"update this test.\n\n"+
+			"A mention of it in a comment does not count: the anchor is looked for in "+
+			"the masked source even though what is returned is the raw one, because "+
+			"otherwise a note ABOUT this declaration could locate the region the note "+
+			"is then read out of.", file, anchor)
+	}
+	return src
 }
 
 // Every read of a native file goes through one of the five, and this is what
@@ -292,8 +334,8 @@ func TestEveryNativeReadNamesItsQuestion(t *testing.T) {
 		why  string
 	}{
 		{
-			primitive: "readNative(t,", want: 3,
-			by: "codeIn, valuesIn and proseIn",
+			primitive: "readNative(t,", want: 4,
+			by: "codeIn, valuesIn, proseIn and proseOf",
 			why: "the raw read. A check calling it directly is one whose subject can " +
 				"be satisfied by a comment, and that is the defect the mask was put " +
 				"into declSource for in the first place",
@@ -323,7 +365,7 @@ func TestEveryNativeReadNamesItsQuestion(t *testing.T) {
 			t.Errorf("%s is called %d times in this package and should be called %d, by "+
 				"%s.\n\n%s\n\nA check reads a native file by naming the question it is "+
 				"asking — does the renderer DO this (codeIn/codeOf), does it LIST this "+
-				"VALUE (valuesIn/valuesOf), or does the file SAY this (proseIn) — and "+
+				"VALUE (valuesIn/valuesOf), or does the file SAY this (proseIn/proseOf) — and "+
 				"gets the mask that suits it. A call to the primitive is a call site "+
 				"that has not chosen, which is how the strongest reader in this package "+
 				"came to be used by one file out of twenty-five.",

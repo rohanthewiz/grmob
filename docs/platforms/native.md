@@ -1238,11 +1238,12 @@ drawn spilling out of a box its parent still believes it fits inside.
 
 What still diverges is the siblings, and that sentence used to be the end of the
 matter. `internal/pinfixture` turns it into numbers: one overflowing `Row`, three
-children, the pin moved through all three positions, plus the control with no pin
-at all. `GrMobFlexSolver` solves each one (`ios/verify/pin.swift`), a real Chrome
-lays the same four `Row`s out (`wasm/verify`'s check 12), and the Compose column
-is a **transcription** of `foundation-layout`'s zero-weight measure loop — not
-androidx's code, and labelled as such wherever it appears.
+children, the pin moved through all three positions, the control with no pin at
+all, and two of those arrangements repeated with a gap. `GrMobFlexSolver` solves
+each one (`ios/verify/pin.swift`), a real Chrome lays the same six `Row`s out
+(`wasm/verify`'s check 12), and the Compose column is a **transcription** of
+`foundation-layout`'s zero-weight measure loop — not androidx's code, and
+labelled as such wherever it appears.
 
 | | CSS | Compose |
 |---|---|---|
@@ -1251,6 +1252,7 @@ androidx's code, and labelled as such wherever it appears.
 | pin middle `[A,P,B]` | 0, **200**, 0 | 60, **200**, 0 |
 | pin last `[A,B,P]` | 0, 0, **200** | 60, 40, **200** |
 | pin middle, 8px gap `[A,P,B]` | 0, **200**, 0 | 60, **200**, 0 |
+| pin last, 16px gap `[A,B,P]` | 0, 0, **200** | 60, 40, **200** |
 
 Three things are readable there and none of them was before. The pinned child is
 200 in every row and on both targets, so the declaration means one thing
@@ -1281,21 +1283,32 @@ the pin an overflow on this target rather than a clip, which is what
 `spaceAfterLastNoWeight` is `min(spacing, what is left)`, so a `Row` that has
 spent its main axis inserts no gap after the child that spent it.
 
-That last sentence is what the fifth row is for, and it is the reason its two
-columns of extents are the fourth row's twice over. A gap is used space in a
-flex line like any other, so adding 8px to a `Row` whose shrinkable children
-were already clamped to zero moves no child on either target — and underneath,
-the two are doing different things:
+That last sentence is what the two gapped rows are for, and it is the reason
+each one's columns of extents are its ungapped twin's twice over. A gap is used
+space in a flex line like any other, so adding 8px — or 16px — to a `Row` whose
+shrinkable children were already clamped to zero moves no child on either
+target. What changes is underneath:
 
 | | CSS | Compose |
 |---|---|---|
-| spacing after each child, 8px gap | 8, 8 | 8, 0 |
+| pin middle, 8px gap | 8, 8 | 8, 0 |
+| pin last, 16px gap | 16, 16 | 16, 4 |
 
-The `Row` charges its spacing after the lead child, has nothing left after the
-pin, and charges none. A flex line charges both regardless, and is 8px wider for
-it. Until that row existed every case in `internal/pinfixture` carried `gap: 0`,
-so the sentence three documents repeat had never been put in front of a browser
-or a solver — `MeasureCompose` implemented the line and nothing compared it with
+The first row is the two ENDS of `min(spacing, what is left)`. The `Row` charges
+its spacing after the lead child, has nothing left after the pin, and charges
+none; a flex line charges both regardless, and is 8px wider for it.
+
+The second row is the middle, and it is there because a `min` has three answers
+and the first row reaches two. With `[A,B,P]` and a 16px gap the `Row` charges 16
+after the lead child, is left with 4 when it reaches the second, and charges 4 —
+neither the spacing nor zero. Every other gap in the fixture is one or the other,
+which is also exactly what "charge the gap unless the `Row` has overflowed" would
+produce, so without this row the transcribed rule and that simpler wrong one are
+indistinguishable everywhere the fixture looks.
+
+Until those rows existed every case in `internal/pinfixture` carried `gap: 0`, so
+the sentence three documents repeat had never been put in front of a browser or a
+solver — `MeasureCompose` implemented the line and nothing compared it with
 anything.
 
 The CSS column is a browser's, and for a while it was not. `GrMobFlexSolver` is
@@ -1304,7 +1317,7 @@ census one section down records a place the two part company — under overflow,
 when a child has padding, the solver shrinks in proportion to a base that
 includes that padding and CSS does not. The pin fixture's children have none, so
 the two rules coincide; that sentence was reasoning, made by whoever wrote the
-fixture and asked of nobody. `wasm/verify`'s check 12 mounts the four `Row`s and
+fixture and asked of nobody. `wasm/verify`'s check 12 mounts the six `Row`s and
 measures them, and a browser produces the CSS column above exactly. It recomputes
 nothing — every claim it makes is one the fixture states, held against pixels:
 the pinned child keeps its base, the extents match the Compose column precisely

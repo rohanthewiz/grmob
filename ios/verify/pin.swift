@@ -73,6 +73,14 @@ func checkPinnedRow(_ cases: [PinCase]) -> [String] {
     // fixture's last case has the same extents on both targets and different
     // gaps.
     var gapsAgreed = 0, gapsDiverged = 0
+    // And whether any row charges a gap that is NEITHER the Row's spacing nor
+    // zero. The collapse is a min over two quantities, and a fixture whose
+    // charged gaps are only ever one end or the other is equally well described
+    // by "charge the gap unless the Row has overflowed" — a different rule, and
+    // the wrong one. internal/pinfixture carries a row for the middle arm
+    // (partialGap); this refuses to read a transcript that has lost it, for the
+    // reason the overflow guard above refuses one that cannot overflow.
+    var sawPartialGap = false
     // The same child's extent with and without the pin, keyed by name. Filled
     // as the rows are solved and compared after all of them, because the pair
     // it is about spans two cases.
@@ -131,8 +139,8 @@ func checkPinnedRow(_ cases: [PinCase]) -> [String] {
         // browser — so the claim only means anything while something is held to
         // it, and this is one of the two things that are.
         //
-        // The control row is why it matters. Three of the four rows are pinned
-        // down by other assertions below (the pin keeps its base, the extents
+        // The control row is why it matters. Three of the pinned rows are
+        // pinned down by other assertions below (the pin keeps its base, the extents
         // match Compose where the fixture says they do, a child's width does
         // not depend on where it sits). The no-pin row's 24/80/16 is determined
         // by nothing else at all: it is the scaled-base rule producing three
@@ -180,6 +188,10 @@ func checkPinnedRow(_ cases: [PinCase]) -> [String] {
                 + "both kinds of row would assert one of them twice")
         }
         if gapsSame { gapsAgreed += 1 } else { gapsDiverged += 1 }
+        for i in 0..<max(bases.count - 1, 0)
+        where c.compose.gaps[i] > pinEpsilon && c.compose.gaps[i] < c.gap - pinEpsilon {
+            sawPartialGap = true
+        }
 
         // --- the declaration ------------------------------------------------
         //
@@ -316,14 +328,22 @@ func checkPinnedRow(_ cases: [PinCase]) -> [String] {
     }
     if gapsAgreed == 0 {
         problems.append("no case in the fixture inserts the spacing a flex line "
-            + "inserts. Four of the five rows carry no gap at all, which agrees "
-            + "vacuously and is what bounds the one that does not")
+            + "inserts. Four of the six rows carry no gap at all, which agrees "
+            + "vacuously and is what bounds the two that do not")
     }
     if gapsDiverged == 0 {
         problems.append("no case in the fixture has the spacing collapsing, so the one "
             + "line of the measure policy nothing used to measure — "
             + "spaceAfterLastNoWeight is min(spacing, what is left) — is unmeasured "
             + "again. internal/pinfixture is supposed to carry a row with a gap in it")
+    }
+    if !sawPartialGap {
+        problems.append("every gap the Compose column charges is either the Row's own "
+            + "spacing or zero, so nothing here distinguishes min(spacing, what is "
+            + "left) from `charge the gap unless the Row has overflowed`. Those two "
+            + "rules agree on both ends of the min and part company only in the "
+            + "middle — internal/pinfixture's partialGap row is the one that reaches "
+            + "it, and this transcript no longer carries it")
     }
     return problems
 }

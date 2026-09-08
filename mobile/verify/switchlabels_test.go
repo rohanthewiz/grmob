@@ -249,6 +249,178 @@ func declSourceOf(src, anchor string) (string, bool) {
 	return anchor + rest, true
 }
 
+// proseSourceOf cuts one declaration TOGETHER WITH the note above it, prose
+// intact.
+//
+// # Why this is a different cut and not a flag on the one above
+//
+// declSourceOf blanks the comments and then cuts from the declaration line
+// down, which is right for every question about code and wrong for every
+// question about a note: the note a declaration carries is written ABOVE it,
+// and that cut starts below. So a check whose subject is "grMobSelectedTrait
+// explains that SwiftUI has no word for the off state" had one reader available
+// — the whole file — and asked its question of a file rather than of a
+// declaration. Two sites did exactly that, each with a comment saying why.
+//
+// # Where it starts and where it stops
+//
+// Both ends are the comment block, and they are the two halves of one rule: a
+// declaration's note is the run of comment lines immediately above it, up to
+// the first blank line or the first line with code on it.
+//
+//	the start   walk back from the anchor's line over that run, so the
+//	            paragraph the check is about is inside the region
+//	the end     the next declaration, minus ITS run — because the coarse cut's
+//	            known defect is that it carries the next declaration's doc
+//	            comment along, and for a reader that keeps comments that defect
+//	            is the whole failure mode rather than a wrinkle
+//
+// Offsets come off the mask and the text comes off the source, which is what
+// makes both walks cheap: maskComments blanks a comment without moving
+// anything, so "this line is comment or blank" is "this line is blank in the
+// mask", and the same index cuts the raw file.
+func proseSourceOf(src, anchor string) (string, bool) {
+	code := maskComments(src)
+
+	at := strings.Index(code, anchor)
+	if at < 0 {
+		return "", false
+	}
+
+	// commentBlockStart walks back from the beginning of the line at `from`
+	// over the contiguous run of comment-only lines. A blank line ends the run:
+	// it is what separates one declaration's note from the paragraph above it.
+	commentBlockStart := func(from int) int {
+		for from > 0 {
+			prev := lineStart(src, from-1)
+			line := src[prev : from-1]
+			if strings.TrimSpace(line) == "" {
+				break // a blank line: the note starts below it
+			}
+			if strings.TrimSpace(code[prev:from-1]) != "" {
+				break // code on the line: not part of the note
+			}
+			from = prev
+		}
+		return from
+	}
+
+	start := commentBlockStart(lineStart(src, at))
+
+	end := len(src)
+	if next := declStart.FindStringIndex(code[at+len(anchor):]); next != nil {
+		end = commentBlockStart(at + len(anchor) + next[0])
+	}
+	return src[start:end], true
+}
+
+// lineStart is the index of the first character of the line containing i.
+func lineStart(s string, i int) int { return strings.LastIndexByte(s[:i], '\n') + 1 }
+
+// And the prose cut, at both of its ends.
+//
+// proseOf is the one reader that KEEPS the comments, so where its region starts
+// and stops is the whole of what it means. The two ends are one rule read in
+// two directions — a declaration's note is the run of comment lines immediately
+// above it — and each end fails in its own way:
+//
+//	the start   a cut beginning at the declaration line misses the note
+//	            entirely, which is the state the two converted sites were in:
+//	            they read the whole file because the only cut available started
+//	            below their subject.
+//	the end     a cut running to the next declaration carries THAT
+//	            declaration's note, which is declSource's known coarseness. For
+//	            a reader that blanks comments it is a wrinkle; for this one it
+//	            is the failure mode, because the thing being searched for is
+//	            prose and the carried paragraph is prose about something else.
+//
+// Synthetic sources for the same reason the table above uses them: the
+// renderers are written the way a correct cut expects, so the interesting
+// inputs are otherwise reachable only by breaking one.
+func TestProseOfCutsTheNoteThatBelongsToTheDeclaration(t *testing.T) {
+	const anchor = "func grMobSelectedTrait("
+
+	for _, c := range []struct {
+		name, src string
+		// want is a phrase the region must contain, unwanted one it must not.
+		want, unwanted string
+		missing        bool
+	}{
+		{
+			// The reason the reader exists. The note is above the declaration
+			// and declSource would start below it.
+			name: "the declaration's own note is inside the region",
+			src: "/// SwiftUI has no word for the off state.\n" +
+				"private func grMobSelectedTrait(_ s: String) -> Traits {\n    []\n}\n",
+			want: "no word for the off state",
+		},
+		{
+			// The other end, and the one that makes this more than a
+			// convenience: a note about the NEXT declaration answering a
+			// question about this one is exactly the failure a whole-file read
+			// already had, moved five lines.
+			name: "the next declaration's note stays out",
+			src: "private func grMobSelectedTrait(_ s: String) -> Traits {\n    []\n}\n\n" +
+				"/// Nothing here has a word for the off state either.\n" +
+				"private func grMobOther() {}\n",
+			unwanted: "no word for the off state",
+		},
+		{
+			// A blank line ends the note. Without that rule the walk back would
+			// run to the top of the file and swallow whatever precedes it,
+			// which for a renderer is the previous declaration's paragraph.
+			name: "a paragraph separated by a blank line is not this note",
+			src: "/// Some other function's note about the off state.\n" +
+				"\n" +
+				"/// Go's core.SelectedState as a trait.\n" +
+				"private func grMobSelectedTrait(_ s: String) -> Traits {\n    []\n}\n",
+			unwanted: "other function's note",
+		},
+		{
+			// And a line with code on it ends it too, so the declaration above
+			// does not come along with its trailing comment.
+			name: "the previous declaration does not come along",
+			src: "private func grMobRole() { off() }\n" +
+				"/// Go's core.SelectedState as a trait.\n" +
+				"private func grMobSelectedTrait(_ s: String) -> Traits {\n    []\n}\n",
+			unwanted: "grMobRole",
+		},
+		{
+			// The anchor is looked for in the MASK even though the raw source
+			// is what comes back. Otherwise a note naming the declaration would
+			// locate the region the note is then read out of, which is a check
+			// that finds its own subject.
+			name:    "an anchor that appears only in prose",
+			src:     "/// See func grMobSelectedTrait( in the other file.\nfunc other() {}\n",
+			missing: true,
+		},
+	} {
+		got, ok := proseSourceOf(c.src, anchor)
+		if c.missing {
+			if ok {
+				t.Errorf("%s: proseSourceOf found the anchor and returned %q. The anchor "+
+					"is searched for in the masked source precisely so a mention of it "+
+					"in a comment cannot start a region.", c.name, got)
+			}
+			continue
+		}
+		if !ok {
+			t.Errorf("%s: proseSourceOf did not find %q at all", c.name, anchor)
+			continue
+		}
+		if c.want != "" && !strings.Contains(got, c.want) {
+			t.Errorf("%s: the region does not contain %q, so a check about this "+
+				"declaration's note cannot find it and has to read the whole file "+
+				"again.\n%s", c.name, c.want, got)
+		}
+		if c.unwanted != "" && strings.Contains(got, c.unwanted) {
+			t.Errorf("%s: the region contains %q, which belongs to another "+
+				"declaration. A note answering a question about its neighbour is the "+
+				"failure a whole-file read already had.\n%s", c.name, c.unwanted, got)
+		}
+	}
+}
+
 // The prose a coarse cut carries must not answer a question about code.
 //
 // This is the defect that put the mask in declSource, written out as the

@@ -496,8 +496,25 @@ func maskComments(src string) string { masked, _ := maskNonCode(src, false); ret
 // construct there is a build failure long before it is a test failure.
 //
 // A `//` running to end of file is not one of these. It terminates at EOF by
-// definition, and so does a single-quoted literal as far as this scan is
-// concerned — matchingBrace never reported either.
+// definition, and so does a double-quoted literal as far as this scan is
+// concerned — matchingBrace never reported either. An unpaired APOSTROPHE is
+// not one either, and for a stronger reason: that arm declines to read it as a
+// literal at all, so nothing is blanked and nothing is left open.
+//
+// # The fourth language
+//
+// Three of the four this serves spell their literals identically — Swift,
+// Kotlin, and Java by inheritance. Groovy does not: it has an apostrophe string
+// and a tripled one alongside the double-quoted pair, and this scan did not
+// know either.
+//
+// That was found by accident rather than by looking. mobile/verify reads
+// android/app/build.gradle through the literals-KEPT mask, so the coordinates
+// it looks for survived a scan that could not see them and the reading was
+// right for a reason nobody had written down. Note which direction the gap ran:
+// the risk was never a check that failed, it was a check whose subject is a
+// string literal in a language the scan believed had none — a coordinate quoted
+// in a comment satisfying a question asked under a reader named for code.
 func maskNonCode(src string, literals bool) (masked, unterminated string) {
 	out := []byte(src)
 	blank := func(from, to int) {
@@ -557,6 +574,44 @@ func maskNonCode(src string, literals bool) (masked, unterminated string) {
 			}
 			blankLiteral(i, j+1)
 			i = j
+		case strings.HasPrefix(src[i:], "'''"):
+			// Groovy's multi-line literal, matched before the apostrophe arm
+			// for the reason the triple-double-quote arm is matched before the
+			// double-quote one: that arm would read the opening delimiter as an
+			// empty string followed by a third quote.
+			end := strings.Index(src[i+3:], "'''")
+			if end < 0 {
+				blankLiteral(i, len(src))
+				return string(out), "multi-line string"
+			}
+			blankLiteral(i, i+3+end+3)
+			i += 3 + end + 2
+		case src[i] == '\'':
+			// Groovy's ordinary string, and Kotlin's and Java's character
+			// literal. See the paragraph above about the fourth language.
+			//
+			// Bounded at the newline, which is the one place this differs from
+			// the double-quote arm. None of the four languages lets such a
+			// literal span a line, and the bound is what makes the arm safe to
+			// add: an apostrophe that is NOT a delimiter — which cannot happen
+			// in code a compiler accepted, and can happen in a file this scan
+			// is pointed at by mistake — blanks nothing rather than swallowing
+			// the rest of the file. An unpaired one leaves its line as code,
+			// which is the direction a mask has to fail in: a check can be
+			// weakened by reading a literal as code, and can be silently
+			// satisfied by a region blanked to nothing.
+			j := i + 1
+			for j < len(src) && src[j] != '\'' && src[j] != '\n' {
+				if src[j] == '\\' && j+1 < len(src) && src[j+1] != '\n' {
+					j++
+				}
+				j++
+			}
+			if j >= len(src) || src[j] != '\'' {
+				break // an apostrophe, not a literal
+			}
+			blankLiteral(i, j+1)
+			i = j
 		}
 	}
 	return string(out), ""
@@ -597,7 +652,7 @@ func TestTheMaskAndTheBraceCounterAgreeAboutWhatIsCode(t *testing.T) {
 			// The unpaired quote before the hidden text is what makes this row
 			// discriminate, and it is the same trick
 			// TestTheSwiftTypeCutIsSyntacticNotTypographic uses: a scanner that
-			// knows only single-quoted strings pairs the three delimiter
+			// knows only double-quoted strings pairs the three delimiter
 			// characters off two at a time and comes out even whenever the
 			// content holds an even number of quotes — so a fixture with none
 			// has its content blanked by accident and passes either way. An odd
@@ -606,8 +661,26 @@ func TestTheMaskAndTheBraceCounterAgreeAboutWhatIsCode(t *testing.T) {
 			hidden: "    let s = \"\"\"\nan unpaired \" then private struct GrMobHidden }\n\"\"\"\n",
 		},
 		{
-			name:   "a single-quoted literal",
+			name:   "a double-quoted literal",
 			hidden: "    let s = \"private struct GrMobHidden }\"\n",
+		},
+		{
+			// Groovy's ordinary string, in the delimiter the scan learned last.
+			// Same hidden brace, same hidden anchor: the row that would have
+			// passed on both counts before the apostrophe arm existed — the
+			// mask leaving the anchor visible and the counter counting the
+			// brace — is the row that says the arm is there.
+			name:   "an apostrophe literal",
+			hidden: "    def s = 'private struct GrMobHidden }'\n",
+		},
+		{
+			// And its tripled form, carrying an unpaired apostrophe for the
+			// reason the multi-line row above carries an unpaired quote: a
+			// scanner pairing delimiters off two at a time comes out even
+			// whenever the content holds an even number of them, so a fixture
+			// with none would pass either way.
+			name:   "a Groovy multi-line literal",
+			hidden: "    def s = '''\nan unpaired ' then private struct GrMobHidden }\n'''\n",
 		},
 	} {
 		src := "{\n" + c.hidden + "    let tail = 1\n}\n" +
@@ -643,16 +716,26 @@ func TestTheMaskAndTheBraceCounterAgreeAboutWhatIsCode(t *testing.T) {
 // was a t.Fatalf inside the scanner and could only be checked by owning a
 // source file with the fault.
 //
-// The two that are NOT faults are here for the same reason the two that are:
+// The three that are NOT faults are here for the same reason the two that are:
 // a `//` running to end of file terminates at EOF by definition, and so does a
-// single-quoted literal as far as this scan is concerned. Reporting either
-// would turn an ordinary last line into a failure.
+// double-quoted literal as far as this scan is concerned. An unpaired
+// APOSTROPHE is a third kind and a different one — the arm declines to read it
+// as a literal at all, so there is nothing left open to name — and reporting
+// any of the three would turn an ordinary last line into a failure.
 func TestTheScanNamesWhatWasLeftOpen(t *testing.T) {
 	for _, c := range []struct{ name, src, want string }{
 		{name: "an unterminated block comment", src: "{\n/* on and on", want: "block comment"},
 		{name: "an unterminated multi-line literal", src: "{\nlet s = \"\"\"\nand on", want: "multi-line string"},
 		{name: "a line comment at end of file", src: "{\n// the last line", want: ""},
-		{name: "a single-quoted literal at end of file", src: "{\nlet s = \"and on", want: ""},
+		{name: "a double-quoted literal at end of file", src: "{\nlet s = \"and on", want: ""},
+		{name: "an unterminated Groovy multi-line literal", src: "{\ndef s = '''\nand on",
+			want: "multi-line string"},
+		// The arm that reports nothing rather than reporting a fault. An
+		// apostrophe with no partner on its line is not a literal, so the scan
+		// leaves the line as code and has nothing to name — which is what keeps
+		// the arm from turning a stray quote into a failure in a language where
+		// it is prose.
+		{name: "an apostrophe with no partner", src: "{\ndef s = it's fine\n}\n", want: ""},
 		{name: "an ordinary block", src: "{\n    let a = 1\n}\n", want: ""},
 	} {
 		if _, got := maskNonCode(c.src, true); got != c.want {
@@ -788,7 +871,7 @@ func TestTheSwiftTypeCutIsSyntacticNotTypographic(t *testing.T) {
 			name: "a brace inside a multi-line literal",
 			// The content carries an unpaired quote as well as the brace,
 			// which is what makes the case need a `"""` arm of its own. A
-			// scanner that knows only single-quoted strings pairs the three
+			// scanner that knows only double-quoted strings pairs the three
 			// delimiter characters off two at a time and comes out even
 			// whenever the content holds an even number of quotes — so a
 			// fixture with none, or with a quoted word in it, passes either

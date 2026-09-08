@@ -68,7 +68,12 @@ func TestSwiftCarriesTheHeadingLevelThrough(t *testing.T) {
 // level property, this test fails, and the person adding the mapping is
 // handed the paragraph that has to be rewritten.
 func TestKotlinWritesDownTheHeadingLevelGap(t *testing.T) {
-	src := proseIn(t, kotlinStyle)
+	// proseOf rather than the whole file: the note is grMobRole's own doc
+	// comment, and so is the second half of the claim below — that the renderer
+	// does not parse the key. Reading the file would let the phrase be
+	// satisfied from anywhere in it, which for a NOTE is the likely failure
+	// rather than a remote one.
+	src := proseOf(t, kotlinStyle, "fun SemanticsPropertyReceiver.grMobRole(")
 	if !strings.Contains(src, "AccessibilityHeadingLevel is not read here, and cannot be") {
 		t.Errorf("%s: the heading-level gap is not documented beside the role dispatch — a "+
 			"field this file simply ignored is indistinguishable from one nobody had heard of",

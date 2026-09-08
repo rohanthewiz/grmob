@@ -54,21 +54,22 @@
  *
  * # The protocol at the end, which is a different question
  *
- * Everything above asks "what is this C type called in Swift". The last
- * declaration asks something else: what Clang's ERROR CONVENTION does to an
- * Objective-C method that returns a nullable object and takes a trailing
- * NSError**. mobile/verify's swiftResults has an arm for exactly that shape —
- * it throws, and the imported return loses its optional, because nil is what
- * signals the error and so can no longer also be a value — and that arm was
- * read off one real `gomobile bind` and has been prose ever since.
+ * Everything above asks "what is this C type called in Swift". The protocol
+ * asks something else: what Clang's ERROR CONVENTION does to an Objective-C
+ * method that takes a trailing NSError**. mobile/verify's swiftResults decides
+ * that for every bound method it emits, in three arms, and all three were read
+ * off one real `gomobile bind` and were prose ever since.
  *
- * It is the arm a `([]byte, error)` result lands in, which is why it is here
- * now. `NSData*` is _Nullable in gobind's own golden
+ * The nullable-object arm came first, because it is the one a `([]byte, error)`
+ * result lands in. `NSData*` is _Nullable in gobind's own golden
  * (bind/testdata/basictypes.objc.h.golden, line 24) in both positions, so
  * funcSummary leaves it as the return rather than moving it into an
  * out-pointer — and a bound interface method returning it is a nullable object
- * return, which is the convention's other usable shape. Both halves of that
- * are readings; the second one is the compiler's now.
+ * return, which is that arm's shape. The other two arms were left as prose for
+ * no reason except that nobody had written them down: they are the same
+ * question, asked of the same importer, and declarable in the same protocol.
+ * The methods below are all three. Both halves of each are readings; the second
+ * half is the compiler's now.
  */
 
 #include <stdint.h>
@@ -112,12 +113,40 @@ BOOL GrMobImportOutBool(BOOL* ret0_);
 NSData* _Nullable GrMobImportData(NSData* _Nullable x);
 
 /*
- * And the error convention, on the one shape it rewrites that this bridge can
- * produce: a method returning a nullable object alongside a trailing NSError**.
- * Declared as a protocol because the convention applies to Objective-C methods
- * and not to C functions — which is itself one of mobile/verify's readings, and
- * the reason a package-level func does not throw.
+ * And the error convention. Declared as a protocol because the convention
+ * applies to Objective-C methods and not to C functions — which is itself one
+ * of mobile/verify's readings, and the reason a package-level func does not
+ * throw.
+ *
+ * # Three methods, because swiftResults has three arms
+ *
+ * A bound METHOD's (value, error) result lands in one of three shapes, and
+ * which one it lands in is decided by gobind's nullability annotation on the
+ * return rather than by the Go type's kind (see nullableObjectResult). The
+ * convention reads that annotation and does three different things:
+ *
+ *   nullable object    it throws, and the import DROPS the optional: nil is
+ *                      what signals the error, so it can no longer also be a
+ *                      value. `[]byte` and every bound interface land here.
+ *   _Nonnull object    it declines to rewrite the method at all — there is no
+ *                      way to signal failure through a return annotated
+ *                      non-null — so the error parameter stays and nothing
+ *                      throws. `string` lands here, because objcType
+ *                      annotates a returned NSString* non-null.
+ *   BOOL               the textbook shape: the return IS the signal, so it
+ *                      disappears and the method becomes a plain `throws`.
+ *                      Every scalar result lands here, because a scalar is
+ *                      moved into an out-pointer and what is left is a BOOL.
+ *
+ * All three were read off one real `gomobile bind` and have been prose since.
+ * Only the first was settled by a compiler, and it was settled first because it
+ * is the arm `([]byte, error)` reaches. The other two are the same question
+ * asked of the same importer, and they are declarable in the same header — so
+ * there was no reason for them to stay prose except that nobody had written
+ * them down.
  */
 @protocol GrMobImportErrorConvention
 - (nullable NSData *)dataOrError:(NSError * _Nullable * _Nullable)error;
+- (nonnull NSString *)nameOrError:(NSError * _Nullable * _Nullable)error;
+- (BOOL)storeOrError:(NSError * _Nullable * _Nullable)error;
 @end

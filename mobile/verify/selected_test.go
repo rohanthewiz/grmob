@@ -104,10 +104,12 @@ func TestKotlinOpensItsSemanticsLambdaForASelectedStateAlone(t *testing.T) {
 // re-derive it from Apple's docs. If SwiftUI ever grows the trait, this fails
 // and hands over the paragraph to rewrite.
 func TestSwiftWritesDownTheUnselectedGap(t *testing.T) {
-	// readNative rather than declSource: the note is a doc comment, and
-	// declSource cuts from the declaration line down. Same reason
-	// TestKotlinWritesDownTheHeadingLevelGap reads the whole file.
-	src := proseIn(t, swiftStyle)
+	// proseOf: the subject is grMobSelectedTrait's own note, which is a doc
+	// comment above it — so this wants the declaration's region with the prose
+	// kept, which is the one cut this package did not used to have. It read the
+	// whole file, and a phrase found anywhere in a thousand lines of renderer
+	// answered a question about one function.
+	src := proseOf(t, swiftStyle, "func grMobSelectedTrait(")
 	for _, phrase := range []string{"no word for the *off* state", "not selectable"} {
 		if !strings.Contains(src, phrase) {
 			t.Errorf("%s: grMobSelectedTrait no longer explains that SwiftUI cannot state "+

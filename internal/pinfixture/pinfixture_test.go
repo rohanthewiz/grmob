@@ -38,7 +38,8 @@ func TestTheFixtureIsTheTableInTheHeader(t *testing.T) {
 		agrees  bool
 		// gapsAgree is whether the Row inserted the spacing CSS inserts. It is
 		// vacuously true wherever the Row's own gap is 0, which is every row
-		// but the last — and the last is the only reason the column exists.
+		// but the last two — and those two are the only reason the column
+		// exists.
 		gapsAgree bool
 	}{
 		// The control. Nothing is pinned, and the divergence from CSS
@@ -67,6 +68,14 @@ func TestTheFixtureIsTheTableInTheHeader(t *testing.T) {
 		// three out.
 		{"the pinned child between its siblings, with spacing", []int{120, 52, 0},
 			[]int{60, 200, 0}, []int{8, 0, 0}, 268, []int{0, 200, 0}, false, false},
+		// The partial gap, which is the middle arm of the same min and the one
+		// no other row reaches. Both columns of extents are the pin-last row's,
+		// unchanged: the lead child is offered 120 and the tail 44, and both
+		// fit. The Row charges 16 after the lead child, has 4 left when it
+		// reaches the tail child, and charges 4 — neither the spacing nor zero,
+		// which is the whole reason this row is here.
+		{"the pinned child last, with partial spacing", []int{120, 44, 0},
+			[]int{60, 40, 200}, []int{16, 4, 0}, 320, []int{0, 0, 200}, false, false},
 	}
 
 	cases := Cases()
@@ -529,6 +538,7 @@ func TestTheCensusTableIsTheFixture(t *testing.T) {
 		"the pinned child between its siblings":               "| pin middle `[A,P,B]` |",
 		"the pinned child last":                               "| pin last `[A,B,P]` |",
 		"the pinned child between its siblings, with spacing": "| pin middle, 8px gap `[A,P,B]` |",
+		"the pinned child last, with partial spacing":         "| pin last, 16px gap `[A,B,P]` |",
 	}
 
 	for _, c := range Cases() {
@@ -574,37 +584,83 @@ func TestTheCensusTableIsTheFixture(t *testing.T) {
 		}
 	}
 
-	// And the spacing table below it, which is one row about one case.
-	spacing := Cases()[len(Cases())-1]
-	if spacing.Gap == 0 {
-		t.Fatalf("the last case (%q) has no spacing, and the census prints a spacing "+
-			"table derived from it", spacing.What)
+	// And the spacing table below it, which is one row per gapped case.
+	//
+	// Found by walking the fixture rather than by taking the last case, which
+	// is what this did while there was one gapped row. There are two now — the
+	// ends of min(spacing, what is left) and its middle — and "the last one"
+	// would go on passing with the other printed nowhere.
+	spacingRows := map[string]string{
+		"the pinned child between its siblings, with spacing": "| pin middle, 8px gap |",
+		"the pinned child last, with partial spacing":         "| pin last, 16px gap |",
 	}
-	const lead = "| spacing after each child, 8px gap |"
-	at := strings.Index(doc, lead)
-	if at < 0 {
-		t.Fatalf("docs/platforms/native.md has no row beginning %q. The gap collapse is "+
-			"a sentence three documents repeat and this is the only place it is written "+
-			"as numbers.", lead)
-	}
-	row := doc[at : at+strings.IndexByte(doc[at:], '\n')]
+	gapped, middle := 0, false
+	for _, spacing := range Cases() {
+		if spacing.Gap == 0 {
+			continue
+		}
+		gapped++
+		// Whether this row charges a gap that is neither the Row's spacing nor
+		// zero. The trailing entry is excluded for the reason the CSS column
+		// excludes it: with n children there are n-1 places a gap can go.
+		for i := 0; i+1 < len(spacing.Compose.Gaps); i++ {
+			if g := spacing.Compose.Gaps[i]; g > 0 && g < spacing.Gap {
+				middle = true
+			}
+		}
 
-	// CSS charges the gap between every adjacent pair whatever happened to the
-	// children, so its cell is the Row's own gap repeated. Written out from the
-	// fixture rather than as a literal, so a gap changed there moves the claim
-	// rather than making this test wrong about it.
-	cssGaps := make([]int, len(spacing.Children)-1)
-	for i := range cssGaps {
-		cssGaps[i] = spacing.Gap
+		lead, ok := spacingRows[spacing.What]
+		if !ok {
+			t.Errorf("%q carries a gap of %d and has no row in the census's spacing "+
+				"table. The collapse is a sentence three documents repeat and that "+
+				"table is the only place it is written as numbers.",
+				spacing.What, spacing.Gap)
+			continue
+		}
+		at := strings.Index(doc, lead)
+		if at < 0 {
+			t.Errorf("docs/platforms/native.md has no row beginning %q. If the section "+
+				"moved, re-point this; if it was rewritten, the gap collapse is prose "+
+				"again and nothing else says otherwise.", lead)
+			continue
+		}
+		row := doc[at : at+strings.IndexByte(doc[at:], '\n')]
+
+		// CSS charges the gap between every adjacent pair whatever happened to
+		// the children, so its cell is the Row's own gap repeated. Written out
+		// from the fixture rather than as a literal, so a gap changed there
+		// moves the claim rather than making this test wrong about it.
+		cssGaps := make([]int, len(spacing.Children)-1)
+		for i := range cssGaps {
+			cssGaps[i] = spacing.Gap
+		}
+		if got, want := cellAt(row, 1), joinInts(cssGaps); got != want {
+			t.Errorf("%s: the census's spacing table gives CSS %q and a flex line "+
+				"charges %q — its gap between every adjacent pair, whatever the "+
+				"children did", spacing.What, got, want)
+		}
+		if got, want := cellAt(row, 2), joinInts(spacing.Compose.Gaps[:len(cssGaps)]); got != want {
+			t.Errorf("%s: the census's spacing table gives Compose %q and the fixture "+
+				"measures %q. spaceAfterLastNoWeight is min(spacing, what is left).",
+				spacing.What, got, want)
+		}
 	}
-	if got, want := cellAt(row, 1), joinInts(cssGaps); got != want {
-		t.Errorf("the census's spacing table gives CSS %q and a flex line charges %q — "+
-			"its gap between every adjacent pair, whatever the children did", got, want)
+
+	// And both kinds of gapped row, because a min has three answers and one row
+	// reaches only two of them. With the spacing charged in full or not at all,
+	// "charge the gap unless the Row has overflowed" produces every number in
+	// the table — so a fixture without the middle arm cannot tell the rule it
+	// transcribes from a simpler one that is wrong.
+	if gapped < 2 {
+		t.Errorf("%d of the fixture's rows carry a gap, and two are needed: one whose "+
+			"charged gaps are the spacing or zero, and one where a charged gap is "+
+			"neither.", gapped)
 	}
-	if got, want := cellAt(row, 2), joinInts(spacing.Compose.Gaps[:len(cssGaps)]); got != want {
-		t.Errorf("the census's spacing table gives Compose %q and the fixture measures "+
-			"%q. spaceAfterLastNoWeight is min(spacing, what is left); the whole content "+
-			"of that row is that the second one is 0.", got, want)
+	if !middle {
+		t.Errorf("no gapped row charges a gap strictly between zero and the Row's own " +
+			"spacing. That value is the whole content of the second spacing row (see " +
+			"partialGap): it is what separates min(spacing, what is left) from a rule " +
+			"that charges the gap until the Row overflows.")
 	}
 }
 

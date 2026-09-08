@@ -1053,6 +1053,7 @@ func swiftResults(sig *ast.FuncType, ifaces map[string]bool, isMethod bool) (res
 		// Not nullable in ObjC, so the value leaves through a pointer and the
 		// return becomes BOOL — which is a return the error convention can
 		// use, so a method throws and has no return at all.
+		// grMobImportErrorConventionDropsABoolReturn is that arm, compiled.
 		if isMethod {
 			return resultShape{outParams: []string{retParam + ptr}, throws: true}, nil
 		}
@@ -1066,11 +1067,13 @@ func swiftResults(sig *ast.FuncType, ifaces map[string]bool, isMethod bool) (res
 		// A nullable object return is the convention's other usable shape, and
 		// the import drops the optional: nil is what signals the error, so it
 		// can no longer also be a value.
+		// grMobImportErrorConventionDropsTheOptional is that arm, compiled.
 		return resultShape{throws: true, ret: " -> " + strings.TrimSuffix(typ, "?")}, nil
 	}
 	// A method returning NSString* _Nonnull is the one arm that keeps its error
 	// parameter: the convention has no way to signal failure through a return
 	// annotated non-null, so it declines to rewrite the method at all.
+	// grMobImportErrorConventionKeepsTheErrorParameter is that arm, compiled.
 	return resultShape{outParams: []string{errParam}, ret: " -> " + typ}, nil
 }
 
@@ -1096,9 +1099,14 @@ func swiftResults(sig *ast.FuncType, ifaces map[string]bool, isMethod bool) (res
 //
 // The distinction is gobind's annotation, not the Go type's kind, which is the
 // same position-versus-type confusion the fixed-width numerics' refusal was.
-// ios/verify/importer.swift settles the consequence with a compiler: a protocol
-// method returning `nullable NSData *` alongside an NSError**, assigned to a
-// non-optional Data.
+//
+// ios/verify/importer.swift settles all three consequences with a compiler, on
+// one protocol carrying one method per arm: a `nullable NSData *` return
+// assigned to a non-optional Data, a `nonnull NSString *` return whose method
+// reference still takes an NSErrorPointer and does not throw, and a BOOL return
+// whose method reference is a throwing nullary function with no result at all.
+// Two of those three had been prose since somebody ran a bind once, and they
+// are the two arms this predicate exists to send a method to.
 func nullableObjectResult(name string, ifaces map[string]bool) bool {
 	return ifaces[name] || name == goByteSlice
 }

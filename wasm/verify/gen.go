@@ -712,6 +712,23 @@ type bandRender struct {
 	// there after the widget stopped declaring it.
 	LabelInk  string `json:"labelInk"`
 	BadgeFill string `json:"badgeFill"`
+
+	// BadgePadLeft is the count pill's own leading padding, in
+	// device-independent pixels.
+	//
+	// It is here so that the pixel the browser samples inside the pill is
+	// DERIVED from the widget rather than chosen against it. The sample used to
+	// be a literal 5 — inside the pill's radius and inside its 8px leading
+	// padding, on the themes bundled today — which is a number measured against
+	// a widget's current insets, exactly the shape the census's byte windows
+	// were one level up. A pill whose padding shrank to 4 would put that sample
+	// on a digit and the check would fail describing a colour, not a cause.
+	//
+	// Half the padding is what the browser samples: far enough from the pill's
+	// leading edge, which at mid-height is the apex of a 999-radius curve and
+	// therefore antialiased, and short of the first digit. Both ends of that
+	// are why renderBandCase refuses a padding too small to sample inside.
+	BadgePadLeft float64 `json:"badgePadLeft"`
 }
 
 // bandRenderBuilders is one entry per band shape, so a shape added here is
@@ -885,6 +902,20 @@ func renderBandCase(name string, theme *core.Theme, what string, collapsible boo
 					"badge that failed to paint", name, what)
 		}
 		c.BadgeFill = badge.Style.Background
+		c.BadgePadLeft = float64(badge.Style.Padding.Left)
+		// The sample point is half of this, so a pill with less than two
+		// device-independent pixels of leading padding has no interior for the
+		// browser to read: the sample lands on the corner's antialiasing or on
+		// the first digit, and either one fails while describing a colour
+		// rather than a cause.
+		if c.BadgePadLeft < 2 {
+			return bandRender{}, fmt.Errorf(
+				"%s/%s: the count pill's leading padding is %gpx. The browser samples "+
+					"the pill's fill half a padding in — the leading edge itself is the "+
+					"apex of a 999-radius curve and every pixel there is a blend — so a "+
+					"padding this small leaves nowhere inside the pill that is fill and "+
+					"not digit", name, what, c.BadgePadLeft)
+		}
 		if c.BadgeFill == c.Fill {
 			return bandRender{}, fmt.Errorf(
 				"%s/%s: the badge and the band behind it are both %s, so a pixel taken "+

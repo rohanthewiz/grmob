@@ -1,4 +1,4 @@
-// Package pinfixture states one overflowing Row four ways, so that what
+// Package pinfixture states one overflowing Row six ways, so that what
 // core.FlexShrink(0) does on Compose stops being a paragraph and becomes a set
 // of numbers something can disagree with.
 //
@@ -58,7 +58,7 @@
 //
 // # The fixture, and what each case is for
 //
-// One Row, one set of children, five arrangements. The Row is 120 wide and the
+// One Row, one set of children, six arrangements. The Row is 120 wide and the
 // children want 60, 200 and 40, so the deficit (180) is larger than what the
 // two shrinkable children have to give (100) — which is forced, not chosen: a
 // pinned child whose base exceeds the container makes it arithmetically
@@ -70,7 +70,8 @@
 //	pin first      [P,A,B]   200,  0,  0      200,  0,  0
 //	pin middle     [A,P,B]     0,200,  0       60,200,  0
 //	pin last       [A,B,P]     0,  0,200       60, 40,200
-//	pin middle+gap [A,P,B]     0,200,  0       60,200,  0   gaps 8,8 / 8,0
+//	pin middle+8   [A,P,B]     0,200,  0       60,200,  0   gaps  8, 8 /  8,0
+//	pin last+16    [A,B,P]     0,  0,200       60, 40,200   gaps 16,16 / 16,4
 //
 // BOTH columns are fields now, and that is newer than the rest of this. The CSS
 // one used to be three numbers in this comment, beside two mechanisms that
@@ -82,7 +83,7 @@
 // question about whether two transcriptions agree. What changed is that the
 // claim is now a value, so a solver and a browser can be held to it.
 //
-// Four claims come out of that table, and each needs a different row to be
+// Five claims come out of that table, and each needs a different row to be
 // visible:
 //
 //	the declaration means the same thing   the pinned child is 200 in every
@@ -104,22 +105,35 @@
 //	                                       same three children get the same three
 //	                                       sizes in any order.
 //
-//	the SPACING diverges too               the last row is the pin-middle row
-//	                                       with an 8px gap, and both its columns
-//	                                       of extents are that row's unchanged —
-//	                                       a gap is used space in a flex line,
-//	                                       and the shrinkable children were
-//	                                       clamped to zero already. What differs
-//	                                       is underneath:
+//	the SPACING diverges too               the two gapped rows are the
+//	                                       pin-middle and pin-last rows again,
+//	                                       and both columns of extents are those
+//	                                       rows' unchanged — a gap is used space
+//	                                       in a flex line, and the shrinkable
+//	                                       children were clamped to zero
+//	                                       already. What differs is underneath:
 //	                                       spaceAfterLastNoWeight is
-//	                                       min(spacing, what is left), so the
-//	                                       Row charges 8 after the lead child
-//	                                       and nothing after the pin, where a
-//	                                       flex line charges both. Every case
-//	                                       here carried gap 0 until that row, so
-//	                                       the line MeasureCompose implements had
-//	                                       never been put in front of a browser
-//	                                       or a solver.
+//	                                       min(spacing, what is left), where a
+//	                                       flex line charges its gap between
+//	                                       every adjacent pair regardless. Every
+//	                                       case here carried gap 0 until those
+//	                                       rows, so the line MeasureCompose
+//	                                       implements had never been put in
+//	                                       front of a browser or a solver.
+//
+//	the collapse is a MIN                  and a min has three answers, not two.
+//	                                       The 8px row shows the ends: the gap
+//	                                       in full after the lead child, nothing
+//	                                       after the pin. The 16px row is the
+//	                                       one that shows the middle — 4 charged
+//	                                       where 16 was asked for, because that
+//	                                       is what was left. Without it every
+//	                                       gap in this fixture is either the
+//	                                       spacing or zero, which is also what
+//	                                       "charge the gap unless the Row has
+//	                                       overflowed" would produce, and the
+//	                                       two rules would be indistinguishable
+//	                                       on every row here.
 //
 // The pin-first row is the one where they agree, and it is here for the reason
 // bandfixture states an unbadged band: an "it diverges" with no case that does
@@ -422,12 +436,14 @@ type Case struct {
 //	no padding             every number below is a child's extent against the
 //	                       container's, with no subtraction for the reader to
 //	                       do.
-//	gap 0, except once     four of the five rows carry none, which keeps the
+//	gap 0, except twice    four of the six rows carry none, which keeps the
 //	                       solver's spacing out of a comparison that is about
-//	                       shrink. The fifth carries 8 and is about spacing
-//	                       alone — it is the pin-middle row again, with extents
-//	                       chosen so that neither column moves, so the only
-//	                       thing it can be measuring is the gap.
+//	                       shrink. The other two carry 8 and 16 and are about
+//	                       spacing alone — each is an ungapped row repeated,
+//	                       with a gap chosen so that neither column of extents
+//	                       moves, so the only thing either can be measuring is
+//	                       the gap. Two of them because the collapse is a min
+//	                       and one row reaches only its ends: see partialGap.
 const (
 	rowOffer   = 120
 	rowGap     = 0
@@ -450,7 +466,35 @@ const (
 // 0 is not measuring a rounding.
 const spacedGap = 8
 
-// Cases returns the four arrangements, in the order the table in this package's
+// partialGap is the second spacing row's, and it exists because the collapse is
+// a min over TWO quantities and spacedGap only ever varies one of them.
+//
+// With 8 the Row charges the gap in full after the lead child (8 is less than
+// the 60 left) and nothing at all after the pin (nothing is left). Both are
+// arms of min(spacing, what is left), and both are ENDS of it: the answer is
+// either the spacing or zero. The arm nobody had seen is the middle one, where
+// what is left is a real number smaller than the gap and the Row charges a gap
+// that is neither.
+//
+// Reaching it takes a gap larger than what remains before the pin, and the
+// arithmetic bounds it on both sides. With the children written [lead, tail,
+// pin] and a Row of 120, the space left after the tail child is `20 - g`:
+//
+//	g <= 10   20-g is at least g, so the spacing is charged in full and the
+//	          middle arm is not reached
+//	g >= 20   20-g is at or below zero, which is the collapse spacedGap
+//	          already shows
+//	g == 16   4 is charged where 16 was asked for — the arm itself
+//
+// 16 is also the largest of those that stays a round number of layout units,
+// and it is small enough to leave both columns of extents identical to the
+// ungapped row it sits beside (that needs g <= 20, since the tail child is 40
+// wide and is offered 60-g). So the second spacing row is the same kind of
+// statement the first one is: everything else about it is its twin's, and the
+// only thing it can be measuring is the gap.
+const partialGap = 16
+
+// Cases returns the six arrangements, in the order the table in this package's
 // header lists them.
 func Cases() []Case {
 	lead := Child{Name: "lead", Base: leadBase}
@@ -486,6 +530,22 @@ func Cases() []Case {
 		// where CSS inserts 8 in both places.
 		build("the pinned child between its siblings, with spacing", spacedGap,
 			[]int{0, 200, 0}, lead, pin, tail),
+
+		// And the spacing row that reaches the middle arm of the same min. Same
+		// three children as the pin-LAST row above, in the same order, so it is
+		// that row plus a gap the way the row above is the pin-middle row plus
+		// one — and its extents are that row's for the same two reasons: a flex
+		// line's shrinkable children were already clamped to zero, and the
+		// Compose offers are 120 and 44 against bases of 60 and 40, both of
+		// which fit.
+		//
+		// What differs is the second gap. 16 is asked for and 4 is left, so the
+		// Row charges 4 — a number that is neither the spacing nor zero, and
+		// the only value in this fixture that could tell min(spacing, what is
+		// left) from `spacing unless the Row has overflowed`. Those two rules
+		// agree on every other row here.
+		build("the pinned child last, with partial spacing", partialGap,
+			[]int{0, 0, 200}, lead, tail, pin),
 	}
 }
 

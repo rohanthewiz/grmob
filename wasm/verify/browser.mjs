@@ -387,9 +387,73 @@ function over(color, backdrop) {
 
 // How far a sampled pixel may sit from the ink it is supposed to be. Text is
 // antialiased and the composite above is arithmetic this file does rather than
-// the browser, so an exact match is asking two roundings to agree; three is far
-// below the distance to any other colour in a band.
+// the browser, so an exact match is asking two roundings to agree.
 const INK_EPSILON = 3;
+
+// And what that tolerance has to stay far below.
+//
+// "Three is far below the distance to any other colour in a band" was the whole
+// argument for the number, and it was a sentence: nothing measured the distance
+// it is a claim about. A band paints three colours the label's composite could
+// be confused with — the fill behind the words, the count pill, and the page
+// under the band — and if the composite drifted within a few channels of one of
+// them, the ink scan would go on passing while reading a pixel that agrees with
+// two answers.
+//
+// So the distance is asserted per case, at INK_MARGIN times the tolerance. A
+// factor rather than an absolute, because the thing being claimed is a RATIO:
+// the tolerance exists to absorb two roundings, and it is safe exactly while
+// the colours it discriminates between are an order away from it. Four is the
+// smallest factor that is unambiguously an order — a composite 12 channels from
+// the fill is still a colour a person can see against it — and the bundled
+// themes clear it by a wide margin: the closest pair anything here paints is
+// DefaultTheme's translucent secondary ink over its own band fill, at 109. So
+// this fires on a palette that has stopped being readable rather than on
+// ordinary theming.
+const INK_MARGIN = 4;
+
+// Where across the label's box the ink is looked for, as fractions of its
+// height.
+//
+// One row was not enough, and the argument for it said so out loud: the label's
+// vertical middle is the row "most likely" to cross a stem. Likely is not a
+// property a check can rest on — a face whose x-height band happened to fall
+// between two stems at that exact y reports a label with no ink in it, which
+// fails in the safe direction and is still a failure, on whichever machine's
+// Chrome picked that fallback face.
+//
+// Three rows over the middle fifth of the box. They are all inside the x-height
+// band (an ascender or a descender would read backdrop where a lowercase word
+// has none), they are far enough apart to sit in different rows of a glyph's
+// bitmap at caption sizes, and three horizontal passes over one rect is the
+// same arithmetic run three times — the scan is already the cheapest thing in
+// this check.
+const INK_ROWS = [0.4, 0.5, 0.6];
+
+// Whether a composited ink is too close to something else the band paints for
+// the scan to tell them apart, and if so which.
+//
+// The three candidates are everything a pixel inside a band can legitimately
+// be: the fill the words sit on, the pill beside them, and the page under the
+// band. gen.go already refuses the two cases that are widget faults — a label
+// declared in the band's own fill, a pill declared in it — but it compares
+// DECLARATIONS, and the thing this scan reads is a composite. An eight-digit
+// ink at a low enough alpha lands arbitrarily close to its own backdrop while
+// the two declarations stay different strings.
+//
+// Returns null when the case discriminates, which is every bundled theme.
+function confusableInk(want, b) {
+    for (const [what, color] of [
+        ["the band's own fill, which is what the words are drawn on", b.fill],
+        ["the count pill beside them", b.badgeFill],
+        ["the page the band sits on", b.page],
+    ]) {
+        if (!color) continue;
+        const distance = channelDistance(want, color);
+        if (distance <= INK_EPSILON * INK_MARGIN) return { what, color, distance };
+    }
+    return null;
+}
 
 // --------------------------------------------------------------------------
 // CDP
@@ -1158,7 +1222,7 @@ const FIXED_SIZE_CASES = [
 // The pin fixture's children have no padding, so the two rules coincide and the
 // solver's column is CSS's — which is a piece of reasoning, made by whoever
 // wrote the fixture, about whether a known divergence applies. Nothing had
-// asked. This asks: the same four Rows, mounted, measured.
+// asked. This asks: the same six Rows, mounted, measured.
 //
 // # What is compared, and why none of it is a second transcription
 //
@@ -1217,7 +1281,7 @@ const FIXED_SIZE_CASES = [
 //
 // Every child carries `min-width: 0`, and unlike bandTree's control it does
 // nothing here. That is measured rather than assumed — a break-test removed it
-// and the four rows laid out identically — and the reason is the one bandTree's
+// and every row laid out identically — and the reason is the one bandTree's
 // badge already states about itself: CSS's automatic minimum for a flex item is
 // min(its specified size, its content size), and these children are empty
 // boxes, so their content size is 0 and their automatic minimum is 0 already.
@@ -2430,9 +2494,9 @@ async function main() {
             //	                 and a label drawn in the theme's other ink role
             //	                 would satisfy the first claim and fail this one.
             //
-            // Scanned at the label's vertical middle, across its width, which is
-            // the row most likely to cross a stem: an x-height band rather than
-            // an ascender or a descender.
+            // Scanned across three rows near the label's vertical middle, which
+            // is where a glyph's x-height band is: not an ascender, not a
+            // descender. See INK_ROWS for why one row was not enough.
             if (r.label) {
                 // What the ink is supposed to LOOK like, which is not always
                 // what it is declared as. DefaultTheme's TextSecondary is
@@ -2445,48 +2509,83 @@ async function main() {
                 // the translucent ink is the one where that fallback would be
                 // the whole check.
                 const want = over(b.labelInk, b.fill);
-                const y = Math.round((r.label.y + r.label.h / 2) * bandDpr);
-                let ink = false, notFill = false, darkest = null, best = -1;
-                for (let dx = 0; dx < Math.round(r.label.w * bandDpr); dx++) {
-                    const got = pixelAt(bandImg, Math.round(r.label.x * bandDpr) + dx, y);
-                    if (got === null) continue;
-                    if (got !== b.fill) notFill = true;
-                    // A stem's interior is unblended, so the pixel furthest
-                    // from the backdrop is the ink itself. Compared with a
-                    // tolerance because the composite above is done in eight
-                    // bits and a browser's rounding is its own.
-                    const away = channelDistance(got, b.fill);
-                    if (away > best) { best = away; darkest = got; }
-                    if (channelDistance(got, want) <= INK_EPSILON) ink = true;
-                }
-                if (!notFill) {
-                    problems.push(`${where}: every pixel across the middle of the label's ` +
-                        `box is ${b.fill}, the band's own fill. The words are not there — ` +
-                        `and until this scan a band that painted its fill over them passed ` +
-                        `every assertion in this check, because a rect is the same either ` +
-                        `way`);
-                } else if (!ink) {
-                    problems.push(`${where}: the label's box has ink in it and the pixel ` +
-                        `furthest from the band's ${b.fill} is ${darkest}. ` +
-                        `components.GroupHeader declares ${b.labelInk} for the words ` +
-                        `(core.TextColor(TextSecondary)), which over this band composites ` +
-                        `to ${want}. Something is drawn there in another colour, which is ` +
-                        `what a label that lost its declaration and inherited one looks ` +
-                        `like`);
+
+                // Before any pixel is read: the tolerance this scan compares
+                // with is only meaningful while the composite is far from
+                // every other colour the band paints. That was a sentence
+                // beside INK_EPSILON and is a check now — a case where the ink
+                // has drifted to within a few channels of the fill, the pill
+                // or the page is one where "it is THIS ink" agrees with two
+                // answers, and a check that cannot fail must not report a
+                // pass.
+                const confusable = confusableInk(want, b);
+                if (confusable) {
+                    problems.push(`${where}: the label's ink ${b.labelInk} composites ` +
+                        `over this band to ${want}, which is ${confusable.distance} ` +
+                        `channels from ${confusable.color} — ${confusable.what}. The ink ` +
+                        `scan below accepts a pixel within ${INK_EPSILON} of the ` +
+                        `composite, a tolerance that exists to absorb this file's ` +
+                        `eight-bit blend and the browser's own rounding, and it is only ` +
+                        `worth anything while the colours it tells apart are an order ` +
+                        `further apart than that (${INK_EPSILON * INK_MARGIN}). A theme ` +
+                        `this close is one where the words are not readable either`);
+                } else {
+                    let ink = false, notFill = false, darkest = null, best = -1;
+                    const x0 = Math.round(r.label.x * bandDpr);
+                    const width = Math.round(r.label.w * bandDpr);
+                    for (const f of INK_ROWS) {
+                        const y = Math.round((r.label.y + r.label.h * f) * bandDpr);
+                        for (let dx = 0; dx < width; dx++) {
+                            const got = pixelAt(bandImg, x0 + dx, y);
+                            if (got === null) continue;
+                            if (got !== b.fill) notFill = true;
+                            // A stem's interior is unblended, so the pixel
+                            // furthest from the backdrop is the ink itself.
+                            // Compared with a tolerance because the composite
+                            // above is done in eight bits and a browser's
+                            // rounding is its own.
+                            const away = channelDistance(got, b.fill);
+                            if (away > best) { best = away; darkest = got; }
+                            if (channelDistance(got, want) <= INK_EPSILON) ink = true;
+                        }
+                    }
+                    if (!notFill) {
+                        problems.push(`${where}: every pixel on all ${INK_ROWS.length} ` +
+                            `scanned rows of the label's box is ${b.fill}, the band's own ` +
+                            `fill. The words are not there — and until this scan a band ` +
+                            `that painted its fill over them passed every assertion in ` +
+                            `this check, because a rect is the same either way`);
+                    } else if (!ink) {
+                        problems.push(`${where}: the label's box has ink in it and the ` +
+                            `pixel furthest from the band's ${b.fill} is ${darkest}. ` +
+                            `components.GroupHeader declares ${b.labelInk} for the words ` +
+                            `(core.TextColor(TextSecondary)), which over this band ` +
+                            `composites to ${want}. Something is drawn there in another ` +
+                            `colour, which is what a label that lost its declaration and ` +
+                            `inherited one looks like`);
+                    }
                 }
             }
 
             // And the count pill, which is a fill and can be sampled like one.
             //
-            // Five device-independent pixels in and vertically centred: the
-            // pill's radius is 999, so its leftmost point is the apex of a
+            // Half the pill's OWN leading padding in, and vertically centred:
+            // the pill's radius is 999, so its leftmost point is the apex of a
             // curve and every pixel there is an antialiased blend — the same
             // trap the widget grid's ring scan records. At mid-height the box
-            // is at its widest and 5px in is inside the pill's own leading
-            // padding, which is 8, so it is fill and not digit.
+            // is at its widest, and half a padding in is clear of that curve
+            // and short of the first digit.
+            //
+            // It was a literal 5, which is inside the 8px padding the pill
+            // carries today and is a number chosen against a widget's current
+            // insets — the same shape as a byte window measured off somebody
+            // else's file. gen.go reads the padding off the rendered node and
+            // refuses a pill with too little of it to sample inside, so this
+            // point moves when the widget does.
             if (r.badge) {
                 const badgeFill = pixelAt(bandImg,
-                    (r.badge.x + 5) * bandDpr, (r.badge.y + r.badge.h / 2) * bandDpr);
+                    (r.badge.x + b.badgePadLeft / 2) * bandDpr,
+                    (r.badge.y + r.badge.h / 2) * bandDpr);
                 if (badgeFill !== b.badgeFill) {
                     problems.push(`${where}: the count pill painted as ${badgeFill}, and ` +
                         `its own Style declares ${b.badgeFill} (the band behind it is ` +
@@ -2826,6 +2925,15 @@ async function main() {
         const pinnedRowExtent = {};
         let sawAgreement = false, sawDivergence = false;
         let sawGapAgreement = false, sawGapDivergence = false;
+        // Whether any row charges a gap strictly between zero and the Row's own
+        // spacing. The collapse is a min over two quantities, and a fixture
+        // whose charged gaps only ever come out at one end or the other is
+        // described just as well by "charge the gap unless the Row has
+        // overflowed" — a simpler rule, and not the one MeasureCompose
+        // transcribes. internal/pinfixture carries a row for the middle arm;
+        // this refuses to read a transcript that has lost it, for the reason
+        // the overflow guard refuses one that cannot overflow.
+        let sawPartialGap = false;
 
         for (let i = 0; i < PINS.length; i++) {
             const c = PINS[i], boxes = pinRects[i];
@@ -2879,8 +2987,8 @@ async function main() {
             // not, so nothing had ever measured it.
             //
             // Both arms, for the reason the extents' agreement has both: four
-            // of the five rows have no gap and agree vacuously, which is what
-            // bounds the one that does not.
+            // of the six rows have no gap and agree vacuously, which is what
+            // bounds the two that do not.
             let gapsSame = true;
             for (let j = 0; j + 1 < mains.length; j++) {
                 const measured = boxes[j + 1].x - (boxes[j].x + mains[j]);
@@ -2893,6 +3001,11 @@ async function main() {
                         `ended up at`);
                 }
                 if (!pinSame(c.compose.gaps[j], c.gap)) gapsSame = false;
+                // And whether this row charges a gap that is NEITHER the Row's
+                // spacing nor zero. See sawPartialGap.
+                if (c.compose.gaps[j] > 0 && c.compose.gaps[j] < c.gap) {
+                    sawPartialGap = true;
+                }
             }
             if (gapsSame) sawGapAgreement = true; else sawGapDivergence = true;
             if (gapsSame !== c.gapsAgreeWithCSS) {
@@ -3005,8 +3118,17 @@ async function main() {
             problems.push(`the pinned Row: internal/pinfixture carried ` +
                 (sawGapAgreement ? "" : "no case whose spacing survives ") +
                 (sawGapDivergence ? "" : "no case whose spacing collapses ") +
-                `— four of its five rows have no gap at all and the fifth is the only ` +
-                `thing that has ever measured min(spacing, what is left)`);
+                `— four of its six rows have no gap at all, and the other two are ` +
+                `the only things that have ever measured min(spacing, what is left)`);
+        }
+        if (!sawPartialGap) {
+            problems.push(`the pinned Row: every gap internal/pinfixture's Compose ` +
+                `column charges is either the Row's own spacing or zero, so nothing ` +
+                `here tells min(spacing, what is left) apart from \`charge the gap ` +
+                `unless the Row has overflowed\`. Those two rules agree at both ends ` +
+                `of the min and part company only in the middle; the fixture's ` +
+                `partialGap row is what reaches it, and this transcript no longer ` +
+                `carries it`);
         }
 
     } finally {
