@@ -746,7 +746,7 @@ type pinLanguage struct {
 var pinFreeForm = map[string]pinLanguage{
 	".mjs": {
 		Whitespace: "JavaScript: whitespace between tokens is insignificant, and a newline ends a statement only where the parser would already have ended it",
-		Lexis:      "JavaScript: // to end of line, /* */ which does not nest, and three string forms — ' \" and the backtick template, all with backslash escapes, the first two ending at the line. The regular-expression literal is not lexed: telling it from division needs the parser's context, and a quote inside one can open a string that was never opened — bounded to a line, and covered by pinCodeOnly's floor",
+		Lexis:      "JavaScript: // to end of line, /* */ which does not nest, and three string forms — ' \" and the backtick template, all with backslash escapes, the first two ending at the line. The regular-expression literal is not lexed: telling it from division needs the parser's context, and a quote inside one can open a string that was never opened — bounded to a line, covered by pinCodeOnly's floor when it runs away, and REPORTED when it does not: every line the lexer ends inside a single-line string comes back with the code, because one blanked line is a false deletion report the floor is far too coarse to see",
 	},
 	".js": {
 		Whitespace: "JavaScript, as above",

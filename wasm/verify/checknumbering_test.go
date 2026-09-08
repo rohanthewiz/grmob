@@ -234,10 +234,8 @@ func checkCitationsResolve(t *testing.T, checks int) {
 		t.Error(v)
 	}
 
-	seenExempt := map[string]bool{}
 	for _, f := range files {
 		if _, exempt := citationExempt[f.path]; exempt {
-			seenExempt[f.path] = true
 			continue
 		}
 		act, classified := citationSenses[f.sense]
@@ -264,12 +262,54 @@ func checkCitationsResolve(t *testing.T, checks int) {
 	// so both failing arms are unreachable from any repository this test can be
 	// pointed at, and the sentence each one carries was prose nobody could ask a
 	// question of.
+	//
+	// What FEEDS that decision is citationExemptInputs', for the same reason
+	// one level further in: the two booleans come from two different
+	// enumerations, and the wrong one on either side flips the diagnosis while
+	// leaving the verdict function perfectly correct.
 	for path, why := range citationExempt {
-		_, reached := considered[path]
-		if v := citationExemptVerdict(path, why, from, reached, seenExempt[path]); v != "" {
+		reached, cited := citationExemptInputs(path, considered, files)
+		if v := citationExemptVerdict(path, why, from, reached, cited); v != "" {
 			t.Error(v)
 		}
 	}
+}
+
+// The two enumerations citationExemptVerdict's answer is decided by.
+//
+// # The line the whole pair rests on
+//
+// citationExemptVerdict tells a renamed exemption from a silent one, and a
+// fixture holds it to both arms. What feeds it was two expressions in the walk
+// and nothing looked at either: `reached` came from `considered`, every path
+// the enumeration opened, and `cited` came from a set built while walking
+// `files`, the paths that turned out to HAVE citations. Two lists, two
+// different questions, and the verdict function cannot tell them apart — hand
+// it the wrong pair and it reports the wrong failure with complete confidence.
+//
+// The interesting swap is `reached`. Taken from `files` instead — which is the
+// natural mistake, because that is the list the loop above walks and the only
+// one in scope where the exemption is first noticed — an exemption whose file
+// is still sitting there and has simply stopped citing anything reads as NOT
+// REACHED, and the message sends the reader off to look for a rename that
+// never happened. That is the exact confusion the ORDER of the two arms inside
+// citationExemptVerdict exists to prevent, arriving one level up where the
+// ordering cannot see it.
+//
+// So the pair is a function of the two enumerations, and the fixture below
+// hands it the case that separates them: a path the walk opened and found no
+// citation in.
+func citationExemptInputs(path string, considered map[string]string,
+	files []citing) (reached, cited bool) {
+
+	_, reached = considered[path]
+	for _, f := range files {
+		if f.path == path {
+			cited = true
+			break
+		}
+	}
+	return reached, cited
 }
 
 // Whether one row of citationExempt still means what it says, and if not, which
@@ -553,6 +593,80 @@ func TestCitationReportChoosesItsReporterFromTheVerdict(t *testing.T) {
 			if !slices.Equal(rec.logs, tc.logs) {
 				t.Errorf("citationReport(%q, fails=%v) reported %q as logs, want %q.\n\n"+
 					"%s", tc.say, tc.fails, rec.logs, tc.logs, tc.what)
+			}
+		})
+	}
+}
+
+// Where citationExemptVerdict's two inputs come from.
+//
+// # The half of the pair a fixture over the verdict cannot reach
+//
+// The test below hands citationExemptVerdict all four (reached, cited) pairs
+// and holds each to its sentence. That is the decision. It says nothing about
+// whether the walk computes the pair correctly — and the pair is two lookups
+// in two different maps, which is the one line a correct verdict function
+// still rests on.
+//
+// The case that separates the two enumerations is the third one here: a path
+// the walk opened and found no citations in. It is in `considered` and NOT in
+// `files`, so a `reached` derived from the wrong list turns "still there,
+// stopped citing" into "renamed or deleted" — a confident report about a file
+// that is exactly where the table says it is.
+//
+// The fourth row is unreachable from a real enumeration, because citingFiles
+// only records a citation for a path it considered. It is here because the
+// function is defined over both maps independently and an implementation that
+// derived one from the other would pass the other three.
+func TestCitationExemptInputsComeFromTheTwoEnumerations(t *testing.T) {
+	const path = "wasm/verify/gen.go"
+	for _, tc := range []struct {
+		what       string
+		considered map[string]string
+		files      []citing
+		reached    bool
+		cited      bool
+	}{
+		{
+			what:       "opened and citing",
+			considered: map[string]string{path: senseTracked},
+			files:      []citing{{path: path, sense: senseTracked, cites: []int{1}}},
+			reached:    true, cited: true,
+		},
+		{
+			what:       "never opened and not citing is a rename",
+			considered: map[string]string{"wasm/verify/browser.mjs": senseTracked},
+			files: []citing{
+				{path: "wasm/verify/browser.mjs", sense: senseTracked, cites: []int{1}},
+			},
+		},
+		{
+			what:       "opened and not citing is the case the two lists disagree about",
+			considered: map[string]string{path: senseTracked},
+			files: []citing{
+				{path: "wasm/verify/browser.mjs", sense: senseTracked, cites: []int{1}},
+			},
+			reached: true,
+		},
+		{
+			what:       "citing without having been considered, which no enumeration produces",
+			considered: map[string]string{},
+			files:      []citing{{path: path, sense: senseTracked, cites: []int{1}}},
+			cited:      true,
+		},
+	} {
+		t.Run(tc.what, func(t *testing.T) {
+			reached, cited := citationExemptInputs(path, tc.considered, tc.files)
+			if reached != tc.reached || cited != tc.cited {
+				t.Errorf("citationExemptInputs(%q) is (reached=%v, cited=%v), want "+
+					"(%v, %v).\n\n"+
+					"`reached` is a question about the ENUMERATION — did the walk open "+
+					"this path — and `cited` is a question about what was found in it. "+
+					"Reading either off the other list is what makes a file that is "+
+					"still there and has stopped citing arrive as a rename, which is "+
+					"the failure citationExemptVerdict's arm order exists to prevent "+
+					"and cannot prevent from up here.\n\n%s",
+					path, reached, cited, tc.reached, tc.cited, tc.what)
 			}
 		})
 	}

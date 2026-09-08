@@ -1,10 +1,12 @@
 package pinfixture
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
 	"unicode"
@@ -969,6 +971,12 @@ func TestEveryReadingNamesAHarnessThatSpellsTheNumber(t *testing.T) {
 	// are code, which is the measure of how much of the search space that
 	// sentence was competing with.
 	source := map[string]string{}
+	// The same files unlexed, and the lines the lexer was unsure about. Both
+	// are read only by the deletion report at the bottom, which is where the
+	// difference between "gone from the file" and "gone from the code" decides
+	// what the reader is sent to look at.
+	wholeSource := map[string]string{}
+	openBy := map[string][]int{}
 	for name, path := range pinConsumers {
 		b, err := os.ReadFile(filepath.Join(root, path))
 		if err != nil {
@@ -978,7 +986,7 @@ func TestEveryReadingNamesAHarnessThatSpellsTheNumber(t *testing.T) {
 				"the ones that set the floor ios/verify and browser.mjs both hold their "+
 				"tolerances to.", path, name, err)
 		}
-		code := pinCodeOnly(string(b), filepath.Ext(path))
+		code, openLines := pinCodeOnly(string(b), filepath.Ext(path))
 		// The lexer is a lexer and not a parser, and the one construct it
 		// declines to guess at — JavaScript's regex literal — can open a
 		// string that was never opened. That damage is bounded to a line by
@@ -999,7 +1007,42 @@ func TestEveryReadingNamesAHarnessThatSpellsTheNumber(t *testing.T) {
 				"to a line, so a reading this low is something else again.",
 				kept, name, whole, 100*float64(kept)/float64(whole))
 		}
+		// And the small version of that damage, which no percentage can show.
+		//
+		// The floor is a bound on catastrophe: a lexer that lost its place
+		// leaves 4% of a file, and these two measure 16.8% and 17.3%. What it
+		// cannot see is one line — a regex whose quote opened a string that
+		// swallowed the rest of the line an assertion happens to sit on. Two
+		// hundred bytes moves no percentage, and what comes out is one
+		// confident "DELETED assertion" about a harness that is fine.
+		//
+		// pinCodeOnly reports every line it ended inside a single-line string,
+		// which is the complete set of places that can start. Both consumers
+		// have none, so this is a claim with a measurement behind it rather
+		// than a hedge — and the day one has some, the reader is told which
+		// lines before any citation below is believed.
+		openBy[name] = openLines
+		if len(openLines) > 0 {
+			t.Errorf("pinCodeOnly ended inside an unterminated string on %d of %s's "+
+				"lines: %v.\n\n"+
+				"A single-line string that runs into the newline is a syntax error in "+
+				"both of these languages, so in a file that compiles it is the one "+
+				"construct this lexer does not lex: a JavaScript regular-expression "+
+				"literal carrying an odd number of quote characters, whose first quote "+
+				"opens a string that nothing closes. Everything after it on that line "+
+				"was blanked, and if an assertion was spelled there its citation below "+
+				"reports as DELETED — one false failure in a table of forty, pointing "+
+				"at a harness that still asserts exactly what this table says it does. "+
+				"Either the regex moves onto a line of its own, or pinCodeOnly learns "+
+				"to lex it and pinFreeForm's Lexis sentence for %s stops saying it "+
+				"does not.", len(openLines), name, openLines, filepath.Ext(path))
+		}
 		source[name] = pinStripSpace(code)
+		// The raw file, stripped the same way. Only the deletion report reads
+		// it: a phrase that is gone from the CODE and still present in the file
+		// is a different finding from one that is gone altogether, and it is
+		// the finding the blind spot produces.
+		wholeSource[name] = pinStripSpace(string(b))
 	}
 
 	// Which consumers anything credits at all. A harness in the closed set that
@@ -1087,6 +1130,35 @@ func TestEveryReadingNamesAHarnessThatSpellsTheNumber(t *testing.T) {
 						c.What, r.What, by, r.Read, path, cited.Phrase, cited.Field)
 					continue
 				}
+				// The phrase is gone from the CODE. Whether it is gone from the
+				// file is the next question, and it is not the same one: the
+				// search runs over what pinCodeOnly left, so a phrase surviving
+				// only in the comment above a deleted assertion is the rot this
+				// half was added to catch — and a phrase surviving in code
+				// pinCodeOnly BLANKED is the blind spot the same lexer comes
+				// with. The two are told apart by looking, not guessed at.
+				inFile := pinSpells(wholeSource[by], cited.Phrase) ||
+					pinSpells(wholeSource[by], cited.Field)
+				note := ""
+				switch {
+				case inFile && len(openBy[by]) > 0:
+					note = fmt.Sprintf("\n\nBoth strings are still SOMEWHERE in %s, and "+
+						"the lexer ended inside an unterminated string on %d of its "+
+						"lines (%v). Check those first: a regular-expression literal "+
+						"carrying an odd number of quotes blanks the rest of its own "+
+						"line, and an assertion spelled there arrives here as a "+
+						"deletion. If the phrase is on one of them, this failure is "+
+						"pinCodeOnly's and not the harness's.", path,
+						len(openBy[by]), openBy[by])
+				case inFile:
+					note = fmt.Sprintf("\n\nOne of the two strings is still somewhere in "+
+						"%s and pinCodeOnly did not leave it in the code, so what is "+
+						"left of it is prose: the sentence above an assertion outlives "+
+						"the assertion, and a whole-file search would have gone on "+
+						"passing. That is exactly the rot the lexer was added to catch, "+
+						"and this is it caught. (The lexer ended inside no unterminated "+
+						"string in this file, so its own blind spot is ruled out.)", path)
+				}
 				t.Errorf("%q: caseNumbers says %s is read by %s (%s), and %s contains "+
 					"neither %q nor %q.\n\n"+
 					"That is a DELETED assertion: the harness has stopped naming this "+
@@ -1094,8 +1166,8 @@ func TestEveryReadingNamesAHarnessThatSpellsTheNumber(t *testing.T) {
 					"on deriving a floor over it — a bound BOTH tolerances obey, for a "+
 					"distinction one of them has stopped being asked to make. Either the "+
 					"reading comes out of this table, or the assertion goes back into "+
-					"that file.",
-					c.What, r.What, by, r.Read, path, cited.Phrase, cited.Field)
+					"that file.%s",
+					c.What, r.What, by, r.Read, path, cited.Phrase, cited.Field, note)
 			}
 		}
 	}
@@ -1249,7 +1321,33 @@ func TestNoCitationQuotesALiteral(t *testing.T) {
 // still sees a token boundary where a literal used to be: `f("x")` becomes
 // `f(   )` and then `f()`, and `a"x"b` stays two identifiers rather than
 // becoming one.
-func pinCodeOnly(src, ext string) string {
+//
+// # And the blind spot reports itself
+//
+// The floor below discriminates a lexer that lost its place — 4.0% of a file
+// surviving — from two files that are mostly prose, at 16.8% and 17.3%. That
+// is a real bound with a measurement on each side, and it is a bound on
+// CATASTROPHE. What it cannot see is the small version: a regex whose quote
+// opens a string that swallows the rest of ONE line, and that line being the
+// one an assertion happens to sit on. Two hundred bytes out of a hundred
+// thousand moves no percentage, and what it produces is a single false
+// "DELETED assertion" in a table of forty-odd citations — a message that sends
+// a reader to look at a harness which is perfectly fine.
+//
+// So the second return value is every line the lexer ended INSIDE a
+// single-line string: the quote opened and the newline closed it, rather than
+// its partner doing so. That is not a heuristic about regexes, it is the
+// complete set of places the damage can start. In real source an unterminated
+// single-line string is a syntax error, so every one of these is either the
+// regex blind spot or a file that does not compile — and either way it is the
+// one thing a reader needs to know before believing a deletion report about
+// that file.
+//
+// A regex carrying an EVEN number of quotes pairs them among themselves and
+// blanks its own body, which is inside the literal and not code an assertion
+// can be spelled in. The odd case is the one that runs on, and the odd case is
+// exactly what shows up here.
+func pinCodeOnly(src, ext string) (code string, openQuoteLines []int) {
 	// Swift nests block comments; JavaScript does not, and treating /* */ as
 	// nesting there would swallow everything after a `/*` inside a comment.
 	nested := ext == ".swift"
@@ -1267,6 +1365,11 @@ func pinCodeOnly(src, ext string) string {
 			out[i] = ' '
 		}
 	}
+	// Where a single-line string ran into a newline instead of into its closing
+	// quote. Offsets while the scan runs, turned into line numbers in one pass
+	// afterwards, so the scan stays linear and the newline bookkeeping does not
+	// have to be threaded through every arm of it.
+	var openAt []int
 	for i := 0; i < len(src); {
 		switch {
 		case src[i] == '/' && i+1 < len(src) && src[i+1] == '/':
@@ -1335,6 +1438,15 @@ func pinCodeOnly(src, ext string) string {
 				// running to the end of the file. It also bounds the damage a
 				// regex literal's quote can do to one line.
 				if !long && q != '`' && src[i] == '\n' {
+					// And it is recorded. A quote that opened and did not close
+					// before the line ended is a syntax error in both these
+					// languages, so in a file that compiles it is the regex
+					// literal's own quote — the one construct this lexer
+					// declines to guess at. See the note above: it is the
+					// complete set of places the damage can start, and every
+					// line here is a line whose code from the quote onward was
+					// blanked.
+					openAt = append(openAt, i)
 					break
 				}
 				blank(i)
@@ -1344,7 +1456,20 @@ func pinCodeOnly(src, ext string) string {
 			i++
 		}
 	}
-	return string(out)
+
+	// The offsets, as line numbers. One walk over the source, because the
+	// offsets came out of a left-to-right scan and are therefore sorted.
+	at, line := 0, 1
+	for i := 0; i < len(src) && at < len(openAt); i++ {
+		for at < len(openAt) && openAt[at] == i {
+			openQuoteLines = append(openQuoteLines, line)
+			at++
+		}
+		if src[i] == '\n' {
+			line++
+		}
+	}
+	return string(out), openQuoteLines
 }
 
 // pinCodeOnly does what pinFreeForm's Lexis sentences say, per language.
@@ -1363,43 +1488,88 @@ func TestPinCodeOnlyBlanksWhatEachLanguageCallsProse(t *testing.T) {
 	for _, c := range []struct {
 		what, ext, src string
 		want, gone     []string
+		// openLines is what the lexer has to say about its own uncertainty:
+		// the lines it ended inside a single-line string. See pinCodeOnly.
+		openLines []int
 	}{
 		{"a line comment", ".mjs", "keep(1) // gone(2)\nkeep(3)",
-			[]string{"keep(1)", "keep(3)"}, []string{"gone(2)"}},
+			[]string{"keep(1)", "keep(3)"}, []string{"gone(2)"}, nil},
 		{"a block comment", ".mjs", "keep(1) /* gone(2)\ngone(3) */ keep(4)",
-			[]string{"keep(1)", "keep(4)"}, []string{"gone(2)", "gone(3)"}},
+			[]string{"keep(1)", "keep(4)"}, []string{"gone(2)", "gone(3)"}, nil},
 		{"a double-quoted string", ".mjs", `keep(1, "gone(2)")`,
-			[]string{"keep(1,"}, []string{"gone(2)"}},
+			[]string{"keep(1,"}, []string{"gone(2)"}, nil},
 		{"a single-quoted string", ".mjs", "keep(1, 'gone(2)')",
-			[]string{"keep(1,"}, []string{"gone(2)"}},
+			[]string{"keep(1,"}, []string{"gone(2)"}, nil},
 		{"a template literal", ".mjs", "keep(1, `gone(2)\ngone(3)`)",
-			[]string{"keep(1,"}, []string{"gone(2)", "gone(3)"}},
+			[]string{"keep(1,"}, []string{"gone(2)", "gone(3)"}, nil},
 		{"an escaped quote inside a string", ".mjs", `f("a\"gone(1)") keep(2)`,
-			[]string{"keep(2)"}, []string{"gone(1)"}},
+			[]string{"keep(2)"}, []string{"gone(1)"}, nil},
 		// JavaScript's block comment does not nest, so the FIRST */ ends it and
 		// what follows is code again. A lexer that nested here would swallow
 		// the rest of the file.
 		{"a block comment that does not nest", ".mjs",
 			"/* gone(1) /* gone(2) */ keep(3)",
-			[]string{"keep(3)"}, []string{"gone(1)", "gone(2)"}},
+			[]string{"keep(3)"}, []string{"gone(1)", "gone(2)"}, nil},
 		// And Swift's does, so the same text is comment all the way to the
 		// second closer.
 		{"a block comment that nests", ".swift",
 			"/* gone(1) /* gone(2) */ gone(3) */ keep(4)",
-			[]string{"keep(4)"}, []string{"gone(1)", "gone(2)", "gone(3)"}},
+			[]string{"keep(4)"}, []string{"gone(1)", "gone(2)", "gone(3)"}, nil},
 		// An apostrophe in Swift is prose, not a string opener. Treated as one,
 		// everything to the end of the line would be blanked.
 		{"an apostrophe outside a comment", ".swift", "keep(1) // it's here\nkeep(2)",
-			[]string{"keep(1)", "keep(2)"}, []string{"here"}},
+			[]string{"keep(1)", "keep(2)"}, []string{"here"}, nil},
 		{"a multi-line string", ".swift",
 			"keep(1)\n\"\"\"\ngone(2)\n\"\"\"\nkeep(3)",
-			[]string{"keep(1)", "keep(3)"}, []string{"gone(2)"}},
+			[]string{"keep(1)", "keep(3)"}, []string{"gone(2)"}, nil},
 		// A backtick quotes an identifier in Swift. Read as a template opener
 		// it would blank from there to the next one, or to the end of the file.
 		{"a backtick-quoted identifier", ".swift", "keep(`class`) keep(2)",
-			[]string{"keep(", "class", "keep(2)"}, nil},
+			[]string{"keep(", "class", "keep(2)"}, nil, nil},
+		// The construct this lexer declines to guess at, and the only damage it
+		// can do. A regex with one quote in it opens a string that runs to the
+		// newline, so the assertion after it on that line is blanked and its
+		// citation reports as deleted. The line is named, which is the whole of
+		// what this half adds: the floor cannot see two hundred bytes, and a
+		// reader told "line 2" can look.
+		{"a regex literal's odd quote, reported rather than lexed", ".mjs",
+			"keep(1)\nif (/[\"]/.test(x)) gone(2)\nkeep(3)",
+			[]string{"keep(1)", "keep(3)"}, []string{"gone(2)"}, []int{2}},
+		// And the even case, which pairs among itself and damages nothing past
+		// the literal: the first quote opens a string, the second closes it,
+		// and what is blanked is the regex's own body. Reported as clean,
+		// because reporting it would send a reader to a line where nothing
+		// happened.
+		//
+		// Two quotes of the SAME kind. `/["']/` is not this case — in
+		// JavaScript an apostrophe opens a string of its own, so a regex
+		// carrying one of each has an odd number of each and runs on.
+		{"a regex literal's paired quotes leave the line alone", ".mjs",
+			"keep(1)\nif (/[\"gone(2)\"]/.test(x)) keep(3)\nkeep(4)",
+			[]string{"keep(1)", "keep(3)", "keep(4)"}, []string{"gone(2)"}, nil},
+		// A real unterminated string, which is a syntax error rather than the
+		// blind spot — and is reported identically, because from here they are
+		// the same event and the message says so.
+		{"a string with no closing quote", ".mjs", "keep(1)\nf(\"gone(2)\nkeep(3)",
+			[]string{"keep(1)", "keep(3)"}, []string{"gone(2)"}, []int{2}},
+		// Swift's multi-line string spans lines on purpose and must not be
+		// reported: it is closed by its own delimiter, not by a newline.
+		{"a multi-line string is not an open quote", ".swift",
+			"keep(1)\n\"\"\"\ngone(2)\n\"\"\"\nkeep(3)",
+			[]string{"keep(1)", "keep(3)"}, []string{"gone(2)"}, nil},
 	} {
-		got := pinCodeOnly(c.src, c.ext)
+		got, openLines := pinCodeOnly(c.src, c.ext)
+		if !slices.Equal(openLines, c.openLines) {
+			t.Errorf("%s (%s): pinCodeOnly reports unterminated strings on lines %v, "+
+				"want %v.\n\n"+
+				"That list is the whole of what this lexer knows about its own blind "+
+				"spot. The floor bounds a lexer that lost its place; it cannot see one "+
+				"line, and one line is what a regular-expression literal's stray quote "+
+				"costs. A missing entry is a deletion report nothing warns about; a "+
+				"spurious one sends a reader to a line where nothing "+
+				"happened.\n\nsource: %q\ncode:   %q", c.what, c.ext, openLines,
+				c.openLines, c.src, got)
+		}
 		for _, w := range c.want {
 			if !strings.Contains(got, w) {
 				t.Errorf("%s (%s): pinCodeOnly blanked %q, which is code.\n\n"+

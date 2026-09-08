@@ -2351,6 +2351,52 @@ function inkSubjectFault(where, subject, read) {
         `not in general the path that names the declaration to ask about`;
 }
 
+// And that every declaration this read came back with is one the guard above
+// was actually asked about.
+//
+// # The guard covered the paths that ask, not the shape of the mistake
+//
+// inkSubjectFault is asked at the three paths a declaration is read at today —
+// the label, the count, and the probe's own text. That is the whole of the
+// grid's declaration reads and it is a fact about the current file rather than
+// a property of it: `r.band`, `r.control`, `r.wrapper`, `r.leading` and
+// `r.chevron` are read as rects and none of them is read as a declaration, so
+// the confusion the guard is about is simply not available at any of them
+// today. What makes that true is that nobody has added a declaration read to
+// one — the same sentence that was true of the badge until components.Badge
+// was asked to grow.
+//
+// The read is now driven by one list (see `declarations` in the evaluate), so
+// the three go together by construction. This is the other half: it holds what
+// came BACK to the same pairing, so a `somethingOwn` written straight into the
+// evaluate — around the table, the way the previous version's lines were — is
+// a failure here rather than a silent fourth declaration nothing guards.
+//
+// Returns null when every `*Own` and `*Ancestry` in the read has its
+// `*Subject` beside it, which is every read this grid takes.
+function inkDeclarationGuard(where, read) {
+    if (!read) return null;
+    const missing = [];
+    for (const key of Object.keys(read)) {
+        for (const suffix of ["Own", "Ancestry"]) {
+            if (!key.endsWith(suffix) || key === suffix) continue;
+            const at = key.slice(0, -suffix.length);
+            if (read[at + "Subject"] === undefined) missing.push(key);
+        }
+    }
+    if (missing.length === 0) return null;
+    return `${where}: ${missing.join(", ")} came back with no ${missing.length === 1
+        ? "matching Subject read" : "matching Subject reads"} beside ` +
+        `${missing.length === 1 ? "it" : "them"}.\n\n` +
+        `A declaration read — the computed style the antialiasing probe is held to, ` +
+        `or the chain swept above the glyphs — is a question about the element that ` +
+        `PAINTS the run, and the subject read is the only thing that says the path ` +
+        `names one. Asked of a container the answers are about the container and ` +
+        `both come back perfectly plausible: it inherits the page's typography and ` +
+        `resolves none of what the run resolves. See inkSubjectFault, and the ` +
+        `\`declarations\` table the three reads are supposed to be derived from`;
+}
+
 // And the other side of the pair, for the probe's white ground.
 //
 // Returns null when the sample rect is a container with exactly one child and
@@ -2512,7 +2558,14 @@ function inkFaceFault(where, subject, what, faces, text, probeFaces) {
             `GLYPHS. They match on every run in this grid, and a mismatch means the ` +
             `face is substituting — a ligature, a composed form — so the string that ` +
             `was measured and the string that was drawn are not the same sequence, ` +
-            `and both width answers are about the former`;
+            `and both width answers are about the former.\n\n` +
+            `One glyph per character is a property of the strings this grid uses and ` +
+            `not of any face, and gen.go's inkGlyphPerCharacter is where that is ` +
+            `decided: it refuses a scanned run carrying an f-ligature pair or anything ` +
+            `outside printable ASCII, so a fixture whose words a face is entitled to ` +
+            `draw as one glyph fails at the fixture rather than arriving here as a ` +
+            `font substitution. What is left for this message is the substitution ` +
+            `itself — a face doing it to a string that check passed`;
     }
     if (probeFaces && probeFaces.length === 1 &&
         probeFaces[0].family !== faces[0].family) {
@@ -2526,6 +2579,94 @@ function inkFaceFault(where, subject, what, faces, text, probeFaces) {
             `they got`;
     }
     return null;
+}
+
+// The page both readers have to be describing.
+//
+// # Two readers, one document, and nothing saying so
+//
+// Every other measurement this check makes comes back from ONE
+// Runtime.evaluate: the rects, the run metrics, the ancestry sweeps and the
+// computed styles are all taken inside a single expression, so they are of one
+// layout by construction and a mount landing between two of them is not a
+// thing that can happen.
+//
+// The platform-font read is not that shape. CSS.getPlatformFontsForNode takes
+// a node id, a node id comes from DOM.querySelector, and DOM.querySelector is
+// asked against a root id taken once by DOM.getDocument before any of them —
+// so the faces are dozens of round trips over a document that could in
+// principle change under them. A mount that replaced the tree between the
+// rects and the faces would leave the second reader answering about boxes the
+// first one never saw, and NEITHER READ COULD SAY SO: a face is a family name
+// and a glyph count, and both are entirely plausible for the wrong element.
+// The failure would arrive as inkFaceFault's third arm — a run whose glyph
+// count is not its character count — pointing at a font substitution that did
+// not happen.
+//
+// So the page is fingerprinted on both sides of the protocol reads, with the
+// same expression, and the FIRST one is taken inside the evaluate that returns
+// the rects. That is what makes it the rects' own page rather than a third
+// reading of a third moment.
+//
+// # What is in the fingerprint, and what deliberately is not
+//
+// How many elements the runtime has mounted, and a hash over each one's path,
+// tag, child count and text length in document order.
+//
+// Not the geometry. A scroll, a resize or a font that finished loading moves
+// every rect in the page and changes no fact about which element is which, and
+// the claim being made here is about IDENTITY — that the node id the protocol
+// resolved for a path names the element the page read that path at. Folding
+// layout into it would turn a benign relayout into a failure about fonts.
+const TREE_FINGERPRINT_JS = `(() => {
+    const all = document.querySelectorAll("[data-node-path]");
+    // FNV-1a over the whole description. Math.imul keeps the multiply in 32
+    // bits, which is what makes this the same number on every run rather than
+    // a double that has started rounding away the low ones.
+    let h = 2166136261;
+    const feed = (s) => {
+        for (let i = 0; i < s.length; i++) {
+            h = Math.imul(h ^ s.charCodeAt(i), 16777619);
+        }
+    };
+    for (const e of all) {
+        // "|" separates the fields and is not a character a data-node-path can
+        // carry — they are "root" and slash-joined indices — so two different
+        // trees cannot feed one byte sequence by running fields together.
+        feed(e.getAttribute("data-node-path") + "|" + e.tagName + "|" +
+            e.childElementCount + "|" + e.textContent.length + "||");
+    }
+    return { n: all.length, hash: (h >>> 0).toString(16) };
+})()`;
+
+// Returns null when the tree the protocol read is the tree the page read.
+function treeMovedFault(before, after, paths) {
+    if (!before || !after) {
+        return `the page was not fingerprinted on both sides of the ${paths} ` +
+            `platform-font reads, so nothing holds them to describing the same ` +
+            `document as the rects.\n\n` +
+            `The first fingerprint rides back with the rects, inside the same ` +
+            `Runtime.evaluate; the second is taken after the last ` +
+            `CSS.getPlatformFontsForNode. One of them did not arrive, which means the ` +
+            `read that carries it did not happen — see the note above ` +
+            `TREE_FINGERPRINT_JS for why the two readers need joining at all`;
+    }
+    if (before.n === after.n && before.hash === after.hash) return null;
+    return `the page changed under the ${paths} platform-font reads: it held ` +
+        `${before.n} mounted elements when the rects were taken and ${after.n} ` +
+        `afterwards` +
+        (before.n === after.n
+            ? ` — the same count, and a different tree (${before.hash} then ` +
+              `${after.hash})`
+            : ``) + `.\n\n` +
+        `Every other measurement in this check comes back from one evaluate and is ` +
+        `of one layout by construction. The faces are not: each is a ` +
+        `DOM.querySelector against a root node id taken before any of them, and a ` +
+        `tree that moved in between hands back ids for boxes the rects are not ` +
+        `about. What that produces downstream is a run whose glyph count is not its ` +
+        `character count, reported as a font substitution — a true statement about ` +
+        `some other page, delivered as a finding about this one. Nothing below has ` +
+        `consulted a face`;
 }
 
 // One chain, reported.
@@ -3067,7 +3208,14 @@ async function main() {
     // here because the OK line is printed after the try block and a number
     // recited from inside it would be BAND_RENDERS.length again — see `asked`,
     // where the argument is.
-    const asked = { targets: 0, insets: 0, fills: 0, words: 0, counts: 0 };
+    const asked = {
+        // The tap target is three assertions and the tail recites their
+        // conjunction, so both are counted: `targets` is the number the
+        // sentence at the bottom is allowed to say, and the three beside it
+        // are what the census reports. See the note above `declared`.
+        targets: 0, targetLead: 0, targetTrail: 0, targetStretch: 0,
+        insets: 0, fills: 0, words: 0, counts: 0,
+    };
     try {
         const port = await devtoolsPort(profile);
         // Which browser this is, read before anything is measured in it.
@@ -4205,24 +4353,50 @@ async function main() {
                     text: e.textContent,
                 };
             };
+            // Every path a DECLARATION is read at, and the only ones.
+            //
+            // Three reads are about one element for one reason: the computed
+            // style the probe is held to, the chain swept above it, and the
+            // subject guard saying the path names the box PAINTING the run
+            // rather than a box with the run somewhere inside it. See
+            // inkSubjectFault — the two jobs a path does here are "where the
+            // pixels are" and "whose declaration is in question", and those
+            // are the same element only for a glyph-drawing leaf.
+            //
+            // Written as three sets of hand-matched lines, as they were, a
+            // fourth declaration read could be added at a path with no guard
+            // beside it. Derived from one list it cannot be, and
+            // inkDeclarationGuard holds the returned object to the same
+            // pairing for anything written around this table.
+            const declarations = [
+                { at: "label", as: "label" },
+                { at: "badge", as: "badge" },
+                // Both of the probe's reads are taken at its text node rather
+                // than at the white Box around it — see inkProbeTextPath. That
+                // is the element drawing the glyphs, and it puts the Box into
+                // its own ancestry sweep instead of leaving it neutral by
+                // construction.
+                { at: "probeText", as: "probe" },
+            ];
             const out = {};
             for (const k of Object.keys(paths)) out[k] = at(paths[k]);
             if (paths.label) out.labelBand = band(paths.label, "x");
             if (paths.badge) out.badgeBand = band(paths.badge, "0");
-            if (paths.label) out.labelAncestry = ancestry(paths.label);
-            if (paths.badge) out.badgeAncestry = ancestry(paths.badge);
-            // Both of the probe's reads are taken at its text node rather
-            // than at the white Box around it — see inkProbeTextPath. That is
-            // the element drawing the glyphs, and it puts the Box into its own
-            // ancestry sweep instead of leaving it neutral by construction.
-            if (paths.probeText) out.probeAncestry = ancestry(paths.probeText);
-            if (paths.label) out.labelOwn = own(paths.label);
-            if (paths.badge) out.badgeOwn = own(paths.badge);
-            if (paths.probeText) out.probeOwn = own(paths.probeText);
-            if (paths.label) out.labelSubject = subject(paths.label);
-            if (paths.badge) out.badgeSubject = subject(paths.badge);
-            if (paths.probeText) out.probeSubject = subject(paths.probeText);
+            for (const d of declarations) {
+                if (!paths[d.at]) continue;
+                out[d.as + "Ancestry"] = ancestry(paths[d.at]);
+                out[d.as + "Own"] = own(paths[d.at]);
+                out[d.as + "Subject"] = subject(paths[d.at]);
+            }
+            // The complement, at the one place this file has a path for each
+            // job: the probe's SAMPLE rect must not be a glyph-drawing leaf.
+            // See inkProbeBoxFault.
             if (paths.probe) out.probeBoxSubject = subject(paths.probe);
+            // And the tree these reads were taken from, so the platform-font
+            // reads that follow them over the protocol can be held to the same
+            // page. It rides with the grid's entry because it is one fact about
+            // the document rather than one per path. See TREE_FINGERPRINT_JS.
+            if (paths.grid) out.tree = ${TREE_FINGERPRINT_JS};
             return out;
         })`);
         // The grid's own box rides last and the probes before it, so the band
@@ -4230,6 +4404,20 @@ async function main() {
         const gridRead = renderRects.pop();
         const probeReads = renderRects.splice(BAND_RENDERS.length);
         const probeRects = probeReads.map((r) => r.probe);
+
+        // Every declaration that came back has its subject guard beside it.
+        // See inkDeclarationGuard: asked of the whole read rather than of the
+        // three paths that ask today, so the guard is about the shape of the
+        // mistake and not about the current contents of the file.
+        for (const [what, read] of [
+            ...BAND_RENDERS.map((b, i) => [`${b.theme}/${b.what}`, renderRects[i]]),
+            ...INK_PROBES.map((p, i) =>
+                [`the antialiasing probe for ${p.what}`, probeReads[i]]),
+            ["the band render grid", gridRead],
+        ]) {
+            const unguarded = inkDeclarationGuard(what, read);
+            if (unguarded) problems.push(unguarded);
+        }
 
         // And the paint, which this grid did not read at all until now.
         //
@@ -4286,6 +4474,24 @@ async function main() {
         for (let i = 0; i < INK_PROBES.length; i++) {
             probeFaces.push(await facesAt(inkProbeTextPath(i)));
         }
+
+        // And whether all of that was about the page the rects came from.
+        //
+        // See TREE_FINGERPRINT_JS. The first fingerprint rode back inside the
+        // rects' own evaluate; this is the same expression after the last
+        // font read. A tree that moved in between makes every face above a
+        // statement about some other document, so the face arm is dropped
+        // rather than reported — an unheld claim is not evidence, and the one
+        // thing it would produce is a confident diagnosis of a font
+        // substitution that did not happen.
+        const facePaths = BAND_RENDERS.length * 2 + INK_PROBES.length;
+        const treeFault = treeMovedFault(
+            gridRead ? gridRead.tree : null, await evaluate(TREE_FINGERPRINT_JS),
+            facePaths);
+        if (treeFault) problems.push(treeFault);
+        // Every consultation of a face goes through this, so the suppression is
+        // one decision rather than a condition repeated at each call site.
+        const faceFault = (...args) => treeFault ? null : inkFaceFault(...args);
 
         // Whether the grid as a whole is on the screen, asked once.
         //
@@ -4549,7 +4755,7 @@ async function main() {
             // this is the arm that says the probe's own edges are a single
             // face's to begin with, which is what makes that comparison mean
             // anything.
-            const probeFace = inkFaceFault(
+            const probeFace = faceFault(
                 `the antialiasing probe for ${p.what}`, "the probe's glyphs", p.what,
                 probeFaces[i], probeReads[i].probeSubject
                     ? probeReads[i].probeSubject.text : null, null);
@@ -4673,7 +4879,7 @@ async function main() {
             // three above are about what the document says, and this is about
             // what the font stack resolved the document's request to. See
             // inkFaceFault.
-            return inkFaceFault(where, subject, self ? self.what : key, faces,
+            return faceFault(where, subject, self ? self.what : key, faces,
                 read ? read.text : null, self ? self.faces : null);
         };
 
@@ -4727,8 +4933,32 @@ async function main() {
         // measured; the inset's is over the bands whose leading child gen.go
         // names, because a band with none is a band the claim is not about and
         // says so with its own message.
+        //
+        // # The tap target is three claims, and the census reports three
+        //
+        // `targets` counted the CONJUNCTION of the leading edge, the trailing
+        // edge and the disclosure branch's wrapper stretch, on the argument
+        // that any one of them failing means the target did not span the band.
+        // That argument is right about the tail's sentence and wrong about the
+        // census: a band that failed the stretch and a band whose leading edge
+        // moved decremented one number, so the line said how many bands lost
+        // the claim without saying which of the three cost them — and it could
+        // not tell a run where one band lost all three from a run where three
+        // bands lost one each.
+        //
+        // So the three are counted separately and the census reports those;
+        // `targets` stays because it is the number the tail is allowed to
+        // recite, and it is not censused itself, because a shortfall in it is
+        // a shortfall in one of the three and the three say which.
+        //
+        // The stretch's population is the bands that HAVE a wrapper. It is the
+        // disclosure branch's mechanism and the plain branch has no equivalent
+        // — a claim counted over twenty bands when eight can make it is a
+        // census line that fails on every run.
         const declared = {
-            targets: BAND_RENDERS.length,
+            targetLead: BAND_RENDERS.length,
+            targetTrail: BAND_RENDERS.length,
+            targetStretch: BAND_RENDERS.filter((b) => b.wrapper).length,
             insets: BAND_RENDERS.filter((b) => b.leading).length,
             fills: BAND_RENDERS.length,
             words: BAND_RENDERS.filter((b) => b.label).length,
@@ -5269,18 +5499,22 @@ async function main() {
                     `reason`);
             }
 
-            // The band's leading edge is the control's, which is the whole move:
-            // the insets came off the Row so that a press lands on the leading
-            // edge rather than 16px into it.
             // Whether this band's tap target came out whole, which is the
             // three assertions below taken together — the leading edge, the
             // trailing edge, and on the disclosure branch the stretch that puts
             // the button across the wrapper. Any one of them failing means the
-            // target did not span the band, so the census counts the
-            // conjunction rather than three separate claims.
+            // target did not span the band, so the tail's sentence recites the
+            // conjunction; the census counts the three apart, so a shortfall
+            // says which of them cost it. See `declared`.
             let targetWhole = true;
+
+            // The band's leading edge is the control's, which is the whole move:
+            // the insets came off the Row so that a press lands on the leading
+            // edge rather than 16px into it.
             const lead = r.control.x - r.band.x;
-            if (!bandRenderSame(lead, b.rowLeft)) {
+            if (bandRenderSame(lead, b.rowLeft)) {
+                asked.targetLead++;
+            } else {
                 targetWhole = false;
                 problems.push(`${where}: the control starts ${lead.toFixed(2)}px into ` +
                     `the band and the Row's own leading inset is ${b.rowLeft}px. A press ` +
@@ -5345,7 +5579,9 @@ async function main() {
             const wantRight = r.band.x + r.band.w - b.rowRight -
                 (r.badge ? r.badge.w + b.gap : 0);
             const gotRight = r.control.x + r.control.w;
-            if (!bandRenderSame(gotRight, wantRight)) {
+            if (bandRenderSame(gotRight, wantRight)) {
+                asked.targetTrail++;
+            } else {
                 targetWhole = false;
                 problems.push(`${where}: the control's trailing edge is at ` +
                     `${gotRight.toFixed(2)}px and the band's content ends at ` +
@@ -5366,8 +5602,10 @@ async function main() {
             // fills is a band whose wrapper stopped growing, and one the button
             // does not fill is the cross-axis stretch going away.
             if (r.wrapper) {
-                if (!bandRenderSame(r.control.w, r.wrapper.w) ||
-                    !bandRenderSame(r.control.x, r.wrapper.x)) {
+                if (bandRenderSame(r.control.w, r.wrapper.w) &&
+                    bandRenderSame(r.control.x, r.wrapper.x)) {
+                    asked.targetStretch++;
+                } else {
                     targetWhole = false;
                     problems.push(`${where}: the button is ${r.control.w.toFixed(2)}px ` +
                         `wide at x=${r.control.x.toFixed(2)} inside a heading wrapper ` +
@@ -5379,7 +5617,10 @@ async function main() {
                 }
             }
             // The three above are the whole of the tap-target claim, so this is
-            // where it is counted.
+            // where the conjunction the tail recites is counted. The three
+            // components are counted at their own success paths, because a
+            // number that says how many bands lost the claim without saying
+            // which assertion cost them is what the census is for.
             if (targetWhole) asked.targets++;
 
             // The taller child, with glyphs in it. Both halves of the reason are
@@ -5419,8 +5660,8 @@ async function main() {
 
         // How much of what the tail recites was actually asked.
         //
-        // See `asked`. The two numbers below are counted at the end of each
-        // scan's own success path, so they say how many boxes were read rather
+        // See `asked`. Every number below is counted at the end of its own
+        // check's success path, so it says how many boxes were read rather
         // than how many the transcript declared. A shortfall means some band's
         // words or count went unscanned, and the reason is one of the messages
         // above — which is the point: on a run where the grid was clipped, or a
@@ -5431,8 +5672,12 @@ async function main() {
         // It is a census and not a second failure. Every path that suppresses a
         // scan has already said why; what none of them said is how many.
         for (const [what, population, subject] of [
-            ["targets", "bands in this grid",
-                "a tap target measured across the whole band"],
+            ["targetLead", "bands in this grid",
+                "their tap target's leading edge held to the band's"],
+            ["targetTrail", "bands in this grid",
+                "its trailing edge held to where the band's content ends"],
+            ["targetStretch", "bands mounted behind a heading wrapper",
+                "the button held to the wrapper it is stretched across"],
             ["insets", "bands whose leading child gen.go names",
                 "their content held to their own declared inset"],
             ["fills", "bands in this grid", "their own fill read off the screenshot"],
@@ -6001,7 +6246,8 @@ async function main() {
     the backdrop, behind ${INK_PROBES.length} antialiasing probes, one per text
     declaration any of it reads, every one of them and every box they answer for
     read at the element that draws the glyphs rather than at the box around it,
-    drawn by one platform face this browser names — a glyph per character, and the
+    drawn by one platform face this browser names over the same tree the rects
+    were read from — a glyph per character, and the
     same face the probe was drawn with — under an ancestry that decides nothing
     about how a glyph is drawn, and
     resolving every computed property its probe's own text node resolves except

@@ -904,6 +904,77 @@ const inkProbeText = "illlim"
 // browser checks the rendered width against this rather than trusting it.
 const inkProbeWidth = 56
 
+// The character pairs a Latin text face is entitled to draw as one glyph.
+//
+// The f-ligatures are the ones every serif face in common use carries, the UA
+// default these bands render in among them; "st" is the discretionary one that
+// some carry as well. A superset is the right shape: what this has to rule out
+// is a fixture string whose glyph count is a question about which optional
+// ligatures a particular build shipped with, and being wrong in the direction
+// of refusing an innocent pair costs a fixture author one word.
+var inkLigatureSeeds = []string{
+	"ff", "fi", "fl", "ft", "fb", "fh", "fj", "fk", "st",
+}
+
+// inkGlyphPerCharacter says why a browser's glyph count for this string cannot
+// be compared against its characters, or "" when it can.
+//
+// # A property of the fixture, presented as a property of the face
+//
+// browser.mjs's inkFaceFault holds every scanned run to one glyph per
+// character: `measureText` reads the DOM's characters and
+// CSS.getPlatformFontsForNode counts the compositor's glyphs, so the pair is a
+// third answer to "was the string on the page the string that was measured".
+//
+// That claim holds on this grid because of what this grid SAYS — "January
+// 2026", one longer title, a single digit, "illlim" — and not because a face
+// draws a glyph per character in general. A face is entitled to draw one glyph
+// for "fi" and the common ones do. The first fixture string with an
+// f-ligature in it therefore makes that check fire for a reason that is
+// correct rendering, and it fires as a font substitution in the middle of an
+// antialiasing check rather than as the fixture choice it actually is.
+//
+// So the choice is made where the strings are and it fails here, with the
+// string in front of whoever wrote it. Non-ASCII is refused for the same
+// reason from the other direction: a composed form, a combining mark or an
+// emoji sequence is any number of glyphs for any number of code points, and
+// the two counts stop being comparable before any face has an opinion.
+func inkGlyphPerCharacter(s string) string {
+	for _, r := range s {
+		if r < 0x20 || r > 0x7e {
+			return fmt.Sprintf("%q is outside printable ASCII, where a code point "+
+				"and a glyph stop being the same unit", r)
+		}
+	}
+	low := strings.ToLower(s)
+	for _, seed := range inkLigatureSeeds {
+		if strings.Contains(low, seed) {
+			return fmt.Sprintf("it contains %q, which a text face may draw as one "+
+				"glyph", seed)
+		}
+	}
+	return ""
+}
+
+// inkGlyphFault is inkGlyphPerCharacter with the whole argument attached, for
+// the three places a scanned run's text is decided.
+func inkGlyphFault(where, what, s string) error {
+	why := inkGlyphPerCharacter(s)
+	if why == "" {
+		return nil
+	}
+	return fmt.Errorf("%s: %s is %q, and %s.\n\n"+
+		"browser.mjs holds every run this grid scans to being drawn with one glyph "+
+		"per character — the DOM's characters are what its width is measured over "+
+		"and the compositor's glyphs are what it counts, and the two agreeing is the "+
+		"only evidence there that the string on the page is the string that was "+
+		"measured. That agreement is a property of the strings named here, not of "+
+		"the face. This one breaks it, and the check it breaks presents itself as a "+
+		"font substitution in the middle of an antialiasing scan. Choose another "+
+		"word, or take the glyph count out of inkFaceFault and say what replaces it.",
+		where, what, s, why)
+}
+
 // inkProbeFor builds the probe that answers for one scanned text node.
 //
 // Returns the probe and its key. The key is the rendered declaration, so
@@ -912,6 +983,12 @@ func inkProbeFor(text *core.Node, subject inkProbeSubject, what string) (inkProb
 	if text == nil || text.Style == nil {
 		return inkProbe{}, fmt.Errorf(
 			"%s: no styled text node to build an antialiasing probe from", what)
+	}
+	// The probe's own run is scanned like any other, so the string it paints is
+	// held to the same property the bands' are. See inkGlyphPerCharacter.
+	if err := inkGlyphFault(what, "the probe's own run (inkProbeText)",
+		inkProbeText); err != nil {
+		return inkProbe{}, err
 	}
 	// The node's own Style, copied whole. A field this file has never heard of
 	// is a field that might change how Chrome draws the glyphs, and the probe
@@ -1206,10 +1283,12 @@ func bandRenderThemes() map[string]*core.Theme {
 	// first names a real leaf, the second names nothing. Same shape as
 	// pinfixture's deleted-versus-reworded pair, and the same reason for
 	// bothering — the diagnosis is what the message is for.
-	leaves := map[string]bool{}
-	for _, path := range themeLeafPaths(reflect.ValueOf(*base), "") {
-		leaves[path] = true
-	}
+	// The leaves, with the near-miss threshold measured over them. See
+	// themeLeafSet: the number is a fact about these names and travels with
+	// them, rather than being a constant about whichever struct was in front of
+	// whoever wrote it.
+	set := themeLeaves(reflect.ValueOf(*base))
+	leaves := set.leaves
 	unused, unknown := []string{}, []string{}
 	for _, path := range bandRenderTallVaries {
 		if allowed[path] {
@@ -1230,7 +1309,7 @@ func bandRenderThemes() map[string]*core.Theme {
 			"its own is \"the theme does not differ there\", which sends the reader "+
 			"to the two assignments above when what happened was a rename in "+
 			"core.Theme or a typo here. The derivation is not the thing to look "+
-			"at.\n\n%s.", unknown, themeNearMiss(leaves, unknown[0]))
+			"at.\n\n%s.", unknown, themeNearMiss(set, unknown[0]))
 	}
 	if len(unused) > 0 {
 		fatal("bandRenderTallVaries permits the tall-caption theme to differ from %s at "+
@@ -1334,7 +1413,180 @@ func themeDifferences(a, b reflect.Value, path string) []string {
 // The second and third make 1 the threshold: at one edit the answer stays a
 // pair, at two it becomes five, and a wall of names is the thing this whole
 // function exists not to print.
+//
+// # What this constant is now, and what it is not
+//
+// It is core.Theme's answer, pinned. The derivation itself lives in
+// themeLeaves and runs over whatever leaves it is handed — see themeLeafSet
+// for why the number had to stop being a constant the function read.
 const themeNearMissEdits = 1
+
+// How far a threshold derived from a struct is allowed to reach.
+//
+// themeLeaves searches upward for the largest distance that keeps an answer to
+// a pair of names, and a sparse struct has no such distance: two leaves under
+// one parent are never crowded, however far the search goes. That is not a
+// licence to report a name five edits away as "probably what was meant" — past
+// a few characters the claim stops being about typing and becomes a guess
+// about intent, which is the claim this function was rewritten not to make.
+//
+// This is a judgement and not a measurement, and it is the only one left here.
+// Three is where a slip stops being one slip: a transposition plus a case
+// change is two, a doubled letter in a word already misspelt is two, and
+// nothing that reads as a typing accident to a person is further out than
+// three without being a different word.
+const themeNearMissReach = 3
+
+// themeLeafSet is a struct's leaf paths together with the near-miss threshold
+// measured over THEM.
+//
+// # The threshold was derived from one struct and the function took any
+//
+// themeNearMissEdits is 1 because of three readings of core.Theme's own field
+// names, and themeNearMiss used to take a bare map[string]bool and read the
+// constant. The only caller passes core.Theme's leaves, so the derivation held
+// for the one use — and nothing in the signature or in the constant said which
+// struct the number was about. A second caller with a different struct would
+// have got a threshold measured against somebody else's field names, silently,
+// and the message would have gone on citing Spacing.XS and Spacing.XL as its
+// reason for hedging about a struct that has neither.
+//
+// So the measurement travels with the leaves. themeLeaves does it once per
+// struct — the cost is a per-parent quadratic and the callers build one set
+// and reuse it — themeNearMiss reads `edits` off the set it is handed, and the
+// ambiguity sentence names the closest pair THIS set has.
+type themeLeafSet struct {
+	// leaves is every dotted path themeLeafPaths produced, as a set.
+	leaves map[string]bool
+
+	// edits is the largest distance at which an answer over these names is
+	// still at most a pair, floored at 1 and capped at themeNearMissReach.
+	edits int
+
+	// closest is the closest pair of SIBLING leaves and closestD how far apart
+	// they are. This is what decides the shape of the message rather than the
+	// size of the threshold: a set whose closest siblings are three apart can
+	// report one candidate and call it the answer, and one with a pair at
+	// distance 1 cannot, at any threshold. -1 when no parent has two leaves.
+	closest  string
+	closestD int
+
+	// crowdAt is the most siblings any leaf has within `edits`, and crowdBeyond
+	// the most within one more — the two readings that bound the threshold from
+	// each side. atWorst and beyondWorst name the leaves they were measured at,
+	// so a test that disagrees with the derivation can say where.
+	crowdAt, crowdBeyond int
+	atWorst, beyondWorst string
+}
+
+// themeLeaves reads a struct's leaves and measures the near-miss threshold over
+// them. See themeLeafSet.
+func themeLeaves(v reflect.Value) themeLeafSet {
+	return themeLeafSetOf(themeLeafPaths(v, ""))
+}
+
+// themeLeafSetOf is the measurement, over dotted paths rather than over a
+// struct.
+//
+// Split from themeLeaves so the derivation can be put in front of names that
+// are not core.Theme's. That is the one thing a test over core.Theme alone
+// cannot show: one struct gives one answer, and a constant with a walk in
+// front of it would give the same one.
+func themeLeafSetOf(paths []string) themeLeafSet {
+	set := themeLeafSet{leaves: map[string]bool{}, closestD: -1}
+
+	// Grouped by parent, because that is the only comparison themeNearMiss
+	// makes: a slip under Typography.Caption is answered by Typography.Caption's
+	// own names, and a leaf three parents away is not a candidate however close
+	// it spells.
+	byParent := map[string][]string{}
+	for _, path := range paths {
+		set.leaves[path] = true
+		cut := strings.LastIndex(path, ".") + 1
+		byParent[path[:cut]] = append(byParent[path[:cut]], path[cut:])
+	}
+
+	// Every sibling pair's distance, once. The two crowd readings below and the
+	// closest-pair reading are three questions about the same numbers, and
+	// recomputing them per question is the whole cost of this function.
+	type group struct {
+		parent string
+		names  []string
+		d      [][]int
+	}
+	groups := make([]group, 0, len(byParent))
+	parents := make([]string, 0, len(byParent))
+	for parent := range byParent {
+		parents = append(parents, parent)
+	}
+	sort.Strings(parents)
+	for _, parent := range parents {
+		names := byParent[parent]
+		sort.Strings(names)
+		low := make([]string, len(names))
+		for i, n := range names {
+			low[i] = strings.ToLower(n)
+		}
+		d := make([][]int, len(names))
+		for i := range names {
+			d[i] = make([]int, len(names))
+		}
+		for i := range names {
+			for j := 0; j < i; j++ {
+				d[i][j] = themeEditDistance(low[i], low[j])
+				d[j][i] = d[i][j]
+				if set.closestD < 0 || d[i][j] < set.closestD {
+					set.closestD = d[i][j]
+					set.closest = parent + names[j] + " and " + parent + names[i]
+				}
+			}
+		}
+		groups = append(groups, group{parent: parent, names: names, d: d})
+	}
+
+	// The most OTHER siblings any leaf has within a distance, and the leaf that
+	// has them.
+	crowd := func(within int) (int, string) {
+		most, worst := 0, ""
+		for _, g := range groups {
+			for i := range g.names {
+				n := 0
+				for j := range g.names {
+					if i != j && g.d[i][j] <= within {
+						n++
+					}
+				}
+				if n > most {
+					most, worst = n, g.parent+g.names[i]
+				}
+			}
+		}
+		return most, worst
+	}
+
+	// The largest threshold that keeps an answer to a pair of names, searched
+	// upward from the floor.
+	//
+	// One is the floor rather than a candidate: below it there is no threshold
+	// at all, only exact match, and a struct crowded enough that even one edit
+	// reaches several siblings gets 1 with a longer list — which the message
+	// prints, because "several names are one edit from this" is a true and
+	// useful thing to say and a silently narrowed threshold is not.
+	set.edits = 1
+	for set.edits < themeNearMissReach {
+		n, worst := crowd(set.edits + 1)
+		if n > 1 {
+			set.crowdBeyond, set.beyondWorst = n, worst
+			break
+		}
+		set.edits++
+	}
+	set.crowdAt, set.atWorst = crowd(set.edits)
+	if set.beyondWorst == "" {
+		set.crowdBeyond, set.beyondWorst = crowd(set.edits + 1)
+	}
+	return set
+}
 
 // themeEditDistance is the optimal string alignment distance — an insert, a
 // delete, a substitution or a swap of two ADJACENT characters, each costing
@@ -1387,23 +1639,24 @@ func themeEditDistance(a, b string) int {
 // A core.Style has seventy leaves under it and a core.Theme has 872; printing
 // them all is the wall this repository keeps deciding not to produce. So the
 // answer is narrowed to the ones a typo actually reaches: a leaf under the same
-// parent that differs only in case, or one within themeNearMissEdits of it.
+// parent that differs only in case, or one within the set's own threshold.
 //
 // The two are reported separately because they are different strengths of
 // claim. A name that differs only in case is almost certainly the one that was
-// meant; a name one edit away is a candidate, and core.Theme has a pair of
-// siblings one edit apart, so it may not be the only one — see
-// themeNearMissEdits, where the measurement is.
+// meant; a name an edit away is a candidate, and this set may have sibling
+// leaves that close to each other, in which case it is not the only one — see
+// themeLeafSet, where the measurements are, and themeNearMissEdits for what
+// they come to for core.Theme.
 //
-// With nothing within an edit, what is said is how many leaves the parent has
-// and what one edit covers, rather than a verdict on whether the name was ever
-// right. That verdict was the previous version's and it was stated with more
-// confidence than case-insensitive equality could support.
-func themeNearMiss(leaves map[string]bool, path string) string {
+// With nothing within the threshold, what is said is how many leaves the
+// parent has and what an edit covers, rather than a verdict on whether the
+// name was ever right. That verdict was the previous version's and it was
+// stated with more confidence than case-insensitive equality could support.
+func themeNearMiss(set themeLeafSet, path string) string {
 	cut := strings.LastIndex(path, ".") + 1
 	parent, want := path[:cut], strings.ToLower(path[cut:])
 	same, near, under := []string{}, []string{}, 0
-	for leaf := range leaves {
+	for leaf := range set.leaves {
 		if !strings.HasPrefix(leaf, parent) {
 			continue
 		}
@@ -1411,33 +1664,40 @@ func themeNearMiss(leaves map[string]bool, path string) string {
 		switch d := themeEditDistance(strings.ToLower(leaf[cut:]), want); {
 		case d == 0:
 			same = append(same, leaf)
-		case d <= themeNearMissEdits:
+		case d <= set.edits:
 			near = append(near, leaf)
 		}
 	}
 	sort.Strings(same)
 	sort.Strings(near)
+	// "one edit" reads better than "1 edits" and the threshold is 1 for
+	// core.Theme, so the singular is the sentence this prints today; the plural
+	// is what a sparser struct would get.
+	edits := "one edit"
+	if set.edits != 1 {
+		edits = fmt.Sprintf("%d edits", set.edits)
+	}
 	if len(same) > 0 {
 		return fmt.Sprintf("%s differs from it only in case, and is probably what "+
 			"was meant", strings.Join(same, " and "))
 	}
 	if len(near) == 1 {
-		return fmt.Sprintf("%s is one edit from it — a letter added, dropped or "+
+		return fmt.Sprintf("%s is within %s of it — a letter added, dropped or "+
 			"changed, or two adjacent letters swapped — and is probably what was meant",
-			near[0])
+			near[0], edits)
 	}
 	if len(near) > 1 {
-		return fmt.Sprintf("%s are each one edit from it, and which was meant is not "+
-			"something this can say: core.Theme has sibling leaves one edit apart "+
-			"(Spacing.XS and Spacing.XL), so a name at this distance can belong to "+
-			"more than one of them", strings.Join(near, " and "))
+		return fmt.Sprintf("%s are each within %s of it, and which was meant is not "+
+			"something this can say: this struct has sibling leaves %d apart (%s), so "+
+			"a name at this distance can belong to more than one of them",
+			strings.Join(near, " and "), edits, set.closestD, set.closest)
 	}
-	return fmt.Sprintf("nothing under %s is within one edit of it, case ignored, and "+
+	return fmt.Sprintf("nothing under %s is within %s of it, case ignored, and "+
 		"that prefix has %d leaves. One edit covers a letter added, dropped or "+
 		"changed and two adjacent letters swapped — a doubled letter, a singular for "+
 		"a plural, a transposition — so a slip of that kind is ruled out. Two "+
 		"independent slips are not, and neither is a name that was never right",
-		strings.TrimSuffix(parent, "."), under)
+		strings.TrimSuffix(parent, "."), edits, under)
 }
 
 // themeLeafPaths is every leaf path a core.Theme has, in the spelling
@@ -1875,6 +2135,35 @@ func renderBandCase(name string, theme *core.Theme, what string, collapsible boo
 			"%s/%s: the label's ink and the band behind it are both %s, so the words are "+
 				"invisible and a check that found the ink would be finding the fill",
 			name, what, c.LabelInk)
+	}
+
+	// And that both scanned runs are strings the browser's glyph count can be
+	// held to. See inkGlyphPerCharacter: that check is one of the three answers
+	// to "was the string on the page the string that was measured", and it is
+	// true of this grid because of the words chosen here. Asked at the rendered
+	// node rather than at bandRenderGroup, because what the browser counts
+	// glyphs for is what the component put in the DOM — a label the widget
+	// truncated or decorated is a different string from the one the fixture
+	// declared, and it is the rendered one the claim has to hold of.
+	var badgeNode *core.Node
+	if c.Badge != "" {
+		badgeNode = row.Children[1]
+	}
+	for _, run := range []struct {
+		what string
+		node *core.Node
+	}{
+		{"the band's label", labelNode},
+		{"the count badge's digits", badgeNode},
+	} {
+		if run.node == nil {
+			continue
+		}
+		content, _ := run.node.Props["content"].(string)
+		if err := inkGlyphFault(
+			fmt.Sprintf("%s/%s", name, what), run.what, content); err != nil {
+			return bandRender{}, nil, err
+		}
 	}
 
 	// The antialiasing probes: one per box this case's ink assertions read.
