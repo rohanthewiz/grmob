@@ -2732,13 +2732,27 @@ function inkFaceList(faces) {
 //	              joiner and the BOM. None carries an advance or a glyph, so a
 //	              pair split by one is a pair the shaper still joins and a pair
 //	              this note must still find.
-//	lowercase     last, because the two steps above produce letters that need
-//	              it: NFKD of a ligature yields base letters in whatever case
-//	              the composed form carried.
+//	long s        U+017F to "s". U+FB05's compatibility decomposition runs
+//	              through it — UnicodeData gives <compat> 017F 0074 — and
+//	              `toLowerCase` will not finish the job, because mapping the
+//	              long s to "s" is a case FOLDING and that is a case mapping.
+//	              This build's normaliser happens to answer "st" for U+FB05
+//	              outright; one that answered "ſt" would leave the pair one
+//	              character short of the seed. Taken explicitly so the reading
+//	              does not depend on which.
+//	lowercase     last, because the steps above produce letters that need it:
+//	              NFKD of a ligature yields base letters in whatever case the
+//	              composed form carried.
 //
-// This changes nothing about what gen.go refuses. It changes what this note
-// says about a string that got past the refusal, which is the only kind it
-// ever sees.
+// gen.go folds too now, and through the same three answers: inkGlyphFold
+// expands the same presentation forms, drops the same format characters and
+// takes the same long-s step, and asks the pair question before the
+// printable-ASCII one. What it does not have is a normaliser — that module
+// carries no Unicode tables — so its expansion is written out for the seven
+// characters the seed list is about rather than derived. The two are the same
+// answer about a seed written some other way and this one is wider everywhere
+// else, which is the direction that costs a note a clause rather than a
+// fixture a refusal.
 //
 // # And it is applied to both sides of the question
 //
@@ -2760,7 +2774,8 @@ const INK_FOLD_IGNORABLE =
 
 function inkFold(text) {
     return typeof text === "string"
-        ? text.normalize("NFKD").replace(INK_FOLD_IGNORABLE, "").toLowerCase()
+        ? text.normalize("NFKD").replace(INK_FOLD_IGNORABLE, "")
+            .replace(/\u017F/gu, "s").toLowerCase()
         : "";
 }
 
@@ -3079,65 +3094,153 @@ function inkCanvasNameReached(m) {
         Math.abs(m.canary - m.base) >= LAYOUT_UNIT;
 }
 
-// Whether the generic the canary falls back to is a face this grid is not
-// drawn with.
+// How far a joined run's own face is from the generic the canary falls back to.
+//
+// `named` is the advance this canvas gives the box with the compositor's family
+// at the head of its own list; `base` is the advance it gives the SAME string,
+// at the same size, under INK_CANARY_FALLBACK alone. Both are measureText on
+// one canvas in one evaluate, so their difference is two faces' widths for one
+// string and nothing else — which is the whole of what the canary below rests
+// on.
+//
+// Split out for the reason inkCanvasNameReached is: the arm that reports the
+// premise failing and the number the tail recites are the same comparison, and
+// a second spelling of it would let them disagree.
+//
+// Null when either number is missing. Those are runs inkCanvasFaceFault has
+// already reported on their own line, and a gap guessed at from one advance is
+// not a reading.
+function inkCanvasGenericGap(m) {
+    return m && typeof m.named === "number" && typeof m.base === "number"
+        ? Math.abs(m.named - m.base) : null;
+}
+
+// What this browser calls the face behind that generic, for a sentence to name.
+//
+// One entry per distinct font request the joined runs make — see where the
+// probes are mounted. A family list is allowed to answer per size (an optical
+// cut, a display face at the large end), so a single read at whatever the page
+// default happens to be would be naming a face no canary is asked at.
+//
+// Collapsed to one clause when every request came back with the same answer,
+// which is what a stack without such a cut does and what makes the long form
+// worth printing when it happens.
+//
+// Null when nothing was read. That costs a sentence its noun and costs the
+// premise nothing — see inkCanvasFallbackFault, which decides on advances.
+function inkCanaryFaceList(probes) {
+    if (!probes || probes.length === 0) return null;
+    const read = probes.filter((p) => p.faces && p.faces.length > 0);
+    if (read.length === 0) return null;
+    const answers = new Set(read.map((p) => inkFaceList(p.faces)));
+    if (answers.size === 1) return [...answers][0];
+    return read.map((p) => `${inkFaceList(p.faces)} at ${p.req}`).join("; ");
+}
+
+// Whether the generic the canary falls back to measures like the faces this
+// grid is drawn with.
 //
 // # The premise the canary itself rests on
 //
 // inkCanvasNameReached reads "the two advances came apart" as "the family in
 // front of the generic reached a face". That inference has a second leg the
-// reading cannot see: the generic must resolve to a DIFFERENT face. Handed a
-// browser where `monospace` maps onto the very family the text is set in, the
-// two requests resolve to one face, the advances are equal for every run, and
-// the canary reports the join as having bitten nothing — everywhere, silently,
-// while the join was working perfectly.
+// reading cannot see: the generic must resolve to a face with DIFFERENT widths.
+// Handed a browser where `monospace` maps onto the very family the text is set
+// in, the two requests resolve to one face, the advances are equal for every
+// run, and the canary reports the join as having bitten nothing — everywhere,
+// silently, while the join was working perfectly.
 //
 // INK_CANARY_FALLBACK's own note argues that a fixed-advance face is nothing
-// like this grid's proportional ones. That is an argument about a font stack
-// on some machine, not a reading of this one, and the browser will answer it:
-// the resolution is what CSS.getPlatformFontsForNode reports, which is the
-// same third party every other face question here is put to.
+// like this grid's proportional ones. That is an argument about a font stack on
+// some machine, not a reading of this one.
+//
+// # Why the browser is not asked what the face is CALLED
+//
+// It was, and a name is the one thing this cannot be decided by. The first
+// version of this compared the family strings CSS.getPlatformFontsForNode
+// returned for the generic's probe against the strings it returned for the
+// joined runs. Those come from one API on one page, so they agree today — and
+// a platform that reports one face under two spellings ("Times" for the run,
+// "Times New Roman" for the generic's node) makes the comparison miss and the
+// trap go unreported. That is the silent direction again, reached from inside
+// the reader that exists to close it.
+//
+// The metric answer is already in hand at the counter and is the answer the
+// canary actually needs. What breaks the canary is not two nodes sharing a face
+// NAME, it is two requests producing the same ADVANCE — and that is precisely
+// inkCanvasGenericGap, measured over each run's own string at its own size, on
+// the same canvas, in the same evaluate. A gap inside a LayoutUnit is a canary
+// with nothing to read.
+//
+// The bound is LAYOUT_UNIT rather than INK_CANARY_MARGIN because this is the
+// canary's own decision bound: inkCanvasNameReached calls anything under it "the
+// name reached nothing", so a run whose face lands that close to the generic is
+// one the canary CANNOT answer for. INK_CANARY_MARGIN is the wider bracket, and
+// it is asked in the census over the runs that did separate — the two populations
+// are complements and each is held to the bound that decides it.
+//
+// This subsumes the name test rather than dropping it: one face under two names
+// gives one advance, so every match the string comparison could find is a match
+// this makes, and the ones it misses are exactly the ones it was missing.
 //
 // # What the arms mean
 //
-// A read that comes back empty is the premise unmeasured, not a failure of it
-// — but it is reported, because the canary's whole job is to keep a silence
-// from being counted as a confirmation, and an unread premise is the same
-// silence one level up.
+// No gap readable at all is the premise unmeasured, and it is reported for the
+// reason the canary exists: a silence must not be counted as a confirmation.
+// Every joined run carries both advances by construction, so this arm is the
+// reader that fires if that ever stops being true.
 //
-// A face the runs share is the trap itself. Reported against the families the
-// JOINED runs were drawn by, not against every face on the page: a probe or a
-// ligature node drawn in the generic's face costs the canary nothing, because
-// no canary is asked about those boxes.
-function inkCanvasFallbackFault(faces, families, count) {
+// A run whose face measures like the generic is the trap itself. Asked of the
+// JOINED runs only, not of every box on the page: a probe or a ligature node
+// that happens to be drawn in the generic's face costs the canary nothing,
+// because no canary is put to those boxes.
+function inkCanvasFallbackFault(faces, rows, count) {
     if (count === 0) return null;
-    if (!faces || faces.length === 0) {
-        return `nothing says which face ${INK_CANARY_FALLBACK} reaches on this ` +
-            `browser, so the canary behind ${count} canvas joins is resting on an ` +
+    const gaps = rows.map(inkCanvasGenericGap).filter((g) => g !== null);
+    const named = inkCanaryFaceList(faces);
+    if (gaps.length === 0) {
+        return `nothing measured ${INK_CANARY_FALLBACK} against the faces this grid ` +
+            `is drawn by, so the canary behind ${count} canvas joins is resting on an ` +
             `unread premise.\n\n` +
             `That canary measures one string under ${INK_CANARY_FALLBACK} alone and ` +
             `under the compositor's family in front of it, and reads a difference as ` +
-            `the family having reached a face. The reading is only that if the ` +
-            `generic resolves to something else — which is a fact about this ` +
-            `machine's font stack, asked here by mounting a span in the generic and ` +
-            `putting CSS.getPlatformFontsForNode to it. An empty answer is that read ` +
-            `not having happened`;
+            `the family having reached a face. The reading is only that if the two ` +
+            `requests resolve to faces of different widths, which is a fact about this ` +
+            `machine's font stack and is answered by the pair of advances every joined ` +
+            `run already produced. Both of them come back from one evaluate, so a run ` +
+            `carrying neither is that evaluate having returned something this file does ` +
+            `not recognise`;
     }
-    const shared = faces.filter((f) => families.has(f.family));
-    if (shared.length === 0) return null;
-    return `${INK_CANARY_FALLBACK} resolves to ${inkFaceList(shared)} on this ` +
-        `browser, and ${shared.length === 1 ? "that is a face" : "those are faces"} ` +
-        `this grid's joined runs are drawn by — so the canary behind those ${count} ` +
-        `joins is comparing a face with itself.\n\n` +
-        `It measures one string under ${INK_CANARY_FALLBACK} alone and under the ` +
+    const blind = rows.filter((m) => {
+        const gap = inkCanvasGenericGap(m);
+        return gap !== null && gap < LAYOUT_UNIT;
+    });
+    if (blind.length === 0) return null;
+    // The worst of them, because the message is about a bound and the reader
+    // wants the number furthest from it that still fell inside.
+    const widest = blind.reduce(
+        (w, m) => Math.max(w, inkCanvasGenericGap(m)), 0);
+    const example = blind[0];
+    return `${INK_CANARY_FALLBACK} measures like the face ` +
+        `${blind.length === 1 ? "one" : blind.length} of this grid's ${count} joined ` +
+        `runs ${blind.length === 1 ? "is" : "are"} drawn by — no more than ` +
+        `${widest.toFixed(6)}px apart over ${blind.length === 1 ? "that run's" :
+        "those runs'"} own string${blind.length === 1 ? "" : "s"} (e.g. ` +
+        `"${example.text}", ${inkCanvasGenericGap(example).toFixed(6)}px), against a ` +
+        `LayoutUnit of ${LAYOUT_UNIT}` +
+        (named === null ? `` : ` — the generic resolves to ${named} here`) + `.\n\n` +
+        `So the canary behind those joins is comparing a face with itself. It ` +
+        `measures one string under ${INK_CANARY_FALLBACK} alone and under the ` +
         `compositor's family in front of ${INK_CANARY_FALLBACK}. Both requests now ` +
-        `resolve to one face, the two advances are equal, and equal is exactly what ` +
-        `this file reads as "the name reached nothing". Every join in the grid ` +
-        `reports as silent, the tail recites 0 confirmed, and the reader is sent ` +
-        `after an unreachable family name that the page can reach.\n\n` +
-        `INK_CANARY_FALLBACK is a generic chosen on a metric argument — a ` +
-        `fixed-advance face's widths for these strings are nothing like a ` +
-        `proportional one's — and this is that argument failing on this machine ` +
+        `come back with the same advance, and equal is exactly what this file reads as ` +
+        `"the name reached nothing". Every such join reports as silent, the tail ` +
+        `recites them as unconfirmed, and the reader is sent after an unreachable ` +
+        `family name that the page can reach.\n\n` +
+        `This is asked of advances rather than of face names on purpose: one face ` +
+        `reported under two spellings would pass a name comparison and break the ` +
+        `canary just the same. INK_CANARY_FALLBACK is a generic chosen on a metric ` +
+        `argument — a fixed-advance face's widths for these strings are nothing like ` +
+        `a proportional one's — and this is that argument failing on this machine ` +
         `rather than in this file. A different generic, or a family this grid does ` +
         `not draw with, restores the separation`;
 }
@@ -4235,7 +4338,22 @@ async function main() {
         // is the other half of that canary's premise: a generic that resolved
         // to the family the grid is drawn with would have the canary comparing
         // a face with itself. See inkCanvasFallbackFault.
+        //
+        // A NAME, and a name is what that premise cannot be decided by — see
+        // inkCanvasFallbackFault, which decides it on the pair of advances
+        // below. This is what the tail calls the generic and what a failure
+        // prints beside its numbers; an empty read costs a sentence its noun
+        // and costs the premise nothing.
         canvasFallback: null,
+        // And how far the generic actually is from the nearest face this grid's
+        // joined runs are drawn by, in pixels, over those runs' own strings at
+        // their own sizes.
+        //
+        // This is the premise itself as a number: the canary reads "the two
+        // advances came apart" as "the family reached a face", and that reading
+        // is worth exactly this much. Null when no run was joined, because a
+        // minimum over nothing is not a small separation.
+        canvasGenericNearest: null,
     };
     try {
         const port = await devtoolsPort(profile);
@@ -5551,75 +5669,6 @@ async function main() {
             });
         }
 
-        // And which face this browser gives the canary's own generic.
-        //
-        // See inkCanvasFallbackFault. Nothing already mounted is set in
-        // INK_CANARY_FALLBACK — the whole grid is drawn in the theme's stack —
-        // so the question needs a box, and the box is made here and removed
-        // before the loop below reads a pixel.
-        //
-        // Mounted inside the bracketed window on purpose, and invisible to
-        // both fingerprints by construction: TREE_FINGERPRINT_JS and
-        // LAYOUT_FINGERPRINT_JS walk `[data-node-path]` and this span carries
-        // no such attribute, and `position:fixed` takes it out of flow so no
-        // rect they do hash can move. That is an argument, and the two
-        // fingerprints are also the thing that would report it wrong: a mount
-        // that moved a rect fires faceLayoutFault, which drops every face arm
-        // rather than believing this one.
-        //
-        // Off the left edge rather than `display:none` or `visibility:hidden`,
-        // because a box that is not rendered has no glyphs and
-        // CSS.getPlatformFontsForNode reports the faces that DREW something.
-        const canaryMounted = await evaluate(`(() => {
-            const e = document.createElement("span");
-            e.setAttribute("data-ink-canary", "");
-            e.style.cssText = "position:fixed;top:0;left:-9999px;" +
-                "font-family:${INK_CANARY_FALLBACK}";
-            e.textContent = ${JSON.stringify(INK_CANARY_PROBE_TEXT)};
-            document.body.appendChild(e);
-            return true;
-        })()`);
-        let canaryFaces = null;
-        if (canaryMounted) {
-            const { nodeId } = await session.send("DOM.querySelector",
-                { nodeId: domRoot, selector: `[data-ink-canary]` });
-            if (nodeId) {
-                const { fonts } = await session.send(
-                    "CSS.getPlatformFontsForNode", { nodeId });
-                canaryFaces = fonts.map(
-                    (f) => ({ family: f.familyName, glyphs: f.glyphCount }));
-            }
-            // Removed here rather than left for the page teardown: every
-            // reading after this one is about the grid, and a span nothing
-            // else knows about is exactly the kind of thing a later check
-            // would find and have no account of.
-            await evaluate(`(() => {
-                const e = document.querySelector("[data-ink-canary]");
-                if (e) e.remove();
-                return true;
-            })()`);
-        }
-
-        // And whether all of that was about the page the rects came from, and
-        // about the rendering the capture holds.
-        //
-        // See TREE_FINGERPRINT_JS. The first fingerprint rode back inside the
-        // rects' own evaluate; this is the same expression after the last
-        // font read. A tree that moved in between makes every face above a
-        // statement about some other document, so the face arm is dropped
-        // rather than reported — an unheld claim is not evidence, and the one
-        // thing it would produce is a confident diagnosis of a font
-        // substitution that did not happen.
-        //
-        // The layout fingerprint rides back in the SAME evaluate, and closes
-        // the window the other two leave between them: identity holds as far
-        // as here, geometry was held as far as the shutter, and a font that
-        // finished loading in between moves the rects without moving the tree.
-        // See faceLayoutFault. One expression rather than two, because two
-        // round trips would put a window between the two readings that close
-        // the windows.
-        const facePaths = BAND_RENDERS.length * 2 + INK_PROBES.length +
-            INK_LIGATURES.length + (canaryMounted ? 1 : 0);
         // And the runs whose canvas is about to be held to the face the reads
         // above just named. The table is built here rather than in the page
         // because the family is the protocol's answer and the path is this
@@ -5643,6 +5692,115 @@ async function main() {
                 });
             }
         }
+        // And which face this browser gives the canary's own generic — at each
+        // size the canary is actually asked at.
+        //
+        // See inkCanvasFallbackFault. Nothing already mounted is set in
+        // INK_CANARY_FALLBACK — the whole grid is drawn in the theme's stack —
+        // so the question needs a box, and the boxes are made here and removed
+        // before the loop below reads a pixel.
+        //
+        // # One probe per request, not one probe
+        //
+        // The first version mounted a single span carrying `font-family` and
+        // nothing else, so the generic resolved at whatever the page default
+        // was. The runs are measured at their OWN computed size, weight and
+        // style — that is what INK_FONT_SHORTHAND_JS assembles — and a family
+        // list is allowed to answer per size: an optical cut, a display face at
+        // the large end, a stack whose monospace entry only exists in one
+        // width. Any of those leaves the probe naming a face no canary is put
+        // to.
+        //
+        // So the requests are taken off the joined runs themselves and
+        // deduplicated, and each gets a probe carrying that whole shorthand
+        // with the generic as its family. The shorthand is built the same way
+        // the canvas builds it — style, weight, size, family — because the
+        // point is for the two to be asking one question.
+        //
+        // Mounted inside the bracketed window on purpose, and invisible to
+        // both fingerprints by construction: TREE_FINGERPRINT_JS and
+        // LAYOUT_FINGERPRINT_JS walk `[data-node-path]` and these spans carry
+        // no such attribute, and `position:fixed` takes them out of flow so no
+        // rect they do hash can move. That is an argument, and the two
+        // fingerprints are also the thing that would report it wrong: a mount
+        // that moved a rect fires faceLayoutFault, which drops every face arm
+        // rather than believing this one.
+        //
+        // Off the left edge rather than `display:none` or `visibility:hidden`,
+        // because a box that is not rendered has no glyphs and
+        // CSS.getPlatformFontsForNode reports the faces that DREW something.
+        const canaryReqs = await evaluate(`(() => {
+            const paths = ${JSON.stringify(canvasRuns
+                .filter((r) => r.family && r.path).map((r) => r.path))};
+            const seen = [];
+            for (const path of paths) {
+                const e = document.querySelector('[data-node-path="' + path + '"]');
+                if (!e) continue;
+                const cs = getComputedStyle(e);
+                // The head of INK_FONT_SHORTHAND_JS, which is the part that
+                // selects a face before the family does.
+                const req = cs.fontStyle + " " + cs.fontWeight + " " + cs.fontSize;
+                if (seen.includes(req)) continue;
+                seen.push(req);
+                const probe = document.createElement("span");
+                probe.setAttribute("data-ink-canary", String(seen.length - 1));
+                probe.style.cssText = "position:fixed;top:0;left:-9999px;font:" +
+                    req + " ${INK_CANARY_FALLBACK}";
+                probe.textContent = ${JSON.stringify(INK_CANARY_PROBE_TEXT)};
+                document.body.appendChild(probe);
+            }
+            return seen;
+        })()`);
+        // Keyed by the request rather than by position, so a message can say
+        // which size an answer is about — and so two requests that came back
+        // with the same face collapse into one clause instead of reading as
+        // two findings. See inkCanaryFaceList.
+        const canaryFaces = [];
+        for (let i = 0; i < (canaryReqs || []).length; i++) {
+            const { nodeId } = await session.send("DOM.querySelector",
+                { nodeId: domRoot, selector: `[data-ink-canary="${i}"]` });
+            let faces = null;
+            if (nodeId) {
+                const { fonts } = await session.send(
+                    "CSS.getPlatformFontsForNode", { nodeId });
+                faces = fonts.map(
+                    (f) => ({ family: f.familyName, glyphs: f.glyphCount }));
+            }
+            canaryFaces.push({ req: canaryReqs[i], faces });
+        }
+        if (canaryReqs && canaryReqs.length > 0) {
+            // Removed here rather than left for the page teardown: every
+            // reading after this one is about the grid, and spans nothing else
+            // knows about are exactly the kind of thing a later check would
+            // find and have no account of.
+            await evaluate(`(() => {
+                for (const e of document.querySelectorAll("[data-ink-canary]")) {
+                    e.remove();
+                }
+                return true;
+            })()`);
+        }
+
+        // And whether all of that was about the page the rects came from, and
+        // about the rendering the capture holds.
+        //
+        // See TREE_FINGERPRINT_JS. The first fingerprint rode back inside the
+        // rects' own evaluate; this is the same expression after the last
+        // font read. A tree that moved in between makes every face above a
+        // statement about some other document, so the face arm is dropped
+        // rather than reported — an unheld claim is not evidence, and the one
+        // thing it would produce is a confident diagnosis of a font
+        // substitution that did not happen.
+        //
+        // The layout fingerprint rides back in the SAME evaluate, and closes
+        // the window the other two leave between them: identity holds as far
+        // as here, geometry was held as far as the shutter, and a font that
+        // finished loading in between moves the rects without moving the tree.
+        // See faceLayoutFault. One expression rather than two, because two
+        // round trips would put a window between the two readings that close
+        // the windows.
+        const facePaths = BAND_RENDERS.length * 2 + INK_PROBES.length +
+            INK_LIGATURES.length + (canaryReqs ? canaryReqs.length : 0);
         const afterFaces = await evaluate(`({
             tree: ${TREE_FINGERPRINT_JS}, layout: ${LAYOUT_FINGERPRINT_JS},
             canvas: ${JSON.stringify(canvasRuns)}.map((r) => {
@@ -5783,24 +5941,33 @@ async function main() {
         // the number that means what the tail was saying. See the canary in
         // inkCanvasFaceFault: a head family that resolves to nothing leaves the
         // two advances equal without either of them having been about it.
-        // And whether the generic that canary falls back to is a face this
-        // grid is not drawn with, which is the other leg of the same premise.
+        // And whether the generic that canary falls back to measures like the
+        // faces this grid is drawn with, which is the other leg of the same
+        // premise.
         //
-        // Asked of the families the JOINED runs carry rather than of
-        // runFamilies: the probe and ligature boxes have faces too and no
-        // canary is put to them, so a generic that reached one of those costs
-        // this reading nothing. Taken off the same rows the counts below are,
-        // so the count and the premise cannot be about different populations.
-        const canvasFamilies = new Set(canvasRuns
-            .filter((r) => r.family && (canvasRead.get(r.at) || {}).asked)
-            .map((r) => r.family));
-        asked.canvasFallback = canaryFaces
-            ? canaryFaces.map((f) => f.family) : null;
+        // Asked of the JOINED runs' own advances rather than of every face on
+        // the page: the probe and ligature boxes have faces too and no canary
+        // is put to them, so a generic that reached one of those costs this
+        // reading nothing. Taken off the very rows the counts below are, so
+        // the count and the premise cannot be about different populations —
+        // and off their advances rather than their family names, because one
+        // face reported under two spellings breaks the canary and passes a
+        // name comparison. See inkCanvasFallbackFault.
+        asked.canvasFallback = inkCanaryFaceList(canaryFaces);
         if (facesHeld) {
             const fallbackFault = inkCanvasFallbackFault(
-                canaryFaces, canvasFamilies, canvasAsked.length);
+                canaryFaces, canvasAsked, canvasAsked.length);
             if (fallbackFault) problems.push(fallbackFault);
         }
+        // And the premise as a number, for the tail to recite in place of the
+        // name it used to assert something about. Through the same helper the
+        // arm above decides with, so the sentence and the check cannot come
+        // apart. Null when no run produced the pair, which is the state that
+        // arm reports rather than a separation of zero.
+        const canvasGaps = canvasAsked
+            .map(inkCanvasGenericGap).filter((g) => g !== null);
+        asked.canvasGenericNearest = canvasGaps.length === 0 ? null
+            : canvasGaps.reduce((w, g) => Math.min(w, g), Infinity);
         const canvasReached = canvasAsked.filter(inkCanvasNameReached);
         asked.canvasNamed = canvasReached.length;
         // And how much room the reading behind that count had. Taken off the
@@ -7748,8 +7915,11 @@ async function main() {
         ? "no measured amount" : asked.canvasNarrowest.toFixed(4) + "px"}, where a
     LayoutUnit would have been read as a reaching name, and the generic it falls back
     to resolving on this browser to ${asked.canvasFallback === null
-        ? "a face nothing here read" : asked.canvasFallback.join(", ")}, which is not
-    a face any of these runs is drawn by, so the agreement is a face's
+        ? "a face nothing here read" : asked.canvasFallback} and measuring
+    ${asked.canvasGenericNearest === null ? "no measured amount"
+        : asked.canvasGenericNearest.toFixed(4) + "px"} from the nearest of the faces
+    those runs are drawn by, over their own strings at their own sizes rather than by
+    a name either of them could be reported under twice, so the agreement is a face's
     and not a skipped lookup's — which gave the same width both ways, the widest of those
     ${asked.canvasFaces} differences being ${asked.canvasWidest.toFixed(6)}px against
     a bound of ${LAYOUT_UNIT},

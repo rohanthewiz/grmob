@@ -930,6 +930,125 @@ var inkLigatureSeeds = []string{
 	"ff", "fi", "fl", "ft", "fb", "fh", "fj", "fk", "st",
 }
 
+// The characters this refusal's fold expands, and what it expands them to.
+//
+// The Alphabetic Presentation Forms block carries the very pairs
+// inkLigatureSeeds names, precomposed: U+FB01 IS "fi", written as one code
+// point. Nothing below can see that with strings.Contains, and a fixture
+// spelling a word with one is a fixture holding a pair.
+//
+// U+017F, the long s, is in the table because U+FB05's compatibility
+// decomposition runs through it: UnicodeData gives that ligature as <compat>
+// 017F 0074, which is one character short of the seed that names it. What a
+// normaliser actually hands back is not settled — the ICU this repository's
+// Node is built against answers "st" directly, and a build that answered
+// "ſt" would be following the file. Neither Go's strings.ToLower nor
+// JavaScript's toLowerCase maps the long s to "s" (that is a case FOLDING and
+// they are case mappings), so the answer would then sit there unmatched.
+//
+// So both folds take the step explicitly and neither depends on which answer
+// its normaliser gives. browser.mjs's inkFold does the same replacement for the
+// same reason, and the pair is held by a test that runs that fold — see
+// TestTheTwoFoldsAgreeOnTheFormsTheyBothCarry.
+//
+// A table rather than a normaliser: this module has no Unicode normalisation in
+// it and takes no dependency for one, and what the refusal below has to see is
+// not "NFKD" in general but the seed list's own pairs written some other way.
+// Seven characters and a long s are the whole of that, and they are written
+// down where the next person adding a seed will find them.
+var inkLigatureForms = map[rune]string{
+	'\uFB00': "ff",
+	'\uFB01': "fi",
+	'\uFB02': "fl",
+	'\uFB03': "ffi",
+	'\uFB04': "ffl",
+	// Through "ſt", which the entry below folds in the same pass: this is the
+	// answer after both steps rather than the decomposition's alone.
+	'\uFB05': "st",
+	'\uFB06': "st",
+	'\u017F': "s",
+}
+
+// inkGlyphIgnorable reports whether a character carries neither an advance nor
+// a glyph, and so cannot separate a pair the shaper still joins.
+//
+// The soft hyphen, the zero-width and bidi controls, the word joiner and the
+// BOM. Written as ranges rather than taken from unicode.Cf so that this set and
+// browser.mjs's INK_FOLD_IGNORABLE are the same set spelled twice rather than
+// two answers that happen to agree on the characters anybody has tried: the
+// category's membership has moved between Unicode versions, and the two sides
+// of this question are compiled against different tables by different vendors.
+func inkGlyphIgnorable(r rune) bool {
+	switch {
+	case r == 0x00AD || r == 0x180E || r == 0xFEFF:
+		return true
+	case r >= 0x200B && r <= 0x200F:
+		return true
+	case r >= 0x202A && r <= 0x202E:
+		return true
+	case r >= 0x2060 && r <= 0x2064:
+		return true
+	case r >= 0x206A && r <= 0x206F:
+		return true
+	}
+	return false
+}
+
+// inkGlyphFold is the form inkGlyphPerCharacter asks its pair question in.
+//
+// # One property, decided in two places, and only one of them folding
+//
+// browser.mjs's inkLigatureNote already folds a string before looking for these
+// same pairs in it, and says why at length: a label carrying U+FB01 contains
+// "fi" in every sense the question is about and in none that a raw match can
+// see. That note is the message that fires when THIS refusal did not do its
+// job — and until now the two were shaped differently. The note folded; the
+// refusal matched raw bytes and leaned on the printable-ASCII arm below to keep
+// that safe.
+//
+// Leaning on it is what made the REASON wrong. A fixture spelling "ﬁle" with
+// U+FB01 was refused for being outside printable ASCII, which is true and is
+// not what is wrong with it: the author is sent to look for an invisible
+// character rather than told they have written a ligature pair, which is the
+// same wrong-suspect failure the note's own fold exists to prevent, reached
+// from the other end. And the lean fails outright one step further out — a form
+// that folds INTO a pair while staying printable ASCII passes both arms and
+// arrives in the browser as exactly the substitution this refusal is here to
+// stop.
+//
+// So the pair question is asked of the folded string, and asked first.
+//
+// # The three steps
+//
+//	presentation forms   inkLigatureForms, expanded — NFKD's answer for the
+//	                     seven characters the seed list is actually about,
+//	                     plus the long s those decompose through.
+//	format characters    inkGlyphIgnorable, dropped. None carries an advance
+//	                     or a glyph, so a pair split by one is a pair the
+//	                     shaper still joins and a pair this must still find.
+//	lowercase            last, because the steps above produce letters that
+//	                     need it.
+//
+// Narrower than browser.mjs's NFKD everywhere else, and deliberately so: the
+// whole of what this has to see is a seed written some other way. Being wrong
+// in the direction of refusing an innocent string costs a fixture author one
+// word, which is the argument inkLigatureSeeds is a superset for.
+func inkGlyphFold(s string) string {
+	var b strings.Builder
+	b.Grow(len(s))
+	for _, r := range s {
+		if inkGlyphIgnorable(r) {
+			continue
+		}
+		if to, ok := inkLigatureForms[r]; ok {
+			b.WriteString(to)
+			continue
+		}
+		b.WriteRune(r)
+	}
+	return strings.ToLower(b.String())
+}
+
 // inkGlyphPerCharacter says why a browser's glyph count for this string cannot
 // be compared against its characters, or "" when it can.
 //
@@ -953,18 +1072,44 @@ var inkLigatureSeeds = []string{
 // reason from the other direction: a composed form, a combining mark or an
 // emoji sequence is any number of glyphs for any number of code points, and
 // the two counts stop being comparable before any face has an opinion.
+//
+// The two arms overlap on exactly one kind of string — a precomposed ligature
+// — and the pair arm is asked first, because both sentences are true of it and
+// only one of them names what the author actually wrote. See inkGlyphFold.
 func inkGlyphPerCharacter(s string) string {
+	// The pairs first, and through the fold on BOTH sides, so a pair written
+	// as one code point is named as the pair it is rather than as the
+	// invisible character it is written with — and so a seed added here in a
+	// composed form is looked for in the form the string could hold it in.
+	// See inkGlyphFold.
+	folded := inkGlyphFold(s)
+	for _, seed := range inkLigatureSeeds {
+		as := inkGlyphFold(seed)
+		if !strings.Contains(folded, as) {
+			continue
+		}
+		// What the fold did to each side, said only where it did something. A
+		// reader told their string contains "fi" when no two characters of it
+		// spell "fi" is owed the form the question was asked in.
+		how := ""
+		if as != seed {
+			how += fmt.Sprintf(", looked for as %q since the seeds go through the "+
+				"same fold as the string", as)
+		}
+		if folded != strings.ToLower(s) {
+			how += fmt.Sprintf(", found in %q — this string with its presentation "+
+				"forms expanded and its zero-width characters dropped", folded)
+		}
+		return fmt.Sprintf("it contains %q%s, which a text face may draw as one "+
+			"glyph", seed, how)
+	}
+	// And then the wider refusal, which is about the counts rather than about
+	// any pair. It comes second because a composed ligature satisfies both and
+	// only one of the two sentences tells the author what they wrote.
 	for _, r := range s {
 		if r < 0x20 || r > 0x7e {
 			return fmt.Sprintf("%q is outside printable ASCII, where a code point "+
 				"and a glyph stop being the same unit", r)
-		}
-	}
-	low := strings.ToLower(s)
-	for _, seed := range inkLigatureSeeds {
-		if strings.Contains(low, seed) {
-			return fmt.Sprintf("it contains %q, which a text face may draw as one "+
-				"glyph", seed)
 		}
 	}
 	return ""
