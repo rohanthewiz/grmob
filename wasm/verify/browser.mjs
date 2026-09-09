@@ -2634,6 +2634,13 @@ function inkOwnBuildNote(read, browser) {
 // arithmetic done to the rect after shaping, which is the class the injected
 // defect belongs to; what it cannot see is the resolution itself.
 //
+// That argument holds while both sides are ASKED the same thing, and the
+// canvas is not: it is handed a shorthand assembled out of four computed
+// longhands, which is less than an element's font request. See
+// inkCanvasFaceFault, which is what holds the two requests together — without
+// it, a canvas on another face makes the pair above fire with a message about
+// the layout.
+//
 // Nothing on the page can see it either. A computed `font-family` is the
 // REQUEST — a list, with the UA default at the end of it — and neither the
 // canvas nor `getComputedStyle` reports which entry the browser reached. So
@@ -2752,6 +2759,140 @@ function inkFaceFault(where, subject, what, faces, text, probeFaces, ligated) {
             `they got`;
     }
     return null;
+}
+
+// The shorthand the canvas is handed, spelled once.
+//
+// Carried as source rather than as a function, for the same reason FNV1A_JS is:
+// it is evaluated in the page, in two different expressions — the rects' own
+// evaluate, where the ink band and the run advance are measured off a canvas,
+// and the after-faces evaluate, where that canvas is held to the compositor's
+// face. Two spellings would let the join drift off the thing it joins, and the
+// drift would be silent: the second read would be holding a shorthand nothing
+// ever measured with.
+//
+// `head` puts one family at the front of the element's own list and is left out
+// by the measuring side. See inkCanvasFaceFault for what it is for.
+const INK_FONT_SHORTHAND_JS = `((cs, head) =>
+    cs.fontStyle + " " + cs.fontWeight + " " + cs.fontSize + " " +
+    (head ? head + ", " : "") + cs.fontFamily)`;
+
+// And whether the canvas resolved that shorthand to the face the compositor
+// drew the run with.
+//
+// # The fourth reader
+//
+// Three readers of this grid are held to one another now. The rects, the
+// computed styles and the run metrics come back from one evaluate and are of
+// one layout by construction; the capture is bracketed by
+// LAYOUT_FINGERPRINT_JS; the platform-font reads are bracketed by that and by
+// TREE_FINGERPRINT_JS together — see facesHeld.
+//
+// The fourth is a canvas. `band()` opens one per scanned box and takes three
+// numbers off it: the ascent that puts the baseline under the inline text box's
+// top, the ink ascent the three sampled rows are fractions of, and
+// `measureText(textContent)`, which is one of inkRunRectFault's two width
+// answers. Those numbers ride back with the rects, so no relayout can get
+// between them and the boxes they are about — that window is closed. What
+// nothing held is WHICH FACE they are about.
+//
+// The canvas is handed a shorthand this file assembles out of four computed
+// longhands, and an element's font request is not four longhands. `font-stretch`
+// selects a width face. `font-size-adjust` changes the size the face is asked
+// for. `font-variant-caps` can reach a small-caps face or have one synthesised.
+// `font-variation-settings` and `font-optical-sizing` pick an instance of a
+// variable font. None of them travels through the shorthand, and any of them
+// leaves the canvas measuring a face that is not the one on the screen.
+//
+// # Why the two width answers cannot see it
+//
+// inkRunRectFault compares the run rect's width with the canvas's advance and
+// calls that two answers. The note above inkFaceList says why that pair is
+// blind to the RESOLUTION: canvas measurement and layout go through one shaper,
+// so a family list that resolved to something unexpected moves both numbers
+// together and they agree about the wrong face.
+//
+// That argument holds while both sides are given the same request, which is
+// exactly what an assembled shorthand is not. When the requests differ the pair
+// does fire — and it fires with the wrong story. Its message is about arithmetic
+// done to a rect after shaping, and it would send a reader to the layout for a
+// face the canvas picked.
+//
+// # The join
+//
+// The same measurement, with CSS.getPlatformFontsForNode's own family at the
+// head of the element's own list. If the canvas had already resolved that list
+// to that face, naming it first changes nothing and the two advances are the
+// same double. A difference is the canvas on one face while the compositor drew
+// another.
+//
+// Bounded by a LayoutUnit rather than asked as an equality. Two measurements of
+// one face, on one canvas, in one evaluate, of one string are the same number;
+// the bound is there so the check is about a face and not about a double's last
+// bits, and a whole run drawn by two different faces is nowhere near that close.
+//
+// Prepended rather than substituted, and that is the whole of what makes this a
+// one-sided test. A platform font name is a FACE's name and need not be a family
+// CSS can reach — ".AppleSystemUIFont" is not — so a substitution would be
+// measuring the canvas default and reporting every run in the grid. At the head
+// of the list, a name that resolves to nothing is skipped and the list resolves
+// as it did: equal advances, and the check goes quiet rather than wrong. What is
+// left to report is the one refusal the browser states out loud — the assignment
+// itself not taking, which is the `unspellable` arm.
+//
+// Taken in the after-faces evaluate, because the family it names comes back over
+// the protocol and there is nowhere earlier to know it. It costs no round trip
+// — the two fingerprints were being taken there anyway — and it is covered by
+// both of them, which is the same suppression every other face consultation
+// gets.
+function inkCanvasFaceFault(where, subject, faces, m) {
+    // One face is the arm above this one's business: with a run drawn by two,
+    // there is no single family to name and inkFaceFault has already said so.
+    const family = faces && faces.length === 1 ? faces[0].family : null;
+    if (!family) return null;
+    if (!m) {
+        return `${where}: nothing measured ${subject} against ${family}, so the ink ` +
+            `band and the run advance over this box are a canvas's numbers with no ` +
+            `face on them. The read rides in the same evaluate as the two ` +
+            `fingerprints after the last CSS.getPlatformFontsForNode; an entry ` +
+            `missing from it is that measurement not having been taken for this box`;
+    }
+    if (m.unspellable) {
+        return `${where}: the compositor drew ${subject} with ${m.unspellable}, and a ` +
+            `canvas will not take that as a font family — so the measurement that ` +
+            `would hold the ink band and the run advance to this face could not be ` +
+            `made.\n\n` +
+            `A platform font name is a FACE's name and a CSS font-family is a ` +
+            `request for one; they coincide often enough to be worth asking, and this ` +
+            `is the browser saying they do not coincide here. Every number the ink ` +
+            `scan takes off its canvas is still whichever face that canvas resolved, ` +
+            `and nothing in this run says which face that is`;
+    }
+    if (!m.asked) {
+        return `${where}: ${subject} were not re-measured against ${family}. The ` +
+            `after-faces evaluate looks each box up by the same data-node-path the ` +
+            `rects were read at, so one it cannot find is a tree that moved without ` +
+            `the fingerprint saying so — and this message is what notices`;
+    }
+    const off = m.asIs - m.named;
+    if (Math.abs(off) < LAYOUT_UNIT) return null;
+    return `${where}: ${subject} are drawn by ${family}, and the canvas the ink band ` +
+        `and the run advance are measured on makes them ${m.asIs.toFixed(4)}px wide ` +
+        `against ${m.named.toFixed(4)}px for ${family} itself — ` +
+        `${Math.abs(off).toFixed(4)}px ${off > 0 ? "wider" : "narrower"} for the same ` +
+        `string ("${m.text}"), against a LayoutUnit of ${LAYOUT_UNIT}.\n\n` +
+        `Both numbers are measureText on one canvas in one evaluate, and the only ` +
+        `difference between the two requests is that the second names the face ` +
+        `CSS.getPlatformFontsForNode reports at the head of this element's own family ` +
+        `list. Naming a face the canvas has already resolved to changes nothing, so a ` +
+        `difference is the canvas on some other face — and a font shorthand ` +
+        `assembled out of four computed longhands is how it gets there: ` +
+        `font-stretch, font-size-adjust, the font-variant longhands and the ` +
+        `variation settings each select a face, and none of them is in it.\n\n` +
+        `What that costs is every canvas number over this box: the ascent the three ` +
+        `sampled rows are fractions of, and the advance inkRunRectFault holds the run ` +
+        `rect's width to. The rect is the compositor's and that advance is not, so ` +
+        `the pair is two faces being compared and its message names the layout`;
 }
 
 // What this build's face does with the pairs the fixture refuses.
@@ -3726,6 +3867,12 @@ async function main() {
         // tail recites the claim, and reciting it without this was reciting a
         // superset as though it had been measured.
         ligatureSeeds: 0, ligated: [], ligatureFamily: null,
+        // And how many of this grid's runs had the canvas their ink band and
+        // run advance are measured on held to the face the compositor named.
+        // See inkCanvasFaceFault: the join is one-sided, so this is a count of
+        // the runs where it could be asked and not of the runs that have a
+        // face.
+        canvasFaces: 0,
     };
     try {
         const port = await devtoolsPort(profile);
@@ -4753,8 +4900,10 @@ async function main() {
                 if (!e) return null;
                 const cs = getComputedStyle(e);
                 const cx = document.createElement("canvas").getContext("2d");
-                cx.font = cs.fontStyle + " " + cs.fontWeight + " " + cs.fontSize +
-                    " " + cs.fontFamily;
+                // One spelling of the shorthand, shared with the read that
+                // holds this canvas to the face the compositor drew the run
+                // with. See INK_FONT_SHORTHAND_JS and inkCanvasFaceFault.
+                cx.font = (${INK_FONT_SHORTHAND_JS})(cs);
                 // An unparsed font shorthand leaves the canvas on its own
                 // default, and every number below would then be another face's.
                 if (!cx.font.includes(cs.fontSize)) {
@@ -5059,8 +5208,60 @@ async function main() {
         // the windows.
         const facePaths = BAND_RENDERS.length * 2 + INK_PROBES.length +
             INK_LIGATURES.length;
-        const afterFaces = await evaluate(
-            `({ tree: ${TREE_FINGERPRINT_JS}, layout: ${LAYOUT_FINGERPRINT_JS} })`);
+        // And the runs whose canvas is about to be held to the face the reads
+        // above just named. The table is built here rather than in the page
+        // because the family is the protocol's answer and the path is this
+        // file's; the page is handed the pairing and measures it. Keyed by
+        // band and stem, not by position — the loops below ask for a box, and
+        // an index into a flat array is a coupling nothing would notice
+        // breaking. See inkCanvasFaceFault.
+        const canvasRuns = [];
+        for (let i = 0; i < BAND_RENDERS.length; i++) {
+            const b = BAND_RENDERS[i];
+            for (const [as, path, faces] of [
+                ["label", bandRenderPath(i, b.label), bandFaces[i].label],
+                ["badge", bandRenderPath(i, b.badge), bandFaces[i].badge],
+            ]) {
+                canvasRuns.push({
+                    at: `${i}|${as}`, path: path || null,
+                    // One face or nothing: a run that fell back has no single
+                    // family to name and inkFaceFault's second arm is already
+                    // reporting it.
+                    family: faces && faces.length === 1 ? faces[0].family : null,
+                });
+            }
+        }
+        const afterFaces = await evaluate(`({
+            tree: ${TREE_FINGERPRINT_JS}, layout: ${LAYOUT_FINGERPRINT_JS},
+            canvas: ${JSON.stringify(canvasRuns)}.map((r) => {
+                const e = r.path
+                    ? document.querySelector('[data-node-path="' + r.path + '"]') : null;
+                if (!e || !r.family) return { at: r.at, asked: false };
+                const cs = getComputedStyle(e);
+                const cx = document.createElement("canvas").getContext("2d");
+                const text = e.textContent;
+                // The shorthand band() measured with, and then the same
+                // request with the compositor's own family in front of the
+                // element's list.
+                cx.font = (${INK_FONT_SHORTHAND_JS})(cs);
+                const list = cx.font, asIs = cx.measureText(text).width;
+                cx.font = (${INK_FONT_SHORTHAND_JS})(cs, JSON.stringify(r.family));
+                // An assignment the canvas refuses leaves cx.font exactly as
+                // it was, so an unchanged serialisation is the browser saying
+                // it will not take this family — which is a different answer
+                // from "the same face" and must not be read as one.
+                if (cx.font === list) {
+                    return { at: r.at, asked: false, unspellable: r.family };
+                }
+                return { at: r.at, asked: true, text,
+                    asIs, named: cx.measureText(text).width };
+            }),
+        })`);
+        // What came back, by the same key the table was built with.
+        const canvasRead = new Map(
+            (afterFaces && Array.isArray(afterFaces.canvas) ? afterFaces.canvas : [])
+                .map((r) => [r.at, r]));
+        const canvasAt = (i, as) => canvasRead.get(`${i}|${as}`) || null;
         const treeFault = treeMovedFault(
             gridRead ? gridRead.tree : null, afterFaces ? afterFaces.tree : null,
             facePaths);
@@ -5121,6 +5322,19 @@ async function main() {
         // holds one.
         const faceFault = (...args) =>
             facesHeld ? inkFaceFault(...args, ligatures.ligated) : null;
+
+        // And the same suppression for the canvas join, which rests on exactly
+        // the same two fingerprints: the family it names is one of the reads
+        // they bracket, and the re-measure itself is taken in the evaluate that
+        // closes them. See inkCanvasFaceFault.
+        const canvasFault = (...args) =>
+            facesHeld ? inkCanvasFaceFault(...args) : null;
+        // How many runs were actually held to their compositor's face, for the
+        // tail to recite instead of a constant. Counted off what came back
+        // rather than incremented at the call site — a ledger that moves when
+        // it is read is the shape bandTargetTally was split out of.
+        asked.canvasFaces = facesHeld
+            ? [...canvasRead.values()].filter((r) => r.asked).length : 0;
 
         // Whether the grid as a whole is on the screen, asked once.
         //
@@ -5517,7 +5731,8 @@ async function main() {
         // reporting "a third colour in the label" under a rendering mode that
         // puts one there would be the failure this whole apparatus exists to
         // keep from being reported as a palette fault.
-        const inkUnreadable = (where, subject, key, ancestry, own, read, faces) => {
+        const inkUnreadable = (where, subject, key, ancestry, own, read, faces,
+                               canvas) => {
             // First, whether the two questions below are even being asked of
             // the right element. Both of them — the chain above the glyphs and
             // the declaration the probe copies — are about the box that PAINTS
@@ -5558,8 +5773,17 @@ async function main() {
             // three above are about what the document says, and this is about
             // what the font stack resolved the document's request to. See
             // inkFaceFault.
-            return faceFault(where, subject, self ? self.what : key, faces,
+            const resolved = faceFault(where, subject, self ? self.what : key, faces,
                 read ? read.text : null, self ? self.faces : null);
+            if (resolved) return resolved;
+            // And after that, the fourth reader: the canvas the ink band and
+            // the run advance came off, held to the face the compositor just
+            // named. Asked last of all because it is a statement about ONE
+            // face, and the arm above is what makes there be one. See
+            // inkCanvasFaceFault — a canvas on another face makes the three
+            // rows fractions of another face's band, so this suppresses the
+            // scan the way the other three do rather than reporting beside it.
+            return canvasFault(where, subject, faces, canvas);
         };
 
         // What a scan with no edge clearance would be reading, one box at a
@@ -5794,7 +6018,8 @@ async function main() {
                 // to, which is what makes every reading below arithmetic
                 // rather than a guess. See inkUnreadable.
                 const unreadable = inkUnreadable(where, "the label's words", b.labelProbe,
-                    r.labelAncestry, r.labelOwn, r.labelSubject, bandFaces[i].label);
+                    r.labelAncestry, r.labelOwn, r.labelSubject, bandFaces[i].label,
+                    canvasAt(i, "label"));
                 const confusable = unreadable ? null : confusableInk(want, b);
                 if (unreadable) {
                     problems.push(unreadable);
@@ -6042,7 +6267,8 @@ async function main() {
                 // being built twice to be tested and then reported.
                 const digitsUnreadable = inkUnreadable(
                     where, "the count's digits", b.badgeProbe, r.badgeAncestry,
-                    r.badgeOwn, r.badgeSubject, bandFaces[i].badge);
+                    r.badgeOwn, r.badgeSubject, bandFaces[i].badge,
+                    canvasAt(i, "badge"));
                 const badgeFill = pixelAt(bandImg,
                     (r.badge.x + b.badgePadLeft / 2) * bandDpr,
                     (r.badge.y + r.badge.h / 2) * bandDpr);
@@ -6925,7 +7151,9 @@ async function main() {
     the backdrop, behind ${INK_PROBES.length} antialiasing probes, one per text
     declaration any of it reads, every one of them and every box they answer for
     read at the element that draws the glyphs rather than at the box around it,
-    drawn by one platform face this browser names, one across the whole grid,
+    drawn by one platform face this browser names, one across the whole grid, and
+    named again to the canvas the ink band and the run advance are measured on in
+    ${asked.canvasFaces} runs, which gave the same width both ways,
     over the same tree the rects were read from and in the same layout the
     capture holds — a glyph per character of strings gen.go refuses a ligature
     pair in, ${asked.ligated.length} of those ${asked.ligatureSeeds} pairs
