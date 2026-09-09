@@ -443,12 +443,47 @@ var foldMeasuredOn = struct {
 	// matters — it is the population the printable-ASCII arm is holding shut —
 	// and it is the one that would go quiet without a word.
 	changes, agreed, gap, bearing int
+	// And the same four over the sixteen planes above it, which this census
+	// used to stop at without saying so.
+	//
+	// # What it cost to stop stopping there
+	//
+	// The gen.go side of the fold had its astral bound asserted and this side
+	// did not: the walk ran `for cp = 0; cp <= 0xFFFF` in node and nothing
+	// said what NFKD does above U+FFFF. The reason given was that nobody had
+	// priced a walk of a million code points through a child process.
+	//
+	// It is 128ms and 30KB of JSON — the whole plane set, folded and returned
+	// as the 2307 rows that change — against the BMP walk's own cost, which is
+	// the same shape and a sixteenth of the size. So the bound was not a cost;
+	// it was a walk nobody had run.
+	//
+	// # And what is up there, which is not nothing
+	//
+	// The astral gap is not the BMP's gap made smaller. NFKD decomposes the
+	// mathematical alphanumerics — U+1D41F MATHEMATICAL BOLD SMALL F folds to
+	// "f" — so the seed-bearing population, the one that completes a pair for
+	// inkLigatureNote and completes none for the refusal, has hundreds of
+	// members above the BMP where the whole of what holds it shut is again the
+	// printable-ASCII arm. The witness below is built and asked on both sides
+	// of U+FFFF for exactly that reason.
+	astralChanges, astralAgreed, astralGap, astralBearing int
 }{
 	build:   foldBuild{unicode: "16.0", icu: "76.1", node: "22.12.0"},
 	changes: 15802,
 	agreed:  748,
 	gap:     15054,
 	bearing: 299,
+
+	astralChanges: 2307,
+	// 260, which is every code point above the BMP that gen.go's fold touches
+	// at all — see foldOwnMeasuredOn.astralLowered, the same number reached
+	// from the other side. So the two folds agree about every astral character
+	// either of them changes, and the 2047 below is entirely NFKD reaching
+	// where the narrow fold does not.
+	astralAgreed:  260,
+	astralGap:     2047,
+	astralBearing: 257,
 }
 
 // foldBuildNote is the sentence a census adds when this run is not the run
@@ -878,6 +913,10 @@ func TestHowWideTheNarrowerFoldIsAndWhatHoldsTheGap(t *testing.T) {
 	// JSON saying nothing. Surrogates are skipped on both sides — Go turns a
 	// lone one into U+FFFD and JavaScript does not, so the pair would be
 	// comparing two different characters.
+	//
+	// Every plane, not only the first. See foldMeasuredOn's astral counts for
+	// what that cost when it was finally measured — 128ms and 30KB — and for
+	// what is up there that the BMP does not have.
 	script := filepath.Join(t.TempDir(), "gap.mjs")
 	// The build comes back with the rows, out of the same process that did the
 	// folding. See foldMeasuredOn: every number below is NFKD as the ICU
@@ -887,7 +926,7 @@ func TestHowWideTheNarrowerFoldIsAndWhatHoldsTheGap(t *testing.T) {
 	// binaries.
 	if err := os.WriteFile(script, []byte(string(decl)+string(fn)+`
 const out = [];
-for (let cp = 0; cp <= 0xFFFF; cp++) {
+for (let cp = 0; cp <= 0x10FFFF; cp++) {
     if (cp >= 0xD800 && cp <= 0xDFFF) continue;
     const ch = String.fromCodePoint(cp);
     const folded = inkFold(ch);
@@ -926,9 +965,9 @@ console.log(JSON.stringify({
 			now.node, now.icu)
 	}
 	if len(rows) == 0 {
-		t.Fatalf("browser.mjs's fold changed nothing on any of the 65536 code " +
-			"points of this plane, which is this test having lifted something that " +
-			"is not a fold rather than a fold that does nothing.")
+		t.Fatalf("browser.mjs's fold changed nothing on any of Unicode's 1114112 " +
+			"code points, which is this test having lifted something that is not a " +
+			"fold rather than a fold that does nothing.")
 	}
 
 	// The letters the seeds are spelled with, after their own fold — the
@@ -940,12 +979,23 @@ console.log(JSON.stringify({
 		}
 	}
 	theirs := map[rune]string{}
-	agreed, bearing := 0, 0
+	// The census, kept per plane-set rather than summed. The BMP's four
+	// numbers are what every other reading in this file is about — the
+	// fixtures are printable ASCII and the presentation forms are at U+FB00 —
+	// and the astral four are the bound that used to be a place the walk
+	// stopped. Two different facts, counted apart, the way foldOwnMeasuredOn
+	// counts gen.go's own width.
+	type foldSide struct {
+		changes, agreed, bearing int
+		bearingAt                rune
+	}
+	bmp, astral := foldSide{bearingAt: -1}, foldSide{bearingAt: -1}
 	// A character both inside printable ASCII and in the gap, which is the one
 	// thing the second arm cannot catch. First one found; there is nothing to
-	// be gained from a list of a fault that should have no members.
+	// be gained from a list of a fault that should have no members. Only the
+	// BMP can hold one, which is why it is not a per-side count: 0x20..0x7e is
+	// the whole of the arm's range.
 	ascii, asciiCount := rune(-1), 0
-	var bearingExample rune = -1
 	for _, row := range rows {
 		var cp rune
 		var their string
@@ -956,9 +1006,14 @@ console.log(JSON.stringify({
 			t.Fatalf("a folded answer came back unreadable: %v", err)
 		}
 		theirs[cp] = their
+		side := &bmp
+		if cp > 0xFFFF {
+			side = &astral
+		}
+		side.changes++
 		mine := inkGlyphFold(string(cp))
 		if mine == their {
-			agreed++
+			side.agreed++
 			continue
 		}
 		if cp >= 0x20 && cp <= 0x7e {
@@ -969,15 +1024,18 @@ console.log(JSON.stringify({
 		}
 		for _, r := range their {
 			if seedLetters[r] && !strings.ContainsRune(mine, r) {
-				bearing++
-				if bearingExample < 0 {
-					bearingExample = cp
+				side.bearing++
+				if side.bearingAt < 0 {
+					side.bearingAt = cp
 				}
 				break
 			}
 		}
 	}
-	gap := len(rows) - agreed
+	agreed, bearing := bmp.agreed, bmp.bearing
+	bearingExample := bmp.bearingAt
+	gap := bmp.changes - bmp.agreed
+	astralGap := astral.changes - astral.agreed
 
 	// The edge the printable-ASCII arm is the whole of.
 	if ascii >= 0 {
@@ -994,8 +1052,17 @@ console.log(JSON.stringify({
 	}
 
 	// And the other direction, which would be the refusal wider than the note.
+	//
+	// Over every plane, now that every plane came back. This is the edge the
+	// astral half of the census buys that the gen.go-only walk could not:
+	// foldOwnMeasuredOn asserts that inkGlyphFold does nothing above the BMP
+	// but lowercase, and that is a fact about one side. Whether the OTHER side
+	// lowercases the same characters is a fact about node's Unicode, and until
+	// this walk went past U+FFFF nothing compared them. A case pair Go has and
+	// node does not is gen.go reaching further than NFKD up here, which is the
+	// direction this file does not allow.
 	wider := []rune{}
-	for cp := rune(0); cp <= 0xFFFF && len(wider) < 4; cp++ {
+	for cp := rune(0); cp <= 0x10FFFF && len(wider) < 4; cp++ {
 		if cp >= 0xD800 && cp <= 0xDFFF {
 			continue
 		}
@@ -1028,7 +1095,19 @@ console.log(JSON.stringify({
 	// it. The refusal still holds — and it holds by the OTHER arm, which is
 	// what "the printable-ASCII arm is what makes that safe" means when it is
 	// asked of a string instead of asserted in a comment.
-	if bearingExample >= 0 {
+	//
+	// Asked once per plane-set, because the two are not the same question. The
+	// BMP's witness is built out of an accented letter and the astral one out
+	// of a decomposing letter FORM — U+1CCD7 folds to "b" and U+1D41F
+	// MATHEMATICAL BOLD SMALL F to "f" — and the second population did not
+	// exist as far as this file was concerned until the walk went past U+FFFF. What holds them shut is
+	// the same arm in both cases and it is holding for two different reasons:
+	// on the BMP because the character is outside 0x20..0x7e, and above it
+	// because nothing up there can be inside a range of two ASCII bytes at all.
+	witnessFor := func(what string, bearingAt rune) {
+		if bearingAt < 0 {
+			return
+		}
 		witness := ""
 		for _, seed := range inkLigatureSeeds {
 			folded := inkGlyphFold(seed)
@@ -1036,44 +1115,47 @@ console.log(JSON.stringify({
 				continue
 			}
 			head := folded[:len(folded)-1]
-			if strings.Contains(head+theirs[bearingExample], folded) {
-				witness = head + string(bearingExample)
+			if strings.Contains(head+theirs[bearingAt], folded) {
+				witness = head + string(bearingAt)
 				break
 			}
 		}
-		if witness != "" {
-			held := ""
-			for _, seed := range inkLigatureSeeds {
-				if strings.Contains(inkGlyphFold(witness), inkGlyphFold(seed)) {
-					held = seed
-				}
-			}
-			if held != "" {
-				t.Errorf("gen.go's fold finds %q in %q after all, so this string is "+
-					"not the witness this arm is about.", held, witness)
-			}
-			why := inkGlyphPerCharacter(witness)
-			switch {
-			case why == "":
-				t.Errorf("inkGlyphPerCharacter accepts %q.\n\n"+
-					"browser.mjs's fold turns U+%04X into %q, so that string holds a "+
-					"pair for inkLigatureNote and holds none for the refusal — the "+
-					"gap between the two folds, on one string. What kept it out was "+
-					"the printable-ASCII arm, and it has stopped: a fixture can now "+
-					"carry a pair past this refusal and arrive as the font "+
-					"substitution it exists to prevent.",
-					witness, bearingExample, theirs[bearingExample])
-			case !strings.Contains(why, "printable ASCII"):
-				t.Errorf("inkGlyphPerCharacter refuses %q with %q.\n\n"+
-					"That string holds a pair only under NFKD, and gen.go's fold is "+
-					"narrower there by design — so the arm that has to catch it is "+
-					"the printable-ASCII one. A different sentence means the pair arm "+
-					"has widened, which is a better refusal and makes this reading "+
-					"stale: re-measure the gap and say what is holding it now.",
-					witness, why)
+		if witness == "" {
+			return
+		}
+		held := ""
+		for _, seed := range inkLigatureSeeds {
+			if strings.Contains(inkGlyphFold(witness), inkGlyphFold(seed)) {
+				held = seed
 			}
 		}
+		if held != "" {
+			t.Errorf("gen.go's fold finds %q in %q after all, so this string is "+
+				"not the witness this arm is about (%s).", held, witness, what)
+		}
+		why := inkGlyphPerCharacter(witness)
+		switch {
+		case why == "":
+			t.Errorf("inkGlyphPerCharacter accepts %q, built from %s.\n\n"+
+				"browser.mjs's fold turns U+%04X into %q, so that string holds a "+
+				"pair for inkLigatureNote and holds none for the refusal — the "+
+				"gap between the two folds, on one string. What kept it out was "+
+				"the printable-ASCII arm, and it has stopped: a fixture can now "+
+				"carry a pair past this refusal and arrive as the font "+
+				"substitution it exists to prevent.",
+				witness, what, bearingAt, theirs[bearingAt])
+		case !strings.Contains(why, "printable ASCII"):
+			t.Errorf("inkGlyphPerCharacter refuses %q (built from %s) with %q.\n\n"+
+				"That string holds a pair only under NFKD, and gen.go's fold is "+
+				"narrower there by design — so the arm that has to catch it is "+
+				"the printable-ASCII one. A different sentence means the pair arm "+
+				"has widened, which is a better refusal and makes this reading "+
+				"stale: re-measure the gap and say what is holding it now.",
+				witness, what, why)
+		}
 	}
+	witnessFor("the BMP's gap", bmp.bearingAt)
+	witnessFor("the gap above the BMP", astral.bearingAt)
 
 	// And the population the arm above is asked over, which had no floor at all.
 	//
@@ -1084,6 +1166,25 @@ console.log(JSON.stringify({
 	// string end to end rather than a code point, and it going quiet is exactly
 	// what "the printable-ASCII arm is what makes the rest safe" would stop
 	// being evidence for.
+	// And the same for the plane-set above, where the population is larger and
+	// newer: the mathematical alphanumerics decompose to bare letters, so a
+	// gap character up there completes a seed as readily as one on the BMP and
+	// the arm that asks whether the refusal still holds has to be asked of it
+	// too. Zero here would be NFKD having stopped decomposing them, which is a
+	// build change rather than a fold change — and the note says so.
+	if astral.bearing == 0 {
+		t.Errorf("not one of the %d code points in the gap ABOVE the BMP is turned "+
+			"by NFKD into a letter a seed is spelled with.\n\n"+
+			"U+1D41F MATHEMATICAL BOLD SMALL F decomposes to \"f\", and the block it "+
+			"is in is the reason this half of the census is worth taking: the "+
+			"seed-bearing population up there is hundreds of characters, none of "+
+			"which gen.go's fold touches, and what holds every one of them out of a "+
+			"fixture is the printable-ASCII arm. With none of them the astral witness "+
+			"is never built and that reading passes by being skipped. The seeds fold "+
+			"to %v.%s",
+			astralGap, seedLetters, foldBuildNote(now))
+	}
+
 	if bearing == 0 {
 		t.Errorf("not one of the %d code points in the gap is turned by NFKD into a "+
 			"letter a seed is spelled with.\n\n"+
@@ -1118,11 +1219,20 @@ console.log(JSON.stringify({
 			what      string
 			got, want int
 		}{
-			{"the code points browser.mjs's fold changes", len(rows), foldMeasuredOn.changes},
+			{"the code points browser.mjs's fold changes", bmp.changes,
+				foldMeasuredOn.changes},
 			{"the ones gen.go's fold agrees with", agreed, foldMeasuredOn.agreed},
 			{"the gap between them", gap, foldMeasuredOn.gap},
 			{"the part of the gap that reaches a seed's own letters", bearing,
 				foldMeasuredOn.bearing},
+			{"the code points browser.mjs's fold changes above the BMP",
+				astral.changes, foldMeasuredOn.astralChanges},
+			{"the ones gen.go's fold agrees with above the BMP", astral.agreed,
+				foldMeasuredOn.astralAgreed},
+			{"the gap between them above the BMP", astralGap,
+				foldMeasuredOn.astralGap},
+			{"the part of THAT gap that reaches a seed's own letters",
+				astral.bearing, foldMeasuredOn.astralBearing},
 		} {
 			if c.got == c.want {
 				continue
@@ -1143,15 +1253,40 @@ console.log(JSON.stringify({
 		}
 	}
 
-	t.Logf("browser.mjs's fold changes %d of this plane's code points; gen.go's "+
+	// The astral half of the sentence, which is a different fact and is said
+	// as one. Its seed-bearing example is the interesting number: gen.go's
+	// fold does nothing above the BMP but lowercase (foldOwnMeasuredOn asserts
+	// it), so every one of these is a character that completes a pair for
+	// inkLigatureNote and completes none for the refusal.
+	astralSaid := "and no code point above the BMP at all, which is this walk " +
+		"having stopped at U+FFFF again"
+	if astral.changes > 0 {
+		example := ""
+		if astral.bearingAt >= 0 {
+			example = fmt.Sprintf(" (e.g. U+%04X %q→%q, where gen.go says %q)",
+				astral.bearingAt, string(astral.bearingAt), theirs[astral.bearingAt],
+				inkGlyphFold(string(astral.bearingAt)))
+		}
+		astralSaid = fmt.Sprintf("and %d above the BMP, where it agrees on %d and "+
+			"is narrower on %d, %d of which reach a seed's own letters%s — a "+
+			"population that is not the BMP's made smaller: NFKD decomposes the "+
+			"mathematical alphanumerics to bare letters, and nothing up there can be "+
+			"inside 0x20..0x7e, so the arm holding all of them out is the same one "+
+			"and it is holding for a different reason",
+			astral.changes, astral.agreed, astralGap, astral.bearing, example)
+	}
+	t.Logf("browser.mjs's fold changes %d of the BMP's code points; gen.go's "+
 		"agrees on %d and is narrower on %d, %d of which NFKD turns into a letter "+
 		"a seed is spelled with (e.g. U+%04X %q→%q, where gen.go says %q) — and %d of "+
 		"it inside printable ASCII, which is the whole of what "+
 		"inkGlyphPerCharacter's second arm refuses on and therefore the whole of "+
-		"what is holding this gap shut. Measured on Unicode %s (ICU %s, node %s), "+
+		"what is holding this gap shut. %s. The whole walk is %d code points "+
+		"through node and cost less than a fifth of a second, which is what the "+
+		"bound at U+FFFF was worth. Measured on Unicode %s (ICU %s, node %s), "+
 		"which is %s the record was taken on%s",
-		len(rows), agreed, gap, bearing, bearingExample, string(bearingExample),
+		bmp.changes, agreed, gap, bearing, bearingExample, string(bearingExample),
 		theirs[bearingExample], inkGlyphFold(string(bearingExample)), asciiCount,
+		astralSaid, 0x110000,
 		now.unicode, now.icu, now.node,
 		map[bool]string{true: "the build", false: "NOT the build"}[now.unicode == foldMeasuredOn.build.unicode],
 		foldBuildNote(now))
