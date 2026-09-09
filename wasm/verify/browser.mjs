@@ -154,7 +154,7 @@ import { PALETTES } from "./palette.mjs";
 import { VALUE_RANGES, axRange, valueRangeProblem } from "./valuerange.mjs";
 import { startupVerdict } from "./startup.mjs";
 import { foldVerdict } from "./fold.mjs";
-import { BAND_TARGET_PARTS, bandTargetRead } from "./bandtarget.mjs";
+import { bandTargetCensus, bandTargetRead } from "./bandtarget.mjs";
 
 // The widget swatches come from the transcript rather than from a .mjs table,
 // because they are real components rendered by Go: gen.go builds the trees and
@@ -2422,6 +2422,15 @@ function inkSubjectFault(where, subject, read) {
 // Returns null when the read asked what it says it asked, which is every read
 // this grid takes.
 
+// What a subject read is, named once.
+//
+// The narrowest object inkReadShape is handed that must NOT come back "a
+// computed style", and therefore the lower edge of INK_OWN_SHAPE_FLOOR. Named
+// rather than written inline because the floor is now stated as sitting
+// between two measured populations and this is one of them — see where the
+// floor's two edges are reported together.
+const INK_SUBJECT_KEYS = ["tag", "elements", "directText", "text"];
+
 // What one value in the read looks like, or "" for anything that is not one of
 // the three declaration answers.
 //
@@ -2437,8 +2446,8 @@ function inkReadShape(v) {
     }
     if (!v || typeof v !== "object") return "";
     const keys = Object.keys(v);
-    if (keys.length === 4 && ["tag", "elements", "directText", "text"]
-        .every((k) => k in v)) {
+    if (keys.length === INK_SUBJECT_KEYS.length &&
+        INK_SUBJECT_KEYS.every((k) => k in v)) {
         return "a subject read";
     }
     // A computed style is every longhand the build exposes — hundreds — and
@@ -2593,8 +2602,22 @@ const INK_OWN_MEASURED_ON = {
 // with it. What a quarter buys over a half is room for a build that exposes
 // far fewer longhands than Chrome does before the shape test stops recognising
 // one — and that a run whose own enumeration falls under it says so, rather
-// than the guard silently going quiet. See where inkOwnRead is compared with
-// this.
+// than the guard silently going quiet.
+//
+// # And a fraction is still a fraction of one population
+//
+// The quarter is derived and it is derived from ONE number. What makes the
+// floor a measurement rather than a taste is the pair of populations it has to
+// separate, and both are in hand on every run: the widest computed style this
+// grid reads (inkOwnRead, counted where the pairs are compared) is what must
+// stay ABOVE it, and INK_SUBJECT_KEYS — the narrowest object the shape test has
+// to reject — is what must stay under it. Neither edge is asserted by the
+// arithmetic: `Math.floor(props / 4)` is under four the moment `props` is, and
+// a build that enumerates fewer properties than this floor is one where the
+// guard has gone quiet.
+//
+// So both edges are checked and reported as one bracket. See where inkOwnRead
+// is compared with this.
 const INK_OWN_SHAPE_FLOOR = Math.floor(INK_OWN_MEASURED_ON.props / 4);
 
 // The sentence the message adds when this browser is not that one. Returns ""
@@ -2677,6 +2700,54 @@ function inkFaceList(faces) {
         `${f.glyphs === 1 ? "" : "s"})`).join(", ");
 }
 
+// The fold the question below is asked through.
+//
+// # Lowercasing was the whole of the normalisation
+//
+// inkLigatureSeeds' pairs are ASCII and this grid's fixtures are Latin, so
+// `text.toLowerCase().includes(pair)` was right about every string that has
+// ever reached this note. It is right BECAUSE of gen.go's refusal rather than
+// independently of it: inkGlyphPerCharacter drops any fixture outside printable
+// ASCII, so a composed form or a zero-width joiner never arrives.
+//
+// And this note is the message that fires when that refusal did not do its job.
+// It is inkFaceFault's third arm's companion and is reached only on a run where
+// a string the check meant to keep out is in the grid — so deciding what such a
+// string contains by an ASCII-shaped test is deciding it in the one world where
+// the ASCII assumption is known to have failed. A label carrying U+FB01
+// contains "fi" in every sense this note is about and in none that
+// `includes("fi")` can see, and the note would then say the seed list is short
+// of this face while the fixture is holding the pair in a single code point —
+// a confident sentence about the wrong one of two suspects.
+//
+// # Three steps, in this order
+//
+//	NFKD          the COMPATIBILITY decomposition, which is the one that turns
+//	              a precomposed ligature into its letters: U+FB01 becomes "fi".
+//	              Canonical NFD leaves it whole, because an f-ligature is a
+//	              compatibility equivalence and not a canonical one — so NFD,
+//	              the form that would be right for accents, is the wrong form
+//	              for exactly the characters this note is about.
+//	format chars  the soft hyphen, the zero-width and bidi controls, the word
+//	              joiner and the BOM. None carries an advance or a glyph, so a
+//	              pair split by one is a pair the shaper still joins and a pair
+//	              this note must still find.
+//	lowercase     last, because the two steps above produce letters that need
+//	              it: NFKD of a ligature yields base letters in whatever case
+//	              the composed form carried.
+//
+// This changes nothing about what gen.go refuses. It changes what this note
+// says about a string that got past the refusal, which is the only kind it
+// ever sees.
+const INK_FOLD_IGNORABLE =
+    /[\u00AD\u180E\u200B-\u200F\u202A-\u202E\u2060-\u2064\u206A-\u206F\uFEFF]/gu;
+
+function inkFold(text) {
+    return typeof text === "string"
+        ? text.normalize("NFKD").replace(INK_FOLD_IGNORABLE, "").toLowerCase()
+        : "";
+}
+
 // What the measured ligature row adds to a glyph-count mismatch.
 //
 // The refusal in gen.go is what keeps this arm quiet, and a run that reaches
@@ -2691,17 +2762,27 @@ function inkFaceList(faces) {
 // middle of somebody else's.
 function inkLigatureNote(text, ligated) {
     if (!ligated || ligated.length === 0) return ``;
-    const here = ligated.filter((pair) =>
-        typeof text === "string" && text.toLowerCase().includes(pair));
+    const folded = inkFold(text);
+    // Whether the answer below is one a plain lowercase would have given. A
+    // fold that changed something is a string carrying a composed form or a
+    // format character — a fixture gen.go's refusal was supposed to have
+    // dropped — and it earns a clause, because the pair the reader is being
+    // told about may not be two characters in the string in front of them.
+    const flat = typeof text === "string" ? text.toLowerCase() : "";
+    const how = folded === flat ? `` :
+        ` (asked of ${JSON.stringify(folded)}, which is this string under NFKD with ` +
+        `the zero-width and bidi controls dropped — a pair written as one code point ` +
+        `or split by a joiner is still the pair this face joins)`;
+    const here = ligated.filter((pair) => folded.includes(pair));
     if (here.length > 0) {
         return `\n\nThis face was measured to draw ${here.join(", ")} as one glyph, ` +
-            `and this string contains ${here.length === 1 ? "it" : "them"} — so the ` +
-            `refusal that was supposed to keep this string out of the grid did not ` +
+            `and this string contains ${here.length === 1 ? "it" : "them"}${how} — so ` +
+            `the refusal that was supposed to keep this string out of the grid did not ` +
             `fire. inkGlyphPerCharacter and this face disagree about the same pair, ` +
             `which is a fixture that got through rather than a substitution`;
     }
     return `\n\nThe pairs this face was measured to join are ${ligated.join(", ")}, ` +
-        `and none of them is in this string. So whatever it joined is not one ` +
+        `and none of them is in this string${how}. So whatever it joined is not one ` +
         `inkLigatureSeeds names, and the list is short of this face rather than ` +
         `the fixture being short of the list`;
 }
@@ -2772,10 +2853,31 @@ function inkFaceFault(where, subject, what, faces, text, probeFaces, ligated) {
 // ever measured with.
 //
 // `head` puts one family at the front of the element's own list and is left out
-// by the measuring side. See inkCanvasFaceFault for what it is for.
-const INK_FONT_SHORTHAND_JS = `((cs, head) =>
+// by the measuring side. `instead` replaces that list outright: a substitution
+// is the wrong shape for the join itself — see inkCanvasFaceFault, where
+// prepending is the whole of what keeps an unreachable platform family from
+// reporting every run — and the right shape for the canary that asks whether
+// such a name reaches a face at all, because there the fallback IS the answer.
+const INK_FONT_SHORTHAND_JS = `((cs, head, instead) =>
     cs.fontStyle + " " + cs.fontWeight + " " + cs.fontSize + " " +
-    (head ? head + ", " : "") + cs.fontFamily)`;
+    (instead || (head ? head + ", " : "") + cs.fontFamily))`;
+
+// The family the canary falls back to.
+//
+// A generic, because a generic always resolves — that is what makes "the same
+// advance as this alone" a statement about the name in front of it rather than
+// about a second name that also missed. `monospace` rather than `serif` or
+// `sans-serif` because the separation wanted is metric: the faces this grid
+// draws with are proportional, and a fixed-advance face is the one whose
+// widths for these strings are nothing like theirs, so the two readings come
+// apart by pixels rather than by a rounding.
+//
+// Being wrong the only way this can be wrong — a platform face whose advance
+// for the string happens to equal this one's — costs a run the confirmation
+// and reports the join as silent when it bit. That is the understating
+// direction: it says a reading is missing, never that a face was named when it
+// was not.
+const INK_CANARY_FALLBACK = "monospace";
 
 // And whether the canvas resolved that shorthand to the face the compositor
 // drew the run with.
@@ -2845,6 +2947,63 @@ const INK_FONT_SHORTHAND_JS = `((cs, head) =>
 // — the two fingerprints were being taken there anyway — and it is covered by
 // both of them, which is the same suppression every other face consultation
 // gets.
+//
+// # What the one-sidedness costs, and the canary that prices it
+//
+// Prepending buys the check its safety and spends its evidence. A head family
+// that resolves to no face is SKIPPED, the list resolves exactly as it did, and
+// the two advances are equal — which is the same number this check returns when
+// the canvas and the compositor genuinely agree. "The face was named and
+// matched" and "the name reached nothing and the join was a no-op" arrive as
+// one reading, and a count of them recited in the tail says the first while
+// meaning either.
+//
+// Nothing already in hand separates them. The element's own list is the
+// fallback in both cases, so asIs is the same number either way; a substitution
+// would tell them apart and is the thing this deliberately does not do.
+//
+// So a second pair of measurements, on the same canvas, in the same evaluate,
+// of the same string: the advance under INK_CANARY_FALLBACK alone, and the
+// advance under this family in front of INK_CANARY_FALLBACK. The generic always
+// resolves, so the second reading falls back to the first EXACTLY when the name
+// in front of it reaches nothing. A difference is the name reaching a face; an
+// equality is the join having been asked of a name CSS cannot follow.
+//
+// That reading is what the arm below reports and what asked.canvasNamed counts,
+// and the two numbers the tail recites are now "asked" and "bit".
+//
+// # The missing-box arm, and why it is unreachable
+//
+// `!m.asked` without `unspellable` is the page's querySelector finding no
+// element at a path the rects were read at. It cannot be reached through a tree
+// that moved, and the reason is that TREE_FINGERPRINT_JS hashes EXACTLY this
+// population — every `[data-node-path]` in the document, the path itself among
+// the fields fed — and the second fingerprint is taken in this same evaluate.
+// A path that stopped resolving in between changes that hash, treeMovedFault
+// reports it, and facesHeld drops every face consultation before this one is
+// composed.
+//
+// What is left is one evaluate's `querySelectorAll("[data-node-path]")` and
+// `querySelector('[data-node-path="..."]')` disagreeing about the same
+// attribute, which is not a page fault at all. The arm is kept and says so: it
+// is the reader that would fire if the fingerprint's population ever stopped
+// being the population these lookups draw from, and its silence on every run is
+// the evidence that it has not.
+// Whether the family the join names reaches a face on this canvas at all.
+//
+// See inkCanvasFaceFault's canary. Split out because two readers need the same
+// answer — the arm that reports a silent join, and the counter the tail recites
+// — and a second spelling of the comparison would let them disagree about which
+// runs were confirmed.
+//
+// The bound is LAYOUT_UNIT for the same reason it is everywhere else here: two
+// advances off one canvas are being compared, and the question is whether they
+// are the same face's, not whether they are the same double.
+function inkCanvasNameReached(m) {
+    return typeof m.canary === "number" && typeof m.base === "number" &&
+        Math.abs(m.canary - m.base) >= LAYOUT_UNIT;
+}
+
 function inkCanvasFaceFault(where, subject, faces, m) {
     // One face is the arm above this one's business: with a run drawn by two,
     // there is no single family to name and inkFaceFault has already said so.
@@ -2869,10 +3028,48 @@ function inkCanvasFaceFault(where, subject, faces, m) {
             `and nothing in this run says which face that is`;
     }
     if (!m.asked) {
-        return `${where}: ${subject} were not re-measured against ${family}. The ` +
-            `after-faces evaluate looks each box up by the same data-node-path the ` +
-            `rects were read at, so one it cannot find is a tree that moved without ` +
-            `the fingerprint saying so — and this message is what notices`;
+        return `${where}: ${subject} were not re-measured against ${family} — the ` +
+            `after-faces evaluate looked the box up by the same data-node-path the ` +
+            `rects were read at and found no element there.\n\n` +
+            `A tree that moved does not produce this. TREE_FINGERPRINT_JS hashes ` +
+            `every [data-node-path] in the document, path included, and its second ` +
+            `reading is taken in this very evaluate — so a path that stopped ` +
+            `resolving between the rects and here moves that hash, treeMovedFault ` +
+            `reports it, and facesHeld drops this consultation before the message is ` +
+            `composed. What reaches here instead is one evaluate's querySelectorAll ` +
+            `and querySelector disagreeing about the same attribute. This arm is the ` +
+            `reader that would fire if the fingerprint's population ever stopped ` +
+            `being the population these lookups draw from`;
+    }
+    if (typeof m.canary !== "number") {
+        return `${where}: the canvas would not take ${family} in front of ` +
+            `${INK_CANARY_FALLBACK}, so nothing here says whether that name reaches ` +
+            `a face.\n\n` +
+            `The family alone was spellable — the arm above it would have fired ` +
+            `otherwise — and the same name followed by a generic was not, which is ` +
+            `the canvas refusing a list it accepted the head of. Without that ` +
+            `reading, the join below it is one-sided with nothing pricing the one ` +
+            `side: an equal pair of advances would mean either that the face was ` +
+            `named and matched or that the name resolved to nothing and was skipped`;
+    }
+    if (!inkCanvasNameReached(m)) {
+        return `${where}: ${subject} are drawn by ${family}, and no canvas on this ` +
+            `page can reach that name — ${INK_CANARY_FALLBACK} alone and ` +
+            `${family} in front of ${INK_CANARY_FALLBACK} both measure ` +
+            `${m.base.toFixed(4)}px for the same string ("${m.text}"), against a ` +
+            `LayoutUnit of ${LAYOUT_UNIT}.\n\n` +
+            `So the join was made and bit nothing. It puts the compositor's family at ` +
+            `the head of this element's own list, and a head that resolves to no face ` +
+            `is skipped: the list resolves as it did, the two advances are equal, and ` +
+            `the check goes quiet for the one reason that is not evidence. Prepending ` +
+            `rather than substituting is deliberate — a platform font name is a ` +
+            `FACE's name and need not be a family CSS can reach, and substituting ` +
+            `would measure the canvas default and report every run in this grid — so ` +
+            `the silence is the design working and this is the reading that keeps it ` +
+            `from being counted as a success.\n\n` +
+            `Every canvas number over this box is still unheld: the ascent the three ` +
+            `sampled rows are fractions of, and the advance inkRunRectFault holds the ` +
+            `run rect's width to`;
     }
     const off = m.asIs - m.named;
     if (Math.abs(off) < LAYOUT_UNIT) return null;
@@ -3867,12 +4064,28 @@ async function main() {
         // tail recites the claim, and reciting it without this was reciting a
         // superset as though it had been measured.
         ligatureSeeds: 0, ligated: [], ligatureFamily: null,
+        // And how wide this build's computed-style enumeration turned out to
+        // be. INK_OWN_SHAPE_FLOOR is derived from the build the exception table
+        // was written against; this is the population on the other side of it,
+        // and the tail recites the bracket rather than the fraction.
+        ownRead: 0,
         // And how many of this grid's runs had the canvas their ink band and
         // run advance are measured on held to the face the compositor named.
         // See inkCanvasFaceFault: the join is one-sided, so this is a count of
         // the runs where it could be asked and not of the runs that have a
         // face.
         canvasFaces: 0,
+        // And how many of those named a family a canvas can actually reach.
+        // The two are equal on a run that passes — a name that reaches nothing
+        // is reported — and they are separate numbers because the first alone
+        // was reciting a skipped join as a confirmed one. See the canary in
+        // inkCanvasFaceFault.
+        canvasNamed: 0,
+        // And the widest those two advances ever came apart while staying
+        // inside LAYOUT_UNIT. The bound is derived from two measurements of one
+        // face being the same double; this is what the population does under
+        // it, which is the half nothing recorded.
+        canvasWidest: 0,
     };
     try {
         const port = await devtoolsPort(profile);
@@ -5236,16 +5449,24 @@ async function main() {
             canvas: ${JSON.stringify(canvasRuns)}.map((r) => {
                 const e = r.path
                     ? document.querySelector('[data-node-path="' + r.path + '"]') : null;
-                if (!e || !r.family) return { at: r.at, asked: false };
+                // Two ways of not asking, kept apart because they are
+                // different findings. No element at a path the fingerprint in
+                // this same expression says is still mounted is
+                // inkCanvasFaceFault's first arm; no single family is a run
+                // inkFaceFault has already reported, and that fault returns
+                // before the arm can see it.
+                if (!e) return { at: r.at, asked: false, missing: true };
+                if (!r.family) return { at: r.at, asked: false };
                 const cs = getComputedStyle(e);
                 const cx = document.createElement("canvas").getContext("2d");
                 const text = e.textContent;
+                const family = JSON.stringify(r.family);
                 // The shorthand band() measured with, and then the same
                 // request with the compositor's own family in front of the
                 // element's list.
                 cx.font = (${INK_FONT_SHORTHAND_JS})(cs);
                 const list = cx.font, asIs = cx.measureText(text).width;
-                cx.font = (${INK_FONT_SHORTHAND_JS})(cs, JSON.stringify(r.family));
+                cx.font = (${INK_FONT_SHORTHAND_JS})(cs, family);
                 // An assignment the canvas refuses leaves cx.font exactly as
                 // it was, so an unchanged serialisation is the browser saying
                 // it will not take this family — which is a different answer
@@ -5253,8 +5474,31 @@ async function main() {
                 if (cx.font === list) {
                     return { at: r.at, asked: false, unspellable: r.family };
                 }
+                const named = cx.measureText(text).width;
+                // And the canary, which prices the join's one-sidedness. A head
+                // family that resolves to no face is skipped and the two
+                // advances above are equal for a reason that is not agreement
+                // — see inkCanvasFaceFault. These two readings tell that apart:
+                // a generic that always resolves, and the same generic with
+                // this family in front of it. Equal means the family reached
+                // nothing.
+                //
+                // Substituting is right HERE and wrong above: this asks what
+                // the name resolves to, so falling back to the generic is the
+                // answer rather than a wrong measurement.
+                const fallback = ${JSON.stringify(INK_CANARY_FALLBACK)};
+                cx.font = (${INK_FONT_SHORTHAND_JS})(cs, null, fallback);
+                const bare = cx.font, base = cx.measureText(text).width;
+                cx.font = (${INK_FONT_SHORTHAND_JS})(cs, null,
+                    family + ", " + fallback);
+                // The same refusal test as above: an unchanged serialisation
+                // is a list the canvas would not take, and null rather than a
+                // width so the arm that reads this cannot mistake a refusal
+                // for an equality.
+                const canary = cx.font === bare
+                    ? null : cx.measureText(text).width;
                 return { at: r.at, asked: true, text,
-                    asIs, named: cx.measureText(text).width };
+                    asIs, named, base, canary };
             }),
         })`);
         // What came back, by the same key the table was built with.
@@ -5333,8 +5577,19 @@ async function main() {
         // tail to recite instead of a constant. Counted off what came back
         // rather than incremented at the call site — a ledger that moves when
         // it is read is the shape bandTargetTally was split out of.
-        asked.canvasFaces = facesHeld
-            ? [...canvasRead.values()].filter((r) => r.asked).length : 0;
+        const canvasAsked = facesHeld
+            ? [...canvasRead.values()].filter((r) => r.asked) : [];
+        asked.canvasFaces = canvasAsked.length;
+        // And how many of those named a face the canvas could reach, which is
+        // the number that means what the tail was saying. See the canary in
+        // inkCanvasFaceFault: a head family that resolves to nothing leaves the
+        // two advances equal without either of them having been about it.
+        asked.canvasNamed = canvasAsked.filter(inkCanvasNameReached).length;
+        // And what the bound the join is asked under actually costs on this
+        // run, kept for the check below rather than derived there — the widths
+        // are here and the census is six hundred lines down.
+        asked.canvasWidest = canvasAsked.reduce(
+            (w, r) => Math.max(w, Math.abs(r.asIs - r.named)), 0);
 
         // Whether the grid as a whole is on the screen, asked once.
         //
@@ -5520,6 +5775,8 @@ async function main() {
                     inkOwnBuildNote(inkOwnRead, browserBuild));
             }
         }
+        asked.ownRead = inkOwnRead;
+
         // And whether a computed style read on THIS build still looks like one
         // to the guard that has to recognise it.
         //
@@ -5537,6 +5794,31 @@ async function main() {
         // manifest check would find nothing missing, and the hole that guard
         // was rewritten to close would be open again with every message
         // silent.
+        // The lower edge of the same bracket, which is not a measurement of
+        // the browser and is a property of the derivation: a floor at or under
+        // a subject read's key count would call one a computed style the moment
+        // inkReadShape's own subject arm stopped matching — a fifth key added
+        // to the subject read is all that takes — and the manifest check would
+        // then find a declaration answer where a subject sits. Reported here
+        // rather than beside the constant so a reader meets the floor's two
+        // edges in one place: what it must stay under, and what it must stay
+        // above.
+        if (INK_OWN_SHAPE_FLOOR <= INK_SUBJECT_KEYS.length) {
+            problems.push(`inkReadShape calls anything with more than ` +
+                `${INK_OWN_SHAPE_FLOOR} string values a computed style, and a subject ` +
+                `read has ${INK_SUBJECT_KEYS.length} keys.
+
+` +
+                `The floor is a quarter of the ${INK_OWN_MEASURED_ON.props} ` +
+                `properties ${INK_OWN_MEASURED_ON.browser} enumerates, and it has to ` +
+                `sit between two populations: above the narrowest object the shape ` +
+                `test must reject, which is a subject read, and below the widest one ` +
+                `it must recognise, which is a computed style. It has come down to ` +
+                `the reject population. inkReadShape's own subject arm is what keeps ` +
+                `that from mattering today — it matches on the four key NAMES first — ` +
+                `so this is a bracket that has closed while every message stayed ` +
+                `silent, and the next key added to a subject read opens it`);
+        }
         if (inkOwnRead > 0 && inkOwnRead <= INK_OWN_SHAPE_FLOOR) {
             problems.push(`this browser enumerates ${inkOwnRead} computed properties ` +
                 `and inkReadShape calls anything with more than ` +
@@ -5544,8 +5826,10 @@ async function main() {
 
 ` +
                 `That floor is a quarter of the ${INK_OWN_MEASURED_ON.props} ` +
-                `${INK_OWN_MEASURED_ON.browser} enumerated, and this build is under ` +
-                `it — so a declaration read taken here is not shaped like one to ` +
+                `${INK_OWN_MEASURED_ON.browser} enumerated — it has to sit above the ` +
+                `${INK_SUBJECT_KEYS.length} keys of a subject read and below what a ` +
+                `computed style comes to — and this build is under ` +
+                `it, so a declaration read taken here is not shaped like one to ` +
                 `inkDeclarationGuard. That guard would go on passing while a read ` +
                 `written around the \`declarations\` table went unseen, which is the ` +
                 `hole it exists to close: the manifest says what was asked, and the ` +
@@ -5858,14 +6142,17 @@ async function main() {
         // disclosure branch's mechanism and the plain branch has no equivalent
         // — a claim counted over twenty bands when eight can make it is a
         // census line that fails on every run.
+        // The three the tap-target claim is made of, counted by the module that
+        // owns the parts. See bandTargetCensus: the ternary that used to pick a
+        // population here was a second spelling of the predicate bandTargetRead
+        // decides `wanted` with, and the census line's phrase was a third — so
+        // a row with the wrong `everyBand` produced a shortfall on every run
+        // and no message saying which row it was. The predicate that says a
+        // band is on the disclosure branch stays here, because a band record's
+        // shape is this file's.
+        const targetCensus = bandTargetCensus(BAND_RENDERS, (b) => Boolean(b.wrapper));
         const declared = {
-            // The three the tap-target claim is made of, with their
-            // populations taken from the same table the band loop writes its
-            // verdicts against. See BAND_TARGET_PARTS: a part cannot be added
-            // to the claim without arriving here.
-            ...Object.fromEntries(BAND_TARGET_PARTS.map((p) => [p.counter,
-                p.everyBand ? BAND_RENDERS.length
-                            : BAND_RENDERS.filter((b) => b.wrapper).length])),
+            ...Object.fromEntries(targetCensus.map((r) => [r.counter, r.declared])),
             insets: BAND_RENDERS.filter((b) => b.leading).length,
             fills: BAND_RENDERS.length,
             words: BAND_RENDERS.filter((b) => b.label).length,
@@ -6577,12 +6864,9 @@ async function main() {
         // It is a census and not a second failure. Every path that suppresses a
         // scan has already said why; what none of them said is how many.
         for (const [what, population, subject] of [
-            ["targetLead", "bands in this grid",
-                "their tap target's leading edge held to the band's"],
-            ["targetTrail", "bands in this grid",
-                "its trailing edge held to where the band's content ends"],
-            ["targetStretch", "bands mounted behind a heading wrapper",
-                "the button held to the wrapper it is stretched across"],
+            // The tap target's three rows come from the table that owns them,
+            // population and phrase together. See bandTargetCensus.
+            ...targetCensus.map((r) => [r.counter, r.population, r.subject]),
             ["insets", "bands whose leading child gen.go names",
                 "their content held to their own declared inset"],
             ["fills", "bands in this grid", "their own fill read off the screenshot"],
@@ -6634,6 +6918,43 @@ async function main() {
                     `brackets has gone: the rows would pass wherever they were put, and ` +
                     `the clearance would be a preference again`);
             }
+        }
+
+        // And the same question of the bound the canvas join is asked under.
+        //
+        // LAYOUT_UNIT is the tolerance there because two measureText calls, on
+        // one canvas, in one evaluate, for one string, under two requests that
+        // resolve to one face, return THE SAME DOUBLE. The bound exists so the
+        // check is about a face and not about a double's last bits — and that
+        // is a statement about the derivation with nothing recording what the
+        // population actually does under it. A margin that is silently spent is
+        // a margin nobody notices leaving, which is the argument INK_ROW_ROUNDING
+        // has a census on both sides of it for.
+        //
+        // Zero is what the premise predicts, so anything at all inside the
+        // bound is reported: the run is not failing the check, it is spending a
+        // tolerance the check was not supposed to need. The other bracket is
+        // not hypothetical — a canvas put on a different face costs about 18px
+        // on this grid's strings, three orders above this bound — so the
+        // reporting threshold is the premise itself rather than a fraction of
+        // the margin.
+        if (asked.canvasFaces > 0 && asked.canvasWidest > 0) {
+            problems.push(`the canvas join is bounded by a LayoutUnit ` +
+                `(${LAYOUT_UNIT}) and the widest of the ${asked.canvasFaces} runs it ` +
+                `was asked of came apart by ${asked.canvasWidest.toFixed(6)}px.
+
+` +
+                `That is under the bound, so no run reported — and the bound is not ` +
+                `supposed to be doing any work here. Both numbers are measureText on ` +
+                `ONE canvas, in one evaluate, for one string; the only difference ` +
+                `between the requests is a family at the head of the list that the ` +
+                `canvas has already resolved to. Two such calls return the same ` +
+                `double, and the tolerance is there so the check is about a face ` +
+                `rather than about a rounding. A nonzero widest means that premise ` +
+                `has stopped holding: either the head family is reaching a second ` +
+                `face with very nearly the same advances, or something between the ` +
+                `two calls is moving the measurement — and the next face that ` +
+                `differs by less than ${LAYOUT_UNIT} goes unreported`);
         }
 
         // The two branches are the same band — and the measurement is what says
@@ -7153,7 +7474,11 @@ async function main() {
     read at the element that draws the glyphs rather than at the box around it,
     drawn by one platform face this browser names, one across the whole grid, and
     named again to the canvas the ink band and the run advance are measured on in
-    ${asked.canvasFaces} runs, which gave the same width both ways,
+    ${asked.canvasFaces} runs — a name a canary finds reaches a real face in
+    ${asked.canvasNamed} of them, so the agreement is a face's and not a skipped
+    lookup's — which gave the same width both ways, the widest of those
+    ${asked.canvasFaces} differences being ${asked.canvasWidest.toFixed(6)}px against
+    a bound of ${LAYOUT_UNIT},
     over the same tree the rects were read from and in the same layout the
     capture holds — a glyph per character of strings gen.go refuses a ligature
     pair in, ${asked.ligated.length} of those ${asked.ligatureSeeds} pairs
@@ -7163,7 +7488,11 @@ async function main() {
     about how a glyph is drawn, and
     resolving every computed property its probe's own text node resolves except
     the ${Object.keys(INK_OWN_MAY_DIFFER).length} INK_OWN_MAY_DIFFER gives a reason
-    for — measured against ${INK_OWN_MEASURED_ON.browser}, and each spent by some box
+    for — ${asked.ownRead} properties on this build against the
+    ${INK_OWN_MEASURED_ON.props} ${INK_OWN_MEASURED_ON.browser} enumerated, both above
+    the ${INK_OWN_SHAPE_FLOOR} it takes to be shaped like a computed style and that
+    above the ${INK_SUBJECT_KEYS.length} keys of a subject read — and each permission
+    spent by some box
     in the grid — and are taller
     than their badges with real glyphs in them, a fixed-size container squeezes its
     child along the main axis and lets it spill across — unless the child is

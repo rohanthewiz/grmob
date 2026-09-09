@@ -11,7 +11,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { BAND_TARGET_PARTS, bandTargetRead } from "./bandtarget.mjs";
+import { BAND_TARGET_PARTS, bandTargetCensus, bandTargetRead }
+    from "./bandtarget.mjs";
 
 const held = (where, target, hasWrapper) => bandTargetRead(where, target, hasWrapper);
 
@@ -32,6 +33,8 @@ test("the table gives every part a key, a counter and a population", () => {
         assert.equal(typeof p.what, "string", `${p.key} has nothing to call itself`);
         assert.equal(typeof p.everyBand, "boolean",
             `${p.key} does not say which bands make the claim`);
+        assert.equal(typeof p.census, "string",
+            `${p.key} has nothing for the census line to call it`);
         assert.ok(!keys.has(p.key), `two parts are keyed ${p.key}`);
         assert.ok(!counters.has(p.counter), `two parts count at ${p.counter}`);
         keys.add(p.key);
@@ -124,4 +127,67 @@ test("reading a ledger twice reads the same thing", () => {
     const first = held("light/disclosure", target, true);
     const second = held("light/disclosure", target, true);
     assert.deepEqual(first, second);
+});
+
+// The population half of the same table, which used to be a ternary in
+// browser.mjs and a phrase in the census table beside it.
+//
+// The property under test is the join: bandTargetCensus counts a part's
+// population with the SAME expression bandTargetRead decides `wanted` with, so
+// the set the loop asks for a verdict from and the set the census divides by
+// cannot come apart. Both halves are functions of values here, which is what
+// makes the property assertable at all.
+
+// Four bands, one of them on the disclosure branch.
+const grid = [{ w: false }, { w: true }, { w: false }, { w: false }];
+const wrapper = (b) => b.w;
+
+test("the census counts every part over the population its reading wants", () => {
+    const rows = bandTargetCensus(grid, wrapper);
+    assert.equal(rows.length, BAND_TARGET_PARTS.length);
+    for (const row of rows) {
+        const part = BAND_TARGET_PARTS.find((p) => p.counter === row.counter);
+        assert.ok(part, `${row.counter} is counted and no part earns it`);
+        assert.equal(row.subject, part.census);
+        // The declared population, recomputed from the reading's own answer:
+        // a band earns a place in it exactly when a full ledger for that band
+        // hands back this part's counter.
+        const wanted = grid.filter((b) => {
+            const target = {};
+            for (const q of BAND_TARGET_PARTS) {
+                if (q.everyBand || wrapper(b)) target[q.key] = true;
+            }
+            return bandTargetRead("x", target, wrapper(b))
+                .counters.includes(part.counter);
+        }).length;
+        assert.equal(row.declared, wanted,
+            `${row.counter} is declared over ${row.declared} bands and the ` +
+            `reading hands its counter to ${wanted}`);
+    }
+});
+
+test("the census names the population it counted", () => {
+    const rows = bandTargetCensus(grid, wrapper);
+    const by = new Map(rows.map((r) => [r.counter, r]));
+    // Both halves of the phrase move with `everyBand` and nothing else: an
+    // every-band part is counted over the whole grid and says so, and a
+    // wrappered one is counted over the one band with a wrapper and says that.
+    for (const part of BAND_TARGET_PARTS) {
+        const row = by.get(part.counter);
+        assert.equal(row.declared,
+            part.everyBand ? grid.length : grid.filter(wrapper).length);
+        assert.equal(row.population.includes("wrapper"), !part.everyBand,
+            `${part.counter} counts ${row.declared} of ${grid.length} bands and ` +
+            `calls them "${row.population}"`);
+    }
+});
+
+test("an empty grid declares nothing and still gives every part a row", () => {
+    // The census is a table of rows and not a table of counts: a run that
+    // mounted no bands must still produce a row per part, or a part could
+    // vanish from the census by the grid being empty rather than by anybody
+    // deciding it should.
+    const rows = bandTargetCensus([], wrapper);
+    assert.equal(rows.length, BAND_TARGET_PARTS.length);
+    for (const row of rows) assert.equal(row.declared, 0);
 });

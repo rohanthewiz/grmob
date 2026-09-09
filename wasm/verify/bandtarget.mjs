@@ -52,20 +52,66 @@
 // disclosure branch's mechanism, and the plain branch has no equivalent — so
 // `everyBand` is what the census reads and what says whether a missing verdict
 // is a branch that does not make the claim or an assertion that did not run.
+//
+// `census` is what the tail's census line calls the assertion, and it is here
+// for the same reason `counter` is: see bandTargetCensus, which is the one
+// place `everyBand` is turned into a population, a count and a phrase.
 export const BAND_TARGET_PARTS = [
     {
         key: "lead", counter: "targetLead", everyBand: true,
         what: "the control's leading edge against the band's",
+        census: "their tap target's leading edge held to the band's",
     },
     {
         key: "trail", counter: "targetTrail", everyBand: true,
         what: "the control's trailing edge against the band's content",
+        census: "its trailing edge held to where the band's content ends",
     },
     {
         key: "stretch", counter: "targetStretch", everyBand: false,
         what: "the button stretched across the heading wrapper",
+        census: "the button held to the wrapper it is stretched across",
     },
 ];
+
+// What the census may say about each part, derived where `everyBand` is read.
+//
+// # One flag, three readers, and two of them were somewhere else
+//
+// `everyBand` decides three things: which bands bandTargetRead WANTS a verdict
+// from, how many bands the census line divides by, and what that line calls the
+// set it is dividing by. The first is here; the other two were in browser.mjs,
+// spelled again — a ternary picking between `BAND_RENDERS.length` and the
+// wrappered ones, and a literal phrase in the census table beside it.
+//
+// Three spellings of one predicate is a join nothing makes. A part whose
+// `everyBand` is wrong gets a population and a counter that agree with each
+// other and with nothing the band loop did, and what a reader meets is a census
+// line short by twelve on every run with no message naming the row that is
+// wrong. Derived here, the same flag moves all three at once: the loop stops
+// wanting the verdict exactly when the count stops expecting it, and the drift
+// arrives as bandTargetRead's own message — "nothing decided X", or "X came
+// back decided on a band that does not make that claim" — which names the part.
+//
+//	bands       the band records the grid mounted, in gen.go's order
+//	hasWrapper  the predicate that says a band is on the disclosure branch,
+//	            passed in because a band record's shape is browser.mjs's and
+//	            not this module's
+//
+// Returns one row per part: the counter the census reads, how many bands are
+// declared to earn it, and how the line names that population.
+export function bandTargetCensus(bands, hasWrapper) {
+    return BAND_TARGET_PARTS.map((part) => ({
+        counter: part.counter,
+        subject: part.census,
+        // The same phrase the population is counted with, so a row cannot say
+        // one set and count another.
+        population: part.everyBand
+            ? "bands in this grid" : "bands mounted behind a heading wrapper",
+        // And the same expression bandTargetRead applies per band as `wanted`.
+        declared: bands.filter((b) => part.everyBand || hasWrapper(b)).length,
+    }));
+}
 
 // What one band's ledger comes to.
 //
@@ -83,6 +129,9 @@ export function bandTargetRead(where, target, hasWrapper) {
     const counters = [];
     let whole = true;
     for (const part of BAND_TARGET_PARTS) {
+        // The same expression bandTargetCensus counts the population with. See
+        // there: one flag, and the loop's appetite and the census's divisor
+        // move together.
         const wanted = part.everyBand || hasWrapper;
         const held = target[part.key];
         if (held === undefined) {

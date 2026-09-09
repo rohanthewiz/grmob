@@ -273,12 +273,91 @@ func checkCitationsResolve(t *testing.T, checks int) {
 			"InputsComeFromTheTwoEnumerations would go on passing over a fixture, and "+
 			"an exemption that had simply gone quiet would report as a rename against "+
 			"a file still sitting on disk.", len(considered))
-	} else {
+	}
+
+	// And whether any of that set is a file an exemption could be about.
+	//
+	// # A separating case drawn from the wrong population
+	//
+	// The example named above was silent[0], the alphabetically first path the
+	// walk opened and found no citation in — which in this repository is
+	// .github/workflows/ci.yml, a file nothing would ever cite. It satisfies
+	// "reached and not citing" and it is evidence for nothing:
+	// citationExemptVerdict's silent arm is about a file somebody wrote an
+	// EXEMPTION for, and an exemption is a claim that a file's own `check N`
+	// is not an address into browser.mjs. A silent set that was nothing but
+	// workflow files and licences would read exactly like this one and would
+	// support none of what the sentence above claims — the walk would have
+	// proved it can open a YAML file.
+	//
+	// The population an exemption is drawn from is the files this check is
+	// actually about, and that population is measured rather than listed: the
+	// extensions the citing files have, plus the extensions citationExempt's
+	// own rows have. Both are in hand here, and the second matters on its own —
+	// an exemption's file has stopped citing by hypothesis, so its kind can be
+	// absent from `files` precisely in the case this is about.
+	//
+	// Being wrong towards a wider population would put a .md back in the
+	// example and cost the reader a weaker illustration; being wrong towards a
+	// narrower one would report a separating case as missing while one was
+	// sitting there. So the kinds are a union and not an intersection.
+	kinds := map[string]bool{}
+	for _, f := range files {
+		kinds[filepath.Ext(f.path)] = true
+	}
+	// The tighter of the two, kept apart because it is what the EXAMPLE is
+	// drawn from. An exemption is a claim about a file somebody wrote, and the
+	// two rows on file are both Go source; a silent README satisfies the
+	// property and a silent .go file is what the sentence is describing. The
+	// assertion stays over the union, so a repository that stopped exempting
+	// Go fails nothing here — it is the illustration that narrows, not the
+	// claim.
+	exemptKinds := map[string]bool{}
+	for path := range citationExempt {
+		exemptKinds[filepath.Ext(path)] = true
+		kinds[filepath.Ext(path)] = true
+	}
+	couldBeExempt, likeAnExemption := []string{}, []string{}
+	for _, path := range silent {
+		if kinds[filepath.Ext(path)] {
+			couldBeExempt = append(couldBeExempt, path)
+		}
+		if exemptKinds[filepath.Ext(path)] {
+			likeAnExemption = append(likeAnExemption, path)
+		}
+	}
+	// The tightest example there is, and the wider one when the tight
+	// population is empty. Both are silent paths of a kind this check is
+	// about; the first is one of a kind an exemption has actually been written
+	// for.
+	example := couldBeExempt
+	if len(likeAnExemption) > 0 {
+		example = likeAnExemption
+	}
+	switch {
+	case len(silent) == 0:
+		// Already reported above, and reporting it twice would send a reader
+		// looking for two faults.
+	case len(couldBeExempt) == 0:
+		t.Errorf("%d of the %d files the enumeration opened cite nothing, and not one "+
+			"of them is a kind anything in this repository cites or is exempted for "+
+			"(the kinds are %v; the silent set starts %s).\n\n"+
+			"The separating case citationExemptInputs needs is a path the walk opened "+
+			"and found no citation in, and it needs it as evidence about EXEMPTIONS: "+
+			"citationExemptVerdict's silent arm fires for a file somebody claimed "+
+			"numbers things of its own and that has stopped citing. A silent set made "+
+			"entirely of files nothing would ever cite satisfies the arithmetic and "+
+			"supports none of that — the walk has shown it can open a file, which was "+
+			"never in doubt.", len(silent), len(considered), kindList(kinds), silent[0])
+	default:
 		// Named, because a passing run's evidence for "the two enumerations are
-		// two questions" is this list existing and nothing else says so.
-		t.Logf("%d of the %d files opened cite nothing (e.g. %s), which is the pair "+
-			"citationExemptVerdict's silent arm is about", len(silent),
-			len(considered), silent[0])
+		// two questions" is this list existing and nothing else says so — and
+		// named from the population the claim is about rather than from the top
+		// of an alphabetical list.
+		t.Logf("%d of the %d files opened cite nothing, %d of them a kind this check "+
+			"is about and %d a kind citationExempt itself names (e.g. %s), which is "+
+			"the pair citationExemptVerdict's silent arm is about", len(silent),
+			len(considered), len(couldBeExempt), len(likeAnExemption), example[0])
 	}
 
 	// Every sense the enumeration produced has to be one somebody classified.
@@ -346,6 +425,21 @@ func checkCitationsResolve(t *testing.T, checks int) {
 			t.Error(v)
 		}
 	}
+}
+
+// The file kinds a failure names, sorted so two runs read the same.
+//
+// A map's iteration order is deliberate noise in Go, and a message that listed
+// extensions straight out of one would differ between two runs over an
+// unchanged tree — which is the shape of thing that makes a reader wonder what
+// moved.
+func kindList(kinds map[string]bool) []string {
+	out := make([]string, 0, len(kinds))
+	for ext := range kinds {
+		out = append(out, ext)
+	}
+	sort.Strings(out)
+	return out
 }
 
 // The two enumerations citationExemptVerdict's answer is decided by.

@@ -459,3 +459,196 @@ func TestEveryThemeLeafIsFoundAgainAfterOneSlip(t *testing.T) {
 	}
 	t.Logf("%d leaves, %d one-edit slips, every one traced back", len(paths), tried)
 }
+
+// The two relations `afforded` rests on, over sets nobody chose.
+//
+// # A number with one reader and no assertion
+//
+// afforded is what themeNearMissReach costs a struct: the width its own names
+// would have carried with the ceiling taken off, measured only when the ceiling
+// is what stopped the search. affordedOpen is the other answer that search can
+// end with — it ran out of distances to try rather than finding a crowd, which
+// is a fact about the SHAPE of the set and not a width.
+//
+// Both reach exactly one reader, themeNearMiss's `why` clause, and the test
+// above holds them over four sets somebody wrote down: a sparse one, a wide
+// one, a pair and a crowd. Four sets are four cases an author thought of, which
+// is the evidence this file has twice decided is not evidence — see the note
+// above TestEveryThemeLeafIsFoundAgainAfterOneSlip. What is not held anywhere
+// is the pair of relations the number rests on, and they are properties of the
+// derivation rather than of core.Theme:
+//
+//	afforded >= edits, always
+//	    afforded is a width the threshold could have been, so a set that
+//	    affords LESS than it measures is a message telling a reader the
+//	    ceiling cost them something while the ceiling was raising the answer.
+//	    Where the crowding stopped the search the two are equal by
+//	    construction, and that half is asserted too, because "equal by
+//	    construction" is a claim about an assignment somebody can move.
+//
+//	affordedOpen exactly when no parent holds three leaves
+//	    a crowd is a leaf with more than one sibling inside the threshold, so
+//	    a parent with two leaves cannot make one at any distance. The flag is
+//	    the search running out of distances, and running out is available
+//	    only to a set no width crowds. Both directions matter: reporting "no
+//	    width crowds these names" about a set some width does crowd sends a
+//	    reader to stop looking, and failing to report it about a set nothing
+//	    crowds prints a number that reads as a measurement of where the names
+//	    stop being distinguishable, which is nowhere.
+//
+// # Where the sets come from
+//
+// core.Theme's own leaf names, re-parented into shapes it does not have.
+// Windows of one to six consecutive names are taken over the sorted leaves and
+// mounted under a synthetic parent — and, for the halves that need two parents
+// to be interesting, split across two. The names are real and every shape is an
+// accident of where the window fell, which is the same move the slip walk
+// makes: the inputs are the struct's, and the cases are nobody's.
+func TestTheAffordedWidthHoldsItsTwoRelations(t *testing.T) {
+	paths := themeLeafPaths(reflect.ValueOf(*core.DefaultTheme), "")
+	sort.Strings(paths)
+	// The bare names, deduplicated: two parents can hold the same leaf name
+	// (Colors.Surface and Colors.Overlay.Surface), and a window carrying it
+	// twice would mount one parent with two identical children — a shape the
+	// walk that produces these sets can never see, and one whose zero distance
+	// is a different check's business.
+	names := []string{}
+	seen := map[string]bool{}
+	for _, path := range paths {
+		name := path[strings.LastIndex(path, ".")+1:]
+		if !seen[name] {
+			seen[name] = true
+			names = append(names, name)
+		}
+	}
+
+	// Every window, at every width, under one parent and under two. The second
+	// arrangement is what puts leaves in front of the derivation that are NOT
+	// candidates for one another — the only comparison the measurement makes is
+	// within a parent, and a set with one parent cannot show that `span` and
+	// the crowd search read different populations.
+	sets := [][]string{}
+	for width := 1; width <= 6 && width <= len(names); width++ {
+		for i := 0; i+width <= len(names); i++ {
+			window := names[i : i+width]
+			one := make([]string, 0, width)
+			two := make([]string, 0, width)
+			for j, name := range window {
+				one = append(one, "One."+name)
+				if j%2 == 0 {
+					two = append(two, "Left."+name)
+				} else {
+					two = append(two, "Right."+name)
+				}
+			}
+			sets = append(sets, one, two)
+		}
+	}
+
+	// Reported once at the end rather than per set: 20-odd thousand sets can
+	// break a relation in the same way twenty thousand times, and a failure
+	// list that long is a failure nobody reads. The first of each is the one
+	// that gets the sentence.
+	told := map[string]bool{}
+	// And which of the derivation's four endings each set reached.
+	//
+	// A relation asserted over a population that never produces the state it is
+	// about passes for free, and both relations above are biconditionals: the
+	// open flag's half is worth nothing unless sets on each side of it are in
+	// the population. This is the census that says they were — the same
+	// argument the ink scan's counts are kept for, one directory over.
+	reached := map[string]int{}
+	for _, leaves := range sets {
+		set := themeLeafSetOf(leaves)
+		where := strings.Join(leaves, ", ")
+		switch {
+		case !set.cappedByReach:
+			reached["its own crowding stopped the search"]++
+		case set.affordedOpen:
+			reached["no width crowds these names at all"]++
+		case set.afforded > set.edits:
+			reached["the ceiling cost this set a wider threshold"]++
+		default:
+			reached["the ceiling and the crowding stop in the same place"]++
+		}
+
+		if set.afforded < set.edits && !told["under"] {
+			told["under"] = true
+			t.Errorf("%s measures a threshold of %d and reports affording %d.\n\n"+
+				"afforded is the width these names would carry with "+
+				"themeNearMissReach taken off, so it is the same search continued and "+
+				"can only go up. A value under the threshold is the message telling a "+
+				"reader the ceiling cost them something while the ceiling was the "+
+				"thing raising the answer — and the sentence it prints, \"these names "+
+				"would carry %d\", would be citing a width narrower than the one in "+
+				"force.", where, set.edits, set.afforded, set.afforded)
+		}
+
+		if !set.cappedByReach && (set.afforded != set.edits || set.affordedOpen) &&
+			!told["uncapped"] {
+			told["uncapped"] = true
+			t.Errorf("%s was stopped by its own crowding at %d and reports affording "+
+				"%d (open=%v).\n\n"+
+				"When the crowding is what stopped the search there is nothing for "+
+				"the ceiling to have cost: raising themeNearMissReach finds the same "+
+				"crowd one step out. afforded is assigned edits for exactly that "+
+				"reason and the open flag is never reached, so a set that disagrees "+
+				"is the assignment having moved out from under the message that "+
+				"reads it.", where, set.edits, set.afforded, set.affordedOpen)
+		}
+
+		// The shape the open flag claims: a parent holding three leaves is the
+		// smallest thing that can crowd, because a crowd is a leaf with more
+		// than one sibling inside the threshold.
+		crowdable := false
+		byParent := map[string]int{}
+		for _, leaf := range leaves {
+			byParent[leaf[:strings.LastIndex(leaf, ".")+1]]++
+		}
+		for _, n := range byParent {
+			if n >= 3 {
+				crowdable = true
+			}
+		}
+		if set.affordedOpen != !crowdable && !told["open"] {
+			told["open"] = true
+			// Said in the direction the set is actually in: the flag is wrong
+			// both ways and the two are different mistakes, so the sentence
+			// names the shape rather than printing a boolean beside it.
+			shape := "has a parent holding three leaves"
+			if !crowdable {
+				shape = "has no parent holding three leaves"
+			}
+			t.Errorf("%s %s, and reports "+
+				"open=%v (afforded %d, threshold %d, capped=%v).\n\n"+
+				"The flag says the upward search ran out of distances to try rather "+
+				"than finding a crowd, and past the longest name every sibling pair "+
+				"is inside the threshold — so a parent with three leaves crowds at "+
+				"SOME width and the search cannot run out. The two answers are a "+
+				"width and a shape, and they are printed as different sentences: one "+
+				"tells a reader how much wider a threshold these names would carry, "+
+				"and the other tells them there is no such width to look for.",
+				where, shape, set.affordedOpen, set.afforded, set.edits,
+				set.cappedByReach)
+		}
+	}
+	// Every ending, or the population has stopped separating them.
+	for _, ending := range []string{
+		"its own crowding stopped the search",
+		"no width crowds these names at all",
+		"the ceiling cost this set a wider threshold",
+		"the ceiling and the crowding stop in the same place",
+	} {
+		if reached[ending] == 0 {
+			t.Errorf("not one of the %d generated sets ended with %q.\n\n"+
+				"The relations above are biconditionals and this is the reading that "+
+				"says they were asked of both sides. An ending no set reaches is a "+
+				"relation passing over a population that cannot break it — which is "+
+				"the same failure as a table of four cases somebody wrote down, "+
+				"arriving with a bigger number in front of it.", len(sets), ending)
+		}
+	}
+	t.Logf("%d generated leaf sets, none of them a shape anybody chose, hold "+
+		"afforded >= edits and the open flag's parent-of-three: %v",
+		len(sets), reached)
+}
