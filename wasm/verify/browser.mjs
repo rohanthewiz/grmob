@@ -3321,6 +3321,45 @@ function inkCanaryPassedPhrase(asked) {
     agreement`;
 }
 
+// And what the per-request reads came to, as the tail says it.
+//
+// # A two-way branch on a three-way question
+//
+// This clause was spelled inline in the recital, and it chose between "one
+// face at every one of them" and "N different faces across them" on
+// `canvasGenericAnswers === 1`. Both branches are sentences about a stack, and
+// there is a third state neither of them is about: a run where every probe
+// came back with no faces answers zero, takes the second branch, and recites
+// "0 different faces across them, which is a family list answering per request
+// and the reason one probe is not enough" over a run that read nothing at all.
+//
+// That is not a rare shape of bug — it is the same shape inkCanaryPassedPhrase
+// exists for, one clause down. A reading going quiet arrives in the recital as
+// a number, and a number in a sentence written for the other case is a
+// confident claim about the wrong thing. Nothing on this machine produces it
+// (every probe here answers), which is why it stood: the browser pass runs the
+// live population and the live population has never been empty.
+//
+// So the clause is a function, the third branch is written, and the whole of
+// it is asked in inkcanary_test.go over populations this browser does not
+// give. Split out for the reason inkCanvasGenericGap is: the sentence and the
+// reading it is about are now one spelling.
+function inkCanarySpreadPhrase(asked) {
+    if (asked.canvasGenericRead === 0) {
+        return `no face at any of them, so nothing below is a reading about this
+    stack: ${asked.canvasGenericReqs} probe${asked.canvasGenericReqs === 1 ? "" : "s"}
+    were mounted and none answered, and the axes an answer would have been read across
+    are ${inkCanaryAxisPhrase(asked.canvasGenericAxes)}`;
+    }
+    if (asked.canvasGenericAnswers === 1) {
+        return `one face at every one of them, which is this stack having no optical cut
+    across ${inkCanaryAxisPhrase(asked.canvasGenericAxes)}`;
+    }
+    return `${asked.canvasGenericAnswers} different faces across them, which is a family
+    list answering per request and the reason one probe is not enough, over
+    ${inkCanaryAxisPhrase(asked.canvasGenericAxes)}`;
+}
+
 // The probe's answer and the advances' answer to one question, held against
 // each other.
 //
@@ -8294,12 +8333,7 @@ async function main() {
         ? "a face nothing here read" : asked.canvasFallback} — read at
     ${asked.canvasGenericRead} of the ${asked.canvasGenericReqs} distinct requests the
     joined runs make rather than once at whatever the page default is, and answering
-    with ${asked.canvasGenericAnswers === 1
-        ? `one face at every one of them, which is this stack having no optical cut
-    across ${inkCanaryAxisPhrase(asked.canvasGenericAxes)}`
-        : `${asked.canvasGenericAnswers} different faces across them, which is a family
-    list answering per request and the reason one probe is not enough, over
-    ${inkCanaryAxisPhrase(asked.canvasGenericAxes)}`} — and measuring
+    with ${inkCanarySpreadPhrase(asked)} — and measuring
     ${asked.canvasGenericNearest === null ? "no measured amount"
         : asked.canvasGenericNearest.toFixed(4) + "px"} from the nearest of the faces
     those runs are drawn by, over their own strings at their own sizes rather than by

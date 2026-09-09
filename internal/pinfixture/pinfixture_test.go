@@ -2,6 +2,10 @@ package pinfixture
 
 import (
 	"fmt"
+	"go/ast"
+	"go/parser"
+	"go/printer"
+	"go/token"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -2046,63 +2050,485 @@ func pinEscapeHeldLiteral(src string, open []int, by []byte) bool {
 // reaches it is a `.swift` one because that is where the construct is real,
 // and the name here says what the code does rather than what the comment
 // meant.
+// Every place pinCodeOnly decides which construct it is in, and how a row is
+// shown to have reached it.
+//
+// # The dimension the pair census does not count
+//
+// The census below enumerates ordered pairs of the five constructs and holds
+// itself to having a row for each. That is a complete walk of ONE dimension,
+// and the completeness arm says so in pairs — so a lexer path could lose a
+// construct entirely and the grid would go on reporting itself complete,
+// because a pair is named by the two kinds at the boundary and not by the
+// bytes that opened them.
+//
+// The other dimension is this one: pinCodeOnly reaches each of those five
+// kinds by more than one route, and the routes are what the extension actually
+// changes. Three booleans come off the extension — `nested`, `single`, `tick`
+// — and a run of three quotes and a backslash change the answer without any
+// extension being consulted at all. Nine of the eleven branches below produce
+// or decline to produce the same kind, `a string literal`, so none of them
+// adds a PAIR and the census above cannot see any of them go.
+//
+// When this was written the grid ran 22 rows through `.go`, one `.mjs` and two
+// `.swift`, and reached five of these eleven. The five it missed were every
+// route that is not a double quote or a comment: the single quote, the
+// backtick, both of Swift's refusals to treat them as quotes at all, the
+// three-quote run and the escape.
+//
+// # And what a row has to do to claim one
+//
+// Read off pinCodeOnly's record rather than off a label. A `via` column would
+// be a row asserting its own coverage, which is the shape of evidence this
+// file keeps replacing: the probes below ask the lexer what it recorded for
+// the row's own bytes, and the four that are about an extension flag ask the
+// stronger question — whether the OTHER path records something different.
+// Under `.swift` a `'` is punctuation and under `.go` it opens a literal that
+// runs to the newline, so a row that claims either has to be a row the two
+// paths disagree about.
+//
+// One correction the probes made to this file's prose on the way in:
+// pinCodeOnly's comment calls the three-quote run "Swift's multi-line string",
+// and the branch has no extension guard on it. A `"""` in a `.go` harness is
+// lexed as a literal that carries past newlines, on every path. The row that
+// reaches it is a `.swift` one because that is where the construct is real,
+// and the name here says what the code does rather than what the comment
+// meant.
+//
+// # And the list itself is held to the lexer
+//
+// This table was written to fix a census complete in the dimension it counts,
+// and for one session it was itself a hand-written list of eleven checked for
+// COVERAGE and not for COMPLETENESS. A twelfth branch in pinCodeOnly — a
+// fourth extension, a new delimiter, a raw-string prefix — left this census
+// reporting 11 of 11 and the pair grid reporting 20 of 20, with the new route
+// reached by nothing. The same complaint one level up, for the fourth time in
+// this file.
+//
+// So the set of decisions is no longer written down here. It is read off
+// pinCodeOnly's syntax tree by pinLexDecisionSites, and each row names the
+// conditions it is evidence about in `sites`. A decision the tree has and no
+// row claims fails TestEveryDecisionPinCodeOnlyMakesIsClaimedByTheBranchCensus
+// unless pinLexNotAConstruct excuses it in writing, and a `sites` entry the
+// tree does not have fails too — so a reworded condition is a re-read rather
+// than a silent pass.
+//
+// What is still a judgement is the SPLIT: which conditions decide a construct
+// and which only say how far one runs. That judgement is now written out
+// per condition in pinLexNotAConstruct rather than exercised by omission.
 var pinLexBranches = []struct {
-	name    string
+	name string
+	// The decisions in pinCodeOnly this row is evidence about, spelled as the
+	// conditions themselves — the text go/printer produces for them, so a
+	// reformat of the lexer is a re-read here and a reword is a failure.
+	//
+	// More than one row may claim a site, and several do: a flag off the
+	// extension is ONE decision with two outcomes, and the row for each
+	// outcome is evidence about the same condition. Both rows are needed —
+	// the flag read one way is a different route into the source than the
+	// flag read the other — and neither is a different decision.
+	sites   []string
 	reached func(src, ext string, open []int, by []byte) bool
 }{
-	{"// — a comment to the end of the line",
-		func(src, ext string, open []int, by []byte) bool {
+	{name: "// — a comment to the end of the line",
+		sites: []string{"src[i] == '/' && i+1 < len(src) && src[i+1] == '/'"},
+		reached: func(src, ext string, open []int, by []byte) bool {
 			return slices.Contains(by, pinLineComment)
 		}},
-	{"/* — a block comment the lexer does not nest",
-		func(src, ext string, open []int, by []byte) bool {
+	// The two block-comment rows claim the same three conditions, because the
+	// open and the close are shared and the nesting test is the one flag that
+	// tells the two languages apart. Which of them is in force is the `nested`
+	// assignment, and that is why both rows name it.
+	{name: "/* — a block comment the lexer does not nest",
+		sites: []string{
+			"src[i] == '/' && i+1 < len(src) && src[i+1] == '*'",
+			"src[i] == '*' && i+1 < len(src) && src[i+1] == '/'",
+			"nested && src[i] == '/' && i+1 < len(src) && src[i+1] == '*'",
+			"nested := ext == \".swift\"",
+		},
+		reached: func(src, ext string, open []int, by []byte) bool {
 			return ext != ".swift" && slices.Contains(by, pinBlockComment)
 		}},
-	{"/* — a block comment the lexer nests, which only Swift does",
-		func(src, ext string, open []int, by []byte) bool {
+	{name: "/* — a block comment the lexer nests, which only Swift does",
+		sites: []string{
+			"src[i] == '/' && i+1 < len(src) && src[i+1] == '*'",
+			"src[i] == '*' && i+1 < len(src) && src[i+1] == '/'",
+			"nested && src[i] == '/' && i+1 < len(src) && src[i+1] == '*'",
+			"nested := ext == \".swift\"",
+		},
+		reached: func(src, ext string, open []int, by []byte) bool {
 			return ext == ".swift" && slices.Contains(by, pinBlockComment) &&
 				pinLexDiffers(src, ext, ".go")
 		}},
-	{`" — a double-quoted literal`,
-		func(src, ext string, open []int, by []byte) bool {
+	// The closing quote of a single-line literal is claimed by all three rows
+	// that open one, for the same reason: it is the arm that ends what they
+	// started, and a literal none of them can close is a runaway rather than
+	// a literal.
+	{name: `" — a double-quoted literal`,
+		sites: []string{"src[i] == '\"'", "!long && src[i] == q"},
+		reached: func(src, ext string, open []int, by []byte) bool {
 			return pinRecordedAs(src, by, '"', pinStringLiteral) ||
 				pinRecordedAs(src, by, '"', pinRunawayString)
 		}},
-	{"' — a single-quoted literal, which Swift does not have",
-		func(src, ext string, open []int, by []byte) bool {
+	{name: "' — a single-quoted literal, which Swift does not have",
+		sites: []string{
+			"single && src[i] == '\\''",
+			"single := ext != \".swift\"",
+			"!long && src[i] == q",
+		},
+		reached: func(src, ext string, open []int, by []byte) bool {
 			return ext != ".swift" &&
 				(pinRecordedAs(src, by, '\'', pinStringLiteral) ||
 					pinRecordedAs(src, by, '\'', pinRunawayString)) &&
 				pinLexDiffers(src, ext, ".swift")
 		}},
-	{"` — a template literal, which Swift does not have",
-		func(src, ext string, open []int, by []byte) bool {
+	{name: "` — a template literal, which Swift does not have",
+		sites: []string{
+			"tick && src[i] == '`'",
+			"tick := ext != \".swift\"",
+			"!long && src[i] == q",
+		},
+		reached: func(src, ext string, open []int, by []byte) bool {
 			return ext != ".swift" && pinRecordedAs(src, by, '`', pinStringLiteral) &&
 				pinLexDiffers(src, ext, ".swift")
 		}},
-	{"' — an apostrophe that is code, because Swift has no single-quoted string",
-		func(src, ext string, open []int, by []byte) bool {
+	{name: "' — an apostrophe that is code, because Swift has no single-quoted string",
+		sites: []string{"single && src[i] == '\\''", "single := ext != \".swift\""},
+		reached: func(src, ext string, open []int, by []byte) bool {
 			return ext == ".swift" && pinRecordedAs(src, by, '\'', pinKeptCode) &&
 				pinLexDiffers(src, ext, ".go")
 		}},
-	{"` — a backtick that is code, because Swift quotes identifiers with it",
-		func(src, ext string, open []int, by []byte) bool {
+	{name: "` — a backtick that is code, because Swift quotes identifiers with it",
+		sites: []string{"tick && src[i] == '`'", "tick := ext != \".swift\""},
+		reached: func(src, ext string, open []int, by []byte) bool {
 			return ext == ".swift" && pinRecordedAs(src, by, '`', pinKeptCode) &&
 				pinLexDiffers(src, ext, ".mjs")
 		}},
-	{`""" — a literal a run of three quotes opens, which carries past newlines`,
-		func(src, ext string, open []int, by []byte) bool {
+	// The three-quote run is three decisions and one construct: whether the
+	// delimiter is long, how many bytes of it to blank, and what closes it.
+	{name: `""" — a literal a run of three quotes opens, which carries past newlines`,
+		sites: []string{
+			"long := q == '\"' && strings.HasPrefix(src[i:], `\"\"\"`)",
+			"long",
+			"long && strings.HasPrefix(src[i:], `\"\"\"`)",
+		},
+		reached: func(src, ext string, open []int, by []byte) bool {
 			return strings.Contains(src, `"""`) && len(open) == 0 &&
 				pinLiteralPastNewline(src, by)
 		}},
-	{`\ — an escape carrying the quote after it, which keeps the literal open`,
-		func(src, ext string, open []int, by []byte) bool {
+	{name: `\ — an escape carrying the quote after it, which keeps the literal open`,
+		sites: []string{"src[i] == '\\\\' && i+1 < len(src)"},
+		reached: func(src, ext string, open []int, by []byte) bool {
 			return pinEscapeHeldLiteral(src, open, by)
 		}},
-	{"the newline that turns an unclosed literal into a runaway",
-		func(src, ext string, open []int, by []byte) bool {
+	{name: "the newline that turns an unclosed literal into a runaway",
+		sites: []string{"!long && q != '`' && src[i] == '\\n'"},
+		reached: func(src, ext string, open []int, by []byte) bool {
 			return len(open) > 0
 		}},
+}
+
+// The conditions in pinCodeOnly that are not a decision about which construct
+// it is in, each with the reason it is not.
+//
+// pinLexDecisionSites takes every condition the function turns on, because a
+// rule that took only some of them would be the judgement it is here to
+// remove. Most of what it finds is a construct decision and is claimed by a
+// row above; the rest is here, and it is all of one shape — an EXTENT (how far
+// a construct already decided on runs) or the second pass's bookkeeping.
+//
+// Written out per condition rather than filtered by a rule about node kinds,
+// because "loop conditions do not decide constructs" is exactly the sort of
+// argument this file keeps converting into a statement. A new loop that DOES
+// decide one arrives here as an unexcused site and has to be answered.
+var pinLexNotAConstruct = []struct{ site, why string }{
+	{"i < len(src)",
+		"the scan's own bound, in the main loop and again in the literal body: " +
+			"where the source ends, not what is in it"},
+	{"i < len(src) && src[i] != '\\n'",
+		"how far a line comment runs, once the `//` has decided it is one"},
+	{"i < len(src) && depth > 0",
+		"how far a block comment runs, once the `/*` has decided it is one — " +
+			"`depth` is the nesting count and the arm that moves it is claimed"},
+	{"k < n",
+		"blanking the opening delimiter's own bytes, one or three of them; `n` " +
+			"was chosen by the `long` decision, which a row claims"},
+	{"k < i",
+		"the walk back over a runaway's bytes to retell them, after the newline " +
+			"has decided what they were"},
+	{"i < len(src) && at < len(openAt)",
+		"the second pass, which turns recorded offsets into line numbers and " +
+			"lexes nothing"},
+	{"at < len(openAt) && openAt[at] == i",
+		"the same pass, emitting the offsets that land on this byte"},
+	{"src[i] == '\\n'",
+		"counting lines in that pass. The newline that DECIDES something is the " +
+			"one inside the literal arm, and it is claimed by the runaway row"},
+	{"out[i] != '\\n'",
+		"blank() leaving newlines alone, so a blanked span keeps its lines — a " +
+			"rule about what a construct's bytes become, not about which it is"},
+	{"blankedBy[k] == pinStringLiteral",
+		"the retell rewriting only the bytes the literal arm recorded, so a " +
+			"comment inside a runaway's span keeps its own kind"},
+}
+
+// pinLexDecisionSites is every condition pinCodeOnly turns on, read off the
+// function's syntax tree rather than listed beside it.
+//
+// # What counts as one
+//
+// Every `if` condition, every `case` expression, every `for` condition and
+// every boolean assignment in the body — and each of those split on its
+// top-level `||`, because a disjunction is the lexer offering separate routes
+// to one arm and the three quote characters are exactly that: `"` always,
+// `'` when `single`, a backtick when `tick`. A rule that took the case
+// expression whole would call those one branch and let two of them go without
+// a row.
+//
+// A site is identified by the text go/printer produces for it, which has three
+// consequences worth stating. Two conditions that read identically are one
+// site — `i < len(src)` appears twice and is the same claim both times.
+// Reformatting the lexer does not move a site, because the printer normalises
+// spacing. And REWORDING one does: a condition spelled differently is a
+// different site, which fails as an unclaimed decision and an orphaned claim
+// at once. That is the intended cost — the reword is the moment to re-read
+// whether the row above still describes what the lexer does.
+//
+// A boolean assignment is identified by the whole statement, not by its
+// right-hand side, because `single` and `tick` are both `ext != ".swift"` and
+// are two different decisions.
+//
+// # Why the source and not a coverage tool
+//
+// Go can report which lines a test executed, and that would answer a narrower
+// question: whether some test somewhere ran the branch. What this census is
+// for is whether a row in THIS table demonstrates it, on a source whose
+// extension turns the flag on, with the other path recording something
+// different. Coverage cannot tell that from a line reached incidentally by a
+// harness scan.
+func pinLexDecisionSites(t *testing.T) []string {
+	t.Helper()
+
+	// The package's own directory, whatever file the lexer happens to live in:
+	// a function moved between files is not a change to the census.
+	entries, err := os.ReadDir(".")
+	if err != nil {
+		t.Fatalf("reading this package's directory: %v", err)
+	}
+	fset := token.NewFileSet()
+	var fn *ast.FuncDecl
+	var in string
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".go") {
+			continue
+		}
+		file, err := parser.ParseFile(fset, e.Name(), nil, 0)
+		if err != nil {
+			t.Fatalf("parsing %s: %v", e.Name(), err)
+		}
+		for _, d := range file.Decls {
+			fd, ok := d.(*ast.FuncDecl)
+			if ok && fd.Recv == nil && fd.Name.Name == "pinCodeOnly" && fd.Body != nil {
+				fn, in = fd, e.Name()
+			}
+		}
+	}
+	if fn == nil {
+		t.Fatalf("no func pinCodeOnly in this package.\n\n" +
+			"This census reads the lexer's decisions off its syntax tree. A lexer " +
+			"that has been renamed or moved out of the package is a census with " +
+			"nothing to be about, and reporting zero decisions would be a green " +
+			"run saying every one of them is covered.")
+	}
+	t.Logf("pinCodeOnly's decisions read off %s", in)
+
+	text := func(n ast.Node) string {
+		var b strings.Builder
+		if err := printer.Fprint(&b, fset, n); err != nil {
+			t.Fatalf("printing a node of pinCodeOnly: %v", err)
+		}
+		return b.String()
+	}
+	// Split on top-level `||`, through parentheses. See the note above: a
+	// disjunct is a route, and the routes are what this census counts.
+	var disjuncts func(ast.Expr) []ast.Expr
+	disjuncts = func(e ast.Expr) []ast.Expr {
+		switch x := e.(type) {
+		case *ast.ParenExpr:
+			return disjuncts(x.X)
+		case *ast.BinaryExpr:
+			if x.Op == token.LOR {
+				return append(disjuncts(x.X), disjuncts(x.Y)...)
+			}
+		}
+		return []ast.Expr{e}
+	}
+
+	seen, sites := map[string]bool{}, []string{}
+	add := func(n ast.Node) {
+		if s := text(n); !seen[s] {
+			seen[s] = true
+			sites = append(sites, s)
+		}
+	}
+	addCond := func(e ast.Expr) {
+		for _, d := range disjuncts(e) {
+			add(d)
+		}
+	}
+	ast.Inspect(fn.Body, func(n ast.Node) bool {
+		switch s := n.(type) {
+		case *ast.IfStmt:
+			addCond(s.Cond)
+		case *ast.CaseClause:
+			for _, e := range s.List {
+				addCond(e)
+			}
+		case *ast.ForStmt:
+			if s.Cond != nil {
+				addCond(s.Cond)
+			}
+		case *ast.AssignStmt:
+			// A boolean assignment is a decision taken once and read later —
+			// the three extension flags and `long`. Identified by the whole
+			// statement: `single` and `tick` have identical right-hand sides.
+			for _, r := range s.Rhs {
+				if pinBoolExpr(r) {
+					add(s)
+				}
+			}
+		}
+		return true
+	})
+	slices.Sort(sites)
+	return sites
+}
+
+// pinBoolExpr reports whether an expression is a comparison or a logical
+// operation, which is how a boolean assignment is told from any other.
+//
+// Syntactic rather than typed, because running the type checker over the
+// package to classify four assignments would be a second toolchain in a test
+// about a lexer. The cost of the approximation is in the safe direction: a
+// boolean assignment spelled some other way (a call returning bool, a copy of
+// another flag) is a site this census does not see, and the arms that DECIDE a
+// construct — `if`, `case` — are seen whatever they are spelled with.
+func pinBoolExpr(e ast.Expr) bool {
+	switch x := e.(type) {
+	case *ast.BinaryExpr:
+		switch x.Op {
+		case token.EQL, token.NEQ, token.LSS, token.GTR, token.LEQ, token.GEQ,
+			token.LAND, token.LOR:
+			return true
+		}
+	case *ast.UnaryExpr:
+		return x.Op == token.NOT
+	case *ast.ParenExpr:
+		return pinBoolExpr(x.X)
+	}
+	return false
+}
+
+// The branch census, held to the lexer in both directions.
+//
+// pinLexBranches fixed a pair grid that was complete in the dimension it
+// counted and blind to the routes into it. This is the same question asked of
+// the fix: the list of eleven was hand-written, checked for coverage, and a
+// twelfth branch in pinCodeOnly would have left it reporting eleven of eleven
+// with the new route reached by nothing.
+//
+// Both directions, because either alone is a half-reading:
+//
+//	a decision with no row and no excuse   a branch nothing demonstrates
+//	a row naming no decision               a claim about a lexer that changed
+//
+// The second is the one a reword produces, and it is a failure rather than a
+// silent pass on purpose: a condition spelled differently is a condition
+// somebody edited, and the row above it is prose written about the old one.
+func TestEveryDecisionPinCodeOnlyMakesIsClaimedByTheBranchCensus(t *testing.T) {
+	sites := pinLexDecisionSites(t)
+	derived := map[string]bool{}
+	for _, s := range sites {
+		derived[s] = true
+	}
+
+	// Row → decisions, and the inverse, so the message can say which row is
+	// the evidence for a decision rather than that there is some.
+	claimedBy := map[string][]string{}
+	for _, branch := range pinLexBranches {
+		if len(branch.sites) == 0 {
+			t.Errorf("the census row %q names no decision in pinCodeOnly.\n\n"+
+				"A row without one is a probe that demonstrates something about the "+
+				"lexer and does not say what, which leaves the completeness arm "+
+				"below unable to count it — and completeness is the whole reason "+
+				"this column exists.", branch.name)
+			continue
+		}
+		for _, site := range branch.sites {
+			if !derived[site] {
+				t.Errorf("the census row %q is evidence about `%s`, and pinCodeOnly "+
+					"has no such condition.\n\n"+
+					"Sites are the text go/printer gives a condition, so this is "+
+					"either a decision that has been deleted — in which case the row "+
+					"is about a lexer that no longer exists — or one that has been "+
+					"reworded, in which case it is worth reading whether the row's "+
+					"own sentence still describes what the code does. The decisions "+
+					"pinCodeOnly makes today are:\n\t%s",
+					branch.name, site, strings.Join(sites, "\n\t"))
+				continue
+			}
+			claimedBy[site] = append(claimedBy[site], branch.name)
+		}
+	}
+
+	excused := map[string]string{}
+	for _, e := range pinLexNotAConstruct {
+		if !derived[e.site] {
+			t.Errorf("`%s` is excused from this census as %s, and pinCodeOnly has no "+
+				"such condition.\n\n"+
+				"An excuse for a decision that is not there excuses nothing, and it "+
+				"is the shape that goes stale silently: the condition it was written "+
+				"about was reworded or removed, and what is left is a sentence that "+
+				"will one day be read as covering something else.", e.site, e.why)
+			continue
+		}
+		if rows := claimedBy[e.site]; len(rows) > 0 {
+			t.Errorf("`%s` is both excused as %s and claimed as evidence by %s.\n\n"+
+				"One of the two is wrong about what the condition does. A decision "+
+				"that selects a construct has a row; one that says how far an "+
+				"already-selected construct runs has an excuse; nothing is both.",
+				e.site, e.why, strings.Join(rows, " and "))
+		}
+		excused[e.site] = e.why
+	}
+
+	unclaimed := []string{}
+	for _, site := range sites {
+		if len(claimedBy[site]) == 0 && excused[site] == "" {
+			unclaimed = append(unclaimed, site)
+		}
+	}
+	if len(unclaimed) > 0 {
+		t.Errorf("%d of the %d decisions pinCodeOnly makes are claimed by no census "+
+			"row and excused by nothing:\n\t%s\n\n"+
+			"This is the arm the branch census was missing when it was itself a "+
+			"hand-written list of eleven: a route added to the lexer left the "+
+			"census reporting every branch reached and the pair grid reporting "+
+			"every pair built, with nothing anywhere reaching the new one. Either "+
+			"build a row that demonstrates it — a source carrying the bytes, an "+
+			"extension turning the flag on, and for a flag the two paths recording "+
+			"something different — or say in pinLexNotAConstruct why it decides no "+
+			"construct.",
+			len(unclaimed), len(sites), strings.Join(unclaimed, "\n\t"))
+	}
+
+	t.Logf("pinCodeOnly turns on %d distinct conditions: %d of them decide which "+
+		"construct the lexer is in and are claimed by the %d rows of this census, "+
+		"and %d say how far an already-decided construct runs or belong to the "+
+		"line-number pass, each with its reason. The list of branches is no longer "+
+		"written beside the lexer — it is read off it, so a twelfth route cannot "+
+		"arrive with this census still saying every route is covered.",
+		len(sites), len(sites)-len(excused), len(pinLexBranches), len(excused))
 }
 
 func TestWhichConstructTransitionsAStraddleCanBeBuiltFrom(t *testing.T) {

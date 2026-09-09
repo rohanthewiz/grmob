@@ -98,8 +98,11 @@ func TestTheCanaryReadingsAreAskedOfPopulationsThisMachineDoesNotProduce(t *test
 		{"INK_CANARY_REQ_JS", `(?s)\nconst INK_CANARY_REQ_JS = ` + "`" + `.*?` + "`" + `;\n`},
 		{"inkFaceList", `(?s)\nfunction inkFaceList\(.*?\n\}\n`},
 		{"inkCanvasGenericGap", `(?s)\nfunction inkCanvasGenericGap\(.*?\n\}\n`},
+		{"inkCanaryFaceList", `(?s)\nfunction inkCanaryFaceList\(.*?\n\}\n`},
+		{"inkCanaryFaceSpread", `(?s)\nfunction inkCanaryFaceSpread\(.*?\n\}\n`},
 		{"inkCanaryReqAxes", `(?s)\nfunction inkCanaryReqAxes\(.*?\n\}\n`},
 		{"inkCanaryAxisPhrase", `(?s)\nfunction inkCanaryAxisPhrase\(.*?\n\}\n`},
+		{"inkCanarySpreadPhrase", `(?s)\nfunction inkCanarySpreadPhrase\(.*?\n\}\n`},
 		{"inkCanaryPassedPhrase", `(?s)\nfunction inkCanaryPassedPhrase\(.*?\n\}\n`},
 		{"inkCanaryAgreement", `(?s)\nfunction inkCanaryAgreement\(.*?\n\}\n`},
 	} {
@@ -176,6 +179,48 @@ for (const [what, probes] of Object.entries({
 })) {
     const axes = inkCanaryReqAxes(probes);
     out.axes[what] = { axes, phrase: inkCanaryAxisPhrase(axes) };
+}
+
+// What the per-request reads came to, over populations this browser does not
+// give: a probe that answered nothing, every probe answering nothing, and a
+// family list that answers per request.
+//
+// Taken beside inkCanaryFaceList over the SAME probes, because the two walk
+// one population with the same filter written twice and the recital picks its
+// clause from one of them and its noun from the other.
+out.spread = {};
+for (const [what, probes] of Object.entries({
+    none: [],
+    allRead: [probe("normal 400 12px", "Times"), probe("normal 400 19px", "Times")],
+    oneUnread: [{ req: "normal 400 12px", faces: null },
+        probe("normal 400 19px", "Times")],
+    // An empty face array rather than null — a read that came back and
+    // reported no face, which is a different failure from a read that did not
+    // come back and is the same thing to every reader downstream.
+    emptyFaces: [probe("normal 400 12px"), probe("normal 400 19px", "Times")],
+    noneRead: [{ req: "normal 400 12px", faces: null }, probe("normal 400 19px")],
+    opticalCut: [probe("normal 400 12px", "Times"),
+        probe("normal 400 19px", "Georgia")],
+    // The same family at two glyph counts. The answer is what inkFaceList
+    // renders, counts and all, so this is two answers and not one.
+    glyphCount: [probe("normal 400 12px", "Times"),
+        { req: "normal 400 19px", faces: [{ family: "Times", glyphs: 2 }] }],
+    // And the same two faces in the other order, which is also two answers:
+    // the platform's list is ordered and the fallback that resolves first is
+    // the one the sentence is about.
+    ordering: [probe("normal 400 12px", "Times", "Menlo"),
+        probe("normal 400 19px", "Menlo", "Times")],
+})) {
+    const s = inkCanaryFaceSpread(probes);
+    out.spread[what] = {
+        mounted: s.mounted, read: s.read, answers: s.answers,
+        list: inkCanaryFaceList(probes),
+        phrase: inkCanarySpreadPhrase({
+            canvasGenericReqs: s.mounted, canvasGenericRead: s.read,
+            canvasGenericAnswers: s.answers,
+            canvasGenericAxes: inkCanaryReqAxes(probes),
+        }),
+    };
 }
 
 // The skips, over probe answers this browser does not give.
@@ -268,6 +313,11 @@ console.log(JSON.stringify(out));
 			}
 			Phrase string
 		}
+		Spread map[string]struct {
+			Mounted, Read, Answers int
+			List                   *string
+			Phrase                 string
+		}
 		Skips map[string]struct {
 			Asked, Agreed, Multi, Unread, Unjoined int
 			Fault                                  bool
@@ -290,6 +340,162 @@ console.log(JSON.stringify(out));
 	if err := json.Unmarshal(out, &got); err != nil {
 		t.Fatalf("the lifted readings returned something this test cannot read: "+
 			"%v\n%s", err, out)
+	}
+
+	// What the per-request reads came to, and the sentence built on it.
+	//
+	// # The one reading nothing asked
+	//
+	// inkCanaryFaceSpread was the third of the canary's readings and the only
+	// one no test put a question to: the wiring check below stubs it, which
+	// asks where its three numbers land and not what they are. Its `mounted`,
+	// `read` and `answers` are three of the ten fields the tail recites, and
+	// the sentence they carry is the one a reader uses to decide whether six
+	// probe reads were worth their round trips.
+	//
+	// The populations it separates are all populations this machine does not
+	// produce. Every probe on this Chrome answers with exactly one face, so
+	// `read` is always `mounted` and `answers` is always 1 — the live run
+	// exercises one row of the table below and the arms that matter are the
+	// other seven.
+	//
+	// # And the join between the count and the noun
+	//
+	// inkCanaryFaceList and inkCanaryFaceSpread walk the same probes with the
+	// same filter written twice — `p.faces && p.faces.length > 0` in each —
+	// and the recital takes its CLAUSE from the spread's `answers` and its
+	// NOUN from the list. A drift between the two spellings is a sentence that
+	// says one face at every request and then names three, and neither
+	// function would be wrong on its own. So the two are asked together over
+	// every population here, structurally rather than by spelling the strings
+	// out: a list is null exactly when nothing was read, and it takes its
+	// per-request form exactly when the answers differed.
+	for _, c := range []struct {
+		what                   string
+		mounted, read, answers int
+		// What the recital says about this population, and what it must not.
+		// The third branch of inkCanarySpreadPhrase is the whole reason that
+		// clause is a function: a run that read nothing used to take the
+		// "different faces" branch and recite a family list answering per
+		// request over probes that answered nothing at all.
+		says, saysNot string
+	}{
+		// The live shape, as the control: every probe answered and they agreed.
+		{what: "allRead", mounted: 2, read: 2, answers: 1,
+			says:    "one face at every one of them",
+			saysNot: "different faces across them"},
+		// A probe that did not come back. `read` apart from `mounted` is what
+		// stops the sentence being quietly about the rest — and the answers
+		// that did come back still agree, so the clause is unchanged and the
+		// two numbers beside it are not.
+		{what: "oneUnread", mounted: 2, read: 1, answers: 1,
+			says:    "one face at every one of them",
+			saysNot: "different faces across them"},
+		// A probe that came back reporting no face, which is a different
+		// failure from one that did not come back and the same number here.
+		{what: "emptyFaces", mounted: 2, read: 1, answers: 1,
+			says:    "one face at every one of them",
+			saysNot: "different faces across them"},
+		// Nothing answered. Two probes mounted, no reading at all — and the
+		// clause has to say so rather than reciting zero as a measurement.
+		{what: "noneRead", mounted: 2, read: 0, answers: 0,
+			says:    "no face at any of them",
+			saysNot: "family list answering per request"},
+		// No probes at all, which is the same sentence with nothing mounted.
+		{what: "none", mounted: 0, read: 0, answers: 0,
+			says:    "no face at any of them",
+			saysNot: "family list answering per request"},
+		// The case a single probe at the page default got wrong: a family list
+		// answering per request, naming a face at one size that no canary at
+		// the other is put to.
+		{what: "opticalCut", mounted: 2, read: 2, answers: 2,
+			says:    "2 different faces across them",
+			saysNot: "no optical cut"},
+		// The same family at two glyph counts. An answer is what inkFaceList
+		// renders and that carries the counts, so this is two answers — which
+		// is the honest reading: the same family covering different characters
+		// at two sizes is the stack doing something a single probe would miss.
+		{what: "glyphCount", mounted: 2, read: 2, answers: 2,
+			says:    "2 different faces across them",
+			saysNot: "no optical cut"},
+		// And the same two faces in the other order, which is also two. The
+		// platform's list is ordered and the face that resolves first is the
+		// one the premise is about, so a reordering is a difference and not a
+		// spelling.
+		{what: "ordering", mounted: 2, read: 2, answers: 2,
+			says:    "2 different faces across them",
+			saysNot: "no optical cut"},
+	} {
+		row, ok := got.Spread[c.what]
+		if !ok {
+			t.Errorf("%s: the lifted spread returned nothing for this population.\n\n"+
+				"Every row here is a probe answer this browser does not give, which is "+
+				"the whole reason they are asked in node rather than left to the "+
+				"browser pass.", c.what)
+			continue
+		}
+		if row.Mounted != c.mounted || row.Read != c.read || row.Answers != c.answers {
+			t.Errorf("%s: inkCanaryFaceSpread reports %d mounted, %d read, %d "+
+				"answer(s), and the fixture is %d mounted, %d that answered, %d "+
+				"distinct.\n\n"+
+				"These three are what the tail recites in place of the assumption a "+
+				"single probe at the page default was: how many requests the generic "+
+				"was asked at, how many came back, and how many different faces those "+
+				"were. `read` short of `mounted` is a request whose answer is missing "+
+				"while the others are present, and `answers` above one is the family "+
+				"list answering per request — the case one probe gets wrong.",
+				c.what, row.Mounted, row.Read, row.Answers,
+				c.mounted, c.read, c.answers)
+			continue
+		}
+		// Rendered for the message rather than dereferenced in it: null is one
+		// of the two answers this arm is about and a nil pointer through %q is
+		// not a sentence.
+		rendered := "no noun at all"
+		if row.List != nil {
+			rendered = fmt.Sprintf("%q", *row.List)
+		}
+		// The two spellings of one filter, held against each other.
+		if (row.Read == 0) != (row.List == nil) {
+			t.Errorf("%s: the spread read %d of %d probes and inkCanaryFaceList "+
+				"answered %s.\n\n"+
+				"Both walk this population with the same test for a probe that "+
+				"answered, written out in each — so a list with a noun over a spread "+
+				"that read nothing, or a null over a spread that read something, is "+
+				"the two filters having come apart. The recital takes its clause from "+
+				"one and its noun from the other, and neither is wrong on its own.",
+				c.what, row.Read, row.Mounted, rendered)
+		}
+		perRequest := row.List != nil && strings.Contains(*row.List, " at ")
+		if (row.Answers > 1) != perRequest {
+			t.Errorf("%s: the spread reports %d distinct answers and "+
+				"inkCanaryFaceList rendered %s.\n\n"+
+				"The list collapses to one clause when every request came back with "+
+				"the same answer and names them per request when they did not, which "+
+				"is the same `answers` count decided a second time. A count above one "+
+				"beside a collapsed noun is the recital saying the stack answered per "+
+				"request and then naming one face for all of them.",
+				c.what, row.Answers, rendered)
+		}
+		if !strings.Contains(row.Phrase, c.says) {
+			t.Errorf("%s: the recital's clause over %d mounted, %d read and %d "+
+				"answer(s) is %q, and it does not say %q.\n\n"+
+				"inkCanarySpreadPhrase is the sentence and the reading in one "+
+				"spelling. A population that reads nothing, one that agrees and one "+
+				"that does not are three different findings, and the clause said two "+
+				"of them until this test was written — a run where every probe came "+
+				"back empty answered zero, took the branch written for a family list "+
+				"answering per request, and recited it.",
+				c.what, c.mounted, c.read, c.answers, row.Phrase, c.says)
+		}
+		if strings.Contains(row.Phrase, c.saysNot) {
+			t.Errorf("%s: the recital's clause is %q, which says %q about a "+
+				"population of %d mounted, %d read and %d answer(s).\n\n"+
+				"The negative is half the reading: a three-way branch that reaches "+
+				"the right sentence and also the wrong one is a two-way branch with "+
+				"an extra string in it.",
+				c.what, row.Phrase, c.saysNot, c.mounted, c.read, c.answers)
+		}
 	}
 
 	// The axes, and the two halves of what they bound.
@@ -560,12 +766,17 @@ console.log(JSON.stringify(out));
 	t.Logf("browser.mjs's own canary readings, lifted and run over %d request grids "+
 		"and %d probe answers this machine's browser does not produce — a probe "+
 		"naming two faces, a probe naming none, a style spelled with a space, and "+
-		"a name agreeing over advances 12px apart — plus %d keys built by "+
-		"INK_CANARY_REQ_JS itself and parsed back into their three fields, and the "+
-		"join site itself lifted and run over stubs answering a different number "+
-		"each: %d of `asked`'s fields hold the reading they are named after, and "+
-		"the %d that are inside the faces-held guard are absent on a run that could "+
-		"not hold them",
-		len(got.Axes), len(got.Skips), len(got.Keys), wired, 5)
+		"a name agreeing over advances 12px apart — plus %d probe populations the "+
+		"spread and the face list are asked TOGETHER over, which is the third "+
+		"reading and the one nothing used to put a question to: a family list "+
+		"answering per request, the same family at two glyph counts, two faces in "+
+		"the other order, and a run where nothing answered at all, whose clause "+
+		"used to recite a family list answering per request over probes that "+
+		"answered nothing — plus %d keys built by INK_CANARY_REQ_JS itself and "+
+		"parsed back into their three fields, and the join site itself lifted and "+
+		"run over stubs answering a different number each: %d of `asked`'s fields "+
+		"hold the reading they are named after, and the %d that are inside the "+
+		"faces-held guard are absent on a run that could not hold them",
+		len(got.Axes), len(got.Skips), len(got.Spread), len(got.Keys), wired, 5)
 	_ = fmt.Sprint()
 }

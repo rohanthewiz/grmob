@@ -2,11 +2,18 @@ package main
 
 import (
 	"fmt"
+	"go/ast"
+	"go/parser"
+	"go/printer"
+	"go/token"
 	"math"
+	"os"
 	"reflect"
+	"runtime"
 	"slices"
 	"sort"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/rohanthewiz/grmob/core"
@@ -636,13 +643,67 @@ const (
 // and a run that disagrees about either is a run whose endings cannot be
 // compared with these. The message says which changed rather than reporting a
 // number that moved.
+//
+// # And the names themselves, which is what a count of them could not do
+//
+// `leaves: 80` was the whole of what this record said about its population,
+// and every reading built on it had to argue from that one integer. Three of
+// them were arguing about set MEMBERSHIP:
+//
+//	the exact arm     ran whenever this run had 80 leaves, on the premise that
+//	                  the walk is a function of the names — over a population
+//	                  it only knew had the same COUNT of names. A leaf renamed
+//	                  keeps the count and changes the strings the walk is over,
+//	                  and that arm would have reported themeLeafSetOf re-sorting
+//	                  a walk nobody re-sorted.
+//	the added-leaf    is a proof because the record's population is this run's
+//	arm               names with the new leaf dropped — which is true when the
+//	                  record's names are a SUBSET of this run's and was assumed
+//	                  from the count being one lower. A leaf added and another
+//	                  renamed is +1 with no subset, and the assertion is a
+//	                  tolerance again with nothing saying so.
+//	the removed-leaf  had no arm at all, and the reason given was that the
+//	reading           removed name is not in this run to put back — so the band
+//	                  in force was the 78↔79 step standing in for the 79↔80 one.
+//
+// All three are the same missing fact: which names. So they are recorded, and
+// the walk is a pure function of them — which means the record's own census can
+// be RE-DERIVED on every run, whatever core.Theme has become since. That is the
+// strongest reading in this file and it no longer needs the struct to have
+// stood still: see the arm that walks these names directly.
+//
+// The order is the order affordedLeafNames produces (paths sorted, leaf taken
+// off each, first occurrence kept) and not alphabetical, because the walk takes
+// windows of CONSECUTIVE names — a re-ordering of this list is a different
+// population. Nothing asserts the order separately; the re-derivation above
+// asserts it along with everything else, because a list in a different order
+// produces different counts.
 var affordedMeasuredOn = struct {
 	leaves int
 	window int
+	names  []string
 	ending map[string]int
 }{
 	leaves: 80,
 	window: 6,
+	names: []string{
+		"Background", "Border", "ControlBorder", "Error", "ErrorOnLight", "Primary",
+		"PrimaryOnLight", "Secondary", "Success", "SuccessOnLight", "Surface",
+		"TextPrimary", "TextSecondary", "Warning", "WarningOnLight",
+		"AccessibilityControls", "AccessibilityExpanded",
+		"AccessibilityHeadingLevel", "AccessibilityHidden", "AccessibilityHint",
+		"AccessibilityID", "AccessibilityLabel", "AccessibilityNestingLevel",
+		"AccessibilityRole", "AccessibilitySelected",
+		"AccessibilitySelectionFollowsFocus", "Max", "Min", "Now", "Text", "Align",
+		"AlignItems", "AlignSelf", "Animation", "BorderColor", "BorderRadius",
+		"BorderWidth", "Bottom", "ColumnGap", "Disabled", "Display", "FlexBasis",
+		"FlexDirection", "FlexGrow", "FlexShrink", "FlexWrap", "FocusStyle",
+		"FontSize", "FontWeight", "Gap", "Height", "HoverStyle", "JustifyContent",
+		"Left", "LineHeight", "Horizontal", "Right", "Top", "Vertical", "MaxHeight",
+		"MaxWidth", "MinHeight", "MinWidth", "Overflow", "Position", "PseudoStates",
+		"Rotate", "RowGap", "Shadow", "StackAlign", "TextColor", "Transition",
+		"WhiteSpace", "Width", "ZIndex", "LG", "MD", "SM", "XL", "XS",
+	},
 	ending: map[string]int{
 		"its own crowding stopped the search":                 27,
 		"no width crowds these names at all":                  473,
@@ -685,11 +746,52 @@ func affordedSetCount(leaves, window int) int {
 // Zero when the recorded population is empty, which is a record that cannot be
 // scaled against and is reported where it is read rather than divided by.
 func affordedScale(leaves int) float64 {
-	then := affordedSetCount(affordedMeasuredOn.leaves, affordedMeasuredOn.window)
-	if then == 0 {
+	return affordedRatioOf(affordedSetCount(leaves, affordedWindowMax),
+		affordedSetCount(affordedMeasuredOn.leaves, affordedMeasuredOn.window))
+}
+
+// affordedRatioOf is one population as a fraction of another.
+//
+// One division, in one place, for every ratio between two set counts in this
+// file — affordedScale's, and the two the band's walk takes at each step. It
+// is not tidiness: the k-leaf arms are assertions BECAUSE the residual they
+// bracket is one of the numbers the band is the maximum of, and that is only
+// true while the scale the test divides by and the scale the band divided by
+// are the same number. They are two spellings of one division today and the
+// argument that they agree is an argument about IEEE rounding — which is
+// exactly the shape of argument that failed the last time this file trusted
+// one: see affordedResidualOf, where a multiply and the subtract after it were
+// fused into a single rounding at one spelling and not at the other, and one
+// ulp was the whole distance between a band held and a green run reporting a
+// re-sort nobody made.
+//
+// Zero when there is nothing to divide by, which is a population that cannot be
+// scaled against and is reported where it is read rather than divided by.
+func affordedRatioOf(part, whole int) float64 {
+	if whole == 0 {
 		return 0
 	}
-	return float64(affordedSetCount(leaves, affordedWindowMax)) / float64(then)
+	return float64(part) / float64(whole)
+}
+
+// affordedPopulationUnchanged is whether the scale says this run walked the
+// same population the record was taken over.
+//
+// One spelling, because it was two: affordedShortfallCause decided which of
+// three findings to name with it and the log line decided which sentence to
+// print with it, and both compared the same derived float against the same
+// constant. Two evaluations of that absolute difference are two numbers the
+// compiler is free to round differently — see affordedPredictedFrom, where
+// exactly that cost a green run a sentence about a re-sort that did not happen
+// — and here the two would disagree about whether the walk stood still, in a
+// failure message and in the line printed beside it.
+//
+// The tolerance is affordedScaleSame and its note says why a thousandth: the
+// scale is a ratio of two integer set counts, so an untouched walk gives
+// exactly 1 and what the tolerance carries is the reader rather than a
+// rounding.
+func affordedPopulationUnchanged(scale float64) bool {
+	return math.Abs(scale-1) < affordedScaleSame
 }
 
 // affordedRecordTotal is what affordedMeasuredOn's four counts add up to.
@@ -732,7 +834,27 @@ func affordedPrediction(ending string, scale float64) (float64, bool) {
 	if !known || scale == 0 {
 		return 0, false
 	}
-	return float64(measured) * scale, true
+	return affordedPredictedFrom(measured, scale), true
+}
+
+// affordedPredictedFrom is that multiply, in one place.
+//
+// The one arithmetic rule this file has learned the hard way: two floats that
+// are COMPARED have to come from one evaluation. affordedResidualOf's note
+// says what happens otherwise — Go may fuse a multiply and the subtract after
+// it into a single rounding, it did so at one spelling of this product and not
+// at another, and against a band that is the maximum of a family the residual
+// belongs to, one ulp was the whole distance between "inside its band" and a
+// green run reporting a re-sort that did not happen.
+//
+// That was fixed at the residual and prevented nowhere. This is the same
+// product, and it had four spellings: affordedPrediction's, the one
+// affordedShortfallCause decided a floor with, the one the share-edge arm
+// decided the SAME floor with in the opposite direction, and the four failure
+// messages. See TestNoFloatThisFileComparesIsDerivedTwice for what now stops a
+// fifth appearing.
+func affordedPredictedFrom(recorded int, scale float64) float64 {
+	return float64(recorded) * scale
 }
 
 // affordedTaker is one ending that came in ABOVE what a merely-moved population
@@ -879,7 +1001,12 @@ func affordedShortfallCause(b affordedBracket, scale float64, got string,
 			"affordedMeasuredOn has no reading for this ending, so there is no " +
 			"count to scale and no prediction to hold this one against."
 	}
-	moved := float64(b.measured) * scale
+	// Through affordedPrediction rather than spelled here, for the reason
+	// affordedResidualOf carries: this comparison and the one in the test's own
+	// share-edge arm are the same number against the same floor, read in
+	// opposite directions, and two spellings of a float multiply are two
+	// numbers the compiler is free to round differently.
+	moved, _ := affordedPrediction(got, scale)
 	if moved < float64(b.floor) {
 		return fmt.Sprintf("\n\nThis is the population having moved rather than "+
 			"this arm having gone: the census is at %.2f× the one the record was "+
@@ -907,7 +1034,7 @@ func affordedShortfallCause(b affordedBracket, scale float64, got string,
 		// other and the residual is what is left after the scale is taken off.
 		where := fmt.Sprintf("The population is at %.2f× the one the record was "+
 			"taken over, so the scale is not the whole of it", scale)
-		if math.Abs(scale-1) < affordedScaleSame {
+		if affordedPopulationUnchanged(scale) {
 			where = "The population is the one the record was taken over — same " +
 				"leaves, same window, same %d sets — so this is not the walk at all"
 			where = fmt.Sprintf(where, affordedSetCount(affordedMeasuredOn.leaves,
@@ -1057,12 +1184,17 @@ func affordedCensusOf(names []string, window int) map[string]int {
 // False when there is nothing to divide by: an ending with no recorded count
 // has no prediction, and a residual against zero is not a large number, it is
 // no number.
-func affordedResidualOf(recorded, got int, scale float64) (float64, bool) {
-	predicted := float64(recorded) * scale
+// The prediction it divided by comes back with it, so a message that names the
+// number and an arm that compares against it cannot be reading two evaluations
+// of one product. That was the remaining half of the FMA hazard: the residual
+// had one definition and the prediction beside it in the sentence did not.
+func affordedResidualOf(recorded, got int, scale float64) (residual, predicted float64,
+	ok bool) {
+	predicted = affordedPredictedFrom(recorded, scale)
 	if predicted == 0 {
-		return 0, false
+		return 0, 0, false
 	}
-	return math.Abs(float64(got)-predicted) / predicted, true
+	return math.Abs(float64(got)-predicted) / predicted, predicted, true
 }
 
 // affordedBand is how far one ending's count moves, after the scale is taken
@@ -1134,41 +1266,287 @@ type affordedBand struct {
 // unless themeLeafSetOf sorted the walk differently than it did when the
 // record was taken.
 func affordedOneLeafBand(names []string, endings []string) map[string]affordedBand {
-	full := affordedCensusOf(names, affordedWindowMax)
+	return affordedKLeafBand(names, endings, 1)
+}
+
+// affordedKLeafBand is that band for a step of k leaves rather than one:
+// every population these names are exactly k away from, enumerated.
+//
+// # Why k at all, and why it is not the one-leaf band times k
+//
+// The one-leaf arms are assertions because the family is enumerable — eighty
+// populations, every one of them walked, no case anybody chose. Past one leaf
+// the log line said an ending outside the band is "the absence of a finding
+// rather than one", and the obvious next move was to check whether the drift
+// grows about linearly and use band × k. It does not:
+//
+//	                                                one leaf   two leaves  ×
+//	its own crowding stopped the search    losing     24.96%      46.77%  1.87
+//	                                      gaining     33.26%      87.88%  2.64
+//	no width crowds these names at all     losing      0.02%       0.04%  2.24
+//	                                      gaining      0.02%       0.04%  2.24
+//	the ceiling cost this set a wider ...  losing      2.92%       5.10%  1.75
+//	                                      gaining      2.84%       4.85%  1.71
+//	the ceiling and the crowding stop ...  losing     21.63%      38.02%  1.76
+//	                                      gaining     27.60%      61.35%  2.22
+//
+// The ratios run from 1.71× to 2.64× and five of the eight are ABOVE two, so
+// `band × k` is not a bound: twice the one-leaf gaining band for the crowding
+// ending is 66.5% and two leaves are worth 87.9%, which would have called an
+// honest two-field edit a re-sort — the same failure the stated tenth had,
+// arriving in the fix for it. (The percentages are the recorded four decimal
+// places and the ratios are taken on the measurements themselves, which is why
+// 0.02% over 0.02% comes to 2.24 rather than 1. The log line prints both.)
+//
+// It is not linear in either direction and the two directions are not even
+// alike: gaining divides by the SMALLER population's count, so a handful of
+// sets is a larger share of 27 than of 29 and the same step read backwards is
+// worth more. Losing is under two on the three endings with sets to spare and
+// over it on the one whose drift is a rounding — which is "one number is not a
+// bracket for four populations this far apart" holding at the next step out.
+//
+// So the band for a step is measured for that step. This is what makes it
+// possible: the family is still enumerable at k = 2 (3160 populations against
+// 80), so the two-leaf arms are assertions on the same footing as the one-leaf
+// ones and nothing has been scaled.
+//
+// # And where it stops
+//
+// C(80, k) walks: 80, 3160, 82160, 1.6M. Three leaves is minutes and four is
+// an hour, so k >= 3 is not enumerable here at any price a test can pay, and
+// the log line's sentence stands for those — with a reason now attached to it
+// rather than an absence: the one-leaf band cannot be scaled to reach them and
+// the family cannot be walked.
+//
+// # Walked in parallel, and deterministically
+//
+// 3160 walks is eight seconds on one core and about one across the machine,
+// which is the difference between a reading that runs on every green run and
+// one nobody would keep. The reduction is by (value, then lowest combination
+// index), which is what the sequential scan produced — the first combination
+// to reach the maximum — so the recorded `losingAt` does not depend on how the
+// work was split.
+func affordedKLeafBand(names, endings []string, k int) map[string]affordedBand {
 	bands := map[string]affordedBand{}
 	for _, ending := range endings {
 		bands[ending] = affordedBand{}
 	}
+	if k <= 0 || k >= len(names) {
+		return bands
+	}
+	full := affordedCensusOf(names, affordedWindowMax)
 	whole := affordedSetCount(len(names), affordedWindowMax)
-	for i := range names {
-		// This run's names with one dropped. Copied rather than sliced in
-		// place: affordedSets takes sub-slices of what it is given, and an
-		// append that reused the backing array would leave the walk reading
-		// names this population does not have.
-		smaller := make([]string, 0, len(names)-1)
-		smaller = append(smaller, names[:i]...)
-		smaller = append(smaller, names[i+1:]...)
-		census := affordedCensusOf(smaller, affordedWindowMax)
-		part := affordedSetCount(len(smaller), affordedWindowMax)
-		if whole == 0 || part == 0 {
-			continue
+	part := affordedSetCount(len(names)-k, affordedWindowMax)
+	if whole == 0 || part == 0 {
+		return bands
+	}
+	// Every k-drop is the same size, so the two scales are constants rather
+	// than a division inside the walk. Through affordedRatioOf, which is also
+	// what affordedScale divides with: `down` and the scale the test reads a
+	// residual against are the same number, and the k-leaf assertions are only
+	// proofs while they are.
+	down := affordedRatioOf(part, whole)
+	up := affordedRatioOf(whole, part)
+
+	// The combinations, enumerated up front so the work can be split by index
+	// and the reduction can tie-break on it.
+	combos := [][]int{}
+	pick := make([]int, k)
+	var build func(pos, from int)
+	build = func(pos, from int) {
+		if pos == k {
+			combos = append(combos, append([]int(nil), pick...))
+			return
 		}
-		down := float64(part) / float64(whole)
-		up := float64(whole) / float64(part)
-		for _, ending := range endings {
-			b := bands[ending]
-			if off, ok := affordedResidualOf(full[ending], census[ending], down); ok &&
-				off > b.losing {
-				b.losing, b.losingAt = off, names[i]
+		for i := from; i <= len(names)-(k-pos); i++ {
+			pick[pos] = i
+			build(pos+1, i+1)
+		}
+	}
+	build(0, 0)
+
+	// A candidate maximum and the combination that reached it. The index is
+	// carried so the merge below can reproduce the sequential answer.
+	type best struct {
+		value float64
+		at    int
+	}
+	worst := func(a, b best) best {
+		if b.value > a.value || (b.value == a.value && b.at >= 0 && a.at >= 0 &&
+			b.at < a.at) {
+			return b
+		}
+		return a
+	}
+	type result struct{ losing, gaining map[string]best }
+	workers := runtime.GOMAXPROCS(0)
+	if workers > len(combos) {
+		workers = len(combos)
+	}
+	results := make([]result, workers)
+	var wg sync.WaitGroup
+	for w := 0; w < workers; w++ {
+		wg.Add(1)
+		go func(w int) {
+			defer wg.Done()
+			r := result{losing: map[string]best{}, gaining: map[string]best{}}
+			for _, ending := range endings {
+				r.losing[ending] = best{at: -1}
+				r.gaining[ending] = best{at: -1}
 			}
-			if off, ok := affordedResidualOf(census[ending], full[ending], up); ok &&
-				off > b.gaining {
-				b.gaining, b.gainingAt = off, names[i]
+			// Strided rather than blocked, so a family whose expensive
+			// populations sit together does not land on one worker.
+			smaller := make([]string, 0, len(names)-k)
+			for c := w; c < len(combos); c += workers {
+				drop := combos[c]
+				// Rebuilt into a buffer this goroutine owns. affordedSets
+				// takes sub-slices of what it is given, so a walk over a
+				// shared backing array would read names its population does
+				// not have.
+				smaller = smaller[:0]
+				at := 0
+				for i, name := range names {
+					if at < k && drop[at] == i {
+						at++
+						continue
+					}
+					smaller = append(smaller, name)
+				}
+				census := affordedCensusOf(smaller, affordedWindowMax)
+				for _, ending := range endings {
+					if off, _, ok := affordedResidualOf(
+						full[ending], census[ending], down); ok {
+						r.losing[ending] = worst(r.losing[ending], best{off, c})
+					}
+					if off, _, ok := affordedResidualOf(
+						census[ending], full[ending], up); ok {
+						r.gaining[ending] = worst(r.gaining[ending], best{off, c})
+					}
+				}
 			}
-			bands[ending] = b
+			results[w] = r
+		}(w)
+	}
+	wg.Wait()
+
+	// The name a combination is reported under: the leaves it dropped, in the
+	// order they stand in the struct.
+	spell := func(c int) string {
+		if c < 0 {
+			return ""
+		}
+		dropped := make([]string, 0, k)
+		for _, i := range combos[c] {
+			dropped = append(dropped, names[i])
+		}
+		return strings.Join(dropped, ", ")
+	}
+	for _, ending := range endings {
+		losing, gaining := best{at: -1}, best{at: -1}
+		for _, r := range results {
+			if r.losing == nil {
+				continue // a worker with no share of the combinations
+			}
+			losing = worst(losing, r.losing[ending])
+			gaining = worst(gaining, r.gaining[ending])
+		}
+		bands[ending] = affordedBand{
+			losing: losing.value, losingAt: spell(losing.at),
+			gaining: gaining.value, gainingAt: spell(gaining.at),
 		}
 	}
 	return bands
+}
+
+// affordedMissingLeaf is the one name `bigger` has that `smaller` does not,
+// when that is the whole of the difference between them.
+//
+// # What this is the premise of
+//
+// Two of the readings below are assertions rather than tolerances, and both
+// rest on the same fact: that one of the two populations is the other one with
+// a single name dropped. When that holds, the smaller population is a MEMBER
+// of the family affordedOneLeafBand walks over the larger — so the residual
+// between them is one of the numbers that band is the maximum of, and a
+// residual above it is arithmetic that cannot happen while themeLeafSetOf
+// sorts the walk the way it did.
+//
+// Until the names were recorded this was inferred from the leaf COUNT being
+// one apart, which is a different claim. A leaf added and another renamed is
+// +1 with no subset anywhere, and the band would then be a bound over a family
+// that does not contain the case it brackets — a tolerance wearing a proof's
+// clothes, which is the exact thing the removal reading was left out to avoid.
+//
+// False when the sizes are wrong, when more than one name is missing, or when
+// nothing is: each of those is a population that cannot be reached from the
+// other by dropping one leaf, and the caller falls back to the reading it had.
+//
+// Both lists are distinct names — affordedLeafNames deduplicates and the
+// record's list is asserted distinct — so exactly one missing name plus a size
+// difference of one is enough to make the smaller a subset of the bigger. With
+// n+1 names in `bigger`, n of which are in `smaller`, and n distinct names in
+// `smaller`, the two sets of n are the same set.
+func affordedMissingLeaf(bigger, smaller []string) (string, bool) {
+	missing, ok := affordedMissingLeaves(bigger, smaller)
+	if !ok || len(missing) != 1 {
+		return "", false
+	}
+	return missing[0], true
+}
+
+// affordedMissingLeaves is the same question for a step of any size: the names
+// `bigger` has and `smaller` does not, when `smaller` is a subset of it.
+//
+// The subset is what the caller needs and the count is how it is established.
+// With `smaller` distinct, |bigger \ smaller| equals |bigger| − |smaller|
+// exactly when every name in `smaller` is in `bigger` — a name that is not
+// leaves one of `bigger`'s unmatched, so the difference comes out too large.
+// So the size test below is the subset test, and it is the whole premise the
+// k-leaf arms rest on: the population is one of the ones the band was measured
+// over, rather than one that is merely the same size as them.
+//
+// False on a repeat in `smaller`, which breaks that counting argument.
+func affordedMissingLeaves(bigger, smaller []string) ([]string, bool) {
+	if len(bigger) < len(smaller) {
+		return nil, false
+	}
+	have := make(map[string]bool, len(smaller))
+	for _, name := range smaller {
+		if have[name] {
+			return nil, false
+		}
+		have[name] = true
+	}
+	missing := make([]string, 0, len(bigger)-len(smaller))
+	for _, name := range bigger {
+		if !have[name] {
+			missing = append(missing, name)
+		}
+	}
+	if len(missing) != len(bigger)-len(smaller) {
+		return nil, false
+	}
+	return missing, true
+}
+
+// affordedDropCount is how many populations a k-leaf step has to choose from:
+// C(n, k), the number of ways k of n names can be dropped.
+//
+// Written out because it is the size of the family every k-leaf assertion
+// rests on, and a sentence that says "one of the 3160 populations that band
+// was measured over" with 3160 typed into it is a sentence that goes on saying
+// 3160 after core.Theme changes size. Multiplied before dividing at each step
+// so the running value stays an integer — C(n, k) is whole at every k and the
+// product of k consecutive integers is divisible by k!.
+func affordedDropCount(n, k int) int {
+	if k < 0 || k > n {
+		return 0
+	}
+	c := 1
+	for i := 1; i <= k; i++ {
+		c = c * (n - k + i) / i
+	}
+	return c
 }
 
 // affordedBandRounded is a band number as it is recorded and compared.
@@ -1210,6 +1588,35 @@ var affordedBandMeasuredOn = struct {
 	},
 }
 
+// And what TWO leaves are worth, measured the same way over the same names.
+//
+// The step past one leaf had no band at all, and the reason it had none was
+// that the obvious construction — the one-leaf band times k — is not one. See
+// affordedKLeafBand for the measurement that says so: losing comes in at about
+// 1.8× and gaining at up to 2.6×, so a doubled one-leaf band would have called
+// an honest two-field edit a re-sort on the two small endings.
+//
+// What makes this a band and not a guess is the same thing that makes the
+// one-leaf one a band: 3160 populations, every pair of names dropped in turn,
+// no case anybody chose. It is re-derived on every run over affordedMeasuredOn's
+// own names — a second and much wider reading on themeLeafSetOf, since it walks
+// 3160 populations where the census walks one — and asserted against these
+// numbers.
+//
+// It carries no names or window of its own for the reason the one-leaf record
+// does not: both are measurements of affordedMeasuredOn's population, and two
+// copies of eighty strings would be two lists to keep in step.
+var affordedTwoLeafBandMeasuredOn = struct {
+	ending map[string]affordedBand
+}{
+	ending: map[string]affordedBand{
+		"its own crowding stopped the search":                 {losing: 0.4677, gaining: 0.8788},
+		"no width crowds these names at all":                  {losing: 0.0004, gaining: 0.0004},
+		"the ceiling cost this set a wider threshold":         {losing: 0.0510, gaining: 0.0485},
+		"the ceiling and the crowding stop in the same place": {losing: 0.3802, gaining: 0.6135},
+	},
+}
+
 // affordedBandFor is the band one ending is read against, and where it came
 // from.
 //
@@ -1220,7 +1627,13 @@ var affordedBandMeasuredOn = struct {
 // whole finding above is that one number is not a band for four endings this
 // far apart, and an ending arriving with no measurement is exactly the case
 // where that matters and nobody can tell from the number.
-func affordedBandFor(bands map[string]affordedBand, over int, ending string,
+// `whose` names the population the band was measured over, because there are
+// now two: the band over THIS run's names, which is the family a run one leaf
+// LONG than the record belongs to, and the band over the RECORD's names, which
+// is the family a run one leaf SHORT belongs to. They are different numbers
+// measured over different populations, and a sentence that did not say which
+// would be the one thing a reader needs to check the claim.
+func affordedBandFor(bands map[string]affordedBand, over int, whose, ending string,
 	gaining bool) (float64, string) {
 	b, known := bands[ending]
 	if !known {
@@ -1230,14 +1643,14 @@ func affordedBandFor(bands map[string]affordedBand, over int, ending string,
 	}
 	if gaining {
 		return b.gaining, fmt.Sprintf(
-			"the %.2f%% a single leaf ADDED to this run's names moves this ending, "+
+			"the %.2f%% a single leaf ADDED to %s moves this ending, "+
 				"measured over all %d of them (the widest being %q)",
-			b.gaining*100, over, b.gainingAt)
+			b.gaining*100, whose, over, b.gainingAt)
 	}
 	return b.losing, fmt.Sprintf(
-		"the %.2f%% a single leaf REMOVED from this run's names moves this ending, "+
+		"the %.2f%% a single leaf REMOVED from %s moves this ending, "+
 			"measured over all %d of them (the widest being %q)",
-		b.losing*100, over, b.losingAt)
+		b.losing*100, whose, over, b.losingAt)
 }
 
 func TestTheAffordedWidthHoldsItsTwoRelations(t *testing.T) {
@@ -1426,6 +1839,82 @@ func TestTheAffordedWidthHoldsItsTwoRelations(t *testing.T) {
 			"census in the log line) rather than adjusting one entry to make the sum "+
 			"come out. The record reads %v.", total, want, affordedMeasuredOn.ending)
 	}
+	// # The record's own census, re-derived — the reading that needs nothing
+	//
+	// Everything else in this test compares THIS run's walk against the record
+	// and therefore has to argue about how far the two populations are apart.
+	// This one does not: the record now carries the names it was taken over
+	// (see affordedMeasuredOn), the walk is a function of a list of names, and
+	// so the record's four counts can simply be produced again.
+	//
+	// That makes it the strongest reading here and the only one that runs on
+	// every population. The exact arm below is silent the moment core.Theme
+	// gains, loses or renames a leaf — which is the moment somebody is editing
+	// it, which is the moment it would be read — and this one is not, because
+	// it is not about core.Theme at all. It is about themeLeafSetOf: the record
+	// is 80 strings and 4 counts, and a run that cannot reproduce the counts
+	// from the strings has changed how a set is classified.
+	//
+	// Asked before anything that divides by the record, because a record whose
+	// own census cannot be reproduced is a record every scaled reading below
+	// would be comparing against a population nobody can walk.
+	if len(affordedMeasuredOn.names) != affordedMeasuredOn.leaves {
+		t.Fatalf("affordedMeasuredOn says it was taken over %d leaf names and "+
+			"carries %d of them.\n\n"+
+			"The two are the same fact written twice and the count is the one every "+
+			"scaled reading below divides by, so a disagreement makes the scale a "+
+			"ratio against a population that is neither of them. Re-take the record "+
+			"as a whole — the census and the names in the log line — rather than "+
+			"adjusting one of the two to agree with the other.",
+			affordedMeasuredOn.leaves, len(affordedMeasuredOn.names))
+	}
+	{
+		seen := map[string]bool{}
+		for _, name := range affordedMeasuredOn.names {
+			if seen[name] {
+				t.Fatalf("affordedMeasuredOn's names carry %q twice.\n\n"+
+					"affordedLeafNames deduplicates, because two parents can hold the "+
+					"same leaf name and a window carrying it twice would mount one "+
+					"parent with two identical children — a shape the walk cannot "+
+					"produce. A repeat here is a record of a population the walk was "+
+					"never taken over, and it is also what makes affordedMissingLeaf's "+
+					"counting argument unsound: the two arms that are assertions rather "+
+					"than tolerances both rest on it.", name)
+			}
+			seen[name] = true
+		}
+		recordCensus := affordedCensusOf(affordedMeasuredOn.names,
+			affordedMeasuredOn.window)
+		for _, ending := range endings {
+			want, known := affordedMeasuredOn.ending[ending]
+			if !known {
+				continue // reported by the key-set arms above
+			}
+			if recordCensus[ending] == want {
+				continue
+			}
+			t.Errorf("walking affordedMeasuredOn's own %d names at its own window of "+
+				"%d puts %d sets at %q, and the record says %d.\n\n"+
+				"The walk is a function of the names and the record carries them, so "+
+				"this comparison is exact and it does not depend on what core.Theme "+
+				"is today: the same strings in the same order through the same "+
+				"arithmetic. A disagreement is themeLeafSetOf classifying a set "+
+				"differently than it did when the record was taken — which is the "+
+				"finding every other reading in this test is trying to make from a "+
+				"distance, arriving without a scale, a band or a population to argue "+
+				"about.\n\n"+
+				"This run's own census is %v over %d names; the record's re-walk is "+
+				"%v against a record of %v.\n\n"+
+				"If the new sort is what was wanted, re-take affordedMeasuredOn and "+
+				"affordedBandMeasuredOn together — and read the derivation first, "+
+				"because a record re-taken over a classification that moved by "+
+				"accident records the accident as the baseline.",
+				len(affordedMeasuredOn.names), affordedMeasuredOn.window,
+				recordCensus[ending], ending, want,
+				reached, len(names), recordCensus, affordedMeasuredOn.ending)
+		}
+	}
+
 	// What this whole census comes to against the one the record was taken
 	// over. See affordedScale: one number, because one walk produced all four
 	// endings.
@@ -1483,20 +1972,38 @@ func TestTheAffordedWidthHoldsItsTwoRelations(t *testing.T) {
 	// windows crowd, which is a shape the scale does not model — that reading
 	// stays in the log line, under affordedResidualQuiet, where it is a
 	// sentence rather than a bound nobody measured.
-	if len(names) == affordedMeasuredOn.leaves &&
-		affordedWindowMax == affordedMeasuredOn.window {
+	//
+	// # And "the same population" is now the names and not the count of them
+	//
+	// This arm used to run whenever the leaf COUNT matched, on a premise about
+	// the names: "the walk is a function of those two numbers and they have not
+	// moved". A leaf RENAMED keeps the count and changes the strings the walk
+	// is over — so the sets are different sets, the counts may legitimately
+	// differ, and this arm would have reported themeLeafSetOf re-sorting a walk
+	// nobody re-sorted. The premise was checkable the moment the record carried
+	// its names, and it is checked.
+	//
+	// With the names equal this is the same claim the re-derivation above makes
+	// over the record's own list, reached through the test's own walk rather
+	// than through affordedCensusOf. It is kept because its message is the one
+	// about the population in force, and because the pair covers the whole
+	// question between them: this arm goes quiet exactly when the names differ,
+	// and that is when the re-derivation is the only reading left.
+	sameNames := slices.Equal(names, affordedMeasuredOn.names)
+	if sameNames && affordedWindowMax == affordedMeasuredOn.window {
 		for _, ending := range endings {
 			measured, known := affordedMeasuredOn.ending[ending]
 			if !known || reached[ending] == measured {
 				continue
 			}
 			t.Errorf("%q was reached by %d of the %d sets and affordedMeasuredOn "+
-				"records %d, over the same %d leaf names at the same window of %d.\n\n"+
-				"The walk is a function of those two numbers and they have not moved, "+
-				"so it produced the same %d sets in the same order — and which ending "+
-				"a set reaches is a function of the set. These two counts are "+
-				"therefore the same number or themeLeafSetOf is sorting the walk "+
-				"differently than it was when the record was taken.\n\n"+
+				"records %d, over the same %d leaf NAMES at the same window of %d.\n\n"+
+				"The walk is a function of the names and the record carries them, so "+
+				"this run walked the record's own list — the same %d sets in the same "+
+				"order — and which ending a set reaches is a function of the set. "+
+				"These two counts are therefore the same number or themeLeafSetOf is "+
+				"sorting the walk differently than it was when the record was "+
+				"taken.\n\n"+
 				"That is the finding the per-ending floors cannot make. A re-sort "+
 				"moves the four endings against each other while the population is "+
 				"identical: every floor stays clear, every relation goes on being "+
@@ -1521,59 +2028,202 @@ func TestTheAffordedWidthHoldsItsTwoRelations(t *testing.T) {
 	// a leaf has been ADDED and the log line's per-ending quiet check — have to
 	// be reading the same numbers.
 	bands := affordedOneLeafBand(names, endings)
+	// Which of the two one-leaf families this run and the record are in, decided
+	// by the NAMES rather than by how many of them there are. See
+	// affordedMissingLeaf: an assertion against a band is only a proof while
+	// the bracketed population is a member of the family the band is the
+	// maximum over, and "one apart by count" does not say that — a leaf added
+	// and another renamed is +1 with no subset anywhere.
+	//
+	//	added, oneLong    the record's names are this run's with one dropped.
+	//	                  The band over THIS run's names is the family.
+	//	removed, oneShort this run's names are the record's with one dropped.
+	//	                  The band over the RECORD's names is the family, and
+	//	                  this run cannot walk it — which is why the removal had
+	//	                  no assertion until the record carried its names.
+	added, oneLong := affordedMissingLeaf(names, affordedMeasuredOn.names)
+	removed, oneShort := affordedMissingLeaf(affordedMeasuredOn.names, names)
+	// And the same question for a step of two, which is the largest step whose
+	// family can still be walked. See affordedKLeafBand: 3160 populations at
+	// two and eighty-two thousand at three, and the one-leaf band cannot be
+	// scaled to stand in for either because the drift is not linear in the
+	// number of leaves moved.
+	addedTwo, twoLong := affordedMissingLeaves(names, affordedMeasuredOn.names)
+	twoLong = twoLong && len(addedTwo) == 2
+	removedTwo, twoShort := affordedMissingLeaves(affordedMeasuredOn.names, names)
+	twoShort = twoShort && len(removedTwo) == 2
+	// And the same band over the RECORD's own names, which is a pure function
+	// of them and therefore measurable on every run — the same argument the
+	// record's census re-derivation rests on, applied to the record one level
+	// up. Eighty more walks, and what they buy is two things at once: the
+	// family a run one leaf SHORT of the record belongs to, and a reading on
+	// affordedBandMeasuredOn that does not need core.Theme to have stood still.
+	recordBands := affordedOneLeafBand(affordedMeasuredOn.names, endings)
+	// And the two-leaf band over those same names, which is both the record
+	// affordedTwoLeafBandMeasuredOn is held to and the family a run two leaves
+	// SHORT of the record belongs to. 3160 walks, across the machine: see
+	// affordedKLeafBand.
+	//
+	// It is the one reading here with a cost worth naming — about five seconds
+	// against the rest of this test's half — so `-short` gives it up, and gives
+	// up exactly two things with it: the four numbers affordedKLeafBand's note
+	// argues from stop being re-derived, and the widest of the readings on
+	// themeLeafSetOf stops running. Both are re-taken by the next full run, and
+	// the log line says which of the two it was. A run that is actually two
+	// leaves from the record measures it either way, because that is the run it
+	// is the family for.
+	twoBandTaken := !testing.Short() || twoShort || twoLong
+	var recordTwoBands map[string]affordedBand
+	if twoBandTaken {
+		recordTwoBands = affordedKLeafBand(affordedMeasuredOn.names, endings, 2)
+	}
 	// And against what it came to when it was written down. A band derived on
 	// every run cannot go stale, but the note above cites four numbers and
 	// argues from them, and a number cited in prose and never re-derived is a
 	// number that has already moved. This is also the wider of the two readings
-	// on themeLeafSetOf in this test: the census is one walk over these names
-	// and the band is eighty walks over eighty populations, so a re-sort that
-	// happened to leave the census where it was still has all of those to get
-	// past.
-	if len(names) == affordedBandMeasuredOn.leaves &&
-		affordedWindowMax == affordedBandMeasuredOn.window {
-		for _, ending := range endings {
-			want, known := affordedBandMeasuredOn.ending[ending]
-			if !known {
-				t.Errorf("affordedBandMeasuredOn carries no one-leaf band for %q.\n\n"+
-					"The residual for this ending is then read against the stated "+
-					"fallback of %.0f%% — which the measurement says is three times the "+
-					"drift of the large endings and a third of the drift of the small "+
-					"ones — and nothing says it happened. Re-take the band under the new "+
-					"wording, or leave the wording alone. This run measures it at "+
-					"%.4f losing and %.4f gaining.",
-					ending, affordedResidualQuiet*100,
-					bands[ending].losing, bands[ending].gaining)
-				continue
-			}
-			got := bands[ending]
-			if affordedBandRounded(got.losing) == want.losing &&
-				affordedBandRounded(got.gaining) == want.gaining {
-				continue
-			}
-			t.Errorf("a single leaf moves %q by %.4f losing and %.4f gaining, and "+
-				"affordedBandMeasuredOn records %.4f and %.4f — over the same %d leaf "+
-				"names at the same window of %d.\n\n"+
-				"Both numbers come off the same eighty walks and the walk is a "+
-				"function of the names, so on an unchanged population they are the "+
-				"recorded ones exactly. A disagreement here is themeLeafSetOf sorting "+
-				"one of the eighty smaller populations differently than it did when "+
-				"the band was taken — which the census above can miss, because it "+
-				"reads one population and this reads eighty. The widest leaves this "+
-				"run are %q losing and %q gaining.\n\n"+
-				"If the new sort is what was wanted, re-take affordedBandMeasuredOn "+
-				"from the band in the log line — and read the derivation first.",
-				ending, got.losing, got.gaining, want.losing, want.gaining,
-				len(names), affordedWindowMax, got.losingAt, got.gainingAt)
+	// on themeLeafSetOf in this test: the record's census is one walk over its
+	// eighty names and this is eighty walks over eighty populations, so a
+	// re-sort that happened to leave the census where it was still has all of
+	// those to get past.
+	//
+	// # Over the RECORD's names, and therefore on every run
+	//
+	// This comparison used to be guarded on `len(names) == leaves`, which is
+	// the same premise-by-count the exact arm carried: a leaf RENAMED keeps the
+	// count and changes the strings, so the band this run measures is a band
+	// over a different eighty populations and the comparison reports a re-sort
+	// that is a rename. It fired that way the first time somebody tried it.
+	//
+	// The fix is the one the census re-derivation makes: the band is a function
+	// of a list of names, the record carries the list, so the record's own band
+	// is re-measurable whatever core.Theme has become. That removes the guard
+	// entirely — this is now asserted on every run, including the runs where
+	// somebody is editing the struct.
+	//
+	// The record does not carry its own names; it states the population it was
+	// taken over and that population is affordedMeasuredOn's, which is asserted
+	// rather than assumed. Two lists of eighty strings for one walk would be
+	// two lists to keep in step.
+	if affordedBandMeasuredOn.leaves != affordedMeasuredOn.leaves ||
+		affordedBandMeasuredOn.window != affordedMeasuredOn.window {
+		t.Fatalf("affordedBandMeasuredOn says it was taken over %d leaf names at a "+
+			"window of %d and affordedMeasuredOn says %d at %d.\n\n"+
+			"The two records are one measurement of one population written down "+
+			"twice — the census and what a single leaf is worth to it — and only one "+
+			"of them carries the names. The band is re-derived from THOSE names, so "+
+			"a record claiming a different population is a record being compared "+
+			"against a walk it was not taken over. Re-take both together.",
+			affordedBandMeasuredOn.leaves, affordedBandMeasuredOn.window,
+			affordedMeasuredOn.leaves, affordedMeasuredOn.window)
+	}
+	for _, ending := range endings {
+		want, known := affordedBandMeasuredOn.ending[ending]
+		if !known {
+			t.Errorf("affordedBandMeasuredOn carries no one-leaf band for %q.\n\n"+
+				"The residual for this ending is then read against the stated "+
+				"fallback of %.0f%% — which the measurement says is three times the "+
+				"drift of the large endings and a third of the drift of the small "+
+				"ones — and nothing says it happened. Re-take the band under the new "+
+				"wording, or leave the wording alone. The record's own names measure "+
+				"it at %.4f losing and %.4f gaining.",
+				ending, affordedResidualQuiet*100,
+				recordBands[ending].losing, recordBands[ending].gaining)
+			continue
 		}
-		for key := range affordedBandMeasuredOn.ending {
-			if !slices.Contains(endings, key) {
-				t.Errorf("affordedBandMeasuredOn carries a one-leaf band for %q and "+
-					"the derivation has no such ending.\n\n"+
-					"Every set reaches exactly one of the four sentences, so a fifth in "+
-					"the band record is a band for an ending that was renamed or removed "+
-					"— and its partner is an ending being read against the stated "+
-					"fallback with nobody having decided that.", key)
-			}
+		got := recordBands[ending]
+		if affordedBandRounded(got.losing) == want.losing &&
+			affordedBandRounded(got.gaining) == want.gaining {
+			continue
+		}
+		t.Errorf("a single leaf moves %q by %.4f losing and %.4f gaining over "+
+			"affordedMeasuredOn's own %d names, and affordedBandMeasuredOn records "+
+			"%.4f and %.4f.\n\n"+
+			"Both numbers come off the same eighty walks over the same eighty "+
+			"populations — the record's names with each one dropped in turn — and "+
+			"the walk is a function of the names, so this comparison is exact and "+
+			"does not depend on what core.Theme is today. A disagreement is "+
+			"themeLeafSetOf sorting one of those eighty populations differently "+
+			"than it did when the band was taken, which the census re-derivation "+
+			"above can miss: it reads one population and this reads eighty. The "+
+			"widest leaves are %q losing and %q gaining.\n\n"+
+			"If the new sort is what was wanted, re-take affordedMeasuredOn and "+
+			"affordedBandMeasuredOn together from the log line — and read the "+
+			"derivation first.",
+			ending, got.losing, got.gaining, affordedMeasuredOn.leaves,
+			want.losing, want.gaining, got.losingAt, got.gainingAt)
+	}
+	for key := range affordedBandMeasuredOn.ending {
+		if !slices.Contains(endings, key) {
+			t.Errorf("affordedBandMeasuredOn carries a one-leaf band for %q and "+
+				"the derivation has no such ending.\n\n"+
+				"Every set reaches exactly one of the four sentences, so a fifth in "+
+				"the band record is a band for an ending that was renamed or removed "+
+				"— and its partner is an ending being read against the stated "+
+				"fallback with nobody having decided that.", key)
+		}
+	}
+
+	// # And what two leaves are worth, which is not twice what one is
+	//
+	// The same three arms over affordedTwoLeafBandMeasuredOn, re-derived over
+	// the record's own names on every run. This is the widest reading on
+	// themeLeafSetOf in this file by a long way — 3160 populations against the
+	// eighty the one-leaf band walks and the one the census does — so a re-sort
+	// that happened to leave both of those where they were still has three
+	// thousand to get past.
+	//
+	// The numbers are also the argument. The note above affordedKLeafBand
+	// rejects `band × k` because gaining comes in at up to 2.6× the one-leaf
+	// figure, and a rejection that rests on four numbers nobody re-derives is
+	// the shape this file keeps replacing: they are asserted here, and the log
+	// line prints the ratios so a green run carries the finding rather than the
+	// prose alone.
+	for _, ending := range endings {
+		if !twoBandTaken {
+			break // -short; said in the log line
+		}
+		want, known := affordedTwoLeafBandMeasuredOn.ending[ending]
+		if !known {
+			t.Errorf("affordedTwoLeafBandMeasuredOn carries no two-leaf band for "+
+				"%q.\n\n"+
+				"A run two leaves from the record then has no family to be a member "+
+				"of for this ending, and the one-leaf band cannot stand in for it: "+
+				"the drift is not linear in the number of leaves moved. Re-take the "+
+				"band under the new wording, or leave the wording alone. The record's "+
+				"own names measure it at %.4f losing and %.4f gaining.",
+				ending, recordTwoBands[ending].losing, recordTwoBands[ending].gaining)
+			continue
+		}
+		got := recordTwoBands[ending]
+		if affordedBandRounded(got.losing) == want.losing &&
+			affordedBandRounded(got.gaining) == want.gaining {
+			continue
+		}
+		t.Errorf("two leaves move %q by %.4f losing and %.4f gaining over "+
+			"affordedMeasuredOn's own %d names, and affordedTwoLeafBandMeasuredOn "+
+			"records %.4f and %.4f.\n\n"+
+			"Both numbers come off the same 3160 walks — every PAIR of the "+
+			"record's names dropped in turn — and the walk is a function of the "+
+			"names, so this comparison is exact and does not depend on what "+
+			"core.Theme is today. A disagreement is themeLeafSetOf sorting one of "+
+			"those 3160 populations differently than it did when the band was "+
+			"taken, which the one-leaf band can miss: it reads eighty of them. The "+
+			"widest pairs are %q losing and %q gaining.\n\n"+
+			"These four are also what says `band × k` is not a bound — gaining runs "+
+			"to 2.6× the one-leaf figure on the small endings — so a change here is "+
+			"a change to the argument in affordedKLeafBand's note as well as to the "+
+			"number. Re-take the record and re-read that note together.",
+			ending, got.losing, got.gaining, affordedMeasuredOn.leaves,
+			want.losing, want.gaining, got.losingAt, got.gainingAt)
+	}
+	for key := range affordedTwoLeafBandMeasuredOn.ending {
+		if !slices.Contains(endings, key) {
+			t.Errorf("affordedTwoLeafBandMeasuredOn carries a two-leaf band for %q "+
+				"and the derivation has no such ending.\n\n"+
+				"Every set reaches exactly one of the four sentences, so a fifth in "+
+				"the band record is a band for an ending that was renamed or removed "+
+				"— and its partner is an ending a two-leaf run would be read against "+
+				"the stated fallback with nobody having decided that.", key)
 		}
 	}
 
@@ -1596,25 +2246,39 @@ func TestTheAffordedWidthHoldsItsTwoRelations(t *testing.T) {
 	// unusually far; it is arithmetic that cannot happen while themeLeafSetOf
 	// sorts the walk the way it did when the record was taken.
 	//
-	// The other direction has no such argument and is deliberately not
-	// asserted. A run with one leaf FEWER cannot walk the record's population
-	// at all — the removed name is not in this run to put back — so the band
-	// measured here is the 78↔79 step standing in for the 79↔80 step in force,
-	// and a bound whose family does not contain the case it brackets is a
-	// tolerance wearing a proof's clothes. That reading stays in the log line,
-	// where it is a sentence that says which step it measured.
-	if len(names) == affordedMeasuredOn.leaves+1 &&
-		affordedWindowMax == affordedMeasuredOn.window {
+	// # And the other direction, which used to have no argument
+	//
+	// A run with one leaf FEWER cannot walk the record's population from its
+	// own names — the removed name is not here to put back — so the band this
+	// run can measure is the 78↔79 step standing in for the 79↔80 step in
+	// force, and a bound whose family does not contain the case it brackets is
+	// a tolerance wearing a proof's clothes. That was the reason the removal
+	// stayed a reading in the log line, and the reason was sound.
+	//
+	// What it rested on was the record being four counts and an integer. With
+	// the names recorded the record's population is walkable on any run, so the
+	// band over THOSE names is measurable — and this run's population, being
+	// the record's names with one dropped, is a member of that family by the
+	// same argument the addition uses in the other direction. The arm below is
+	// therefore an assertion and not a tolerance, and its premise is checked by
+	// name rather than inferred from a count.
+	//
+	// The premise of the ADDED arm is checked the same way, and it was not
+	// before: `len(names) == leaves+1` is true of a run that added one leaf and
+	// renamed another, where the record's population is not this run's names
+	// minus anything and the band is a bound over the wrong family.
+	if oneLong && affordedWindowMax == affordedMeasuredOn.window {
 		for _, ending := range endings {
 			measured, known := affordedMeasuredOn.ending[ending]
 			if !known {
 				continue // reported by the key-set arms above
 			}
-			off, ok := affordedResidualOf(measured, reached[ending], scale)
+			off, predicted, ok := affordedResidualOf(measured, reached[ending], scale)
 			if !ok {
 				continue
 			}
-			band, why := affordedBandFor(bands, len(names), ending, true)
+			band, why := affordedBandFor(bands, len(names), "this run's names",
+				ending, true)
 			if off <= band {
 				continue
 			}
@@ -1622,8 +2286,8 @@ func TestTheAffordedWidthHoldsItsTwoRelations(t *testing.T) {
 				"only gained a leaf predicts about %.0f — %.1f%% out, against a band "+
 				"of %.2f%%: %s.\n\n"+
 				"This run has %d leaf names and affordedMeasuredOn was taken over %d "+
-				"at the same window, so the record's population is this run's names "+
-				"with one of them dropped — which is exactly one of the %d "+
+				"at the same window, and the record's names are this run's with %q "+
+				"dropped — which is exactly one of the %d "+
 				"populations the band was measured over. The residual above is "+
 				"therefore a member of the family the band is the largest of, and it "+
 				"cannot exceed it while themeLeafSetOf sorts the walk the way it did "+
@@ -1635,9 +2299,150 @@ func TestTheAffordedWidthHoldsItsTwoRelations(t *testing.T) {
 				"affordedBandMeasuredOn together from the log line — and read the "+
 				"derivation first, because a record re-taken over a classification "+
 				"that moved by accident records the accident as the baseline.",
-				ending, reached[ending], len(sets), float64(measured)*scale, off*100,
-				band*100, why, len(names), affordedMeasuredOn.leaves, len(names),
+				ending, reached[ending], len(sets), predicted, off*100,
+				band*100, why, len(names), affordedMeasuredOn.leaves, added, len(names),
 				reached, affordedMeasuredOn.ending)
+		}
+	}
+
+	// And the same arm the other way round, over the band the record's own
+	// names carry. See affordedOneLeafBand: dropping each of the RECORD's
+	// eighty names in turn produces eighty populations of seventy-nine, and
+	// this run — the record's names with the removed one gone — is one of them.
+	// Its residual
+	// against the record is therefore one of the numbers `losing` is the
+	// maximum of, and a residual above it cannot happen while themeLeafSetOf
+	// sorts the walk the way it did.
+	if oneShort && affordedWindowMax == affordedMeasuredOn.window {
+		for _, ending := range endings {
+			measured, known := affordedMeasuredOn.ending[ending]
+			if !known {
+				continue // reported by the key-set arms above
+			}
+			off, predicted, ok := affordedResidualOf(measured, reached[ending], scale)
+			if !ok {
+				continue
+			}
+			band, why := affordedBandFor(recordBands, affordedMeasuredOn.leaves,
+				"the record's names", ending, false)
+			if off <= band {
+				continue
+			}
+			t.Errorf("%q was reached by %d of the %d sets, and a population that had "+
+				"only lost a leaf predicts about %.0f — %.1f%% out, against a band "+
+				"of %.2f%%: %s.\n\n"+
+				"This run has %d leaf names and affordedMeasuredOn was taken over %d "+
+				"at the same window, and this run's names are the record's with %q "+
+				"dropped — which is exactly one of the %d populations that band was "+
+				"measured over. The residual above is therefore a member of the "+
+				"family the band is the largest of, and it cannot exceed it while "+
+				"themeLeafSetOf sorts the walk the way it did when the record was "+
+				"taken. The whole census is %v against a record of %v.\n\n"+
+				"This is the reading a run one leaf SHORT did not have. The band this "+
+				"run can measure from its own names is the 78↔79 step and the step in "+
+				"force is 79↔80, so until the record carried the names it was taken "+
+				"over there was no family here to be a member of. If the new sort is "+
+				"what was wanted, re-take affordedMeasuredOn and "+
+				"affordedBandMeasuredOn together from the log line — and read the "+
+				"derivation first, because a record re-taken over a classification "+
+				"that moved by accident records the accident as the baseline.",
+				ending, reached[ending], len(sets), predicted, off*100,
+				band*100, why, len(names), affordedMeasuredOn.leaves, removed,
+				affordedMeasuredOn.leaves, reached, affordedMeasuredOn.ending)
+		}
+	}
+
+	// # And the same pair of arms for a step of two
+	//
+	// The step past one leaf used to have nothing: the log line said an ending
+	// outside the band was "the absence of a finding rather than one", which is
+	// honest and is not a measurement. What was missing was a family, and the
+	// obvious one — the one-leaf band times two — turned out not to be a bound
+	// at all. See affordedKLeafBand: gaining runs to 2.6× the one-leaf figure
+	// on the two small endings, so a doubled band would have called an honest
+	// two-field edit a re-sort, which is the failure the measured one-leaf band
+	// replaced in the first place, arriving in its own extension.
+	//
+	// So two leaves are measured rather than scaled, over their own 3160
+	// populations, and these arms are assertions on the same footing as the
+	// one-leaf pair: the premise is the subset, checked by name, and this run's
+	// population is then a member of the family the band is the maximum of.
+	if twoLong && affordedWindowMax == affordedMeasuredOn.window {
+		// The family is drops of two from THIS run's names, one of which is
+		// the record's population. Measured here rather than above because it
+		// is a band about this run and nothing else reads it.
+		runTwoBands := affordedKLeafBand(names, endings, 2)
+		for _, ending := range endings {
+			measured, known := affordedMeasuredOn.ending[ending]
+			if !known {
+				continue // reported by the key-set arms above
+			}
+			off, predicted, ok := affordedResidualOf(measured, reached[ending], scale)
+			if !ok {
+				continue
+			}
+			band, why := affordedBandFor(runTwoBands, len(names), "this run's names",
+				ending, true)
+			if off <= band {
+				continue
+			}
+			t.Errorf("%q was reached by %d of the %d sets, and a population that had "+
+				"only gained two leaves predicts about %.0f — %.1f%% out, against a "+
+				"band of %.2f%%: %s.\n\n"+
+				"This run has %d leaf names and affordedMeasuredOn was taken over %d "+
+				"at the same window, and the record's names are this run's with %s "+
+				"dropped — which is exactly one of the %d populations that band was "+
+				"measured over. The residual is therefore a member of the family the "+
+				"band is the largest of, and it cannot exceed it while themeLeafSetOf "+
+				"sorts the walk the way it did when the record was taken. The whole "+
+				"census is %v against a record of %v.\n\n"+
+				"Note that this band is MEASURED for a two-leaf step and is not twice "+
+				"the one-leaf one: the drift is not linear in the number of leaves "+
+				"moved, and in the gaining direction it is worse than linear. If the "+
+				"new sort is what was wanted, re-take affordedMeasuredOn, "+
+				"affordedBandMeasuredOn and affordedTwoLeafBandMeasuredOn together "+
+				"from the log line — and read the derivation first.",
+				ending, reached[ending], len(sets), predicted, off*100,
+				band*100, why, len(names), affordedMeasuredOn.leaves,
+				strings.Join(addedTwo, " and "), affordedDropCount(len(names), 2),
+				reached, affordedMeasuredOn.ending)
+		}
+	}
+	if twoShort && affordedWindowMax == affordedMeasuredOn.window {
+		for _, ending := range endings {
+			measured, known := affordedMeasuredOn.ending[ending]
+			if !known {
+				continue // reported by the key-set arms above
+			}
+			off, predicted, ok := affordedResidualOf(measured, reached[ending], scale)
+			if !ok {
+				continue
+			}
+			band, why := affordedBandFor(recordTwoBands, affordedMeasuredOn.leaves,
+				"the record's names", ending, false)
+			if off <= band {
+				continue
+			}
+			t.Errorf("%q was reached by %d of the %d sets, and a population that had "+
+				"only lost two leaves predicts about %.0f — %.1f%% out, against a "+
+				"band of %.2f%%: %s.\n\n"+
+				"This run has %d leaf names and affordedMeasuredOn was taken over %d "+
+				"at the same window, and this run's names are the record's with %s "+
+				"dropped — which is exactly one of the %d populations that band was "+
+				"measured over. The residual is therefore a member of the family the "+
+				"band is the largest of, and it cannot exceed it while themeLeafSetOf "+
+				"sorts the walk the way it did when the record was taken. The whole "+
+				"census is %v against a record of %v.\n\n"+
+				"Note that this band is MEASURED for a two-leaf step and is not twice "+
+				"the one-leaf one. If the new sort is what was wanted, re-take "+
+				"affordedMeasuredOn, affordedBandMeasuredOn and "+
+				"affordedTwoLeafBandMeasuredOn together from the log line — and read "+
+				"the derivation first.",
+				ending, reached[ending], len(sets), predicted, off*100,
+				band*100, why, len(names), affordedMeasuredOn.leaves,
+				strings.Join(removedTwo, " and "),
+				affordedDropCount(affordedMeasuredOn.leaves, 2), reached,
+				affordedMeasuredOn.ending)
 		}
 	}
 
@@ -1682,7 +2487,9 @@ func TestTheAffordedWidthHoldsItsTwoRelations(t *testing.T) {
 		if !b.known || scale == 0 {
 			continue // reported by the key-set arms above
 		}
-		moved := float64(b.measured) * scale
+		// The same number affordedShortfallCause reads, through the same
+		// function, and read the other way. See affordedPrediction.
+		moved, _ := affordedPrediction(ending, scale)
 		if moved >= float64(b.floor) {
 			continue
 		}
@@ -1727,6 +2534,28 @@ func TestTheAffordedWidthHoldsItsTwoRelations(t *testing.T) {
 	// either misses a re-sort of 473 sets or reports a standing-still walk as
 	// a moved one, depending which ending it is asked about.
 	gaining := len(names) > affordedMeasuredOn.leaves
+	// And whose names that band was measured over. A run one leaf SHORT of the
+	// record is bracketed by the band over the RECORD's names — that is the
+	// family it belongs to and the one the arm above asserts against — so the
+	// sentence has to read the same numbers the assertion did, or a green run
+	// would be reporting a different bound from the one in force.
+	bandsFor, bandOver, bandWhose := bands, len(names), "this run's names"
+	bandStep := 1
+	if oneShort {
+		bandsFor, bandOver, bandWhose =
+			recordBands, affordedMeasuredOn.leaves, "the record's names"
+	}
+	// A run two leaves SHORT is bracketed by the two-leaf band over the
+	// record's names, which is the family it belongs to and the one the arm
+	// above asserted against. The two-leaf LONG case has its own band measured
+	// inside that arm and not here: it is a band about this run's names and
+	// nothing else reads it, so the sentence stays with the one the readings
+	// share.
+	if twoShort && recordTwoBands != nil {
+		bandsFor, bandOver, bandWhose, bandStep =
+			recordTwoBands, affordedDropCount(affordedMeasuredOn.leaves, 2),
+			"the record's names", 2
+	}
 	outside := []string{}
 	for _, ending := range endings {
 		b := brackets[ending]
@@ -1745,14 +2574,15 @@ func TestTheAffordedWidthHoldsItsTwoRelations(t *testing.T) {
 		// family this number is a member of, so a difference of one ulp is the
 		// whole distance between "inside its band" and a green run reporting a
 		// re-sort that did not happen.
-		off, ok := affordedResidualOf(b.measured, reached[ending], scale)
+		off, _, ok := affordedResidualOf(b.measured, reached[ending], scale)
 		if !ok {
 			continue
 		}
 		if off > worst {
 			worst, worstEnding = off, ending
 		}
-		if band, why := affordedBandFor(bands, len(names), ending, gaining); off > band {
+		if band, why := affordedBandFor(
+			bandsFor, bandOver, bandWhose, ending, gaining); off > band {
 			outside = append(outside, fmt.Sprintf("%q is %.1f%% out against %s",
 				ending, off*100, why))
 		}
@@ -1764,7 +2594,7 @@ func TestTheAffordedWidthHoldsItsTwoRelations(t *testing.T) {
 	// run's line rather than the same words that describe a walk standing
 	// still. The floors are one ending at a time and cannot see it.
 	resorted := "every ending inside the band a single leaf is worth to it"
-	if math.Abs(scale-1) < affordedScaleSame {
+	if affordedPopulationUnchanged(scale) {
 		resorted = "the walk having been re-sorted by nothing"
 	}
 	if len(outside) > 0 {
@@ -1781,6 +2611,20 @@ func TestTheAffordedWidthHoldsItsTwoRelations(t *testing.T) {
 	// is silent exactly when somebody is editing core.Theme, which is when it
 	// would be read — see the arms above.
 	distance := len(names) - affordedMeasuredOn.leaves
+	// How many of the record's names this run does not have, for the branch
+	// where the two are one apart by count and not by name.
+	strangers := 0
+	{
+		here := make(map[string]bool, len(names))
+		for _, name := range names {
+			here[name] = true
+		}
+		for _, name := range affordedMeasuredOn.names {
+			if !here[name] {
+				strangers++
+			}
+		}
+	}
 	reading := ""
 	switch {
 	case affordedWindowMax != affordedMeasuredOn.window:
@@ -1788,33 +2632,99 @@ func TestTheAffordedWidthHoldsItsTwoRelations(t *testing.T) {
 			"window is %d against the record's %d, so neither the exact comparison "+
 			"nor the one-leaf band is about this population",
 			affordedWindowMax, affordedMeasuredOn.window)
-	case distance == 0:
+	case sameNames:
 		reading = "the census against the record EXACTLY, ending by ending — same " +
 			"names, same window, so which ending a set reaches is the only thing " +
 			"left that can move"
-	case distance == 1:
-		reading = "the census against the record within the band a single ADDED " +
-			"leaf is worth to each ending, asserted — the record's own population " +
-			"is this run's names with the new leaf dropped, so its residual is a " +
-			"member of the family that band is the largest of"
-	case distance == -1:
-		reading = "the four floors and the sentence above, which is a reading and " +
-			"not an assertion: this run is one leaf SHORT of the record and the " +
-			"missing name is not here to put back, so the band below is the step " +
-			"from these names down rather than the step from the record's names to " +
-			"these"
+	case oneLong:
+		reading = fmt.Sprintf("the census against the record within the band a "+
+			"single ADDED leaf is worth to each ending, asserted — the record's own "+
+			"population is this run's names with %q dropped, so its residual is a "+
+			"member of the family that band is the largest of", added)
+	case oneShort:
+		reading = fmt.Sprintf("the census against the record within the band a "+
+			"single REMOVED leaf is worth to each ending, asserted over the band "+
+			"measured on the RECORD's names — this run's population is those names "+
+			"with %q dropped, so its residual is a member of the family that band "+
+			"is the largest of. This run cannot walk that family from its own "+
+			"names; it is walkable because the record carries the names it was "+
+			"taken over", removed)
+	case distance == 0:
+		reading = fmt.Sprintf("the record's re-walk and the four floors: this run "+
+			"has the record's %d leaf names by COUNT and not by name — %d of them "+
+			"are not here — so a leaf was renamed, this run's counts are a walk "+
+			"over different strings, and comparing them against the record exactly "+
+			"would report a re-sort nobody made",
+			affordedMeasuredOn.leaves, strangers)
+	case twoLong:
+		reading = fmt.Sprintf("the census against the record within the band TWO "+
+			"ADDED leaves are worth to each ending, asserted — the record's own "+
+			"population is this run's names with %s dropped, so its residual is a "+
+			"member of the family that band is the largest of. The band is measured "+
+			"for a two-leaf step over all %d of them and is not twice the one-leaf "+
+			"one, which is not a bound",
+			strings.Join(addedTwo, " and "), affordedDropCount(len(names), 2))
+	case twoShort:
+		reading = fmt.Sprintf("the census against the record within the band TWO "+
+			"REMOVED leaves are worth to each ending, asserted over the band "+
+			"measured on the RECORD's names — this run's population is those names "+
+			"with %s dropped, so its residual is a member of the family that band "+
+			"is the largest of, measured over all %d of them",
+			strings.Join(removedTwo, " and "),
+			affordedDropCount(affordedMeasuredOn.leaves, 2))
+	case distance == 1 || distance == -1 || distance == 2 || distance == -2:
+		reading = fmt.Sprintf("the record's re-walk and the four floors: this run "+
+			"is %d leaves from the record by COUNT and not by name — %d of the "+
+			"record's %d names are not here — so neither population is the other "+
+			"with leaves merely dropped, and a band whose family does not contain "+
+			"the case it brackets is a tolerance wearing a proof's clothes",
+			distance, strangers, affordedMeasuredOn.leaves)
 	default:
-		reading = fmt.Sprintf("only the four floors: this run is %d leaves from the "+
-			"record's %d, and the band below is a ONE-leaf reading — nothing here "+
-			"has measured what %d of them move, so an ending outside it is the "+
-			"absence of a finding rather than one",
-			distance, affordedMeasuredOn.leaves, distance)
+		reading = fmt.Sprintf("the record's re-walk and the four floors: this run "+
+			"is %d leaves from the record's %d, and the bands measured here are the "+
+			"ONE- and TWO-leaf steps. Neither can be scaled to reach %d — the drift "+
+			"is sub-linear losing and worse than linear gaining — and the family "+
+			"cannot be walked either: dropping %d of %d names is %d populations "+
+			"against the 3160 two of them make. So an ending outside the band below "+
+			"is the absence of a finding rather than one",
+			distance, affordedMeasuredOn.leaves, distance, distance,
+			affordedMeasuredOn.leaves,
+			affordedDropCount(affordedMeasuredOn.leaves, distance))
 	}
+	// And what the two-leaf reading came to, or that it was skipped. The four
+	// ratios are the argument against `band × k`, so a green run carries them
+	// rather than leaving them in a comment nobody re-derives.
+	twoBandNote := ""
+	if !twoBandTaken {
+		twoBandNote = ". The two-leaf band was NOT re-derived on this run " +
+			"(-short), so affordedTwoLeafBandMeasuredOn's four numbers and the " +
+			"3160-population reading on themeLeafSetOf are the previous full run's"
+	} else {
+		ratios := make([]string, 0, len(endings))
+		for _, ending := range endings {
+			one, two := affordedBandMeasuredOn.ending[ending], recordTwoBands[ending]
+			losing, gaining := 0.0, 0.0
+			if one.losing > 0 {
+				losing = two.losing / one.losing
+			}
+			if one.gaining > 0 {
+				gaining = two.gaining / one.gaining
+			}
+			ratios = append(ratios, fmt.Sprintf("%q ±%.2f%%/%.2f%% (%.2f×/%.2f×)",
+				ending, two.losing*100, two.gaining*100, losing, gaining))
+		}
+		twoBandNote = fmt.Sprintf(". Two leaves over all %d pairs of the record's "+
+			"names move each ending by %s — losing under twice the one-leaf figure "+
+			"and gaining over it, which is why the two-leaf band is measured rather "+
+			"than scaled from the one-leaf one",
+			affordedDropCount(affordedMeasuredOn.leaves, 2), strings.Join(ratios, ", "))
+	}
+
 	// The band itself, so the numbers the note above argues from are in a
 	// green run's line rather than only in a failure's.
 	bandSaid := make([]string, 0, len(endings))
 	for _, ending := range endings {
-		b := bands[ending]
+		b := bandsFor[ending]
 		bandSaid = append(bandSaid, fmt.Sprintf("%q ±%.2f%%/%.2f%%",
 			ending, b.losing*100, b.gaining*100))
 	}
@@ -1824,10 +2734,320 @@ func TestTheAffordedWidthHoldsItsTwoRelations(t *testing.T) {
 		"share of its own measurement and the rest on the stated %d, over a "+
 		"population at %.2f× the one the record was taken on and partitioning it "+
 		"(%d sets, %d accounted for), every ending within %.1f%% of what that scale "+
-		"predicts for it (the furthest being %q), which is %s. The reading in force "+
-		"here is %s. Floors: %s. One leaf lost/gained moves each ending by %s%s",
+		"predicts for it (the furthest being %q), which is %s. The record's own %d "+
+		"names were re-walked and hold its four counts exactly, which is the one "+
+		"reading here that does not need this run's population to have stood still "+
+		"— the walk is a function of a list of strings and the record carries the "+
+		"list. Against THIS run the reading in force is %s. Floors: %s. One leaf "+
+		"lost/gained moves each ending by %s. The band in force here is the "+
+		"%d-leaf step, measured over %s%s%s",
 		len(sets), len(names), onShare, affordedEndingFloor, scale,
-		len(sets), census, worst*100, worstEnding, resorted, reading,
-		strings.Join(held, ", "), strings.Join(bandSaid, ", "),
-		affordedMeasuredNote(len(names), len(sets)))
+		len(sets), census, worst*100, worstEnding, resorted,
+		len(affordedMeasuredOn.names), reading,
+		strings.Join(held, ", "), strings.Join(bandSaid, ", "), bandStep, bandWhose,
+		twoBandNote, affordedMeasuredNote(len(names), len(sets)))
+}
+
+// Every float this package's checks derive, and where each one is derived.
+//
+// # What this is for
+//
+// The residual and the band it is read against were once computed by two
+// expressions that were the same arithmetic written twice. On arm64 they
+// disagreed in the last bit — Go may fuse a multiply and the subtract after it
+// into a single rounding, and it did so at one spelling and not at the other —
+// and against a band that is the MAXIMUM of a family the residual is a member
+// of, one ulp is the whole distance between "inside its band" and a green run
+// reporting a re-sort that did not happen. It surfaced as a 0.02%-band ending
+// reported 0.0% out, in a break-test's odd output, which is the only reason
+// anybody saw it.
+//
+// That was fixed at the one site and prevented nowhere, and nothing had looked
+// for a second. Looking found three more of the same shape:
+//
+//	float64(measured) * scale   four spellings — the prediction. Two of them
+//	                            DECIDED a floor, in opposite directions, at two
+//	                            sites; two printed it beside a residual taken
+//	                            from a third.
+//	math.Abs(scale - 1)         two spellings, both comparing against
+//	                            affordedScaleSame — one choosing which of three
+//	                            findings a failure names, the other choosing
+//	                            which sentence a green run prints.
+//	float64(part) / float64(whole)
+//	                            the band's step scale and affordedScale's, which
+//	                            the k-leaf assertions require to be the same
+//	                            number: the residual is only a member of the
+//	                            band's family while the two divisions agree.
+//
+// Each is now one function — affordedPredictedFrom, affordedPopulationUnchanged,
+// affordedRatioOf — and this census is what stops a fifth spelling appearing.
+//
+// # What a derivation is here
+//
+// Read off the package's test sources: every `* / + -` between operands and
+// every call into `math`, where the printed text carries a `float64(`
+// conversion, a `math.` call or a decimal literal, and where no string literal
+// appears inside it. Sub-expressions count as well as their parents, because
+// the hazard is arithmetic and not statements.
+//
+// Identity is the text go/printer produces, which has two consequences worth
+// stating. Reformatting does not move an entry; rewording one does, which is
+// the intended cost — an expression spelled differently is arithmetic somebody
+// edited. And the same recipe under different variable names reads as two
+// entries: `math.Round(palette.Ratio(edge, lum)*100)/100` and the same thing
+// over `la, lb` are one rounding written in two files, and this census can say
+// so in the table and cannot say it in the arithmetic. That is the limit of a
+// syntactic reading and it is named rather than papered over.
+//
+// The rule the table enforces is the one the FMA hazard taught: TWO FLOATS
+// THAT ARE COMPARED MUST COME FROM ONE EVALUATION. What that reduces to
+// syntactically is that no derivation is spelled in two functions — a
+// derivation in one place cannot disagree with itself.
+var affordedFloatDerivations = []struct{ expr, what string }{
+	{"float64(recorded) * scale",
+		"the prediction: a recorded count scaled by this run's population. " +
+			"COMPARED — the share-edge arm and affordedShortfallCause both decide a " +
+			"floor with it, and the residual is taken against it"},
+	{"float64(got) - predicted",
+		"the gap between a count and its prediction, inside the residual"},
+	{"math.Abs(float64(got) - predicted)",
+		"the same gap without its sign — the sub-expression the fusing happened " +
+			"at"},
+	{"math.Abs(float64(got)-predicted) / predicted",
+		"the residual itself. COMPARED against every band in this file"},
+	{"math.Abs(scale - 1)",
+		"how far the population moved. COMPARED against affordedScaleSame, which " +
+			"decides whether a walk is called unchanged"},
+	{"float64(part) / float64(whole)",
+		"one population as a fraction of another. COMPARED by construction: the " +
+			"k-leaf arms are proofs only while the scale the residual is taken with " +
+			"and the scale the band was measured with are the same number"},
+	{"float64(reached[ending]) - predicted",
+		"how far above its prediction an ending came in, for naming which ending " +
+			"holds another's sets"},
+	{"math.Round(v * 10000)", "the band record's four decimal places, rounded"},
+	{"math.Round(v*10000) / 10000",
+		"the same, back to a fraction. COMPARED against affordedBandMeasuredOn " +
+			"and affordedTwoLeafBandMeasuredOn"},
+	{"math.Round(palette.Ratio(edge, lum) * 100)",
+		"a contrast ratio at two decimal places, in the palette census"},
+	{"math.Round(palette.Ratio(edge, lum)*100) / 100",
+		"the same, back to a ratio. COMPARED against the recorded palette rows"},
+	{"math.Round(palette.Ratio(la, lb) * 100)",
+		"the same recipe over the widget swatches' own two colours — one rounding " +
+			"written in two files, which textual identity cannot see and this table " +
+			"can"},
+	{"math.Round(palette.Ratio(la, lb)*100) / 100",
+		"the same, back to a ratio. COMPARED against the swatch's own reported " +
+			"figure"},
+}
+
+// affordedFloatDerivedIn is every float derivation in this package's test
+// sources, mapped to the functions it is spelled in.
+//
+// See affordedFloatDerivations for what counts as one and why the reading is
+// syntactic. A string literal anywhere inside an expression takes it out: a
+// concatenated message carrying "%.4f" is an ADD between strings and is not
+// arithmetic, and there is no cheaper way to tell the two apart without
+// running the type checker over a package that imports half the repository.
+func affordedFloatDerivedIn(t *testing.T) map[string][]string {
+	t.Helper()
+	entries, err := os.ReadDir(".")
+	if err != nil {
+		t.Fatalf("reading this package's directory: %v", err)
+	}
+	fset := token.NewFileSet()
+	in := map[string][]string{}
+	files := 0
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), "_test.go") {
+			continue
+		}
+		file, err := parser.ParseFile(fset, e.Name(), nil, 0)
+		if err != nil {
+			t.Fatalf("parsing %s: %v", e.Name(), err)
+		}
+		files++
+		for _, d := range file.Decls {
+			fn, ok := d.(*ast.FuncDecl)
+			if !ok || fn.Body == nil {
+				continue
+			}
+			where := e.Name() + ":" + fn.Name.Name
+			ast.Inspect(fn.Body, func(n ast.Node) bool {
+				if !affordedIsDerivation(n) {
+					return true
+				}
+				var b strings.Builder
+				if err := printer.Fprint(&b, fset, n); err != nil {
+					t.Fatalf("printing an expression of %s: %v", where, err)
+				}
+				text := b.String()
+				if !affordedLooksFloat(text) || affordedHoldsString(n) {
+					return true
+				}
+				if !slices.Contains(in[text], where) {
+					in[text] = append(in[text], where)
+				}
+				return true
+			})
+		}
+	}
+	if files == 0 {
+		t.Fatalf("no _test.go files in this package.\n\n" +
+			"This census reads the checks' own arithmetic off their source. A run " +
+			"that finds nothing to read reports every derivation single-spelled, " +
+			"which is a green run saying the thing it was written to look for is " +
+			"absent.")
+	}
+	return in
+}
+
+// affordedIsDerivation is whether a node is arithmetic this census counts:
+// a binary `* / + -`, or a call into the math package.
+func affordedIsDerivation(n ast.Node) bool {
+	switch x := n.(type) {
+	case *ast.BinaryExpr:
+		switch x.Op {
+		case token.MUL, token.QUO, token.ADD, token.SUB:
+			return true
+		}
+	case *ast.CallExpr:
+		sel, ok := x.Fun.(*ast.SelectorExpr)
+		if !ok {
+			return false
+		}
+		id, ok := sel.X.(*ast.Ident)
+		return ok && id.Name == "math"
+	}
+	return false
+}
+
+// affordedLooksFloat is the syntactic stand-in for "this is float arithmetic":
+// a float64 conversion, a call into math, or a decimal literal in the text.
+//
+// Approximate, and in the direction that costs a reading rather than an
+// assertion: an expression over two float variables with no conversion and no
+// literal — `a * b` where both came from somewhere else — is arithmetic this
+// census does not see. The alternative is running go/types over a package that
+// imports the repository, which is a second toolchain inside a test about a
+// theme's leaf names. Every derivation this file's hazard actually took carries
+// one of the three.
+func affordedLooksFloat(text string) bool {
+	if strings.Contains(text, "float64(") || strings.Contains(text, "math.") {
+		return true
+	}
+	for i := 1; i+1 < len(text); i++ {
+		if text[i] == '.' && text[i-1] >= '0' && text[i-1] <= '9' &&
+			text[i+1] >= '0' && text[i+1] <= '9' {
+			return true
+		}
+	}
+	return false
+}
+
+// affordedHoldsString is whether a string literal appears anywhere inside an
+// expression, which is how a concatenated message is told from arithmetic.
+func affordedHoldsString(n ast.Node) bool {
+	found := false
+	ast.Inspect(n, func(m ast.Node) bool {
+		if lit, ok := m.(*ast.BasicLit); ok && lit.Kind == token.STRING {
+			found = true
+		}
+		return !found
+	})
+	return found
+}
+
+// The rule the FMA hazard taught, held over the package's own checks.
+//
+// Three arms, and they are three different findings:
+//
+//	spelled twice   a derivation in two functions. This is the hazard itself:
+//	                two evaluations of one expression are two numbers the
+//	                compiler may round differently, and a comparison between
+//	                them is a comparison nobody wrote.
+//	not in the      a derivation the source has and this table does not. Not a
+//	table           failure of the arithmetic — a decision nobody has taken.
+//	                Every entry says whether a comparison rests on it, and that
+//	                is the sentence somebody has to write.
+//	not in the      a table entry the source no longer has, which is an entry
+//	source          describing arithmetic that was reworded or deleted.
+func TestNoFloatAComparisonRestsOnIsDerivedTwice(t *testing.T) {
+	derived := affordedFloatDerivedIn(t)
+
+	said := map[string]string{}
+	for _, d := range affordedFloatDerivations {
+		if _, ok := derived[d.expr]; !ok {
+			t.Errorf("this package's checks no longer derive `%s`, which the census "+
+				"describes as %s.\n\n"+
+				"An entry for arithmetic that is not there describes nothing, and it "+
+				"is the shape that goes stale silently: the expression it was written "+
+				"about was reworded or removed, and what is left is a sentence a "+
+				"reader will one day take as covering something else.", d.expr, d.what)
+		}
+		if was, dup := said[d.expr]; dup {
+			t.Errorf("the census carries `%s` twice — as %s and as %s.\n\n"+
+				"One derivation, one entry: the second is either a copy or a "+
+				"disagreement about what the arithmetic is for, and both are worse "+
+				"than either sentence alone.", d.expr, was, d.what)
+		}
+		said[d.expr] = d.what
+	}
+
+	twice, missing := []string{}, []string{}
+	for expr, where := range derived {
+		if len(where) > 1 {
+			slices.Sort(where)
+			twice = append(twice, fmt.Sprintf("`%s` in %s", expr,
+				strings.Join(where, " and ")))
+		}
+		if _, known := said[expr]; !known {
+			missing = append(missing, fmt.Sprintf("`%s` in %s", expr,
+				strings.Join(where, ", ")))
+		}
+	}
+	slices.Sort(twice)
+	slices.Sort(missing)
+	if len(twice) > 0 {
+		t.Errorf("%d float derivation(s) are spelled in more than one function:\n"+
+			"\t%s\n\n"+
+			"Two floats a comparison rests on have to come from one evaluation. Go "+
+			"may fuse a multiply and the subtract after it into a single rounding "+
+			"and is free to do so at one spelling and not at another — it did, in "+
+			"this file, and against a band that is the maximum of a family the "+
+			"residual belongs to, one ulp was the whole distance between a bound "+
+			"held and a green run reporting a re-sort nobody made. It surfaced in a "+
+			"break-test's odd output and nothing would have surfaced it otherwise.\n\n"+
+			"Give the expression one name and call it from both places. If the two "+
+			"really are independent arithmetic over different populations, they are "+
+			"still two spellings a reader has to check by eye — say so in "+
+			"affordedFloatDerivations and give one of them its own name anyway.",
+			len(twice), strings.Join(twice, "\n\t"))
+	}
+	if len(missing) > 0 {
+		t.Errorf("%d float derivation(s) in this package's checks have no entry in "+
+			"affordedFloatDerivations:\n\t%s\n\n"+
+			"The census is the place a reader finds out whether a comparison rests "+
+			"on a number — which is the question the FMA hazard turned on and the "+
+			"question nobody could answer about the second spelling, because nobody "+
+			"had looked for one. A new derivation is a decision: say what it is and "+
+			"whether anything compares it, or route it through arithmetic that "+
+			"already has an entry.",
+			len(missing), strings.Join(missing, "\n\t"))
+	}
+
+	compared := 0
+	for _, d := range affordedFloatDerivations {
+		if strings.Contains(d.what, "COMPARED") {
+			compared++
+		}
+	}
+	t.Logf("%d float derivations across this package's checks, each spelled in "+
+		"exactly one function — %d of them carrying a comparison, which is the "+
+		"class the FMA hazard belongs to: two evaluations of one expression are "+
+		"two numbers the compiler may round differently, and the residual and its "+
+		"band were once exactly that. The rule is held by the arithmetic having one "+
+		"name rather than by anybody remembering it",
+		len(derived), compared)
 }

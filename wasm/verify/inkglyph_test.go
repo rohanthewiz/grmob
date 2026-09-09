@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -191,10 +192,38 @@ func TestTheTwoFoldsDropTheSameCharacters(t *testing.T) {
 		t.Fatalf("INK_FOLD_IGNORABLE parsed to no characters at all, which is this " +
 			"test reading the wrong thing rather than browser.mjs dropping nothing.")
 	}
-	// Every code point of the plane these characters live in, both ways. The
-	// interesting failures are at the edges of a range, and enumerating is
-	// cheaper than arguing about which edges.
-	for r := rune(0); r <= 0xFFFF; r++ {
+	// # And what the class cannot say, which is why this walk can go past it
+	//
+	// The items above are `\uXXXX`, which names a UTF-16 code unit — so this
+	// class cannot express a code point above U+FFFF at all, and the parser
+	// above is not narrower than the thing it reads. A `\u{...}` escape can,
+	// and if browser.mjs grew one this parser would skip it silently and the
+	// comparison below would report gen.go dropping a character browser.mjs
+	// "keeps" while browser.mjs was dropping it too.
+	//
+	// So the spelling is asserted. It is what licenses `there = false` for
+	// every code point above the BMP in the walk below — the half of this
+	// comparison that used to stop at U+FFFF with nothing saying why.
+	if bytes.Contains(m[1], []byte(`\u{`)) {
+		t.Fatalf("INK_FOLD_IGNORABLE contains a \\u{...} escape, which names a code "+
+			"point rather than a UTF-16 code unit, and the parser above reads only "+
+			"\\uXXXX.\n\n"+
+			"The class is %q. Every item this test can see is a BMP code unit, and "+
+			"that is what lets the walk below treat every code point above U+FFFF as "+
+			"absent from the set — a claim about the SPELLING, which is why it is "+
+			"checked rather than assumed. Teach the parser the braced form before "+
+			"the class uses it, or the comparison silently stops covering whatever "+
+			"the braces hold.", m[1])
+	}
+	// Every code point, both ways, and not only the plane these characters live
+	// in. The interesting failures are at the edges of a range, and enumerating
+	// is cheaper than arguing about which edges — and the edge nothing walked
+	// was U+FFFF itself: gen.go's predicate is a switch over rune ranges and
+	// can name any code point, while the class above cannot name one past the
+	// BMP, so an ignorable added up there is a disagreement neither side would
+	// report. Today both sides drop nothing there, which is agreement and is
+	// also the thing worth asserting: see foldOwnMeasuredOn's astral counts.
+	for r := rune(0); r <= 0x10FFFF; r++ {
 		there := false
 		for _, s := range spans {
 			if r >= s.lo && r <= s.hi {
@@ -203,7 +232,15 @@ func TestTheTwoFoldsDropTheSameCharacters(t *testing.T) {
 			}
 		}
 		if here := inkGlyphIgnorable(r); here != there {
-			t.Fatalf("U+%04X is dropped by %s and kept by %s.\n\n"+
+			above := ""
+			if r > 0xFFFF {
+				above = "\n\nAnd it is above the BMP, where the disagreement can only " +
+					"go one way: INK_FOLD_IGNORABLE is a character class in \\uXXXX " +
+					"escapes and cannot name a code point up here, so this is a range " +
+					"gen.go's predicate grew and the other side has no spelling for. " +
+					"Both files need it, and the class needs the braced escape form."
+			}
+			t.Fatalf("U+%04X is dropped by %s and kept by %s.%s\n\n"+
 				"These two folds are asked the same question at the two ends of one "+
 				"pipeline: gen.go refuses a fixture that holds a ligature pair, and "+
 				"browser.mjs's inkLigatureNote says which pair a face joined when one "+
@@ -212,9 +249,16 @@ func TestTheTwoFoldsDropTheSameCharacters(t *testing.T) {
 				"sentence naming a pair the reader cannot see in the string in front "+
 				"of them.", r,
 				map[bool]string{true: "inkGlyphIgnorable", false: "INK_FOLD_IGNORABLE"}[here],
-				map[bool]string{true: "inkGlyphIgnorable", false: "INK_FOLD_IGNORABLE"}[!here])
+				map[bool]string{true: "inkGlyphIgnorable", false: "INK_FOLD_IGNORABLE"}[!here],
+				above)
 		}
 	}
+	t.Logf("inkGlyphIgnorable and INK_FOLD_IGNORABLE drop the same characters "+
+		"over every one of Unicode's %d code points, not only the BMP: %d spans "+
+		"parsed out of the class, and the class asserted to be spelled in \\uXXXX "+
+		"escapes, which is what makes `absent above U+FFFF` a reading of it rather "+
+		"than a gap in this parser",
+		0x110000, len(spans))
 }
 
 // The two folds' answers, over the characters they both claim to fold.
@@ -471,26 +515,83 @@ func foldBuildNote(now foldBuild) string {
 // fold that quietly narrowed — narrower is the direction they allow — and
 // until now the only thing that could see it was a census that needs node and
 // the right ICU.
+// # And the plane it was taken over, which is now stated
+//
+// Every walk in this file ran `for cp := rune(0); cp <= 0xFFFF` and none of
+// them said so as a bound. That is a real bound and not a formality: the fold
+// is a function of a rune and the sixteen planes above the BMP hold most of
+// Unicode's case pairs and every one of its tag characters. Nothing anywhere
+// said what the fold does to them, and the arm that compares this census's
+// `table` against `len(inkLigatureForms)` had to name "a key outside the BMP"
+// as one of two possible causes because nothing could tell it from the other.
+//
+// So the walk is both, counted apart. Apart rather than summed, because they
+// are two different facts: the BMP counts are what every other reading in this
+// file is about — the fixtures are printable ASCII and the ligature forms are
+// at U+FB00 — and the astral counts are the bound, which is the interesting
+// number precisely when it stops being what it is today.
+//
+//	astralIgnorable   0. inkGlyphIgnorable's ranges all end below U+FFFF, and
+//	                  browser.mjs's INK_FOLD_IGNORABLE is a character class
+//	                  spelled in \uXXXX escapes, which cannot name a code
+//	                  point above the BMP at all. So the two folds agree there
+//	                  by construction — and both are silent about U+E0000's tag
+//	                  characters and U+1D173's musical format controls, which
+//	                  are default-ignorable and which neither drops.
+//	astralTable       0. Every row of inkLigatureForms is a presentation form
+//	                  in U+FB00's block. This is the count that makes the
+//	                  row-census arm below able to say which of its two causes
+//	                  it found.
+//	astralLowered     260, and Go's tables, so gated the way the BMP's 1173 is.
+//	                  Deseret at U+10400 first.
 var foldOwnMeasuredOn = struct {
 	// Go's Unicode version, from the unicode package this binary was compiled
-	// against. The `lowered` count is that data and nothing else; the other two
+	// against. The `lowered` counts are that data and nothing else; the others
 	// are gen.go's and are asserted whatever this says.
 	goUnicode                 string
 	ignorable, table, lowered int
+	// And the same three over the sixteen planes above the BMP, which every
+	// walk in this file used to stop at without saying so.
+	astralIgnorable, astralTable, astralLowered int
 }{
 	goUnicode: "15.0.0",
 	ignorable: 24,
 	table:     8,
 	lowered:   1173,
+
+	astralIgnorable: 0,
+	astralTable:     0,
+	astralLowered:   260,
 }
 
-func TestTheNarrowFoldsOwnWidthIsAFactAboutGenGoAlone(t *testing.T) {
-	// The same plane the other census walks, and the same skip of the
-	// surrogates: Go turns a lone one into U+FFFD, so a fold asked about it is
-	// answering about a different character.
-	ignorable, table, lowered, unexplained := 0, 0, 0, 0
-	var ignorableAt, tableAt, loweredAt, unexplainedAt rune = -1, -1, -1, -1
-	for cp := rune(0); cp <= 0xFFFF; cp++ {
+// foldSpread is how wide inkGlyphFold is over one range of code points, split
+// by which of its three steps changed each one.
+//
+// A struct and a function because the walk is now done twice — the BMP, which
+// is what the rest of this file is about, and the planes above it, which is the
+// bound nothing stated. Two copies of the switch would be two classifications
+// that can drift apart while both look right, which is the complaint the
+// pinfixture census one directory over is built around.
+type foldSpread struct {
+	ignorable, table, lowered, unexplained         int
+	ignorableAt, tableAt, loweredAt, unexplainedAt rune
+}
+
+// changed is the width of the fold over that range, which the three named
+// causes partition.
+func (f foldSpread) changed() int {
+	return f.ignorable + f.table + f.lowered + f.unexplained
+}
+
+// foldSpreadOver walks a range and counts what the fold did to it.
+//
+// Surrogates are skipped: Go turns a lone one into U+FFFD, so a fold asked
+// about it is answering about a different character. They only fall inside the
+// BMP, and the test is written so the skip is a property of the walk rather
+// than of the caller.
+func foldSpreadOver(lo, hi rune) foldSpread {
+	f := foldSpread{ignorableAt: -1, tableAt: -1, loweredAt: -1, unexplainedAt: -1}
+	for cp := lo; cp <= hi; cp++ {
 		if cp >= 0xD800 && cp <= 0xDFFF {
 			continue
 		}
@@ -504,28 +605,41 @@ func TestTheNarrowFoldsOwnWidthIsAFactAboutGenGoAlone(t *testing.T) {
 		// would make the total a number that is not a population.
 		switch {
 		case inkGlyphIgnorable(cp):
-			ignorable++
-			if ignorableAt < 0 {
-				ignorableAt = cp
+			f.ignorable++
+			if f.ignorableAt < 0 {
+				f.ignorableAt = cp
 			}
 		case inkLigatureForms[cp] != "":
-			table++
-			if tableAt < 0 {
-				tableAt = cp
+			f.table++
+			if f.tableAt < 0 {
+				f.tableAt = cp
 			}
 		case strings.ToLower(s) != s:
-			lowered++
-			if loweredAt < 0 {
-				loweredAt = cp
+			f.lowered++
+			if f.loweredAt < 0 {
+				f.loweredAt = cp
 			}
 		default:
-			unexplained++
-			if unexplainedAt < 0 {
-				unexplainedAt = cp
+			f.unexplained++
+			if f.unexplainedAt < 0 {
+				f.unexplainedAt = cp
 			}
 		}
 	}
-	changed := ignorable + table + lowered + unexplained
+	return f
+}
+
+func TestTheNarrowFoldsOwnWidthIsAFactAboutGenGoAlone(t *testing.T) {
+	// The plane the rest of this file is about, and the sixteen above it —
+	// which every walk here used to stop at without saying so. See
+	// foldOwnMeasuredOn: counted apart because they are two different facts.
+	bmp := foldSpreadOver(0, 0xFFFF)
+	astral := foldSpreadOver(0x10000, 0x10FFFF)
+	ignorable, table, lowered, unexplained :=
+		bmp.ignorable, bmp.table, bmp.lowered, bmp.unexplained
+	ignorableAt, tableAt, loweredAt, unexplainedAt :=
+		bmp.ignorableAt, bmp.tableAt, bmp.loweredAt, bmp.unexplainedAt
+	changed := bmp.changed()
 
 	// The partition, which every count below is a share of.
 	//
@@ -581,15 +695,57 @@ func TestTheNarrowFoldsOwnWidthIsAFactAboutGenGoAlone(t *testing.T) {
 	// outside the BMP — where no walk here would ever reach it — or a row maps
 	// a character to itself, which is a row that is in the table and is not in
 	// the fold.
-	if table != len(inkLigatureForms) {
+	//
+	// It used to name two causes and be unable to tell them apart, because the
+	// walk stopped at U+FFFF and nothing counted what was above it. Both are
+	// counted now: the astral half of the walk says how many rows the fold
+	// rewrites up there, and the map itself says how many rows are keyed there
+	// and how many map a character to itself. A message that names the cause it
+	// found is the difference between a reader checking one thing and checking
+	// the table.
+	astralKeys, selfMapping := 0, 0
+	var astralKeyAt, selfMappingAt rune = -1, -1
+	for key, to := range inkLigatureForms {
+		if key > 0xFFFF {
+			astralKeys++
+			if astralKeyAt < 0 || key < astralKeyAt {
+				astralKeyAt = key
+			}
+		}
+		if to == string(key) {
+			selfMapping++
+			if selfMappingAt < 0 || key < selfMappingAt {
+				selfMappingAt = key
+			}
+		}
+	}
+	if table+astral.table != len(inkLigatureForms) {
+		// Said in the direction the table is actually in, so a reader is sent
+		// to the row rather than to the two possibilities.
+		cause := "and neither a key above the BMP nor a row mapping its character " +
+			"to itself accounts for the difference, which leaves a row this walk " +
+			"reaches and does not count — read the switch above"
+		switch {
+		case astralKeys > 0 && selfMapping > 0:
+			cause = fmt.Sprintf("of which %d are keyed above the BMP (first "+
+				"U+%04X) and %d map their character to themselves (first U+%04X)",
+				astralKeys, astralKeyAt, selfMapping, selfMappingAt)
+		case astralKeys > 0:
+			cause = fmt.Sprintf("of which %d are keyed above the BMP, the first "+
+				"being U+%04X", astralKeys, astralKeyAt)
+		case selfMapping > 0:
+			cause = fmt.Sprintf("of which %d map their character to themselves, "+
+				"the first being U+%04X", selfMapping, selfMappingAt)
+		}
 		t.Errorf("inkLigatureForms has %d rows and %d of them change a code point "+
-			"on this plane.\n\n"+
-			"A row that this walk does not reach is a row whose key is outside the "+
-			"BMP — where the fold is never asked about it by anything in this file — "+
-			"or one that maps its character to itself, which is a row present in the "+
-			"table and absent from the fold. Either way the table is wider than what "+
-			"it does, and the census above is counting the second.",
-			len(inkLigatureForms), table)
+			"— %d on the BMP and %d above it — %s.\n\n"+
+			"A row that changes nothing is a row present in the table and absent "+
+			"from the fold: a spelling of a seed that stops being recognised, with "+
+			"the table still looking as though it covers it. A row keyed above the "+
+			"BMP is a different thing again — the fold reaches it, and nothing else "+
+			"in this file does, because every fixture here is printable ASCII and "+
+			"every form the note names is in U+FB00's block.",
+			len(inkLigatureForms), table+astral.table, table, astral.table, cause)
 	}
 
 	// And the third, which is Go's copy of the same data node has its own copy
@@ -612,6 +768,65 @@ func TestTheNarrowFoldsOwnWidthIsAFactAboutGenGoAlone(t *testing.T) {
 			"the toolchain.",
 			lowered, foldOwnMeasuredOn.lowered, unicode.Version, loweredAt)
 	}
+	// # And the same three above the BMP, which is the bound nothing stated
+	//
+	// The two gen.go counts are held here on every machine, exactly as they are
+	// on the BMP — and what they say today is that the fold does NOTHING up
+	// there but lowercase. That is worth an assertion rather than a sentence:
+	// inkGlyphIgnorable's ranges all end below U+FFFF and browser.mjs's
+	// INK_FOLD_IGNORABLE is spelled in \uXXXX escapes, so a range added above
+	// the BMP on this side is a range the other side's character class cannot
+	// express — the two folds coming apart in the one region no test walked.
+	if astral.unexplained > 0 {
+		t.Errorf("inkGlyphFold changes %d code points above the BMP for a reason "+
+			"none of its three steps explains, the first being U+%04X (%q→%q).\n\n"+
+			"The same partition the BMP arm asserts, over the planes nothing here "+
+			"used to walk. A fourth cause is a step somebody added to the fold, and "+
+			"the counts beside it are then shares of a population that is not the "+
+			"fold's width.",
+			astral.unexplained, astral.unexplainedAt, string(astral.unexplainedAt),
+			inkGlyphFold(string(astral.unexplainedAt)))
+	}
+	if astral.ignorable != foldOwnMeasuredOn.astralIgnorable {
+		t.Errorf("inkGlyphIgnorable drops %d code points above the BMP and "+
+			"foldOwnMeasuredOn records %d (the first this run being U+%04X).\n\n"+
+			"That predicate is gen.go's own, so this number moved because somebody "+
+			"edited it — and the edit is in the region the other fold cannot follow "+
+			"it into. browser.mjs's INK_FOLD_IGNORABLE is a character class written "+
+			"in \\uXXXX escapes, which name BMP code points and nothing else, so a "+
+			"range added here is a character gen.go drops and browser.mjs keeps with "+
+			"TestTheTwoFoldsDropTheSameCharacters unable to say so unless it walks "+
+			"this far. If tag characters (U+E0000) or the musical format controls "+
+			"(U+1D173) are what belong in the fold, both sides need them and the "+
+			"class needs a spelling that can reach them.",
+			astral.ignorable, foldOwnMeasuredOn.astralIgnorable, astral.ignorableAt)
+	}
+	if astral.table != foldOwnMeasuredOn.astralTable {
+		t.Errorf("inkLigatureForms rewrites %d code points above the BMP and "+
+			"foldOwnMeasuredOn records %d (the first this run being U+%04X).\n\n"+
+			"Every row of that table is a presentation form in U+FB00's block, which "+
+			"is where the ligatures a face joins are spelled. A row keyed above the "+
+			"BMP is reached by the fold and by nothing else in this file — the "+
+			"fixtures are printable ASCII and the block census walks U+FB00's block "+
+			"— so it is a row whose effect no other reading here can see.",
+			astral.table, foldOwnMeasuredOn.astralTable, astral.tableAt)
+	}
+	// And the third, gated on Go's Unicode version for the reason the BMP's is:
+	// most of Unicode's newer case pairs live up here, so this is the count a
+	// toolchain upgrade moves the most.
+	if unicode.Version == foldOwnMeasuredOn.goUnicode &&
+		astral.lowered != foldOwnMeasuredOn.astralLowered {
+		t.Errorf("strings.ToLower changes %d code points above the BMP that "+
+			"inkGlyphFold does not otherwise touch, and foldOwnMeasuredOn records "+
+			"%d, over the same Go Unicode %s (the first this run being U+%04X).\n\n"+
+			"That data has not moved, so what moved is which characters reach the "+
+			"lowercasing at all — the two steps before it, both of which record 0 up "+
+			"here. This is the same finding as the two above arriving through the "+
+			"arm that is supposed to be about the toolchain.",
+			astral.lowered, foldOwnMeasuredOn.astralLowered, unicode.Version,
+			astral.loweredAt)
+	}
+
 	note := ""
 	if unicode.Version != foldOwnMeasuredOn.goUnicode {
 		note = fmt.Sprintf(" — foldOwnMeasuredOn's lowercase count was taken on Go "+
@@ -620,14 +835,22 @@ func TestTheNarrowFoldsOwnWidthIsAFactAboutGenGoAlone(t *testing.T) {
 			"they are the ones a change to the fold moves",
 			foldOwnMeasuredOn.goUnicode, unicode.Version)
 	}
-	t.Logf("inkGlyphFold changes %d of this plane's code points: %d dropped as "+
+	t.Logf("inkGlyphFold changes %d of the BMP's code points: %d dropped as "+
 		"ignorable (e.g. U+%04X) and %d rewritten by inkLigatureForms (e.g. U+%04X), "+
 		"both of them gen.go's own and both held on any machine that can build this "+
 		"package, and %d lowercased by Go's Unicode %s (e.g. U+%04X). The first two "+
 		"are what foldMeasuredOn's census cannot read off a build that is not the "+
-		"one it was taken on%s",
+		"one it was taken on. Above the BMP — the bound every walk in this file used "+
+		"to stop at without saying so — it changes %d: %d ignorable and %d rewritten "+
+		"by the table, both asserted at %d and %d, so the fold does nothing up there "+
+		"but lowercase, which it does to %d (e.g. U+%04X). That the two gen.go "+
+		"counts are zero is what keeps the two folds agreeing there: "+
+		"INK_FOLD_IGNORABLE is a character class in \\uXXXX escapes and cannot name "+
+		"a code point above U+FFFF at all%s",
 		changed, ignorable, ignorableAt, table, tableAt, lowered, unicode.Version,
-		loweredAt, note)
+		loweredAt, astral.changed(), astral.ignorable, astral.table,
+		foldOwnMeasuredOn.astralIgnorable, foldOwnMeasuredOn.astralTable,
+		astral.lowered, astral.loweredAt, note)
 }
 
 func TestHowWideTheNarrowerFoldIsAndWhatHoldsTheGap(t *testing.T) {
