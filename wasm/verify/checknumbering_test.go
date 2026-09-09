@@ -328,8 +328,8 @@ func checkCitationsResolve(t *testing.T, checks int) {
 	// core/debug.go is hand-written and a generated zz_gen.go would share its
 	// kind, so the population takes in files no human numbered anything in.
 	// That costs the ILLUSTRATION and not the claim — the assertion below is
-	// over the union, which is wider still — and the report says which row
-	// lends the example its kind, so a population that widened is a population
+	// over the union, which is wider still — and the report says which rows
+	// lend the example its kind, so a population that widened is a population
 	// the next reader can see widening rather than a number that moved.
 	//
 	// And only a row the enumeration actually reached lends one. A path this
@@ -337,26 +337,41 @@ func checkCitationsResolve(t *testing.T, checks int) {
 	// about to report on its own line, and until it does its extension would
 	// go on tightening this population — the example would be drawn from a
 	// kind whose whole evidence is a row about a file that is not there.
-	exemptKinds := map[string]string{}
+	//
+	// # Every row of the kind, not the first of them
+	//
+	// This used to keep the alphabetically first row per extension, chosen so
+	// that two exemptions sharing a kind named the same lender on every run.
+	// Stability is right and picking one is what was wrong with it: both rows
+	// here are Go source and their arguments are nothing alike — one is a
+	// development-mode audit with numbered sections of its own, the other is a
+	// test file that quotes citations as examples. A reader sent to whichever
+	// sorts first is being shown an argument that may have nothing to do with
+	// the file in the example, and the table's `why` — the half that tells them
+	// apart — was in hand at this point and read by nothing.
+	//
+	// So the kind carries all of its reached rows, sorted, and the recital
+	// prints each with the reason written beside it. Sorted for the same
+	// stability the single lender was chosen for; whole because "which of these
+	// two arguments fits" is the reader's question and not this file's.
+	exemptKinds := map[string][]string{}
 	for path := range citationExempt {
 		kinds[filepath.Ext(path)] = true
 		if _, reached := considered[path]; !reached {
 			continue
 		}
-		// The alphabetically first row of a kind, so two exemptions sharing an
-		// extension name the same lender on every run: the sentence below is
-		// read against a table somebody edits, and a lender that moved with
-		// map order would read as the population having changed.
-		if lender, lent := exemptKinds[filepath.Ext(path)]; !lent || path < lender {
-			exemptKinds[filepath.Ext(path)] = path
-		}
+		ext := filepath.Ext(path)
+		exemptKinds[ext] = append(exemptKinds[ext], path)
+	}
+	for ext := range exemptKinds {
+		sort.Strings(exemptKinds[ext])
 	}
 	couldBeExempt, likeAnExemption := []string{}, []string{}
 	for _, path := range silent {
 		if kinds[filepath.Ext(path)] {
 			couldBeExempt = append(couldBeExempt, path)
 		}
-		if _, lent := exemptKinds[filepath.Ext(path)]; lent {
+		if len(exemptKinds[filepath.Ext(path)]) > 0 {
 			likeAnExemption = append(likeAnExemption, path)
 		}
 	}
@@ -389,19 +404,32 @@ func checkCitationsResolve(t *testing.T, checks int) {
 		// named from the population the claim is about rather than from the top
 		// of an alphabetical list.
 		//
-		// With the row that lends the example its kind, which is the half a
-		// count cannot carry: the tight population is as good as the reason
-		// its extension is in it, and an exemption written for some other kind
-		// widens it without moving any number here. Naming the lender puts
-		// that in the line a passing run prints.
-		how := "a kind this check is about, none exempted"
-		if lender, lent := exemptKinds[filepath.Ext(example[0])]; lent {
-			how = fmt.Sprintf("the kind %s is exempted under", lender)
+		// With the rows that lend the example its kind and the reason each of
+		// them is exempted, which is the half a count cannot carry: the tight
+		// population is as good as the arguments its extension is in it for,
+		// and an exemption written for some other kind widens it without moving
+		// any number here. Printing the reasons puts the thing a reader would
+		// have to open the table for into the line a passing run prints.
+		lenders := exemptKinds[filepath.Ext(example[0])]
+		how := "a kind this check is about, with no exemption written for it"
+		if len(lenders) > 0 {
+			said := make([]string, 0, len(lenders))
+			for _, lender := range lenders {
+				said = append(said, fmt.Sprintf("%s, because %s", lender,
+					citationExempt[lender]))
+			}
+			rows := fmt.Sprintf("%d rows are", len(lenders))
+			if len(lenders) == 1 {
+				rows = "one row is"
+			}
+			how = fmt.Sprintf("the kind %s exempted under: %s", rows,
+				strings.Join(said, "; and "))
 		}
 		t.Logf("%d of the %d files opened cite nothing, %d of them a kind this check "+
-			"is about and %d a kind citationExempt itself names (e.g. %s, %s), which "+
-			"is the pair citationExemptVerdict's silent arm is about", len(silent),
-			len(considered), len(couldBeExempt), len(likeAnExemption), example[0], how)
+			"is about and %d a kind citationExempt itself names (e.g. %s), which "+
+			"is the pair citationExemptVerdict's silent arm is about.\n\nThat is %s",
+			len(silent), len(considered), len(couldBeExempt), len(likeAnExemption),
+			example[0], how)
 	}
 
 	// Every sense the enumeration produced has to be one somebody classified.

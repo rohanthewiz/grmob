@@ -995,6 +995,12 @@ func TestEveryReadingNamesAHarnessThatSpellsTheNumber(t *testing.T) {
 	// while the copy itself is gone, and a note reading lines calls that copy
 	// an assertion and sends a reader to open it. See pinCopyNote.
 	codeSource := map[string]string{}
+	// And what pinCodeOnly was lexing when it blanked each of those bytes. Same
+	// offsets, same walk, one byte per source byte — read only by the deletion
+	// report, which is the one place that has to tell a phrase inside a string
+	// literal from one inside a comment trailing an assertion. See
+	// pinBlankKind.
+	blankedBy := map[string][]byte{}
 	openBy := map[string][]int{}
 	for name, path := range pinConsumers {
 		b, err := os.ReadFile(filepath.Join(root, path))
@@ -1005,7 +1011,7 @@ func TestEveryReadingNamesAHarnessThatSpellsTheNumber(t *testing.T) {
 				"the ones that set the floor ios/verify and browser.mjs both hold their "+
 				"tolerances to.", path, name, err)
 		}
-		code, openLines := pinCodeOnly(string(b), filepath.Ext(path))
+		code, openLines, blanked := pinCodeOnly(string(b), filepath.Ext(path))
 		// The lexer is a lexer and not a parser, and the one construct it
 		// declines to guess at — JavaScript's regex literal — can open a
 		// string that was never opened. That damage is bounded to a line by
@@ -1069,6 +1075,7 @@ func TestEveryReadingNamesAHarnessThatSpellsTheNumber(t *testing.T) {
 		// pinPhraseLines.
 		rawSource[name] = string(b)
 		codeSource[name] = code
+		blankedBy[name] = blanked
 	}
 
 	// Which consumers anything credits at all. A harness in the closed set that
@@ -1212,7 +1219,7 @@ func TestEveryReadingNamesAHarnessThatSpellsTheNumber(t *testing.T) {
 					// And which of those copies is the prose. See
 					// pinCopyNote: the count says there are two and the
 					// argument turns on which.
-					which := pinCopyNote(codeSource[by], spellings)
+					which := pinCopyNote(codeSource[by], blankedBy[by], spellings)
 					on := []int{}
 					for _, line := range at {
 						if slices.Contains(openBy[by], line) {
@@ -1377,6 +1384,58 @@ func TestNoCitationQuotesALiteral(t *testing.T) {
 	}
 }
 
+// What pinCodeOnly was lexing when it blanked a byte.
+//
+// # A count-shaped answer, one level down
+//
+// pinCopyNote tells a reader which surviving copy of a phrase is the assertion
+// and which is the sentence above it. Its middle arm — a copy blanked on a line
+// that kept code — used to name all three things that produce that shape and
+// let the reader sort it out: "a literal, a comment trailing an assertion, or
+// the runaway that blanks the rest of its own line". Three constructs, three
+// different things to find at that line, and one sentence covering them is the
+// count-shaped answer that whole note was rebuilt to stop giving.
+//
+// The pass that blanked the bytes knows which it was. pinCodeOnly is a lexer
+// with a case per construct and it returned none of that, so the note was
+// reconstructing from a line what the lexer had decided from a quote.
+//
+// Zero is code the lexer kept, which is also what an untouched newline reads
+// as: neither is a construct, and the only reader here asks about spans it has
+// already established were blanked.
+const (
+	pinKeptCode      byte = 0
+	pinLineComment   byte = 'l'
+	pinBlockComment  byte = 'b'
+	pinStringLiteral byte = 's'
+	// A single-line string the lexer never saw closed — see pinCodeOnly's own
+	// note. Recorded apart from an ordinary literal because it is the one that
+	// makes the deletion report lie: the code BEFORE the quote still stands on
+	// that line, so the line looks live while the assertion after it is gone.
+	pinRunawayString byte = 'r'
+)
+
+// pinConstructName is one of those, spelled the way a sentence needs it.
+func pinConstructName(kind byte) string {
+	switch kind {
+	case pinLineComment:
+		return "a comment running to the end of the line"
+	case pinBlockComment:
+		return "a block comment"
+	case pinStringLiteral:
+		return "a string literal"
+	case pinRunawayString:
+		return "a string the lexer never saw closed, which blanks the rest of its " +
+			"own line"
+	}
+	// Not reachable from a blanked span: a phrase's span always contains a byte
+	// that was not a space in the raw file, and a blanked copy is one where
+	// those bytes became spaces. Named rather than omitted, because a sentence
+	// that quietly drops its noun is worse than one that says the noun is
+	// missing.
+	return "a construct pinCodeOnly did not record"
+}
+
 // pinCodeOnly blanks out every character of a source that is inside a comment
 // or a string literal, leaving the code.
 //
@@ -1442,7 +1501,23 @@ func TestNoCitationQuotesALiteral(t *testing.T) {
 // blanks its own body, which is inside the literal and not code an assertion
 // can be spelled in. The odd case is the one that runs on, and the odd case is
 // exactly what shows up here.
-func pinCodeOnly(src, ext string) (code string, openQuoteLines []int) {
+//
+// # And what it was doing when it blanked each byte
+//
+// The third return value is one byte per source byte saying which construct
+// took it — see pinBlankKind. The switch below already decides that, a case at
+// a time, and returning none of it left pinCopyNote reconstructing from a LINE
+// what this had decided from a quote: its middle arm named all three
+// constructs at once and let the reader work out which. A literal, a comment
+// trailing an assertion and this blind spot's runaway produce the same shape
+// from outside and send a reader to three different places.
+//
+// Recorded at the source's own offsets, like the blanking itself, so a copy's
+// span is a slice of it and no second walk can disagree with the one that did
+// the work. The runaway is written twice: once as the literal it looked like,
+// and again from its opening quote when the newline closes it, because that is
+// the moment the lexer learns which of the two it was.
+func pinCodeOnly(src, ext string) (code string, openQuoteLines []int, blankedBy []byte) {
 	// Swift nests block comments; JavaScript does not, and treating /* */ as
 	// nesting there would swallow everything after a `/*` inside a comment.
 	nested := ext == ".swift"
@@ -1455,9 +1530,19 @@ func pinCodeOnly(src, ext string) (code string, openQuoteLines []int) {
 	single := ext != ".swift"
 
 	out := []byte(src)
-	blank := func(i int) {
+	// And which construct was being lexed when each byte went. See
+	// pinBlankKind: the switch below already knows — it has a case per
+	// construct — and until now it returned none of it, so the one reader that
+	// has to tell a literal from a trailing comment was left listing all three.
+	//
+	// One byte per source byte, at the source's own offsets, for the same
+	// reason the blanking is done in place: a copy's span is then a slice of
+	// this, and no second walk can disagree with the one that did the work.
+	blankedBy = make([]byte, len(src))
+	blank := func(i int, kind byte) {
 		if out[i] != '\n' {
 			out[i] = ' '
+			blankedBy[i] = kind
 		}
 	}
 	// Where a single-line string ran into a newline instead of into its closing
@@ -1469,29 +1554,29 @@ func pinCodeOnly(src, ext string) (code string, openQuoteLines []int) {
 		switch {
 		case src[i] == '/' && i+1 < len(src) && src[i+1] == '/':
 			for ; i < len(src) && src[i] != '\n'; i++ {
-				blank(i)
+				blank(i, pinLineComment)
 			}
 		case src[i] == '/' && i+1 < len(src) && src[i+1] == '*':
 			depth := 1
-			blank(i)
-			blank(i + 1)
+			blank(i, pinBlockComment)
+			blank(i+1, pinBlockComment)
 			i += 2
 			for i < len(src) && depth > 0 {
 				if nested && src[i] == '/' && i+1 < len(src) && src[i+1] == '*' {
 					depth++
-					blank(i)
-					blank(i + 1)
+					blank(i, pinBlockComment)
+					blank(i+1, pinBlockComment)
 					i += 2
 					continue
 				}
 				if src[i] == '*' && i+1 < len(src) && src[i+1] == '/' {
 					depth--
-					blank(i)
-					blank(i + 1)
+					blank(i, pinBlockComment)
+					blank(i+1, pinBlockComment)
 					i += 2
 					continue
 				}
-				blank(i)
+				blank(i, pinBlockComment)
 				i++
 			}
 		case src[i] == '"' || (single && src[i] == '\'') || (tick && src[i] == '`'):
@@ -1504,26 +1589,33 @@ func pinCodeOnly(src, ext string) (code string, openQuoteLines []int) {
 			if long {
 				n = 3
 			}
+			// Where this literal opened, so that a run to the newline can go
+			// back and say what these bytes actually were. The lexer does not
+			// know it was looking at a runaway until it hits one, and a reader
+			// sent to a line where the code before a quote is all that stands
+			// is being told about a different construct from a reader sent to
+			// a literal the author closed.
+			from := i
 			for k := 0; k < n; k++ {
-				blank(i + k)
+				blank(i+k, pinStringLiteral)
 			}
 			i += n
 			for i < len(src) {
 				if src[i] == '\\' && i+1 < len(src) {
-					blank(i)
-					blank(i + 1)
+					blank(i, pinStringLiteral)
+					blank(i+1, pinStringLiteral)
 					i += 2
 					continue
 				}
 				if long && strings.HasPrefix(src[i:], `"""`) {
-					blank(i)
-					blank(i + 1)
-					blank(i + 2)
+					blank(i, pinStringLiteral)
+					blank(i+1, pinStringLiteral)
+					blank(i+2, pinStringLiteral)
 					i += 3
 					break
 				}
 				if !long && src[i] == q {
-					blank(i)
+					blank(i, pinStringLiteral)
 					i++
 					break
 				}
@@ -1542,9 +1634,19 @@ func pinCodeOnly(src, ext string) (code string, openQuoteLines []int) {
 					// line here is a line whose code from the quote onward was
 					// blanked.
 					openAt = append(openAt, i)
+					// Retold, now that the lexer knows what it was in. Every
+					// byte from the opening quote to here was recorded as an
+					// ordinary literal; what it actually is is the one
+					// construct this lexer declines to guess at, running past
+					// the code it swallowed.
+					for k := from; k < i; k++ {
+						if blankedBy[k] == pinStringLiteral {
+							blankedBy[k] = pinRunawayString
+						}
+					}
 					break
 				}
-				blank(i)
+				blank(i, pinStringLiteral)
 				i++
 			}
 		default:
@@ -1564,7 +1666,7 @@ func pinCodeOnly(src, ext string) (code string, openQuoteLines []int) {
 			line++
 		}
 	}
-	return string(out), openQuoteLines
+	return string(out), openQuoteLines, blankedBy
 }
 
 // pinCodeOnly does what pinFreeForm's Lexis sentences say, per language.
@@ -1653,7 +1755,7 @@ func TestPinCodeOnlyBlanksWhatEachLanguageCallsProse(t *testing.T) {
 			"keep(1)\n\"\"\"\ngone(2)\n\"\"\"\nkeep(3)",
 			[]string{"keep(1)", "keep(3)"}, []string{"gone(2)"}, nil},
 	} {
-		got, openLines := pinCodeOnly(c.src, c.ext)
+		got, openLines, _ := pinCodeOnly(c.src, c.ext)
 		if !slices.Equal(openLines, c.openLines) {
 			t.Errorf("%s (%s): pinCodeOnly reports unterminated strings on lines %v, "+
 				"want %v.\n\n"+
@@ -1957,7 +2059,18 @@ func pinStripSpaceMap(s string) (string, []int, []int) {
 //	not blanked                             code the lexer kept, which is the
 //	                                        line to open
 //
+// # And the middle row was three answers in one sentence
+//
+// It said "a literal, a comment trailing an assertion, or the runaway that
+// blanks the rest of its own line" and left the reader to work out which. Those
+// send a reader to three different places, and the lexer had already decided:
+// it has a case per construct and now records which one blanked each byte. See
+// pinBlankKind. The row is read off the copy's own span, the same way the row
+// itself is, so the construct named and the copy placed cannot be about
+// different bytes.
+//
 //	code     what pinCodeOnly left, whole and unsplit
+//	by       pinCodeOnly's third answer, one byte per source byte
 //	copies   the surviving spellings, from pinPhraseCopies over the raw file
 //
 // A copy whose span is not inside that string is dropped rather than guessed
@@ -1966,8 +2079,11 @@ func pinStripSpaceMap(s string) (string, []int, []int) {
 // a copy.
 //
 // Returns a sentence beginning with a space, to be appended to a verdict.
-func pinCopyNote(code string, copies []pinCopy) string {
-	prose, shadowed, live := []int{}, []int{}, []int{}
+func pinCopyNote(code string, by []byte, copies []pinCopy) string {
+	prose, live := []int{}, []int{}
+	// The shadowed ones carry their construct with them, because the sentence
+	// that names them has to name it too.
+	shadowed := []pinShadow{}
 	for _, c := range copies {
 		if len(c.At) == 0 || c.Start < 0 || c.End > len(code) || c.Start >= c.End {
 			continue
@@ -1984,7 +2100,7 @@ func pinCopyNote(code string, copies []pinCopy) string {
 			prose = append(prose, at)
 			continue
 		}
-		shadowed = append(shadowed, at)
+		shadowed = append(shadowed, pinShadow{at: at, kind: pinBlankedBy(by, c)})
 	}
 	clauses := []string{}
 	if len(prose) > 0 {
@@ -1992,8 +2108,7 @@ func pinCopyNote(code string, copies []pinCopy) string {
 			fmt.Sprintf("blanked the copy on %v whole", prose))
 	}
 	if len(shadowed) > 0 {
-		clauses = append(clauses, fmt.Sprintf(
-			"blanked the copy on %v inside a line it left code on", shadowed))
+		clauses = append(clauses, pinShadowClause(shadowed))
 	}
 	if len(live) > 0 {
 		clauses = append(clauses,
@@ -2008,13 +2123,96 @@ func pinCopyNote(code string, copies []pinCopy) string {
 		return note + fmt.Sprintf("%v is the line to open.", live)
 	case len(shadowed) > 0:
 		return note + fmt.Sprintf("no copy of this string is code the lexer kept: "+
-			"what stands on %v is the code AROUND this string — a literal, a comment "+
-			"trailing an assertion, or the runaway that blanks the rest of its own "+
-			"line — and not the string itself.", shadowed)
+			"what stands on %v is the code AROUND %s, and not the string itself.",
+			pinShadowLines(shadowed), pinShadowConstructs(shadowed))
 	default:
 		return note + "every surviving copy is prose and nothing here is an " +
 			"assertion the lexer misread."
 	}
+}
+
+// pinShadow is one copy the lexer blanked on a line it left code on, and what
+// it was lexing when it did.
+type pinShadow struct {
+	at   int
+	kind byte
+}
+
+// pinBlankedBy is the construct a copy's own bytes were blanked as.
+//
+// Read off the span rather than off the line, for the reason the placement
+// itself is: a line can carry a literal and a trailing comment at once, and the
+// copy is inside exactly one of them. The first recorded byte answers, because
+// a phrase that straddled two constructs would have had to be blanked by both
+// and pinShadowConstructs is what says so when it happens.
+func pinBlankedBy(by []byte, c pinCopy) byte {
+	if by == nil {
+		return pinKeptCode
+	}
+	for i := c.Start; i < c.End && i < len(by); i++ {
+		if by[i] != pinKeptCode {
+			return by[i]
+		}
+	}
+	return pinKeptCode
+}
+
+// pinShadowClause is the middle clause of the note: which copies were blanked,
+// and by what.
+//
+// Grouped by construct so two copies a literal swallowed are one clause and a
+// literal and a block comment are two. Ordered by first appearance, which is
+// the order the copies came in, so the sentence reads in the file's own order
+// rather than in a map's.
+func pinShadowClause(shadowed []pinShadow) string {
+	byKind := map[byte][]int{}
+	order := []byte{}
+	for _, s := range shadowed {
+		if _, seen := byKind[s.kind]; !seen {
+			order = append(order, s.kind)
+		}
+		byKind[s.kind] = append(byKind[s.kind], s.at)
+	}
+	parts := make([]string, 0, len(order))
+	for _, kind := range order {
+		parts = append(parts, fmt.Sprintf("the copy on %v inside %s",
+			byKind[kind], pinConstructName(kind)))
+	}
+	if len(parts) == 1 {
+		return "blanked " + parts[0] + " on a line it left code on"
+	}
+	return "blanked " + strings.Join(parts, ", and ") +
+		", each on a line it left code on"
+}
+
+// pinShadowLines is every line a shadowed copy starts on, in order.
+func pinShadowLines(shadowed []pinShadow) []int {
+	out := make([]int, 0, len(shadowed))
+	for _, s := range shadowed {
+		out = append(out, s.at)
+	}
+	return out
+}
+
+// pinShadowConstructs names what stands around those copies, once each.
+//
+// The old sentence listed all three constructs every time and let the reader
+// sort it out. This lists the ones the lexer actually met — usually one, and
+// when it is more than one that is a finding rather than a hedge.
+func pinShadowConstructs(shadowed []pinShadow) string {
+	seen := map[byte]bool{}
+	names := []string{}
+	for _, s := range shadowed {
+		if seen[s.kind] {
+			continue
+		}
+		seen[s.kind] = true
+		names = append(names, pinConstructName(s.kind))
+	}
+	if len(names) == 1 {
+		return names[0]
+	}
+	return strings.Join(names[:len(names)-1], ", ") + " and " + names[len(names)-1]
 }
 
 // pinLinesAround is every line a span touches, whole.
@@ -2158,16 +2356,17 @@ func word(b byte) bool {
 func TestPinCopyNoteNamesTheCopyThatSurvivesInCode(t *testing.T) {
 	const src = "// pinSame(total, c.offer) in prose\n" +
 		"assert(pinSame(total, c.offer))\n" +
-		"log(\"pinSame(total, c.offer)\")\n"
-	code, open := pinCodeOnly(src, ".go")
+		"log(\"pinSame(total, c.offer)\")\n" +
+		"x = 1; /* pinSame(total, c.offer) */\n"
+	code, open, by := pinCodeOnly(src, ".go")
 	if len(open) > 0 {
 		t.Fatalf("pinCodeOnly ended inside an unterminated string on %v of this "+
 			"fixture's lines, so what it left is not what the arms below are about.",
 			open)
 	}
 	all := pinPhraseCopies(src, "pinSame(total, c.offer)")
-	if len(all) != 3 {
-		t.Fatalf("the fixture spells the phrase 3 times and pinPhraseCopies finds "+
+	if len(all) != 4 {
+		t.Fatalf("the fixture spells the phrase 4 times and pinPhraseCopies finds "+
 			"%d, so the rows below are about some other file.", len(all))
 	}
 	// By the line each copy starts on, so a row names the case rather than an
@@ -2199,17 +2398,36 @@ func TestPinCopyNoteNamesTheCopyThatSurvivesInCode(t *testing.T) {
 			what:   "a copy inside a literal is not the line to open",
 			copies: on(1, 3),
 			says: []string{"blanked the copy on [1] whole",
-				"blanked the copy on [3] inside a line it left code on",
+				"blanked the copy on [3] inside a string literal on a line it " +
+					"left code on",
 				"no copy of this string is code the lexer kept",
-				"the code AROUND this string"},
-			quiet: []string{"line to open", "every surviving copy is prose"},
+				"the code AROUND a string literal"},
+			quiet: []string{"line to open", "every surviving copy is prose",
+				// The three-constructs-in-one-sentence answer this arm was
+				// rebuilt out of. The lexer knew which it was; naming all of
+				// them is the count-shaped answer one level down.
+				"block comment", "never saw closed"},
 		},
 		{
 			what:   "a literal and live code still send the reader to the code",
 			copies: on(2, 3),
-			says: []string{"blanked the copy on [3] inside a line it left code on",
+			says: []string{
+				"blanked the copy on [3] inside a string literal on a line it " +
+					"left code on",
 				"[2] is the line to open"},
 			quiet: []string{"whole"},
+		},
+		{
+			// Two constructs at once, which the old sentence could not tell
+			// apart from one: a reader looking at line 3 is looking for a
+			// quote and a reader looking at line 4 is looking for a comment.
+			what:   "two constructs are two answers, not a longer list",
+			copies: on(3, 4),
+			says: []string{
+				"blanked the copy on [3] inside a string literal, and the copy on " +
+					"[4] inside a block comment, each on a line it left code on",
+				"the code AROUND a string literal and a block comment"},
+			quiet: []string{"line to open", "whole"},
 		},
 		{
 			what:   "every copy prose is nothing to open",
@@ -2239,7 +2457,7 @@ func TestPinCopyNoteNamesTheCopyThatSurvivesInCode(t *testing.T) {
 			quiet: []string{"99"},
 		},
 	} {
-		got := pinCopyNote(code, c.copies)
+		got := pinCopyNote(code, by, c.copies)
 		for _, want := range c.says {
 			if !strings.Contains(got, want) {
 				t.Errorf("%s: pinCopyNote does not say %q.\n\nIt said: %q\n\n"+
@@ -2257,5 +2475,45 @@ func TestPinCopyNoteNamesTheCopyThatSurvivesInCode(t *testing.T) {
 					c.what, never, got)
 			}
 		}
+	}
+
+	// And the third construct, which the fixture above cannot produce.
+	//
+	// A JavaScript regular-expression literal carrying an odd number of quotes
+	// is the one thing pinCodeOnly declines to lex — see its own note — and the
+	// damage it does is shaped exactly like a string literal's from the outside:
+	// the copy is blanked, the line keeps code. What differs is what a reader
+	// finds there. In a literal the code around it is a real call; here it is
+	// the half of an assertion that happened to sit before the quote, and the
+	// rest of the line is gone. Those are two different afternoons.
+	const runaway = "x = /\"/; assert(pinSame(total, c.offer))\n"
+	blanked, ran, ranBy := pinCodeOnly(runaway, ".mjs")
+	if len(ran) != 1 {
+		t.Fatalf("the runaway fixture is one line whose regex opens a string nothing "+
+			"closes, and pinCodeOnly reports unterminated strings on %v. Without one "+
+			"there is no runaway here and the row below is about an ordinary "+
+			"literal.", ran)
+	}
+	loose := pinPhraseCopies(runaway, "pinSame(total, c.offer)")
+	if len(loose) != 1 {
+		t.Fatalf("the runaway fixture spells the phrase once and pinPhraseCopies "+
+			"finds %d.", len(loose))
+	}
+	got := pinCopyNote(blanked, ranBy, loose)
+	for _, want := range []string{
+		"blanked the copy on [1] inside a string the lexer never saw closed",
+		"the code AROUND a string the lexer never saw closed",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("the runaway arm does not say %q.\n\nIt said: %q\n\n"+
+				"pinCodeOnly knows this was the construct it declines to guess at — "+
+				"it records the whole literal again once the newline closes it — and "+
+				"a note that calls it a string literal sends the reader looking for a "+
+				"quote somebody wrote on purpose.", want, got)
+		}
+	}
+	if strings.Contains(got, "line to open") {
+		t.Errorf("the runaway arm offers a line to open: %q. What stands on that "+
+			"line is the code before the quote, which is not this string.", got)
 	}
 }

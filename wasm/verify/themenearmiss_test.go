@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"reflect"
+	"slices"
 	"sort"
 	"strings"
 	"testing"
@@ -515,16 +516,126 @@ func TestEveryThemeLeafIsFoundAgainAfterOneSlip(t *testing.T) {
 // over a population that can no longer break it, and the two look identical
 // from outside a census that only fires at zero.
 //
-// So the floor is stated. Ten, which is well under what every ending scores
-// today and far enough above 1 that a population losing an arm has to lose it
+// So a floor is stated. Ten, which is well under what every ending scores today
+// and far enough above 1 that a population losing an arm has to lose it
 // noticeably rather than silently. This is INK_ROW_ROUNDING's argument in
-// another directory: a margin that is silently spent is a margin nobody
-// notices leaving, and the way this one gets spent is somebody narrowing the
-// window — or core.Theme gaining or losing leaves — with the test still green.
+// another directory: a margin that is silently spent is a margin nobody notices
+// leaving, and the way this one gets spent is somebody narrowing the window —
+// or core.Theme gaining or losing leaves — with the test still green.
+//
+// # And one floor is the wrong shape for four endings this far apart
+//
+// Ten is a real bracket under 27 and is nothing at all under 473. An ending
+// that fell from 473 to 11 would be a population that had lost nineteen
+// twentieths of itself — a relation asked of an arm that has all but gone —
+// and the floor above would say nothing about it. The two failures this census
+// exists to notice are "the ending is gone" and "the ending is going", and a
+// constant can only see the first for the thinnest arm.
+//
+// So the floor moves with the ending, in the shape INK_OWN_MEASURED_ON uses one
+// directory over: a number taken against ONE build, recorded as such, and the
+// bracket derived from it rather than typed in beside it. See
+// affordedMeasuredOn.
 const (
 	affordedWindowMax   = 6
 	affordedEndingFloor = 10
+	// What fraction of its own measurement an ending may fall to before it is
+	// reported.
+	//
+	// A third. What this has to separate is a population that moved — core.Theme
+	// gains a leaf, the window bound is nudged, and every ending moves with the
+	// count of sets — from a population that lost an ARM, which is one ending
+	// collapsing while the others hold. The first is proportional and small; the
+	// second takes two thirds of one number away.
+	//
+	// The sets scale with the leaf count (930 is 2×(6n−15) at n=80), so a third
+	// is roughly core.Theme shrinking to a quarter of its leaves before an
+	// ending that is holding its share says anything. That is a re-measure and
+	// the message asks for one, with the leaf count then and now beside it, so
+	// the reading is never "a relation broke" when what happened is a struct
+	// changing size.
+	affordedEndingShare = 3
 )
+
+// What each ending scored when this census was written, and over what.
+//
+// The counts are the population's own measurement and the only one anybody has
+// taken. INK_OWN_MEASURED_ON's note argues the shape at length: a bracket
+// derived from a recorded measurement moves when somebody re-measures, and a
+// bracket typed in beside it stays where it was written while everything it was
+// about moves out from under it.
+//
+// `leaves` and `window` are here because a count is meaningless without them.
+// The sets are windows of one to `window` consecutive names over core.Theme's
+// distinct leaf names, so both numbers are inputs to every count in the map,
+// and a run that disagrees about either is a run whose endings cannot be
+// compared with these. The message says which changed rather than reporting a
+// number that moved.
+var affordedMeasuredOn = struct {
+	leaves int
+	window int
+	ending map[string]int
+}{
+	leaves: 80,
+	window: 6,
+	ending: map[string]int{
+		"its own crowding stopped the search":                 27,
+		"no width crowds these names at all":                  473,
+		"the ceiling cost this set a wider threshold":         377,
+		"the ceiling and the crowding stop in the same place": 53,
+	},
+}
+
+// affordedEndingBracket is the floor one ending is held to, and why it is that
+// number.
+//
+// The larger of the stated floor and a share of what this ending scored when it
+// was measured: the constant is what keeps a small arm from sliding to 1, and
+// the share is what keeps a large one from losing most of itself unremarked.
+// Returns the reason as well as the number, because a message that prints a
+// bound without saying which of the two produced it leaves a reader unable to
+// tell "this ending is thin" from "this ending has collapsed".
+func affordedEndingBracket(ending string) (int, string) {
+	measured, known := affordedMeasuredOn.ending[ending]
+	if !known {
+		return affordedEndingFloor, fmt.Sprintf(
+			"the stated floor of %d — affordedMeasuredOn carries no reading for this "+
+				"ending, so there is no share of a measurement to take",
+			affordedEndingFloor)
+	}
+	share := measured / affordedEndingShare
+	if share <= affordedEndingFloor {
+		return affordedEndingFloor, fmt.Sprintf(
+			"the stated floor of %d, which is above the %d that a third of this "+
+				"ending's own measurement (%d) comes to",
+			affordedEndingFloor, share, measured)
+	}
+	return share, fmt.Sprintf(
+		"a third of the %d this ending scored when affordedMeasuredOn was taken",
+		measured)
+}
+
+// affordedMeasuredNote is the sentence a failure adds when this run is not the
+// run those numbers were taken on.
+//
+// The same move inkOwnBuildNote makes: the bracket is a share of a measurement,
+// so the first thing a reader needs is whether the measurement still describes
+// the population. A struct that lost half its leaves halves every ending, and
+// that is a re-measure rather than a relation coming apart — but it arrives
+// looking exactly like one.
+func affordedMeasuredNote(leaves, sets int) string {
+	if leaves == affordedMeasuredOn.leaves && affordedWindowMax == affordedMeasuredOn.window {
+		return ""
+	}
+	return fmt.Sprintf("\n\naffordedMeasuredOn was taken over %d distinct leaf names "+
+		"at a window of %d; this run has %d at a window of %d, and produced %d sets. "+
+		"Every ending scales with that population, so the shortfall above may be the "+
+		"struct having changed size rather than an arm having gone — in which case "+
+		"the census in the log line is the new measurement and affordedMeasuredOn is "+
+		"what needs re-taking.",
+		affordedMeasuredOn.leaves, affordedMeasuredOn.window,
+		leaves, affordedWindowMax, sets)
+}
 
 func TestTheAffordedWidthHoldsItsTwoRelations(t *testing.T) {
 	paths := themeLeafPaths(reflect.ValueOf(*core.DefaultTheme), "")
@@ -663,12 +774,39 @@ func TestTheAffordedWidthHoldsItsTwoRelations(t *testing.T) {
 	// zero. See affordedEndingFloor — the two arms say different things
 	// because they are different findings, and the thin one names the knob
 	// that moves it.
-	for _, ending := range []string{
+	endings := []string{
 		"its own crowding stopped the search",
 		"no width crowds these names at all",
 		"the ceiling cost this set a wider threshold",
 		"the ceiling and the crowding stop in the same place",
-	} {
+	}
+	// And the record's keys against them, because the bracket below is looked
+	// up BY the ending's own sentence. A reworded ending finds nothing in the
+	// map, falls back to the stated floor, and goes on passing with its share
+	// of a measurement quietly gone — which is this whole census's failure
+	// mode arriving through the lookup that fixes it.
+	for _, ending := range endings {
+		if _, known := affordedMeasuredOn.ending[ending]; !known {
+			t.Errorf("affordedMeasuredOn carries no reading for %q.\n\n"+
+				"The floor each ending is held to is a share of what that ending "+
+				"scored when the record was taken, looked up by the sentence itself. "+
+				"An ending the record does not name falls back to the stated floor of "+
+				"%d — which is a bracket under 27 and nothing at all under 473 — and "+
+				"nothing says it happened. Re-take the reading under the new wording, "+
+				"or leave the wording alone.", ending, affordedEndingFloor)
+		}
+	}
+	for key := range affordedMeasuredOn.ending {
+		if !slices.Contains(endings, key) {
+			t.Errorf("affordedMeasuredOn carries a reading for %q and the derivation "+
+				"has no such ending.\n\n"+
+				"Every set reaches exactly one of the four sentences above, so a fifth "+
+				"in the record is a reading for an ending that was renamed or removed "+
+				"— and its partner is an ending running on the stated floor with "+
+				"nobody having decided that.", key)
+		}
+	}
+	for _, ending := range endings {
 		if reached[ending] == 0 {
 			t.Errorf("not one of the %d generated sets ended with %q.\n\n"+
 				"The relations above are biconditionals and this is the reading that "+
@@ -678,9 +816,10 @@ func TestTheAffordedWidthHoldsItsTwoRelations(t *testing.T) {
 				"arriving with a bigger number in front of it.", len(sets), ending)
 			continue
 		}
-		if reached[ending] < affordedEndingFloor {
+		floor, why := affordedEndingBracket(ending)
+		if reached[ending] < floor {
 			t.Errorf("%d of the %d generated sets ended with %q, against a floor of "+
-				"%d.\n\n"+
+				"%d — %s.\n\n"+
 				"The ending is still reached, so the relations above are still being "+
 				"asked of both sides — and by a population thin enough that the next "+
 				"change to either end of it decides whether they are asked at all. "+
@@ -690,12 +829,13 @@ func TestTheAffordedWidthHoldsItsTwoRelations(t *testing.T) {
 				"(affordedWindowMax), so this number moves when that bound moves and "+
 				"when the struct gains or loses leaves — and it moves without a "+
 				"message, because a relation that holds over 1 set holds. That is the "+
-				"margin this floor is here to notice leaving.",
-				reached[ending], len(sets), ending, affordedEndingFloor, reached,
-				affordedWindowMax)
+				"margin this floor is here to notice leaving.%s",
+				reached[ending], len(sets), ending, floor, why, reached,
+				affordedWindowMax, affordedMeasuredNote(len(names), len(sets)))
 		}
 	}
-	t.Logf("%d generated leaf sets, none of them a shape anybody chose, hold "+
-		"afforded >= edits and the open flag's parent-of-three: %v",
-		len(sets), reached)
+	t.Logf("%d generated leaf sets over %d distinct leaf names, none of them a "+
+		"shape anybody chose, hold afforded >= edits and the open flag's "+
+		"parent-of-three: %v — each ending against its own floor%s",
+		len(sets), len(names), reached, affordedMeasuredNote(len(names), len(sets)))
 }
