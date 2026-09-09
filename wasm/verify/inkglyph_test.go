@@ -468,6 +468,14 @@ var foldMeasuredOn = struct {
 	// printable-ASCII arm. The witness below is built and asked on both sides
 	// of U+FFFF for exactly that reason.
 	astralChanges, astralAgreed, astralGap, astralBearing int
+	// And the shape of that seed-bearing population rather than its size: how
+	// many runs of consecutive code points it falls in, and how many regions
+	// those runs make when the ones within foldBearingGap of each other are
+	// taken together. Three regions is two blocks and a supplement, which is
+	// something a reader can go and look at; the count alone said nothing
+	// about whether it was that or 257 characters scattered over sixteen
+	// planes.
+	astralBearingRuns, astralBearingClusters int
 }{
 	build:   foldBuild{unicode: "16.0", icu: "76.1", node: "22.12.0"},
 	changes: 15802,
@@ -484,6 +492,9 @@ var foldMeasuredOn = struct {
 	astralAgreed:  260,
 	astralGap:     2047,
 	astralBearing: 257,
+
+	astralBearingRuns:     118,
+	astralBearingClusters: 3,
 }
 
 // foldBuildNote is the sentence a census adds when this run is not the run
@@ -888,6 +899,46 @@ func TestTheNarrowFoldsOwnWidthIsAFactAboutGenGoAlone(t *testing.T) {
 		astral.lowered, astral.loweredAt, note)
 }
 
+// How far apart two runs of seed-bearing code points have to be before they
+// are counted as different regions.
+//
+// 256. The census below finds them in three regions, and the numbers are not
+// close: the widest gap INSIDE a region is 67 code points and the narrowest
+// gap BETWEEN two of them is 1816. Anything from 68 to 1816 gives the same
+// three, so the constant is not doing work — it is naming where a reader
+// should look, and the log line prints both gaps so a build that moved them
+// says so rather than quietly re-drawing the regions.
+const foldBearingGap = 0x100
+
+// foldClustersOf merges runs of code points into regions, so a census of a
+// population says what SHAPE it is and not only how large.
+//
+// 257 characters in three regions is two blocks a reader can look up; 257
+// scattered singletons would be a different fact about NFKD, and the count on
+// its own cannot tell them apart. Returns the regions and the two gaps the
+// constant above sits between — the widest inside a region and the narrowest
+// between two — because those are what say whether the constant chose the
+// answer.
+func foldClustersOf(runs [][2]rune) (clusters [][2]rune, inside, between rune) {
+	between = -1
+	for _, run := range runs {
+		if n := len(clusters); n > 0 && run[0]-clusters[n-1][1] <= foldBearingGap {
+			if gap := run[0] - clusters[n-1][1]; gap > inside {
+				inside = gap
+			}
+			clusters[n-1][1] = run[1]
+			continue
+		}
+		if n := len(clusters); n > 0 {
+			if gap := run[0] - clusters[n-1][1]; between < 0 || gap < between {
+				between = gap
+			}
+		}
+		clusters = append(clusters, run)
+	}
+	return clusters, inside, between
+}
+
 func TestHowWideTheNarrowerFoldIsAndWhatHoldsTheGap(t *testing.T) {
 	node, err := exec.LookPath("node")
 	if err != nil {
@@ -988,8 +1039,16 @@ console.log(JSON.stringify({
 	type foldSide struct {
 		changes, agreed, bearing int
 		bearingAt                rune
+		// The seed-bearing code points as contiguous runs, which is the shape
+		// of that population rather than a count of it. See the arm that reads
+		// them: 257 characters in a handful of runs is two or three blocks
+		// somebody can look up, and 257 scattered singletons would be a
+		// different fact about NFKD entirely.
+		runs   [][2]rune
+		lastAt rune
 	}
-	bmp, astral := foldSide{bearingAt: -1}, foldSide{bearingAt: -1}
+	bmp := foldSide{bearingAt: -1, lastAt: -2}
+	astral := foldSide{bearingAt: -1, lastAt: -2}
 	// A character both inside printable ASCII and in the gap, which is the one
 	// thing the second arm cannot catch. First one found; there is nothing to
 	// be gained from a list of a fault that should have no members. Only the
@@ -1028,6 +1087,15 @@ console.log(JSON.stringify({
 				if side.bearingAt < 0 {
 					side.bearingAt = cp
 				}
+				// The rows come back in ascending order, so a run extends
+				// while the code points are consecutive and starts again when
+				// they are not.
+				if cp == side.lastAt+1 && len(side.runs) > 0 {
+					side.runs[len(side.runs)-1][1] = cp
+				} else {
+					side.runs = append(side.runs, [2]rune{cp, cp})
+				}
+				side.lastAt = cp
 				break
 			}
 		}
@@ -1036,6 +1104,11 @@ console.log(JSON.stringify({
 	bearingExample := bmp.bearingAt
 	gap := bmp.changes - bmp.agreed
 	astralGap := astral.changes - astral.agreed
+	// And where the seed-bearing characters above the BMP actually are. See
+	// foldClustersOf: the shape of that population is what a count of it
+	// cannot say, and it is read here so both the arms and the log line have
+	// it.
+	astralClusters, insideGap, betweenGap := foldClustersOf(astral.runs)
 
 	// The edge the printable-ASCII arm is the whole of.
 	if ascii >= 0 {
@@ -1233,6 +1306,10 @@ console.log(JSON.stringify({
 				foldMeasuredOn.astralGap},
 			{"the part of THAT gap that reaches a seed's own letters",
 				astral.bearing, foldMeasuredOn.astralBearing},
+			{"the runs of consecutive code points it falls in",
+				len(astral.runs), foldMeasuredOn.astralBearingRuns},
+			{"the regions those runs make", len(astralClusters),
+				foldMeasuredOn.astralBearingClusters},
 		} {
 			if c.got == c.want {
 				continue
@@ -1267,13 +1344,26 @@ console.log(JSON.stringify({
 				astral.bearingAt, string(astral.bearingAt), theirs[astral.bearingAt],
 				inkGlyphFold(string(astral.bearingAt)))
 		}
+		// Where those seed-bearing characters actually are, which is the half
+		// a count cannot say. See foldClustersOf.
+		where := make([]string, 0, len(astralClusters))
+		for _, c := range astralClusters {
+			where = append(where, fmt.Sprintf("U+%04X..U+%04X", c[0], c[1]))
+		}
 		astralSaid = fmt.Sprintf("and %d above the BMP, where it agrees on %d and "+
 			"is narrower on %d, %d of which reach a seed's own letters%s — a "+
 			"population that is not the BMP's made smaller: NFKD decomposes the "+
 			"mathematical alphanumerics to bare letters, and nothing up there can be "+
 			"inside 0x20..0x7e, so the arm holding all of them out is the same one "+
-			"and it is holding for a different reason",
-			astral.changes, astral.agreed, astralGap, astral.bearing, example)
+			"and it is holding for a different reason. Those %d sit in %d runs "+
+			"making %d regions — %s, which is the outlined letters, the "+
+			"mathematical alphanumerics and the enclosed ones — with the widest gap "+
+			"inside a region %d code points and the narrowest between two %d, so "+
+			"the %d this file separates them by is naming where to look rather than "+
+			"choosing the answer",
+			astral.changes, astral.agreed, astralGap, astral.bearing, example,
+			astral.bearing, len(astral.runs), len(astralClusters),
+			strings.Join(where, ", "), insideGap, betweenGap, foldBearingGap)
 	}
 	t.Logf("browser.mjs's fold changes %d of the BMP's code points; gen.go's "+
 		"agrees on %d and is narrower on %d, %d of which NFKD turns into a letter "+
