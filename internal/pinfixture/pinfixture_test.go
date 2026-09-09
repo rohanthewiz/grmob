@@ -1936,6 +1936,175 @@ func TestAPhraseIsPutBackOnTheLinesItCameFrom(t *testing.T) {
 // records; a `bare` that started matching would be pinStripSpace having grown
 // looser, and either one moves what pinCopyNote can see without touching a
 // line of it.
+// pinRecordedAs reports whether some occurrence of one byte in a source was
+// recorded as a given construct.
+//
+// Read off pinCodeOnly's own record at the source's own offsets, which is the
+// only place the answer exists: whether a `'` opened a literal or stood there
+// as punctuation is a decision the lexer made and nothing about the byte says
+// which way it went.
+func pinRecordedAs(src string, by []byte, c, kind byte) bool {
+	for i := 0; i < len(src) && i < len(by); i++ {
+		if src[i] == c && by[i] == kind {
+			return true
+		}
+	}
+	return false
+}
+
+// pinLexDiffers reports whether one source lexes into different constructs
+// under two extensions.
+//
+// This is the only evidence an extension flag did anything. `nested`, `single`
+// and `tick` are three booleans off the extension, and a row that claims to
+// exercise one of them while both paths record the same constructs is a row
+// about the path it names in name only — the same argument the Swift nested
+// comment row is built on, applied to the other two flags.
+func pinLexDiffers(src, a, b string) bool {
+	_, openA, byA := pinCodeOnly(src, a)
+	_, openB, byB := pinCodeOnly(src, b)
+	return !slices.Equal(byA, byB) || !slices.Equal(openA, openB)
+}
+
+// pinLiteralPastNewline reports whether a literal was still open on the byte
+// after a newline.
+//
+// Which is the whole difference between the two things a quote can start. A
+// single-line literal that meets a newline is a runaway and the bytes after it
+// are code again; a run of three quotes opens one that carries on, and the
+// byte after the newline is still inside it.
+func pinLiteralPastNewline(src string, by []byte) bool {
+	for i := 0; i+1 < len(src) && i+1 < len(by); i++ {
+		if src[i] == '\n' && by[i+1] == pinStringLiteral {
+			return true
+		}
+	}
+	return false
+}
+
+// pinEscapeHeldLiteral reports whether a backslash inside a literal carried the
+// quote after it.
+//
+// The escape arm's whole job. Without it the quote after the backslash closes
+// the literal, the bytes after that are code, and the literal's real closing
+// quote opens a runaway — so "no line ran away" is not decoration here, it is
+// the half of the reading that says the arm ran.
+func pinEscapeHeldLiteral(src string, open []int, by []byte) bool {
+	if len(open) > 0 {
+		return false
+	}
+	for i := 0; i+1 < len(src) && i+1 < len(by); i++ {
+		if src[i] == '\\' && by[i] == pinStringLiteral &&
+			src[i+1] == '"' && by[i+1] == pinStringLiteral {
+			return true
+		}
+	}
+	return false
+}
+
+// Every place pinCodeOnly decides which construct it is in, and how a row is
+// shown to have reached it.
+//
+// # The dimension the pair census does not count
+//
+// The census below enumerates ordered pairs of the five constructs and holds
+// itself to having a row for each. That is a complete walk of ONE dimension,
+// and the completeness arm says so in pairs — so a lexer path could lose a
+// construct entirely and the grid would go on reporting itself complete,
+// because a pair is named by the two kinds at the boundary and not by the
+// bytes that opened them.
+//
+// The other dimension is this one: pinCodeOnly reaches each of those five
+// kinds by more than one route, and the routes are what the extension actually
+// changes. Three booleans come off the extension — `nested`, `single`, `tick`
+// — and a run of three quotes and a backslash change the answer without any
+// extension being consulted at all. Nine of the eleven branches below produce
+// or decline to produce the same kind, `a string literal`, so none of them
+// adds a PAIR and the census above cannot see any of them go.
+//
+// When this was written the grid ran 22 rows through `.go`, one `.mjs` and two
+// `.swift`, and reached five of these eleven. The five it missed were every
+// route that is not a double quote or a comment: the single quote, the
+// backtick, both of Swift's refusals to treat them as quotes at all, the
+// three-quote run and the escape.
+//
+// # And what a row has to do to claim one
+//
+// Read off pinCodeOnly's record rather than off a label. A `via` column would
+// be a row asserting its own coverage, which is the shape of evidence this
+// file keeps replacing: the probes below ask the lexer what it recorded for
+// the row's own bytes, and the four that are about an extension flag ask the
+// stronger question — whether the OTHER path records something different.
+// Under `.swift` a `'` is punctuation and under `.go` it opens a literal that
+// runs to the newline, so a row that claims either has to be a row the two
+// paths disagree about.
+//
+// One correction the probes made to this file's prose on the way in:
+// pinCodeOnly's comment calls the three-quote run "Swift's multi-line string",
+// and the branch has no extension guard on it. A `"""` in a `.go` harness is
+// lexed as a literal that carries past newlines, on every path. The row that
+// reaches it is a `.swift` one because that is where the construct is real,
+// and the name here says what the code does rather than what the comment
+// meant.
+var pinLexBranches = []struct {
+	name    string
+	reached func(src, ext string, open []int, by []byte) bool
+}{
+	{"// — a comment to the end of the line",
+		func(src, ext string, open []int, by []byte) bool {
+			return slices.Contains(by, pinLineComment)
+		}},
+	{"/* — a block comment the lexer does not nest",
+		func(src, ext string, open []int, by []byte) bool {
+			return ext != ".swift" && slices.Contains(by, pinBlockComment)
+		}},
+	{"/* — a block comment the lexer nests, which only Swift does",
+		func(src, ext string, open []int, by []byte) bool {
+			return ext == ".swift" && slices.Contains(by, pinBlockComment) &&
+				pinLexDiffers(src, ext, ".go")
+		}},
+	{`" — a double-quoted literal`,
+		func(src, ext string, open []int, by []byte) bool {
+			return pinRecordedAs(src, by, '"', pinStringLiteral) ||
+				pinRecordedAs(src, by, '"', pinRunawayString)
+		}},
+	{"' — a single-quoted literal, which Swift does not have",
+		func(src, ext string, open []int, by []byte) bool {
+			return ext != ".swift" &&
+				(pinRecordedAs(src, by, '\'', pinStringLiteral) ||
+					pinRecordedAs(src, by, '\'', pinRunawayString)) &&
+				pinLexDiffers(src, ext, ".swift")
+		}},
+	{"` — a template literal, which Swift does not have",
+		func(src, ext string, open []int, by []byte) bool {
+			return ext != ".swift" && pinRecordedAs(src, by, '`', pinStringLiteral) &&
+				pinLexDiffers(src, ext, ".swift")
+		}},
+	{"' — an apostrophe that is code, because Swift has no single-quoted string",
+		func(src, ext string, open []int, by []byte) bool {
+			return ext == ".swift" && pinRecordedAs(src, by, '\'', pinKeptCode) &&
+				pinLexDiffers(src, ext, ".go")
+		}},
+	{"` — a backtick that is code, because Swift quotes identifiers with it",
+		func(src, ext string, open []int, by []byte) bool {
+			return ext == ".swift" && pinRecordedAs(src, by, '`', pinKeptCode) &&
+				pinLexDiffers(src, ext, ".mjs")
+		}},
+	{`""" — a literal a run of three quotes opens, which carries past newlines`,
+		func(src, ext string, open []int, by []byte) bool {
+			return strings.Contains(src, `"""`) && len(open) == 0 &&
+				pinLiteralPastNewline(src, by)
+		}},
+	{`\ — an escape carrying the quote after it, which keeps the literal open`,
+		func(src, ext string, open []int, by []byte) bool {
+			return pinEscapeHeldLiteral(src, open, by)
+		}},
+	{"the newline that turns an unclosed literal into a runaway",
+		func(src, ext string, open []int, by []byte) bool {
+			return len(open) > 0
+		}},
+}
+
 func TestWhichConstructTransitionsAStraddleCanBeBuiltFrom(t *testing.T) {
 	grid := []struct {
 		// The pair, as the bytes pinCodeOnly records — not as prose. The
@@ -2087,6 +2256,58 @@ func TestWhichConstructTransitionsAStraddleCanBeBuiltFrom(t *testing.T) {
 			src: "x = 1 // pinSame(total,\nc.offer) + 2\n", ext: ".swift",
 			phrase: "pinSame(total, c.offer)",
 			kinds:  []byte{pinLineComment, pinKeptCode}},
+
+		// And the six routes into a literal that no pair can be missing,
+		// because every one of them ends at the same kind. See pinLexBranches:
+		// the census above walks ordered PAIRS and is complete in that
+		// dimension, and nine of the lexer's eleven ways of deciding a
+		// construct produce or decline to produce `a string literal` — so all
+		// six of these rows are the pair `code the lexer kept` then `a string
+		// literal`, which had a row already, and the grid could have lost any
+		// of them without a word.
+		//
+		// The first two are the flags read one way and the next two are the
+		// same flags read the other, which is where Swift differs from
+		// JavaScript in the direction nothing else here reaches: the byte that
+		// opens a literal on one path is ordinary code on the other, and a row
+		// is only about a flag if the two paths disagree about its source.
+		{from: pinKeptCode, to: pinStringLiteral, delim: `'`,
+			src: "x = pinSame('a')\n", ext: ".go",
+			phrase: "pinSame('a')", bare: "pinSame(a)",
+			kinds: []byte{pinKeptCode, pinStringLiteral}},
+		{from: pinKeptCode, to: pinStringLiteral, delim: "`",
+			src: "x = pinSame(`a`)\n", ext: ".mjs",
+			phrase: "pinSame(`a`)", bare: "pinSame(a)",
+			kinds: []byte{pinKeptCode, pinStringLiteral}},
+		// An apostrophe in Swift code, which `.go` would read as a quote
+		// opening a literal that runs to the newline — so the citation after
+		// it is a live literal on one path and inside a runaway on the other.
+		{from: pinKeptCode, to: pinStringLiteral, delim: `"`,
+			src: "let a = it's\npinSame(\"x\") + y\n", ext: ".swift",
+			phrase: "pinSame(\"x\")", bare: "pinSame(x)",
+			kinds: []byte{pinKeptCode, pinStringLiteral}},
+		// And a backtick quoting a keyword as an identifier, which `.mjs`
+		// would read as a template literal swallowing the rest of the file.
+		{from: pinKeptCode, to: pinStringLiteral, delim: `"`,
+			src: "let `class` = pinSame(\"x\")\n", ext: ".swift",
+			phrase: "pinSame(\"x\")", bare: "pinSame(x)",
+			kinds: []byte{pinKeptCode, pinStringLiteral}},
+		// The run of three quotes, whose literal carries past the newline
+		// instead of ending there — the one construct in the lexer that is
+		// spelled in quotes and does NOT produce a runaway. `open` being empty
+		// is half of what this row asserts.
+		{from: pinKeptCode, to: pinStringLiteral, delim: `"""`,
+			src: "x = pinSame(\"\"\"a\nb\"\"\")\n", ext: ".swift",
+			phrase: "pinSame(\"\"\"a b\"\"\")", bare: "pinSame(a b)",
+			kinds: []byte{pinKeptCode, pinStringLiteral}},
+		// And the escape, which is the other way a quote fails to close a
+		// literal. Without that arm the quote after the backslash ends the
+		// literal, `b` is code, and the real closing quote opens a runaway —
+		// so this row's empty `open` is the assertion that the arm ran.
+		{from: pinKeptCode, to: pinStringLiteral, delim: `"\"`,
+			src: "x = pinSame(\"a\\\"b\") + c\n", ext: ".go",
+			phrase: "pinSame(\"a\\\"b\")", bare: "pinSame(ab)",
+			kinds: []byte{pinKeptCode, pinStringLiteral}},
 	}
 	// How each row's boundary is crossed, for the line at the end: the two the
 	// strip removes for free, and the rest the citation has to spell.
@@ -2102,11 +2323,21 @@ func TestWhichConstructTransitionsAStraddleCanBeBuiltFrom(t *testing.T) {
 			delims = append(delims, fmt.Sprintf("%q", c.delim))
 		}
 	}
+	// And which of pinCodeOnly's own branches each row's source reaches. See
+	// pinLexBranches: the pair census below is a complete walk of one
+	// dimension and this is the other one, collected here off the same lex the
+	// row's assertions are read from rather than from a second one.
+	routes := map[string][]string{}
 	for _, c := range grid {
 		// Spelled through the same function the sentence under test uses, so a
 		// row naming a pair and a message naming a pair cannot disagree.
 		what := pinConstructName(c.from) + " then " + pinConstructName(c.to)
 		code, open, by := pinCodeOnly(c.src, c.ext)
+		for _, branch := range pinLexBranches {
+			if branch.reached(c.src, c.ext, open, by) {
+				routes[branch.name] = append(routes[branch.name], c.ext)
+			}
+		}
 		if !slices.Equal(open, c.open) {
 			t.Errorf("%s: pinCodeOnly ended inside an unterminated string on %v of "+
 				"this row's lines and the row says %v.\n\n"+
@@ -2243,6 +2474,38 @@ func TestWhichConstructTransitionsAStraddleCanBeBuiltFrom(t *testing.T) {
 				pinConstructName(kind), heads[kind], tails[kind])
 		}
 	}
+	// # And the same completeness question in the other dimension
+	//
+	// The pairs above are a complete walk of the five kinds and say nothing
+	// about the routes into them — see pinLexBranches. Nine of the eleven
+	// branches end at `a string literal`, so a lexer path could stop producing
+	// one and every arm above would still pass: the pair is named by the kinds
+	// at the boundary, not by the byte that opened them.
+	//
+	// Held the same way the pairs are, and for the same reason: a branch with
+	// no row is a decision pinCodeOnly makes that nothing in this file has put
+	// a citation across, and that is a fact worth a sentence rather than a gap
+	// somebody notices later.
+	unreached := []string{}
+	for _, branch := range pinLexBranches {
+		if len(routes[branch.name]) == 0 {
+			unreached = append(unreached, branch.name)
+		}
+	}
+	if len(unreached) > 0 {
+		t.Errorf("%d of the %d branches pinCodeOnly decides a construct at have no "+
+			"row in this census: %s.\n\n"+
+			"The pair census above is complete in pairs and cannot see this: most of "+
+			"these branches end at the same kind, so a route into a literal can go "+
+			"without changing which pairs exist. Each of them is reached by a row "+
+			"whose source carries the bytes and whose extension turns the flag on — "+
+			"and, for the four that are about an extension flag, by the two paths "+
+			"recording something different about the same source, which is the only "+
+			"evidence the flag did anything. Build the row rather than deleting this "+
+			"arm.",
+			len(unreached), len(pinLexBranches), strings.Join(unreached, "; "))
+	}
+
 	// And what the walk came to, which is the reading that says the general
 	// machinery has general evidence.
 	//
@@ -2252,6 +2515,21 @@ func TestWhichConstructTransitionsAStraddleCanBeBuiltFrom(t *testing.T) {
 	// anybody had built, and the rest are reachable the moment a citation
 	// quotes the delimiter — which is the ordinary shape of a citation that
 	// quotes a call.
+	// Which extensions reached each branch, so a green run's line says where the
+	// evidence for the other dimension actually is rather than that there is
+	// some.
+	routeSaid := make([]string, 0, len(pinLexBranches))
+	for _, branch := range pinLexBranches {
+		seenExt, exts := map[string]bool{}, []string{}
+		for _, ext := range routes[branch.name] {
+			if !seenExt[ext] {
+				seenExt[ext] = true
+				exts = append(exts, ext)
+			}
+		}
+		routeSaid = append(routeSaid, fmt.Sprintf("%s (%d row(s), %s)",
+			branch.name, len(routes[branch.name]), strings.Join(exts, " ")))
+	}
 	t.Logf("every one of the %d ordered construct pairs this census asks about is "+
 		"reachable — %d across a newline, which the strip removes and which "+
 		"therefore costs the citation nothing, and %d across raw bytes the "+
@@ -2260,8 +2538,12 @@ func TestWhichConstructTransitionsAStraddleCanBeBuiltFrom(t *testing.T) {
 		"records and the code it keeps all appear on both sides of a boundary, so "+
 		"pinBlankedAs's run of kinds is exercised over the transitions rather than "+
 		"over the one a fixture happened to be written with, and all %d ordered "+
-		"pairs of them have a row",
-		len(grid), across, len(grid)-across, strings.Join(delims, ", "), pairs)
+		"pairs of them have a row. And the other dimension, which pairs cannot "+
+		"count: %d of the %d branches pinCodeOnly decides a construct at are "+
+		"reached — %s",
+		len(grid), across, len(grid)-across, strings.Join(delims, ", "), pairs,
+		len(pinLexBranches)-len(unreached), len(pinLexBranches),
+		strings.Join(routeSaid, ", "))
 }
 
 // pinDense counts the bytes of a source that are not whitespace, which is the

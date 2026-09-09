@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"unicode"
 )
 
 // The fold inkGlyphPerCharacter refuses through, and the one browser.mjs looks
@@ -420,9 +421,213 @@ func foldBuildNote(now foldBuild) string {
 		"and this run is on Unicode %s (ICU %s, node %s). NFKD is that data, so every "+
 		"count above is expected to differ and the difference is not a finding about "+
 		"either fold — re-take the record against this build, from the census in the "+
-		"log line, and leave the two edges asserting what they assert.",
+		"log line, and leave the two edges asserting what they assert.\n\n"+
+		"What is NOT off on this build is gen.go's own half: "+
+		"TestTheNarrowFoldsOwnWidthIsAFactAboutGenGoAlone counts what "+
+		"inkGlyphIgnorable drops and what inkLigatureForms rewrites, neither of "+
+		"which goes near an ICU, and holds both on any machine that can build this "+
+		"package. If what is being looked for here is whether the narrow fold "+
+		"changed width, that is the test with the answer.",
 		foldMeasuredOn.build.unicode, foldMeasuredOn.build.icu,
 		foldMeasuredOn.build.node, now.unicode, now.icu, now.node)
+}
+
+// What gen.go's own fold changes, split by which of its three parts changed
+// it, and on what.
+//
+// # The census that stops at the edge of this machine
+//
+// foldMeasuredOn is four numbers about the two folds together, and its bracket
+// runs only where this run's Unicode version matches the record's. That is the
+// right gate for what it holds — NFKD is the ICU's data and every one of those
+// four moves when the data does — but it leaves a developer on a different
+// node, or on no node at all, with the two edges and no census reading
+// whatsoever, which is the state the record was written to replace. The gate
+// closes exactly where somebody is most likely to be reading it.
+//
+// The guess was that a bracket might survive a build change as a FRACTION: the
+// gap over what the note's fold changes moves less than either count does.
+// Nobody could check it — the stability of that ratio is a claim about two ICU
+// versions and there is one on this machine — and it turns out not to be
+// needed, because the census's gen.go half can be taken with no ICU in it at
+// all.
+//
+// inkGlyphFold is three things in a row and every one of them is local:
+//
+//	ignorable   inkGlyphIgnorable drops the character. gen.go's own predicate.
+//	table       inkLigatureForms rewrites it. gen.go's own map.
+//	lowered     strings.ToLower changes it, and nothing else did. Go's Unicode
+//	            tables, which move with the toolchain and not with node.
+//
+// Each code point that the fold changes is changed by exactly one of them —
+// the three are tried in that order and the third is the whole of what is left
+// — so the counts partition the width of the fold, and the partition is
+// asserted rather than assumed. Two of the three are facts about gen.go and
+// are held on every machine that can build this package; the third is gated on
+// Go's Unicode version the way the other census is gated on node's, which is
+// the same reading about a different vendor's copy of the same data.
+//
+// This is the number the whole file is actually about. Both edges pass over a
+// fold that quietly narrowed — narrower is the direction they allow — and
+// until now the only thing that could see it was a census that needs node and
+// the right ICU.
+var foldOwnMeasuredOn = struct {
+	// Go's Unicode version, from the unicode package this binary was compiled
+	// against. The `lowered` count is that data and nothing else; the other two
+	// are gen.go's and are asserted whatever this says.
+	goUnicode                 string
+	ignorable, table, lowered int
+}{
+	goUnicode: "15.0.0",
+	ignorable: 24,
+	table:     8,
+	lowered:   1173,
+}
+
+func TestTheNarrowFoldsOwnWidthIsAFactAboutGenGoAlone(t *testing.T) {
+	// The same plane the other census walks, and the same skip of the
+	// surrogates: Go turns a lone one into U+FFFD, so a fold asked about it is
+	// answering about a different character.
+	ignorable, table, lowered, unexplained := 0, 0, 0, 0
+	var ignorableAt, tableAt, loweredAt, unexplainedAt rune = -1, -1, -1, -1
+	for cp := rune(0); cp <= 0xFFFF; cp++ {
+		if cp >= 0xD800 && cp <= 0xDFFF {
+			continue
+		}
+		s := string(cp)
+		if inkGlyphFold(s) == s {
+			continue
+		}
+		// In the order the fold applies them, because that is what makes these
+		// four counts a partition: a character that is both ignorable and in
+		// the table is dropped and never rewritten, and counting it twice
+		// would make the total a number that is not a population.
+		switch {
+		case inkGlyphIgnorable(cp):
+			ignorable++
+			if ignorableAt < 0 {
+				ignorableAt = cp
+			}
+		case inkLigatureForms[cp] != "":
+			table++
+			if tableAt < 0 {
+				tableAt = cp
+			}
+		case strings.ToLower(s) != s:
+			lowered++
+			if loweredAt < 0 {
+				loweredAt = cp
+			}
+		default:
+			unexplained++
+			if unexplainedAt < 0 {
+				unexplainedAt = cp
+			}
+		}
+	}
+	changed := ignorable + table + lowered + unexplained
+
+	// The partition, which every count below is a share of.
+	//
+	// Unreachable while the fold is those three steps: a character the first
+	// two leave alone is written out unchanged and then lowered, so the fold
+	// changing it and ToLower not changing it cannot both be true. Spelled out
+	// rather than left as a `default` that quietly adds to a total, because a
+	// fourth cause is a fold that has grown a step nothing here knows about —
+	// and the three counts would go on looking like a census of it.
+	if unexplained > 0 {
+		t.Errorf("inkGlyphFold changes %d of this plane's code points for a reason "+
+			"none of its three steps explains, the first being U+%04X (%q→%q).\n\n"+
+			"The fold drops ignorables, rewrites what inkLigatureForms names, and "+
+			"lowercases what is left — so a character none of those three touches is "+
+			"a character the fold returns unchanged. A fourth cause is a step "+
+			"somebody added, and the counts below are then shares of a population "+
+			"that is not the fold's width.",
+			unexplained, unexplainedAt, string(unexplainedAt),
+			inkGlyphFold(string(unexplainedAt)))
+	}
+
+	// The two halves that are gen.go's own, held on every machine.
+	//
+	// Neither goes near node or the ICU, so neither is gated on anything: this
+	// is the reading foldMeasuredOn's census cannot make off its own build, and
+	// it is the half that a change to gen.go actually moves.
+	if ignorable != foldOwnMeasuredOn.ignorable {
+		t.Errorf("inkGlyphIgnorable drops %d of this plane's code points and "+
+			"foldOwnMeasuredOn records %d (the first this run being U+%04X).\n\n"+
+			"That predicate is gen.go's own and reads no table anybody else ships, "+
+			"so this number moved because somebody edited it. Both of this file's "+
+			"edges pass over a fold that dropped one character fewer — a fixture "+
+			"holding it is then refused for a pair inkLigatureNote would not report, "+
+			"or accepted with a pair nothing here can see, depending which way the "+
+			"predicate moved.",
+			ignorable, foldOwnMeasuredOn.ignorable, ignorableAt)
+	}
+	if table != foldOwnMeasuredOn.table {
+		t.Errorf("inkLigatureForms rewrites %d of this plane's code points and "+
+			"foldOwnMeasuredOn records %d (the first this run being U+%04X).\n\n"+
+			"That map is the seven-character table the whole narrow-fold argument "+
+			"rests on. A row added or removed moves this number and moves nothing "+
+			"else in this file: the pair arm still asks its question in this fold, "+
+			"and a form that is no longer rewritten is a spelling of a seed that "+
+			"stops being recognised.",
+			table, foldOwnMeasuredOn.table, tableAt)
+	}
+	// And the same count read off the map itself, which is the reading that
+	// says every row in it does something.
+	//
+	// The walk above counts code points this plane holds and the map is what it
+	// looks them up in, so the two are the same number unless a row's key is
+	// outside the BMP — where no walk here would ever reach it — or a row maps
+	// a character to itself, which is a row that is in the table and is not in
+	// the fold.
+	if table != len(inkLigatureForms) {
+		t.Errorf("inkLigatureForms has %d rows and %d of them change a code point "+
+			"on this plane.\n\n"+
+			"A row that this walk does not reach is a row whose key is outside the "+
+			"BMP — where the fold is never asked about it by anything in this file — "+
+			"or one that maps its character to itself, which is a row present in the "+
+			"table and absent from the fold. Either way the table is wider than what "+
+			"it does, and the census above is counting the second.",
+			len(inkLigatureForms), table)
+	}
+
+	// And the third, which is Go's copy of the same data node has its own copy
+	// of.
+	//
+	// Gated the way foldMeasuredOn's census is gated, and for the same reason:
+	// ToLower is the Unicode tables the toolchain was built with, so a Go
+	// upgrade moves this number and the move is not a finding about gen.go.
+	// What makes it worth recording anyway is that it is the OTHER thing that
+	// can change the fold's width, and without it a table edit and a toolchain
+	// upgrade would arrive at the total as the same number.
+	if unicode.Version == foldOwnMeasuredOn.goUnicode &&
+		lowered != foldOwnMeasuredOn.lowered {
+		t.Errorf("strings.ToLower changes %d of this plane's code points that "+
+			"inkGlyphFold does not otherwise touch, and foldOwnMeasuredOn records "+
+			"%d, over the same Go Unicode %s (the first this run being U+%04X).\n\n"+
+			"That data has not moved, so what moved is which characters reach the "+
+			"lowercasing at all — the two steps before it. This is the same finding "+
+			"as the two above arriving through the arm that is supposed to be about "+
+			"the toolchain.",
+			lowered, foldOwnMeasuredOn.lowered, unicode.Version, loweredAt)
+	}
+	note := ""
+	if unicode.Version != foldOwnMeasuredOn.goUnicode {
+		note = fmt.Sprintf(" — foldOwnMeasuredOn's lowercase count was taken on Go "+
+			"Unicode %s and this toolchain carries %s, so that one number is expected "+
+			"to differ and is not asserted here; the two gen.go counts above are, and "+
+			"they are the ones a change to the fold moves",
+			foldOwnMeasuredOn.goUnicode, unicode.Version)
+	}
+	t.Logf("inkGlyphFold changes %d of this plane's code points: %d dropped as "+
+		"ignorable (e.g. U+%04X) and %d rewritten by inkLigatureForms (e.g. U+%04X), "+
+		"both of them gen.go's own and both held on any machine that can build this "+
+		"package, and %d lowercased by Go's Unicode %s (e.g. U+%04X). The first two "+
+		"are what foldMeasuredOn's census cannot read off a build that is not the "+
+		"one it was taken on%s",
+		changed, ignorable, ignorableAt, table, tableAt, lowered, unicode.Version,
+		loweredAt, note)
 }
 
 func TestHowWideTheNarrowerFoldIsAndWhatHoldsTheGap(t *testing.T) {
@@ -678,6 +883,13 @@ console.log(JSON.stringify({
 	// different Unicode version the numbers are expected to move and nothing is
 	// asserted about them — the two edges above hold on every build, and they
 	// are what the refusal actually rests on.
+	//
+	// And the gap that leaves is closed elsewhere rather than hedged about
+	// here. See foldOwnMeasuredOn: the width of gen.go's fold splits into what
+	// the ignorable predicate drops, what the table rewrites and what ToLower
+	// changes, the first two have no ICU anywhere in them, and both are held on
+	// every machine — including one with no node on it at all, where this whole
+	// test skips.
 	if now.unicode == foldMeasuredOn.build.unicode {
 		for _, c := range []struct {
 			what      string
