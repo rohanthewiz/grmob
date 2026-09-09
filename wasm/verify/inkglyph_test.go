@@ -344,6 +344,87 @@ func TestTheTwoFoldsAgreeOnTheFormsTheyBothCarry(t *testing.T) {
 //
 // Both are asserted. The census is logged, because a bound with no reading of
 // the population under it is the state the item before this one was about.
+// The build a census of this gap is a fact about.
+//
+// # A number with nothing behind it
+//
+// The census below is NFKD as the ICU compiled into one node implements it,
+// held against a table somebody wrote down. Both halves move, and they move for
+// different reasons: the table moves when somebody edits gen.go, and the fold
+// moves when the machine's node does — a newer ICU decomposes characters an
+// older one left alone, and every number in the log line moves with it.
+//
+// Only one of those is a finding. Until this record existed the line printed
+// whichever numbers it got and asserted the two edges, so a run whose gap had
+// halved because the table lost half its rows printed the new number and said
+// nothing — the same shape INK_OWN_MEASURED_ON is for, one directory over, and
+// the one this file's own affordedMeasuredOn-shaped neighbours already record.
+//
+// # And the record makes the difference decidable
+//
+// With the build in hand the two are separable rather than hedged between:
+//
+// \tthe build moved      this run's ICU is not the record's. Every count is
+// \t                     expected to differ, the two edges still hold, and what
+// \t                     is wanted is a re-take rather than an investigation.
+// \tthe table moved      same ICU, same Unicode, different numbers. NFKD cannot
+// \t                     have changed, so the difference is gen.go's fold — and
+// \t                     a fold that quietly reaches further or less far is the
+// \t                     thing this whole file is about.
+//
+// Unicode rather than the ICU or node version alone, because that is the
+// version of the DATA: two node builds carrying one ICU answer identically, and
+// pinning the node version would report a re-take as needed every time somebody
+// upgrades a patch release. The other two are recorded beside it so a reader
+// who has to re-take the reading knows what they are re-taking it on.
+type foldBuild struct {
+	unicode string
+	icu     string
+	node    string
+}
+
+// What the two folds came to, and on what.
+//
+// The counts are this census's own measurement and the only one anybody has
+// taken. Written down here rather than left in the log line for the reason
+// affordedMeasuredOn is: a number in a passing run's output is a number nobody
+// is holding, and the whole of this test's argument is that an unheld number
+// slides.
+var foldMeasuredOn = struct {
+	build foldBuild
+	// Every code point of the BMP browser.mjs's fold changes, how many of them
+	// gen.go's fold agrees with, how many it is narrower on, and how many of
+	// THAT reaches a letter a seed is spelled with. The fourth is the one that
+	// matters — it is the population the printable-ASCII arm is holding shut —
+	// and it is the one that would go quiet without a word.
+	changes, agreed, gap, bearing int
+}{
+	build:   foldBuild{unicode: "16.0", icu: "76.1", node: "22.12.0"},
+	changes: 15802,
+	agreed:  748,
+	gap:     15054,
+	bearing: 299,
+}
+
+// foldBuildNote is the sentence a census adds when this run is not the run
+// those numbers were taken on.
+//
+// inkOwnBuildNote's move, and affordedMeasuredNote's: the first thing a reader
+// needs is whether the recorded measurement still describes the thing measured.
+// Empty when the Unicode versions agree, because then it does.
+func foldBuildNote(now foldBuild) string {
+	if now.unicode == foldMeasuredOn.build.unicode {
+		return ""
+	}
+	return fmt.Sprintf("\n\nfoldMeasuredOn was taken on Unicode %s (ICU %s, node %s) "+
+		"and this run is on Unicode %s (ICU %s, node %s). NFKD is that data, so every "+
+		"count above is expected to differ and the difference is not a finding about "+
+		"either fold — re-take the record against this build, from the census in the "+
+		"log line, and leave the two edges asserting what they assert.",
+		foldMeasuredOn.build.unicode, foldMeasuredOn.build.icu,
+		foldMeasuredOn.build.node, now.unicode, now.icu, now.node)
+}
+
 func TestHowWideTheNarrowerFoldIsAndWhatHoldsTheGap(t *testing.T) {
 	node, err := exec.LookPath("node")
 	if err != nil {
@@ -370,6 +451,12 @@ func TestHowWideTheNarrowerFoldIsAndWhatHoldsTheGap(t *testing.T) {
 	// lone one into U+FFFD and JavaScript does not, so the pair would be
 	// comparing two different characters.
 	script := filepath.Join(t.TempDir(), "gap.mjs")
+	// The build comes back with the rows, out of the same process that did the
+	// folding. See foldMeasuredOn: every number below is NFKD as the ICU
+	// compiled into THIS node implements it, and a census with no build beside
+	// it is a measurement of an unnamed thing. Read from process.versions
+	// rather than asked of the shell, so the two cannot be about different
+	// binaries.
 	if err := os.WriteFile(script, []byte(string(decl)+string(fn)+`
 const out = [];
 for (let cp = 0; cp <= 0xFFFF; cp++) {
@@ -378,7 +465,10 @@ for (let cp = 0; cp <= 0xFFFF; cp++) {
     const folded = inkFold(ch);
     if (folded !== ch) out.push([cp, folded]);
 }
-console.log(JSON.stringify(out));
+console.log(JSON.stringify({
+    unicode: process.versions.unicode || "", icu: process.versions.icu || "",
+    node: process.versions.node, rows: out,
+}));
 `), 0o644); err != nil {
 		t.Fatalf("the lifted fold will not write: %v", err)
 	}
@@ -386,9 +476,26 @@ console.log(JSON.stringify(out));
 	if err != nil {
 		t.Fatalf("node will not run browser.mjs's own fold: %v", err)
 	}
-	var rows [][]json.RawMessage
-	if err := json.Unmarshal(out, &rows); err != nil {
+	var answer struct {
+		Unicode, ICU, Node string
+		Rows               [][]json.RawMessage
+	}
+	if err := json.Unmarshal(out, &answer); err != nil {
 		t.Fatalf("browser.mjs's fold returned something this test cannot read: %v", err)
+	}
+	rows := answer.Rows
+	// What this run is, in the shape the record is written in.
+	now := foldBuild{unicode: answer.Unicode, icu: answer.ICU, node: answer.Node}
+	if now.unicode == "" {
+		// A node with no ICU folds nothing the table does not, which would make
+		// the whole census a reading about a build that cannot answer the
+		// question. Named rather than compared against a record it cannot be
+		// compared with.
+		t.Skipf("this node reports no Unicode version (process.versions.unicode is "+
+			"empty), which is a build without full ICU — String.prototype.normalize "+
+			"there is not the NFKD the census below is a measurement of, so the "+
+			"numbers would be about a fold nobody ships. node %s, icu %q.",
+			now.node, now.icu)
 	}
 	if len(rows) == 0 {
 		t.Fatalf("browser.mjs's fold changed nothing on any of the 65536 code " +
@@ -540,12 +647,77 @@ console.log(JSON.stringify(out));
 		}
 	}
 
+	// And the population the arm above is asked over, which had no floor at all.
+	//
+	// The whole of the previous paragraph runs inside `if bearingExample >= 0`.
+	// A census that found no seed-bearing character in the gap would skip it in
+	// silence — no witness built, no refusal asked, and a log line printing
+	// U+FFFFFFFF for a rune nobody found. That is the one arm here that reads a
+	// string end to end rather than a code point, and it going quiet is exactly
+	// what "the printable-ASCII arm is what makes the rest safe" would stop
+	// being evidence for.
+	if bearing == 0 {
+		t.Errorf("not one of the %d code points in the gap is turned by NFKD into a "+
+			"letter a seed is spelled with.\n\n"+
+			"That population is the whole reason this gap is interesting: a character "+
+			"in it completes a pair for inkLigatureNote and completes none for the "+
+			"refusal, which is the two ends of the pipeline looking at one string and "+
+			"disagreeing about whether there is a ligature in it. With none of them "+
+			"the witness below is never built and the arm that asks whether the "+
+			"printable-ASCII refusal is still holding never runs — it passes by being "+
+			"skipped. The seeds fold to %v.%s",
+			gap, seedLetters, foldBuildNote(now))
+	}
+
+	// And the census itself, against the one recorded for this build.
+	//
+	// See foldMeasuredOn. NFKD is the ICU's data, so on a matching Unicode
+	// version these four numbers are a function of gen.go's table alone: a
+	// difference is that table having changed, which is a fold reaching further
+	// or less far than the one this file's edges were reasoned about. On a
+	// different Unicode version the numbers are expected to move and nothing is
+	// asserted about them — the two edges above hold on every build, and they
+	// are what the refusal actually rests on.
+	if now.unicode == foldMeasuredOn.build.unicode {
+		for _, c := range []struct {
+			what      string
+			got, want int
+		}{
+			{"the code points browser.mjs's fold changes", len(rows), foldMeasuredOn.changes},
+			{"the ones gen.go's fold agrees with", agreed, foldMeasuredOn.agreed},
+			{"the gap between them", gap, foldMeasuredOn.gap},
+			{"the part of the gap that reaches a seed's own letters", bearing,
+				foldMeasuredOn.bearing},
+		} {
+			if c.got == c.want {
+				continue
+			}
+			t.Errorf("%s comes to %d on this run and foldMeasuredOn records %d, over "+
+				"the same Unicode %s.\n\n"+
+				"NFKD is that version's data and it has not moved, so this is gen.go's "+
+				"own table having changed width — inkGlyphFold now reaches somewhere "+
+				"it did not, or has stopped reaching somewhere it did. That is the "+
+				"thing this whole file is about and it is invisible from either edge: "+
+				"both of them still pass over a fold that quietly narrowed, because "+
+				"narrower is the direction they allow. Re-read what changed in the "+
+				"table, and if the new width is intended, re-take foldMeasuredOn from "+
+				"the census in the log line. This run: %d changed, %d agreed, %d gap, "+
+				"%d seed-bearing, %d inside printable ASCII.",
+				c.what, c.got, c.want, now.unicode,
+				len(rows), agreed, gap, bearing, asciiCount)
+		}
+	}
+
 	t.Logf("browser.mjs's fold changes %d of this plane's code points; gen.go's "+
 		"agrees on %d and is narrower on %d, %d of which NFKD turns into a letter "+
 		"a seed is spelled with (e.g. U+%04X %q→%q, where gen.go says %q) — and %d of "+
 		"it inside printable ASCII, which is the whole of what "+
 		"inkGlyphPerCharacter's second arm refuses on and therefore the whole of "+
-		"what is holding this gap shut",
+		"what is holding this gap shut. Measured on Unicode %s (ICU %s, node %s), "+
+		"which is %s the record was taken on%s",
 		len(rows), agreed, gap, bearing, bearingExample, string(bearingExample),
-		theirs[bearingExample], inkGlyphFold(string(bearingExample)), asciiCount)
+		theirs[bearingExample], inkGlyphFold(string(bearingExample)), asciiCount,
+		now.unicode, now.icu, now.node,
+		map[bool]string{true: "the build", false: "NOT the build"}[now.unicode == foldMeasuredOn.build.unicode],
+		foldBuildNote(now))
 }

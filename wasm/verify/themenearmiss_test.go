@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"math"
 	"reflect"
 	"slices"
 	"sort"
@@ -584,6 +585,28 @@ const (
 	// the constant the moment a measurement is small, and it is above a moved
 	// population the moment the population moved by more than the share.
 	affordedEndingShare = 3
+	// How close to 1.00 the scale has to be before the population is called
+	// unchanged.
+	//
+	// A ratio of two integer set counts, so an untouched walk gives exactly 1
+	// and the tolerance is not carrying a rounding — it is carrying the reader.
+	// The sentence this gates says "same leaves, same window, same 930 sets",
+	// which is a claim about the walk and would be a lie at 0.999; a thousandth
+	// is under any change the walk can actually make (one leaf moves 930 by 12,
+	// which is 1.3%) and above every double this division can produce.
+	affordedScaleSame = 0.001
+	// And how far an ending may sit from its own prediction before the log line
+	// stops calling the classification unmoved.
+	//
+	// A tenth. The floors are asked one ending at a time and a redistribution
+	// that stays above all four of them passes without a word — see
+	// affordedTakers — so this is the only place a green run can say the sort
+	// has moved. It is a reading rather than an assertion because the residual
+	// moves for an honest reason too: the scale is exact only while the walk's
+	// shape is unchanged, and a leaf added mid-name shifts which windows crowd
+	// by a percent or two. A tenth is well above that and well under the 600%
+	// a re-sorted ending shows.
+	affordedResidualQuiet = 0.10
 )
 
 // What each ending scored when this census was written, and over what.
@@ -656,6 +679,104 @@ func affordedScale(leaves int) float64 {
 	return float64(affordedSetCount(leaves, affordedWindowMax)) / float64(then)
 }
 
+// affordedRecordTotal is what affordedMeasuredOn's four counts add up to.
+//
+// Every set the walk produces reaches exactly one of the four endings — the
+// switch that classifies them has a default arm, so the counts are a partition
+// of the population and not a sample of it. That makes this sum the population
+// the record was taken over, and it is asserted against affordedSetCount rather
+// than assumed: a re-measure that mistyped one ending would leave every
+// prediction below scaled against a total nobody walked, and the error would be
+// invisible because each ending's own number still looks like a count.
+//
+// It is also the premise the residual reading rests on. Because the record is a
+// partition and this run's counts are a partition of the same walk scaled, the
+// four residuals sum to zero — so an ending that came in under its prediction
+// has, necessarily, a partner that came in over one. That is what lets
+// affordedShortfallCause name where the sets went instead of asserting that
+// they left.
+func affordedRecordTotal() int {
+	n := 0
+	for _, count := range affordedMeasuredOn.ending {
+		n += count
+	}
+	return n
+}
+
+// affordedPrediction is how many sets an ending would reach if the only thing
+// that had happened were the population moving.
+//
+// The ending's own recorded count times the whole census's scale. One walk
+// produces all four endings, so a struct that gained or lost leaves moves every
+// ending by the same ratio and leaves each of them at its own share of the new
+// total — which is exactly this number, and is the null hypothesis every
+// shortfall below is read against.
+//
+// Zero-with-false when there is no reading for the ending, because a prediction
+// derived from a measurement nobody took is unavailable rather than zero.
+func affordedPrediction(ending string, scale float64) (float64, bool) {
+	measured, known := affordedMeasuredOn.ending[ending]
+	if !known || scale == 0 {
+		return 0, false
+	}
+	return float64(measured) * scale, true
+}
+
+// affordedTaker is one ending that came in ABOVE what a merely-moved population
+// predicts for it, and by how much.
+type affordedTaker struct {
+	ending string
+	got    int
+	over   float64
+}
+
+// affordedTakers is every such ending, the largest surplus first.
+//
+// # The reading the scale on its own cannot make
+//
+// affordedScale is one number for the whole census, and that is right for the
+// change it was written for: a window nudged or core.Theme gaining leaves moves
+// all four endings together, and the ratio is the whole of what happened. It is
+// wrong for the change that actually threatens this census. A rewrite of
+// themeLeafSetOf that reshapes WHICH ending a set reaches moves the four
+// against each other while the population is identical — same leaves, same
+// window, same 930 sets, scale 1.00 — and "this ending should be where it was"
+// is then the constant argument wearing a measurement's clothes. Every
+// shortfall reads as an arm having gone, and the sentence sends a reader after
+// a relation that is being asked as often as ever, of different sets.
+//
+// The residual is what separates the two, and it is available because both
+// censuses are partitions of the same walk: the four predictions add up to this
+// run's own population (see affordedRecordTotal), so the surpluses and the
+// shortfalls are the same pixels counted twice. An ending that fell did not
+// lose its sets to the walk — they are in this list, under another name.
+//
+//	the population moved      every residual near zero; the ratio is the whole
+//	                          of what happened, and a shortfall under the floor
+//	                          is the record needing a re-take
+//	the classification moved  one ending down and a named ending up by about as
+//	                          much; the walk produced the same sets and
+//	                          themeLeafSetOf sorted them somewhere else
+//
+// Endings the record does not name are left out rather than predicted at zero:
+// they have no measurement to scale, the key-set arms above report them, and a
+// surplus computed against nothing would be the largest number in the list.
+func affordedTakers(reached map[string]int, endings []string, scale float64) []affordedTaker {
+	takers := []affordedTaker{}
+	for _, ending := range endings {
+		predicted, ok := affordedPrediction(ending, scale)
+		if !ok {
+			continue
+		}
+		if over := float64(reached[ending]) - predicted; over > 0 {
+			takers = append(takers, affordedTaker{
+				ending: ending, got: reached[ending], over: over})
+		}
+	}
+	sort.Slice(takers, func(i, j int) bool { return takers[i].over > takers[j].over })
+	return takers
+}
+
 // affordedBracket is the floor one ending is held to, why it is that number,
 // and which of the two arms produced it.
 //
@@ -706,18 +827,42 @@ func affordedEndingBracket(ending string) affordedBracket {
 			measured)}
 }
 
-// affordedShortfallCause is which of the two findings a shortfall actually is,
-// decided rather than hedged.
+// affordedShortfallCause is which of the three findings a shortfall actually
+// is, decided rather than hedged.
 //
-// A count under its floor is either the whole population having moved — in
-// which case every ending moved with it and the record is what needs re-taking
-// — or this one arm going while the others held, which is the relation being
-// asked of a population that can no longer break it. affordedMeasuredNote can
-// only say the first "may be" the case; the scale says which, because a moved
-// population predicts a number and the number is in hand.
-func affordedShortfallCause(b affordedBracket, scale float64, got int) string {
+// A count under its floor is one of three things, and the first two look
+// identical from the count alone:
+//
+//	the population moved          the walk got smaller — a window narrowed,
+//	                              core.Theme lost leaves — and every ending
+//	                              came down with it. affordedMeasuredOn is
+//	                              what needs re-taking, not the relation.
+//	the classification moved      the walk produced the same sets and
+//	                              themeLeafSetOf sorted them into different
+//	                              endings. The relation is still asked as
+//	                              often; it is asked of other sets, and some
+//	                              named ending is holding the difference.
+//	the arm went                  neither: the sets that used to reach this
+//	                              ending are not on the walk and are not
+//	                              anywhere else either.
+//
+// affordedMeasuredNote can only say the first "may be" the case. The scale says
+// whether it is, because a moved population predicts a number and the number is
+// in hand — and affordedTakers says whether it is the second, because the four
+// counts are a partition of one walk and a shortfall therefore has to have a
+// partner. The third is the one that cannot happen while affordedRecordTotal's
+// assertion holds, and it is still spelled out: an arithmetic that has come
+// apart deserves a sentence saying which arithmetic, not a fallthrough into one
+// of the other two readings.
+//
+// `reached` is the whole census rather than this ending's count, because the
+// question "did these sets leave, or did they go somewhere" cannot be asked of
+// one number.
+func affordedShortfallCause(b affordedBracket, scale float64, got string,
+	reached map[string]int, endings []string) string {
+	count := reached[got]
 	if !b.known || scale == 0 {
-		return "\n\nWhich of the two this is cannot be said here: " +
+		return "\n\nWhich of the three this is cannot be said here: " +
 			"affordedMeasuredOn has no reading for this ending, so there is no " +
 			"count to scale and no prediction to hold this one against."
 	}
@@ -730,10 +875,50 @@ func affordedShortfallCause(b affordedBracket, scale float64, got int) string {
 			"that same number, so the thing to re-take is affordedMeasuredOn and "+
 			"not this walk.", scale, b.measured, moved, b.floor)
 	}
+	// Where the missing sets went. The four endings partition one walk, so a
+	// count under its prediction is matched, set for set, by counts over
+	// theirs; naming them is the difference between "this relation has stopped
+	// being asked" and "this relation is being asked of the sets that used to
+	// answer some other question".
+	takers := affordedTakers(reached, endings, scale)
+	if len(takers) > 0 {
+		said := make([]string, 0, len(takers))
+		for _, t := range takers {
+			predicted, _ := affordedPrediction(t.ending, scale)
+			said = append(said, fmt.Sprintf("%q is at %d against a prediction of "+
+				"%.0f, +%.0f", t.ending, t.got, predicted, t.over))
+		}
+		// The population is the thing that decides how to read the surplus: at
+		// 1.00× the walk is untouched and the only thing that can have moved is
+		// the sort, and at any other ratio the two changes are on top of each
+		// other and the residual is what is left after the scale is taken off.
+		where := fmt.Sprintf("The population is at %.2f× the one the record was "+
+			"taken over, so the scale is not the whole of it", scale)
+		if math.Abs(scale-1) < affordedScaleSame {
+			where = "The population is the one the record was taken over — same " +
+				"leaves, same window, same %d sets — so this is not the walk at all"
+			where = fmt.Sprintf(where, affordedSetCount(affordedMeasuredOn.leaves,
+				affordedMeasuredOn.window))
+		}
+		return fmt.Sprintf("\n\nAnd these sets did not leave the walk. %s: this "+
+			"ending predicts about %.0f and %d arrived, and %s. That is "+
+			"themeLeafSetOf reshaping WHICH ending a set reaches rather than an arm "+
+			"going — the relation is still being asked, of the sets now answering "+
+			"somewhere else, and the ending to look at is the one holding them. "+
+			"Read the two derivations against each other before re-taking "+
+			"affordedMeasuredOn: a record re-taken over a classification that has "+
+			"moved records the new shape as the baseline.",
+			where, moved, count, strings.Join(said, "; "))
+	}
 	return fmt.Sprintf("\n\nAnd it is this arm and not the census: the population "+
 		"is at %.2f× the one the record was taken over, which predicts about %.0f "+
-		"sets for this ending and %d arrived. The others moved with the walk; this "+
-		"one went.", scale, moved, got)
+		"sets for this ending and %d arrived, and no other ending is above its own "+
+		"prediction.\n\nThe four endings partition one walk, so a shortfall with no "+
+		"partner is arithmetic that has come apart rather than a finding about the "+
+		"derivation — affordedRecordTotal's assertion above is the one that should "+
+		"have fired first, and reading this as an arm going would be a sentence "+
+		"about core.Theme built on a division nobody can stand behind.",
+		scale, moved, count)
 }
 
 // affordedMeasuredNote is the sentence a failure adds when this run is not the
@@ -944,6 +1129,52 @@ func TestTheAffordedWidthHoldsItsTwoRelations(t *testing.T) {
 			"walked, so nothing further is asked.",
 			len(sets), len(names), affordedWindowMax, want)
 	}
+	// And both censuses as partitions, which is what every prediction below
+	// rests on.
+	//
+	// The switch that classifies a set has a default arm, so each set reaches
+	// exactly one ending and the four counts add up to the walk. That is what
+	// makes an ending's own share of the population a thing the scale can
+	// predict — and, one step further, what makes the four residuals sum to
+	// zero, so a shortfall in one ending is necessarily a surplus in another
+	// and affordedShortfallCause can name where the sets went instead of
+	// asserting that they left. See affordedTakers.
+	//
+	// Asked of both ends because either can come apart on its own: a fifth
+	// ending would leave this run's counts short of the walk, and a re-measure
+	// that mistyped one number would leave the RECORD short of the population
+	// it says it was taken over — and that one is invisible from the record,
+	// because each ending's number still looks like a count.
+	census := 0
+	for _, ending := range endings {
+		census += reached[ending]
+	}
+	if census != len(sets) {
+		t.Fatalf("the walk produced %d sets and the four endings account for %d of "+
+			"them.\n\n"+
+			"Every set reaches exactly one of the four sentences — the switch above "+
+			"has a default arm — and that partition is what every prediction below "+
+			"rests on: an ending's floor is its share of a population, and the "+
+			"reading that tells a redistribution from an arm going is that the "+
+			"residuals have to sum to zero. With sets unaccounted for, a shortfall "+
+			"could be either and nothing here could say which, so nothing further is "+
+			"asked. The census is %v.", len(sets), census, reached)
+	}
+	if total, want := affordedRecordTotal(),
+		affordedSetCount(affordedMeasuredOn.leaves, affordedMeasuredOn.window); total != want {
+		t.Fatalf("affordedMeasuredOn's four counts add up to %d and the walk it says "+
+			"it was taken over produces %d sets.\n\n"+
+			"The record is a partition of that population, so those two are the same "+
+			"number by construction and a disagreement means one of the counts was "+
+			"mistyped when it was written down — which is invisible from the record "+
+			"itself, because the wrong number still looks like a count. Everything "+
+			"below scales this run against that total: the floors are shares of "+
+			"these numbers and the redistribution reading is the residuals summing "+
+			"to zero, so a record that is not a partition makes every one of them a "+
+			"comparison with a population nobody walked. Re-take the reading (the "+
+			"census in the log line) rather than adjusting one entry to make the sum "+
+			"come out. The record reads %v.", total, want, affordedMeasuredOn.ending)
+	}
 	// What this whole census comes to against the one the record was taken
 	// over. See affordedScale: one number, because one walk produced all four
 	// endings.
@@ -974,8 +1205,59 @@ func TestTheAffordedWidthHoldsItsTwoRelations(t *testing.T) {
 				"message, because a relation that holds over 1 set holds. That is the "+
 				"margin this floor is here to notice leaving.%s",
 				reached[ending], len(sets), ending, b.floor, b.why,
-				affordedShortfallCause(b, scale, reached[ending]), reached,
+				affordedShortfallCause(b, scale, ending, reached, endings), reached,
 				affordedWindowMax, affordedMeasuredNote(len(names), len(sets)))
+		}
+	}
+
+	// # And the redistribution itself, where there is nothing to argue about
+	//
+	// Everything above is a bound on ONE ending, and a re-sort of the walk
+	// clears all four of them: 377 sets moving from one ending to another
+	// leaves both above their floors, both above what the scale predicts to
+	// within the floors' own slack, and the census reading as healthy. That is
+	// the failure the per-ending floors were introduced for, arriving one level
+	// up — the same move this file has now made three times.
+	//
+	// The residual is what sees it, and on an unmoved population it needs no
+	// tolerance at all. Same leaf names, same window bound: the walk produces
+	// the same sets in the same order, themeLeafSetOf is a function of a set,
+	// and therefore every ending's count is the one that was recorded. Not
+	// "about the one" — the one. So the comparison is exact, and anything that
+	// is not equal is the classification having moved, with no re-measure to
+	// hedge about.
+	//
+	// Asked only in that state on purpose. When the population HAS moved the
+	// counts are expected to differ and by how much is a question about which
+	// windows crowd, which is a shape the scale does not model — that reading
+	// stays in the log line, under affordedResidualQuiet, where it is a
+	// sentence rather than a bound nobody measured.
+	if len(names) == affordedMeasuredOn.leaves &&
+		affordedWindowMax == affordedMeasuredOn.window {
+		for _, ending := range endings {
+			measured, known := affordedMeasuredOn.ending[ending]
+			if !known || reached[ending] == measured {
+				continue
+			}
+			t.Errorf("%q was reached by %d of the %d sets and affordedMeasuredOn "+
+				"records %d, over the same %d leaf names at the same window of %d.\n\n"+
+				"The walk is a function of those two numbers and they have not moved, "+
+				"so it produced the same %d sets in the same order — and which ending "+
+				"a set reaches is a function of the set. These two counts are "+
+				"therefore the same number or themeLeafSetOf is sorting the walk "+
+				"differently than it was when the record was taken.\n\n"+
+				"That is the finding the per-ending floors cannot make. A re-sort "+
+				"moves the four endings against each other while the population is "+
+				"identical: every floor stays clear, every relation goes on being "+
+				"asked, and the census reads healthy while the sets answering each "+
+				"question are not the ones the record was about. The whole census is "+
+				"%v against a record of %v.\n\n"+
+				"If the new sort is what was wanted, re-take affordedMeasuredOn from "+
+				"the census in the log line — and read the derivation first, because "+
+				"a record re-taken over a classification that moved by accident "+
+				"records the accident as the baseline.",
+				ending, reached[ending], len(sets), measured, len(names),
+				affordedWindowMax, len(sets), reached, affordedMeasuredOn.ending)
 		}
 	}
 
@@ -1044,6 +1326,20 @@ func TestTheAffordedWidthHoldsItsTwoRelations(t *testing.T) {
 	// derivation is doing anything is this line: "against its own floor" was
 	// true of an ending on the stated constant too.
 	held := make([]string, 0, len(endings))
+	// And how far the four are from where a moved population puts them, which
+	// is the reading that says the SORT has not moved.
+	//
+	// The floors above are about one ending at a time and they pass over a
+	// redistribution that stayed above them — the case affordedTakers exists
+	// for. This is that case in a passing run's own line: the residual is what
+	// is left of an ending's count after the scale is taken off, so four
+	// residuals near zero is the classification standing still, and a pair of
+	// them at ±40% with the population unchanged is themeLeafSetOf having
+	// re-sorted the walk with every floor still cleared.
+	// Started under zero rather than at it, so the first ending always names
+	// itself: on an unmoved walk every residual is exactly 0 and a strict
+	// comparison would leave the sentence with no noun.
+	worst, worstEnding := -1.0, ""
 	for _, ending := range endings {
 		b := brackets[ending]
 		arm := "the stated floor"
@@ -1052,12 +1348,35 @@ func TestTheAffordedWidthHoldsItsTwoRelations(t *testing.T) {
 		}
 		held = append(held, fmt.Sprintf("%q %d/%d (%s)",
 			ending, reached[ending], b.floor, arm))
+		predicted, ok := affordedPrediction(ending, scale)
+		if !ok || predicted == 0 {
+			continue
+		}
+		if off := math.Abs(float64(reached[ending])-predicted) / predicted; off > worst {
+			worst, worstEnding = off, ending
+		}
+	}
+	// Said in the direction the residuals are actually in. "Re-sorted by
+	// nothing" is a claim, and a run where an ending is half again its own
+	// prediction while every floor is still cleared is the redistribution
+	// affordedTakers is about, passing — which is worth a sentence in a green
+	// run's line rather than the same words that describe a walk standing
+	// still. The floors are one ending at a time and cannot see it.
+	resorted := "the walk having been re-sorted by nothing"
+	if worst > affordedResidualQuiet {
+		resorted = fmt.Sprintf("more than the %.0f%% a walk standing still leaves, "+
+			"so some ending is holding sets another one used to reach — every floor "+
+			"is still clear and themeLeafSetOf has moved under them",
+			affordedResidualQuiet*100)
 	}
 	t.Logf("%d generated leaf sets over %d distinct leaf names, none of them a "+
 		"shape anybody chose, hold afforded >= edits and the open flag's "+
 		"parent-of-three — each ending against its own floor, %d of the four on a "+
 		"share of its own measurement and the rest on the stated %d, over a "+
-		"population at %.2f× the one the record was taken on: %s%s",
+		"population at %.2f× the one the record was taken on and partitioning it "+
+		"(%d sets, %d accounted for), every ending within %.1f%% of what that scale "+
+		"predicts for it (the furthest being %q), which is %s: %s%s",
 		len(sets), len(names), onShare, affordedEndingFloor, scale,
+		len(sets), census, worst*100, worstEnding, resorted,
 		strings.Join(held, ", "), affordedMeasuredNote(len(names), len(sets)))
 }

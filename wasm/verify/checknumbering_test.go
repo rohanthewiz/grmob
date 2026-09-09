@@ -449,8 +449,17 @@ func checkCitationsResolve(t *testing.T, checks int) {
 				rest = fmt.Sprintf("; and %d more of this kind, in citationExempt",
 					len(lenders)-len(shown))
 			}
-			how = fmt.Sprintf("the kind %s exempted under, nearest this file first: "+
-				"%s%s", rows, strings.Join(said, "; and "), rest)
+			// With the reading that says whether "nearest first" chose
+			// anything. See citationLenderSpread: on a kind whose rows are all
+			// in one directory the phrase is true and empty, and a reader who
+			// takes it for a match has been told something this file cannot
+			// know.
+			n, near, dirs, spread := citationLenderSpread(
+				lenders, example[0], exemptKinds)
+			how = fmt.Sprintf("the kind %s exempted under, nearest this file first "+
+				"(%s): %s%s", rows,
+				citationLenderWhy(n, near, dirs, spread, len(exemptKinds)),
+				strings.Join(said, "; and "), rest)
 		}
 		t.Logf("%d of the %d files opened cite nothing, %d of them a kind this check "+
 			"is about and %d a kind citationExempt itself names (e.g. %s), which "+
@@ -586,6 +595,262 @@ func citationLendersNear(lenders []string, example string) []string {
 		far = append(far, lender)
 	}
 	return append(near, far...)
+}
+
+// citationLenderSpread is what the proximity sort actually had to decide, for
+// one kind and across all of them.
+//
+// # A sort with no population under it
+//
+// citationLendersNear puts same-directory rows first, and on this repository
+// the example is a core/ file and both core/ exemptions lead — which looks like
+// the heuristic working and is equally consistent with there being two rows and
+// one directory between them. Nothing counted, so "nearest this file first" was
+// a claim about a sort rather than about a match, and a reader had no way to
+// tell an ordering that fired from one that could not have.
+//
+// Three numbers say which:
+//
+// \trows      the kind's exemptions. Under two the sort has nothing to order.
+// \tnear      how many of them are in the example's own directory. Zero means
+// \t          every row is "far" and the order is alphabetical under another
+// \t          name; all of them means the same from the other side.
+// \tdirs      how many directories the kind's rows are spread over. One is the
+// \t          case where proximity cannot separate anything at all.
+//
+// # And the same question one level up
+//
+// `kinds` is how many kinds in the whole table have rows in more than one
+// directory, which is the population the heuristic can EVER be about. A
+// repository where that is zero is one where this sort is dead code wearing a
+// sentence, and the line should say so rather than print "nearest this file
+// first" over a list that was going to come out in that order regardless.
+//
+// Taken over the whole exempt table rather than over the kinds that reached an
+// example, because the question is about the sort and not about this run's
+// silent set: a kind with lenders in three directories is evidence the ordering
+// has work to do even on a run where no file of that kind went silent.
+func citationLenderSpread(lenders []string, example string,
+	byKind map[string][]string) (rows, near, dirs, kinds int) {
+	rows = len(lenders)
+	here := filepath.Dir(example)
+	seen := map[string]bool{}
+	for _, lender := range lenders {
+		dir := filepath.Dir(lender)
+		if dir == here {
+			near++
+		}
+		if !seen[dir] {
+			seen[dir] = true
+			dirs++
+		}
+	}
+	for _, of := range byKind {
+		spread := map[string]bool{}
+		for _, lender := range of {
+			spread[filepath.Dir(lender)] = true
+		}
+		if len(spread) > 1 {
+			kinds++
+		}
+	}
+	return rows, near, dirs, kinds
+}
+
+// citationLenderWhy is that spread as the clause that qualifies the order.
+//
+// Said in the direction the numbers are actually in, because the three states
+// send a reader to different conclusions: an order the sort decided, an order
+// it could not have decided, and an order there was nothing to decide about.
+// One sentence covering all three is the count-shaped answer this whole line
+// was rebuilt out of.
+func citationLenderWhy(rows, near, dirs, kinds, allKinds int) string {
+	over := fmt.Sprintf("%d of the %d kind%s citationExempt names %s rows in more "+
+		"than one directory", kinds, allKinds,
+		map[bool]string{true: "", false: "s"}[allKinds == 1],
+		map[bool]string{true: "has", false: "have"}[kinds == 1])
+	switch {
+	case rows < 2:
+		return fmt.Sprintf("one row, so there is no order here to have chosen — %s",
+			over)
+	case dirs == 1:
+		return fmt.Sprintf("all %d of them in one directory, so \"nearest first\" is "+
+			"alphabetical order under another name here and decided nothing — %s",
+			rows, over)
+	case near == 0:
+		return fmt.Sprintf("none of the %d in this file's own directory, across %d of "+
+			"them, so every row is equally far and the order below is alphabetical — "+
+			"%s", rows, dirs, over)
+	default:
+		return fmt.Sprintf("%d of the %d in this file's own directory and the rest "+
+			"across %d more, so the order below is one the sort chose — %s",
+			near, rows, dirs-1, over)
+	}
+}
+
+// The proximity sort, asked of orderings this repository does not have.
+//
+// # A guess with one example under it
+//
+// citationLendersNear puts same-directory rows first and citationLenderSpread
+// now says whether that decided anything. On this repository it decides
+// nothing: the example is a file in neither lender's directory, so both rows
+// are "far" and the order is alphabetical. That is a real reading and it is
+// also the whole of what any run here exercises — the near group is never
+// non-empty, the sort's own arm has never run, and the census reports honestly
+// on a function nothing has asked a question of.
+//
+// So the orderings are built. Four shapes, each of which sends a reader
+// somewhere different, and each with what the spread has to say about it:
+//
+// \tone row              nothing to order
+// \tone directory        every row near or every row far; either way the
+// \t                     output is the input and "nearest first" is a name for
+// \t                     alphabetical
+// \tnone near            this repository's own shape, where the sort is a
+// \t                     no-op it cannot report as one without counting
+// \tsome near            the only shape where the order below is one the sort
+// \t                     chose, which is the arm no run had reached
+//
+// # And the two properties underneath all of them
+//
+// The output has to be a permutation of the input, because a row silently
+// dropped is an exemption a reader is never shown and a row duplicated is one
+// they are shown twice. And it has to be stable within each group, because the
+// stability is what the single-lender version was picked for and is what keeps
+// two runs over an unchanged tree printing one line.
+func TestTheLenderOrderIsAskedOfOrderingsThisRepositoryDoesNotHave(t *testing.T) {
+	for _, c := range []struct {
+		what    string
+		lenders []string
+		example string
+		// The order citationLendersNear has to produce.
+		want []string
+		// And what citationLenderSpread has to say about that ordering, over a
+		// table of one kind — the numbers, and the clause a reader gets.
+		rows, near, dirs int
+		says             string
+	}{
+		{
+			what:    "one row, so there is no order to have chosen",
+			lenders: []string{"core/debug.go"},
+			example: "wasm/verify/x.go",
+			want:    []string{"core/debug.go"},
+			rows:    1, near: 0, dirs: 1,
+			says: "one row, so there is no order here to have chosen",
+		},
+		{
+			// Every row in the example's own directory. "Nearest first" is
+			// true of all of them, which is the same as being true of none.
+			what:    "one directory, and it is this file's",
+			lenders: []string{"core/a.go", "core/b.go"},
+			example: "core/x.go",
+			want:    []string{"core/a.go", "core/b.go"},
+			rows:    2, near: 2, dirs: 1,
+			says: "all 2 of them in one directory",
+		},
+		{
+			// This repository's shape today, and the reading that says the
+			// sentence above the list is describing a sort that did nothing.
+			what:    "two directories, neither of them this file's",
+			lenders: []string{"core/debug.go", "wasm/verify/check.go"},
+			example: "render/x.go",
+			want:    []string{"core/debug.go", "wasm/verify/check.go"},
+			rows:    2, near: 0, dirs: 2,
+			says: "none of the 2 in this file's own directory",
+		},
+		{
+			// The arm the whole heuristic exists for, which no run in this
+			// repository has reached: a far row sorted BEHIND a near one that
+			// comes after it alphabetically.
+			what:    "a near row that alphabetises last",
+			lenders: []string{"aaa/first.go", "zzz/near.go", "zzz/other.go"},
+			example: "zzz/x.go",
+			want:    []string{"zzz/near.go", "zzz/other.go", "aaa/first.go"},
+			rows:    3, near: 2, dirs: 2,
+			says: "2 of the 3 in this file's own directory and the rest across 1 more",
+		},
+	} {
+		got := citationLendersNear(c.lenders, c.example)
+		if !slices.Equal(got, c.want) {
+			t.Errorf("%s: citationLendersNear(%v, %q) is %v and the row wants %v.\n\n"+
+				"An exemption is a claim about a file's CONTENT and all this file has "+
+				"is a path, so directory is the one thing in hand that correlates "+
+				"with content at all — and the rows a reader is shown are the first "+
+				"two of this list. An order that is not this one puts a different "+
+				"pair of arguments in front of them.",
+				c.what, c.lenders, c.example, got, c.want)
+		}
+		// A permutation, asked apart from the order: a sort that dropped a row
+		// would satisfy any `want` short enough to match it.
+		bag, back := append([]string(nil), c.lenders...), append([]string(nil), got...)
+		sort.Strings(bag)
+		sort.Strings(back)
+		if !slices.Equal(bag, back) {
+			t.Errorf("%s: citationLendersNear returned %v over an input of %v.\n\n"+
+				"The count beside this list — \"and N more of this kind\" — is taken "+
+				"off the returned slice, so a row dropped here is an exemption a "+
+				"reader is never shown and is not told about either. Two groups "+
+				"appended is a permutation by construction; this is the assertion "+
+				"that it stayed one.", c.what, got, c.lenders)
+		}
+		rows, near, dirs, kinds := citationLenderSpread(
+			c.lenders, c.example, map[string][]string{".go": c.lenders})
+		if rows != c.rows || near != c.near || dirs != c.dirs {
+			t.Errorf("%s: citationLenderSpread reports %d rows, %d near, %d "+
+				"directories; the row is %d, %d, %d.\n\n"+
+				"Those three are what separate an order the sort chose from one it "+
+				"could not have chosen, and the clause a passing run prints is built "+
+				"out of them. A number that does not describe the ordering leaves "+
+				"\"nearest this file first\" qualified by a sentence about some other "+
+				"list.", c.what, rows, near, dirs, c.rows, c.near, c.dirs)
+		}
+		why := citationLenderWhy(rows, near, dirs, kinds, 1)
+		if !strings.Contains(why, c.says) {
+			t.Errorf("%s: citationLenderWhy does not say %q.\n\nIt said: %q\n\n"+
+				"The three states send a reader to different conclusions — an order "+
+				"the sort decided, an order it could not have decided, and an order "+
+				"there was nothing to decide about — and one sentence covering all "+
+				"three is the count-shaped answer this line was rebuilt out of.",
+				c.what, c.says, why)
+		}
+	}
+	// And the kind census one level up, which is the population the heuristic
+	// can ever be about.
+	//
+	// Asked over a table rather than over one kind's rows: a repository where
+	// no kind has lenders in more than one directory is one where this sort is
+	// dead code wearing a sentence, and the line should be able to say so.
+	for _, c := range []struct {
+		what  string
+		table map[string][]string
+		kinds int
+	}{
+		{what: "every kind in one directory", kinds: 0, table: map[string][]string{
+			".go":  {"core/a.go", "core/b.go"},
+			".mjs": {"wasm/verify/a.mjs"},
+		}},
+		{what: "one kind spread, one not", kinds: 1, table: map[string][]string{
+			".go":  {"core/a.go", "wasm/verify/b.go"},
+			".mjs": {"wasm/verify/a.mjs", "wasm/verify/b.mjs"},
+		}},
+		{what: "both spread", kinds: 2, table: map[string][]string{
+			".go":  {"core/a.go", "wasm/verify/b.go"},
+			".mjs": {"core/a.mjs", "wasm/verify/b.mjs"},
+		}},
+	} {
+		_, _, _, kinds := citationLenderSpread(
+			c.table[".go"], "render/x.go", c.table)
+		if kinds != c.kinds {
+			t.Errorf("%s: citationLenderSpread reports %d kinds with rows in more "+
+				"than one directory and the row is %d (%v).\n\n"+
+				"That count is the population under the whole heuristic. At zero the "+
+				"sort cannot separate anything anywhere in the table, and the line "+
+				"printing \"nearest this file first\" over a list that was going to "+
+				"come out in that order regardless is a claim about a sort presented "+
+				"as a claim about a match.", c.what, kinds, c.kinds, c.table)
+		}
+	}
 }
 
 // citationClipWhy is one exemption's argument, bounded.

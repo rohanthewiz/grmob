@@ -3185,6 +3185,142 @@ function inkCanaryFaceSpread(probes) {
     };
 }
 
+// What the six probe reads bought, and what they cannot bound.
+//
+// # A round trip each, and five of them agreeing
+//
+// One probe per distinct request is a DOM.querySelector and a
+// CSS.getPlatformFontsForNode apiece, inside the window two fingerprints are
+// holding open. inkCanaryFaceSpread says how many answers came back and how
+// many of them differed; on this grid that is six reads and one answer, which
+// is the reading asking per request was written to get — and is also the
+// evidence that five of those round trips bought a sentence rather than a fact.
+//
+// The honest next move is a bound, and a bound needs the CONDITION under which
+// a second read could differ from the first. That condition is not a guess: the
+// request key is style, weight and size (see INK_CANARY_REQ_JS), a family list
+// answers per REQUEST, and a read can only differ from another where the two
+// requests differ. So the axes are what to measure.
+//
+//\tvaried   an axis these requests take more than one value on. An agreement
+//\t         across it is a real reading: the stack has no cut at those values
+//\t         and one read would have carried the finding.
+//\tfixed    an axis every request agrees on. Nothing here says anything about
+//\t         it — six reads at one weight are six reads at one weight — and
+//\t         "no optical cut" is a claim about the varied axes only.
+//
+// That is the whole of what separates a redundant read from a necessary one,
+// and it turns "read one, and read a second only where the answers could
+// differ" from an instinct into a rule with this run's own numbers under it: on
+// a grid whose requests differ in size alone, the bound is one read per distinct
+// SIZE, and the style and weight columns are blind however many probes are
+// mounted.
+//
+// # Parsed from the end
+//
+// The key is `fontStyle + " " + fontWeight + " " + fontSize`, and fontStyle is
+// the one of the three that can be two words ("oblique 10deg"). Size is the
+// last token and weight the one before it, so taking them off the end leaves
+// whatever remains as the style — which is right for both spellings, where
+// splitting on the first space is right for only one.
+//
+// Null when nothing was read, for the same reason inkCanaryFaceList is: a
+// sentence with no population under it should have no noun rather than a zero.
+function inkCanaryReqAxes(probes) {
+    const rows = (probes || []).filter((p) => p && p.req);
+    if (rows.length === 0) return null;
+    const axes = [
+        { name: "style", values: new Map() },
+        { name: "weight", values: new Map() },
+        { name: "size", values: new Map() },
+    ];
+    for (const p of rows) {
+        const parts = p.req.split(" ");
+        const size = parts.pop();
+        const weight = parts.pop();
+        const at = { style: parts.join(" "), weight, size };
+        // The answer this request came back with, so an axis can say not only
+        // that it was varied but whether varying it changed anything. A probe
+        // that came back empty still counts as a value of the axis — the
+        // request was asked at it — and contributes no answer.
+        const answer = p.faces && p.faces.length > 0 ? inkFaceList(p.faces) : null;
+        for (const axis of axes) {
+            const value = at[axis.name];
+            if (!axis.values.has(value)) axis.values.set(value, new Set());
+            if (answer !== null) axis.values.get(value).add(answer);
+        }
+    }
+    const varied = axes.filter((a) => a.values.size > 1);
+    const fixed = axes.filter((a) => a.values.size === 1);
+    // What a read at one value of each varied axis would come to, which is the
+    // bound: the product of the varied axes' value counts, against the number
+    // of probes actually mounted. On a grid that varies one axis those are the
+    // same number and nothing is being spent twice; the gap between them is
+    // what the deduplication in the mount already saves.
+    const grid = varied.reduce((n, a) => n * a.values.size, 1);
+    return {
+        varied: varied.map((a) => ({ name: a.name, values: [...a.values.keys()] })),
+        fixed: fixed.map((a) => ({ name: a.name, value: [...a.values.keys()][0] })),
+        reads: rows.length, grid,
+    };
+}
+
+// The axis census as a clause, and the whole of what the reads bound.
+//
+// Two halves, because the reading has two: what varying an axis showed, and
+// what the axes nobody varied leave unsaid. The second half is the one a tail
+// without it gets wrong — "no optical cut at these sizes" is true and is read
+// as "one probe would have done", and neither of those is a statement about
+// weight or style when every request carried the same ones.
+//
+// The bound comes out of the same numbers: one read per point of the varied
+// grid is what could have produced this finding, and the probes are mounted per
+// distinct request, so on a grid varying one axis those two are equal and the
+// six reads are six values of it rather than six asks at one.
+function inkCanaryAxisPhrase(axes) {
+    if (!axes) return "no request this run could read";
+    const varied = axes.varied.map(
+        (a) => `${a.name} (${a.values.join(", ")})`).join(" and ");
+    const fixed = axes.fixed.map((a) => `${a.name} ${a.value}`).join(" and ");
+    if (axes.varied.length === 0) {
+        return `no axis at all — ` +
+            (axes.reads === 1 ? `the single read is at ` :
+                `every one of the ${axes.reads} reads is at `) +
+            `${fixed}, so the answers agreeing says nothing beyond that one request`;
+    }
+    return `${varied}, which is ${axes.grid} point${axes.grid === 1 ? "" : "s"} of ` +
+        `the request grid and the bound on what reading more of them could show` +
+        (axes.fixed.length === 0 ? `` :
+            ` — and at one ${fixed} throughout, so nothing here is a reading about ` +
+            `${axes.fixed.map((a) => a.name).join(" or ")}`);
+}
+
+// And what the name-against-advance comparison declined to ask.
+//
+// Said only when there was something, because a clause that reports zeroes on
+// every healthy run is a clause a reader stops seeing — and the state this is
+// for is the comparison going quiet, which is exactly when the numbers stop
+// being zero. See inkCanaryAgreement: a probe that named two faces is that
+// reading declining on a page state, and without this the runs it cost arrive
+// in the recital as a population that was simply smaller.
+function inkCanaryPassedPhrase(asked) {
+    const parts = [];
+    if (asked.canvasGenericMulti > 0) {
+        parts.push(`${asked.canvasGenericMulti} of the probes naming more than one ` +
+            `face, which is a generic reaching two for one string and leaves no ` +
+            `single name to hold an advance against, costing the join ` +
+            `${asked.canvasGenericUnjoined} run` +
+            `${asked.canvasGenericUnjoined === 1 ? "" : "s"}`);
+    }
+    if (asked.canvasGenericUnread > 0) {
+        parts.push(`${asked.canvasGenericUnread} of them coming back with no face ` +
+            `at all`);
+    }
+    if (parts.length === 0) return ``;
+    return `, with ${parts.join(" and ")} — passed over rather than counted as
+    agreement`;
+}
+
 // The probe's answer and the advances' answer to one question, held against
 // each other.
 //
@@ -3225,6 +3361,28 @@ function inkCanaryFaceSpread(probes) {
 // under. Every one of those makes a sentence elsewhere confidently wrong, and
 // none of them is visible from either reading alone.
 //
+// # And what it was NOT asked of
+//
+// A probe whose `faces` has two entries is passed over: the generic reached
+// more than one face for "Ag0" and there is no single name to hold against an
+// advance. That is true, and it is also the population where a
+// name-versus-metric disagreement is most likely — a family list resolving past
+// its head is exactly the state both readings are trying to see — and it was
+// dropped without a count. `asked` said how many runs were joined and nothing
+// said how many were passed over, so the comparison going quiet on some machine
+// would arrive in the tail as a smaller number with no reason attached, which
+// reads as this grid having had fewer runs rather than as this reading having
+// stopped.
+//
+// So the skips are counted and named apart:
+//
+//	multi     probes that named more than one face — the comparison declining
+//	          on a page state, which is the interesting one
+//	unread    probes that came back with no faces at all — a request whose
+//	          answer is missing rather than plural
+//	unjoined  runs whose own request had a probe in the first bucket, which is
+//	          what those skips actually cost this reading in rows
+//
 // Returns the population as well as the fault, because a comparison asked of no
 // runs is not agreement and the tail has to be able to say which it had.
 function inkCanaryAgreement(probes, rows) {
@@ -3232,15 +3390,25 @@ function inkCanaryAgreement(probes, rows) {
     // is a generic that reached more than one for "Ag0" — there is no single
     // name to compare and inkFaceList's own arm is the reader for it.
     const named = new Map();
+    // And the requests that were passed over for that reason, kept apart from
+    // the ones that were never read at all: a row skipped because its probe
+    // answered with two faces is this comparison declining, and a row skipped
+    // because nothing came back is a read that failed.
+    const plural = new Set();
+    let multi = 0, unread = 0;
     for (const p of probes || []) {
-        if (p && p.req && p.faces && p.faces.length === 1) {
-            named.set(p.req, p.faces[0].family);
-        }
+        if (!p || !p.req) continue;
+        if (!p.faces || p.faces.length === 0) { unread++; continue; }
+        if (p.faces.length === 1) { named.set(p.req, p.faces[0].family); continue; }
+        multi++;
+        plural.add(p.req);
     }
-    let asked = 0;
+    let asked = 0, unjoined = 0;
     const split = [];
     for (const m of rows) {
-        if (!m || !m.asked || !m.family || !m.req || !named.has(m.req)) continue;
+        if (!m || !m.asked || !m.family || !m.req) continue;
+        if (plural.has(m.req)) { unjoined++; continue; }
+        if (!named.has(m.req)) continue;
         const gap = inkCanvasGenericGap(m);
         if (gap === null) continue;
         asked++;
@@ -3249,10 +3417,12 @@ function inkCanaryAgreement(probes, rows) {
         if (named.get(m.req) !== m.family || gap < LAYOUT_UNIT) continue;
         split.push({ m, gap, face: named.get(m.req) });
     }
-    if (split.length === 0) return { asked, agreed: asked, fault: null };
+    if (split.length === 0) {
+        return { asked, agreed: asked, multi, unread, unjoined, fault: null };
+    }
     const worst = split.reduce((w, s) => (s.gap > w.gap ? s : w), split[0]);
     return {
-        asked, agreed: asked - split.length,
+        asked, agreed: asked - split.length, multi, unread, unjoined,
         fault: `the probe and the advances disagree about what ` +
             `${INK_CANARY_FALLBACK} reaches at ${worst.m.req}: the probe says ` +
             `${worst.face}, which is the family this run is drawn by, and the same ` +
@@ -4517,6 +4687,16 @@ async function main() {
         // asked of no runs is not agreement, and the tail has to be able to say
         // which of the two it had.
         canvasGenericPaired: 0, canvasGenericAgreed: 0,
+        // And what that comparison declined to ask, which nothing counted:
+        // probes that named more than one face, probes that came back with
+        // none, and the runs those first skips cost the join. See
+        // inkCanaryAgreement — a reading going quiet arrives as a smaller
+        // population, and a smaller population with no reason beside it reads
+        // as a smaller grid.
+        canvasGenericMulti: 0, canvasGenericUnread: 0, canvasGenericUnjoined: 0,
+        // And the axes the requests actually differ in, which is what bounds
+        // the reads. See inkCanaryReqAxes.
+        canvasGenericAxes: null,
     };
     try {
         const port = await devtoolsPort(profile);
@@ -6131,6 +6311,13 @@ async function main() {
         asked.canvasGenericReqs = canarySpread.mounted;
         asked.canvasGenericRead = canarySpread.read;
         asked.canvasGenericAnswers = canarySpread.answers;
+        // And which axes of the request key those reads actually differ in,
+        // which is the only thing that says whether a second read could have
+        // answered differently from the first. See inkCanaryReqAxes: the
+        // spread says the answers agreed and this says what they agreed
+        // ACROSS, and an axis every request shares is one the agreement is
+        // silent about however many probes were mounted.
+        asked.canvasGenericAxes = inkCanaryReqAxes(canaryFaces);
         if (facesHeld) {
             const fallbackFault = inkCanvasFallbackFault(
                 canaryFaces, canvasAsked, canvasAsked.length);
@@ -6143,6 +6330,9 @@ async function main() {
             const agreement = inkCanaryAgreement(canaryFaces, canvasAsked);
             asked.canvasGenericPaired = agreement.asked;
             asked.canvasGenericAgreed = agreement.agreed;
+            asked.canvasGenericMulti = agreement.multi;
+            asked.canvasGenericUnread = agreement.unread;
+            asked.canvasGenericUnjoined = agreement.unjoined;
             if (agreement.fault) problems.push(agreement.fault);
         }
         // And the premise as a number, for the tail to recite in place of the
@@ -8106,9 +8296,10 @@ async function main() {
     joined runs make rather than once at whatever the page default is, and answering
     with ${asked.canvasGenericAnswers === 1
         ? `one face at every one of them, which is this stack having no optical cut
-    at these sizes`
+    across ${inkCanaryAxisPhrase(asked.canvasGenericAxes)}`
         : `${asked.canvasGenericAnswers} different faces across them, which is a family
-    list answering per size and the reason one probe is not enough`} — and measuring
+    list answering per request and the reason one probe is not enough, over
+    ${inkCanaryAxisPhrase(asked.canvasGenericAxes)}`} — and measuring
     ${asked.canvasGenericNearest === null ? "no measured amount"
         : asked.canvasGenericNearest.toFixed(4) + "px"} from the nearest of the faces
     those runs are drawn by, over their own strings at their own sizes rather than by
@@ -8116,7 +8307,8 @@ async function main() {
     and not a skipped lookup's, with those two readings of one question — the name a
     probe reports and the distance a canvas measures — held against each other on
     ${asked.canvasGenericPaired} runs where both were in hand and agreeing on
-    ${asked.canvasGenericAgreed} — which gave the same width both ways, the widest of those
+    ${asked.canvasGenericAgreed}${inkCanaryPassedPhrase(asked)} — which gave the same
+    width both ways, the widest of those
     ${asked.canvasFaces} differences being ${asked.canvasWidest.toFixed(6)}px against
     a bound of ${LAYOUT_UNIT},
     over the same tree the rects were read from and in the same layout the

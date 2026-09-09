@@ -1897,6 +1897,373 @@ func TestAPhraseIsPutBackOnTheLinesItCameFrom(t *testing.T) {
 	}
 }
 
+// Which transitions between two constructs a straddle can actually be built
+// out of, walked rather than argued about.
+//
+// # A general reader with evidence from one shape
+//
+// pinBlankedAs reads every construct a copy's span meets, in order, and the
+// sentence it feeds names them all. That machinery is general. Its evidence was
+// not: both fixtures that exercised it opened with `//`, and the note above it
+// said why — a line comment and a runaway string end AT the newline, the
+// newline is whitespace, and every other transition needs "a delimiter in the
+// raw file and a delimiter breaks the match".
+//
+// The second half of that is wrong, and it is wrong in the direction that
+// matters. A delimiter breaks the match when the phrase is spelled WITHOUT it.
+// A citation that quotes a call carries its own quotes:
+//
+// \tlog(pinSame("x"))    code the lexer kept, then a string literal, and not a
+// \t                     newline anywhere in it
+//
+// So the rule is about the bytes at the boundary and not about which construct
+// is on either side of it: a straddle is buildable when those bytes are
+// whitespace (which the strip removes) or are part of the citation. Under that
+// rule every ordered pair below is reachable, including the block comment
+// closing mid-line into a literal that the old note called hypothetical.
+//
+// # What each row asserts
+//
+// Both directions, because either alone is half a reading. The phrase has to
+// produce exactly one copy and that copy's own bytes have to have been taken by
+// the run of constructs the row names — the sentence is not asked here, that is
+// the test above; this is about what the lexer's record says. And for every row
+// whose boundary is raw bytes, the SAME source with those bytes taken out of
+// the phrase has to produce no copy at all, which is what shows the delimiter
+// is being carried rather than skipped over.
+//
+// A row that stopped straddling would be pinCodeOnly having changed what it
+// records; a `bare` that started matching would be pinStripSpace having grown
+// looser, and either one moves what pinCopyNote can see without touching a
+// line of it.
+func TestWhichConstructTransitionsAStraddleCanBeBuiltFrom(t *testing.T) {
+	grid := []struct {
+		// The pair, as the bytes pinCodeOnly records — not as prose. The
+		// sentence a failure prints goes through pinConstructName, so the two
+		// cannot drift; and the completeness check below counts ordered pairs,
+		// which it can only do over the kinds themselves.
+		from, to byte
+		src, ext string
+		// The citation, and the same citation with the boundary bytes taken
+		// out. Empty when the boundary is a newline and there is nothing to
+		// take out.
+		phrase, bare string
+		// What the boundary is made of, for the line at the end.
+		delim string
+		// The run of constructs the copy's span meets, as pinBlankedAs returns
+		// it. Written out so a row that quietly started meeting a different
+		// construct is a failure and not a passing test about something else.
+		kinds []byte
+		// The lines pinCodeOnly ended inside a single-line string on. The
+		// runaway rows have one by construction — that is what makes them
+		// runaways — and every other row has none.
+		open []int
+	}{
+		// The four a citation can walk OUT of live code into. Each boundary is
+		// the construct's own opening delimiter, and the phrase carries it.
+		{from: pinKeptCode, to: pinLineComment, delim: "//",
+			src: "x = pinSame( // total,\ny)\n", ext: ".go",
+			phrase: "pinSame( // total, y)", bare: "pinSame( total, y)",
+			kinds: []byte{pinKeptCode, pinLineComment}},
+		{from: pinKeptCode, to: pinBlockComment, delim: "/*",
+			src: "x = pinSame(/*total*/)\n", ext: ".go",
+			phrase: "pinSame(/*total*/)", bare: "pinSame(total)",
+			kinds: []byte{pinKeptCode, pinBlockComment}},
+		{from: pinKeptCode, to: pinStringLiteral, delim: `"`,
+			src: "log(pinSame(\"x\"))\n", ext: ".go",
+			phrase: "pinSame(\"x\")", bare: "pinSame(x)",
+			kinds: []byte{pinKeptCode, pinStringLiteral}},
+		{from: pinKeptCode, to: pinRunawayString, delim: `"`,
+			src: "x = pinSame(\"total,\ny)\n", ext: ".go",
+			phrase: "pinSame(\"total, y)", bare: "pinSame(total, y)",
+			kinds: []byte{pinKeptCode, pinRunawayString}, open: []int{1}},
+
+		// Out of a line comment, whose boundary is the newline and therefore
+		// costs the phrase nothing — the two rows the fixtures above were
+		// built on, and a third showing the same head reaching a comment.
+		{from: pinLineComment, to: pinKeptCode,
+			src: "x = 1 // pinSame(total,\nc.offer) + 2\n", ext: ".go",
+			phrase: "pinSame(total, c.offer)",
+			kinds:  []byte{pinLineComment, pinKeptCode}},
+		{from: pinLineComment, to: pinStringLiteral, delim: `"`,
+			src: "x = 1 // pinSame(\n\"x\") + y\n", ext: ".mjs",
+			phrase: "pinSame(\"x\")", bare: "pinSame(x)",
+			kinds: []byte{pinLineComment, pinStringLiteral, pinKeptCode}},
+		{from: pinLineComment, to: pinBlockComment, delim: "/*",
+			src: "x = 1 // pinSame(\n/*total*/)\n", ext: ".go",
+			phrase: "pinSame( /*total*/)", bare: "pinSame(total)",
+			kinds: []byte{pinLineComment, pinBlockComment, pinKeptCode}},
+
+		// Out of a block comment, whose boundary is `*/` — the transition the
+		// note above pinBlankedAs called unreachable. It is reachable, and the
+		// citation that reaches it is one that quotes the comment's own close.
+		{from: pinBlockComment, to: pinKeptCode, delim: "*/",
+			src: "/* pinSame( */ x)\n", ext: ".go",
+			phrase: "pinSame( */ x)", bare: "pinSame( x)",
+			kinds: []byte{pinBlockComment, pinKeptCode}},
+		{from: pinBlockComment, to: pinStringLiteral, delim: `*/ "`,
+			src: "/* pinSame( */ \"x\")\n", ext: ".go",
+			phrase: "pinSame( */ \"x\")", bare: "pinSame( x)",
+			kinds: []byte{pinBlockComment, pinStringLiteral, pinKeptCode}},
+
+		// Out of a closed literal, whose boundary is its own closing quote.
+		{from: pinStringLiteral, to: pinKeptCode, delim: `"`,
+			src: "x = \"pinSame(\" + y\n", ext: ".go",
+			phrase: "pinSame(\" + y", bare: "pinSame( + y",
+			kinds: []byte{pinStringLiteral, pinKeptCode}},
+		{from: pinStringLiteral, to: pinLineComment, delim: `" //`,
+			src: "a = \"pinSame(\" // total)\n", ext: ".go",
+			phrase: "pinSame(\" // total)", bare: "pinSame( total)",
+			kinds: []byte{pinStringLiteral, pinLineComment}},
+
+		// And out of the runaway, which the newline closes. This is the blind
+		// spot the kind exists for: the code before the quote stands, so the
+		// line reads live while the assertion after it is gone.
+		{from: pinRunawayString, to: pinKeptCode,
+			src: "x = 1 + \"pinSame(total,\nc.offer) + 2\n", ext: ".go",
+			phrase: "pinSame(total, c.offer)",
+			kinds:  []byte{pinRunawayString, pinKeptCode}, open: []int{1}},
+		{from: pinRunawayString, to: pinStringLiteral, delim: `"`,
+			src: "x = 1 + \"pinSame(\n\"total\")\n", ext: ".go",
+			phrase: "pinSame( \"total\")", bare: "pinSame( total)",
+			kinds: []byte{pinRunawayString, pinStringLiteral, pinKeptCode},
+			open:  []int{1}},
+
+		// And the seven the first version of this census left out, which is
+		// what made it a sample calling itself a grid. Every one of them is
+		// reachable, and each is the same rule again: the boundary is the
+		// newline, or the citation spells it.
+		{from: pinLineComment, to: pinRunawayString, delim: `"`,
+			src: "x = 1 // pinSame(\n\"total,\ny)\n", ext: ".go",
+			phrase: "pinSame( \"total, y)", bare: "pinSame( total, y)",
+			kinds: []byte{pinLineComment, pinRunawayString, pinKeptCode},
+			open:  []int{2}},
+		{from: pinBlockComment, to: pinLineComment, delim: "*/ //",
+			src: "/* pinSame( */ // total)\n", ext: ".go",
+			phrase: "pinSame( */ // total)", bare: "pinSame( total)",
+			kinds: []byte{pinBlockComment, pinLineComment}},
+		{from: pinBlockComment, to: pinRunawayString, delim: `*/ "`,
+			src: "/* pinSame( */ \"total,\ny)\n", ext: ".go",
+			phrase: "pinSame( */ \"total, y)", bare: "pinSame( total, y)",
+			kinds: []byte{pinBlockComment, pinRunawayString, pinKeptCode},
+			open:  []int{1}},
+		{from: pinStringLiteral, to: pinBlockComment, delim: `"/*`,
+			src: "a = \"pinSame(\"/*total*/)\n", ext: ".go",
+			phrase: "pinSame(\"/*total*/)", bare: "pinSame(total)",
+			kinds: []byte{pinStringLiteral, pinBlockComment, pinKeptCode}},
+		{from: pinStringLiteral, to: pinRunawayString, delim: `" + "`,
+			src: "a = \"pinSame(\" + \"total,\ny)\n", ext: ".go",
+			phrase: "pinSame(\" + \"total, y)", bare: "pinSame( + total, y)",
+			kinds: []byte{pinStringLiteral, pinKeptCode, pinRunawayString},
+			open:  []int{1}},
+		{from: pinRunawayString, to: pinLineComment, delim: "//",
+			src: "x = \"pinSame(\n// total)\n", ext: ".go",
+			phrase: "pinSame( // total)", bare: "pinSame( total)",
+			kinds: []byte{pinRunawayString, pinLineComment}, open: []int{1}},
+		{from: pinRunawayString, to: pinBlockComment, delim: "/*",
+			src: "x = \"pinSame(\n/*total*/)\n", ext: ".go",
+			phrase: "pinSame( /*total*/)", bare: "pinSame( total)",
+			kinds: []byte{pinRunawayString, pinBlockComment, pinKeptCode},
+			open:  []int{1}},
+
+		// And the third lexer, which no row above reaches.
+		//
+		// pinCodeOnly branches on the extension three ways — Swift nests block
+		// comments, has no single-quoted string, and treats a backtick as code
+		// — and every row above runs one of the two non-nesting paths. A
+		// nested comment closing into code is a boundary only Swift can spell,
+		// and this row is written so the two lexers disagree about it: with
+		// nesting the first `*/` closes the inner comment and the literal
+		// after it is still inside the outer one, so the copy meets a comment
+		// and then code; without nesting the first `*/` ends the comment
+		// outright and the same bytes are a literal the copy passes through.
+		// A row where both paths answer alike would have been a Swift row in
+		// name only.
+		{from: pinBlockComment, to: pinKeptCode, delim: `*/ "y" */`,
+			src: "/* /* pinSame( */ \"y\" */ z)\n", ext: ".swift",
+			phrase: "pinSame( */ \"y\" */ z)", bare: "pinSame( z)",
+			kinds: []byte{pinBlockComment, pinKeptCode}},
+		{from: pinLineComment, to: pinKeptCode,
+			src: "x = 1 // pinSame(total,\nc.offer) + 2\n", ext: ".swift",
+			phrase: "pinSame(total, c.offer)",
+			kinds:  []byte{pinLineComment, pinKeptCode}},
+	}
+	// How each row's boundary is crossed, for the line at the end: the two the
+	// strip removes for free, and the rest the citation has to spell.
+	across, delims := 0, []string{}
+	seen := map[string]bool{}
+	for _, c := range grid {
+		if c.delim == "" {
+			across++
+			continue
+		}
+		if !seen[c.delim] {
+			seen[c.delim] = true
+			delims = append(delims, fmt.Sprintf("%q", c.delim))
+		}
+	}
+	for _, c := range grid {
+		// Spelled through the same function the sentence under test uses, so a
+		// row naming a pair and a message naming a pair cannot disagree.
+		what := pinConstructName(c.from) + " then " + pinConstructName(c.to)
+		code, open, by := pinCodeOnly(c.src, c.ext)
+		if !slices.Equal(open, c.open) {
+			t.Errorf("%s: pinCodeOnly ended inside an unterminated string on %v of "+
+				"this row's lines and the row says %v.\n\n"+
+				"The runaway is one of the five constructs and it is the one this "+
+				"return value is the whole record of, so a row that gained or lost "+
+				"one is a row about a different pair than the one it names.",
+				what, open, c.open)
+			continue
+		}
+		copies := pinPhraseCopies(c.src, c.phrase)
+		if len(copies) != 1 {
+			t.Errorf("%s: this row spells %q once in %q and pinPhraseCopies finds "+
+				"%d.\n\n"+
+				"A transition is buildable when the bytes between the two halves "+
+				"survive pinStripSpace or are carried by the phrase itself. This row "+
+				"is the claim that this pair is buildable, and without exactly one "+
+				"match there is no copy to ask what it was taken by.",
+				what, c.phrase, c.src, len(copies))
+			continue
+		}
+		if kinds := pinBlankedAs(code, by, copies[0]); !slices.Equal(kinds, c.kinds) {
+			t.Errorf("%s: the copy's own bytes were taken by %q and the row says "+
+				"%q.\n\n"+
+				"pinBlankedAs reads the record the lexer wrote at the source's own "+
+				"offsets, so this is what pinCopyNote's sentence will name and in "+
+				"what order. A run that changed is pinCodeOnly recording a different "+
+				"construct for these bytes — which moves every sentence built on it "+
+				"without touching one of them.",
+				what, string(kinds), string(c.kinds))
+		}
+		// And the other direction: the delimiter is carried, not skipped.
+		if c.bare == "" {
+			if c.delim != "" {
+				t.Errorf("%s: the row names a boundary of %q and gives no phrase "+
+					"without it.\n\n"+
+					"The negative is half the reading. A raw-byte boundary is "+
+					"reachable only because the citation spells it, and the way that "+
+					"is shown is the same source declining to match the same phrase "+
+					"with those bytes taken out.", what, c.delim)
+			}
+			continue
+		}
+		if n := len(pinPhraseCopies(c.src, c.bare)); n != 0 {
+			t.Errorf("%s: %q — the phrase with its %q taken out — matches %d "+
+				"time(s) in %q.\n\n"+
+				"pinStripSpace removes whitespace between tokens and nothing else, "+
+				"so a boundary made of raw bytes has to be spelled by the citation "+
+				"to be crossed. A bare phrase that matches means the strip has grown "+
+				"looser, and a looser strip matches phrases the harness does not "+
+				"actually contain — which is this whole table reporting citations to "+
+				"assertions that are not there.",
+				what, c.bare, c.delim, n, c.src)
+		}
+	}
+	// And the grid being a grid.
+	//
+	// The first version of this census asked about thirteen ordered pairs and
+	// called them "the grid", which is a sample wearing a walk's name: seven
+	// pairs were missing, every one of them reachable, and nothing said which
+	// or why. A reader had the same problem the fixtures had one level down —
+	// general machinery, and evidence from whatever somebody thought of.
+	//
+	// So the pairs are enumerated rather than listed. Five constructs, twenty
+	// ordered pairs with the two ends different, and a row for each. A pair
+	// with no row is named here rather than quietly absent; a self-pair is not
+	// a transition and is not asked for, because a copy wholly inside one
+	// construct is the case pinBlankedAs returns one kind for and the wrapped
+	// fixture above is about.
+	//
+	// Rows beyond twenty are fine and are the point of the extension column: a
+	// pair can be reachable by more than one boundary, and Swift's nested
+	// block comment is the same pair through a different lexer path.
+	kinds := []byte{pinKeptCode, pinLineComment, pinBlockComment,
+		pinStringLiteral, pinRunawayString}
+	asked := map[[2]byte]bool{}
+	for _, c := range grid {
+		asked[[2]byte{c.from, c.to}] = true
+	}
+	pairs, missing := 0, []string{}
+	for _, from := range kinds {
+		for _, to := range kinds {
+			if from == to {
+				continue
+			}
+			pairs++
+			if !asked[[2]byte{from, to}] {
+				missing = append(missing,
+					pinConstructName(from)+" then "+pinConstructName(to))
+			}
+		}
+	}
+	if len(missing) > 0 {
+		t.Errorf("%d of the %d ordered construct pairs have no row in this census: "+
+			"%s.\n\n"+
+			"pinBlankedAs walks a span and names every construct it meets, in the "+
+			"order it meets them, and that walk is written for constructs in general "+
+			"— so a pair with no row is a transition the machinery handles and "+
+			"nothing has asked it about. The seven this census was missing when it "+
+			"was written were all reachable, and each of them was reachable the same "+
+			"way: the boundary is a newline the strip removes, or the citation is "+
+			"spelled with the delimiter in it. Build the row rather than deleting "+
+			"this arm — a pair that genuinely cannot be built is a fact about "+
+			"pinCodeOnly worth writing down, and it belongs here with its reason.",
+			len(missing), pairs, strings.Join(missing, ", "))
+	}
+
+	// And the coverage the line below claims, asserted rather than counted on.
+	//
+	// The sentence says every construct appears on both sides of a boundary,
+	// and a row deleted or reworded would leave it saying so over a grid that
+	// no longer does — which is the count-shaped evidence this census was
+	// written to replace, arriving in the census's own recital. Read off the
+	// kind runs the rows assert rather than off their prose names, so the two
+	// cannot drift apart.
+	heads, tails := map[byte]bool{}, map[byte]bool{}
+	for _, c := range grid {
+		if len(c.kinds) == 0 {
+			continue
+		}
+		heads[c.kinds[0]] = true
+		for _, kind := range c.kinds[1:] {
+			tails[kind] = true
+		}
+	}
+	for _, kind := range kinds {
+		if !heads[kind] || !tails[kind] {
+			t.Errorf("%s leads a row in this grid: %v; and is crossed INTO by one: "+
+				"%v.\n\n"+
+				"pinBlankedAs walks a span and names whatever it meets, in order, and "+
+				"a construct that only ever appears at one end of a boundary is a "+
+				"half of that walk nothing here has asked about. The line below says "+
+				"every construct appears on both sides — that claim is this grid's "+
+				"and has to be held by it.",
+				pinConstructName(kind), heads[kind], tails[kind])
+		}
+	}
+	// And what the walk came to, which is the reading that says the general
+	// machinery has general evidence.
+	//
+	// Counted off the same rows the assertions are, and split by what the
+	// boundary is made of, because that is the distinction the whole census is
+	// about: the newline pairs cost the citation nothing and were the only ones
+	// anybody had built, and the rest are reachable the moment a citation
+	// quotes the delimiter — which is the ordinary shape of a citation that
+	// quotes a call.
+	t.Logf("every one of the %d ordered construct pairs this census asks about is "+
+		"reachable — %d across a newline, which the strip removes and which "+
+		"therefore costs the citation nothing, and %d across raw bytes the "+
+		"citation itself carries (%s), each of those refusing to match the moment "+
+		"the same phrase is spelled without them. The four constructs pinCodeOnly "+
+		"records and the code it keeps all appear on both sides of a boundary, so "+
+		"pinBlankedAs's run of kinds is exercised over the transitions rather than "+
+		"over the one a fixture happened to be written with, and all %d ordered "+
+		"pairs of them have a row",
+		len(grid), across, len(grid)-across, strings.Join(delims, ", "), pairs)
+}
+
 // pinDense counts the bytes of a source that are not whitespace, which is the
 // measure pinCodeOnly's floor is taken in: blanking a literal replaces it with
 // spaces, so a count of every byte would not move at all.
@@ -2203,14 +2570,29 @@ type pinShadow struct {
 // per copy, and the multi-construct clause was about two COPIES in two
 // constructs. A straddle arrived as whichever construct the phrase started in.
 //
-// Straddles are not hypothetical, because the phrase is matched over the
-// space-stripped source and a newline is whitespace. Two transitions need no
-// byte between them at all — a line comment and a runaway string both end at
-// the newline — so a phrase can begin inside one and finish in whatever the
-// next line starts with:
+// Straddles are not hypothetical, and the rule for when one is buildable is
+// not the one this note first gave. What has to be true is that the bytes
+// BETWEEN the two halves survive the strip or are carried by the citation
+// itself — see TestWhichConstructTransitionsAStraddleCanBeBuiltFrom, which
+// walks the grid rather than arguing about it.
+//
+// Two transitions need no byte at all, because a line comment and a runaway
+// string both end AT the newline and the newline is whitespace:
 //
 //	x = 1 // pinSame(total,      the head is a line comment's
 //	c.offer)                     and the tail is code the lexer kept
+//
+// Every other transition puts raw bytes at the boundary — `*/`, a quote, `//`,
+// `/*` — and those are reachable too, whenever the phrase is spelled with them
+// in it, which is the ordinary shape of a citation that quotes a call:
+//
+//	log(pinSame("x"))            code the lexer kept, then a literal, and no
+//	                             newline anywhere in it
+//
+// The census finds every one of the fourteen ordered pairs it asks about
+// reachable, and finds each raw-byte boundary unreachable the moment the phrase
+// is spelled without the delimiter. So this reads the whole span rather than
+// the transition shapes somebody could think of.
 //
 // That copy is half gone. Answering "a comment running to the end of the line"
 // sends a reader to a line where the phrase is not, and answering "live code"
@@ -2709,12 +3091,18 @@ func TestPinCopyNoteNamesTheCopyThatSurvivesInCode(t *testing.T) {
 // # The shape, and why it is not contrived
 //
 // A phrase is matched over the space-stripped source and a newline is
-// whitespace — see pinStripSpaceMap. Most transitions between constructs need
-// a delimiter in the raw file and a delimiter breaks the match, but two of them
-// need nothing at all: a line comment and a single-line string both end AT the
+// whitespace — see pinStripSpaceMap. Two transitions therefore need no byte
+// between them at all: a line comment and a single-line string both end AT the
 // newline. So a phrase can begin inside one and finish in whatever the next
 // line starts with, and what it finishes in is a different construct from what
 // it started in.
+//
+// The rest need a delimiter in the raw file, and a delimiter the citation
+// carries does not break the match — `log(pinSame("x"))` is a copy half in
+// code and half in a literal with no newline in it at all. Which transitions
+// are buildable and which are not is measured rather than reasoned about in
+// TestWhichConstructTransitionsAStraddleCanBeBuiltFrom; the rows below are the
+// SENTENCE, over heads that are not all the same construct.
 //
 //	x = 1 // pinSame(total,      the head is a comment's
 //	c.offer) + 2                 and the tail is code the lexer kept
@@ -2731,11 +3119,28 @@ func TestPinCopyNoteNamesTheCopyThatSurvivesInCode(t *testing.T) {
 // The second fixture crosses a comment, a string literal the author closed, and
 // live code — one copy, three places to look, and the clause has to name them
 // in the order the reader meets them.
+//
+// # And the head is not always a line comment
+//
+// The first two rows both open with `//`, which is the transition the census
+// finds cheapest to write and is not the only one the machinery handles. The
+// third opens with a string the lexer never saw closed — the blind spot the
+// runaway kind exists for, whose own line still reads live — and the fourth
+// opens inside a block comment and ends inside a literal, with no newline
+// anywhere in it. Three of the four constructs lead a fixture, and the fourth
+// (kept code) leads one in the census.
 func TestPinCopyNotePlacesACopyThatStraddlesTwoConstructs(t *testing.T) {
 	for _, c := range []struct {
 		what, src, ext, phrase string
-		says                   []string
-		quiet                  []string
+		// The lines pinCodeOnly ended inside a single-line string on, which is
+		// nil for every fixture whose quotes close. Declared per row rather
+		// than refused for all of them: the runaway IS one of the constructs a
+		// copy can straddle out of, and a fixture that produces it has to be
+		// able to say so without the guard below reading it as the lexer
+		// having lost its place.
+		open  []int
+		says  []string
+		quiet []string
 	}{
 		{
 			what:   "a comment and the code on the next line",
@@ -2767,12 +3172,47 @@ func TestPinCopyNotePlacesACopyThatStraddlesTwoConstructs(t *testing.T) {
 			},
 			quiet: []string{"line to open"},
 		},
+		{
+			// A head that is not a comment. The runaway is the construct the
+			// deletion report lies about — the code BEFORE the quote still
+			// stands, so the line reads live while the assertion after it is
+			// gone — and it is also one of the two transitions that need no
+			// delimiter, because the newline closes it. Both halves of that
+			// are in this one fixture.
+			what:   "a string the lexer never saw closed, and the code after it",
+			src:    "x = 1 + \"pinSame(total,\nc.offer) + 2\n",
+			ext:    ".go",
+			phrase: "pinSame(total, c.offer)",
+			open:   []int{1},
+			says: []string{
+				"split the copy on [1 2] across a string the lexer never saw " +
+					"closed, which blanks the rest of its own line then code the " +
+					"lexer kept",
+				"no copy of this string survives whole",
+			},
+			quiet: []string{"line to open", "whole,", "inside a"},
+		},
+		{
+			// And a straddle with no newline in it at all, which the note above
+			// this test used to say was unreachable. The boundary is `*/` and
+			// the phrase carries it, which is the whole of what the census
+			// finds separates a buildable transition from an unbuildable one.
+			what:   "a block comment, the code after it and a literal",
+			src:    "/* pinSame( */ x + \"y\")\n",
+			ext:    ".go",
+			phrase: "pinSame( */ x + \"y\")",
+			says: []string{
+				"across a block comment, code the lexer kept then a string literal",
+				"the rest of it went to a block comment and a string literal",
+			},
+			quiet: []string{"line to open"},
+		},
 	} {
 		code, open, by := pinCodeOnly(c.src, c.ext)
-		if len(open) > 0 {
+		if !slices.Equal(open, c.open) {
 			t.Fatalf("%s: pinCodeOnly ended inside an unterminated string on %v of "+
-				"this fixture's lines, so what it left is not what the rows below "+
-				"are about.", c.what, open)
+				"this fixture's lines and the row says %v, so what it left is not "+
+				"what the rows below are about.", c.what, open, c.open)
 		}
 		copies := pinPhraseCopies(c.src, c.phrase)
 		if len(copies) != 1 {
