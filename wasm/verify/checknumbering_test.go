@@ -312,17 +312,51 @@ func checkCitationsResolve(t *testing.T, checks int) {
 	// assertion stays over the union, so a repository that stopped exempting
 	// Go fails nothing here — it is the illustration that narrows, not the
 	// claim.
-	exemptKinds := map[string]bool{}
+	//
+	// # Why a kind stands in for a file, and what it cannot see
+	//
+	// An exemption is about CONTENT: this file numbers things of its own, so a
+	// `check N` in it is not an address into browser.mjs. Nothing here can ask
+	// that of a path, and the closest thing that can be asked cheaply is the
+	// extension — which stands in for it on the evidence of the rows
+	// themselves. A kind with an exemption written for it is a kind that has
+	// been shown to carry the numbered prose the arm is about; a kind with
+	// none has not, and a silent file of that kind is silent for reasons the
+	// arm has nothing to say about.
+	//
+	// The proxy is coarse in exactly one direction and it is worth naming:
+	// core/debug.go is hand-written and a generated zz_gen.go would share its
+	// kind, so the population takes in files no human numbered anything in.
+	// That costs the ILLUSTRATION and not the claim — the assertion below is
+	// over the union, which is wider still — and the report says which row
+	// lends the example its kind, so a population that widened is a population
+	// the next reader can see widening rather than a number that moved.
+	//
+	// And only a row the enumeration actually reached lends one. A path this
+	// walk never opens is a rename or a delete that citationExemptVerdict is
+	// about to report on its own line, and until it does its extension would
+	// go on tightening this population — the example would be drawn from a
+	// kind whose whole evidence is a row about a file that is not there.
+	exemptKinds := map[string]string{}
 	for path := range citationExempt {
-		exemptKinds[filepath.Ext(path)] = true
 		kinds[filepath.Ext(path)] = true
+		if _, reached := considered[path]; !reached {
+			continue
+		}
+		// The alphabetically first row of a kind, so two exemptions sharing an
+		// extension name the same lender on every run: the sentence below is
+		// read against a table somebody edits, and a lender that moved with
+		// map order would read as the population having changed.
+		if lender, lent := exemptKinds[filepath.Ext(path)]; !lent || path < lender {
+			exemptKinds[filepath.Ext(path)] = path
+		}
 	}
 	couldBeExempt, likeAnExemption := []string{}, []string{}
 	for _, path := range silent {
 		if kinds[filepath.Ext(path)] {
 			couldBeExempt = append(couldBeExempt, path)
 		}
-		if exemptKinds[filepath.Ext(path)] {
+		if _, lent := exemptKinds[filepath.Ext(path)]; lent {
 			likeAnExemption = append(likeAnExemption, path)
 		}
 	}
@@ -354,10 +388,20 @@ func checkCitationsResolve(t *testing.T, checks int) {
 		// two questions" is this list existing and nothing else says so — and
 		// named from the population the claim is about rather than from the top
 		// of an alphabetical list.
+		//
+		// With the row that lends the example its kind, which is the half a
+		// count cannot carry: the tight population is as good as the reason
+		// its extension is in it, and an exemption written for some other kind
+		// widens it without moving any number here. Naming the lender puts
+		// that in the line a passing run prints.
+		how := "a kind this check is about, none exempted"
+		if lender, lent := exemptKinds[filepath.Ext(example[0])]; lent {
+			how = fmt.Sprintf("the kind %s is exempted under", lender)
+		}
 		t.Logf("%d of the %d files opened cite nothing, %d of them a kind this check "+
-			"is about and %d a kind citationExempt itself names (e.g. %s), which is "+
-			"the pair citationExemptVerdict's silent arm is about", len(silent),
-			len(considered), len(couldBeExempt), len(likeAnExemption), example[0])
+			"is about and %d a kind citationExempt itself names (e.g. %s, %s), which "+
+			"is the pair citationExemptVerdict's silent arm is about", len(silent),
+			len(considered), len(couldBeExempt), len(likeAnExemption), example[0], how)
 	}
 
 	// Every sense the enumeration produced has to be one somebody classified.

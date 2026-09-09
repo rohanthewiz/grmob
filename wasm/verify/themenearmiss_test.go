@@ -504,6 +504,28 @@ func TestEveryThemeLeafIsFoundAgainAfterOneSlip(t *testing.T) {
 // to be interesting, split across two. The names are real and every shape is an
 // accident of where the window fell, which is the same move the slip walk
 // makes: the inputs are the struct's, and the cases are nobody's.
+// How wide a window of consecutive leaf names is taken, and the floor each of
+// the four endings is held to.
+//
+// The window bound is the knob the whole population hangs from: at 6 it puts
+// 930 sets in front of the relations, and the four endings come to 27, 473, 53
+// and 377 on core.Theme's current leaves. Neither number is asserted anywhere
+// and the thinnest arm is the one that matters — an ending reached by 27 sets
+// is separating the relations, an ending reached by 1 is a relation passing
+// over a population that can no longer break it, and the two look identical
+// from outside a census that only fires at zero.
+//
+// So the floor is stated. Ten, which is well under what every ending scores
+// today and far enough above 1 that a population losing an arm has to lose it
+// noticeably rather than silently. This is INK_ROW_ROUNDING's argument in
+// another directory: a margin that is silently spent is a margin nobody
+// notices leaving, and the way this one gets spent is somebody narrowing the
+// window — or core.Theme gaining or losing leaves — with the test still green.
+const (
+	affordedWindowMax   = 6
+	affordedEndingFloor = 10
+)
+
 func TestTheAffordedWidthHoldsItsTwoRelations(t *testing.T) {
 	paths := themeLeafPaths(reflect.ValueOf(*core.DefaultTheme), "")
 	sort.Strings(paths)
@@ -528,7 +550,7 @@ func TestTheAffordedWidthHoldsItsTwoRelations(t *testing.T) {
 	// within a parent, and a set with one parent cannot show that `span` and
 	// the crowd search read different populations.
 	sets := [][]string{}
-	for width := 1; width <= 6 && width <= len(names); width++ {
+	for width := 1; width <= affordedWindowMax && width <= len(names); width++ {
 		for i := 0; i+width <= len(names); i++ {
 			window := names[i : i+width]
 			one := make([]string, 0, width)
@@ -632,7 +654,15 @@ func TestTheAffordedWidthHoldsItsTwoRelations(t *testing.T) {
 				set.cappedByReach)
 		}
 	}
-	// Every ending, or the population has stopped separating them.
+	// Every ending, and each of them by more than an accident.
+	//
+	// Zero is the failure this started as and it is the last state of a slide,
+	// not the first: an ending that 27 sets reach is separating the relations,
+	// an ending that 1 reaches is a relation passing over a population that
+	// cannot break it, and both of those pass a census that only asks about
+	// zero. See affordedEndingFloor — the two arms say different things
+	// because they are different findings, and the thin one names the knob
+	// that moves it.
 	for _, ending := range []string{
 		"its own crowding stopped the search",
 		"no width crowds these names at all",
@@ -646,6 +676,23 @@ func TestTheAffordedWidthHoldsItsTwoRelations(t *testing.T) {
 				"relation passing over a population that cannot break it — which is "+
 				"the same failure as a table of four cases somebody wrote down, "+
 				"arriving with a bigger number in front of it.", len(sets), ending)
+			continue
+		}
+		if reached[ending] < affordedEndingFloor {
+			t.Errorf("%d of the %d generated sets ended with %q, against a floor of "+
+				"%d.\n\n"+
+				"The ending is still reached, so the relations above are still being "+
+				"asked of both sides — and by a population thin enough that the next "+
+				"change to either end of it decides whether they are asked at all. "+
+				"The whole census is %v.\n\n"+
+				"Neither end of this is an assertion anybody has made. The sets are "+
+				"windows of one to %d consecutive names over core.Theme's own leaves "+
+				"(affordedWindowMax), so this number moves when that bound moves and "+
+				"when the struct gains or loses leaves — and it moves without a "+
+				"message, because a relation that holds over 1 set holds. That is the "+
+				"margin this floor is here to notice leaving.",
+				reached[ending], len(sets), ending, affordedEndingFloor, reached,
+				affordedWindowMax)
 		}
 	}
 	t.Logf("%d generated leaf sets, none of them a shape anybody chose, hold "+

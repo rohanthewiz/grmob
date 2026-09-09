@@ -980,15 +980,21 @@ func TestEveryReadingNamesAHarnessThatSpellsTheNumber(t *testing.T) {
 	// blind-spot arm of the deletion report reads this, and only to turn "one
 	// of these lines" into "this line". See pinPhraseLines.
 	rawSource := map[string]string{}
-	// And what pinCodeOnly left, line for line.
+	// And what pinCodeOnly left, byte for byte.
 	//
-	// The lexer replaces prose with spaces IN PLACE, so its output has the
-	// file's own lines in the file's own order — which makes "what did this
-	// pass do to line 40" a lookup. The deletion report is the only reader:
-	// when a phrase survives twice in the file, the count alone sends a reader
-	// to open both, and the pass that blanked one of them already knows which.
-	// See where the copies are told apart.
-	codeLines := map[string][]string{}
+	// The lexer replaces prose with spaces IN PLACE, so its output is the
+	// file's own bytes at the file's own offsets — which makes "what did this
+	// pass do to the bytes this copy occupies" a slice. The deletion report is
+	// the only reader: when a phrase survives twice in the file, the count
+	// alone sends a reader to open both, and the pass that blanked one of them
+	// already knows which.
+	//
+	// Kept whole rather than split into lines, because a line is the wrong
+	// unit for the question. The lexer blanks SPANS: a phrase inside a string
+	// literal on a line that also carries code leaves that line looking live
+	// while the copy itself is gone, and a note reading lines calls that copy
+	// an assertion and sends a reader to open it. See pinCopyNote.
+	codeSource := map[string]string{}
 	openBy := map[string][]int{}
 	for name, path := range pinConsumers {
 		b, err := os.ReadFile(filepath.Join(root, path))
@@ -1062,7 +1068,7 @@ func TestEveryReadingNamesAHarnessThatSpellsTheNumber(t *testing.T) {
 		// the lexer's own list keeps the file as it was read. See
 		// pinPhraseLines.
 		rawSource[name] = string(b)
-		codeLines[name] = strings.Split(code, "\n")
+		codeSource[name] = code
 	}
 
 	// Which consumers anything credits at all. A harness in the closed set that
@@ -1174,11 +1180,11 @@ func TestEveryReadingNamesAHarnessThatSpellsTheNumber(t *testing.T) {
 					// away and the line it falls on is one count away. Asked of
 					// the phrase, and of the field when the phrase is the one
 					// that is gone from the file too.
-					spellings := pinPhraseLines(rawSource[by], cited.Phrase)
+					spellings := pinPhraseCopies(rawSource[by], cited.Phrase)
 					what := "the phrase"
 					if spellings == nil {
 						spellings, what =
-							pinPhraseLines(rawSource[by], cited.Field), "the field"
+							pinPhraseCopies(rawSource[by], cited.Field), "the field"
 					}
 					// Every line every surviving copy sits on. The question is
 					// whether ANY of them is on a line the lexer lost its place
@@ -1188,7 +1194,7 @@ func TestEveryReadingNamesAHarnessThatSpellsTheNumber(t *testing.T) {
 					// the comment while the assertion sat on a blanked line.
 					at := []int{}
 					for _, spelling := range spellings {
-						for _, line := range spelling {
+						for _, line := range spelling.At {
 							if !slices.Contains(at, line) {
 								at = append(at, line)
 							}
@@ -1206,7 +1212,7 @@ func TestEveryReadingNamesAHarnessThatSpellsTheNumber(t *testing.T) {
 					// And which of those copies is the prose. See
 					// pinCopyNote: the count says there are two and the
 					// argument turns on which.
-					which := pinCopyNote(codeLines[by], at)
+					which := pinCopyNote(codeSource[by], spellings)
 					on := []int{}
 					for _, line := range at {
 						if slices.Contains(openBy[by], line) {
@@ -1716,16 +1722,50 @@ func TestAPhraseIsPutBackOnTheLinesItCameFrom(t *testing.T) {
 		{"a phrase broken across a line", "pinSame(x, y)", [][]int{{4, 5}}},
 		{"a phrase that is not there at all", "pinSame(nothing)", nil},
 	} {
-		if got := pinPhraseLines(src, c.phrase); !slices.EqualFunc(got, c.want,
-			slices.Equal[[]int]) {
-			t.Errorf("%s: pinPhraseLines(%q) is %v, want %v.\n\n"+
+		copies := pinPhraseCopies(src, c.phrase)
+		at := [][]int{}
+		for _, copy := range copies {
+			at = append(at, copy.At)
+		}
+		if len(at) == 0 {
+			at = nil
+		}
+		if !slices.EqualFunc(at, c.want, slices.Equal[[]int]) {
+			t.Errorf("%s: pinPhraseCopies(%q) is on %v, want %v.\n\n"+
 				"The deletion report's blind-spot arm turns \"the lexer lost its place "+
 				"on these lines\" into \"the surviving assertion is on this one, which "+
 				"is among them\", and that verdict is this index. A phrase placed on "+
 				"the wrong line sends the reader to look at code that is fine and "+
 				"clears a lexer that is not, and a copy left out of the answer is a "+
 				"blanked assertion the note rules out by reading its own comment.",
-				c.what, c.phrase, got, c.want)
+				c.what, c.phrase, at, c.want)
+		}
+		// And the other half of the entry, which is what pinCopyNote reads:
+		// the raw bytes this copy occupies. Held to the phrase itself under
+		// the same stripping the search uses — a span off by a byte at either
+		// end slices a literal's quote or drops a bracket, and every arm of
+		// that note is a question about what the lexer did to exactly these
+		// bytes.
+		for _, copy := range copies {
+			if copy.Start < 0 || copy.End > len(src) || copy.Start >= copy.End {
+				t.Errorf("%s: pinPhraseCopies(%q) places a copy at [%d %d) in a "+
+					"%d-byte file.\n\n"+
+					"The span is an index into what pinCodeOnly left, which is this "+
+					"file with prose spaced out. A range outside it is a copy "+
+					"pinCopyNote drops, and it drops it because the two readings have "+
+					"come apart rather than because a copy is missing.",
+					c.what, c.phrase, copy.Start, copy.End, len(src))
+				continue
+			}
+			if got := pinStripSpace(src[copy.Start:copy.End]); got !=
+				pinStripSpace(c.phrase) {
+				t.Errorf("%s: the copy on %v spans %q, want the phrase %q.\n\n"+
+					"pinCopyNote asks what pinCodeOnly did to THESE bytes and answers "+
+					"prose, literal or live code from it. A span that reached past the "+
+					"copy would take in the code around a literal and report the copy "+
+					"as standing; one that fell short would report an assertion as "+
+					"blanked.", c.what, copy.At, got, pinStripSpace(c.phrase))
+			}
 		}
 	}
 	// And the property the index rests on, which no row above can show: the
@@ -1804,9 +1844,27 @@ func pinStripSpace(s string) string {
 // which is strings.Fields', so the two passes below produce exactly the string
 // the previous version did.
 func pinStripSpaceLines(s string) (string, []int) {
+	stripped, lines, _ := pinStripSpaceMap(s)
+	return stripped, lines
+}
+
+// pinStripSpaceMap is that index and the one beside it: the raw BYTE every
+// surviving byte came from.
+//
+// The line was enough while the only question was "which line is this copy
+// on". It is not enough for the question underneath it — what did pinCodeOnly
+// do to this copy — because that pass blanks spans and not lines: a phrase
+// inside a string literal on a line that also carries code sits on a line that
+// still looks live. The offset is what turns the copy into a slice of the
+// lexed source, and the lexer's in-place blanking is what makes that slice
+// mean anything: same bytes, same offsets, prose replaced by spaces.
+//
+// One array per byte of the stripped string, indexed the same way, so a match
+// there is a line range and a byte range in one lookup. See pinPhraseCopies.
+func pinStripSpaceMap(s string) (string, []int, []int) {
 	// Pass one: the fields, joined by a single space.
 	var joined []byte
-	var jline []int
+	var jline, joff []int
 	line, inField := 1, false
 	for i, r := range s {
 		if unicode.IsSpace(r) {
@@ -1823,34 +1881,43 @@ func pinStripSpaceLines(s string) (string, []int) {
 			// would put the wrap on the earlier line twice.
 			joined = append(joined, ' ')
 			jline = append(jline, line)
+			// The separator is credited to the first byte of the field it
+			// precedes, for the same reason its line is: a span that began at
+			// the whitespace run would reach back over bytes no copy occupies,
+			// and the run can be a newline and an indent.
+			joff = append(joff, i)
 		}
 		inField = true
 		n := len(string(r))
 		joined = append(joined, s[i:i+n]...)
 		for k := 0; k < n; k++ {
 			jline = append(jline, line)
+			joff = append(joff, i+k)
 		}
 	}
 	// Pass two: a space survives only between two word characters, which is
 	// pinStripSpace's rule and the reason it has one. See the note above.
 	var out []byte
-	var oline []int
+	var oline, ooff []int
 	for i := 0; i < len(joined); i++ {
 		if joined[i] == ' ' {
 			if i > 0 && i+1 < len(joined) && word(joined[i-1]) && word(joined[i+1]) {
 				out = append(out, ' ')
 				oline = append(oline, jline[i])
+				ooff = append(ooff, joff[i])
 			}
 			continue
 		}
 		out = append(out, joined[i])
 		oline = append(oline, jline[i])
+		ooff = append(ooff, joff[i])
 	}
-	return string(out), oline
+	return string(out), oline, ooff
 }
 
 // pinCopyNote says which of a phrase's surviving copies pinCodeOnly took for
-// prose, or "" when it cannot place any of them.
+// prose, which of them it blanked inside a line it left standing, and which it
+// kept — or "" when it cannot place any of them.
 //
 // # The count was the whole of what the reader got
 //
@@ -1862,54 +1929,126 @@ func pinStripSpaceLines(s string) (string, []int) {
 // sitting in live code is the lexer's blind spot or a string literal. Those
 // send a reader to two different places, and both arrived as the same sentence.
 //
-// The pass that blanked one of them knows. pinCodeOnly replaces prose with
-// spaces IN PLACE, so its output has the file's lines in the file's order: a
-// line it took for prose entirely comes back whitespace, and a line it kept
-// comes back with code on it. This is a lookup into what that pass produced
-// rather than a second opinion about the file, which is what keeps it from ever
-// disagreeing with the search that reported the phrase gone.
+// # And a line was the wrong thing to ask
 //
-//	code  what pinCodeOnly left, split on newlines
-//	at    the 1-based lines a surviving copy of the phrase sits on
+// The pass that blanked one of them knows, and it knows it in SPANS.
+// pinCodeOnly replaces prose with spaces in place, so its output has the file's
+// bytes at the file's offsets — and the first version of this note read that
+// output a line at a time: a line that came back whitespace was prose, a line
+// with anything on it was live.
 //
-// A line outside the file is dropped rather than guessed at: pinPhraseLines
-// counts over the raw file and this reads the lexed one, and the two are the
-// same length by construction — a disagreement is a bug in one of them and not
-// a fact about a copy.
+// That is right about the line and wrong about the copy, and it is wrong in the
+// direction that costs a reader an afternoon. A phrase inside a string literal
+// on a line that also carries code — `log("pinSame(total, c.offer)")` — leaves
+// that line live while the copy itself is blanked, and the note would call it
+// the surviving assertion and name it as the line to open. What survives there
+// is the call around the literal, not the string the report is about. The same
+// shape covers a comment trailing real code, and the blind spot this arm exists
+// for: a runaway string blanks the rest of ITS OWN line, leaving the code
+// before it standing.
+//
+// So the copy is placed by its own bytes, and its line is asked as a second
+// question rather than as a proxy for the first:
+//
+//	blanked, on a line with nothing left    a comment of its own — prose
+//	blanked, on a line that kept code       a literal, a trailing comment, or
+//	                                        the runaway — and what stands on
+//	                                        that line is not this string
+//	not blanked                             code the lexer kept, which is the
+//	                                        line to open
+//
+//	code     what pinCodeOnly left, whole and unsplit
+//	copies   the surviving spellings, from pinPhraseCopies over the raw file
+//
+// A copy whose span is not inside that string is dropped rather than guessed
+// at: the two are the same bytes by construction — one is the other with prose
+// spaced out — and a disagreement is a bug in one of them and not a fact about
+// a copy.
 //
 // Returns a sentence beginning with a space, to be appended to a verdict.
-func pinCopyNote(code []string, at []int) string {
-	blanked, live := []int{}, []int{}
-	for _, line := range at {
-		if line < 1 || line > len(code) {
+func pinCopyNote(code string, copies []pinCopy) string {
+	prose, shadowed, live := []int{}, []int{}, []int{}
+	for _, c := range copies {
+		if len(c.At) == 0 || c.Start < 0 || c.End > len(code) || c.Start >= c.End {
 			continue
 		}
-		if strings.TrimSpace(code[line-1]) == "" {
-			blanked = append(blanked, line)
-		} else {
-			live = append(live, line)
+		// The line the copy starts on, which is the line the report already
+		// names it at. A copy broken across lines is one entry either way —
+		// see pinPhraseCopies — and its span carries the wrap.
+		at := c.At[0]
+		if strings.TrimSpace(code[c.Start:c.End]) != "" {
+			live = append(live, at)
+			continue
 		}
+		if strings.TrimSpace(pinLinesAround(code, c.Start, c.End)) == "" {
+			prose = append(prose, at)
+			continue
+		}
+		shadowed = append(shadowed, at)
 	}
+	clauses := []string{}
+	if len(prose) > 0 {
+		clauses = append(clauses,
+			fmt.Sprintf("blanked the copy on %v whole", prose))
+	}
+	if len(shadowed) > 0 {
+		clauses = append(clauses, fmt.Sprintf(
+			"blanked the copy on %v inside a line it left code on", shadowed))
+	}
+	if len(live) > 0 {
+		clauses = append(clauses,
+			fmt.Sprintf("left the copy on %v standing in code", live))
+	}
+	if len(clauses) == 0 {
+		return ""
+	}
+	note := " pinCodeOnly " + strings.Join(clauses, ", ") + ", so "
 	switch {
-	case len(blanked) > 0 && len(live) > 0:
-		return fmt.Sprintf(" pinCodeOnly blanked %v whole and left code on %v, so "+
-			"the copy on %v is the sentence above the assertion and %v is the line "+
-			"to open.", blanked, live, blanked, live)
 	case len(live) > 0:
-		return fmt.Sprintf(" pinCodeOnly blanked no line here whole and left code "+
-			"on %v, so no copy of this string is a comment of its own: what it "+
-			"blanked is a span inside a live line, which is a string literal or a "+
-			"comment trailing real code.", live)
-	case len(blanked) > 0:
-		return fmt.Sprintf(" pinCodeOnly blanked %v whole, so every surviving copy "+
-			"is prose and nothing here is an assertion the lexer misread.", blanked)
+		return note + fmt.Sprintf("%v is the line to open.", live)
+	case len(shadowed) > 0:
+		return note + fmt.Sprintf("no copy of this string is code the lexer kept: "+
+			"what stands on %v is the code AROUND this string — a literal, a comment "+
+			"trailing an assertion, or the runaway that blanks the rest of its own "+
+			"line — and not the string itself.", shadowed)
+	default:
+		return note + "every surviving copy is prose and nothing here is an " +
+			"assertion the lexer misread."
 	}
-	return ""
 }
 
-// pinPhraseLines is the lines of a raw file each spelling of the phrase
-// occupies — one entry per surviving copy — or nil when the phrase is not in
-// the file at all.
+// pinLinesAround is every line a span touches, whole.
+//
+// The span says what happened to the copy; this says what happened to the rest
+// of the line it sits on, which is the difference between a comment of its own
+// and a string literal with code around it. Both readings come off the same
+// lexed source, so neither can be about a file the other is not.
+func pinLinesAround(s string, start, end int) string {
+	from := strings.LastIndexByte(s[:start], '\n') + 1
+	to := len(s)
+	if i := strings.IndexByte(s[end:], '\n'); i >= 0 {
+		to = end + i
+	}
+	return s[from:to]
+}
+
+// pinCopy is one surviving spelling of a phrase in a raw file: the lines it
+// occupies, and the bytes.
+//
+// The two answer different questions and the second was missing. `At` is where
+// to send a reader. `Start`/`End` is what pinCodeOnly did to this copy — the
+// lexer blanks spans in place, so the same range in its output is either
+// whitespace, which is a copy it took for prose, or not, which is a copy
+// standing in code. A line cannot be asked that: a phrase inside a string
+// literal on a line that also carries code is on a line the lexer left live
+// and is itself gone. See pinCopyNote.
+type pinCopy struct {
+	At         []int
+	Start, End int
+}
+
+// pinPhraseCopies is each spelling of the phrase in a raw file — one entry per
+// surviving copy — or nil when the phrase is not in the file at all.
 //
 // Asked of the RAW file rather than of what pinCodeOnly left, because the one
 // caller is the arm that has already established the phrase is gone from the
@@ -1931,19 +2070,30 @@ func pinCopyNote(code []string, at []int) string {
 // for the verdict and counts the entries for the sentence, because "the phrase
 // is on two lines" and "there are two phrases" send a reader to different
 // places.
-func pinPhraseLines(raw, phrase string) [][]int {
-	stripped, lines := pinStripSpaceLines(raw)
-	var out [][]int
+func pinPhraseCopies(raw, phrase string) []pinCopy {
+	stripped, lines, offs := pinStripSpaceMap(raw)
+	var out []pinCopy
 	// Non-overlapping, left to right, which is what FindAll gives: two matches
 	// that overlapped would be one spelling counted twice.
 	for _, loc := range pinSpellsPattern(phrase).FindAllStringIndex(stripped, -1) {
-		var at []int
+		c := pinCopy{Start: -1, End: -1}
 		for i := loc[0]; i < loc[1] && i < len(lines); i++ {
-			if len(at) == 0 || at[len(at)-1] != lines[i] {
-				at = append(at, lines[i])
+			if len(c.At) == 0 || c.At[len(c.At)-1] != lines[i] {
+				c.At = append(c.At, lines[i])
+			}
+			// Both walks are left to right over one index, so the first byte
+			// of the match is the copy's first raw byte and the last is its
+			// last. Written as a widening rather than as two lookups because
+			// the loop is already here and a truncated match — the guard above
+			// — would leave the second wrong.
+			if c.Start < 0 || offs[i] < c.Start {
+				c.Start = offs[i]
+			}
+			if offs[i]+1 > c.End {
+				c.End = offs[i] + 1
 			}
 		}
-		out = append(out, at)
+		out = append(out, c)
 	}
 	return out
 }
@@ -1992,73 +2142,119 @@ func word(b byte) bool {
 // call, which is the move bandtarget.mjs and startupVerdict were split out for.
 //
 // `code` is what pinCodeOnly leaves: prose replaced by spaces, in place, so the
-// lines are the file's own.
+// Every arm of the note, over copies a lexer actually produced.
+//
+// The fixture is three spellings of one phrase and one pass of pinCodeOnly
+// over them, because the distinction this note was rebuilt for is a lexer's
+// and not a fixture author's: the copy on line 3 sits inside a string literal
+// on a line that also carries code, so the LINE comes back live and the COPY
+// comes back blanked. Reading lines, as this did, called that copy the
+// surviving assertion and sent a reader to open a line where what stands is
+// the call around the literal.
+//
+// The two arms nothing in a real file reaches — a span outside the lexed
+// source, and no placeable copy at all — are handed in as values, which is the
+// move pinCopyNote was extracted for.
 func TestPinCopyNoteNamesTheCopyThatSurvivesInCode(t *testing.T) {
-	// A comment above an assertion, the assertion, and a blank tail. Lines 1
-	// and 3 are what a lexer that blanked a whole comment leaves; line 2 kept
-	// its code.
-	code := []string{"        ", "  assert(pinSame(total, c.offer))", "   ", "\tx := 1"}
+	const src = "// pinSame(total, c.offer) in prose\n" +
+		"assert(pinSame(total, c.offer))\n" +
+		"log(\"pinSame(total, c.offer)\")\n"
+	code, open := pinCodeOnly(src, ".go")
+	if len(open) > 0 {
+		t.Fatalf("pinCodeOnly ended inside an unterminated string on %v of this "+
+			"fixture's lines, so what it left is not what the arms below are about.",
+			open)
+	}
+	all := pinPhraseCopies(src, "pinSame(total, c.offer)")
+	if len(all) != 3 {
+		t.Fatalf("the fixture spells the phrase 3 times and pinPhraseCopies finds "+
+			"%d, so the rows below are about some other file.", len(all))
+	}
+	// By the line each copy starts on, so a row names the case rather than an
+	// index into a slice.
+	on := func(lines ...int) []pinCopy {
+		out := []pinCopy{}
+		for _, copy := range all {
+			for _, line := range lines {
+				if copy.At[0] == line {
+					out = append(out, copy)
+				}
+			}
+		}
+		return out
+	}
 	for _, c := range []struct {
-		what  string
-		at    []int
-		says  []string
-		quiet []string
+		what   string
+		copies []pinCopy
+		says   []string
+		quiet  []string
 	}{
 		{
-			what: "one copy in prose and one in code names both and says which",
-			at:   []int{1, 2},
-			says: []string{"blanked [1] whole", "left code on [2]",
+			what:   "prose and live code names both and says which to open",
+			copies: on(1, 2),
+			says: []string{"blanked the copy on [1] whole",
+				"left the copy on [2] standing in code", "[2] is the line to open"},
+		},
+		{
+			what:   "a copy inside a literal is not the line to open",
+			copies: on(1, 3),
+			says: []string{"blanked the copy on [1] whole",
+				"blanked the copy on [3] inside a line it left code on",
+				"no copy of this string is code the lexer kept",
+				"the code AROUND this string"},
+			quiet: []string{"line to open", "every surviving copy is prose"},
+		},
+		{
+			what:   "a literal and live code still send the reader to the code",
+			copies: on(2, 3),
+			says: []string{"blanked the copy on [3] inside a line it left code on",
 				"[2] is the line to open"},
+			quiet: []string{"whole"},
 		},
 		{
-			what:  "every copy on a blanked line is prose and nothing to open",
-			at:    []int{1, 3},
-			says:  []string{"blanked [1 3] whole", "every surviving copy is prose"},
-			quiet: []string{"line to open"},
+			what:   "every copy prose is nothing to open",
+			copies: on(1),
+			says: []string{"blanked the copy on [1] whole",
+				"every surviving copy is prose"},
+			quiet: []string{"line to open", "left code on"},
 		},
 		{
-			what: "every copy on a live line is a span inside one",
-			at:   []int{2, 4},
-			says: []string{"blanked no line here whole", "left code on [2 4]",
-				"string literal"},
-			quiet: []string{"sentence above the assertion"},
-		},
-		{
-			// The report reaches this arm with `at` empty when
-			// pinPhraseLines could place no copy — the default verdict
+			// The report reaches this arm with no copies when
+			// pinPhraseCopies could place none — the default verdict
 			// already says so, and a second sentence guessing at lines
 			// would be the note contradicting it.
-			what:  "no placeable copy says nothing at all",
-			at:    nil,
-			quiet: []string{"pinCodeOnly"},
+			what:   "no placeable copy says nothing at all",
+			copies: nil,
+			quiet:  []string{"pinCodeOnly"},
 		},
 		{
-			// A line number the lexed file does not have is the two
-			// readings having come apart, which is not a fact about a
-			// copy. Dropped rather than reported, and the copies that CAN
-			// be placed still get their sentence.
-			what:  "a line outside the file is dropped and the rest still answer",
-			at:    []int{2, 99},
-			says:  []string{"left code on [2]"},
+			// A span the lexed source does not have is the two readings
+			// having come apart, which is not a fact about a copy. Dropped
+			// rather than reported, and the copies that CAN be placed still
+			// get their sentence.
+			what: "a span outside the file is dropped and the rest still answer",
+			copies: append(on(2),
+				pinCopy{At: []int{99}, Start: len(code) + 10, End: len(code) + 30}),
+			says:  []string{"left the copy on [2] standing in code"},
 			quiet: []string{"99"},
 		},
 	} {
-		got := pinCopyNote(code, c.at)
+		got := pinCopyNote(code, c.copies)
 		for _, want := range c.says {
 			if !strings.Contains(got, want) {
-				t.Errorf("%s: pinCopyNote(%v) does not say %q.\n\nIt said: %q\n\n"+
+				t.Errorf("%s: pinCopyNote does not say %q.\n\nIt said: %q\n\n"+
 					"The count of surviving copies is what this replaces, and it "+
 					"replaces it by naming which line a reader has to open. A note "+
 					"missing that is the count again with more words around it.",
-					c.what, c.at, want, got)
+					c.what, want, got)
 			}
 		}
 		for _, never := range c.quiet {
 			if strings.Contains(got, never) {
-				t.Errorf("%s: pinCopyNote(%v) says %q and must not.\n\nIt said: %q\n\n"+
+				t.Errorf("%s: pinCopyNote says %q and must not.\n\nIt said: %q\n\n"+
 					"Each arm sends the reader somewhere different, and a sentence "+
 					"carrying another arm's phrase sends them to two places at once.",
-					c.what, c.at, never, got)
+					c.what, never, got)
 			}
 		}
 	}
