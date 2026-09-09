@@ -154,6 +154,7 @@ import { PALETTES } from "./palette.mjs";
 import { VALUE_RANGES, axRange, valueRangeProblem } from "./valuerange.mjs";
 import { startupVerdict } from "./startup.mjs";
 import { foldVerdict } from "./fold.mjs";
+import { BAND_TARGET_PARTS, bandTargetRead } from "./bandtarget.mjs";
 
 // The widget swatches come from the transcript rather than from a .mjs table,
 // because they are real components rendered by Go: gen.go builds the trees and
@@ -2442,7 +2443,10 @@ function inkReadShape(v) {
     }
     // A computed style is every longhand the build exposes — hundreds — and
     // every value in it is a string. Nothing else this read returns is both.
-    if (keys.length > 50 && Object.values(v).every((x) => typeof x === "string")) {
+    // The floor is derived from the one enumeration this file has counted
+    // rather than chosen to look sensible: see INK_OWN_SHAPE_FLOOR.
+    if (keys.length > INK_OWN_SHAPE_FLOOR &&
+        Object.values(v).every((x) => typeof x === "string")) {
         return "a computed style";
     }
     return "";
@@ -2567,6 +2571,31 @@ const INK_OWN_MEASURED_ON = {
     browser: "Chrome/152.0.7977.83",
     props: 476,
 };
+
+// How many string values make a computed style, taken from the enumeration
+// above.
+//
+// # A bare number with its argument in a comment
+//
+// inkReadShape's test used to be `keys.length > 50`, with "a computed style is
+// every longhand the build exposes — hundreds" written beside it. The sentence
+// is true and 50 is not derived from it: it is a number that sits somewhere
+// between "hundreds" and the four keys of a subject read, and nothing said how
+// far it was from either edge or what would move it. Meanwhile the file
+// already records the one enumeration anybody here has counted — 476, on the
+// build INK_OWN_MAY_DIFFER was assembled against — and already counts what the
+// running build exposes.
+//
+// A quarter of it. The gap this has to straddle is between four keys and
+// several hundred, so any number in the middle separates them and the property
+// worth having is that it MOVES with the only measurement available: a file
+// that re-measures INK_OWN_MEASURED_ON against a newer Chrome re-derives this
+// with it. What a quarter buys over a half is room for a build that exposes
+// far fewer longhands than Chrome does before the shape test stops recognising
+// one — and that a run whose own enumeration falls under it says so, rather
+// than the guard silently going quiet. See where inkOwnRead is compared with
+// this.
+const INK_OWN_SHAPE_FLOOR = Math.floor(INK_OWN_MEASURED_ON.props / 4);
 
 // The sentence the message adds when this browser is not that one. Returns ""
 // when the enumeration matches, because then the delta explains nothing.
@@ -2756,6 +2785,15 @@ function inkFaceFault(where, subject, what, faces, text, probeFaces, ligated) {
 // A row drawn by some other face is a perfectly confident census about
 // somebody else's ligatures, which is the same shape of mistake the tree
 // fingerprint exists to stop one level up.
+//
+// And that the grid has ONE face for it to speak for. "The row's family is one
+// of the grid's" is not "the row's family is the grid's": eleven probes are
+// eleven declarations, and two differing in weight are two faces that may
+// ligate differently. What holds the grid to one face today is inkFaceFault's
+// last arm, and that is a per-pair claim — each scanned box against its own
+// probe — which is exactly the claim a census over the whole grid cannot be
+// derived from. So the grid-wide one is asked here, where it is being rested
+// on.
 function inkLigatureCensus(seeds, runFamilies) {
     const problems = [];
     const ligated = [], carried = [];
@@ -2791,6 +2829,23 @@ function inkLigatureCensus(seeds, runFamilies) {
         // and is counted as "not ligated" rather than guessed at.
         if (s.faces[0].glyphs < chars) ligated.push(s.pair);
         else carried.push(s.pair);
+    }
+    if (runFamilies.size > 1) {
+        problems.push(`the grid's runs are drawn by ${runFamilies.size} faces — ` +
+            `${[...runFamilies].sort().join(", ")} — and the ligature row is one ` +
+            `declaration` +
+            (family === null ? `` : ` (${family})`) + `.\n\n` +
+            `The row measures what inkGlyphPerCharacter's refusal is worth against the ` +
+            `face it was mounted in, and gen.go mounts it in the first probe's ` +
+            `declaration on the argument that the grid has one face. What holds that ` +
+            `argument today is inkFaceFault's last arm, which is a per-pair claim: ` +
+            `each scanned box agrees with ITS OWN probe, and the grid mounts one probe ` +
+            `per text declaration it reads — two of those differing in weight are two ` +
+            `faces that may ligate differently. With more than one family resolved ` +
+            `across the grid ` +
+            `the census covers the strings drawn in one of them and carries nothing ` +
+            `for the rest — and which of the refused pairs the other face joins is ` +
+            `unmeasured rather than measured and passing`);
     }
     if (family !== null && runFamilies.size > 0 && !runFamilies.has(family)) {
         problems.push(`the ligature row is drawn by ${family} and no run this grid ` +
@@ -2933,7 +2988,9 @@ function treeMovedFault(before, after, paths) {
 // So a second fingerprint, over the same elements' geometry, bracketing the
 // capture rather than the font reads. The two windows nest and neither
 // subsumes the other: identity has to hold as far as the last font read, and
-// layout only has to hold as far as the shutter.
+// layout has to hold as far as the shutter — and then again from the shutter
+// to that same last font read, which is a third reading of this expression and
+// a window of its own. See faceLayoutFault for what fits through it.
 //
 // # Over every mounted element, and not over the boxes that get sampled
 //
@@ -2979,21 +3036,14 @@ const LAYOUT_FINGERPRINT_JS = `(() => {
     };
 })()`;
 
-// Returns null when the pixels the capture carries are of the layout the rects
-// describe.
-function layoutMovedFault(before, after) {
-    if (!before || !after) {
-        return `the page was not fingerprinted on both sides of the screenshot, so ` +
-            `nothing holds the capture to the layout the rects were read from.\n\n` +
-            `The first fingerprint rides back with the rects, inside the same ` +
-            `Runtime.evaluate; the second is taken immediately after ` +
-            `Page.captureScreenshot. One of them did not arrive, which means the read ` +
-            `that carries it did not happen — see the note above ` +
-            `LAYOUT_FINGERPRINT_JS for why a capture needs joining to the rects at ` +
-            `all`;
-    }
-    // Named one at a time, because these are the four ways the answer can move
-    // and each sends a reader somewhere different.
+// What moved between two readings, named one at a time.
+//
+// Split out because this fingerprint brackets two windows now — the rects to
+// the shutter, and the shutter to the last platform-font read — and the four
+// ways a layout can differ are the same list for both while what they COST is
+// not. One list and two consequences, rather than one message hedging about
+// which of the two readers it is warning.
+function layoutMovedList(before, after) {
     const moved = [];
     if (before.dpr !== after.dpr) {
         moved.push(`the device pixel ratio went from ${before.dpr} to ${after.dpr}`);
@@ -3013,6 +3063,23 @@ function layoutMovedFault(before, after) {
         moved.push(`the same ${before.n} elements are at different rects ` +
             `(${before.hash} then ${after.hash})`);
     }
+    return moved;
+}
+
+// Returns null when the pixels the capture carries are of the layout the rects
+// describe.
+function layoutMovedFault(before, after) {
+    if (!before || !after) {
+        return `the page was not fingerprinted on both sides of the screenshot, so ` +
+            `nothing holds the capture to the layout the rects were read from.\n\n` +
+            `The first fingerprint rides back with the rects, inside the same ` +
+            `Runtime.evaluate; the second is taken immediately after ` +
+            `Page.captureScreenshot. One of them did not arrive, which means the read ` +
+            `that carries it did not happen — see the note above ` +
+            `LAYOUT_FINGERPRINT_JS for why a capture needs joining to the rects at ` +
+            `all`;
+    }
+    const moved = layoutMovedList(before, after);
     if (moved.length === 0) return null;
     return `the page relaid out between the rects and the screenshot: ` +
         `${moved.join(", and ")}.\n\n` +
@@ -3026,6 +3093,69 @@ function layoutMovedFault(before, after) {
         `The tree fingerprint says nothing about this and is right not to: it is ` +
         `about which element is which, and that has not changed. See ` +
         `LAYOUT_FINGERPRINT_JS. No pixel below this line was read`;
+}
+
+// The third window: the shutter to the last face read.
+//
+// # What the first two hold, and the gap between them
+//
+// The tree fingerprint brackets the rects to the last platform-font read and
+// holds IDENTITY across it. The layout fingerprint brackets the rects to the
+// shutter and holds GEOMETRY across that. Between them they leave one window
+// unasked, and it is the one the faces are actually read in: from the capture
+// to the last CSS.getPlatformFontsForNode.
+//
+// A font that finished loading in there is the thing that fits through it. It
+// moves every run's rect and changes no fact about which element is which, so
+// the tree fingerprint is silent and correct; the layout question had already
+// been asked and answered at the shutter, so that one is silent too. What
+// comes back afterwards is the NEW face's glyph counts and family names, laid
+// beside a capture painted with the old one — inkFaceFault comparing a
+// substitution against pixels that cannot show it, and a ligature census about
+// a face the grid was not drawn in.
+//
+// So the layout reading taken at the shutter is compared with one taken after
+// the last face read, and the two rides come back in one evaluate: the tree
+// fingerprint had to be taken there anyway, and two round trips would put a
+// window between the two readings that close the windows.
+//
+// # What this cannot see
+//
+// A face swap that moved no mounted box. The hash is over rects, so a font
+// whose metrics happen to match the one it replaced, or one under text in a
+// box whose size is declared rather than measured, changes glyph counts
+// without changing a single number in here. That is a miss rather than a false
+// finding, which is the direction every fingerprint in this file is wrong in —
+// and the run rects the ink scan holds are content-sized, so the swap this
+// window exists for is one that does move them.
+//
+// Returns null when the faces were read in the layout the capture was taken
+// in.
+function faceLayoutFault(before, after, paths) {
+    if (!before || !after) {
+        return `the layout was not fingerprinted on both sides of the ${paths} ` +
+            `platform-font reads, so nothing holds the faces to the layout the ` +
+            `screenshot was taken in.\n\n` +
+            `The first of those two readings is the one taken at the shutter; the ` +
+            `second rides back with the tree fingerprint after the last ` +
+            `CSS.getPlatformFontsForNode. One of them did not arrive, which means the ` +
+            `read that carries it did not happen — see the note above ` +
+            `faceLayoutFault for what fits through the window they close`;
+    }
+    const moved = layoutMovedList(before, after);
+    if (moved.length === 0) return null;
+    return `the page relaid out under the ${paths} platform-font reads: ` +
+        `${moved.join(", and ")}.\n\n` +
+        `The rects, the capture and the faces are three readings of one rendering, ` +
+        `and this is the window between the last two. A font that finished loading ` +
+        `in it moves every run's rect and changes no fact about which element is ` +
+        `which — so the tree fingerprint holds, and the layout question had already ` +
+        `been asked at the shutter — while the glyph counts read afterwards are the ` +
+        `new face's and every pixel sampled below is the old one's.\n\n` +
+        `What that produces is inkFaceFault's third arm reporting a substitution the ` +
+        `capture cannot show, or a ligature census about a face this grid was not ` +
+        `drawn in. Both would be true statements about a rendering nothing here ` +
+        `measured. No face was consulted below this line`;
 }
 
 // One chain, reported.
@@ -3152,92 +3282,19 @@ function inkOwnFault(where, subject, what, box, probe, browser) {
         inkOwnBuildNote(read, browser);
 }
 
-// The assertions the tap-target claim is made of, named once.
+// One band's tap-target ledger, spent.
 //
-// # A conjunction the census could not see
-//
-// The tail recites `targets` — how many bands got a tap target that spans the
-// band — and the census counts the three assertions that claim is made of
-// apart, so a shortfall says which of them cost it. The two agreed by
-// construction and nothing said they had to: `targetWhole` was a boolean set
-// false at three sites and the three counters were incremented at three
-// others, so a fourth assertion added to the claim could clear the conjunction
-// while leaving the census reciting three full populations under it.
-//
-// Naming the parts here is what joins them. The band loop writes a verdict per
-// part into a ledger; bandTargetTally derives the conjunction FROM that ledger
-// rather than from a boolean an assertion can reach, counts each part at its
-// own counter, and reports a ledger that does not match this table. `declared`
-// takes each part's census population from the same rows, so a part added here
-// arrives with a counter and a population and cannot arrive without them.
-//
-// The stretch's population is the bands that HAVE a wrapper — it is the
-// disclosure branch's mechanism, and the plain branch has no equivalent — so
-// `everyBand` is what the census reads and what says whether a missing verdict
-// is a branch that does not make the claim or an assertion that did not run.
-const BAND_TARGET_PARTS = [
-    {
-        key: "lead", counter: "targetLead", everyBand: true,
-        what: "the control's leading edge against the band's",
-    },
-    {
-        key: "trail", counter: "targetTrail", everyBand: true,
-        what: "the control's trailing edge against the band's content",
-    },
-    {
-        key: "stretch", counter: "targetStretch", everyBand: false,
-        what: "the button stretched across the heading wrapper",
-    },
-];
-
-// One band's tap-target ledger, counted and reduced.
-//
-// Returns the messages a ledger that has drifted from BAND_TARGET_PARTS
-// produces — a part with no verdict, a verdict on a part this branch does not
-// make, a verdict under a name the table does not have — and increments the
-// census counters and `targets` as a side effect, because the whole point is
-// that the conjunction and the three counts come out of one reading.
+// The reading is bandtarget.mjs's — see there for why the ledger's own arms
+// live in a module and why the reading no longer moves the census — and this
+// is the half that does move it: each part that held at its own counter, and
+// `targets` for the conjunction the tail recites. One reading feeds both,
+// which is the property that made this one function to begin with, and the
+// conjunction is derived from the parts rather than carried beside them.
 function bandTargetTally(where, target, asked, hasWrapper) {
-    const out = [];
-    let whole = true;
-    for (const part of BAND_TARGET_PARTS) {
-        const wanted = part.everyBand || hasWrapper;
-        const held = target[part.key];
-        if (held === undefined) {
-            if (wanted) {
-                whole = false;
-                out.push(`${where}: nothing decided ${part.what}, which is one of the ` +
-                    `${BAND_TARGET_PARTS.length} assertions the tap-target claim is ` +
-                    `made of. The tail recites the conjunction of them and the census ` +
-                    `counts them apart, and a part with no verdict is a band counted ` +
-                    `in neither`);
-            }
-            continue;
-        }
-        if (!wanted) {
-            whole = false;
-            out.push(`${where}: ${part.what} came back decided on a band that does ` +
-                `not make that claim. Its census population is the bands with a ` +
-                `heading wrapper, so a verdict from outside that set is a count over ` +
-                `a population the tail cannot state`);
-            continue;
-        }
-        if (held) asked[part.counter]++;
-        else whole = false;
-    }
-    for (const key of Object.keys(target)) {
-        if (BAND_TARGET_PARTS.some((p) => p.key === key)) continue;
-        whole = false;
-        out.push(`${where}: the tap-target ledger came back with a verdict for ` +
-            `${JSON.stringify(key)} and BAND_TARGET_PARTS has no row for it.\n\n` +
-            `A fourth assertion added to this claim has to be added there, where it ` +
-            `gets a counter and a census population. Left out, it would drop the ` +
-            `conjunction the tail recites while the census went on reporting three ` +
-            `full populations underneath it — which is the shape of shortfall this ` +
-            `table exists to make impossible`);
-    }
-    if (whole) asked.targets++;
-    return out;
+    const read = bandTargetRead(where, target, hasWrapper);
+    for (const counter of read.counters) asked[counter]++;
+    if (read.whole) asked.targets++;
+    return read.problems;
 }
 
 // --------------------------------------------------------------------------
@@ -4982,7 +5039,8 @@ async function main() {
             });
         }
 
-        // And whether all of that was about the page the rects came from.
+        // And whether all of that was about the page the rects came from, and
+        // about the rendering the capture holds.
         //
         // See TREE_FINGERPRINT_JS. The first fingerprint rode back inside the
         // rects' own evaluate; this is the same expression after the last
@@ -4991,19 +5049,41 @@ async function main() {
         // rather than reported — an unheld claim is not evidence, and the one
         // thing it would produce is a confident diagnosis of a font
         // substitution that did not happen.
+        //
+        // The layout fingerprint rides back in the SAME evaluate, and closes
+        // the window the other two leave between them: identity holds as far
+        // as here, geometry was held as far as the shutter, and a font that
+        // finished loading in between moves the rects without moving the tree.
+        // See faceLayoutFault. One expression rather than two, because two
+        // round trips would put a window between the two readings that close
+        // the windows.
         const facePaths = BAND_RENDERS.length * 2 + INK_PROBES.length +
             INK_LIGATURES.length;
+        const afterFaces = await evaluate(
+            `({ tree: ${TREE_FINGERPRINT_JS}, layout: ${LAYOUT_FINGERPRINT_JS} })`);
         const treeFault = treeMovedFault(
-            gridRead ? gridRead.tree : null, await evaluate(TREE_FINGERPRINT_JS),
+            gridRead ? gridRead.tree : null, afterFaces ? afterFaces.tree : null,
             facePaths);
         if (treeFault) problems.push(treeFault);
+        const faceLayout = faceLayoutFault(
+            layoutAfter, afterFaces ? afterFaces.layout : null, facePaths);
+        if (faceLayout) problems.push(faceLayout);
+        // Every consultation of a face rests on both of those, so the pair is
+        // one name — the way pixelsHeld is one name for the two questions the
+        // sampling sites ask. A face read is held when the tree it was taken
+        // over is the rects' tree AND the layout it was taken in is the
+        // capture's layout; either one gone and what the read describes is a
+        // rendering nothing else here measured.
+        const facesHeld = !treeFault && !faceLayout;
 
         // What the refused pairs come to on the face this browser resolved.
         //
-        // See inkLigatureCensus. Suppressed by the same fingerprint and for the
-        // same reason as every other face arm: a glyph count read off a tree
-        // that moved is a count of some other page's glyphs, and a census is
-        // the one thing worse than a missing measurement to state confidently.
+        // See inkLigatureCensus. Suppressed by the same two fingerprints and
+        // for the same reason as every other face arm: a glyph count read off a
+        // tree that moved is a count of some other page's glyphs, one read in a
+        // layout the capture is not of is a count for a face the pixels do not
+        // show, and a census is the one thing worse than a missing measurement
+        // to state confidently.
         //
         // The families the grid's own runs were drawn by are collected here
         // rather than inside the census, because they are what the loops above
@@ -5015,7 +5095,7 @@ async function main() {
             if (f && f.length === 1) runFamilies.add(f[0].family);
         }
         let ligatures = { ligated: [], carried: [], family: null };
-        if (!treeFault) {
+        if (facesHeld) {
             if (INK_LIGATURES.length === 0 && INK_PROBES.length > 0) {
                 problems.push(`no ligature row came with the transcript, and ` +
                     `inkGlyphPerCharacter's refusal is a claim about faces in general ` +
@@ -5040,7 +5120,7 @@ async function main() {
         // was measured to join, and says whether the string in front of it
         // holds one.
         const faceFault = (...args) =>
-            treeFault ? null : inkFaceFault(...args, ligatures.ligated);
+            facesHeld ? inkFaceFault(...args, ligatures.ligated) : null;
 
         // Whether the grid as a whole is on the screen, asked once.
         //
@@ -5225,6 +5305,39 @@ async function main() {
                     `and the entry belongs out of the table` +
                     inkOwnBuildNote(inkOwnRead, browserBuild));
             }
+        }
+        // And whether a computed style read on THIS build still looks like one
+        // to the guard that has to recognise it.
+        //
+        // inkReadShape counts string values against INK_OWN_SHAPE_FLOOR, which
+        // is derived from the build INK_OWN_MAY_DIFFER was measured on and not
+        // from the build in front of it. What this run enumerates is
+        // inkOwnRead, and it is only in hand here — the guard runs with the
+        // rects, long before any pair has been compared — so the derivation is
+        // what the guard uses and this is where the derivation is checked
+        // against the measurement.
+        //
+        // Under the floor, inkDeclarationGuard's third question goes quiet
+        // rather than wrong: a hand-written `out.ownStyle` written around the
+        // `declarations` table would be shaped like nothing at all, the
+        // manifest check would find nothing missing, and the hole that guard
+        // was rewritten to close would be open again with every message
+        // silent.
+        if (inkOwnRead > 0 && inkOwnRead <= INK_OWN_SHAPE_FLOOR) {
+            problems.push(`this browser enumerates ${inkOwnRead} computed properties ` +
+                `and inkReadShape calls anything with more than ` +
+                `${INK_OWN_SHAPE_FLOOR} string values a computed style.
+
+` +
+                `That floor is a quarter of the ${INK_OWN_MEASURED_ON.props} ` +
+                `${INK_OWN_MEASURED_ON.browser} enumerated, and this build is under ` +
+                `it — so a declaration read taken here is not shaped like one to ` +
+                `inkDeclarationGuard. That guard would go on passing while a read ` +
+                `written around the \`declarations\` table went unseen, which is the ` +
+                `hole it exists to close: the manifest says what was asked, and the ` +
+                `shape test is the half that notices what was asked without being ` +
+                `declared` +
+                inkOwnBuildNote(inkOwnRead, browserBuild));
         }
         for (let i = 0; pixelsHeld && i < INK_PROBES.length; i++) {
             const p = INK_PROBES[i], rect = probeRects[i];
@@ -6812,8 +6925,9 @@ async function main() {
     the backdrop, behind ${INK_PROBES.length} antialiasing probes, one per text
     declaration any of it reads, every one of them and every box they answer for
     read at the element that draws the glyphs rather than at the box around it,
-    drawn by one platform face this browser names over the same tree the rects
-    were read from — a glyph per character of strings gen.go refuses a ligature
+    drawn by one platform face this browser names, one across the whole grid,
+    over the same tree the rects were read from and in the same layout the
+    capture holds — a glyph per character of strings gen.go refuses a ligature
     pair in, ${asked.ligated.length} of those ${asked.ligatureSeeds} pairs
     drawn as one glyph by ${asked.ligatureFamily || "no face this run could name"}${
         asked.ligated.length > 0 ? ` (${asked.ligated.join(", ")})` : ``}, and the

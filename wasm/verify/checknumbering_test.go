@@ -238,9 +238,33 @@ func checkCitationsResolve(t *testing.T, checks int) {
 			break
 		}
 	}
-	if len(considered) <= len(files) {
-		t.Errorf("the enumeration opened %d files and %d of them carry citations, so "+
-			"nothing it looked inside is silent.\n\n"+
+	// The separating case itself, rather than the two sizes it shows up in.
+	//
+	// This was `len(considered) > len(files)`, which says a silent file exists
+	// SOMEWHERE and says it by arithmetic: it is a statement about the
+	// separating case only while every citing path is also a considered one,
+	// which is the loop above — and that loop reports and carries on, so a run
+	// where it fired could go on to read the inequality as evidence about
+	// nesting that had just been shown not to hold.
+	//
+	// So the set is taken: the paths the enumeration opened and found no
+	// citation in. Same property, measured on the population it is about, and
+	// a failure can name what it looked at instead of leaving a reader to
+	// subtract two numbers.
+	citing := map[string]bool{}
+	for _, f := range files {
+		citing[f.path] = true
+	}
+	silent := []string{}
+	for path := range considered {
+		if !citing[path] {
+			silent = append(silent, path)
+		}
+	}
+	sort.Strings(silent)
+	if len(silent) == 0 {
+		t.Errorf("the enumeration opened %d files and every one of them carries a "+
+			"citation, so nothing it looked inside is silent.\n\n"+
 			"citingFiles returns the two as separate answers because they are separate "+
 			"questions — citationExempt has to know a path still EXISTS and "+
 			"citationSenses has to know which senses were produced — and the case that "+
@@ -248,7 +272,13 @@ func checkCitationsResolve(t *testing.T, checks int) {
 			"the two sets equal that case is unreachable here: TestCitationExempt"+
 			"InputsComeFromTheTwoEnumerations would go on passing over a fixture, and "+
 			"an exemption that had simply gone quiet would report as a rename against "+
-			"a file still sitting on disk.", len(considered), len(files))
+			"a file still sitting on disk.", len(considered))
+	} else {
+		// Named, because a passing run's evidence for "the two enumerations are
+		// two questions" is this list existing and nothing else says so.
+		t.Logf("%d of the %d files opened cite nothing (e.g. %s), which is the pair "+
+			"citationExemptVerdict's silent arm is about", len(silent),
+			len(considered), silent[0])
 	}
 
 	// Every sense the enumeration produced has to be one somebody classified.

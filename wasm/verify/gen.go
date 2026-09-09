@@ -1552,8 +1552,8 @@ type themeLeafSet struct {
 	atWorst, beyondWorst string
 
 	// cappedByReach is true when the search stopped at themeNearMissReach
-	// rather than at this struct's own crowding — that is, when these names
-	// could have carried a wider threshold and a judgement refused them one.
+	// rather than at this struct's own crowding — that is, when a judgement
+	// and not these names decided the threshold.
 	//
 	// The two are different facts with one number in front of them, and
 	// nothing recorded which. core.Theme measures 1 against a ceiling of 3, so
@@ -1564,6 +1564,35 @@ type themeLeafSet struct {
 	// 3 edits of it" invites a reader to try 4, and whether that is available
 	// is exactly what this flag knows.
 	cappedByReach bool
+
+	// afforded is how wide a threshold these names would carry with the ceiling
+	// taken off, and affordedOpen says the search for it ran out of distances
+	// to try rather than finding a crowd.
+	//
+	// # The flag says which stopped the search and not what the other one was
+	//
+	// cappedByReach turns "nothing is within 3 edits of it" into "and 3 is a
+	// judgement, not a measurement" — which is the half a reader needs to know
+	// they are looking at a constant. The half it does not carry is what the
+	// constant is costing them, and the message was stating it anyway: "these
+	// names are far enough apart to carry a wider one" is a claim about
+	// crowding at 4, and the search stops at 3 without ever asking. A capped
+	// set whose names ARE crowded at 4 got that sentence too, and it was
+	// wrong — the ceiling and the crowding stop in the same place there, and a
+	// reader was being sent to raise a constant that would find nothing.
+	//
+	// So the same upward search continues past the ceiling, bounded by the
+	// longest leaf name: an edit distance is never more than the longer of the
+	// two strings, so past that every sibling pair is inside the threshold and
+	// the answer stops moving. A search that gets there without crowding is one
+	// where no width crowds these names at all — a set with no parent holding
+	// three leaves — and that is reported as the shape it is rather than as a
+	// number that would read like a measurement.
+	//
+	// Equal to edits whenever the ceiling was not what stopped the search,
+	// because then the crowding already answered the question.
+	afforded     int
+	affordedOpen bool
 }
 
 // themeLeaves reads a struct's leaves and measures the near-miss threshold over
@@ -1607,9 +1636,17 @@ func themeLeafSetOf(paths []string) themeLeafSet {
 		parents = append(parents, parent)
 	}
 	sort.Strings(parents)
+	// The longest leaf name, which bounds every edit distance these names can
+	// produce. See afforded.
+	span := 0
 	for _, parent := range parents {
 		names := byParent[parent]
 		sort.Strings(names)
+		for _, n := range names {
+			if len(n) > span {
+				span = len(n)
+			}
+		}
 		low := make([]string, len(names))
 		for i, n := range names {
 			low[i] = strings.ToLower(n)
@@ -1678,6 +1715,22 @@ func themeLeafSetOf(paths []string) themeLeafSet {
 	set.crowdAt, set.atWorst = crowd(set.edits)
 	if set.beyondWorst == "" {
 		set.crowdBeyond, set.beyondWorst = crowd(set.edits + 1)
+	}
+	// And, when the ceiling is what stopped the search, how far these names
+	// would have gone without it. See afforded: the flag says which of the two
+	// bound the threshold, and this is what the other one was.
+	set.afforded = set.edits
+	if set.cappedByReach {
+		for set.afforded <= span {
+			if n, _ := crowd(set.afforded + 1); n > 1 {
+				break
+			}
+			set.afforded++
+		}
+		// Past the longest name every pair is inside the threshold, so a search
+		// that got there found no crowd at any width — which is a fact about the
+		// SHAPE of the set (no parent with three leaves) and not a number.
+		set.affordedOpen = set.afforded > span
 	}
 	return set
 }
@@ -1787,16 +1840,31 @@ func themeNearMiss(set themeLeafSet, path string) string {
 			strings.Join(near, " and "), edits, set.closestD, set.closest)
 	}
 	// Where the threshold came from, on the one arm that invites the reader to
-	// wonder whether a wider one would have found something. It would have: a
-	// capped set is one whose names are not crowded at the ceiling either, and
-	// what stopped the search is the judgement written above
-	// themeNearMissReach rather than anything about these leaves.
+	// wonder whether a wider one would have found something — and, when the
+	// answer is yes, how much wider. See afforded: "these names could carry
+	// more" was being said without the width, and on a set crowded one step
+	// past the ceiling it was being said wrongly.
 	why := ""
 	if set.cappedByReach {
-		why = fmt.Sprintf(" That threshold is themeNearMissReach and not this "+
-			"struct's own crowding — these names are far enough apart to carry a "+
-			"wider one, and %d edits is where a slip stops reading as one slip.",
-			themeNearMissReach)
+		switch {
+		case set.affordedOpen:
+			why = fmt.Sprintf(" That threshold is themeNearMissReach and not this "+
+				"struct's own crowding: no parent here holds three leaves, so no "+
+				"width crowds these names at all and the ceiling is the only thing "+
+				"bounding the answer. %d edits is where a slip stops reading as one "+
+				"slip.", themeNearMissReach)
+		case set.afforded > set.edits:
+			why = fmt.Sprintf(" That threshold is themeNearMissReach and not this "+
+				"struct's own crowding: these names would carry %d before a name at "+
+				"that distance could belong to more than one of them, and %d edits is "+
+				"where a slip stops reading as one slip.", set.afforded,
+				themeNearMissReach)
+		default:
+			why = fmt.Sprintf(" That threshold is themeNearMissReach, and this "+
+				"struct's own crowding stops in the same place: %d is the widest "+
+				"these names carry either way, so raising the ceiling would find "+
+				"nothing here.", set.afforded)
+		}
 	}
 	return fmt.Sprintf("nothing under %s is within %s of it, case ignored, and "+
 		"that prefix has %d leaves. One edit covers a letter added, dropped or "+

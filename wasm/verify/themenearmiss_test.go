@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"reflect"
 	"sort"
 	"strings"
@@ -181,6 +182,19 @@ func TestThemeNearMissThresholdIsDerivedFromCoreTheme(t *testing.T) {
 			"binding.", set.edits, themeNearMissReach, beyond, set.edits+1,
 			beyondWorst)
 	}
+	// And that a set the ceiling did not stop says nothing about what it would
+	// have afforded. The crowding already answered that: crowdBeyond is the
+	// reading that ended the search, and a second number claiming these names
+	// carry more would be two measurements of one thing disagreeing. See
+	// afforded, which is only searched for when the ceiling is what stopped it.
+	if set.afforded != set.edits {
+		t.Errorf("core.Theme's threshold is %d, measured against its own crowding, "+
+			"and the set reports it would afford %d.\n\n"+
+			"That number exists for the sets the ceiling stopped, to say what the "+
+			"ceiling is costing them. For a set that stopped on its own crowding the "+
+			"answer is the threshold itself, and anything else is a second search "+
+			"contradicting the one that produced the number.", set.edits, set.afforded)
+	}
 
 	t.Logf("core.Theme: %d parents, closest sibling pair %d apart (%s); "+
 		"within %d edits at most %d sibling, within %d at most %d",
@@ -230,12 +244,66 @@ func TestTheNearMissThresholdMovesWithTheNamesItIsMeasuredOver(t *testing.T) {
 	if !sparse.cappedByReach {
 		t.Errorf("the sparse set measures %d, which is the ceiling, and reports that "+
 			"its own crowding stopped the search.\n\n"+
-			"Nothing in it crowds at any distance, so what stopped the search is "+
+			"Nothing in it crowds within the reach, so what stopped the search is "+
 			"themeNearMissReach — the one judgement left in this derivation. A set "+
 			"that does not know which of the two bound it cannot say so in its "+
 			"message, and \"nothing is within %d edits of it\" then invites a reader "+
 			"to try four with no answer about whether four was available.",
 			sparse.edits, sparse.edits)
+	}
+	// And what four would have been worth here, which is the question the flag
+	// alone cannot answer.
+	//
+	// These four names look sparse and are not, one step out: Palette.Echo has
+	// two siblings within four edits. So the ceiling and the crowding stop this
+	// set in the same place, and the sentence the message used to print for
+	// every capped set — "these names are far enough apart to carry a wider
+	// one" — was false about the very set this test was written around. See
+	// afforded.
+	if sparse.afforded != sparse.edits {
+		t.Errorf("the sparse set measures %d and reports that it would afford %d.\n\n"+
+			"Its own crowding is %d siblings within %d edits (%s), which is the same "+
+			"place the ceiling stops it. A capped set that reports a wider afforded "+
+			"threshold than it has is the message telling a reader to raise "+
+			"themeNearMissReach and find something, when raising it finds this crowd.",
+			sparse.edits, sparse.afforded, sparse.crowdBeyond, sparse.edits+1,
+			sparse.beyondWorst)
+	}
+	if sparse.affordedOpen {
+		t.Errorf("the sparse set reports that no width crowds it at all, and %s has "+
+			"%d siblings within %d edits.\n\n"+
+			"That flag is for a set with no parent holding three leaves, where the "+
+			"search runs out of distances to try rather than finding a crowd. This "+
+			"parent holds four.", sparse.beyondWorst, sparse.crowdBeyond,
+			sparse.edits+1)
+	}
+
+	// A set that really is far enough apart to carry more, so the arm that
+	// states a width is reached by something.
+	wide := themeLeafSetOf([]string{"Ramp.Aaaaaa", "Ramp.Bbbbbb", "Ramp.Cccccc"})
+	if !wide.cappedByReach || wide.afforded <= wide.edits {
+		t.Errorf("three sibling names six edits apart measure %d, capped=%v, and "+
+			"afford %d.\n\n"+
+			"Nothing under this parent is within five edits of anything else, so the "+
+			"ceiling is what stops the search and the width these names would carry "+
+			"is what the ceiling is costing. A set that cannot report that leaves the "+
+			"message saying a wider threshold was available without saying how much "+
+			"wider, which is the state this measurement replaced.",
+			wide.edits, wide.cappedByReach, wide.afforded)
+	}
+
+	// And a set nothing crowds at any width, which is a different sentence and
+	// not a bigger number: two leaves under one parent are never a crowd,
+	// however far the search goes, so there is no width to report.
+	pair := themeLeafSetOf([]string{"Duo.Alpha", "Duo.Zulu"})
+	if !pair.affordedOpen {
+		t.Errorf("two sibling names under one parent report an afforded width of %d "+
+			"(open=%v).\n\n"+
+			"A crowd is a leaf with more than one sibling inside the threshold, and a "+
+			"parent with two leaves cannot produce one at any distance. The search is "+
+			"supposed to run out of distances to try and say so, because a number "+
+			"there would read as a measurement of where these names stop being "+
+			"distinguishable — and they never do.", pair.afforded, pair.affordedOpen)
 	}
 
 	// And the other direction: names one edit apart in a crowd cannot widen,
@@ -279,9 +347,45 @@ func TestTheNearMissThresholdMovesWithTheNamesItIsMeasuredOver(t *testing.T) {
 		t.Errorf("themeNearMiss over the sparse set finds nothing for Palette.Zulu "+
 			"and does not say the threshold was the ceiling.\n\n"+
 			"It said: %s\n\n"+
-			"That set's names could have carried a wider threshold and a constant "+
-			"refused them one. A message that reports the number without its origin "+
-			"reads as a measurement over these leaves, which it is not.", miss)
+			"The number in that sentence is a judgement about typing accidents and "+
+			"not a reading of these names. A message that reports it without its "+
+			"origin reads as a measurement over these leaves, which it is not.", miss)
+	}
+	// And that it says what the ceiling is costing, which for THIS set is
+	// nothing: its crowding stops in the same place. A reader sent to raise a
+	// constant that would find a crowd is the failure this arm exists to
+	// prevent.
+	if !strings.Contains(miss, "stops in the same place") {
+		t.Errorf("themeNearMiss over the sparse set does not say that raising the "+
+			"ceiling would find nothing.\n\n"+
+			"It said: %s\n\n"+
+			"%s has %d siblings within %d edits, so the ceiling and this struct's own "+
+			"crowding bound the threshold at the same number. The message names the "+
+			"constant, which invites a reader to raise it; what it owes them is that "+
+			"the names do not carry more.", miss, sparse.beyondWorst,
+			sparse.crowdBeyond, sparse.edits+1)
+	}
+
+	// The other two arms of the same sentence, each reached by a set with the
+	// shape it is about.
+	if wideMiss := themeNearMiss(wide, "Ramp.Zzzzzz"); !strings.Contains(
+		wideMiss, fmt.Sprintf("would carry %d", wide.afforded)) {
+		t.Errorf("themeNearMiss over a set that affords %d does not say so.\n\n"+
+			"It said: %s\n\n"+
+			"This is the arm where the ceiling is genuinely costing something, and "+
+			"the width is what a reader needs to decide whether raising it is worth "+
+			"doing. \"These names could carry a wider threshold\" without the number "+
+			"is the state this replaced.", wide.afforded, wideMiss)
+	}
+	if pairMiss := themeNearMiss(pair, "Duo.Mike"); !strings.Contains(
+		pairMiss, "no width crowds these names") {
+		t.Errorf("themeNearMiss over a two-leaf parent does not say that no width "+
+			"crowds it.\n\n"+
+			"It said: %s\n\n"+
+			"A number there would read as a measurement of where these names stop "+
+			"being distinguishable, and there is no such distance: a parent with two "+
+			"leaves never produces a crowd. The shape of the set is the answer.",
+			pairMiss)
 	}
 	if crowdedMiss := themeNearMiss(crowded, "Weight.Zzz"); strings.Contains(
 		crowdedMiss, "themeNearMissReach") {

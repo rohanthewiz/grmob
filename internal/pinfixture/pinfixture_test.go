@@ -1164,10 +1164,34 @@ func TestEveryReadingNamesAHarnessThatSpellsTheNumber(t *testing.T) {
 					// away and the line it falls on is one count away. Asked of
 					// the phrase, and of the field when the phrase is the one
 					// that is gone from the file too.
-					at := pinPhraseLines(rawSource[by], cited.Phrase)
+					spellings := pinPhraseLines(rawSource[by], cited.Phrase)
 					what := "the phrase"
-					if at == nil {
-						at, what = pinPhraseLines(rawSource[by], cited.Field), "the field"
+					if spellings == nil {
+						spellings, what =
+							pinPhraseLines(rawSource[by], cited.Field), "the field"
+					}
+					// Every line every surviving copy sits on. The question is
+					// whether ANY of them is on a line the lexer lost its place
+					// on, and a phrase is spelled twice whenever the sentence
+					// above an assertion quotes it — so answering over the
+					// first copy would rule the blind spot out by looking at
+					// the comment while the assertion sat on a blanked line.
+					at := []int{}
+					for _, spelling := range spellings {
+						for _, line := range spelling {
+							if !slices.Contains(at, line) {
+								at = append(at, line)
+							}
+						}
+					}
+					// And how many copies there are, said when it is more than
+					// one: "on two lines" and "twice" send a reader to
+					// different places, and the lines alone cannot tell them
+					// apart.
+					lead := what
+					if len(spellings) > 1 {
+						lead = fmt.Sprintf("%s, spelled %d times in the file,",
+							what, len(spellings))
 					}
 					on := []int{}
 					for _, line := range at {
@@ -1181,11 +1205,11 @@ func TestEveryReadingNamesAHarnessThatSpellsTheNumber(t *testing.T) {
 						verdict = fmt.Sprintf("%s is on %v, which %s among them — so "+
 							"this failure is pinCodeOnly's and not the harness's: the "+
 							"assertion is there and the lexer blanked it.",
-							what, on, map[bool]string{true: "is", false: "are"}[len(on) == 1])
-					case at != nil:
+							lead, on, map[bool]string{true: "is", false: "are"}[len(on) == 1])
+					case len(at) > 0:
 						verdict = fmt.Sprintf("%s is on %v, which %s among them — so "+
 							"the blind spot is ruled out and what survives at that "+
-							"line is prose.", what, at,
+							"line is prose.", lead, at,
 							map[bool]string{true: "is not", false: "are not"}[len(at) == 1])
 					default:
 						verdict = "neither string could be put on a line of the file, " +
@@ -1651,25 +1675,40 @@ func TestPinCodeOnlyBlanksWhatEachLanguageCallsProse(t *testing.T) {
 // one of them" is a sentence about a run of lines and not about a point, and a
 // wrap that put half an assertion on a blanked line is exactly the case the
 // note exists for.
+//
+// The twice-spelled case is the other one, and it is why the answer is grouped
+// per copy rather than flattened here: a phrase quoted in the sentence above
+// its own assertion survives in two places, and "on two lines" and "twice" are
+// different things to tell a reader. Taking the first match, which is what
+// this used to do, answers about whichever copy came earlier in the file — the
+// comment, when the comment is above the code.
 func TestAPhraseIsPutBackOnTheLinesItCameFrom(t *testing.T) {
-	const src = "one\n  if (!pinSame(total, c.offer)) {\n three\n a = pinSame(x,\n   y)\n"
+	const src = "one\n  if (!pinSame(total, c.offer)) {\n three\n a = pinSame(x,\n   y)\n" +
+		"// pinSame(total, c.offer) again, in prose\n"
 	for _, c := range []struct {
 		what   string
 		phrase string
-		want   []int
+		want   [][]int
 	}{
-		{"a phrase on one line", "pinSame(total, c.offer)", []int{2}},
-		{"the same phrase spelled without its spaces", "pinSame(total,c.offer)", []int{2}},
-		{"a phrase broken across a line", "pinSame(x, y)", []int{4, 5}},
+		// Two copies: the code on line 2 and the comment on line 6. Both are
+		// reported, and it is the caller that decides which of them being on a
+		// blanked line settles the verdict.
+		{"a phrase spelled twice", "pinSame(total, c.offer)", [][]int{{2}, {6}}},
+		{"the same phrase spelled without its spaces", "pinSame(total,c.offer)",
+			[][]int{{2}, {6}}},
+		{"a phrase broken across a line", "pinSame(x, y)", [][]int{{4, 5}}},
 		{"a phrase that is not there at all", "pinSame(nothing)", nil},
 	} {
-		if got := pinPhraseLines(src, c.phrase); !slices.Equal(got, c.want) {
+		if got := pinPhraseLines(src, c.phrase); !slices.EqualFunc(got, c.want,
+			slices.Equal[[]int]) {
 			t.Errorf("%s: pinPhraseLines(%q) is %v, want %v.\n\n"+
 				"The deletion report's blind-spot arm turns \"the lexer lost its place "+
 				"on these lines\" into \"the surviving assertion is on this one, which "+
 				"is among them\", and that verdict is this index. A phrase placed on "+
 				"the wrong line sends the reader to look at code that is fine and "+
-				"clears a lexer that is not.", c.what, c.phrase, got, c.want)
+				"clears a lexer that is not, and a copy left out of the answer is a "+
+				"blanked assertion the note rules out by reading its own comment.",
+				c.what, c.phrase, got, c.want)
 		}
 	}
 	// And the property the index rests on, which no row above can show: the
@@ -1793,23 +1832,43 @@ func pinStripSpaceLines(s string) (string, []int) {
 	return string(out), oline
 }
 
-// pinPhraseLines is the lines of a raw file the phrase occupies, or nil when
-// the phrase is not in it.
+// pinPhraseLines is the lines of a raw file each spelling of the phrase
+// occupies — one entry per surviving copy — or nil when the phrase is not in
+// the file at all.
 //
 // Asked of the RAW file rather than of what pinCodeOnly left, because the one
 // caller is the arm that has already established the phrase is gone from the
 // code and still somewhere in the file. What it wants to know is where.
-func pinPhraseLines(raw, phrase string) []int {
+//
+// # Every copy, not the first
+//
+// It used to take FindStringIndex and answer about one match. A phrase is
+// spelled twice whenever the sentence above an assertion quotes it, which is
+// the ordinary way a comment is written here — and the blind-spot verdict is
+// "is a surviving copy on a line the lexer lost its place on". Answering that
+// over whichever copy came first in the file is right when one of them is the
+// survivor and wrong exactly when both survive and the LATER one is the
+// blanked assertion: the note would rule its own blind spot out by looking at
+// the comment.
+//
+// So all of them, grouped: a copy broken across a line is one entry naming two
+// lines, and two copies on one line each are two entries. The caller flattens
+// for the verdict and counts the entries for the sentence, because "the phrase
+// is on two lines" and "there are two phrases" send a reader to different
+// places.
+func pinPhraseLines(raw, phrase string) [][]int {
 	stripped, lines := pinStripSpaceLines(raw)
-	loc := pinSpellsPattern(phrase).FindStringIndex(stripped)
-	if loc == nil {
-		return nil
-	}
-	var out []int
-	for i := loc[0]; i < loc[1] && i < len(lines); i++ {
-		if len(out) == 0 || out[len(out)-1] != lines[i] {
-			out = append(out, lines[i])
+	var out [][]int
+	// Non-overlapping, left to right, which is what FindAll gives: two matches
+	// that overlapped would be one spelling counted twice.
+	for _, loc := range pinSpellsPattern(phrase).FindAllStringIndex(stripped, -1) {
+		var at []int
+		for i := loc[0]; i < loc[1] && i < len(lines); i++ {
+			if len(at) == 0 || at[len(at)-1] != lines[i] {
+				at = append(at, lines[i])
+			}
 		}
+		out = append(out, at)
 	}
 	return out
 }
