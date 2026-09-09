@@ -554,6 +554,35 @@ const (
 	// the message asks for one, with the leaf count then and now beside it, so
 	// the reading is never "a relation broke" when what happened is a struct
 	// changing size.
+	//
+	// # And a fraction is still a fraction of one population
+	//
+	// One number, chosen once, applied to four endings — which is the shape
+	// complaint above arriving one level up. INK_OWN_SHAPE_FLOOR's note makes
+	// the same admission about its quarter and then says what keeps it a
+	// measurement: the pair of populations it has to separate, both in hand on
+	// every run, and both asserted rather than argued. A third had neither. It
+	// is under every ending today and nothing said what it was above.
+	//
+	// So the two edges are named and held, and they are the two findings this
+	// census exists to tell apart:
+	//
+	//	a population that MOVED   affordedScale — every ending is a count of
+	//	                         sets off one walk, so a struct that changed
+	//	                         size moves all four together and by that much.
+	//	                         The floor has to stay UNDER what a merely-moved
+	//	                         ending would score, or a re-measure arrives
+	//	                         looking exactly like a collapse.
+	//	a population on the       affordedBracket.share — an ending whose share
+	//	stated floor              falls under the constant is held to a number
+	//	                         that is not a measurement of IT. That is right
+	//	                         for a thin arm and it is the derivation going
+	//	                         quiet when it is true of all four, which is the
+	//	                         state this replaced with nobody deciding it.
+	//
+	// Neither edge is protected by the arithmetic. max(constant, measured/3) is
+	// the constant the moment a measurement is small, and it is above a moved
+	// population the moment the population moved by more than the share.
 	affordedEndingShare = 3
 )
 
@@ -586,33 +615,125 @@ var affordedMeasuredOn = struct {
 	},
 }
 
-// affordedEndingBracket is the floor one ending is held to, and why it is that
-// number.
+// affordedSetCount is how many sets the walk below produces from a given number
+// of distinct leaf names at a given window.
+//
+// Both arrangements of every window of one to `window` consecutive names, which
+// is exactly what the loop does: 2×(leaves−w+1) at each width. A function
+// rather than the 930 it comes to today, because a count of this population is
+// unreadable without what it was counted over — and the scale below divides
+// this run's population by the one affordedMeasuredOn was taken over, which is
+// a number no constant can be asked for after the fact.
+//
+// The walk is asserted against it. A formula that has come apart from the loop
+// it describes makes the scale a ratio between a real population and an
+// imaginary one, and every reading derived from it a fiction stated in numbers.
+func affordedSetCount(leaves, window int) int {
+	n := 0
+	for w := 1; w <= window && w <= leaves; w++ {
+		n += 2 * (leaves - w + 1)
+	}
+	return n
+}
+
+// affordedScale is this run's population as a fraction of the one
+// affordedMeasuredOn was taken over.
+//
+// One number for the whole census. Every ending is a count of sets and all the
+// sets come off one walk, so a struct that gained or lost leaves — or a window
+// somebody narrowed — moves all four endings together and by this much. That is
+// the difference between the two findings the floor exists to tell apart, and
+// until it was computed the distinction was made in prose by a note that could
+// only say "may be".
+//
+// Zero when the recorded population is empty, which is a record that cannot be
+// scaled against and is reported where it is read rather than divided by.
+func affordedScale(leaves int) float64 {
+	then := affordedSetCount(affordedMeasuredOn.leaves, affordedMeasuredOn.window)
+	if then == 0 {
+		return 0
+	}
+	return float64(affordedSetCount(leaves, affordedWindowMax)) / float64(then)
+}
+
+// affordedBracket is the floor one ending is held to, why it is that number,
+// and which of the two arms produced it.
+//
+// The arm is here because it is the half no message could see. The larger of a
+// constant and a share reads as one number from outside, and the two say
+// different things about the ending: on the share it is held to a fraction of
+// its OWN measurement, and on the constant it is held to a number that is not a
+// measurement of it at all. Which of those is in force decides what a shortfall
+// means and whether the derivation is doing anything for this ending.
+type affordedBracket struct {
+	floor int
+	// What the ending scored when the record was taken, and whether there is
+	// such a reading at all. A reworded ending has neither, and everything
+	// derived from a measurement is unavailable rather than zero.
+	measured int
+	known    bool
+	share    bool
+	why      string
+}
+
+// affordedEndingBracket is that bracket, for one ending.
 //
 // The larger of the stated floor and a share of what this ending scored when it
 // was measured: the constant is what keeps a small arm from sliding to 1, and
 // the share is what keeps a large one from losing most of itself unremarked.
-// Returns the reason as well as the number, because a message that prints a
+// Carries the reason as well as the number, because a message that prints a
 // bound without saying which of the two produced it leaves a reader unable to
 // tell "this ending is thin" from "this ending has collapsed".
-func affordedEndingBracket(ending string) (int, string) {
+func affordedEndingBracket(ending string) affordedBracket {
 	measured, known := affordedMeasuredOn.ending[ending]
 	if !known {
-		return affordedEndingFloor, fmt.Sprintf(
+		return affordedBracket{floor: affordedEndingFloor, why: fmt.Sprintf(
 			"the stated floor of %d — affordedMeasuredOn carries no reading for this "+
 				"ending, so there is no share of a measurement to take",
-			affordedEndingFloor)
+			affordedEndingFloor)}
 	}
 	share := measured / affordedEndingShare
 	if share <= affordedEndingFloor {
-		return affordedEndingFloor, fmt.Sprintf(
-			"the stated floor of %d, which is above the %d that a third of this "+
-				"ending's own measurement (%d) comes to",
-			affordedEndingFloor, share, measured)
+		return affordedBracket{floor: affordedEndingFloor, measured: measured,
+			known: true, why: fmt.Sprintf(
+				"the stated floor of %d, which is above the %d that a third of this "+
+					"ending's own measurement (%d) comes to",
+				affordedEndingFloor, share, measured)}
 	}
-	return share, fmt.Sprintf(
-		"a third of the %d this ending scored when affordedMeasuredOn was taken",
-		measured)
+	return affordedBracket{floor: share, measured: measured, known: true,
+		share: true, why: fmt.Sprintf(
+			"a third of the %d this ending scored when affordedMeasuredOn was taken",
+			measured)}
+}
+
+// affordedShortfallCause is which of the two findings a shortfall actually is,
+// decided rather than hedged.
+//
+// A count under its floor is either the whole population having moved — in
+// which case every ending moved with it and the record is what needs re-taking
+// — or this one arm going while the others held, which is the relation being
+// asked of a population that can no longer break it. affordedMeasuredNote can
+// only say the first "may be" the case; the scale says which, because a moved
+// population predicts a number and the number is in hand.
+func affordedShortfallCause(b affordedBracket, scale float64, got int) string {
+	if !b.known || scale == 0 {
+		return "\n\nWhich of the two this is cannot be said here: " +
+			"affordedMeasuredOn has no reading for this ending, so there is no " +
+			"count to scale and no prediction to hold this one against."
+	}
+	moved := float64(b.measured) * scale
+	if moved < float64(b.floor) {
+		return fmt.Sprintf("\n\nThis is the population having moved rather than "+
+			"this arm having gone: the census is at %.2f× the one the record was "+
+			"taken over, which puts this ending's own %d at about %.0f — under the "+
+			"floor of %d before any relation is asked. Every ending is scaled by "+
+			"that same number, so the thing to re-take is affordedMeasuredOn and "+
+			"not this walk.", scale, b.measured, moved, b.floor)
+	}
+	return fmt.Sprintf("\n\nAnd it is this arm and not the census: the population "+
+		"is at %.2f× the one the record was taken over, which predicts about %.0f "+
+		"sets for this ending and %d arrived. The others moved with the walk; this "+
+		"one went.", scale, moved, got)
 }
 
 // affordedMeasuredNote is the sentence a failure adds when this run is not the
@@ -806,6 +927,28 @@ func TestTheAffordedWidthHoldsItsTwoRelations(t *testing.T) {
 				"nobody having decided that.", key)
 		}
 	}
+	// And the walk against the formula the scale is taken with.
+	//
+	// affordedSetCount describes the loop above and the loop is what actually
+	// produced these counts. A formula that has come apart from it would leave
+	// every reading below a ratio between this population and an imaginary one
+	// — stated to two decimal places, which is the shape a number nobody
+	// derived arrives in.
+	if want := affordedSetCount(len(names), affordedWindowMax); len(sets) != want {
+		t.Fatalf("the walk produced %d sets over %d distinct leaf names at a window "+
+			"of %d, and affordedSetCount says %d.\n\n"+
+			"That function is the same walk written as arithmetic, and it is what "+
+			"scales this run's population against the one affordedMeasuredOn was "+
+			"taken over — both ends of that division go through it. A disagreement "+
+			"makes every reading below a comparison with a population that was never "+
+			"walked, so nothing further is asked.",
+			len(sets), len(names), affordedWindowMax, want)
+	}
+	// What this whole census comes to against the one the record was taken
+	// over. See affordedScale: one number, because one walk produced all four
+	// endings.
+	scale := affordedScale(len(names))
+
 	for _, ending := range endings {
 		if reached[ending] == 0 {
 			t.Errorf("not one of the %d generated sets ended with %q.\n\n"+
@@ -816,10 +959,10 @@ func TestTheAffordedWidthHoldsItsTwoRelations(t *testing.T) {
 				"arriving with a bigger number in front of it.", len(sets), ending)
 			continue
 		}
-		floor, why := affordedEndingBracket(ending)
-		if reached[ending] < floor {
+		b := affordedEndingBracket(ending)
+		if reached[ending] < b.floor {
 			t.Errorf("%d of the %d generated sets ended with %q, against a floor of "+
-				"%d — %s.\n\n"+
+				"%d — %s.%s\n\n"+
 				"The ending is still reached, so the relations above are still being "+
 				"asked of both sides — and by a population thin enough that the next "+
 				"change to either end of it decides whether they are asked at all. "+
@@ -830,12 +973,91 @@ func TestTheAffordedWidthHoldsItsTwoRelations(t *testing.T) {
 				"when the struct gains or loses leaves — and it moves without a "+
 				"message, because a relation that holds over 1 set holds. That is the "+
 				"margin this floor is here to notice leaving.%s",
-				reached[ending], len(sets), ending, floor, why, reached,
+				reached[ending], len(sets), ending, b.floor, b.why,
+				affordedShortfallCause(b, scale, reached[ending]), reached,
 				affordedWindowMax, affordedMeasuredNote(len(names), len(sets)))
 		}
 	}
+
+	// # The share's two edges, and which endings it is doing work for
+	//
+	// See affordedEndingShare. A third is a fraction of one population and
+	// what makes it a measurement rather than a taste is the pair it has to
+	// separate — both in hand here, and neither protected by max(constant,
+	// measured/3).
+	//
+	// The first edge is the population that MOVED. Every ending is scaled by
+	// affordedScale, so a merely-moved ending scores about `measured × scale`;
+	// a floor above that is a floor no healthy census can clear, and the next
+	// failure it produces is a re-measure wearing a collapse's message. The
+	// second is the derivation itself: an ending whose share falls under the
+	// stated constant is held to a number that is not a measurement of it, and
+	// when that is true of all four the per-ending floor has quietly become the
+	// one constant for four endings it was written to replace.
+	onShare, brackets := 0, map[string]affordedBracket{}
+	for _, ending := range endings {
+		b := affordedEndingBracket(ending)
+		brackets[ending] = b
+		if b.share {
+			onShare++
+		}
+	}
+	if onShare == 0 {
+		t.Errorf("not one of the four endings is held to a share of its own "+
+			"measurement: every floor here is the stated %d.\n\n"+
+			"A third of an ending's own count is what brackets a large arm — 473 "+
+			"sets losing four fifths of themselves clears a constant of %d without a "+
+			"word — and the constant is what keeps a small one from sliding to 1. "+
+			"With every share under the constant this is one number holding four "+
+			"endings, which is the state affordedMeasuredOn was recorded to replace, "+
+			"arriving back through the arithmetic rather than through an edit. The "+
+			"record reads %v against a population of %d sets%s",
+			affordedEndingFloor, affordedEndingFloor, affordedMeasuredOn.ending,
+			len(sets), affordedMeasuredNote(len(names), len(sets)))
+	}
+	for _, ending := range endings {
+		b := brackets[ending]
+		if !b.known || scale == 0 {
+			continue // reported by the key-set arms above
+		}
+		moved := float64(b.measured) * scale
+		if moved >= float64(b.floor) {
+			continue
+		}
+		t.Errorf("this ending's floor is %d and a population that had only MOVED "+
+			"would put %q at about %.0f — under its own floor before any relation "+
+			"is asked.\n\n"+
+			"The census is at %.2f× the population affordedMeasuredOn was taken "+
+			"over (%d sets then, %d now), and the floor is %s. The two findings "+
+			"this bracket exists to separate are a struct that changed size and an "+
+			"arm that went; at this scale the first of them trips the second's "+
+			"message, so the next failure here says a relation has stopped being "+
+			"asked when what happened is that somebody narrowed a window or "+
+			"core.Theme lost leaves. Re-take affordedMeasuredOn against this walk — "+
+			"the census in the log line is the new measurement.",
+			b.floor, ending, moved, scale,
+			affordedSetCount(affordedMeasuredOn.leaves, affordedMeasuredOn.window),
+			len(sets), b.why)
+	}
+	// And what each ending was actually held to, which arm set it, and how much
+	// room there was. A passing run's whole evidence that the per-ending
+	// derivation is doing anything is this line: "against its own floor" was
+	// true of an ending on the stated constant too.
+	held := make([]string, 0, len(endings))
+	for _, ending := range endings {
+		b := brackets[ending]
+		arm := "the stated floor"
+		if b.share {
+			arm = "a third of its own"
+		}
+		held = append(held, fmt.Sprintf("%q %d/%d (%s)",
+			ending, reached[ending], b.floor, arm))
+	}
 	t.Logf("%d generated leaf sets over %d distinct leaf names, none of them a "+
 		"shape anybody chose, hold afforded >= edits and the open flag's "+
-		"parent-of-three: %v — each ending against its own floor%s",
-		len(sets), len(names), reached, affordedMeasuredNote(len(names), len(sets)))
+		"parent-of-three — each ending against its own floor, %d of the four on a "+
+		"share of its own measurement and the rest on the stated %d, over a "+
+		"population at %.2f× the one the record was taken on: %s%s",
+		len(sets), len(names), onShare, affordedEndingFloor, scale,
+		strings.Join(held, ", "), affordedMeasuredNote(len(names), len(sets)))
 }

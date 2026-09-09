@@ -352,8 +352,25 @@ func checkCitationsResolve(t *testing.T, checks int) {
 	//
 	// So the kind carries all of its reached rows, sorted, and the recital
 	// prints each with the reason written beside it. Sorted for the same
-	// stability the single lender was chosen for; whole because "which of these
-	// two arguments fits" is the reader's question and not this file's.
+	// stability the single lender was chosen for.
+	//
+	// # And an argument printed whole has no bound
+	//
+	// Every `why` in full is the right direction and it grows with the number
+	// of rows sharing a kind: two of them already put six hundred characters
+	// into a PASSING run's log, and a third makes it a paragraph. A line nobody
+	// reads is a line that says nothing, which is where the count-shaped
+	// version of this started.
+	//
+	// The reader's question is which of these arguments fits the file in the
+	// example, and this file cannot answer it — an exemption is a claim about
+	// CONTENT and all that is in hand here is a path. What it can do is put the
+	// likeliest first and bound the rest: rows in the example's own directory
+	// lead, alphabetical within that, and the arguments are clipped at
+	// citationWhyBudget with the count of what was left out and the table named
+	// to read it in. Proximity is a guess and it is stated as one — the line
+	// says the order it is in — where picking one row and printing it alone
+	// stated nothing at all.
 	exemptKinds := map[string][]string{}
 	for path := range citationExempt {
 		kinds[filepath.Ext(path)] = true
@@ -410,20 +427,30 @@ func checkCitationsResolve(t *testing.T, checks int) {
 		// and an exemption written for some other kind widens it without moving
 		// any number here. Printing the reasons puts the thing a reader would
 		// have to open the table for into the line a passing run prints.
-		lenders := exemptKinds[filepath.Ext(example[0])]
+		lenders := citationLendersNear(exemptKinds[filepath.Ext(example[0])],
+			example[0])
 		how := "a kind this check is about, with no exemption written for it"
 		if len(lenders) > 0 {
-			said := make([]string, 0, len(lenders))
-			for _, lender := range lenders {
+			shown := lenders
+			if len(shown) > citationLendersShown {
+				shown = shown[:citationLendersShown]
+			}
+			said := make([]string, 0, len(shown))
+			for _, lender := range shown {
 				said = append(said, fmt.Sprintf("%s, because %s", lender,
-					citationExempt[lender]))
+					citationClipWhy(citationExempt[lender])))
 			}
 			rows := fmt.Sprintf("%d rows are", len(lenders))
 			if len(lenders) == 1 {
 				rows = "one row is"
 			}
-			how = fmt.Sprintf("the kind %s exempted under: %s", rows,
-				strings.Join(said, "; and "))
+			rest := ""
+			if len(lenders) > len(shown) {
+				rest = fmt.Sprintf("; and %d more of this kind, in citationExempt",
+					len(lenders)-len(shown))
+			}
+			how = fmt.Sprintf("the kind %s exempted under, nearest this file first: "+
+				"%s%s", rows, strings.Join(said, "; and "), rest)
 		}
 		t.Logf("%d of the %d files opened cite nothing, %d of them a kind this check "+
 			"is about and %d a kind citationExempt itself names (e.g. %s), which "+
@@ -512,6 +539,69 @@ func kindList(kinds map[string]bool) []string {
 	}
 	sort.Strings(out)
 	return out
+}
+
+// What the recital of a kind's exemptions is allowed to cost a passing run.
+//
+// The arguments are the half that tells two rows of one kind apart — see where
+// exemptKinds is built — and they are prose somebody wrote to be read once, in
+// the table, by a reader who had gone looking. Printed whole on every green run
+// they are unbounded: two of them already come to about six hundred characters
+// and nothing stops a third.
+//
+// Two rows with their arguments clipped is the compromise. It is enough to see
+// that the arguments DIFFER, which is what the single-lender version could not
+// show at all, and the count and the table name are what a reader follows when
+// neither of the two shown is the one they need.
+const (
+	citationLendersShown = 2
+	citationWhyBudget    = 120
+)
+
+// citationLendersNear is a kind's exempt rows with the ones nearest the example
+// first.
+//
+// An exemption is a claim about a file's CONTENT and the example is a silent
+// file: which of these arguments applies to it is not a question this file can
+// answer, and the previous version's answer — whichever sorted first — was a
+// worse guess than no guess, because nothing in the line said it was one.
+//
+// Directory is the one thing in hand that correlates with content at all: a
+// silent .go file in wasm/verify sits beside a .go exemption written about
+// wasm/verify, and the two are far likelier to be the same kind of file than
+// either is to something in core. Alphabetical within each group, so two runs
+// over an unchanged tree print the same line — the stability the single lender
+// was picked for, kept.
+//
+// The input is already sorted, so the two groups come out sorted; the copy is
+// because the caller's slice is the map's own.
+func citationLendersNear(lenders []string, example string) []string {
+	near, far := []string{}, []string{}
+	dir := filepath.Dir(example)
+	for _, lender := range lenders {
+		if filepath.Dir(lender) == dir {
+			near = append(near, lender)
+			continue
+		}
+		far = append(far, lender)
+	}
+	return append(near, far...)
+}
+
+// citationClipWhy is one exemption's argument, bounded.
+//
+// Cut at a word rather than mid-token, and marked, so a reader can see that
+// what they are looking at is the head of a sentence and not the whole of a
+// thin one. The full text is in citationExempt and the line says so.
+func citationClipWhy(why string) string {
+	if len(why) <= citationWhyBudget {
+		return why
+	}
+	cut := why[:citationWhyBudget]
+	if i := strings.LastIndexByte(cut, ' '); i > citationWhyBudget/2 {
+		cut = cut[:i]
+	}
+	return cut + "…"
 }
 
 // The two enumerations citationExemptVerdict's answer is decided by.

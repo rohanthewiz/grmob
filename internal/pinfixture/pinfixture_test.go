@@ -1418,6 +1418,13 @@ const (
 // pinConstructName is one of those, spelled the way a sentence needs it.
 func pinConstructName(kind byte) string {
 	switch kind {
+	// Reachable from a copy that STRADDLES: a phrase whose first half a
+	// construct swallowed and whose second half the lexer kept is part code,
+	// and the sentence that describes it has to be able to say so. Not
+	// reachable from a copy that is wholly one thing — that copy is live and is
+	// the line to open. See pinBlankedAs.
+	case pinKeptCode:
+		return "code the lexer kept"
 	case pinLineComment:
 		return "a comment running to the end of the line"
 	case pinBlockComment:
@@ -2081,9 +2088,14 @@ func pinStripSpaceMap(s string) (string, []int, []int) {
 // Returns a sentence beginning with a space, to be appended to a verdict.
 func pinCopyNote(code string, by []byte, copies []pinCopy) string {
 	prose, live := []int{}, []int{}
-	// The shadowed ones carry their construct with them, because the sentence
-	// that names them has to name it too.
+	// The shadowed ones carry their constructs with them, because the sentence
+	// that names them has to name them too.
 	shadowed := []pinShadow{}
+	// And the ones that are in a construct AND in live code, which is a copy
+	// half deleted. Kept apart from both buckets: it is not the line to open —
+	// what stands there is one end of the string — and it is not a copy the
+	// lexer took whole either. See pinBlankedAs.
+	straddling := []pinShadow{}
 	for _, c := range copies {
 		if len(c.At) == 0 || c.Start < 0 || c.End > len(code) || c.Start >= c.End {
 			continue
@@ -2092,15 +2104,35 @@ func pinCopyNote(code string, by []byte, copies []pinCopy) string {
 		// names it at. A copy broken across lines is one entry either way —
 		// see pinPhraseCopies — and its span carries the wrap.
 		at := c.At[0]
-		if strings.TrimSpace(code[c.Start:c.End]) != "" {
+		// What the lexer was in for each of this copy's own bytes. Placed by
+		// the record rather than by the span test this used to make, which
+		// could only ask whether ANYTHING in the span survived and therefore
+		// read a half-deleted copy as a live one.
+		kinds := pinBlankedAs(code, by, c)
+		kept := false
+		for _, kind := range kinds {
+			if kind == pinKeptCode {
+				kept = true
+			}
+		}
+		switch {
+		case len(kinds) == 1 && kept:
 			live = append(live, at)
-			continue
-		}
-		if strings.TrimSpace(pinLinesAround(code, c.Start, c.End)) == "" {
+		case kept:
+			straddling = append(straddling, pinShadow{lines: c.At, kinds: kinds})
+		case len(kinds) > 0 &&
+			strings.TrimSpace(pinLinesAround(code, c.Start, c.End)) != "":
+			shadowed = append(shadowed, pinShadow{lines: c.At, kinds: kinds})
+		// No record to read: a caller with no lexer behind it. The line is all
+		// there is then, and it is exactly what this reading replaced — kept
+		// so that arm answers as it did rather than dropping the copy.
+		case len(kinds) == 0 && strings.TrimSpace(code[c.Start:c.End]) != "":
+			live = append(live, at)
+		case strings.TrimSpace(pinLinesAround(code, c.Start, c.End)) == "":
 			prose = append(prose, at)
-			continue
+		default:
+			shadowed = append(shadowed, pinShadow{lines: c.At, kinds: kinds})
 		}
-		shadowed = append(shadowed, pinShadow{at: at, kind: pinBlankedBy(by, c)})
 	}
 	clauses := []string{}
 	if len(prose) > 0 {
@@ -2109,6 +2141,9 @@ func pinCopyNote(code string, by []byte, copies []pinCopy) string {
 	}
 	if len(shadowed) > 0 {
 		clauses = append(clauses, pinShadowClause(shadowed))
+	}
+	if len(straddling) > 0 {
+		clauses = append(clauses, pinStraddleClause(straddling))
 	}
 	if len(live) > 0 {
 		clauses = append(clauses,
@@ -2121,6 +2156,12 @@ func pinCopyNote(code string, by []byte, copies []pinCopy) string {
 	switch {
 	case len(live) > 0:
 		return note + fmt.Sprintf("%v is the line to open.", live)
+	case len(straddling) > 0:
+		return note + fmt.Sprintf("no copy of this string survives whole: part of "+
+			"the copy on %v is code the lexer kept and the rest of it went to %s, "+
+			"so that line reads live for a fragment of this string and the "+
+			"assertion is gone either way.",
+			pinShadowLines(straddling), pinStraddleConstructs(straddling))
 	case len(shadowed) > 0:
 		return note + fmt.Sprintf("no copy of this string is code the lexer kept: "+
 			"what stands on %v is the code AROUND %s, and not the string itself.",
@@ -2133,28 +2174,93 @@ func pinCopyNote(code string, by []byte, copies []pinCopy) string {
 
 // pinShadow is one copy the lexer blanked on a line it left code on, and what
 // it was lexing when it did.
+//
+// Every construct the copy's own span met, in the order it met them, because a
+// copy can be in more than one — see pinBlankedAs. Nil when there was no record
+// to read, which pinConstructNames says in words rather than leaving the noun
+// out of the sentence.
 type pinShadow struct {
-	at   int
-	kind byte
+	// Every line the copy occupies, not the first of them. A copy inside one
+	// construct is on one line and the two readings agree; a straddle is the
+	// case where they cannot, because the halves are on different lines and
+	// naming the first would send a reader to the half that is standing.
+	lines []int
+	kinds []byte
 }
 
-// pinBlankedBy is the construct a copy's own bytes were blanked as.
+// pinBlankedAs is every construct a copy's own bytes were taken by, in the
+// order the span meets them.
 //
 // Read off the span rather than off the line, for the reason the placement
-// itself is: a line can carry a literal and a trailing comment at once, and the
-// copy is inside exactly one of them. The first recorded byte answers, because
-// a phrase that straddled two constructs would have had to be blanked by both
-// and pinShadowConstructs is what says so when it happens.
-func pinBlankedBy(by []byte, c pinCopy) byte {
+// itself is: a line can carry a literal and a trailing comment at once, and a
+// copy is inside one of them.
+//
+// # And a copy can be inside two
+//
+// This returned the FIRST recorded byte and called that the construct, on the
+// argument that a phrase straddling two would have had to be blanked by both
+// and the clause would say so. It cannot: one byte per copy is one construct
+// per copy, and the multi-construct clause was about two COPIES in two
+// constructs. A straddle arrived as whichever construct the phrase started in.
+//
+// Straddles are not hypothetical, because the phrase is matched over the
+// space-stripped source and a newline is whitespace. Two transitions need no
+// byte between them at all — a line comment and a runaway string both end at
+// the newline — so a phrase can begin inside one and finish in whatever the
+// next line starts with:
+//
+//	x = 1 // pinSame(total,      the head is a line comment's
+//	c.offer)                     and the tail is code the lexer kept
+//
+// That copy is half gone. Answering "a comment running to the end of the line"
+// sends a reader to a line where the phrase is not, and answering "live code"
+// — which is what the span test above did, since something in the span
+// survived — sends them to a line that holds half of it and calls it the
+// assertion.
+//
+// # What is skipped, and why the answer is not always "code"
+//
+// pinCodeOnly blanks in place and leaves newlines alone, so a raw newline and
+// a raw space between tokens both read as kept code. A copy broken across
+// lines carries at least one of them, and counting those would make every
+// multi-line copy a straddle. A byte is therefore only read as kept code when
+// something is actually standing there: no recorded construct, and not
+// whitespace in the lexed output.
+//
+// Nil when there is no record to read (a `by` of nil), which is a caller with
+// no lexer behind it rather than a copy with no construct — pinCopyNote places
+// those by their line, which is what this whole reading replaced and is still
+// the only thing available without a record.
+func pinBlankedAs(code string, by []byte, c pinCopy) []byte {
 	if by == nil {
-		return pinKeptCode
+		return nil
 	}
-	for i := c.Start; i < c.End && i < len(by); i++ {
-		if by[i] != pinKeptCode {
-			return by[i]
+	var kinds []byte
+	seen := map[byte]bool{}
+	for i := c.Start; i < c.End && i < len(code) && i < len(by); i++ {
+		kind := by[i]
+		if kind == pinKeptCode && pinSpaceByte(code[i]) {
+			continue
 		}
+		if seen[kind] {
+			continue
+		}
+		seen[kind] = true
+		kinds = append(kinds, kind)
 	}
-	return pinKeptCode
+	return kinds
+}
+
+// pinSpaceByte reports whether a byte of the lexed source is whitespace.
+//
+// The bytes pinCodeOnly writes when it blanks a construct are spaces too, and
+// the caller tells the two apart by the record and not by this: a space with a
+// construct recorded against it is prose, and a space with nothing recorded is
+// the source's own layout. Written over bytes rather than runes because both
+// readers index the same offsets the lexer wrote at, and every whitespace
+// character either language separates tokens with is ASCII.
+func pinSpaceByte(b byte) bool {
+	return b == ' ' || b == '\t' || b == '\n' || b == '\r' || b == '\f' || b == '\v'
 }
 
 // pinShadowClause is the middle clause of the note: which copies were blanked,
@@ -2164,20 +2270,14 @@ func pinBlankedBy(by []byte, c pinCopy) byte {
 // literal and a block comment are two. Ordered by first appearance, which is
 // the order the copies came in, so the sentence reads in the file's own order
 // rather than in a map's.
+//
+// Grouped by the whole run of constructs and not by one of them, because a copy
+// carries every construct its span met — see pinBlankedAs. Two copies a literal
+// swallowed still group; a copy a literal swallowed and a copy split between a
+// literal and a comment do not, and reading as one clause is exactly the
+// summary this was rebuilt out of.
 func pinShadowClause(shadowed []pinShadow) string {
-	byKind := map[byte][]int{}
-	order := []byte{}
-	for _, s := range shadowed {
-		if _, seen := byKind[s.kind]; !seen {
-			order = append(order, s.kind)
-		}
-		byKind[s.kind] = append(byKind[s.kind], s.at)
-	}
-	parts := make([]string, 0, len(order))
-	for _, kind := range order {
-		parts = append(parts, fmt.Sprintf("the copy on %v inside %s",
-			byKind[kind], pinConstructName(kind)))
-	}
+	parts := pinShadowParts(shadowed, "inside", "across")
 	if len(parts) == 1 {
 		return "blanked " + parts[0] + " on a line it left code on"
 	}
@@ -2185,11 +2285,73 @@ func pinShadowClause(shadowed []pinShadow) string {
 		", each on a line it left code on"
 }
 
+// pinStraddleClause is the same for the copies that are in a construct and in
+// live code at once.
+//
+// Said as a split rather than as a blanking, because neither word is true of
+// the whole copy: half of it is gone and half of it is standing on a line that
+// reads live. "Blanked" would be the note claiming the copy is prose and
+// "left standing" would be it naming a line to open.
+func pinStraddleClause(straddling []pinShadow) string {
+	parts := pinShadowParts(straddling, "across", "across")
+	return "split " + strings.Join(parts, ", and ")
+}
+
+// pinShadowParts is one phrase per group of copies that met the same run of
+// constructs, in the order the copies came in.
+func pinShadowParts(shadowed []pinShadow, one, many string) []string {
+	byKinds := map[string][]int{}
+	shape := map[string][]byte{}
+	order := []string{}
+	for _, s := range shadowed {
+		key := string(s.kinds)
+		if _, seen := byKinds[key]; !seen {
+			order = append(order, key)
+			shape[key] = s.kinds
+		}
+		byKinds[key] = append(byKinds[key], s.lines...)
+	}
+	parts := make([]string, 0, len(order))
+	for _, key := range order {
+		// "inside" is true of a copy one construct swallowed and is a claim
+		// about a copy that met several: it was not in them, it crossed them.
+		how := one
+		if len(shape[key]) > 1 {
+			how = many
+		}
+		parts = append(parts, fmt.Sprintf("the copy on %v %s %s",
+			byKinds[key], how, pinConstructNames(shape[key])))
+	}
+	return parts
+}
+
+// pinConstructNames is a copy's own run of constructs, spelled in span order.
+//
+// Joined with "then" rather than "and": these are not two things the copy is
+// inside, they are what the lexer was in as it walked from the copy's first
+// byte to its last, and the order is where the reader has to look first.
+func pinConstructNames(kinds []byte) string {
+	if len(kinds) == 0 {
+		// Not reachable from a lexed span — see pinBlankedAs — and named
+		// rather than omitted, because a sentence that quietly drops its noun
+		// is worse than one that says the noun is missing.
+		return "a construct pinCodeOnly did not record"
+	}
+	names := make([]string, 0, len(kinds))
+	for _, kind := range kinds {
+		names = append(names, pinConstructName(kind))
+	}
+	if len(names) == 1 {
+		return names[0]
+	}
+	return strings.Join(names[:len(names)-1], ", ") + " then " + names[len(names)-1]
+}
+
 // pinShadowLines is every line a shadowed copy starts on, in order.
 func pinShadowLines(shadowed []pinShadow) []int {
 	out := make([]int, 0, len(shadowed))
 	for _, s := range shadowed {
-		out = append(out, s.at)
+		out = append(out, s.lines...)
 	}
 	return out
 }
@@ -2199,15 +2361,38 @@ func pinShadowLines(shadowed []pinShadow) []int {
 // The old sentence listed all three constructs every time and let the reader
 // sort it out. This lists the ones the lexer actually met — usually one, and
 // when it is more than one that is a finding rather than a hedge.
+//
+// Over every construct of every copy, because one copy can carry several.
 func pinShadowConstructs(shadowed []pinShadow) string {
+	return pinNameSet(shadowed, false)
+}
+
+// pinStraddleConstructs is the same over the straddling copies, with the code
+// half left out.
+//
+// The sentence it lands in has already said that half is standing; naming it
+// again in the list of what TOOK the string would have the note reporting live
+// code as a construct that swallowed something.
+func pinStraddleConstructs(straddling []pinShadow) string {
+	return pinNameSet(straddling, true)
+}
+
+// pinNameSet is every construct these copies met, once each, in the order they
+// were met — optionally without the one that is not a construct at all.
+func pinNameSet(shadowed []pinShadow, skipKept bool) string {
 	seen := map[byte]bool{}
 	names := []string{}
 	for _, s := range shadowed {
-		if seen[s.kind] {
-			continue
+		for _, kind := range s.kinds {
+			if seen[kind] || (skipKept && kind == pinKeptCode) {
+				continue
+			}
+			seen[kind] = true
+			names = append(names, pinConstructName(kind))
 		}
-		seen[s.kind] = true
-		names = append(names, pinConstructName(s.kind))
+	}
+	if len(names) == 0 {
+		return "a construct pinCodeOnly did not record"
 	}
 	if len(names) == 1 {
 		return names[0]
@@ -2515,5 +2700,155 @@ func TestPinCopyNoteNamesTheCopyThatSurvivesInCode(t *testing.T) {
 	if strings.Contains(got, "line to open") {
 		t.Errorf("the runaway arm offers a line to open: %q. What stands on that "+
 			"line is the code before the quote, which is not this string.", got)
+	}
+}
+
+// A copy that is in more than one construct, which every reading above places
+// by the first thing it met.
+//
+// # The shape, and why it is not contrived
+//
+// A phrase is matched over the space-stripped source and a newline is
+// whitespace — see pinStripSpaceMap. Most transitions between constructs need
+// a delimiter in the raw file and a delimiter breaks the match, but two of them
+// need nothing at all: a line comment and a single-line string both end AT the
+// newline. So a phrase can begin inside one and finish in whatever the next
+// line starts with, and what it finishes in is a different construct from what
+// it started in.
+//
+//	x = 1 // pinSame(total,      the head is a comment's
+//	c.offer) + 2                 and the tail is code the lexer kept
+//
+// That copy is half deleted. The span test this note was built on asks whether
+// anything in the span survived, and something did — so it called this the
+// surviving assertion and named line 1 as the line to open, where the phrase
+// is not. Reading the record and stopping at the first kind is the same answer
+// from the other side: "a comment running to the end of the line", about a
+// copy half of which is standing in code.
+//
+// # And three constructs is the same fault with more of it
+//
+// The second fixture crosses a comment, a string literal the author closed, and
+// live code — one copy, three places to look, and the clause has to name them
+// in the order the reader meets them.
+func TestPinCopyNotePlacesACopyThatStraddlesTwoConstructs(t *testing.T) {
+	for _, c := range []struct {
+		what, src, ext, phrase string
+		says                   []string
+		quiet                  []string
+	}{
+		{
+			what:   "a comment and the code on the next line",
+			src:    "x = 1 // pinSame(total,\nc.offer) + 2\n",
+			ext:    ".go",
+			phrase: "pinSame(total, c.offer)",
+			says: []string{
+				"split the copy on [1 2] across a comment running to the end of " +
+					"the line then code the lexer kept",
+				"no copy of this string survives whole",
+				"part of the copy on [1 2] is code the lexer kept",
+				"the rest of it went to a comment running to the end of the line",
+			},
+			// Not the line to open: what stands on line 2 is the tail of a
+			// phrase whose head a comment took, and sending a reader there is
+			// the failure this whole note exists to stop, one level in.
+			quiet: []string{"line to open", "whole,", "inside a comment"},
+		},
+		{
+			what:   "a comment, a literal and the code after it",
+			src:    "x = 1 // pinSame(\n\"x\") + y\n",
+			ext:    ".mjs",
+			phrase: "pinSame(\"x\")",
+			says: []string{
+				"across a comment running to the end of the line, a string " +
+					"literal then code the lexer kept",
+				"the rest of it went to a comment running to the end of the line " +
+					"and a string literal",
+			},
+			quiet: []string{"line to open"},
+		},
+	} {
+		code, open, by := pinCodeOnly(c.src, c.ext)
+		if len(open) > 0 {
+			t.Fatalf("%s: pinCodeOnly ended inside an unterminated string on %v of "+
+				"this fixture's lines, so what it left is not what the rows below "+
+				"are about.", c.what, open)
+		}
+		copies := pinPhraseCopies(c.src, c.phrase)
+		if len(copies) != 1 {
+			t.Fatalf("%s: the fixture spells %q once and pinPhraseCopies finds %d. "+
+				"The straddle is a property of one copy crossing a newline, and "+
+				"without exactly one match this is about some other string.",
+				c.what, c.phrase, len(copies))
+		}
+		// The record itself, before the sentence: a copy whose bytes are all
+		// one kind cannot straddle anything, and a test asserting the sentence
+		// alone would pass on a fixture that never produced the shape.
+		kinds := pinBlankedAs(code, by, copies[0])
+		if len(kinds) < 2 {
+			t.Fatalf("%s: the copy's own bytes were taken by %d construct(s) (%q), "+
+				"so this fixture is not the straddle it is here to be. Both halves "+
+				"have to be in the span — see pinBlankedAs.",
+				c.what, len(kinds), string(kinds))
+		}
+		got := pinCopyNote(code, by, copies)
+		for _, want := range c.says {
+			if !strings.Contains(got, want) {
+				t.Errorf("%s: pinCopyNote does not say %q.\n\nIt said: %q\n\n"+
+					"A copy that crosses constructs is in each of them for part of "+
+					"its length, and the reader has to be sent to all of them in the "+
+					"order the phrase meets them. Naming the first is the "+
+					"count-shaped answer this note was rebuilt out of, arriving one "+
+					"copy further in.", c.what, want, got)
+			}
+		}
+		for _, never := range c.quiet {
+			if strings.Contains(got, never) {
+				t.Errorf("%s: pinCopyNote says %q and must not.\n\nIt said: %q\n\n"+
+					"Half of this copy is standing and half of it is gone, so it is "+
+					"neither a line to open nor a copy the lexer took whole. Either "+
+					"sentence sends a reader somewhere the string is not.",
+					c.what, never, got)
+			}
+		}
+	}
+	// And the other half of the reading: a copy broken across lines INSIDE one
+	// construct is not a straddle.
+	//
+	// pinCodeOnly blanks in place and leaves newlines alone, so the newline a
+	// two-line copy carries comes back as a byte nothing recorded a construct
+	// against — which is indistinguishable, byte for byte, from code the lexer
+	// kept. Counting it would make every multi-line copy a straddle between its
+	// own construct and a newline, and the note would report a block comment
+	// that swallowed a phrase whole as a phrase half standing in code. See
+	// pinBlankedAs, which skips a byte only when nothing was recorded against
+	// it AND nothing is standing there.
+	const wrapped = "/* pinSame(total,\nc.offer) */\n"
+	code, _, by := pinCodeOnly(wrapped, ".go")
+	copies := pinPhraseCopies(wrapped, "pinSame(total, c.offer)")
+	if len(copies) != 1 {
+		t.Fatalf("the wrapped fixture spells the phrase once across two lines and "+
+			"pinPhraseCopies finds %d.", len(copies))
+	}
+	if kinds := pinBlankedAs(code, by, copies[0]); len(kinds) != 1 {
+		t.Errorf("a copy a block comment swallowed across two lines was taken by %q "+
+			"— %d constructs.\n\n"+
+			"One comment took every character of it. The extra kind is the newline "+
+			"between the two halves, which pinCodeOnly leaves alone and which "+
+			"therefore reads exactly like a byte of live code. A copy that wraps is "+
+			"the ordinary case and reporting it as half deleted would bury the "+
+			"straddle above in false ones.", string(kinds), len(kinds))
+	}
+	// And placed as prose, at the line the report names it at: nothing stands
+	// on either of its lines, so there is no assertion here for the lexer to
+	// have misread and no second line to send anybody to. The straddles above
+	// name both of theirs for the opposite reason — there the two halves are in
+	// different places and which one a reader opens decides what they find.
+	if note := pinCopyNote(code, by, copies); !strings.Contains(note,
+		"blanked the copy on [1] whole") ||
+		!strings.Contains(note, "every surviving copy is prose") {
+		t.Errorf("the wrapped copy is not reported as prose: %q\n\n"+
+			"Nothing stands on either of its lines, so there is no assertion here "+
+			"for the lexer to have misread.", note)
 	}
 }

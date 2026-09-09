@@ -2909,6 +2909,21 @@ const INK_FONT_SHORTHAND_JS = `((cs, head, instead) =>
     cs.fontStyle + " " + cs.fontWeight + " " + cs.fontSize + " " +
     (instead || (head ? head + ", " : "") + cs.fontFamily))`;
 
+// The part of that shorthand that selects a face before the family does.
+//
+// Style, weight and size — everything a font request carries except the list.
+// Two readers need it: the canary probes, which mount one span per distinct
+// request so the generic is resolved at a size some canary is actually asked
+// at, and the canvas measurement, which reports the request each run was
+// measured under so the two can be paired.
+//
+// One expression rather than two, because the pairing is a JOIN and a join on
+// two spellings of a key is a join that silently matches nothing: a probe keyed
+// "normal 400 12px" and a run keyed "normal 400 12.0px" would leave every
+// comparison below unasked, and an unasked comparison here reports as agreement.
+const INK_CANARY_REQ_JS = `((cs) =>
+    cs.fontStyle + " " + cs.fontWeight + " " + cs.fontSize)`;
+
 // The family the canary falls back to.
 //
 // A generic, because a generic always resolves — that is what makes "the same
@@ -3128,6 +3143,17 @@ function inkCanvasGenericGap(m) {
 //
 // Null when nothing was read. That costs a sentence its noun and costs the
 // premise nothing — see inkCanvasFallbackFault, which decides on advances.
+//
+// # And the per-request reads are a decision's input, not only a noun's
+//
+// One read per distinct request is a DOM.querySelector and a
+// CSS.getPlatformFontsForNode each, inside the window two fingerprints are
+// holding open, for a sentence the premise no longer consults. What makes the
+// per-request answers worth their round trips is that something now reads them
+// one at a time: inkCanaryAgreement joins each probe to the runs measured
+// at ITS request and holds the name against the advances. A single read at the
+// page default could not be joined to anything, and a difference between the
+// six would have been a curiosity in a string.
 function inkCanaryFaceList(probes) {
     if (!probes || probes.length === 0) return null;
     const read = probes.filter((p) => p.faces && p.faces.length > 0);
@@ -3135,6 +3161,127 @@ function inkCanaryFaceList(probes) {
     const answers = new Set(read.map((p) => inkFaceList(p.faces)));
     if (answers.size === 1) return [...answers][0];
     return read.map((p) => `${inkFaceList(p.faces)} at ${p.req}`).join("; ");
+}
+
+// How many requests the generic was asked at, how many came back, and how many
+// different answers they were.
+//
+// The spread is the reading that says what the per-request probes bought. One
+// answer across every request is a stack with no optical cut at these sizes —
+// the single probe this replaced would have said the same thing, and the six
+// reads are what establishes that rather than assuming it. More than one is the
+// case the single probe got wrong: a family list answering per size, naming a
+// face at 19px that no canary asked at 12px is put to.
+//
+// `read` apart from `mounted` because a probe that came back with no faces is a
+// request whose answer is missing while the others are present, and
+// inkCanaryFaceList's sentence would quietly be about the rest.
+function inkCanaryFaceSpread(probes) {
+    if (!probes || probes.length === 0) return { mounted: 0, read: 0, answers: 0 };
+    const read = probes.filter((p) => p.faces && p.faces.length > 0);
+    return {
+        mounted: probes.length, read: read.length,
+        answers: new Set(read.map((p) => inkFaceList(p.faces))).size,
+    };
+}
+
+// The probe's answer and the advances' answer to one question, held against
+// each other.
+//
+// # Two readings nothing compared
+//
+// The mounted probe says WHICH face the generic reached at a request: a span
+// set in INK_CANARY_FALLBACK at that request, and CSS.getPlatformFontsForNode
+// on it. inkCanvasGenericGap says HOW FAR that face is from the run's, over the
+// run's own string, off one canvas. They are the same question — is the generic
+// the face this run is drawn by — asked of a third party and asked of a
+// measurement, and nothing put them side by side.
+//
+// That is the shape inkFaceList's own note is about, and it has a direction
+// each:
+//
+//	one name, two advances    the probe says the generic resolved to the very
+//	                         family this run is drawn by, and the same string
+//	                         measures differently under the two requests. Held
+//	                         here, because nothing else looks at it.
+//	two names, one advance    the generic resolved to some other face and that
+//	                         face measures like this run's. That is the canary
+//	                         resting on nothing, and inkCanvasFallbackFault
+//	                         reports it on the advances — which is the reading
+//	                         that decides, since one face under two spellings
+//	                         passes any name comparison.
+//
+// The two are complements and each is held by the reader that decides it. Said
+// once between them: two messages about one page state would send a reader
+// looking for two faults.
+//
+// # What a disagreement actually means
+//
+// Same face, same request, same canvas, same string: one advance. So a name
+// that says the two requests reached one face while the advances say they
+// reached two is one of the readings being about something else — the platform
+// reporting a face that did not draw, the family list resolving past its head
+// for this string, or the probe's box not being at the request it is filed
+// under. Every one of those makes a sentence elsewhere confidently wrong, and
+// none of them is visible from either reading alone.
+//
+// Returns the population as well as the fault, because a comparison asked of no
+// runs is not agreement and the tail has to be able to say which it had.
+function inkCanaryAgreement(probes, rows) {
+    // The probes that named exactly one face, by request. Two faces on a probe
+    // is a generic that reached more than one for "Ag0" — there is no single
+    // name to compare and inkFaceList's own arm is the reader for it.
+    const named = new Map();
+    for (const p of probes || []) {
+        if (p && p.req && p.faces && p.faces.length === 1) {
+            named.set(p.req, p.faces[0].family);
+        }
+    }
+    let asked = 0;
+    const split = [];
+    for (const m of rows) {
+        if (!m || !m.asked || !m.family || !m.req || !named.has(m.req)) continue;
+        const gap = inkCanvasGenericGap(m);
+        if (gap === null) continue;
+        asked++;
+        // The other direction is inkCanvasFallbackFault's, and it is the one
+        // that decides the premise. This arm is the half nothing was holding.
+        if (named.get(m.req) !== m.family || gap < LAYOUT_UNIT) continue;
+        split.push({ m, gap, face: named.get(m.req) });
+    }
+    if (split.length === 0) return { asked, agreed: asked, fault: null };
+    const worst = split.reduce((w, s) => (s.gap > w.gap ? s : w), split[0]);
+    return {
+        asked, agreed: asked - split.length,
+        fault: `the probe and the advances disagree about what ` +
+            `${INK_CANARY_FALLBACK} reaches at ${worst.m.req}: the probe says ` +
+            `${worst.face}, which is the family this run is drawn by, and the same ` +
+            `run's own string ("${worst.m.text}") measures ` +
+            `${worst.gap.toFixed(6)}px differently under the two requests — against ` +
+            `a LayoutUnit of ${LAYOUT_UNIT}` +
+            (split.length === 1 ? `` : `, over ${split.length} such runs`) + `.
+
+` +
+            `Those are two readings of one question. The probe is a span set in ` +
+            `${INK_CANARY_FALLBACK} at that very request with ` +
+            `CSS.getPlatformFontsForNode asked what drew it; the advances are ` +
+            `measureText on one canvas for one string, once under the compositor's ` +
+            `family and once under ${INK_CANARY_FALLBACK} alone. One face measured ` +
+            `twice returns one width, so a name saying the two requests reached the ` +
+            `same face while the widths say otherwise means one of the readings is ` +
+            `about something else: a platform naming a face that did not draw this ` +
+            `string, a family list resolving past its head for these glyphs, or a ` +
+            `probe filed under a request it was not mounted at.
+
+` +
+            `What it costs is a sentence that reads as one finding and is two. The ` +
+            `canary's premise is decided on the advances — see ` +
+            `inkCanvasFallbackFault — and the face it NAMES comes from the probe, ` +
+            `so a reader is handed a number from one reading and a noun from the ` +
+            `other while the two are about different faces. The opposite direction, ` +
+            `two names over one advance, is that fault's own blind arm and is ` +
+            `reported there rather than twice here`,
+    };
 }
 
 // Whether the generic the canary falls back to measures like the faces this
@@ -4354,6 +4501,22 @@ async function main() {
         // is worth exactly this much. Null when no run was joined, because a
         // minimum over nothing is not a small separation.
         canvasGenericNearest: null,
+        // And what the per-request probes came back with: how many requests the
+        // generic was asked at, how many answered, and how many distinct faces
+        // those answers were.
+        //
+        // The spread is what says whether asking per request bought anything —
+        // see inkCanaryFaceSpread. One answer across every request is a stack
+        // with no optical cut at these sizes, which is a reading and not an
+        // assumption; more than one is the case a single probe at the page
+        // default got wrong.
+        canvasGenericReqs: 0, canvasGenericRead: 0, canvasGenericAnswers: 0,
+        // And how many joined runs had BOTH readings of "is the generic this
+        // run's face" available — the probe's name and the pair of advances —
+        // and how many of those agreed. See inkCanaryAgreement: a comparison
+        // asked of no runs is not agreement, and the tail has to be able to say
+        // which of the two it had.
+        canvasGenericPaired: 0, canvasGenericAgreed: 0,
     };
     try {
         const port = await devtoolsPort(profile);
@@ -5738,8 +5901,10 @@ async function main() {
                 if (!e) continue;
                 const cs = getComputedStyle(e);
                 // The head of INK_FONT_SHORTHAND_JS, which is the part that
-                // selects a face before the family does.
-                const req = cs.fontStyle + " " + cs.fontWeight + " " + cs.fontSize;
+                // selects a face before the family does. Through the shared
+                // expression, because the measurement below reports the same
+                // key and the two are joined on it. See INK_CANARY_REQ_JS.
+                const req = (${INK_CANARY_REQ_JS})(cs);
                 if (seen.includes(req)) continue;
                 seen.push(req);
                 const probe = document.createElement("span");
@@ -5854,7 +6019,13 @@ async function main() {
                 // for an equality.
                 const canary = cx.font === bare
                     ? null : cx.measureText(text).width;
-                return { at: r.at, asked: true, text,
+                // And the request this run was measured under, plus the
+                // family the protocol named it — the two halves of the pairing
+                // inkCanaryAgreement makes. The family rides back rather than
+                // being looked up from the table by its key, so the name in the
+                // comparison is the name this very row was measured with.
+                return { at: r.at, asked: true, text, family: r.family,
+                    req: (${INK_CANARY_REQ_JS})(cs),
                     asIs, named, base, canary };
             }),
         })`);
@@ -5954,10 +6125,25 @@ async function main() {
         // face reported under two spellings breaks the canary and passes a
         // name comparison. See inkCanvasFallbackFault.
         asked.canvasFallback = inkCanaryFaceList(canaryFaces);
+        // And what those reads came to, which is the reading that says what
+        // asking per request bought. See inkCanaryFaceSpread.
+        const canarySpread = inkCanaryFaceSpread(canaryFaces);
+        asked.canvasGenericReqs = canarySpread.mounted;
+        asked.canvasGenericRead = canarySpread.read;
+        asked.canvasGenericAnswers = canarySpread.answers;
         if (facesHeld) {
             const fallbackFault = inkCanvasFallbackFault(
                 canaryFaces, canvasAsked, canvasAsked.length);
             if (fallbackFault) problems.push(fallbackFault);
+            // And the two readings of that same premise against each other,
+            // joined on the request each was taken at. See inkCanaryAgreement:
+            // the direction fallbackFault decides is two names over one
+            // advance, and this is the other one — one name over two advances,
+            // which nothing was looking at.
+            const agreement = inkCanaryAgreement(canaryFaces, canvasAsked);
+            asked.canvasGenericPaired = agreement.asked;
+            asked.canvasGenericAgreed = agreement.agreed;
+            if (agreement.fault) problems.push(agreement.fault);
         }
         // And the premise as a number, for the tail to recite in place of the
         // name it used to assert something about. Through the same helper the
@@ -7915,12 +8101,22 @@ async function main() {
         ? "no measured amount" : asked.canvasNarrowest.toFixed(4) + "px"}, where a
     LayoutUnit would have been read as a reaching name, and the generic it falls back
     to resolving on this browser to ${asked.canvasFallback === null
-        ? "a face nothing here read" : asked.canvasFallback} and measuring
+        ? "a face nothing here read" : asked.canvasFallback} — read at
+    ${asked.canvasGenericRead} of the ${asked.canvasGenericReqs} distinct requests the
+    joined runs make rather than once at whatever the page default is, and answering
+    with ${asked.canvasGenericAnswers === 1
+        ? `one face at every one of them, which is this stack having no optical cut
+    at these sizes`
+        : `${asked.canvasGenericAnswers} different faces across them, which is a family
+    list answering per size and the reason one probe is not enough`} — and measuring
     ${asked.canvasGenericNearest === null ? "no measured amount"
         : asked.canvasGenericNearest.toFixed(4) + "px"} from the nearest of the faces
     those runs are drawn by, over their own strings at their own sizes rather than by
     a name either of them could be reported under twice, so the agreement is a face's
-    and not a skipped lookup's — which gave the same width both ways, the widest of those
+    and not a skipped lookup's, with those two readings of one question — the name a
+    probe reports and the distance a canvas measures — held against each other on
+    ${asked.canvasGenericPaired} runs where both were in hand and agreeing on
+    ${asked.canvasGenericAgreed} — which gave the same width both ways, the widest of those
     ${asked.canvasFaces} differences being ${asked.canvasWidest.toFixed(6)}px against
     a bound of ${LAYOUT_UNIT},
     over the same tree the rects were read from and in the same layout the

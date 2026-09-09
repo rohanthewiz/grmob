@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -303,4 +304,248 @@ func TestTheTwoFoldsAgreeOnTheFormsTheyBothCarry(t *testing.T) {
 			"character or plain ASCII — so the divergence is not the documented one.",
 			input, mine, theirs[i])
 	}
+}
+
+// How much narrower gen.go's fold is than the one it is held against, and what
+// is holding the difference.
+//
+// # A documented gap is not a measured one
+//
+// The test above asks only about inputs both sides claim — ASCII, the seven
+// presentation forms, the long s, the format characters — and says so: NFKD
+// decomposes an accented letter and inkGlyphFold does not, because a fixture
+// holding one is refused by inkGlyphPerCharacter's printable-ASCII arm and
+// never reaches a seed comparison. That is the same lean the pair arm was
+// taken off, still holding up everything else, and nothing said how wide it
+// was or where its edge is.
+//
+// So the whole plane is walked. browser.mjs's own fold is run over every BMP
+// code point — the real declaration and the real function, lifted out of the
+// file — and each answer compared with gen.go's.
+//
+// \tagreed        what both folds do the same thing to
+// \tgap           what NFKD reaches and inkGlyphFold does not
+// \tseed-bearing  the part of the gap that MATTERS: a character NFKD turns
+// \t              into a letter one of the seeds is spelled with, so that it
+// \t              completes a pair for inkLigatureNote and not for the refusal
+//
+// # The two edges
+//
+// The gap is allowed to be wide. What it may not do is reach printable ASCII,
+// because that is the whole of what the second arm refuses on: a character both
+// inside 0x20..0x7e and folded by NFKD alone would pass the pair arm (the
+// narrow fold finds nothing), pass the ASCII arm (it is ASCII), and arrive in
+// browser.mjs as the glyph-count mismatch this refusal exists to stop.
+//
+// And gen.go may not be WIDER anywhere: a string it folds into a seed that
+// NFKD does not is a fixture refused for a pair inkLigatureNote could never
+// report, which is the same two ends looking at different strings from the
+// other direction.
+//
+// Both are asserted. The census is logged, because a bound with no reading of
+// the population under it is the state the item before this one was about.
+func TestHowWideTheNarrowerFoldIsAndWhatHoldsTheGap(t *testing.T) {
+	node, err := exec.LookPath("node")
+	if err != nil {
+		t.Skip("no node on this machine, so browser.mjs's own fold cannot be run " +
+			"and the width of the gap between the two cannot be measured. The two " +
+			"folds' character sets are still compared above, out of the regex.")
+	}
+	src, err := os.ReadFile("browser.mjs")
+	if err != nil {
+		t.Fatalf("browser.mjs cannot be read: %v", err)
+	}
+	decl := regexp.MustCompile(`(?s)const INK_FOLD_IGNORABLE =.*?;\n`).Find(src)
+	fn := regexp.MustCompile(`(?s)\nfunction inkFold\(text\) \{.*?\n\}\n`).Find(src)
+	if decl == nil || fn == nil {
+		t.Fatalf("browser.mjs no longer declares INK_FOLD_IGNORABLE and inkFold in " +
+			"the shape this test lifts them out in. Find what folds a string there " +
+			"and measure against that instead of deleting this — the gap it reports " +
+			"is what the printable-ASCII arm is holding shut.")
+	}
+	// Only the code points the note's fold actually changes come back: the
+	// answer for the rest is the character itself, gen.go's fold is asked of
+	// them below anyway, and a plane of unchanged strings is half a megabyte of
+	// JSON saying nothing. Surrogates are skipped on both sides — Go turns a
+	// lone one into U+FFFD and JavaScript does not, so the pair would be
+	// comparing two different characters.
+	script := filepath.Join(t.TempDir(), "gap.mjs")
+	if err := os.WriteFile(script, []byte(string(decl)+string(fn)+`
+const out = [];
+for (let cp = 0; cp <= 0xFFFF; cp++) {
+    if (cp >= 0xD800 && cp <= 0xDFFF) continue;
+    const ch = String.fromCodePoint(cp);
+    const folded = inkFold(ch);
+    if (folded !== ch) out.push([cp, folded]);
+}
+console.log(JSON.stringify(out));
+`), 0o644); err != nil {
+		t.Fatalf("the lifted fold will not write: %v", err)
+	}
+	out, err := exec.Command(node, script).Output()
+	if err != nil {
+		t.Fatalf("node will not run browser.mjs's own fold: %v", err)
+	}
+	var rows [][]json.RawMessage
+	if err := json.Unmarshal(out, &rows); err != nil {
+		t.Fatalf("browser.mjs's fold returned something this test cannot read: %v", err)
+	}
+	if len(rows) == 0 {
+		t.Fatalf("browser.mjs's fold changed nothing on any of the 65536 code " +
+			"points of this plane, which is this test having lifted something that " +
+			"is not a fold rather than a fold that does nothing.")
+	}
+
+	// The letters the seeds are spelled with, after their own fold — the
+	// alphabet a gap character has to reach to be able to complete a pair.
+	seedLetters := map[rune]bool{}
+	for _, seed := range inkLigatureSeeds {
+		for _, r := range inkGlyphFold(seed) {
+			seedLetters[r] = true
+		}
+	}
+	theirs := map[rune]string{}
+	agreed, bearing := 0, 0
+	// A character both inside printable ASCII and in the gap, which is the one
+	// thing the second arm cannot catch. First one found; there is nothing to
+	// be gained from a list of a fault that should have no members.
+	ascii, asciiCount := rune(-1), 0
+	var bearingExample rune = -1
+	for _, row := range rows {
+		var cp rune
+		var their string
+		if err := json.Unmarshal(row[0], &cp); err != nil {
+			t.Fatalf("a code point came back unreadable: %v", err)
+		}
+		if err := json.Unmarshal(row[1], &their); err != nil {
+			t.Fatalf("a folded answer came back unreadable: %v", err)
+		}
+		theirs[cp] = their
+		mine := inkGlyphFold(string(cp))
+		if mine == their {
+			agreed++
+			continue
+		}
+		if cp >= 0x20 && cp <= 0x7e {
+			asciiCount++
+			if ascii < 0 {
+				ascii = cp
+			}
+		}
+		for _, r := range their {
+			if seedLetters[r] && !strings.ContainsRune(mine, r) {
+				bearing++
+				if bearingExample < 0 {
+					bearingExample = cp
+				}
+				break
+			}
+		}
+	}
+	gap := len(rows) - agreed
+
+	// The edge the printable-ASCII arm is the whole of.
+	if ascii >= 0 {
+		t.Errorf("U+%04X (%q) is printable ASCII, and the two folds answer "+
+			"differently about it: browser.mjs's says %q and gen.go's says %q.\n\n"+
+			"inkGlyphPerCharacter has two arms and this character is outside both. "+
+			"The pair arm asks its question in gen.go's fold, which finds nothing "+
+			"here; the second arm refuses everything outside 0x20..0x7e, and this is "+
+			"inside it. A fixture holding this character is accepted, and "+
+			"inkLigatureNote — which folds with NFKD — would find a pair in the very "+
+			"string that was let through. That is the gap between the two folds "+
+			"reaching the one population nothing is holding.",
+			ascii, string(ascii), theirs[ascii], inkGlyphFold(string(ascii)))
+	}
+
+	// And the other direction, which would be the refusal wider than the note.
+	wider := []rune{}
+	for cp := rune(0); cp <= 0xFFFF && len(wider) < 4; cp++ {
+		if cp >= 0xD800 && cp <= 0xDFFF {
+			continue
+		}
+		if _, changed := theirs[cp]; changed {
+			continue
+		}
+		if inkGlyphFold(string(cp)) != string(cp) {
+			wider = append(wider, cp)
+		}
+	}
+	if len(wider) > 0 {
+		names := make([]string, 0, len(wider))
+		for _, cp := range wider {
+			names = append(names, fmt.Sprintf("U+%04X %q→%q", cp, string(cp),
+				inkGlyphFold(string(cp))))
+		}
+		t.Errorf("gen.go's fold changes %s and browser.mjs's leaves them alone.\n\n"+
+			"The narrow fold is allowed to reach less than NFKD and says so — that "+
+			"is the whole argument for a seven-character table. It is not allowed to "+
+			"reach MORE: a string refused here for holding a pair is a string "+
+			"inkLigatureNote would never report a pair in, so the fixture author is "+
+			"sent to find a ligature that the check at the other end of the pipeline "+
+			"does not believe is there.", strings.Join(names, ", "))
+	}
+
+	// And the lean itself, on one string, end to end.
+	//
+	// A gap character that completes a seed is what the pair arm cannot see:
+	// the note's fold turns it into the seed's own letter and gen.go's leaves
+	// it. The refusal still holds — and it holds by the OTHER arm, which is
+	// what "the printable-ASCII arm is what makes that safe" means when it is
+	// asked of a string instead of asserted in a comment.
+	if bearingExample >= 0 {
+		witness := ""
+		for _, seed := range inkLigatureSeeds {
+			folded := inkGlyphFold(seed)
+			if len(folded) < 2 {
+				continue
+			}
+			head := folded[:len(folded)-1]
+			if strings.Contains(head+theirs[bearingExample], folded) {
+				witness = head + string(bearingExample)
+				break
+			}
+		}
+		if witness != "" {
+			held := ""
+			for _, seed := range inkLigatureSeeds {
+				if strings.Contains(inkGlyphFold(witness), inkGlyphFold(seed)) {
+					held = seed
+				}
+			}
+			if held != "" {
+				t.Errorf("gen.go's fold finds %q in %q after all, so this string is "+
+					"not the witness this arm is about.", held, witness)
+			}
+			why := inkGlyphPerCharacter(witness)
+			switch {
+			case why == "":
+				t.Errorf("inkGlyphPerCharacter accepts %q.\n\n"+
+					"browser.mjs's fold turns U+%04X into %q, so that string holds a "+
+					"pair for inkLigatureNote and holds none for the refusal — the "+
+					"gap between the two folds, on one string. What kept it out was "+
+					"the printable-ASCII arm, and it has stopped: a fixture can now "+
+					"carry a pair past this refusal and arrive as the font "+
+					"substitution it exists to prevent.",
+					witness, bearingExample, theirs[bearingExample])
+			case !strings.Contains(why, "printable ASCII"):
+				t.Errorf("inkGlyphPerCharacter refuses %q with %q.\n\n"+
+					"That string holds a pair only under NFKD, and gen.go's fold is "+
+					"narrower there by design — so the arm that has to catch it is "+
+					"the printable-ASCII one. A different sentence means the pair arm "+
+					"has widened, which is a better refusal and makes this reading "+
+					"stale: re-measure the gap and say what is holding it now.",
+					witness, why)
+			}
+		}
+	}
+
+	t.Logf("browser.mjs's fold changes %d of this plane's code points; gen.go's "+
+		"agrees on %d and is narrower on %d, %d of which NFKD turns into a letter "+
+		"a seed is spelled with (e.g. U+%04X %q→%q, where gen.go says %q) — and %d of "+
+		"it inside printable ASCII, which is the whole of what "+
+		"inkGlyphPerCharacter's second arm refuses on and therefore the whole of "+
+		"what is holding this gap shut",
+		len(rows), agreed, gap, bearing, bearingExample, string(bearingExample),
+		theirs[bearingExample], inkGlyphFold(string(bearingExample)), asciiCount)
 }
