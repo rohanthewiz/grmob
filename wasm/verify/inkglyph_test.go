@@ -8,6 +8,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"slices"
+	"sort"
 	"strconv"
 	"strings"
 	"testing"
@@ -455,12 +457,34 @@ var foldMeasuredOn = struct {
 	// runs were computed by the walk and thrown away.
 	//
 	// They are eight regions, and they are not a smaller version of the astral
-	// three: the accented Latin letters, the phonetic modifiers, the
-	// superscripts and Roman numerals, the circled letters, the fullwidth
-	// forms — NFKD reaches a seed's own letters from every direction the BMP
+	// three: Latin letters and modifier letters low down, numerals and
+	// symbols in the enclosed and superscript ranges, fullwidth letters at the
+	// top — NFKD reaches a seed's own letters from every direction the BMP
 	// has, where above it the whole population is three blocks of decorated
-	// alphabets.
+	// alphabets in one script. Which regions those are is derived and recorded
+	// rather than written out here; see bearingRegions below, and
+	// foldRegionsNamed for why a block name is not what came back.
 	bearingRuns, bearingClusters int
+	// And each of those regions as this run names it: the range, and what
+	// Go's Unicode tables say is in it. See foldRegionsNamed.
+	//
+	// # Why the ranges are recorded here and not in a sentence
+	//
+	// The eight were named in prose beside the log line — "the accented Latin
+	// letters, the phonetic modifiers, the superscripts and Roman numerals" —
+	// and that sentence was the half of this census a reader actually used
+	// and the only half nothing held. The counts above are held: 96 runs, 8
+	// regions. The RANGES were not, and a count cannot see them move — a
+	// build whose NFKD re-drew every region while leaving 96 runs in 8
+	// groups would print eight different spans under the same two numbers and
+	// the same sentence.
+	//
+	// So the naming is derived on every run and recorded as a whole. It is
+	// asserted only when BOTH Unicode versions match their records, because
+	// it reads two of them: the population is node's NFKD (foldMeasuredOn's
+	// build) and the scripts and categories are Go's (foldOwnMeasuredOn's
+	// goUnicode).
+	bearingRegions []string
 	// And the same four over the sixteen planes above it, which this census
 	// used to stop at without saying so.
 	//
@@ -494,6 +518,13 @@ var foldMeasuredOn = struct {
 	// about whether it was that or 257 characters scattered over sixteen
 	// planes.
 	astralBearingRuns, astralBearingClusters int
+	// And the same for those three. The first of them is the reading's own
+	// evidence that it is derived: U+1CCD7..U+1CCE9 is a block Unicode 16.0
+	// added, node's NFKD decomposes it, and Go's 15.0.0 tables have no script
+	// and no category for a single code point in it. The prose called it "the
+	// outlined letters", which was a claim about a block this toolchain does
+	// not know exists.
+	astralBearingRegions []string
 }{
 	build:   foldBuild{unicode: "16.0", icu: "76.1", node: "22.12.0"},
 	changes: 15802,
@@ -503,6 +534,16 @@ var foldMeasuredOn = struct {
 
 	bearingRuns:     96,
 	bearingClusters: 8,
+	bearingRegions: []string{
+		"U+00CC..U+02E2 Latin letters/modifier letters",
+		"U+1D2E..U+1ECB Latin letters/modifier letters",
+		"U+2071..U+217C Common/Latin letters/modifier letters/numerals/symbols",
+		"U+249D..U+24E3 Common symbols",
+		"U+2C7C Latin modifier letters",
+		"U+3250..U+33FF Common symbols",
+		"U+A7F3 Latin modifier letters",
+		"U+FF22..U+FF54 Latin letters",
+	},
 
 	astralChanges: 2307,
 	// 260, which is every code point above the BMP that gen.go's fold touches
@@ -516,6 +557,12 @@ var foldMeasuredOn = struct {
 
 	astralBearingRuns:     118,
 	astralBearingClusters: 3,
+	astralBearingRegions: []string{
+		"U+1CCD7..U+1CCE9 assigned in neither script nor category by Go's " +
+			"Unicode 15.0.0, so newer than it",
+		"U+1D401..U+1D69D Common letters",
+		"U+1F111..U+1F190 Common symbols",
+	},
 }
 
 // foldBuildNote is the sentence a census adds when this run is not the run
@@ -974,6 +1021,171 @@ func foldClustersOf(runs [][2]rune) (clusters [][2]rune, inside, between rune) {
 	return clusters, inside, between
 }
 
+// foldRegionKinds is the general categories Unicode gives a set of code
+// points, as the words a sentence about them would use.
+//
+// One word per category rather than the category's own two letters, because
+// what a reader wants out of a region is what KIND of thing is in it — the
+// difference between "the circled letters" and "the accented ones" is Lu/Ll
+// against So, and "So" says nothing to somebody reading a log line. The
+// mapping is a translation of a derived fact and not a judgement about which
+// region is which: the categories come from Go's tables, and an unmapped one
+// falls through as its own two letters rather than as silence.
+var foldRegionKinds = []struct{ category, word string }{
+	{"Lu", "letters"},
+	{"Ll", "letters"},
+	{"Lt", "letters"},
+	{"Lo", "letters"},
+	{"Lm", "modifier letters"},
+	{"Nd", "numerals"},
+	{"Nl", "numerals"},
+	{"No", "numerals"},
+	{"So", "symbols"},
+	{"Sk", "symbols"},
+	{"Sm", "symbols"},
+	{"Sc", "symbols"},
+	{"Mn", "marks"},
+	{"Mc", "marks"},
+	{"Me", "marks"},
+	{"Pd", "punctuation"},
+	{"Po", "punctuation"},
+}
+
+// foldRegionsNamed is each region as a range and what Unicode says is in it.
+//
+// # The sentence this replaced, and why a block name is not what came back
+//
+// The eight BMP regions were named in prose — "the accented Latin letters,
+// the phonetic modifiers, the superscripts and Roman numerals" — typed beside
+// a list of eight ranges whose ORDER had to match and which nobody
+// re-derived. That is the half of the census a reader actually uses, and it
+// was the only half held by nothing: the ranges move with the Unicode version
+// and the sentence does not, so the first NFKD change that re-draws a region
+// leaves a log line naming the wrong thing, in a file whose whole subject is
+// two implementations disagreeing about a fold.
+//
+// The obvious repair is the block each region falls in, and Go's standard
+// library does not carry one. `unicode` has Categories, Scripts and
+// Properties and no Blocks table at all, and adding golang.org/x/text to a
+// repository with three dependencies for a log line's prose is not a trade
+// worth making. So a region is named by what the stdlib does carry: the
+// scripts its code points are in and the categories they belong to. That is
+// less evocative than "the enclosed CJK squares" and it is derived, which the
+// sentence was not.
+//
+// # And it reads a different Unicode version than the population
+//
+// The regions come from node's NFKD — Unicode 16.0 on the build this was
+// taken on — and the scripts and categories come from Go's tables, which are
+// 15.0.0 (see foldOwnMeasuredOn.goUnicode). A code point new in 16.0 has no
+// script Go knows, and it comes back as "unassigned in Go's tables" rather
+// than being dropped: the two versions disagreeing is a fact about the build
+// and this is where it would show.
+func foldRegionsNamed(clusters, runs [][2]rune) []string {
+	out := make([]string, 0, len(clusters))
+	for _, c := range clusters {
+		where := fmt.Sprintf("U+%04X..U+%04X", c[0], c[1])
+		if c[0] == c[1] {
+			where = fmt.Sprintf("U+%04X", c[0])
+		}
+		// The members, which are the runs inside this region and not the
+		// whole span: a region is runs merged across gaps of up to
+		// foldBearingGap, and the code points in those gaps are not in the
+		// population being described.
+		scripts, kinds := map[string]bool{}, map[string]bool{}
+		unknown := 0
+		members := 0
+		for _, run := range runs {
+			if run[0] < c[0] || run[1] > c[1] {
+				continue
+			}
+			for cp := run[0]; cp <= run[1]; cp++ {
+				members++
+				script, kind := foldScriptOf(cp), foldKindOf(cp)
+				if script == "" && kind == "" {
+					unknown++
+					continue
+				}
+				if script != "" {
+					scripts[script] = true
+				}
+				if kind != "" {
+					kinds[kind] = true
+				}
+			}
+		}
+		// A region Go's tables have nothing to say about at all. That is not
+		// a gap in this reading, it is the reading working: the population
+		// comes from node's NFKD and the naming from Go's stdlib, and a block
+		// that exists in one Unicode version and not the other lands here.
+		// A region with no members at all is not a fact about Unicode, it is
+		// the runs and the clusters having come apart — every cluster is
+		// built out of runs, so one holding none of them is a caller passing
+		// the wrong plane's population. Said as itself rather than falling
+		// into the version arm below, where it would read as a whole region
+		// of characters newer than Go's tables.
+		if members == 0 {
+			out = append(out, where+" holds none of the runs it was built from")
+			continue
+		}
+		if unknown == members {
+			out = append(out, fmt.Sprintf("%s assigned in neither script nor "+
+				"category by Go's Unicode %s, so newer than it", where,
+				unicode.Version))
+			continue
+		}
+		said := foldSortedWords(scripts) + " " + foldSortedWords(kinds)
+		if unknown > 0 {
+			said += fmt.Sprintf(" (and %d of the %d unassigned in Go's Unicode %s)",
+				unknown, members, unicode.Version)
+		}
+		out = append(out, where+" "+said)
+	}
+	return out
+}
+
+// foldScriptOf is the Unicode script Go's tables put a code point in, or empty
+// where they have none for it.
+func foldScriptOf(cp rune) string {
+	for name, table := range unicode.Scripts {
+		if unicode.Is(table, cp) {
+			return name
+		}
+	}
+	return ""
+}
+
+// foldKindOf is the word for a code point's general category, or empty for a
+// code point Go's tables have not assigned one. See foldRegionKinds.
+func foldKindOf(cp rune) string {
+	for _, k := range foldRegionKinds {
+		if table, ok := unicode.Categories[k.category]; ok &&
+			unicode.Is(table, cp) {
+			return k.word
+		}
+	}
+	// A category nobody gave a word to arrives as its own two letters, which
+	// a reader can look up. Cn — unassigned — is the one that is not a
+	// category so much as an absence, and it is reported as one above.
+	for name, table := range unicode.Categories {
+		if len(name) == 2 && name != "Cn" && unicode.Is(table, cp) {
+			return name
+		}
+	}
+	return ""
+}
+
+// foldSortedWords is a set of words as a sentence lists them, in a fixed
+// order so a log line does not depend on Go's map iteration.
+func foldSortedWords(set map[string]bool) string {
+	words := make([]string, 0, len(set))
+	for w := range set {
+		words = append(words, w)
+	}
+	sort.Strings(words)
+	return strings.Join(words, "/")
+}
+
 func TestHowWideTheNarrowerFoldIsAndWhatHoldsTheGap(t *testing.T) {
 	node, err := exec.LookPath("node")
 	if err != nil {
@@ -1374,6 +1586,52 @@ console.log(JSON.stringify({
 		}
 	}
 
+	// # And where those regions are, which the counts above cannot see
+	//
+	// Two Unicode versions meet here, so the gate is both of them: the spans
+	// come from node's NFKD and the words come from Go's script and category
+	// tables. On a build where either has moved the naming is expected to move
+	// with it and nothing is asserted — the two counts above are what hold on
+	// every build, and this is what holds the ranges those counts are silent
+	// about. See foldMeasuredOn.bearingRegions.
+	if now.unicode == foldMeasuredOn.build.unicode &&
+		unicode.Version == foldOwnMeasuredOn.goUnicode {
+		for _, c := range []struct {
+			what       string
+			got, want  []string
+			plane      string
+			runs, regs int
+		}{
+			{"the BMP", foldRegionsNamed(bmpClusters, bmp.runs),
+				foldMeasuredOn.bearingRegions, "the BMP",
+				len(bmp.runs), len(bmpClusters)},
+			{"above the BMP", foldRegionsNamed(astralClusters, astral.runs),
+				foldMeasuredOn.astralBearingRegions, "above the BMP",
+				len(astral.runs), len(astralClusters)},
+		} {
+			if slices.Equal(c.got, c.want) {
+				continue
+			}
+			t.Errorf("the seed-bearing regions %s come to\n\t%s\nand "+
+				"foldMeasuredOn records\n\t%s\n\n"+
+				"Both Unicode versions match their records — node's %s for the "+
+				"population and Go's %s for the naming — so neither table has "+
+				"moved and this is where those characters ARE having changed. The "+
+				"run and region counts (%d and %d) are asserted above and they "+
+				"cannot see this: the same number of runs falling into the same "+
+				"number of groups says nothing about which code points they hold, "+
+				"and the sentence that used to name them was typed rather than "+
+				"derived, so it could not either.\n\n"+
+				"If gen.go's table changed width, that is the finding and the arms "+
+				"above will have said so too. If it did not, the fold is reaching a "+
+				"different population for the same count — re-read what moved "+
+				"before re-taking the record.",
+				c.what, strings.Join(c.got, "\n\t"),
+				strings.Join(c.want, "\n\t"), now.unicode, unicode.Version,
+				c.runs, c.regs)
+		}
+	}
+
 	// The astral half of the sentence, which is a different fact and is said
 	// as one. Its seed-bearing example is the interesting number: gen.go's
 	// fold does nothing above the BMP but lowercase (foldOwnMeasuredOn asserts
@@ -1390,18 +1648,14 @@ console.log(JSON.stringify({
 		}
 		// Where those seed-bearing characters actually are, which is the half
 		// a count cannot say. See foldClustersOf.
-		where := make([]string, 0, len(astralClusters))
-		for _, c := range astralClusters {
-			where = append(where, fmt.Sprintf("U+%04X..U+%04X", c[0], c[1]))
-		}
+		where := foldRegionsNamed(astralClusters, astral.runs)
 		astralSaid = fmt.Sprintf("and %d above the BMP, where it agrees on %d and "+
 			"is narrower on %d, %d of which reach a seed's own letters%s — a "+
 			"population that is not the BMP's made smaller: NFKD decomposes the "+
 			"mathematical alphanumerics to bare letters, and nothing up there can be "+
 			"inside 0x20..0x7e, so the arm holding all of them out is the same one "+
 			"and it is holding for a different reason. Those %d sit in %d runs "+
-			"making %d regions — %s, which is the outlined letters, the "+
-			"mathematical alphanumerics and the enclosed ones — with the widest gap "+
+			"making %d regions — %s — with the widest gap "+
 			"inside a region %d code points and the narrowest between two %d, so "+
 			"the %d this file separates them by is naming where to look rather than "+
 			"choosing the answer",
@@ -1412,24 +1666,15 @@ console.log(JSON.stringify({
 	// And where the BMP's seed-bearing characters are, which is the half a
 	// count cannot say. Same reading as the astral half's, over the population
 	// that actually matters here.
-	bmpWhere := make([]string, 0, len(bmpClusters))
-	for _, c := range bmpClusters {
-		if c[0] == c[1] {
-			bmpWhere = append(bmpWhere, fmt.Sprintf("U+%04X", c[0]))
-			continue
-		}
-		bmpWhere = append(bmpWhere, fmt.Sprintf("U+%04X..U+%04X", c[0], c[1]))
-	}
+	bmpWhere := foldRegionsNamed(bmpClusters, bmp.runs)
 	t.Logf("browser.mjs's fold changes %d of the BMP's code points; gen.go's "+
 		"agrees on %d and is narrower on %d, %d of which NFKD turns into a letter "+
 		"a seed is spelled with (e.g. U+%04X %q→%q, where gen.go says %q) — and %d of "+
 		"it inside printable ASCII, which is the whole of what "+
 		"inkGlyphPerCharacter's second arm refuses on and therefore the whole of "+
-		"what is holding this gap shut. Those %d sit in %d runs making %d regions "+
-		"— %s: the accented Latin letters and the Latin extensions, the phonetic "+
-		"modifiers, the superscripts and Roman numerals, the circled and "+
-		"parenthesised letters, one subscript in Latin Extended-C, the enclosed "+
-		"CJK squares, one modifier in Latin Extended-D and the fullwidth forms. "+
+		"what is holding this gap shut. Those %d sit in %d runs making %d regions, "+
+		"each named by what Go's Unicode %s says is in it rather than by a "+
+		"sentence nobody re-derives — %s. "+
 		"The widest gap inside a region is %d code points and the narrowest "+
 		"between two is %d, so the %d this file separates them by is naming where "+
 		"to look rather than choosing the answer — and this population is not the "+
@@ -1441,7 +1686,8 @@ console.log(JSON.stringify({
 		"which is %s the record was taken on%s",
 		bmp.changes, agreed, gap, bearing, bearingExample, string(bearingExample),
 		theirs[bearingExample], inkGlyphFold(string(bearingExample)), asciiCount,
-		bearing, len(bmp.runs), len(bmpClusters), strings.Join(bmpWhere, ", "),
+		bearing, len(bmp.runs), len(bmpClusters), unicode.Version,
+		strings.Join(bmpWhere, ", "),
 		bmpInsideGap, bmpBetweenGap, foldBearingGap,
 		astralSaid, 0x110000,
 		now.unicode, now.icu, now.node,

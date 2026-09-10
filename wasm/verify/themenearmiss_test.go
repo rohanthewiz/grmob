@@ -229,12 +229,20 @@ func TestThemeNearMissThresholdIsDerivedFromCoreTheme(t *testing.T) {
 // struct SHAPE — sparse in one case, crowded in the other — and what is being
 // asked is whether the derivation reads the shape it is given.
 func TestTheNearMissThresholdMovesWithTheNamesItIsMeasuredOver(t *testing.T) {
+	// The four fixtures, from the one place their names are written.
+	//
+	// They used to be four literals here, and affordedEndingWitness needed the
+	// same four populations for a different question — which branch of the
+	// classification each reaches. Two copies of a fixture list is how this
+	// file came to have two copies of the ending list, and the second copy is
+	// worse here than there: a set edited in one place and not the other goes
+	// on passing BOTH tests, because each would be asserting about whatever it
+	// was handed. The names are next door, indexed by the ending they reach.
+	//
 	// Four siblings, pairwise far apart: no two of these are within three edits
 	// of each other, so nothing crowds at any distance the reach allows and the
 	// search runs to the ceiling.
-	sparse := themeLeafSetOf([]string{
-		"Palette.Alpha", "Palette.Bravo", "Palette.CharlieDelta", "Palette.Echo",
-	})
+	sparse := themeLeafSetOf(affordedEndingWitness[3].names)
 	if sparse.edits <= themeNearMissEdits {
 		t.Errorf("four sibling names no two of which are within three edits of each "+
 			"other measure a threshold of %d, and core.Theme's is %d.\n\n"+
@@ -291,7 +299,7 @@ func TestTheNearMissThresholdMovesWithTheNamesItIsMeasuredOver(t *testing.T) {
 
 	// A set that really is far enough apart to carry more, so the arm that
 	// states a width is reached by something.
-	wide := themeLeafSetOf([]string{"Ramp.Aaaaaa", "Ramp.Bbbbbb", "Ramp.Cccccc"})
+	wide := themeLeafSetOf(affordedEndingWitness[2].names)
 	if !wide.cappedByReach || wide.afforded <= wide.edits {
 		t.Errorf("three sibling names six edits apart measure %d, capped=%v, and "+
 			"afford %d.\n\n"+
@@ -306,7 +314,7 @@ func TestTheNearMissThresholdMovesWithTheNamesItIsMeasuredOver(t *testing.T) {
 	// And a set nothing crowds at any width, which is a different sentence and
 	// not a bigger number: two leaves under one parent are never a crowd,
 	// however far the search goes, so there is no width to report.
-	pair := themeLeafSetOf([]string{"Duo.Alpha", "Duo.Zulu"})
+	pair := themeLeafSetOf(affordedEndingWitness[1].names)
 	if !pair.affordedOpen {
 		t.Errorf("two sibling names under one parent report an afforded width of %d "+
 			"(open=%v).\n\n"+
@@ -319,9 +327,7 @@ func TestTheNearMissThresholdMovesWithTheNamesItIsMeasuredOver(t *testing.T) {
 
 	// And the other direction: names one edit apart in a crowd cannot widen,
 	// whatever the ceiling says.
-	crowded := themeLeafSetOf([]string{
-		"Weight.Aaa", "Weight.Aab", "Weight.Aac", "Weight.Aad", "Weight.Aae",
-	})
+	crowded := themeLeafSetOf(affordedEndingWitness[0].names)
 	if crowded.edits != 1 {
 		t.Errorf("five sibling names each one edit from the other four measure a "+
 			"threshold of %d, want the floor of 1.\n\n"+
@@ -1794,6 +1800,134 @@ func affordedCensusMap(c affordedCensus) map[string]int {
 	return out
 }
 
+// affordedEndingWitness is one population per ending: entry e is a set of leaf
+// names that reaches affordedEndingAt's branch e, together with the sentence
+// affordedEndingNames stands at that index and the shape the names have.
+//
+// # What holds the switch to the list, which was nothing
+//
+// affordedEndingAt returns 0, 1, 2 and 3 as literals and affordedEndingNames
+// lists four sentences in that order, and the two were held together by
+// position alone. That coupling was INTRODUCED when the classification became
+// an index: before it the switch returned the sentence itself, and the order
+// of the test's list of four was harmless.
+//
+// A reordering of the array now silently re-labels every census, band and
+// record in this file. Most of the way there, something does fire — the
+// record's census is keyed by the sentence and re-walked on every run, so the
+// counts arrive under the wrong headings and that comparison fails. What it
+// does not survive is a re-take: a person who reorders the array, sees the
+// census arm fail and pastes the new record has a file that is internally
+// consistent, states the wrong sentence for every population it counts, and
+// has no arm left that would say so.
+//
+// So the four sentences are written down a second time HERE, beside a set
+// that reaches each, and that second copy is the assertion rather than a
+// duplicate to be removed. It is the one copy the retake paste does not
+// rewrite (see affordedRetakeSource, which prints affordedMeasuredOn and
+// affordedBandMeasuredOn and nothing else), which is exactly the property
+// that makes it worth having.
+//
+// # Why these four sets
+//
+// They are the four branches, reached by the smallest thing that reaches
+// each, and they are the same populations TestTheNearMissThresholdMovesWith-
+// TheNamesItIsMeasuredOver builds its four fixtures out of — which is why the
+// names live here rather than in that test. Two copies of a fixture list is
+// how this file came to have two copies of the ending list.
+var affordedEndingWitness = [len(affordedEndingNames)]struct {
+	// The sentence at this index, typed rather than read off the array. See
+	// above: reading it from affordedEndingNames would make every arm below
+	// a comparison of the array with itself.
+	sentence string
+	names    []string
+	// What about these names puts them on this branch, for a failure that
+	// has to say whether the derivation moved or the fixture stopped being
+	// the shape it was chosen for.
+	shape string
+}{
+	0: {
+		sentence: "its own crowding stopped the search",
+		names: []string{
+			"Weight.Aaa", "Weight.Aab", "Weight.Aac", "Weight.Aad", "Weight.Aae",
+		},
+		shape: "five siblings each one edit from the other four, so no width " +
+			"above the floor keeps an answer to a pair and the crowding stops " +
+			"the search below themeNearMissReach",
+	},
+	1: {
+		sentence: "no width crowds these names at all",
+		names:    []string{"Duo.Alpha", "Duo.Zulu"},
+		shape: "one parent holding two leaves, which cannot produce a crowd at " +
+			"any distance, so the upward search runs out of widths to try",
+	},
+	2: {
+		sentence: "the ceiling cost this set a wider threshold",
+		names:    []string{"Ramp.Aaaaaa", "Ramp.Bbbbbb", "Ramp.Cccccc"},
+		shape: "three siblings six edits apart, so the ceiling stops the search " +
+			"and the width these names would carry is what it is costing",
+	},
+	3: {
+		sentence: "the ceiling and the crowding stop in the same place",
+		names: []string{
+			"Palette.Alpha", "Palette.Bravo", "Palette.CharlieDelta", "Palette.Echo",
+		},
+		shape: "four siblings no two of which are within three edits, and " +
+			"Palette.Echo has two within four — so the ceiling stops the search " +
+			"at the same width the crowding would have",
+	},
+}
+
+// affordedHoldEndingWitnesses asks each of those four populations which ending
+// it reaches, by index and by sentence.
+//
+// Both, because they are two different findings. The index says the switch's
+// branches still stand where the array's entries are; the sentence says the
+// array has not been reordered underneath them. Neither implies the other:
+// affordedEndingOf is affordedEndingNames[affordedEndingAt(set)], so a
+// reordering that moves the array alone leaves every index right and every
+// sentence wrong, and an edit to the switch's literals leaves them both
+// wrong in the other direction.
+func affordedHoldEndingWitnesses(t *testing.T) {
+	t.Helper()
+	for e, w := range affordedEndingWitness {
+		set := themeLeafSetOf(w.names)
+		at := affordedEndingAt(set)
+		if at != e {
+			t.Errorf("%s is %s, and affordedEndingAt puts it at %d rather than "+
+				"%d.\n\n"+
+				"That set was chosen to reach exactly one branch of the "+
+				"classification, and the branch it reaches is what every census, "+
+				"band and record in this file is a partition by. Either the switch's "+
+				"arms have moved — the ceiling flag, the open flag and the "+
+				"afforded/edits comparison are read in an order and the order is the "+
+				"partition — or these names no longer have the shape they were "+
+				"picked for, and those are different repairs. It measures "+
+				"threshold %d, afforded %d, capped=%v, open=%v.",
+				affordedNameList(w.names), w.shape, at, e,
+				set.edits, set.afforded, set.cappedByReach, set.affordedOpen)
+			continue
+		}
+		if got := affordedEndingOf(set); got != w.sentence {
+			t.Errorf("%s reaches branch %d of the classification and "+
+				"affordedEndingOf calls it %q, where this witness says %q.\n\n"+
+				"The switch returns an index and affordedEndingNames turns it into a "+
+				"sentence by POSITION, so those two are held together by nothing but "+
+				"the order of a literal — and a reordering re-labels every census, "+
+				"band and record in this file at once. The census re-walked from "+
+				"affordedMeasuredOn would fail too, and it is the arm a person "+
+				"silences by pasting a fresh record; this one is not printed by the "+
+				"paste and does not move with it.\n\n"+
+				"If the wording of an ending was what changed, change it here as "+
+				"well and re-take both records — affordedMeasuredOn is keyed by the "+
+				"sentence. If the ORDER changed, put it back: the index is what the "+
+				"walks carry.\n\nThe list reads %v.",
+				affordedNameList(w.names), e, got, w.sentence,
+				affordedEndingNames)
+		}
+	}
+}
+
 // affordedCensusOf is the whole census — the walk, the derivation and the
 // classification — over a given list of distinct leaf names.
 //
@@ -1990,7 +2124,112 @@ func affordedOneLeafBand(names []string) (map[string]affordedBand, string) {
 // (value, then lowest combination index), which is what the sequential scan
 // produced — the first combination to reach the maximum — so the recorded
 // `losingAt` does not depend on how the work was split.
+// # And measured once per (names, k) in a run, not once per caller
+//
+// The walk is a pure function of a list of names and a step, and a run asks
+// for the same (names, k) more than once. The one-leaf band over the record's
+// names was taken three times on every green run: once by the steps loop,
+// once by affordedTwoStepBands for the composition's b₁, and a third time by
+// affordedChainBoundOf's first step, which is `names[0:]` and therefore the
+// same list. About 15ms — a tenth of what the three-leaf step costs, which is
+// why nobody noticed while the test was 2.9 seconds and does notice now that
+// it is under one.
+//
+// So the answer is memoised on the argument list rather than the walk being
+// changed. This is the same trade affordedWhole.memoise makes one level down,
+// with none of its difficulty: the key is the whole of the input, the value
+// is the whole of the output, and there is no enumeration that has to stay
+// covering. Guarded because the walk itself is parallel and a caller may sit
+// inside another goroutine; keyed on the names joined by a byte no leaf path
+// can hold, so two different lists cannot key the same entry.
+//
+// The maps are copied out. Four entries is nothing to copy, and handing the
+// same map to two callers would make a caller that wrote into it edit an
+// answer somebody else is about to read — a bug that would look exactly like
+// a re-sort.
+//
+// Counted, and the counts are in the affordance test's log line. A memo that
+// stops being hit is a caller that has quietly started asking for a different
+// list — `names[1:]` where it used to ask for `names`, or this run's own
+// population having moved away from the record's — and that is a change in
+// what is being walked rather than in how fast. The numbers say which:
+// `walks` is populations actually censused and `reused` is askings that found
+// one already there.
+var affordedBandMemo = struct {
+	sync.Mutex
+	at map[string]struct {
+		bands map[string]affordedBand
+		off   string
+	}
+	walks, reused int
+}{at: map[string]struct {
+	bands map[string]affordedBand
+	off   string
+}{}}
+
+// affordedBandKey is the identity of a walk: its names and its step.
+//
+// 0x00 as the separator because a leaf path is a Go identifier and dots, so
+// no name can hold one — which is what stops {"a\x00b"} and {"a","b"} from
+// being one key.
+//
+// # And what a run would and would not notice about this key
+//
+// A key that drops the step conflates the one-leaf and three-leaf bands over
+// the record's names, and a key that drops the names conflates the chain's
+// two steps; both are caught, loudly, by the recorded bands they would move.
+//
+// A key of (step, len(names)) is NOT caught, and the reason is worth writing
+// down: the three populations a green run censuses here are 80 names at k=1,
+// 80 at k=3 and 79 at k=1, and no two of them share a size. It would go wrong
+// on the first run where a leaf was RENAMED — this run's names and the
+// record's would then be two different lists of eighty, and the second asking
+// would get the first's answer. That is the same premise-by-count the exact
+// census arm carried before it started reading the record's own strings, and
+// it is why the key is the whole list rather than a summary of it.
+func affordedBandKey(names []string, k int) string {
+	return fmt.Sprintf("%d\x00%s", k, strings.Join(names, "\x00"))
+}
+
+// affordedBandCopy is a band map handed to a caller, so the memo's own is
+// never the one anybody holds.
+func affordedBandCopy(bands map[string]affordedBand) map[string]affordedBand {
+	out := make(map[string]affordedBand, len(bands))
+	for ending, b := range bands {
+		out[ending] = b
+	}
+	return out
+}
+
 func affordedKLeafBand(names []string, k int) (map[string]affordedBand, string) {
+	key := affordedBandKey(names, k)
+	affordedBandMemo.Lock()
+	if had, seen := affordedBandMemo.at[key]; seen {
+		affordedBandMemo.reused++
+		affordedBandMemo.Unlock()
+		return affordedBandCopy(had.bands), had.off
+	}
+	affordedBandMemo.Unlock()
+	// Walked outside the lock, so two callers asking for two different bands
+	// at once are not serialised behind each other. The cost of both asking
+	// for the SAME one is that it is walked twice and stored twice, which is
+	// the state before the memo existed rather than a wrong answer.
+	bands, off := affordedKLeafBandWalk(names, k)
+	affordedBandMemo.Lock()
+	if _, seen := affordedBandMemo.at[key]; !seen {
+		affordedBandMemo.walks++
+	}
+	affordedBandMemo.at[key] = struct {
+		bands map[string]affordedBand
+		off   string
+	}{affordedBandCopy(bands), off}
+	affordedBandMemo.Unlock()
+	return bands, off
+}
+
+// affordedKLeafBandWalk is the walk itself. See affordedKLeafBand, which is
+// the memo in front of it.
+func affordedKLeafBandWalk(names []string, k int) (map[string]affordedBand, string) {
 	bands := map[string]affordedBand{}
 	for _, ending := range affordedEndingNames {
 		bands[ending] = affordedBand{}
@@ -2057,7 +2296,19 @@ func affordedKLeafBand(names []string, k int) (map[string]affordedBand, string) 
 		return a
 	}
 	type result struct {
-		losing, gaining [len(affordedEndingNames)]best
+		// The widest residual this worker saw in each direction, per ending.
+		//
+		// Named for the direction and not `losing`/`gaining`, which is what
+		// they were called: affordedBand's two fields are floats with those
+		// names, and the field table this package's float census reads a type
+		// off is keyed by the field name alone. Two structs disagreeing about
+		// a name is a conflation that census can only report, so every
+		// selector called `.losing` anywhere in the package read as float
+		// arithmetic — including these, which are arrays. See
+		// affordedFloatSource: renaming the pair here is the half of that
+		// finding this file owns, and it takes the census from five conflated
+		// names to three.
+		widestLosing, widestGaining [len(affordedEndingNames)]best
 		// The first population whose window bookkeeping did not add up, or
 		// empty. Carried out of the walk rather than reported inside it.
 		off string
@@ -2082,8 +2333,8 @@ func affordedKLeafBand(names []string, k int) (map[string]affordedBand, string) 
 			r := result{ran: true}
 			defer func() { results[w] = r }()
 			for e := range affordedEndingNames {
-				r.losing[e] = best{at: -1}
-				r.gaining[e] = best{at: -1}
+				r.widestLosing[e] = best{at: -1}
+				r.widestGaining[e] = best{at: -1}
 			}
 			// Strided rather than blocked, so a family whose expensive
 			// populations sit together does not land on one worker.
@@ -2109,10 +2360,10 @@ func affordedKLeafBand(names []string, k int) (map[string]affordedBand, string) 
 				}
 				for e := range affordedEndingNames {
 					if off, _, ok := affordedResidualOf(full[e], census[e], down); ok {
-						r.losing[e] = worst(r.losing[e], best{off, c})
+						r.widestLosing[e] = worst(r.widestLosing[e], best{off, c})
 					}
 					if off, _, ok := affordedResidualOf(census[e], full[e], up); ok {
-						r.gaining[e] = worst(r.gaining[e], best{off, c})
+						r.widestGaining[e] = worst(r.widestGaining[e], best{off, c})
 					}
 				}
 			}
@@ -2154,8 +2405,8 @@ func affordedKLeafBand(names []string, k int) (map[string]affordedBand, string) 
 			if !r.ran {
 				continue // a worker with no share of the combinations
 			}
-			losing = worst(losing, r.losing[e])
-			gaining = worst(gaining, r.gaining[e])
+			losing = worst(losing, r.widestLosing[e])
+			gaining = worst(gaining, r.widestGaining[e])
 		}
 		bands[ending] = affordedBand{
 			losing: losing.value, losingAt: spell(losing.at),
@@ -2689,11 +2940,66 @@ func affordedBandRounded(v float64) float64 {
 // a family this run's population is a MEMBER of, rather than a sentence saying
 // an ending outside the band is the absence of a finding.
 //
-// Four is left off, and that is a judgement with a number under it rather than
-// a wall. 685ms is six times what the whole rest of this test costs, and what
-// it buys is the fourth simultaneous field edit — which is a rarer thing than
-// the third by about the margin the cost says. Five is where the wall actually
-// is now.
+// # Four is left off, and the history says how much that costs
+//
+// This used to read "the fourth simultaneous field edit is a rarer thing than
+// the third by about the margin the cost says", which was a guess. Nobody had
+// asked how often core.Theme actually moves four leaves at once, and the git
+// history has the answer.
+//
+// It was read like this: for every commit that touches core/, the package's
+// sources at that revision are parsed and core.Theme is expanded to its
+// distinct leaf NAMES — the same population affordedLeafNames produces, and
+// the reading reproduces affordedMeasuredOn's eighty exactly at HEAD — and
+// each commit is diffed against its predecessor. Taken over the whole history
+// to 6d3bad1 (2026-09-07), the commit that brought the population to eighty.
+//
+// Which is also how a reader tells whether it is current: this reading ends
+// where affordedMeasuredOn's population begins, so while that record says 80
+// leaves the table below covers every edit there has been. The run that
+// re-takes the record for an eighty-first leaf is the run that has one more
+// row to add here, and it knows its own size — the failure prints it.
+//
+// Fifteen commits moved the population after the one that created it with
+// twenty-five leaves in it:
+//
+//	leaves moved   commits   what they were
+//	           1         8   a role, a state, a flag: one field, one decision
+//	           2         2
+//	           3         2   three Accessibility fields; Border/Success/Warning
+//	           4         1   Max/Min/Now/Text — a slider's value range
+//	           5         1   a second tone per palette role
+//	          28         1   the style-props surface arriving at once
+//
+// Two things fall out of that, and neither is what the guess said.
+//
+// The fourth simultaneous edit is NOT rare against the third: three leaves
+// moved on two commits and four on one, which is a margin of two to one
+// against a cost margin of six. And there is no k at which the family becomes
+// complete — a five-leaf edit happened as often as a four-leaf one, and the
+// twenty-eight-leaf one is past anything enumerable at all. Field edits arrive
+// FEATURE-sized: Max/Min/Now/Text is one slider, and the five is one decision
+// about palette roles. A feature's size is not bounded by what this test can
+// afford to walk.
+//
+// So the list stops at three, and now for a reason with a distribution under
+// it rather than a guess: k = 1..3 covers 12 of the 14 non-bootstrap edits,
+// k = 4 would cover 13 for 685ms — six times what the whole rest of this test
+// costs — and would still leave the sentence about an ending outside the band
+// being the absence of a finding in place for the fourteenth. Five is where
+// the wall is, and past five the question stops being about cost.
+//
+// # And one thing the history says that no band here is measuring
+//
+// Every one of those sixteen commits ADDED leaves. Not one of them removed or
+// renamed a leaf name in the whole history of the struct. So affordedBand's
+// `losing` number — the residual of a population read against a LARGER one —
+// is a band over a direction core.Theme has never actually gone, and every
+// arm that has ever fired against a real edit fired against `gaining`. It is
+// still measured, because the direction is a real edit somebody can make and
+// the day they make it is the day the band has to be there; but a reader
+// weighing what these numbers have caught should know the two halves have not
+// had equal exposure.
 //
 // See affordedKLeafBand for what fails when a bigger step is scaled from a
 // smaller one instead, and affordedChainBoundOf for the composition that was
@@ -3059,6 +3365,12 @@ func affordedRetakeParts(names []string, census map[string]int,
 }
 
 func TestTheAffordedWidthHoldsItsTwoRelations(t *testing.T) {
+	// Which branch of the classification each of the four sentences names,
+	// asked first because everything below is a partition BY those sentences
+	// and the index-to-sentence map is held by the order of a literal. See
+	// affordedEndingWitness.
+	affordedHoldEndingWitnesses(t)
+
 	names := affordedLeafNames()
 	sets := affordedSets(names, affordedWindowMax)
 
@@ -4114,19 +4426,26 @@ func TestTheAffordedWidthHoldsItsTwoRelations(t *testing.T) {
 					affordedMeasuredOn.leaves-2, g.losingAt, g.gainingAt)
 			}
 			m := recordTwoBands[ending]
+			// `band` and not `measured`, which is what this field was called:
+			// affordedBracket declares `measured` as an int and this
+			// package's float census reads a field's type off the name
+			// alone, so the two spellings conflated every `.measured` in the
+			// package into one answer. See affordedFloatSource — a local
+			// table's field name is free to move and the conflation is not
+			// free, so it moves.
 			for _, d := range []struct {
-				what            string
-				bound, measured float64
-				at              string
+				what        string
+				bound, band float64
+				at          string
 			}{
 				{"losing", g.losing, m.losing, second[ending].losingAt},
 				{"gaining", g.gaining, m.gaining, second[ending].gainingAt},
 			} {
-				if affordedBandRounded(d.bound) >= affordedBandRounded(d.measured) {
+				if affordedBandRounded(d.bound) >= affordedBandRounded(d.band) {
 					soundSaid = append(soundSaid, fmt.Sprintf("%q %s %.2f%% over a "+
 						"measured %.2f%% (%.2fx)", ending, d.what,
-						affordedPercent(d.bound), affordedPercent(d.measured),
-						affordedStepRatio(d.bound, d.measured)))
+						affordedPercent(d.bound), affordedPercent(d.band),
+						affordedStepRatio(d.bound, d.band)))
 					continue
 				}
 				t.Errorf("the sound chain bound for %q %s is %.4f and the measured "+
@@ -4143,7 +4462,7 @@ func TestTheAffordedWidthHoldsItsTwoRelations(t *testing.T) {
 					"disagreement is a census that is not of the population it says "+
 					"— the drop bookkeeping, the scales, or the composition — and it "+
 					"is not a fact about core.Theme. The widest second step was %q.",
-					ending, d.what, d.bound, d.measured, affordedMeasuredOn.leaves,
+					ending, d.what, d.bound, d.band, affordedMeasuredOn.leaves,
 					affordedDropCount(affordedMeasuredOn.leaves, 2),
 					affordedMeasuredOn.leaves-2, affordedMeasuredOn.leaves-1, d.at)
 			}
@@ -4167,19 +4486,24 @@ func TestTheAffordedWidthHoldsItsTwoRelations(t *testing.T) {
 		under := []string{}
 		for _, ending := range endings {
 			g, m := chain[ending], recordTwoBands[ending]
+			// `composed` and `band` rather than `chain` and `measured`, for
+			// the reason the table above carries: affordedBandMeasuredOn
+			// declares `chain` as a map and affordedBracket declares
+			// `measured` as an int, and the float census's field table is
+			// keyed by the name with no struct in front of it.
 			for _, d := range []struct {
-				what            string
-				chain, measured float64
+				what           string
+				composed, band float64
 			}{
 				{"losing", g.losing, m.losing},
 				{"gaining", g.gaining, m.gaining},
 			} {
-				if affordedBandRounded(d.chain) >= affordedBandRounded(d.measured) {
+				if affordedBandRounded(d.composed) >= affordedBandRounded(d.band) {
 					continue
 				}
 				under = append(under, fmt.Sprintf(
 					"%q %s composes to %.2f%% against a measured %.2f%%",
-					ending, d.what, affordedPercent(d.chain), affordedPercent(d.measured)))
+					ending, d.what, affordedPercent(d.composed), affordedPercent(d.band)))
 			}
 		}
 		if len(under) == 0 {
@@ -4676,12 +5000,21 @@ func TestTheAffordedWidthHoldsItsTwoRelations(t *testing.T) {
 		"— the walk is a function of a list of strings and the record carries the "+
 		"list. Against THIS run the reading in force is %s. Floors: %s. One leaf "+
 		"lost/gained moves each ending by %s. The band in force here is the "+
-		"%d-leaf step, measured over %s%s%s",
+		"%d-leaf step, measured over %s%s. %d population(s) were censused for a "+
+		"band and %d further asking(s) found one already taken — the one-leaf band "+
+		"over the record's names alone is asked for by the steps loop, by the "+
+		"composition's b1, by the chain's first step and, while core.Theme still "+
+		"has the record's population, by this run's own band. A walk of 80 names is "+
+		"13ms and a reuse is under 3µs; this test measured 0.78s without the memo "+
+		"and 0.72s with it. The numbers are here because a `reused` that drops is a "+
+		"caller asking about a different population — which is a change in what is "+
+		"being read rather than in what it costs%s",
 		len(sets), len(names), onShare, affordedEndingFloor, scale,
 		len(sets), census, affordedPercent(worst), worstEnding, resorted,
 		len(affordedMeasuredOn.names), reading,
 		strings.Join(held, ", "), strings.Join(bandSaid, ", "), bandStep, bandWhose,
-		twoBandNote, affordedMeasuredNote(len(names), len(sets)))
+		twoBandNote, affordedBandMemo.walks, affordedBandMemo.reused,
+		affordedMeasuredNote(len(names), len(sets)))
 }
 
 // affordedDeclaredFields is the field names of a package-level var's struct
@@ -5965,12 +6298,34 @@ func TestNoFloatAComparisonRestsOnIsDerivedTwice(t *testing.T) {
 	// an approximation. What it did not say is whether the approximation was
 	// currently costing anything, and nothing asked.
 	//
-	// It is. Five field names in this package are declared as a float in one
-	// struct and as something else in another — `losing` and `gaining` are
-	// affordedBand's two numbers and also the k-leaf walk's two arrays of
-	// candidate maxima; `measured` is a bracket's own count as a float and a
-	// band comparison's as an int. So the reading a comment described as a
-	// limit is a limit in force, on names this file uses everywhere.
+	// It was. Five field names in this package were declared as a float in
+	// one struct and as something else in another, so the reading a comment
+	// described as a limit was a limit in force, on names this file uses
+	// everywhere:
+	//
+	//	losing    affordedBand's number, and the k-leaf walk's array of
+	//	gaining   candidate maxima
+	//	chain     affordedBandMeasuredOn's map, and a float in the arm that
+	//	          asks whether the composition covers
+	//	measured  affordedBracket's int, and a float in two comparison tables
+	//	got       affordedTaker's int, and a float64 in widget_test.go
+	//
+	// # And four of the five were this file's own to rename
+	//
+	// The census reports and does not resolve, which is right for the general
+	// case — telling two same-named declarations apart is what go/types is
+	// for. It is not right for a collision where both declarations are in
+	// this package and one of them is a local table nobody reads by name: the
+	// walk's arrays are widestLosing/widestGaining, and the two comparison
+	// tables spell their fields `band` and `composed`. Four renames, no
+	// change to a single number, and the approximation narrows from five
+	// names to one.
+	//
+	// What is left is the honest residue and the shape the census cannot fix:
+	// `got` is affordedTaker's int here and a float64 in widget_test.go —
+	// two files with nothing to do with each other, where neither name is
+	// wrong and there is no local edit that separates them. That one stays
+	// counted.
 	//
 	// # And the two tables fail differently, which is why this is two arms
 	//
@@ -6083,10 +6438,14 @@ func TestNoFloatAComparisonRestsOnIsDerivedTwice(t *testing.T) {
 		"declarations sharing a name apart. No method or import name is answered "+
 		"two ways — that arm fails, because the surviving answer there is whichever "+
 		"file was read last and one of the two orders hides arithmetic. %d FIELD "+
-		"names are: %s. That table is a union rather than an assignment, so every "+
-		"selector with one of those names reads as float wherever it appears, which "+
-		"is this census asking for an entry it may not need rather than missing one "+
-		"— the direction it is built to err in. The number is here so a reader can "+
-		"see it grow; it was a sentence in a comment and nobody was counting",
+		"name(s) are answered two ways: %s. That table is a union rather than an "+
+		"assignment, so every selector with one of those names reads as float "+
+		"wherever it appears, which is this census asking for an entry it may not "+
+		"need rather than missing one — the direction it is built to err in. It was "+
+		"five, and four of those were collisions inside this package between a "+
+		"record and a local table; those are renamed. What a number here now means "+
+		"is a name two FILES disagree about, which is the case this census cannot "+
+		"resolve without go/types. The count is here so a reader can see it move; it "+
+		"was a sentence in a comment and nobody was counting",
 		len(derived), compared, len(conflate), strings.Join(conflate, ", "))
 }
