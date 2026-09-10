@@ -10,7 +10,9 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"syscall"
 	"testing"
+	"time"
 
 	"github.com/rohanthewiz/grmob/internal/themeleaves"
 )
@@ -1517,6 +1519,21 @@ func TestEveryBatchResponseShapeIsToldApart(t *testing.T) {
 				"this stream is here to make checkable.",
 		},
 		{
+			what:   "ambiguous",
+			stream: "abc1234 ambiguous\n" + good,
+			want:   errDesync,
+			why: "git's other complete one-line response, for an object name " +
+				"matching more than one object. It is NOT read as complete, " +
+				"and that is a decision rather than a consequence of the " +
+				"field count: trusting a line wrongly costs every response " +
+				"after it, and distrusting one costs a single process. " +
+				"Nothing in this walk can produce it — every name asked for " +
+				"is <full sha>:<path> built from `ls-tree`'s own output — so " +
+				"the conservative reading is free here rather than merely " +
+				"cheap. If something ever does ask with a short oid, this row " +
+				"is where the trade gets re-decided.",
+		},
+		{
 			what:   "a header that is not a header",
 			stream: "fatal: not a git repository\n",
 			want:   errDesync,
@@ -1784,5 +1801,95 @@ func TestEveryPlaceACollisionCanSitIsToldApart(t *testing.T) {
 					"the declaration that lost.", c.what, last, got)
 			}
 		})
+	}
+}
+
+// Retiring a reader whose process will not leave has a deadline behind it.
+//
+// # The state, and why it is not the one the batch produces
+//
+// `git cat-file --batch` exits when its stdin reaches EOF, so retire's close-
+// drain-Wait terminates for every git that is working. Neither step is
+// guaranteed to on its own: the drain ends when the pipe reaches EOF, which is
+// when the process exits, and the process exits when it notices the EOF — so a
+// process wedged for any other reason (a filesystem that will not answer, a
+// pack being rewritten underneath it) holds the drain, and the drain holds
+// blobsMu, and that is the whole run.
+//
+// Nothing can make git behave that way on demand, which is exactly why the
+// reader is built around an *exec.Cmd and a pair of pipes rather than around
+// git: the shape retire has to survive is "a child that keeps its stdout open
+// and ignores its stdin", and `sh -c 'sleep …'` is that shape with none of
+// git's cooperativeness. What is under test is retire, not the batch protocol,
+// and this is the process that tells the two apart.
+//
+// # And why the grace is a variable
+//
+// batchRetireGrace is five seconds because no healthy shutdown is within four
+// orders of magnitude of it. A test that waited it out would be a five-second
+// test asserting a constant. What is worth asserting is that the deadline
+// EXISTS and that the Kill behind it makes the wait finish — both of which are
+// the same at 150ms.
+func TestRetiringAWedgedProcessDoesNotWaitForever(t *testing.T) {
+	// Long enough that a retire without a deadline would hang past any
+	// patience this test has, and bounded so a failing run leaves nothing
+	// behind for a minute.
+	cmd := exec.Command("sh", "-c", "sleep 60")
+	in, err := cmd.StdinPipe()
+	if err != nil {
+		t.Skipf("cannot open a stdin pipe on this machine: %v", err)
+	}
+	out, err := cmd.StdoutPipe()
+	if err != nil {
+		t.Skipf("cannot open a stdout pipe on this machine: %v", err)
+	}
+	if err := cmd.Start(); err != nil {
+		t.Skipf("cannot start a child process on this machine: %v", err)
+	}
+	b := &batchReader{cmd: cmd, in: in, pipe: out, out: bufio.NewReader(out)}
+
+	// The premise. `sleep` holds the stdout its shell gave it and never reads
+	// stdin, so closing the write end tells it nothing — which is the whole
+	// state, and asserting it here means a future `sh` that behaved
+	// differently would fail loudly rather than make this test vacuous.
+	if err := in.Close(); err != nil {
+		t.Fatalf("closing the child's stdin: %v", err)
+	}
+	if err := cmd.Process.Signal(syscall.Signal(0)); err != nil {
+		t.Skipf("the child exited when its stdin closed, so it is not the "+
+			"wedged process this test needs: %v", err)
+	}
+
+	old := batchRetireGrace
+	batchRetireGrace = 150 * time.Millisecond
+	t.Cleanup(func() { batchRetireGrace = old })
+
+	start := time.Now()
+	done := make(chan struct{})
+	go func() { defer close(done); b.retire() }()
+	select {
+	case <-done:
+	case <-time.After(10 * time.Second):
+		cmd.Process.Kill()
+		t.Fatalf("retire has not returned after 10s against a %v grace.\n\n"+
+			"A child that keeps its stdout open and ignores its stdin holds "+
+			"the drain open forever, and retire is called under blobsMu — so "+
+			"a reader retired against one takes the whole run with it. The "+
+			"deadline is what stops that, and the Kill behind it is what makes "+
+			"the drain reach EOF.", batchRetireGrace)
+	}
+	if took := time.Since(start); took > 5*time.Second {
+		t.Errorf("retire took %v against a %v grace. It returned, so the "+
+			"deadline fired — but not near when it was meant to.", took,
+			batchRetireGrace)
+	}
+
+	// And the half a deadline alone would not buy: the process is reaped.
+	// Kill signals; it does not wait. A retire that returned without Wait
+	// would leave a zombie behind on every desynchronising response, which is
+	// trading a wedged run for a leak.
+	if cmd.ProcessState == nil {
+		t.Errorf("retire returned and the child has not been waited on, so it " +
+			"is a zombie. Kill signals a process; only Wait reaps it.")
 	}
 }

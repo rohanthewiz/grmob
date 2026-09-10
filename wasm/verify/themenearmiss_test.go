@@ -704,142 +704,6 @@ const (
 	affordedResidualQuiet = 0.10
 )
 
-// The machine every wall-clock number in this file's prose was taken on.
-//
-// # Why a number in this file needs a machine attached and the others do not
-//
-// Everything else recorded here is re-derived on every run. affordedMeasuredOn
-// keeps eighty names and four counts and the census over them is re-walked, so
-// a reading that moved is a reading about the STRUCT — which is the finding.
-// The timings cannot work that way. `685ms`, `112ms`, `2530.0us`, `5.5s`:
-// every one of them is a number somebody took once and typed in, and a number
-// in a note is a number that has already moved.
-//
-// It cannot become an arm either, and not for want of trying. A wall clock is
-// a reading of the machine, the load on it, the Go version's scheduler and
-// whatever else was compiling at the time; an assertion over one would fail on
-// a busy laptop and on every CI runner, and a test that fails for reasons
-// nobody can act on is a test people learn to ignore. That is a worse outcome
-// than an unattributed number.
-//
-// What a timing CAN carry is where it came from. `go test ./wasm/verify`
-// spreads over 1.81–1.92s across seven runs on one idle machine, which is 6%
-// wide by itself — so a reader holding a 2.0s run against a 1.88s written down
-// somewhere has nothing to reason with: the difference is inside one machine's
-// own spread, or it is a regression, or it is a different computer, and the
-// number alone distinguishes none of them. The spread is why the record is a
-// RANGE and the machine is why it is a record at all; the arm below says which
-// computer this run is standing on when it is not this one.
-//
-// # Why the fields are the ones a program can read
-//
-// A model name is what a person wants and what nothing can check, so the
-// record carries both: `machine` for the reader, and four fields the runtime
-// answers for itself. A mismatch in those is a machine difference stated as a
-// fact rather than guessed at from a number that looks wrong.
-//
-// # Re-taking it
-//
-//	go test -count=1 ./wasm/verify              the whole-file number
-//	go test -bench . -run '^$' ./wasm/verify    the per-walk ones
-//
-// Anything re-taken here is re-taken WITH this record: a run on another
-// machine that updates a timing and leaves the machine alone has put the same
-// unattributed number back, one commit later.
-var affordedTimingsTakenOn = struct {
-	// For a reader. Nothing checks this.
-	machine string
-	// For the arm. runtime answers all four.
-	goos, goarch, goVersion string
-	cores                   int
-	// The whole file, `go test -count=1 ./wasm/verify`, over several runs.
-	// Not the sum of the numbers in the prose — those are pieces of it, taken
-	// at different times — and the one number a reader is most likely to be
-	// holding this record up against, because it is the one they get by
-	// running the file.
-	wholeFile string
-}{
-	machine:   "Apple M3 (Mac15,13), macOS 26.2",
-	goos:      "darwin",
-	goarch:    "arm64",
-	goVersion: "go1.26.1",
-	cores:     8,
-	wholeFile: "1.81–1.92s over seven runs",
-}
-
-// This run says whether it is standing on the machine the timings came from.
-//
-// # Why this reports and does not assert
-//
-// A timing cannot be an arm — see affordedTimingsTakenOn — and neither can the
-// machine, for a reason that is not the same: asserting the machine would fail
-// on every computer that is not this one, which is every computer except this
-// one. What is worth having is the SENTENCE, in front of the person comparing
-// a number in a comment with a number on their screen, saying that the two
-// were taken on different things before they go looking for a regression.
-//
-// So it is a Logf, and the file is honest about what that buys: it is visible
-// under -v and on any run where something else in this file has failed, which
-// are the two occasions anybody reads this output. A green quiet run does not
-// need it.
-//
-// The one thing here that IS an assertion is that the record is filled in at
-// all. A zeroed field is a record somebody added a timing to without saying
-// where it came from, which is the state this whole thing exists to end, and
-// it is a fact about the source rather than about the machine.
-func TestTheTimingsInThisFileSayWhichMachineTheyCameFrom(t *testing.T) {
-	rec := affordedTimingsTakenOn
-	if rec.machine == "" || rec.goos == "" || rec.goarch == "" ||
-		rec.goVersion == "" || rec.cores == 0 || rec.wholeFile == "" {
-		t.Fatalf("affordedTimingsTakenOn has an empty field (%+v).\n\n"+
-			"Every wall-clock number in this file's prose is attributed to "+
-			"this record, and a record with a hole in it attributes them to "+
-			"nothing. That is the state this record exists to end: a reader "+
-			"a few percent off one of these numbers cannot tell a regression "+
-			"from a different computer.", rec)
-	}
-
-	var differs []string
-	if got := runtime.GOOS; got != rec.goos {
-		differs = append(differs, fmt.Sprintf("GOOS %s against %s", got, rec.goos))
-	}
-	if got := runtime.GOARCH; got != rec.goarch {
-		differs = append(differs, fmt.Sprintf("GOARCH %s against %s", got,
-			rec.goarch))
-	}
-	// The toolchain, because the numbers are of code this compiles and the
-	// scheduler that runs it. Compared as a prefix: a patch release is a
-	// different toolchain and worth naming, and `devel` builds carry a suffix
-	// no equality test would ever match.
-	if got := runtime.Version(); !strings.HasPrefix(got, rec.goVersion) {
-		differs = append(differs, fmt.Sprintf("%s against %s", got, rec.goVersion))
-	}
-	// NumCPU and not GOMAXPROCS: the walks below split the family across
-	// GOMAXPROCS, which a caller can set, and what the record is about is the
-	// machine underneath it.
-	if got := runtime.NumCPU(); got != rec.cores {
-		differs = append(differs, fmt.Sprintf("%d cores against %d", got,
-			rec.cores))
-	}
-
-	if len(differs) == 0 {
-		t.Logf("this run is on the machine the timings in this file were taken "+
-			"on: %s, %s, %s/%s, %d cores. The whole file was %s there.",
-			rec.machine, rec.goVersion, rec.goos, rec.goarch, rec.cores,
-			rec.wholeFile)
-		return
-	}
-	t.Logf("the wall-clock numbers in this file's comments were taken on %s "+
-		"(%s, %s/%s, %d cores), and this run is not on it: %s.\n\n"+
-		"The whole file was %s there, `go test -count=1 ./wasm/verify`. A "+
-		"reading of this file that is some percent off one of its numbers is "+
-		"a difference between two computers before it is anything else — "+
-		"which is what this record is for, and why none of these numbers is "+
-		"an assertion.",
-		rec.machine, rec.goVersion, rec.goos, rec.goarch, rec.cores,
-		strings.Join(differs, ", "), rec.wholeFile)
-}
-
 // What each ending scored when this census was written, and over what.
 //
 // The counts are the population's own measurement and the only one anybody has
@@ -1608,7 +1472,7 @@ func affordedSets(names []string, window int) [][]string {
 //
 // # And what it bought, which is not what it was expected to buy
 //
-// Measured over one 78-name population on affordedTimingsTakenOn's machine,
+// Measured over one 78-name population on verifyTimingsTakenOn's machine,
 // `go test -bench`:
 //
 //	the loop this replaced   96.7us   4057 allocations
@@ -2840,7 +2704,7 @@ func affordedOneLeafBand(names []string) (map[string]affordedBand, string) {
 // # And where it stops, which has moved twice and is now a judgement
 //
 // C(80, k) populations: 80, 3160, 82160, 1.6M, 24M. Measured on
-// affordedTimingsTakenOn's machine, with the family split across its cores, at
+// verifyTimingsTakenOn's machine, with the family split across its cores, at
 // each of the two things that have
 // happened to the cost — the census of a drop taken as a correction of the
 // whole population's rather than as a fresh walk (affordedWhole), and the

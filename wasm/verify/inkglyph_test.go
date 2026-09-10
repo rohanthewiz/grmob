@@ -518,6 +518,13 @@ var foldMeasuredOn = struct {
 	// the same shape and a sixteenth of the size. So the bound was not a cost;
 	// it was a walk nobody had run.
 	//
+	// That 128ms is a reading of a machine, like every wall clock in this
+	// package: see verifyTimingsTakenOn, which names the one it came from and
+	// brackets it with the enclosing test's own cost. It is the astral walk
+	// alone and is not re-taken on every run — nothing here needs it to be,
+	// because what it settles is that the bound was affordable, and a figure
+	// that has drifted by half still settles that.
+	//
 	// # And what is up there, which is not nothing
 	//
 	// The astral gap is not the BMP's gap made smaller. NFKD decomposes the
@@ -2317,8 +2324,9 @@ func TestHowWideTheNarrowerFoldIsAndWhatHoldsTheGap(t *testing.T) {
 	// comparing two different characters.
 	//
 	// Every plane, not only the first. See foldMeasuredOn's astral counts for
-	// what that cost when it was finally measured — 128ms and 30KB — and for
-	// what is up there that the BMP does not have.
+	// what that cost when it was finally measured — 128ms and 30KB, on
+	// verifyTimingsTakenOn's machine — and for what is up there that the BMP
+	// does not have.
 	script := filepath.Join(t.TempDir(), "gap.mjs")
 	// The build comes back with the rows, out of the same process that did the
 	// folding. See foldMeasuredOn: every number below is NFKD as the ICU

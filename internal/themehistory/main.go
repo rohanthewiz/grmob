@@ -94,6 +94,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/rohanthewiz/grmob/internal/themeleaves"
 )
@@ -749,23 +750,64 @@ func newBatchReader(dir string) (*batchReader, error) {
 		dir: dir}, nil
 }
 
+// How long retire waits for a git to leave on its own before killing it.
+//
+// # Why this is not a timeout in the usual sense
+//
+// A timeout tuned to a workload is a number somebody has to re-tune. This is
+// not one: it is a bound on "a healthy git has already gone", and the healthy
+// case is bounded by a pipe drain from a local process plus a process exit —
+// microseconds to low milliseconds, four orders of magnitude under this. No
+// run that is working can reach it, which is the property that matters, and
+// the cost of being generous is that a wedged git is waited on for five
+// seconds once rather than forever.
+//
+// A variable rather than a const so the arm can lower it: a test for the
+// deadline that had to wait out the real one would be a five-second test, and
+// what it is checking is that the deadline EXISTS.
+var batchRetireGrace = 5 * time.Second
+
 // retire ends this reader's process and waits for it.
 //
 // `git cat-file --batch` reads requests until its stdin reaches EOF and then
-// exits, so closing the write end is the whole shutdown; there is nothing to
-// signal and nothing to kill. What has to happen before Wait is the DRAIN:
-// this is called on a reader whose stream may hold bytes nobody took — the
-// second half of a desynchronising response, or a whole response for a request
-// whose caller gave up — and a git blocked writing into a full pipe would
-// never see the EOF.
+// exits, so closing the write end is the whole shutdown. What has to happen
+// before Wait is the DRAIN: this is called on a reader whose stream may hold
+// bytes nobody took — the second half of a desynchronising response, or a whole
+// response for a request whose caller gave up — and a git blocked writing into
+// a full pipe would never see the EOF.
+//
+// # Why there is a deadline behind it
+//
+// Both of those steps terminate for a `cat-file --batch` and neither is
+// guaranteed to. The drain ends when the pipe reaches EOF, which is when the
+// process exits; the process exits when it notices the EOF on its stdin. A git
+// wedged for any other reason — a filesystem that will not answer, a pack being
+// rewritten underneath it — holds the drain open, and the drain holds blobsMu,
+// and that is the whole run. So the shutdown gets a deadline and a Kill behind
+// it, and the Kill is what makes the wait terminate: it closes the process's
+// end of the pipe, the drain reaches EOF, and Wait returns.
 //
 // Errors are dropped on purpose. Every caller is already on its way to
 // starting a fresh reader, and there is no answer this could give that would
 // change that.
 func (b *batchReader) retire() {
 	b.in.Close()
-	io.Copy(io.Discard, b.pipe)
-	b.cmd.Wait()
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		io.Copy(io.Discard, b.pipe)
+		b.cmd.Wait()
+	}()
+	select {
+	case <-done:
+	case <-time.After(batchRetireGrace):
+		b.cmd.Process.Kill()
+		// Waited for even after the Kill, so the goroutine and the process are
+		// both finished when this returns. Killing a process does not reap it,
+		// and a retire that left one behind on every desynchronising response
+		// would trade a wedged run for a leak.
+		<-done
+	}
 }
 
 // read is one request and its response.
@@ -834,12 +876,26 @@ func readResponse(r *bufio.Reader, name string) (string, error) {
 	if len(fields) == 2 && fields[1] == "missing" {
 		return "", fmt.Errorf("git cat-file --batch: %s: %w", name, errMissing)
 	}
-	// Anything else that is not a header. git has other complete one-line
-	// answers — `ambiguous` for a short oid that matches two objects — and
-	// they are treated as desynchronising rather than recognised: being wrong
-	// in this direction costs one process and being wrong in the other costs
-	// every response after it. That trade only became affordable once a dead
-	// reader could be replaced.
+	// Anything else that is not a header, and `ambiguous` is the one worth
+	// naming: git answers `<name> SP ambiguous LF` for an object name that
+	// matches more than one object, and it is a COMPLETE one-line response
+	// exactly as `missing` is. Recognising it would be correct and would cost
+	// nothing; it is deliberately not recognised, and the reason is what the
+	// two mistakes cost.
+	//
+	//	read as desynchronising   one git process, once, and a run that carries
+	//	                          on with correct bytes
+	//	read as complete when it   a body that was never there is skipped or a
+	//	is not                    header is read as one, and every response
+	//	                          after it belongs to the request before it
+	//
+	// So the set of lines this reader will trust is kept to the one it has
+	// actually seen git send. `ambiguous` needs a short or otherwise ambiguous
+	// object name and every name asked for here is `<full sha>:<path>` built
+	// from `ls-tree`'s own output, so nothing in this walk can produce one —
+	// which is why the conservative reading is free rather than merely cheap.
+	// See TestEveryBatchResponseShapeIsToldApart, where the choice is a row
+	// rather than a consequence of `len(fields) != 3`.
 	if len(fields) != 3 {
 		return "", fmt.Errorf("git cat-file --batch: %s: %q: %w", name, line,
 			errDesync)
