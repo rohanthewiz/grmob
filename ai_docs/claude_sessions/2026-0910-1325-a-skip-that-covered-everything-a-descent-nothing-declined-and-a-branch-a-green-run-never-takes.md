@@ -277,11 +277,8 @@ raised here.
    no way to watch it fire. A fixture cannot carry it either — the arm is about
    git's own tree — so the honest fix is a recipe in the test's comment rather
    than a testdata directory.
-6. **(age 4 · deliberate non-goal) A sound chain bound at k = 3.**
-   `affordedTwoStepBands` exists only for two, and there is no reason to write
-   the three-step version: bounding the last step over every chain needs a
-   census of every population of size n−k, which is the family the direct
-   measurement walks — and the direct measurement is the cheaper of the two at
-   every k this file takes. The composition is kept at k = 2 for the SHAPE it
-   holds, not as a route to anything. Listed so it is visibly declined rather
-   than quietly missing.
+6. **(age 4 · deliberate non-goal) A sound chain bound at k = 3.** Moved out
+   of this list to `ai_docs/plans/non_goals.md`, which is where declined work
+   now lives so it is decided once rather than re-declined at the bottom of
+   every session. The argument is unchanged and `affordedTwoStepBands` carries
+   a pointer to it.

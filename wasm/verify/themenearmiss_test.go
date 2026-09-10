@@ -3665,6 +3665,20 @@ func affordedChainBoundOf(names []string, k int) (map[string]affordedBand, strin
 // The tie-break is the pair's own index, which is the order affordedKLeafBand
 // enumerates its combinations in for k = 2 (i < j, lexicographically), so the
 // measured band this produces names the same widest drop that one does.
+// # And why there is no three-step version, though affordedBandSteps runs to 3
+//
+// Declined, and written down rather than left as a gap somebody re-derives.
+// Bounding the LAST step over every chain needs a census of every population
+// of size n−k — which is the family the direct measurement already walks, and
+// the direct measurement is the cheaper of the two at every k this file takes.
+// The composition at k = 3 would cost more than the number it bounds and
+// produce a looser one: a slower route to a weaker answer, not an
+// approximation that buys anything. This is kept at k = 2 for the SHAPE above
+// — the reading that separated the two causes of affordedChainBoundOf failing
+// to cover — and not as a step towards three.
+//
+// See ai_docs/plans/non_goals.md, which carries the argument in full and what
+// would have to change for it to be reconsidered.
 func affordedTwoStepBands(names []string) (
 	measured, second, bound map[string]affordedBand, off string) {
 	measured = map[string]affordedBand{}
