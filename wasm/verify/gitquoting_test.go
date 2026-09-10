@@ -148,17 +148,20 @@ func TestEveryGitListingAsksForNulSeparatedPaths(t *testing.T) {
 			}
 			helpers[dir] = at
 			// The premise, checked rather than assumed: a function called
-			// `git` in this repository runs git. A helper that did something
-			// else would make every call to it a finding about the wrong
-			// thing, stated with a line number and a subcommand.
-			if !runsGit(fn) {
-				t.Errorf("%s:%d declares `func git` and its body contains no "+
-					"exec.Command(\"git\", …).\n\n"+
+			// `git` in this repository runs git WITH THE ARGUMENTS IT WAS
+			// GIVEN. A helper that did something else would make every call to
+			// it a finding about the wrong thing, stated with a line number
+			// and a subcommand.
+			if why := whyNotAGitWrapper(fn); why != "" {
+				t.Errorf("%s:%d declares `func git` and it %s.\n\n"+
 					"Calls to a bare `git(…)` in %s are read by this check as "+
-					"git invocations and held to the -z rule. If this helper "+
-					"is something else, the findings this check produces about "+
-					"that package are about the wrong function — rename one of "+
-					"them, or teach gitArgs which is which.", rel, at.Line, dir)
+					"git command lines — `git(\"ls-tree\", \"--name-only\")` is "+
+					"reported as `git ls-tree --name-only` — and that reading "+
+					"is only true when the helper's own arguments are what the "+
+					"process is handed. If this helper is something else, the "+
+					"findings this check produces about that package are about "+
+					"the wrong function: rename one of them, or teach gitArgs "+
+					"which is which.", rel, at.Line, why, dir)
 			}
 		}
 	}
@@ -213,7 +216,8 @@ func TestEveryGitListingAsksForNulSeparatedPaths(t *testing.T) {
 	sort.Strings(where)
 	t.Logf("%d git invocation(s) across the repository's Go sources; every one "+
 		"that lists paths asks for -z. %d package(s) declare a `git` helper, "+
-		"held above to running one: %s. Enumerated by %s.",
+		"held above to running git with the arguments they are handed: %s. "+
+		"Enumerated by %s.",
 		seen, len(helpers), strings.Join(where, ", "), from)
 }
 
@@ -292,36 +296,195 @@ func literal(e ast.Expr) string {
 	return strings.Trim(lit.Value, "`\"")
 }
 
-// runsGit is whether a `func git` declaration actually runs git.
+// whyNotAGitWrapper is why a `func git` declaration is not the thing this
+// check reads its callers as, or "" if it is one.
 //
-// The test is `exec.Command("git", …)` somewhere in the body, which is what
-// every wrapper of this shape is built on and what the one in
-// internal/themehistory is. A helper that reached git some other way — a
-// go-git binding, a shelled-out `sh -c` — would fail this and would be right
-// to: this check reads such a call's LITERAL ARGUMENTS as a git command line,
-// and that reading is only correct for a wrapper that passes them to git.
-func runsGit(fn *ast.FuncDecl) bool {
+// # What this used to be, and the shape that satisfied it
+//
+// It was: `exec.Command("git", …)` somewhere in the body, anywhere. That is
+// the right FIRST question and it is not the whole one, because it is
+// satisfied by a helper that calls git once for a reason of its own and does
+// something else entirely with the arguments it was handed:
+//
+//	func git(args ...string) (string, error) {
+//	    root, _ := exec.Command("git", "rev-parse", "--show-toplevel").Output()
+//	    return run(filepath.Join(string(root), args[0]), args[1:]...)
+//	}
+//
+// That passes the old test and every finding this check produces about its
+// package is then a git command line assembled out of arguments that never
+// reached git. The reading is not merely loose there — it is about a different
+// program.
+//
+// # What is checked instead
+//
+// That the helper's VARIADIC PARAMETER reaches the git call. That is the
+// premise the caller-side reading rests on: `git("ls-tree", "--name-only")` is
+// read as `git ls-tree --name-only`, which is true exactly when those strings
+// are what the process is given.
+//
+// It is a dataflow question, and dataflow is what go/types answers and a
+// parse does not. This package parses FILES rather than loading packages —
+// deliberately, since it walks a repository including revisions and generated
+// trees that need not build — so what is done here is the intraprocedural,
+// syntactic approximation of it:
+//
+//	the variadic parameter's names start out tainted
+//	an assignment whose right-hand side mentions a tainted name taints its
+//	  left-hand names
+//	the premise holds if a tainted name reaches exec.Command("git", …) after
+//	  the program name, or is assigned into a field of the *exec.Cmd that call
+//	  produced — `cmd.Args = append(cmd.Args, args...)` is an ordinary wrapper
+//	  and reaches git just as surely
+//
+// # What it is loose about
+//
+// Statements are taken in source order and nothing here understands control
+// flow, so a taint inside an `if` that never runs still counts, and a
+// parameter shadowed by a `for args := range …` is still the parameter. Both
+// are in the direction of ACCEPTING a helper, which is the safe direction:
+// this check's purpose is to stop a wrong premise being stated confidently,
+// not to audit wrappers. A helper that would fool this has to launder its
+// arguments through something with no syntactic connection to them at all.
+func whyNotAGitWrapper(fn *ast.FuncDecl) string {
 	if fn.Body == nil {
+		return "has no body, so nothing in it reaches git"
+	}
+	// The variadic parameter. Without one, `git("ls-tree", "--name-only")`
+	// cannot be a command line: the arguments are going to named parameters
+	// that mean whatever the helper says they mean.
+	tainted := map[string]bool{}
+	if fn.Type.Params != nil && len(fn.Type.Params.List) > 0 {
+		last := fn.Type.Params.List[len(fn.Type.Params.List)-1]
+		if _, variadic := last.Type.(*ast.Ellipsis); variadic {
+			for _, n := range last.Names {
+				if n.Name != "_" {
+					tainted[n.Name] = true
+				}
+			}
+		}
+	}
+	if len(tainted) == 0 {
+		return "declares no variadic parameter, so a call's arguments are not " +
+			"a command line"
+	}
+
+	// Idents holding the *exec.Cmd that `exec.Command("git", …)` returned, so
+	// a later `cmd.Args = …` can be recognised as reaching the same process.
+	cmds := map[string]bool{}
+	sawGit := false
+	reaches := false
+
+	ast.Inspect(fn.Body, func(n ast.Node) bool {
+		if reaches {
+			return false
+		}
+		switch node := n.(type) {
+		case *ast.AssignStmt:
+			// `cmd.Args = append(cmd.Args, args...)` — the argument list of a
+			// command already built. Checked before the taint rule below,
+			// because the left-hand side here is a field and not a name.
+			for _, lhs := range node.Lhs {
+				sel, ok := lhs.(*ast.SelectorExpr)
+				if !ok {
+					continue
+				}
+				base, ok := sel.X.(*ast.Ident)
+				if !ok || !cmds[base.Name] {
+					continue
+				}
+				if mentionsAny(node.Rhs, tainted) {
+					reaches = true
+					return false
+				}
+			}
+			if mentionsAny(node.Rhs, tainted) {
+				for _, lhs := range node.Lhs {
+					if id, ok := lhs.(*ast.Ident); ok && id.Name != "_" {
+						tainted[id.Name] = true
+					}
+				}
+			}
+			// And which name holds the command, for the field rule above.
+			if len(node.Lhs) > 0 && len(node.Rhs) == 1 {
+				if isGitCommandCall(node.Rhs[0]) {
+					if id, ok := node.Lhs[0].(*ast.Ident); ok {
+						cmds[id.Name] = true
+					}
+				}
+			}
+		case *ast.CallExpr:
+			if !isGitCommandCall(node) {
+				return true
+			}
+			sawGit = true
+			// args[0] is the program name and is not part of the command line.
+			if mentionsAny(node.Args[1:], tainted) {
+				reaches = true
+				return false
+			}
+		}
+		return true
+	})
+
+	switch {
+	case reaches:
+		return ""
+	case !sawGit:
+		return "contains no exec.Command(\"git\", …)"
+	default:
+		return "runs git, and no argument of its own reaches that call"
+	}
+}
+
+// isGitCommandCall is whether an expression is `exec.Command("git", …)`.
+func isGitCommandCall(e ast.Expr) bool {
+	call, ok := e.(*ast.CallExpr)
+	if !ok || len(call.Args) == 0 {
 		return false
 	}
-	found := false
-	ast.Inspect(fn.Body, func(n ast.Node) bool {
-		call, ok := n.(*ast.CallExpr)
-		if !ok || len(call.Args) == 0 {
-			return true
-		}
-		sel, ok := call.Fun.(*ast.SelectorExpr)
-		if !ok || sel.Sel.Name != "Command" {
-			return true
-		}
-		pkg, ok := sel.X.(*ast.Ident)
-		if !ok || pkg.Name != "exec" || literal(call.Args[0]) != "git" {
-			return true
-		}
-		found = true
+	sel, ok := call.Fun.(*ast.SelectorExpr)
+	if !ok || sel.Sel.Name != "Command" {
 		return false
-	})
-	return found
+	}
+	pkg, ok := sel.X.(*ast.Ident)
+	return ok && pkg.Name == "exec" && literal(call.Args[0]) == "git"
+}
+
+// mentionsAny is whether any of these expressions names a tainted identifier.
+//
+// A selector's field is deliberately not looked at — only its base — so a
+// parameter called `Args` is not matched by every `cmd.Args` in the body. What
+// is being asked is which VALUE this expression is built out of, and the field
+// name is not one.
+func mentionsAny(exprs []ast.Expr, tainted map[string]bool) bool {
+	found := false
+	for _, e := range exprs {
+		ast.Inspect(e, func(n ast.Node) bool {
+			if found {
+				return false
+			}
+			switch node := n.(type) {
+			case *ast.SelectorExpr:
+				ast.Inspect(node.X, func(inner ast.Node) bool {
+					if id, ok := inner.(*ast.Ident); ok && tainted[id.Name] {
+						found = true
+					}
+					return !found
+				})
+				return false
+			case *ast.Ident:
+				if tainted[node.Name] {
+					found = true
+				}
+			}
+			return !found
+		})
+		if found {
+			return true
+		}
+	}
+	return false
 }
 
 // The subcommands whose whole output is paths.
@@ -363,4 +526,131 @@ func hasArg(args []string, want string) bool {
 		}
 	}
 	return false
+}
+
+// The wrapper premise answers for the shapes a wrapper can take, and for the
+// one it was tightened because of.
+//
+// # Why these are written here rather than found in the repository
+//
+// This repository declares exactly ONE `func git`, in internal/themehistory,
+// and it is the plain shape: a variadic parameter handed straight to
+// exec.Command. So every rule in whyNotAGitWrapper except the first is
+// exercised by nothing, and the rule that matters most — a helper that runs
+// git and does something else with its arguments — cannot be exercised by a
+// repository that does not contain one.
+//
+// That is the same position runsGit was in when it was only asking whether the
+// word `git` appeared in an exec.Command: the check passed, and what it passed
+// ON was one helper that happened to be right. A premise held up by there
+// being one instance of the thing it is about is the shape this whole session
+// is written against.
+func TestWhatCountsAsAGitWrapper(t *testing.T) {
+	cases := []struct {
+		name string
+		src  string
+		// The substring the reason must contain, or "" for a helper this
+		// check accepts.
+		want string
+	}{{
+		name: "the shape this repository has",
+		src: `func git(args ...string) (string, error) {
+			cmd := exec.Command("git", args...)
+			var out bytes.Buffer
+			cmd.Stdout = &out
+			return out.String(), cmd.Run()
+		}`,
+	}, {
+		name: "arguments joined onto a fixed prefix",
+		src: `func git(args ...string) (string, error) {
+			all := append([]string{"-C", root}, args...)
+			return exec.Command("git", all...).Output()
+		}`,
+	}, {
+		// A wrapper that builds the command first and fills its argument list
+		// after. The arguments reach git just as surely, and a check that
+		// rejected this would be rejecting a correct helper.
+		name: "arguments appended to cmd.Args",
+		src: `func git(args ...string) (string, error) {
+			cmd := exec.Command("git")
+			cmd.Args = append(cmd.Args, args...)
+			return "", cmd.Run()
+		}`,
+	}, {
+		// The item this test is here for. It runs git, so the old check was
+		// satisfied — and the arguments go somewhere else entirely, so every
+		// finding about this package would have been a command line assembled
+		// out of strings git never saw.
+		name: "runs git, and the arguments go elsewhere",
+		src: `func git(args ...string) (string, error) {
+			root, _ := exec.Command("git", "rev-parse", "--show-toplevel").Output()
+			return run(filepath.Join(string(root), args[0]), args[1:]...)
+		}`,
+		want: "no argument of its own reaches that call",
+	}, {
+		name: "does not run git at all",
+		src: `func git(args ...string) (string, error) {
+			return exec.Command("hg", args...).Output()
+		}`,
+		want: "contains no exec.Command",
+	}, {
+		// Without a variadic parameter a call's arguments are not a command
+		// line at all — they are whatever this signature says they are, and
+		// reading them in order as `git <a> <b>` is a guess about a helper
+		// this file has never seen.
+		name: "not variadic",
+		src: `func git(sub string, paths []string) (string, error) {
+			return exec.Command("git", append([]string{sub}, paths...)...).Output()
+		}`,
+		want: "declares no variadic parameter",
+	}, {
+		name: "declared, never defined",
+		src:  `func git(args ...string) (string, error)`,
+		want: "has no body",
+	}}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			fn := parseOneFunc(t, c.src)
+			got := whyNotAGitWrapper(fn)
+			switch {
+			case c.want == "" && got != "":
+				t.Errorf("this is a git wrapper and the check rejected it: %s\n\n"+
+					"A rejection here is reported against the package that "+
+					"declares the helper and stops nothing else — but it is a "+
+					"finding about a correct file, which is the one kind of "+
+					"noise a check nobody can weigh cannot afford.\n\n%s",
+					got, c.src)
+			case c.want != "" && !strings.Contains(got, c.want):
+				t.Errorf("expected a reason containing %q and got %q.\n\n%s",
+					c.want, got, c.src)
+			}
+		})
+	}
+}
+
+// parseOneFunc is the declaration in a fragment of Go source.
+//
+// Wrapped in a package clause and the imports the fragments use, because
+// go/parser wants a file and the fragments are written as bodies. Parsed with
+// SkipObjectResolution for the reason the walk above uses it: nothing here
+// resolves an identifier to a declaration, and the resolution pass is the
+// expensive half.
+func parseOneFunc(t *testing.T, src string) *ast.FuncDecl {
+	t.Helper()
+	const preamble = "package p\n\nimport (\n\t\"bytes\"\n\t\"os/exec\"\n\t" +
+		"\"path/filepath\"\n)\n\nvar root string\n\n" +
+		"func run(string, ...string) (string, error) { return \"\", nil }\n\n"
+	file, err := parser.ParseFile(token.NewFileSet(), "fragment.go",
+		preamble+src+"\n", parser.SkipObjectResolution)
+	if err != nil {
+		t.Fatalf("the fragment does not parse: %v\n\n%s", err, src)
+	}
+	for _, d := range file.Decls {
+		if fn, ok := d.(*ast.FuncDecl); ok && fn.Name.Name == "git" {
+			return fn
+		}
+	}
+	t.Fatalf("the fragment declares no `func git`:\n%s", src)
+	return nil
 }

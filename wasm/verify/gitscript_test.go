@@ -2,6 +2,7 @@ package main
 
 import (
 	"os"
+	"path"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -57,18 +58,39 @@ import (
 // Three things, and all three are in the direction of missing a call rather
 // than inventing one, except the last:
 //
-//	heredoc bodies are skipped   a heredoc is data being fed to a command —
-//	                             the one in this repository is a JSON literal
-//	                             — so `ssh host <<EOF … git ls-tree … EOF`
-//	                             would not be found
-//	line numbers inside a        reported as the line the quote OPENED on,
-//	quoted region                which is the line somebody looks at anyway
-//	a git in command position    if a string that is not a command happens to
-//	inside a string              begin with the word `git`, it is reported.
-//	                             The cost is a message naming a line
+//	a heredoc body is lexed     only when the command it feeds is one that RUNS
+//	only for some commands      its stdin — see shellFromStdin. `cat <<EOF` and
+//	                            `jq <<EOF` are data and are skipped, so a git
+//	                            call reached through a wrapper this file has
+//	                            not heard of is missed
+//	line numbers inside a       reported as the line the quote OPENED on,
+//	quoted region               which is the line somebody looks at anyway
+//	a git in command position   if a string that is not a command happens to
+//	inside a string             begin with the word `git`, it is reported.
+//	                            The cost is a message naming a line
 //
-// The first is why this is a companion to the Go check and not a replacement
-// for it: a parse tree has no equivalent hole.
+// # Why a heredoc is read at all, given that it started out as data
+//
+// It was skipped outright, on the grounds that a heredoc is input being fed to
+// a command and the one in this repository is a JSON literal. That is true of
+// that heredoc and not of the shape:
+//
+//	ssh host <<EOF        the body is a script, run by the remote shell
+//	git ls-tree --name-only HEAD
+//	EOF
+//
+// is a deploy script's ordinary spelling, and every path it lists comes back
+// C-quoted. The body is already delimited, so lexing it costs nothing but the
+// decision of WHEN — and skipping it always is one answer to that decision,
+// not the absence of one.
+//
+// The discriminator is the command, because that is what the question actually
+// is: does anything run this text. `cat <<EOF` and `jq <<EOF` are data, and
+// lexing a JSON body as shell would report every `"git …"` string in it. So a
+// body is lexed only for a command that runs its stdin, and the words are
+// scanned rather than just the first one — `docker exec -i c bash <<EOF` and
+// `sudo -u x ssh host <<EOF` are both the shape, and neither has the shell in
+// command position.
 func TestEveryGitListingInAScriptAsksForNulSeparatedPaths(t *testing.T) {
 	root := filepath.Join("..", "..")
 	_, considered, from, err := citingFiles(root)
@@ -346,12 +368,21 @@ func lexShell(src string, line, depth int) []scriptCommand {
 		case ' ', '\t', '\r':
 			flushWord()
 		case '<':
-			// A heredoc, whose body is data rather than commands — see the
-			// header for what that misses. The redirection itself ends nothing:
-			// `git ls-tree -z <<EOF` is still a git call, so only the BODY is
-			// skipped and the word assembly carries on.
+			// A heredoc. The redirection itself ends nothing: `git ls-tree -z
+			// <<EOF` is still a git call, so the word assembly carries on
+			// across the body either way.
+			//
+			// Whether the BODY is commands is a question about the command it
+			// is being fed to — see the header. `strings.Contains` is the same
+			// short-circuit the quoted case uses: a body with no `git` in it
+			// anywhere cannot produce a finding, and most bodies are that.
 			if i+1 < len(src) && src[i+1] == '<' {
-				i = skipHeredoc(src, i, &line)
+				body, bodyLine, next := heredocBody(src, i, &line)
+				if depth < 3 && strings.Contains(body, "git") &&
+					feedsAShell(words, word.String(), started) {
+					out = append(out, lexShell(body, bodyLine, depth+1)...)
+				}
+				i = next
 				break
 			}
 			flushWord()
@@ -386,13 +417,63 @@ func isAllDigits(s string) bool {
 	return true
 }
 
-// skipHeredoc advances past a heredoc body, returning the index of its last
-// consumed byte and advancing the line counter over it.
+// The commands that RUN their standard input rather than reading it as data.
+//
+// A heredoc fed to one of these is a script; a heredoc fed to anything else is
+// input. `ssh` is here because the remote end is a shell — that is what ssh
+// with no command IS — and it is the member of this list a repository is most
+// likely to grow a git call under.
+//
+// A word is matched on its BASE, so `/bin/sh` and `/usr/bin/ssh` are the same
+// answer as `sh` and `ssh`. Nothing here is matched loosely: `shell.py` and
+// `mysh` are not shells, and a list that guessed at them would lex a Python
+// heredoc as commands.
+var shellFromStdin = map[string]bool{
+	"ssh":  true,
+	"sh":   true,
+	"bash": true,
+	"zsh":  true,
+	"dash": true,
+	"ash":  true,
+	"ksh":  true,
+	"mksh": true,
+}
+
+// feedsAShell is whether the command being assembled runs its stdin.
+//
+// Every word is looked at rather than the first, because the shell is usually
+// not the command: `docker exec -i c bash`, `kubectl exec -i p -- sh`, `sudo
+// -u deploy ssh host`. That is loose in the direction of lexing a body that is
+// data — the cost of which is a finding naming a line somebody can look at —
+// and tight in the direction that matters, which is not missing a script.
+//
+// `partial` is the word still being assembled when the `<<` was reached, since
+// `ssh host<<EOF` is legal and leaves `host` unflushed.
+func feedsAShell(words []string, partial string, started bool) bool {
+	for _, w := range words {
+		if shellFromStdin[path.Base(w)] {
+			return true
+		}
+	}
+	return started && shellFromStdin[path.Base(partial)]
+}
+
+// heredocBody is a heredoc's body, the line that body starts on, and the index
+// of the last byte the redirection consumed. The line counter is advanced over
+// the whole thing.
+//
+// This was skipHeredoc, which returned only the third of those. The body is
+// returned now because the caller decides whether it is a script — see
+// feedsAShell — and the line is returned because a finding inside one has to
+// report its position in the enclosing FILE rather than in the body.
 //
 // The delimiter may be quoted (`<<'EOF'`) and `<<-` strips leading tabs from
 // the terminator, both of which are spelled here because both appear in
 // ordinary scripts and getting either wrong would swallow the rest of a file.
-func skipHeredoc(src string, at int, line *int) int {
+// The tab stripping is applied only when LOOKING FOR the terminator: the body
+// is handed back as it was written, and the shell lexer does not care about
+// leading whitespace.
+func heredocBody(src string, at int, line *int) (body string, bodyLine, end int) {
 	i := at + 2
 	dash := false
 	if i < len(src) && src[i] == '-' {
@@ -410,9 +491,9 @@ func skipHeredoc(src string, at int, line *int) int {
 		}
 		i++
 	}
-	end := delim.String()
-	if end == "" {
-		return at + 1
+	term := delim.String()
+	if term == "" {
+		return "", 0, at + 1
 	}
 	// The body starts on the line after the one the redirection is on, and the
 	// rest of THAT line is still shell — but a heredoc is nearly always last on
@@ -421,6 +502,8 @@ func skipHeredoc(src string, at int, line *int) int {
 	for i < len(src) && src[i] != '\n' {
 		i++
 	}
+	bodyLine = *line + 1
+	var out strings.Builder
 	for i < len(src) {
 		i++ // past the newline
 		*line++
@@ -429,17 +512,23 @@ func skipHeredoc(src string, at int, line *int) int {
 			i++
 		}
 		got := src[start:i]
+		looking := got
 		if dash {
-			got = strings.TrimLeft(got, "\t")
+			looking = strings.TrimLeft(got, "\t")
 		}
-		if got == end {
-			return i - 1
+		if looking == term {
+			return out.String(), bodyLine, i - 1
 		}
+		out.WriteString(got)
+		out.WriteByte('\n')
 		if i >= len(src) {
 			break
 		}
 	}
-	return len(src) - 1
+	// An unterminated heredoc. The body is whatever was collected, which is
+	// the rest of the file — a script in that state does not run, and the
+	// alternative is discarding a call this check exists to find.
+	return out.String(), bodyLine, len(src) - 1
 }
 
 // One string literal lifted out of JavaScript, with the line it opened on.
@@ -514,4 +603,168 @@ func jsStrings(src string) []jsString {
 		}
 	}
 	return out
+}
+
+// The lexer finds a git call in the shapes that hide one, and does not invent
+// one where there is none.
+//
+// # Why this exists beside the walk above
+//
+// The walk is over this repository, and this repository has exactly ONE git
+// call in a script. So the walk's whole reading is one invocation, and every
+// rule the lexer carries — command position, quoted recursion, redirection
+// targets, comments that are not comments, heredoc bodies — is exercised by a
+// file that happens not to contain the shape it is about. Those rules were
+// checked by hand, once, by editing scripts and reverting them; a rule checked
+// that way is a rule that was true on an afternoon.
+//
+// The cases below are the shapes themselves, so the lexer answers for them on
+// every run. That matters most for the two directions this file is loose in:
+// a shape it must NOT report (the seventeen mentions of `git` in a comment
+// block) and a shape it must (a body a remote shell runs).
+//
+// Each case names the invocations it expects, `git` dropped, as they would
+// appear in a finding.
+func TestTheScriptLexerFindsAGitCallInTheShapesThatHideIt(t *testing.T) {
+	cases := []struct {
+		name string
+		kind scriptLang
+		src  string
+		want []string
+	}{{
+		name: "a plain call",
+		kind: shellScript,
+		src:  "git ls-tree --name-only -z HEAD\n",
+		want: []string{"ls-tree --name-only -z HEAD"},
+	}, {
+		// The reason this is a lexer. session-doc-check.sh holds the word
+		// eighteen times and one of them is a call.
+		name: "the word in prose, above a call",
+		kind: shellScript,
+		src: "# git writes a path back C-quoted, so this git call asks git\n" +
+			"# for -z. Not every git listing does; this one does.\n" +
+			"git diff --cached --name-only -z\n",
+		want: []string{"diff --cached --name-only -z"},
+	}, {
+		name: "a mention that is an argument, not a command",
+		kind: shellScript,
+		src:  "grep git README.md\necho git ls-files\n",
+		want: nil,
+	}, {
+		name: "leading assignments and a prefix word",
+		kind: shellScript,
+		src:  "GIT_DIR=x env LC_ALL=C git ls-files -z\n",
+		want: []string{"ls-files -z"},
+	}, {
+		// The quoted recursion: the region is folded into the word AND lexed
+		// on its own, so the command inside `sh -c` is a command.
+		name: "a call inside sh -c",
+		kind: shellScript,
+		src:  "sh -c 'git ls-tree --name-only HEAD'\n",
+		want: []string{"ls-tree --name-only HEAD"},
+	}, {
+		// The finding that came out of a break-test: without the redirection
+		// rule the arguments read `diff --name-only 2 /dev/null`.
+		name: "a redirection is not an argument",
+		kind: shellScript,
+		src:  "git diff --name-only -z 2>/dev/null\n",
+		want: []string{"diff --name-only -z"},
+	}, {
+		name: "a call after a separator and inside a subshell",
+		kind: shellScript,
+		src:  "cd x && git status -z\n(git ls-files -z)\n",
+		want: []string{"status -z", "ls-files -z"},
+	}, {
+		// `#` is only a comment where a word can begin.
+		name: "a hash mid-word is not a comment",
+		kind: shellScript,
+		src:  "n=$#\ngit ls-files -z\n",
+		want: []string{"ls-files -z"},
+	}, {
+		// The item this case is here for. A heredoc fed to a shell is a
+		// script, and every path the call below lists comes back C-quoted.
+		name: "a heredoc a remote shell runs",
+		kind: shellScript,
+		src:  "ssh host <<EOF\ngit ls-tree --name-only HEAD\nEOF\necho done\n",
+		want: []string{"ls-tree --name-only HEAD"},
+	}, {
+		name: "a heredoc a shell runs, reached past other words",
+		kind: shellScript,
+		src:  "docker exec -i c bash <<'SH'\ngit ls-files\nSH\n",
+		want: []string{"ls-files"},
+	}, {
+		name: "a dash heredoc, terminator indented",
+		kind: shellScript,
+		src:  "\tssh host <<-EOF\n\tgit status --porcelain\n\tEOF\n",
+		want: []string{"status --porcelain"},
+	}, {
+		// The other half of the discriminator: a body nothing runs stays data,
+		// which is what keeps a JSON literal from being lexed as commands.
+		name: "a heredoc that is data",
+		kind: shellScript,
+		src:  "cat <<EOF > out.json\n{\"cmd\": \"git ls-tree --name-only\"}\nEOF\n",
+		want: nil,
+	}, {
+		// The line counting has to survive the body, or every finding after a
+		// heredoc names the wrong line. Checked by position below.
+		name: "a call after a data heredoc",
+		kind: shellScript,
+		src:  "cat <<EOF\nnot\na\nscript\nEOF\ngit ls-files -z\n",
+		want: []string{"ls-files -z"},
+	}, {
+		name: "a call from javascript, in a string",
+		kind: jsScript,
+		src:  "const out = execSync(\"git ls-tree --name-only HEAD\")\n",
+		want: []string{"ls-tree --name-only HEAD"},
+	}, {
+		name: "a mention from javascript, in a comment",
+		kind: jsScript,
+		src:  "// run git ls-tree --name-only here one day\nconst x = 1\n",
+		want: nil,
+	}}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			var got []string
+			for _, cmd := range scriptGitCommands(c.kind, c.src) {
+				got = append(got, strings.Join(cmd.args, " "))
+			}
+			if strings.Join(got, " | ") != strings.Join(c.want, " | ") {
+				t.Errorf("the lexer read %d invocation(s) and this shape has "+
+					"%d.\n\ngot:  %v\nwant: %v\n\nsource:\n%s",
+					len(got), len(c.want), got, c.want, c.src)
+			}
+		})
+	}
+}
+
+// A finding inside a heredoc names the line it is on in the FILE.
+//
+// Separate from the table above because that one compares argument lists and
+// this is about the other half of a finding. A check that reports the right
+// call at the wrong line sends a reader to a line that is fine, and a heredoc
+// is where the counting is easiest to get wrong: the body is consumed by a
+// function of its own, and every line of it has to reach the counter whether
+// the body was lexed or skipped.
+func TestALineNumberSurvivesAHeredoc(t *testing.T) {
+	// Line 1 is the `ssh`, 2 the call inside the body, 3 the terminator, 4 the
+	// echo, 5 the call after it.
+	const src = "ssh host <<EOF\ngit ls-tree --name-only HEAD\nEOF\necho done\ngit status\n"
+	got := scriptGitCommands(shellScript, src)
+	if len(got) != 2 {
+		t.Fatalf("expected the call inside the body and the one after it, got "+
+			"%d: %v", len(got), got)
+	}
+	if got[0].line != 2 {
+		t.Errorf("the call inside the heredoc body is reported at line %d and "+
+			"it is on line 2 of the file. A body is lexed as a fragment, so "+
+			"the line it STARTS on has to be carried in — see heredocBody's "+
+			"second return value.", got[0].line)
+	}
+	if got[1].line != 5 {
+		t.Errorf("the call after the heredoc is reported at line %d and it is "+
+			"on line 5. Every line of a body has to reach the counter, "+
+			"terminator included, whether or not the body was lexed.",
+			got[1].line)
+	}
 }

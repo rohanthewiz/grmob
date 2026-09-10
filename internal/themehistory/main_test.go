@@ -981,10 +981,19 @@ func TestTheFourOutcomesOfARereadingAreToldApart(t *testing.T) {
 // # Why this arm exists at all
 //
 // Every revision in the edit-size table is parsed out of text this reader
-// produced. It replaced one `git cat-file -p` per file — eighty-eight commits
-// times up to forty-nine files, around forty-four hundred processes, thirty-one
-// seconds — with a single `git cat-file --batch` the whole run talks to, which
-// is 1.8 seconds for the same sixteen rows.
+// produced. It replaced one `git cat-file -p` per file — 2906 of them over
+// this repository's eighty-eight commits, thirty-one seconds — with a single
+// `git cat-file --batch` the whole run talks to.
+//
+// The two numbers in that sentence used to be "around forty-four hundred
+// processes" and "1.8 seconds", and both were readings nothing re-took. The
+// fetch count is now counted by the reader itself, and the wall clock is in
+// themehistoryTimingsTakenOn.wholeRun, taken by
+// TestTheWholeWalkGoesRoundOneBatchProcess: 1.49–1.61s on the machine that
+// record names. The 1.8s was from an earlier session and an earlier shape of
+// this package, and it is left out here rather than reconciled — an
+// unattributed number and an attributed one are not two readings that can be
+// held against each other, which is what both timings records exist to say.
 //
 // What that trades is a process boundary for a PARSE. `-p` hands back a
 // process's entire stdout and cannot return the wrong thing; `--batch` hands

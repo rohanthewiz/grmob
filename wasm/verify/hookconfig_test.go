@@ -1,13 +1,18 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
+	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"sort"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 )
 
 // .claude/settings.json is a shape Claude Code will actually load.
@@ -84,8 +89,8 @@ func TestTheHookConfigUsesOnlyKeysTheSchemaHas(t *testing.T) {
 			t.Errorf("hooks.%s is not an event Claude Code fires. The events "+
 				"are: %s.\n\nAn unknown event name is not an error anywhere — "+
 				"the object is simply never matched — so the hook under it "+
-				"never runs and nothing says so.",
-				event, strings.Join(keysOf(hookEvents), ", "))
+				"never runs and nothing says so.\n\n%s",
+				event, strings.Join(keysOf(hookEvents), ", "), hookSchemaNote())
 			continue
 		}
 		list, ok := v.([]any)
@@ -144,8 +149,9 @@ func TestTheHookConfigUsesOnlyKeysTheSchemaHas(t *testing.T) {
 							"command out of its stdin payload now: the "+
 							"matcher can only say \"a Bash call\", so a "+
 							"narrower question has to be asked inside the "+
-							"script.", event, i, j, k,
-							strings.Join(keysOf(hookEntryKeys), ", "))
+							"script.\n\n%s", event, i, j, k,
+							strings.Join(keysOf(hookEntryKeys), ", "),
+							hookSchemaNote())
 					}
 				}
 				checkHookEntry(t, root, event, i, j, hook)
@@ -206,8 +212,9 @@ func checkHookEntry(t *testing.T, root, event string, i, j int, hook map[string]
 	t.Helper()
 	typ, _ := hook["type"].(string)
 	if !hookTypes[typ] {
-		t.Errorf("hooks.%s[%d].hooks[%d] has type %q; the types are: %s.",
-			event, i, j, typ, strings.Join(keysOf(hookTypes), ", "))
+		t.Errorf("hooks.%s[%d].hooks[%d] has type %q; the types are: %s.\n\n%s",
+			event, i, j, typ, strings.Join(keysOf(hookTypes), ", "),
+			hookSchemaNote())
 		return
 	}
 	if typ != "command" {
@@ -263,6 +270,11 @@ func checkHookEntry(t *testing.T, root, event string, i, j int, hook map[string]
 // Listed rather than pattern-matched because the failure mode of a misspelled
 // event is silence: the object under it is never matched and the hook simply
 // never runs.
+//
+// This list and the three below it are a reading of ONE build of Claude Code,
+// named in hookSchemaReadFrom. Anything added here is added with that record:
+// a table updated against a newer release and left claiming the old version is
+// a snapshot that has quietly stopped being one.
 var hookEvents = map[string]bool{
 	"PermissionRequest":  true,
 	"PreToolUse":         true,
@@ -300,6 +312,216 @@ var hookTypes = map[string]bool{
 	"prompt":  true,
 	"agent":   true,
 }
+
+// Which Claude Code the four key tables above are a reading of.
+//
+// # Why a version and not just a list
+//
+// hookEvents, hookGroupKeys, hookEntryKeys and hookTypes were copied out of
+// the hooks reference embedded in one build of Claude Code. That makes them a
+// fact about THAT BUILD, sitting in a repository which will outlive it, and
+// the direction they fail in is the bad one: a key a later release ADDS is a
+// key this file has never heard of, so a CORRECT config fails a check whose
+// whole purpose is to catch an incorrect one.
+//
+// Nothing here said which build. That is the same omission verifyTimingsTakenOn
+// and themehistoryTimingsTakenOn exist to end for a wall clock, and it is the
+// same omission for the same reason: a number with no machine attached and a
+// list with no version attached are both readings presented as facts, and a
+// reader holding a disagreement cannot tell a regression from a different
+// computer, or a typo from a release.
+//
+// # What is done about it, since the direction cannot be fixed
+//
+// An unknown key still fails, and should: this repository's settings.json is
+// written by hand, and `if` sat in it for a whole session doing nothing. What
+// changes is that the failure now arrives with the two facts that tell the
+// reader WHICH of the two things it is — the version these tables came from,
+// and the version of the Claude Code standing on this machine. See
+// hookSchemaNote, which every message in this file whose authority is a table
+// ends with.
+//
+// The version difference itself is reported and never asserted, for the reason
+// the timings records give about a machine: asserting it would fail on every
+// computer whose Claude Code has moved on, which is every computer eventually.
+//
+// # Re-reading it
+//
+// The reference is inside the binary rather than on disk. The reliable way to
+// re-read it is to ask a Claude Code session for its hooks reference and take
+// four things out of the answer: the event names, the keys of a matcher group,
+// the keys of one hook entry, and the hook types. Nothing else in that
+// document is used here.
+//
+//	claude --version        the build the answer is coming from
+var hookSchemaReadFrom = struct {
+	// The build the tables were read out of.
+	claudeVersion string
+	// When, so a reader can weigh the drift without knowing this repository's
+	// commit dates. Parsed by the arm below, so a placeholder is a failure.
+	readOn string
+	// Where in that build, for whoever re-reads it.
+	source string
+}{
+	claudeVersion: "2.1.267",
+	readOn:        "2026-09-10",
+	source:        "the hooks reference embedded in the Claude Code binary",
+}
+
+// The version of the Claude Code on this machine, or "" if there is none to
+// ask.
+//
+// # Why this runs another program, in a package that says it will not
+//
+// The header of this file draws a line at launching an agent: proving the hook
+// actually fires needs a fresh session, a staged file and a commit to be
+// about, and that is not a test's business. `claude --version` is on the other
+// side of that line — it prints one line and exits, starts no session, reads
+// no file of this repository's and changes nothing. It is worth the fork for
+// the one sentence it produces, which is the difference between a failure a
+// reader can act on and one they have to go and investigate.
+//
+// Computed once, because every failure message in this file wants it and a
+// process per finding would be a fork per line. A missing binary is an ANSWER
+// here rather than a failure — CI machines have no Claude Code and the config
+// check is still worth running there — and the deadline is because this is
+// another program and nothing here knows what it will do.
+var installedClaude = sync.OnceValue(func() string {
+	bin, err := exec.LookPath("claude")
+	if err != nil {
+		return ""
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	out, err := exec.CommandContext(ctx, bin, "--version").Output()
+	if err != nil {
+		return ""
+	}
+	// `2.1.267 (Claude Code)`. Only the first field is taken, so a change to
+	// what follows it is not read as a change of version.
+	fields := strings.Fields(string(out))
+	if len(fields) == 0 {
+		return ""
+	}
+	return fields[0]
+})
+
+// hookSchemaNote is the sentence that goes under any finding whose authority
+// is one of the four tables in this file.
+//
+// Three shapes, and the middle one is the point: when this machine's Claude
+// Code IS the build the tables came from, an unknown key cannot be a release
+// that moved, so the finding is unambiguous and says so.
+func hookSchemaNote() string {
+	rec := hookSchemaReadFrom
+	switch got := installedClaude(); {
+	case got == "":
+		return fmt.Sprintf("The key tables in this check are a reading of %s, "+
+			"taken from Claude Code %s on %s. There is no `claude` on this "+
+			"machine to compare against, so this finding is either a mistake "+
+			"in .claude/settings.json or a key a release after %s added. Ask a "+
+			"Claude Code session for its hooks reference before changing the "+
+			"file — and if the schema has grown, update hookSchemaReadFrom in "+
+			"the same commit as the table.",
+			rec.source, rec.claudeVersion, rec.readOn, rec.claudeVersion)
+	case got == rec.claudeVersion:
+		return fmt.Sprintf("This is not a version difference: the key tables "+
+			"in this check were read from Claude Code %s (%s, %s) and the "+
+			"`claude` on this machine is %s. The schema has not moved under "+
+			"this file, so the finding is about the file.",
+			rec.claudeVersion, rec.source, rec.readOn, got)
+	default:
+		return fmt.Sprintf("Check the version before changing the file. The "+
+			"key tables in this check were read from Claude Code %s (%s, %s) "+
+			"and the `claude` on this machine is %s, so a key they have never "+
+			"heard of may be one a release added rather than a mistake — which "+
+			"is this check's bad direction: it fails a CORRECT config. Ask a "+
+			"session for its hooks reference; if the key is in it, add it to "+
+			"the table and move hookSchemaReadFrom to %s in the same commit.",
+			rec.claudeVersion, rec.source, rec.readOn, got, got)
+	}
+}
+
+// The key tables say which build of Claude Code they are a reading of, and
+// this run says whether it is standing on that build.
+//
+// # What is asserted and what is only reported
+//
+// Asserted: the record is filled in and its two machine-readable fields are
+// the shapes they claim to be — a version made of digits and dots, and a date
+// that parses. A placeholder in either is a record that attributes the tables
+// to nothing, which is the state this record exists to end.
+//
+// Reported: everything about the machine. A newer Claude Code here is the
+// ordinary case and not a finding, and an arm over it would fail on every
+// computer whose install has moved on. What is worth having is the SENTENCE,
+// and the place it is worth having it is under a failure — which is
+// hookSchemaNote's job, not this test's. This one exists so the fact is on the
+// record on a green run too, where somebody reading -v output can see how old
+// the snapshot has become.
+func TestTheHookSchemaTablesSayWhichClaudeCodeTheyCameFrom(t *testing.T) {
+	rec := hookSchemaReadFrom
+	if rec.claudeVersion == "" || rec.readOn == "" || rec.source == "" {
+		t.Fatalf("hookSchemaReadFrom has an empty field (%+v).\n\n"+
+			"The four key tables in this file are a reading of one build of "+
+			"Claude Code, and a record with a hole in it attributes them to "+
+			"nothing — which is the state where an unknown key cannot be told "+
+			"apart from a release that added one.", rec)
+	}
+	// A version, and not a word somebody left behind. `latest`, `unknown` and
+	// an empty-looking string all pass a non-empty test and all attribute the
+	// tables to nothing.
+	if !versionish.MatchString(rec.claudeVersion) {
+		t.Errorf("hookSchemaReadFrom.claudeVersion is %q, which is not a "+
+			"version. It is the build the key tables were read out of, and it "+
+			"is compared against `claude --version` — a word here makes both "+
+			"the comparison and the failure messages meaningless.",
+			rec.claudeVersion)
+	}
+	if _, err := time.Parse("2006-01-02", rec.readOn); err != nil {
+		t.Errorf("hookSchemaReadFrom.readOn is %q, which is not a date: %v.\n\n"+
+			"It is how far a reader can tell the snapshot has drifted without "+
+			"going through this repository's commit dates.", rec.readOn, err)
+	}
+	// The tables reaching anything. An emptied table makes every key in the
+	// settings file unknown, so the check would fail loudly — but it would
+	// fail naming the file, and the cause would be here.
+	if len(hookEvents) == 0 || len(hookGroupKeys) == 0 ||
+		len(hookEntryKeys) == 0 || len(hookTypes) == 0 {
+		t.Fatalf("a key table is empty (%d event(s), %d group key(s), %d entry "+
+			"key(s), %d type(s)). Every key in .claude/settings.json would be "+
+			"reported as one the schema does not have, naming the file for a "+
+			"fault that is in this one.", len(hookEvents), len(hookGroupKeys),
+			len(hookEntryKeys), len(hookTypes))
+	}
+
+	switch got := installedClaude(); {
+	case got == "":
+		t.Logf("the key tables in this file are a reading of %s, taken from "+
+			"Claude Code %s on %s. There is no `claude` on this machine, so "+
+			"nothing here can say how far that snapshot has drifted.",
+			rec.source, rec.claudeVersion, rec.readOn)
+	case got == rec.claudeVersion:
+		t.Logf("this run is on the build the key tables came from: Claude Code "+
+			"%s, read from %s on %s. An unknown key found by this file today "+
+			"is a fault in .claude/settings.json and cannot be a release that "+
+			"moved.", got, rec.source, rec.readOn)
+	default:
+		t.Logf("the key tables in this file were read from Claude Code %s (%s, "+
+			"%s) and this machine runs %s.\n\n"+
+			"That is not a failure and this check does not make it one — a "+
+			"newer install is the ordinary case, and an arm over it would fail "+
+			"on every computer whose Claude Code has moved on. It is recorded "+
+			"because this check's bad direction is a key a later release added "+
+			"failing a config that is correct, and the drift is how a reader "+
+			"weighs a finding when one arrives.",
+			rec.claudeVersion, rec.source, rec.readOn, got)
+	}
+}
+
+// A version and not a word: digits and dots, with an optional pre-release tail
+// that a nightly or a release candidate would carry.
+var versionish = regexp.MustCompile(`^[0-9]+(\.[0-9]+)*([-+][0-9A-Za-z.-]+)?$`)
 
 // keysOf is a map's keys, sorted, so a failure message reads the same on every
 // run and can be diffed.

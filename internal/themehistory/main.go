@@ -94,6 +94,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/rohanthewiz/grmob/internal/themeleaves"
@@ -566,10 +567,26 @@ func wrap(names []string, width int, indent string) string {
 //
 // It was, and it cost thirty-one seconds. Eighty-eight commits touch core/ and
 // each one is read with one `ls-tree` plus one `cat-file` per non-test .go
-// file in it — around forty-four hundred git processes for a table of sixteen
-// rows. Almost none of that time is git doing anything: it is fork, exec, the
-// repository being opened, and the process being torn down, forty-four hundred
-// times.
+// file in it — thousands of git processes for a table of sixteen rows. Almost
+// none of that time is git doing anything: it is fork, exec, the repository
+// being opened, and the process being torn down, once per file.
+//
+// "Around forty-four hundred" stood here for several sessions and it was a
+// BOUND arithmetic away from the source — eighty-eight commits times up to
+// forty-nine files — written in the position a count goes. The walk actually
+// fetches 2906 objects, which TestTheWholeWalkGoesRoundOneBatchProcess reports
+// on every run because the reader counts them; the difference is every
+// revision that held fewer than the largest core/ ever did. The bound was not
+// wrong about the order and it was not a measurement, and this comment could
+// not tell the two apart.
+//
+// The thirty-one seconds fared better. It is the one number here that cannot
+// be re-taken by running anything — the code that cost it is gone — but the
+// arm above was break-tested by making blob retire and replace its reader on
+// every fetch, which is one process per object, and that run took 31.8s on the
+// machine themehistoryTimingsTakenOn names. A figure carried in a comment
+// since the session that removed the shape it measures, standing up to being
+// re-created on purpose.
 //
 //	before   ls-tree ── cat-file ── cat-file ── cat-file ── ...   per revision
 //	after    ls-tree ── ┐
@@ -577,8 +594,9 @@ func wrap(names []string, width int, indent string) string {
 //
 // `--batch` is git's answer to exactly this: one process reads object names on
 // its stdin and writes each object to its stdout, for as long as the pipe is
-// open. The whole run then costs 89 processes rather than 4400, and the reading
-// is byte-for-byte the one it was — `--batch` and `-p` both write a blob's
+// open. The whole run then costs 90 processes — one `log`, one `ls-tree` per
+// revision, one `cat-file --batch` — rather than one per object, and the
+// reading is byte-for-byte the one it was — `--batch` and `-p` both write a blob's
 // contents raw, with no filters and no line-ending conversion, which is what
 // makes this a change in how the text is fetched and not in what it says.
 //
@@ -640,8 +658,10 @@ func blob(rev, path string) (string, error) {
 	}
 	// Read before the lock rather than inside newBatchReader, so the check
 	// below and the process's own Dir are the same string. One getcwd per
-	// fetch is a syscall against a pipe round trip; at the ~4400 fetches a
-	// whole run takes it is not measurable.
+	// fetch is a syscall against a pipe round trip; at the 2906 fetches a
+	// whole run over this repository takes — counted by batchReader.reads and
+	// reported by TestTheWholeWalkGoesRoundOneBatchProcess — it is not
+	// measurable.
 	wd, err := os.Getwd()
 	if err != nil {
 		return "", fmt.Errorf("git cat-file --batch: the working directory "+
@@ -721,7 +741,36 @@ type batchReader struct {
 	// Why this reader is finished, or nil. Set by read on any error but
 	// errMissing; once set, nothing is ever read out of this reader again.
 	dead error
+	// How many requests have gone round this process.
+	//
+	// # Why a counter is in a struct that is otherwise all mechanism
+	//
+	// The whole argument for `--batch` is a count: eighty-eight commits times
+	// up to forty-nine files is around forty-four hundred objects, and the
+	// point of the batch is that they cost ONE process instead of that many.
+	// Every part of that sentence was a number in a comment.
+	//
+	// This is the part a program can answer. With it,
+	// TestTheWholeWalkGoesRoundOneBatchProcess can say that a real run fetched
+	// n objects and started one process to do it — which is the claim, stated
+	// about the run that just happened rather than about a run somebody
+	// remembers. Not guarded: this program is single-threaded and every read
+	// goes through blobsMu; see the note on that mutex.
+	reads int
 }
+
+// How many `git cat-file --batch` processes this program has started.
+//
+// The other half of the count above, and it has to live outside the reader
+// because what it is counting is readers: a batch that desynchronises is
+// retired and REPLACED (see blob), so a per-reader field would be reset by the
+// very event worth noticing. One for a whole run is the claim; two is a run
+// that hit a desync and carried on, which is correct behaviour and a different
+// performance story.
+//
+// Atomic rather than plain because this one is written by newBatchReader,
+// which the tests call directly and outside blobsMu.
+var batchesStarted atomic.Int64
 
 func newBatchReader(dir string) (*batchReader, error) {
 	cmd := exec.Command("git", "cat-file", "--batch")
@@ -746,6 +795,9 @@ func newBatchReader(dir string) (*batchReader, error) {
 	if err := cmd.Start(); err != nil {
 		return nil, fmt.Errorf("git cat-file --batch: %w", err)
 	}
+	// Counted after Start, so what this counts is processes that exist rather
+	// than attempts to make one.
+	batchesStarted.Add(1)
 	return &batchReader{cmd: cmd, in: in, pipe: out, out: bufio.NewReader(out),
 		dir: dir}, nil
 }
@@ -851,6 +903,10 @@ func (b *batchReader) retire() {
 // a table assembled out of misaligned bytes.
 func (b *batchReader) read(rev, path string) (string, error) {
 	name := rev + ":" + path
+	// Counted before the write, so a request that failed on the way out is
+	// still a request this process was asked for — the count is of what the
+	// run demanded, which is what the batch's cost argument is about.
+	b.reads++
 	if _, err := io.WriteString(b.in, name+"\n"); err != nil {
 		// The request may have been written in part. Whether git saw a whole
 		// name, half of one, or nothing at all is not knowable from here, so
