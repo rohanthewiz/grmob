@@ -81,6 +81,19 @@ var verifyTimingsTakenOn = struct {
 	// numbers in the prose — those are pieces of it, taken at different times
 	// — and the one number a reader is most likely to be holding this record
 	// up against, because it is the one they get by running the tests.
+	//
+	// It moved 2.49–2.59s → 2.70–2.80s when two repository-wide censuses were
+	// added: TestTheDottedVersionParsersAreTheOnesTheReasonCovers and
+	// TestTheShortLeversAreTheOnesThisRepositoryHasDecidedOn, each of which
+	// parses every Go file in the tree and reports 0.18s of doing it.
+	//
+	// Two arms at 0.18s against a total that moved 0.21s do not add up, and
+	// the gap is not explained here for the same reason the 60% one in the
+	// other record is not: these are two readings taken in two sessions, and a
+	// difference of that size is what a wall clock is worth. There are now
+	// three of these walks in this package — the third is
+	// TestEveryTimingsRecordIsTheSameShape — and each is 0.18s whether it runs
+	// alone or beside the others, which was measured rather than assumed.
 	wholeFile string
 	// TestHowWideTheNarrowerFoldIsAndWhatHoldsTheGap end to end, which is what
 	// inkglyph_test.go's `128ms` sits inside.
@@ -122,7 +135,7 @@ var verifyTimingsTakenOn = struct {
 	goarch:    "arm64",
 	goVersion: "go1.26.1",
 	cores:     8,
-	wholeFile: "2.49–2.59s over seven runs",
+	wholeFile: "2.70–2.80s over seven runs",
 	foldWalk:  "0.40–0.52s over seven runs, node v22.12.0",
 }
 

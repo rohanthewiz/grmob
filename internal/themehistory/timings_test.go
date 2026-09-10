@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -65,22 +66,31 @@ var themehistoryTimingsTakenOn = struct {
 	//
 	// Everything on top of that IS accounted for, and all of it is one arm:
 	// TestTheWholeWalkGoesRoundOneBatchProcess runs the program over the whole
-	// history (the 1.49–1.61s in wholeRun below) and enumerates the objects it
-	// expects to be fetched first, which is one `ls-tree` per commit and
-	// another ~0.86s. So this figure is roughly the old one plus that arm; the
-	// paragraph above is about a gap with no such explanation, and the two are
-	// worth keeping apart.
+	// history (the 1.52–1.60s in wholeRun below) and enumerates the objects it
+	// expects to be fetched first, which is one `ls-tree` per commit. So this
+	// figure is roughly the old one plus that arm; the paragraph above is
+	// about a gap with no such explanation, and the two are worth keeping
+	// apart.
 	//
-	// What that arm costs, since it is the one thing here anybody would want
-	// to switch off — and `-short` is the switch:
+	// That enumeration was 0.86s of it and is now 0.22s: it runs in a bounded
+	// pool, which is the one concurrent thing in this package and is explained
+	// at enumWorkers. The whole figure moved 3.77–3.93s → 3.01–3.07s for that
+	// change and nothing else.
+	//
+	// What the arm costs, since it is the one thing here anybody would want to
+	// switch off — and `-short` is the switch:
 	//
 	//	              default        -short
-	//	plain         3.77–3.93s     1.31–1.40s
-	//	-race         7.36–7.60s     2.53–2.55s
+	//	plain         3.01–3.07s     1.20–1.24s
+	//	-race         6.46–6.57s     2.38–2.40s
 	//
 	// Three runs each for the three that are not this field. The arm is around
-	// 2.5s of a plain run and around 4.8s of a -race one, which is the price
+	// 1.8s of a plain run and around 4.1s of a -race one, which is the price
 	// of the only test here that runs the real program over the real history.
+	//
+	// It is also the repository's only `-short` lever, which is a decision
+	// rather than a coincidence: wasm/verify/shortlever_test.go holds the set
+	// of them to one and says what a short run stops asserting.
 	wholePackage string
 	// The command itself over this repository's history — the walk the batch
 	// reader exists to make affordable, and the number the batch's whole cost
@@ -137,6 +147,19 @@ var themehistoryTimingsTakenOn = struct {
 	// wholeRun above, which also pays 88 `ls-tree` processes and every
 	// revision's parse. The two are not readings of the same thing and the
 	// ratio below is the one that belongs beside blob's argument.
+	//
+	// # The third figure, which is here so that nobody has to subtract
+	//
+	// wholeRun and the batched half of this field were the one number pair in
+	// either record that invited a subtraction, and a reader who did it got a
+	// figure nobody had measured. So the missing term is taken here too: the
+	// 88 `ls-tree` processes, run SERIALLY, which is what the walk itself pays
+	// for trees. With it, wholeRun's 1.52–1.60s is 0.40s of fetches plus
+	// 0.90–0.95s of trees plus about 0.25s of parse, diff and printing — and
+	// that last one is named in the log as a REMAINDER rather than printed as
+	// though it had been timed. Three readings of one machine taken in
+	// different runs do not decompose exactly, and saying so is the point of
+	// this record.
 	perObjectRun string
 	// One healthy retire: close stdin, drain stdout, Wait. See
 	// TestRetiringAHealthyGitLeavesBeforeTheDeadline, which takes this, and
@@ -154,11 +177,13 @@ var themehistoryTimingsTakenOn = struct {
 	goarch:       "arm64",
 	goVersion:    "go1.26.1",
 	cores:        8,
-	wholePackage: "3.77–3.93s over seven runs",
-	wholeRun:     "1.49–1.61s over seven runs, in process, 2906 objects fetched",
-	perObjectRun: "30.14–30.42s over three runs, 2906 objects, one process " +
-		"each, against 399–401ms for the same fetches batched — 75–76×",
-	batchRetire: "0.18–0.30ms over four sets of seven",
+	wholePackage: "3.01–3.07s over seven runs",
+	wholeRun: "1.52–1.60s over seven runs, in process, 2906 objects fetched, " +
+		"the expectation enumerated alongside in 0.22s over 8 workers",
+	perObjectRun: "30.36–30.39s over three runs, 2906 objects, one process " +
+		"each, against 395–400ms for the same fetches batched — 76×; the 88 " +
+		"`ls-tree` the walk pays serially, 0.90–0.95s",
+	batchRetire: "0.18–0.29ms over four sets of seven",
 }
 
 // This run says whether it is standing on the machine the timings came from.
@@ -345,6 +370,130 @@ func TestRetiringAHealthyGitLeavesBeforeTheDeadline(t *testing.T) {
 // the walk the figure is about.
 const wholeWalkCommitsFloor = 50
 
+// How many `git ls-tree` processes the enumeration below runs at once.
+//
+// # Why this is the one concurrent thing in this package
+//
+// The whole-walk arm holds the batch reader's fetch count to an EQUALITY
+// against what themeSourcesAt names across the history, and that expectation
+// is one `git ls-tree` per commit — 88 processes over this repository, 0.83s
+// serial, which was 35% of the arm's wall clock and the largest single thing
+// `-short` skips. Almost none of that is git doing anything: it is fork, exec,
+// the repository being opened and the process being torn down, which is the
+// same cost blob's comment is an argument about, once per commit instead of
+// once per object.
+//
+// The listings are independent of each other and of everything else here —
+// themeSourcesAt calls treePaths calls git(), which is an exec.Command with no
+// shared state behind it — so they go out in a bounded pool. 0.83s becomes
+// 0.22s on the eight cores themehistoryTimingsTakenOn names, which puts the
+// expectation at a seventh of the walk it is checking rather than a third.
+//
+// Bounded rather than one goroutine per commit, because the bound is what
+// makes this a fixed number of git processes at a time on any machine and any
+// history: a repository with a thousand commits touching core/ would otherwise
+// fork a thousand. Capped at eight as well as by the core count, since past
+// that the machine is scheduling git processes rather than running them.
+//
+// # And what this does NOT make parallel
+//
+// blob's mutex comment says this program is single-threaded, and the
+// os.Stdout redirect in the whole-walk arm is safe only because nothing in
+// this package is parallel. Both still hold: this pool runs BEFORE the walk,
+// touches no package state — not blobs, not batchesStarted, not os.Stdout —
+// and is joined before anything is measured. What is concurrent here is 88 git
+// processes, which is a fact about the machine rather than about this program.
+var enumWorkers = min(runtime.NumCPU(), 8)
+
+// themeObject is one fetch the walk will make: a path, at a revision.
+type themeObject struct{ rev, path string }
+
+// themeSourcesAcross is every object the walk names over these commits, in
+// commit order, and what enumerating them cost.
+//
+// # Why both arms take their expectation from here
+//
+// This is the walk's own filter — themeSourcesAt, the function leavesAt calls
+// — asked across a history instead of at one revision. Neither arm spells the
+// `.go` rule or the directory rule again: a test carrying its own copy of them
+// would be asserting one copy against another, and both can be wrong together.
+// That argument is written down in themeSourcesAt's header, which is where it
+// belongs; this is the one place either arm reaches it from.
+//
+// # Why `workers` is a parameter, when one of the two callers always passes 1
+//
+// The two arms want different things out of the same enumeration:
+//
+//	the whole-walk arm    enumWorkers. It pays this on every green run to have
+//	                      an expectation rather than a constant, so it wants it
+//	                      cheap and does not care what it cost
+//	the per-object arm    1. The SERIAL figure is the ls-tree half of what a
+//	                      walk spends — the term wholeRun's decomposition needs
+//	                      MEASURED rather than subtracted, and a parallel
+//	                      reading of it would not be that number
+//
+// Results are written into a slice indexed by commit and read back in order,
+// so eight workers name the same objects in the same order as one. Nothing
+// here touches package state; see enumWorkers.
+func themeSourcesAcross(t *testing.T, shas []string, workers int) ([]themeObject, time.Duration) {
+	t.Helper()
+	if workers < 1 {
+		workers = 1
+	}
+	// Indexed by commit rather than appended to, which is what keeps the order
+	// independent of how many workers there were and makes the writes
+	// disjoint: two goroutines never touch one element.
+	per := make([][]string, len(shas))
+	errs := make([]error, len(shas))
+
+	start := time.Now()
+	work := make(chan int)
+	var wg sync.WaitGroup
+	for w := 0; w < workers; w++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for i := range work {
+				per[i], _, errs[i] = themeSourcesAt(shas[i])
+			}
+		}()
+	}
+	for i := range shas {
+		work <- i
+	}
+	close(work)
+	wg.Wait()
+	took := time.Since(start)
+
+	// Errors are reported after the join and in commit order, so a failure
+	// names the same revision whatever order the workers finished in.
+	var objects []themeObject
+	for i, sha := range shas {
+		if errs[i] != nil {
+			t.Fatalf("enumerating %s/ at %s: %v", themePkg, sha[:8], errs[i])
+		}
+		for _, p := range per[i] {
+			objects = append(objects, themeObject{rev: sha, path: p})
+		}
+	}
+
+	// The enumeration reaching the history. Every revision in this repository
+	// holds several sources directly in core/, so fewer objects than commits
+	// means this function and not the walk is the thing that has stopped
+	// working — and an expectation of nought would make the equality in the
+	// whole-walk arm pass for a walk that fetched nothing at all.
+	if len(objects) < len(shas) {
+		t.Fatalf("the enumeration names %d object(s) across %d commit(s), and "+
+			"a revision that touched %s/ holds at least one source in it.\n\n"+
+			"Both arms here take their expectation from this function, so an "+
+			"enumeration that has stopped reading the history would make those "+
+			"assertions pass over nothing. themeSourcesAt is the walk's own "+
+			"filter; if it now declines everything, the table a run prints is "+
+			"empty too.", len(objects), len(shas), themePkg)
+	}
+	return objects, took
+}
+
 // batchesStartedSince is how many `git cat-file --batch` processes have started
 // since it was called.
 //
@@ -418,6 +567,34 @@ func batchesStartedSince() func() int64 {
 // costs one `git ls-tree` per commit, which is the price of the number not
 // being a constant.
 //
+// # Whether that price buys anything, which was an open question
+//
+// The equality costs 88 `git ls-tree` processes to assert a number a floor
+// scaled off HEAD would have got within a few of for one process. What settles
+// it is whether an OFF-BY-ONE in the fetch path is a failure mode anybody
+// expects — and it is, because this program has one written into it:
+//
+//	a path with a newline   blob sends it to a `cat-file -p` of its own,
+//	                        because the batch protocol is line-terminated and
+//	                        asking anyway DESYNCHRONISES the stream rather than
+//	                        failing. That fetch never reaches batchReader.read,
+//	                        so `reads` comes back short by exactly one per such
+//	                        path per revision — with one process started, one
+//	                        live reader, and a correct table printed
+//	a desync mid-run        the reader is retired and replaced, so `reads`
+//	                        starts again from nought on the new one. Caught by
+//	                        the process count above as well as by this
+//
+// The first is the case only this equality sees: every other assertion in this
+// arm passes through it unchanged, and a floor of a thousand would never
+// notice a run that quietly stopped batching a file. Nothing in this
+// repository has such a path today, which is the point — the arm is what says
+// so on each run, rather than a sentence saying nobody has added one.
+//
+// So the trade is made, and the price is paid down rather than accepted: the
+// enumeration runs in a bounded pool (see enumWorkers), which takes it from
+// 0.83s to 0.22s and from 35% of this arm to about a seventh of it.
+//
 // # And what is only recorded
 //
 // The wall clock, for the reason both timings records give: an assertion over
@@ -441,15 +618,26 @@ func batchesStartedSince() func() int64 {
 // processes.
 //
 // The lever for anybody who does not want to pay it is `-short`, which skips
-// this and nothing else in the package. Not skipped by default, because a
+// this and nothing else in the repository. Not skipped by default, because a
 // claim nobody checks on a green run is the state this arm was written to end.
+//
+// That lever is the only one here, which is a fact about the repository rather
+// than about this file and is held to by an arm of its own:
+// wasm/verify/shortlever_test.go finds every testing.Short() there is, holds
+// each to skipping rather than shrinking, and holds the SET of them to the
+// convention this repository has decided on — one, with a row saying what a
+// short run stops asserting. A second lever is where `-short` stops meaning
+// one named thing, and that check is what says so.
 func TestTheWholeWalkGoesRoundOneBatchProcess(t *testing.T) {
 	if testing.Short() {
 		t.Skip("-short: the whole-walk arm runs the real program over the " +
 			"whole history and costs a couple of seconds.\n\n" +
 			"Skipped means the process count, the fetch count and the table " +
 			"are not asserted on this run, and no wall clock is taken for " +
-			"themehistoryTimingsTakenOn.wholeRun.")
+			"themehistoryTimingsTakenOn.wholeRun.\n\n" +
+			"This is the repository's only `-short` lever, and it is one on " +
+			"purpose — see wasm/verify/shortlever_test.go, which is where " +
+			"what a short run does and does not assert is written down.")
 	}
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("no git on this machine, so there is no history to walk.")
@@ -484,31 +672,10 @@ func TestTheWholeWalkGoesRoundOneBatchProcess(t *testing.T) {
 	// What the walk will fetch, asked of the walk. One `ls-tree` per commit,
 	// and the same enumeration leavesAt does — so the number below is a
 	// property of this checkout's history rather than a constant tuned against
-	// one run of it.
-	enumStart := time.Now()
-	wantReads := 0
-	for _, sha := range shas {
-		direct, _, err := themeSourcesAt(sha)
-		if err != nil {
-			t.Fatalf("enumerating %s/ at %s: %v", themePkg, sha[:8], err)
-		}
-		wantReads += len(direct)
-	}
-	enumTook := time.Since(enumStart)
-	// The enumeration reaching the history. Every revision in this repository
-	// holds several sources directly in core/, so fewer objects than commits
-	// means this loop and not the walk is the thing that has stopped working —
-	// and an expectation of nought would make the equality below pass for a
-	// walk that fetched nothing at all.
-	if wantReads < commits {
-		t.Fatalf("the enumeration names %d object(s) across %d commit(s), and "+
-			"a revision that touched %s/ holds at least one source in it.\n\n"+
-			"The fetch count below is held to this number, so an enumeration "+
-			"that has stopped reading the history would make that assertion "+
-			"pass over nothing. themeSourcesAt is the walk's own filter; if it "+
-			"now declines everything, the table this run prints is empty too.",
-			wantReads, commits, themePkg)
-	}
+	// one run of it. Run in a pool; see enumWorkers for what that is worth and
+	// what it deliberately leaves serial.
+	objects, enumTook := themeSourcesAcross(t, shas, enumWorkers)
+	wantReads := len(objects)
 
 	// A reader left running by an earlier test would make the counts below
 	// that test's as much as this one's, and it would already be past its
@@ -585,9 +752,10 @@ func TestTheWholeWalkGoesRoundOneBatchProcess(t *testing.T) {
 	}
 	if reader.reads != wantReads {
 		// Both directions, because they are different findings. Short: a
-		// revision whose sources were not fetched, or a cache between the
-		// walk and the reader. Long: an object fetched twice, which is the
-		// batch being asked for work the walk does not need.
+		// revision whose sources were not fetched, a fetch that went round the
+		// batch, or a cache between the walk and the reader. Long: an object
+		// fetched twice, which is the batch being asked for work the walk does
+		// not need.
 		by := fmt.Sprintf("%d over", reader.reads-wantReads)
 		if reader.reads < wantReads {
 			by = fmt.Sprintf("short by %d", wantReads-reader.reads)
@@ -599,12 +767,16 @@ func TestTheWholeWalkGoesRoundOneBatchProcess(t *testing.T) {
 			"single process that answered eleven requests would satisfy the "+
 			"count above while saying nothing about it. The expectation is "+
 			"themeSourcesAt summed over the history rather than a constant, "+
-			"so a difference here is the walk and this enumeration disagreeing "+
+			"so a difference here is the walk and that enumeration disagreeing "+
 			"about which objects the table is built from — not a number that "+
 			"has gone stale.\n\n"+
-			"Fewer fetches than objects: a revision the walk did not read, or "+
-			"a fetch answered from somewhere other than this reader. More: an "+
-			"object fetched twice.",
+			"Short by exactly the number of paths with a NEWLINE in them is "+
+			"the one difference this program produces on purpose: blob sends "+
+			"such a path to a `cat-file -p` of its own, which never touches "+
+			"this counter. See blob, and TestAPathWithANewlineInItGoesRound"+
+			"TheBatch. Short by anything else: a revision the walk did not "+
+			"read, or a fetch answered from somewhere other than this reader. "+
+			"More: an object fetched twice.",
 			reader.reads, wantReads, commits, by)
 	}
 
@@ -626,15 +798,25 @@ func TestTheWholeWalkGoesRoundOneBatchProcess(t *testing.T) {
 
 	// The by-product. Printed as the numbers together, because the wall clock
 	// on its own is the thing this record exists to stop anybody writing down.
+	//
+	// The enumeration's own figure is printed with its worker count attached,
+	// and that is not decoration: the walk pays the SAME 88 `ls-tree`
+	// processes serially inside itself, so a pooled reading of them is not the
+	// walk's ls-tree cost and must not be subtracted from the total as though
+	// it were. The serial figure is taken by the per-object arm and the
+	// subtraction is done there — see themehistoryTimingsTakenOn.perObjectRun,
+	// which is where the three terms of this number live.
 	t.Logf("the whole walk: %v over %d commit(s), %d object(s) fetched through "+
-		"%d `git cat-file --batch` process(es) — the fetch count is exactly "+
-		"what themeSourcesAt names, enumerated here in %v. Recorded as "+
-		"themehistoryTimingsTakenOn.wholeRun.\n\n"+
+		"%d `git cat-file --batch` process(es), against the %d object(s) "+
+		"themeSourcesAt names, enumerated here in %v over %d worker(s). "+
+		"Recorded as themehistoryTimingsTakenOn.wholeRun.\n\n"+
 		"Not asserted — see this file's header. The assertions above are the "+
 		"process count, the fetch count and the table; the clock is a reading "+
-		"of this machine.",
+		"of this machine. What the walk spent it ON is not read off this "+
+		"line: the enumeration above it is pooled and the walk's is not, so "+
+		"the split is in perObjectRun rather than in a subtraction here.",
 		took.Round(time.Millisecond), commits, reader.reads, started,
-		enumTook.Round(time.Millisecond))
+		wantReads, enumTook.Round(time.Millisecond), enumWorkers)
 }
 
 // The switch that runs the per-object re-creation below, and the one value it
@@ -647,6 +829,44 @@ const (
 	perObjectEnv      = "GRMOB_PER_OBJECT_FETCH"
 	perObjectRequired = "required"
 )
+
+// The least the per-object shape has to cost, as a multiple of the batch, for
+// blob's argument to be an argument.
+//
+// # What was here before, which could not fail
+//
+// `perTook <= batchTook`: thirty seconds against four hundred milliseconds
+// over 2906 objects, on a comparison no machine reverses. That is an assertion
+// whose failure is unreachable, so the content was the two numbers in the log
+// beside it and the arm was decoration — which is the same shape this package
+// keeps writing arms against, one level up.
+//
+// # Why a multiple is not a wall clock in a ratio's clothes
+//
+// That was the objection to a floor, and it is the wrong reading of what these
+// two numbers are. They are taken in ONE RUN over the SAME objects in the same
+// order, so everything about this machine that scales both — a slower disk, a
+// busy core, a cold page cache, a `-race` binary — divides out of the
+// quotient. What is left is exactly the quantity blob's comment is made of:
+// the cost of forking a process against the cost of a pipe round trip. A
+// number that survives the machine changing is not a reading of the machine.
+//
+// The individual figures stay unasserted for the usual reason and are still
+// only logged; it is their RATIO that is a claim about the program.
+//
+// # Where five comes from
+//
+// 75–76× on the machine themehistoryTimingsTakenOn names. Five is deliberately
+// nowhere near that: a machine whose forks are fifteen times cheaper relative
+// to its pipes than this one's still passes, which is the room a floor over a
+// timing has to leave if it is not to fail on somebody else's computer for
+// reasons they cannot act on.
+//
+// What it does fail is the trade having actually gone — a platform where
+// spawning a process costs about what a pipe round trip does — and that is a
+// finding about blob's cost argument, which is the only thing this test exists
+// to hold up.
+const perObjectSlowdownFloor = 5
 
 // One process per object, re-created on purpose, against the batch over the
 // same objects.
@@ -687,10 +907,13 @@ const (
 //	one process, many    the batch serves all of them through a single
 //	                    process — batchesStarted moves by one while the
 //	                    per-object route starts one per object by construction
-//	the direction        per-object is slower. Not by how much: the MULTIPLE
-//	                    is a reading of this machine's fork cost against its
-//	                    pipe cost, and an arm over it would be a wall-clock
-//	                    assertion wearing a ratio's clothes
+//	the multiple        per-object is at least perObjectSlowdownFloor times
+//	                    slower. The direction on its own could not fail; the
+//	                    ratio is the cost argument's own quantity and divides
+//	                    the machine out of both readings — see that constant
+//	the three terms     the fetches, the trees and the per-object route are
+//	                    logged together, so wholeRun's split is in one place
+//	                    rather than a subtraction across two records
 //
 // The ratio is what blob's comment now rests on, and it is two numbers taken
 // in the same run, over the same objects, on whatever machine is running —
@@ -736,23 +959,15 @@ func TestOneProcessPerObjectIsSlowerThanOneProcessForAllOfThem(t *testing.T) {
 	// Every object the walk fetches, named the way the walk names them. The
 	// pairs are collected first so that both routes below are handed exactly
 	// the same work in exactly the same order — the enumeration's own
-	// `ls-tree` per commit is paid once and belongs to neither reading.
-	type object struct{ rev, path string }
-	var objects []object
-	for _, sha := range shas {
-		direct, _, err := themeSourcesAt(sha)
-		if err != nil {
-			t.Fatalf("enumerating %s/ at %s: %v", themePkg, sha[:8], err)
-		}
-		for _, p := range direct {
-			objects = append(objects, object{rev: sha, path: p})
-		}
-	}
-	if len(objects) < len(shas) {
-		t.Fatalf("the enumeration names %d object(s) across %d commit(s); see "+
-			"the same check in TestTheWholeWalkGoesRoundOneBatchProcess.",
-			len(objects), len(shas))
-	}
+	// `ls-tree` per commit is paid once and belongs to neither fetch reading.
+	//
+	// SERIALLY, which is the one place in this package that asks for that. The
+	// whole-walk arm pools it because it only wants the answer; this one wants
+	// the COST, because 88 `ls-tree` processes one after another is what the
+	// walk itself spends on trees, and it is the term that turns wholeRun from
+	// a number inviting a subtraction into three measured parts. See
+	// themeSourcesAcross, and the log at the end of this test.
+	objects, enumTook := themeSourcesAcross(t, shas, 1)
 
 	// The batch, first, with a reader of its own. Retired afterwards so the
 	// per-object pass below cannot be answered out of it and so nothing this
@@ -833,28 +1048,53 @@ func TestOneProcessPerObjectIsSlowerThanOneProcessForAllOfThem(t *testing.T) {
 			differed, len(objects), firstDiff)
 	}
 
-	// The direction, which is the whole cost argument. Not the multiple — see
-	// the header.
-	if perTook <= batchTook {
+	// The cost argument, as the multiple it is actually made of. See
+	// perObjectSlowdownFloor for why this is a ratio and not the direction it
+	// used to be.
+	if batchTook <= 0 {
+		t.Fatalf("the batched pass over %d object(s) measured %v, which is not "+
+			"a duration anything can be divided by. Nothing below is a "+
+			"reading if this is one.", len(objects), batchTook)
+	}
+	ratio := float64(perTook) / float64(batchTook)
+	if ratio < perObjectSlowdownFloor {
 		t.Errorf("one process per object took %v and the batch took %v over "+
-			"the same %d object(s), so the shape this program was rewritten "+
-			"to avoid is no longer the slower one.\n\n"+
+			"the same %d object(s) — %.1f×, against a floor of %d×.\n\n"+
 			"blob's comment is a cost argument: fork, exec, opening the "+
 			"repository and tearing the process down, once per file, against "+
-			"one process and a pipe round trip per file. If that has stopped "+
-			"being true on this machine, the argument is what needs "+
-			"rewriting, not this test.", perTook, batchTook, len(objects))
+			"one process and a pipe round trip per file. This is that "+
+			"argument's own quantity — both readings are of the same objects "+
+			"in the same run, so everything about this machine that scales "+
+			"both of them divides out and what is left is its fork cost "+
+			"against its pipe cost.\n\n"+
+			"The floor is a long way under what this shape has ever measured "+
+			"(%d× against 75× where the record was taken), so a failure here "+
+			"is not a busy laptop: it is the trade blob describes having "+
+			"changed on this machine, and the argument in that comment is "+
+			"then what needs rewriting rather than this test.",
+			perTook.Round(time.Millisecond), batchTook.Round(time.Millisecond),
+			len(objects), ratio, perObjectSlowdownFloor, perObjectSlowdownFloor)
 	}
 
+	// The three terms, in one place, because the alternative is a reader
+	// subtracting across two records. wholeRun is the walk; the first two lines
+	// here are the parts of it this arm can measure, and what is left over is
+	// named as a remainder rather than printed as though somebody had timed it.
 	t.Logf("%d object(s) over %d commit(s), fetched both ways:\n"+
 		"    one `cat-file --batch`   %v\n"+
 		"    one `cat-file -p` each   %v  (%d processes)\n"+
-		"    ratio                    %.1f×\n\n"+
-		"Recorded as themehistoryTimingsTakenOn.perObjectRun, and it is the "+
-		"after-figure's other half in blob's cost argument. Not asserted "+
-		"beyond the direction: both numbers are readings of this machine's "+
-		"fork cost against its pipe cost.",
+		"    ratio                    %.1f×  (floor %d×)\n"+
+		"    the trees, serially      %v  (%d `ls-tree` processes)\n\n"+
+		"Recorded as themehistoryTimingsTakenOn.perObjectRun. The first line "+
+		"and the last are the two halves of wholeRun this arm can put a clock "+
+		"on — the fetches, and the `ls-tree` per commit the walk pays inside "+
+		"itself — and wholeRun minus the two of them is the parse, the diff "+
+		"and the printing. That last figure is a REMAINDER and not a reading: "+
+		"nothing here has timed it, and the three above it are three separate "+
+		"readings of this machine rather than one decomposition taken in one "+
+		"run.\n\n"+
+		"Only the ratio is asserted; see perObjectSlowdownFloor.",
 		len(objects), len(shas), batchTook.Round(time.Millisecond),
-		perTook.Round(time.Millisecond), len(objects),
-		float64(perTook)/float64(batchTook))
+		perTook.Round(time.Millisecond), len(objects), ratio,
+		perObjectSlowdownFloor, enumTook.Round(time.Millisecond), len(shas))
 }

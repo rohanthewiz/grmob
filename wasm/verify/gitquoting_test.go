@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"go/ast"
 	"go/parser"
 	"go/token"
@@ -666,6 +667,28 @@ func TestWhatCountsAsAGitWrapper(t *testing.T) {
 // way — an early `return ""` in the middle of the walk — so the arm also holds
 // the function to having exactly ONE `return ""`, the accepting arm of the
 // switch at its end. With that, `reaches` is the only way out.
+//
+// # The two ways round that, which are closed here rather than named
+//
+// Counting `reaches = true` is a syntactic count of a syntactic thing, and it
+// trusted the shape of the function twice over. Both gaps are the same move —
+// an acceptance that happens somewhere this census does not read — and both
+// are now checks rather than assumptions:
+//
+//	reaches = reachesVia(…)   an assignment to `reaches` whose right-hand side
+//	                          is not the literal `true`. The count would not
+//	                          move and the rule would be live, with its content
+//	                          in a function nothing here counts. Every
+//	                          assignment to `reaches` is held to `= true`
+//	if acceptsVia(…) { … }    a helper called from the body, deciding the rule
+//	                          and leaving `reaches = true` as its punctuation.
+//	                          The callees are held to gitWrapperTaintHelpers,
+//	                          so a new one is a row and a decision in the
+//	                          commit that adds it
+//
+// What remains beyond that is one level further out and is not closable by a
+// parse of this function: the helpers themselves could grow. They are three
+// lines each and listed by name, which is the point of listing them.
 func TestTheGitWrapperTaintWalkIsTheSizeItsReasonCovers(t *testing.T) {
 	const self = "gitquoting_test.go"
 	fset := token.NewFileSet()
@@ -688,8 +711,22 @@ func TestTheGitWrapperTaintWalkIsTheSizeItsReasonCovers(t *testing.T) {
 
 	accepts := 0
 	emptyReturns := 0
+	// Assignments to `reaches` whose right-hand side is not the literal
+	// `true`, and unqualified calls the body makes. Both are ways an
+	// acceptance rule can live somewhere the count above does not read; see
+	// the header.
+	var indirect []string
+	callees := map[string]bool{}
 	ast.Inspect(fn.Body, func(n ast.Node) bool {
 		switch node := n.(type) {
+		case *ast.CallExpr:
+			// Unqualified only: a `pkg.Fn(…)` is the standard library, which
+			// cannot assign to a local. A call to a function in this package
+			// is spelled as a bare name and is the shape being watched for.
+			if id, ok := node.Fun.(*ast.Ident); ok {
+				callees[id.Name] = true
+			}
+			return true
 		case *ast.AssignStmt:
 			// `reaches = true` — one acceptance rule, wherever it sits.
 			if len(node.Lhs) != 1 || len(node.Rhs) != 1 {
@@ -699,8 +736,19 @@ func TestTheGitWrapperTaintWalkIsTheSizeItsReasonCovers(t *testing.T) {
 			if !ok || id.Name != "reaches" {
 				return true
 			}
-			if lit, ok := node.Rhs[0].(*ast.Ident); ok && lit.Name == "true" {
+			lit, isIdent := node.Rhs[0].(*ast.Ident)
+			switch {
+			case node.Tok == token.ASSIGN && isIdent && lit.Name == "true":
 				accepts++
+			case node.Tok == token.DEFINE && isIdent && lit.Name == "false":
+				// `reaches := false`, the declaration the rules write into.
+				// Not a rule, and the only `:=` this name takes.
+			default:
+				// An acceptance whose CONTENT is elsewhere. Recorded with its
+				// line so the message can point at it rather than describe the
+				// shape.
+				indirect = append(indirect, fmt.Sprintf("line %d",
+					fset.Position(node.Pos()).Line))
 			}
 		case *ast.ReturnStmt:
 			// An acceptance spelled as a return rather than through
@@ -715,6 +763,45 @@ func TestTheGitWrapperTaintWalkIsTheSizeItsReasonCovers(t *testing.T) {
 		}
 		return true
 	})
+
+	if len(indirect) > 0 {
+		t.Errorf("whyNotAGitWrapper assigns to `reaches` from something other "+
+			"than the literal `true` at %s, and this check counts its rules by "+
+			"counting `reaches = true`.\n\n"+
+			"An assignment like `reaches = reachesVia(...)` is an acceptance "+
+			"rule whose content is in another function: the count here does "+
+			"not move, the budget below is not the number of rules there are, "+
+			"and the looseness of the new rule is written down nowhere. Spell "+
+			"it as a condition around `reaches = true` — which is what every "+
+			"rule in this function already is — or teach this check the other "+
+			"spelling.", strings.Join(indirect, ", "))
+	}
+
+	// The helpers this function is allowed to call. A rule decided inside one
+	// of them is a rule this census cannot see, so a new callee is a row in
+	// the table and a decision about whether the approximation has stopped
+	// being one function.
+	for name := range callees {
+		if gitWrapperTaintHelpers[name] != "" {
+			continue
+		}
+		var known []string
+		for h := range gitWrapperTaintHelpers {
+			known = append(known, h)
+		}
+		sort.Strings(known)
+		t.Errorf("whyNotAGitWrapper calls %s(…), which is not one of the "+
+			"helpers this census knows about: %s.\n\n"+
+			"The rule count above reads THIS function's body and nothing else, "+
+			"so a helper that decides an acceptance — `if acceptsVia(x) { "+
+			"reaches = true }` — is a rule whose content the census never "+
+			"hears about, and whose looseness gitWrapperTaintLimits does not "+
+			"describe. Add a row to gitWrapperTaintHelpers saying what the new "+
+			"one answers, and while writing it, the question the row is "+
+			"really asking: whether the approximation is still one function a "+
+			"reader can hold in their head, which is what its budget of %d is "+
+			"about.", name, strings.Join(known, ", "), gitWrapperAcceptRules)
+	}
 
 	if emptyReturns != 1 {
 		t.Errorf("whyNotAGitWrapper has %d `return \"\"` and this check counts "+
@@ -773,11 +860,14 @@ func TestTheGitWrapperTaintWalkIsTheSizeItsReasonCovers(t *testing.T) {
 			accepts, gitWrapperAcceptRules, accepts)
 	}
 
-	t.Logf("whyNotAGitWrapper accepts a helper in %d place(s), each with a row "+
-		"in gitWrapperTaintRules and a case in %s; %d looseness(es) written "+
-		"down beside them. Counted out of %s rather than listed, so a rule "+
-		"added without a row fails this arm in the commit that adds it.",
-		accepts, gitWrapperCaseTable, len(gitWrapperTaintLimits), self)
+	t.Logf("whyNotAGitWrapper accepts a helper in %d place(s), each spelled "+
+		"`reaches = true`, each with a row in gitWrapperTaintRules and a case "+
+		"in %s; %d looseness(es) written down beside them, and %d helper(s) "+
+		"called out of a body with one way out. Counted out of %s rather than "+
+		"listed, so a rule added without a row fails this arm in the commit "+
+		"that adds it.",
+		accepts, gitWrapperCaseTable, len(gitWrapperTaintLimits),
+		len(callees), self)
 }
 
 // How many acceptance rules the written reason covers. Two, and the third one
@@ -804,6 +894,24 @@ var gitWrapperTaintRules = []struct {
 		"as surely",
 	exercisedBy: "arguments appended to cmd.Args",
 }}
+
+// The functions whyNotAGitWrapper is allowed to call, and what each answers.
+//
+// Not a style rule. The rule count above is a walk over one function's body,
+// so a helper is where an acceptance can be decided without the census
+// noticing — `if acceptsVia(x) { reaches = true }` reads as one rule and is
+// two. Each row says what the helper answers, and what makes it not a rule is
+// in the answer: none of these three has an opinion about whether the premise
+// holds, they report a syntactic fact the walk then decides on.
+//
+// `len` is here because it is spelled the same way a local helper is. The
+// standard library is not, and does not need to be: a `pkg.Fn(…)` cannot
+// assign to a local in this function, so the walk only collects bare names.
+var gitWrapperTaintHelpers = map[string]string{
+	"len":              "a builtin, and unqualified like everything else here",
+	"mentionsAny":      "whether an expression names a tainted identifier",
+	"isGitCommandCall": "whether an expression is exec.Command(\"git\", …)",
+}
 
 // And what it is loose about, which is the half a rule count does not say.
 //

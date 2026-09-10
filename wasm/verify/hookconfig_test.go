@@ -482,12 +482,27 @@ func hookSchemaNote() string {
 // is behind b, +1 if it is ahead, 0 if they are the same release. `ok` is
 // false when either side is not something this can order at all.
 //
-// # Why this is here rather than a dependency
+// # Why this is here rather than golang.org/x/mod/semver
 //
 // The whole question is which of two opposite findings a reader is holding —
 // a key a later release added, or a key an older install has — and that turns
-// on ORDER. Twenty lines and no dependency, against a repository whose go.mod
-// has one line in it.
+// on ORDER.
+//
+// This paragraph used to say "twenty lines and no dependency, against a
+// repository whose go.mod has one line in it", and both halves of that were
+// wrong. go.mod has several requirements and one of them is golang.org/x/mod,
+// held indirect by the `tool` block that pins gomobile — so the import moves a
+// line in go.mod rather than adding a download. And semver answers all four
+// rules below, which was checked and not assumed; see
+// TestTheDottedVersionParsersAreTheOnesTheReasonCovers, where the four
+// comparisons are written out.
+//
+// What is actually left of the argument is smaller and is about ONE caller:
+// semver wants a leading `v` and `claude --version` prints `2.1.267`, so
+// either way something here wraps it — and for a single caller a wrapper costs
+// about what the parser does. The second orderer is where that stops being
+// true, and the arm named above is what says so at the moment it arrives
+// rather than several sessions later.
 //
 // # The rules, and what each one is for
 //

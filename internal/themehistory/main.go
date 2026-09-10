@@ -401,6 +401,27 @@ func leavesAt(sha string) (revision, error) {
 // not `_test.go` because nobody will parse the rest, and `path.Dir(p) ==
 // themePkg` because one package is one directory — which is InDir's rule, and
 // the declined paths are named on stderr rather than dropped in silence.
+//
+// # Who asks, and why a green run asks twice
+//
+// A previous session removed a walk this program was taking twice in one run.
+// This is one arriving by a different door, and it is worth naming rather than
+// leaving for somebody to rediscover as the same finding:
+//
+//	leavesAt              once per revision, in the program. The fetch itself
+//	themeSourcesAcross    once per revision, in the whole-walk arm, to have an
+//	                      expectation that is not a constant
+//	themeSourcesAcross    once per revision again, in the per-object arm —
+//	                      which is off unless GRMOB_PER_OBJECT_FETCH is set,
+//	                      so a green run pays two of these three
+//
+// The duplication is the point rather than an oversight: an expectation
+// derived from the walk's own fetch would be the fetch checking itself, and
+// the arm's whole claim is that the two agree. What it costs is one
+// `git ls-tree` per commit, twice — and the test side of that is pooled, so
+// the second pass is about a quarter of the first (see enumWorkers). If this
+// ever reaches a third caller on a green run, the question is not how to share
+// the walk but why two arms want the same expectation.
 func themeSourcesAt(sha string) (direct, nested []string, err error) {
 	files, err := treePaths(sha)
 	if err != nil {
