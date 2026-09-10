@@ -345,21 +345,54 @@ func TestTheNearMissThresholdMovesWithTheNamesItIsMeasuredOver(t *testing.T) {
 	// sparse set's threshold is three, so a name two edits from one of its
 	// leaves has to be reported — which at core.Theme's threshold it would not
 	// be.
-	got := themeNearMiss(sparse, "Palette.Alfa")
-	if !strings.Contains(got, "Palette.Alpha") {
-		t.Errorf("themeNearMiss over the sparse set does not name Palette.Alpha for "+
-			"Palette.Alfa, which is two edits from it under a threshold of %d.\n\n"+
+	//
+	// The probe is built under the witness's own parent and its distance is
+	// read rather than assumed: both halves of the sentence above are premises
+	// about this fixture, and a respelling that broke either would leave the
+	// arm below reporting the wrong finding. See affordedWitnessProbe.
+	alfa, alfaD, alfaAt := affordedWitnessProbe(t, 3, "Alfa")
+	if alfaD > sparse.edits {
+		t.Fatalf("%s is %d edits from the nearest leaf of the sparse set (%s), "+
+			"which measures a threshold of %d.\n\n"+
+			"This arm is about a probe INSIDE the measured threshold — the whole "+
+			"claim is that the wider number the sparse names carry is the one in "+
+			"force. A probe outside it would be answered with silence, and the arm "+
+			"would then be reading the not-found branch of the function while "+
+			"saying it was reading the other one.",
+			alfa, alfaD, alfaAt, sparse.edits)
+	}
+	if alfaD <= themeNearMissEdits {
+		t.Fatalf("%s is %d edits from %s, and core.Theme's threshold is %d.\n\n"+
+			"The point of this arm is that the sparse set's own wider threshold is "+
+			"what answers: a probe this close would be reported at core.Theme's "+
+			"number too, so finding it says nothing about whose threshold was used.",
+			alfa, alfaD, alfaAt, themeNearMissEdits)
+	}
+	got := themeNearMiss(sparse, alfa)
+	if !strings.Contains(got, alfaAt) {
+		t.Errorf("themeNearMiss over the sparse set does not name %s for "+
+			"%s, which is %d edits from it under a threshold of %d.\n\n"+
 			"It said: %s\n\n"+
 			"The function reads the threshold off the set it is given. If this answer "+
 			"is core.Theme's, the number is travelling with the code rather than with "+
-			"the names.", sparse.edits, got)
+			"the names.", alfaAt, alfa, alfaD, sparse.edits, got)
 	}
 
 	// And that the message names what capped the threshold, on the arm where
 	// it matters: a reader told "nothing is within three edits" will wonder
 	// about four, and whether four was available is the difference between a
 	// struct that is not crowded and a judgement that refused to look further.
-	miss := themeNearMiss(sparse, "Palette.Zulu")
+	zulu, zuluD, zuluAt := affordedWitnessProbe(t, 3, "Zulu")
+	if zuluD <= sparse.edits {
+		t.Fatalf("%s is %d edits from %s and the sparse set's threshold is %d, so "+
+			"this probe is a HIT.\n\n"+
+			"The three arms below are about the sentence themeNearMiss prints when "+
+			"it finds nothing — what capped the threshold, and what the cap is "+
+			"costing. A probe inside the threshold gets a list of candidates "+
+			"instead, and none of those arms is then asking about anything.",
+			zulu, zuluD, zuluAt, sparse.edits)
+	}
+	miss := themeNearMiss(sparse, zulu)
 	if !strings.Contains(miss, "themeNearMissReach") {
 		t.Errorf("themeNearMiss over the sparse set finds nothing for Palette.Zulu "+
 			"and does not say the threshold was the ceiling.\n\n"+
@@ -385,7 +418,13 @@ func TestTheNearMissThresholdMovesWithTheNamesItIsMeasuredOver(t *testing.T) {
 
 	// The other two arms of the same sentence, each reached by a set with the
 	// shape it is about.
-	if wideMiss := themeNearMiss(wide, "Ramp.Zzzzzz"); !strings.Contains(
+	zzzzzz, zzzzzzD, zzzzzzAt := affordedWitnessProbe(t, 2, "Zzzzzz")
+	if zzzzzzD <= wide.edits {
+		t.Fatalf("%s is %d edits from %s and the wide set's threshold is %d, so "+
+			"this probe is a hit and the arm below is not about the sentence it "+
+			"names.", zzzzzz, zzzzzzD, zzzzzzAt, wide.edits)
+	}
+	if wideMiss := themeNearMiss(wide, zzzzzz); !strings.Contains(
 		wideMiss, fmt.Sprintf("would carry %d", wide.afforded)) {
 		t.Errorf("themeNearMiss over a set that affords %d does not say so.\n\n"+
 			"It said: %s\n\n"+
@@ -394,7 +433,13 @@ func TestTheNearMissThresholdMovesWithTheNamesItIsMeasuredOver(t *testing.T) {
 			"doing. \"These names could carry a wider threshold\" without the number "+
 			"is the state this replaced.", wide.afforded, wideMiss)
 	}
-	if pairMiss := themeNearMiss(pair, "Duo.Mike"); !strings.Contains(
+	mike, mikeD, mikeAt := affordedWitnessProbe(t, 1, "Mike")
+	if mikeD <= pair.edits {
+		t.Fatalf("%s is %d edits from %s and the two-leaf set's threshold is %d, "+
+			"so this probe is a hit and the arm below is not about the sentence it "+
+			"names.", mike, mikeD, mikeAt, pair.edits)
+	}
+	if pairMiss := themeNearMiss(pair, mike); !strings.Contains(
 		pairMiss, "no width crowds these names") {
 		t.Errorf("themeNearMiss over a two-leaf parent does not say that no width "+
 			"crowds it.\n\n"+
@@ -404,7 +449,16 @@ func TestTheNearMissThresholdMovesWithTheNamesItIsMeasuredOver(t *testing.T) {
 			"leaves never produces a crowd. The shape of the set is the answer.",
 			pairMiss)
 	}
-	if crowdedMiss := themeNearMiss(crowded, "Weight.Zzz"); strings.Contains(
+	zzz, zzzD, zzzAt := affordedWitnessProbe(t, 0, "Zzz")
+	if zzzD <= crowded.edits {
+		t.Fatalf("%s is %d edits from %s and the crowded set's threshold is %d, so "+
+			"this probe is a hit.\n\n"+
+			"The arm below is about what the not-found sentence does NOT say, and a "+
+			"probe that is found prints no such sentence — it would pass for the "+
+			"reason an assertion over an empty population always passes.",
+			zzz, zzzD, zzzAt, crowded.edits)
+	}
+	if crowdedMiss := themeNearMiss(crowded, zzz); strings.Contains(
 		crowdedMiss, "themeNearMissReach") {
 		t.Errorf("themeNearMiss over the crowded set says the ceiling capped its "+
 			"threshold.\n\n"+
@@ -1845,6 +1899,51 @@ var affordedEndingWitness = [len(affordedEndingNames)]struct {
 	// has to say whether the derivation moved or the fixture stopped being
 	// the shape it was chosen for.
 	shape string
+
+	// # And the countable half of that sentence, so the fixture is held to
+	// # its shape and not only to the branch it happens to reach
+	//
+	// `shape` above is prose, and the arms below asserted which ending each
+	// set reaches and nothing else. A fixture that drifted into reaching the
+	// RIGHT ending by the wrong route went on passing with the sentence
+	// beside it describing a set that no longer exists: Duo.Alpha/Duo.Zulu
+	// edited to three names under one parent still reaches ending 1 — a
+	// parent of three CAN crowd, so it would be reaching it because nothing
+	// happens to be within any width rather than because no width can — and
+	// nothing here would have said so.
+	//
+	// Every field below is re-derived from `names` on every run by
+	// affordedWitnessShapeOf. Between them they pin the whole of each shape
+	// sentence:
+	//
+	//	perParent   how many leaves sit under each parent, most first. This
+	//	            is "five siblings", "one parent holding two leaves", and
+	//	            it is also the WHOLE of "cannot produce a crowd at any
+	//	            distance": a crowd is a leaf with more than one sibling
+	//	            inside the threshold, so a parent of two can never make
+	//	            one however far the search goes.
+	//	closestD    the closest sibling pair, and
+	//	farthestD   the farthest. Equal when the sentence says the names are
+	//	            all one distance apart ("each one edit from the other
+	//	            four", "six edits apart"); apart when it bounds them from
+	//	            one side only ("no two within three edits").
+	//	crowd*      the crowd reading the sentence names: within
+	//	            `crowdWithin` edits the most OTHER siblings any leaf has
+	//	            is `crowdSiblings`, and `crowdAt` is every leaf tied at
+	//	            that maximum. The tie structure is part of the shape —
+	//	            "Palette.Echo has two within four" is a claim that Echo
+	//	            is the ONLY one, and a list of three there would be a
+	//	            different set.
+	//
+	// The distances are the derivation's own metric (themeEditDistance, an
+	// adjacent swap counted once), because that is what the threshold is
+	// measured in and a shape stated in some other metric would be a fact
+	// about no search.
+	perParent           []int
+	closestD, farthestD int
+	crowdWithin         int
+	crowdSiblings       int
+	crowdAt             []string
 }{
 	0: {
 		sentence: "its own crowding stopped the search",
@@ -1854,18 +1953,48 @@ var affordedEndingWitness = [len(affordedEndingNames)]struct {
 		shape: "five siblings each one edit from the other four, so no width " +
 			"above the floor keeps an answer to a pair and the crowding stops " +
 			"the search below themeNearMissReach",
+		perParent: []int{5},
+		// Every pair is one apart, which is what "each one edit from the
+		// other four" says and what closest == farthest is the reading of.
+		closestD:      1,
+		farthestD:     1,
+		crowdWithin:   1,
+		crowdSiblings: 4,
+		crowdAt: []string{
+			"Weight.Aaa", "Weight.Aab", "Weight.Aac", "Weight.Aad", "Weight.Aae",
+		},
 	},
 	1: {
 		sentence: "no width crowds these names at all",
 		names:    []string{"Duo.Alpha", "Duo.Zulu"},
 		shape: "one parent holding two leaves, which cannot produce a crowd at " +
 			"any distance, so the upward search runs out of widths to try",
+		perParent: []int{2},
+		closestD:  5,
+		farthestD: 5,
+		// Read at the farthest pair, which is where the reading stops
+		// moving: past it every sibling is inside the threshold, so one
+		// sibling here is one sibling at every wider width. The claim that
+		// no width crowds these names is perParent's — a parent of two
+		// cannot make a crowd — and this is that claim at the only distance
+		// where it could have failed.
+		crowdWithin:   5,
+		crowdSiblings: 1,
+		crowdAt:       []string{"Duo.Alpha", "Duo.Zulu"},
 	},
 	2: {
 		sentence: "the ceiling cost this set a wider threshold",
 		names:    []string{"Ramp.Aaaaaa", "Ramp.Bbbbbb", "Ramp.Cccccc"},
 		shape: "three siblings six edits apart, so the ceiling stops the search " +
 			"and the width these names would carry is what it is costing",
+		perParent: []int{3},
+		closestD:  6,
+		farthestD: 6,
+		// Six is where all three become each other's neighbours at once, so
+		// the crowd appears in one step and every leaf is tied at it.
+		crowdWithin:   6,
+		crowdSiblings: 2,
+		crowdAt:       []string{"Ramp.Aaaaaa", "Ramp.Bbbbbb", "Ramp.Cccccc"},
 	},
 	3: {
 		sentence: "the ceiling and the crowding stop in the same place",
@@ -1875,7 +2004,242 @@ var affordedEndingWitness = [len(affordedEndingNames)]struct {
 		shape: "four siblings no two of which are within three edits, and " +
 			"Palette.Echo has two within four — so the ceiling stops the search " +
 			"at the same width the crowding would have",
+		perParent: []int{4},
+		// Bounded from one side only: the closest pair is four apart, which
+		// is what "no two within three edits" means, and the farthest is
+		// eleven. These are the names that look sparse and are not one step
+		// out, and closestD is the reading that says where "one step out"
+		// is.
+		closestD:  4,
+		farthestD: 11,
+		// And Echo alone. A second name in this list would be a set the
+		// ceiling costs nothing for a different reason than the one the
+		// sentence gives.
+		crowdWithin:   4,
+		crowdSiblings: 2,
+		crowdAt:       []string{"Palette.Echo"},
 	},
+}
+
+// affordedWitnessProbe is a path under a witness's own parent, with the
+// distance from it to the nearest leaf that witness has and which leaf that
+// is.
+//
+// # The probes were literals beside a table they were not read from
+//
+// TestTheNearMissThresholdMovesWithTheNamesItIsMeasuredOver builds its four
+// populations out of affordedEndingWitness and then asked about them with
+// "Palette.Alfa", "Palette.Zulu", "Ramp.Zzzzzz", "Duo.Mike" and "Weight.Zzz"
+// typed into the test. themeNearMiss only ever compares within a parent, so a
+// witness renamed out of `Palette.` would leave every probe naming a parent no
+// set has — and the arms would have reported "themeNearMiss found nothing" and
+// meant "this probe is not about this set". Those are different findings and
+// only one of them is about the function.
+//
+// So the parent comes from the witness. The distance comes back with it
+// because every arm has a PREMISE about it and none of them stated it: an arm
+// that expects a name to be reported needs the nearest leaf inside the set's
+// threshold, and an arm that expects silence needs it outside. Neither is a
+// fact about the probe alone — both move when the fixture is respelled — and
+// an unstated premise that has quietly stopped holding is an arm asserting
+// about the wrong branch of the function.
+//
+// Fatal rather than Errorf on the two structural failures: a probe under the
+// wrong parent, or one that names a leaf the set actually has, makes every arm
+// downstream of it a reading of nothing.
+func affordedWitnessProbe(t *testing.T, e int, leaf string) (path string,
+	nearest int, nearestAt string) {
+	t.Helper()
+	w := affordedEndingWitness[e]
+	first := w.names[0]
+	parent := first[:strings.LastIndex(first, ".")+1]
+	// Every witness sits under exactly one parent — affordedHoldWitnessShape
+	// asserts it, as len(perParent) — and the probe is only well defined while
+	// that holds.
+	for _, name := range w.names {
+		if got := name[:strings.LastIndex(name, ".")+1]; got != parent {
+			t.Fatalf("witness %d holds %s under %q and %s under %q, so there is no "+
+				"one parent to hang a probe off.\n\n"+
+				"themeNearMiss answers a slip with that parent's own names and "+
+				"nothing else, so a probe has to name the parent whose leaves the arm "+
+				"is about. These fixtures are one parent each by construction; a "+
+				"second one here means the set has been rebuilt and the arms below "+
+				"are asking about whichever half the probe happens to land in.",
+				e, first, parent, name, got)
+		}
+	}
+	path = parent + leaf
+	nearest = -1
+	for _, name := range w.names {
+		if name == path {
+			t.Fatalf("the probe %s IS a leaf of witness %d.\n\n"+
+				"themeNearMiss is about paths that name no leaf: handed one that "+
+				"does, there is no near miss to report and the arm below is reading "+
+				"the wrong branch of the function. Pick a spelling this set does not "+
+				"have.", path, e)
+		}
+		d := themeEditDistance(strings.ToLower(leaf),
+			strings.ToLower(name[strings.LastIndex(name, ".")+1:]))
+		if nearest < 0 || d < nearest {
+			nearest, nearestAt = d, name
+		}
+	}
+	return path, nearest, nearestAt
+}
+
+// affordedWitnessShapeOf is the countable half of a witness's `shape`
+// sentence, read off a list of names and nothing else.
+//
+// # Why this is a second implementation of a search themeLeafSetOf already has
+//
+// themeLeafSetOf groups by parent and runs the same crowd search, and its
+// answers are on the set every arm below already holds. Reading the shape off
+// THAT would make the witness's numbers a comparison of the derivation with
+// itself — the objection the threshold test states one screen up and recomputes
+// its own readings for. The witness's numbers are a claim about the FIXTURE:
+// that these names still have the shape they were picked for. So they are held
+// against a walk that shares nothing with the derivation but the metric.
+//
+// Returns the crowd search as a closure rather than a table because the
+// distance each witness's sentence names is a different one, and a table would
+// have to guess how far out to go.
+func affordedWitnessShapeOf(names []string) (perParent []int,
+	closestD, farthestD int, crowd func(within int) (int, []string)) {
+	byParent := map[string][]string{}
+	for _, path := range names {
+		cut := strings.LastIndex(path, ".") + 1
+		byParent[path[:cut]] = append(byParent[path[:cut]], path[cut:])
+	}
+	parents := make([]string, 0, len(byParent))
+	for parent := range byParent {
+		parents = append(parents, parent)
+	}
+	sort.Strings(parents)
+	for _, parent := range parents {
+		sort.Strings(byParent[parent])
+		perParent = append(perParent, len(byParent[parent]))
+	}
+	// Most first, so the shape reads as "one parent of four" rather than as an
+	// ordering of parent names nobody chose — and so a fixture that moved a
+	// leaf between two parents of the same size does not read as a change.
+	sort.Sort(sort.Reverse(sort.IntSlice(perParent)))
+
+	// One distance function, used by all three readings below, for the reason
+	// themeLeafSetOf builds its matrix once: the closest pair, the farthest
+	// pair and every crowd width are three questions about one set of numbers.
+	dist := func(parent string, i, j int) int {
+		ns := byParent[parent]
+		return themeEditDistance(strings.ToLower(ns[i]), strings.ToLower(ns[j]))
+	}
+
+	closestD, farthestD = -1, -1
+	for _, parent := range parents {
+		ns := byParent[parent]
+		for i := range ns {
+			for j := i + 1; j < len(ns); j++ {
+				d := dist(parent, i, j)
+				if closestD < 0 || d < closestD {
+					closestD = d
+				}
+				if d > farthestD {
+					farthestD = d
+				}
+			}
+		}
+	}
+
+	// The most OTHER siblings any leaf has within a distance, and EVERY leaf
+	// tied at that maximum. themeLeafSetOf keeps only the first, because a
+	// message wants one name; the tie structure is part of a shape, so this
+	// keeps them all. Sorted, so the answer does not depend on map iteration.
+	crowd = func(within int) (int, []string) {
+		most, at := 0, []string{}
+		for _, parent := range parents {
+			ns := byParent[parent]
+			for i := range ns {
+				n := 0
+				for j := range ns {
+					if i != j && dist(parent, i, j) <= within {
+						n++
+					}
+				}
+				switch {
+				case n > most:
+					most, at = n, []string{parent + ns[i]}
+				case n == most && n > 0:
+					at = append(at, parent+ns[i])
+				}
+			}
+		}
+		sort.Strings(at)
+		return most, at
+	}
+	return perParent, closestD, farthestD, crowd
+}
+
+// affordedHoldWitnessShape asks whether one witness's names still have the
+// shape the sentence beside them describes.
+//
+// Split out of affordedHoldEndingWitnesses so the two findings stay two: this
+// one says the FIXTURE moved, and the branch arms next door say the
+// CLASSIFICATION moved. A set edited into a different shape usually trips both,
+// and a reader who is told only "it reaches branch 2 rather than 3" has to go
+// and work out which of the two happened.
+func affordedHoldWitnessShape(t *testing.T, e int) {
+	t.Helper()
+	w := affordedEndingWitness[e]
+	perParent, closestD, farthestD, crowd := affordedWitnessShapeOf(w.names)
+
+	if !slices.Equal(perParent, w.perParent) {
+		t.Errorf("%s sits %v leaves to a parent and this witness says %v.\n\n"+
+			"That is the shape it was chosen for — %s — and the branch of the "+
+			"classification it reaches is a consequence of it. A set that reaches "+
+			"the right branch with the wrong number of leaves under a parent is "+
+			"reaching it for a different reason than the one written here, which "+
+			"is the state the ending arms alone cannot see: they ask which branch "+
+			"and this asks why.",
+			affordedNameList(w.names), perParent, w.perParent, w.shape)
+	}
+	if closestD != w.closestD || farthestD != w.farthestD {
+		t.Errorf("%s has its closest sibling pair %d edits apart and its farthest "+
+			"%d; this witness says %d and %d.\n\n"+
+			"Those two bound the shape from each side: equal means every pair is "+
+			"the same distance apart (\"each one edit from the other four\", \"six "+
+			"edits apart\") and apart means the sentence bounds them from one side "+
+			"only. A fixture whose names were respelled keeps its leaf count and "+
+			"loses this, and the ending it reaches can survive both.\n\n"+
+			"The shape it was picked for: %s",
+			affordedNameList(w.names), closestD, farthestD,
+			w.closestD, w.farthestD, w.shape)
+	}
+	siblings, at := crowd(w.crowdWithin)
+	if siblings != w.crowdSiblings || !slices.Equal(at, w.crowdAt) {
+		t.Errorf("within %d edits the most siblings any leaf of %s has is %d, at "+
+			"%v; this witness says %d at %v.\n\n"+
+			"A crowd reading is what every branch of the classification turns on, "+
+			"and WHICH leaves are tied at it is part of the shape rather than "+
+			"decoration: \"Palette.Echo has two within four\" is a claim that Echo is "+
+			"the only one, and three names there would be a set the ceiling costs "+
+			"nothing for a different reason than the one written down.\n\n"+
+			"The shape it was picked for: %s",
+			w.crowdWithin, affordedNameList(w.names), siblings, at,
+			w.crowdSiblings, w.crowdAt, w.shape)
+	}
+
+	// And the one join between the two walks: the derivation reads the same
+	// names this shape was taken over. Everything above is a second
+	// implementation deliberately kept apart from themeLeafSetOf, and that
+	// separation is worth nothing if the two are being handed different lists.
+	if set := themeLeafSetOf(w.names); set.closestD != closestD {
+		t.Errorf("themeLeafSetOf puts %s's closest sibling pair %d apart (%s) and "+
+			"the walk beside it makes them %d apart.\n\n"+
+			"These are two implementations of one metric over one list of names, "+
+			"kept apart on purpose so the witness's shape is a claim about the "+
+			"fixture rather than about the derivation. Two answers means the metric "+
+			"itself has moved — themeEditDistance is what both of them call — or "+
+			"one of the two groupings by parent is wrong.",
+			affordedNameList(w.names), set.closestD, set.closest, closestD)
+	}
 }
 
 // affordedHoldEndingWitnesses asks each of those four populations which ending
@@ -1891,6 +2255,12 @@ var affordedEndingWitness = [len(affordedEndingNames)]struct {
 func affordedHoldEndingWitnesses(t *testing.T) {
 	t.Helper()
 	for e, w := range affordedEndingWitness {
+		// The shape first, because it is the diagnostic for the two arms
+		// below: a set that reaches the wrong branch has either been edited
+		// or the classification has moved underneath it, and this is the
+		// half that says which. See affordedHoldWitnessShape.
+		affordedHoldWitnessShape(t, e)
+
 		set := themeLeafSetOf(w.names)
 		at := affordedEndingAt(set)
 		if at != e {
@@ -2155,6 +2525,21 @@ func affordedOneLeafBand(names []string) (map[string]affordedBand, string) {
 // what is being walked rather than in how fast. The numbers say which:
 // `walks` is populations actually censused and `reused` is askings that found
 // one already there.
+//
+// # The counters are the PROCESS's and the sentence reading them says "this
+// # run", so the reader takes a baseline
+//
+// These two accumulate for the life of the test binary, and the one place
+// that prints them is inside a single test. The numbers happened to be that
+// test's own, because it is the only caller of the band walks in the package —
+// which is a fact nobody asserted and which the next test to want a band would
+// quietly end, leaving a sentence about "this run" reporting a total that
+// includes somebody else's walks. Rather than assert exclusivity, which would
+// be a rule about what may be written next door, the reader snapshots the
+// counters before it starts and reports the difference: see
+// affordedBandMemoRead and affordedBandMemoSince. A baseline that is not zero
+// is then a finding the log line states rather than an error, because a second
+// caller is a perfectly good thing to be.
 var affordedBandMemo = struct {
 	sync.Mutex
 	at map[string]struct {
@@ -2199,6 +2584,43 @@ func affordedBandCopy(bands map[string]affordedBand) map[string]affordedBand {
 		out[ending] = b
 	}
 	return out
+}
+
+// affordedBandMemoRead is the two counters, taken together under the lock.
+//
+// Together, because they are read into one sentence and a walk in progress
+// between two separate reads would make that sentence describe a state the
+// memo was never in. Cheap enough to be unremarkable — the band walks hold
+// this lock for the length of a map lookup.
+func affordedBandMemoRead() (walks, reused int) {
+	affordedBandMemo.Lock()
+	defer affordedBandMemo.Unlock()
+	return affordedBandMemo.walks, affordedBandMemo.reused
+}
+
+// affordedBandMemoSince is the work done since a baseline, with a sentence
+// about the baseline itself.
+//
+// The counters are the process's (see affordedBandMemo). A caller takes a
+// baseline at the top of the test that prints them and the difference is that
+// test's own share; the note is what says whether there WAS anything else,
+// which is the assertion the old sentence rested on without making.
+//
+// Go runs a package's tests one after another unless they ask otherwise, so a
+// non-zero baseline is work done by a test that ran before this one — not by
+// one running alongside it.
+func affordedBandMemoSince(baseWalks, baseReused int) (walks, reused int,
+	note string) {
+	nowWalks, nowReused := affordedBandMemoRead()
+	walks, reused = nowWalks-baseWalks, nowReused-baseReused
+	if baseWalks == 0 && baseReused == 0 {
+		return walks, reused, ""
+	}
+	return walks, reused, fmt.Sprintf(" — and these two are this test's own "+
+		"share: %d walk(s) and %d reuse(s) were already on the memo when it "+
+		"started, so the band walks have a caller that is not this test and the "+
+		"process totals are %d and %d",
+		baseWalks, baseReused, nowWalks, nowReused)
 }
 
 func affordedKLeafBand(names []string, k int) (map[string]affordedBand, string) {
@@ -2960,6 +3382,27 @@ func affordedBandRounded(v float64) float64 {
 // re-takes the record for an eighty-first leaf is the run that has one more
 // row to add here, and it knows its own size — the failure prints it.
 //
+// # And the walker is in the repository, so the next reading is a command
+//
+// The first version of this table came out of a throwaway AST walker in a
+// scratch directory, and what survived into the file was the numbers, the
+// method in this paragraph, and the commit it was taken at. That is the
+// convention the rest of this file has been moving AWAY from: the record's
+// census is re-walked on every run precisely because a number in a note is a
+// number that has already moved.
+//
+// It cannot become an arm — a test that shells out to git is a test that
+// fails in a shallow clone, a source tarball or a build container, none of
+// which have a history to read — but it can stop being a re-derivation:
+//
+//	go run ./internal/themehistory
+//	go run ./internal/themehistory -names
+//
+// prints the per-commit listing this table is a histogram of, and the
+// population at HEAD to check it against affordedMeasuredOn's. The second
+// form prints the names, which is the stronger check: two different sets of
+// eighty print the same 80.
+//
 // Fifteen commits moved the population after the one that created it with
 // twenty-five leaves in it:
 //
@@ -3370,6 +3813,12 @@ func TestTheAffordedWidthHoldsItsTwoRelations(t *testing.T) {
 	// and the index-to-sentence map is held by the order of a literal. See
 	// affordedEndingWitness.
 	affordedHoldEndingWitnesses(t)
+
+	// The band memo's counters before this test has asked for anything, so
+	// the sentence at the bottom reporting them can say "this run" and mean
+	// it. They are the process's and this test is only their busiest reader.
+	// See affordedBandMemoSince.
+	baseWalks, baseReused := affordedBandMemoRead()
 
 	names := affordedLeafNames()
 	sets := affordedSets(names, affordedWindowMax)
@@ -4988,6 +5437,12 @@ func TestTheAffordedWidthHoldsItsTwoRelations(t *testing.T) {
 		t.Log(affordedRetakeSource(names, reached, fresh, freshChain, freshSound))
 	}
 
+	// Read here rather than at the Logf's argument list so the retake walk
+	// above — which asks for three more bands, and only on a run that has
+	// already failed — is inside the count. What the sentence reports is the
+	// work this test caused, whichever branch it took.
+	memoWalks, memoReused, memoNote := affordedBandMemoSince(baseWalks, baseReused)
+
 	t.Logf("%d generated leaf sets over %d distinct leaf names, none of them a "+
 		"shape anybody chose, hold afforded >= edits and the open flag's "+
 		"parent-of-three — each ending against its own floor, %d of the four on a "+
@@ -5008,13 +5463,13 @@ func TestTheAffordedWidthHoldsItsTwoRelations(t *testing.T) {
 		"13ms and a reuse is under 3µs; this test measured 0.78s without the memo "+
 		"and 0.72s with it. The numbers are here because a `reused` that drops is a "+
 		"caller asking about a different population — which is a change in what is "+
-		"being read rather than in what it costs%s",
+		"being read rather than in what it costs%s%s",
 		len(sets), len(names), onShare, affordedEndingFloor, scale,
 		len(sets), census, affordedPercent(worst), worstEnding, resorted,
 		len(affordedMeasuredOn.names), reading,
 		strings.Join(held, ", "), strings.Join(bandSaid, ", "), bandStep, bandWhose,
-		twoBandNote, affordedBandMemo.walks, affordedBandMemo.reused,
-		affordedMeasuredNote(len(names), len(sets)))
+		twoBandNote, memoWalks, memoReused,
+		memoNote, affordedMeasuredNote(len(names), len(sets)))
 }
 
 // affordedDeclaredFields is the field names of a package-level var's struct

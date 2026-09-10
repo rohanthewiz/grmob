@@ -1031,6 +1031,23 @@ func foldClustersOf(runs [][2]rune) (clusters [][2]rune, inside, between rune) {
 // mapping is a translation of a derived fact and not a judgement about which
 // region is which: the categories come from Go's tables, and an unmapped one
 // falls through as its own two letters rather than as silence.
+//
+// # Seventeen of the thirty-one, and the other fourteen are written down too
+//
+// This list was assembled by looking at what these two populations happen to
+// contain. The fall-through is honest — an unmapped category arrives as its
+// own two letters, which a reader can look up — but it made two very
+// different things look identical: a category deliberately left as its code,
+// and a category nobody had thought about. A build whose NFKD reached into Nd
+// would print "numerals" and one that reached Cf would print "Cf", and
+// nothing said which of those was a decision.
+//
+// So the complement is enumerated as well, in foldUnwordedCategories, and
+// TestTheRegionKindsAccountForEveryCategoryGoHas asserts that the two lists
+// partition unicode.Categories' two-letter entries exactly. Every category
+// Go has is then either a word or a written-down decision not to give it one,
+// and a Unicode version that adds a category to Go's tables is a failure
+// naming it rather than a two-letter code in a log line.
 var foldRegionKinds = []struct{ category, word string }{
 	{"Lu", "letters"},
 	{"Ll", "letters"},
@@ -1049,6 +1066,224 @@ var foldRegionKinds = []struct{ category, word string }{
 	{"Me", "marks"},
 	{"Pd", "punctuation"},
 	{"Po", "punctuation"},
+}
+
+// foldUnwordedCategories is every two-letter general category foldRegionKinds
+// deliberately gives no word to, and why.
+//
+// Not a gap: the complement of the list above, written down so the two
+// together are a partition of what Go's tables carry. A category here prints
+// as its own two letters (see foldKindOf), which is the same output an
+// unmapped one would produce — and the whole point of the list is that the
+// output being the same does not make the two cases the same. One is a
+// decision and the other is an oversight, and only one of them should survive
+// a Unicode version bump.
+//
+// The reasons fall into three groups.
+//
+//	the punctuation shapes   Pc Ps Pe Pi Pf. "punctuation" is the word Pd and
+//	                         Po get, and flattening the paired and quoting
+//	                         forms into it would lose the only thing that
+//	                         makes them worth naming: a region of Ps/Pe is
+//	                         brackets, which is a different sentence from a
+//	                         region of dashes. There is no one-word English
+//	                         for "initial quotation mark", so the code stands.
+//	the separators           Zs Zl Zp. Not a kind of glyph at all — a region
+//	                         of these is whitespace, and nothing NFKD produces
+//	                         from a seed's letters lands there. If one ever
+//	                         does, the two letters are the right amount of
+//	                         surprise.
+//	the non-graphic          Cc Cf Cs Co, and LC. The C-classes are controls,
+//	                         formatting, surrogates and private use: they have
+//	                         no appearance to describe, and "Cf" in a log line
+//	                         is a more honest thing to print than a word
+//	                         implying there is something to look at. LC is not
+//	                         a category at all but Go's union of Lu, Ll and
+//	                         Lt, all three of which are worded above — a code
+//	                         point can only reach it by way of one of those,
+//	                         so it is unreachable rather than undescribed.
+//
+// Cn is absent from both lists on purpose and the arm knows it: unassigned is
+// not a kind of thing, it is the absence of one, and foldRegionsNamed reports
+// it as "newer than Go's tables" a level up rather than as a category.
+var foldUnwordedCategories = map[string]string{
+	"Pc": "connector punctuation: the word would be \"punctuation\", which Pd " +
+		"and Po already have and which loses what makes this one worth naming",
+	"Ps": "open punctuation — a region of these is brackets, not \"punctuation\"",
+	"Pe": "close punctuation, for the same reason as Ps",
+	"Pi": "initial quotation mark, which has no one-word English",
+	"Pf": "final quotation mark, for the same reason as Pi",
+	"Zs": "a space separator is not a kind of glyph",
+	"Zl": "a line separator is not a kind of glyph",
+	"Zp": "a paragraph separator is not a kind of glyph",
+	"Cc": "a control character has no appearance to describe",
+	"Cf": "a formatting character has no appearance to describe",
+	"Cs": "a surrogate is an encoding artefact and never a character",
+	"Co": "private use: by definition nobody outside its user knows what it is",
+	"LC": "not a category but Go's union of Lu, Ll and Lt, all three of which " +
+		"are worded above, so nothing can reach this that has not already " +
+		"been named",
+}
+
+// Every category Go's tables have is either a word or a written-down decision
+// not to give it one.
+//
+// The two lists above are a partition of unicode.Categories' two-letter
+// entries, with Cn the one deliberate hole — and this is the arm that says so.
+// Without it foldRegionKinds is a list assembled from what two populations
+// happen to contain, and the difference between "left as its code on purpose"
+// and "never considered" is invisible in the output, because both print the
+// same two letters.
+//
+// Held against Go's own tables rather than against a count, so a toolchain
+// whose Unicode data grew a category is a failure that NAMES it. A count would
+// only say the total had moved.
+func TestTheRegionKindsAccountForEveryCategoryGoHas(t *testing.T) {
+	worded := map[string]string{}
+	for _, k := range foldRegionKinds {
+		if had, seen := worded[k.category]; seen {
+			t.Errorf("foldRegionKinds gives %s two words, %q and %q.\n\n"+
+				"foldKindOf returns the first match, so the second is dead and a "+
+				"reader editing it would change nothing. One entry per category.",
+				k.category, had, k.word)
+		}
+		worded[k.category] = k.word
+	}
+
+	// Go's own list, which is the thing this is a claim about. Two-letter
+	// entries only: unicode.Categories also carries the one-letter unions (L,
+	// N, P, S, Z, C, M), which are not categories a code point is IN so much
+	// as sets of the ones it can be.
+	goHas := map[string]bool{}
+	for name := range unicode.Categories {
+		if len(name) == 2 {
+			goHas[name] = true
+		}
+	}
+
+	for name := range goHas {
+		_, isWord := worded[name]
+		_, isUnworded := foldUnwordedCategories[name]
+		switch {
+		case name == "Cn":
+			// The deliberate hole. See foldUnwordedCategories.
+			if isWord || isUnworded {
+				t.Errorf("Cn is listed in one of the two category lists.\n\n" +
+					"Unassigned is not a kind of thing, it is the absence of one, " +
+					"and foldRegionsNamed reports a region of it as \"newer than " +
+					"Go's tables\" — a fact about two Unicode versions " +
+					"disagreeing rather than a description of what is there. A " +
+					"word or a code for it here would turn that finding into a " +
+					"line of ordinary output.")
+			}
+		case isWord && isUnworded:
+			t.Errorf("%s is in both lists: foldRegionKinds words it %q and "+
+				"foldUnwordedCategories says %q.\n\n"+
+				"The two are supposed to partition Go's categories, so a name in "+
+				"both makes the reason beside it dead text — foldKindOf finds the "+
+				"word first and the sentence explaining why there is no word is "+
+				"describing something that does not happen.",
+				name, worded[name], foldUnwordedCategories[name])
+		case !isWord && !isUnworded:
+			t.Errorf("Go's Unicode %s carries the general category %s and neither "+
+				"list here mentions it.\n\n"+
+				"foldKindOf would print it as its own two letters, which is what a "+
+				"category deliberately left uncoded prints as too — so a reader "+
+				"seeing %q in a region's description cannot tell whether somebody "+
+				"decided that or nobody looked. Give it a word in foldRegionKinds "+
+				"if a sentence about a region of them would want one, or a reason "+
+				"in foldUnwordedCategories if it would not.",
+				unicode.Version, name, name)
+		}
+	}
+
+	// And the other direction: a name in either list that Go does not have.
+	// A category removed from the tables leaves a word nothing can reach,
+	// which is the same dead text the both-lists case is.
+	for _, l := range []struct {
+		what string
+		of   map[string]string
+	}{{"foldRegionKinds", worded}, {"foldUnwordedCategories", foldUnwordedCategories}} {
+		for name := range l.of {
+			if !goHas[name] {
+				t.Errorf("%s names the category %s and Go's Unicode %s has no "+
+					"two-letter category by that name.\n\n"+
+					"Nothing can reach that entry, so the word or the reason beside "+
+					"it is describing a classification this toolchain does not make. "+
+					"Either it is a typo or the tables have dropped a category.",
+					l.what, name, unicode.Version)
+			}
+		}
+	}
+
+	used, unused := foldReachedWords()
+	t.Logf("Go's Unicode %s carries %d two-letter general categories: %d have a "+
+		"word in foldRegionKinds, %d are written down in foldUnwordedCategories "+
+		"as deliberately printing their own code, and Cn is neither because "+
+		"unassigned is reported as two Unicode versions disagreeing rather than "+
+		"as a kind of character. Of the words, the recorded regions print %s and "+
+		"have never printed %s — those last are the categories the mapping was "+
+		"written for and these populations have not reached, which is a guess "+
+		"about what a region of them would be called rather than a translation "+
+		"of one that turned up. See foldReachedWords.",
+		unicode.Version, len(goHas), len(worded), len(foldUnwordedCategories),
+		strings.Join(used, ", "), strings.Join(unused, ", "))
+}
+
+// foldReachedWords is which of foldRegionKinds' words the recorded regions
+// actually use, and which of them nothing has ever printed.
+//
+// The mapping above was assembled by looking at what these two populations
+// contain, and the partition arm fixes only one half of that: it says every
+// category Go has is accounted for. The other half is that some of the words
+// were written for categories these populations have never reached, and a
+// word nothing prints is a guess about what a region of them would want to be
+// called. Saying so in the log line does not make it wrong — the day NFKD
+// reaches a mark, "marks" is the right word and it is already there — it
+// makes it visible, which is the difference between a mapping and a list of
+// what happened to turn up.
+//
+// Read off foldMeasuredOn's own recorded region descriptions rather than off
+// this run, because those are the populations the mapping was written from
+// and they are the ones the claim is about. The descriptions are
+// "scripts words" with each half "/"-joined (see foldRegionsNamed), so a
+// piece is matched by its longest trailing word: "Latin modifier letters" is
+// Lm and not Lm and Lu at once.
+func foldReachedWords() (used, unused []string) {
+	seen := map[string]bool{}
+	regions := append(append([]string{}, foldMeasuredOn.bearingRegions...),
+		foldMeasuredOn.astralBearingRegions...)
+	for _, region := range regions {
+		for _, piece := range strings.Split(region, "/") {
+			best := ""
+			for _, k := range foldRegionKinds {
+				if piece != k.word && !strings.HasSuffix(piece, " "+k.word) {
+					continue
+				}
+				if len(k.word) > len(best) {
+					best = k.word
+				}
+			}
+			if best != "" {
+				seen[best] = true
+			}
+		}
+	}
+	told := map[string]bool{}
+	for _, k := range foldRegionKinds {
+		if told[k.word] {
+			continue
+		}
+		told[k.word] = true
+		if seen[k.word] {
+			used = append(used, k.word)
+			continue
+		}
+		unused = append(unused, k.word)
+	}
+	sort.Strings(used)
+	sort.Strings(unused)
+	return used, unused
 }
 
 // foldRegionsNamed is each region as a range and what Unicode says is in it.
