@@ -205,8 +205,8 @@ func TestTheRevisionsFileSetIsTheOneTheWorkingTreeWalkReads(t *testing.T) {
 			"only the revision walk: %s\nonly the working tree:  %s\n\n"+
 			"Those paths are the same in both trees — the ones that are not were "+
 			"held out — so this is the two file filters having come apart. "+
-			"leavesAt drops test files before fetching them (a `git cat-file` per "+
-			"test file per revision is real time spent on text nobody parses) and "+
+			"leavesAt drops test files before fetching them (a fetch per test file "+
+			"per revision is text nobody parses, carried eighty-eight times) and "+
 			"themeleaves.Of drops them again; InDir does its own directory read "+
 			"with the same rule. Whichever of the three moved, every row of the "+
 			"edit-size table is now over a different population than the arm at "+
@@ -309,43 +309,18 @@ func TestTheRevisionsFileSetIsTheOneTheWorkingTreeWalkReads(t *testing.T) {
 	// how often that happens.
 	subset, compared := false, true
 	if len(held) > 0 {
-		compared = false
 		headSub, treeSub, err := expansionsOver(headFiles)
+		r := readSubset(headSub, treeSub, err, headFiles, held)
 		switch {
-		case err != nil:
-			t.Errorf("the %d file(s) both walks reach and both trees agree "+
-				"about cannot be re-read to compare the expansions over them: "+
-				"%v\n\nEvery one of those paths was listed by `ls-tree` at HEAD "+
-				"and read off disk by themeleaves.InDir in this same run, so a "+
-				"fetch that fails here is the tree having moved underneath this "+
-				"test rather than a finding about either walk.",
-				len(headFiles), err)
-		case !headSub.Found && !treeSub.Found:
-			// Two empty populations comparing equal is not evidence, and this
-			// is the shape a dirty theme.go produces: the file the struct is
-			// declared in is held out, so neither re-reading finds it. The
-			// remaining files are still a comparison of the FILTERS, which ran
-			// above; they are not a comparison of the expansion.
-			t.Logf("the expansions were re-taken over the %d file(s) the two "+
-				"trees agree about and neither reading declares %s.%s in them, "+
-				"so a name-for-name comparison would be between two empty "+
-				"populations. The %d held-out file(s) (%s) include the one that "+
-				"declares it. The file FILTERS were still compared, over the "+
-				"same %d. Commit or stash to get the whole reading back.",
-				len(headFiles), themePkg, themeType, len(held),
-				strings.Join(held, ", "), len(headFiles))
-		case headSub.Found != treeSub.Found:
-			t.Errorf("over the same %d file(s) — the ones HEAD and this working "+
-				"tree agree about — %s is declared at HEAD: %v, and in the "+
-				"working tree: %v.\n\nThe text is the same text for every one of "+
-				"those paths, so one reading finding the struct and the other "+
-				"not is `git cat-file` and the disk disagreeing about a file "+
-				"neither `git status` nor either walk calls different.",
-				len(headFiles), themeType, headSub.Found, treeSub.Found)
-		default:
-			headNames, treeNames = headSub.Names, treeSub.Names
-			subset, compared = true, true
+		case r.failed:
+			t.Errorf("%s", r.report)
+		case r.report != "":
+			t.Logf("%s", r.report)
 		}
+		if r.compared {
+			headNames, treeNames = headSub.Names, treeSub.Names
+		}
+		subset, compared = r.compared, r.compared
 	}
 	if compared && !slices.Equal(headNames, treeNames) {
 		// What the two lists are OVER, which is the difference between "the
@@ -389,6 +364,36 @@ func TestTheRevisionsFileSetIsTheOneTheWorkingTreeWalkReads(t *testing.T) {
 			strings.Join(atHead.Unparsed, ", "))
 	}
 
+	// And that nothing in core/ was declared twice. themeleaves.Of keys every
+	// struct it parses by its bare NAME in one flat map, so a second
+	// declaration overwrites the first and which one answers for a field is
+	// decided by the order the paths sorted in — a resolution it makes and now
+	// records (Expansion.Shadowed).
+	//
+	// At HEAD that state does not build, which is what makes this arm cheap
+	// and worth having anyway: it is empty here for a reason outside this
+	// package's control, so a non-empty one is either a `go vet`-clean tree
+	// that would not compile or Of having started keying on something else.
+	// The nested arm above is where a legitimate collision arrives — two
+	// packages, one name, and both of them building.
+	if len(atHead.Shadowed) > 0 {
+		named := make([]string, 0, len(atHead.Shadowed))
+		for _, sh := range atHead.Shadowed {
+			named = append(named, fmt.Sprintf("%s (%s)", sh.Name,
+				strings.Join(sh.Files, ", ")))
+		}
+		t.Errorf("%d struct name(s) are declared more than once in %s/ at "+
+			"HEAD: %s.\n\n"+
+			"themeleaves.Of resolved each of them to whichever path sorted "+
+			"last, so this revision's expansion is over one declaration of each "+
+			"and would look exactly as whole if it were over the other. One "+
+			"package cannot declare a name twice and build, so this is a tree "+
+			"that does not compile — or Of no longer resolving field types by "+
+			"bare name, in which case every row of the edit-size table was "+
+			"taken by a rule that has moved.",
+			len(atHead.Shadowed), themePkg, strings.Join(named, ", "))
+	}
+
 	// Only on a run where every arm above held. A sentence reporting agreement
 	// under a list of failures is a sentence that describes a state this run
 	// was never in — the counts in it are the ones the failures are about.
@@ -423,6 +428,81 @@ func TestTheRevisionsFileSetIsTheOneTheWorkingTreeWalkReads(t *testing.T) {
 		len(headFiles), themePkg, expanded, hole)
 }
 
+// subsetReading is what a re-reading over the kept files came to: what to say
+// about it, whether that is a failure, and whether it produced two lists worth
+// comparing.
+//
+// report is empty when there is nothing to say, which is the ordinary case:
+// the two readings agree about the struct and the caller goes on to compare
+// their names.
+type subsetReading struct {
+	report   string
+	failed   bool
+	compared bool
+}
+
+// readSubset is the decision the four outcomes of expansionsOver make.
+//
+// # Why this is a function and not the switch it used to be
+//
+// It was four cases inline in the arm, and three of them are reachable only
+// from states nobody can produce on demand: a fetch that fails between one
+// `ls-tree` and the next read, a working tree whose theme.go is dirty, and a
+// `git cat-file` that disagrees with the disk about a file `git status` calls
+// clean. So the branch that ran was the fourth, on every green run, and the
+// other three were read-only prose in a file whose whole subject is arms that
+// do not run.
+//
+// Every input the decision uses is a value: two expansions, an error, and the
+// two path lists. Lifted out, all four outcomes are a table — and what stays
+// behind in the arm is the FETCH, which is the part that genuinely needs a
+// repository and a dirty tree.
+//
+//	err != nil            a failure. The paths were all read moments ago
+//	neither Found         a note. theme.go itself is held out, so both
+//	                      re-readings are empty and equal for no reason
+//	one Found             a failure, and a strange one: same bytes, two answers
+//	both Found            the comparison the caller wanted, over a SUBSET
+func readSubset(headSub, treeSub themeleaves.Expansion, err error,
+	kept, held []string) subsetReading {
+	switch {
+	case err != nil:
+		return subsetReading{failed: true, report: fmt.Sprintf(
+			"the %d file(s) both walks reach and both trees agree about cannot "+
+				"be re-read to compare the expansions over them: %v\n\nEvery "+
+				"one of those paths was listed by `ls-tree` at HEAD and read off "+
+				"disk by themeleaves.InDir in this same run, so a fetch that "+
+				"fails here is the tree having moved underneath this test rather "+
+				"than a finding about either walk.", len(kept), err)}
+	case !headSub.Found && !treeSub.Found:
+		// Two empty populations comparing equal is not evidence, and this is
+		// the shape a dirty theme.go produces: the file the struct is declared
+		// in is held out, so neither re-reading finds it. The remaining files
+		// are still a comparison of the FILTERS, which ran above; they are not
+		// a comparison of the expansion.
+		return subsetReading{report: fmt.Sprintf(
+			"the expansions were re-taken over the %d file(s) the two trees "+
+				"agree about and neither reading declares %s.%s in them, so a "+
+				"name-for-name comparison would be between two empty "+
+				"populations. The %d held-out file(s) (%s) include the one that "+
+				"declares it. The file FILTERS were still compared, over the "+
+				"same %d. Commit or stash to get the whole reading back.",
+			len(kept), themePkg, themeType, len(held),
+			strings.Join(held, ", "), len(kept))}
+	case headSub.Found != treeSub.Found:
+		return subsetReading{failed: true, report: fmt.Sprintf(
+			"over the same %d file(s) — the ones HEAD and this working tree "+
+				"agree about — %s is declared at HEAD: %v, and in the working "+
+				"tree: %v.\n\nThe text is the same text for every one of those "+
+				"paths, so one reading finding the struct and the other not is "+
+				"`git cat-file` and the disk disagreeing about a file neither "+
+				"`git status` nor either walk calls different.",
+			len(kept), themeType, headSub.Found, treeSub.Found)}
+	default:
+		return subsetReading{compared: true}
+	}
+}
+
 // expansionsOver is the two readings re-taken over one named set of files: the
 // same paths fetched out of HEAD and read off disk, each handed to
 // themeleaves.Of.
@@ -440,9 +520,11 @@ func TestTheRevisionsFileSetIsTheOneTheWorkingTreeWalkReads(t *testing.T) {
 // premise, and it is why the caller passes the kept list rather than
 // Expansion.Files.
 //
-// Cost is one `git cat-file` per kept file on a dirty tree, which is the same
-// fetch leavesAt already did for HEAD once; what it buys is an arm that runs
-// while somebody is editing core/, which is when a filter moves.
+// Cost is one request per kept file on a dirty tree, down the same
+// `git cat-file --batch` the command itself reads through (see blob), so it is
+// a write and a read on an open pipe rather than a process apiece. What it
+// buys is an arm that runs while somebody is editing core/, which is when a
+// filter moves.
 func expansionsOver(rels []string) (atHead, inTree themeleaves.Expansion, err error) {
 	headSrc := make(map[string]string, len(rels))
 	treeSrc := make(map[string]string, len(rels))
@@ -455,7 +537,7 @@ func expansionsOver(rels []string) (atHead, inTree themeleaves.Expansion, err er
 		// twice would answer differently on each side for no reason either
 		// walk is about.
 		key := path.Join(themePkg, rel)
-		src, err := git("cat-file", "-p", "HEAD:"+key)
+		src, err := blob("HEAD", key)
 		if err != nil {
 			return atHead, inTree, fmt.Errorf("HEAD:%s: %w", key, err)
 		}
@@ -504,12 +586,54 @@ func expansionsOver(rels []string) (atHead, inTree themeleaves.Expansion, err er
 // directory rule exists to prevent: a TextStyle in core/sub and a TextStyle in
 // core/ are one key in that map, and which of them answers is decided by sort
 // order over paths. So a difference here has two possible causes — a leaf the
-// subpackage really contributes, or a name it shadowed — and the union cannot
-// separate them. It is reported as a thing to look at, with both directions
-// printed, rather than as the population.
+// subpackage really contributes, or a name it shadowed — and the union is a
+// thing to look at rather than the population.
+//
+// # Which of the two it is, though, the probe can now say
+//
+// It used to print both causes and leave the reader to work out which. The
+// choice is not a mystery to the code that made it: Of records every name it
+// got more than one declaration of, in Expansion.Shadowed, with the paths that
+// declared it and the winner last. So the message names the collisions if
+// there are any and says there are none if there are not, and the reader is
+// told which of the two paragraphs applies to them.
+//
+//	Shadowed empty      the subdirectory contributes or removes the leaves
+//	                    listed — the reading is short by them
+//	Shadowed non-empty   a bare name is declared in both, and at least part of
+//	                    the difference is which declaration answered
 func reportNested(t *testing.T, atHead revision) {
 	t.Helper()
 	union, err := unionWithNested(atHead)
+	// Which of the two causes the union met, as a sentence both branches
+	// below carry. Computed once and appended rather than written into each,
+	// because the benign branch needs it too: two declarations of one name can
+	// hold the same fields, in which case the populations agree AND a choice
+	// was still made between them.
+	shadow := fmt.Sprintf("\n\nNo bare name is declared both in %s/ and below "+
+		"it, so nothing here is a shadowed type: themeleaves.Of resolves field "+
+		"types against one flat map of everything it parsed, and this union gave "+
+		"it no name twice.", themePkg)
+	if len(union.Shadowed) > 0 {
+		names := make([]string, 0, len(union.Shadowed))
+		for _, sh := range union.Shadowed {
+			// The winner last, which is what Shadowed.Files is ordered for —
+			// a reader with a moved population wants to know which of two
+			// declarations the expansion above was actually taken over.
+			names = append(names, fmt.Sprintf("%s (declared in %s; the last of "+
+				"those is the one that answered)", sh.Name,
+				strings.Join(sh.Files, ", ")))
+		}
+		shadow = fmt.Sprintf("\n\n%d bare name(s) are declared both in %s/ and "+
+			"below it: %s.\n\nthemeleaves.Of resolves field types against one "+
+			"flat map of every struct it parsed, so those two declarations are "+
+			"one key and the winner is whichever path sorted LAST — "+
+			"%s/sub/x.go loses to %s/theme.go and %s/zsub/x.go beats it. That is "+
+			"what the one-package-one-directory rule exists to prevent, and it "+
+			"is why this union is a probe and not a wider glob.",
+			len(union.Shadowed), themePkg, strings.Join(names, ", "),
+			themePkg, themePkg, themePkg)
+	}
 	switch {
 	case err != nil:
 		t.Errorf("git tracks %d non-test .go file(s) under %s/ at HEAD that are "+
@@ -533,33 +657,28 @@ func reportNested(t *testing.T, atHead revision) {
 			"package, one directory. What is left is a note — themePkg's doc "+
 			"comment says core/ is where the struct and everything it holds are "+
 			"declared, and that is now a statement about the top level of a "+
-			"directory that has more in it.",
+			"directory that has more in it.%s",
 			len(atHead.nested), themePkg, strings.Join(atHead.nested, ", "),
-			themePkg, len(atHead.Names), themePkg, themeType)
+			themePkg, len(atHead.Names), themePkg, themeType, shadow)
 	default:
 		t.Errorf("git tracks %d non-test .go file(s) under %s/ at HEAD that are "+
 			"not directly in it — %s — and parsing them alongside %s/'s own "+
 			"files MOVES the population: %d name(s) against the %d every row of "+
 			"the edit-size table is over.\n\n"+
 			"only the union's:      %s\nonly the top level's:  %s\n\n"+
-			"Two things produce that and this arm cannot tell them apart. Either "+
-			"those files declare something %s.%s reaches, and the table is short "+
-			"by it — in which case the reading needs the subpackage, which is a "+
-			"different expansion and not a wider glob. Or they declare a type "+
-			"whose BARE NAME the top level already uses: themeleaves.Of resolves "+
-			"field types by bare name against one flat map of everything it "+
-			"parsed, so two packages in one map let a file below %s/ answer for "+
-			"a field in %s/, or lose to it, on nothing better than the order "+
-			"their paths sort in. That is what "+
-			"the one-package-one-directory rule is for, and it is why the union "+
-			"above is a probe rather than the new population.\n\n"+
+			"Two things produce that, and the sentence below says which of them "+
+			"this is. Either those files declare something %s.%s reaches, and "+
+			"the table is short by it — in which case the reading needs the "+
+			"subpackage, which is a different expansion and not a wider glob. Or "+
+			"they declare a type whose BARE NAME the top level already uses, and "+
+			"the difference is which of two declarations answered.%s\n\n"+
 			"Both walks still decline these files identically, so the file-set "+
 			"comparison stays green and this is the only arm that can say so.",
 			len(atHead.nested), themePkg, strings.Join(atHead.nested, ", "),
 			themePkg, len(union.Names), len(atHead.Names),
 			nameList(missing(union.Names, atHead.Names)),
 			nameList(missing(atHead.Names, union.Names)),
-			themePkg, themeType, themePkg, themePkg)
+			themePkg, themeType, shadow)
 	}
 }
 
@@ -569,14 +688,14 @@ func reportNested(t *testing.T, atHead revision) {
 //
 // Both halves are fetched rather than one being reused: leavesAt hands back
 // the expansion and not the text it was over, and re-fetching what it already
-// read costs a `cat-file` per file on a run that is by definition rare (this
-// repository has never had a revision with anything below core/). Paying it
-// here keeps revision — and the command — free of a sources map that exists
-// for a test.
+// read is one batched request per file (see blob) on a run that is by
+// definition rare — this repository has never had a revision with anything
+// below core/. Paying it here keeps revision — and the command — free of a
+// sources map that exists for a test.
 func unionWithNested(rev revision) (themeleaves.Expansion, error) {
 	sources := make(map[string]string, len(rev.Files)+len(rev.nested))
 	for _, p := range append(append([]string{}, rev.Files...), rev.nested...) {
-		src, err := git("cat-file", "-p", "HEAD:"+p)
+		src, err := blob("HEAD", p)
 		if err != nil {
 			return themeleaves.Expansion{}, fmt.Errorf("HEAD:%s: %w", p, err)
 		}
@@ -590,10 +709,10 @@ func unionWithNested(rev revision) (themeleaves.Expansion, error) {
 // ones held out because HEAD and the working tree disagree about them.
 //
 // Relative rather than the base name: see the call, which is where the
-// difference between the two matters. A path this function cannot make
-// relative is kept whole, which is the loud version of the failure — it will
-// not match its opposite number and the file-set arm will name it — rather
-// than a silent fall back onto the base name, which would match one it is not.
+// difference between the two matters. The keying itself is relToPkg, which
+// dirtyPaths uses too — the two lists have to be keyed identically or the
+// comparison is between two spellings, and one rule in two copies is the shape
+// this whole test exists to catch one level up.
 //
 // Sorted here rather than relied on: themeleaves.Files comes out sorted by
 // PATH, and two different prefixes can sort their shared suffixes into two
@@ -601,12 +720,7 @@ func unionWithNested(rev revision) (themeleaves.Expansion, error) {
 // "b.go", but that is a property of these prefixes and not of any two).
 func underPkg(paths []string, differ map[string]bool) (kept, held []string) {
 	for _, p := range paths {
-		rel, err := filepath.Rel(themePkg, filepath.FromSlash(p))
-		if err != nil {
-			rel = p
-		} else {
-			rel = filepath.ToSlash(rel)
-		}
+		rel := relToPkg(p)
 		if differ[rel] {
 			held = append(held, rel)
 			continue
@@ -616,6 +730,32 @@ func underPkg(paths []string, differ map[string]bool) (kept, held []string) {
 	slices.Sort(kept)
 	slices.Sort(held)
 	return kept, held
+}
+
+// relToPkg is a repository-relative path as both sides of the comparison are
+// keyed: relative to themePkg, slash-separated, and kept WHOLE if it cannot be
+// made relative.
+//
+// # Why the two callers share this
+//
+// underPkg keys the walks' file lists and dirtyPaths keys the paths `git
+// status` named, and the second is looked up in the first. Two spellings of
+// one rule would not fail loudly — a dirty file keyed one way and looked up
+// the other is simply never found, so it would be compared rather than held
+// out, and the arm would report somebody's uncommitted edit as the two file
+// filters having come apart. That is the same failure this test exists to
+// distinguish from a real one, arriving through its own keying.
+//
+// Keeping an unresolvable path whole is the loud choice and it is pinned by
+// TestAPathThatCannotBeMadeRelativeIsKeptWhole: it matches nothing, so the
+// file-set arm names it exactly as it was handed over, where a fall back onto
+// the base name would match a file it is not.
+func relToPkg(p string) string {
+	rel, err := filepath.Rel(themePkg, filepath.FromSlash(p))
+	if err != nil {
+		return p
+	}
+	return filepath.ToSlash(rel)
 }
 
 // heldOut is the two walks' held-out paths as one list, each named once.
@@ -653,20 +793,28 @@ func heldOut(these, those []string) []string {
 //
 //	"·M core/theme.go\0"              index clean, work tree modified
 //	"?? core/new.go\0"                untracked
+//	"?? core/zsub/\0"                 an untracked DIRECTORY, collapsed to one
+//	                                  record with a trailing slash
 //	"R· core/to.go\0core/from.go\0"   a rename, whose SOURCE is the record
 //	                                  that follows it
 //
 // Both halves of a rename are held out. The source is gone from the working
 // tree and present at HEAD and the destination is the other way round, so each
 // of them is a path exactly one of the two walks reads.
+//
+// The collapsed directory is here because it is a shape this parse meets and
+// NOT because it does anything. `git status` reports an untracked directory as
+// ONE record rather than listing what is in it — that is what -uall is for —
+// so a new core/zsub/ full of .go files arrives as the single record
+// "?? core/zsub/", and the set gets a key for a directory.
+//
+// It comes out as "zsub" and not "zsub/": relToPkg goes through filepath.Rel,
+// which cleans its result, and a trailing separator does not survive that.
+// Either spelling is inert — this map is only ever consulted for paths one of
+// the two walks RETURNED, both walks return .go files, and neither descends —
+// so nothing turns on which one it is. It is in the table below so that
+// "inert" is a thing this file has checked rather than a thing it assumes.
 func dirtyPaths(z string) map[string]bool {
-	rel := func(p string) string {
-		r, err := filepath.Rel(themePkg, filepath.FromSlash(p))
-		if err != nil {
-			return p
-		}
-		return filepath.ToSlash(r)
-	}
 	out := map[string]bool{}
 	records := strings.Split(z, "\x00")
 	for i := 0; i < len(records); i++ {
@@ -676,11 +824,11 @@ func dirtyPaths(z string) map[string]bool {
 			continue
 		}
 		status, p := records[i][:2], records[i][3:]
-		out[rel(p)] = true
+		out[relToPkg(p)] = true
 		if strings.ContainsAny(status, "RC") {
 			i++
 			if i < len(records) && records[i] != "" {
-				out[rel(records[i])] = true
+				out[relToPkg(records[i])] = true
 			}
 		}
 	}
@@ -714,6 +862,253 @@ func nameList(names []string) string {
 		return "nothing"
 	}
 	return strings.Join(names, ", ")
+}
+
+// The four outcomes of a re-reading, and which of them is a finding.
+//
+// # What this replaces
+//
+// The decision used to be a switch inline in the arm above, and only its last
+// case ever ran: the other three need a fetch that fails mid-run, a working
+// tree whose theme.go is dirty, or a `git cat-file` that disagrees with the
+// disk about a file `git status` calls clean. Three branches, each of them the
+// thing a reader meets in a failure message, none of them ever executed —
+// which is the shape this whole file exists to get rid of.
+//
+// The inputs are all values, so the outcomes are a table. What is asserted is
+// the DECISION — is this a failure, a note or nothing, and are there two lists
+// worth comparing — plus the facts each message has to carry. Not the wording:
+// a test that pinned the prose would fail on every rephrasing and would be
+// asserting that somebody had not edited a paragraph.
+func TestTheFourOutcomesOfARereadingAreToldApart(t *testing.T) {
+	kept := []string{"colors.go", "sizes.go", "theme.go"}
+	held := []string{"type.go"}
+	found := themeleaves.Expansion{Found: true, Names: []string{"Background"}}
+	empty := themeleaves.Expansion{}
+
+	for _, c := range []struct {
+		what       string
+		head, tree themeleaves.Expansion
+		err        error
+		failed     bool
+		compared   bool
+		// Facts the message must carry, whatever words carry them. Each is a
+		// substring the reader needs in order to act on the finding at all.
+		carries []string
+	}{
+		{
+			what: "a fetch that failed",
+			head: empty, tree: empty,
+			err:    fmt.Errorf("HEAD:core/theme.go: object missing"),
+			failed: true,
+			// The count of what could not be read, and git's own words —
+			// without them the reader has a failure and no next step.
+			carries: []string{"3 file(s)", "object missing"},
+		},
+		{
+			what: "neither reading declaring the struct",
+			head: empty, tree: empty,
+			failed: false, compared: false,
+			// Which files were held out, or the note is untraceable: the whole
+			// finding is that one of THOSE declares Theme.
+			carries: []string{"type.go", themeType, "Commit or stash"},
+		},
+		{
+			what: "one reading declaring it and the other not",
+			head: found, tree: empty,
+			failed: true, compared: false,
+			// Both answers, since which side found it is the finding.
+			carries: []string{"HEAD: true", "tree: false"},
+		},
+		{
+			what: "both readings declaring it",
+			head: found, tree: found,
+			failed: false, compared: true,
+			// Nothing to say: the caller goes on to compare the names, and a
+			// note here would be a sentence on every dirty-tree run.
+			carries: nil,
+		},
+	} {
+		r := readSubset(c.head, c.tree, c.err, kept, held)
+		if r.failed != c.failed || r.compared != c.compared {
+			t.Errorf("%s reads as failed=%v compared=%v, and failed=%v "+
+				"compared=%v is the decision.\n\n"+
+				"compared is what says the two name lists are worth comparing at "+
+				"all — a false one leaves the name-for-name arm silent, exactly "+
+				"as standing down on a dirty tree used to, and a wrongly true "+
+				"one reports somebody's uncommitted field edit as the two file "+
+				"filters having come apart.",
+				c.what, r.failed, r.compared, c.failed, c.compared)
+		}
+		if (r.report == "") != (c.carries == nil) {
+			t.Errorf("%s produces report %q, and %v is whether it should say "+
+				"anything.\n\n"+
+				"The silent outcome is the ordinary one: both readings found the "+
+				"struct and the caller compares their names. Every other outcome "+
+				"is the arm reporting on a reading it could not take.",
+				c.what, r.report, c.carries != nil)
+			continue
+		}
+		for _, want := range c.carries {
+			if !strings.Contains(r.report, want) {
+				t.Errorf("%s produces a message that does not carry %q:\n\n%s",
+					c.what, want, r.report)
+			}
+		}
+	}
+}
+
+// The batched fetch reads the same bytes the per-file one did.
+//
+// # Why this arm exists at all
+//
+// Every revision in the edit-size table is parsed out of text this reader
+// produced. It replaced one `git cat-file -p` per file — eighty-eight commits
+// times up to forty-nine files, around forty-four hundred processes, thirty-one
+// seconds — with a single `git cat-file --batch` the whole run talks to, which
+// is 1.8 seconds for the same sixteen rows.
+//
+// What that trades is a process boundary for a PARSE. `-p` hands back a
+// process's entire stdout and cannot return the wrong thing; `--batch` hands
+// back a stream of headers and counted bodies, and a reader that is one byte
+// out anywhere is one byte out for every file after it. The failure would not
+// look like a failure: go/parser would be handed something that begins in the
+// middle of the previous file, and a revision whose expansion is short reads
+// as a commit that removed leaves.
+//
+// So the two are held against each other over every file the walk actually
+// reads, which is the population the table is over.
+func TestTheBatchedFetchReadsWhatCatFileDoes(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("no git on this machine, so there is no fetch to compare — see " +
+			"TestTheRevisionsFileSetIsTheOneTheWorkingTreeWalkReads, which is " +
+			"the arm this repository's one honest git skip is stated for.")
+	}
+	root, err := git("rev-parse", "--show-toplevel")
+	if err != nil {
+		t.Skipf("this checkout is not a git repository: %v", err)
+	}
+	t.Chdir(strings.TrimSpace(root))
+
+	listed, err := git("ls-tree", "-r", "--name-only", "HEAD", "--", themePkg)
+	if err != nil {
+		t.Skipf("HEAD cannot be read: %v", err)
+	}
+	var files []string
+	for _, p := range strings.Split(strings.TrimSpace(listed), "\n") {
+		if strings.HasSuffix(p, ".go") && !strings.HasSuffix(p, "_test.go") &&
+			path.Dir(p) == themePkg {
+			files = append(files, p)
+		}
+	}
+	if len(files) == 0 {
+		t.Skipf("git tracks no non-test .go files directly in %s/ at HEAD, so "+
+			"this is not the repository %s.%s is declared in.",
+			themePkg, themePkg, themeType)
+	}
+
+	// Every file, and in the order the walk reads them, because the failure
+	// this is about is positional: a reader that loses a byte on one file is
+	// wrong from there on, so a spot check of one file would be the one check
+	// that cannot see it.
+	for _, p := range files {
+		want, err := git("cat-file", "-p", "HEAD:"+p)
+		if err != nil {
+			t.Fatalf("`git cat-file -p HEAD:%s` failed, and `ls-tree` named that "+
+				"path at HEAD in this same run: %v", p, err)
+		}
+		got, err := blob("HEAD", p)
+		if err != nil {
+			t.Fatalf("the batched reader could not fetch HEAD:%s, which "+
+				"`git cat-file -p` just read: %v", p, err)
+		}
+		if got != want {
+			t.Fatalf("HEAD:%s reads as %d byte(s) through `git cat-file --batch` "+
+				"and %d through `git cat-file -p`.\n\n"+
+				"first difference at byte %d.\n\n"+
+				"The batched reader takes the body by COUNT out of a shared "+
+				"stream — <oid> <type> <size>, then that many bytes, then a "+
+				"terminating newline that is not in the size — so a length it "+
+				"reads wrongly or a terminator it leaves unread puts every file "+
+				"after this one at the wrong offset. Every row of the edit-size "+
+				"table is go/parser over text this reader produced.",
+				p, len(got), len(want), firstDiff(got, want))
+		}
+	}
+	t.Logf("all %d file(s) the walk reads under %s/ at HEAD come back "+
+		"byte-identical through `git cat-file --batch` and `git cat-file -p`. "+
+		"The batch is why `go run ./internal/themehistory` is 1.8s rather than "+
+		"31s: one git process for the run instead of one per file per revision.",
+		len(files), themePkg)
+}
+
+// A missing object is an error that leaves the stream usable.
+//
+// This is the one error the batched reader can meet and carry on from, and it
+// is worth pinning because carrying on WRONGLY is the failure that does not
+// look like one. "<name> missing" is a complete response — one line and no
+// body — so the stream is left at the start of the next header. A reader that
+// treated it as a header with a body would go looking for bytes that are not
+// there and hand the next caller a file read from the middle of another one,
+// which go/parser would accept without complaint for as long as it happened to
+// begin at a declaration.
+func TestAMissingObjectDoesNotDesynchroniseTheBatch(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("no git on this machine, so there is no batch to desynchronise.")
+	}
+	root, err := git("rev-parse", "--show-toplevel")
+	if err != nil {
+		t.Skipf("this checkout is not a git repository: %v", err)
+	}
+	t.Chdir(strings.TrimSpace(root))
+
+	real := path.Join(themePkg, "theme.go")
+	want, err := git("cat-file", "-p", "HEAD:"+real)
+	if err != nil {
+		t.Skipf("HEAD:%s cannot be read, so this is not the repository %s.%s is "+
+			"declared in: %v", real, themePkg, themeType, err)
+	}
+
+	// A path git will resolve the revision of and not find the object for,
+	// which is what a fetch at the wrong revision looks like.
+	absent := path.Join(themePkg, "no-such-file-a4232825.go")
+	if _, err := blob("HEAD", absent); err == nil {
+		t.Fatalf("the batched reader returned a blob for HEAD:%s, and nothing "+
+			"is meant to be there. Either that file now exists — rename it in "+
+			"this test — or a `missing` response is being read as an object.",
+			absent)
+	}
+
+	// And the next request, which is the whole point: the stream has to be
+	// sitting at the start of a header and not part-way through one.
+	got, err := blob("HEAD", real)
+	if err != nil {
+		t.Fatalf("after a missing object, the batched reader could not fetch "+
+			"HEAD:%s: %v\n\nA `missing` response is one line with no body, so "+
+			"nothing should have been left unread behind it.", real, err)
+	}
+	if got != want {
+		t.Errorf("after a missing object, HEAD:%s reads as %d byte(s) through "+
+			"the batch and %d through `git cat-file -p`; first difference at "+
+			"byte %d.\n\n"+
+			"The stream is desynchronised: the reader consumed something for the "+
+			"missing object that was not there, so this file was read starting "+
+			"from the wrong offset. Every file after it in a run would be too.",
+			real, len(got), len(want), firstDiff(got, want))
+	}
+}
+
+// firstDiff is where two strings stop agreeing, for a message about a stream
+// that is read by position. The length is the answer when one is a prefix of
+// the other.
+func firstDiff(a, b string) int {
+	n := min(len(a), len(b))
+	for i := 0; i < n; i++ {
+		if a[i] != b[i] {
+			return i
+		}
+	}
+	return n
 }
 
 // A rename inside themePkg is two paths in one `git status` record, and both
@@ -763,6 +1158,7 @@ func TestARenameUnderThePackageHoldsOutBothOfItsPaths(t *testing.T) {
 		"?? core/new.go",    // untracked
 		"D  core/gone.go",   // deleted
 		" M core/a name.go", // the reason -z is asked for
+		"?? core/zsub/",     // an untracked directory, collapsed by git
 		"R  core/to.go",     // a rename: the destination
 		"core/from.go",      // and its source, on its own record
 		"C  core/copy.go",   // a copy, which has the same two-record
@@ -774,7 +1170,7 @@ func TestARenameUnderThePackageHoldsOutBothOfItsPaths(t *testing.T) {
 	z := strings.Join(records, "\x00") + "\x00"
 
 	want := []string{"a name.go", "colors.go", "copy.go", "from.go", "gone.go",
-		"last.go", "new.go", "origin.go", "theme.go", "to.go"}
+		"last.go", "new.go", "origin.go", "theme.go", "to.go", "zsub"}
 	got := dirtyPaths(z)
 	names := make([]string, 0, len(got))
 	for p := range got {

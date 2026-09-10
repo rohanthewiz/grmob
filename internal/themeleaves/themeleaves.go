@@ -35,6 +35,16 @@
 // the set of types the loop has entered so far: two SIBLING fields of the same
 // struct type are not recursion. See walk's `next`.
 //
+// # And resolving by bare name is a decision, not a lookup
+//
+// One flat map of every struct parsed, keyed by the name alone, means a name
+// declared twice has one winner and the winner is whichever path sorted last.
+// Inside one compiling package that cannot arise, which was the reason it went
+// unrecorded — but Of is handed file sets that are not one package (see
+// Expansion.Shadowed), and there it decides which of two declarations answers
+// for a field on nothing better than a string comparison between their paths.
+// It still decides; it now says so.
+//
 // # Which is why the expansion is a package and the git reading is not
 //
 // A test cannot shell out to git — a shallow clone, a source tarball or a
@@ -113,6 +123,53 @@ type Expansion struct {
 	// with an empty Names is "this revision has no such type"; false is never
 	// the same finding as "it has no fields".
 	Found bool
+	// Every struct name more than one of the parsed declarations gave, sorted
+	// by name — the resolutions Of made by SORT ORDER rather than by anything
+	// about the code.
+	//
+	// Of resolves a field's type by bare name against one flat map of every
+	// struct it parsed, and a second declaration of a name overwrites the
+	// first. Which of the two answers for a field is then decided by the order
+	// the paths sorted in, and until this field existed that decision was
+	// invisible: the expansion came back, whole and plausible, over whichever
+	// declaration happened to sort last.
+	//
+	// The excuse for leaving it invisible used to be that a package declaring
+	// one name twice does not compile. Two callers make that untrue:
+	//
+	//	a union probe   internal/themehistory hands Of the top level of core/
+	//	                AND a subdirectory, deliberately, to find out whether
+	//	                the files it declines move the population. Those are
+	//	                two packages, and one name in both of them compiles.
+	//	a revision      the history walks every commit that touched core/,
+	//	                including ones caught mid-refactor. Of already reports
+	//	                a revision go/parser could not read; a revision that
+	//	                parses and would not build is the same kind of state.
+	//
+	// Empty for every file set that is one compiling package, which is every
+	// revision in this repository's history and the working tree — so this
+	// costs the readings nothing and is there for the two cases above.
+	Shadowed []Shadow
+}
+
+// Shadow is one struct name declared more than once in the files Of parsed,
+// with the paths that declared it.
+//
+// Files is sorted, and the LAST entry is the declaration that answers: Of
+// sorts its paths before parsing them and a later declaration overwrites an
+// earlier one, so "core/sub/x.go" loses to "core/theme.go" and
+// "core/zsub/x.go" beats it. That is the whole resolution rule, and it is a
+// fact about two strings rather than about either declaration.
+//
+// A path listed twice is one file declaring the name twice, which go/parser
+// reads and the compiler does not accept. It is recorded as it was read rather
+// than deduplicated: the count is how many declarations there were.
+type Shadow struct {
+	// The type name declared more than once.
+	Name string
+	// The paths that declared it, in the order Of parsed them — sorted, so
+	// the last is the one whose declaration survived into the flat map.
+	Files []string
 }
 
 // Of expands the struct named root, declared somewhere in sources, to its
@@ -127,6 +184,11 @@ type Expansion struct {
 // dotted path, and keep each name once however many parents hold it.
 func Of(sources map[string]string, root string) Expansion {
 	structs := map[string]*ast.StructType{}
+	// Which paths declared each struct name, so that a name declared more than
+	// once can be reported rather than silently resolved. Every name goes in,
+	// not just the repeats: whether a name is a repeat is only known after
+	// every file has been read.
+	declaredIn := map[string][]string{}
 	var unparsed, files []string
 	fset := token.NewFileSet()
 	paths := make([]string, 0, len(sources))
@@ -175,6 +237,12 @@ func Of(sources map[string]string, root string) Expansion {
 					continue
 				}
 				if st, ok := ts.Type.(*ast.StructType); ok {
+					// Recorded before the overwrite, so declaredIn holds the
+					// losers as well as the winner. The map assignment below
+					// is the resolution this walk makes by sort order and
+					// Shadowed is the record of having made it.
+					declaredIn[ts.Name.Name] = append(
+						declaredIn[ts.Name.Name], path)
 					structs[ts.Name.Name] = st
 				}
 			}
@@ -232,9 +300,23 @@ func Of(sources map[string]string, root string) Expansion {
 		out = append(out, name)
 	}
 	sort.Strings(out)
+	// The names that got more than one declaration, in name order. The paths
+	// under each are already in parse order, which is sorted order, because
+	// declaredIn was filled by the loop over the sorted paths above.
+	var shadowed []Shadow
+	for name, where := range declaredIn {
+		if len(where) > 1 {
+			shadowed = append(shadowed, Shadow{Name: name, Files: where})
+		}
+	}
+	sort.Slice(shadowed, func(i, j int) bool {
+		return shadowed[i].Name < shadowed[j].Name
+	})
+
 	// paths is already sorted and files is built from it in order, so Files
 	// comes out sorted without a second sort.
-	return Expansion{Names: out, Unparsed: unparsed, Files: files, Found: found}
+	return Expansion{Names: out, Unparsed: unparsed, Files: files, Found: found,
+		Shadowed: shadowed}
 }
 
 // InDir is Of over the .go files of one directory on disk.

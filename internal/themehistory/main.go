@@ -81,14 +81,18 @@
 package main
 
 import (
+	"bufio"
 	"bytes"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path"
 	"sort"
+	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/rohanthewiz/grmob/internal/themeleaves"
 )
@@ -171,6 +175,29 @@ func run() error {
 				"working tree by, so any type declared only in there is missing "+
 				"from this revision's expansion\n", sha[:8], len(rev.nested),
 				themePkg, strings.Join(rev.nested, ", "))
+		}
+		// And a name this revision declared more than once, which themeleaves
+		// resolved by sort order over the paths. Same shape of finding again:
+		// the row below is over ONE of two declarations, chosen by a string
+		// comparison, and every other reading of this revision would have been
+		// over the same one and looked equally whole.
+		//
+		// Inside one package that state does not build — which is exactly why
+		// it is worth a line here rather than nowhere. This walk parses every
+		// commit that touched core/, including ones caught mid-refactor, and a
+		// revision that parses and would not compile is the same kind of state
+		// as a revision go/parser could not read: ordinary in a history, not a
+		// failure, and not something to let through in silence.
+		//
+		// Empty at all 88 revisions of this repository, so this prints nothing
+		// today and the table is unchanged by its existence.
+		for _, sh := range rev.Shadowed {
+			fmt.Fprintf(os.Stderr, "themehistory: %s: %s is declared %d time(s) "+
+				"under %s/ (%s) and themeleaves resolved it to the last of them "+
+				"by path order — any field of that type in this revision's "+
+				"expansion is the reading of ONE of the declarations\n",
+				sha[:8], sh.Name, len(sh.Files), themePkg,
+				strings.Join(sh.Files, ", "))
 		}
 		if !rev.Found {
 			fmt.Fprintf(os.Stderr, "themehistory: %s: %s/ declares no %s at this "+
@@ -311,8 +338,11 @@ type revision struct {
 // text, and wasm/verify holds THAT half against reflect on every run.
 //
 // Test files are filtered here rather than left to themeleaves (which filters
-// them too): a `git cat-file` per test file in core/ at every revision is real
-// time spent fetching text nobody will parse.
+// them too): a fetch per test file in core/ at every revision is text nobody
+// will parse, carried down the pipe eighty-eight times. That cost is small now
+// that the fetch is batched (see blob) and it was the difference between this
+// walk and a noticeably slower one before, which is why the filter is here and
+// not left to the parse.
 //
 // Which makes the rule below a second copy of themeleaves.Of's, and a copy of
 // a rule is a thing that can move on its own. Expansion.Files is what each
@@ -347,7 +377,7 @@ func leavesAt(sha string) (revision, error) {
 			rev.nested = append(rev.nested, p)
 			continue
 		}
-		src, err := git("cat-file", "-p", sha+":"+p)
+		src, err := blob(sha, p)
 		if err != nil {
 			return revision{}, err
 		}
@@ -384,6 +414,168 @@ func wrap(names []string, width int, indent string) string {
 		line += len(name)
 	}
 	return b.String()
+}
+
+// blob is one file's text at one revision.
+//
+// # Why this is not `git cat-file -p` per file
+//
+// It was, and it cost thirty-one seconds. Eighty-eight commits touch core/ and
+// each one is read with one `ls-tree` plus one `cat-file` per non-test .go
+// file in it — around forty-four hundred git processes for a table of sixteen
+// rows. Almost none of that time is git doing anything: it is fork, exec, the
+// repository being opened, and the process being torn down, forty-four hundred
+// times.
+//
+//	before   ls-tree ── cat-file ── cat-file ── cat-file ── ...   per revision
+//	after    ls-tree ── ┐
+//	                    └── one `cat-file --batch`, for the whole run
+//
+// `--batch` is git's answer to exactly this: one process reads object names on
+// its stdin and writes each object to its stdout, for as long as the pipe is
+// open. The whole run then costs 89 processes rather than 4400, and the reading
+// is byte-for-byte the one it was — `--batch` and `-p` both write a blob's
+// contents raw, with no filters and no line-ending conversion, which is what
+// makes this a change in how the text is fetched and not in what it says.
+//
+// # The protocol, since a misread here is a silently wrong table
+//
+// One request per line, "<rev>:<path>". One response, in three parts:
+//
+//	<oid> SP <type> SP <size> LF   the header
+//	<size> bytes                   the object, raw
+//	LF                             a terminator that is NOT in the size
+//
+// So the body is read by COUNT and not by any delimiter, and the trailing LF
+// is consumed separately. A response that is short by that byte leaves the
+// next read starting one byte into the following header, and every file after
+// it in the run would come back wrong.
+//
+// # And one shape that goes back to a process of its own
+//
+// The request is newline-terminated, so a path containing a newline cannot be
+// asked for this way. Nothing in this repository has one and git will happily
+// track one, so it falls back to a `cat-file -p` of its own rather than
+// silently asking for a different object: the file-set arm in main_test.go is
+// specifically about paths that need quoting, and answering it with the wrong
+// blob is the one failure that would read as a filter having drifted.
+func blob(rev, path string) (string, error) {
+	if strings.ContainsAny(path, "\n") {
+		return git("cat-file", "-p", rev+":"+path)
+	}
+	blobsMu.Lock()
+	defer blobsMu.Unlock()
+	if blobs == nil {
+		b, err := newBatchReader()
+		if err != nil {
+			return "", err
+		}
+		blobs = b
+	}
+	return blobs.read(rev, path)
+}
+
+// The one `git cat-file --batch` this process talks to, started on first use.
+//
+// Lazy because a program that never reads a blob — `themehistory` cannot be
+// one, but a test binary that only runs the unit tests can be — should not
+// start a git process to find that out. Not closed: it lives for the run and
+// the pipe closing on exit is what ends it, which is the same lifetime the
+// per-file processes had in aggregate.
+//
+// The mutex is not for this program, which is single-threaded. It is for the
+// tests, which share this package and could be given a t.Parallel() at any
+// point; a batch reader driven from two goroutines would interleave two
+// requests and hand each caller the other's file.
+var (
+	blobs   *batchReader
+	blobsMu sync.Mutex
+)
+
+// batchReader is a running `git cat-file --batch` and the two ends of its
+// pipes.
+type batchReader struct {
+	cmd *exec.Cmd
+	in  io.WriteCloser
+	// Buffered because the body is read by count immediately after a header
+	// read that stops at a newline: an unbuffered read would need the header
+	// consumed one byte at a time to avoid swallowing the object behind it.
+	out *bufio.Reader
+}
+
+func newBatchReader() (*batchReader, error) {
+	cmd := exec.Command("git", "cat-file", "--batch")
+	in, err := cmd.StdinPipe()
+	if err != nil {
+		return nil, fmt.Errorf("git cat-file --batch: stdin: %w", err)
+	}
+	out, err := cmd.StdoutPipe()
+	if err != nil {
+		return nil, fmt.Errorf("git cat-file --batch: stdout: %w", err)
+	}
+	// stderr goes to this process's, so a git that has something to say says
+	// it where the rest of this command's diagnostics go rather than into a
+	// buffer nobody reads.
+	cmd.Stderr = os.Stderr
+	if err := cmd.Start(); err != nil {
+		return nil, fmt.Errorf("git cat-file --batch: %w", err)
+	}
+	return &batchReader{cmd: cmd, in: in, out: bufio.NewReader(out)}, nil
+}
+
+// read is one request and its response.
+//
+// # Which errors leave the stream usable, and which do not
+//
+// "<name> missing" is a COMPLETE response — one line, no body — so a request
+// for an object git cannot resolve costs an error and nothing else: the stream
+// is still sitting at the start of the next header and the caller after this
+// one gets its own file. That is the case worth being exact about, because it
+// is the reachable one (a path fetched at the wrong revision) and because a
+// reader that resynchronised wrongly would hand somebody else's bytes to a
+// walk that would parse them without complaint.
+//
+// Every other error here — a header that is not three fields, a body that ends
+// early, a pipe that closed — leaves the stream at an unknown offset and this
+// reader is not usable again. Nothing tries to recover: the callers all treat
+// a fetch failure as fatal to the reading, and a walk that carried on would be
+// producing a table out of whatever bytes came next.
+func (b *batchReader) read(rev, path string) (string, error) {
+	name := rev + ":" + path
+	if _, err := io.WriteString(b.in, name+"\n"); err != nil {
+		return "", fmt.Errorf("git cat-file --batch: asking for %s: %w", name, err)
+	}
+	header, err := b.out.ReadString('\n')
+	if err != nil {
+		return "", fmt.Errorf("git cat-file --batch: reading the header for "+
+			"%s: %w", name, err)
+	}
+	// "<oid> <type> <size>" — or "<name> missing", which is git's answer for
+	// an object it cannot resolve and is not an error on the pipe. It is an
+	// error HERE: every path this is asked for was named by `ls-tree` at the
+	// same revision in this same run.
+	fields := strings.Fields(strings.TrimSuffix(header, "\n"))
+	if len(fields) != 3 {
+		return "", fmt.Errorf("git cat-file --batch: %s: %q", name,
+			strings.TrimSuffix(header, "\n"))
+	}
+	size, err := strconv.Atoi(fields[2])
+	if err != nil {
+		return "", fmt.Errorf("git cat-file --batch: %s: unreadable size in "+
+			"%q: %w", name, strings.TrimSuffix(header, "\n"), err)
+	}
+	body := make([]byte, size)
+	if _, err := io.ReadFull(b.out, body); err != nil {
+		return "", fmt.Errorf("git cat-file --batch: %s: reading %d byte(s): %w",
+			name, size, err)
+	}
+	// The terminator, which is not counted in size. Left unread it would be
+	// the first byte of the next response's header.
+	if _, err := b.out.ReadByte(); err != nil {
+		return "", fmt.Errorf("git cat-file --batch: %s: reading the byte after "+
+			"the object: %w", name, err)
+	}
+	return string(body), nil
 }
 
 func git(args ...string) (string, error) {

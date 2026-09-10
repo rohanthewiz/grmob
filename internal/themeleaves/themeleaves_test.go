@@ -520,6 +520,161 @@ type Theme struct{}`, true},
 	}
 }
 
+// A name declared twice is resolved by SORT ORDER, and the resolution is
+// reported rather than made silently.
+//
+// # Why this can happen at all
+//
+// Of keys every struct it parses by its bare name in one flat map, so a second
+// declaration of a name overwrites the first and the winner is whichever path
+// sorted last. Inside one compiling package that never arises — which was the
+// reason it went unrecorded — and two callers hand Of file sets that are not
+// one package:
+//
+//	a union probe   internal/themehistory parses core/ together with a
+//	                subdirectory of it, on purpose, to find out whether the
+//	                files both walks decline would move the population
+//	a revision       the history walks every commit that touched core/, and a
+//	                commit caught mid-refactor need not build
+//
+// # And the direction of it is the part worth pinning
+//
+// The two cases below are the same collision with the subdirectory renamed,
+// and they resolve opposite ways:
+//
+//	core/sub/x.go   sorts BEFORE core/theme.go, so theme.go overwrites it and
+//	                the collision moves nothing — invisible
+//	core/zsub/x.go  sorts AFTER, so it takes the name and the expansion is
+//	                over a struct from another package
+//
+// A recipe written to demonstrate the hazard used sub/ and reported that
+// nothing happened. The hazard was real both times; only one spelling of it
+// shows. Shadowed is what makes the other one visible.
+func TestANameDeclaredTwiceIsResolvedBySortOrderAndSaidSoOutLoud(t *testing.T) {
+	const top = `package p
+type Theme struct{ Colors Colors }
+type Colors struct{ Background int }`
+	const elsewhere = `package q
+type Colors struct{ Ghost int }`
+
+	for _, c := range []struct {
+		what  string
+		other string
+		want  []string // the leaf names, which say which declaration answered
+		files []string // Shadowed[0].Files, in parse order
+	}{
+		{
+			what:  "a subdirectory that sorts before the top level",
+			other: "core/sub/x.go",
+			want:  []string{"Background"},
+			files: []string{"core/sub/x.go", "core/theme.go"},
+		},
+		{
+			what:  "a subdirectory that sorts after it",
+			other: "core/zsub/x.go",
+			want:  []string{"Ghost"},
+			files: []string{"core/theme.go", "core/zsub/x.go"},
+		},
+	} {
+		exp := Of(map[string]string{
+			"core/theme.go": top,
+			c.other:         elsewhere,
+		}, "Theme")
+
+		if !slices.Equal(exp.Names, c.want) {
+			t.Errorf("with %s declaring Colors too, Theme expands to %v and %v "+
+				"is what the LAST path to declare it gives.\n\n"+
+				"Of parses its paths in sorted order and a later declaration "+
+				"overwrites an earlier one, so which of two Colors answers for "+
+				"the field is a comparison between %q and \"core/theme.go\" and "+
+				"nothing else. A different answer here is that rule having "+
+				"changed, and every reading Of has ever taken over more than one "+
+				"package was over the other declaration.",
+				c.what, exp.Names, c.want, c.other)
+		}
+
+		want := []Shadow{{Name: "Colors", Files: c.files}}
+		if !shadowsEqual(exp.Shadowed, want) {
+			t.Errorf("with %s declaring Colors too, Of reports %v shadowed and "+
+				"%v is the collision it resolved.\n\n"+
+				"The expansion above is over one of the two declarations and "+
+				"came back whole and plausible either way. This is the only "+
+				"place that says a choice was made: internal/themehistory's "+
+				"nested arm prints two possible causes for a moved population — "+
+				"a leaf the subpackage really contributes, or a name it shadowed "+
+				"— and without this field it cannot tell them apart.",
+				c.what, exp.Shadowed, want)
+		}
+		// And that Files' ORDER is the finding rather than incidental. The
+		// last entry is meant to be the declaration that survived, so the two
+		// halves of each row are held against each other here instead of both
+		// being read from the table: if the winner is the other package's
+		// file, the leaf is the other package's leaf.
+		if len(exp.Shadowed) == 1 {
+			last := exp.Shadowed[0].Files[len(exp.Shadowed[0].Files)-1]
+			wonByOther := slices.Equal(exp.Names, []string{"Ghost"})
+			if (last == c.other) != wonByOther {
+				t.Errorf("%s: Shadowed names %q as the last declaration and "+
+					"Theme expands to %v.\n\n"+
+					"Those two disagree about which Colors answered. Files is "+
+					"documented as being in parse order with the winner last, "+
+					"and a reader meeting this record in a failure message will "+
+					"use it to decide which declaration to go and look at.",
+					c.what, last, exp.Names)
+			}
+		}
+	}
+
+	// One compiling package, which is every revision in this repository's
+	// history and the working tree. Nothing to report, and the field costs
+	// those readings nothing.
+	exp := Of(map[string]string{
+		"core/theme.go":  top,
+		"core/colors.go": "package p\ntype Other struct{ A int }",
+	}, "Theme")
+	if len(exp.Shadowed) != 0 {
+		t.Errorf("a file set declaring each name once reports %v shadowed.\n\n"+
+			"Shadowed is meant to be empty for anything that would compile, "+
+			"which is what makes a non-empty one a finding rather than noise. "+
+			"internal/themehistory prints it per revision on stderr the way it "+
+			"prints Unparsed, and a field that fired on ordinary input would "+
+			"put a line under all eighty-eight of them.", exp.Shadowed)
+	}
+
+	// A name declared twice in ONE file. go/parser reads it and the compiler
+	// does not accept it, which is the mid-refactor revision this record is
+	// partly for. The path is listed once per declaration rather than
+	// deduplicated: the count is how many declarations there were.
+	exp = Of(map[string]string{"p.go": `package p
+type Theme struct{ Colors Colors }
+type Colors struct{ Background int }
+type Colors struct{ Ghost int }`}, "Theme")
+	want := []Shadow{{Name: "Colors", Files: []string{"p.go", "p.go"}}}
+	if !shadowsEqual(exp.Shadowed, want) {
+		t.Errorf("one file declaring Colors twice reports %v and %v is the "+
+			"reading.\n\n"+
+			"Two declarations, so two entries under the one path. A shape that "+
+			"does not build is exactly what a revision caught mid-refactor can "+
+			"hold, and the history parses those rather than skipping them.",
+			exp.Shadowed, want)
+	}
+}
+
+// shadowsEqual compares two Shadowed lists, which slices.Equal cannot do: a
+// Shadow holds a slice and is therefore not comparable.
+func shadowsEqual(these, those []Shadow) bool {
+	if len(these) != len(those) {
+		return false
+	}
+	for i := range these {
+		if these[i].Name != those[i].Name ||
+			!slices.Equal(these[i].Files, those[i].Files) {
+			return false
+		}
+	}
+	return true
+}
+
 // notIn is the members of one list the other does not hold.
 func notIn(these, those []string) []string {
 	have := make(map[string]bool, len(those))
