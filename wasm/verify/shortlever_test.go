@@ -48,6 +48,29 @@ import (
 //	            in the run's output
 //	how many    shortLeverBudget. One lever is a lever; a second is a
 //	            convention, and a convention needs the rule written down
+//
+// # What "SKIPS" is asked of, which used to be the whole function
+//
+// The first spelling of this check asked whether ANYTHING in the enclosing
+// function skipped. That is a question about the wrong scope, and it passes
+// the exact shape the rule is against:
+//
+//	if runtime.GOOS == "js" { t.Skip(…) }
+//	samples := 1000
+//	if testing.Short() { samples = 10 }
+//
+// The function skips, so the old check was satisfied; what `-short` does in it
+// is shrink a loop. So the lever is now tied to the `if` it is the condition
+// OF — see shortLeverSkip — and the branch that condition guards is what has
+// to skip.
+//
+// The receiver is checked too, and for the same reason one level down: `.Skip`
+// on anything at all used to count. It is now held to the test's own
+// *testing.T (or *testing.B, or *testing.F), read off the function's
+// signature, so a `someOther.Skip()` in the guarded branch is not read as this
+// test skipping. That is a syntactic question about one parameter name and not
+// the dataflow question gitquoting_test.go declines: nothing here follows a
+// value, it compares two identifiers.
 func TestTheShortLeversAreTheOnesThisRepositoryHasDecidedOn(t *testing.T) {
 	root := filepath.Join("..", "..")
 	_, considered, from, err := citingFiles(root)
@@ -80,27 +103,18 @@ func TestTheShortLeversAreTheOnesThisRepositoryHasDecidedOn(t *testing.T) {
 			if !ok || fn.Body == nil {
 				continue
 			}
-			at := 0
-			ast.Inspect(fn.Body, func(n ast.Node) bool {
-				call, ok := n.(*ast.CallExpr)
-				if !ok || len(call.Args) != 0 {
-					return true
-				}
-				sel, ok := call.Fun.(*ast.SelectorExpr)
-				if !ok || sel.Sel.Name != "Short" {
-					return true
-				}
-				if pkg, ok := sel.X.(*ast.Ident); ok && pkg.Name == "testing" {
-					at = fset.Position(call.Pos()).Line
-					return false
-				}
-				return true
-			})
+			// The test's own *testing.T / *testing.B / *testing.F, by name.
+			// A function that reads testing.Short() without one is not a test
+			// at all, and `recv` is "" for it — which shortLeverSkip reports
+			// as its own finding rather than treating as a missing skip.
+			recv := testParamName(fn)
+			at, guarded := shortLeverCall(fset, fn.Body)
 			if at == 0 {
 				continue
 			}
+			why := shortLeverSkip(guarded, recv)
 			found = append(found, shortLever{file: rel, fn: fn.Name.Name,
-				line: at, skips: callsSkip(fn.Body)})
+				line: at, skips: why == "", why: why})
 		}
 	}
 
@@ -143,16 +157,20 @@ func TestTheShortLeversAreTheOnesThisRepositoryHasDecidedOn(t *testing.T) {
 				l.file, l.line, l.fn, shortLeverList())
 		}
 		if !l.skips {
-			t.Errorf("%s:%d reads testing.Short() in %s and nothing in that "+
-				"function skips.\n\n"+
+			t.Errorf("%s:%d reads testing.Short() in %s and %s.\n\n"+
 				"A `-short` that shrinks a loop, lowers a sample count or "+
 				"takes a smaller input is a different thing wearing the same "+
 				"name: the test passes, its name is in the run's output, and "+
 				"what it asserted is not what it asserts on a full run. This "+
 				"repository's one lever SKIPS, and says in the skip message "+
 				"what is not being asserted — which is the half a reader of a "+
-				"green `-short` run has to be able to see.",
-				l.file, l.line, l.fn)
+				"green `-short` run has to be able to see.\n\n"+
+				"The question is asked of the BRANCH testing.Short() guards "+
+				"and not of the function around it: a test that skips for an "+
+				"unrelated reason elsewhere and shrinks a loop here is exactly "+
+				"the shape this rule is against, and it satisfies a check "+
+				"that only asks whether the function skips somewhere.",
+				l.file, l.line, l.fn, l.why)
 		}
 	}
 	for key, stops := range want {
@@ -239,6 +257,13 @@ type shortLever struct {
 	file, fn string
 	line     int
 	skips    bool
+	// Why not, when it does not — as the half of a sentence the message puts
+	// after "reads testing.Short() in F and ". Empty when it does skip.
+	//
+	// Carried rather than re-derived in the message, because there are four
+	// ways to fail this and "nothing skips" describes one of them: see
+	// shortLeverSkip.
+	why string
 }
 
 // leverList is what the walk found, for a message.
@@ -251,14 +276,175 @@ func leverList(found []shortLever) []string {
 	return out
 }
 
-// callsSkip is whether this body calls Skip, Skipf or SkipNow on anything.
+// shortLeverCall finds this body's testing.Short() and the branch it guards.
 //
-// The receiver is not checked. Every one of these is a method on *testing.T or
-// *testing.B and nothing else in this repository declares such a name, so
-// matching the selector alone is the whole question — and a check that tried
-// to prove the receiver was the test's own `t` would be the dataflow question
-// gitquoting_test.go explains this package does not ask.
-func callsSkip(body *ast.BlockStmt) bool {
+// # Why the branch and not the function
+//
+// A lever is a CONDITION. `if testing.Short() { t.Skip(…) }` is the shape this
+// repository decided on, and what makes it that shape is the branch: the call
+// is a question, and the answer is what the `if` does with it. Reading the
+// enclosing function instead answers a looser question — "does anything here
+// skip" — which a test that skips for one reason and shrinks for another
+// passes while being the thing the rule refuses.
+//
+// So the call is found first, and then the innermost `if` whose CONDITION
+// contains it. `guarded` is that if's body.
+//
+//	if testing.Short() { … }              guarded is the body
+//	if testing.Short() && x { … }         the same: the call is in the cond
+//	if !testing.Short() { … }             the same body, and shortLeverSkip
+//	                                      fails it — the branch a short run
+//	                                      does NOT take is not where a skip
+//	                                      belongs, and a lever spelled this way
+//	                                      is a full run taking a second path
+//	short := testing.Short(); if short …  no enclosing cond, guarded is nil,
+//	                                      and shortLeverSkip says so. A lever
+//	                                      held in a variable is one this parse
+//	                                      cannot follow, which is a finding
+//	                                      rather than a pass
+//
+// Returns the call's line, which is what every message here points at.
+func shortLeverCall(fset *token.FileSet, body *ast.BlockStmt) (line int, guarded *ast.BlockStmt) {
+	// The chain of `if` statements this walk is currently inside, innermost
+	// last. ast.Inspect calls back with nil on the way out of a node, which is
+	// what pops it.
+	var ifs []*ast.IfStmt
+	ast.Inspect(body, func(n ast.Node) bool {
+		if line != 0 {
+			return false
+		}
+		if n == nil {
+			if len(ifs) > 0 {
+				ifs = ifs[:len(ifs)-1]
+			}
+			return false
+		}
+		if in, ok := n.(*ast.IfStmt); ok {
+			ifs = append(ifs, in)
+			return true
+		}
+		call, ok := n.(*ast.CallExpr)
+		if !ok || len(call.Args) != 0 {
+			return true
+		}
+		sel, ok := call.Fun.(*ast.SelectorExpr)
+		if !ok || sel.Sel.Name != "Short" {
+			return true
+		}
+		pkg, ok := sel.X.(*ast.Ident)
+		if !ok || pkg.Name != "testing" {
+			return true
+		}
+		line = fset.Position(call.Pos()).Line
+		// The innermost enclosing `if` whose CONDITION this call is inside.
+		// Walking outwards rather than taking the last one, because the call
+		// may be in a nested if's BODY rather than its condition — in which
+		// case the lever belongs to whichever ancestor's condition holds it,
+		// and to none of them if no ancestor's does.
+		for i := len(ifs) - 1; i >= 0; i-- {
+			if containsPos(ifs[i].Cond, call.Pos()) {
+				guarded = ifs[i].Body
+				break
+			}
+		}
+		return false
+	})
+	return line, guarded
+}
+
+// containsPos is whether an expression's source range covers this position.
+//
+// Position arithmetic rather than a second walk: the condition and the call
+// come out of one parse and one FileSet, so a call inside a condition is
+// exactly a call whose Pos lies between the condition's ends. Nothing here
+// needs to know what the condition is made of, which is the point — `a &&
+// testing.Short()`, `!testing.Short()` and a call buried in a parenthesised
+// expression all answer the same way.
+func containsPos(e ast.Expr, pos token.Pos) bool {
+	return e != nil && e.Pos() <= pos && pos < e.End()
+}
+
+// shortLeverSkip is why this lever is not a skip, or "" when it is one.
+//
+// Four ways to fail, and they are different findings — which is why this
+// returns a reason rather than a bool. Each is a half-sentence the caller puts
+// after "reads testing.Short() in F and ".
+func shortLeverSkip(guarded *ast.BlockStmt, recv string) string {
+	if recv == "" {
+		return "that function takes no *testing.T, *testing.B or *testing.F, " +
+			"so there is nothing there that could skip. A `-short` read " +
+			"outside a test is a lever on something else"
+	}
+	if guarded == nil {
+		return "the call is not the condition of an `if`. A lever assigned to " +
+			"a variable, passed to a helper or read inside a larger " +
+			"expression is one this parse cannot follow to the branch it " +
+			"decides, and what a short run then stops asserting is not " +
+			"readable off the source"
+	}
+	if !skipsVia(guarded, recv) {
+		return "the branch it guards does not call " + recv + ".Skip, " +
+			recv + ".Skipf or " + recv + ".SkipNow"
+	}
+	return ""
+}
+
+// testParamName is the name of the test's own *testing.T, *testing.B or
+// *testing.F parameter.
+//
+// # Why the receiver is worth reading at all
+//
+// The skip check used to match any `.Skip` selector on anything, on the
+// reasoning that these are methods on the testing types and nothing else here
+// declares such a name. That is true today and it is an argument about the
+// repository rather than about the code being read, and it costs nothing to
+// stop making: the parameter is right there in the signature.
+//
+// What this deliberately does NOT do is prove the receiver at the call site IS
+// that parameter in any deeper sense — a `t` shadowed by a local of another
+// type would still match. That is the dataflow question gitquoting_test.go
+// explains this package does not ask, and the answer here is the same: this
+// compares two identifiers, which is a real narrowing over matching every
+// selector in the language, and the remaining looseness is in the direction of
+// ACCEPTING a lever, which is the safe direction for a census whose failure is
+// a prompt.
+//
+// "" when there is no such parameter, which shortLeverSkip reports as its own
+// finding: a testing.Short() outside a test is not a lever this convention is
+// about.
+func testParamName(fn *ast.FuncDecl) string {
+	if fn.Type.Params == nil {
+		return ""
+	}
+	for _, f := range fn.Type.Params.List {
+		star, ok := f.Type.(*ast.StarExpr)
+		if !ok {
+			continue
+		}
+		sel, ok := star.X.(*ast.SelectorExpr)
+		if !ok {
+			continue
+		}
+		pkg, ok := sel.X.(*ast.Ident)
+		if !ok || pkg.Name != "testing" {
+			continue
+		}
+		switch sel.Sel.Name {
+		case "T", "B", "F":
+		default:
+			continue
+		}
+		for _, id := range f.Names {
+			if id.Name != "_" {
+				return id.Name
+			}
+		}
+	}
+	return ""
+}
+
+// skipsVia is whether this block calls Skip, Skipf or SkipNow on `recv`.
+func skipsVia(body *ast.BlockStmt, recv string) bool {
 	hit := false
 	ast.Inspect(body, func(n ast.Node) bool {
 		if hit {
@@ -274,6 +460,10 @@ func callsSkip(body *ast.BlockStmt) bool {
 		}
 		switch sel.Sel.Name {
 		case "Skip", "Skipf", "SkipNow":
+		default:
+			return true
+		}
+		if id, ok := sel.X.(*ast.Ident); ok && id.Name == recv {
 			hit = true
 			return false
 		}

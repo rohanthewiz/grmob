@@ -11,8 +11,8 @@ import (
 	"testing"
 )
 
-// This repository hand-rolls ONE parser for dotted versions, and the reason
-// for hand-rolling it was written for one.
+// This repository has ONE comparator for dotted versions, and the reason for
+// the way it is built was written for one.
 //
 // # What this is about
 //
@@ -58,22 +58,49 @@ import (
 // TestEveryTimingsRecordIsTheSameShape, which are the same shape of check for
 // the same kind of reason.
 //
-// The syntactic handle is the PARSER rather than the comparator, because an
-// orderer cannot be recognised by shape and a parser can: ordering dotted
-// versions means having the fields as numbers, which means splitting a string
-// on "." and converting the pieces. A function that does both is a dotted
-// version being taken apart by hand, whatever the function is called.
+// # What is being counted, which used to be the wrong noun
 //
-//	what it finds        one function body that splits on "." and runs the
-//	                     pieces through strconv — versionFields, which is what
-//	                     compareVersions is built on
-//	what it will not     an orderer that never splits, because it was written
-//	                     on top of x/mod/semver. That is the change this arm
-//	                     is asking for, so not seeing it is correct
+// This arm counted HAND-ROLLED PARSERS. The syntactic handle was the parser
+// because an orderer cannot be recognised by shape and a parser can: ordering
+// dotted versions means having the fields as numbers, which means splitting a
+// string on "." and converting the pieces.
+//
+// That handle is right and the noun was wrong, and the two came apart at
+// exactly the change this arm exists to prompt. An orderer built on
+// golang.org/x/mod/semver never splits anything, so it was invisible here —
+// written down as correct behaviour, on the reasoning that a semver-based
+// comparator IS the change being asked for. It is, right up until somebody
+// adds one and leaves versionFields where it is. The repository then holds two
+// comparators that agree until the day they do not, and the count still reads
+// one: the zero-found case covered both of them going, and nothing covered one
+// of them ARRIVING.
+//
+// So the budget is about COMPARATORS and the kind is a column. They are the
+// same number today, which is why the distinction could be left alone, and
+// they will not be at the moment it matters.
+//
+//	what it finds        every function that orders dotted versions, by either
+//	                     construction — a body that splits on "." and runs the
+//	                     pieces through strconv (versionFields, which is what
+//	                     compareVersions is built on), or one that calls
+//	                     x/mod/semver's own orderer
+//	what it will not     an orderer that neither splits nor calls semver —
+//	                     one built on a third dependency, say. That is a
+//	                     dependency arriving, which go.mod and the build both
+//	                     report, and this arm does not
 //	what it might        a function that splits some other dotted thing and
 //	                     parses it. There is none today; one arriving is a row
 //	                     for the table below and a decision either way, which
 //	                     is the point of a failing arm rather than a silent one
+//
+// # What the two kinds mean when the count is right
+//
+//	1 hand-rolled, 0 semver   today. The twenty lines, and the reason above
+//	1 semver, 0 hand-rolled   the change this arm asks for, having been made.
+//	                          Passes, and is meant to
+//	2 of anything             two comparators. The failure, whichever way they
+//	                          are built, because that is the thing the reason
+//	                          is about
 func TestTheDottedVersionParsersAreTheOnesTheReasonCovers(t *testing.T) {
 	root := filepath.Join("..", "..")
 	_, considered, from, err := citingFiles(root)
@@ -90,7 +117,7 @@ func TestTheDottedVersionParsersAreTheOnesTheReasonCovers(t *testing.T) {
 	// arrive in map order cannot be diffed against the last run.
 	sort.Strings(paths)
 
-	var found []string
+	var found []versionComparator
 	fset := token.NewFileSet()
 	for _, rel := range paths {
 		src := filepath.Join(root, filepath.FromSlash(rel))
@@ -106,27 +133,53 @@ func TestTheDottedVersionParsersAreTheOnesTheReasonCovers(t *testing.T) {
 			if !ok || fn.Body == nil {
 				continue
 			}
-			if !splitsOnADot(fn.Body) || !parsesANumber(fn.Body) {
+			// Both constructions, and a function that is somehow both is
+			// reported once as hand-rolled: the split is what the reason in
+			// compareVersions' header is about, and it is the half that would
+			// need rewriting.
+			kind := ""
+			switch {
+			case splitsOnADot(fn.Body) && parsesANumber(fn.Body):
+				kind = "hand-rolled"
+			case ordersViaSemver(fn.Body):
+				kind = "x/mod/semver"
+			default:
 				continue
 			}
-			found = append(found, fmt.Sprintf("%s (%s:%d)", fn.Name.Name, rel,
-				fset.Position(fn.Pos()).Line))
+			found = append(found, versionComparator{
+				kind: kind,
+				name: fn.Name.Name,
+				at: fmt.Sprintf("%s:%d", rel,
+					fset.Position(fn.Pos()).Line),
+			})
 		}
 	}
+	// Sorted so a run's findings can be diffed against the last one; the file
+	// order above is already stable, and this makes the two kinds read
+	// together.
+	sort.Slice(found, func(i, j int) bool {
+		if found[i].kind != found[j].kind {
+			return found[i].kind < found[j].kind
+		}
+		return found[i].at < found[j].at
+	})
 
 	// The walk reaching anything. Every arm in this package that walks the
 	// repository says this: a walk over nothing passes silently and reads as a
 	// clean result, and this one is looking for a SHAPE that a rewrite could
 	// take away without anybody meaning to.
 	if len(found) == 0 {
-		t.Fatalf("no function that splits a string on \".\" and parses the "+
-			"pieces was found in %d Go file(s) enumerated by %s, and this "+
-			"repository has one: versionFields, in hookconfig_test.go.\n\n"+
-			"Either the walk is not reaching it, or compareVersions has been "+
-			"rewritten on top of something that does the parsing — which is "+
-			"the change this check exists to prompt, and which should retire "+
-			"this arm in the same commit rather than leave it passing over "+
-			"nothing.", len(paths), from)
+		t.Fatalf("no function that orders dotted versions was found in %d Go "+
+			"file(s) enumerated by %s, and this repository has one: "+
+			"versionFields, in hookconfig_test.go, which compareVersions is "+
+			"built on.\n\n"+
+			"Both constructions are looked for — a split-and-parse, and a call "+
+			"into x/mod/semver — so this is not the arm's own change having "+
+			"been made. Either the walk is not reaching the file, or "+
+			"hookconfig_test.go no longer orders versions at all, in which "+
+			"case the question this arm exists for has gone with it and this "+
+			"check should be retired in the same commit rather than left "+
+			"passing over nothing.", len(paths), from)
 	}
 
 	// Every row of the table naming a file that is still there, because a row
@@ -143,47 +196,62 @@ func TestTheDottedVersionParsersAreTheOnesTheReasonCovers(t *testing.T) {
 		}
 	}
 
-	if len(found) > dottedVersionParsers {
-		t.Errorf("this repository takes a dotted version apart by hand in %d "+
-			"place(s) and the argument for doing it by hand was written for "+
-			"%d: %s.\n\n"+
+	if len(found) > dottedVersionComparators {
+		t.Errorf("this repository orders dotted versions in %d place(s) and "+
+			"the argument for the way the one is built was written for %d: "+
+			"%s.\n\n"+
 			"That argument is in compareVersions' header and it is about ONE "+
 			"caller: a wrapper around golang.org/x/mod/semver is needed either "+
 			"way, because semver wants a leading `v` and the versions this "+
 			"repository reads do not have one, so for a single caller the "+
 			"wrapper and the parser cost about the same. At %d it is a "+
-			"different trade — two hand-rolled comparators agree until the "+
-			"day they do not, and x/mod is already in this module's graph as "+
-			"an indirect requirement, so the import moves a line in go.mod "+
-			"rather than adding a dependency.\n\n"+
+			"different trade — two comparators agree until the day they do "+
+			"not, however each is built, and x/mod is already in this module's "+
+			"graph as an indirect requirement, so the import moves a line in "+
+			"go.mod rather than adding a dependency.\n\n"+
+			"The kinds above are the shape of the decision, not the decision "+
+			"itself. Two hand-rolled is the case the reason was written "+
+			"against; one of each is worse, because the two disagree about "+
+			"the cases semver has opinions on (build metadata, a bare `v`, a "+
+			"pre-release tail) and each looks obviously correct beside its own "+
+			"caller.\n\n"+
 			"Either put the callers on one comparator — semver answers every "+
 			"rule compareVersions has; the four of them are checked off in "+
-			"this test's header — or raise dottedVersionParsers and write the "+
-			"reason beside that header, so the next person reads a decision "+
-			"rather than a number.",
-			len(found), dottedVersionParsers, strings.Join(found, ", "),
+			"this test's header — or raise dottedVersionComparators and write "+
+			"the reason beside that header, so the next person reads a "+
+			"decision rather than a number.",
+			len(found), dottedVersionComparators, comparatorList(found),
 			len(found))
 	}
 
-	t.Logf("%d dotted-version parser(s) in %d Go file(s): %s. %d other place(s) "+
-		"read a version without ordering one; see versionReaders. Enumerated "+
-		"by %s.", len(found), len(paths), strings.Join(found, ", "),
+	t.Logf("%d dotted-version comparator(s) in %d Go file(s): %s. %d other "+
+		"place(s) read a version without ordering one; see versionReaders. "+
+		"Enumerated by %s.", len(found), len(paths), comparatorList(found),
 		len(versionReaders), from)
 }
 
-// How many hand-rolled dotted-version parsers the written reason covers.
+// How many dotted-version comparators the written reason covers.
 //
 // One, and the second is a decision rather than a number to raise — see the
 // arm above, and gitWrapperAcceptRules and timingsRecordCopies, which are the
 // same shape of constant for the same kind of reason.
 //
+// # Comparators and not hand-rolled parsers, which is the whole point
+//
+// This used to be `dottedVersionParsers`, counting only the split-and-parse
+// construction. That made the arm blind in exactly one direction — a second
+// comparator built on x/mod/semver — and that direction is the one the arm's
+// own message asks somebody to walk in. A check that cannot see the change it
+// requests is a check that stops being true at the moment it matters.
+//
 // # The direction this fails in
 //
-// A second one is somebody writing twenty correct lines, which this arm fails.
-// That is the same deliberate direction timingsRecordCopies documents: the
-// failure IS the prompt, the change being asked for is in THIS repository, and
-// the message names what to do rather than reporting a mistake.
-const dottedVersionParsers = 1
+// A second one is somebody writing twenty correct lines, or twenty correct
+// lines' worth of semver call, which this arm fails either way. That is the
+// same deliberate direction timingsRecordCopies documents: the failure IS the
+// prompt, the change being asked for is in THIS repository, and the message
+// names what to do rather than reporting a mistake.
+const dottedVersionComparators = 1
 
 // The places that read a version and do NOT order one.
 //
@@ -214,6 +282,69 @@ var versionReaders = []struct {
 	what: "a Compose release DERIVED out of the BOM's own pom and used to " +
 		"find a jar — read the way gradle reads it, and compared to nothing",
 }}
+
+// versionComparator is one function that orders dotted versions: which
+// construction it is, what it is called, and where.
+type versionComparator struct {
+	kind, name, at string
+}
+
+// comparatorList is what the walk found, for a message.
+func comparatorList(found []versionComparator) string {
+	out := make([]string, 0, len(found))
+	for _, c := range found {
+		out = append(out, fmt.Sprintf("%s, %s (%s)", c.name, c.kind, c.at))
+	}
+	return strings.Join(out, "; ")
+}
+
+// ordersViaSemver is whether this body calls golang.org/x/mod/semver's own
+// orderer.
+//
+// # Which calls count, and why not every semver call does
+//
+// semver.IsValid, semver.Canonical and semver.MajorMinor answer questions
+// about ONE version and order nothing — a caller of those is a version reader,
+// which is what versionReaders is a list of, and counting them here would put
+// four of this repository's existing lines into a budget of one.
+//
+// Compare is the order. Sort and Max are it applied to a collection, and both
+// are worth catching for the same reason: a function reaching for either is
+// deciding which of several versions is ahead, which is precisely the thing
+// two comparators can disagree about.
+//
+// The package name is matched and the import path is not, for the reason
+// callsStrings matches `strings`: this file is reading a bare parse with no
+// object resolution behind it, and a local package aliased to `semver` that
+// exported a `Compare` would be a second comparator being reported as one —
+// which is the safe direction.
+func ordersViaSemver(body *ast.BlockStmt) bool {
+	hit := false
+	ast.Inspect(body, func(n ast.Node) bool {
+		if hit {
+			return false
+		}
+		call, ok := n.(*ast.CallExpr)
+		if !ok {
+			return true
+		}
+		sel, ok := call.Fun.(*ast.SelectorExpr)
+		if !ok {
+			return true
+		}
+		switch sel.Sel.Name {
+		case "Compare", "Sort", "Max":
+		default:
+			return true
+		}
+		if pkg, ok := sel.X.(*ast.Ident); ok && pkg.Name == "semver" {
+			hit = true
+			return false
+		}
+		return true
+	})
+	return hit
+}
 
 // splitsOnADot is whether this body splits a string on the literal ".".
 //

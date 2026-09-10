@@ -5,6 +5,11 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
+	// Aliased: this package already declares a `types` function
+	// (timingsrecords_test.go), and a bare import would collide with it. The
+	// alias is here rather than a rename there because the collision is one
+	// import's problem and the other name is load-bearing in its own file.
+	gotypes "go/types"
 	"path"
 	"path/filepath"
 	"sort"
@@ -781,17 +786,46 @@ func TestTheGitWrapperTaintWalkIsTheSizeItsReasonCovers(t *testing.T) {
 	// of them is a rule this census cannot see, so a new callee is a row in
 	// the table and a decision about whether the approximation has stopped
 	// being one function.
+	//
+	// Predeclared names are dropped as a CLASS rather than listed. `len` used
+	// to be a row here, and the row said only that it is spelled the way a
+	// local helper is — which is a fact about the walk collecting bare names,
+	// not a reason anybody could act on. An `append` or a `make` arriving in
+	// the body would have needed a row for the same non-reason, and a table
+	// that fills up with those stops being what it is for: a list of the
+	// places a rule could be hiding. Nothing predeclared is such a place. It
+	// has no body in this repository, so there is nothing in it to hide.
+	//
+	// `shadowsAPredeclaredName` is what makes that true rather than assumed:
+	// see it for the one spelling that would make a bare `len(…)` a call into
+	// this repository after all, and gitWrapperTaintLimits for the one it
+	// cannot see.
+	shadowed := shadowsAPredeclaredName(file, fn)
+	named := 0
 	for name := range callees {
 		if gitWrapperTaintHelpers[name] != "" {
+			named++
 			continue
 		}
+		if isPredeclared(name) && !shadowed[name] {
+			continue
+		}
+		named++
 		var known []string
 		for h := range gitWrapperTaintHelpers {
 			known = append(known, h)
 		}
 		sort.Strings(known)
+		shadow := ""
+		if shadowed[name] {
+			shadow = fmt.Sprintf("\n\n%s is predeclared, and calls to "+
+				"predeclared names are skipped here because nothing "+
+				"predeclared has a body in this repository. This one is not "+
+				"skipped: something in scope declares that name, so the call "+
+				"goes to a function in this package after all.", name)
+		}
 		t.Errorf("whyNotAGitWrapper calls %s(…), which is not one of the "+
-			"helpers this census knows about: %s.\n\n"+
+			"helpers this census knows about: %s.%s\n\n"+
 			"The rule count above reads THIS function's body and nothing else, "+
 			"so a helper that decides an acceptance — `if acceptsVia(x) { "+
 			"reaches = true }` — is a rule whose content the census never "+
@@ -800,7 +834,8 @@ func TestTheGitWrapperTaintWalkIsTheSizeItsReasonCovers(t *testing.T) {
 			"one answers, and while writing it, the question the row is "+
 			"really asking: whether the approximation is still one function a "+
 			"reader can hold in their head, which is what its budget of %d is "+
-			"about.", name, strings.Join(known, ", "), gitWrapperAcceptRules)
+			"about.", name, strings.Join(known, ", "), shadow,
+			gitWrapperAcceptRules)
 	}
 
 	if emptyReturns != 1 {
@@ -863,11 +898,11 @@ func TestTheGitWrapperTaintWalkIsTheSizeItsReasonCovers(t *testing.T) {
 	t.Logf("whyNotAGitWrapper accepts a helper in %d place(s), each spelled "+
 		"`reaches = true`, each with a row in gitWrapperTaintRules and a case "+
 		"in %s; %d looseness(es) written down beside them, and %d helper(s) "+
-		"called out of a body with one way out. Counted out of %s rather than "+
-		"listed, so a rule added without a row fails this arm in the commit "+
-		"that adds it.",
+		"called out of a body with one way out — of %d bare name(s) called, "+
+		"the rest predeclared. Counted out of %s rather than listed, so a "+
+		"rule added without a row fails this arm in the commit that adds it.",
 		accepts, gitWrapperCaseTable, len(gitWrapperTaintLimits),
-		len(callees), self)
+		named, len(callees), self)
 }
 
 // How many acceptance rules the written reason covers. Two, and the third one
@@ -901,14 +936,23 @@ var gitWrapperTaintRules = []struct {
 // so a helper is where an acceptance can be decided without the census
 // noticing — `if acceptsVia(x) { reaches = true }` reads as one rule and is
 // two. Each row says what the helper answers, and what makes it not a rule is
-// in the answer: none of these three has an opinion about whether the premise
+// in the answer: neither of these two has an opinion about whether the premise
 // holds, they report a syntactic fact the walk then decides on.
 //
-// `len` is here because it is spelled the same way a local helper is. The
-// standard library is not, and does not need to be: a `pkg.Fn(…)` cannot
-// assign to a local in this function, so the walk only collects bare names.
+// # What is NOT a row, and why that is the point of the table
+//
+// `len` was one. Its row said it is spelled the same way a local helper is —
+// unqualified — which is a fact about the walk (a `pkg.Fn(…)` cannot assign to
+// a local here, so only bare names are collected) and not a reason anybody
+// could act on. Nothing distinguished it from the two real helpers, so an
+// `append` or a `make` arriving in the body would have earned a row on the
+// same non-reason, and the table would have stopped being what it is FOR: the
+// list of places an acceptance rule could be hiding.
+//
+// A predeclared name is not such a place — it has no body in this repository —
+// so the walk drops the whole class instead, and `shadowsAPredeclaredName`
+// checks the one thing that would make that wrong.
 var gitWrapperTaintHelpers = map[string]string{
-	"len":              "a builtin, and unqualified like everything else here",
 	"mentionsAny":      "whether an expression names a tainted identifier",
 	"isGitCommandCall": "whether an expression is exec.Command(\"git\", …)",
 }
@@ -928,6 +972,127 @@ var gitWrapperTaintLimits = []string{
 		"is still the parameter",
 	"only this function's body is read, so a helper that hands its arguments " +
 		"to another function in the package is not followed",
+	"a predeclared name shadowed by a package-level declaration in ANOTHER " +
+		"file of this package is read as the builtin: shadowsAPredeclaredName " +
+		"sees this file's top level and this function's own scope, which is " +
+		"where such a declaration would have to be to be worth reading, and " +
+		"not the rest of the package",
+}
+
+// isPredeclared is whether this bare name is one of Go's own.
+//
+// Asked of go/types' universe scope rather than of a list written here, so it
+// answers for whatever toolchain is compiling this — `min` and `max` were not
+// predeclared before Go 1.21, and a hand-written list is a second copy of a
+// language definition that changes.
+//
+// Both builtins and predeclared TYPES are dropped, because both reach this
+// walk as a call to a bare identifier and neither has a body: `len(x)` is a
+// builtin and `string(b)` is a conversion, and an acceptance rule can hide in
+// exactly as much of either, which is none.
+func isPredeclared(name string) bool {
+	switch gotypes.Universe.Lookup(name).(type) {
+	case *gotypes.Builtin, *gotypes.TypeName:
+		return true
+	}
+	return false
+}
+
+// shadowsAPredeclaredName is every predeclared name that something in scope at
+// whyNotAGitWrapper redeclares.
+//
+// # Why this exists
+//
+// Dropping predeclared names rests on there being no body behind them. That is
+// true of `len` the builtin and false of a `len` this package declared, and
+// the two are spelled identically at the call site — so a redeclaration is the
+// one thing that turns the class exclusion above from a fact into a guess.
+//
+// # What it reads, which is the two scopes a redeclaration would sit in
+//
+//	this file's top level    `func len(…)`, `var len = …`, `type len …` — any
+//	                         package-level declaration in gitquoting_test.go
+//	whyNotAGitWrapper's own  its parameters, and anything the body declares
+//	                         with `:=`, `var`, `const` or `type`
+//
+// A `for len := range …` inside the body is caught by the same walk: the
+// census is not tracking scope (see gitWrapperTaintLimits), so a shadow
+// anywhere in the function counts everywhere in it. That is the safe
+// direction — it makes the census ASK about a call it would otherwise skip.
+//
+// The rest of the package is not read, which is the limit written down beside
+// the others. A redeclaration of a builtin in this package's other files would
+// be visible here as a name, and reading thirty files to find it is a walk
+// this package has three of already.
+func shadowsAPredeclaredName(file *ast.File, fn *ast.FuncDecl) map[string]bool {
+	out := map[string]bool{}
+	note := func(name string) {
+		if name != "" && name != "_" && isPredeclared(name) {
+			out[name] = true
+		}
+	}
+	// Package-level declarations in this file.
+	for _, d := range file.Decls {
+		switch decl := d.(type) {
+		case *ast.FuncDecl:
+			if decl.Recv == nil {
+				note(decl.Name.Name)
+			}
+		case *ast.GenDecl:
+			for _, spec := range decl.Specs {
+				switch sp := spec.(type) {
+				case *ast.ValueSpec:
+					for _, id := range sp.Names {
+						note(id.Name)
+					}
+				case *ast.TypeSpec:
+					note(sp.Name.Name)
+				}
+			}
+		}
+	}
+	// The function's own parameters and results.
+	if fn.Type.Params != nil {
+		for _, f := range fn.Type.Params.List {
+			for _, id := range f.Names {
+				note(id.Name)
+			}
+		}
+	}
+	if fn.Type.Results != nil {
+		for _, f := range fn.Type.Results.List {
+			for _, id := range f.Names {
+				note(id.Name)
+			}
+		}
+	}
+	// And anything the body binds.
+	ast.Inspect(fn.Body, func(n ast.Node) bool {
+		switch node := n.(type) {
+		case *ast.AssignStmt:
+			if node.Tok != token.DEFINE {
+				return true
+			}
+			for _, lhs := range node.Lhs {
+				if id, ok := lhs.(*ast.Ident); ok {
+					note(id.Name)
+				}
+			}
+		case *ast.GenDecl:
+			for _, spec := range node.Specs {
+				switch sp := spec.(type) {
+				case *ast.ValueSpec:
+					for _, id := range sp.Names {
+						note(id.Name)
+					}
+				case *ast.TypeSpec:
+					note(sp.Name.Name)
+				}
+			}
+		}
+		return true
+	})
+	return out
 }
 
 // isEmptyStringLit is whether an expression is the literal "".

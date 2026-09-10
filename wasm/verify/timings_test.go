@@ -90,10 +90,31 @@ var verifyTimingsTakenOn = struct {
 	// Two arms at 0.18s against a total that moved 0.21s do not add up, and
 	// the gap is not explained here for the same reason the 60% one in the
 	// other record is not: these are two readings taken in two sessions, and a
-	// difference of that size is what a wall clock is worth. There are now
-	// three of these walks in this package — the third is
-	// TestEveryTimingsRecordIsTheSameShape — and each is 0.18s whether it runs
-	// alone or beside the others, which was measured rather than assumed.
+	// difference of that size is what a wall clock is worth. Each of these
+	// walks is 0.18s whether it runs alone or beside the others, which was
+	// measured rather than assumed.
+	//
+	// # How many of them there are, which this comment used to get wrong
+	//
+	// It said three, naming TestEveryTimingsRecordIsTheSameShape as the last.
+	// There were four: TestEveryGitListingAsksForNulSeparatedPaths has parsed
+	// the whole tree since before any of the other three existed and was
+	// simply not counted. And a walk in this package is not always a test —
+	// checkCitationsResolve is a helper, and it walks once per caller.
+	//
+	// So the count stopped being kept here. TestTheRepositoryWideWalksIn-
+	// ThisPackageAreTheOnesDecidedOn reads it out of the source: SEVEN walks a
+	// run, four of them parsing every Go file, each with a row saying what it
+	// asks the repository and how deep it goes. About a second of the figure
+	// below, and the number that decides when one shared parse becomes worth
+	// its lifetime rules is that arm's repositoryParseBudget rather than a
+	// sentence here.
+	//
+	// That arm costs 0.01s: it reads this ONE DIRECTORY and parses only the
+	// files whose bytes name an enumeration, which is seven of thirty-five. A
+	// census of repository walks that was itself a repository walk would have
+	// been the eighth, and the figure below did not move for it — 2.70–2.80s
+	// became 2.73–2.84s, which is one machine's spread.
 	wholeFile string
 	// TestHowWideTheNarrowerFoldIsAndWhatHoldsTheGap end to end, which is what
 	// inkglyph_test.go's `128ms` sits inside.
@@ -135,7 +156,7 @@ var verifyTimingsTakenOn = struct {
 	goarch:    "arm64",
 	goVersion: "go1.26.1",
 	cores:     8,
-	wholeFile: "2.70–2.80s over seven runs",
+	wholeFile: "2.73–2.84s over seven runs",
 	foldWalk:  "0.40–0.52s over seven runs, node v22.12.0",
 }
 

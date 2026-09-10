@@ -10,6 +10,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/rohanthewiz/grmob/internal/themeleaves"
 )
 
 // The machine every wall-clock number in this package's prose was taken on.
@@ -72,21 +74,48 @@ var themehistoryTimingsTakenOn = struct {
 	// about a gap with no such explanation, and the two are worth keeping
 	// apart.
 	//
-	// That enumeration was 0.86s of it and is now 0.22s: it runs in a bounded
+	// That enumeration was 0.90s of it and is now 0.22s: it runs in a bounded
 	// pool, which is the one concurrent thing in this package and is explained
-	// at enumWorkers. The whole figure moved 3.77–3.93s → 3.01–3.07s for that
+	// at enumWorkers. The whole figure moved 3.77–3.93s → 3.01–3.11s for that
 	// change and nothing else.
 	//
-	// What the arm costs, since it is the one thing here anybody would want to
-	// switch off — and `-short` is the switch:
+	// # Which makes this figure a reading of a CORE COUNT, and it says so
+	//
+	// enumWorkers is min(NumCPU, 8), so the arm's largest term scales with the
+	// machine in a way nothing else recorded here does. Measured by fixing the
+	// worker count and re-running, three runs apiece on the eight cores named
+	// above:
+	//
+	//	workers    the enumeration    the whole package
+	//	1          0.90–0.92s         3.69–3.82s
+	//	2          0.51s              3.30–3.31s
+	//	4          0.29–0.30s         3.07–3.16s
+	//	8          0.21–0.23s         3.05–3.14s
+	//
+	// The one-core row is the figure this package had BEFORE the pool, which
+	// is what says the pool is the only thing that moved. So `3.01–3.11s`
+	// below is not a number about this code: it is a number about this code on
+	// eight cores, and a single-core CI runner pays about 0.7s more for the
+	// same green run.
+	//
+	// # What the arm costs, since it is the one thing here anybody would want
+	// # to switch off — and `-short` is the switch
 	//
 	//	              default        -short
-	//	plain         3.01–3.07s     1.20–1.24s
-	//	-race         6.46–6.57s     2.38–2.40s
+	//	plain         3.01–3.11s     1.22–1.27s
+	//	-race         6.52–6.64s     2.41s
 	//
-	// Three runs each for the three that are not this field. The arm is around
-	// 1.8s of a plain run and around 4.1s of a -race one, which is the price
-	// of the only test here that runs the real program over the real history.
+	// Seven runs for the plain default, three for the other three. The arm is
+	// around 1.8s of a plain run and around 4.2s of a -race one, which is the
+	// price of the only test here that runs the real program over the real
+	// history.
+	//
+	// That saving is the half of the table that moves with the machine, and it
+	// moves the OTHER way: a short run skips the enumeration entirely, so what
+	// `-short` is worth is the whole 0.90s on one core against 0.22s on eight.
+	// The lever's justification is therefore strongest on the machines least
+	// likely to have been measured, which is worth knowing before anybody
+	// reads the two seconds above as the number to beat.
 	//
 	// It is also the repository's only `-short` lever, which is a decision
 	// rather than a coincidence: wasm/verify/shortlever_test.go holds the set
@@ -148,18 +177,30 @@ var themehistoryTimingsTakenOn = struct {
 	// revision's parse. The two are not readings of the same thing and the
 	// ratio below is the one that belongs beside blob's argument.
 	//
-	// # The third figure, which is here so that nobody has to subtract
+	// # The other terms, which are here so that nobody has to subtract
 	//
 	// wholeRun and the batched half of this field were the one number pair in
 	// either record that invited a subtraction, and a reader who did it got a
-	// figure nobody had measured. So the missing term is taken here too: the
-	// 88 `ls-tree` processes, run SERIALLY, which is what the walk itself pays
-	// for trees. With it, wholeRun's 1.52–1.60s is 0.40s of fetches plus
-	// 0.90–0.95s of trees plus about 0.25s of parse, diff and printing — and
-	// that last one is named in the log as a REMAINDER rather than printed as
-	// though it had been timed. Three readings of one machine taken in
-	// different runs do not decompose exactly, and saying so is the point of
-	// this record.
+	// figure nobody had measured. So the missing terms are taken here too:
+	//
+	//	the fetches      395–405ms, the batched half above
+	//	the trees        0.87–0.92s, the 88 `ls-tree` run SERIALLY, which is
+	//	                 what the walk itself pays. Not the pooled 0.22s the
+	//	                 whole-walk arm reports, which is a different quantity
+	//	the parse        0.118–0.120s, themeleaves.Of over the same sources at
+	//	                 the same revisions — the same call the walk makes, over
+	//	                 the bytes the batch just returned
+	//	                 ─────
+	//	together         1.39–1.44s, against a wholeRun of 1.52–1.60s
+	//
+	// What is left is the diff between consecutive revisions and the printing,
+	// and it is still a REMAINDER rather than a reading: roughly 0.1–0.2s,
+	// which is the same size as the disagreement between three separate
+	// readings of this machine, so it is not worth a clock of its own until it
+	// is bigger than the noise around it. The parse was worth one because it
+	// was the largest unmeasured term and because this arm already holds every
+	// source in memory — which is what made it measurable here and nowhere
+	// else.
 	perObjectRun string
 	// One healthy retire: close stdin, drain stdout, Wait. See
 	// TestRetiringAHealthyGitLeavesBeforeTheDeadline, which takes this, and
@@ -177,12 +218,13 @@ var themehistoryTimingsTakenOn = struct {
 	goarch:       "arm64",
 	goVersion:    "go1.26.1",
 	cores:        8,
-	wholePackage: "3.01–3.07s over seven runs",
+	wholePackage: "3.01–3.11s over seven runs, and 3.69–3.82s on a single core",
 	wholeRun: "1.52–1.60s over seven runs, in process, 2906 objects fetched, " +
 		"the expectation enumerated alongside in 0.22s over 8 workers",
-	perObjectRun: "30.36–30.39s over three runs, 2906 objects, one process " +
-		"each, against 395–400ms for the same fetches batched — 76×; the 88 " +
-		"`ls-tree` the walk pays serially, 0.90–0.95s",
+	perObjectRun: "30.40–30.52s over three runs, 2906 objects, one process " +
+		"each, against 398–405ms for the same fetches batched — 75.1–76.4×; " +
+		"the 88 `ls-tree` the walk pays serially, 0.87–0.92s; themeleaves.Of " +
+		"over the same sources, 0.118–0.120s",
 	batchRetire: "0.18–0.29ms over four sets of seven",
 }
 
@@ -220,9 +262,31 @@ func TestTheTimingsInThisPackageSayWhichMachineTheyCameFrom(t *testing.T) {
 	if got := runtime.Version(); !strings.HasPrefix(got, rec.goVersion) {
 		differs = append(differs, fmt.Sprintf("%s against %s", got, rec.goVersion))
 	}
-	if got := runtime.NumCPU(); got != rec.cores {
-		differs = append(differs, fmt.Sprintf("%d cores against %d", got,
+	// NumCPU and not GOMAXPROCS, the way the other record puts it: what this
+	// is about is the machine underneath. It is also the one field here that
+	// changes a recorded number by a term a reader can name, so the messages
+	// below say which term.
+	cores := runtime.NumCPU()
+	if cores != rec.cores {
+		differs = append(differs, fmt.Sprintf("%d cores against %d", cores,
 			rec.cores))
+	}
+	// The enumeration in the whole-walk arm runs min(NumCPU, 8) workers and is
+	// the largest single term in wholePackage — 0.22s here against 0.90s on
+	// one core, which is 0.7s of the figure. Said out loud whenever the two
+	// core counts differ, because a reader holding 3.1s against a 3.7s run on
+	// a small runner has a difference this line explains entirely.
+	pooled := ""
+	if cores != rec.cores {
+		pooled = fmt.Sprintf("\n\nThe whole-walk arm enumerates its "+
+			"expectation over min(NumCPU, 8) workers — %d here against %d "+
+			"where the record was taken — and that is the largest term in "+
+			"the package figure: 0.22s at eight, 0.90s at one, with the "+
+			"total moving 3.05s to 3.75s across the same range. See "+
+			"enumWorkers and the table in wholePackage's comment. A "+
+			"difference of that size between this run and the number above "+
+			"is accounted for before anything else is.",
+			min(cores, 8), min(rec.cores, 8))
 	}
 
 	if len(differs) == 0 {
@@ -241,10 +305,10 @@ func TestTheTimingsInThisPackageSayWhichMachineTheyCameFrom(t *testing.T) {
 		"percent off one of these is a "+
 		"difference between two computers before it is anything else — which "+
 		"is what this record is for, and why none of these numbers is an "+
-		"assertion.",
+		"assertion.%s",
 		rec.machine, rec.goVersion, rec.goos, rec.goarch, rec.cores,
 		strings.Join(differs, ", "), rec.wholePackage, rec.wholeRun,
-		rec.batchRetire, rec.perObjectRun)
+		rec.batchRetire, rec.perObjectRun, pooled)
 }
 
 // How many healthy retires the measurement below takes.
@@ -385,9 +449,22 @@ const wholeWalkCommitsFloor = 50
 //
 // The listings are independent of each other and of everything else here —
 // themeSourcesAt calls treePaths calls git(), which is an exec.Command with no
-// shared state behind it — so they go out in a bounded pool. 0.83s becomes
+// shared state behind it — so they go out in a bounded pool. 0.90s becomes
 // 0.22s on the eight cores themehistoryTimingsTakenOn names, which puts the
 // expectation at a seventh of the walk it is checking rather than a third.
+//
+// # Which makes this arm's cost a property of the machine
+//
+// Worth saying plainly, because it is the only figure in either record that
+// does this. The saving is real on eight cores and roughly nothing on one, and
+// everything in between is measured rather than extrapolated —
+// themehistoryTimingsTakenOn.wholePackage carries the table, 0.90s at one
+// worker through 0.22s at eight, with the whole package moving 3.75s to 3.05s
+// across the same range.
+//
+// So the one-core figure is the number this package had BEFORE the pool. A
+// reader on a single-core runner has not lost the change; they never had it,
+// and the `-short` lever is worth correspondingly more to them.
 //
 // Bounded rather than one goroutine per commit, because the bound is what
 // makes this a fixed number of git processes at a time on any machine and any
@@ -403,6 +480,16 @@ const wholeWalkCommitsFloor = 50
 // touches no package state — not blobs, not batchesStarted, not os.Stdout —
 // and is joined before anything is measured. What is concurrent here is 88 git
 // processes, which is a fact about the machine rather than about this program.
+//
+// That paragraph used to be the whole of it, which is the state this package
+// keeps writing arms against: an argument nobody re-checks, holding up two
+// claims made somewhere else. TestTheGoroutinesInThisPackageAreTheOnesDecided-
+// On is the arm. It finds every `go` statement here, holds each to a row
+// saying what joins it, and follows the package's own call graph out of each
+// one to make sure none of them reaches blobs, os.Stdout, an fmt.Print or a
+// t.Fatal. A later edit that moved a fetch inside this loop to save a second
+// fails there, on every run, rather than on the runs where two workers
+// happened to overlap.
 var enumWorkers = min(runtime.NumCPU(), 8)
 
 // themeObject is one fetch the walk will make: a path, at a revision.
@@ -608,10 +695,16 @@ func batchesStartedSince() func() int64 {
 //
 // # What it costs, since that is the objection
 //
-// Around two seconds — the walk itself, plus the enumeration above it — which
-// roughly doubles this package's test time, and is paid again under -race on
-// every `go test ./...` anybody runs, to hold a claim that changes about once
-// a year. That is the price of the one arm that runs the actual program over
+// 1.8s on the eight cores themehistoryTimingsTakenOn names — the walk itself,
+// plus the enumeration above it — which roughly doubles this package's test
+// time, and is paid again under -race on every `go test ./...` anybody runs,
+// to hold a claim that changes about once a year.
+//
+// That number is a reading of a CORE COUNT and not just of a machine: the
+// enumeration is pooled at min(NumCPU, 8), so the same arm is about 2.5s where
+// there is one core. See enumWorkers, and the table in wholePackage's comment
+// — the figure quoted here is the eight-core end of a range four times wide at
+// its own term. That is the price of the one arm that runs the actual program over
 // the actual history: everything else here is over a scratch repository or a
 // hand-built stream, which is right for the shapes they check and is why none
 // of them could have caught a walk that quietly started four thousand
@@ -805,7 +898,7 @@ func TestTheWholeWalkGoesRoundOneBatchProcess(t *testing.T) {
 	// walk's ls-tree cost and must not be subtracted from the total as though
 	// it were. The serial figure is taken by the per-object arm and the
 	// subtraction is done there — see themehistoryTimingsTakenOn.perObjectRun,
-	// which is where the three terms of this number live.
+	// which is where the measured terms of this number live.
 	t.Logf("the whole walk: %v over %d commit(s), %d object(s) fetched through "+
 		"%d `git cat-file --batch` process(es), against the %d object(s) "+
 		"themeSourcesAt names, enumerated here in %v over %d worker(s). "+
@@ -911,9 +1004,13 @@ const perObjectSlowdownFloor = 5
 //	                    slower. The direction on its own could not fail; the
 //	                    ratio is the cost argument's own quantity and divides
 //	                    the machine out of both readings — see that constant
-//	the three terms     the fetches, the trees and the per-object route are
-//	                    logged together, so wholeRun's split is in one place
-//	                    rather than a subtraction across two records
+//	the parse reached   themeleaves.Of named at least one leaf across the
+//	                    history. Not a clock: it is what says the clock beside
+//	                    it is a reading of the parse rather than of a loop
+//	                    that parsed nothing
+//	the terms           the fetches, the trees, the parse and the per-object
+//	                    route are logged together, so wholeRun's split is in
+//	                    one place rather than a subtraction across two records
 //
 // The ratio is what blob's comment now rests on, and it is two numbers taken
 // in the same run, over the same objects, on whatever machine is running —
@@ -1048,6 +1145,63 @@ func TestOneProcessPerObjectIsSlowerThanOneProcessForAllOfThem(t *testing.T) {
 			differed, len(objects), firstDiff)
 	}
 
+	// The third term of wholeRun, which used to be a remainder.
+	//
+	// # Why this is measurable here and nowhere else
+	//
+	// The walk's cost is fetches, plus trees, plus what it does with the text.
+	// The first two are taken above; the third was left as "wholeRun minus the
+	// other two", named honestly as a subtraction nobody had done rather than
+	// printed as a reading. What was missing was somewhere to take it: timing
+	// themeleaves.Of means having every source at every revision in memory at
+	// once, which is 2906 blobs, and this is the one arm that already has
+	// them.
+	//
+	// So it is the SAME call the walk makes — themeleaves.Of over one
+	// revision's direct sources, once per revision, in commit order — over the
+	// bytes the batch just returned. What is left out of it is the diff
+	// between consecutive revisions and the printing, which is what the
+	// remainder now is: a much smaller thing, and still named as a remainder.
+	//
+	// The sources are collected per revision first and timed after, so the map
+	// building is not counted as parse. objects is in commit order (see
+	// themeSourcesAcross), so a revision's sources are contiguous.
+	type revSources struct {
+		sha     string
+		sources map[string]string
+	}
+	var perRev []revSources
+	for i, o := range objects {
+		if i == 0 || o.rev != objects[i-1].rev {
+			perRev = append(perRev, revSources{sha: o.rev,
+				sources: map[string]string{}})
+		}
+		perRev[len(perRev)-1].sources[o.path] = batched[i]
+	}
+	parseStart := time.Now()
+	leaves := 0
+	for _, r := range perRev {
+		exp := themeleaves.Of(r.sources, themeType)
+		leaves += len(exp.Names)
+	}
+	parseTook := time.Since(parseStart)
+
+	// The parse reaching the sources. themeleaves.Of over a revision holding
+	// core.Theme names its fields, and every revision in this history holds
+	// one — so nought leaves across the whole run is a parse that read
+	// nothing, and the clock above would then be a reading of an empty loop
+	// rather than of the walk's third term.
+	if leaves == 0 {
+		t.Errorf("themeleaves.Of named no leaves at all across %d revision(s) "+
+			"in %v, and the walk's own table is built out of exactly these "+
+			"calls.\n\n"+
+			"A run that parses %d source(s) and finds no field of %s has not "+
+			"done the work this clock is a clock of, so the figure below is "+
+			"not the walk's parse cost — it is the cost of failing to parse.",
+			len(perRev), parseTook.Round(time.Millisecond), len(objects),
+			themeType)
+	}
+
 	// The cost argument, as the multiple it is actually made of. See
 	// perObjectSlowdownFloor for why this is a ratio and not the direction it
 	// used to be.
@@ -1076,25 +1230,35 @@ func TestOneProcessPerObjectIsSlowerThanOneProcessForAllOfThem(t *testing.T) {
 			len(objects), ratio, perObjectSlowdownFloor, perObjectSlowdownFloor)
 	}
 
-	// The three terms, in one place, because the alternative is a reader
-	// subtracting across two records. wholeRun is the walk; the first two lines
-	// here are the parts of it this arm can measure, and what is left over is
-	// named as a remainder rather than printed as though somebody had timed it.
+	// The terms, in one place, because the alternative is a reader subtracting
+	// across two records. wholeRun is the walk; the fetch, tree and parse
+	// lines here are the parts of it this arm can measure, and what is left
+	// over is named as a remainder rather than printed as though somebody had
+	// timed it.
 	t.Logf("%d object(s) over %d commit(s), fetched both ways:\n"+
 		"    one `cat-file --batch`   %v\n"+
 		"    one `cat-file -p` each   %v  (%d processes)\n"+
 		"    ratio                    %.1f×  (floor %d×)\n"+
-		"    the trees, serially      %v  (%d `ls-tree` processes)\n\n"+
-		"Recorded as themehistoryTimingsTakenOn.perObjectRun. The first line "+
-		"and the last are the two halves of wholeRun this arm can put a clock "+
-		"on — the fetches, and the `ls-tree` per commit the walk pays inside "+
-		"itself — and wholeRun minus the two of them is the parse, the diff "+
-		"and the printing. That last figure is a REMAINDER and not a reading: "+
-		"nothing here has timed it, and the three above it are three separate "+
-		"readings of this machine rather than one decomposition taken in one "+
-		"run.\n\n"+
+		"    the trees, serially      %v  (%d `ls-tree` processes)\n"+
+		"    themeleaves.Of           %v  (%d revision(s), %d leaf name(s))\n"+
+		"    ─────\n"+
+		"    the three, together      %v against a wholeRun of %s\n\n"+
+		"Recorded as themehistoryTimingsTakenOn.perObjectRun. The first line, "+
+		"the trees and the parse are the three terms of wholeRun this arm can "+
+		"put a clock on — the fetches, the `ls-tree` per commit the walk pays "+
+		"inside itself, and the same themeleaves.Of call over the same "+
+		"sources. What is left is the diff between consecutive revisions and "+
+		"the printing, and it is still a REMAINDER rather than a reading: "+
+		"nothing here has timed it, and the terms above are separate readings "+
+		"of this machine rather than one decomposition taken in one run — so "+
+		"the three need not, and do not, land exactly under the total in "+
+		"either direction. That gap IS the remainder plus the noise between "+
+		"readings, and it is smaller than either on its own.\n\n"+
 		"Only the ratio is asserted; see perObjectSlowdownFloor.",
 		len(objects), len(shas), batchTook.Round(time.Millisecond),
 		perTook.Round(time.Millisecond), len(objects), ratio,
-		perObjectSlowdownFloor, enumTook.Round(time.Millisecond), len(shas))
+		perObjectSlowdownFloor, enumTook.Round(time.Millisecond), len(shas),
+		parseTook.Round(time.Millisecond), len(perRev), leaves,
+		(batchTook + enumTook + parseTook).Round(time.Millisecond),
+		themehistoryTimingsTakenOn.wholeRun)
 }
