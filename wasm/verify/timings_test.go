@@ -56,9 +56,17 @@ import (
 //
 // # Re-taking it
 //
-//	go test -count=1 ./wasm/verify                          wholeFile
+//	go test -count=1 ./wasm/verify                                  wholeFile
 //	go test -count=1 -run TestHowWideTheNarrowerFold ./wasm/verify   foldWalk
-//	go test -bench . -run '^$' ./wasm/verify                the per-walk ones
+//
+// There is no third line, and there was: this table used to offer `go test
+// -bench . -run '^$' ./wasm/verify` for "the per-walk ones" — the 96.7us,
+// 7.4us and 2530.0us in themenearmiss_test.go's account of what affordedEachSet
+// replaced. That command does nothing. The benchmarks it names were written to
+// take those three numbers and removed once they had been taken, so the
+// re-taking instruction outlived the thing it instructed. Those three are in
+// the same position as the 128ms below and for the same reason: they are a
+// record of a change that was already made, not a property anything asserts.
 //
 // Anything re-taken here is re-taken WITH this record: a run on another machine
 // that updates a timing and leaves the machine alone has put the same
@@ -85,6 +93,28 @@ var verifyTimingsTakenOn = struct {
 	// enclosing test's wall clock, which brackets it — so that is what is
 	// recorded, and the 128ms is a sub-figure of it rather than a number this
 	// record vouches for.
+	//
+	// # And whether it earns its place at all, which is a question this record
+	// # cannot answer and inkglyph_test.go can
+	//
+	// A bracketed number from an unknown day is still a number from an unknown
+	// day, and no amount of attribution makes it re-derivable. The question is
+	// therefore not "how do we re-take it" but "what is it holding up", and
+	// the answer turned out to be nothing that needs it: the astral walk's
+	// AFFORDABILITY is demonstrated by the test running it on every green run,
+	// and the walk still going all the way up is asserted by foldMeasuredOn's
+	// six astral counts, which a narrowing would fail. Both are re-derived; the
+	// wall clock is not, and does not have to be.
+	//
+	// So the figure is kept where it was taken, marked as the reading a past
+	// decision was made on, and the sentence it used to carry now stands on
+	// the arms instead. That is the resolution rather than a re-measurement:
+	// the number was never the load-bearing part, and pricing it a second time
+	// would have been work to keep something honest that could instead stop
+	// being asked to hold anything.
+	//
+	// This field, foldWalk, is the one that IS re-takeable, and the command
+	// for it is in the table above.
 	foldWalk string
 }{
 	machine:   "Apple M3 (Mac15,13), macOS 26.2",

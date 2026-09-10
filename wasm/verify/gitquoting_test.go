@@ -4,6 +4,7 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
+	"path"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -85,7 +86,26 @@ func TestEveryGitListingAsksForNulSeparatedPaths(t *testing.T) {
 	// comment three lines above the call, and the call — and cannot tell which
 	// of them has a -z in it.
 	fset := token.NewFileSet()
-	seen := 0
+	// Two passes, and the first one exists because of what the second used to
+	// assume. See gitArgs: a call to a bare identifier `git` was read as a git
+	// invocation wherever it appeared, on the reasoning that a package running
+	// more than two git commands writes such a helper and that nothing else
+	// would be called that. The first half is true here; the second was a
+	// guess, and a wrong guess would have this check saying something
+	// confident about a call that has nothing to do with git.
+	//
+	// So the helpers are FOUND first, held to actually being git wrappers, and
+	// a bare `git(…)` is read as an invocation only in a package that declares
+	// one. What was a heuristic standing in for cross-package identifier
+	// resolution is now a premise this file checks.
+	type parsed struct {
+		rel  string
+		dir  string
+		file *ast.File
+	}
+	var files []parsed
+	// dir -> the position of the `func git` declared in it.
+	helpers := map[string]token.Position{}
 	for _, rel := range paths {
 		if !strings.HasSuffix(rel, ".go") {
 			continue
@@ -104,12 +124,55 @@ func TestEveryGitListingAsksForNulSeparatedPaths(t *testing.T) {
 			// would be failing too.
 			continue
 		}
+		dir := path.Dir(rel)
+		files = append(files, parsed{rel: rel, dir: dir, file: file})
+		for _, d := range file.Decls {
+			fn, ok := d.(*ast.FuncDecl)
+			// Recv nil because a METHOD called git is not what a bare `git(…)`
+			// call resolves to — that would be `x.git(…)`, which reaches
+			// gitArgs as a SelectorExpr and is rejected there.
+			if !ok || fn.Recv != nil || fn.Name.Name != "git" {
+				continue
+			}
+			at := fset.Position(fn.Name.Pos())
+			if prev, dup := helpers[dir]; dup {
+				// Two in one package do not compile, so this is a package
+				// split across directories by the enumeration or a build tag —
+				// either way the second one is what the calls below would
+				// resolve to and it is worth naming.
+				t.Errorf("%s declares a second `git` helper at line %d; the "+
+					"first is %s:%d. This check reads a bare `git(…)` call as "+
+					"a git invocation, and with two declarations in one "+
+					"package it cannot say which one a call means.",
+					rel, at.Line, prev.Filename, prev.Line)
+			}
+			helpers[dir] = at
+			// The premise, checked rather than assumed: a function called
+			// `git` in this repository runs git. A helper that did something
+			// else would make every call to it a finding about the wrong
+			// thing, stated with a line number and a subcommand.
+			if !runsGit(fn) {
+				t.Errorf("%s:%d declares `func git` and its body contains no "+
+					"exec.Command(\"git\", …).\n\n"+
+					"Calls to a bare `git(…)` in %s are read by this check as "+
+					"git invocations and held to the -z rule. If this helper "+
+					"is something else, the findings this check produces about "+
+					"that package are about the wrong function — rename one of "+
+					"them, or teach gitArgs which is which.", rel, at.Line, dir)
+			}
+		}
+	}
+
+	seen := 0
+	for _, pf := range files {
+		_, local := helpers[pf.dir]
+		rel, file := pf.rel, pf.file
 		ast.Inspect(file, func(n ast.Node) bool {
 			call, ok := n.(*ast.CallExpr)
 			if !ok {
 				return true
 			}
-			args, ok := gitArgs(call)
+			args, ok := gitArgs(call, local)
 			if !ok {
 				return true
 			}
@@ -143,33 +206,52 @@ func TestEveryGitListingAsksForNulSeparatedPaths(t *testing.T) {
 			"internal/themehistory's walk is built on them. The parse is not "+
 			"reaching the tree, so this check is over nothing.", len(paths), from)
 	}
+	where := make([]string, 0, len(helpers))
+	for dir := range helpers {
+		where = append(where, dir)
+	}
+	sort.Strings(where)
 	t.Logf("%d git invocation(s) across the repository's Go sources; every one "+
-		"that lists paths asks for -z. Enumerated by %s.", seen, from)
+		"that lists paths asks for -z. %d package(s) declare a `git` helper, "+
+		"held above to running one: %s. Enumerated by %s.",
+		seen, len(helpers), strings.Join(where, ", "), from)
 }
 
 // gitArgs is a call's git arguments as string literals, and whether it is a
 // git call at all.
 //
-// # The two shapes, and why a heuristic is honest here
+// # The two shapes, and what `local` settles
 //
 // A git call in this repository is either `exec.Command("git", …)` or a call
 // to a package-local helper spelled `git(…)` — internal/themehistory has one,
 // and a helper is the obvious thing to write once a package runs more than two
-// commands. Matching the bare identifier is loose: a function called `git`
-// that took something else would be read as a git invocation. That direction
-// is the safe one — it can only produce a message naming a call somebody can
-// look at — and the alternative is resolving identifiers across packages to
-// check a flag.
+// commands.
+//
+// The identifier form was once matched wherever it appeared, on the argument
+// that the loose direction was the safe one: the worst case is a message
+// naming a call somebody can look at. That is true and it is not the whole
+// cost. A check that says something confident and wrong about a call is a
+// check people stop reading, and this one's whole value is that it is believed
+// when it fires — the thing it reports (a file silently missing from a
+// listing) is invisible by construction, so a reader has nothing else to weigh
+// its findings against.
+//
+// `local` is the caller's answer to "does this file's package declare a `git`
+// helper", found by the pass above and held there to actually running git. A
+// bare identifier in a package that declares no such function is some other
+// `git` — a variable, a dot-imported name, a helper in a package this walk
+// enumerated under a different directory — and is not read as an invocation.
+// The heuristic is now a premise with a check under it.
 //
 // Only literal arguments are collected. A subcommand assembled at runtime is
 // beyond what a parse can say, and there are none: every git call here names
 // its subcommand as a constant, which is the property that makes this check
 // possible rather than an assumption it makes.
-func gitArgs(call *ast.CallExpr) ([]string, bool) {
+func gitArgs(call *ast.CallExpr, local bool) ([]string, bool) {
 	args := call.Args
 	switch fn := call.Fun.(type) {
 	case *ast.Ident:
-		if fn.Name != "git" {
+		if fn.Name != "git" || !local {
 			return nil, false
 		}
 	case *ast.SelectorExpr:
@@ -208,6 +290,38 @@ func literal(e ast.Expr) string {
 		return ""
 	}
 	return strings.Trim(lit.Value, "`\"")
+}
+
+// runsGit is whether a `func git` declaration actually runs git.
+//
+// The test is `exec.Command("git", …)` somewhere in the body, which is what
+// every wrapper of this shape is built on and what the one in
+// internal/themehistory is. A helper that reached git some other way — a
+// go-git binding, a shelled-out `sh -c` — would fail this and would be right
+// to: this check reads such a call's LITERAL ARGUMENTS as a git command line,
+// and that reading is only correct for a wrapper that passes them to git.
+func runsGit(fn *ast.FuncDecl) bool {
+	if fn.Body == nil {
+		return false
+	}
+	found := false
+	ast.Inspect(fn.Body, func(n ast.Node) bool {
+		call, ok := n.(*ast.CallExpr)
+		if !ok || len(call.Args) == 0 {
+			return true
+		}
+		sel, ok := call.Fun.(*ast.SelectorExpr)
+		if !ok || sel.Sel.Name != "Command" {
+			return true
+		}
+		pkg, ok := sel.X.(*ast.Ident)
+		if !ok || pkg.Name != "exec" || literal(call.Args[0]) != "git" {
+			return true
+		}
+		found = true
+		return false
+	})
+	return found
 }
 
 // The subcommands whose whole output is paths.

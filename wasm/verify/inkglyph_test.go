@@ -513,17 +513,28 @@ var foldMeasuredOn = struct {
 	// said what NFKD does above U+FFFF. The reason given was that nobody had
 	// priced a walk of a million code points through a child process.
 	//
-	// It is 128ms and 30KB of JSON — the whole plane set, folded and returned
-	// as the 2307 rows that change — against the BMP walk's own cost, which is
-	// the same shape and a sixteenth of the size. So the bound was not a cost;
-	// it was a walk nobody had run.
+	// It is 30KB of JSON — the whole plane set, folded and returned as the
+	// 2307 rows that change — against the BMP walk's own cost, which is the
+	// same shape and a sixteenth of the size. So the bound was not a cost; it
+	// was a walk nobody had run.
 	//
-	// That 128ms is a reading of a machine, like every wall clock in this
-	// package: see verifyTimingsTakenOn, which names the one it came from and
-	// brackets it with the enclosing test's own cost. It is the astral walk
-	// alone and is not re-taken on every run — nothing here needs it to be,
-	// because what it settles is that the bound was affordable, and a figure
-	// that has drifted by half still settles that.
+	// # Which half of that is still a claim, and which is a record
+	//
+	// The affordability is not asserted anywhere and does not need to be,
+	// because it is DEMONSTRATED on every green run: this test walks every
+	// plane, `astralChanges` and its five siblings are compared against
+	// foldMeasuredOn below, and a walk narrowed back to the BMP fails those
+	// six comparisons rather than quietly getting faster. What the walk costs
+	// while doing it is verifyTimingsTakenOn.foldWalk, re-takeable by running
+	// the test.
+	//
+	// So the wall clock the decision was originally made on — 128ms for the
+	// astral walk alone, on verifyTimingsTakenOn's machine — is kept as what
+	// it is: the reading somebody took on the day the bound was widened. It is
+	// not re-taken, it is not what makes the sentence above true today, and it
+	// would take instrumenting this test or running a second copy of the walk
+	// to re-take it. A figure that has drifted by half changes nothing here,
+	// which is another way of saying it is history rather than an argument.
 	//
 	// # And what is up there, which is not nothing
 	//
@@ -2323,10 +2334,11 @@ func TestHowWideTheNarrowerFoldIsAndWhatHoldsTheGap(t *testing.T) {
 	// lone one into U+FFFD and JavaScript does not, so the pair would be
 	// comparing two different characters.
 	//
-	// Every plane, not only the first. See foldMeasuredOn's astral counts for
-	// what that cost when it was finally measured — 128ms and 30KB, on
-	// verifyTimingsTakenOn's machine — and for what is up there that the BMP
-	// does not have.
+	// Every plane, not only the first — 30KB of rows, and the six astral
+	// counts in foldMeasuredOn are what hold this loop to still going all the
+	// way up. See there for what is up there that the BMP does not have, and
+	// the comment on astralChanges for why the 128ms that first priced this
+	// walk is a record of one afternoon rather than the reason it is affordable.
 	script := filepath.Join(t.TempDir(), "gap.mjs")
 	// The build comes back with the rows, out of the same process that did the
 	// folding. See foldMeasuredOn: every number below is NFKD as the ICU

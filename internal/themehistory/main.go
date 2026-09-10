@@ -757,10 +757,26 @@ func newBatchReader(dir string) (*batchReader, error) {
 // A timeout tuned to a workload is a number somebody has to re-tune. This is
 // not one: it is a bound on "a healthy git has already gone", and the healthy
 // case is bounded by a pipe drain from a local process plus a process exit —
-// microseconds to low milliseconds, four orders of magnitude under this. No
-// run that is working can reach it, which is the property that matters, and
-// the cost of being generous is that a wedged git is waited on for five
-// seconds once rather than forever.
+// microseconds to low milliseconds. No run that is working can reach it, which
+// is the property that matters, and the cost of being generous is that a
+// wedged git is waited on for five seconds once rather than forever.
+//
+// # And what that argument was worth once it was measured
+//
+// The paragraph above was reasoning, and it stood on its own for a session:
+// "four orders of magnitude under this" was a claim about a pipe drain that
+// nobody had timed. It is now taken on every run.
+// TestRetiringAHealthyGitLeavesBeforeTheDeadline retires seven healthy batch
+// readers and records what they cost — 0.18–0.30ms on the machine in
+// themehistoryTimingsTakenOn, so the slowest is about 1/17000 of the grace,
+// and the a priori figure was right to the order.
+//
+// That is the smaller half of what the measurement buys. The larger half is
+// that the test asserts the OUTCOME rather than the clock: a healthy git exits
+// 0 because it noticed the EOF, and a git the deadline killed does not exit 0
+// at all. So the sentence "no run that is working can reach it" now fails a
+// test on the day it stops being true, and it cannot fail because a machine
+// was busy — a slow retire is still a 0 exit right up to the deadline.
 //
 // A variable rather than a const so the arm can lower it: a test for the
 // deadline that had to wait out the real one would be a five-second test, and
