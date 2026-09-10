@@ -195,6 +195,35 @@ func TestEveryTimingsRecordIsTheSameShape(t *testing.T) {
 // reasoning in internal/themehistory/timings_test.go was written about. Moving
 // it is a decision, which is why the failure above asks for the reason to be
 // written beside that reasoning rather than just for the constant to go up.
+//
+// # The direction this fails in, which is chosen rather than overlooked
+//
+// A third timings record is a package that has grown a wall clock and written
+// down which machine it came from — the right thing to do — and this check
+// fails it. That is a CORRECT addition failing an arm, which is the shape
+// hookSchemaReadFrom exists to apologise for: a key a later Claude Code adds
+// is a key the tables have never heard of, so a correct settings.json fails a
+// check meant to catch an incorrect one.
+//
+// The two are the same direction and they are not the same decision, because
+// what a reader can do about them is not the same:
+//
+//	the hook tables    the failure is a MISTAKE about another program's
+//	                   schema. Nothing here can tell it from a release that
+//	                   moved, and softening the check would let `if` sit in
+//	                   settings.json again — so the finding stays and arrives
+//	                   with the two versions, which is all this side can
+//	                   honestly offer
+//	this constant      the failure IS the prompt. The third record is the
+//	                   moment the trade changes, the change wanted is in THIS
+//	                   repository, and the message asks for an extraction or a
+//	                   written reason
+//
+// So the failing green run is the mechanism here and the residue there. The
+// cost is the same in both: somebody reads a message and edits a file. The
+// difference is that this one is asking for a decision it can name, and that
+// is worth stating rather than leaving to be rediscovered as an inconsistency
+// between two arms in the same repository.
 const timingsRecordCopies = 2
 
 // The reporting arm's name, which is the same in both packages and is what

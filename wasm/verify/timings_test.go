@@ -29,8 +29,8 @@ import (
 // than an unattributed number.
 //
 // What a timing CAN carry is where it came from. `go test ./wasm/verify`
-// spreads over 2.51–2.58s across seven runs on one idle machine, roughly 3%
-// wide by itself — so a reader holding a 2.7s run against a 2.55s written down
+// spreads over 2.49–2.59s across seven runs on one idle machine, roughly 4%
+// wide by itself — so a reader holding a 2.7s run against a 2.54s written down
 // somewhere has nothing to reason with: the difference is inside one machine's
 // own spread, or it is a regression, or it is a different computer, and the
 // number alone distinguishes none of them. The spread is why the recorded
@@ -122,7 +122,7 @@ var verifyTimingsTakenOn = struct {
 	goarch:    "arm64",
 	goVersion: "go1.26.1",
 	cores:     8,
-	wholeFile: "2.51–2.58s over seven runs",
+	wholeFile: "2.49–2.59s over seven runs",
 	foldWalk:  "0.40–0.52s over seven runs, node v22.12.0",
 }
 

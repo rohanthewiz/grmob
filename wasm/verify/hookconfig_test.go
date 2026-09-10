@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -409,13 +410,25 @@ var installedClaude = sync.OnceValue(func() string {
 // hookSchemaNote is the sentence that goes under any finding whose authority
 // is one of the four tables in this file.
 //
-// Three shapes, and the middle one is the point: when this machine's Claude
-// Code IS the build the tables came from, an unknown key cannot be a release
-// that moved, so the finding is unambiguous and says so.
+// Four shapes, and which one a reader gets is decided by ORDERING the two
+// versions rather than by comparing them for equality.
+//
+//	no claude here     the comparison cannot be made at all
+//	the same build     an unknown key cannot be a release that moved, so the
+//	                   finding is about the file
+//	a NEWER claude     this check's bad direction is live: the key may be one
+//	                   a release after the tables added
+//	an OLDER claude    the key cannot be a later addition — nothing later than
+//	                   the tables is installed here
+//
+// The last two used to be one message saying "a different build", which is the
+// check declining to do the comparison it had just made: `2.1.300` and `2.0.9`
+// against a table read from `2.1.267` are opposite findings, and the reader was
+// told to go and work out which by hand.
 func hookSchemaNote() string {
 	rec := hookSchemaReadFrom
-	switch got := installedClaude(); {
-	case got == "":
+	got := installedClaude()
+	if got == "" {
 		return fmt.Sprintf("The key tables in this check are a reading of %s, "+
 			"taken from Claude Code %s on %s. There is no `claude` on this "+
 			"machine to compare against, so this finding is either a mistake "+
@@ -424,22 +437,126 @@ func hookSchemaNote() string {
 			"file — and if the schema has grown, update hookSchemaReadFrom in "+
 			"the same commit as the table.",
 			rec.source, rec.claudeVersion, rec.readOn, rec.claudeVersion)
-	case got == rec.claudeVersion:
-		return fmt.Sprintf("This is not a version difference: the key tables "+
-			"in this check were read from Claude Code %s (%s, %s) and the "+
-			"`claude` on this machine is %s. The schema has not moved under "+
-			"this file, so the finding is about the file.",
-			rec.claudeVersion, rec.source, rec.readOn, got)
-	default:
-		return fmt.Sprintf("Check the version before changing the file. The "+
-			"key tables in this check were read from Claude Code %s (%s, %s) "+
-			"and the `claude` on this machine is %s, so a key they have never "+
-			"heard of may be one a release added rather than a mistake — which "+
-			"is this check's bad direction: it fails a CORRECT config. Ask a "+
-			"session for its hooks reference; if the key is in it, add it to "+
-			"the table and move hookSchemaReadFrom to %s in the same commit.",
-			rec.claudeVersion, rec.source, rec.readOn, got, got)
 	}
+	provenance := fmt.Sprintf("The key tables in this check were read from "+
+		"Claude Code %s (%s, %s) and the `claude` on this machine is %s",
+		rec.claudeVersion, rec.source, rec.readOn, got)
+
+	order, ordered := compareVersions(got, rec.claudeVersion)
+	switch {
+	case !ordered:
+		// One of the two is not a version this can order — a nightly spelling
+		// the regexp below accepts and the comparator does not, or a `claude`
+		// that has started printing something else first. Reported as the
+		// unknown it is, rather than by guessing a direction.
+		return provenance + ", and these two cannot be ordered against each " +
+			"other, so nothing here can say whether this install is ahead of " +
+			"the tables or behind them. Ask a Claude Code session for its " +
+			"hooks reference; if the key is in it, add it to the table and " +
+			"move hookSchemaReadFrom in the same commit."
+	case order == 0:
+		return fmt.Sprintf("This is not a version difference: %s. The schema "+
+			"has not moved under this file, so the finding is about the file.",
+			provenance)
+	case order > 0:
+		return provenance + fmt.Sprintf(" — NEWER than the tables. So a key "+
+			"they have never heard of may be one a release after %s added "+
+			"rather than a mistake, which is this check's bad direction: it "+
+			"fails a CORRECT config. Ask a session for its hooks reference; if "+
+			"the key is in it, add it to the table and move "+
+			"hookSchemaReadFrom to %s in the same commit.",
+			rec.claudeVersion, got)
+	default:
+		return provenance + fmt.Sprintf(" — OLDER than the tables. So the key "+
+			"cannot be one a release added after they were read: nothing later "+
+			"than %s is installed here, and the tables already describe %s. "+
+			"Either it is a mistake in .claude/settings.json, or it is a key "+
+			"THIS build has and %s dropped — which is worth knowing, because "+
+			"the file has to load on the Claude Code people are running. Ask "+
+			"this install's session for its hooks reference before changing "+
+			"either.", got, rec.claudeVersion, rec.claudeVersion)
+	}
+}
+
+// compareVersions orders two dotted versions the way a reader would: -1 if a
+// is behind b, +1 if it is ahead, 0 if they are the same release. `ok` is
+// false when either side is not something this can order at all.
+//
+// # Why this is here rather than a dependency
+//
+// The whole question is which of two opposite findings a reader is holding —
+// a key a later release added, or a key an older install has — and that turns
+// on ORDER. Twenty lines and no dependency, against a repository whose go.mod
+// has one line in it.
+//
+// # The rules, and what each one is for
+//
+//	numeric, field by field   `2.1.267` against `2.1.30` is 267 > 30, which
+//	                          string comparison gets backwards
+//	a missing field is 0      `2.1` and `2.1.0` are the same release
+//	a pre-release tail is     semver's rule, and the one that matters here:
+//	  BEHIND its release      `2.2.0-nightly` is not yet `2.2.0`
+//	anything else is not      a field that is not digits, or an empty version.
+//	  ordered                 The caller says so instead of picking a side
+//
+// A field that overflows an int is not a version anybody ships, and ParseInt
+// saying so is the same answer as a field made of letters: not ordered.
+func compareVersions(a, b string) (int, bool) {
+	af, aPre, aOK := versionFields(a)
+	bf, bPre, bOK := versionFields(b)
+	if !aOK || !bOK {
+		return 0, false
+	}
+	for i := 0; i < len(af) || i < len(bf); i++ {
+		x, y := 0, 0
+		if i < len(af) {
+			x = af[i]
+		}
+		if i < len(bf) {
+			y = bf[i]
+		}
+		switch {
+		case x < y:
+			return -1, true
+		case x > y:
+			return 1, true
+		}
+	}
+	// The numbers are equal, so only the tail can separate them. A release is
+	// ahead of any pre-release of itself; two different pre-release tails of
+	// one release are left equal rather than ordered by their text, which is
+	// where semver's own rules get intricate and where nothing in this
+	// repository has a question.
+	switch {
+	case aPre && !bPre:
+		return -1, true
+	case !aPre && bPre:
+		return 1, true
+	}
+	return 0, true
+}
+
+// versionFields is a version's numeric fields, whether it carries a
+// pre-release tail, and whether it is orderable at all.
+func versionFields(v string) (fields []int, pre bool, ok bool) {
+	// The tail is cut before anything is parsed: `-` and `+` are the two
+	// characters versionish allows after the numbers, and neither belongs to
+	// the field it follows.
+	if i := strings.IndexAny(v, "-+"); i >= 0 {
+		pre = true
+		v = v[:i]
+	}
+	if v == "" {
+		return nil, false, false
+	}
+	for _, f := range strings.Split(v, ".") {
+		n, err := strconv.Atoi(f)
+		if err != nil || n < 0 {
+			return nil, false, false
+		}
+		fields = append(fields, n)
+	}
+	return fields, pre, true
 }
 
 // The key tables say which build of Claude Code they are a reading of, and
@@ -495,27 +612,134 @@ func TestTheHookSchemaTablesSayWhichClaudeCodeTheyCameFrom(t *testing.T) {
 			len(hookEntryKeys), len(hookTypes))
 	}
 
-	switch got := installedClaude(); {
-	case got == "":
+	got := installedClaude()
+	if got == "" {
 		t.Logf("the key tables in this file are a reading of %s, taken from "+
 			"Claude Code %s on %s. There is no `claude` on this machine, so "+
 			"nothing here can say how far that snapshot has drifted.",
 			rec.source, rec.claudeVersion, rec.readOn)
-	case got == rec.claudeVersion:
+		return
+	}
+	order, ordered := compareVersions(got, rec.claudeVersion)
+	switch {
+	case !ordered:
+		// Not an assertion for the same reason the drift is not one, and
+		// reported because it is the one state where hookSchemaNote cannot
+		// name a direction under a failure. A `claude` printing something the
+		// comparator cannot read is worth seeing on a green run rather than
+		// discovering inside a finding.
+		t.Logf("the key tables in this file were read from Claude Code %s (%s, "+
+			"%s) and this machine's `claude` answers %q, which cannot be "+
+			"ordered against it. A finding from this file will say so instead "+
+			"of naming a direction; see compareVersions for what it can read.",
+			rec.claudeVersion, rec.source, rec.readOn, got)
+	case order == 0:
 		t.Logf("this run is on the build the key tables came from: Claude Code "+
 			"%s, read from %s on %s. An unknown key found by this file today "+
 			"is a fault in .claude/settings.json and cannot be a release that "+
 			"moved.", got, rec.source, rec.readOn)
-	default:
+	case order > 0:
 		t.Logf("the key tables in this file were read from Claude Code %s (%s, "+
-			"%s) and this machine runs %s.\n\n"+
+			"%s) and this machine runs %s, which is NEWER.\n\n"+
 			"That is not a failure and this check does not make it one — a "+
 			"newer install is the ordinary case, and an arm over it would fail "+
 			"on every computer whose Claude Code has moved on. It is recorded "+
-			"because this check's bad direction is a key a later release added "+
-			"failing a config that is correct, and the drift is how a reader "+
-			"weighs a finding when one arrives.",
-			rec.claudeVersion, rec.source, rec.readOn, got)
+			"because this check's bad direction is live in exactly this "+
+			"state: a key a release after %s added would be reported as a "+
+			"config that is wrong.",
+			rec.claudeVersion, rec.source, rec.readOn, got, rec.claudeVersion)
+	default:
+		// The other direction, and it is the interesting one to see on a
+		// green run: the tables were read from a build nobody here is
+		// running, so this run is not exercising the schema it checks
+		// against.
+		t.Logf("the key tables in this file were read from Claude Code %s (%s, "+
+			"%s) and this machine runs %s, which is OLDER.\n\n"+
+			"Also not a failure. It does mean this checkout's settings.json "+
+			"is being held to a schema newer than the Claude Code that will "+
+			"load it, so a key %s dropped and %s still has would be reported "+
+			"here — which is a finding about the file, in the opposite "+
+			"direction from the one above.",
+			rec.claudeVersion, rec.source, rec.readOn, got, rec.claudeVersion,
+			got)
+	}
+}
+
+// The comparator behind those four branches, over the shapes a version takes
+// and the ones it does not.
+//
+// # Why this is a table and not two calls
+//
+// The thing being fixed was a comparison that could not say WHICH WAY, and the
+// failure it produced was a correct-looking sentence: "a different build" is
+// true of `2.1.300` and of `2.0.9` and tells a reader nothing they can act on.
+// A comparator with the same property — right about equality, wrong about
+// order — passes any test that only asks whether two versions differ, so the
+// cases here are chosen to be the ones string comparison gets backwards and
+// the ones a naive split panics on.
+func TestOrderingTwoClaudeVersions(t *testing.T) {
+	cases := []struct {
+		a, b string
+		// -1, 0, +1, or 2 for "cannot be ordered", which is a value no
+		// comparison returns.
+		want int
+	}{
+		// The pair the whole item is about: string comparison puts `2.1.30`
+		// ahead of `2.1.267` because `3` > `2`, and that is a reader sent to
+		// look for a key a release added when the release is behind them.
+		{"2.1.267", "2.1.30", 1},
+		{"2.1.30", "2.1.267", -1},
+		{"2.1.267", "2.1.267", 0},
+		{"2.1.300", "2.1.267", 1},
+		{"2.0.9", "2.1.267", -1},
+		// Field-by-field, not lexical, at every position.
+		{"10.0.0", "9.9.9", 1},
+		{"2.2", "2.10", -1},
+		// A missing field is a zero, so these are the same release.
+		{"2.1", "2.1.0", 0},
+		{"2.1.0.0", "2.1", 0},
+		{"3", "3.0.0", 0},
+		// A pre-release is behind its release and ahead of the one before it.
+		{"2.2.0-nightly", "2.2.0", -1},
+		{"2.2.0", "2.2.0-nightly", 1},
+		{"2.2.0-nightly", "2.1.999", 1},
+		{"2.2.0+build.7", "2.2.0", -1},
+		// Two tails of one release are left equal rather than ordered by
+		// their text; see compareVersions.
+		{"2.2.0-a", "2.2.0-b", 0},
+		// And the shapes that are not versions. Each one would otherwise be
+		// answered with a confident direction: "" splits to one empty field,
+		// `latest` is the placeholder the record's own arm refuses, and a
+		// leading dot is what a bad split produces.
+		{"", "2.1.267", 2},
+		{"2.1.267", "", 2},
+		{"latest", "2.1.267", 2},
+		{"2.1.x", "2.1.267", 2},
+		{".2.1", "2.1", 2},
+		{"2..1", "2.0.1", 2},
+		{"-1.0", "1.0", 2},
+	}
+	for _, c := range cases {
+		got, ordered := compareVersions(c.a, c.b)
+		if !ordered {
+			got = 2
+		}
+		if got != c.want {
+			t.Errorf("compareVersions(%q, %q) = %d, want %d.\n\n"+
+				"This decides which of two opposite sentences a failing "+
+				"config check prints: a key a release ADDED (this install is "+
+				"ahead of the tables) or a key an older build has that the "+
+				"tables' build dropped. A wrong direction here is a reader "+
+				"sent to ask a session about a key that cannot be new.",
+				c.a, c.b, got, c.want)
+		}
+	}
+	// The comparison this repository actually makes, on whatever machine is
+	// running. Reported, never asserted — see the record's own arm.
+	if got := installedClaude(); got != "" {
+		order, ordered := compareVersions(got, hookSchemaReadFrom.claudeVersion)
+		t.Logf("this machine's claude is %s against the tables' %s: order=%d "+
+			"ordered=%v.", got, hookSchemaReadFrom.claudeVersion, order, ordered)
 	}
 }
 

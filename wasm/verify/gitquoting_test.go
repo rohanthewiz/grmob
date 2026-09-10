@@ -629,6 +629,245 @@ func TestWhatCountsAsAGitWrapper(t *testing.T) {
 	}
 }
 
+// The taint walk is the size the reason for having it covers, and every rule
+// in it is exercised by a case.
+//
+// # What this is about, which is an approximation that will be asked to grow
+//
+// whyNotAGitWrapper answers a DATAFLOW question — do this helper's own
+// arguments reach the process — with a syntactic walk, because this package
+// parses FILES rather than loading packages. That reason is good and it is
+// written down once, in that function's header: the walk covers revisions and
+// generated trees that need not build, and go/types needs a package that does.
+//
+// That reason is now carrying two approximations in this package rather than
+// one. The other is themenearmiss's float census, which declines the type
+// checker in the same words and for the same cost — "a second toolchain inside
+// a test suite that imports half the repository" — and which has grown a
+// name-keyed table per question it could not answer, four of them, plus a
+// count of the collisions it knows it cannot resolve. That is what an
+// approximation looks like after several sessions of obviously-correct
+// additions, and it is the shape this one is on the first rung of.
+//
+// So the moment to notice is the THIRD rule, not the sixth.
+//
+//	rules the reason covers   two, both listed below, each with a case
+//	the third                 this arm fails and says what the decision is
+//
+// # Why the rules are counted out of the source rather than listed
+//
+// A census somebody has to remember to update is the thing this repository
+// writes arms instead of. So the count comes from the function itself: an
+// acceptance in whyNotAGitWrapper is a `reaches = true`, and the walk below
+// counts them. A rule added without a row here fails this check, in the
+// commit that adds it, which is the only moment the trade is being made.
+//
+// The one loophole in counting that way is an acceptance spelled some other
+// way — an early `return ""` in the middle of the walk — so the arm also holds
+// the function to having exactly ONE `return ""`, the accepting arm of the
+// switch at its end. With that, `reaches` is the only way out.
+func TestTheGitWrapperTaintWalkIsTheSizeItsReasonCovers(t *testing.T) {
+	const self = "gitquoting_test.go"
+	fset := token.NewFileSet()
+	file, err := parser.ParseFile(fset, self, nil, parser.SkipObjectResolution)
+	if err != nil {
+		t.Fatalf("parsing %s, which is this file: %v", self, err)
+	}
+	var fn *ast.FuncDecl
+	for _, d := range file.Decls {
+		if f, ok := d.(*ast.FuncDecl); ok && f.Recv == nil &&
+			f.Name.Name == "whyNotAGitWrapper" {
+			fn = f
+		}
+	}
+	if fn == nil || fn.Body == nil {
+		t.Fatalf("%s declares no `func whyNotAGitWrapper` with a body. It is "+
+			"in this file and this check counts the rules inside it; a rename "+
+			"leaves this arm passing over nothing.", self)
+	}
+
+	accepts := 0
+	emptyReturns := 0
+	ast.Inspect(fn.Body, func(n ast.Node) bool {
+		switch node := n.(type) {
+		case *ast.AssignStmt:
+			// `reaches = true` — one acceptance rule, wherever it sits.
+			if len(node.Lhs) != 1 || len(node.Rhs) != 1 {
+				return true
+			}
+			id, ok := node.Lhs[0].(*ast.Ident)
+			if !ok || id.Name != "reaches" {
+				return true
+			}
+			if lit, ok := node.Rhs[0].(*ast.Ident); ok && lit.Name == "true" {
+				accepts++
+			}
+		case *ast.ReturnStmt:
+			// An acceptance spelled as a return rather than through
+			// `reaches`. One of these is the switch's own accepting arm.
+			if len(node.Results) != 1 {
+				return true
+			}
+			if literal(node.Results[0]) == "" &&
+				isEmptyStringLit(node.Results[0]) {
+				emptyReturns++
+			}
+		}
+		return true
+	})
+
+	if emptyReturns != 1 {
+		t.Errorf("whyNotAGitWrapper has %d `return \"\"` and this check counts "+
+			"its rules by counting `reaches = true`.\n\n"+
+			"One is the accepting arm of the switch at the end of the "+
+			"function. A second is an acceptance rule that does not go through "+
+			"`reaches`, which means the count below is short and the budget "+
+			"this arm is holding is not the number of rules there are. Route "+
+			"the new rule through `reaches` — the switch is what turns it into "+
+			"a return — or teach this check the other spelling.", emptyReturns)
+	}
+	if accepts != len(gitWrapperTaintRules) {
+		t.Errorf("whyNotAGitWrapper accepts a helper in %d place(s) and "+
+			"gitWrapperTaintRules lists %d.\n\n"+
+			"The census is where a reader finds out what the approximation "+
+			"actually covers and which case exercises each part of it — the "+
+			"question nobody could answer about `runsGit`, which passed on "+
+			"one helper that happened to be right. A rule with no row here is "+
+			"a rule whose looseness nobody has written down.",
+			accepts, len(gitWrapperTaintRules))
+	}
+
+	// Every row naming a case that is really in the table, because a row
+	// pointing at a case that has been renamed away is a rule nothing
+	// exercises and a census that reads as though something does.
+	cases := taintCaseNames(t, file)
+	for _, r := range gitWrapperTaintRules {
+		if !cases[r.exercisedBy] {
+			t.Errorf("gitWrapperTaintRules says %q is exercised by the case "+
+				"%q, and %s declares no such case in %s.\n\n"+
+				"Cases in this file are the only thing that exercises these "+
+				"rules: this repository declares exactly ONE `func git` and it "+
+				"is the plainest shape there is, so every rule but the first "+
+				"is covered by the table or by nothing.",
+				r.what, r.exercisedBy, self, gitWrapperCaseTable)
+		}
+	}
+
+	// The trigger. Two is the number the reason in whyNotAGitWrapper's header
+	// was written about; the third is where the trade changes.
+	if accepts > gitWrapperAcceptRules {
+		t.Errorf("whyNotAGitWrapper now accepts a helper in %d place(s) and "+
+			"the argument for approximating this syntactically was written "+
+			"for %d.\n\n"+
+			"That argument is about a parse being able to read revisions and "+
+			"generated trees that need not build, against the cost of one "+
+			"loose rule. At %d rules it is a different trade: the function is "+
+			"a small dataflow engine with its own looseness table, answering "+
+			"badly a question go/types answers exactly, and the next case "+
+			"will look just as obviously correct as this one did.\n\n"+
+			"Either load the package and ask go/types — and say what that "+
+			"costs the walk over revisions, which is the reason it was not "+
+			"done — or raise gitWrapperAcceptRules and write the reason "+
+			"beside the header's argument, so the next person reads a "+
+			"decision rather than a number.",
+			accepts, gitWrapperAcceptRules, accepts)
+	}
+
+	t.Logf("whyNotAGitWrapper accepts a helper in %d place(s), each with a row "+
+		"in gitWrapperTaintRules and a case in %s; %d looseness(es) written "+
+		"down beside them. Counted out of %s rather than listed, so a rule "+
+		"added without a row fails this arm in the commit that adds it.",
+		accepts, gitWrapperCaseTable, len(gitWrapperTaintLimits), self)
+}
+
+// How many acceptance rules the written reason covers. Two, and the third one
+// is a decision — see the arm above, and timingsRecordCopies, which is the
+// same shape of constant for the same kind of reason.
+const gitWrapperAcceptRules = 2
+
+// The test whose table is the only thing exercising those rules.
+const gitWrapperCaseTable = "TestWhatCountsAsAGitWrapper"
+
+// What the approximation accepts a helper ON, one row per `reaches = true`.
+var gitWrapperTaintRules = []struct {
+	// The rule, as the premise it establishes.
+	what string
+	// The case in TestWhatCountsAsAGitWrapper that would fail if it went.
+	exercisedBy string
+}{{
+	what: "a tainted name reaches exec.Command(\"git\", …) past the program " +
+		"name, which is the wrapper this repository actually has",
+	exercisedBy: "the shape this repository has",
+}, {
+	what: "a tainted name is assigned into a field of the *exec.Cmd that call " +
+		"produced — `cmd.Args = append(cmd.Args, args...)` reaches git just " +
+		"as surely",
+	exercisedBy: "arguments appended to cmd.Args",
+}}
+
+// And what it is loose about, which is the half a rule count does not say.
+//
+// Each of these is in the direction of ACCEPTING a helper, which is the safe
+// direction for this check: its purpose is to stop a wrong premise being
+// stated confidently about a package's git calls, not to audit wrappers. They
+// are listed because a third rule arriving would be arriving on top of these,
+// and the question at that point is whether the pile is still cheaper than
+// loading a package.
+var gitWrapperTaintLimits = []string{
+	"statements are taken in source order and nothing here understands " +
+		"control flow, so a taint inside an `if` that never runs counts",
+	"nothing tracks scope, so a parameter shadowed by a `for args := range …` " +
+		"is still the parameter",
+	"only this function's body is read, so a helper that hands its arguments " +
+		"to another function in the package is not followed",
+}
+
+// isEmptyStringLit is whether an expression is the literal "".
+//
+// literal() returns "" both for an empty string literal and for anything that
+// is not a literal at all, and the count above needs those told apart: a
+// `return err.Error()` is not an acceptance.
+func isEmptyStringLit(e ast.Expr) bool {
+	lit, ok := e.(*ast.BasicLit)
+	return ok && lit.Kind == token.STRING && (lit.Value == `""` || lit.Value == "``")
+}
+
+// taintCaseNames is the `name:` of every case in the wrapper table.
+//
+// Read out of the test's own source rather than by running it, because what
+// the census claims is that a rule is exercised BY A CASE — a fact about the
+// table, which a parse can settle without the cases having to pass.
+func taintCaseNames(t *testing.T, file *ast.File) map[string]bool {
+	t.Helper()
+	names := map[string]bool{}
+	for _, d := range file.Decls {
+		fn, ok := d.(*ast.FuncDecl)
+		if !ok || fn.Name.Name != gitWrapperCaseTable {
+			continue
+		}
+		ast.Inspect(fn.Body, func(n ast.Node) bool {
+			kv, ok := n.(*ast.KeyValueExpr)
+			if !ok {
+				return true
+			}
+			key, ok := kv.Key.(*ast.Ident)
+			if !ok || key.Name != "name" {
+				return true
+			}
+			if lit, ok := kv.Value.(*ast.BasicLit); ok && lit.Kind == token.STRING {
+				names[strings.Trim(lit.Value, "`\"")] = true
+			}
+			return true
+		})
+	}
+	if len(names) == 0 {
+		t.Fatalf("no case name was read out of %s. The census rows below "+
+			"claim each rule is exercised by one of them, and with none found "+
+			"that claim is checked against nothing.", gitWrapperCaseTable)
+	}
+	return names
+}
+
 // parseOneFunc is the declaration in a fragment of Go source.
 //
 // Wrapped in a package clause and the imports the fragments use, because

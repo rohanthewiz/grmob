@@ -338,17 +338,21 @@ type revision struct {
 // needs a repository; everything themeleaves does is the half that needs only
 // text, and wasm/verify holds THAT half against reflect on every run.
 //
-// Test files are filtered here rather than left to themeleaves (which filters
-// them too): a fetch per test file in core/ at every revision is text nobody
-// will parse, carried down the pipe eighty-eight times. That cost is small now
-// that the fetch is batched (see blob) and it was the difference between this
-// walk and a noticeably slower one before, which is why the filter is here and
-// not left to the parse.
+// Test files are filtered before the fetch rather than left to themeleaves
+// (which filters them too): a fetch per test file in core/ at every revision
+// is text nobody will parse, carried down the pipe eighty-eight times. That
+// cost is small now that the fetch is batched (see blob) and it was the
+// difference between this walk and a noticeably slower one before, which is
+// why the filter is on this side and not left to the parse.
 //
-// Which makes the rule below a second copy of themeleaves.Of's, and a copy of
-// a rule is a thing that can move on its own. Expansion.Files is what each
+// Which makes that filter a second copy of themeleaves.Of's rule, and a copy
+// of a rule is a thing that can move on its own. Expansion.Files is what each
 // reading says it read, and main_test.go holds this one's against InDir's at
 // HEAD — see TestTheRevisionsFileSetIsTheOneTheWorkingTreeWalkReads.
+//
+// The filter itself is themeSourcesAt, immediately below, and it is a function
+// rather than four lines in the loop here because what it decides is also the
+// walk's unit of work — see its header.
 //
 // # Why -r is still asked for, when the descent it does is undone here
 //
@@ -357,12 +361,51 @@ type revision struct {
 // would be paths it could not name. -r is how they are SEEN; revision.nested
 // is where they go.
 func leavesAt(sha string) (revision, error) {
-	files, err := treePaths(sha)
+	direct, nested, err := themeSourcesAt(sha)
 	if err != nil {
 		return revision{}, err
 	}
-	rev := revision{}
+	rev := revision{nested: nested}
 	sources := map[string]string{}
+	for _, p := range direct {
+		src, err := blob(sha, p)
+		if err != nil {
+			return revision{}, err
+		}
+		sources[p] = src
+	}
+	rev.Expansion = themeleaves.Of(sources, themeType)
+	return rev, nil
+}
+
+// themeSourcesAt is which of a revision's tracked files this walk will FETCH,
+// and which ones it declines for being under themePkg rather than in it.
+//
+// # Why the filter is a function of its own
+//
+// It was four lines inside the loop above, and what it decides is the walk's
+// unit of work: one object per path it returns, per revision. That makes it
+// the answer to "how many objects does a whole run fetch", which used to be a
+// number in a comment (see blob) and is now derived —
+// TestTheWholeWalkGoesRoundOneBatchProcess sums this over the history and
+// holds the batch reader's own fetch count to it.
+//
+// Extracted rather than re-implemented in that test on purpose. A test that
+// spelled the suffix rule and the directory rule again would be asserting its
+// own copy of them against the walk's, which is two copies of a filter and a
+// check that passes while both are wrong together. Asking the walk what it
+// intends to fetch and then counting what it fetched is a question about the
+// FETCH, which is what the count is a claim about.
+//
+// The rules themselves are unchanged and both are explained above: `.go` and
+// not `_test.go` because nobody will parse the rest, and `path.Dir(p) ==
+// themePkg` because one package is one directory — which is InDir's rule, and
+// the declined paths are named on stderr rather than dropped in silence.
+func themeSourcesAt(sha string) (direct, nested []string, err error) {
+	files, err := treePaths(sha)
+	if err != nil {
+		return nil, nil, err
+	}
 	// git speaks slash-separated, repository-relative paths on every platform,
 	// so `path` and not `path/filepath`: these are not paths on this machine.
 	for _, p := range files {
@@ -375,17 +418,12 @@ func leavesAt(sha string) (revision, error) {
 		// and listing it here would be noise in a report about declarations
 		// that went missing.
 		if path.Dir(p) != themePkg {
-			rev.nested = append(rev.nested, p)
+			nested = append(nested, p)
 			continue
 		}
-		src, err := blob(sha, p)
-		if err != nil {
-			return revision{}, err
-		}
-		sources[p] = src
+		direct = append(direct, p)
 	}
-	rev.Expansion = themeleaves.Of(sources, themeType)
-	return rev, nil
+	return direct, nested, nil
 }
 
 // shadowKind is where one collision's declarations sit, as a phrase that
@@ -565,28 +603,45 @@ func wrap(names []string, width int, indent string) string {
 //
 // # Why this is not `git cat-file -p` per file
 //
-// It was, and it cost thirty-one seconds. Eighty-eight commits touch core/ and
-// each one is read with one `ls-tree` plus one `cat-file` per non-test .go
-// file in it — thousands of git processes for a table of sixteen rows. Almost
-// none of that time is git doing anything: it is fork, exec, the repository
-// being opened, and the process being torn down, once per file.
+// It was, and each revision is read with one `ls-tree` plus one `cat-file` per
+// non-test .go file in it — a git process per object, for a table of sixteen
+// rows. Almost none of that time is git doing anything: it is fork, exec, the
+// repository being opened, and the process being torn down, once per file.
+//
+// # The two numbers this paragraph used to assert, and what they are now
 //
 // "Around forty-four hundred" stood here for several sessions and it was a
 // BOUND arithmetic away from the source — eighty-eight commits times up to
-// forty-nine files — written in the position a count goes. The walk actually
-// fetches 2906 objects, which TestTheWholeWalkGoesRoundOneBatchProcess reports
-// on every run because the reader counts them; the difference is every
-// revision that held fewer than the largest core/ ever did. The bound was not
-// wrong about the order and it was not a measurement, and this comment could
-// not tell the two apart.
+// forty-nine files — written in the position a count goes. It is now the
+// repository's own answer on every run: themeSourcesAt names the objects a
+// revision contributes and TestTheWholeWalkGoesRoundOneBatchProcess sums it
+// across the history, holds the batch reader's fetch count to that sum, and
+// reports it. 2906 over this repository's eighty-eight commits, and a number
+// that moves with the checkout rather than a constant tuned against one run.
 //
-// The thirty-one seconds fared better. It is the one number here that cannot
-// be re-taken by running anything — the code that cost it is gone — but the
-// arm above was break-tested by making blob retire and replace its reader on
-// every fetch, which is one process per object, and that run took 31.8s on the
-// machine themehistoryTimingsTakenOn names. A figure carried in a comment
-// since the session that removed the shape it measures, standing up to being
-// re-created on purpose.
+// "Thirty-one seconds" was worse: taken once, in the session that deleted the
+// code which cost it. It is now a RATIO of two readings taken in the same run
+// over the same objects —
+// TestOneProcessPerObjectIsSlowerThanOneProcessForAllOfThem re-creates the
+// per-object shape rather than describing it, and is off unless
+// GRMOB_PER_OBJECT_FETCH=required because it is thirty seconds and three
+// thousand processes:
+//
+//	one `cat-file -p` each   30.14–30.42s   2906 processes
+//	one `cat-file --batch`   399–401ms      1 process
+//	                         ─────────────  75–76× on the fetches alone
+//
+// (Three runs on the machine themehistoryTimingsTakenOn names; the batched
+// figure there is the fetches on their own, which is why it is well under
+// wholeRun's 1.5s — that one also pays 88 `ls-tree` processes and every
+// revision's parse.) The thirty-one seconds carried in this comment for
+// several sessions turns out to have been right, and it is no longer what the
+// argument rests on: what rests here now is a comparison anybody can re-take
+// with one environment variable, on their own machine, in either direction.
+//
+// The arm asserts the DIRECTION and not the multiple, for the reason every
+// number in themehistoryTimingsTakenOn is reported rather than asserted: 75×
+// is a reading of this machine's fork cost against its pipe cost.
 //
 //	before   ls-tree ── cat-file ── cat-file ── cat-file ── ...   per revision
 //	after    ls-tree ── ┐
@@ -745,17 +800,20 @@ type batchReader struct {
 	//
 	// # Why a counter is in a struct that is otherwise all mechanism
 	//
-	// The whole argument for `--batch` is a count: eighty-eight commits times
-	// up to forty-nine files is around forty-four hundred objects, and the
-	// point of the batch is that they cost ONE process instead of that many.
-	// Every part of that sentence was a number in a comment.
+	// The whole argument for `--batch` is a count: every object a revision
+	// contributes costs a process, and the point of the batch is that all of
+	// them cost ONE. Every part of that sentence was a number in a comment.
 	//
 	// This is the part a program can answer. With it,
-	// TestTheWholeWalkGoesRoundOneBatchProcess can say that a real run fetched
-	// n objects and started one process to do it — which is the claim, stated
-	// about the run that just happened rather than about a run somebody
-	// remembers. Not guarded: this program is single-threaded and every read
-	// goes through blobsMu; see the note on that mutex.
+	// TestTheWholeWalkGoesRoundOneBatchProcess says that a real run fetched
+	// exactly the objects themeSourcesAt names across the history and started
+	// one process to do it — the claim, stated about the run that just
+	// happened rather than about a run somebody remembers. The count is held
+	// to an EQUALITY rather than a floor, so it fails both ways: a revision
+	// the walk skipped, and an object fetched twice.
+	//
+	// Not guarded: this program is single-threaded and every read goes
+	// through blobsMu; see the note on that mutex.
 	reads int
 }
 
@@ -770,6 +828,16 @@ type batchReader struct {
 //
 // Atomic rather than plain because this one is written by newBatchReader,
 // which the tests call directly and outside blobsMu.
+//
+// # Nothing resets it, and that is the point
+//
+// It counts for the lifetime of the process, so a reader of it takes a DELTA
+// around whatever it is asking about — batchesStartedSince in
+// internal/themehistory/timings_test.go is that discipline written down once.
+// A reset would be the wrong tool twice over: it would lose the retire-and-
+// replace this counter exists to notice, and it would silently subtract from
+// any delta another test had open, in a package where nothing is parallel
+// today and the mutex above exists because that can change.
 var batchesStarted atomic.Int64
 
 func newBatchReader(dir string) (*batchReader, error) {
