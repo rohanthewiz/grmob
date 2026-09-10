@@ -19,6 +19,7 @@ import (
 	"testing"
 
 	"github.com/rohanthewiz/grmob/core"
+	"github.com/rohanthewiz/grmob/internal/themeleaves"
 )
 
 // themeNearMissEdits, and the derivation that produces it.
@@ -1259,6 +1260,147 @@ func affordedLeafNames() []string {
 	return names
 }
 
+// The two expansions of core.Theme are one population.
+//
+// # What rests on this, and what was holding it
+//
+// affordedBandSteps' table of what the struct has actually done — eight
+// one-leaf commits, two of two, one of four, one of twenty-eight — comes out of
+// internal/themehistory, which expands core.Theme by PARSING core/'s sources at
+// a revision. affordedLeafNames expands the same struct over reflect. Two
+// mechanisms, and the table is a fact about this file's population only while
+// they produce the same eighty names.
+//
+// That was verified once, by hand, with a diff: run the command with -names,
+// eyeball it against this file's list, believe the table from then on. It is
+// the same shape as a number written into a note, and this file's whole
+// convention is that such a number has already moved.
+//
+// # Why it can be an arm when the table cannot
+//
+// The command needs git and a test must not: a shallow clone, a source tarball
+// or a build container has no history in it. But the git half is only where the
+// SOURCES come from. themeleaves.InDir takes them from the working tree
+// instead, and the expansion it runs is the identical code path — so the half
+// that has to shell out stays a command, and the half that can be checked is
+// checked on every run.
+//
+// It is also the half that already went wrong: the first walker came back with
+// ninety-one names, because its recursion guard was reassigned inside the field
+// loop and Typography's three TextStyle fields stopped being three subtrees.
+// Eleven names too many, in the mechanism the whole table is derived by.
+//
+// # What each direction of a disagreement means
+//
+// They are not symmetric, and the failure says which happened:
+//
+//	only the source walk has it   a field whose type it could not resolve to a
+//	                              struct declared in core/ — an alias, a
+//	                              generic, a type from another package. It
+//	                              stopped there and kept the FIELD's name;
+//	                              reflect went in and kept the children.
+//	only reflect has it           the children behind exactly that stop, unless
+//	                              some other parent happens to hold the same
+//	                              name too.
+//
+// So the ninety-one-name bug reads as eleven names the source walk has and
+// reflect does not, which is the first line of the failure below.
+func TestTheHistoryWalkersExpansionIsTheOneThisFileMeasures(t *testing.T) {
+	// Relative to this package's directory, which is where `go test` runs.
+	// core/ is the package Theme is declared in and nothing outside it
+	// contributes a field, which is the same premise internal/themehistory
+	// reads only core/ on.
+	const coreDir = "../../core"
+	exp, err := themeleaves.InDir(coreDir, "Theme")
+	if err != nil {
+		t.Fatalf("could not read %s to expand Theme from its sources: %v\n\n"+
+			"This is the working-tree half of internal/themehistory's reading — "+
+			"no git, just the .go files that are there — so a failure here is the "+
+			"path having moved rather than anything about the struct.", coreDir, err)
+	}
+	if len(exp.Unparsed) > 0 {
+		t.Fatalf("go/parser returned nothing for %s.\n\n"+
+			"The expansion below is over whatever the other files declared, so "+
+			"every count it produces is short by however much lives in these. In a "+
+			"HISTORY that is ordinary — a revision caught mid-refactor — and "+
+			"internal/themehistory says so and carries on. In a working tree it "+
+			"means this checkout does not compile, and no reading taken over it is "+
+			"worth comparing to anything.", strings.Join(exp.Unparsed, ", "))
+	}
+	if !exp.Found {
+		t.Fatalf("no struct named Theme is declared in %s.\n\n"+
+			"reflect finds one — affordedLeafNames is expanding core.DefaultTheme "+
+			"right now — so the type has been moved to another package, or renamed, "+
+			"and internal/themehistory is walking the whole history looking for a "+
+			"name that is not there any more. Its table would come back empty "+
+			"rather than wrong, which is the failure that looks like nothing "+
+			"happened.", coreDir)
+	}
+
+	// Sorted, because the claim is about the POPULATION and not about the
+	// order. affordedLeafNames returns its names in the order the sorted PATHS
+	// produce them — Colors.Background before Colors.Border before
+	// Spacing.LG — which is the order the windows are cut in and is a fact
+	// about the paths rather than about the names. themeleaves has no paths to
+	// sort by, and an arm that failed over the two orderings would be a
+	// failure about nothing.
+	want := slices.Clone(affordedLeafNames())
+	sort.Strings(want)
+	if slices.Equal(exp.Names, want) {
+		t.Logf("core.Theme expands to the same %d leaf names both ways: parsed "+
+			"out of %s by internal/themeleaves, and walked over reflect by "+
+			"affordedLeafNames. That is what the edit-size table under "+
+			"affordedBandSteps rests on — it is a reading of the parsed "+
+			"population at sixteen revisions, and it is a fact about the "+
+			"population this file measures only while these two agree. The git "+
+			"half stays a command (go run ./internal/themehistory -names); this "+
+			"is the half that does not need one.", len(want), coreDir)
+		return
+	}
+
+	inSource := affordedNamesNotIn(exp.Names, want)
+	inReflect := affordedNamesNotIn(want, exp.Names)
+	t.Errorf("core.Theme expands to %d leaf names parsed out of %s and %d walked "+
+		"over reflect.\n\n"+
+		"only the source walk has: %s\nonly reflect has:        %s\n\n"+
+		"These two are supposed to be one population, and the whole of "+
+		"internal/themehistory's table — the edit-size distribution "+
+		"affordedBandSteps stops at three leaves because of — is the parsed one "+
+		"read at sixteen revisions.\n\n"+
+		"A name only the SOURCE walk has is a field whose type it could not "+
+		"resolve to a struct declared in core/: an alias, a generic, a type from "+
+		"another package. It stopped there and kept the field's own name where "+
+		"reflect recursed and kept the children — so those children are the names "+
+		"only reflect has, and the two lists above are usually one edit read from "+
+		"both sides. That is the ninety-one-name shape the walker shipped with "+
+		"once.\n\n"+
+		"A name only REFLECT has, with nothing beside it in the other list, is "+
+		"the other direction: a field this walk never saw at all, which means "+
+		"Theme is now assembled from more than %s.",
+		len(exp.Names), coreDir, len(want),
+		affordedNameList(inSource), affordedNameList(inReflect), coreDir)
+}
+
+// affordedNamesNotIn is the names of one sorted list that the other does not
+// hold, as its own list.
+//
+// Both directions are wanted and each is read as a different finding, so the
+// difference is taken twice rather than returned as a pair — see the failure
+// above, which says what each side means.
+func affordedNamesNotIn(these, those []string) []string {
+	have := make(map[string]bool, len(those))
+	for _, name := range those {
+		have[name] = true
+	}
+	out := []string{}
+	for _, name := range these {
+		if !have[name] {
+			out = append(out, name)
+		}
+	}
+	return out
+}
+
 // affordedSets is the population: every window of one to `window` consecutive
 // names, mounted under one parent and under two.
 //
@@ -1927,13 +2069,34 @@ var affordedEndingWitness = [len(affordedEndingNames)]struct {
 	//	            all one distance apart ("each one edit from the other
 	//	            four", "six edits apart"); apart when it bounds them from
 	//	            one side only ("no two within three edits").
-	//	crowd*      the crowd reading the sentence names: within
-	//	            `crowdWithin` edits the most OTHER siblings any leaf has
-	//	            is `crowdSiblings`, and `crowdAt` is every leaf tied at
-	//	            that maximum. The tie structure is part of the shape —
-	//	            "Palette.Echo has two within four" is a claim that Echo
-	//	            is the ONLY one, and a list of three there would be a
-	//	            different set.
+	//	crowd*      the crowd reading the sentence names: within one width the
+	//	            most OTHER siblings any leaf has is `crowdSiblings`, and
+	//	            `crowdAt` is every leaf tied at that maximum. The tie
+	//	            structure is part of the shape — "Palette.Echo has two
+	//	            within four" is a claim that Echo is the ONLY one, and a
+	//	            list of three there would be a different set.
+	//
+	// # And the width that reading is taken at is a choice, not a number
+	//
+	// Two of the four sentences name a width: "no two of which are within
+	// three edits, and Palette.Echo has two within four" is a claim at four,
+	// and "six edits apart" is one at six. Those are `crowdWithin`.
+	//
+	// The other two are claims about EVERY width — "no width above the floor
+	// keeps an answer to a pair", "cannot produce a crowd at any distance" —
+	// and there is no number in them to type. The reading for those is taken
+	// at the farthest sibling pair, because past it the answer cannot move:
+	// every pair is already inside the threshold, so one more edit of width
+	// admits nobody. `crowdAtFarthest` says so, and the width comes from
+	// affordedWitnessShapeOf's own farthestD on the run.
+	//
+	// It used to be a literal that HAPPENED to equal the farthest pair, with
+	// the reasoning in a comment beside it. Both are true of these fixtures
+	// today and only one of them survives a respelling: names edited three
+	// apart instead of five leave a recorded 5 reading a width the set no
+	// longer reaches, where the derived one follows. The arms below also make
+	// the "cannot move past it" half checkable rather than asserted in
+	// prose — see the saturation arm in affordedHoldWitnessShape.
 	//
 	// The distances are the derivation's own metric (themeEditDistance, an
 	// adjacent swap counted once), because that is what the threshold is
@@ -1941,9 +2104,14 @@ var affordedEndingWitness = [len(affordedEndingNames)]struct {
 	// about no search.
 	perParent           []int
 	closestD, farthestD int
-	crowdWithin         int
-	crowdSiblings       int
-	crowdAt             []string
+	// The width the crowd reading is taken at, as one of two things: a width
+	// the sentence names, or the farthest pair for a sentence that names none.
+	// Exactly one of them per witness — a literal beside the flag is a number
+	// nothing reads, which the arm says.
+	crowdWithin     int
+	crowdAtFarthest bool
+	crowdSiblings   int
+	crowdAt         []string
 }{
 	0: {
 		sentence: "its own crowding stopped the search",
@@ -1956,10 +2124,17 @@ var affordedEndingWitness = [len(affordedEndingNames)]struct {
 		perParent: []int{5},
 		// Every pair is one apart, which is what "each one edit from the
 		// other four" says and what closest == farthest is the reading of.
-		closestD:      1,
-		farthestD:     1,
-		crowdWithin:   1,
-		crowdSiblings: 4,
+		closestD:  1,
+		farthestD: 1,
+		// "no width above the floor keeps an answer to a pair" is a claim
+		// about every width, so the reading is taken where it stops moving:
+		// at the farthest pair, which for a set all one edit apart is one.
+		// Typed as 1 it would have been indistinguishable from a sentence
+		// that names a width, and a respelling that pushed two of these
+		// names three apart would leave it reading at a width the set no
+		// longer has anything at.
+		crowdAtFarthest: true,
+		crowdSiblings:   4,
 		crowdAt: []string{
 			"Weight.Aaa", "Weight.Aab", "Weight.Aac", "Weight.Aad", "Weight.Aae",
 		},
@@ -1977,10 +2152,11 @@ var affordedEndingWitness = [len(affordedEndingNames)]struct {
 		// sibling here is one sibling at every wider width. The claim that
 		// no width crowds these names is perParent's — a parent of two
 		// cannot make a crowd — and this is that claim at the only distance
-		// where it could have failed.
-		crowdWithin:   5,
-		crowdSiblings: 1,
-		crowdAt:       []string{"Duo.Alpha", "Duo.Zulu"},
+		// where it could have failed. Derived rather than typed, because
+		// "at any distance" names no distance to type.
+		crowdAtFarthest: true,
+		crowdSiblings:   1,
+		crowdAt:         []string{"Duo.Alpha", "Duo.Zulu"},
 	},
 	2: {
 		sentence: "the ceiling cost this set a wider threshold",
@@ -1991,7 +2167,10 @@ var affordedEndingWitness = [len(affordedEndingNames)]struct {
 		closestD:  6,
 		farthestD: 6,
 		// Six is where all three become each other's neighbours at once, so
-		// the crowd appears in one step and every leaf is tied at it.
+		// the crowd appears in one step and every leaf is tied at it. A
+		// width the sentence names ("six edits apart") rather than a
+		// saturating one, even though these names make the two the same
+		// number: the claim being held is about six.
 		crowdWithin:   6,
 		crowdSiblings: 2,
 		crowdAt:       []string{"Ramp.Aaaaaa", "Ramp.Bbbbbb", "Ramp.Cccccc"},
@@ -2212,9 +2391,29 @@ func affordedHoldWitnessShape(t *testing.T, e int) {
 			affordedNameList(w.names), closestD, farthestD,
 			w.closestD, w.farthestD, w.shape)
 	}
-	siblings, at := crowd(w.crowdWithin)
+	// The width, which is either the one the sentence names or the one the
+	// names themselves put the last pair at. See the witness struct: a
+	// sentence about EVERY width has no number in it to type, and a literal
+	// that happens to equal farthestD is a reading that stops following the
+	// fixture the moment somebody respells it.
+	within, widthSaid := w.crowdWithin, fmt.Sprintf("within %d edits", w.crowdWithin)
+	if w.crowdAtFarthest {
+		within = farthestD
+		widthSaid = fmt.Sprintf("at this set's farthest sibling pair, %d edits",
+			farthestD)
+		if w.crowdWithin != 0 {
+			t.Errorf("witness %s carries crowdAtFarthest and a crowdWithin of %d.\n\n"+
+				"The two are exclusive: the reading is taken at the farthest pair "+
+				"(%d here, derived from these names) and the literal beside it is "+
+				"read by nothing. If the sentence does name a width, drop the flag "+
+				"and the width is asserted; if it does not, drop the number and "+
+				"nothing can go stale.",
+				affordedNameList(w.names), w.crowdWithin, farthestD)
+		}
+	}
+	siblings, at := crowd(within)
 	if siblings != w.crowdSiblings || !slices.Equal(at, w.crowdAt) {
-		t.Errorf("within %d edits the most siblings any leaf of %s has is %d, at "+
+		t.Errorf("%s the most siblings any leaf of %s has is %d, at "+
 			"%v; this witness says %d at %v.\n\n"+
 			"A crowd reading is what every branch of the classification turns on, "+
 			"and WHICH leaves are tied at it is part of the shape rather than "+
@@ -2222,8 +2421,44 @@ func affordedHoldWitnessShape(t *testing.T, e int) {
 			"the only one, and three names there would be a set the ceiling costs "+
 			"nothing for a different reason than the one written down.\n\n"+
 			"The shape it was picked for: %s",
-			w.crowdWithin, affordedNameList(w.names), siblings, at,
+			widthSaid, affordedNameList(w.names), siblings, at,
 			w.crowdSiblings, w.crowdAt, w.shape)
+	}
+
+	// # And the argument for reading at the farthest pair, as an arm
+	//
+	// "past it the answer cannot move" is the whole reason a sentence about
+	// every width can be checked at one width, and it was a comment. Here it
+	// is the assertion: the same reading taken at a width no pair of these
+	// names can exceed — an edit distance is at most the longer of the two
+	// spellings — has to come back identical.
+	//
+	// It cannot fail while the crowd search is monotone in `within`, which is
+	// the point: it is the search's own property that makes the one reading
+	// stand for all of them, and a search that acquired a ceiling of its own
+	// would break the inference silently everywhere else.
+	if w.crowdAtFarthest {
+		beyond := within
+		for _, name := range w.names {
+			beyond += len(name)
+		}
+		wider, widerAt := crowd(beyond)
+		if wider != siblings || !slices.Equal(widerAt, at) {
+			t.Errorf("%s's crowd reading is %d siblings at %v within %d edits and "+
+				"%d at %v within %d.\n\n"+
+				"This witness is read at its farthest sibling pair because its "+
+				"sentence is about every width — %s — and that only stands while "+
+				"the reading cannot move past that pair. Every pair is inside the "+
+				"threshold at %d edits and %d is wider than any two of these names "+
+				"can be apart, so the two readings are over the same comparisons "+
+				"and a difference means the crowd search is not monotone in its "+
+				"width: something in it now REFUSES at a distance it used to "+
+				"admit, and every sentence in this file that reasons \"past here "+
+				"nothing changes\" is reasoning about a search that no longer works "+
+				"that way.",
+				affordedNameList(w.names), siblings, at, within, wider, widerAt,
+				beyond, w.shape, within, beyond)
+		}
 	}
 
 	// And the one join between the two walks: the derivation reads the same
@@ -2540,6 +2775,23 @@ func affordedOneLeafBand(names []string) (map[string]affordedBand, string) {
 // affordedBandMemoRead and affordedBandMemoSince. A baseline that is not zero
 // is then a finding the log line states rather than an error, because a second
 // caller is a perfectly good thing to be.
+//
+// # And the baseline says THAT there is another caller, not which
+//
+// The difference from a baseline is this test's own share, and a non-zero
+// baseline is a sentence saying somebody else walked a band first. Somebody
+// else is where the reader has to stop: the note could say two walks happened
+// before this test started and not what asked for them, in a package where the
+// interesting version of that finding is "the composition test is now taking
+// its own census" and the uninteresting one is "a fixture warmed the memo".
+//
+// So the counters are also kept per caller. The key is the outermost Test
+// function on the stack at the asking (see affordedBandCaller), which is the
+// unit a reader can go and look at — the helper it came through is this file's
+// own plumbing and would only ever name affordedTwoStepBands or
+// affordedChainBoundOf. One stack walk per asking, on a path that either walks
+// 80 names for 13ms or copies a four-entry map; the walk is 32 frames of
+// runtime.Callers and does not show up against either.
 var affordedBandMemo = struct {
 	sync.Mutex
 	at map[string]struct {
@@ -2547,10 +2799,59 @@ var affordedBandMemo = struct {
 		off   string
 	}
 	walks, reused int
+	// The same two, split by who asked. Totals are kept alongside rather than
+	// summed out of this map: they are what the memo is FOR, and a sum over a
+	// map is a second way to get a number that has to agree with the first.
+	by map[string]affordedBandCallerCount
 }{at: map[string]struct {
 	bands map[string]affordedBand
 	off   string
-}{}}
+}{}, by: map[string]affordedBandCallerCount{}}
+
+// affordedBandCallerCount is one caller's share of the memo.
+type affordedBandCallerCount struct{ walks, reused int }
+
+// affordedBandCaller is the name a band walk is attributed to: the outermost
+// Test function on the stack.
+//
+// Outermost rather than immediate, because the immediate caller is always one
+// of this file's own helpers — affordedOneLeafBand, affordedTwoStepBands,
+// affordedChainBoundOf — and "affordedChainBoundOf asked for a band" is not a
+// fact anybody needs. Which TEST asked is: the whole point of the tally is to
+// tell a reader that the band walks have a second reader and to name it.
+//
+// The fallback is the immediate caller's file and line, for an asking with no
+// Test frame above it at all — from a goroutine started by a test, or from
+// TestMain. That is a worse name and it is a name; an asking counted under ""
+// would be one the tally cannot describe.
+func affordedBandCaller() string {
+	// 2 skips runtime.Callers and this function, so the first frame is
+	// whatever asked for the band.
+	pcs := make([]uintptr, 32)
+	n := runtime.Callers(2, pcs)
+	frames := runtime.CallersFrames(pcs[:n])
+	outermost, fallback := "", ""
+	for {
+		f, more := frames.Next()
+		short := f.Function[strings.LastIndex(f.Function, ".")+1:]
+		if fallback == "" {
+			fallback = fmt.Sprintf("%s:%d", filepath.Base(f.File), f.Line)
+		}
+		// Frames arrive innermost first, so the last Test seen is the one
+		// furthest out — which is the test itself rather than a subtest
+		// closure or a helper that happens to start with Test.
+		if strings.HasPrefix(short, "Test") {
+			outermost = short
+		}
+		if !more {
+			break
+		}
+	}
+	if outermost != "" {
+		return outermost
+	}
+	return fallback
+}
 
 // affordedBandKey is the identity of a walk: its names and its step.
 //
@@ -2598,6 +2899,55 @@ func affordedBandMemoRead() (walks, reused int) {
 	return affordedBandMemo.walks, affordedBandMemo.reused
 }
 
+// affordedBandMemoCount adds one asking to a caller's tally.
+//
+// Called with the memo already locked, by the two places that move the totals,
+// so a caller's share and the total it is part of cannot disagree — the
+// alternative is a second lock acquisition between the two increments and a
+// window in which they do.
+func affordedBandMemoCount(who string, walked bool) {
+	had := affordedBandMemo.by[who]
+	if walked {
+		had.walks++
+	} else {
+		had.reused++
+	}
+	affordedBandMemo.by[who] = had
+}
+
+// affordedBandMemoCallers is the per-caller tally as a sentence, most work
+// first, or empty when nothing has asked for a band at all.
+//
+// Sorted by walks and then by name so the line does not depend on map
+// iteration, and so the caller that actually cost something leads it.
+func affordedBandMemoCallers() string {
+	affordedBandMemo.Lock()
+	who := make([]string, 0, len(affordedBandMemo.by))
+	tally := make(map[string]affordedBandCallerCount, len(affordedBandMemo.by))
+	for name, count := range affordedBandMemo.by {
+		who = append(who, name)
+		tally[name] = count
+	}
+	affordedBandMemo.Unlock()
+
+	sort.Slice(who, func(i, j int) bool {
+		a, b := tally[who[i]], tally[who[j]]
+		if a.walks != b.walks {
+			return a.walks > b.walks
+		}
+		if a.reused != b.reused {
+			return a.reused > b.reused
+		}
+		return who[i] < who[j]
+	})
+	said := make([]string, 0, len(who))
+	for _, name := range who {
+		said = append(said, fmt.Sprintf("%s (%d walk(s), %d reuse(s))",
+			name, tally[name].walks, tally[name].reused))
+	}
+	return strings.Join(said, ", ")
+}
+
 // affordedBandMemoSince is the work done since a baseline, with a sentence
 // about the baseline itself.
 //
@@ -2616,18 +2966,25 @@ func affordedBandMemoSince(baseWalks, baseReused int) (walks, reused int,
 	if baseWalks == 0 && baseReused == 0 {
 		return walks, reused, ""
 	}
+	// And WHICH other test, which is the half a baseline cannot say. See
+	// affordedBandMemo: the tally is kept per caller precisely so this
+	// sentence names the reader rather than reporting that one exists.
 	return walks, reused, fmt.Sprintf(" — and these two are this test's own "+
 		"share: %d walk(s) and %d reuse(s) were already on the memo when it "+
 		"started, so the band walks have a caller that is not this test and the "+
-		"process totals are %d and %d",
-		baseWalks, baseReused, nowWalks, nowReused)
+		"process totals are %d and %d. Per caller: %s",
+		baseWalks, baseReused, nowWalks, nowReused, affordedBandMemoCallers())
 }
 
 func affordedKLeafBand(names []string, k int) (map[string]affordedBand, string) {
 	key := affordedBandKey(names, k)
+	// Taken outside the lock: a stack walk under a mutex the parallel band
+	// walks also take is a stack walk every other goroutine waits for.
+	who := affordedBandCaller()
 	affordedBandMemo.Lock()
 	if had, seen := affordedBandMemo.at[key]; seen {
 		affordedBandMemo.reused++
+		affordedBandMemoCount(who, false)
 		affordedBandMemo.Unlock()
 		return affordedBandCopy(had.bands), had.off
 	}
@@ -2640,6 +2997,7 @@ func affordedKLeafBand(names []string, k int) (map[string]affordedBand, string) 
 	affordedBandMemo.Lock()
 	if _, seen := affordedBandMemo.at[key]; !seen {
 		affordedBandMemo.walks++
+		affordedBandMemoCount(who, true)
 	}
 	affordedBandMemo.at[key] = struct {
 		bands map[string]affordedBand
@@ -3402,6 +3760,14 @@ func affordedBandRounded(v float64) float64 {
 // population at HEAD to check it against affordedMeasuredOn's. The second
 // form prints the names, which is the stronger check: two different sets of
 // eighty print the same 80.
+//
+// And that check is no longer a thing somebody remembers to run. The command
+// needs git; the EXPANSION under it does not, and
+// TestTheHistoryWalkersExpansionIsTheOneThisFileMeasures holds
+// internal/themeleaves over a working-tree core/ against affordedLeafNames()
+// name for name on every run. So what a reader still has to take on trust here
+// is that the sixteen revisions were read by that same expansion — not that
+// the expansion produces this file's population.
 //
 // Fifteen commits moved the population after the one that created it with
 // twenty-five leaves in it:

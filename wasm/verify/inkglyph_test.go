@@ -484,7 +484,13 @@ var foldMeasuredOn = struct {
 	// it reads two of them: the population is node's NFKD (foldMeasuredOn's
 	// build) and the scripts and categories are Go's (foldOwnMeasuredOn's
 	// goUnicode).
-	bearingRegions []string
+	//
+	// Each entry is the sentence AND the kind words that went into it. The
+	// second column is not decoration: foldReachedWords is a claim about which
+	// of foldRegionKinds' words these populations have ever printed, and it
+	// used to recover them by splitting the sentence back up — a parser of this
+	// file's own formatter, held to it by nothing. See foldRegionName.
+	bearingRegions []foldRegionName
 	// And the same four over the sixteen planes above it, which this census
 	// used to stop at without saying so.
 	//
@@ -524,7 +530,10 @@ var foldMeasuredOn = struct {
 	// and no category for a single code point in it. The prose called it "the
 	// outlined letters", which was a claim about a block this toolchain does
 	// not know exists.
-	astralBearingRegions []string
+	// Two columns, like the BMP's. This one has the empty kinds cell: Go's
+	// tables have no category for a single code point of U+1CCD7..U+1CCE9,
+	// which is the same fact its sentence states.
+	astralBearingRegions []foldRegionName
 }{
 	build:   foldBuild{unicode: "16.0", icu: "76.1", node: "22.12.0"},
 	changes: 15802,
@@ -534,15 +543,20 @@ var foldMeasuredOn = struct {
 
 	bearingRuns:     96,
 	bearingClusters: 8,
-	bearingRegions: []string{
-		"U+00CC..U+02E2 Latin letters/modifier letters",
-		"U+1D2E..U+1ECB Latin letters/modifier letters",
-		"U+2071..U+217C Common/Latin letters/modifier letters/numerals/symbols",
-		"U+249D..U+24E3 Common symbols",
-		"U+2C7C Latin modifier letters",
-		"U+3250..U+33FF Common symbols",
-		"U+A7F3 Latin modifier letters",
-		"U+FF22..U+FF54 Latin letters",
+	// The sentence, and the kind words under it. Both columns are derived and
+	// both are asserted; the second is the one foldReachedWords reads.
+	bearingRegions: []foldRegionName{
+		{"U+00CC..U+02E2 Latin letters/modifier letters",
+			[]string{"letters", "modifier letters"}},
+		{"U+1D2E..U+1ECB Latin letters/modifier letters",
+			[]string{"letters", "modifier letters"}},
+		{"U+2071..U+217C Common/Latin letters/modifier letters/numerals/symbols",
+			[]string{"letters", "modifier letters", "numerals", "symbols"}},
+		{"U+249D..U+24E3 Common symbols", []string{"symbols"}},
+		{"U+2C7C Latin modifier letters", []string{"modifier letters"}},
+		{"U+3250..U+33FF Common symbols", []string{"symbols"}},
+		{"U+A7F3 Latin modifier letters", []string{"modifier letters"}},
+		{"U+FF22..U+FF54 Latin letters", []string{"letters"}},
 	},
 
 	astralChanges: 2307,
@@ -557,11 +571,13 @@ var foldMeasuredOn = struct {
 
 	astralBearingRuns:     118,
 	astralBearingClusters: 3,
-	astralBearingRegions: []string{
-		"U+1CCD7..U+1CCE9 assigned in neither script nor category by Go's " +
-			"Unicode 15.0.0, so newer than it",
-		"U+1D401..U+1D69D Common letters",
-		"U+1F111..U+1F190 Common symbols",
+	astralBearingRegions: []foldRegionName{
+		// No kinds at all: Go's 15.0.0 has no category for a single code point
+		// in this range, which is the reading's own evidence that it is derived.
+		{"U+1CCD7..U+1CCE9 assigned in neither script nor category by Go's " +
+			"Unicode 15.0.0, so newer than it", nil},
+		{"U+1D401..U+1D69D Common letters", []string{"letters"}},
+		{"U+1F111..U+1F190 Common symbols", []string{"symbols"}},
 	},
 }
 
@@ -1106,23 +1122,121 @@ var foldRegionKinds = []struct{ category, word string }{
 // Cn is absent from both lists on purpose and the arm knows it: unassigned is
 // not a kind of thing, it is the absence of one, and foldRegionsNamed reports
 // it as "newer than Go's tables" a level up rather than as a category.
-var foldUnwordedCategories = map[string]string{
-	"Pc": "connector punctuation: the word would be \"punctuation\", which Pd " +
-		"and Po already have and which loses what makes this one worth naming",
-	"Ps": "open punctuation — a region of these is brackets, not \"punctuation\"",
-	"Pe": "close punctuation, for the same reason as Ps",
-	"Pi": "initial quotation mark, which has no one-word English",
-	"Pf": "final quotation mark, for the same reason as Pi",
-	"Zs": "a space separator is not a kind of glyph",
-	"Zl": "a line separator is not a kind of glyph",
-	"Zp": "a paragraph separator is not a kind of glyph",
-	"Cc": "a control character has no appearance to describe",
-	"Cf": "a formatting character has no appearance to describe",
-	"Cs": "a surrogate is an encoding artefact and never a character",
-	"Co": "private use: by definition nobody outside its user knows what it is",
-	"LC": "not a category but Go's union of Lu, Ll and Lt, all three of which " +
-		"are worded above, so nothing can reach this that has not already " +
-		"been named",
+//
+// # The three groups are in the data now, and each of them is checkable
+//
+// The groups above were a paragraph and the entries were a flat map from a
+// category to a sentence, and the arm only ever read the KEY. So the reasons
+// were prose nothing held: "no appearance to describe" beside a category that
+// acquired one, or a shape filed under the wrong heading, would sit here
+// indefinitely — in a list whose entire purpose is to be the written-down half
+// of a decision.
+//
+// Each entry carries its group, and the group is not decoration either. It is
+// re-derived from the category's own name (P, Z and C are the three, and LC is
+// the one entry that is not a category), and each group makes a claim Go's
+// tables can answer:
+//
+//	punctuation shapes   the reason is "the word would be punctuation, which Pd
+//	                     and Po already have" — so foldRegionKinds must still
+//	                     give Pd and Po one word between them. Reword either and
+//	                     these five reasons are describing a collision that has
+//	                     stopped happening.
+//	separators           "a region of these is whitespace, not a kind of glyph"
+//	                     — so every code point in them is unicode.IsSpace.
+//	non-graphic          "no appearance to describe" — so not one code point in
+//	                     them is unicode.IsGraphic.
+//	not a category       LC is Go's union of Lu, Ll and Lt, and the claim that
+//	                     nothing can reach it undescribed is the claim that all
+//	                     three of those are worded above.
+//
+// See TestTheRegionKindsAccountForEveryCategoryGoHas, which holds all four.
+type foldUnwordedGroup string
+
+const (
+	foldPunctuationShapes foldUnwordedGroup = "punctuation shapes"
+	foldSeparators        foldUnwordedGroup = "separators"
+	foldNonGraphic        foldUnwordedGroup = "non-graphic"
+	foldNotACategory      foldUnwordedGroup = "not a category"
+)
+
+var foldUnwordedCategories = map[string]struct {
+	group foldUnwordedGroup
+	why   string
+}{
+	"Pc": {foldPunctuationShapes, "connector punctuation: the word would be " +
+		"\"punctuation\", which Pd and Po already have and which loses what " +
+		"makes this one worth naming"},
+	"Ps": {foldPunctuationShapes,
+		"open punctuation — a region of these is brackets, not \"punctuation\""},
+	"Pe": {foldPunctuationShapes, "close punctuation, for the same reason as Ps"},
+	"Pi": {foldPunctuationShapes,
+		"initial quotation mark, which has no one-word English"},
+	"Pf": {foldPunctuationShapes, "final quotation mark, for the same reason as Pi"},
+	"Zs": {foldSeparators, "a space separator is not a kind of glyph"},
+	"Zl": {foldSeparators, "a line separator is not a kind of glyph"},
+	"Zp": {foldSeparators, "a paragraph separator is not a kind of glyph"},
+	"Cc": {foldNonGraphic, "a control character has no appearance to describe"},
+	"Cf": {foldNonGraphic, "a formatting character has no appearance to describe"},
+	"Cs": {foldNonGraphic,
+		"a surrogate is an encoding artefact and never a character"},
+	"Co": {foldNonGraphic,
+		"private use: by definition nobody outside its user knows what it is"},
+	"LC": {foldNotACategory, "not a category but Go's union of Lu, Ll and Lt, " +
+		"all three of which are worded above, so nothing can reach this that " +
+		"has not already been named"},
+}
+
+// foldUnwordedGroupOf is the group a category's own name puts it in.
+//
+// The point of deriving it is that the group in the data is then a claim
+// rather than a label: an entry filed under the wrong heading is a failure,
+// where a `group` field nothing re-derived would be one more piece of prose in
+// a list of prose.
+//
+// LC is the exception and is the reason the second return exists: it is not a
+// general category at all but Go's union of the three cased-letter ones, and
+// its first letter says "letter", which is exactly what it is NOT one of.
+func foldUnwordedGroupOf(category string) (foldUnwordedGroup, bool) {
+	if category == "LC" {
+		return foldNotACategory, true
+	}
+	switch {
+	case strings.HasPrefix(category, "P"):
+		return foldPunctuationShapes, true
+	case strings.HasPrefix(category, "Z"):
+		return foldSeparators, true
+	case strings.HasPrefix(category, "C"):
+		return foldNonGraphic, true
+	}
+	return "", false
+}
+
+// foldCodePointFailing is the first code point of a category that does not
+// satisfy a predicate, walking Go's own range table for it.
+//
+// Every code point rather than a sample: the claim being checked is about all
+// of them ("no appearance to describe", "a region of these is whitespace"),
+// and a sampled claim is the shape of thing this file keeps replacing. The
+// largest of these categories is Co at 137,468 code points and the walk is a
+// few milliseconds; the alternative — trusting three endpoints per range —
+// would miss exactly the one code point somebody carved out.
+func foldCodePointFailing(table *unicode.RangeTable, holds func(rune) bool) (rune, bool) {
+	for _, r := range table.R16 {
+		for cp := rune(r.Lo); cp <= rune(r.Hi); cp += rune(r.Stride) {
+			if !holds(cp) {
+				return cp, true
+			}
+		}
+	}
+	for _, r := range table.R32 {
+		for cp := rune(r.Lo); cp <= rune(r.Hi); cp += rune(r.Stride) {
+			if !holds(cp) {
+				return cp, true
+			}
+		}
+	}
+	return 0, false
 }
 
 // Every category Go's tables have is either a word or a written-down decision
@@ -1183,7 +1297,7 @@ func TestTheRegionKindsAccountForEveryCategoryGoHas(t *testing.T) {
 				"both makes the reason beside it dead text — foldKindOf finds the "+
 				"word first and the sentence explaining why there is no word is "+
 				"describing something that does not happen.",
-				name, worded[name], foldUnwordedCategories[name])
+				name, worded[name], foldUnwordedCategories[name].why)
 		case !isWord && !isUnworded:
 			t.Errorf("Go's Unicode %s carries the general category %s and neither "+
 				"list here mentions it.\n\n"+
@@ -1200,10 +1314,19 @@ func TestTheRegionKindsAccountForEveryCategoryGoHas(t *testing.T) {
 	// And the other direction: a name in either list that Go does not have.
 	// A category removed from the tables leaves a word nothing can reach,
 	// which is the same dead text the both-lists case is.
+	unwordedNames := map[string]bool{}
+	for name := range foldUnwordedCategories {
+		unwordedNames[name] = true
+	}
+	wordedNames := map[string]bool{}
+	for name := range worded {
+		wordedNames[name] = true
+	}
 	for _, l := range []struct {
 		what string
-		of   map[string]string
-	}{{"foldRegionKinds", worded}, {"foldUnwordedCategories", foldUnwordedCategories}} {
+		of   map[string]bool
+	}{{"foldRegionKinds", wordedNames},
+		{"foldUnwordedCategories", unwordedNames}} {
 		for name := range l.of {
 			if !goHas[name] {
 				t.Errorf("%s names the category %s and Go's Unicode %s has no "+
@@ -1216,10 +1339,155 @@ func TestTheRegionKindsAccountForEveryCategoryGoHas(t *testing.T) {
 		}
 	}
 
+	// # And the reasons, which were prose nothing read
+	//
+	// Every entry's group is re-derived from its own name, and every group
+	// makes a claim Go's tables can answer. See foldUnwordedCategories: the
+	// three headings used to be a paragraph in a doc comment, so a category
+	// filed under the wrong one — or a reason that had quietly stopped being
+	// true — was invisible to everything here.
+	byGroup := map[foldUnwordedGroup][]string{}
+	for name, entry := range foldUnwordedCategories {
+		byGroup[entry.group] = append(byGroup[entry.group], name)
+		want, derivable := foldUnwordedGroupOf(name)
+		switch {
+		case !derivable:
+			t.Errorf("foldUnwordedCategories files %s under %q and its name says "+
+				"nothing about which group it belongs in.\n\n"+
+				"The three groups are the three general-category classes that get "+
+				"no word — P, Z and C — plus LC, which is not a category at all. A "+
+				"name outside those four is either a category this list has never "+
+				"had (a letter, a mark, a number, a symbol), in which case the "+
+				"question is why it has no word, or Go's tables have grown a class "+
+				"nobody here has considered.", name, entry.group)
+		case entry.group != want:
+			t.Errorf("foldUnwordedCategories files %s under %q and its name puts it "+
+				"under %q.\n\n"+
+				"The group is not a label, it is the claim the reason beside it "+
+				"rests on: the punctuation shapes are excused because Pd and Po "+
+				"already own the word, the separators because a region of them is "+
+				"whitespace, the C-classes because there is nothing to look at. A "+
+				"category under the wrong heading is being excused by an argument "+
+				"that was made about something else.\n\nIts reason: %s",
+				name, entry.group, want, entry.why)
+		}
+	}
+
+	// The punctuation shapes' reason names two entries of the OTHER list, and
+	// that is the whole of it: "the word would be punctuation, which Pd and Po
+	// already have". Reword either of those and these five reasons are
+	// describing a collision that no longer happens.
+	if len(byGroup[foldPunctuationShapes]) > 0 {
+		pd, hasPd := worded["Pd"]
+		po, hasPo := worded["Po"]
+		if !hasPd || !hasPo || pd != po {
+			t.Errorf("%d categories are left uncoded because \"punctuation\" is the "+
+				"word Pd and Po already have, and foldRegionKinds now words Pd %q "+
+				"and Po %q.\n\n"+
+				"That is the reason those five entries give — flattening the "+
+				"paired, quoting and connector forms into one word would lose the "+
+				"only thing that makes them worth naming — and it is an argument "+
+				"about a word two other categories share. If they no longer share "+
+				"one, the argument has to be re-made rather than left standing: "+
+				"%s.",
+				len(byGroup[foldPunctuationShapes]),
+				map[bool]string{true: pd, false: "nothing"}[hasPd],
+				map[bool]string{true: po, false: "nothing"}[hasPo],
+				strings.Join(byGroup[foldPunctuationShapes], ", "))
+		}
+	}
+
+	// And the two groups whose reason is a fact about the code points
+	// themselves. Both are stated as absolutes — "a region of these is
+	// whitespace", "no appearance to describe" — so both are checked over
+	// every code point Go puts in the category.
+	for _, c := range []struct {
+		group foldUnwordedGroup
+		// What the reason claims, as a predicate, and the sentence a
+		// counterexample is reported with.
+		holds func(rune) bool
+		said  string
+	}{
+		{foldSeparators, unicode.IsSpace,
+			"a region of these is whitespace and not a kind of glyph, which is " +
+				"why no word for one would be describing anything a reader could " +
+				"look at"},
+		{foldNonGraphic, func(cp rune) bool { return !unicode.IsGraphic(cp) },
+			"these have no appearance to describe, which is why their own two " +
+				"letters are a more honest thing to print than a word implying " +
+				"there is something to see"},
+	} {
+		for _, name := range byGroup[c.group] {
+			table, ok := unicode.Categories[name]
+			if !ok {
+				// Already reported by the arm above, which names it as a
+				// category Go does not have.
+				continue
+			}
+			cp, failed := foldCodePointFailing(table, c.holds)
+			if !failed {
+				continue
+			}
+			t.Errorf("foldUnwordedCategories excuses %s as %q, and U+%04X %q is in "+
+				"%s and is not.\n\n"+
+				"The group's reason is that %s. Go's own tables now disagree with "+
+				"it for at least this code point, so either the category has grown "+
+				"members the reason was not written about or the reason was never "+
+				"right — and the output is the same two letters either way, which "+
+				"is exactly the state this list exists to make impossible.\n\n"+
+				"Its reason: %s",
+				name, c.group, cp, string(cp), name, c.said,
+				foldUnwordedCategories[name].why)
+		}
+	}
+
+	// And LC, whose reason is a claim about three entries of the other list.
+	for _, name := range byGroup[foldNotACategory] {
+		if name != "LC" {
+			t.Errorf("foldUnwordedCategories files %s under %q, and LC is the only "+
+				"name that group is about.\n\n"+
+				"It is there because it is Go's union of Lu, Ll and Lt rather than "+
+				"a category a code point is in. Another name under the same heading "+
+				"is a second such union, which foldKindOf's fall-through would "+
+				"print as two letters without anybody having decided that.",
+				name, foldNotACategory)
+			continue
+		}
+		for _, member := range []string{"Lu", "Ll", "Lt"} {
+			if _, isWord := worded[member]; isWord {
+				continue
+			}
+			t.Errorf("LC is excused as Go's union of Lu, Ll and Lt, \"all three of "+
+				"which are worded above\" — and %s has no word in "+
+				"foldRegionKinds.\n\n"+
+				"That sentence is the whole reason LC needs no word of its own: a "+
+				"code point can only reach it by way of one of the three, so it is "+
+				"unreachable rather than undescribed. With %s unworded, a region of "+
+				"%s prints as its own two letters and LC's entry is describing a "+
+				"guarantee this file no longer makes.", member, member, member)
+		}
+	}
+
+	// The groups as a sentence, in the order the doc comment argues them
+	// rather than in map order. Said out loud because the counts are the thing
+	// a mis-filed entry moves: five, three, four and one is the partition, and
+	// "four punctuation shapes and four non-graphic" is a heading somebody
+	// changed.
+	groupSaid := []string{}
+	for _, g := range []foldUnwordedGroup{foldPunctuationShapes, foldSeparators,
+		foldNonGraphic, foldNotACategory} {
+		names := append([]string{}, byGroup[g]...)
+		sort.Strings(names)
+		groupSaid = append(groupSaid, fmt.Sprintf("%d %s (%s)", len(names), g,
+			strings.Join(names, " ")))
+	}
+
 	used, unused := foldReachedWords()
 	t.Logf("Go's Unicode %s carries %d two-letter general categories: %d have a "+
 		"word in foldRegionKinds, %d are written down in foldUnwordedCategories "+
-		"as deliberately printing their own code, and Cn is neither because "+
+		"as deliberately printing their own code — %s, each group held to the "+
+		"claim its reason makes rather than to the sentence alone — and Cn is "+
+		"neither because "+
 		"unassigned is reported as two Unicode versions disagreeing rather than "+
 		"as a kind of character. Of the words, the recorded regions print %s and "+
 		"have never printed %s — those last are the categories the mapping was "+
@@ -1227,6 +1495,7 @@ func TestTheRegionKindsAccountForEveryCategoryGoHas(t *testing.T) {
 		"about what a region of them would be called rather than a translation "+
 		"of one that turned up. See foldReachedWords.",
 		unicode.Version, len(goHas), len(worded), len(foldUnwordedCategories),
+		strings.Join(groupSaid, ", "),
 		strings.Join(used, ", "), strings.Join(unused, ", "))
 }
 
@@ -1243,30 +1512,30 @@ func TestTheRegionKindsAccountForEveryCategoryGoHas(t *testing.T) {
 // makes it visible, which is the difference between a mapping and a list of
 // what happened to turn up.
 //
-// Read off foldMeasuredOn's own recorded region descriptions rather than off
-// this run, because those are the populations the mapping was written from
-// and they are the ones the claim is about. The descriptions are
-// "scripts words" with each half "/"-joined (see foldRegionsNamed), so a
-// piece is matched by its longest trailing word: "Latin modifier letters" is
-// Lm and not Lm and Lu at once.
+// Read off foldMeasuredOn's own recorded regions rather than off this run,
+// because those are the populations the mapping was written from and they are
+// the ones the claim is about. This runs on any machine — the record is a
+// literal — where the regions themselves need node and a matching Unicode
+// version to re-derive.
+//
+// # It used to read the words back out of the sentence
+//
+// A region's description is "scripts words" with each half "/"-joined, so
+// splitting on "/" and matching the longest trailing word recovers the kinds:
+// "Latin modifier letters" is Lm and not Lm and Lu at once. It worked, and it
+// made this function a parser of foldRegionsNamed's output — two formatters
+// with an undeclared contract between them, one of which nobody would think to
+// update when the other's separator or wording changed. The words are recorded
+// beside the sentence now (see foldRegionName), and the same arm that holds
+// the sentence holds them.
 func foldReachedWords() (used, unused []string) {
 	seen := map[string]bool{}
-	regions := append(append([]string{}, foldMeasuredOn.bearingRegions...),
+	regions := append(append([]foldRegionName{},
+		foldMeasuredOn.bearingRegions...),
 		foldMeasuredOn.astralBearingRegions...)
 	for _, region := range regions {
-		for _, piece := range strings.Split(region, "/") {
-			best := ""
-			for _, k := range foldRegionKinds {
-				if piece != k.word && !strings.HasSuffix(piece, " "+k.word) {
-					continue
-				}
-				if len(k.word) > len(best) {
-					best = k.word
-				}
-			}
-			if best != "" {
-				seen[best] = true
-			}
+		for _, word := range region.kinds {
+			seen[word] = true
 		}
 	}
 	told := map[string]bool{}
@@ -1316,8 +1585,66 @@ func foldReachedWords() (used, unused []string) {
 // script Go knows, and it comes back as "unassigned in Go's tables" rather
 // than being dropped: the two versions disagreeing is a fact about the build
 // and this is where it would show.
-func foldRegionsNamed(clusters, runs [][2]rune) []string {
-	out := make([]string, 0, len(clusters))
+// foldRegionName is one region: what a log line prints for it, and the kind
+// words that went into that sentence.
+//
+// # Why the words come back beside the string and are not read out of it
+//
+// foldReachedWords wants to know which of foldRegionKinds' words the recorded
+// regions actually use, and it used to get them by SPLITTING the sentence: cut
+// on "/", match the longest trailing word. That works because of how the two
+// halves are joined below — scripts "/"-joined, a space, kinds "/"-joined — so
+// the piece at the seam reads "Latin letters" and gives up "letters" to a
+// suffix match. Two formatters, one of them a parser of the other's output,
+// held together by nothing but both being in this file. A separator that
+// became ", ", a script whose name ended in a kind word, a kind word that
+// became two — each of them silently changes what the parser recovers, and
+// what it recovers is a claim about which words this mapping has ever printed.
+//
+// So the words ride along. The record carries both columns and the arm holds
+// both, which means the kinds beside a recorded region are as derived as the
+// range is: a build where the naming changed fails on the column that changed.
+type foldRegionName struct {
+	// Exactly what the log line prints.
+	text string
+	// The words foldKindOf returned for this region's members, sorted and
+	// deduplicated — the same set that went into text, in the same order.
+	// Empty for the two regions that have no kinds to name: one whose code
+	// points Go's tables do not know, and one that holds none of the runs it
+	// was built from.
+	kinds []string
+}
+
+// foldRegionTexts is the printable half of a list of regions.
+func foldRegionTexts(named []foldRegionName) []string {
+	out := make([]string, 0, len(named))
+	for _, n := range named {
+		out = append(out, n.text)
+	}
+	return out
+}
+
+// foldRegionLines is a list of regions as a failure prints them: the sentence,
+// and the words under it that a reader cannot see in the sentence.
+func foldRegionLines(named []foldRegionName) []string {
+	out := make([]string, 0, len(named))
+	for _, n := range named {
+		said := "(no kind words)"
+		if len(n.kinds) > 0 {
+			said = strings.Join(n.kinds, ", ")
+		}
+		out = append(out, n.text+"   [kinds: "+said+"]")
+	}
+	return out
+}
+
+// foldRegionSame is two readings of one region agreeing in both columns.
+func foldRegionSame(a, b foldRegionName) bool {
+	return a.text == b.text && slices.Equal(a.kinds, b.kinds)
+}
+
+func foldRegionsNamed(clusters, runs [][2]rune) []foldRegionName {
+	out := make([]foldRegionName, 0, len(clusters))
 	for _, c := range clusters {
 		where := fmt.Sprintf("U+%04X..U+%04X", c[0], c[1])
 		if c[0] == c[1] {
@@ -1360,13 +1687,14 @@ func foldRegionsNamed(clusters, runs [][2]rune) []string {
 		// into the version arm below, where it would read as a whole region
 		// of characters newer than Go's tables.
 		if members == 0 {
-			out = append(out, where+" holds none of the runs it was built from")
+			out = append(out, foldRegionName{
+				text: where + " holds none of the runs it was built from"})
 			continue
 		}
 		if unknown == members {
-			out = append(out, fmt.Sprintf("%s assigned in neither script nor "+
-				"category by Go's Unicode %s, so newer than it", where,
-				unicode.Version))
+			out = append(out, foldRegionName{text: fmt.Sprintf("%s assigned in "+
+				"neither script nor category by Go's Unicode %s, so newer than it",
+				where, unicode.Version)})
 			continue
 		}
 		said := foldSortedWords(scripts) + " " + foldSortedWords(kinds)
@@ -1374,7 +1702,12 @@ func foldRegionsNamed(clusters, runs [][2]rune) []string {
 			said += fmt.Sprintf(" (and %d of the %d unassigned in Go's Unicode %s)",
 				unknown, members, unicode.Version)
 		}
-		out = append(out, where+" "+said)
+		// The same set the sentence was built from, kept rather than left to be
+		// recovered from it. See foldRegionName.
+		out = append(out, foldRegionName{
+			text:  where + " " + said,
+			kinds: foldWordList(kinds),
+		})
 	}
 	return out
 }
@@ -1413,12 +1746,24 @@ func foldKindOf(cp rune) string {
 // foldSortedWords is a set of words as a sentence lists them, in a fixed
 // order so a log line does not depend on Go's map iteration.
 func foldSortedWords(set map[string]bool) string {
+	return strings.Join(foldWordList(set), "/")
+}
+
+// foldWordList is that same set as a list, which is what a region carries
+// beside its sentence.
+//
+// The two are one function because the sentence and the column have to be the
+// same words in the same order — a region whose text says one thing and whose
+// kinds say another is the drift foldRegionName exists to make impossible, and
+// building them from two different traversals of the map is how it would get
+// back in.
+func foldWordList(set map[string]bool) []string {
 	words := make([]string, 0, len(set))
 	for w := range set {
 		words = append(words, w)
 	}
 	sort.Strings(words)
-	return strings.Join(words, "/")
+	return words
 }
 
 func TestHowWideTheNarrowerFoldIsAndWhatHoldsTheGap(t *testing.T) {
@@ -1833,7 +2178,7 @@ console.log(JSON.stringify({
 		unicode.Version == foldOwnMeasuredOn.goUnicode {
 		for _, c := range []struct {
 			what       string
-			got, want  []string
+			got, want  []foldRegionName
 			plane      string
 			runs, regs int
 		}{
@@ -1844,7 +2189,12 @@ console.log(JSON.stringify({
 				foldMeasuredOn.astralBearingRegions, "above the BMP",
 				len(astral.runs), len(astralClusters)},
 		} {
-			if slices.Equal(c.got, c.want) {
+			// Both columns, because both are derived and each fails for its own
+			// reason: the sentence moves when the characters move, and the kind
+			// words move when Go's categories do. A run where only the second
+			// changed is a naming that has started saying something else about
+			// the same range — see foldRegionName.
+			if slices.EqualFunc(c.got, c.want, foldRegionSame) {
 				continue
 			}
 			t.Errorf("the seed-bearing regions %s come to\n\t%s\nand "+
@@ -1861,9 +2211,9 @@ console.log(JSON.stringify({
 				"above will have said so too. If it did not, the fold is reaching a "+
 				"different population for the same count — re-read what moved "+
 				"before re-taking the record.",
-				c.what, strings.Join(c.got, "\n\t"),
-				strings.Join(c.want, "\n\t"), now.unicode, unicode.Version,
-				c.runs, c.regs)
+				c.what, strings.Join(foldRegionLines(c.got), "\n\t"),
+				strings.Join(foldRegionLines(c.want), "\n\t"), now.unicode,
+				unicode.Version, c.runs, c.regs)
 		}
 	}
 
@@ -1883,7 +2233,7 @@ console.log(JSON.stringify({
 		}
 		// Where those seed-bearing characters actually are, which is the half
 		// a count cannot say. See foldClustersOf.
-		where := foldRegionsNamed(astralClusters, astral.runs)
+		where := foldRegionTexts(foldRegionsNamed(astralClusters, astral.runs))
 		astralSaid = fmt.Sprintf("and %d above the BMP, where it agrees on %d and "+
 			"is narrower on %d, %d of which reach a seed's own letters%s — a "+
 			"population that is not the BMP's made smaller: NFKD decomposes the "+
@@ -1901,7 +2251,7 @@ console.log(JSON.stringify({
 	// And where the BMP's seed-bearing characters are, which is the half a
 	// count cannot say. Same reading as the astral half's, over the population
 	// that actually matters here.
-	bmpWhere := foldRegionsNamed(bmpClusters, bmp.runs)
+	bmpWhere := foldRegionTexts(foldRegionsNamed(bmpClusters, bmp.runs))
 	t.Logf("browser.mjs's fold changes %d of the BMP's code points; gen.go's "+
 		"agrees on %d and is narrower on %d, %d of which NFKD turns into a letter "+
 		"a seed is spelled with (e.g. U+%04X %q→%q, where gen.go says %q) — and %d of "+
