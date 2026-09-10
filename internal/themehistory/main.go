@@ -58,6 +58,22 @@
 //
 // The counts agreeing is the weak form of that check: two different sets of
 // eighty print the same 80. -names prints the population itself.
+//
+// # And the filter above the expansion is an arm too, at the one revision that
+// has a working tree
+//
+// leavesAt decides which of a revision's files reach themeleaves — a `.go`
+// suffix test and a `_test.go` exclusion, both of which also exist inside
+// themeleaves.Of. Two copies of one rule, and the arm in wasm/verify is
+// downstream of both: it hands InDir a directory and never goes through
+// leavesAt at all, so a filter that drifted here would move every row of the
+// table and leave that test green.
+//
+// main_test.go compares the two file sets at HEAD, which is the one revision
+// git and the working tree both describe. It skips where there is no
+// repository or where core/ is dirty — the two cases in which the readings are
+// over different trees — and that is the one place in this repository a
+// skipping git test is honest, because the git half IS the subject.
 package main
 
 import (
@@ -248,6 +264,14 @@ func run() error {
 // Test files are filtered here rather than left to themeleaves (which filters
 // them too): a `git cat-file` per test file in core/ at every revision is real
 // time spent fetching text nobody will parse.
+//
+// Which makes the rule below a second copy of themeleaves.Of's, and a copy of
+// a rule is a thing that can move on its own. Expansion.Files is what each
+// reading says it read, and main_test.go holds this one's against InDir's at
+// HEAD — see TestTheRevisionsFileSetIsTheOneTheWorkingTreeWalkReads, and note
+// that `ls-tree -r` descends into subdirectories of core/ where InDir does
+// not, so a package split into one would show up there as a divergence rather
+// than as a table that quietly grew.
 func leavesAt(sha string) (themeleaves.Expansion, error) {
 	files, err := git("ls-tree", "-r", "--name-only", sha, "--", themePkg)
 	if err != nil {

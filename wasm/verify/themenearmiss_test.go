@@ -2824,6 +2824,20 @@ type affordedBandCallerCount struct{ walks, reused int }
 // Test frame above it at all — from a goroutine started by a test, or from
 // TestMain. That is a worse name and it is a name; an asking counted under ""
 // would be one the tally cannot describe.
+//
+// # And "the outermost Test frame" is a convention, so it is asserted
+//
+// Every caller in this file today is a test function calling a helper on its
+// own goroutine, which is the one shape this walk reads correctly. A band
+// asked for inside t.Run gets the fallback — Go runs a subtest closure on a
+// new goroutine, so the parent's frame is not on the stack and the closure's
+// own name is `TestFoo.func1`, whose last segment is `func1`. So does a band
+// asked for from a goroutine a test started.
+//
+// affordedHoldBandAttribution holds this against t.Name(), which is the same
+// attribution from the side that cannot be wrong about it, and against the
+// memo's own totals. Without it the tally is a heuristic producing a sentence
+// that reads identically whether the heuristic worked or not.
 func affordedBandCaller() string {
 	// 2 skips runtime.Callers and this function, so the first frame is
 	// whatever asked for the band.
@@ -2974,6 +2988,144 @@ func affordedBandMemoSince(baseWalks, baseReused int) (walks, reused int,
 		"started, so the band walks have a caller that is not this test and the "+
 		"process totals are %d and %d. Per caller: %s",
 		baseWalks, baseReused, nowWalks, nowReused, affordedBandMemoCallers())
+}
+
+// affordedBandMemoState is everything the tally can be held to, taken in one
+// acquisition of the lock.
+//
+// One acquisition because the four readings below are compared with each
+// other: a caller's share, the totals it is part of, the same totals added up
+// out of the per-caller map, and whether every key names a test. Taken
+// separately they could describe four moments, and a mismatch between two of
+// them would then be a walk that happened in between rather than a finding.
+type affordedBandMemoState struct {
+	// The caller asked about, and whether it has asked for anything at all.
+	mine  affordedBandCallerCount
+	known bool
+	// The counters the memo keeps alongside the map — what the walks and
+	// reuses at the bottom of the log line are.
+	total affordedBandCallerCount
+	// And those same two added up out of the per-caller map. The memo keeps
+	// the totals separately on purpose (see affordedBandMemo: they are what it
+	// is FOR, and a sum over a map is a second way to get a number that has to
+	// agree with the first) — which makes this the arm that says the second
+	// way still gets the first answer.
+	summed affordedBandCallerCount
+	// Keys that are not a Go test function's name. affordedBandCaller falls
+	// back to file:line for an asking with no Test frame above it, and that is
+	// deliberate — an asking counted under "" would be one the tally cannot
+	// describe — but the fallback firing means the attribution did not work
+	// for that asking, which is a thing to say out loud rather than to print
+	// in a sentence about who asked.
+	notTests []string
+}
+
+// affordedBandMemoStateFor is that reading, for one caller.
+func affordedBandMemoStateFor(who string) affordedBandMemoState {
+	affordedBandMemo.Lock()
+	defer affordedBandMemo.Unlock()
+	st := affordedBandMemoState{total: affordedBandCallerCount{
+		walks: affordedBandMemo.walks, reused: affordedBandMemo.reused}}
+	st.mine, st.known = affordedBandMemo.by[who]
+	for name, count := range affordedBandMemo.by {
+		st.summed.walks += count.walks
+		st.summed.reused += count.reused
+		if !strings.HasPrefix(name, "Test") {
+			st.notTests = append(st.notTests, name)
+		}
+	}
+	sort.Strings(st.notTests)
+	return st
+}
+
+// This test's own askings are filed under this test's own name.
+//
+// # A heuristic with nothing holding it to its own convention
+//
+// affordedBandCaller walks 32 frames and attributes an asking to the OUTERMOST
+// function whose name starts with "Test". That is right for every caller in
+// this file today and it is a convention rather than a fact: Go runs a subtest
+// closure on its own goroutine, so a band asked for inside t.Run has no Test
+// frame above it at all and lands on the file:line fallback. So does a band
+// asked for from a goroutine a test started, and so does one asked for from
+// TestMain. Nothing said the tally's keys were test names, and the sentence
+// the tally exists to produce — "the band walks have a caller that is not this
+// test, and it is X" — reads exactly the same whether X is a test or a line
+// number.
+//
+// t.Name() is the other end of that attribution and it is right here. Holding
+// the memo's idea of who asked against the runtime's makes the convention a
+// claim: this test asked for every band it asked for, and they are all filed
+// under it.
+//
+// # Why the two numbers can be compared at all
+//
+// baseWalks and baseReused are snapshotted at the top of this test, before it
+// has asked for anything, so the difference from them is this test's own
+// share. affordedBandMemo.by[t.Name()] is that same share from the other
+// direction — nothing else in this package can be filed under this test's
+// name, because the key IS the name and Go runs it once. The two are the same
+// number counted by the caller and by the callee, and they agree only while
+// every asking on this test's stack was attributed to this test.
+func affordedHoldBandAttribution(t *testing.T, mineWalks, mineReused int) {
+	t.Helper()
+	st := affordedBandMemoStateFor(t.Name())
+	if !st.known {
+		t.Errorf("the band memo has no entry at all for %q, and this test asked "+
+			"for %d walk(s) and %d reuse(s).\n\n"+
+			"affordedBandCaller attributes an asking to the outermost Test "+
+			"function on the stack, and the tally it feeds is what tells a reader "+
+			"the band walks have a second caller and names it. With this test "+
+			"missing from it, that naming is not working for the one caller "+
+			"there certainly is: the askings went to the file:line fallback, "+
+			"which happens when no frame in the top 32 starts with \"Test\" — a "+
+			"band asked for inside t.Run (its closure runs on its own goroutine), "+
+			"from a goroutine this test started, or from a helper deeper than the "+
+			"stack the walk reads.\n\nPer caller: %s",
+			t.Name(), mineWalks, mineReused, affordedBandMemoCallers())
+		return
+	}
+	if st.mine.walks != mineWalks || st.mine.reused != mineReused {
+		t.Errorf("this test's own share of the band memo is %d walk(s) and %d "+
+			"reuse(s) counted from the baseline it took, and %d and %d filed "+
+			"under %q.\n\n"+
+			"Those are one number counted twice: the baseline is snapshotted "+
+			"before this test asks for anything, and nothing else in this package "+
+			"can be filed under this test's name. A difference is askings that "+
+			"happened on this test's watch and were attributed to somebody else "+
+			"— which is affordedBandCaller reading a stack it did not expect, "+
+			"most likely a band asked for from a goroutine.\n\nPer caller: %s",
+			mineWalks, mineReused, st.mine.walks, st.mine.reused, t.Name(),
+			affordedBandMemoCallers())
+	}
+	if st.summed != st.total {
+		t.Errorf("the band memo's own counters are %d walk(s) and %d reuse(s), "+
+			"and the per-caller tally adds up to %d and %d.\n\n"+
+			"The two are kept separately on purpose — the totals are what the "+
+			"memo is for, and summing a map is a second way to get a number that "+
+			"has to agree with the first — and they move under one lock, in "+
+			"affordedBandMemoCount, called with the memo already held by the two "+
+			"places that move the totals. They can only disagree if an asking "+
+			"moved a total without moving a caller's share, which is a walk "+
+			"nobody can attribute sitting inside a number everybody reads.\n\n"+
+			"Per caller: %s",
+			st.total.walks, st.total.reused, st.summed.walks, st.summed.reused,
+			affordedBandMemoCallers())
+	}
+	if len(st.notTests) > 0 {
+		t.Errorf("the band memo has %d caller(s) that are not test names: %s.\n\n"+
+			"affordedBandCaller falls back to file:line when no frame above the "+
+			"asking starts with \"Test\", which is better than counting it under "+
+			"\"\" and is not what the tally is for: the unit a reader can go and "+
+			"look at is a test, and \"themenearmiss_test.go:4612 walked a band\" "+
+			"names a line that will have moved by the time anybody reads it.\n\n"+
+			"The three ways to get here are a band asked for inside t.Run, from a "+
+			"goroutine a test started, or from TestMain. If the new caller is one "+
+			"of those on purpose, the attribution is what needs widening — "+
+			"t.Name() is available at every one of them and the stack is not.\n\n"+
+			"Per caller: %s", len(st.notTests), strings.Join(st.notTests, ", "),
+			affordedBandMemoCallers())
+	}
 }
 
 func affordedKLeafBand(names []string, k int) (map[string]affordedBand, string) {
@@ -5809,6 +5961,13 @@ func TestTheAffordedWidthHoldsItsTwoRelations(t *testing.T) {
 	// work this test caused, whichever branch it took.
 	memoWalks, memoReused, memoNote := affordedBandMemoSince(baseWalks, baseReused)
 
+	// And that those two are filed under this test's own name, which is the
+	// half the per-caller tally asserted about nobody. See
+	// affordedHoldBandAttribution: the attribution is a convention about stack
+	// frames, and t.Name() is the same fact from the side that cannot be wrong
+	// about it.
+	affordedHoldBandAttribution(t, memoWalks, memoReused)
+
 	t.Logf("%d generated leaf sets over %d distinct leaf names, none of them a "+
 		"shape anybody chose, hold afforded >= edits and the open flag's "+
 		"parent-of-three — each ending against its own floor, %d of the four on a "+
@@ -5829,7 +5988,11 @@ func TestTheAffordedWidthHoldsItsTwoRelations(t *testing.T) {
 		"13ms and a reuse is under 3µs; this test measured 0.78s without the memo "+
 		"and 0.72s with it. The numbers are here because a `reused` that drops is a "+
 		"caller asking about a different population — which is a change in what is "+
-		"being read rather than in what it costs%s%s",
+		"being read rather than in what it costs. Every one of those askings is "+
+		"filed under this test's own name: affordedBandCaller reads the outermost "+
+		"Test frame on the stack and t.Name() is the same fact from the side that "+
+		"cannot be wrong about it, so the per-caller tally is a claim here rather "+
+		"than a convention%s%s",
 		len(sets), len(names), onShare, affordedEndingFloor, scale,
 		len(sets), census, affordedPercent(worst), worstEnding, resorted,
 		len(affordedMeasuredOn.names), reading,

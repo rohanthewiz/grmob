@@ -44,6 +44,22 @@
 // TestTheHistoryWalkersExpansionIsTheOneThisFileMeasures in wasm/verify holds
 // InDir("../../core", "Theme") against affordedLeafNames() on every run. The
 // half that can be an arm is the half that already went wrong once.
+//
+// # And that arm is one answer, not a test of this walker
+//
+// It asks whether this package agrees with reflect about core.Theme, which is
+// a struct holding no pointer to a struct, no embedded field, no generic and
+// no type from another package. Every rule in walk is exercised by that answer
+// only as far as core.Theme exercises it, and the rules it does not reach are
+// three lines of source text each.
+//
+// themeleaves_test.go declares those shapes as real Go types and hands this
+// file's own source to Of, so the declaration reflect walks and the
+// declaration go/parser walks are one text with no fixture between them. The
+// first thing it found was an embedded field spelled *Foo, pkg.Foo or Foo[T]
+// producing no name AT ALL — not a leaf under some other name, nothing, and no
+// descent either. See embeddedName, which is the one way this walk could come
+// back with fewer names than reflect rather than more.
 package themeleaves
 
 import (
@@ -72,10 +88,27 @@ type Expansion struct {
 	// population this is a reading of counts each name once — see
 	// affordedLeafNames, which deduplicates for the same reason.
 	Names []string
-	// The files go/parser returned nothing for. A struct declared only in one
-	// of these is missing from the walk, which shows up as a leaf count that
-	// jumps rather than as an error.
+	// The files go/parser reported an error for. Whatever it did manage to
+	// read out of them is still in the walk — it recovers, and a file with one
+	// bad declaration gives up the rest — so this is not "these contributed
+	// nothing", it is "these contributed less than they say". A struct
+	// declared only inside the unreadable part is missing, which shows up as a
+	// leaf count that jumps rather than as an error.
 	Unparsed []string
+	// Every path that got as far as go/parser, sorted — the population this
+	// reading was actually taken over, which is not the same thing as the one
+	// it was handed. Of filters (a .go suffix, no _test.go), and a caller that
+	// filters too — internal/themehistory does, to save a `git cat-file` per
+	// test file per revision — is filtering with its own copy of that rule.
+	// Two copies of a rule are two things that can move apart, and the way
+	// they would move apart here is silent: a filter that dropped a file would
+	// give a revision a smaller population and no error anywhere.
+	//
+	// So each reading says which files it read, and the two can be held
+	// against each other. Unparsed is a subset of this: a file that failed to
+	// parse was still one of the files this expansion is over, and it is
+	// listed in both.
+	Files []string
 	// Whether the root struct was declared at all in what was parsed. False
 	// with an empty Names is "this revision has no such type"; false is never
 	// the same finding as "it has no fields".
@@ -94,7 +127,7 @@ type Expansion struct {
 // dotted path, and keep each name once however many parents hold it.
 func Of(sources map[string]string, root string) Expansion {
 	structs := map[string]*ast.StructType{}
-	var unparsed []string
+	var unparsed, files []string
 	fset := token.NewFileSet()
 	paths := make([]string, 0, len(sources))
 	for path := range sources {
@@ -109,12 +142,26 @@ func Of(sources map[string]string, root string) Expansion {
 		if !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
 			continue
 		}
+		// Recorded before the parse rather than after it, so Files is the set
+		// this expansion was taken OVER and not the set it got declarations
+		// from. A file that go/parser choked on is in both this and Unparsed.
+		files = append(files, path)
 		// Errors are not fatal here: go/parser returns the declarations it did
 		// manage, and which files failed goes back to the caller.
-		f, _ := parser.ParseFile(fset, path, sources[path],
+		//
+		// The ERROR is what says a file failed, not a nil result. go/parser
+		// recovers: a file with a syntax error in the middle of it comes back
+		// as a non-nil *ast.File holding whatever was readable, and only input
+		// it cannot even find a package clause in comes back nil. Testing the
+		// result alone — which this did — meant Unparsed almost never fired,
+		// so the one case it exists for, a revision caught mid-refactor, was
+		// the case that passed through silently with a short population.
+		f, err := parser.ParseFile(fset, path, sources[path],
 			parser.SkipObjectResolution)
-		if f == nil {
+		if err != nil {
 			unparsed = append(unparsed, path)
+		}
+		if f == nil {
 			continue
 		}
 		for _, decl := range f.Decls {
@@ -150,8 +197,8 @@ func Of(sources map[string]string, root string) Expansion {
 				fieldNames = append(fieldNames, n.Name)
 			}
 			if len(fieldNames) == 0 {
-				if id, ok := unwrap(field.Type).(*ast.Ident); ok {
-					fieldNames = append(fieldNames, id.Name)
+				if name := embeddedName(field.Type); name != "" {
+					fieldNames = append(fieldNames, name)
 				}
 			}
 			// The set the CHILD descends with, which is this one plus the type
@@ -185,7 +232,9 @@ func Of(sources map[string]string, root string) Expansion {
 		out = append(out, name)
 	}
 	sort.Strings(out)
-	return Expansion{Names: out, Unparsed: unparsed, Found: found}
+	// paths is already sorted and files is built from it in order, so Files
+	// comes out sorted without a second sort.
+	return Expansion{Names: out, Unparsed: unparsed, Files: files, Found: found}
 }
 
 // InDir is Of over the .go files of one directory on disk.
@@ -224,6 +273,55 @@ func unwrap(t ast.Expr) ast.Expr {
 		return unwrap(p.X)
 	}
 	return t
+}
+
+// embeddedName is the name Go gives an embedded field: its type's, unqualified
+// and with every wrapper the spec allows stripped off.
+//
+// reflect calls the field `Foo` for all five spellings an embedded field can
+// take — `Foo`, `*Foo`, `pkg.Foo`, `*pkg.Foo` and `Foo[T]` — and this used to
+// read only the first, by type-asserting the field's type to *ast.Ident. The
+// other four did not become leaves under some other name; they produced NO
+// name at all, and no descent either, so the field and everything under it
+// left the population without a trace.
+//
+//	Theme ──┬── *Palette        ← reflect: leaf "Palette"
+//	        │                     this walk, before: nothing
+//	        ├── image.Rectangle  ← reflect: descends (Min, Max)
+//	        │                     this walk, before: nothing
+//	        └── Sized[float64]   ← reflect: leaf or descent by its underlying
+//	                               this walk, before: nothing
+//
+// That is the one way this walker could come back with FEWER names than
+// reflect rather than more, and it is the direction the failure message in
+// wasm/verify is least specific about: a name only reflect has, with nothing
+// beside it in the other list, reads as "Theme is assembled from more than
+// core/" when it could equally have been an embedded pointer sitting in it.
+//
+// The asymmetry that remains is the documented one. A pointer stays a leaf
+// because reflect's is (see unwrap), and a type this package did not parse —
+// `pkg.Foo` embedded, or named — is a leaf under its own name where reflect
+// would have gone into it. Both are one-sided in the direction the caller
+// already reads.
+func embeddedName(t ast.Expr) string {
+	switch t := t.(type) {
+	case *ast.Ident:
+		return t.Name
+	case *ast.ParenExpr:
+		return embeddedName(t.X)
+	case *ast.StarExpr:
+		return embeddedName(t.X)
+	case *ast.SelectorExpr:
+		// pkg.Foo — the field is called Foo, not pkg.Foo.
+		return t.Sel.Name
+	case *ast.IndexExpr:
+		// Foo[T]; the name is the generic's, not the argument's.
+		return embeddedName(t.X)
+	case *ast.IndexListExpr:
+		// Foo[T, U], which go/ast keeps as its own node rather than nesting.
+		return embeddedName(t.X)
+	}
+	return ""
 }
 
 // withName is `seen` plus one name, copied so that two sibling fields of the
