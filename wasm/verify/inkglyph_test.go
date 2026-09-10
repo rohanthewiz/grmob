@@ -443,6 +443,24 @@ var foldMeasuredOn = struct {
 	// matters — it is the population the printable-ASCII arm is holding shut —
 	// and it is the one that would go quiet without a word.
 	changes, agreed, gap, bearing int
+	// And the shape of that seed-bearing population rather than its size, the
+	// same pair the astral half records below.
+	//
+	// This is the census that most deserved a shape and was the last to get
+	// one. The astral 257 were named first because they were new — the walk
+	// had just stopped at U+FFFF — but the BMP's 299 are the population the
+	// printable-ASCII arm is holding shut on the plane every fixture in this
+	// repository lives on, and 299 could as easily have been three blocks a
+	// reader can look up or 299 singletons scattered across the plane. The
+	// runs were computed by the walk and thrown away.
+	//
+	// They are eight regions, and they are not a smaller version of the astral
+	// three: the accented Latin letters, the phonetic modifiers, the
+	// superscripts and Roman numerals, the circled letters, the fullwidth
+	// forms — NFKD reaches a seed's own letters from every direction the BMP
+	// has, where above it the whole population is three blocks of decorated
+	// alphabets.
+	bearingRuns, bearingClusters int
 	// And the same four over the sixteen planes above it, which this census
 	// used to stop at without saying so.
 	//
@@ -482,6 +500,9 @@ var foldMeasuredOn = struct {
 	agreed:  748,
 	gap:     15054,
 	bearing: 299,
+
+	bearingRuns:     96,
+	bearingClusters: 8,
 
 	astralChanges: 2307,
 	// 260, which is every code point above the BMP that gen.go's fold touches
@@ -902,12 +923,21 @@ func TestTheNarrowFoldsOwnWidthIsAFactAboutGenGoAlone(t *testing.T) {
 // How far apart two runs of seed-bearing code points have to be before they
 // are counted as different regions.
 //
-// 256. The census below finds them in three regions, and the numbers are not
-// close: the widest gap INSIDE a region is 67 code points and the narrowest
-// gap BETWEEN two of them is 1816. Anything from 68 to 1816 gives the same
-// three, so the constant is not doing work — it is naming where a reader
-// should look, and the log line prints both gaps so a build that moved them
-// says so rather than quietly re-drawing the regions.
+// 256, and it is asked of both planes' populations, which have different
+// margins around it:
+//
+//	above the BMP   three regions. The widest gap INSIDE one is 67 code points
+//	                and the narrowest BETWEEN two is 1816, so anything from 68
+//	                to 1816 gives the same three.
+//	the BMP         eight regions, and the margin is narrower but real: 162
+//	                inside and 422 between, so anything from 163 to 421 gives
+//	                the same eight.
+//
+// So the constant is not doing work on either side — it is naming where a
+// reader should look. The log line prints both gaps for both planes, because a
+// build that moved them is a build that re-drew the regions, and the region
+// COUNTS are recorded and asserted, so a constant that started choosing the
+// answer would show up as a count that moved rather than as nothing at all.
 const foldBearingGap = 0x100
 
 // foldClustersOf merges runs of code points into regions, so a census of a
@@ -919,6 +949,11 @@ const foldBearingGap = 0x100
 // constant above sits between — the widest inside a region and the narrowest
 // between two — because those are what say whether the constant chose the
 // answer.
+//
+// Asked of both planes. The astral population was shaped first because it was
+// new; the BMP's 299 are the ones the printable-ASCII arm holds shut on the
+// plane every fixture lives on, and they were a count with nothing behind it
+// for exactly as long.
 func foldClustersOf(runs [][2]rune) (clusters [][2]rune, inside, between rune) {
 	between = -1
 	for _, run := range runs {
@@ -1109,6 +1144,11 @@ console.log(JSON.stringify({
 	// cannot say, and it is read here so both the arms and the log line have
 	// it.
 	astralClusters, insideGap, betweenGap := foldClustersOf(astral.runs)
+	// And the same for the BMP's, which is the population the printable-ASCII
+	// arm is actually holding shut on the plane every fixture in this
+	// repository lives on. Its runs were being computed by the loop above —
+	// the walk is written once and both sides go through it — and thrown away.
+	bmpClusters, bmpInsideGap, bmpBetweenGap := foldClustersOf(bmp.runs)
 
 	// The edge the printable-ASCII arm is the whole of.
 	if ascii >= 0 {
@@ -1298,6 +1338,10 @@ console.log(JSON.stringify({
 			{"the gap between them", gap, foldMeasuredOn.gap},
 			{"the part of the gap that reaches a seed's own letters", bearing,
 				foldMeasuredOn.bearing},
+			{"the runs of consecutive code points THAT falls in",
+				len(bmp.runs), foldMeasuredOn.bearingRuns},
+			{"the regions those runs make", len(bmpClusters),
+				foldMeasuredOn.bearingClusters},
 			{"the code points browser.mjs's fold changes above the BMP",
 				astral.changes, foldMeasuredOn.astralChanges},
 			{"the ones gen.go's fold agrees with above the BMP", astral.agreed,
@@ -1365,17 +1409,40 @@ console.log(JSON.stringify({
 			astral.bearing, len(astral.runs), len(astralClusters),
 			strings.Join(where, ", "), insideGap, betweenGap, foldBearingGap)
 	}
+	// And where the BMP's seed-bearing characters are, which is the half a
+	// count cannot say. Same reading as the astral half's, over the population
+	// that actually matters here.
+	bmpWhere := make([]string, 0, len(bmpClusters))
+	for _, c := range bmpClusters {
+		if c[0] == c[1] {
+			bmpWhere = append(bmpWhere, fmt.Sprintf("U+%04X", c[0]))
+			continue
+		}
+		bmpWhere = append(bmpWhere, fmt.Sprintf("U+%04X..U+%04X", c[0], c[1]))
+	}
 	t.Logf("browser.mjs's fold changes %d of the BMP's code points; gen.go's "+
 		"agrees on %d and is narrower on %d, %d of which NFKD turns into a letter "+
 		"a seed is spelled with (e.g. U+%04X %q→%q, where gen.go says %q) — and %d of "+
 		"it inside printable ASCII, which is the whole of what "+
 		"inkGlyphPerCharacter's second arm refuses on and therefore the whole of "+
-		"what is holding this gap shut. %s. The whole walk is %d code points "+
+		"what is holding this gap shut. Those %d sit in %d runs making %d regions "+
+		"— %s: the accented Latin letters and the Latin extensions, the phonetic "+
+		"modifiers, the superscripts and Roman numerals, the circled and "+
+		"parenthesised letters, one subscript in Latin Extended-C, the enclosed "+
+		"CJK squares, one modifier in Latin Extended-D and the fullwidth forms. "+
+		"The widest gap inside a region is %d code points and the narrowest "+
+		"between two is %d, so the %d this file separates them by is naming where "+
+		"to look rather than choosing the answer — and this population is not the "+
+		"astral one made larger: up there it is three blocks of decorated "+
+		"alphabets and here NFKD reaches a seed's letters from every direction the "+
+		"plane has. %s. The whole walk is %d code points "+
 		"through node and cost less than a fifth of a second, which is what the "+
 		"bound at U+FFFF was worth. Measured on Unicode %s (ICU %s, node %s), "+
 		"which is %s the record was taken on%s",
 		bmp.changes, agreed, gap, bearing, bearingExample, string(bearingExample),
 		theirs[bearingExample], inkGlyphFold(string(bearingExample)), asciiCount,
+		bearing, len(bmp.runs), len(bmpClusters), strings.Join(bmpWhere, ", "),
+		bmpInsideGap, bmpBetweenGap, foldBearingGap,
 		astralSaid, 0x110000,
 		now.unicode, now.icu, now.node,
 		map[bool]string{true: "the build", false: "NOT the build"}[now.unicode == foldMeasuredOn.build.unicode],
