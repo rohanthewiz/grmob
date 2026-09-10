@@ -148,8 +148,29 @@ type shapeForeign struct {
 // A second implementation on purpose. The whole worth of this package is that
 // two mechanisms produce one population, and a test that shared code with
 // either of them would be measuring one mechanism twice. It is eight lines,
-// which is what makes that affordable — see wasm/verify's themeLeafPaths and
-// affordedLeafNames, of which this is the two of them collapsed.
+// which is what makes that affordable.
+//
+// # Which makes three copies of the rule, and this is the third
+//
+// "Recurse on a struct, take the last dotted segment, keep each name once"
+// now exists here:
+//
+//	wasm/verify/gen.go              themeLeafPaths     the walk, as paths
+//	wasm/verify/themenearmiss_      affordedLeafNames  the dedup on top of it;
+//	  test.go                                          the population that
+//	                                                   file measures
+//	internal/themeleaves/           reflectLeafNames   both of those collapsed
+//	  themeleaves_test.go                              — this one
+//
+// Two of those are one mechanism in two pieces and could be one. This one
+// could not: it is what the PARSE in themeleaves.go is held against, and a
+// comparison whose two sides share code is a comparison of a thing with
+// itself. The cost of that argument is a copy nobody else reads, which is
+// exactly the copy that can drift without a failure — so it is named here, at
+// all three sites, rather than left to be discovered as a coincidence.
+//
+// If wasm/verify ever exports the pair, this file importing them would be the
+// wrong economy for the same reason.
 func reflectLeafNames(v reflect.Value) []string {
 	seen := map[string]bool{}
 	var walk func(v reflect.Value, name string)

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"os/exec"
 	"path/filepath"
 	"slices"
@@ -49,11 +50,31 @@ import (
 // source tarball, a build container — has nothing for it to be wrong about.
 // The skip says which of those it is rather than reporting a pass.
 //
-// A working tree that differs from HEAD under core/ is the other skip, and it
-// is not a shortcoming either: the two readings would then be over two
-// different trees, and a difference between them would be the uncommitted edit
-// rather than the filters. That is a fact about the checkout and the message
-// says so.
+// # And a dirty core/ is a hole in the reading rather than the end of it
+//
+// The other skip used to be a working tree that differs from HEAD under core/,
+// on the sound ground that the two readings would then be over two different
+// trees and a difference between them would be the uncommitted edit rather
+// than the filters. Sound, and all-or-nothing: core/ is dirty for as long as
+// anybody is editing it, so the arm ran on a clean checkout and in CI and
+// never for the person who might actually move a filter.
+//
+// It does not have to be. `git status --porcelain` already NAMES the paths
+// that differ, so the comparison is taken over the files that do not, and what
+// was held out is said out loud — in the failure message and in the log line
+// alike. That is a reading with a stated hole in place of a skip that covered
+// everything.
+//
+//	core/  theme.go   colors.go   type.go   sizes.go
+//	                   modified               new, untracked
+//	       └─ compared ─┘        └─ compared ─┘
+//	                   └──── held out, and named ────┘
+//
+// Two arms depend on the hole being empty rather than on it being small. The
+// name-for-name comparison below is one — the same files with different text
+// expand to different names, which is the uncommitted edit again — and it says
+// so rather than running over a tree it cannot describe. The other two read
+// HEAD alone and are unaffected by anything on disk.
 func TestTheRevisionsFileSetIsTheOneTheWorkingTreeWalkReads(t *testing.T) {
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("no git on this machine, so the revision half of this command " +
@@ -89,22 +110,25 @@ func TestTheRevisionsFileSetIsTheOneTheWorkingTreeWalkReads(t *testing.T) {
 			"walk to be wrong about.", themePkg, themePkg, themeType)
 	}
 
-	// And whether the two readings would be over the same tree. --porcelain
+	// And WHICH paths would be read out of two different trees. --porcelain
 	// lists staged, unstaged and untracked paths alike, which is what is
 	// wanted: an uncommitted new file in core/ is exactly the difference that
 	// would otherwise read as a filter having drifted.
-	dirty, err := git("status", "--porcelain", "--", themePkg)
+	//
+	// -z rather than the default output, because the default QUOTES any path
+	// holding a space, a quote or a non-ASCII byte — `"core/a b.go"`, with the
+	// quotes as part of the line — and a path read that way matches nothing
+	// coming out of ls-tree or off disk. A file whose name needed quoting
+	// would then be counted as clean, which is the one direction this reading
+	// must not fail in: it would put a file the two walks disagree about back
+	// INTO the comparison and report the disagreement as a drifted filter.
+	dirty, err := git("status", "--porcelain", "-z", "--", themePkg)
 	if err != nil {
-		t.Skipf("git cannot report the state of %s/: %v", themePkg, err)
+		t.Skipf("git cannot report the state of %s/, so there is no way to tell "+
+			"which of its files the two walks would read out of two different "+
+			"trees: %v", themePkg, err)
 	}
-	if strings.TrimSpace(dirty) != "" {
-		t.Skipf("%s/ differs from HEAD in this working tree:\n%s\n"+
-			"The revision walk reads HEAD and themeleaves.InDir reads the "+
-			"directory, so the two file sets are expected to differ here and the "+
-			"difference would be the uncommitted edit rather than the filters "+
-			"this test is about. Commit or stash and run it again.",
-			themePkg, strings.TrimSpace(dirty))
-	}
+	differ := dirtyPaths(dirty)
 
 	// The two readings. Both go through themeleaves.Of in the end, and what
 	// differs is how the sources reached it.
@@ -120,30 +144,78 @@ func TestTheRevisionsFileSetIsTheOneTheWorkingTreeWalkReads(t *testing.T) {
 		t.Fatalf("%s/ cannot be read off disk: %v", themePkg, err)
 	}
 
-	// Compared by base name, because the two carry different prefixes for the
-	// same file — git's paths are repository-relative ("core/theme.go") and
-	// InDir's are joined onto the directory it was given. The file NAMES are
-	// what both filters decide on.
-	headFiles := baseNames(atHead.Files)
-	treeFiles := baseNames(inTree.Files)
-	if !slices.Equal(headFiles, treeFiles) {
+	// Compared as paths RELATIVE to core/, which is a key both sides can
+	// produce: git's are repository-relative ("core/theme.go") and InDir's are
+	// joined onto the directory it was handed, which is core/ here.
+	//
+	// Relative rather than the base name alone, though the two are the same
+	// string for every file either walk currently reaches. leavesAt declines a
+	// nested path outright now and names it (revision.nested), so the arm
+	// below is where a subdirectory of core/ arrives; keying on the relative
+	// path is what stops THIS comparison from depending on that filter still
+	// being there.
+	//
+	// The difference is not academic, and it is worse than a wrong match. Run
+	// against a revision holding core/sub/theme.go with the descent put back,
+	// the two keys report:
+	//
+	//	relative   50 against 49 — only the revision walk: sub/theme.go
+	//	base name  50 against 49 — only the revision walk: nothing
+	//	                           only the working tree:  nothing
+	//
+	// Because "theme.go" is then in the revision's list TWICE, and `missing`
+	// is a set difference: every name one side has, the other has too, and the
+	// lists are still different lengths. The failure is real, it is loud, and
+	// it names no file at all.
+	headFiles, headHeld := underPkg(atHead.Files, differ)
+	treeFiles, treeHeld := underPkg(inTree.Files, differ)
+	held := heldOut(headHeld, treeHeld)
+
+	// The hole, as a sentence every reading below can carry. Held out are the
+	// paths one walk or the other reaches AND that differ between HEAD and
+	// disk; a modified file that neither walk reads — core/README.md, a
+	// _test.go — is not a hole in anything and is not mentioned.
+	hole := ""
+	if len(held) > 0 {
+		hole = fmt.Sprintf("\n\n%d file(s) the walks reach under %s/ differ "+
+			"between HEAD and this working tree and were held out of the "+
+			"comparison above: %s. For those paths the readings are over two "+
+			"different trees, so a difference in them would be the uncommitted "+
+			"edit rather than the filters. Everything else in %s/ was compared.",
+			len(held), themePkg, strings.Join(held, ", "), themePkg)
+	}
+
+	switch {
+	case len(headFiles) == 0 && len(treeFiles) == 0:
+		// Every file both walks reach is uncommitted, so the comparison is
+		// over nothing and slices.Equal would report that as agreement. Said
+		// rather than passed: the arms below this one read HEAD alone and did
+		// run, and a log line claiming the filters were compared would be
+		// describing a comparison that had no members.
+		t.Logf("every file the two walks reach under %s/ differs from HEAD in "+
+			"this working tree, so the file-set comparison had nothing left to "+
+			"run over.%s", themePkg, hole)
+	case !slices.Equal(headFiles, treeFiles):
 		t.Errorf("the revision walk reads %d file(s) under %s/ at HEAD and "+
-			"themeleaves.InDir reads %d in the working tree.\n\n"+
+			"themeleaves.InDir reads %d in the working tree, out of the files "+
+			"the two trees agree about.\n\n"+
 			"only the revision walk: %s\nonly the working tree:  %s\n\n"+
-			"The trees are the same — this test skips when they are not — so this "+
-			"is the two file filters having come apart. leavesAt drops test files "+
-			"before fetching them (a `git cat-file` per test file per revision is "+
-			"real time spent on text nobody parses) and themeleaves.Of drops them "+
-			"again; InDir does its own directory read with the same rule. Whichever "+
-			"of the three moved, every row of the edit-size table is now over a "+
-			"different population than the arm at HEAD checks, and that arm cannot "+
-			"see it: it never goes through leavesAt.\n\n"+
-			"A name only the REVISION walk has is usually ls-tree's -r reaching "+
-			"into a subdirectory of %s/, which InDir does not descend into — see "+
-			"its note on why it is not recursive.",
+			"Those paths are the same in both trees — the ones that are not were "+
+			"held out — so this is the two file filters having come apart. "+
+			"leavesAt drops test files before fetching them (a `git cat-file` per "+
+			"test file per revision is real time spent on text nobody parses) and "+
+			"themeleaves.Of drops them again; InDir does its own directory read "+
+			"with the same rule. Whichever of the three moved, every row of the "+
+			"edit-size table is now over a different population than the arm at "+
+			"HEAD checks, and that arm cannot see it: it never goes through "+
+			"leavesAt.\n\n"+
+			"A path with a directory in it on the REVISION side is leavesAt "+
+			"having stopped declining what `ls-tree -r` descends into — see "+
+			"revision.nested, and the arm below, which is where that arrives "+
+			"when the two are otherwise agreeing.%s",
 			len(headFiles), themePkg, len(treeFiles),
 			nameList(missing(headFiles, treeFiles)),
-			nameList(missing(treeFiles, headFiles)), themePkg)
+			nameList(missing(treeFiles, headFiles)), hole)
 		// Everything below reads the expansions those files produced, and with
 		// the file sets apart every one of them fails as a consequence of this:
 		// a missing file is a missing struct is a missing leaf. The finding is
@@ -151,11 +223,56 @@ func TestTheRevisionsFileSetIsTheOneTheWorkingTreeWalkReads(t *testing.T) {
 		return
 	}
 
+	// And what `ls-tree -r` found below core/ that no reading of this package
+	// is over. HEAD only, and true whatever is on disk: it is a fact about
+	// what git tracks.
+	//
+	// Not a divergence between the two walks — leavesAt declines these exactly
+	// as InDir does, so the arm above stays green — which is what makes it its
+	// own arm. Both readings would be short by the same files, agreeing about
+	// a population neither of them is over.
+	if len(atHead.nested) > 0 {
+		t.Errorf("git tracks %d non-test .go file(s) under %s/ at HEAD that are "+
+			"not directly in it: %s.\n\n"+
+			"Both walks decline them and so they do not show up above: leavesAt "+
+			"names them (revision.nested) and themeleaves.InDir never descends. "+
+			"The rule is one package, one directory, and it is the right rule — "+
+			"themeleaves.Of resolves a field's type by BARE NAME against one flat "+
+			"map of every struct it parsed, so two packages' declarations in that "+
+			"map would let a type from %s/sub answer for a field in %s/, or lose "+
+			"to it, on nothing better than sort order.\n\n"+
+			"What it means is that %s/ has become more than one package's worth "+
+			"of directory, and every row of the edit-size table under "+
+			"affordedBandSteps is over the top level of it alone. If those files "+
+			"declare nothing %s.%s reaches, the table is still exactly what it "+
+			"says it is and this arm wants the new directory written into "+
+			"themePkg's note. If they do, the table is short and the reading "+
+			"needs the subpackage — which is a different expansion, not a wider "+
+			"glob.",
+			len(atHead.nested), themePkg, strings.Join(atHead.nested, ", "),
+			themePkg, themePkg, themePkg, themePkg, themeType)
+	}
+
 	// And that the same files gave the same answer. Redundant while the file
 	// sets agree — Of is one function and the text is the same text — which is
 	// the point: it costs nothing and it is the assertion that would survive
 	// somebody giving leavesAt a second parse.
-	if !slices.Equal(atHead.Names, inTree.Names) {
+	//
+	// This is the one arm the hole is fatal to rather than merely narrowing.
+	// The expansions are over WHOLE readings — Names is not per file and
+	// cannot be filtered down to the paths the two trees agree about — so with
+	// anything held out the two lists differ by the uncommitted edit and the
+	// failure would be a sentence about a file somebody is in the middle of
+	// writing.
+	switch {
+	case len(held) > 0:
+		t.Logf("the two expansions were not compared name-for-name: %d of the "+
+			"file(s) the walks reach differ between HEAD and this working tree "+
+			"(%s), and Names is a reading of the whole file set rather than "+
+			"something that can be taken over part of it. The file FILTERS were "+
+			"still compared, over the rest. Commit or stash to get this arm back.",
+			len(held), strings.Join(held, ", "))
+	case !slices.Equal(atHead.Names, inTree.Names):
 		t.Errorf("%s.%s expands to %d leaf name(s) out of HEAD and %d out of the "+
 			"same %d file(s).\n\n"+
 			"only HEAD's:        %s\nonly the tree's:    %s\n\n"+
@@ -194,28 +311,125 @@ func TestTheRevisionsFileSetIsTheOneTheWorkingTreeWalkReads(t *testing.T) {
 	if t.Failed() {
 		return
 	}
+	// What was compared, and what was not. The second half is the point of
+	// saying it at all: this arm no longer reports one of two states, and a
+	// line that said "the same N files" without saying which N would be the
+	// same sentence on a clean checkout and on a tree with half of core/
+	// rewritten.
+	expanded := fmt.Sprintf("which expand to the same %d leaf name(s)",
+		len(atHead.Names))
+	if len(held) > 0 {
+		expanded = fmt.Sprintf("out of the %d and %d each walk reads in full",
+			len(atHead.Files), len(inTree.Files))
+	}
 	t.Logf("HEAD and the working tree hand themeleaves the same %d file(s) "+
-		"under %s/, which expand to the same %d leaf name(s). That is the half "+
-		"of this command's reading wasm/verify cannot check: it holds the "+
-		"EXPANSION against reflect, and the expansion is downstream of the file "+
-		"filter this test compares. The two filters are `ls-tree` plus leavesAt's "+
-		"own suffix test on one side and themeleaves.InDir's directory read on "+
-		"the other.", len(headFiles), themePkg, len(atHead.Names))
+		"under %s/, %s. That is the half of this command's reading wasm/verify "+
+		"cannot check: it holds the EXPANSION against reflect, and the expansion "+
+		"is downstream of the file filter this test compares. The two filters are "+
+		"`ls-tree` plus leavesAt's own suffix and top-level tests on one side and "+
+		"themeleaves.InDir's directory read on the other.%s",
+		len(headFiles), themePkg, expanded, hole)
 }
 
-// baseNames is a list of paths as the two walks can be compared: the file name
-// alone, sorted.
+// underPkg is a list of paths as the two walks can be compared — each one
+// relative to themePkg, sorted — split into the ones this run can read and the
+// ones held out because HEAD and the working tree disagree about them.
+//
+// Relative rather than the base name: see the call, which is where the
+// difference between the two matters. A path this function cannot make
+// relative is kept whole, which is the loud version of the failure — it will
+// not match its opposite number and the file-set arm will name it — rather
+// than a silent fall back onto the base name, which would match one it is not.
 //
 // Sorted here rather than relied on: themeleaves.Files comes out sorted by
-// PATH, and two different prefixes can sort their shared base names into two
+// PATH, and two different prefixes can sort their shared suffixes into two
 // different orders ("core/a.go" before "core/b.go" is also "a.go" before
 // "b.go", but that is a property of these prefixes and not of any two).
-func baseNames(paths []string) []string {
-	out := make([]string, 0, len(paths))
+func underPkg(paths []string, differ map[string]bool) (kept, held []string) {
 	for _, p := range paths {
-		out = append(out, filepath.Base(p))
+		rel, err := filepath.Rel(themePkg, filepath.FromSlash(p))
+		if err != nil {
+			rel = p
+		} else {
+			rel = filepath.ToSlash(rel)
+		}
+		if differ[rel] {
+			held = append(held, rel)
+			continue
+		}
+		kept = append(kept, rel)
+	}
+	slices.Sort(kept)
+	slices.Sort(held)
+	return kept, held
+}
+
+// heldOut is the two walks' held-out paths as one list, each named once.
+//
+// A modified file is normally in both — it is the same path in both readings
+// — and an added or deleted one is in exactly one. The union is what the
+// sentence about the hole is over, and it is deliberately NOT every dirty path
+// under themePkg: a modified README or _test.go is not a hole in a comparison
+// neither walk was going to read it for.
+func heldOut(these, those []string) []string {
+	seen := map[string]bool{}
+	out := []string{}
+	for _, list := range [][]string{these, those} {
+		for _, p := range list {
+			if !seen[p] {
+				seen[p] = true
+				out = append(out, p)
+			}
+		}
 	}
 	slices.Sort(out)
+	return out
+}
+
+// dirtyPaths is `git status --porcelain -z` as the set of paths, relative to
+// themePkg, that HEAD and the working tree disagree about.
+//
+// # The format, which is why -z is worth the parse
+//
+// Records are NUL-terminated rather than newline-terminated, and a path is
+// never quoted or escaped — which is the whole reason for asking (see the
+// call). Each record is two status letters — index, then work tree — a space,
+// and the path. Written with · for a space, since one of the two letters
+// routinely is one:
+//
+//	"·M core/theme.go\0"              index clean, work tree modified
+//	"?? core/new.go\0"                untracked
+//	"R· core/to.go\0core/from.go\0"   a rename, whose SOURCE is the record
+//	                                  that follows it
+//
+// Both halves of a rename are held out. The source is gone from the working
+// tree and present at HEAD and the destination is the other way round, so each
+// of them is a path exactly one of the two walks reads.
+func dirtyPaths(z string) map[string]bool {
+	rel := func(p string) string {
+		r, err := filepath.Rel(themePkg, filepath.FromSlash(p))
+		if err != nil {
+			return p
+		}
+		return filepath.ToSlash(r)
+	}
+	out := map[string]bool{}
+	records := strings.Split(z, "\x00")
+	for i := 0; i < len(records); i++ {
+		// "XY p" is the shortest a record can be; the trailing empty string
+		// Split leaves after the final NUL is the usual reason to be here.
+		if len(records[i]) < 4 {
+			continue
+		}
+		status, p := records[i][:2], records[i][3:]
+		out[rel(p)] = true
+		if strings.ContainsAny(status, "RC") {
+			i++
+			if i < len(records) && records[i] != "" {
+				out[rel(records[i])] = true
+			}
+		}
+	}
 	return out
 }
 

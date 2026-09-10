@@ -2025,6 +2025,13 @@ func themeNearMiss(set themeLeafSet, path string) string {
 // The same walk with the comparison taken out, so the two cannot disagree about
 // what a path looks like. It exists to tell two failures apart that arrived as
 // one: see where it is called.
+//
+// This is the FIRST of the three copies of the rule "recurse on a struct, take
+// the last dotted segment, keep each name once" — the walk, producing paths.
+// affordedLeafNames in themenearmiss_test.go is the deduplication on top of
+// it, and internal/themeleaves' reflectLeafNames is the two of them collapsed
+// and written a second time on purpose. The table naming all three, and the
+// reason the third is not one too many, is in reflectLeafNames' comment.
 func themeLeafPaths(v reflect.Value, path string) []string {
 	if v.Kind() == reflect.Struct {
 		var out []string

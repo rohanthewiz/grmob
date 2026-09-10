@@ -1530,6 +1530,105 @@ func TestTheRegionKindsAccountForEveryCategoryGoHas(t *testing.T) {
 		len(reach.hidden), foldCategorySaid(reach.hidden))
 }
 
+// No cased letter reaches foldCategoryOf's fall-through, so "LC" is never an
+// answer.
+//
+// # The order of two loops, asserted as the property rather than as its reason
+//
+// foldCategoryOf tries every entry of foldRegionKinds first and then falls
+// through to a walk of unicode.Categories for anything two letters long.
+// unicode.Categories holds "LC" — Go's union of Lu, Ll and Lt, not a general
+// category a code point is IN — and "LC" is two letters long, so the
+// fall-through would happily return it for a cased letter that got that far.
+// A region would then record a category no code point has, under a word
+// (foldWordFor's own fall-through: "LC") that says nothing.
+//
+// Nothing gets that far, and the reason is already asserted from the other
+// end: TestTheRegionKindsAccountForEveryCategoryGoHas reads LC's entry in
+// foldUnwordedCategories, whose whole excuse for needing no word is that all
+// three of its members have one, and fails if any of the three does not.
+//
+// That is not this claim. It says the three are worded; it says nothing about
+// them being tried FIRST, which is the property foldCategoryOf actually rests
+// on. Reorder its two loops for tidiness — a perfectly reasonable-looking edit,
+// with Lu, Ll and Lt still worded and every existing arm still green — and this
+// file starts recording LC. So the property is walked rather than argued.
+//
+//	foldCategoryOf(cp)
+//	  ├── foldRegionKinds   Lu Ll Lt Lo Lm Nd ...   ← 'A' stops here
+//	  └── unicode.Categories, len(name) == 2        ← and "LC" is in here
+func TestNoCasedLetterReachesTheCategoryFallThrough(t *testing.T) {
+	// First, that the hazard is real, because an arm against a danger that
+	// cannot happen is an arm nobody can read. Every condition the
+	// fall-through applies is checked against LC itself: it is two letters, it
+	// is not the one name that loop excludes, and it holds cased letters. With
+	// all three true, the ONLY thing standing between a cased letter and "LC"
+	// is that the first loop answered — the second walks a map, so not even
+	// iteration order can be relied on to reach Lu before LC.
+	lc, isGos := unicode.Categories["LC"]
+	switch {
+	case !isGos:
+		t.Errorf("Go's unicode.Categories has no \"LC\" in Unicode %s.\n\n"+
+			"Which makes foldCategoryOf's fall-through safe for a reason nobody "+
+			"wrote down, and makes LC's entry in foldUnwordedCategories — filed "+
+			"under %q, excused as a union rather than a category — a decision "+
+			"about a name Go no longer carries.", unicode.Version, foldNotACategory)
+		return
+	case len("LC") != 2:
+		// Unreachable, and here because the fall-through's condition is
+		// `len(name) == 2` and this is that condition being quoted rather than
+		// paraphrased.
+		t.Fatal("unreachable")
+	case !unicode.Is(lc, 'A'):
+		t.Errorf("U+0041 \"A\" is not in Go's LC table in Unicode %s.\n\n"+
+			"LC is documented as the union of Lu, Ll and Lt, and this test is "+
+			"about a cased letter being able to reach it. If an uppercase Latin A "+
+			"is not in it, the union is not what this file believes it is and the "+
+			"walk below is over the wrong population.", unicode.Version)
+		return
+	}
+
+	// And then that nothing reaches it. Every code point Go puts in LC, run
+	// through the function itself rather than through a re-derivation of it —
+	// the answer has to come back as one of the three worded categories, which
+	// is the same statement as "the first loop answered".
+	seen := 0
+	cp, failed := foldCodePointFailing(lc, func(cp rune) bool {
+		seen++
+		switch foldCategoryOf(cp) {
+		case "Lu", "Ll", "Lt":
+			return true
+		}
+		return false
+	})
+	if failed {
+		t.Errorf("foldCategoryOf(U+%04X %q) is %q, and that code point is in Go's "+
+			"LC table.\n\n"+
+			"LC is Go's union of Lu, Ll and Lt, so every member of it is in one of "+
+			"the three — and all three have a word in foldRegionKinds, which "+
+			"foldCategoryOf tries before it falls through to a walk of "+
+			"unicode.Categories. An answer that is not one of the three means the "+
+			"first loop did not answer for a cased letter: either the two loops "+
+			"have been reordered, or one of Lu, Ll and Lt has lost its entry.\n\n"+
+			"%q is what a region would record for it, and %q is the word it would "+
+			"print — a category no code point is in, under the two letters "+
+			"foldWordFor falls back to. LC's whole excuse for needing no word of "+
+			"its own is that this cannot happen.",
+			cp, string(cp), foldCategoryOf(cp), foldCategoryOf(cp),
+			foldWordFor(foldCategoryOf(cp)))
+		return
+	}
+
+	t.Logf("all %d code points in Go's LC table (Unicode %s) come back from "+
+		"foldCategoryOf as Lu, Ll or Lt, so its fall-through — which accepts any "+
+		"two-letter name in unicode.Categories other than Cn, and LC is one — is "+
+		"never reached by a cased letter. That is the property the ORDER of its "+
+		"two loops carries, and it is a different claim from the one "+
+		"TestTheRegionKindsAccountForEveryCategoryGoHas makes about LC: that arm "+
+		"says Lu, Ll and Lt are worded, this one says being worded is enough.",
+		seen, unicode.Version)
+}
+
 // foldReached is which entries of foldRegionKinds the recorded regions have
 // actually exercised, and which of them nothing has ever printed.
 //

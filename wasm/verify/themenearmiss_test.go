@@ -1245,6 +1245,14 @@ func affordedMeasuredNote(leaves, sets int) string {
 // would mount one parent with two identical children — a shape the walk below
 // can never produce, and one whose zero distance is a different check's
 // business.
+//
+// This is the SECOND of the three copies of the rule "recurse on a struct,
+// take the last dotted segment, keep each name once" — the deduplication on
+// top of gen.go's themeLeafPaths, and the population everything in this file
+// is measured over. internal/themeleaves' reflectLeafNames is the third, which
+// is the two of these written again over reflect with nothing shared. The
+// table naming all three is in its comment; every claim in this file about
+// "the population" is about the answer THIS one gives.
 func affordedLeafNames() []string {
 	paths := themeLeafPaths(reflect.ValueOf(*core.DefaultTheme), "")
 	sort.Strings(paths)
@@ -2865,6 +2873,144 @@ func affordedBandCaller() string {
 		return outermost
 	}
 	return fallback
+}
+
+// affordedCallSite is the file:line of whoever called it, in the spelling
+// affordedBandCaller's fallback uses.
+//
+// The other end of that fallback, and it exists so the two can be taken on ONE
+// SOURCE LINE — `got, want := affordedBandCaller(), affordedCallSite()`. A
+// runtime.Caller(1) written out at the asking would be a second line and the
+// answers would then differ by one, so the assertion would either be
+// approximate or would break the day somebody inserted a blank line between
+// them.
+func affordedCallSite() string {
+	_, file, line, ok := runtime.Caller(1)
+	if !ok {
+		return ""
+	}
+	return fmt.Sprintf("%s:%d", filepath.Base(file), line)
+}
+
+// The three stacks affordedBandCaller's doc comment describes, read.
+//
+// # A branch a green run never takes
+//
+// affordedHoldBandAttribution asserts that every key in the tally is a test
+// name, which is the right thing to assert and which makes the file:line
+// fallback the branch no passing run has ever entered. It is three lines, and
+// it is the branch that fires on the day the convention breaks — so it is the
+// one that will be read under pressure, by somebody looking at an unfamiliar
+// key in a failure message, having never once been run.
+//
+// It is also the whole content of a claim made in prose next door. The doc
+// comment says a band asked for inside t.Run or from a goroutine a test
+// started lands on the fallback, and the tally arm says such a key would be
+// reported — both of them describing a stack neither of them produces.
+//
+//	affordedBandCaller() called from        frames above it        answers
+//	  the test body                         TestFoo                TestFoo
+//	  a goroutine the test started          TestFoo.funcN, goexit  file:line
+//	  a t.Run closure                       TestFoo.funcN, tRunner file:line
+//
+// Nothing here touches the memo: affordedBandCaller is a stack walk and does
+// not count, so the tally this reads about is not moved by reading it.
+func TestTheBandCallerFallsBackToALineWhenNoTestIsAboveIt(t *testing.T) {
+	// The shape every caller in this file has, which is the one the tally is
+	// built on. Asserted here as well as through the memo because this test is
+	// where the three stacks are compared, and "the fallback fired" only means
+	// something beside a case where it did not.
+	if who, want := affordedBandCaller(), t.Name(); who != want {
+		t.Errorf("called straight from a test body, affordedBandCaller answers "+
+			"%q and the test is %q.\n\n"+
+			"This is the ordinary stack — a test calling a helper on its own "+
+			"goroutine — and it is the one every band walk in this file is asked "+
+			"for on. If it does not come back as the test's own name, the tally "+
+			"affordedHoldBandAttribution holds against t.Name() is keyed on "+
+			"something else entirely.", who, want)
+	}
+
+	// A goroutine the test started. tRunner's frame is not on it and the
+	// closure's own name is TestFoo.funcN, whose last segment is funcN — so
+	// no frame in the top 32 starts with "Test" and the fallback is the whole
+	// answer.
+	type asking struct{ got, want string }
+	fromGoroutine := make(chan asking, 1)
+	go func() {
+		got, want := affordedBandCaller(), affordedCallSite()
+		fromGoroutine <- asking{got, want}
+	}()
+	a := <-fromGoroutine
+
+	// And a subtest closure, which Go also runs on a new goroutine. The same
+	// stack for the same reason, and it is listed separately because it is the
+	// one a reader is most likely to write by accident: t.Run looks like a
+	// call, not like a goroutine.
+	var b asking
+	t.Run("in a subtest closure", func(t *testing.T) {
+		got, want := affordedBandCaller(), affordedCallSite()
+		b = asking{got, want}
+	})
+
+	for _, c := range []struct {
+		where string
+		asking
+	}{
+		{"a goroutine this test started", a},
+		{"a t.Run closure", b},
+	} {
+		if c.got != c.want {
+			t.Errorf("asked from %s, affordedBandCaller answers %q; the frame it "+
+				"was called on is %q.\n\n"+
+				"Both are the same call site — they are taken on one source line "+
+				"— so this is the walk having found something it took for the "+
+				"asking. An answer starting with \"Test\" is a Test frame having "+
+				"become visible from a goroutine, which would make the fallback "+
+				"dead code and the tally's keys mean something new; any other "+
+				"difference is the fallback naming a frame that is not the "+
+				"caller's.", c.where, c.got, c.want)
+			continue
+		}
+		// And that it is the fallback and not a name, which is the property
+		// affordedHoldBandAttribution's last arm reads: a key that does not
+		// start with "Test" is what that arm reports, and this is where such a
+		// key comes from.
+		if strings.HasPrefix(c.got, "Test") {
+			t.Errorf("asked from %s, affordedBandCaller answers %q, which starts "+
+				"with \"Test\".\n\n"+
+				"It is the file:line fallback — it matches this call site exactly "+
+				"— so a test file whose name begins with Test would make the two "+
+				"branches indistinguishable to affordedHoldBandAttribution's "+
+				"notTests arm, which sorts keys by that prefix alone.",
+				c.where, c.got)
+		}
+		file, line, found := strings.Cut(c.got, ":")
+		if !found || file != "themenearmiss_test.go" {
+			t.Errorf("asked from %s, the fallback answers %q, which is not "+
+				"file:line in this file.\n\n"+
+				"It is built from filepath.Base of the frame's file and the "+
+				"frame's line, and a reader who meets it in a tally is meant to be "+
+				"able to open it. A bare line number, an absolute path, or a name "+
+				"with no colon in it is not that.", c.where, c.got)
+			continue
+		}
+		if n, err := strconv.Atoi(line); err != nil || n <= 0 {
+			t.Errorf("asked from %s, the fallback answers %q, whose line number "+
+				"is %q.\n\nA frame with no line is a stack the walk read past "+
+				"the end of.", c.where, c.got, line)
+		}
+	}
+
+	if t.Failed() {
+		return
+	}
+	t.Logf("affordedBandCaller answers %q from this test's own body and %q from "+
+		"a goroutine it started (%q from a t.Run closure, for the same reason: "+
+		"Go runs a subtest on a new goroutine, so no Test frame is above the "+
+		"asking). The second is the file:line fallback, which is the branch a "+
+		"green run never takes — affordedHoldBandAttribution asserts every key "+
+		"in the tally IS a test name — and which is the one a reader meets on "+
+		"the day the convention breaks.", t.Name(), a.got, b.got)
 }
 
 // affordedBandKey is the identity of a walk: its names and its step.

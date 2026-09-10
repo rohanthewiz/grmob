@@ -63,17 +63,21 @@
 // has a working tree
 //
 // leavesAt decides which of a revision's files reach themeleaves — a `.go`
-// suffix test and a `_test.go` exclusion, both of which also exist inside
-// themeleaves.Of. Two copies of one rule, and the arm in wasm/verify is
-// downstream of both: it hands InDir a directory and never goes through
-// leavesAt at all, so a filter that drifted here would move every row of the
-// table and leave that test green.
+// suffix test, a `_test.go` exclusion and, since `ls-tree -r` descends where
+// themeleaves.InDir does not, a top-level test. The first two also exist
+// inside themeleaves.Of, and the arm in wasm/verify is downstream of all
+// three: it hands InDir a directory and never goes through leavesAt at all, so
+// a filter that drifted here would move every row of the table and leave that
+// test green.
 //
 // main_test.go compares the two file sets at HEAD, which is the one revision
-// git and the working tree both describe. It skips where there is no
-// repository or where core/ is dirty — the two cases in which the readings are
-// over different trees — and that is the one place in this repository a
-// skipping git test is honest, because the git half IS the subject.
+// git and the working tree both describe. It skips only where there is no
+// repository to read — and that is the one place in this repository a skipping
+// git test is honest, because the git half IS the subject. A working tree that
+// differs from HEAD under core/ is not a skip but a HOLE: `git status
+// --porcelain` names the paths the two readings would take out of two
+// different trees, those are held out by name, and what was left out is
+// reported alongside what was compared.
 package main
 
 import (
@@ -82,6 +86,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path"
 	"sort"
 	"strings"
 
@@ -137,7 +142,7 @@ func run() error {
 	var prev map[string]bool
 	for _, line := range lines {
 		sha, date, _ := strings.Cut(line, " ")
-		exp, err := leavesAt(sha)
+		rev, err := leavesAt(sha)
 		if err != nil {
 			return fmt.Errorf("%s: %w", sha[:8], err)
 		}
@@ -149,17 +154,30 @@ func run() error {
 		// ever has been. Both are ordinary in a history and neither is a
 		// failure; they are said out loud, on stderr, so the row they produce
 		// is not read as a fact about the struct.
-		if len(exp.Unparsed) > 0 {
+		if len(rev.Unparsed) > 0 {
 			fmt.Fprintf(os.Stderr, "themehistory: %s: go/parser read nothing "+
 				"from %s — any struct declared only there is missing from this "+
-				"revision's expansion\n", sha[:8], strings.Join(exp.Unparsed, ", "))
+				"revision's expansion\n", sha[:8], strings.Join(rev.Unparsed, ", "))
 		}
-		if !exp.Found {
+		// And the files this revision held under core/ that are not directly
+		// in it. Same shape of finding as Unparsed and the same reason for
+		// saying it here: the row below is over a population that is short by
+		// whatever those files declare, and nothing downstream of this loop
+		// could tell that from a revision where the struct was simply smaller.
+		if len(rev.nested) > 0 {
+			fmt.Fprintf(os.Stderr, "themehistory: %s: %d file(s) tracked under "+
+				"%s/ are not directly in it and were not parsed: %s — one package "+
+				"is one directory, which is the rule themeleaves.InDir reads the "+
+				"working tree by, so any type declared only in there is missing "+
+				"from this revision's expansion\n", sha[:8], len(rev.nested),
+				themePkg, strings.Join(rev.nested, ", "))
+		}
+		if !rev.Found {
 			fmt.Fprintf(os.Stderr, "themehistory: %s: %s/ declares no %s at this "+
 				"revision, so its population is empty and the next commit's row "+
 				"reads as a creation\n", sha[:8], themePkg, themeType)
 		}
-		names := leafSet(exp)
+		names := leafSet(rev.Expansion)
 		// A commit that touched core/ without moving the population — a
 		// comment, a method, a rename of something that is not a leaf — is not
 		// a step. Only the commits that MOVED it are what the distribution is
@@ -254,6 +272,37 @@ func run() error {
 	return nil
 }
 
+// revision is one revision's reading of core.Theme: the expansion, plus what
+// the fetch above it declined before themeleaves ever saw the text.
+//
+// Expansion is embedded rather than held in a field because everything in it
+// is still exactly what a caller wants — Names, Files, Unparsed, Found — and
+// `nested` is one more thing THIS half of the reading knows and the
+// working-tree half structurally cannot.
+type revision struct {
+	themeleaves.Expansion
+	// The tracked, non-test .go files under themePkg at this revision that
+	// are not directly in it: core/sub/theme.go and anything deeper.
+	//
+	// The two halves of this reading used to disagree about these, silently
+	// and in the direction nothing could report. `ls-tree -r` descends and
+	// themeleaves.InDir does not, so a revision that split core/ into
+	// subdirectories was parsed WITH those files — producing a row in the
+	// edit-size table — while every arm that checks this expansion runs
+	// against InDir at HEAD and had nothing to notice.
+	//
+	//	revision:      ls-tree -r ──> core/theme.go, core/sub/theme.go
+	//	working tree:  ReadDir    ──> core/theme.go
+	//	                              └─ one package, one directory
+	//
+	// So the rule here is InDir's rule, and the files it drops are NAMED
+	// rather than dropped quietly. Empty at every revision this repository
+	// has — which is why adopting the rule leaves the table byte-identical —
+	// and a revision that ever put one there now says so on stderr instead of
+	// contributing a population nothing else could reproduce.
+	nested []string
+}
+
 // leavesAt is core.Theme's leaf population at one revision.
 //
 // git for the sources, themeleaves for the expansion — which is the split that
@@ -268,27 +317,44 @@ func run() error {
 // Which makes the rule below a second copy of themeleaves.Of's, and a copy of
 // a rule is a thing that can move on its own. Expansion.Files is what each
 // reading says it read, and main_test.go holds this one's against InDir's at
-// HEAD — see TestTheRevisionsFileSetIsTheOneTheWorkingTreeWalkReads, and note
-// that `ls-tree -r` descends into subdirectories of core/ where InDir does
-// not, so a package split into one would show up there as a divergence rather
-// than as a table that quietly grew.
-func leavesAt(sha string) (themeleaves.Expansion, error) {
+// HEAD — see TestTheRevisionsFileSetIsTheOneTheWorkingTreeWalkReads.
+//
+// # Why -r is still asked for, when the descent it does is undone here
+//
+// A listing without it reports a subdirectory of core/ as one tree object and
+// never mentions the .go files inside it, so the paths this walk declines
+// would be paths it could not name. -r is how they are SEEN; revision.nested
+// is where they go.
+func leavesAt(sha string) (revision, error) {
 	files, err := git("ls-tree", "-r", "--name-only", sha, "--", themePkg)
 	if err != nil {
-		return themeleaves.Expansion{}, err
+		return revision{}, err
 	}
+	rev := revision{}
 	sources := map[string]string{}
-	for _, path := range strings.Split(strings.TrimSpace(files), "\n") {
-		if !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
+	// git speaks slash-separated, repository-relative paths on every platform,
+	// so `path` and not `path/filepath`: these are not paths on this machine.
+	for _, p := range strings.Split(strings.TrimSpace(files), "\n") {
+		if !strings.HasSuffix(p, ".go") || strings.HasSuffix(p, "_test.go") {
 			continue
 		}
-		src, err := git("cat-file", "-p", sha+":"+path)
-		if err != nil {
-			return themeleaves.Expansion{}, err
+		// Before the fetch, so a subdirectory of core/ costs no `cat-file`
+		// either. Test files are dropped above this rather than below it: a
+		// nested _test.go contributes nothing to any expansion by either rule,
+		// and listing it here would be noise in a report about declarations
+		// that went missing.
+		if path.Dir(p) != themePkg {
+			rev.nested = append(rev.nested, p)
+			continue
 		}
-		sources[path] = src
+		src, err := git("cat-file", "-p", sha+":"+p)
+		if err != nil {
+			return revision{}, err
+		}
+		sources[p] = src
 	}
-	return themeleaves.Of(sources, themeType), nil
+	rev.Expansion = themeleaves.Of(sources, themeType)
+	return rev, nil
 }
 
 // leafSet is an expansion as the diff below reads it.
