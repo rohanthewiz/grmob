@@ -1,6 +1,8 @@
 package main
 
 import (
+	"bufio"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -101,12 +103,12 @@ func TestTheRevisionsFileSetIsTheOneTheWorkingTreeWalkReads(t *testing.T) {
 	// this module inside another repository would answer every command above
 	// without holding this directory, and an empty answer there is "not this
 	// repository" rather than "the filters disagree by 96 files".
-	tracked, err := git("ls-tree", "-r", "--name-only", "HEAD", "--", themePkg)
+	tracked, err := treePaths("HEAD")
 	if err != nil {
 		t.Skipf("HEAD cannot be read, which is a repository with no commits in "+
 			"it (or a detached state git will not resolve): %v", err)
 	}
-	if strings.TrimSpace(tracked) == "" {
+	if len(tracked) == 0 {
 		t.Skipf("git tracks no files under %s/ at HEAD, so this is not the "+
 			"repository %s.%s is declared in — a vendored copy, or a module "+
 			"extracted into another tree. There is nothing here for the revision "+
@@ -600,8 +602,20 @@ func expansionsOver(rels []string) (atHead, inTree themeleaves.Expansion, err er
 //
 //	Shadowed empty      the subdirectory contributes or removes the leaves
 //	                    listed — the reading is short by them
-//	Shadowed non-empty   a bare name is declared in both, and at least part of
-//	                    the difference is which declaration answered
+//	Shadowed non-empty   a bare name got two declarations, and at least part of
+//	                    the difference is which of them answered
+//
+// # And WHERE the two declarations were, which the sentence used to assume
+//
+// It said "declared both in core/ and below it", which is the union probe's
+// case and not the only one Shadowed can hold: Of records a repeat wherever it
+// parsed one, so two subdirectories shadowing each other, one directory
+// declaring a name twice, or one FILE declaring it twice would all have
+// printed that sentence about something else. A reader with a moved population
+// uses that sentence to decide where to look. It is shadowKind's answer now,
+// per collision, and it is the same phrase the command prints on stderr —
+// one rule with one copy, which is what the rest of this file's helpers are
+// for.
 func reportNested(t *testing.T, atHead revision) {
 	t.Helper()
 	union, err := unionWithNested(atHead)
@@ -610,28 +624,29 @@ func reportNested(t *testing.T, atHead revision) {
 	// because the benign branch needs it too: two declarations of one name can
 	// hold the same fields, in which case the populations agree AND a choice
 	// was still made between them.
-	shadow := fmt.Sprintf("\n\nNo bare name is declared both in %s/ and below "+
-		"it, so nothing here is a shadowed type: themeleaves.Of resolves field "+
-		"types against one flat map of everything it parsed, and this union gave "+
-		"it no name twice.", themePkg)
+	shadow := "\n\nNo bare name is declared twice anywhere in this union, so " +
+		"nothing here is a shadowed type: themeleaves.Of resolves field types " +
+		"against one flat map of everything it parsed, and this union gave it " +
+		"no name twice."
 	if len(union.Shadowed) > 0 {
 		names := make([]string, 0, len(union.Shadowed))
 		for _, sh := range union.Shadowed {
-			// The winner last, which is what Shadowed.Files is ordered for —
-			// a reader with a moved population wants to know which of two
-			// declarations the expansion above was actually taken over.
-			names = append(names, fmt.Sprintf("%s (declared in %s; the last of "+
-				"those is the one that answered)", sh.Name,
-				strings.Join(sh.Files, ", ")))
+			// shadowKind names the placement AND the paths with the winner
+			// last, which is what Shadowed.Files is ordered for — a reader
+			// with a moved population wants to know which of two declarations
+			// the expansion above was actually taken over, and in which
+			// directory to go and look.
+			names = append(names, sh.Name+" is "+shadowKind(sh))
 		}
-		shadow = fmt.Sprintf("\n\n%d bare name(s) are declared both in %s/ and "+
-			"below it: %s.\n\nthemeleaves.Of resolves field types against one "+
-			"flat map of every struct it parsed, so those two declarations are "+
-			"one key and the winner is whichever path sorted LAST — "+
-			"%s/sub/x.go loses to %s/theme.go and %s/zsub/x.go beats it. That is "+
-			"what the one-package-one-directory rule exists to prevent, and it "+
-			"is why this union is a probe and not a wider glob.",
-			len(union.Shadowed), themePkg, strings.Join(names, ", "),
+		shadow = fmt.Sprintf("\n\n%d bare name(s) in this union got more than "+
+			"one declaration:\n\n  %s\n\nthemeleaves.Of resolves field types "+
+			"against one flat map of every struct it parsed, so two "+
+			"declarations of one name are one key and the winner is whichever "+
+			"path sorted LAST — %s/sub/x.go loses to %s/theme.go and "+
+			"%s/zsub/x.go beats it. That is what the one-package-one-directory "+
+			"rule exists to prevent, and it is why this union is a probe and "+
+			"not a wider glob.",
+			len(union.Shadowed), strings.Join(names, "\n  "),
 			themePkg, themePkg, themePkg)
 	}
 	switch {
@@ -670,8 +685,9 @@ func reportNested(t *testing.T, atHead revision) {
 			"this is. Either those files declare something %s.%s reaches, and "+
 			"the table is short by it — in which case the reading needs the "+
 			"subpackage, which is a different expansion and not a wider glob. Or "+
-			"they declare a type whose BARE NAME the top level already uses, and "+
-			"the difference is which of two declarations answered.%s\n\n"+
+			"a bare name got two declarations somewhere in this union, and the "+
+			"difference is which of them answered — in which case the sentence "+
+			"names WHERE the two were, because that is where to go and look.%s\n\n"+
 			"Both walks still decline these files identically, so the file-set "+
 			"comparison stays green and this is the only arm that can say so.",
 			len(atHead.nested), themePkg, strings.Join(atHead.nested, ", "),
@@ -990,12 +1006,12 @@ func TestTheBatchedFetchReadsWhatCatFileDoes(t *testing.T) {
 	}
 	t.Chdir(strings.TrimSpace(root))
 
-	listed, err := git("ls-tree", "-r", "--name-only", "HEAD", "--", themePkg)
+	listed, err := treePaths("HEAD")
 	if err != nil {
 		t.Skipf("HEAD cannot be read: %v", err)
 	}
 	var files []string
-	for _, p := range strings.Split(strings.TrimSpace(listed), "\n") {
+	for _, p := range listed {
 		if strings.HasSuffix(p, ".go") && !strings.HasSuffix(p, "_test.go") &&
 			path.Dir(p) == themePkg {
 			files = append(files, p)
@@ -1254,5 +1270,519 @@ func TestAPathThatCannotBeMadeRelativeIsKeptWhole(t *testing.T) {
 		t.Errorf("underPkg held out %s against an empty dirty set, and nothing "+
 			"can be held out of a comparison when HEAD and the working tree "+
 			"differ about no file at all.", nameList(held))
+	}
+}
+
+// A path with a newline in it goes round the batch, and comes back whole.
+//
+// # Why this branch had never run, and why it now can
+//
+// blob sends a path holding a newline to a `cat-file -p` of its own, because
+// the batch protocol is newline-terminated. That guard had never fired, and
+// not because such a path is exotic — git tracks one happily — but because
+// nothing was ever handing it one: `ls-tree --name-only` C-QUOTES a name it
+// cannot write literally, so a file called `a<LF>b.go` arrived as the eleven
+// characters `"a\nb.go"`, which holds a backslash and an `n`. The guard looked
+// for a newline in a spelling that no longer had one.
+//
+// treePaths asks for -z now, so the path arrives as git holds it, and this is
+// the arm over what happens next.
+//
+// # What the batch does with one, which is the reason for the branch
+//
+// Not a failed request — a desynchronised stream. git reads the newline as the
+// end of one object name and the rest as the start of another, so one request
+// draws TWO responses:
+//
+//	written:  HEAD:a<LF>b.go<LF>
+//	read:     HEAD:a missing<LF>     ← this one is returned as the error
+//	          b.go missing<LF>       ← nobody asked; nobody reads it
+//
+// The second line is then the answer to the NEXT request, and every response
+// after that belongs to the request before it. That is the failure this file
+// spends its longest comment on, arriving through a filename.
+//
+// So the assertion is in two halves: the bytes come back, and the reader that
+// was NOT used is still usable — because a run where the fallback silently
+// stopped firing would pass the first half on the very request that broke the
+// second.
+func TestAPathWithANewlineInItGoesRoundTheBatch(t *testing.T) {
+	repo := scratchRepo(t, map[string]string{
+		"core/theme.go": "package core\n\ntype Theme struct{ A string }\n",
+		"core/a\nb.go":  "package core\n\ntype B struct{ C string }\n",
+	})
+	t.Chdir(repo)
+
+	// The batch is used first and used after, so the file in the middle is the
+	// only thing that could have moved it.
+	before, err := blob("HEAD", "core/theme.go")
+	if err != nil {
+		t.Fatalf("HEAD:core/theme.go cannot be fetched out of a repository this "+
+			"test just built: %v", err)
+	}
+
+	odd := "core/a\nb.go"
+	got, err := blob("HEAD", odd)
+	if err != nil {
+		t.Fatalf("blob could not read %q, a path git tracks and `cat-file -p` "+
+			"resolves: %v\n\n"+
+			"This path holds a real newline, so it must not go down the batch: "+
+			"git would read it as two object names and answer one request with "+
+			"two `missing` lines.", odd, err)
+	}
+	if want := "package core\n\ntype B struct{ C string }\n"; got != want {
+		t.Errorf("%q reads as %q and it was written as %q.", odd, got, want)
+	}
+
+	// And the half that says the fallback was actually taken. If the request
+	// had gone down the batch, one unread `missing` line would be sitting in
+	// the stream and this fetch would be answered by it.
+	after, err := blob("HEAD", "core/theme.go")
+	if err != nil {
+		t.Fatalf("after fetching %q, HEAD:core/theme.go could not be read: %v\n\n"+
+			"The stream is desynchronised, which is what happens when a path "+
+			"holding a newline is written into a newline-terminated protocol: "+
+			"the second of git's two answers is still in the pipe.", odd, err)
+	}
+	if after != before {
+		t.Errorf("HEAD:core/theme.go reads as %q after fetching %q and %q "+
+			"before it.\n\nOne request drew two responses and the second is "+
+			"answering this one.", after, odd, before)
+	}
+}
+
+// The batch is answered out of the repository the CALLER is in, not the one
+// the process was born in.
+//
+// # The state this is about
+//
+// `git cat-file --batch` resolves `<rev>:<path>` from the top of the tree, so
+// nothing about a fetch depends on the working directory — except which
+// repository git DISCOVERS, which is all of it. The batch process is
+// long-lived and its directory was fixed at the moment it started, and every
+// test in this file happens to t.Chdir to this repository's root before
+// fetching anything. t.Chdir puts the directory back afterwards; the git
+// process keeps the one it was born in.
+//
+// So "benign" rested on the order two tests run in. A test that built a
+// throwaway repository and fetched from it would be answered out of grmob —
+// and the kindest way that ends is `missing`, because the paths would not
+// resolve. The unkind way is a path that exists in both.
+//
+// blob compares the directory on every fetch and retires the reader when it
+// has moved, which is what this arm is over: the same relative path, two
+// repositories, two different files.
+func TestTheBatchFollowsTheCallerIntoAnotherRepository(t *testing.T) {
+	// A file at a path grmob also has, holding text grmob does not. Read out
+	// of the wrong repository this comes back as core.Theme's real source.
+	const decoy = "package core\n\ntype Theme struct{ Scratch string }\n"
+	repo := scratchRepo(t, map[string]string{"core/theme.go": decoy})
+
+	// The first fetch, taken from THIS repository, is what starts the reader
+	// and fixes its directory. Without it the reader would be started inside
+	// the scratch repo and the arm below would pass for the wrong reason.
+	root, err := git("rev-parse", "--show-toplevel")
+	if err != nil {
+		t.Skipf("this checkout is not a git repository: %v", err)
+	}
+	func() {
+		t.Chdir(strings.TrimSpace(root))
+		if _, err := blob("HEAD", path.Join(themePkg, "theme.go")); err != nil {
+			t.Skipf("HEAD:%s/theme.go cannot be read, so this is not the "+
+				"repository %s.%s is declared in: %v", themePkg, themePkg,
+				themeType, err)
+		}
+	}()
+
+	t.Chdir(repo)
+	got, err := blob("HEAD", "core/theme.go")
+	if err != nil {
+		t.Fatalf("after moving into another repository, HEAD:core/theme.go "+
+			"could not be read: %v\n\n"+
+			"The batch process still has the directory it was started in, so "+
+			"it is answering out of a repository this path may not exist in.",
+			err)
+	}
+	if got != decoy {
+		t.Errorf("HEAD:core/theme.go read from a repository this test built "+
+			"came back as %d byte(s) that are not the %d it was written with.\n\n"+
+			"got:\n%s\nwant:\n%s\n"+
+			"A `git cat-file --batch` resolves a revision from the top of the "+
+			"tree it DISCOVERED, and it discovers one from the directory it was "+
+			"started in. This answer came out of the repository the process was "+
+			"born in rather than the one the caller is standing in.",
+			len(got), len(decoy), got, decoy)
+	}
+}
+
+// scratchRepo is a git repository with the given files committed, in a
+// directory this test owns.
+//
+// # Why a real repository and not a fixture
+//
+// Both callers are about what GIT does with a path — a name it will not write
+// literally, and a working directory it resolves a repository from. Neither
+// question has an answer that can be written down: it is git's, it is the
+// installed git's, and a fixture would be this file asserting its own belief
+// about the tool it is checking.
+//
+// Committed with -c rather than by writing a config, so a machine whose global
+// git has no identity (a container, a CI image) runs this the same way one
+// with an identity does. `init.defaultBranch` likewise: the branch name is
+// never used — everything is fetched at HEAD — and setting it silences a hint
+// that would otherwise land on this process's stderr.
+func scratchRepo(t *testing.T, files map[string]string) string {
+	t.Helper()
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("no git on this machine, so there is no repository to build.")
+	}
+	dir := t.TempDir()
+	run := func(args ...string) {
+		t.Helper()
+		cmd := exec.Command("git", args...)
+		cmd.Dir = dir
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Skipf("`git %s` failed while building a scratch repository, so "+
+				"this machine's git cannot answer the question below: %v: %s",
+				strings.Join(args, " "), err, strings.TrimSpace(string(out)))
+		}
+	}
+	run("-c", "init.defaultBranch=main", "init", "-q", ".")
+	for rel, src := range files {
+		// filepath, not path: these are names on THIS machine, unlike
+		// everything git hands back.
+		full := filepath.Join(dir, filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
+			t.Fatalf("cannot make the directory for %q: %v", rel, err)
+		}
+		if err := os.WriteFile(full, []byte(src), 0o644); err != nil {
+			// A filesystem that will not hold the name is a skip and not a
+			// failure: the newline case is legal on every platform this
+			// package is built for and illegal on some it is not.
+			t.Skipf("this filesystem will not hold a file called %q: %v", rel, err)
+		}
+	}
+	run("add", "-A")
+	run("-c", "user.email=themehistory@example.invalid", "-c",
+		"user.name=themehistory", "commit", "-q", "-m", "scratch")
+	return dir
+}
+
+// Every shape a batch response can arrive in is told apart, and the one that
+// leaves the stream usable is told apart from the four that do not.
+//
+// # Why this is a table over strings and not five states of a git
+//
+// readResponse is a function of the BYTES. Nothing it decides depends on the
+// process behind them, and four of the five shapes below cannot be produced by
+// asking a working git for anything: a header that is not three fields, a size
+// that will not parse, a body that stops early, a pipe that ends mid-response.
+// Held as a table they are five rows; held as an integration test they are
+// four gits nobody can make misbehave on purpose and one that can.
+//
+// What is asserted is the CLASSIFICATION and not the wording — errMissing for
+// the complete one-line answer, errDesync for everything else — because that
+// is what blob branches on. A message that got rephrased would fail a test
+// pinned to prose and would be asserting that nobody had edited a paragraph;
+// a `missing` reclassified as a desync would cost a process per absent object,
+// and a desync reclassified as `missing` would put the whole rest of a run at
+// an offset nobody knows.
+func TestEveryBatchResponseShapeIsToldApart(t *testing.T) {
+	// The body is the same six bytes wherever a row has one, so a row's
+	// subject is the only thing that differs between it and the good case.
+	const body = "package"
+	good := fmt.Sprintf("%040x blob %d\n%s\n", 1, len(body), body)
+
+	for _, c := range []struct {
+		what   string
+		stream string
+		want   error // errMissing, errDesync, or nil for a whole object
+		why    string
+	}{
+		{
+			what:   "a whole object",
+			stream: good,
+			want:   nil,
+			why: "the header, the counted body and the terminator that is not " +
+				"counted in it",
+		},
+		{
+			what:   "missing",
+			stream: "HEAD:nope missing\n" + good,
+			want:   errMissing,
+			why: "git's complete one-line answer for an object it cannot " +
+				"resolve. Nothing follows it, so the stream is left at the " +
+				"start of the next header and the caller after this one is " +
+				"answered correctly — which is what the second response in " +
+				"this stream is here to make checkable.",
+		},
+		{
+			what:   "a header that is not a header",
+			stream: "fatal: not a git repository\n",
+			want:   errDesync,
+			why: "three fields by count and none of them a size. Anything " +
+				"that is not <oid> <type> <size> and not a `missing` line " +
+				"means the reader does not know what it is looking at.",
+		},
+		{
+			what:   "a size that will not parse",
+			stream: fmt.Sprintf("%040x blob seven\n%s\n", 1, body),
+			want:   errDesync,
+			why: "the body is read by COUNT, so a size that is not a number " +
+				"is not a body that can be skipped",
+		},
+		{
+			what:   "a body that stops early",
+			stream: fmt.Sprintf("%040x blob 99\n%s\n", 1, body),
+			want:   errDesync,
+			why: "the header promised 99 bytes and the stream held seven. " +
+				"Whatever is read next is not a header.",
+		},
+		{
+			what:   "a stream that ends before the terminator",
+			stream: fmt.Sprintf("%040x blob %d\n%s", 1, len(body), body),
+			want:   errDesync,
+			why: "the object is whole and the byte after it is not there. " +
+				"This is the shape that would go unnoticed: the caller has " +
+				"its file, and the reader is one byte into a header it will " +
+				"never read correctly again.",
+		},
+	} {
+		t.Run(c.what, func(t *testing.T) {
+			r := bufio.NewReader(strings.NewReader(c.stream))
+			got, err := readResponse(r, "HEAD:core/theme.go")
+			switch {
+			case c.want == nil:
+				if err != nil {
+					t.Fatalf("%s reads as an error: %v\n\n%s", c.what, err, c.why)
+				}
+				if got != body {
+					t.Errorf("%s reads as %q and the body was %q.\n\n%s",
+						c.what, got, body, c.why)
+				}
+			case !errors.Is(err, c.want):
+				t.Fatalf("%s reads as %v, and it is %v.\n\n%s\n\n"+
+					"blob branches on exactly this: errMissing costs the "+
+					"caller its file and nothing else, and errDesync retires "+
+					"the process. Confusing the two either pays a git per "+
+					"absent object or reads the rest of the run out of a "+
+					"stream at an unknown offset.",
+					c.what, err, c.want, c.why)
+			}
+			if c.want != errMissing {
+				return
+			}
+			// And the half a classification cannot state: after a `missing`
+			// the stream really is where the next request expects it.
+			next, err := readResponse(r, "HEAD:core/theme.go")
+			if err != nil || next != body {
+				t.Errorf("the response after a `missing` reads as (%q, %v), "+
+					"and it is a whole object.\n\nA `missing` line is the "+
+					"complete response. A reader that consumed anything "+
+					"behind it would answer this request out of the middle "+
+					"of something else.", next, err)
+			}
+		})
+	}
+}
+
+// A batch whose process has gone is replaced, not read from.
+//
+// # The state, and why it is reachable
+//
+// Every error but `missing` leaves the stream at an offset nobody knows, and
+// the reader was a package-level value that lived for the run: one such
+// response and every later fetch in the process read from the wrong place,
+// with nothing anywhere saying so. A walk carrying on would be handing
+// go/parser text that begins in the middle of another file, and a short
+// expansion reads as a commit that removed leaves.
+//
+// The process dying is the one shape of that a test can actually make — a
+// crash, an OOM kill, a `git` that exits on its own — and it exercises the
+// whole path rather than a fake: the read meets a closed pipe, the error
+// carries errDesync, blob sees `dead` and retires, and a fresh git answers the
+// next request. What it costs is one process, which is the trade this file
+// takes deliberately: the batch was bought to save four thousand of them, and
+// paying one back to leave a known-bad state is cheaper than any table
+// assembled out of misaligned bytes.
+func TestAKilledBatchIsReplacedRatherThanReadFrom(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("no git on this machine, so there is no batch to kill.")
+	}
+	root, err := git("rev-parse", "--show-toplevel")
+	if err != nil {
+		t.Skipf("this checkout is not a git repository: %v", err)
+	}
+	t.Chdir(strings.TrimSpace(root))
+
+	real := path.Join(themePkg, "theme.go")
+	want, err := blob("HEAD", real)
+	if err != nil {
+		t.Skipf("HEAD:%s cannot be read, so this is not the repository %s.%s "+
+			"is declared in: %v", real, themePkg, themeType, err)
+	}
+	was := blobs.cmd.Process.Pid
+
+	// A `missing` first, which is the error that must NOT cost a process.
+	// Without this the arm below would pass for a reader that retired itself
+	// on every error, and absent objects are the reachable ones.
+	absent := path.Join(themePkg, "no-such-file-a4232825.go")
+	if _, err := blob("HEAD", absent); !errors.Is(err, errMissing) {
+		t.Fatalf("HEAD:%s reads as %v and it is meant to be errMissing. Either "+
+			"that file now exists — rename it in this test — or a complete "+
+			"one-line response is being read as something else.", absent, err)
+	}
+	if blobs.cmd.Process.Pid != was {
+		t.Errorf("a missing object cost a git process: the batch was %d and is "+
+			"now %d.\n\nA `missing` line is a COMPLETE response, so the stream "+
+			"is still usable and there is nothing to recover from. Retiring "+
+			"here would pay a process per absent object.",
+			was, blobs.cmd.Process.Pid)
+	}
+
+	// And now the shape that is not recoverable.
+	if err := blobs.cmd.Process.Kill(); err != nil {
+		t.Skipf("this batch process cannot be killed, so the state below "+
+			"cannot be reached: %v", err)
+	}
+	if _, err := blob("HEAD", real); !errors.Is(err, errDesync) {
+		t.Fatalf("reading from a batch whose process has been killed reads as "+
+			"%v, and it is meant to carry errDesync.\n\nThat is what marks the "+
+			"reader dead: a pipe that ended mid-stream leaves the position "+
+			"unknown, and every response after it would belong to some other "+
+			"request.", err)
+	}
+	if blobs.dead == nil {
+		t.Fatalf("the batch answered with a desynchronising error and was not " +
+			"marked dead, so the next fetch would read one more byte out of a " +
+			"stream whose position is a guess.")
+	}
+
+	// The recovery, which is the point: the caller after the failure gets its
+	// own file out of a process that is not the broken one.
+	got, err := blob("HEAD", real)
+	if err != nil {
+		t.Fatalf("after a killed batch, HEAD:%s could not be read: %v\n\nA dead "+
+			"reader is meant to be retired and replaced, which costs one git "+
+			"process and recovers the run.", real, err)
+	}
+	if got != want {
+		t.Errorf("after a killed batch, HEAD:%s reads as %d byte(s) against the "+
+			"%d it read before; first difference at byte %d.", real, len(got),
+			len(want), firstDiff(got, want))
+	}
+	if blobs.cmd.Process.Pid == was {
+		t.Errorf("the batch is still process %d, which was killed. Whatever "+
+			"answered the fetch above did not come from it.", was)
+	}
+}
+
+// Every place a collision can sit is told apart.
+//
+// # Why the placement needed a table
+//
+// themeleaves.Of records a bare name it parsed more than once WHEREVER the
+// declarations were, and both readers of that record — the command's stderr
+// line and reportNested's sentence — described every one of them as "declared
+// both in core/ and below it". That is the union probe's case. It is the case
+// this repository would actually meet, which is exactly why the other three
+// went unnoticed: nothing here has ever produced one, so nothing has ever read
+// the sentence and found it describing the wrong directory.
+//
+// A reader who meets this message is reading it because a population moved and
+// they want to know which declaration answered. The sentence is how they
+// decide where to look, and a sentence that names the wrong place is worse
+// than one that names none.
+//
+// # What is asserted, and what is not
+//
+// Which SHAPE each row is recognised as — the distinguishing phrase — plus the
+// two facts every row must carry: the paths, and the winner named last. Not
+// the whole wording, which would fail on any rephrasing and would be asserting
+// that nobody had edited a paragraph.
+func TestEveryPlaceACollisionCanSitIsToldApart(t *testing.T) {
+	for _, c := range []struct {
+		what  string
+		files []string
+		// The phrase that distinguishes this shape from the other four.
+		says string
+		why  string
+	}{
+		{
+			what:  "the top level and below it",
+			files: []string{themePkg + "/theme.go", themePkg + "/zsub/extra.go"},
+			says:  "both directly in " + themePkg + "/ and below it",
+			why: "two packages, on purpose: this is the union probe, which " +
+				"hands Of the top level AND a subdirectory to find out whether " +
+				"the files leavesAt declines move the population",
+		},
+		{
+			what:  "two directories below the top level",
+			files: []string{themePkg + "/a/x.go", themePkg + "/b/x.go"},
+			says:  "2 different directories below " + themePkg + "/",
+			why: "two packages, neither of them " + themePkg + "/. Nothing " +
+				"here reads both today, and the old sentence would have sent a " +
+				"reader to the top level to look for a declaration that is not " +
+				"there",
+		},
+		{
+			what:  "twice in the top level",
+			files: []string{themePkg + "/a.go", themePkg + "/b.go"},
+			says:  "directly in " + themePkg + "/, which is one package",
+			why: "ONE package declaring one name twice. It does not compile — " +
+				"and this walk parses every commit that touched " + themePkg +
+				"/, including ones caught mid-refactor, which is the whole " +
+				"reason a revision that would not build is reported rather " +
+				"than dropped",
+		},
+		{
+			what:  "twice in one directory below the top level",
+			files: []string{themePkg + "/sub/a.go", themePkg + "/sub/b.go"},
+			says:  "in " + themePkg + "/sub, which is one package below",
+			why: "the same state one directory down, and the reason the " +
+				"top-level arm cannot simply be \"is it core/ or not\"",
+		},
+		{
+			what:  "twice in one file",
+			files: []string{themePkg + "/theme.go", themePkg + "/theme.go"},
+			says:  "in ONE file",
+			why: "go/parser reads a file that declares a name twice and the " +
+				"compiler does not accept it. This is why Shadow.Files is " +
+				"recorded as parsed rather than deduplicated: collapsing it " +
+				"would make this row print as the one above",
+		},
+	} {
+		t.Run(c.what, func(t *testing.T) {
+			got := shadowKind(themeleaves.Shadow{Name: "SpacingScale",
+				Files: c.files})
+			if !strings.Contains(got, c.says) {
+				t.Errorf("a name declared in %s reads as:\n\n  %s\n\nand it is "+
+					"%s, which no phrase in that sentence says (%q).\n\n%s\n\n"+
+					"A reader meets this message because a population moved "+
+					"and they want the declaration the expansion was taken "+
+					"over. The sentence is how they decide where to look.",
+					nameList(c.files), got, c.what, c.says, c.why)
+			}
+			// And the two facts every shape carries, whatever it is called.
+			// The winner last is what Shadow.Files is ordered for, and a
+			// message that named the paths in any other order would be
+			// pointing at the declaration that did NOT answer.
+			for _, p := range c.files {
+				if !strings.Contains(got, p) {
+					t.Errorf("%q declared it and the sentence does not name "+
+						"that file:\n\n  %s", p, got)
+				}
+			}
+			last := c.files[len(c.files)-1]
+			if i := strings.LastIndex(got, last); i < 0 ||
+				strings.Contains(got[:i], "answered") {
+				t.Errorf("the sentence for %s does not end its list with %q, "+
+					"which is the declaration that answered:\n\n  %s\n\n"+
+					"themeleaves.Of sorts its paths and a later declaration "+
+					"overwrites an earlier one, so the LAST path is the one "+
+					"the expansion was taken over. Any other order points at "+
+					"the declaration that lost.", c.what, last, got)
+			}
+		})
 	}
 }

@@ -83,6 +83,7 @@ package main
 import (
 	"bufio"
 	"bytes"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -192,12 +193,10 @@ func run() error {
 		// Empty at all 88 revisions of this repository, so this prints nothing
 		// today and the table is unchanged by its existence.
 		for _, sh := range rev.Shadowed {
-			fmt.Fprintf(os.Stderr, "themehistory: %s: %s is declared %d time(s) "+
-				"under %s/ (%s) and themeleaves resolved it to the last of them "+
-				"by path order — any field of that type in this revision's "+
-				"expansion is the reading of ONE of the declarations\n",
-				sha[:8], sh.Name, len(sh.Files), themePkg,
-				strings.Join(sh.Files, ", "))
+			fmt.Fprintf(os.Stderr, "themehistory: %s: %s is %s and themeleaves "+
+				"resolved it to the last of them by path order — any field of "+
+				"that type in this revision's expansion is the reading of ONE "+
+				"of the declarations\n", sha[:8], sh.Name, shadowKind(sh))
 		}
 		if !rev.Found {
 			fmt.Fprintf(os.Stderr, "themehistory: %s: %s/ declares no %s at this "+
@@ -356,7 +355,7 @@ type revision struct {
 // would be paths it could not name. -r is how they are SEEN; revision.nested
 // is where they go.
 func leavesAt(sha string) (revision, error) {
-	files, err := git("ls-tree", "-r", "--name-only", sha, "--", themePkg)
+	files, err := treePaths(sha)
 	if err != nil {
 		return revision{}, err
 	}
@@ -364,7 +363,7 @@ func leavesAt(sha string) (revision, error) {
 	sources := map[string]string{}
 	// git speaks slash-separated, repository-relative paths on every platform,
 	// so `path` and not `path/filepath`: these are not paths on this machine.
-	for _, p := range strings.Split(strings.TrimSpace(files), "\n") {
+	for _, p := range files {
 		if !strings.HasSuffix(p, ".go") || strings.HasSuffix(p, "_test.go") {
 			continue
 		}
@@ -385,6 +384,150 @@ func leavesAt(sha string) (revision, error) {
 	}
 	rev.Expansion = themeleaves.Of(sources, themeType)
 	return rev, nil
+}
+
+// shadowKind is where one collision's declarations sit, as a phrase that
+// completes "<Name> is …".
+//
+// # Why the placement is part of the finding
+//
+// themeleaves.Of records any bare name it parsed more than once, wherever the
+// declarations were, and the two readers of that record used to describe it
+// with one sentence: "declared both in core/ and below it". That is the union
+// probe's case — main_test.go hands Of the top level of core/ AND a
+// subdirectory on purpose — and it is only one of the shapes the record can
+// hold. Two subdirectories declaring one name, or two files in one directory,
+// would have printed the same sentence about the wrong thing, and a reader
+// chasing a moved population would have gone looking in the wrong place.
+//
+//	core/theme.go + core/zsub/x.go   two packages. The union probe's case, and
+//	                                 the one the rule exists to prevent
+//	core/a/x.go   + core/b/x.go      two packages, neither of them core/.
+//	                                 Nothing in this repository reads both
+//	core/x.go     + core/y.go        ONE package declaring a name twice. Does
+//	                                 not compile; reachable at a revision
+//	                                 caught mid-refactor, which this walk parses
+//	core/x.go     + core/x.go        one FILE declaring it twice. go/parser
+//	                                 reads it; the compiler does not accept it
+//
+// The last two are why Shadow.Files is recorded as parsed rather than
+// deduplicated: a path listed twice is a fact about the file, and collapsing
+// it would make the two bottom rows print identically.
+//
+// Every phrase ends by naming the paths with the winner last, because a reader
+// with a moved population wants the declaration the expansion was taken over
+// and Files is ordered for exactly that.
+func shadowKind(sh themeleaves.Shadow) string {
+	where := fmt.Sprintf(" (declared in %s; the last of those is the one that "+
+		"answered)", strings.Join(sh.Files, ", "))
+
+	// One file listed more than once is the narrowest case and has to be
+	// tested before any question about directories: every path is the same, so
+	// every directory is too, and the directory-based arms below would call it
+	// "twice in one directory" and lose the sharper fact.
+	same := true
+	for _, p := range sh.Files {
+		if p != sh.Files[0] {
+			same = false
+			break
+		}
+	}
+	if same {
+		return fmt.Sprintf("declared %d time(s) in ONE file%s", len(sh.Files),
+			where)
+	}
+
+	// Otherwise the shape is a question about the directories, and the two
+	// that matter are "is the top level one of them" and "how many are there".
+	dirs := map[string]bool{}
+	atTop := false
+	for _, p := range sh.Files {
+		d := path.Dir(p)
+		dirs[d] = true
+		if d == themePkg {
+			atTop = true
+		}
+	}
+	switch {
+	case atTop && len(dirs) > 1:
+		return fmt.Sprintf("declared both directly in %s/ and below it%s",
+			themePkg, where)
+	case atTop:
+		return fmt.Sprintf("declared %d time(s) directly in %s/, which is one "+
+			"package declaring one name twice%s", len(sh.Files), themePkg, where)
+	case len(dirs) == 1:
+		var only string
+		for d := range dirs {
+			only = d
+		}
+		return fmt.Sprintf("declared %d time(s) in %s, which is one package "+
+			"below %s/ declaring one name twice%s", len(sh.Files), only,
+			themePkg, where)
+	default:
+		return fmt.Sprintf("declared in %d different directories below %s/, "+
+			"none of them %s/ itself%s", len(dirs), themePkg, themePkg, where)
+	}
+}
+
+// treePaths is every path git tracks under themePkg at one revision, as git
+// actually spells it on disk.
+//
+// # Why -z, which is the whole reason this is a function
+//
+// `ls-tree --name-only` C-QUOTES a path it cannot write literally: a name
+// holding a quote, a backslash, a control byte or any byte outside ASCII comes
+// back wrapped in double quotes with the offending bytes escaped, and the
+// quotes are part of the line rather than around it.
+//
+//	on disk           core/a<LF>b.go    core/q"x.go      core/ä.go
+//	--name-only       "core/a\nb.go"    "core/q\"x.go"   "core/\303\244.go"
+//	--name-only -z    core/a<LF>b.go    core/q"x.go      core/ä.go
+//
+// Each of those quoted spellings then travels as if it were a path, and both
+// ways it can go are wrong:
+//
+//	the suffix test   the name now ends `.go"` and not `.go`, so the file is
+//	                  DROPPED and the revision's population is silently short
+//	                  by whatever it declared
+//	the fetch         a name that survives the suffix test is handed to
+//	                  `cat-file` as `<rev>:"core/…"`, which git does not
+//	                  resolve — the walk stops with an error naming a path
+//	                  nothing on disk is called
+//
+// The newline case is the one that shows how far the quoting reaches. blob
+// sends a path holding a real newline to a `cat-file -p` of its own, because
+// the batch protocol is newline-terminated — and `"core/a\nb.go"` holds a
+// backslash and an `n` rather than a newline, so that guard never sees it and
+// the request goes down the batch as an object name git cannot resolve. The
+// guard is not wrong; it was being handed a spelling with nothing left in it to
+// guard against. With -z the path arrives as git holds it and the two halves
+// agree about what a path is.
+//
+// -z is git's answer: NUL-terminated records and no quoting at all, on every
+// version of git this repository has ever been read with. main_test.go already
+// argues exactly this for `git status --porcelain -z` — and that argument
+// stopped at the one command, while the other two readings of a path in this
+// package kept the default. The quoting RULES are not even the same: `status`
+// quotes a path holding a space (the space is its field separator) and
+// `ls-tree --name-only` does not, so a file called `core/a b.go` comes back
+// quoted from one and bare from the other, and a comparison between them is
+// between two spellings of one path.
+//
+// A NUL is the one byte a path cannot contain, so a record is a path and the
+// split cannot be wrong. The trailing NUL after the last record is trimmed
+// rather than yielding an empty final element, and an empty listing — a
+// revision with nothing under themePkg — yields no paths rather than one empty
+// one.
+func treePaths(sha string) ([]string, error) {
+	out, err := git("ls-tree", "-r", "-z", "--name-only", sha, "--", themePkg)
+	if err != nil {
+		return nil, err
+	}
+	out = strings.TrimSuffix(out, "\x00")
+	if out == "" {
+		return nil, nil
+	}
+	return strings.Split(out, "\x00"), nil
 }
 
 // leafSet is an expansion as the diff below reads it.
@@ -454,19 +597,64 @@ func wrap(names []string, width int, indent string) string {
 // # And one shape that goes back to a process of its own
 //
 // The request is newline-terminated, so a path containing a newline cannot be
-// asked for this way. Nothing in this repository has one and git will happily
-// track one, so it falls back to a `cat-file -p` of its own rather than
-// silently asking for a different object: the file-set arm in main_test.go is
-// specifically about paths that need quoting, and answering it with the wrong
-// blob is the one failure that would read as a filter having drifted.
+// asked for this way — and asking anyway is not a failed request but a
+// DESYNCHRONISED stream. git reads the newline as the end of one name and the
+// rest as the start of another, so one request gets two responses:
+//
+//	written:  HEAD:core/a<LF>b.go<LF>
+//	read:     HEAD:core/a missing<LF>
+//	          b.go missing<LF>       ← nobody asked, nobody reads it
+//
+// The second line then answers the NEXT request, and every response after it
+// belongs to the request before it. So such a path gets a `cat-file -p` of its
+// own, which takes its object name from argv where a newline is an ordinary
+// byte. Nothing in this repository has one; git will track one; and since
+// treePaths asks for -z, a path that has one now arrives here intact instead of
+// as `"core/a\nb.go"`, which is what this guard was previously being handed and
+// could not see. See TestAPathWithANewlineInItGoesRoundTheBatch.
+//
+// # And why the reader can be replaced, when nothing has ever replaced it
+//
+// Two things make the one long-lived process a state that can go bad and stay
+// bad, and both of them are cheap to fix once fixing them is possible at all:
+//
+//	a desynchronised   every error but `missing` leaves the stream at an offset
+//	stream             nobody knows. Carrying on means reading a body as a
+//	                   header and a header as a body, for the rest of the run.
+//	a moved cwd        the process resolves `<rev>:<path>` from the top of the
+//	                   repository, so only repository DISCOVERY depends on its
+//	                   working directory — but discovery is what decides WHICH
+//	                   repository, and this process's directory was fixed at the
+//	                   moment it started. A test that t.Chdir's into a throwaway
+//	                   clone and fetches would be answered out of the one it was
+//	                   born in, and `missing` is the kindest way that ends.
+//
+// Neither is recovered from by cleverness: the reader is RETIRED and the next
+// call starts a fresh one. A process is what the batch was bought to save
+// thousands of, and paying one back to leave a known-bad state is the trade
+// this whole file already makes for correctness over count.
 func blob(rev, path string) (string, error) {
 	if strings.ContainsAny(path, "\n") {
 		return git("cat-file", "-p", rev+":"+path)
 	}
+	// Read before the lock rather than inside newBatchReader, so the check
+	// below and the process's own Dir are the same string. One getcwd per
+	// fetch is a syscall against a pipe round trip; at the ~4400 fetches a
+	// whole run takes it is not measurable.
+	wd, err := os.Getwd()
+	if err != nil {
+		return "", fmt.Errorf("git cat-file --batch: the working directory "+
+			"cannot be read, so there is no way to tell which repository a "+
+			"running batch would answer out of: %w", err)
+	}
 	blobsMu.Lock()
 	defer blobsMu.Unlock()
+	if blobs != nil && (blobs.dead != nil || blobs.dir != wd) {
+		blobs.retire()
+		blobs = nil
+	}
 	if blobs == nil {
-		b, err := newBatchReader()
+		b, err := newBatchReader(wd)
 		if err != nil {
 			return "", err
 		}
@@ -479,9 +667,10 @@ func blob(rev, path string) (string, error) {
 //
 // Lazy because a program that never reads a blob — `themehistory` cannot be
 // one, but a test binary that only runs the unit tests can be — should not
-// start a git process to find that out. Not closed: it lives for the run and
-// the pipe closing on exit is what ends it, which is the same lifetime the
-// per-file processes had in aggregate.
+// start a git process to find that out. Retired and replaced rather than
+// closed at the end: nothing here knows when the last fetch was, so what ends
+// the surviving process is this one exiting and the pipe closing with it,
+// which is the same lifetime the per-file processes had in aggregate.
 //
 // The mutex is not for this program, which is single-threaded. It is for the
 // tests, which share this package and could be given a t.Parallel() at any
@@ -492,19 +681,55 @@ var (
 	blobsMu sync.Mutex
 )
 
+// errMissing is git's `<name> missing` — a complete one-line response, and the
+// one error that leaves the stream where the next request can use it.
+//
+// A sentinel rather than a string, because the difference between this and
+// every other error is not cosmetic: this one costs a caller its file and the
+// next caller nothing, and every other one costs the reader.
+var errMissing = errors.New("no such object at that revision")
+
+// errDesync is any response the reader could not consume WHOLE.
+//
+// A header that is not three fields, a size that will not parse, a body that
+// ends early, a pipe that closed, a request that could not be written — after
+// any of them the stream is at an offset nobody knows, and the next response
+// read out of it would be some part of this one. Every error carrying this is
+// a reason to retire the process rather than a reason to stop the run: see
+// blob, which does exactly that.
+var errDesync = errors.New("the batch stream is at an unknown offset")
+
 // batchReader is a running `git cat-file --batch` and the two ends of its
 // pipes.
 type batchReader struct {
 	cmd *exec.Cmd
 	in  io.WriteCloser
+	// The raw stdout, kept alongside the buffered one so retire can drain it:
+	// Wait may not be called while a read is outstanding, and a git holding
+	// bytes nobody has taken would block writing them.
+	pipe io.ReadCloser
 	// Buffered because the body is read by count immediately after a header
 	// read that stops at a newline: an unbuffered read would need the header
 	// consumed one byte at a time to avoid swallowing the object behind it.
 	out *bufio.Reader
+	// The working directory this process was started in, which is the
+	// directory git discovered its repository from. Compared on every fetch —
+	// see blob — because a caller that has moved is asking a different
+	// question and this process cannot hear it.
+	dir string
+	// Why this reader is finished, or nil. Set by read on any error but
+	// errMissing; once set, nothing is ever read out of this reader again.
+	dead error
 }
 
-func newBatchReader() (*batchReader, error) {
+func newBatchReader(dir string) (*batchReader, error) {
 	cmd := exec.Command("git", "cat-file", "--batch")
+	// Stated rather than inherited. exec would use this process's working
+	// directory anyway, and that is the point: the directory this process
+	// resolves a repository from is now a field somebody can compare, rather
+	// than whatever the caller's cwd happened to be at the moment of the first
+	// fetch in the run.
+	cmd.Dir = dir
 	in, err := cmd.StdinPipe()
 	if err != nil {
 		return nil, fmt.Errorf("git cat-file --batch: stdin: %w", err)
@@ -520,7 +745,27 @@ func newBatchReader() (*batchReader, error) {
 	if err := cmd.Start(); err != nil {
 		return nil, fmt.Errorf("git cat-file --batch: %w", err)
 	}
-	return &batchReader{cmd: cmd, in: in, out: bufio.NewReader(out)}, nil
+	return &batchReader{cmd: cmd, in: in, pipe: out, out: bufio.NewReader(out),
+		dir: dir}, nil
+}
+
+// retire ends this reader's process and waits for it.
+//
+// `git cat-file --batch` reads requests until its stdin reaches EOF and then
+// exits, so closing the write end is the whole shutdown; there is nothing to
+// signal and nothing to kill. What has to happen before Wait is the DRAIN:
+// this is called on a reader whose stream may hold bytes nobody took — the
+// second half of a desynchronising response, or a whole response for a request
+// whose caller gave up — and a git blocked writing into a full pipe would
+// never see the EOF.
+//
+// Errors are dropped on purpose. Every caller is already on its way to
+// starting a fresh reader, and there is no answer this could give that would
+// change that.
+func (b *batchReader) retire() {
+	b.in.Close()
+	io.Copy(io.Discard, b.pipe)
+	b.cmd.Wait()
 }
 
 // read is one request and its response.
@@ -536,44 +781,84 @@ func newBatchReader() (*batchReader, error) {
 // walk that would parse them without complaint.
 //
 // Every other error here — a header that is not three fields, a body that ends
-// early, a pipe that closed — leaves the stream at an unknown offset and this
-// reader is not usable again. Nothing tries to recover: the callers all treat
-// a fetch failure as fatal to the reading, and a walk that carried on would be
-// producing a table out of whatever bytes came next.
+// early, a pipe that closed — leaves the stream at an unknown offset, and the
+// error carries errDesync to say so. This reader is finished at that point:
+// `dead` is set, and blob retires the process and starts another rather than
+// reading one more byte out of a stream whose position is a guess.
+//
+// Recovering costs a process, which is the thing the batch exists to save
+// thousands of — and it is still the right trade, because the alternative is
+// not a slower run but a wrong one. Nothing has ever produced such a response;
+// the point is that if one arrives, what follows it is a fresh git rather than
+// a table assembled out of misaligned bytes.
 func (b *batchReader) read(rev, path string) (string, error) {
 	name := rev + ":" + path
 	if _, err := io.WriteString(b.in, name+"\n"); err != nil {
-		return "", fmt.Errorf("git cat-file --batch: asking for %s: %w", name, err)
+		// The request may have been written in part. Whether git saw a whole
+		// name, half of one, or nothing at all is not knowable from here, so
+		// what the stream holds next is not knowable either.
+		b.dead = fmt.Errorf("git cat-file --batch: asking for %s: %w: %w",
+			name, err, errDesync)
+		return "", b.dead
 	}
-	header, err := b.out.ReadString('\n')
+	src, err := readResponse(b.out, name)
+	if err != nil && !errors.Is(err, errMissing) {
+		b.dead = err
+	}
+	return src, err
+}
+
+// readResponse is one `git cat-file --batch` response, taken off a stream.
+//
+// A function of a reader rather than a method, because everything that can go
+// wrong here is a property of the BYTES and not of the process behind them:
+// held this way the four failure shapes are a table over hand-built streams
+// (see TestEveryBatchResponseShapeIsToldApart) rather than four states of a
+// git nobody can make misbehave on purpose.
+//
+// name is carried only for the messages; the protocol does not echo it back
+// except in the `missing` line, and a reader that matched on that echo would
+// be trusting the stream to tell it where it is.
+func readResponse(r *bufio.Reader, name string) (string, error) {
+	header, err := r.ReadString('\n')
 	if err != nil {
 		return "", fmt.Errorf("git cat-file --batch: reading the header for "+
-			"%s: %w", name, err)
+			"%s: %w: %w", name, err, errDesync)
 	}
+	line := strings.TrimSuffix(header, "\n")
 	// "<oid> <type> <size>" — or "<name> missing", which is git's answer for
 	// an object it cannot resolve and is not an error on the pipe. It is an
 	// error HERE: every path this is asked for was named by `ls-tree` at the
 	// same revision in this same run.
-	fields := strings.Fields(strings.TrimSuffix(header, "\n"))
+	fields := strings.Fields(line)
+	if len(fields) == 2 && fields[1] == "missing" {
+		return "", fmt.Errorf("git cat-file --batch: %s: %w", name, errMissing)
+	}
+	// Anything else that is not a header. git has other complete one-line
+	// answers — `ambiguous` for a short oid that matches two objects — and
+	// they are treated as desynchronising rather than recognised: being wrong
+	// in this direction costs one process and being wrong in the other costs
+	// every response after it. That trade only became affordable once a dead
+	// reader could be replaced.
 	if len(fields) != 3 {
-		return "", fmt.Errorf("git cat-file --batch: %s: %q", name,
-			strings.TrimSuffix(header, "\n"))
+		return "", fmt.Errorf("git cat-file --batch: %s: %q: %w", name, line,
+			errDesync)
 	}
 	size, err := strconv.Atoi(fields[2])
 	if err != nil {
 		return "", fmt.Errorf("git cat-file --batch: %s: unreadable size in "+
-			"%q: %w", name, strings.TrimSuffix(header, "\n"), err)
+			"%q: %w: %w", name, line, err, errDesync)
 	}
 	body := make([]byte, size)
-	if _, err := io.ReadFull(b.out, body); err != nil {
-		return "", fmt.Errorf("git cat-file --batch: %s: reading %d byte(s): %w",
-			name, size, err)
+	if _, err := io.ReadFull(r, body); err != nil {
+		return "", fmt.Errorf("git cat-file --batch: %s: reading %d byte(s): "+
+			"%w: %w", name, size, err, errDesync)
 	}
 	// The terminator, which is not counted in size. Left unread it would be
 	// the first byte of the next response's header.
-	if _, err := b.out.ReadByte(); err != nil {
+	if _, err := r.ReadByte(); err != nil {
 		return "", fmt.Errorf("git cat-file --batch: %s: reading the byte after "+
-			"the object: %w", name, err)
+			"the object: %w: %w", name, err, errDesync)
 	}
 	return string(body), nil
 }

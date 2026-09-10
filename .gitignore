@@ -30,6 +30,14 @@ materialwallet.html
 # Local scratch: agent/tool state that is per-checkout, not per-project.
 .cats-todo/
 
+# Claude Code. .claude/ itself IS tracked — .claude/commands/ holds this
+# repository's own slash commands, which are as much a part of how it is worked
+# on as build.sh is. What is not tracked is the settings a person accumulates
+# in their own checkout: settings.local.json is where permission grants land as
+# they are approved, so it differs per machine and per person and would
+# conflict on every pull.
+.claude/settings.local.json
+
 # Editor and OS
 .DS_Store
 .idea/
