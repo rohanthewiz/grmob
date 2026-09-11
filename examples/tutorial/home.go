@@ -15,20 +15,39 @@ import (
 func (t *tutorial) Home(ctx *core.Context) core.View {
 	opened, total := t.progress()
 
+	// The page is a core.List, not a Column inside Screen.Scroll, and the
+	// reason is a measurement: a cold launch of this app reached its first
+	// frame in 7.4s as a scrolled Column and in 1.7s as a List. SwiftUI (and
+	// Compose) build a view per node for a Scroll's whole content, so a
+	// contents screen of 49 two-line rows paid for all 49 before it could
+	// draw the four that fit; a List materializes the rows on screen. See
+	// LiveMapUITests for the readings and for what else was in that number.
+	//
+	// This is also what the tutorial teaches one lesson over ("Use Scroll for
+	// short content and core.List for long data-driven collections"), applied
+	// to itself: 49 rows is not short content.
+	page := []core.PropsAndChildren{
+		core.Gap(16), core.FlexGrow(1),
+		core.Keyed("title", core.Column(
+			core.Gap(4),
+			titleText("GrMob Interactive Tutorial"),
+			caption("Learn GrMob inside GrMob — every lesson is a live screen you can poke at."),
+		)),
+		core.Keyed("progress", progressCard(opened, total)),
+	}
+	page = append(page, asAny(t.chapterCardViews(ctx))...)
+
 	return components.Screen{
-		// The whole page scrolls and nothing inside it does, which is
-		// exactly the case Screen.Scroll exists for.
-		Scroll: true,
-		Gap:    16,
-		Children: []core.View{
-			core.Column(
-				core.Gap(4),
-				titleText("GrMob Interactive Tutorial"),
-				caption("Learn GrMob inside GrMob — every lesson is a live screen you can poke at."),
-			),
-			progressCard(opened, total),
-			t.chapterCards(ctx),
-		},
+		Fill: true,
+		// The scaffold's column is a safe-area frame here and nothing else:
+		// its padding is zeroed so the page is inset once rather than twice.
+		// core.List carries the theme's own container base (12/16, the same
+		// one the Column inside Screen.Scroll used to carry), so zeroing the
+		// outer one leaves the page exactly where it was — where leaving both
+		// shifts every child 16 points inward of where the scrolled version
+		// drew it.
+		Style:    []core.StyleProp{core.Padding(0)},
+		Children: []core.View{core.List(page...)},
 	}
 }
 
@@ -55,11 +74,17 @@ func progressCard(opened, total int) core.View {
 	)
 }
 
-// chapterCards renders the curriculum. Chapter grouping is re-derived from
-// each entry's ChapterNum while walking the flat index once — the flat index
-// is the source of truth for order and IDs, and home just folds it back into
-// sections.
-func (t *tutorial) chapterCards(ctx *core.Context) core.View {
+// chapterCardViews renders the curriculum, one Card per chapter. Chapter
+// grouping is re-derived from each entry's ChapterNum while walking the flat
+// index once — the flat index is the source of truth for order and IDs, and
+// home just folds it back into sections.
+//
+// A slice rather than one Column, because the cards are children of Home's
+// core.List and that is where the laziness lives: a Column of cards inside the
+// List would be one child, and one child is either materialized whole or not
+// at all. Keyed for the same reason every List child is — the lazy containers
+// on both natives keep row state attached to the key across changes.
+func (t *tutorial) chapterCardViews(ctx *core.Context) []core.View {
 	var cards []core.View
 	var rows []core.PropsAndChildren
 	flush := func(ci int) {
@@ -87,8 +112,10 @@ func (t *tutorial) chapterCards(ctx *core.Context) core.View {
 	}
 	flush(current)
 
-	items := append([]core.PropsAndChildren{core.Gap(16)}, asAny(cards)...)
-	return core.Column(items...)
+	for i, c := range cards {
+		cards[i] = core.Keyed(fmt.Sprintf("chapter-%d", i), c)
+	}
+	return cards
 }
 
 // lessonRow is one tappable line of the contents. The row is keyed by lesson
