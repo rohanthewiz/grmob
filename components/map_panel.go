@@ -185,9 +185,16 @@ const (
 // The thing that makes it a fix rather than a trade is that the answer does
 // not change for any set that does not straddle. For those, the widest gap IS
 // the one that wraps from the easternmost point back round to the westernmost,
-// so its complement runs from min to max and the centre is (min+max)/2 — the
-// average this used to compute, arrived at by the general rule. Nothing that
-// worked before moves.
+// so its complement runs from min to max and the centre is the same place the
+// average used to give, arrived at by the general rule.
+//
+// The same *place*, not the same float. The old path added two longitudes and
+// halved; this one adds half a width to an endpoint, which is one subtraction
+// fewer and cancels less. A real set of pins in Austin moved from
+// -97.75800000000001 to -97.758 — fourteen significant figures of agreement,
+// a few nanometres of ground, and a re-recorded snapshot. Worth saying plainly
+// because "nothing moves" is what this paragraph wanted to claim and is not
+// quite what is true.
 //
 // The centre it returns is the middle of that arc, which is the contract a
 // *fit* wants. A circular mean — the direction of the summed unit vectors —
