@@ -391,8 +391,10 @@ var themehistoryTimingsTakenOn = struct {
 	goarch:    "arm64",
 	goVersion: "go1.26.1",
 	cores:     8,
-	wholePackage: "2.92–3.22s over fifty-seven runs in three sessions, and " +
-		"3.69–3.82s on a single core",
+	wholePackage: "2.86–3.22s over sixty-three runs in three sessions, and " +
+		"3.69–3.82s on a single core. The floor was widened at the end of " +
+		"the session that found both packages read faster the longer a " +
+		"session runs — see wasm/verify's wholeFileInProcess",
 	wholeRun: "1.40–1.67s over twenty-three runs of the whole package in " +
 		"two sessions, in process, 2955 objects fetched, the expectation " +
 		"enumerated alongside in 0.22s over 8 workers",

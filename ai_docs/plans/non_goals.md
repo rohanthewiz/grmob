@@ -373,3 +373,51 @@ had drifted from — or the second and third shapes above becoming records
 proper, at which point "inside a declaration" is a span again and the rule is
 one function. The residue to re-read by hand is ten figures and the scan is
 sixty lines.
+
+---
+
+## The timings records do not carry their bands as durations
+
+*Raised: 2026-09-11 · Moved here: 2026-09-11 · Code:
+`wasm/verify/wholefileband_test.go` and `internal/themehistory/band_test.go`,
+which hold the two copies of the parser this would have removed*
+
+**What was proposed.** Both records write each figure as prose opening with a
+range — `"2.65–2.78s over sixteen runs, the clock TestMain puts around
+m.Run()"` — and two packages parse that prefix back out with the same
+25-line function, duplicated. The proposal was to hold `lo` and `hi` as
+`time.Duration` and render the prose from them: nothing to parse, no regexp,
+no "the field must open with the range" fragility, and, it was claimed, no
+copy.
+
+**The copy does not go away, which is the whole of it.** These are two
+separate `package main` programs and neither can import the other's tests.
+That is why the parser is duplicated, and a renderer would be duplicated for
+exactly the same reason and at about the same size. The duplicated surface
+goes from roughly 30 lines to roughly 25. Nothing is solved that holding the
+two copies identical does not solve better, which is what was done instead —
+`recordedBand` and `recordedBandForm` are in `twoCopyFunctionShapes` and
+`twoCopyStateShapes`, and the shared parse now fails if they diverge.
+
+**And the rendering costs more than the parsing.** Measured over the ten
+figure fields in the two records:
+
+    3 fields    a bare range — "0.08–0.10s"
+    5 fields    a range then a note
+    2 fields    a range, a note, and MORE ranges inside the note:
+                perObjectRun carries three further bands and a ratio range,
+                wholePackage carries a second band for a single core
+
+A renderer has to reproduce each field's chosen unit and precision exactly,
+because the record writes `0.08–0.10s` and `0.18–0.29ms` and
+`time.Duration.String()` renders those as `80ms` and `290µs`. So the struct
+needs the unit and the decimal count beside the two durations — four pieces
+of data to express what the string `"0.08–0.10s"` already says exactly, and
+says more readably. The two fields with embedded ranges do not fit the shape
+at all without a second mechanism for the ranges inside the note.
+
+**What would change this.** A third package needing the same reader, which is
+the point at which two copies become the shape kept in step by whoever
+remembers to — the argument `twoCopyPackages` already makes for its own
+value. At three, a real shared package earns its keep and the durations come
+with it. At two, the census is the cheaper answer and it is in place.

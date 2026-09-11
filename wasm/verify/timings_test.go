@@ -184,9 +184,11 @@ var verifyTimingsTakenOn = struct {
 	// # And the readings the copies census grew, which is the same story again
 	//
 	// TestTheQuestionsOnTheSharedRepositoryParseAreTheOnesDecidedOn took on two
-	// more questions — the import-resolving helpers held identical across both
-	// packages, and every core-count read held to being named in its package's
-	// cores note — and both are read off declarations the walk had already
+	// more questions — the declarations kept in two copies held identical
+	// across both packages, which at the time were the import-resolving
+	// helpers alone, and every core-count read held to being named in its
+	// package's cores note — and both are read off declarations the walk had
+	// already
 	// built. Measured by taking them out and putting them back: 0.18s to
 	// 0.19s, which is the fourth parse walk costing a hundredth more than the
 	// three beside it.
@@ -363,6 +365,47 @@ var verifyTimingsTakenOn = struct {
 	// is cheaper than that: it costs a hundredth of a second of width and
 	// it removes a whole class of verdict that is about the sample rather
 	// than about the code.
+	//
+	// # And the reason outward rounding was not enough either
+	//
+	// The band was set at 2.65–2.78s from sixteen runs, and read 2.608s two
+	// hours later in the same session with nothing changed in between. Over
+	// that session this figure went from 2.767s at its widest down to
+	// 2.608s — about 6%, one direction, no code.
+	//
+	// Which is the third band re-taken in one evening, and at that point the
+	// re-taking is the finding. **A reading of this package falls over the
+	// course of a session.** The build cache and the file cache warm, the
+	// same binary is run for the tenth time, and a figure taken in one
+	// sitting is a figure about that sitting rather than about this code.
+	//
+	// So this range holds both ends of the session rather than the middle of
+	// it, and the count says as much — a band over thirty runs in one hour
+	// is worth less than a band over ten at three different times, and the
+	// method line is the only place a reader can tell those apart.
+	//
+	// The rule this settles, which every field here now follows: widen to
+	// hold what has been SEEN, then leave it alone until something is known
+	// to have changed. Chasing each reading down produces a band that is
+	// always correct about the last run and never correct about the next.
+	//
+	// # Which is why this floor is not the lowest reading either
+	//
+	// Outward rounding to two decimals is the right treatment for sampling
+	// noise and it is not enough for a systematic drift. A floor set at
+	// 2.60s — outward-rounded from a 2.608s low — reported UNDER within four
+	// runs, because the fall had not finished.
+	//
+	// So the floor carries a MARGIN, and the margin is measured rather than
+	// picked: the within-session fall was 160ms end to end, and the floor
+	// sits about a third of that under the lowest reading. That is the one
+	// number in this record that is not a reading, and it is here because
+	// the alternative is a verdict about the time of night.
+	//
+	// It widens the band to 230ms, which is real and is the cost of the
+	// drift being unexplained. A reader who works out what warms — the build
+	// cache, the file cache, the same binary run for the tenth time — can
+	// take the margin back out and say why.
 	wholeFileInProcess string
 	// TestHowWideTheNarrowerFoldIsAndWhatHoldsTheGap end to end, which is what
 	// inkglyph_test.go's `128ms` sits inside.
@@ -438,11 +481,15 @@ var verifyTimingsTakenOn = struct {
 	goarch:    "arm64",
 	goVersion: "go1.26.1",
 	cores:     8,
-	wholeFileInProcess: "2.65–2.78s over sixteen runs, the clock TestMain " +
-		"puts around m.Run()",
-	wholeFile: "2.84–2.97s over thirty-three runs in two sessions, the " +
-		"floor widened after the taking that set it read under its own " +
-		"figure nine times out of twelve",
+	wholeFileInProcess: "2.55–2.78s over thirty-four runs taken across one " +
+		"session, the clock TestMain puts around m.Run(). The floor carries " +
+		"a margin for the within-session fall rather than sitting on the " +
+		"lowest reading — see the comment",
+	wholeFile: "2.80–2.97s over forty runs in two sessions, the floor " +
+		"widened twice — once after the taking that set it read under its " +
+		"own figure nine times out of twelve, and again at the end of the " +
+		"session that found this package reads faster the longer a session " +
+		"runs. See wholeFileInProcess",
 	walkEnumerate: "0.08–0.10s",
 	walkRead:      "0.15–0.17s",
 	walkParse:     "0.20–0.24s",

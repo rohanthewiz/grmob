@@ -28,10 +28,12 @@ import (
 //	                      wasm/verify/timings_test.go and
 //	                      internal/themehistory/timings_test.go. See
 //	                      checkTimingsRecordCopies
-//	the import resolver   the functions every census resolves a qualifier
-//	                      with, and the package-level state they keep, in the
-//	                      importnames_test.go of both packages. See
-//	                      checkImportResolverCopies
+//	the two-copy shapes   every declaration this repository deliberately
+//	                      keeps two copies of — the functions each census
+//	                      resolves a qualifier with and the state they keep,
+//	                      and the band reader both timings records compare a
+//	                      reading against — held to being the same
+//	                      declaration in both packages. See checkTwoCopyDecls
 //	the paths it is asked the import paths those censuses name, held to being
 //	                      ones this module could actually import. See
 //	                      checkImportPathsAreImportable
@@ -154,7 +156,7 @@ func TestTheQuestionsOnTheSharedRepositoryParseAreTheOnesDecidedOn(t *testing.T)
 	// rather than in walks of their own because a fifth repository-wide parse
 	// is the decision repositoryParseBudget exists to force, and neither of
 	// these needs one.
-	var resolverDecls []importResolverDecl
+	var resolverDecls []twoCopyDecl
 	var asks []importPathAsk
 	var coreSites []coreCountSite
 	// Every sentence in the tree that quotes the tracked-Go-file count, and
@@ -233,10 +235,10 @@ func TestTheQuestionsOnTheSharedRepositoryParseAreTheOnesDecidedOn(t *testing.T)
 			continue
 		}
 		dir := path.Dir(rel)
-		// Which of the import-resolving shapes this file declares, and which
+		// Which of the two-copy shapes this file declares, and which
 		// import paths its censuses name. One walk over the declarations, two
-		// questions — see importResolverDeclarationsIn.
-		fileDecls, fileAsks := importResolverDeclarationsIn(fset, rel, file)
+		// questions — see twoCopyDeclarationsIn.
+		fileDecls, fileAsks := twoCopyDeclarationsIn(fset, rel, file)
 		resolverDecls = append(resolverDecls, fileDecls...)
 		asks = append(asks, fileAsks...)
 		// And every place this file reads the core count, which is what makes
@@ -347,8 +349,8 @@ func TestTheQuestionsOnTheSharedRepositoryParseAreTheOnesDecidedOn(t *testing.T)
 	// why this is t.Run and not six sections of one function: each of these
 	// ends in a t.Fatalf over a walk that reached nothing, and a Fatalf ends
 	// the goroutine it is on.
-	t.Run("the import-resolving helpers", func(t *testing.T) {
-		checkImportResolverCopies(t, resolverDecls)
+	t.Run("the declarations kept in two copies", func(t *testing.T) {
+		checkTwoCopyDecls(t, resolverDecls)
 	})
 	t.Run("the paths those helpers are asked about", func(t *testing.T) {
 		checkImportPathsAreImportable(t, root, asks)

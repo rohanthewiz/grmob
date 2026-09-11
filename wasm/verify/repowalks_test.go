@@ -898,7 +898,9 @@ var repositoryWalks = []repositoryWalkRow{{
 		"the `…TimingsTakenOn` records: whether each carries the five " +
 			"machine fields, a reporting arm, and a cores note that names " +
 			"every term in its package that scales and nothing that has gone",
-		"the import-resolving helpers and the registry they share, held to " +
+		"the declarations this repository keeps two copies of — the " +
+			"import-resolving helpers, the registry they share, and the " +
+			"band reader both timings records compare against — held to " +
 			"being the same declarations in both packages",
 		"every import path those helpers are asked about, held to being one " +
 			"this module could actually import",

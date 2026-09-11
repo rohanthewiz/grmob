@@ -94,14 +94,17 @@ import (
 // same reason the import-resolving helpers are two copies: these are two
 // separate `package main` programs and neither can import the other's tests.
 //
-// Nothing holds the two identical. checkImportResolverCopies is the
-// machinery for exactly that and its set is named for import resolution, so
-// adding an unrelated pair to it would give that census a name that had
-// stopped being true — which is a defect this repository has chased twice
-// already. The honest state is that this is an unheld copy, and the way out
-// is not a bigger census: it is for the records to carry their bands as
-// durations and render the prose, at which point there is nothing to parse
-// and no copy. That is written up in the session doc as the next item.
+// The two ARE held identical, by checkTwoCopyDecls — the same census that
+// holds the seven import-resolving helpers, and the reason that census is no
+// longer named for them. This function is in twoCopyFunctionShapes and the
+// pattern above is in twoCopyStateShapes; change one copy and the shared
+// repository parse fails, naming both files.
+//
+// The alternative considered and declined was for the records to carry their
+// bands as DURATIONS and render the prose, which would leave nothing to
+// parse. It does not remove the copy — two `package main` programs cannot
+// import each other's tests, so a renderer is duplicated exactly as a parser
+// is — and it costs more than it saves. See ai_docs/plans/non_goals.md.
 var recordedBandForm = regexp.MustCompile(
 	`^(\d+(?:\.\d+)?)–(\d+(?:\.\d+)?)(µs|ms|s)\b`)
 
@@ -124,6 +127,9 @@ func recordedBand(field string) (lo, hi time.Duration, ok bool) {
 		return time.Duration(f * float64(unit))
 	}
 	lo, hi = parse(m[1]), parse(m[2])
+	// A range written backwards is a typing error in the record rather than a
+	// reading of anything, and it would otherwise make every run "outside the
+	// band" with no clue as to why.
 	if lo <= 0 || hi <= 0 || hi < lo {
 		return 0, 0, false
 	}

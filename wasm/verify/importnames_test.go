@@ -471,7 +471,7 @@ func unquote(lit string) string {
 // So the unit is the SET. A package declaring some of these and not the others
 // is a copy being taken apart, which is a finding while the file is still in
 // front of somebody rather than after the two have answered differently.
-var importResolverShapes = []string{
+var twoCopyFunctionShapes = []string{
 	"packageBase",
 	"isMajorVersion",
 	"importedAs",
@@ -479,6 +479,14 @@ var importResolverShapes = []string{
 	"qualifiersFor",
 	"unquote",
 	"forgetDotImportsReported",
+	// Not an import-resolving helper, and the reason this set stopped being
+	// named for them. recordedBand reads a timings record's band back out of
+	// the prose the field opens with; both packages compare a reading
+	// against a band and neither can import the other's tests, so it is a
+	// second copy with the same standing as the seven above. See
+	// internal/themehistory/band_test.go and
+	// wasm/verify/wholefileband_test.go.
+	"recordedBand",
 }
 
 // The package-level STATE those functions keep, held to being the same
@@ -509,20 +517,27 @@ var importResolverShapes = []string{
 // rather than a guess about the name — and a `func dotImportsReported` added
 // by mistake is then a shape that is MISSING from its package rather than one
 // that quietly matched.
-var importResolverStateShapes = []string{
+var twoCopyStateShapes = []string{
 	"dotImportsReported",
+	// recordedBand's pattern. State for the same reason dotImportsReported
+	// is: the compiler insists both packages HAVE it, because the function
+	// beside it reads it, and has no opinion about whether the two spell the
+	// same range. A band reader that accepted a hyphen in one package and an
+	// en dash in the other would compile, pass, and silently stop comparing
+	// half the fields in one record.
+	"recordedBandForm",
 }
 
-// importResolverAllShapes is both lists, in the order a reader would read
+// allTwoCopyShapes is both lists, in the order a reader would read
 // them: the functions, then the state they keep.
 //
 // Built rather than written out a third time, because a shape named in two
 // places and not the third is precisely the drift these lists exist to catch,
 // arriving in the check itself.
-func importResolverAllShapes() []string {
-	all := make([]string, 0, len(importResolverShapes)+len(importResolverStateShapes))
-	all = append(all, importResolverShapes...)
-	all = append(all, importResolverStateShapes...)
+func allTwoCopyShapes() []string {
+	all := make([]string, 0, len(twoCopyFunctionShapes)+len(twoCopyStateShapes))
+	all = append(all, twoCopyFunctionShapes...)
+	all = append(all, twoCopyStateShapes...)
 	return all
 }
 
@@ -540,9 +555,9 @@ func importResolverAllShapes() []string {
 // to match. These are code, so the copies are held to being IDENTICAL, which
 // is the stronger thing and the cheaper one: there is nothing to decide about
 // whether a difference is meant.
-const importResolverCopies = 2
+const twoCopyPackages = 2
 
-// checkImportResolverCopies holds every copy of the shapes above to being the
+// checkTwoCopyDecls holds every copy of the shapes above to being the
 // same declaration, and every package that has one to having all of them.
 //
 // # What is compared, and why it is not the bytes
@@ -556,7 +571,7 @@ const importResolverCopies = 2
 // The set is both lists — the functions and the package-level state they keep
 // — because the compiler's hold on the state is only its NAME, and a copy that
 // declares that name as a different kind of thing compiles in both places and
-// differs under t.Parallel(). See importResolverStateShapes.
+// differs under t.Parallel(). See twoCopyStateShapes.
 //
 // What it cannot see is a difference in something the copies both call. That
 // is the reason the set is the unit: a `packageBase` that had drifted is a
@@ -571,10 +586,10 @@ const importResolverCopies = 2
 // message sending a reader to look for a difference that is not there. It is
 // reported as itself instead, and the comparison for that shape is skipped
 // rather than made against nothing.
-func checkImportResolverCopies(t *testing.T, decls []importResolverDecl) {
+func checkTwoCopyDecls(t *testing.T, decls []twoCopyDecl) {
 	t.Helper()
 
-	byName := map[string][]importResolverDecl{}
+	byName := map[string][]twoCopyDecl{}
 	byDir := map[string]map[string]bool{}
 	for _, d := range decls {
 		byName[d.name] = append(byName[d.name], d)
@@ -588,7 +603,7 @@ func checkImportResolverCopies(t *testing.T, decls []importResolverDecl) {
 	// nothing passes silently and reads as a clean result, and this one is
 	// looking for NAMES that a rename would take away without touching a line
 	// of what they do.
-	shapes := importResolverAllShapes()
+	shapes := allTwoCopyShapes()
 	var missing []string
 	for _, name := range shapes {
 		if len(byName[name]) == 0 {
@@ -596,7 +611,7 @@ func checkImportResolverCopies(t *testing.T, decls []importResolverDecl) {
 		}
 	}
 	if len(missing) == len(shapes) {
-		t.Errorf("none of the %d import-resolving shape(s) was found in the "+
+		t.Errorf("none of the %d two-copy shape(s) was found in the "+
 			"repository: %s.\n\n"+
 			"These are what every census that asks \"is this a call into "+
 			"package P\" resolves the qualifier with, and this repository has "+
@@ -627,7 +642,7 @@ func checkImportResolverCopies(t *testing.T, decls []importResolverDecl) {
 		if len(absent) == 0 {
 			continue
 		}
-		t.Errorf("%s declares %d of the %d import-resolving shapes and not "+
+		t.Errorf("%s declares %d of the %d two-copy shapes and not "+
 			"%s.\n\n"+
 			"The set is the unit. `importedAs` is the function with the "+
 			"reasoning behind it and the others are what it is made of and "+
@@ -686,8 +701,8 @@ func checkImportResolverCopies(t *testing.T, decls []importResolverDecl) {
 				"declaration is.\n\n%s:%d has:\n\n%s\n\n%s:%d has:\n\n%s\n\n"+
 				"Make one a copy of the other, or — if the two packages now "+
 				"need different answers — say so where the copy argument is "+
-				"and take this shape out of importResolverShapes or "+
-				"importResolverStateShapes.",
+				"and take this shape out of twoCopyFunctionShapes or "+
+				"twoCopyStateShapes.",
 				name, found[0].rel, found[0].line, found[i].rel, found[i].line,
 				found[0].rel, found[0].line, found[0].text,
 				found[i].rel, found[i].line, found[i].text)
@@ -702,8 +717,8 @@ func checkImportResolverCopies(t *testing.T, decls []importResolverDecl) {
 			whole++
 		}
 	}
-	if whole > importResolverCopies {
-		t.Errorf("%d package(s) declare the import-resolving shapes and the "+
+	if whole > twoCopyPackages {
+		t.Errorf("%d package(s) declare the two-copy shapes and the "+
 			"argument for copying them was written for %d: %s.\n\n"+
 			"That argument is about two separate `package main` programs, one "+
 			"under wasm/ and one under internal/, and the cost of a package "+
@@ -712,15 +727,15 @@ func checkImportResolverCopies(t *testing.T, decls []importResolverDecl) {
 			"a check, which works, and by whoever remembers to update the "+
 			"third when the reasoning changes, which does not.\n\n"+
 			"Extract them into a package all three can import, or raise "+
-			"importResolverCopies with the reason beside the copy argument, so "+
+			"twoCopyPackages with the reason beside the copy argument, so "+
 			"the next person reads a decision rather than a number.",
-			whole, importResolverCopies, strings.Join(dirs, ", "),
+			whole, twoCopyPackages, strings.Join(dirs, ", "),
 			len(shapes), len(shapes), whole, whole)
 	}
 
-	t.Logf("%d import-resolving shape(s) — %d function(s) and %d piece(s) of "+
+	t.Logf("%d shape(s) kept in two copies — %d function(s) and %d piece(s) of "+
 		"package-level state — %d copy(ies) each, held identical across %s.",
-		len(shapes), len(importResolverShapes), len(importResolverStateShapes),
+		len(shapes), len(twoCopyFunctionShapes), len(twoCopyStateShapes),
 		whole, strings.Join(dirs, ", "))
 }
 
@@ -1129,8 +1144,8 @@ func moduleRequirements(root string) (module string, requires []string, err erro
 	return module, requires, nil
 }
 
-// importResolverDecl is one declaration of a shared shape that the walk found.
-type importResolverDecl struct {
+// twoCopyDecl is one declaration of a shared shape that the walk found.
+type twoCopyDecl struct {
 	name string
 	// The directory, which is the unit a copy is counted in: these are
 	// package-level functions and a package is a directory here.
@@ -1204,7 +1219,7 @@ func declarationText(fset *token.FileSet, node ast.Node) (string, error) {
 	return "", fmt.Errorf("a %T is not a declaration this compares", node)
 }
 
-// importResolverDeclarationsIn collects the shared shapes this file declares,
+// twoCopyDeclarationsIn collects the shared shapes this file declares,
 // and the import paths its censuses ask about.
 //
 // Both readings are of the same parse and are kept together because they are
@@ -1215,23 +1230,23 @@ func declarationText(fset *token.FileSet, node ast.Node) (string, error) {
 // `importedAs` with the path it was handed, which is the implementation rather
 // than a question put to the repository, and reporting it would mean every
 // copy of the helper reporting itself as an unliteral path.
-func importResolverDeclarationsIn(fset *token.FileSet, rel string,
-	file *ast.File) ([]importResolverDecl, []importPathAsk) {
+func twoCopyDeclarationsIn(fset *token.FileSet, rel string,
+	file *ast.File) ([]twoCopyDecl, []importPathAsk) {
 
 	shape := map[string]bool{}
-	for _, name := range importResolverShapes {
+	for _, name := range twoCopyFunctionShapes {
 		shape[name] = true
 	}
 	state := map[string]bool{}
-	for _, name := range importResolverStateShapes {
+	for _, name := range twoCopyStateShapes {
 		state[name] = true
 	}
 	dir := path.Dir(rel)
 	// One declaration of a shared shape, however it is spelled. The two arms
 	// below differ only in what they hand the printer.
-	record := func(name string, at token.Pos, node ast.Node) importResolverDecl {
+	record := func(name string, at token.Pos, node ast.Node) twoCopyDecl {
 		text, err := declarationText(fset, node)
-		return importResolverDecl{
+		return twoCopyDecl{
 			name:     name,
 			dir:      dir,
 			rel:      rel,
@@ -1240,11 +1255,11 @@ func importResolverDeclarationsIn(fset *token.FileSet, rel string,
 			printErr: err,
 		}
 	}
-	var decls []importResolverDecl
+	var decls []twoCopyDecl
 	var asks []importPathAsk
 	for _, d := range file.Decls {
 		// The package-level state, which is a ValueSpec inside a GenDecl
-		// rather than a declaration of its own — see importResolverStateShapes
+		// rather than a declaration of its own — see twoCopyStateShapes
 		// for why it is held to the same rule as the code that reads it.
 		if gen, ok := d.(*ast.GenDecl); ok {
 			if gen.Tok != token.VAR {
