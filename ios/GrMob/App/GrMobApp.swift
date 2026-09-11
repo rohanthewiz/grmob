@@ -74,7 +74,15 @@ struct GrMobApp: App {
             // sends no authorization callback for that one. See
             // LocationSensor.retryIfArmed for the measurement behind that
             // sentence and for why this costs nothing when nothing is armed.
-            if phase == .active { LocationSensor.shared.retryIfArmed() }
+            //
+            // The compass is refused by that same switch and has even less to
+            // go on: it asks for no authorization, so there is no callback it
+            // could have used instead. Both are no-ops unless a sensor was
+            // actually running and actually killed.
+            if phase == .active {
+                LocationSensor.shared.retryIfArmed()
+                HeadingSensor.shared.retryIfArmed()
+            }
         }
     }
 }

@@ -1,8 +1,8 @@
 # The Android device harness
 
-Two scripts for driving a grmob app on a real device or emulator, and one
-answer they exist to give: **is what the app draws the same as what the app
-laid out?**
+Scripts for driving a grmob app on a real device or emulator, and two answers
+they exist to give: **is what the app draws the same as what the app laid
+out?**, and **did a change to a screen's tree make the app start faster?**
 
 ```sh
 android/build.sh ./examples/tutorial
@@ -15,7 +15,31 @@ android/device/ui.sh texts                          # what is on screen
 android/device/ui.sh tap "Show Belém"               # drive it by that text
 android/device/ui.sh drag 540 1900 540 900          # scroll the map into view
 android/device/ui.sh paint                          # does it paint outside its box?
+
+android/device/launch.sh 5                          # five cold launches, timed
+android/device/launch.sh 1 --frames                 # ...and the check on that number
 ```
+
+## The launch instrument
+
+`launch.sh` reports `am start -W`'s TotalTime, which ActivityTaskManager
+measures itself — no screenshots stealing CPU from the thing being timed, which
+is what the iOS side has to do. `--frames` is the check on the one assumption
+under that number, and it is worth reading once: TotalTime ends at the
+activity's first frame, and this app has an Android 12 splash window that goes
+up within a few hundred milliseconds of a five-second launch. The frame column
+and the Displayed line are printed for the *same* launch so the question
+answers itself.
+
+Two metrics were tried and thrown away before the one in `arrival.py` worked,
+both defeated by the same fact — a page of text on white is mostly white — and
+both are written up in that file, because each looked correct and printed a
+confident wrong column.
+
+It was built to answer whether iOS's `core.List` win (7.4s → 1.7s) reproduced
+on Compose. It does, in the same direction and for the same reason, and it is
+29% of the screen's cost rather than all of it: the four arms and what they
+attribute are in `launch.sh`'s header.
 
 ## Why these are checked in
 
@@ -35,6 +59,12 @@ them, and all three were invisible to every automated check in the repository:
 The next device run would have rebuilt all of this from scratch, including the
 one non-obvious detail: `adb shell input swipe` with a short duration is a
 *fling*, and a run driven by flings is not repeatable.
+
+`launch.sh` is checked in on the same argument. Its numbers are one emulator's
+and will not survive a different machine, but the *method* is what took the
+session — a cold launch that is actually cold, a splash window that makes the
+obvious endpoint the wrong one, and two screen-comparison metrics that printed
+confident nonsense before the third one worked.
 
 ## Why nothing runs them automatically
 

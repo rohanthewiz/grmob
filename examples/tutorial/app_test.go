@@ -326,6 +326,51 @@ func TestHomeListsEveryLesson(t *testing.T) {
 	assertNoConcerns(t)
 }
 
+// The contents screen is inset once, by its List.
+//
+// This was a real 16-point shift, found by measuring ink columns in simulator
+// screenshots rather than by eye, and it survived a code review because
+// neither inset is written in any source file: components.Screen's column and
+// core.List are both built on the theme's Components.Column, so moving this
+// page from a scrolled Column to a List silently added a second copy of the
+// same padding. components.Screen now drops its own when its whole content is
+// a scrolling page; what that rule is worth is exactly this screen, so the
+// assertion lives here as well as in the widget's own tests.
+//
+//	SafeArea
+//	  └─ Column   padding 0        ← a safe-area frame, nothing else
+//	       └─ List padding 12/16   ← the page, inset once
+func TestHomeIsInsetOnce(t *testing.T) {
+	mgr := newApp(t)
+	root := tree(t, mgr)
+
+	list := findNode(root, func(n *node) bool { return n.Type == "List" })
+	if list == nil || list.Style == nil {
+		t.Fatal("the contents screen is not a List any more; the inset rule below is about that List")
+	}
+	base := core.DefaultTheme.Components.Column.Padding
+	if list.Style.Padding.Left != base.Left || list.Style.Padding.Top != base.Top {
+		t.Errorf("the page lost its own inset: %+v, want the theme's %+v", list.Style.Padding, base)
+	}
+
+	// The scaffold's column is the List's parent, so it is the one node
+	// between the safe area and the page that could inset it a second time.
+	col := findNode(root, func(n *node) bool {
+		if n.Type != "Column" {
+			return false
+		}
+		return len(n.Children) == 1 && n.Children[0] == list
+	})
+	if col == nil {
+		t.Fatalf("no column holds the List; the tree shape changed")
+	}
+	if col.Style != nil && (col.Style.Padding.Left != 0 || col.Style.Padding.Top != 0) {
+		t.Errorf("the contents screen is inset twice: the scaffold's column adds %+v on top of the List's",
+			col.Style.Padding)
+	}
+	assertNoConcerns(t)
+}
+
 // --- Opening a lesson, and coming back -----------------------------------
 
 func TestOpenLessonMarksProgressAndPopsBack(t *testing.T) {
@@ -446,6 +491,54 @@ func TestStacksDemoSwitchesAxis(t *testing.T) {
 
 	if boxRow(tree(t, mgr), "Column") == nil {
 		t.Fatal("after switching the axis, the boxes should sit in a Column")
+	}
+	assertNoConcerns(t)
+}
+
+// --- What the contents screen costs to send ------------------------------
+
+// The initial tree of the contents screen, in bytes of JSON.
+//
+// This is not a performance test and it does not assert a budget; it prints a
+// number that is otherwise invisible and fails only if the screen's cost
+// changes by an order of magnitude. What it records is the half of an emulator
+// measurement that no device was needed to explain.
+//
+// # The measurement
+//
+// Four arms on one emulator, means of five cold launches, from
+// android/device/launch.sh, which carries the table:
+//
+//	home = title + progress card only, same binary     2529 ms
+//	home = the whole contents as a core.List           5045 ms
+//	home = the whole contents as a scrolled Column     6062 ms
+//
+// The lazy container wins 1017ms — Compose composes the rows on screen and not
+// the other 45 — which is the win iOS saw and the reason this screen is a
+// core.List. But the List arm is still 2516ms above the same binary with the
+// cards taken off the screen, and laziness cannot touch any of it: the whole
+// tree crosses the bridge whether or not Compose composes it.
+//
+// That is what this test prints. Go builds and serialises the number below in
+// well under a millisecond; everything the Android side does with it — the JNI
+// crossing, the parse, the node tree Kotlin builds — scales with it. So on
+// Android the lever is sending fewer nodes rather than composing fewer views,
+// and the first step of any such work is knowing what is being sent.
+//
+// The bound is a factor of ten in each direction because the number is a fact
+// about 49 lessons of prose, which is edited: a new chapter should not fail a
+// test, and a screen that suddenly sends four megabytes should.
+func TestHomeTreeSize(t *testing.T) {
+	mgr := newApp(t)
+	size := len(mgr.RenderInitial())
+	t.Logf("the contents screen is %d bytes of JSON on the wire", size)
+
+	const recorded = 423472
+	if size < recorded/10 || size > recorded*10 {
+		t.Errorf("the contents screen is %d bytes of JSON, an order of magnitude "+
+			"from the %d recorded when android/device/launch.sh attributed "+
+			"2516ms of the Android launch to it. Not a budget failure — a "+
+			"prompt to re-measure and rewrite that table.", size, recorded)
 	}
 	assertNoConcerns(t)
 }

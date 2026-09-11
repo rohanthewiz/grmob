@@ -79,8 +79,36 @@ echo "OK: view layer type-checks"
 # by removing the fix: SIGABRT, 134). The object file is thrown away — it is
 # for a different platform than the app's and is of no use; the exit code is
 # the whole result.
-if ! wmo=$(swiftc -c -O -wmo -target arm64-apple-macos14.0 \
-        ../GrMob/Runtime/*.swift -o "$out/wmo.o" 2>&1); then
+#
+# # Why this one command is on a clock
+#
+# The fault it guards against is a type substitution that does not terminate,
+# and the compiler's own detector only fires on the shapes it recognises. A
+# chain that grows again in some other direction can just as easily make the
+# substitution merely *expensive* — the same bug, one order of magnitude down,
+# where the compiler never aborts and never finishes either. That failure has
+# no message: the verify run simply stops printing, and the reader's first
+# theory is a slow machine rather than the view layer.
+#
+# So the seven seconds are given a ceiling an order of magnitude above them,
+# and blowing it is reported as the finding it is rather than as a hang. The
+# clock is perl's alarm rather than timeout(1), which macOS does not ship
+# (coreutils' gtimeout is a Homebrew package and this script's whole premise is
+# that it needs only Go and the Command Line Tools). SIGALRM leaves the shell's
+# usual 128+signal, which is the 142 tested below.
+WMO_TIMEOUT="${WMO_TIMEOUT:-120}"
+wmo_status=0
+wmo=$(perl -e 'alarm shift; exec @ARGV' "$WMO_TIMEOUT" \
+        swiftc -c -O -wmo -target arm64-apple-macos14.0 \
+        ../GrMob/Runtime/*.swift -o "$out/wmo.o" 2>&1) || wmo_status=$?
+if [ "$wmo_status" -eq 142 ]; then
+  echo "FAIL: whole-module optimisation of the view layer did not finish in"
+  echo "      ${WMO_TIMEOUT}s (it takes about seven). A substitution that is slow"
+  echo "      rather than non-terminating is the same fault as the abort this"
+  echo "      check was added for, below the compiler's own detector. See"
+  echo "      GrMobBoxModifier, and look for a view-modifier chain that grew."
+  exit 1
+elif [ "$wmo_status" -ne 0 ]; then
   echo "$wmo"
   echo "FAIL: the view layer does not survive whole-module optimisation, so the"
   echo "      app cannot be built for Release. See GrMobBoxModifier."

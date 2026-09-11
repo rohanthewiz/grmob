@@ -16,12 +16,23 @@ func (t *tutorial) Home(ctx *core.Context) core.View {
 	opened, total := t.progress()
 
 	// The page is a core.List, not a Column inside Screen.Scroll, and the
-	// reason is a measurement: a cold launch of this app reached its first
-	// frame in 7.4s as a scrolled Column and in 1.7s as a List. SwiftUI (and
-	// Compose) build a view per node for a Scroll's whole content, so a
-	// contents screen of 49 two-line rows paid for all 49 before it could
-	// draw the four that fit; a List materializes the rows on screen. See
-	// LiveMapUITests for the readings and for what else was in that number.
+	// reason is a measurement on both hosts. SwiftUI and Compose each build a
+	// view per node for a Scroll's whole content, so a contents screen of 49
+	// two-line rows paid for all 49 before it could draw the four that fit;
+	// a List materializes the rows on screen.
+	//
+	//	iOS       7.4s -> 1.7s     the floor examples/mobileapp sets
+	//	Android   6.1s -> 5.0s     of which 2.5s is the tree, not the views
+	//
+	// The two hosts agree on the direction and disagree on how much of the
+	// launch it was, which is worth knowing before reaching for this on a
+	// third screen. On iOS the scrolled Column WAS the launch. On Android it
+	// is 29% of the screen's cost: the same binary with these cards taken off
+	// the screen launches in 2.5s, and the rest is what happens to 423KB of
+	// JSON on its way across the bridge — paid for all 49 rows whether or not
+	// Compose composes them. See android/device/launch.sh for the four arms
+	// and TestHomeTreeSize for the bytes; LiveMapUITests carries the iOS
+	// readings and what else was in that number.
 	//
 	// This is also what the tutorial teaches one lesson over ("Use Scroll for
 	// short content and core.List for long data-driven collections"), applied
@@ -37,16 +48,11 @@ func (t *tutorial) Home(ctx *core.Context) core.View {
 	}
 	page = append(page, asAny(t.chapterCardViews(ctx))...)
 
+	// No Padding(0) here any more: the scaffold drops its own inset when its
+	// whole content is a scrolling page, so the List insets this screen once.
+	// See components.Screen, "A scrolling child is the page".
 	return components.Screen{
-		Fill: true,
-		// The scaffold's column is a safe-area frame here and nothing else:
-		// its padding is zeroed so the page is inset once rather than twice.
-		// core.List carries the theme's own container base (12/16, the same
-		// one the Column inside Screen.Scroll used to carry), so zeroing the
-		// outer one leaves the page exactly where it was — where leaving both
-		// shifts every child 16 points inward of where the scrolled version
-		// drew it.
-		Style:    []core.StyleProp{core.Padding(0)},
+		Fill:     true,
 		Children: []core.View{core.List(page...)},
 	}
 }

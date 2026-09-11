@@ -320,3 +320,217 @@ func TestScreenPaintsItsBackgroundOnTheSafeArea(t *testing.T) {
 		t.Errorf("a screen without a background styled its SafeArea: %+v", plain.Style)
 	}
 }
+
+// --- the page-child rule ---------------------------------------------------
+//
+// core.List and core.Column are both built on the theme's Components.Column,
+// so a screen whose whole content is a List used to be inset twice — 16 points
+// of horizontal padding from the scaffold and 16 more from the list, with
+// neither written anywhere a reader could see it. The tests below pin the rule
+// that unstacks them and, just as importantly, the four cases it must not fire
+// on.
+
+// themeInset is the horizontal inset the bundled themes put on a Column, read
+// from the theme rather than written as 16 so these tests keep testing the
+// rule and not the palette.
+func themeInset(theme *core.Theme) core.EdgeInsets { return theme.Components.Column.Padding }
+
+func TestScreenDropsItsInsetWhenTheOnlyChildIsAList(t *testing.T) {
+	for name, theme := range core.BundledThemes() {
+		t.Run(name, func(t *testing.T) {
+			root := renderScreen(t, theme, Screen{
+				Children: []core.View{core.List(core.Text("row"))},
+			})
+
+			col := column(t, root)
+			if col.Style.Padding != (core.EdgeInsets{}) {
+				t.Errorf("the scaffold's column kept its inset around a List: %+v", col.Style.Padding)
+			}
+			// The list keeps its own, or the page would now be inset zero
+			// times instead of twice — the opposite error and just as wrong.
+			list := findFirst(root, func(n *core.Node) bool { return n.Type == "List" })
+			if list == nil {
+				t.Fatalf("no List in the rendered screen: %s", describe(root))
+			}
+			if list.Style.Padding != themeInset(theme) {
+				t.Errorf("List inset = %+v, want the theme's %+v", list.Style.Padding, themeInset(theme))
+			}
+		})
+	}
+}
+
+// The count is taken after nil entries are skipped, which is what keeps the
+// conditional-slot idiom compatible with the rule: a screen holding an absent
+// banner and a list is a single-child screen.
+func TestScreenPageChildRuleCountsAfterNilChildren(t *testing.T) {
+	var absent core.View
+
+	root := renderScreen(t, core.DefaultTheme, Screen{
+		Children: []core.View{absent, core.List(core.Text("row")), absent},
+	})
+
+	col := column(t, root)
+	if len(col.Children) != 1 {
+		t.Fatalf("nil children left nodes behind: %s", describe(root))
+	}
+	if col.Style.Padding != (core.EdgeInsets{}) {
+		t.Errorf("a nil sibling defeated the rule: column inset = %+v", col.Style.Padding)
+	}
+}
+
+// The rule is decided on the rendered child, which is why a widget in this
+// package that *becomes* a List is treated as one. Nothing spells core.List at
+// this call site, and a rule written against the Go value would have missed it
+// — GroupedList is the widget most screens reach for when the whole screen is
+// the list, so missing it would have missed the common case.
+func TestScreenPageChildRuleSeesThroughAWidget(t *testing.T) {
+	root := renderScreen(t, core.DefaultTheme, Screen{
+		Children: []core.View{GroupedList[string]{
+			Items: []string{"a", "b"},
+			Key:   func(s string) string { return s },
+			Row:   func(s string) core.View { return core.Text(s) },
+		}},
+	})
+
+	col := column(t, root)
+	if col.Style.Padding != (core.EdgeInsets{}) {
+		t.Errorf("a GroupedList page was inset twice: column inset = %+v", col.Style.Padding)
+	}
+	if len(col.Children) != 1 || col.Children[0].Type != "List" {
+		t.Fatalf("GroupedList no longer renders as a List: %s", describe(root))
+	}
+}
+
+// A List that is one of several children is a block within the page, not the
+// page: the column's inset is what puts the other children where they belong,
+// and dropping it would slide a header and a footer to the screen edge to fix
+// a doubling that only the list has.
+func TestScreenKeepsItsInsetWhenTheListHasSiblings(t *testing.T) {
+	root := renderScreen(t, core.DefaultTheme, Screen{
+		Children: []core.View{core.Text("header"), core.List(core.Text("row"))},
+	})
+
+	if p := column(t, root).Style.Padding; p != themeInset(core.DefaultTheme) {
+		t.Errorf("column inset = %+v, want the theme's %+v — the rule fired on a multi-child screen",
+			p, themeInset(core.DefaultTheme))
+	}
+}
+
+// Everything that is not a scrolling, self-insetting page leaves the scaffold
+// alone. core.Scroll is the case worth naming: it scrolls but carries no theme
+// base, so its content is inset once — by this column — and stripping that
+// would move the page rather than unstack it.
+func TestScreenKeepsItsInsetForNonPageChildren(t *testing.T) {
+	cases := map[string]core.View{
+		"a text":     core.Text("hi"),
+		"a column":   core.Column(core.Text("hi")),
+		"a scroll":   core.Scroll(core.Text("hi")),
+		"a card":     core.Card(core.Text("hi")),
+		"a box":      core.Box(core.Text("hi")),
+		"a list two": core.Column(core.List(core.Text("row"))), // a List, but not the child
+	}
+	for name, child := range cases {
+		t.Run(name, func(t *testing.T) {
+			root := renderScreen(t, core.DefaultTheme, Screen{Children: []core.View{child}})
+			if p := column(t, root).Style.Padding; p != themeInset(core.DefaultTheme) {
+				t.Errorf("column inset = %+v, want the theme's %+v", p, themeInset(core.DefaultTheme))
+			}
+		})
+	}
+}
+
+// The cleared padding is applied ahead of the caller's Style, so the escape
+// hatch still opens in both directions: a screen can ask for its own inset
+// around a list, and a screen that wants the old doubled behavior can spell it.
+func TestScreenStyleStillWinsOverThePageChildRule(t *testing.T) {
+	root := renderScreen(t, core.DefaultTheme, Screen{
+		Style:    []core.StyleProp{core.Padding(24)},
+		Children: []core.View{core.List(core.Text("row"))},
+	})
+
+	if p := column(t, root).Style.Padding; p.Left != 24 || p.Top != 24 {
+		t.Errorf("column inset = %+v, want the caller's 24 on every side", p)
+	}
+}
+
+// Nothing but the inset is dropped. The rule is about one duplicated property,
+// and a screen that also sets a gap, a fill or a background must keep all
+// three — the column is still the flex parent the List grows inside.
+func TestScreenPageChildRuleDropsOnlyTheInset(t *testing.T) {
+	root := renderScreen(t, core.DefaultTheme, Screen{
+		Fill:     true,
+		Gap:      9,
+		Style:    []core.StyleProp{core.BackgroundColor("#202020")},
+		Children: []core.View{core.List(core.Text("row"))},
+	})
+
+	st := column(t, root).Style
+	if st.Padding != (core.EdgeInsets{}) {
+		t.Errorf("inset survived: %+v", st.Padding)
+	}
+	if st.FlexGrow != 1 || st.Gap != 9 || st.Background != "#202020" {
+		t.Errorf("the rule took more than the inset: %+v", st)
+	}
+}
+
+// The pre-render above is only safe because Screen's own props register no
+// callbacks: every one of them is a style prop or KeyboardAware, which writes a
+// flag and asks nothing of the context. containerNode's ordering contract says
+// a container's callback IDs precede its children's, and a Screen that started
+// registering one would break that contract silently — the IDs would still be
+// assigned, in the other order, and the only symptom would be a handler wired
+// to the wrong node after a diff.
+//
+// So the assumption is checked rather than commented: the sole child's handler
+// takes the first ID of the pass. A prop added to Screen that registers
+// anything moves it, and this fails pointing here.
+func TestScreenRegistersNoCallbacksOfItsOwn(t *testing.T) {
+	ctx := core.NewContext().WithTheme(core.DefaultTheme)
+	ctx.BeginRenderPass()
+
+	screen := Screen{
+		Fill:          true,
+		Gap:           8,
+		KeyboardAware: true,
+		Style:         []core.StyleProp{core.BackgroundColor("#fff")},
+		Children:      []core.View{core.Box(core.OnClick(func() {}), core.Text("tap"))},
+	}
+	root := screen.Render(ctx)
+
+	box := findFirst(root, func(n *core.Node) bool { return n.Type == "Box" })
+	if box == nil {
+		t.Fatalf("no Box in the rendered screen: %s", describe(root))
+	}
+	// cb_0 is the first void callback a fresh registry hands out.
+	if got := box.Props["onClick"]; got != "cb_0" {
+		t.Errorf("the sole child's handler is %v, want cb_0 — something in Screen "+
+			"registered a callback before its child rendered, which the "+
+			"page-child pre-render in Screen.Render assumes nothing does", got)
+	}
+}
+
+// Screen renders its sole child itself to classify it, so the one thing that
+// could go wrong is rendering it twice — which would register every callback
+// in the page a second time and leave the first set pointing at a tree the
+// reconciler has already thrown away. A child that counts its own renders is
+// the only witness, since the duplicate node would be discarded and the tree
+// would look correct.
+func TestScreenRendersItsSoleChildExactlyOnce(t *testing.T) {
+	for name, child := range map[string]func(int) core.View{
+		"a list": func(n int) core.View { return core.List(core.Text("row")) },
+		"a text": func(n int) core.View { return core.Text("hi") },
+	} {
+		t.Run(name, func(t *testing.T) {
+			renders := 0
+			counted := core.ComponentFunc(func(ctx *core.Context) *core.Node {
+				renders++
+				return child(renders).Render(ctx)
+			})
+
+			renderScreen(t, core.DefaultTheme, Screen{Children: []core.View{counted}})
+			if renders != 1 {
+				t.Errorf("the sole child rendered %d times, want 1", renders)
+			}
+		})
+	}
+}

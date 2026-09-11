@@ -990,3 +990,41 @@ for the compass would be that test copied with a different sensor in it.
 **What would change this.** A screen that wants the compass released while
 staying mounted. The day one exists this is a short function, and
 `UseLocationWhen` is the whole template.
+
+---
+
+## `church_mobile`'s static maps stay unconfigured here
+
+*Raised: 2026-09-11 · Moved here: 2026-09-11 · Code:
+`components/static_map.go` (`GoogleStaticMap`, `ConcernNoMapProvider`),
+consumer in `../church/church_mobile`*
+
+**What was declined.** `components.StaticMap` draws an empty box in
+`church_mobile`'s event detail screen, because no `Provider` is configured. The
+obvious completion is to configure one — the widget takes a single function,
+`GoogleStaticMap(key)` is written and tested, and the app is one line from
+drawing maps.
+
+**The argument.** The missing piece is not code and is not this repository's to
+supply. It is a Google Maps Static API key, which is a billing relationship
+belonging to whoever ships the app; `GoogleStaticMap` is a constructor
+specifically so the key stays configuration rather than a package variable this
+tree could hold. And `church_mobile` is downstream — a separate repository —
+so even the call site is not here.
+
+Everything this side owes is done and was re-confirmed twice. The widget
+renders an unconfigured provider as a box with no image rather than as Google's
+"not authorized" error tile, so a misconfigured build looks unfinished instead
+of broken; `ConcernNoMapProvider` names it in debug mode; and the yaml, the
+provider name and the instruction to restrict the key to the Maps Static API
+and the app's bundle ids are written down for whoever holds the key. The live
+events map needs none of it and works today, reachable from the same screen.
+
+Carried as a Next item across four sessions, where it was re-read and
+re-declined each time for the same reason. That is the shape this file exists
+for: it is not a thing to do, it is a thing that is waiting on somebody, and a
+waiting item in a work list is work done repeatedly.
+
+**What would change this.** A key. The change is one argument to one
+constructor in a repository that is not this one, and nothing here has to move
+for it.

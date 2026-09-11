@@ -90,10 +90,47 @@ thing — the absence of a gap, not the imposition of one.
 false when the screen already contains a `core.List` or its own `Scroll` — a
 scroll view nested in a scroll view fights for the same drag on both natives.
 Of the nine app packages in `examples/`, two scroll at the root
-(`fintechapp`, `signup`), and every screen the `tutorial`'s navigator pushes
-(`home`, `lesson_screen`, chapter 6) scrolls as a whole. The rest do not:
-`chat` scrolls its message list, `todoapp` scrolls a virtualized `core.List`,
+(`fintechapp`, `signup`), and the `tutorial`'s `lesson_screen` and chapter 6
+scroll as a whole. The rest do not: `chat` scrolls its message list, `todoapp`
+scrolls a virtualized `core.List`, the `tutorial`'s contents screen is one,
 and `mobileapp` and `layout` are short enough to need neither.
+
+**A scrolling child is the page, and is inset once.** `Screen`'s column and
+`core.List` are both built on the theme's `Components.Column`, whose only entry
+in every bundled theme is the standard 12/16 inset. So a screen whose whole
+content is a `List` used to be inset *twice* — and invisibly, because neither
+inset is written anywhere:
+
+```
+SafeArea
+  └─ Column   padding 12/16   ← the theme's, via Screen
+       └─ List padding 12/16   ← the theme's, again
+```
+
+Every row drew 16 points further in than the same content in a scrolled
+`Column`, which is the shape this page recommends moving *away* from. So the
+scaffold drops its own inset when its content is a single scrolling page:
+
+```go
+// Inset once, by the List. No Padding(0) needed.
+components.Screen{Fill: true, Children: []core.View{core.List(rows...)}}
+```
+
+Three things about the rule:
+
+- **"Only child" is counted after `nil` entries are skipped**, so the
+  conditional-slot idiom below still qualifies — an absent banner beside a list
+  is a single-child screen, exactly as the tree the reconciler walks is. The
+  decision is taken on the *rendered* child, so `components.GroupedList` counts
+  too: it is a `List` once it renders.
+- **The set is node types that scroll and arrive pre-inset**, which today is
+  `core.List` alone. `core.Scroll` is deliberately outside it: it carries no
+  theme base, so its content is inset once — by the column — and dropping that
+  would move the page rather than unstack it. A `List` with siblings is a block
+  within the page rather than the page, and the column keeps its inset.
+- **`Style` still wins.** The cleared padding is applied ahead of the caller's
+  `Style`, so `core.Padding(24)` around a list gives 24. Nothing but the inset
+  is dropped — `Gap`, `Fill` and a background all survive.
 
 **`KeyboardAware` lands on the scroll region, or on the column when there is
 none** — the two halves of what it means. A scrolling screen wants its

@@ -47,6 +47,46 @@ import "github.com/rohanthewiz/grmob/core"
 // — costs the tree no node at all when the condition is false, rather than the
 // empty Fragment a core.If would leave behind for the reconciler to walk on
 // every pass. (That Fragment draws nothing; the cost is the node, not a gap.)
+//
+// # A scrolling child is the page, and is inset once
+//
+// Screen's column carries the theme's Components.Column base, whose only
+// entry in every bundled theme is the standard 12/16 inset. So does core.List
+// — it is the one other container in the tree built on that same base. A
+// screen whose whole content is a List therefore used to be inset twice, and
+// the doubling is invisible in code because neither inset is written anywhere:
+//
+//	SafeArea
+//	  └─ Column   padding 12/16   ← the theme's, via Screen
+//	       └─ List padding 12/16   ← the theme's, again
+//
+// Every child of that list drew 16 points further in than the same content in
+// a Scroll'd Column, which is the shape Screen.Scroll's own documentation
+// recommends migrating *away* from. So the scaffold now drops its column's
+// padding when its content is a single scrolling page:
+//
+//	Screen{Children: []core.View{core.List(rows...)}}   inset once, by the List
+//
+// Three things about the rule are deliberate.
+//
+// "Only child" is counted after nil entries are skipped, so the
+// conditional-slot idiom above keeps working: a screen holding a nil banner
+// and a List is a single-child screen, exactly as the tree the reconciler
+// walks is. That is why the decision is made on the *rendered* child rather
+// than on the Go value — the count that matters is the one core.Column would
+// arrive at, and a wrapper widget (components.GroupedList) is a List only
+// after it renders.
+//
+// The set is node types that scroll and arrive pre-inset, which today is
+// core.List alone. core.Scroll is deliberately outside it: a Scroll carries no
+// theme base, so its content is inset once — by this column — and dropping
+// that would move the page rather than unstack it.
+//
+// Style still wins. The cleared padding is applied ahead of the caller's
+// Style props, so a screen that asks for core.Padding(24) around its list gets
+// 24, and one that wants the old doubled behavior can still spell it. Nothing
+// else about the column changes: a Gap, a Fill and a background all survive,
+// because it is only the inset that was ever duplicated.
 type Screen struct {
 	// Children are the screen's content, laid out top to bottom in the
 	// column. A nil entry is skipped (see above).
@@ -57,6 +97,10 @@ type Screen struct {
 	// inside it — a core.List, or a Scroll around one section — since a
 	// scroll view nested in a scroll view fights for the same drag on both
 	// natives.
+	//
+	// Following that advice with a List costs nothing in layout: the scaffold
+	// drops its own inset when the List is the whole content, so the page sits
+	// where the scrolled Column drew it. See "A scrolling child is the page".
 	Scroll bool
 
 	// KeyboardAware makes that scroll region shrink to sit above the software
@@ -95,10 +139,76 @@ type Screen struct {
 	Style []core.StyleProp
 }
 
+// scrollingPageTypes are the node types that both scroll on their own and
+// arrive already carrying the theme's Components.Column inset. That pair of
+// properties is the whole rule: the first makes the child the page rather than
+// a block within one, and the second is what makes the scaffold's own inset a
+// duplicate rather than the only one.
+//
+// core.List is the only member today, and not by coincidence — it is the only
+// container besides core.Column itself built on Components.Column. A future
+// lazy grid built the same way belongs here; core.Scroll does not, because it
+// carries no theme base and so is inset once, by the column this rule would
+// strip.
+var scrollingPageTypes = map[string]bool{
+	"List": true,
+}
+
+// renderedView hands an already-rendered node back to core.Column as if it
+// were an unrendered child.
+//
+// Screen renders its sole child itself (see soleChild's caller) to find out
+// what type it is, and a View may only be rendered once per pass — rendering
+// it a second time would register its callbacks twice. So the node travels the
+// rest of the way wrapped. This is the same shape core.Cached relies on:
+// returning a *Node the pass already built is legal precisely because a Node is
+// immutable once rendered.
+type renderedView struct{ n *core.Node }
+
+func (r renderedView) Render(*core.Context) *core.Node { return r.n }
+
+// soleChild returns the screen's only child once nil entries are skipped, and
+// nil when there are none or more than one.
+//
+// The nil test is `== nil` on the interface, which is exactly the test
+// containerNode's `case nil` performs — so "one child" here means one child
+// there, and core.MaybeProp's false path is skipped by both. (A typed nil
+// pointer in a core.View is not nil to either, which is the same footgun it
+// has always been and not one this rule adds.)
+func (s Screen) soleChild() core.View {
+	var only core.View
+	for _, c := range s.Children {
+		if c == nil {
+			continue
+		}
+		if only != nil {
+			return nil
+		}
+		only = c
+	}
+	return only
+}
+
 func (s Screen) Render(ctx *core.Context) *core.Node {
+	// Resolve the page-child rule before any prop is chosen, because it adds
+	// one. The child has to be rendered to be classified — a widget in this
+	// package is a List only after it renders — and rendering it here rather
+	// than leaving it to core.Column is safe for ordering: every prop Screen
+	// puts on that column is a style prop or KeyboardAware, and none of them
+	// registers a callback, so nothing depends on the column's own arguments
+	// running before its child's do.
+	var page core.View
+	insetByChild := false
+	if only := s.soleChild(); only != nil {
+		n := only.Render(ctx)
+		page = renderedView{n}
+		insetByChild = n != nil && scrollingPageTypes[n.Type]
+	}
+
 	// Build core.Column's mixed prop/child argument list. Capacity is exact:
-	// the three optional props, the caller's overrides, and the children.
-	items := make([]core.PropsAndChildren, 0, len(s.Style)+len(s.Children)+3)
+	// the three optional props, the page-child's Padding(0), the caller's
+	// overrides, and the children.
+	items := make([]core.PropsAndChildren, 0, len(s.Style)+len(s.Children)+4)
 
 	if s.Fill {
 		items = append(items, core.FlexGrow(1))
@@ -112,13 +222,24 @@ func (s Screen) Render(ctx *core.Context) *core.Node {
 		// on different nodes.
 		items = append(items, core.KeyboardAware())
 	}
+	if insetByChild {
+		// The scaffold's column is a safe-area frame around a page that insets
+		// itself; see "A scrolling child is the page" above. Ahead of the
+		// caller's Style deliberately, so an explicit padding still wins.
+		items = append(items, core.Padding(0))
+	}
 	// Caller Style last: containerNode applies style props in argument order,
-	// so anything here wins over the two props above.
+	// so anything here wins over the three props above.
 	for _, sp := range s.Style {
 		items = append(items, sp)
 	}
-	for _, child := range s.Children {
-		items = append(items, child)
+	if page != nil {
+		// Already rendered above, and the only child there is.
+		items = append(items, page)
+	} else {
+		for _, child := range s.Children {
+			items = append(items, child)
+		}
 	}
 
 	// KeyboardAware lands on the outermost thing below the safe area: the
