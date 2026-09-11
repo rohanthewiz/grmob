@@ -496,6 +496,12 @@ var twoCopyFunctionShapes = []string{
 	// twice, is two records that cannot be read against each other, which is
 	// the whole purpose of their being a pair.
 	"bandPlacement",
+	// The sentence built out of a placement, a band and a machine comparison:
+	// UNDER by this much, OVER by that much, or in the band and where. Both
+	// packages build it and the two must not drift, for the reason
+	// bandPlacement is here — a reader holding one record's verdict against
+	// the other's needs the same words to mean the same thing.
+	"againstBandGiven",
 }
 
 // The package-level STATE those functions keep, held to being the same

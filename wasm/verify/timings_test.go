@@ -43,15 +43,21 @@ import (
 // of one machine's spread and that has not changed; `wholeFile` below is what
 // this package actually costs now, and it is wider than that.
 //
-// How much wider is deliberately not written here. It said "3% wide" for
-// several sessions, which was true of the band as it stood when somebody
-// computed it — 2.88–2.97s — and not of the widened band under it, which is
-// 6.8% and which the field below says was widened three times. A derivable
-// figure copied into prose, which is
-// the defect class this repository spends most of its censuses on, arriving in
-// the record that exists to stop it. The verdict line prints the width of
-// whichever band it compared against, so a reader who wants the number runs
-// the command rather than believing a sentence. See bandPlacement.
+// How much wider is deliberately not written here, and the reason is worth the
+// three lines it takes.
+//
+// This said "3% wide" for several sessions. That was true of the band as it
+// stood when somebody computed it — 2.88–2.97s — and not of the band under it,
+// which has been widened four times since. A derivable figure copied into
+// prose, which is the defect class this repository spends most of its censuses
+// on, arriving in the record that exists to stop it.
+//
+// The sentence that REPLACED it carried the corrected percentage, and that
+// percentage was stale one iteration later: the floor moved again in the same
+// session, found by the arm that places this figure. So the number is gone
+// rather than corrected. The verdict line prints the width of whichever band
+// it compared against, which is the one place it cannot drift. See
+// bandPlacement.
 //
 // The spread is why the recorded
 // figures are RANGES and the machine is why there is a record at all; the arm
@@ -140,9 +146,17 @@ import (
 //
 //	wholeFile
 //	  go test -count=1 ./wasm/verify
+//	  GRMOB_PACKAGE_READING=<that figure> go test -count=1 -v \
+//	      -run TestTheFigureGoTestPrinted ./wasm/verify
 //
 //	wholeFileInProcess
 //	  GRMOB_BAND_VERDICT=required go test -count=1 -v ./wasm/verify
+//
+// Two lines for the first field, because the figure being placed is the first
+// command's OWN wall clock and only the `go` command can see it — so the second
+// hands it back to the code that knows the band. See
+// TestTheFigureGoTestPrintedForThisPackageIsPlacedInItsBand for why it is not
+// a nested run.
 //
 // That last one is the verdict command above, read for its reading rather
 // than for its verdict — the line says what this run took before it says
@@ -377,6 +391,30 @@ var verifyTimingsTakenOn = struct {
 	// harmless one: a range too narrow reports a difference that is not there,
 	// which sends somebody to look and find nothing. A range too wide would
 	// hide one.
+	//
+	// # The fourth widening, and the arm that found it rather than an eye
+	//
+	// 2.78 → 2.76, on two readings of 2.762s and 2.765s in one sitting of ten.
+	// Nineteen readings across two sittings this session ran 2.762–2.894s;
+	// the lowest two are under the floor and one more, 2.775s, is AT it once
+	// rounded to the hundredth the band is written to.
+	//
+	// What is new is not the widening — it is the fourth — but WHO found it.
+	// The three before were found by a person running the command a dozen
+	// times and comparing two ranges by eye, which is how this floor came to
+	// be wrong three times. This one was reported by
+	// TestTheFigureGoTestPrintedForThisPackageIsPlacedInItsBand on the first
+	// sitting after that arm existed: "UNDER the band, by 15.2ms".
+	//
+	// Nothing was made faster. Two small tests were ADDED to this package in
+	// the same session, which costs time rather than saving it, so this is
+	// the floor having been set from too few sittings again — which is what
+	// the paragraph below and the sittings rule at the top of this record
+	// both predict, and is the fourth piece of evidence for them.
+	//
+	// The ceiling is untouched at 2.97s. Nothing this session came near it
+	// (the highest was 2.894s) and an end nothing has reached is evidence of
+	// nothing — see bandPlacement, which now says so on every reading.
 	//
 	// # The floor, which the taking that set it was already under
 	//
@@ -737,12 +775,12 @@ var verifyTimingsTakenOn = struct {
 	wholeFileInProcess: "2.55–2.78s over about sixty runs in five sittings " +
 		"across one session, the clock TestMain puts around m.Run(). The " +
 		"sittings are the statistic and the runs are not — see the comment",
-	wholeFile: "2.78–2.97s over forty-six runs in four sittings across two " +
+	wholeFile: "2.76–2.97s over sixty-five runs in six sittings across three " +
 		"sessions, the floor " +
-		"widened three times in two sessions — twice on readings under it, " +
-		"and once by the session that worked out why that keeps happening: " +
-		"consecutive runs are correlated and a band needs sittings rather " +
-		"than runs. See wholeFileInProcess",
+		"widened four times in three sessions — three times on readings " +
+		"under it, and once by the session that worked out why that keeps " +
+		"happening: consecutive runs are correlated and a band needs " +
+		"sittings rather than runs. See wholeFileInProcess",
 	walkEnumerate: "0.08–0.10s",
 	walkRead:      "0.15–0.17s",
 	walkParse:     "0.19–0.24s",
@@ -864,13 +902,15 @@ const coresAttribution = "The four repository-wide walks in this package are " +
 	"from " +
 	"internal/themehistory's, where the term is a git process per commit " +
 	"and the " +
-	"improvement runs all the way to eight. `wholeFileRunIsTheRecordedOne` " +
-	"also reads the count and does not scale with it: it compares this " +
-	"machine's cores against the record's, so that the whole-package " +
-	"verdict says nothing at all on a computer the band is not about. It " +
-	"is named here because this note is held to naming every reader of the " +
-	"count in the package, which is stricter than naming every term that " +
-	"scales with it."
+	"improvement runs all the way to eight. `recordMachineDiffers` also " +
+	"reads the count and does not scale with it: it compares this machine's " +
+	"cores against the record's, so that a verdict says nothing at all on a " +
+	"computer the band is not about. It is named here because this note is " +
+	"held to naming every reader of the count in the package, which is " +
+	"stricter than naming every term that scales with it — and the name it " +
+	"names moved, which is the census doing its job: the comparison was " +
+	"inline in `wholeFileRunIsTheRecordedOne` and in the reporting arm, and " +
+	"became one function when a third caller wanted it."
 
 // The range a record field opens with.
 //
@@ -944,6 +984,154 @@ func recordedBand(field string) (lo, hi, step time.Duration, ok bool) {
 		return 0, 0, 0, false
 	}
 	return lo, hi, step, true
+}
+
+// againstBandGiven is that sentence, as a function of nothing but its
+// arguments.
+//
+// # Why the gate and the machine check are the caller's
+//
+// This package's one caller is the arm that places the figure `go test` itself
+// printed — a reading taken OUTSIDE this process, whose gate is the presence
+// of that figure rather than the verdict lever. The other package has three
+// arms that clock their own run and gate on the lever. Pushing the gate and
+// the machine out to the callers is what lets one function serve both.
+//
+// Pushing both out leaves a function of four arguments that returns a
+// sentence, which is the form that can be ASSERTED — see
+// TestWhereAReadingFellInItsBandIsReadOffTheBandsOwnPrecision, which is the
+// only kind of test anything in this file can carry. The gate and the machine
+// read the environment and the runtime, and a test over either is a test of
+// the computer it runs on.
+//
+// # A second copy
+//
+// The first is in internal/themehistory/band_test.go and this is the same
+// function: two `package main` programs, neither able to import the other's
+// tests. Held identical by checkTwoCopyDecls — it is in twoCopyFunctionShapes
+// beside recordedBand and bandPlacement, because two packages spelling "UNDER
+// the band, by 14ms" differently is two records a reader cannot hold against
+// each other, which is the whole point of their being a pair.
+func againstBandGiven(fieldName, field string, differs []string,
+	got time.Duration) string {
+
+	lo, hi, step, ok := recordedBand(field)
+	if !ok {
+		return fmt.Sprintf("\n\nNo band was read out of %s. Its value has to "+
+			"OPEN with the range, the way every field in both records is "+
+			"written — see recordedBandForm. Until it does, the reading "+
+			"above is not being compared with anything.", fieldName)
+	}
+	if len(differs) > 0 {
+		return fmt.Sprintf("\n\nNot compared against %s (%v–%v): this run is "+
+			"not on the machine that record was taken on — %s. A reading "+
+			"from a different computer is not evidence about the band.",
+			fieldName, lo, hi, strings.Join(differs, ", "))
+	}
+	// Rounded against the BAND and not against a fixed unit. batchRetire's
+	// range is 180µs–290µs, and a difference rounded to the millisecond
+	// printed there as "by 0s" — a verdict that says the reading is outside
+	// a range and then says by nothing, which is worse than not printing it.
+	// A hundredth of the band's own width is fine enough to be true at every
+	// scale either record holds and coarse enough not to print seven digits.
+	// Rounded against the BAND and not against a fixed unit: batchRetire's
+	// range is 180µs–290µs, and a difference rounded to the millisecond
+	// printed there as "by 0s".
+	//
+	// That was the first half of the fix and it was not enough. A reading
+	// one step under the floor still rounds to zero, and "outside the band
+	// by nothing" is the same useless sentence arrived at from the other
+	// side. So a difference that rounds away is reported at microsecond
+	// resolution instead — whatever it is, it is not nothing, because the
+	// arm that prints it only runs when the reading is outside.
+	round := func(d time.Duration) time.Duration {
+		step := (hi - lo) / 100
+		if step <= 0 {
+			step = time.Microsecond
+		}
+		if r := d.Round(step); r != 0 {
+			return r
+		}
+		return d.Round(time.Microsecond)
+	}
+	switch {
+	case got < lo:
+		return fmt.Sprintf("\n\nUNDER the band %s records (%v–%v), by %v. On "+
+			"the machine that record names, so it is not another computer. "+
+			"Either this got faster and the floor is stale, or the floor was "+
+			"set from too few runs — which has happened to both records in "+
+			"this repository and is why this line is printed at all. Re-take "+
+			"it: widen the range to hold both takings rather than replacing "+
+			"it, unless something is known to have changed the code.",
+			fieldName, lo, hi, round(lo-got))
+	case got > hi:
+		return fmt.Sprintf("\n\nOVER the band %s records (%v–%v), by %v. On "+
+			"the machine that record names, so it is not another computer — "+
+			"but it may well be a busy one, and one reading over a ceiling "+
+			"is not a regression. Take it several times. If it holds, "+
+			"something here costs more than it did and the record is the "+
+			"place that says so.",
+			fieldName, lo, hi, round(got-hi))
+	default:
+		// The placement is the half of this line that is about the BAND
+		// rather than about the reading: a reading inside a band is a pass,
+		// and which part of the band it is in is the only thing it tells
+		// anybody about the two ends. See bandPlacement.
+		return fmt.Sprintf("\n\nIn the band %s records (%v–%v), on the "+
+			"machine it names — %s.", fieldName, lo, hi,
+			bandPlacement(lo, hi, got, step))
+	}
+}
+
+// recordMachineDiffers is every way this computer is not the one this
+// package's record was taken on, in the words the reporting arm prints.
+//
+// # Why it is a function, which is that it had three callers and two bodies
+//
+// The comparison was written out twice: once in the reporting arm and once in
+// the whole-file verdict's own guard, with the comments in the two explaining
+// the same two subtleties in different words. Both were right. A third caller
+// — the arm that places a figure `go test` printed, which needs the same four
+// answers about a reading taken outside the process — is the point at which
+// keeping them in step becomes somebody remembering to, and this repository
+// writes functions instead of remembering.
+//
+// internal/themehistory reached this a run earlier and for the same reason;
+// its copy is the same four comparisons over its own record.
+//
+// # Why the two packages' copies are not held identical
+//
+// They cannot be. Each reads its own record, and the two records are separate
+// anonymous struct literals in separate `package main` programs — which is the
+// argument for their being two copies in the first place. A shared function
+// would need a shared type, and there is none to have. So the two are a pair
+// by intent and not by census, and the thing that IS held identical is the
+// sentence built out of the result: see againstBandGiven.
+func recordMachineDiffers() []string {
+	rec := verifyTimingsTakenOn
+	var differs []string
+	if got := runtime.GOOS; got != rec.goos {
+		differs = append(differs, fmt.Sprintf("GOOS %s against %s", got, rec.goos))
+	}
+	if got := runtime.GOARCH; got != rec.goarch {
+		differs = append(differs, fmt.Sprintf("GOARCH %s against %s", got,
+			rec.goarch))
+	}
+	// The toolchain, because the numbers are of code this compiles and the
+	// scheduler that runs it. Compared as a prefix: a patch release is a
+	// different toolchain and worth naming, and `devel` builds carry a suffix
+	// no equality test would ever match.
+	if got := runtime.Version(); !strings.HasPrefix(got, rec.goVersion) {
+		differs = append(differs, fmt.Sprintf("%s against %s", got, rec.goVersion))
+	}
+	// NumCPU and not GOMAXPROCS: the band walks split their family across
+	// GOMAXPROCS, which a caller can set, and what the record is about is the
+	// machine underneath it.
+	if got := runtime.NumCPU(); got != rec.cores {
+		differs = append(differs, fmt.Sprintf("%d cores against %d", got,
+			rec.cores))
+	}
+	return differs
 }
 
 // bandPlacement is where in a band a reading fell, and which of the band's two
@@ -1074,28 +1262,12 @@ func TestTheTimingsInThisPackageSayWhichMachineTheyCameFrom(t *testing.T) {
 			"from a different computer.", rec)
 	}
 
-	var differs []string
-	if got := runtime.GOOS; got != rec.goos {
-		differs = append(differs, fmt.Sprintf("GOOS %s against %s", got, rec.goos))
-	}
-	if got := runtime.GOARCH; got != rec.goarch {
-		differs = append(differs, fmt.Sprintf("GOARCH %s against %s", got,
-			rec.goarch))
-	}
-	// The toolchain, because the numbers are of code this compiles and the
-	// scheduler that runs it. Compared as a prefix: a patch release is a
-	// different toolchain and worth naming, and `devel` builds carry a suffix
-	// no equality test would ever match.
-	if got := runtime.Version(); !strings.HasPrefix(got, rec.goVersion) {
-		differs = append(differs, fmt.Sprintf("%s against %s", got, rec.goVersion))
-	}
-	// NumCPU and not GOMAXPROCS: the band walks split their family across
-	// GOMAXPROCS, which a caller can set, and what the record is about is the
-	// machine underneath it.
-	if got := runtime.NumCPU(); got != rec.cores {
-		differs = append(differs, fmt.Sprintf("%d cores against %d", got,
-			rec.cores))
-	}
+	// The four comparisons are recordMachineDiffers, which is where they went
+	// when a third caller needed them. This arm prints them, the whole-file
+	// verdict reads whether the list is empty, and the arm that places a
+	// figure taken outside the process does the same — three readings of one
+	// answer, which is one more than it takes for a second copy to drift.
+	differs := recordMachineDiffers()
 
 	if len(differs) == 0 {
 		t.Logf("this run is on the machine the timings in this package were "+
@@ -1128,4 +1300,84 @@ func TestTheTimingsInThisPackageSayWhichMachineTheyCameFrom(t *testing.T) {
 		"for, and why none of these numbers is an assertion.%s",
 		rec.machine, rec.goVersion, rec.goos, rec.goarch, rec.cores,
 		strings.Join(differs, ", "), rec.wholeFile, rec.foldWalk, cores)
+}
+
+// The figure `go test` printed, for the arm that places it in its band.
+//
+// Spelled out and the same name in both packages, the way GRMOB_BAND_VERDICT
+// is: a person who has the recipe for one record has it for the other.
+const packageReadingEnv = "GRMOB_PACKAGE_READING"
+
+// The figure `go test` prints, handed back to the code that knows the band.
+//
+// # Why this one had no verdict, and why that cost something
+//
+// verifyTimingsTakenOn.wholeFile is what `go test -count=1 ./wasm/verify` reports, and that number is
+// produced by the `go` command rather than by the test binary. No test can see
+// it. It is also the number a person is most likely to be holding this record
+// up against, because it is the one they get by running the tests — and it has
+// drifted twice, both times found by somebody running the command a dozen
+// times and comparing two ranges by eye.
+//
+// That comparison was made by eye once more in the run that added this, and it
+// nearly went wrong in the direction the rule exists for: the package read
+// 2.778s against a floor of 2.78s, which LOOKS like a reading under the floor
+// and is the floor — an end is a reading rounded outward to the record's two
+// decimals, so at the precision the band is written to those are the same
+// number. A person without that rule in front of them re-takes a floor that
+// was reached, which is the false verdict every paragraph in this record
+// warns about.
+//
+// # Why the reading comes from the environment and not from a nested run
+//
+// The obvious alternative is an opt-in arm that runs `go test` itself and
+// reads the `ok` line. Measured before it was written: three nested runs of
+// wasm/verify read 2.751–2.902s where nine plain runs read 2.778–2.891s, and
+// one of the three was under the recorded floor. A figure taken by a `go test`
+// running underneath another process is a figure from a different invocation,
+// and "the method is part of the reading" is the thing this record repeats
+// most often. A nested run would have added a new measurement in order to
+// check an old one.
+//
+// So the reading is the one `go test` already printed, for the run the person
+// actually made, and the only new thing is the arithmetic — which is
+// againstBandGiven, the same sentence the other record's arms print.
+//
+// # What it cannot check
+//
+// That the figure came from a run of this package ALONE. `go test ./...` runs
+// package binaries in parallel and reports a figure a band's width above this
+// one; nothing here can tell one from the other, which is the same limit the
+// verdict lever has and is stated for the same reason. The command below is
+// the one to take it from.
+func TestTheFigureGoTestPrintedForThisPackageIsPlacedInItsBand(t *testing.T) {
+	raw := os.Getenv(packageReadingEnv)
+	if raw == "" {
+		t.Skipf("%s is not set. This places the figure `go test` prints for "+
+			"this package — the one reading in verifyTimingsTakenOn that no test can see — "+
+			"in the band the record carries for it:\n\n"+
+			"    go test -count=1 ./wasm/verify\n"+
+			"    %s=<that figure> go test -count=1 -v -run "+
+			"TestTheFigureGoTestPrinted ./wasm/verify\n\n"+
+			"Two commands because the first one's own wall clock is what is "+
+			"being placed, and only the `go` command can see it.",
+			packageReadingEnv, packageReadingEnv)
+	}
+	// A duration, spelled the way `go test` spells it: `2.891s`. Parsed rather
+	// than scanned for digits, so that a figure copied with its unit attached
+	// is the form that works and a bare number is refused rather than read as
+	// nanoseconds.
+	got, err := time.ParseDuration(raw)
+	if err != nil || got <= 0 {
+		t.Fatalf("%s=%q is not a duration this can read (%v).\n\n"+
+			"It takes the figure `go test` prints, with its unit: `2.891s`. "+
+			"Refused rather than guessed at, for the reason the verdict "+
+			"lever is spelled out rather than defaulted — a value nothing "+
+			"understood should say so instead of placing a reading nobody "+
+			"took.", packageReadingEnv, raw, err)
+	}
+	// TrimLeft because againstBandGiven's sentence is built to land at the end
+	// of a line that already reports a reading, and here it IS the line.
+	t.Log(strings.TrimLeft(againstBandGiven("verifyTimingsTakenOn.wholeFile",
+		verifyTimingsTakenOn.wholeFile, recordMachineDiffers(), got), "\n"))
 }

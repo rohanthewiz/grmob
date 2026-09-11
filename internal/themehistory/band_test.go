@@ -272,6 +272,39 @@ func againstBand(fieldName, field string, got time.Duration) string {
 	if !bandVerdictWanted() {
 		return ""
 	}
+	return againstBandGiven(fieldName, field, recordMachineDiffers(), got)
+}
+
+// againstBandGiven is that sentence, as a function of nothing but its
+// arguments.
+//
+// # Why the gate and the machine check are the caller's
+//
+// Two callers, and they are asking different questions. The three arms in this
+// package take a reading of THIS run, so the gate is "was a verdict asked for"
+// and the machine is this computer. The arm that places the figure `go test`
+// itself printed takes a reading from OUTSIDE the process: its gate is the
+// presence of that figure, and the machine that matters is the one the figure
+// came from, which is this one only because the person ran both commands in a
+// row.
+//
+// Pushing both out leaves a function of four arguments that returns a
+// sentence, which is the form that can be ASSERTED — see
+// TestWhereAReadingFellInItsBandIsReadOffTheBandsOwnPrecision, which is the
+// only kind of test anything in this file can carry. The gate and the machine
+// read the environment and the runtime, and a test over either is a test of
+// the computer it runs on.
+//
+// # And why it is a two-copy shape
+//
+// wasm/verify places a figure the same way and neither package can import the
+// other's tests. Two packages spelling "UNDER the band, by 14ms" differently
+// is two records a reader cannot hold against each other, which is the whole
+// point of their being a pair — so this is in twoCopyFunctionShapes beside
+// recordedBand and bandPlacement.
+func againstBandGiven(fieldName, field string, differs []string,
+	got time.Duration) string {
+
 	lo, hi, step, ok := recordedBand(field)
 	if !ok {
 		return fmt.Sprintf("\n\nNo band was read out of %s. Its value has to "+
@@ -279,7 +312,7 @@ func againstBand(fieldName, field string, got time.Duration) string {
 			"written — see recordedBandForm. Until it does, the reading "+
 			"above is not being compared with anything.", fieldName)
 	}
-	if differs := recordMachineDiffers(); len(differs) > 0 {
+	if len(differs) > 0 {
 		return fmt.Sprintf("\n\nNot compared against %s (%v–%v): this run is "+
 			"not on the machine that record was taken on — %s. A reading "+
 			"from a different computer is not evidence about the band.",
@@ -461,4 +494,178 @@ func TestWhereAReadingFellInItsBandIsReadOffTheBandsOwnPrecision(t *testing.T) {
 		"and a microsecond band. bandPlacement is in twoCopyFunctionShapes, "+
 		"so wasm/verify's copy is held to being this same declaration.",
 		len(cases))
+}
+
+// The figure `go test` printed, for the arm that places it in its band.
+//
+// Spelled out and the same name in both packages, the way GRMOB_BAND_VERDICT
+// is: a person who has the recipe for one record has it for the other.
+const packageReadingEnv = "GRMOB_PACKAGE_READING"
+
+// The figure `go test` prints, handed back to the code that knows the band.
+//
+// # Why this one had no verdict, and why that cost something
+//
+// themehistoryTimingsTakenOn.wholePackage is what `go test -count=1 ./internal/themehistory` reports, and that number is
+// produced by the `go` command rather than by the test binary. No test can see
+// it. It is also the number a person is most likely to be holding this record
+// up against, because it is the one they get by running the tests — and it has
+// drifted twice, both times found by somebody running the command a dozen
+// times and comparing two ranges by eye.
+//
+// That comparison was made by eye once more in the run that added this, and it
+// nearly went wrong in the direction the rule exists for: the package read
+// 2.778s against a floor of 2.78s, which LOOKS like a reading under the floor
+// and is the floor — an end is a reading rounded outward to the record's two
+// decimals, so at the precision the band is written to those are the same
+// number. A person without that rule in front of them re-takes a floor that
+// was reached, which is the false verdict every paragraph in this record
+// warns about.
+//
+// # Why the reading comes from the environment and not from a nested run
+//
+// The obvious alternative is an opt-in arm that runs `go test` itself and
+// reads the `ok` line. Measured before it was written: three nested runs of
+// wasm/verify read 2.751–2.902s where nine plain runs read 2.778–2.891s, and
+// one of the three was under the recorded floor. A figure taken by a `go test`
+// running underneath another process is a figure from a different invocation,
+// and "the method is part of the reading" is the thing this record repeats
+// most often. A nested run would have added a new measurement in order to
+// check an old one.
+//
+// So the reading is the one `go test` already printed, for the run the person
+// actually made, and the only new thing is the arithmetic — which is
+// againstBandGiven, the same sentence the other record's arms print.
+//
+// # What it cannot check
+//
+// That the figure came from a run of this package ALONE. `go test ./...` runs
+// package binaries in parallel and reports a figure a band's width above this
+// one; nothing here can tell one from the other, which is the same limit the
+// verdict lever has and is stated for the same reason. The command below is
+// the one to take it from.
+func TestTheFigureGoTestPrintedForThisPackageIsPlacedInItsBand(t *testing.T) {
+	raw := os.Getenv(packageReadingEnv)
+	if raw == "" {
+		t.Skipf("%s is not set. This places the figure `go test` prints for "+
+			"this package — the one reading in themehistoryTimingsTakenOn that no test can see — "+
+			"in the band the record carries for it:\n\n"+
+			"    go test -count=1 ./internal/themehistory\n"+
+			"    %s=<that figure> go test -count=1 -v -run "+
+			"TestTheFigureGoTestPrinted ./internal/themehistory\n\n"+
+			"Two commands because the first one's own wall clock is what is "+
+			"being placed, and only the `go` command can see it.",
+			packageReadingEnv, packageReadingEnv)
+	}
+	// A duration, spelled the way `go test` spells it: `2.891s`. Parsed rather
+	// than scanned for digits, so that a figure copied with its unit attached
+	// is the form that works and a bare number is refused rather than read as
+	// nanoseconds.
+	got, err := time.ParseDuration(raw)
+	if err != nil || got <= 0 {
+		t.Fatalf("%s=%q is not a duration this can read (%v).\n\n"+
+			"It takes the figure `go test` prints, with its unit: `2.891s`. "+
+			"Refused rather than guessed at, for the reason the verdict "+
+			"lever is spelled out rather than defaulted — a value nothing "+
+			"understood should say so instead of placing a reading nobody "+
+			"took.", packageReadingEnv, raw, err)
+	}
+	// TrimLeft because againstBandGiven's sentence is built to land at the end
+	// of a line that already reports a reading, and here it IS the line.
+	t.Log(strings.TrimLeft(againstBandGiven("themehistoryTimingsTakenOn.wholePackage",
+		themehistoryTimingsTakenOn.wholePackage, recordMachineDiffers(), got), "\n"))
+}
+
+// The sentence built around a placement, asserted — the four ways it can come
+// out and the one input that silences it.
+//
+// # Why this is separate from the placement test
+//
+// They answer different questions. bandPlacement is arithmetic about a band;
+// againstBandGiven is the DECISION about what to say, which includes two cases
+// that are not about the band at all — a field whose value cannot be read as a
+// band, and a reading from a different computer. Those two are the ones worth
+// holding: both return early, both are silent about the placement, and a
+// regression in either would read as a passing verdict rather than as a
+// failure.
+//
+// The machine list is a parameter here, which is the reason this can be a test
+// at all: recordMachineDiffers reads the runtime, and a test over it is a test
+// of the computer it runs on. See againstBandGiven's header.
+func TestTheSentenceAroundAPlacementSaysWhichOfTheFourCasesItIs(t *testing.T) {
+	const field = "1.40–1.67s over twenty-three runs"
+	cases := []struct {
+		why             string
+		field           string
+		differs         []string
+		got             time.Duration
+		wants, wantsNot []string
+	}{
+		{
+			why:   "a reading inside the band",
+			field: field, got: 1500 * time.Millisecond,
+			wants: []string{"In the band", "1.4s–1.67s", "37% up a band 270ms wide"},
+		},
+		{
+			why:   "a reading under the floor",
+			field: field, got: 1300 * time.Millisecond,
+			// 99.9ms and not 100ms: the difference is rounded to a
+			// hundredth of the band's own width, which is 2.7ms here. That
+			// rule is there so a microsecond band does not print "by 0s", and
+			// the cost of it is a tenth of a millisecond of honesty on a
+			// figure like this one.
+			wants:    []string{"UNDER the band", "by 99.9ms", "widen the range"},
+			wantsNot: []string{"up a band"},
+		},
+		{
+			why:   "a reading over the ceiling",
+			field: field, got: 1800 * time.Millisecond,
+			wants: []string{"OVER the band", "by 129.6ms",
+				"Take it several times"},
+			wantsNot: []string{"up a band"},
+		},
+		{
+			// The field written the other way round. It comes back as a
+			// finding about the FIELD rather than about the reading, which is
+			// the distinction that matters: nothing is wrong with the run.
+			why:   "a field whose value does not open with a band",
+			field: "over twenty-three runs, 1.40–1.67s", got: 1500 * time.Millisecond,
+			wants:    []string{"No band was read out of", "has to OPEN"},
+			wantsNot: []string{"In the band", "UNDER", "OVER"},
+		},
+		{
+			// A reading from another computer is not evidence about the band,
+			// so the sentence says which machine and stops. This is the case
+			// that would otherwise report a band failure on every CI runner —
+			// the noise that argues for deleting the record.
+			why:   "a reading from a different machine",
+			field: field, differs: []string{"4 cores against 8"},
+			got:      1300 * time.Millisecond,
+			wants:    []string{"Not compared against", "4 cores against 8"},
+			wantsNot: []string{"UNDER the band", "up a band"},
+		},
+	}
+	for _, c := range cases {
+		got := againstBandGiven("theField", c.field, c.differs, c.got)
+		for _, want := range c.wants {
+			if !strings.Contains(got, want) {
+				t.Errorf("%s: the sentence for %v against %q does not say "+
+					"%q.\n\nIt says: %s\n\n"+
+					"This is the line a person reads when they take figures, "+
+					"and the two records print the same one — see "+
+					"twoCopyFunctionShapes. A case that stops saying which "+
+					"of the four it is reads as a verdict that passed.",
+					c.why, c.got, c.field, want, got)
+			}
+		}
+		for _, not := range c.wantsNot {
+			if strings.Contains(got, not) {
+				t.Errorf("%s: the sentence for %v against %q says %q and "+
+					"should not.\n\nIt says: %s",
+					c.why, c.got, c.field, not, got)
+			}
+		}
+	}
+	t.Logf("%d sentence(s) asserted: in band, under, over, a field that is "+
+		"not a band, and a reading from another machine.", len(cases))
 }

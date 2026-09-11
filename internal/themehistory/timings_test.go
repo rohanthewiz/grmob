@@ -94,6 +94,10 @@ import (
 // made this the only figure in either record a person could not re-derive by
 // running something". A table of recipes is the same defect one level up.
 //
+// Two lines for the first field: the figure being placed is the first
+// command's own wall clock, which only the `go` command can see, so the second
+// hands it back to the code that knows the band.
+//
 // That this table has an entry for every band below is held by an arm rather
 // than by hand — see checkEveryBandFieldHasATakingCommand in
 // wasm/verify/copies_test.go, which reads the labels out of this comment and
@@ -102,6 +106,8 @@ import (
 //
 //	wholePackage
 //	  go test -count=1 ./internal/themehistory
+//	  GRMOB_PACKAGE_READING=<that figure> go test -count=1 -v \
+//	      -run TestTheFigureGoTestPrinted ./internal/themehistory
 //
 //	batchRetire
 //	  go test -count=1 -run TestRetiringAHealthyGit ./internal/themehistory
@@ -158,17 +164,55 @@ var themehistoryTimingsTakenOn = struct {
 	//	8          0.21–0.23s         3.05–3.14s
 	//
 	// The one-core row is the figure this package had BEFORE the pool, which
-	// is what says the pool is the only thing that moved. So `2.92–3.22s`
-	// below is not a number about this code: it is a number about this code on
-	// eight cores, and a single-core CI runner pays about 0.7s more for the
-	// same green run.
+	// is what says the pool is the only thing that moved. So the band this
+	// field records is not a number about this code: it is a number about this
+	// code on eight cores, and a single-core CI runner pays about 0.7s more
+	// for the same green run.
+	//
+	// The band is NAMED rather than quoted here, and the reason is that it was
+	// quoted: this sentence said `2.92–3.22s` through two widenings of the
+	// field directly below it. A figure quoted beside the field it is a copy
+	// of is the cheapest possible version of this repository's commonest
+	// defect, and the fix is the one main.go already took — name the field and
+	// let the reader read one number in one place.
+	//
+	// # The second widening, found by an arm rather than by an eye
+	//
+	// 2.86 → 2.82, on readings of 2.824s and 2.843s in a sitting of thirteen
+	// that ran 2.824–3.009s. Both are under the old floor once rounded to the
+	// hundredth the band is written to, and the lower of the two rounds to
+	// 2.82.
+	//
+	// This figure is what `go test` prints for this package, so nothing inside
+	// the package could see it and the comparison was a person reading two
+	// ranges on two screens. It has an arm now —
+	// TestTheFigureGoTestPrintedForThisPackageIsPlacedInItsBand, which takes
+	// the figure `go test` printed and places it — and that arm reported
+	// "UNDER the band, by 18ms" on the first sitting it existed for. The same
+	// thing happened in wasm/verify in the same session and the same hour:
+	// two floors, two packages, both set from too few sittings, both found by
+	// the arm rather than by somebody looking.
+	//
+	// Nothing was made faster. Two tests were ADDED to this package in the
+	// session that widened it, which costs time rather than saving it.
+	//
+	// The ceiling is untouched at 3.22s: the highest reading in the sitting
+	// was 3.009s, and an end nothing has reached is evidence of nothing.
 	//
 	// # What the arm costs, since it is the one thing here anybody would want
 	// # to switch off — and `-short` is the switch
 	//
-	//	              default        -short
-	//	plain         2.92–3.22s     1.18–1.31s
-	//	-race         6.46–6.70s     2.39–2.44s
+	//	              default           -short
+	//	plain         the band above    1.18–1.31s
+	//	-race         6.46–6.70s        2.39–2.44s
+	//
+	// The plain default cell says "the band above" because that is what it is:
+	// the same quantity as this field, written out a second time thirty lines
+	// below it. It read `2.92–3.22s` against a field that had been widened
+	// twice — so the table that exists to price the `-short` lever was
+	// comparing against a figure this record had already replaced. A cell that
+	// names the field cannot drift; one that copies it only looks like it
+	// cannot.
 	//
 	// Seven runs for the plain default, three for the other three, and every
 	// row here holds more than one afternoon's readings. The -race row is six
@@ -423,11 +467,12 @@ var themehistoryTimingsTakenOn = struct {
 	goarch:    "arm64",
 	goVersion: "go1.26.1",
 	cores:     8,
-	wholePackage: "2.86–3.22s over sixty-three runs in three sessions, and " +
-		"3.69–3.82s on a single core. The floor was widened by the session " +
-		"that found consecutive runs are correlated, so a band set from one " +
-		"sitting is narrower than the figure — see wasm/verify's " +
-		"wholeFileInProcess",
+	wholePackage: "2.82–3.22s over seventy-six runs in four sessions, and " +
+		"3.69–3.82s on a single core. The floor has been widened twice, by " +
+		"the session that found consecutive runs are correlated and by the " +
+		"one that gave this figure an arm — so a band set from one sitting " +
+		"is narrower than the figure, and so is one set without anything " +
+		"watching it. See wasm/verify's wholeFileInProcess",
 	wholeRun: "1.40–1.67s over twenty-three runs of the whole package in " +
 		"two sessions, in process, 2955 objects fetched, the expectation " +
 		"enumerated alongside in 0.22s over 8 workers",

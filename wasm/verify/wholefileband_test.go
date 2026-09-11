@@ -6,7 +6,6 @@ import (
 	"flag"
 	"fmt"
 	"os"
-	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -132,24 +131,7 @@ func wholeFileRunIsTheRecordedOne() (why string, ok bool) {
 	if f := flag.Lookup("test.count"); f != nil && f.Value.String() != "1" {
 		return "-count=" + f.Value.String(), false
 	}
-	rec := verifyTimingsTakenOn
-	var differs []string
-	if got := runtime.GOOS; got != rec.goos {
-		differs = append(differs, fmt.Sprintf("GOOS %s against %s", got, rec.goos))
-	}
-	if got := runtime.GOARCH; got != rec.goarch {
-		differs = append(differs, fmt.Sprintf("GOARCH %s against %s", got,
-			rec.goarch))
-	}
-	// A prefix, for the reason the reporting arm gives: a patch release is a
-	// different toolchain and `devel` builds carry a suffix.
-	if got := runtime.Version(); !strings.HasPrefix(got, rec.goVersion) {
-		differs = append(differs, fmt.Sprintf("%s against %s", got, rec.goVersion))
-	}
-	if got := runtime.NumCPU(); got != rec.cores {
-		differs = append(differs, fmt.Sprintf("%d cores against %d", got, rec.cores))
-	}
-	if len(differs) > 0 {
+	if differs := recordMachineDiffers(); len(differs) > 0 {
 		return "not the machine the record names — " +
 			strings.Join(differs, ", "), false
 	}
