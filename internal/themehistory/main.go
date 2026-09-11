@@ -637,7 +637,8 @@ func wrap(names []string, width int, indent string) string {
 // repository's own answer on every run: themeSourcesAt names the objects a
 // revision contributes and TestTheWholeWalkGoesRoundOneBatchProcess sums it
 // across the history, holds the batch reader's fetch count to that sum, and
-// reports it. 2906 over this repository's eighty-eight commits, and a number
+// reports it. Getting on for three thousand over this repository's history,
+// and a number
 // that moves with the checkout rather than a constant tuned against one run.
 //
 // "Thirty-one seconds" was worse: taken once, in the session that deleted the
@@ -648,14 +649,21 @@ func wrap(names []string, width int, indent string) string {
 // GRMOB_PER_OBJECT_FETCH=required because it is thirty seconds and three
 // thousand processes:
 //
-//	one `cat-file -p` each   30.14–30.42s   2906 processes
-//	one `cat-file --batch`   399–401ms      1 process
-//	                         ─────────────  75–76× on the fetches alone
+//	one `cat-file -p` each   one process per object, thirty seconds
+//	one `cat-file --batch`   one process, about four hundred milliseconds
+//	                         ────────────────────────────────────────────
+//	                         seventy-odd × on the fetches alone
 //
-// (Three runs on the machine themehistoryTimingsTakenOn names; the batched
-// figure there is the fetches on their own, which is why it is well under
-// wholeRun's 1.5s — that one also pays 88 `ls-tree` processes and every
-// revision's parse.) The thirty-one seconds carried in this comment for
+// The figures are deliberately orders of magnitude here and not readings: the
+// readings live in themehistoryTimingsTakenOn.perObjectRun, which is where
+// they are re-taken, and a copy of them in this comment would be a second
+// place to keep in step. They were exactly that until tonight — this table
+// said 30.14–30.42s against 399–401ms while the record said something else,
+// both attributed to the same afternoon.
+//
+// The batched figure there is the fetches on their own, which is why it is
+// well under wholeRun — that one also pays an `ls-tree` per commit and every
+// revision's parse. The thirty-one seconds carried in this comment for
 // several sessions turns out to have been right, and it is no longer what the
 // argument rests on: what rests here now is a comparison anybody can re-take
 // with one environment variable, on their own machine, in either direction.
@@ -734,7 +742,7 @@ func blob(rev, path string) (string, error) {
 	}
 	// Read before the lock rather than inside newBatchReader, so the check
 	// below and the process's own Dir are the same string. One getcwd per
-	// fetch is a syscall against a pipe round trip; at the 2906 fetches a
+	// fetch is a syscall against a pipe round trip; at the few thousand fetches a
 	// whole run over this repository takes — counted by batchReader.reads and
 	// reported by TestTheWholeWalkGoesRoundOneBatchProcess — it is not
 	// measurable.

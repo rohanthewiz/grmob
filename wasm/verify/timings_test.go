@@ -420,7 +420,8 @@ var verifyTimingsTakenOn = struct {
 // and eight are the same number. So: a core count that differs from eight is
 // worth a sixth of the figure between one and two, a fiftieth between two and
 // four, and nothing above that. internal/themehistory's keeps improving all
-// the way to eight, because its term is 88 git processes rather than one Go
+// the way to eight, because its term is a git process per commit rather than
+// one Go
 // program's own goroutines. A reader on a four-core machine should expect
 // this package's number and not that one.
 // # How this has to be written, which is a constraint from outside
@@ -449,7 +450,8 @@ const coresAttribution = "The four repository-wide walks in this package are " +
 	"count is worth about a sixth of the figure above between one core and " +
 	"two and a fiftieth between two and four — which is the opposite shape " +
 	"from " +
-	"internal/themehistory's, where the term is 88 git processes and the " +
+	"internal/themehistory's, where the term is a git process per commit " +
+	"and the " +
 	"improvement runs all the way to eight."
 
 // This run says whether it is standing on the machine the timings came from.

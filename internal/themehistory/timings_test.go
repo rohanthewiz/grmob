@@ -40,6 +40,39 @@ import (
 // becomes a shape kept in step by whoever remembers to. The reasoning above is
 // what that check quotes back when it fires.
 //
+// # What a re-taking also moves, and the counts that move on their own
+//
+// Two different problems, and this record had both.
+//
+// The first is that attribution by reference is a pointer that moves. Every
+// figure here says it was taken on the machine this record names, which is the
+// discipline the record exists for and is not sufficient: when a field is
+// re-taken, every sentence elsewhere that quotes its value silently starts
+// claiming to be from a taking it is not from. main.go carried
+// `30.14–30.42s against 399–401ms`, attributed to this record in those words,
+// while the record said 30.40–30.52s against 398–405ms. main_test.go carried
+// the same pair and a wholeRun of `1.49–1.61s` against a recorded 1.52–1.60s.
+// Three copies of two numbers, two of them wrong, all three attributed.
+//
+// The fix is not to re-take the copies. It is for them to stop being copies:
+// main.go states the ORDERS OF MAGNITUDE its argument rests on and names the
+// field for the readings, and main_test.go names the field instead of
+// restating it. A ratio and an order of magnitude do not drift; a reading does.
+//
+// The second is sharper and belongs to this package in particular. The object
+// count and the tree count — 2906 and 88 as they were written — are not
+// readings of a machine at all. They are readings of THIS REPOSITORY'S OWN
+// HISTORY, and it grows. They were 2955 and
+// 89 by the time this paragraph was written, in the same session that found
+// them, because the commits that record a count are commits.
+//
+// So the counts stay in this record, where they say what the timings are a
+// reading OVER, and they are gone from the sentences that used to restate
+// them — fourteen of those, across both packages that quote this record. Those say `one ls-tree per commit` and `every object in the
+// history` now, which is what they were always about — and the arm prints the
+// live number on every run, which is the only place a count like this can be
+// right.
+//
 // # Re-taking it
 //
 //	go test -count=1 ./internal/themehistory                      wholePackage
@@ -68,7 +101,7 @@ var themehistoryTimingsTakenOn = struct {
 	//
 	// Everything on top of that IS accounted for, and all of it is one arm:
 	// TestTheWholeWalkGoesRoundOneBatchProcess runs the program over the whole
-	// history (the 1.52–1.60s in wholeRun below) and enumerates the objects it
+	// history (wholeRun below is what it costs) and enumerates the objects it
 	// expects to be fetched first, which is one `ls-tree` per commit. So this
 	// figure is roughly the old one plus that arm; the paragraph above is
 	// about a gap with no such explanation, and the two are worth keeping
@@ -254,8 +287,8 @@ var themehistoryTimingsTakenOn = struct {
 	// whatever machine is asking, rather than a figure from a lost tree.
 	//
 	// The batched half here is the FETCHES ALONE and is much smaller than
-	// wholeRun above, which also pays 88 `ls-tree` processes and every
-	// revision's parse. The two are not readings of the same thing and the
+	// wholeRun above, which also pays one `ls-tree` process per commit and
+	// every revision's parse. The two are not readings of the same thing and the
 	// ratio below is the one that belongs beside blob's argument.
 	//
 	// # The other terms, which are here so that nobody has to subtract
@@ -264,15 +297,15 @@ var themehistoryTimingsTakenOn = struct {
 	// either record that invited a subtraction, and a reader who did it got a
 	// figure nobody had measured. So the missing terms are taken here too:
 	//
-	//	the fetches      395–405ms, the batched half above
-	//	the trees        0.87–0.92s, the 88 `ls-tree` run SERIALLY, which is
-	//	                 what the walk itself pays. Not the pooled 0.22s the
-	//	                 whole-walk arm reports, which is a different quantity
-	//	the parse        0.118–0.120s, themeleaves.Of over the same sources at
+	//	the fetches      409–412ms, the batched half above
+	//	the trees        0.87–0.91s, one `ls-tree` per commit run SERIALLY,
+	//	                 which is what the walk itself pays. Not the pooled
+	//	                 0.22s the whole-walk arm reports, a different quantity
+	//	the parse        0.125–0.145s, themeleaves.Of over the same sources at
 	//	                 the same revisions — the same call the walk makes, over
 	//	                 the bytes the batch just returned
 	//	                 ─────
-	//	together         1.39–1.44s, against a wholeRun of 1.52–1.60s
+	//	together         1.41–1.47s, against the wholeRun above
 	//
 	// What is left is the diff between consecutive revisions and the printing,
 	// and it is still a REMAINDER rather than a reading: roughly 0.1–0.2s,
@@ -306,12 +339,12 @@ var themehistoryTimingsTakenOn = struct {
 	cores:     8,
 	wholePackage: "2.92–3.22s over fifty-seven runs in three sessions, and " +
 		"3.69–3.82s on a single core",
-	wholeRun: "1.52–1.60s over seven runs, in process, 2906 objects fetched, " +
+	wholeRun: "1.56–1.67s over seven runs, in process, 2955 objects fetched, " +
 		"the expectation enumerated alongside in 0.22s over 8 workers",
-	perObjectRun: "30.40–30.52s over three runs, 2906 objects, one process " +
-		"each, against 398–405ms for the same fetches batched — 75.1–76.4×; " +
-		"the 88 `ls-tree` the walk pays serially, 0.87–0.92s; themeleaves.Of " +
-		"over the same sources, 0.118–0.120s",
+	perObjectRun: "30.53–30.84s over three runs, 2955 objects, one process " +
+		"each, against 409–412ms for the same fetches batched — 74.7–75.1×; " +
+		"the 89 `ls-tree` the walk pays serially, 0.87–0.91s; themeleaves.Of " +
+		"over the same sources, 0.125–0.145s",
 	batchRetire: "0.18–0.29ms over four sets of seven",
 }
 
@@ -406,7 +439,8 @@ func TestTheTimingsInThisPackageSayWhichMachineTheyCameFrom(t *testing.T) {
 // having one, in the same pass that holds them to the five machine fields.
 //
 // What is worth comparing between the two is the SHAPE. This package's term is
-// 88 git processes, so the improvement runs all the way to eight workers;
+// one git process per commit, so the improvement runs all the way to eight
+// workers;
 // wasm/verify's is one Go program's own goroutines, and its figure is flat
 // from two cores upwards. A reader on a four-core machine should expect a
 // different fraction of each.
@@ -601,8 +635,9 @@ const wholeWalkCommitsFloor = 50
 // os.Stdout redirect in the whole-walk arm is safe only because nothing in
 // this package is parallel. Both still hold: this pool runs BEFORE the walk,
 // touches no package state — not blobs, not batchesStarted, not os.Stdout —
-// and is joined before anything is measured. What is concurrent here is 88 git
-// processes, which is a fact about the machine rather than about this program.
+// and is joined before anything is measured. What is concurrent here is a git
+// process per commit, which is a fact about the machine rather than about this
+// program.
 //
 // That paragraph used to be the whole of it, which is the state this package
 // keeps writing arms against: an argument nobody re-checks, holding up two
@@ -1047,7 +1082,7 @@ func TestTheWholeWalkGoesRoundOneBatchProcess(t *testing.T) {
 	// on its own is the thing this record exists to stop anybody writing down.
 	//
 	// The enumeration's own figure is printed with its worker count attached,
-	// and that is not decoration: the walk pays the SAME 88 `ls-tree`
+	// and that is not decoration: the walk pays the SAME `ls-tree`
 	// processes serially inside itself, so a pooled reading of them is not the
 	// walk's ls-tree cost and must not be subtracted from the total as though
 	// it were. The serial figure is taken by the per-object arm and the
@@ -1234,7 +1269,7 @@ func TestOneProcessPerObjectIsSlowerThanOneProcessForAllOfThem(t *testing.T) {
 	//
 	// SERIALLY, which is the one place in this package that asks for that. The
 	// whole-walk arm pools it because it only wants the answer; this one wants
-	// the COST, because 88 `ls-tree` processes one after another is what the
+	// the COST, because an `ls-tree` per commit one after another is what the
 	// walk itself spends on trees, and it is the term that turns wholeRun from
 	// a number inviting a subtraction into three measured parts. See
 	// themeSourcesAcross, and the log at the end of this test.

@@ -366,9 +366,9 @@ var decidedGoroutines = []decidedGoroutine{{
 }, {
 	file: "timings_test.go",
 	fn:   "themeSourcesAcross",
-	what: "the enumeration pool. One `git ls-tree` per commit, 88 of them, " +
-		"which is 0.90s serially and 0.22s over eight workers — see " +
-		"enumWorkers for the bound and for what it deliberately leaves serial",
+	what: "the enumeration pool. One `git ls-tree` per commit, which is " +
+		"0.90s serially and 0.22s over eight workers — see enumWorkers for " +
+		"the bound and for what it deliberately leaves serial",
 	joinedBy: "wg.Wait(), before the results are read and before either arm " +
 		"measures anything. Results go into a slice indexed by commit, so no " +
 		"two workers touch one element and the order is the same at any " +

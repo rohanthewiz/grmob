@@ -312,7 +312,8 @@ const timingsArm = "TestTheTimingsInThisPackageSayWhichMachineTheyCameFrom"
 // sentence.
 //
 // Both packages have an answer and they are different answers —
-// internal/themehistory's largest term is 88 git processes and improves to
+// internal/themehistory's largest term is a git process per commit and
+// improves to
 // eight workers; wasm/verify's is one program's own goroutines and is flat
 // from two cores up. Neither is guessable from the other, which is exactly why
 // having one and not the other was worse than having neither: a reader

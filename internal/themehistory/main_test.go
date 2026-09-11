@@ -981,7 +981,8 @@ func TestTheFourOutcomesOfARereadingAreToldApart(t *testing.T) {
 // # Why this arm exists at all
 //
 // Every revision in the edit-size table is parsed out of text this reader
-// produced. It replaced one `git cat-file -p` per file — 2906 of them over
+// produced. It replaced one `git cat-file -p` per file — getting on for
+// three thousand of them over
 // this repository's eighty-eight commits, thirty seconds — with a single
 // `git cat-file --batch` the whole run talks to.
 //
@@ -993,9 +994,11 @@ func TestTheFourOutcomesOfARereadingAreToldApart(t *testing.T) {
 // thirty seconds is re-taken on demand by
 // TestOneProcessPerObjectIsSlowerThanOneProcessForAllOfThem, which fetches
 // the same objects both ways under GRMOB_PER_OBJECT_FETCH=required and
-// measured 30.14–30.42s against 399–401ms batched. The wall clock for the
-// whole command is in themehistoryTimingsTakenOn.wholeRun: 1.49–1.61s on the
-// machine that record names.
+// takes the reading. Both halves are recorded in
+// themehistoryTimingsTakenOn.perObjectRun rather than restated here, and the
+// wall clock for the whole command is that record's wholeRun — because a
+// figure quoted in two places is a copy, and this sentence was carrying one
+// that had gone out of step with the record it named.
 //
 // The 1.8s was from an earlier session and an earlier shape of this package,
 // and it is left out rather than reconciled — an unattributed number and an
