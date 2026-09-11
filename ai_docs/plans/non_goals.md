@@ -397,7 +397,8 @@ exactly the same reason and at about the same size. The duplicated surface
 goes from roughly 30 lines to roughly 25. Nothing is solved that holding the
 two copies identical does not solve better, which is what was done instead —
 `recordedBand` and `recordedBandForm` are in `twoCopyFunctionShapes` and
-`twoCopyStateShapes`, and the shared parse now fails if they diverge.
+`twoCopyValueShapes` (named `twoCopyStateShapes` when that entry was
+written), and the shared parse now fails if they diverge.
 
 **And the rendering costs more than the parsing.** Measured over the ten
 figure fields in the two records:

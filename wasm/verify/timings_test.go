@@ -922,7 +922,7 @@ const coresAttribution = "The four repository-wide walks in this package are " +
 // The two ARE held identical, by checkTwoCopyDecls — the same census that
 // holds the seven import-resolving helpers, and the reason that census is no
 // longer named for them. This function is in twoCopyFunctionShapes and the
-// pattern above is in twoCopyStateShapes; change one copy and the shared
+// pattern above is in twoCopyValueShapes; change one copy and the shared
 // repository parse fails, naming both files.
 //
 // The alternative considered and declined was for the records to carry their
@@ -1054,8 +1054,30 @@ func againstBandGiven(fieldName, field string, differs []string,
 		}
 		return d.Round(time.Microsecond)
 	}
-	switch {
-	case got < lo:
+	// Compared at the precision the band is WRITTEN to, and not at the clock's.
+	//
+	// # The false UNDER this fixes, which this machinery produced twice in one
+	// # hour
+	//
+	// An end is a reading rounded outward to the record's two decimals — that
+	// is the one departure from "an end is a reading" the record allows, and it
+	// means a floor of `2.76s` stands for readings down to 2.755s. A raw
+	// comparison calls 2.755s UNDER by 5ms, which sends a reader to re-take a
+	// band that is right. Both records did exactly that, within an hour of the
+	// arm that places these figures existing: wasm/verify read 2.755s against a
+	// 2.76s floor and internal/themehistory 2.816s against 2.82s, and both
+	// reported UNDER.
+	//
+	// bandPlacement already judged "does this reading reach an end" this way.
+	// The in-band decision did not, so the two halves of one sentence
+	// disagreed: a reading could be reported outside a band and, by the
+	// placement rule, be AT its floor.
+	//
+	// The distance printed is still the true one, lo-got rather than a rounded
+	// difference. What the rounding decides is WHICH branch, not what to say
+	// once the branch is chosen.
+	switch rounded := got.Round(step); {
+	case rounded < lo:
 		return fmt.Sprintf("\n\nUNDER the band %s records (%v–%v), by %v. On "+
 			"the machine that record names, so it is not another computer. "+
 			"Either this got faster and the floor is stale, or the floor was "+
@@ -1064,7 +1086,7 @@ func againstBandGiven(fieldName, field string, differs []string,
 			"it: widen the range to hold both takings rather than replacing "+
 			"it, unless something is known to have changed the code.",
 			fieldName, lo, hi, round(lo-got))
-	case got > hi:
+	case rounded > hi:
 		return fmt.Sprintf("\n\nOVER the band %s records (%v–%v), by %v. On "+
 			"the machine that record names, so it is not another computer — "+
 			"but it may well be a busy one, and one reading over a ceiling "+

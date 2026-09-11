@@ -502,10 +502,32 @@ var twoCopyFunctionShapes = []string{
 	// bandPlacement is here — a reader holding one record's verdict against
 	// the other's needs the same words to mean the same thing.
 	"againstBandGiven",
+	// The lever's reader, registered beside the two constants it reads rather
+	// than on its own account: the three together are what make
+	// `GRMOB_BAND_VERDICT=required` mean the same thing in both packages, and
+	// a reader that compared the value differently — a prefix, say, or a
+	// case-insensitive match — would diverge as quietly as a misspelled name.
+	// It was registrable all along; nothing had looked.
+	"bandVerdictWanted",
 }
 
-// The package-level STATE those functions keep, held to being the same
-// declaration in every copy for the same reason the functions are.
+// The package-level VALUE declarations the two packages share, held to being
+// the same declaration in every copy for the same reason the functions are.
+//
+// # The name, which was `twoCopyValueShapes` and had stopped being true
+//
+// It was named for its first and only entry: `dotImportsReported` is state,
+// and the paragraphs below are about what the compiler holds about state and
+// what it does not. Then the band reader's pattern arrived, which is a `var`
+// and not state, and then three `const` levers, which are neither. A list
+// named for what its first member happened to be is the defect this
+// repository renamed a whole file over — see sharedparse_test.go's header.
+//
+// What actually unifies them is how the walk FINDS them: a ValueSpec inside a
+// GenDecl, which is one branch of the parse whether the keyword is `var` or
+// `const`. That is a fact about the shape of the source, it is what the
+// paragraph below already argues the list is for, and it will stay true of
+// every future entry — which is what a name should be built on.
 //
 // # What the compiler was already holding, and what it was not
 //
@@ -532,7 +554,7 @@ var twoCopyFunctionShapes = []string{
 // rather than a guess about the name — and a `func dotImportsReported` added
 // by mistake is then a shape that is MISSING from its package rather than one
 // that quietly matched.
-var twoCopyStateShapes = []string{
+var twoCopyValueShapes = []string{
 	"dotImportsReported",
 	// recordedBand's pattern. State for the same reason dotImportsReported
 	// is: the compiler insists both packages HAVE it, because the function
@@ -541,6 +563,31 @@ var twoCopyStateShapes = []string{
 	// en dash in the other would compile, pass, and silently stop comparing
 	// half the fields in one record.
 	"recordedBandForm",
+	// The three levers, which are `const` and are why this list is no longer
+	// named for state.
+	//
+	// # Why a lever is worth holding, which is sharper than it looks
+	//
+	// Both records' doc comments print the same recipe —
+	// `GRMOB_BAND_VERDICT=required go test …` — and each package reads it
+	// through a constant of its own. Nothing compared the two strings. A
+	// `GRMOB_BANDVERDICT` in one of them would compile, pass every test, and
+	// leave a reader following the documented command with a verdict from one
+	// package and SILENCE from the other.
+	//
+	// Silence is the part that matters: it is indistinguishable from a pass.
+	// The verdict line simply does not print, and the records these levers
+	// belong to are the ones that have now had four floors found stale
+	// between them. Same for the figure the placement arm is handed — a lever
+	// nobody's shell spells the way the code reads it is an arm nobody ever
+	// runs.
+	//
+	// Measured when they were registered: 3 consts, 0 divergent, and the scan
+	// that found them found 21 shared names across the two packages of which
+	// 16 are identical and 5 differ for reasons each one states.
+	"bandVerdictEnv",
+	"bandVerdictAsked",
+	"packageReadingEnv",
 }
 
 // allTwoCopyShapes is both lists, in the order a reader would read
@@ -550,9 +597,9 @@ var twoCopyStateShapes = []string{
 // places and not the third is precisely the drift these lists exist to catch,
 // arriving in the check itself.
 func allTwoCopyShapes() []string {
-	all := make([]string, 0, len(twoCopyFunctionShapes)+len(twoCopyStateShapes))
+	all := make([]string, 0, len(twoCopyFunctionShapes)+len(twoCopyValueShapes))
 	all = append(all, twoCopyFunctionShapes...)
-	all = append(all, twoCopyStateShapes...)
+	all = append(all, twoCopyValueShapes...)
 	return all
 }
 
@@ -586,7 +633,7 @@ const twoCopyPackages = 2
 // The set is both lists — the functions and the package-level state they keep
 // — because the compiler's hold on the state is only its NAME, and a copy that
 // declares that name as a different kind of thing compiles in both places and
-// differs under t.Parallel(). See twoCopyStateShapes.
+// differs under t.Parallel(). See twoCopyValueShapes.
 //
 // What it cannot see is a difference in something the copies both call. That
 // is the reason the set is the unit: a `packageBase` that had drifted is a
@@ -717,7 +764,7 @@ func checkTwoCopyDecls(t *testing.T, decls []twoCopyDecl) {
 				"Make one a copy of the other, or — if the two packages now "+
 				"need different answers — say so where the copy argument is "+
 				"and take this shape out of twoCopyFunctionShapes or "+
-				"twoCopyStateShapes.",
+				"twoCopyValueShapes.",
 				name, found[0].rel, found[0].line, found[i].rel, found[i].line,
 				found[0].rel, found[0].line, found[0].text,
 				found[i].rel, found[i].line, found[i].text)
@@ -748,9 +795,14 @@ func checkTwoCopyDecls(t *testing.T, decls []twoCopyDecl) {
 			len(shapes), len(shapes), whole, whole)
 	}
 
-	t.Logf("%d shape(s) kept in two copies — %d function(s) and %d piece(s) of "+
-		"package-level state — %d copy(ies) each, held identical across %s.",
-		len(shapes), len(twoCopyFunctionShapes), len(twoCopyStateShapes),
+	// "%d package(s) declare the whole set" and not "%d copies each": on a
+	// run where one package is short a shape, the count is 1 and the old
+	// wording read "1 copy each, held identical across" both of them — a
+	// summary contradicting the finding printed above it.
+	t.Logf("%d shape(s) kept in two copies — %d function(s) and %d value "+
+		"declaration(s) — %d package(s) declaring the whole set, held "+
+		"identical, across %s.",
+		len(shapes), len(twoCopyFunctionShapes), len(twoCopyValueShapes),
 		whole, strings.Join(dirs, ", "))
 }
 
@@ -1210,7 +1262,9 @@ type importPathAsk struct {
 // and wrong in what it says. The real finding is that the comparison could not
 // be MADE, and a reader told that two functions differ will go looking for a
 // difference that is not there.
-func declarationText(fset *token.FileSet, node ast.Node) (string, error) {
+func declarationText(fset *token.FileSet, node ast.Node,
+	keyword string) (string, error) {
+
 	var buf bytes.Buffer
 	switch decl := node.(type) {
 	case *ast.FuncDecl:
@@ -1229,7 +1283,14 @@ func declarationText(fset *token.FileSet, node ast.Node) (string, error) {
 		if err := printer.Fprint(&buf, fset, &stripped); err != nil {
 			return "", err
 		}
-		return "var " + buf.String(), nil
+		// The keyword comes from the GenDecl and not from here, because a
+		// ValueSpec does not carry one: the printer renders `x = "y"` for both
+		// a var and a const. It is prefixed at all so that the text a reader
+		// is shown in a finding is a declaration they can search for, and it
+		// is the REAL keyword so that a `const` in one package and a `var` of
+		// the same name and value in the other is a difference this reports
+		// rather than one it renders away.
+		return keyword + " " + buf.String(), nil
 	}
 	return "", fmt.Errorf("a %T is not a declaration this compares", node)
 }
@@ -1252,15 +1313,17 @@ func twoCopyDeclarationsIn(fset *token.FileSet, rel string,
 	for _, name := range twoCopyFunctionShapes {
 		shape[name] = true
 	}
-	state := map[string]bool{}
-	for _, name := range twoCopyStateShapes {
-		state[name] = true
+	values := map[string]bool{}
+	for _, name := range twoCopyValueShapes {
+		values[name] = true
 	}
 	dir := path.Dir(rel)
 	// One declaration of a shared shape, however it is spelled. The two arms
 	// below differ only in what they hand the printer.
-	record := func(name string, at token.Pos, node ast.Node) twoCopyDecl {
-		text, err := declarationText(fset, node)
+	record := func(name string, at token.Pos, node ast.Node,
+		keyword string) twoCopyDecl {
+
+		text, err := declarationText(fset, node, keyword)
 		return twoCopyDecl{
 			name:     name,
 			dir:      dir,
@@ -1274,10 +1337,16 @@ func twoCopyDeclarationsIn(fset *token.FileSet, rel string,
 	var asks []importPathAsk
 	for _, d := range file.Decls {
 		// The package-level state, which is a ValueSpec inside a GenDecl
-		// rather than a declaration of its own — see twoCopyStateShapes
+		// rather than a declaration of its own — see twoCopyValueShapes
 		// for why it is held to the same rule as the code that reads it.
 		if gen, ok := d.(*ast.GenDecl); ok {
-			if gen.Tok != token.VAR {
+			// `const` as well as `var`, which is the change that let the
+			// levers be held. The walk read VAR only, so registering a
+			// constant reported it MISSING from both packages — a list entry
+			// that fails rather than holds, which is why three levers sat
+			// unregistered while the argument for registering them had
+			// already been written twice.
+			if gen.Tok != token.VAR && gen.Tok != token.CONST {
 				continue
 			}
 			for _, sp := range gen.Specs {
@@ -1286,10 +1355,11 @@ func twoCopyDeclarationsIn(fset *token.FileSet, rel string,
 					continue
 				}
 				for _, n := range vs.Names {
-					if !state[n.Name] {
+					if !values[n.Name] {
 						continue
 					}
-					decls = append(decls, record(n.Name, n.Pos(), vs))
+					decls = append(decls,
+						record(n.Name, n.Pos(), vs, gen.Tok.String()))
 				}
 			}
 			continue
@@ -1299,7 +1369,8 @@ func twoCopyDeclarationsIn(fset *token.FileSet, rel string,
 			continue
 		}
 		if fn.Recv == nil && shape[fn.Name.Name] {
-			decls = append(decls, record(fn.Name.Name, fn.Pos(), fn))
+			decls = append(decls,
+				record(fn.Name.Name, fn.Pos(), fn, "func"))
 			// The shapes calling each other is what they are made of.
 			continue
 		}

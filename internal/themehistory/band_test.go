@@ -344,8 +344,30 @@ func againstBandGiven(fieldName, field string, differs []string,
 		}
 		return d.Round(time.Microsecond)
 	}
-	switch {
-	case got < lo:
+	// Compared at the precision the band is WRITTEN to, and not at the clock's.
+	//
+	// # The false UNDER this fixes, which this machinery produced twice in one
+	// # hour
+	//
+	// An end is a reading rounded outward to the record's two decimals — that
+	// is the one departure from "an end is a reading" the record allows, and it
+	// means a floor of `2.76s` stands for readings down to 2.755s. A raw
+	// comparison calls 2.755s UNDER by 5ms, which sends a reader to re-take a
+	// band that is right. Both records did exactly that, within an hour of the
+	// arm that places these figures existing: wasm/verify read 2.755s against a
+	// 2.76s floor and internal/themehistory 2.816s against 2.82s, and both
+	// reported UNDER.
+	//
+	// bandPlacement already judged "does this reading reach an end" this way.
+	// The in-band decision did not, so the two halves of one sentence
+	// disagreed: a reading could be reported outside a band and, by the
+	// placement rule, be AT its floor.
+	//
+	// The distance printed is still the true one, lo-got rather than a rounded
+	// difference. What the rounding decides is WHICH branch, not what to say
+	// once the branch is chosen.
+	switch rounded := got.Round(step); {
+	case rounded < lo:
 		return fmt.Sprintf("\n\nUNDER the band %s records (%v–%v), by %v. On "+
 			"the machine that record names, so it is not another computer. "+
 			"Either this got faster and the floor is stale, or the floor was "+
@@ -354,7 +376,7 @@ func againstBandGiven(fieldName, field string, differs []string,
 			"it: widen the range to hold both takings rather than replacing "+
 			"it, unless something is known to have changed the code.",
 			fieldName, lo, hi, round(lo-got))
-	case got > hi:
+	case rounded > hi:
 		return fmt.Sprintf("\n\nOVER the band %s records (%v–%v), by %v. On "+
 			"the machine that record names, so it is not another computer — "+
 			"but it may well be a busy one, and one reading over a ceiling "+
@@ -607,6 +629,17 @@ func TestTheSentenceAroundAPlacementSaysWhichOfTheFourCasesItIs(t *testing.T) {
 			wants: []string{"In the band", "1.4s–1.67s", "37% up a band 270ms wide"},
 		},
 		{
+			// Half a step under the floor is AT the floor: the band is written
+			// to the hundredth, so 1.3951s and 1.40s are the same number at
+			// the precision the record claims. This case is the false UNDER
+			// the rounding fixed, and it fired on both records within an hour
+			// of the arm that places these figures existing.
+			why:   "a reading within half a step of the floor",
+			field: field, got: 1395100 * time.Microsecond,
+			wants:    []string{"In the band", "at the floor"},
+			wantsNot: []string{"UNDER"},
+		},
+		{
 			why:   "a reading under the floor",
 			field: field, got: 1300 * time.Millisecond,
 			// 99.9ms and not 100ms: the difference is rounded to a
@@ -666,6 +699,7 @@ func TestTheSentenceAroundAPlacementSaysWhichOfTheFourCasesItIs(t *testing.T) {
 			}
 		}
 	}
-	t.Logf("%d sentence(s) asserted: in band, under, over, a field that is "+
-		"not a band, and a reading from another machine.", len(cases))
+	t.Logf("%d sentence(s) asserted: in band, half a step under the floor "+
+		"(which is in band, at the floor), under, over, a field that is not a "+
+		"band, and a reading from another machine.", len(cases))
 }
