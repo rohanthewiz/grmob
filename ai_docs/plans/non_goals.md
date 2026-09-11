@@ -895,3 +895,98 @@ that are a shell function and a Python file.
 `LiveMapUITests`: an assertion about a running Android app that has to hold on
 every commit rather than when somebody looks. That is the day the build-system
 change pays for itself, and these two files are what it starts from.
+
+---
+
+## `GrMobMinContent` floors every leaf that is not text at zero
+
+*Raised: 2026-09-11 · Moved here: 2026-09-11 · Code:
+`ios/GrMob/Runtime/GrMobMinContent.swift`*
+
+**What was declined.** A Button, an Input, an Image and a MapView each have a
+min-content size in CSS, and this host gives all four a floor of zero. Only
+text is measured. The obvious completion is one measurement per leaf kind.
+
+**The argument.** Each of those four would need a *different* measurement —
+none of them is a function of a string, so there is no shared routine to
+extend, only four new ones. And the under-estimate is safe by construction: a
+floor that is too low leaves a child exactly as crushable as it was before the
+floor existed, which is the behaviour every one of these nodes already had and
+which nothing has complained about. Text is where the divergence was found and
+where it bites, being the only leaf whose whole business is to be narrower than
+it wants to be — a run of words is the one thing a flex line can legitimately
+squeeze, right up until it cannot.
+
+**What would change this.** A screen where a button, a field or an image is
+visibly crushed on iOS and is not on the web. That is a reproduction, and the
+measurement it needs is the one leaf kind it names rather than all four.
+
+---
+
+## There is no min-height half of the min-content floor
+
+*Raised: 2026-09-11 · Moved here: 2026-09-11 · Code:
+`ios/GrMob/Runtime/GrMobMinContent.swift`*
+
+**What was declined.** CSS's automatic minimum applies on both axes. This host
+implements the main-axis width case and leaves Columns floorless.
+
+**The argument.** A text's min-content *height* is a function of the width it
+wraps at, and a tree walk does not know that width — it is the output of the
+layout the floor is an input to. Closing it honestly means a second pass, and
+the thing it would buy is a Column that overflows its height rather than
+compressing its children, which is a larger behavioural change than the defect
+that prompted the width floor. Columns keep the behaviour they have always had.
+
+**What would change this.** A vertical analogue of the row that started it: a
+Column whose children are compressed below their content on iOS and are not on
+the web, with a reproduction. The design question — overflow or compress — has
+to be answered before the code is written.
+
+---
+
+## A declared main size floors at 0 rather than at `min(declared, min-content)`
+
+*Raised: 2026-09-11 · Moved here: 2026-09-11 · Code:
+`ios/GrMob/Runtime/GrMobMinContent.swift`, `internal/pinfixture`*
+
+**What was declined.** CSS takes the *smaller* of the declared and the content
+suggestions. This host, for a node that declares a width, takes 0.
+
+**The argument.** A declaration becomes a `.frame` on this target, and the host
+cannot see the content behind a frame — so the content suggestion is not
+available to compare against. Zero is the safe end of the two possible errors:
+right for the empty sized boxes `internal/pinfixture` mounts and an
+under-estimate for a sized Text, where an over-estimate would overflow a line a
+browser fits. Closing it means measuring a node's content *before* its own size
+is applied, which is a second walk asking a different question of the same tree.
+
+**What would change this.** A sized Text crushed below its content on iOS and
+not on the web — which is the case the under-estimate is wrong for, and the only
+one.
+
+---
+
+## `hooks.UseHeadingWhen` does not exist
+
+*Raised: 2026-09-11 · Moved here: 2026-09-11 · Code: `hooks/location.go`
+(`UseLocationWhen`), `hooks/heading.go`*
+
+**What was declined.** `UseLocationWhen` is the gate for a screen that cannot
+be its own route: one `core.NewState`, every pass, whatever the answer, where
+the `if` a caller reaches for would move every hook slot after it. The compass
+has the same shape and the same problem one file over, and the symmetry is one
+function.
+
+**The argument.** Nothing has asked for it, and the two sensors are not
+symmetrical in the thing that matters — cost. Location got the flag because a
+GPS left running is a battery bill and a privacy indicator; the compass costs
+almost nothing to leave on, which is precisely why nobody has wanted to switch
+it off. A hook added for symmetry rather than for a caller is API surface with
+no consumer to keep it honest, and `UseLocationWhen`'s own test drives a
+rendered tree to prove a slot below the call site is undisturbed — the version
+for the compass would be that test copied with a different sensor in it.
+
+**What would change this.** A screen that wants the compass released while
+staying mounted. The day one exists this is a short function, and
+`UseLocationWhen` is the whole template.
