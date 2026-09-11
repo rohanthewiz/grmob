@@ -857,10 +857,26 @@ func checkTwoCopyDecls(t *testing.T, decls []twoCopyDecl) {
 	// run where one package is short a shape, the count is 1 and the old
 	// wording read "1 copy each, held identical across" both of them — a
 	// summary contradicting the finding printed above it.
-	t.Logf("%d shape(s) kept in two copies — %d function(s) and %d value "+
-		"declaration(s) — %d package(s) declaring the whole set, held "+
+	// The shapes are NAMED and not just counted, which is the cheapest map of
+	// this machinery there can be.
+	//
+	// What grew and prompted it: the band reader, its pattern, the placement
+	// sentence, the sentence built around it and three verdict levers all
+	// arrived over four iterations, and the only way to find out what the set
+	// is was to read two lists and the census that reads them. The obvious fix
+	// was a paragraph naming the members — and a paragraph naming declarations
+	// is a thing that goes stale, which is what most of this file's censuses
+	// exist to catch.
+	//
+	// A log line cannot: it is built out of the lists themselves, so it says
+	// what the set IS on the run a reader is looking at. The cost is one line
+	// under `-v`, which is where somebody looking for the set already is.
+	t.Logf("%d shape(s) kept in two copies — %d function(s) (%s) and %d value "+
+		"declaration(s) (%s) — %d package(s) declaring the whole set, held "+
 		"identical, across %s.",
-		len(shapes), len(twoCopyFunctionShapes), len(twoCopyValueShapes),
+		len(shapes), len(twoCopyFunctionShapes),
+		strings.Join(twoCopyFunctionShapes, ", "), len(twoCopyValueShapes),
+		strings.Join(twoCopyValueShapes, ", "),
 		whole, strings.Join(dirs, ", "))
 }
 
@@ -1152,10 +1168,15 @@ func checkSharedNamesAreAccountedFor(t *testing.T, recordDirs []string,
 			name, twoCopyNamesThatDiffer[name])
 	}
 
+	// The exemptions named rather than counted, for the reason the line above
+	// names the held shapes: between the two lines, a reader under `-v` has
+	// the whole of what these two packages share and which half is which,
+	// built out of the lists rather than described beside them.
 	t.Logf("%d name(s) declared in both %s: %d held identical, %d recorded as "+
-		"differing with a reason.", len(shared),
+		"differing with a reason (%s).", len(shared),
 		strings.Join(recordDirs, " and "),
-		len(shared)-len(twoCopyNamesThatDiffer), len(twoCopyNamesThatDiffer))
+		len(shared)-len(twoCopyNamesThatDiffer), len(twoCopyNamesThatDiffer),
+		strings.Join(keysOf(twoCopyNamesThatDiffer), ", "))
 }
 
 // checkImportPathsAreImportable holds every import path a census names to

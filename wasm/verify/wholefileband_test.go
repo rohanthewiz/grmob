@@ -148,58 +148,34 @@ func wholeFileVerdict(took time.Duration) string {
 	if _, ok := wholeFileRunIsTheRecordedOne(); !ok {
 		return ""
 	}
-	lo, hi, step, ok := recordedBand(verifyTimingsTakenOn.wholeFileInProcess)
-	if !ok {
-		return "verifyTimingsTakenOn.wholeFileInProcess does not OPEN with a range, " +
-			"so this run was not compared with anything. Every field in " +
-			"both records is written reading-first; see recordedBandForm."
-	}
-	// A hundredth of the band's own width, for the reason the other copy's
-	// caller gives: a fixed unit printed "by 0s" against a microsecond band.
-	// Rounded against the BAND and not against a fixed unit: batchRetire's
-	// range is 180µs–290µs, and a difference rounded to the millisecond
-	// printed there as "by 0s".
+	// The whole of the comparison is againstBandGiven, which is the sentence
+	// the other record's three arms print and is held identical across the two
+	// packages by checkTwoCopyDecls.
 	//
-	// That was the first half of the fix and it was not enough. A reading
-	// one step under the floor still rounds to zero, and "outside the band
-	// by nothing" is the same useless sentence arrived at from the other
-	// side. So a difference that rounds away is reported at microsecond
-	// resolution instead — whatever it is, it is not nothing, because the
-	// arm that prints it only runs when the reading is outside.
-	round := func(d time.Duration) time.Duration {
-		step := (hi - lo) / 100
-		if step <= 0 {
-			step = time.Microsecond
-		}
-		if r := d.Round(step); r != 0 {
-			return r
-		}
-		return d.Round(time.Microsecond)
-	}
-	switch {
-	case took < lo:
-		return fmt.Sprintf("this package took %v, UNDER the %v–%v that "+
-			"verifyTimingsTakenOn.wholeFileInProcess records, by %v. On the "+
-			"machine "+
-			"that record names. Either this got faster or the floor is "+
-			"stale — it has been stale twice. Re-take it, holding both "+
-			"takings unless something is known to have changed.",
-			took.Round(time.Millisecond), lo, hi, round(lo-took))
-	case took > hi:
-		return fmt.Sprintf("this package took %v, OVER the %v–%v that "+
-			"verifyTimingsTakenOn.wholeFileInProcess records, by %v. On the "+
-			"machine "+
-			"that record names — which may also be a busy one, so take it "+
-			"several times before believing it.",
-			took.Round(time.Millisecond), lo, hi, round(took-hi))
-	default:
-		// The same placement sentence the other copy prints, for the same
-		// reason and from the same function — see bandPlacement.
-		return fmt.Sprintf("this package took %v, in the %v–%v that "+
-			"verifyTimingsTakenOn.wholeFileInProcess records — %s.",
-			took.Round(time.Millisecond), lo, hi,
-			bandPlacement(lo, hi, took, step))
-	}
+	// # Why this stopped spelling it out, which is a defect it had
+	//
+	// It used to decide UNDER, OVER and in-band itself, with its own wording
+	// and its own rounding, because the sentence it wanted read "this package
+	// took X, UNDER the Y–Z that …records" rather than as a fragment appended
+	// to a line. That is a third implementation of one decision, and two of
+	// the three were held in step by a census while this one was not.
+	//
+	// It drifted, exactly there. The session that found both records
+	// reporting a false UNDER — a reading of 2.755s against a floor of 2.76s,
+	// which at the precision the band is written to IS the floor — fixed the
+	// two copies the census holds and left this one comparing raw clocks. The
+	// same false verdict was still reachable here two iterations later, on the
+	// line that prints on every asked run of this package.
+	//
+	// So the decision is made in one place and this supplies the half that is
+	// local: which reading, and the sentence it belongs to. The machine
+	// comparison is asked for again rather than assumed empty — the guard
+	// above has already returned if it is not, and a verdict that quietly
+	// depends on an earlier return is one nobody can move.
+	return fmt.Sprintf("this package took %v.%s", took.Round(time.Millisecond),
+		againstBandGiven("verifyTimingsTakenOn.wholeFileInProcess",
+			verifyTimingsTakenOn.wholeFileInProcess, recordMachineDiffers(),
+			took))
 }
 
 // TestMain times the package and reports the reading against the record.

@@ -695,3 +695,52 @@ convention nobody is following yet.
 the claim — a constant that says `= <other>` in its doc the way a taking table
 says its command. One defect in ten candidates is not enough to ask anybody to
 follow a new convention.
+
+---
+
+## The other measurement records do not grow the timings machinery
+
+*Raised: 2026-09-10 · Moved here: 2026-09-11 · Code:
+`affordedMeasuredOn` in `wasm/verify/themenearmiss_test.go`, `foldMeasuredOn`
+in `wasm/verify/inkglyph_test.go`*
+
+**What was proposed.** `…TimingsTakenOn` is not the only record in this
+repository. `affordedMeasuredOn` and `foldMeasuredOn` are records too, and they
+have none of what the timings records have: no five machine fields, no
+reporting arm, no cores note, no band verdict, no taking command. Carried on
+the Next list for fourteen sessions, value falling.
+
+**What the measurement says.** Counted by parsing the four records' literals:
+
+    affordedMeasuredOn            4 fields,  0 strings, 0 wall-clock bands
+    foldMeasuredOn               15 fields,  0 strings, 0 wall-clock bands
+    verifyTimingsTakenOn         11 fields,  8 strings, wall-clock bands in 6
+    themehistoryTimingsTakenOn    9 fields,  5 strings, wall-clock bands in 4
+
+**Not one wall clock between them.** Every piece of the timings machinery
+exists for the one property a wall clock has and a count does not: it cannot be
+re-derived. The machine fields say which computer, because the same code on
+another machine gives another number. The band and its verdict exist because
+the figure moves between sittings on one machine. The taking command exists
+because nothing in the repository can produce the figure on demand.
+
+A count is a reading of DATA, and both of these records are re-derived by the
+run that reads them — `affordedMeasuredOn`'s four ending counts are re-walked
+over its own eighty names and asserted exactly, and `foldMeasuredOn`'s are
+recomputed against the Unicode tables. A number that moved there is a finding
+about the data in the commit that moves it, which is strictly better than
+anything attribution could offer.
+
+And each already carries its own equivalent of the machine, for the same
+reason and under its own name: `foldMeasuredOn.build` is a `foldBuild` naming
+the Unicode, ICU and node versions its counts are a reading of, and
+`affordedMeasuredOn` carries the eighty names themselves — the data is in the
+record.
+
+So there is nothing to extend. The two families answer different questions and
+the shapes they have are the right shapes for each.
+
+**What would change this.** A wall clock arriving in one of these records, or a
+count in one of them that stops being re-derived. Either makes it the same kind
+of record as the timings ones, and the machinery is then worth copying rather
+than discussing.
