@@ -69,6 +69,12 @@ struct GrMobApp: App {
         }
         .onChange(of: scenePhase) { _, phase in
             AppLifecycle.report(phase, to: runtime)
+            // Coming back from Settings is the only signal iOS gives for the
+            // device-wide Location Services switch being turned back on — it
+            // sends no authorization callback for that one. See
+            // LocationSensor.retryIfArmed for the measurement behind that
+            // sentence and for why this costs nothing when nothing is armed.
+            if phase == .active { LocationSensor.shared.retryIfArmed() }
         }
     }
 }

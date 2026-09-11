@@ -111,19 +111,36 @@ final class LocationSensor: NSObject, CLLocationManagerDelegate {
     /// which is `core.LocationAcquiring`: it withdraws the refusal and leaves
     /// the record Active with nothing received, which is the spinner state.
     ///
-    /// # The one arm nothing has run
+    /// # The arm that was never run, and what running it found
     ///
-    /// Location Services switched off device-wide is armed here on the same
-    /// argument as the other two, and the signal that would finish it is
-    /// `locationManagerDidChangeAuthorization` — CoreLocation's only channel
-    /// for "the world outside changed". Whether iOS actually delivers that
-    /// callback for the global switch, as opposed to for this app's own
-    /// authorization, has not been observed on a device: the simulator can
-    /// revoke and grant an app's permission from the command line
-    /// (`simctl privacy`), which is the path that was verified, and the global
-    /// toggle is several taps inside Settings. So the arm is free — one Bool,
-    /// and it cannot make the dead state deader — and the recovery is stated
-    /// as unverified rather than claimed.
+    /// Location Services switched off device-wide used to be armed here on the
+    /// same argument as the other two — that
+    /// `locationManagerDidChangeAuthorization` would finish it, being
+    /// CoreLocation's only channel for "the world outside changed" — and was
+    /// recorded as unverified, because `simctl privacy` drives an app's own
+    /// permission and the global toggle is several taps inside Settings.
+    ///
+    /// Driving those taps refuted it. **iOS delivers no authorization callback
+    /// for the global switch**, so the arm led nowhere; worse, the arm was
+    /// never even set, because the path the global switch takes is not the one
+    /// it was written for. Three separate things had to change, and each is
+    /// commented where it lives:
+    ///
+    ///     didFailWithError    .denied now arms. The global switch kills a
+    ///                         RUNNING sensor through the error callback, not
+    ///                         through either of the two paths that refuse a
+    ///                         start, and that callback cleared `running` and
+    ///                         armed nothing — a sensor that never asked again.
+    ///     didFailWithError    The reason is read off the authorization, not
+    ///                         off locationServicesEnabled(), which returned
+    ///                         true with the switch off. The message was also
+    ///                         NSError's untranslated fallback.
+    ///     retryIfArmed        The recovery, on the foreground, since no
+    ///                         callback arrives. See its own doc for the A/B.
+    ///
+    /// Android needs none of it: `onProviderEnabled` fires for the equivalent
+    /// switch, which is the asymmetry LocationSensor.kt's `registered` flag
+    /// records from the other side.
     private var armed = false
 
     /// Throttle floor, as the compass has: CoreLocation can deliver faster than
@@ -207,11 +224,79 @@ final class LocationSensor: NSObject, CLLocationManagerDelegate {
         running = true
         armed = false
         lastSentAt = 0
+        // Torn down before it is built up, and that is not belt-and-braces.
+        // A `startUpdatingLocation` on a manager that is already in a delivery
+        // session does not restart it — it is a no-op on top of the session's
+        // existing state, so a manager that has just been refused stays
+        // refused and reports nothing at all. Measured: after Location
+        // Services was switched off and on again, this method left the screen
+        // on "waiting for the first fix" indefinitely, and the only difference
+        // between that and the relaunch that got a fix instantly was a fresh
+        // manager.
+        //
+        // This is the same shape as the fix in LocationSensor.kt, one platform
+        // over, where `requestLocationUpdates` on a live registration kept the
+        // platform's distance filter and delivered nothing to a device that
+        // had not moved. Both hosts now stop before they start.
+        manager.stopUpdatingLocation()
         manager.startUpdatingLocation()
         // The sensor is on and has nothing yet. Said out loud because Go's last
         // event may be a refusal this start has just made untrue, and a cold
         // first fix is tens of seconds away — see core.LocationAcquiring.
         send(["acquiring": true])
+    }
+
+    /// Retries a start that Location Services being switched off device-wide
+    /// killed. Called when the app comes back to the foreground.
+    ///
+    /// # Why the foreground, and not a callback
+    ///
+    /// `locationManagerDidChangeAuthorization` is CoreLocation's channel for
+    /// "the world outside changed", and it carries this app's authorization
+    /// faithfully — deny it in Settings and grant it again and the arm above
+    /// finishes the start. It does **not** carry the device-wide Location
+    /// Services switch. That was written down as unverified and is now
+    /// measured: the same sequence on a simulator, driving the master switch
+    /// in Settings and reading lesson 4.12's panel, before and after the three
+    /// changes in this file.
+    ///
+    ///                          before                    after
+    ///     services ON      kCLErrorDomain error 1    Waiting for the first fix
+    ///     services OFF     No position, none on way  No position, none on way
+    ///     services ON      kCLErrorDomain error 1    Waiting for the first fix
+    ///     then a relaunch  Waiting for the first fix Waiting for the first fix
+    ///
+    /// Three things are in that table. The **last row** is what makes the
+    /// third one a finding rather than a broken simulator: the platform was
+    /// ready the whole time and nothing asked it. The **third row** is the
+    /// recovery, and it happens here on the foreground rather than in the
+    /// authorization callback, which never fires. And the **first column** is
+    /// the second bug — `error.localizedDescription` for a CLError.denied is
+    /// NSError's fallback string, and it was going to the screen verbatim.
+    ///
+    /// The foreground is the right substitute because of where the switch
+    /// lives. Location Services is several taps inside Settings, so a user who
+    /// changes it has necessarily left this app and come back — there is no
+    /// path to that switch that does not pass through here. It is also
+    /// self-limiting: `armed` is only true after a start was refused or
+    /// killed, so an app that never asked for a fix does nothing on every
+    /// foreground, and one that is running does nothing either.
+    ///
+    /// Android needs none of this: `onProviderEnabled` fires for the
+    /// equivalent switch, which is why LocationSensor.kt recovers from a
+    /// registered listener alone (see its `registered` flag).
+    func retryIfArmed() {
+        guard armed, !running else { return }
+        // An app-level authorization that is still missing is not this
+        // method's case — the callback above handles that one and will fire
+        // the moment it changes. Retrying here would only re-send a refusal
+        // Go already has.
+        switch manager.authorizationStatus {
+        case .authorizedWhenInUse, .authorizedAlways:
+            beginUpdates()
+        default:
+            return
+        }
     }
 
     private func stop() {
@@ -291,6 +376,50 @@ final class LocationSensor: NSObject, CLLocationManagerDelegate {
         // know it is not getting fixes.
         if (error as? CLError)?.code == .locationUnknown { return }
         running = false
+
+        // `.denied` is the one failure with a way back, so it is the one that
+        // stays armed. The user threw a switch — this app's authorization, or
+        // Location Services for the whole device — and can throw it back
+        // without relaunching.
+        //
+        // The arm was missing here, and the hole was the shape of the path
+        // that was never walked: `armed` was written for the two ways a start
+        // is REFUSED (start() and beginUpdates() both set it), and this is the
+        // way a start already RUNNING is killed. A simulator run is what found
+        // it — Location Services off and on again left the screen reporting
+        // the failure for as long as it was watched, while a relaunch got a
+        // fix immediately, which is the signature of a sensor that never asked
+        // again rather than of a device that cannot answer.
+        //
+        // The message is read back off the device rather than taken from the
+        // error, for two reasons. CoreLocation does not say WHICH switch was
+        // thrown — `.denied` covers both — and `error.localizedDescription`
+        // for this code is NSError's fallback: "The operation couldn't be
+        // completed. (kCLErrorDomain error 1.)", which was reaching the screen
+        // verbatim. Both strings below are the ones beginUpdates() and
+        // didChangeAuthorization already send when they refuse a start for the
+        // same two reasons, so a screen sees one vocabulary whichever path it
+        // arrived by.
+        if (error as? CLError)?.code == .denied {
+            armed = true
+            // Which switch was thrown is read off the AUTHORIZATION and not
+            // off `CLLocationManager.locationServicesEnabled()`, which was
+            // observed returning true on a simulator with Location Services
+            // switched off device-wide — so the guard in beginUpdates() above
+            // cannot be relied on to name this case, and a message built on it
+            // said the wrong one.
+            //
+            // The authorization is unambiguous by construction: if this app is
+            // still authorized and CoreLocation nevertheless refused, the
+            // refusal came from outside the app. If the authorization itself
+            // is gone, it did not.
+            let authorized = manager.authorizationStatus == .authorizedWhenInUse
+                || manager.authorizationStatus == .authorizedAlways
+            send(["available": false,
+                  "error": authorized ? "location services are off"
+                                      : "location permission denied"])
+            return
+        }
         send(["available": false, "error": error.localizedDescription])
     }
 
