@@ -122,6 +122,25 @@ func (f *Form) Checkbox(name string, props ...core.PropsAndChildren) core.View {
 	return core.Checkbox(f.Checked(name), f.OnToggle(name), props...)
 }
 
+// # There is no Switch builder, and that is the decision rather than the gap
+//
+// core.Switch is the other boolean control and every builder here has one, so
+// its absence is worth a sentence. A switch means *this takes effect now*: it
+// is the control a settings screen uses precisely because there is no Submit,
+// and a switch that needed one reads as broken. A form is the opposite shape —
+// a set of values held until something commits them — so a switch bound to a
+// form field would be drawing the platform's "already done" control over a
+// value that has not happened yet.
+//
+// Nothing stops an app from writing one, and an app that really has a form
+// whose natural control is a switch can bind it in two lines:
+//
+//	core.Switch(form.Checked("notify"), form.OnToggle("notify"))
+//
+// That is the whole of what a builder here would be, which is the other half of
+// the argument: the binding is not what makes this a question, the affordance
+// is, and the call site is where somebody can see both.
+
 // Select is a picker bound to name, storing the chosen option's Value as the
 // field's text — so every rule that reads a string reads it unchanged, and
 // forms.Required rejects an unchosen picker exactly as it rejects an empty

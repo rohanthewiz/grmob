@@ -185,6 +185,19 @@
       circle until core had a z-axis container) and announcing itself as one
       spoken sentence because four letters whose positions carry the meaning
       are exactly what a screen reader cannot convey (tutorial lesson 4.10)
+- [x] `StaticMap` — "where is this": a map image from a tile provider, which
+      hands off to the platform's own maps app on a tap. A `core.Image` plus a
+      `core.OpenURL`, so it works on all four targets with no renderer behind
+      it, which is also the argument for building it before a live map view —
+      an app asking "where is the church" wants a picture and then directions,
+      and directions belong to the maps app with the user's own home address in
+      it. Three decisions carry the widget: the provider is a *policy* (the
+      keyless default is a volunteer service, named as such, with
+      `GoogleStaticMap(key)` and a one-function seam beside it), the hand-off is
+      one https URL because nothing here knows its platform, and a tappable map
+      is `RoleLink` rather than `RoleButton` because the tap leaves the app.
+      Latitude clamps at Web Mercator's limit and longitude wraps — two rules,
+      two geographic facts (tutorial lesson 4.11)
 
 ### 🧬 Extensions
 - [x] **The ARIA fixture is generated** — `aria/verify/testdata/aria.json` is
@@ -861,6 +874,61 @@
       therefore invisible to any test that does not drive the owning prop
 - [x] `core.Slider` — a range control on all four targets, with a separate
       end-of-drag callback so a seek bar acts once
+- [x] `core.Switch` — the instant-effect boolean on all four targets
+      (Material's `Switch`, SwiftUI's `Toggle`, and an
+      `<input type="checkbox" switch role="switch">` on the web), beside the
+      `Checkbox` that means the other thing: a value something else will act on
+      rather than a setting the tap has already changed. It is a node type and
+      not a flag, because a changed type is a *replace* and a replace is how one
+      platform control is exchanged for another. Three things it did not need:
+      a prop of its own (the state crosses as `checked`, so both web renderers'
+      existing create-and-patch handling works untouched), a theme field (it
+      reads `Components.CheckBox`; a control a platform draws spends no palette
+      entry), and a `core.Role` — `switch` is written from the node type, making
+      `htmlout.ownRoles` a table where it had been a comparison against
+      `"Modal"`, and joining `dialog` in `aria/spec.NearMisses` as a role this
+      framework emits and does not name
+- [x] `core.MapView` — a live map on all four targets: MapKit on iOS,
+      osmdroid over OpenStreetMap on Android (no key, no Play Services
+      dependency), Leaflet on the web, and a placeholder that keeps its region
+      in `data-lat`/`data-lng`/`data-zoom` in the static export. Markers are
+      **keyed child nodes** (`core.Marker`), the TextGrid trick, so a marker that
+      moved is one patch rather than a rebuilt annotation layer — which on every
+      platform is a visible flicker and on two of them loses the open callout.
+      Three decisions carry it: the region is **applied only when it changes**
+      (Go moving the map is an instruction, Go re-rendering is not — without it
+      any unrelated render snaps the map out from under a finger), the same
+      comparison read the other way is what keeps a host's own recentring from
+      arriving back as a gesture, and every host throttles its region stream on
+      its own side because a pan is a frame-by-frame event and each one would be
+      a full render pass. The web half is checked against a fake Leaflet
+      (`wasm/verify/leaflet.mjs`), which is what found the first version of that
+      guard: a flag set around `setView` only closes the synchronous case, and
+      Leaflet promises nothing about when `moveend` arrives
+- [x] **The location fix** (`core/location.go`, `hooks/location.go`,
+      `ios/GrMob/App/LocationSensor.swift`,
+      `android/.../app/LocationSensor.kt`) — the second sensor, on the
+      arrangement Tier C's compass established: one `"sensor"` system event with
+      a `kind`, a refcounted start/stop, a record in between, and `Received`
+      beside `Available` so "no fix yet" and "this device will never tell you"
+      are different screens. Two things the compass did not need: `Accuracy` in
+      metres, which is the field that separates a 5-metre GPS fix from a
+      2000-metre guess that looks identical to any code reading only the
+      coordinates, and `core.DistanceMeters` — a haversine, because the flat
+      approximation breaks at the antimeridian and the notification filter is a
+      consumer. The two shells differ on who prompts, which is the platform's
+      difference rather than this framework's: `CLLocationManager` can ask from
+      anywhere and there is no fix without it, Android needs the Activity that
+      `Permissions.kt` holds
+- [x] **Both native renderers dispatch every node type**
+      (`mobile/verify/nodetypes_test.go`) — the census the natives were missing.
+      htmlout's tag table is documented as one and the WASM runtime's copy is
+      pinned to it, so three of the four targets already failed when a node type
+      was forgotten. The natives' dispatch ends in a catch-all, which makes a
+      missing arm silent by construction: a childless control with no arm draws
+      as an empty box on the phone and correctly on both web targets. Written
+      the session `core.Switch` landed, which is the session it would have
+      caught three arms in had it existed first
 - [x] `core.TextGrid` — a monospace grid of styled runs on all four targets,
       rows as children so a terminal diff patches one row, not the grid
 - [x] **The overlay `Layout`'s three decisions are run off-device**
@@ -1310,7 +1378,6 @@
 - [ ] Local notifications
 - [ ] Device Storage (Plain): `DeviceStorage.Set()`, `DeviceStorage.Get()`
 - [ ] Bluetooth: `Scan`, `Connect`, `Send`
-- [ ] Location / GPS
 - [ ] FaceID / Biometric authentication
 - [ ] Contacts access
 

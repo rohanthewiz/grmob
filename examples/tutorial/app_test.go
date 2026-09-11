@@ -257,13 +257,23 @@ func openLesson(t *testing.T, mgr *render.Manager, title string) {
 // the same walk signup uses for its second password field.
 func toggleCheckbox(t *testing.T, mgr *render.Manager, idx int, on bool) {
 	t.Helper()
+	toggleBool(t, mgr, "Checkbox", idx, on)
+}
+
+// toggleBool is the same walk over either boolean control. It takes the node
+// type because that is the only thing separating the two — both carry
+// `checked` and both report through `onToggle` (see core.Switch) — so a test
+// that asked for "the first bool control" would flip whichever one the demo
+// happened to write first.
+func toggleBool(t *testing.T, mgr *render.Manager, nodeType string, idx int, on bool) {
+	t.Helper()
 	var found []*node
 	var walk func(n *node)
 	walk = func(n *node) {
 		if n == nil {
 			return
 		}
-		if n.Type == "Checkbox" {
+		if n.Type == nodeType {
 			found = append(found, n)
 		}
 		for _, c := range n.Children {
@@ -272,7 +282,7 @@ func toggleCheckbox(t *testing.T, mgr *render.Manager, idx int, on bool) {
 	}
 	walk(tree(t, mgr))
 	if idx >= len(found) {
-		t.Fatalf("wanted checkbox %d, tree has %d", idx, len(found))
+		t.Fatalf("wanted %s %d, tree has %d", nodeType, idx, len(found))
 	}
 	mgr.DispatchBoolCallback(found[idx].Props["onToggle"].(string), on)
 }

@@ -1397,3 +1397,145 @@ func roleIs(role string) func(*node) bool {
 		return n.Style != nil && n.Style.AccessibilityRole == role
 	}
 }
+
+// --- 4.11 Maps ------------------------------------------------------------
+
+// The map lesson's demo is a URL builder with a picture attached, so what the
+// test drives is the three knobs and what it reads is the URL the widget
+// actually requested — which the lesson prints, for exactly this reason.
+//
+// The two awkward coordinates are the point of the last assertions: a widget
+// that looks right over Lisbon and wrong at 179°E has a wrapping bug, and the
+// clamp and the wrap are two different rules that a single "normalise" would
+// have collapsed.
+func TestStaticMapDemoBuildsTheURLItPrints(t *testing.T) {
+	mgr := newApp(t)
+	openLesson(t, mgr, "Maps: a picture and a hand-off")
+
+	cur := tree(t, mgr)
+	if !hasTextContaining(cur, "Requested: https://staticmap.openstreetmap.de") {
+		t.Fatal("the demo should print the URL it requested through the default provider")
+	}
+	// Lisbon, the marker on, street zoom: the seeded state.
+	if !hasTextContaining(cur, "center=38.7223%2C-9.1393") {
+		t.Error("the seeded place should be centred in the URL")
+	}
+	if !hasTextContaining(cur, "markers=") {
+		t.Error("the marker switch starts on, so the URL should carry a marker")
+	}
+
+	// The switch is a setting: one toggle, no confirmation, and the URL moves.
+	toggleBool(t, mgr, "Switch", 0, false)
+	if hasTextContaining(tree(t, mgr), "markers=") {
+		t.Error("turning the marker off should drop it from the requested URL")
+	}
+
+	// A zoom chip, which is the other half of what a provider is handed.
+	tap(t, mgr, "Building")
+	if !hasTextContaining(tree(t, mgr), "zoom=18") {
+		t.Error("the Building chip should request zoom 18")
+	}
+
+	// The antimeridian: 178.4419°E is an ordinary longitude and must survive.
+	tap(t, mgr, "Suva")
+	if !hasTextContaining(tree(t, mgr), "center=-18.1416%2C178.4419") {
+		t.Error("a longitude just short of 180 must pass through untouched")
+	}
+
+	// And past the pole, where the latitude is held at Mercator's limit.
+	tap(t, mgr, "Past the pole")
+	if !hasTextContaining(tree(t, mgr), "center=85.0511%2C20") {
+		t.Error("a latitude past Mercator's limit should be clamped to it")
+	}
+	assertNoConcerns(t)
+}
+
+// --- 4.12 Live maps -------------------------------------------------------
+
+// mapNodeProp reads one prop off the single MapView in the current tree. The
+// map's three callbacks are what the demo is made of, and they are addressed by
+// name rather than by position because they all ride the same text channel.
+func mapNodeProp(t *testing.T, mgr *render.Manager, prop string) string {
+	t.Helper()
+	n := findNode(tree(t, mgr), func(n *node) bool { return n.Type == "MapView" })
+	if n == nil {
+		t.Fatal("no MapView in the current tree")
+	}
+	id, ok := n.Props[prop].(string)
+	if !ok {
+		t.Fatalf("MapView has no %s callback: %v", prop, n.Props)
+	}
+	return id
+}
+
+// markerIDs lists the ids of the map's Marker children, in tree order — which is
+// also the order the keys were assigned, so this is what a test asserting "the
+// pin was added and the others were left alone" reads.
+func markerIDs(t *testing.T, mgr *render.Manager) []string {
+	t.Helper()
+	var out []string
+	for _, n := range findNodes(tree(t, mgr), func(n *node) bool { return n.Type == "Marker" }) {
+		id, _ := n.Props["id"].(string)
+		out = append(out, id)
+	}
+	return out
+}
+
+// The live-map lesson drives all three map callbacks, and the assertion that
+// matters most is the *negative* one: a reported region must not move the region
+// the demo is asking for. That separation is the lesson, and a demo that echoed
+// it would show nothing.
+func TestLiveMapDemoAddsPinsAndKeepsTheTwoRegionsApart(t *testing.T) {
+	mgr := newApp(t)
+	openLesson(t, mgr, "Live maps: markers and the echo guard")
+
+	if got := markerIDs(t, mgr); len(got) != 3 || got[0] != "rossio" {
+		t.Fatalf("seed markers = %v, want the three landmarks", got)
+	}
+	if !hasTextContaining(tree(t, mgr), "Nothing reported yet") {
+		t.Fatal("the reported line should start empty")
+	}
+
+	// A map tap drops a pin and selects it, which is core.OnMapTap's whole
+	// purpose — a "choose a place" screen.
+	mgr.DispatchTextCallback(mapNodeProp(t, mgr, "onMapTap"), "38.72,-9.13")
+	cur := tree(t, mgr)
+	if got := markerIDs(t, mgr); len(got) != 4 || got[3] != "pin-1" {
+		t.Fatalf("markers after a map tap = %v, want a fourth keyed pin-1", got)
+	}
+	if !hasTextContaining(cur, "pin-1 selected") {
+		t.Error("a dropped pin should be the selected one")
+	}
+
+	// A marker tap reports the id, not a coordinate: the id is what an app has
+	// an index of.
+	mgr.DispatchTextCallback(mapNodeProp(t, mgr, "onMarkerTap"), "belem")
+	if !hasTextContaining(tree(t, mgr), "belem selected") {
+		t.Error("a marker tap should select by id")
+	}
+
+	// A reported region moves the readout and nothing else. The demo renders
+	// from its own region slot, so this is the visible form of "Go merely
+	// re-rendering is not an instruction".
+	mgr.DispatchTextCallback(mapNodeProp(t, mgr, "onRegionChange"), "40.1234,-8.5,16.5")
+	cur = tree(t, mgr)
+	if !hasTextContaining(cur, "Reported: 40.1234, -8.5000 at zoom 16.50") {
+		t.Error("the reported region did not reach the readout")
+	}
+	if !hasTextContaining(cur, "Asking for: 38.7139, -9.1394 at zoom 13.00") {
+		t.Error("a reported pan moved the region the app is asking for — the two " +
+			"slots are the lesson")
+	}
+
+	// And a button is an instruction, which is the other half.
+	tap(t, mgr, "Show Belém")
+	if !hasTextContaining(tree(t, mgr), "Asking for: 38.6970, -9.2065 at zoom 15.00") {
+		t.Error("the button did not move the region the app is asking for")
+	}
+
+	tap(t, mgr, "Reset pins")
+	if got := markerIDs(t, mgr); len(got) != 3 {
+		t.Errorf("markers after a reset = %v, want the three seeds", got)
+	}
+	assertNoConcerns(t)
+}

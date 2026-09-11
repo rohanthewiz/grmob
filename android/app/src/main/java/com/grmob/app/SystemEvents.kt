@@ -21,6 +21,7 @@ import org.json.JSONObject
  *   core.OpenURL    ──▶ "open_url"  ──▶ Intent(ACTION_VIEW)
  *   core.Audio*     ──▶ "audio"     ──▶ AudioPlayer (Media3, in GrMobAudioService)
  *   core.StartHeading ▶ "sensor"    ──▶ HeadingSensor (SensorManager)
+ *   core.StartLocation ▶ "sensor"   ──▶ LocationSensor (LocationManager)
  *   permission.Check  ▶ "permission"──▶ Permissions (runtime permissions)
  *
  * Before this existed the events were emitted into a nil Go handler and
@@ -54,6 +55,7 @@ object SystemEvents {
         val main = Handler(Looper.getMainLooper())
         AudioPlayer.attach(appContext, runtime::hostEvent)
         HeadingSensor.attach(appContext, runtime::hostEvent)
+        LocationSensor.attach(appContext, runtime::hostEvent)
         // The callback runs on the Go goroutine that emitted the event. Both
         // actions below touch the UI (a Toast must be shown from a Looper
         // thread; startActivity from an arbitrary thread is unreliable), so
@@ -76,9 +78,16 @@ object SystemEvents {
             "toast" -> showToast(context, data)
             "open_url" -> openUrl(context, data)
             "audio" -> AudioPlayer.handle(data)
-            // Sensors carry their own "kind", so one event name covers the
-            // compass today and location tomorrow without a second arm here.
-            "sensor" -> HeadingSensor.handle(data)
+            // Sensors carry their own "kind", so one event name covers both of
+            // them here. Each object answers for its own kind and drops the
+            // rest, which is why this is two calls rather than a switch on the
+            // kind: the dispatch stays one line per sensor, and a third sensor
+            // is one more line rather than a second place that has to know the
+            // vocabulary.
+            "sensor" -> {
+                HeadingSensor.handle(data)
+                LocationSensor.handle(data)
+            }
             // Authorization, which unlike the four above has an answer: each
             // command is replied to over the host-event channel. Attached from
             // MainActivity rather than here, because a runtime permission

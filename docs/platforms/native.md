@@ -286,6 +286,83 @@ whose registration must happen in `onCreate`, so `Permissions.attach` is called
 from `MainActivity` rather than from `SystemEvents` — which keeps only an
 application context, deliberately, so an Activity handed to it is not leaked.
 
+## Maps
+
+`core.MapView` is the platform's own map, wrapped so a declarative tree can hold
+an imperative view: `MKMapView` behind a `UIViewRepresentable` on iOS
+(`GrMobMapView.swift`), osmdroid behind an `AndroidView` on Android
+(`GrMobMapView.kt`). Pins are `core.Marker` child nodes, which each renderer
+reads off `node.children` itself rather than rendering as views — the same move
+`core.TextGrid` makes with its rows.
+
+**Neither needs a key.** MapKit is free on iOS. On Android the choice is
+osmdroid over OpenStreetMap tiles rather than Google Maps Compose, for two
+reasons that point the same way: a Maps key is a deployment secret every app
+adopting this framework would have to obtain before a map drew anything, and
+Play Services is absent on a real share of devices. Google Maps is a better map
+where both are present, and it is a second provider `GrMobMapView.kt` could grow
+rather than a reason to start there.
+
+**The tiles are somebody else's bandwidth.** osmdroid's MAPNIK source and
+Leaflet's OSM layer both hit the OpenStreetMap project's own servers, which have
+a usage policy: identify your app, do not bulk download, expect to be blocked
+above a modest volume. The Android host sets the user agent from the package name
+(osmdroid's default is refused with a 418), puts its tile cache in the app's own
+cache directory so no storage permission is involved, and is the place to point
+at a paid provider for a real user base. MapKit has no such concern — Apple
+serves its own tiles.
+
+**Zoom is not a span, and iOS is where they meet.** Every engine here speaks the
+slippy-tile zoom level, and osmdroid and Leaflet speak it natively. MapKit
+speaks `MKCoordinateSpan`, in degrees, so `GrMobMapView.swift` converts through
+Web Mercator's own definition — 256 × 2^zoom pixels around the equator, so a
+view *w* points wide shows `360 × w / (256 × 2^zoom)` degrees of longitude. The
+width is read off the live view through a `GeometryReader`, so zoom 14 shows the
+same ground on an iPhone as in a browser. The latitude half is derived from the
+aspect ratio and the cosine of the latitude and is an approximation; the
+longitude half is exact, and the zoom level is defined by longitude.
+
+**A gesture is reported once, after it ends.** A pan generates a region per
+frame and each one crossing the bridge would be a full Go render pass, so every
+host throttles on its own side: a 120 ms quiet window on iOS and on the web, and
+osmdroid's own `DelayedMapListener` at the same interval on Android. The window
+also coalesces a pinch, which ends as a pan *and* a zoom a few milliseconds
+apart.
+
+**The echo guard is in all three.** Each host remembers the region it last
+applied and compares, which is what keeps Go's re-renders from snapping the map
+out from under a finger — and the same comparison is what stops the host's own
+recentring from arriving back in Go as a user gesture. See
+[Views](../concepts/views.md#leaves) for the contract.
+
+## The location sensor
+
+`core.StartLocation`/`StopLocation` ride the same `"sensor"` system event the
+compass does, with `kind: "location"` — one event name, two objects, and each
+object drops the kind that is not its own. `LocationSensor.swift` wraps
+`CLLocationManager`; `LocationSensor.kt` wraps the platform `LocationManager`
+(not the fused provider, for the same Play Services reason the map gives).
+
+**The two shells differ on who prompts, and that is the platform's difference.**
+`CLLocationManager` can request authorization from anywhere, and there is no fix
+at all without it — `startUpdatingLocation` on an undetermined status reports
+nothing, forever, with no error — so the iOS sensor asks. Android cannot: only
+an Activity can show the dialog, and that Activity is `Permissions.kt`'s. So the
+Android sensor reports `available: false` with a reason instead. Both ends look
+the same to Go, which is why `core.StartLocation` tells an app that wants to
+control the moment to check and ask first.
+
+**Android asks both providers.** `NETWORK_PROVIDER` answers in seconds with a
+coarse fix; `GPS_PROVIDER` can take a minute outdoors and never answers indoors.
+Requesting one means either a slow first fix or no fix in a building, so the host
+requests both and Go takes whichever arrives — `Location.Accuracy` is what tells
+them apart, which is what that field is documented for.
+
+**Neither host normalises the coordinates.** `core.ReceiveLocation` is the single
+place that clamps the latitude and wraps the longitude, which is what makes those
+invariants properties rather than hopes — the same arrangement
+`core.ReceiveHeading` has for the bearing.
+
 ## Persistence on device
 
 Go code cannot discover the writable sandbox path itself — it is an OS-level

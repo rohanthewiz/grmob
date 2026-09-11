@@ -8,6 +8,7 @@ import UIKit
 ///     core.OpenURL    ──▶ "open_url"  ──▶ UIApplication.open
 ///     core.Audio*     ──▶ "audio"     ──▶ AudioPlayer (AVPlayer + the lock screen)
 ///     core.StartHeading ▶ "sensor"    ──▶ HeadingSensor (CLLocationManager)
+///     core.StartLocation ▶ "sensor"   ──▶ LocationSensor (CLLocationManager)
 ///     permission.Check  ▶ "permission"──▶ Permissions (AVFoundation/Photos/CL)
 ///
 /// Before this existed the events were emitted into a nil Go handler and
@@ -30,6 +31,7 @@ enum SystemEvents {
     static func attach(_ bridge: GrMobBridge, runtime: GrMobRuntime) {
         AudioPlayer.shared.report = { name, payload in runtime.hostEvent(name, payload) }
         HeadingSensor.shared.report = { name, payload in runtime.hostEvent(name, payload) }
+        LocationSensor.shared.report = { name, payload in runtime.hostEvent(name, payload) }
         Permissions.shared.report = { name, payload in runtime.hostEvent(name, payload) }
         bridge.setSystemEventListener { name, payload in
             // The callback runs on the Go goroutine that emitted the event.
@@ -55,9 +57,14 @@ enum SystemEvents {
         case "toast": showToast(object)
         case "open_url": openURL(object)
         case "audio": AudioPlayer.shared.handle(object)
-        // Sensors carry their own "kind", so one event name covers the compass
-        // today and location tomorrow without a second arm here.
-        case "sensor": HeadingSensor.shared.handle(object)
+        // Sensors carry their own "kind", so one event name covers both of
+        // them here. Each object answers for its own kind and drops the rest,
+        // which is why this is two calls rather than a switch on the kind: the
+        // dispatch stays one line per sensor, and a third sensor is one more
+        // line rather than a second place that has to know the vocabulary.
+        case "sensor":
+            HeadingSensor.shared.handle(object)
+            LocationSensor.shared.handle(object)
         // Authorization, which unlike the four above has an answer: each
         // command is replied to over the host-event channel. See
         // Permissions.swift for why the mapping table lives there.

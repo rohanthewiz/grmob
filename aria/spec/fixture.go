@@ -45,11 +45,15 @@ var InScopeAttributes = []string{
 // here turns each of those remarks into an assertion — see
 // TestTheNearMissesAreRealDistinctions.
 //
-// `generic` and `dialog` are here for a second reason. `generic` is the premise
-// of the RoleGroup fallback both web exporters supply: a name on it is
-// prohibited, which is why `group` exists in the vocabulary at all. `dialog` is
-// the role core.Modal's chassis writes from the node type rather than from
-// core.Role, so it is a role this framework emits and does not name.
+// `generic`, `dialog` and `switch` are here for a second reason. `generic` is
+// the premise of the RoleGroup fallback both web exporters supply: a name on it
+// is prohibited, which is why `group` exists in the vocabulary at all.
+// `dialog` and `switch` are the two roles a node *type* writes rather than a
+// core.Role — core.Modal's chassis and core.Switch, the whole of
+// htmlout.ownRoles — so they are roles this framework emits and does not name.
+// Being here is what lets TestEveryCoreRoleIsAnARIARole's sibling checks argue
+// about them at all: a role no fixture carries is a string two renderers happen
+// to agree on.
 //
 // `menu`, `menubar`, `tree`, `treegrid`, `grid` and `radiogroup` are the
 // composite patterns core has no vocabulary for, and `menuitem`,
@@ -61,6 +65,7 @@ var InScopeAttributes = []string{
 var NearMisses = []string{
 	"generic",
 	"dialog",
+	"switch",
 	"gridcell",
 	"meter",
 	"scrollbar",

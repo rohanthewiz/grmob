@@ -30,9 +30,11 @@ import "sort"
 // that adding a node type to core and forgetting the renderers shows up as a
 // gap in a list rather than as silence.
 //
-// The tag alone does not always finish the job. Four types share <input>, and
+// The tag alone does not always finish the job. Six types share <input>, and
 // which control the browser draws is decided by the type attribute — see
-// inputTypes, whose four keys are exactly the four <input> rows here.
+// inputTypes, whose keys are exactly the <input> rows here. One pair it cannot
+// separate, and says so: a Switch and a Checkbox are the same type attribute
+// and differ by one more.
 var tags = map[string]string{
 	"Text":     "span",
 	"Button":   "button",
@@ -52,11 +54,15 @@ var tags = map[string]string{
 	"TextGrid": "pre",
 	"GridRow":  "div",
 
-	// The five that share one tag and are told apart by inputTypes.
+	// The six that share one tag and are told apart by inputTypes — except
+	// for the last pair, which inputTypes cannot tell apart at all: a Switch
+	// and a Checkbox are both type="checkbox", and what separates them is the
+	// `switch` attribute the exporter writes for one of them. See inputTypes.
 	"Input":         "input",
 	"InputPassword": "input",
 	"NumericInput":  "input",
 	"Checkbox":      "input",
+	"Switch":        "input",
 	"Slider":        "input",
 
 	// Containers and boxes. A <div> is the honest answer for all of them:
@@ -82,6 +88,19 @@ var tags = map[string]string{
 
 	// A placeholder box in both DOM renderers; neither opens a camera.
 	"CameraView": "div",
+
+	// The live map (core.MapView) and its pins. A <div> in both DOM
+	// renderers, and the two differ in what happens to it afterwards: the
+	// WASM runtime hands the div to Leaflet, while a static export leaves it
+	// a placeholder, as CameraView's is — an exported document has no engine
+	// to run and no tiles to fetch.
+	//
+	// A Marker is data rather than a box, and it gets an element anyway
+	// because a patch path is positional: a node with no element would send
+	// every later patch to the wrong place. It is exported with the
+	// coordinates on it and nothing inside it; see renderNode's arm.
+	"MapView": "div",
+	"Marker":  "div",
 }
 
 // defaultTag is what an unrecognized node type renders as. A div is the
@@ -216,19 +235,50 @@ func TransparentTypes() []string {
 	return out
 }
 
-// CarriesOwnRole reports whether a node type states its own ARIA role, with no
-// core.Style involved.
+// ownRoles are the node types that state their own ARIA role, and the role
+// each one states. Neither value is in the core.Role vocabulary, and that is
+// the property the map is here to carry: these are roles this framework emits
+// and does not name — see core/role.go's "Roles a node type carries for
+// itself", and aria/spec.NearMisses, where both appear so the guards have
+// something to argue with.
 //
-// Modal is the only one: core.ModalNode has no Style field at all, and the
-// overlay is a dialog by virtue of being an overlay — see modalSemantics in
-// export.go, and core/role.go's "Roles a node type carries for itself" for why
-// this is not a value in the Role vocabulary.
+//	Modal    a dialog by virtue of being an overlay. core.ModalNode has no
+//	         Style field at all, so the role has nowhere else to come from.
+//	         modalSemantics (export.go) writes it, plus the aria-modal no Role
+//	         could express.
+//	Switch   a switch by virtue of being one. HTML has no switch element, so
+//	         the control is an <input type="checkbox"> and this attribute is
+//	         what makes a reader announce it as the thing it is. See
+//	         core.Switch, and switchSemantics in export.go.
+//
+// It was a single `nodeType == "Modal"` comparison while Modal was alone, and
+// the second entry is what turns the question into a table: the cost of
+// getting this wrong is a *duplicate* role attribute on one element, which is
+// invalid and which no amount of reading the two call sites would reveal.
+var ownRoles = map[string]string{
+	"Modal":  "dialog",
+	"Switch": "switch",
+}
+
+// CarriesOwnRole reports whether a node type states its own ARIA role, with no
+// core.Style involved. See ownRoles.
 //
 // Exported because the TabView wiring has to know: the role attribute has one
 // slot per element, and a page whose type already filled it must not be given
 // role="tabpanel" on top.
 func CarriesOwnRole(nodeType string) bool {
-	return nodeType == "Modal"
+	_, ok := ownRoles[nodeType]
+	return ok
+}
+
+// OwnRoleFor returns the ARIA role a node type states for itself, or "" for a
+// type that states none. See ownRoles.
+//
+// Exported for the reason Tags is: the WASM runtime has the same two node
+// types to answer for and cannot ask Go at runtime, so wasm/verify holds its
+// copy against this one rather than against a list written twice.
+func OwnRoleFor(nodeType string) string {
+	return ownRoles[nodeType]
 }
 
 // borderResetTypes are the node types whose *user-agent* stylesheet draws a
@@ -261,10 +311,11 @@ func CarriesOwnRole(nodeType string) bool {
 //	Input, InputPassword, NumericInput   a frame the style should own
 //	TextArea                             the same, one tag over
 //	Select                               the same, a third tag over
-//	Checkbox, Slider                     the user agent draws the *control*
+//	Checkbox, Switch, Slider             the user agent draws the *control*
 //
-// A checkbox's border is not chrome around the control, it is the box; a range
-// track has no border to reset in the first place. Both draw through
+// A checkbox's border is not chrome around the control, it is the box; a switch
+// joins it on that argument, since it is the same element with one attribute
+// more; a range track has no border to reset in the first place. Both draw through
 // `appearance: auto`, where a browser ignores the property anyway — so keying
 // by tag would have been harmless today and wrong on the day someone reaches
 // for appearance:none. The question the set answers is "does this element draw

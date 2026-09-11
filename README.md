@@ -202,7 +202,7 @@ core.ButtonWithEvent("Hold", "TouchStart", func() {
 ## 📖 Tutorials
 
 New to GrMob? Start with the [interactive tutorial](docs/tutorial-interactive.md)
-— a GrMob app that teaches GrMob. Forty lessons across eight chapters, and
+— a GrMob app that teaches GrMob. Forty-nine lessons across eight chapters, and
 every lesson is a live screen: the explanation, the code under discussion,
 and a "TRY IT" panel wired to real state and callbacks, from your first
 `Column` through theming, navigation, and error boundaries. It lives in

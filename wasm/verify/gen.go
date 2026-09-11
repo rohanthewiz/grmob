@@ -232,6 +232,14 @@ func demoScenario() scenario {
 	// Bool event: tick the subscription checkbox.
 	record(&steps, mgr.DispatchBoolCallback(prop(mgr.RenderInitial(), "Checkbox", 0, "onToggle"), true))
 
+	// The same channel from the other boolean control, turned off. It is a
+	// separate step rather than a second case of the line above because what
+	// the replay is checking is not the envelope — that is a checkbox's — but
+	// that a Switch is the node type on the far side of it: an <input> whose
+	// `switch` attribute and role are written from the type and have to survive
+	// the update-props patch this toggle produces.
+	record(&steps, mgr.DispatchBoolCallback(prop(mgr.RenderInitial(), "Switch", 0, "onToggle"), false))
+
 	// The Feed tab, then a tap and a long-press on its first row: both
 	// restyle rows and rewrite a status line, exercising keyed-children diffs
 	// inside a List node.

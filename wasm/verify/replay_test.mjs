@@ -24,8 +24,9 @@ const scenarios = loadTranscript().scenarios;
 // The Go node type -> <input type>, restated from the contract for the same
 // reason the prop table below is: the runtime has its own copy of this table
 // (inputTypeFor), and a conformance test that read the runtime's would only
-// prove the runtime agrees with itself. Five Go types share the <input> tag,
-// so this attribute is the only thing that makes a checkbox a checkbox.
+// prove the runtime agrees with itself. Six Go types share the <input> tag,
+// so this attribute is the only thing that makes a checkbox a checkbox — with
+// one exception, the pair below it cannot separate.
 //
 // This copy stays deliberately independent even though the runtime's copy is
 // now pinned to Go's (inputtype_test.go). Pinning it here too would close the
@@ -36,6 +37,7 @@ const INPUT_TYPE = {
     InputPassword: "password",
     NumericInput: "number",
     Checkbox: "checkbox",
+    Switch: "checkbox",
     Slider: "range",
 };
 
@@ -53,6 +55,11 @@ function describeGoNode(node, path) {
         // The <input> discriminator; null for every node whose tag already
         // says what it is.
         inputType: INPUT_TYPE[node.Type] ?? null,
+        // The attribute the discriminator above cannot supply: HTML has no
+        // switch element, so a core.Switch is a checkbox carrying `switch`.
+        // Stated from the node type here, and read back off the element on the
+        // DOM side, so the two halves are independent statements of it.
+        isSwitch: node.Type === "Switch",
         text: String(text),
         value: props.value === undefined ? undefined : String(props.value),
         placeholder: props.placeholder === undefined ? undefined : String(props.placeholder),
@@ -109,6 +116,9 @@ function fromDOM(el, out = []) {
         path: el.getAttribute("data-node-path"),
         type: el.dataset.nodeType,
         inputType: el.getAttribute("type"),
+        // The DOM's half of the switch question: the attribute as the element
+        // actually carries it, against the node type Go described.
+        isSwitch: el.hasAttribute("switch"),
         text: el.textContent,
         value: el.value === undefined ? undefined : String(el.value),
         placeholder: el.placeholder === undefined ? undefined : String(el.placeholder),

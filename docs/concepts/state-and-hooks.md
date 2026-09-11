@@ -253,7 +253,7 @@ own renders. Unlike every other hook here it stores **nothing derived**: the
 errors are recomputed from the values and the current spec on every read.
 See [Forms & Validation](forms.md).
 
-### Sensors: `UseHeading`
+### Sensors: `UseHeading` and `UseLocation`
 
 A sensor is a third kind of thing beside a node and a service: it is
 *subscribed* rather than commanded, and it costs battery while it is on. So
@@ -289,6 +289,38 @@ enable the compass" button is for.
 
 Below the hook, `core.CurrentHeading`/`core.OnHeading` are the un-scoped pair,
 for a subscriber that wants the reading without owning the sensor's lifetime.
+
+`hooks.UseLocation` is the same hook over the second sensor, and every argument
+above applies to it — the refcount, the two booleans, the route. Two things
+differ, and both are the ways location is more expensive than a compass:
+
+```go
+loc := hooks.UseLocation(ctx)   // starts the GPS; releases it on close
+```
+
+**Ask for the permission first.** Every platform gates location, and the dialog
+is the expected path rather than an exception. The hook does not ask: it starts
+the sensor, the host asks the OS if it must, and a refusal comes back as
+`Available: false` with a reason — which means that on an *undecided*
+permission, mounting a component that calls this hook is what puts the system
+dialog on screen. That is a side effect of a screen appearing, and it is the
+surest way to spend an app's one chance at a yes. A screen that can be reached
+cold should check with `UsePermission` and ask from a gesture; the hook
+deliberately does not enforce that, because a "find my nearest branch" button is
+an app where the dialog *is* the response to the tap.
+
+**`Accuracy` is the field a location screen actually reads.** 5 metres is a GPS
+fix outdoors, 50 is a fix through a roof, 2000 is a guess from the cell tower or
+the IP address — and the last one looks exactly like the first to any code that
+reads only `Lat` and `Lng`. A position drawn without its uncertainty is the
+commonest mistake in this area.
+
+The blue dot on a map is *not* this hook.
+[`core.MapView`](views.md#leaves)'s `ShowUserLocation` asks the host's own map
+widget to draw the user's position, which every map SDK does from its own
+plumbing and without telling Go where anybody is. The two features need the same
+OS permission and nothing else: a screen can show the dot with no fix in Go, and
+hold a fix with no map on screen.
 
 ### Permissions: `UsePermission` and `UsePermissionLive`
 

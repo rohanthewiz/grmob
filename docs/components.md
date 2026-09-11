@@ -1723,6 +1723,67 @@ the rose is "N W E S" whatever the bearing — so the whole widget speaks
 all derive from it. Letters are an eighth of the diameter with a 10px floor,
 so a deliberately small compass stays readable.
 
+## StaticMap
+
+A map image of one point, which hands off to the platform's own maps app when
+it is tapped.
+
+```go
+components.StaticMap{
+    Lat: 38.7223, Lng: -9.1393,
+    Label:  "Lisbon Baptist Church",
+    Marker: true,
+}
+```
+
+**A picture and a hand-off, not a map engine.** The widget builds a URL, gives
+it to [`core.Image`](concepts/views.md#leaves), and opens
+[`core.OpenURL`](platforms/native.md) on a tap — so it works on all four
+targets today with no renderer behind it. That is also the shape of what it
+answers: "where is this" wants a picture that says *there* and then directions,
+which the platform's maps app does better than any embedded view, with the
+user's own home address and transport preferences. A live panning map is a node
+type with MapKit, osmdroid and Leaflet behind it, and it is the thing to build
+when an app needs to *interact* with a map.
+
+**The provider is a policy.** `Provider` is one function —
+`func(components.StaticMapArea) string` — and the default is `OSMStaticMap`,
+the OpenStreetMap community's keyless service. That default is what makes the
+widget evaluable without buying anything, and it is a volunteer-run, low-volume
+service: a screen every user opens ten times a day belongs on
+`GoogleStaticMap(key)` or on a provider of your own. A provider sees values
+already defaulted and already clamped — no zero `Zoom`, no 4000px `Width` — so
+every provider is spared the same four lines and none of them can disagree
+about what a zero means. `StaticMap.Area()` is that resolution, exported so a
+caller can ask what will be requested rather than re-deriving it.
+
+**One hand-off URL for three platforms.** Nothing in this framework knows which
+platform it is on — `core.OpenURL` promises only the portable part — so the
+default `Handoff` is an https maps URL all three resolve, and which on both
+phones reaches the installed app. An app that *does* know its platform returns
+a `geo:` or `maps://` URL in one line, and that is what the `label` argument on
+a `MapHandoff` is for: the cross-platform URL deliberately carries the
+coordinates and not the name, because a name is a search and a search can land
+on a different St Mary's in another country. Returning `""` says there is no
+hand-off at all, and the widget renders a picture with no link role and no
+callback.
+
+**Tappable is a link; untappable is an image.** A tap leaves the app entirely,
+which is what [`core.RoleLink`](concepts/styling-and-theming.md#accessibility)
+says and `RoleButton` does not — a button does something *here*. With no
+hand-off the widget is a `core.RoleImg`, a picture standing in for one fact,
+the same argument `Compass` makes. Either way the image inside is hidden, so
+the widget announces once instead of reading out a provider URL.
+
+**Latitude clamps, longitude wraps.** Two rules because they are two geographic
+facts. Latitude is held to the Web Mercator limit (±85.0511°), past which every
+tile service returns an error image; longitude wraps, because 190°E is 170°W
+and clamping it to 180 would move the point rather than name it.
+
+**Lat 0, Lng 0 is the Gulf of Guinea.** There is no unset coordinate — a
+`float64` pair has no third state — so a screen whose location has not loaded
+yet renders a `Skeleton` rather than this widget.
+
 ## Writing your own
 
 The package doc (`components/doc.go`) is the reference for the idiom. In

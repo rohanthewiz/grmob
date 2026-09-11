@@ -2,7 +2,7 @@
 
 GrMob ships a second tutorial that is not a document at all: an app.
 [`examples/tutorial`](../examples/tutorial) is a GrMob app that teaches GrMob
-— 42 lessons across 8 chapters, and every lesson is a live screen with three
+— 49 lessons across 8 chapters, and every lesson is a live screen with three
 parts: an explanation, the code under discussion, and a bordered **TRY IT**
 panel wired to real state and real callbacks. You learn `NewState` by tapping
 a counter it drives, keyed reconciliation by shuffling a list that breaks
@@ -53,9 +53,9 @@ It also ships natively: the package registers itself with the mobile bridge
 | Chapter | What you tap |
 |---|---|
 | 1 · Views & Layout | Composition, text and typography, rows/columns, alignment and flex, surfaces |
-| 2 · State, Events & Lists | `NewState` mechanics, controlled inputs, conditionals, `For` + `Keyed` and why keys matter |
+| 2 · State, Events & Lists | `NewState` mechanics, controlled inputs, conditionals, `For` + `Keyed` and why keys matter, and the two boolean controls — a `Checkbox` collects a value, a `Switch` is the setting |
 | 3 · Hooks & Effects | `UseInterval`, `UseTimeout`, `UseEffect`, `UseMemo`, `UseReducer` — and the rules of hooks |
-| 4 · The Widget Library | Button variants × emphasis, badges/chips/segmented controls, `ListRow`, `Accordion`, `Tabs`, `GroupedList` and `DataTable` — including a collapsible band built from a `Header` override and a `CollapseBand` |
+| 4 · The Widget Library | Button variants × emphasis, badges/chips/segmented controls, `ListRow`, `Accordion`, `Tabs`, `GroupedList` and `DataTable` — including a collapsible band built from a `Header` override and a `CollapseBand` — then the sensors and the maps: `Compass` over a live heading, `StaticMap`'s provider seam and hand-off, and `MapView` with keyed markers and the echo guard |
 | 5 · Forms & Validation | Rules, reveal policies, focus and blur, `FormField` |
 | 6 · Navigation & Overlays | Push/Pop/Replace/Reset, modals, toasts |
 | 7 · Theming & Styling | The style pipeline, `UseStyle` merging, theme anatomy, a live switcher over every bundled palette, transitions |

@@ -69,6 +69,7 @@ struct RenderNode: View {
             case "TextArea": GrMobTextField(node: node, grow: grow, multiline: true)
             case "Select": GrMobSelect(node: node, grow: grow)
             case "Checkbox": GrMobCheckbox(node: node, grow: grow)
+            case "Switch": GrMobSwitch(node: node, grow: grow)
             case "Slider": GrMobSlider(node: node, grow: grow)
             case "TextGrid": GrMobTextGrid(node: node, grow: grow)
             // A row reached on its own (never from core.TextGrid, which draws
@@ -146,6 +147,20 @@ struct RenderNode: View {
             // own; until then render the styled surface and any overlay so
             // layouts hold up.
             case "CameraView": ZStack(alignment: .topLeading) { PlainChildren(node: node) }.grMobBox(node.style, grow: grow)
+
+            // The live map (core.MapView). Its Marker children are data rather
+            // than views — GrMobMapView reads them off node.children itself and
+            // turns them into MKAnnotations, the way GrMobTextGrid reads its
+            // rows — so they are deliberately NOT rendered here. See
+            // GrMobMapView.swift.
+            case "MapView": GrMobMapView(node: node, grow: grow)
+
+            // A Marker reached on its own, outside a map: nothing. It is data
+            // for the node above it, and drawing a box for one would put an
+            // empty rectangle in a layout. The arm exists so the dispatch says
+            // so rather than falling through to the container default, which
+            // would.
+            case "Marker": EmptyView()
 
             // Fragment and Theme are grouping nodes with no visual box of
             // their own: Group flattens the children into whatever stack
@@ -1544,6 +1559,36 @@ private struct GrMobCheckbox: View {
         // iOS has no checkbox control; Toggle (a switch) is the platform
         // idiom for the same bool. Controlled like everything else: the value
         // always comes from Go, the change goes up as a bool event.
+        Toggle(isOn: Binding(
+            get: { node.boolProp("checked") },
+            set: { if !cb.isEmpty { runtime?.toggled(cb, $0) } }
+        )) { EmptyView() }
+            .labelsHidden()
+            .grMobBox(marginAndSizeOnly(node.style), grow: grow)
+    }
+}
+
+/// A core.Switch: SwiftUI's Toggle, which is what a switch is on this
+/// platform. Same wire shape as the Checkbox above — the state arrives as
+/// `checked` and the change goes up through the bool channel — because it is
+/// the same bool; see core.Switch for why the two are separate node types and
+/// why the prop keeps the DOM's spelling rather than Go's `on`.
+///
+/// It draws identically to GrMobCheckbox, and that is the honest answer rather
+/// than a gap. iOS has no checkbox control, so a Checkbox already borrows this
+/// one; here the borrowing runs the other way and the control is the thing it
+/// was made for. The two node types still earn their separation on the targets
+/// that draw them apart (Material's Checkbox and Switch, and the `switch`
+/// attribute on the web) and in what the app is saying: a Checkbox on iOS that
+/// sat beside a Submit button was always drawing a switch, and writing
+/// core.Switch for a setting that takes effect on the tap says so.
+private struct GrMobSwitch: View {
+    let node: GrMobNode
+    let grow: GrMobGrow
+    @Environment(\.grMobRuntime) private var runtime
+
+    var body: some View {
+        let cb = node.stringProp("onToggle")
         Toggle(isOn: Binding(
             get: { node.boolProp("checked") },
             set: { if !cb.isEmpty { runtime?.toggled(cb, $0) } }

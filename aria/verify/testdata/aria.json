@@ -98,6 +98,9 @@
     "dialog": {
       "attributes": []
     },
+    "switch": {
+      "attributes": ["aria-expanded"]
+    },
     "gridcell": {
       "attributes": ["aria-selected", "aria-expanded"]
     },

@@ -49,6 +49,7 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Slider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
@@ -189,6 +190,7 @@ private fun RenderNodeContent(node: GrMobNode, extra: Modifier) {
         "TextArea" -> GrMobTextField(node, extra, multiline = true)
         "Select" -> GrMobSelect(node, extra)
         "Checkbox" -> GrMobCheckbox(node, extra)
+        "Switch" -> GrMobSwitch(node, extra)
         "Slider" -> GrMobSlider(node, extra)
         "TextGrid" -> GrMobTextGrid(node, extra)
         // A row reached on its own (never from core.TextGrid, which draws
@@ -312,6 +314,19 @@ private fun RenderNodeContent(node: GrMobNode, extra: Modifier) {
         // Camera capture needs a CameraX integration pass of its own; until
         // then render the styled surface and any overlay so layouts hold up.
         "CameraView" -> Box(style.boxModifier(extra)) { RenderChildren(node) }
+
+        // The live map (core.MapView). Its Marker children are data rather than
+        // composables — GrMobMapView reads them off node.children itself and
+        // turns them into osmdroid overlays, the way GrMobTextGrid reads its
+        // rows — so RenderChildren is deliberately not called here. See
+        // GrMobMapView.kt.
+        "MapView" -> GrMobMapView(node, extra)
+
+        // A Marker reached on its own, outside a map: nothing. It is data for
+        // the node above it, and a box for one would be an empty rectangle in a
+        // layout. The arm exists so the dispatch says so rather than falling
+        // through to the container default, which would draw one.
+        "Marker" -> Unit
 
         // Fragment and Theme are grouping nodes with no visual box of their
         // own: emit the children inline into whatever scope we're in.
@@ -795,8 +810,15 @@ private fun borderStroke(s: GrMobStyle?): BorderStroke? {
     return BorderStroke(s.borderWidth.dp, color)
 }
 
-/** Margin + explicit dimensions only — for components that draw their own box. */
-private fun marginAndSize(s: GrMobStyle?, extra: Modifier): Modifier {
+/**
+ * Margin + explicit dimensions only — for components that draw their own box.
+ *
+ * internal rather than private to this file because GrMobMapView.kt needs the
+ * same answer: an osmdroid MapView draws its own surface exactly as a Material
+ * Checkbox does, so it wants the margin and the size and none of the fill. A
+ * second copy there would be the thing this function exists to avoid.
+ */
+internal fun marginAndSize(s: GrMobStyle?, extra: Modifier): Modifier {
     if (s == null) return extra
     // Reuse boxModifier's ordering by building a margin/size-only style.
     val trimmed = s.copy(
@@ -897,6 +919,35 @@ private fun GrMobCheckbox(node: GrMobNode, extra: Modifier) {
     val runtime = LocalGrMobRuntime.current
     val cb = node.stringProp("onToggle")
     Checkbox(
+        checked = node.boolProp("checked"),
+        onCheckedChange = { if (cb.isNotEmpty()) runtime.toggled(cb, it) },
+        modifier = marginAndSize(node.style, extra),
+        enabled = !node.isDisabled(),
+    )
+}
+
+/**
+ * A core.Switch: Material 3's Switch, the instant-effect sibling of the
+ * Checkbox above. Same wire shape as one — the state arrives as `checked` and
+ * the change goes up through the bool channel — because it is the same bool;
+ * see core.Switch for why the two are separate node types and why the prop
+ * keeps the DOM's spelling rather than Go's `on`.
+ *
+ * Material draws the two differently on purpose and the platform guidance is
+ * the same as this framework's: a checkbox collects a value something else
+ * will act on, a switch acts on the tap. Nothing here has to arrange for that
+ * distinction — instantiating the other control is the whole of it.
+ *
+ * Its own colours come from the Material theme rather than from the Go style,
+ * exactly as the Checkbox's do: marginAndSize spends only the margin and the
+ * size, which is what keeps a control that a platform draws from being half
+ * drawn by a palette.
+ */
+@Composable
+private fun GrMobSwitch(node: GrMobNode, extra: Modifier) {
+    val runtime = LocalGrMobRuntime.current
+    val cb = node.stringProp("onToggle")
+    Switch(
         checked = node.boolProp("checked"),
         onCheckedChange = { if (cb.isNotEmpty()) runtime.toggled(cb, it) },
         modifier = marginAndSize(node.style, extra),

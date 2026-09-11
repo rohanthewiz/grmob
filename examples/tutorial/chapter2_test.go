@@ -199,3 +199,54 @@ func TestListDemoAddsRemovesAndKeysRows(t *testing.T) {
 	}
 	assertNoConcerns(t)
 }
+
+// --- 2.6 Two booleans -----------------------------------------------------
+
+// The lesson's claim is about *when* a change takes effect, so the test drives
+// each control and watches for the thing that distinguishes them: the switch's
+// copy moves on the toggle alone, and the checkbox's does not move until Save.
+//
+// Both controls are in one tree, which is why this reaches for the node type
+// rather than "the first bool control" — on the wire they are the same prop map
+// (core.Switch), and position would be a silent way to drive the wrong one.
+func TestBooleanDemoSeparatesTheInstantFromTheDeferred(t *testing.T) {
+	mgr := newApp(t)
+	openLesson(t, mgr, "Two booleans: checkbox and switch")
+
+	// The switch starts on, and its line says so.
+	if !hasTextContaining(tree(t, mgr), "Sending you a push") {
+		t.Fatal("the switch should start on, with its subtitle reading as on")
+	}
+
+	// One toggle, no confirmation, and the setting has already changed.
+	toggleBool(t, mgr, "Switch", 0, false)
+	cur := tree(t, mgr)
+	if !hasTextContaining(cur, "Silent") {
+		t.Fatal("the switch's own toggle should change the setting with nothing else involved")
+	}
+	if !hasTextContaining(cur, "off the moment it was tapped") {
+		t.Fatal("the caption should follow the switch immediately")
+	}
+
+	// The checkbox, which changes nothing but itself.
+	if !hasTextContaining(tree(t, mgr), "Not ticked") {
+		t.Fatal("the checkbox should start unticked")
+	}
+	toggleCheckbox(t, mgr, 0, true)
+	if !hasTextContaining(tree(t, mgr), "Ticked, not saved") {
+		t.Fatal("a tick must not commit anything — that is the whole distinction")
+	}
+
+	// And the button, which is what commits it.
+	tap(t, mgr, "Save")
+	if !hasTextContaining(tree(t, mgr), "Saved: accepted") {
+		t.Fatal("Save should commit the ticked value")
+	}
+
+	// Re-ticking revokes the save, so the two facts stay visibly separate.
+	toggleCheckbox(t, mgr, 0, false)
+	if !hasTextContaining(tree(t, mgr), "Not ticked") {
+		t.Fatal("unticking after a save should drop back to the untouched reading")
+	}
+	assertNoConcerns(t)
+}

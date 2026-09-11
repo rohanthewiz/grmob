@@ -38,6 +38,8 @@ func chapter4() Chapter {
 			lessonEndlessFeeds(),
 			lessonCalendars(),
 			lessonCompass(),
+			lessonStaticMap(),
+			lessonLiveMap(),
 		},
 	}
 }
@@ -1975,4 +1977,321 @@ default:                     return components.Skeleton{}   // the check is in f
 			)
 		},
 	}
+}
+
+// --- 4.11 ----------------------------------------------------------------
+
+// tutorialPlaces are the demo's hand-picked points: one ordinary coordinate,
+// one at the antimeridian and one past the pole. The last two are there for the
+// reason 4.10's 359° bearing is — a widget that looks right over Lisbon and
+// wrong at 179°E has a wrapping bug, and this is where a reader can watch the
+// two rules (clamp the latitude, wrap the longitude) do different things.
+var tutorialPlaces = []struct {
+	name     string
+	lat, lng float64
+}{
+	{"Lisbon", 38.7223, -9.1393},
+	{"Suva", -18.1416, 178.4419},
+	{"Past the pole", 89, 20},
+}
+
+func lessonStaticMap() Lesson {
+	return Lesson{
+		Title:   "Maps: a picture and a hand-off",
+		Summary: "components.StaticMap — a map image from a provider you choose, and a tap that leaves for the platform's own maps app.",
+		Body: func(ctx *core.Context) core.View {
+			place := core.NewState(ctx, 0)
+			marker := core.NewState(ctx, true)
+			zoom := core.NewState(ctx, components.DefaultMapZoom)
+
+			current := tutorialPlaces[place.Get()%len(tutorialPlaces)]
+
+			chips := make([]components.Chip, 0, len(tutorialPlaces))
+			for i, p := range tutorialPlaces {
+				idx := i
+				chips = append(chips, components.Chip{
+					Label:    p.name,
+					Selected: place.Get() == idx,
+					OnTap:    func() { place.Set(idx) },
+				})
+			}
+
+			shown := components.StaticMap{
+				Lat: current.lat, Lng: current.lng,
+				Zoom:   zoom.Get(),
+				Marker: marker.Get(),
+				Label:  current.name,
+			}
+			// The URL the widget will request, asked for rather than rebuilt:
+			// Area() is the widget's own resolution of the defaults and the
+			// clamps, so the caption below and the image beside it cannot
+			// disagree about what was fetched. Doing this by hand — defaulting
+			// the zoom here, clamping the size here — is exactly the second
+			// answer Area() exists to prevent.
+			requested := components.OSMStaticMap(shown.Area())
+
+			return core.Column(
+				core.Gap(14),
+				prose("A map is the first widget in this package that draws something nobody here "+
+					"drew. components.StaticMap builds a URL, hands it to core.Image, and makes the "+
+					"whole thing tappable — so what you see is a picture a tile service rendered, and "+
+					"what a tap does is leave for the platform's own maps app."),
+				codeBlock(`components.StaticMap{
+    Lat: 38.7223, Lng: -9.1393,
+    Label:  "Lisbon Baptist Church",
+    Marker: true,
+}`),
+				prose("That is the whole widget on all four targets, with no renderer work behind it: "+
+					"an Image node the reconciler already patches and a core.OpenURL the three hosts "+
+					"already hand to the system. A live panning map is a different feature — a node "+
+					"type with MapKit, osmdroid and Leaflet behind it — and the question it answers "+
+					"is \"interact with a map\", not \"where is this\"."),
+				demoPanel("Pick a place. The switch is a setting, so the marker changes on the tap.",
+					components.ChipStrip{Chips: chips},
+					components.ListRow{
+						Title:    "Marker",
+						Subtitle: "A pin at the centre",
+						Trailing: core.Switch(marker.Get(), func(v bool) { marker.Set(v) }),
+					},
+					components.ChipStrip{Chips: zoomChips(zoom)},
+					shown,
+					caption(fmt.Sprintf("%s — %g, %g at zoom %d",
+						current.name, current.lat, current.lng, zoom.Get())),
+					caption("Requested: "+requested),
+				),
+				prose("The provider is the seam, and it is a policy rather than a detail. The default "+
+					"is the OpenStreetMap community's keyless service, which is what makes the widget "+
+					"evaluable without buying anything — and which is a volunteer-run, low-volume "+
+					"service, so a screen every user opens ten times a day belongs on a paid one. "+
+					"GoogleStaticMap(key) is in the box; anything else is one function."),
+				codeBlock(`// A provider is one function, and it sees values already
+// defaulted and already clamped — no zero Zoom, no 4000px width.
+Provider: func(a components.StaticMapArea) string {
+    return "https://tiles.example.com/" + ...
+}`),
+				prose("The hand-off is one URL for three platforms, because nothing in this framework "+
+					"knows which platform it is on — core.OpenURL promises only the portable part. So "+
+					"the default is an https maps URL that all three resolve and that both phones "+
+					"open in the installed app. An app that does know its platform can hand back a "+
+					"geo: or maps:// URL instead, and that is the one thing the Label argument on a "+
+					"MapHandoff is for: the cross-platform URL deliberately carries the coordinates "+
+					"and not the name, because a name is a search and a search can land on a "+
+					"different St Mary's in a different country."),
+				codeBlock(`Handoff: func(lat, lng float64, label string) string {
+    return fmt.Sprintf("geo:%g,%g?q=%g,%g(%s)", lat, lng, lat, lng, label)
+}
+
+// And returning "" is how you say there is no hand-off at all:
+// the widget renders a picture with no link role and no callback.`),
+				prose("Which is the accessibility decision too. A tappable map is a core.RoleLink, "+
+					"not a RoleButton: a button does something here and a link goes somewhere else, "+
+					"and this one leaves the app entirely, which a reader deserves to know before "+
+					"they follow it. A map with no hand-off is a core.RoleImg — a picture standing "+
+					"in for one fact, exactly as the compass rose does — and either way the image "+
+					"inside is hidden, so the widget announces once instead of reading out a "+
+					"provider URL."),
+				prose("Two of the chips above are not places anyone will ask for, and they are the "+
+					"ones worth watching. Latitude is clamped to where Web Mercator stops (±85.0511°), "+
+					"because every tile service here projects with Mercator and the poles are at "+
+					"infinity — a request past it comes back as an error image. Longitude wraps "+
+					"instead: 190°E is 170°W, the same meridian, and clamping it to 180 would move "+
+					"the point rather than name it. Two rules because they are two different "+
+					"geographic facts."),
+				keyPoints(
+					"A picture plus a hand-off, not a map engine: Image + OpenURL, so it works on all four targets today.",
+					"The provider is a policy. The keyless default is a volunteer service; a load-bearing map belongs on a paid one.",
+					"One hand-off URL for three platforms, because nothing here knows its platform. A platform-specific one is a one-line func.",
+					"Tappable is a link (it leaves the app); untappable is an img. The image inside is hidden either way.",
+					"Lat 0, Lng 0 is the Gulf of Guinea. There is no unset coordinate, so a screen with no location yet renders a Skeleton instead.",
+				),
+			)
+		},
+	}
+}
+
+// zoomChips is the zoom picker for 4.11: three scales far enough apart that the
+// image visibly changes, named for what each one shows rather than by number.
+func zoomChips(zoom core.State[int]) []components.Chip {
+	levels := []struct {
+		label string
+		value int
+	}{
+		{"City", 11},
+		{"Street", components.DefaultMapZoom},
+		{"Building", 18},
+	}
+	chips := make([]components.Chip, 0, len(levels))
+	for _, l := range levels {
+		value := l.value
+		chips = append(chips, components.Chip{
+			Label:    l.label,
+			Selected: zoom.Get() == value,
+			OnTap:    func() { zoom.Set(value) },
+		})
+	}
+	return chips
+}
+
+// --- 4.12 ----------------------------------------------------------------
+
+// tutorialPin is one marker in the live-map demo: an id that outlives the
+// slice index, and a position. The id is the whole point of the type — a marker
+// is identified by it in OnMarkerTap and keyed by it in the tree, and an index
+// changes every time something is inserted above it.
+type tutorialPin struct {
+	id       string
+	lat, lng float64
+}
+
+// The seed pins, one per walkable landmark near the map's opening region, so the
+// demo opens with something to tap rather than with an empty map.
+var tutorialPins = []tutorialPin{
+	{"rossio", 38.7139, -9.1394},
+	{"castelo", 38.7139, -9.1334},
+	{"belem", 38.6970, -9.2065},
+}
+
+func lessonLiveMap() Lesson {
+	return Lesson{
+		Title:   "Live maps: markers and the echo guard",
+		Summary: "core.MapView — the platform's own map, markers as keyed children, and the one rule that makes a controlled map usable.",
+		Body: func(ctx *core.Context) core.View {
+			pins := core.NewState(ctx, tutorialPins)
+			selected := core.NewState(ctx, "")
+			nextID := core.NewState(ctx, 1)
+			// The region the app is asking for. It starts as the opening view and
+			// is *not* written on every pan: the readout below comes from the
+			// same state, so a pan that did not reach it is visible as a readout
+			// that has not moved.
+			region := core.NewState(ctx, core.Region{Lat: 38.7139, Lng: -9.1394, Zoom: 13})
+			// What the map last reported, kept separately from what the app is
+			// asking for. Two slots, because the whole lesson is the difference
+			// between them.
+			reported := core.NewState(ctx, core.Region{})
+
+			markers := make([]core.PropsAndChildren, 0, len(pins.Get()))
+			for _, p := range pins.Get() {
+				markers = append(markers, core.Marker(p.id, p.lat, p.lng, p.id))
+			}
+
+			mapItems := []core.PropsAndChildren{
+				core.Width("100%"),
+				core.Height("260px"),
+				core.OnRegionChange(func(r core.Region) { reported.Set(r) }),
+				core.OnMarkerTap(func(id string) { selected.Set(id) }),
+				core.OnMapTap(func(lat, lng float64) {
+					id := fmt.Sprintf("pin-%d", nextID.Get())
+					nextID.Set(nextID.Get() + 1)
+					pins.Set(append(append([]tutorialPin{}, pins.Get()...),
+						tutorialPin{id, lat, lng}))
+					selected.Set(id)
+				}),
+			}
+			mapItems = append(mapItems, markers...)
+
+			reportedNote := "Nothing reported yet — pan or zoom the map."
+			if r := reported.Get(); r.Zoom != 0 {
+				reportedNote = fmt.Sprintf("Reported: %.4f, %.4f at zoom %.2f",
+					r.Lat, r.Lng, r.Zoom)
+			}
+
+			return core.Column(
+				core.Gap(14),
+				prose("core.MapView is the platform's own map: MapKit on iOS, osmdroid over "+
+					"OpenStreetMap on Android, Leaflet in the browser, and a placeholder box in "+
+					"a static export. It is the node to reach for when the map is part of the "+
+					"screen — a set of markers to compare, a region to explore, a place to pick "+
+					"by tapping. For \"where is this\", components.StaticMap is an image and a "+
+					"hand-off, and it is almost always the right answer."),
+				codeBlock(`core.MapView(core.Region{Lat: 38.7139, Lng: -9.1394, Zoom: 13},
+    core.Width("100%"), core.Height("260px"),
+    core.OnMarkerTap(func(id string) { open(id) }),
+    core.Marker("rossio",  38.7139, -9.1394, "Rossio"),
+    core.Marker("castelo", 38.7139, -9.1334, "Castelo"),
+)`),
+				prose("Markers are child nodes, not a prop — the same decision core.TextGrid "+
+					"makes about its rows. A marker set sent as one value means every marker is "+
+					"re-read whenever any of them moves, and the host rebuilds its whole "+
+					"annotation layer: a visible flicker on every platform, and a lost callout on "+
+					"two of them. As children they are ordinary keyed nodes, so the reconciler "+
+					"emits one update for the one marker that moved. core.Marker keys itself from "+
+					"its id, which is the one field it could not do without."),
+				demoPanel("Tap the map to drop a pin; tap a pin to select it. The readout is what the map reported back.",
+					core.MapView(region.Get(), mapItems...),
+					caption(reportedNote),
+					caption(fmt.Sprintf("Asking for: %.4f, %.4f at zoom %.2f — %d pins%s",
+						region.Get().Lat, region.Get().Lng, region.Get().Zoom,
+						len(pins.Get()), selectedNote(selected.Get()))),
+					core.Row(
+						core.Gap(8),
+						components.Button{Label: "Back to the centre", OnTap: func() {
+							region.Set(core.Region{Lat: 38.7139, Lng: -9.1394, Zoom: 13})
+						}},
+						components.Button{Label: "Show Belém", Emphasis: components.EmphasisOutlined,
+							OnTap: func() {
+								region.Set(core.Region{Lat: 38.6970, Lng: -9.2065, Zoom: 15})
+							}},
+						components.Button{Label: "Reset pins", Emphasis: components.EmphasisGhost,
+							OnTap: func() {
+								pins.Set(tutorialPins)
+								selected.Set("")
+							}},
+					),
+				),
+				prose("Now pan the map and watch the two lines. \"Reported\" moves and \"Asking "+
+					"for\" does not — this demo deliberately does not echo the region into the "+
+					"state it renders from. The map stays where you left it anyway, and that is "+
+					"the one rule that makes a controlled map usable: Go's region is applied only "+
+					"when it *changes*."),
+				prose("Without that rule a map is unusable. A map is the one widget whose value "+
+					"the user changes continuously by touching it — so if every render re-centred "+
+					"on Go's region, any unrelated re-render would snap the map back under the "+
+					"finger. And an app that did echo the pan into state would fight its own "+
+					"round trip, because the echo arrives a frame late and moves the map again. "+
+					"So each host remembers the region it last applied and compares: Go moving "+
+					"the map is an instruction, Go merely re-rendering is not. The two buttons "+
+					"above are instructions, and they work."),
+				codeBlock(`// The same comparison, read the other way, is what stops a host's own
+// recentring from arriving back in Go as a user gesture — no timing
+// flag required, which is what the web half's test proved necessary.
+core.OnRegionChange(func(r core.Region) { region.Set(r) })  // echo, if you want one`),
+				prose("A pan is reported once, after it stops. Each host throttles on its own "+
+					"side of the bridge — a 120ms quiet window on iOS and the web, osmdroid's own "+
+					"DelayedMapListener on Android — because a drag generates a region per frame "+
+					"and every one that crossed would be a full Go render pass. The window also "+
+					"coalesces a pinch, which ends as a pan and a zoom a few milliseconds apart."),
+				prose("ShowUserLocation is the host map's own blue dot, and it is not "+
+					"hooks.UseLocation. The dot comes from the map SDK's own plumbing and tells "+
+					"Go nothing about where anybody is; the hook is a position fix in Go that "+
+					"needs no map. They share one OS permission and nothing else — which is what "+
+					"lets \"centre the map on me\" be a decision an app makes rather than a prop."),
+				codeBlock(`// The dot, drawn by the platform:
+core.MapView(region, core.ShowUserLocation())
+
+// The coordinates, in Go — ask for the permission first:
+loc := hooks.UseLocation(ctx)
+if loc.Received && loc.Available {
+    region = core.Region{Lat: loc.Lat, Lng: loc.Lng, Zoom: 16}
+}`),
+				keyPoints(
+					"MapView is for maps that are part of the screen; StaticMap is for \"where is this\", and is smaller in every way.",
+					"Markers are keyed child nodes, so one that moves is one patch rather than a rebuilt layer.",
+					"The region is applied only when it changes — otherwise a re-render snaps the map out from under the user.",
+					"A pan is reported once, after it stops, and every host throttles on its own side.",
+					"ShowUserLocation is the platform's dot; hooks.UseLocation is a fix in Go. Same permission, different features.",
+					"In the browser the map needs Leaflet on the host page. Without it the node draws a placeholder that still carries its region.",
+				),
+			)
+		},
+	}
+}
+
+// selectedNote is the trailing clause of the live map's status line, kept out of
+// the body for the reason the boolean lesson's sentence-builders are: one
+// conditional, read once.
+func selectedNote(id string) string {
+	if id == "" {
+		return ""
+	}
+	return ", " + id + " selected"
 }

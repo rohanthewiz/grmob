@@ -98,10 +98,10 @@ on device. And on the web a `<button>`, an `<input>`, a `<textarea>` and a `<sel
 the *user agent's* border, which no `BorderWidth(0)` could remove, because
 emitting no declaration is exactly what leaves the browser in charge — so both
 DOM renderers now write `border:none` for the node types a browser draws a
-frame on. The set is keyed by node type because five of them share `<input>`
-and only three want it: a `Checkbox` and a `Slider` are drawn in their entirety
-by the browser, and their border is the control rather than chrome the Go style
-owns.
+frame on. The set is keyed by node type because six of them share `<input>`
+and only three want it: a `Checkbox`, a `Switch` and a `Slider` are drawn in
+their entirety by the browser, and their border is the control rather than
+chrome the Go style owns.
 
 The text fields joined that set only once both bundled themes gave
 `Components.Input` and `Components.TextArea` a border — resetting one nothing
@@ -880,10 +880,20 @@ the overlay was the one target where a dialog was not a dialog. Both now write
 fixed-overlay rules. A closed modal needs no special case — it is
 `display:none`, which takes it out of the accessibility tree entirely.
 
-There is deliberately no `RoleDialog`. Adding one would hand the author work
-that three of the four targets already do unasked, and would cost two native
-arms that could only be empty — which in this vocabulary means "this platform
-cannot say it", the opposite of the truth here. An author who sets
+`core.Switch` is the second node type that does this, and for a reason one step
+removed: HTML has no switch element at all. The control is an
+`<input type="checkbox">` carrying HTML's own `switch` attribute — Safari draws
+a track and a thumb from it, other engines still draw the box — so
+`role="switch"` is what makes every browser *announce* the thing the app wrote.
+Both natives need nothing: a Material `Switch` and a SwiftUI `Toggle` announce
+themselves. `htmlout.ownRoles` is the table of both types, and the role a
+self-roling node supplies is only ever a default — an author's
+`AccessibilityRole` wins, as it does on a Modal.
+
+There is deliberately no `RoleDialog`, and no `RoleSwitch` either. Adding one
+would hand the author work that three of the four targets already do unasked,
+and would cost two native arms that could only be empty — which in this
+vocabulary means "this platform cannot say it", the opposite of the truth here. An author who sets
 `AccessibilityRole` on a hand-built Modal node still wins — `dialog` is the
 default the node type supplies, not a rule it imposes. The visual chassis
 follows the same principle: a Modal's fixed positioning, centring and z-index

@@ -97,6 +97,25 @@ indented HTML. Properties worth relying on:
   style already outranks the chassis. `htmlout.CarriesOwnRole` is how the tab
   wiring knows to leave such a page alone rather than writing a second `role`
   onto it.
+- **A `Switch` is a switch.** HTML has no switch element, so `core.Switch`
+  exports as `<input type="checkbox">` with HTML's own `switch` attribute (which
+  Safari draws as a track and a thumb, and other engines ignore, drawing the
+  box) and `role="switch"`, which is what a reader announces on every browser
+  either way. The role comes from the node type, like a Modal's — both are in
+  `htmlout.ownRoles`, both supply a default an author's `AccessibilityRole`
+  outranks, and neither is a `core.Role`, because the natives announce their own
+  platform control. A bare `switch` attribute is spelled `switch="switch"` here
+  for the reason `checked="checked"` is: `element` emits `key="value"` pairs.
+- **A map exports as a placeholder that has not lost its region.**
+  `core.MapView` has no engine in a static document and no tiles to fetch, so it
+  exports as a `<div>` — as `CameraView` does — carrying
+  `data-lat`/`data-lng`/`data-zoom`, and each `core.Marker` child as a childless
+  `<div>` with `data-marker-id`, its coordinates and its title. A grey box that
+  does not say where it was pointing is a worse snapshot than one that does, and
+  it makes the export *upgradeable*: the WASM runtime reads those same attributes
+  off the same div, so a page that loads Leaflet and wires the exported callback
+  IDs turns the snapshot into the live node. See
+  [WASM — Live maps](wasm.md#live-maps).
 - **A named container is given `role="group"`.** ARIA prohibits an accessible
   name on the `generic` role a `<div>` and a `<span>` carry, and browsers prune
   it, so an `AccessibilityLabel` on any layout node was announced by both
@@ -159,9 +178,9 @@ indented HTML. Properties worth relying on:
   gave `components.Button`'s ghost emphasis an outline the natives never drew.
   `htmlout.ResetsUABorder` is the set, keyed by **node type** rather than by
   tag: `Button`, the three text inputs, `TextArea` and `Select` are in, and
-  `Checkbox` and `Slider` — which share `<input>` with the text fields — are
-  pointedly out, because the browser draws those controls in their entirety
-  and their border *is* the control. See
+  `Checkbox`, `Switch` and `Slider` — which share `<input>` with the text
+  fields — are pointedly out, because the browser draws those controls in their
+  entirety and their border *is* the control. See
   [WASM — The user-agent border](wasm.md#the-user-agent-border-and-the-third-value-totality-needs).
 
 - **No `tabindex`, on any node, ever.** A `listbox` and a `tablist` are ARIA

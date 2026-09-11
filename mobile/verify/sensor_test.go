@@ -13,15 +13,24 @@ import (
 // logs, and the app waits forever for a reading whose request never reached a
 // magnetometer. Go cannot notice, because from Go's side a sent event and a
 // heard event look identical.
+//
+// Two sensors share the event name now, which widens the failure rather than
+// changing it: each shell hands the event to both objects and each object
+// answers for its own kind, so a shell that forgot one call has a sensor whose
+// start is dropped while the other works — which is the same silence, in half
+// the app.
 
 var (
 	swiftSystemEvents = nativeFile("ios", "GrMob", "App", "SystemEvents.swift")
 	swiftHeading      = nativeFile("ios", "GrMob", "App", "HeadingSensor.swift")
+	swiftLocation     = nativeFile("ios", "GrMob", "App", "LocationSensor.swift")
 
 	kotlinSystemEvents = nativeFile("android", "app", "src", "main", "java", "com",
 		"grmob", "app", "SystemEvents.kt")
 	kotlinHeading = nativeFile("android", "app", "src", "main", "java", "com",
 		"grmob", "app", "HeadingSensor.kt")
+	kotlinLocation = nativeFile("android", "app", "src", "main", "java", "com",
+		"grmob", "app", "LocationSensor.kt")
 )
 
 // Both shells must dispatch "sensor" and must attach the sensor's return
@@ -31,12 +40,12 @@ func TestBothShellsDispatchTheSensorEvent(t *testing.T) {
 	for _, pin := range []struct{ file, dispatch, attach string }{
 		{
 			file:     swiftSystemEvents,
-			dispatch: `case "sensor": HeadingSensor.shared.handle(object)`,
+			dispatch: `case "sensor":`,
 			attach:   "HeadingSensor.shared.report =",
 		},
 		{
 			file:     kotlinSystemEvents,
-			dispatch: `"sensor" -> HeadingSensor.handle(data)`,
+			dispatch: `"sensor" -> {`,
 			attach:   "HeadingSensor.attach(appContext, runtime::hostEvent)",
 		},
 	} {
@@ -118,5 +127,121 @@ func TestAndroidConvertsUnitsButLeavesTheFoldToGo(t *testing.T) {
 	// sign, so the value handed over can still be negative.
 	if !strings.Contains(src, `put("magnetic", next.toDouble())`) {
 		t.Errorf("%s: the smoothed bearing is not what gets sent", kotlinHeading)
+	}
+}
+
+// The second sensor reaches both shells, and each shell reports its fixes back.
+//
+// Held separately from the heading half above rather than folded into it,
+// because the two sensors are genuinely independent — one event name, two
+// objects, two reference counts in Go — and the failure of wiring one and not
+// the other is the one this checks for. A shell that forwards "sensor" to the
+// compass alone looks completely healthy to anybody watching a compass.
+func TestBothShellsDispatchTheLocationSensor(t *testing.T) {
+	for _, pin := range []struct{ file, dispatch, attach string }{
+		{
+			file:     swiftSystemEvents,
+			dispatch: "LocationSensor.shared.handle(object)",
+			attach:   "LocationSensor.shared.report =",
+		},
+		{
+			file:     kotlinSystemEvents,
+			dispatch: "LocationSensor.handle(data)",
+			attach:   "LocationSensor.attach(appContext, runtime::hostEvent)",
+		},
+	} {
+		src := valuesIn(t, pin.file)
+		if !strings.Contains(src, pin.dispatch) {
+			t.Errorf("%s: the \"sensor\" event never reaches the location sensor — "+
+				"core.StartLocation is dropped here and hooks.UseLocation waits forever",
+				pin.file)
+		}
+		if !strings.Contains(src, pin.attach) {
+			t.Errorf("%s: the location sensor's report channel is never attached, so "+
+				"fixes have nowhere to go", pin.file)
+		}
+	}
+}
+
+// Each sensor object answers for its own kind and drops the rest. That guard is
+// what makes one event name with two recipients work at all: without it, a
+// "sensor" event for the compass would also start the GPS, which is the most
+// expensive accidental subscription in this framework.
+func TestEachSensorAnswersOnlyForItsOwnKind(t *testing.T) {
+	for _, pin := range []struct{ file, guard string }{
+		{swiftHeading, `(data["kind"] as? String) == "heading"`},
+		{swiftLocation, `(data["kind"] as? String) == "location"`},
+		{kotlinHeading, `data.optString("kind") != "heading"`},
+		{kotlinLocation, `data.optString("kind") != "location"`},
+	} {
+		if src := valuesIn(t, pin.file); !strings.Contains(src, pin.guard) {
+			t.Errorf("%s: no kind guard (%s) — this object acts on the other sensor's "+
+				"start and stop", pin.file, pin.guard)
+		}
+	}
+}
+
+// Both hosts must answer "no location here" rather than going quiet, for the
+// reason both must answer it about the compass: "no fix yet" and "this device
+// will never tell you" call for different screens, and on cold GPS the first
+// one lasts long enough that a silence is indistinguishable from a failure.
+//
+// The two hosts reach that state by different routes, which is the platform's
+// difference rather than this framework's. iOS can prompt from the sensor, so
+// its refusal path is an authorization that came back denied; Android cannot —
+// only an Activity can show the dialog — so its refusal path is a permission
+// that was never granted. Both end in the same event.
+func TestBothHostsReportAnUnavailableLocation(t *testing.T) {
+	for _, pin := range []struct{ file, guard, report string }{
+		{
+			file:   swiftLocation,
+			guard:  "case .restricted, .denied:",
+			report: `send(["available": false, "error": "location permission denied"])`,
+		},
+		{
+			file:   kotlinLocation,
+			guard:  "if (!hasPermission(ctx))",
+			report: `.put("available", false)`,
+		},
+	} {
+		src := valuesIn(t, pin.file)
+		if !strings.Contains(src, pin.guard) {
+			t.Errorf("%s: no permission guard (%s)", pin.file, pin.guard)
+		}
+		if !strings.Contains(src, pin.report) {
+			t.Errorf("%s: an unavailable location is not reported to Go — the app cannot "+
+				"tell \"no permission\" from \"not yet\"", pin.file)
+		}
+	}
+}
+
+// Both hosts must throttle their fix stream, and here the throttle is about
+// power as much as about render passes: a provider asked for fixes ten times a
+// second keeps the radio awake.
+func TestBothHostsThrottleTheirLocationStream(t *testing.T) {
+	for _, pin := range []struct{ file, marker string }{
+		{swiftLocation, "minInterval"},
+		{kotlinLocation, "MIN_INTERVAL_MS"},
+	} {
+		if src := codeIn(t, pin.file); !strings.Contains(src, pin.marker) {
+			t.Errorf("%s: no throttle (%s) — a 1Hz provider is 1 render pass a second "+
+				"and a radio that never sleeps", pin.file, pin.marker)
+		}
+	}
+}
+
+// Neither host may normalise the coordinates: core.ReceiveLocation is the single
+// place that clamps the latitude and wraps the longitude, which is what makes
+// those invariants properties rather than hopes. What is pinned is that each host
+// sends the platform's own numbers through.
+func TestNeitherHostNormalisesItsCoordinates(t *testing.T) {
+	for _, pin := range []struct{ file, sent string }{
+		{swiftLocation, `"lat": fix.coordinate.latitude`},
+		{kotlinLocation, `.put("lat", location.latitude)`},
+	} {
+		if src := valuesIn(t, pin.file); !strings.Contains(src, pin.sent) {
+			t.Errorf("%s: the platform's own latitude is not what gets sent (%s)",
+				pin.file, pin.sent)
+		}
 	}
 }

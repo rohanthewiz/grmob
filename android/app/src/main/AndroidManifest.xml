@@ -1,8 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
-    <!-- Image nodes load remote sources via Coil. -->
+    <!-- Image nodes load remote sources via Coil, and core.MapView fetches
+         OpenStreetMap tiles through osmdroid. -->
     <uses-permission android:name="android.permission.INTERNET" />
+
+    <!-- osmdroid checks the network state before it asks for a tile, so that a
+         map on a disconnected device draws what it has cached instead of
+         queueing requests that cannot complete. It is a normal permission:
+         granted at install, never prompted, and absent it the library logs and
+         draws a blank grid. -->
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
 
     <!-- core's audio service (GrMobAudioService): a foreground service of
          the mediaPlayback type is what keeps a stream playing with the app

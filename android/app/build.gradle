@@ -199,6 +199,18 @@ dependencies {
     // Image node rendering (remote/local sources).
     implementation 'io.coil-kt:coil-compose:2.6.0'
 
+    // core.MapView's map (runtime/GrMobMapView.kt). osmdroid draws
+    // OpenStreetMap tiles with no API key and no dependency on Play Services
+    // being installed, which is what makes the node usable on arrival rather
+    // than after a deployment secret is obtained — see that file's comment for
+    // the comparison with Google Maps Compose.
+    //
+    // 6.1.x is the current line and compiles against compileSdk 34. It pulls in
+    // no Compose: the map is a plain Android View, wrapped in AndroidView, which
+    // is also why it needs the onResume/onPause/onDetach handling that file
+    // owns.
+    implementation 'org.osmdroid:osmdroid-android:6.1.18'
+
     // core's audio service: ExoPlayer does the playing, media3-session
     // wraps it in a MediaSession + MediaSessionService (GrMobAudioService)
     // for the lock screen and background playback, and hands the app a

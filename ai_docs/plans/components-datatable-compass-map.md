@@ -7,10 +7,32 @@ sermons screen has adopted it. A2 landed 2026-09-04 as all seven widgets —
 `chip_strip.go`, `skeleton.go`, `stat_tile.go`, tutorial lesson 4.7 — plus
 `hooks/debounce.go`, which the plan's "debounced OnChange via UseTimeout" line
 turned out to require: `UseTimeout` arms once per mount and stays fired, so it
-cannot debounce. B1–B3 landed 2026-09-05 across the four renderers and were
+cannot debounce. B1–B4 landed 2026-09-05 across the four renderers and were
 adopted downstream the same day. A3 landed 2026-09-05 as `components/calendar.go`
-and `components/date_picker.go` plus tutorial lesson 4.9. Everything from Tier C
-on remains proposed.
+and `components/date_picker.go` plus tutorial lesson 4.9. Tier C landed
+2026-09-05 entire — `core/heading.go`, `hooks/heading.go`, `permission.Location`,
+`components/compass.go`, and the three host sensors
+(`android/.../app/HeadingSensor.kt`, `ios/GrMob/App/HeadingSensor.swift`, the
+browser's `deviceorientationabsolute`/`webkitCompassHeading` arm in
+`wasm/grmob-runtime.js`), plus tutorial lesson 4.10. Both follow-ups the tiers
+above left hanging closed with it: the A1 accessibility role prop is
+`core.AccessibilityRole` (`core/role.go`), and the `EmphasisGhost` border the A3
+note found is reset by `borderResetTypes` (`htmlout/tag.go`, restated as
+`BORDER_RESET_TYPES` in the runtime).
+
+**B5, D0 and D1 landed 2026-09-11, which closes the plan.** B5 is `core.Switch`
+across the four renderers (tutorial lesson 2.6); D0 is `components.StaticMap`
+(lesson 4.11); D1 is `core.MapView` with `core.Marker` children plus the whole
+location fix — `core/location.go`, `hooks/location.go`, `LocationSensor` on both
+shells — on MapKit, osmdroid and Leaflet (lesson 4.12). What each of the three
+turned out to need beyond its sketch is recorded at the tier. The one gap worth
+naming here: **the Compose half of D1 is compiled by nothing in this repository.**
+`android/verify` builds only the two Kotlin files that import nothing, and
+`GrMobMapView.kt`/`LocationSensor.kt` import Compose, the Android SDK and
+osmdroid — so they are held to the contract textually (`mobile/verify/
+mapview_test.go`, `sensor_test.go`) and have never been through `kotlinc`. The
+iOS half type-checks against the real SDK through `ios/verify`, and the web half
+runs against a fake Leaflet in `wasm/verify/mapview_test.mjs`.
 **Date:** 2026-09-04
 **Driver:** `../church/church_mobile` (sermons list wants grouping + paging; events want
 a "where" affordance), plus general widget-library gaps.
@@ -224,6 +246,35 @@ behind it: every button on both web targets changes.
 Fire an end-reached event at most once per data length (debounce on the Go side by
 remembering `len(children)` at last fire), so a slow fetch cannot double-load.
 
+**B5 landed 2026-09-11.** The table's web cell was half the answer: HTML has no
+switch element, so a `core.Switch` is an `<input type="checkbox">` carrying *two*
+things — `role="switch"`, which the sketch has, and HTML's own `switch`
+attribute, which Safari draws as a track and a thumb and other engines ignore.
+Three things the sketch did not say:
+
+- **The state crosses the wire as `checked`, not `on`.** Go says `on` because a
+  switch is on; the wire says what the DOM says, so both web renderers' existing
+  `checked` handling — create *and* update-props — works untouched. Naming it `on`
+  would have meant four new branches meaning what an existing branch already
+  means, and the update half is the one that would have been forgotten: a switch
+  drawn right on the first render and frozen after looks like a working widget.
+- **It is a node type rather than a flag on Checkbox**, and the reason is the
+  reconciler: a changed type is a *replace*, and a replace is how one platform
+  control is exchanged for another. A bool prop would have had update-props
+  swapping a Compose Checkbox for a Compose Switch inside one node.
+- **The role is written from the node type**, which made `htmlout.CarriesOwnRole`
+  a table (`ownRoles`) where it had been a comparison against `"Modal"`, and put
+  `switch` in `aria/spec.NearMisses` beside `dialog` — roles this framework emits
+  and does not name. No `RoleSwitch`: a Role obliges all four renderers to grow
+  an arm, and a Material Switch and a SwiftUI Toggle announce themselves.
+
+It also left a test behind that should have existed first:
+`mobile/verify/nodetypes_test.go` holds both native dispatches against the tag
+table. The natives end in a catch-all, so a forgotten arm is silent by
+construction — a childless control draws as an empty box on the phone and
+correctly on both web targets — and three of B5's four arms would have been
+caught by it.
+
 ---
 
 ## Tier C — Compass (sensor plumbing + one pure-Go widget)
@@ -266,6 +317,34 @@ Maps when a key is configured) and, on tap, `core.OpenURL` of a `geo:`/`maps://`
 `https://maps.google.com/?q=` link so the platform's own maps app gives directions.
 Covers "where is the church / this event". Half a session.
 
+**Landed 2026-09-11.** The sketch's field list survived; what it left open was
+every question that turned out to matter, and all three answers are *policies*
+rather than values:
+
+- **The provider is a seam, not a URL.** `StaticMapProvider` is one function over
+  a `StaticMapArea` — which arrives already defaulted and already clamped, so no
+  provider repeats the same four lines and none can disagree about what a zero
+  means. `OSMStaticMap` is the keyless default and is a volunteer-run service with
+  a low-volume policy, named as such in the doc: right for a church's address
+  card, wrong for a screen every user opens ten times a day, and
+  `GoogleStaticMap(key)` is beside it.
+- **The hand-off cannot be `geo:`.** Nothing in this framework knows which
+  platform it is on — deliberately, see `core.OpenURL` — so the default is the one
+  https URL all three resolve, and which on both phones reaches the installed
+  maps app. The label is deliberately *not* in it: `query` is a search, and a
+  search for "St Mary's" lands on whichever St Mary's the geocoder liked. A
+  platform-specific hand-off is a one-line func, and the `label` argument on
+  `MapHandoff` exists for it.
+- **A tappable map is `RoleLink`, not `RoleButton`.** The tap leaves the app
+  entirely, which is what that distinction is for; with no hand-off the widget is
+  `RoleImg`, the same argument `Compass` makes, and either way the image inside is
+  hidden so the widget announces once instead of reading out a provider URL.
+
+Two smaller ones: latitude clamps at Web Mercator's limit and longitude *wraps*,
+because they are two different facts about a sphere — and `Lat 0, Lng 0` is the
+Gulf of Guinea, so there is no "unset" coordinate to detect and a screen with no
+location yet renders a `Skeleton` instead.
+
 ### D1. Live `core.MapView` node (large; gate on a real need)
 
 - **Props:** `Center{Lat,Lng}`, `Zoom`, `ShowUserLocation`, `OnRegionChange`,
@@ -281,6 +360,44 @@ Covers "where is the church / this event". Half a session.
 - Effort: 3–4 sessions. Region-change events need throttling on every host; test with
   the existing verify harnesses (`wasm/verify`, `ios/verify`, `mobile/verify`).
 
+**Landed 2026-09-11.** The prop list and the host choices all survived. What the
+sketch did not have is the rule the whole node rests on, plus three host facts:
+
+- **The region is applied only when it changes.** A map is the one widget whose
+  value the user changes continuously by touching it, so a controlled region
+  re-asserted on every patch snaps the map out from under the finger on the next
+  unrelated render — and an app that echoed `OnRegionChange` into state would
+  fight its own round trip, because the echo arrives a frame late. Each host
+  remembers the region it last applied and compares. Read the other way, the same
+  comparison is what stops a host's own recentring from arriving back in Go as a
+  gesture: the first version of the web half used a flag set around `setView`
+  instead, and `wasm/verify/mapview_test.mjs` is what said that only closes the
+  case where Leaflet fires `moveend` synchronously — which it happens to do with
+  animation off and promises nowhere.
+- **`Center{Lat,Lng}` and `Zoom` became one `core.Region`**, the same type in both
+  directions, so an app echoing a pan stores the type it renders from. Two types
+  would have differed in nothing and converted at every seam.
+- **iOS is `MKMapView` behind a `UIViewRepresentable`, not SwiftUI's `Map`.** The
+  short spelling cannot do three of the four promises: no tap-location API at all
+  (so `OnMapTap` would be unimplementable), a `MapMarker` that is not tappable,
+  and a region binding that writes back on every frame of a drag. It also needs a
+  projection: MapKit speaks `MKCoordinateSpan` in degrees where every other engine
+  speaks the slippy zoom level, so the conversion goes through Web Mercator's own
+  definition with the width read off a `GeometryReader` — exact in longitude,
+  which is the axis zoom is defined by.
+- **Leaflet is the host page's dependency.** `wasm/index.html` adds the script and
+  the stylesheet; the runtime uses `window.L` when it is there and draws a
+  placeholder otherwise. The placeholder adds *no child element* — a MapView's
+  children are Markers addressed positionally — so it keeps the region in
+  `data-lat`/`data-lng`/`data-zoom`, which is exactly what htmlout exports for the
+  same node. That makes the static export upgradeable rather than merely degraded.
+
+Not closed: `GrMobMapView.kt` and `LocationSensor.kt` have never been compiled.
+`android/verify` builds only the Kotlin that imports nothing, so the Compose half
+is held to its contract by `mobile/verify/mapview_test.go` reading the source —
+the strongest instrument available for "all three hosts implement the same rule",
+and weaker than a compiler. A gradle build is the next thing to run against it.
+
 ---
 
 ## Suggested order
@@ -293,7 +410,9 @@ Covers "where is the church / this event". Half a session.
    auto-load and the chip strip to horizontal.
 4. **A3** Calendar/DatePicker. *(landed 2026-09-05)*
 5. **C** heading plumbing + `Rotate` + Compass.
-6. **D0** StaticMap for the church events screen.
-7. **B4/B5** and **D1** as demand appears.
+6. **D0** StaticMap for the church events screen. *(landed 2026-09-11)*
+7. **B4/B5** and **D1** as demand appears. *(B4 landed 2026-09-05; B5 and D1
+   landed 2026-09-11 — which is the whole of this plan done, so the next one
+   starts from the downstream apps rather than from here.)*
 
 Tutorial: each landed widget gets a lesson in `examples/tutorial` and a ROADMAP line.

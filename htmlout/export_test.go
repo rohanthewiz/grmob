@@ -1612,20 +1612,20 @@ func TestTheBorderResetSetIsExactly(t *testing.T) {
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("borderResetTypes = %v, want %v — <button>, <input>, <textarea> and <select> "+
 			"are the four tags whose user-agent stylesheet draws a frame the Go style is meant "+
-			"to own, and Checkbox and Slider share <input> without sharing that", got, want)
+			"to own, and Checkbox, Switch and Slider share <input> without sharing that", got, want)
 	}
 }
 
-// The three node types that share <input> with a text field and are pointedly
-// not reset.
+// The node types that share <input> with a text field and are pointedly not
+// reset.
 //
-// This is the case that made the set node-type-keyed. A Checkbox and a Slider
-// are <input> elements whose user agent draws the *whole control*, so the
-// border the browser puts on a checkbox is the box itself rather than chrome
-// the Go style is meant to own — and a tag-keyed set would have swept both in
-// the moment text fields joined.
+// This is the case that made the set node-type-keyed. A Checkbox, a Switch and
+// a Slider are <input> elements whose user agent draws the *whole control*, so
+// the border the browser puts on a checkbox is the box itself rather than
+// chrome the Go style is meant to own — and a tag-keyed set would have swept
+// all three in the moment text fields joined.
 func TestTheUserAgentKeepsItsCheckboxAndSlider(t *testing.T) {
-	for _, nodeType := range []string{"Checkbox", "Slider"} {
+	for _, nodeType := range []string{"Checkbox", "Switch", "Slider"} {
 		n := &core.Node{Type: nodeType}
 		if out := ExportHTML(n); strings.Contains(out, "border:none") {
 			t.Errorf("%s was reset — the browser draws that control itself:\n%s", nodeType, out)

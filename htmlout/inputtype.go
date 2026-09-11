@@ -3,7 +3,7 @@ package htmlout
 // inputTypes is the one authoritative statement of the node type -> HTML
 // <input> type table.
 //
-// Five Go node types share the <input> tag, and an <input> with no type
+// Six Go node types share the <input> tag, and an <input> with no type
 // attribute is a text box, so this attribute is the only thing that makes a
 // checkbox a checkbox rather than a text field. Every renderer that targets
 // the DOM therefore needs the same table:
@@ -24,11 +24,20 @@ package htmlout
 // (a <span>, a <textarea>, a <button>, a <div>) and gets no type attribute at
 // all — which is why the zero value of the lookup, "", is the right answer for
 // them rather than an error.
+// The one pair of node types this table cannot tell apart is Checkbox and
+// Switch. HTML has no switch element — a switch *is* a checkbox, plus the
+// `switch` attribute that asks a browser to draw it as one and the
+// role="switch" that makes every browser announce it as one — so the two share
+// a row's value here and are separated one attribute later, by the exporter's
+// own Switch arm and the runtime's. Two node types with one type attribute is
+// the reason the comparison tests below go key by key rather than comparing
+// the tables' value sets.
 var inputTypes = map[string]string{
 	"Input":         "text",
 	"InputPassword": "password",
 	"NumericInput":  "number",
 	"Checkbox":      "checkbox",
+	"Switch":        "checkbox",
 	"Slider":        "range",
 }
 

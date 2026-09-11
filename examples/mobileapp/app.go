@@ -5,7 +5,7 @@
 // already registered. Replace this package in build.sh to ship your own app.
 //
 // The view deliberately exercises every event kind the bridge carries — void
-// (Button), text (Input), bool (Checkbox), int (TabView) — plus the async
+// (Button), text (Input), bool (Checkbox and Switch), int (TabView) — plus the async
 // push path (UseInterval ticking with no native event in flight) and the
 // gap-5 renderer surface (List virtualization, container gestures via
 // OnClick/OnLongPress, accessibility labels), so it doubles as a smoke test
@@ -199,6 +199,7 @@ func formTab() core.View {
 	return core.ComponentFunc(func(ctx *core.Context) *core.Node {
 		name := core.NewState(ctx, "")
 		subscribed := core.NewState(ctx, false)
+		notify := core.NewState(ctx, true)
 
 		greeting := "Hello, stranger."
 		if name.Get() != "" {
@@ -207,6 +208,10 @@ func formTab() core.View {
 		subLabel := "Not subscribed"
 		if subscribed.Get() {
 			subLabel = "Subscribed"
+		}
+		notifyLabel := "Notifications off"
+		if notify.Get() {
+			notifyLabel = "Notifications on"
 		}
 
 		// Uniform 8 between every child, so the spacing is one prop on the
@@ -225,6 +230,21 @@ func formTab() core.View {
 			components.ListRow{
 				Leading: core.Checkbox(subscribed.Get(), func(v bool) { subscribed.Set(v) }),
 				Title:   subLabel,
+			},
+			// The other boolean control, in the arrangement that distinguishes
+			// it: a switch goes in the Trailing slot because it is not
+			// collecting a value for the form, it is the setting. The checkbox
+			// above is a value this screen would submit; this one takes effect
+			// on the tap, which is the whole of the difference between the two
+			// node types (see core.Switch).
+			//
+			// It is also the second bool callback in the tree, which is what
+			// the conformance replay wants from it: the envelope a switch
+			// sends is a boolean, like a checkbox's, and nothing but the node
+			// type tells the two apart on the wire.
+			components.ListRow{
+				Title:    notifyLabel,
+				Trailing: core.Switch(notify.Get(), func(v bool) { notify.Set(v) }),
 			},
 		).Render(ctx)
 	})

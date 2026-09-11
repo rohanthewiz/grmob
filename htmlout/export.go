@@ -192,6 +192,13 @@ func renderNode(b *element.Builder, node *core.Node, from imposed, path string) 
 		// table — knows which callback the bottom of this list belongs to
 		// without re-deriving it from the tree.
 		{"onEndReached", "data-onendreached"},
+		// core.MapView's three. Recorded like the rest — the ID, not the
+		// behavior — which is what makes an exported map upgradeable: a page
+		// that loads Leaflet, reads the region off data-lat/lng/zoom and wires
+		// these three IDs is the live node, built out of the static document.
+		{"onRegionChange", "data-onregionchange"},
+		{"onMarkerTap", "data-onmarkertap"},
+		{"onMapTap", "data-onmaptap"},
 	} {
 		if id, ok := node.Props[cb.prop].(string); ok {
 			attrs = append(attrs, cb.attr, id)
@@ -271,6 +278,27 @@ func renderNode(b *element.Builder, node *core.Node, from imposed, path string) 
 			lead = append(lead, "checked", "checked")
 		}
 		b.Input(withLead(attrs, lead...)...).R()
+	case "Switch":
+		// The same element as a Checkbox — type="checkbox" comes from the
+		// shared table — plus the one attribute that makes it a switch.
+		//
+		// `switch` is HTML's own (WHATWG): on a checkbox it asks the browser
+		// to draw a track and a thumb instead of a box and a tick. Safari
+		// does; most engines do not yet, and those draw the checkbox, which is
+		// the same bool in the same state rather than a broken control. The
+		// role attribute is what closes the remaining gap — a reader announces
+		// a switch everywhere, drawn or not — and it arrives through
+		// switchSemantics rather than here, because a role has one slot per
+		// element and an author's own Style may have filled it.
+		//
+		// switch="switch" rather than a bare `switch`, for checked's reason
+		// one arm up: element emits key="value" pairs, and repeating the name
+		// is the spec-blessed spelling of a bare boolean attribute.
+		lead := []string{"type", InputTypeFor(node.Type), "switch", "switch"}
+		if v, ok := node.Props["checked"].(bool); ok && v {
+			lead = append(lead, "checked", "checked")
+		}
+		b.Input(withLead(attrs, lead...)...).R()
 	case "Slider":
 		// A range input carries its bounds as attributes. The numbers are
 		// formatted with the shortest round-trip form ('g', -1) so 0.5 stays
@@ -288,6 +316,26 @@ func renderNode(b *element.Builder, node *core.Node, from imposed, path string) 
 		b.Input(withLead(attrs, lead...)...).R()
 	case "Select":
 		renderSelect(b, node, attrs)
+	case "MapView":
+		// A placeholder box carrying the region it was looking at, as data.
+		//
+		// An export cannot draw a map: there is no engine in a static
+		// document and no tiles to fetch. What it can do is not lose the
+		// information — a grey box that does not say where it was pointing is
+		// a worse snapshot than one that does — so the region rides out as
+		// data attributes, in the same wire form every host reports a region
+		// in (core.FormatRegion).
+		//
+		// That also makes the export upgradeable. A page that loads Leaflet
+		// and reads these attributes draws the real map, which is precisely
+		// what the WASM runtime does with the same div; the difference between
+		// the two targets is a script tag rather than a different document.
+		renderContainer(b, node, withLead(attrs, mapDataAttrs(node)...), path)
+	case "Marker":
+		// Data, not a box: the coordinates and the id, with nothing inside.
+		// It gets an element at all because patches are addressed positionally
+		// — see the Marker row in tags.
+		b.Div(withLead(attrs, markerDataAttrs(node)...)...).R()
 	case "Image":
 		if src, ok := node.Props["src"].(string); ok {
 			b.Img(withLead(attrs, "src", src)...).R()
@@ -598,6 +646,54 @@ func withLead(attrs []string, lead ...string) []string {
 	return append(lead, attrs...)
 }
 
+// mapDataAttrs is a MapView's region as attributes a loader can read back.
+//
+// Three separate numbers rather than one formatted region string, because the
+// reader is JavaScript: `Number(el.dataset.lat)` is the whole parse, where a
+// combined "lat,lng,zoom" would put a split and three conversions in every
+// consumer. The *event* direction is combined (core.FormatRegion) because there
+// the channel is one text callback and the parse happens once, in Go.
+//
+// Shortest round-trip formatting, the same rule formatNumber follows for a
+// slider's bounds: 38.7223 stays "38.7223" and a whole degree stays "38".
+func mapDataAttrs(node *core.Node) []string {
+	attrs := []string{
+		"data-lat", formatNumber(node.Props["lat"]),
+		"data-lng", formatNumber(node.Props["lng"]),
+		"data-zoom", formatNumber(node.Props["zoom"]),
+	}
+	// Written only when asked, so an ordinary map exports the attributes it
+	// always did. The blue dot is the host map's own feature and a static
+	// document has no user position to draw, so this is a record of the
+	// request rather than a rendering of it.
+	if on, ok := node.Props["showUser"].(bool); ok && on {
+		attrs = append(attrs, "data-show-user", "true")
+	}
+	return attrs
+}
+
+// markerDataAttrs is one pin's identity and position. The title is omitted
+// rather than written empty — a marker with no callout is the common case, and
+// an attribute whose value is "" is one a reader has to test for rather than
+// look up.
+func markerDataAttrs(node *core.Node) []string {
+	attrs := make([]string, 0, 8)
+	// Omitted when empty, like the title: an unnamed marker is a supported
+	// thing to write (see core.Marker) and an attribute whose value is "" is
+	// one a reader has to test for rather than look up.
+	if id := getStr(node.Props["id"]); id != "" {
+		attrs = append(attrs, "data-marker-id", id)
+	}
+	attrs = append(attrs,
+		"data-lat", formatNumber(node.Props["lat"]),
+		"data-lng", formatNumber(node.Props["lng"]),
+	)
+	if title := getStr(node.Props["title"]); title != "" {
+		attrs = append(attrs, "data-title", title)
+	}
+	return attrs
+}
+
 func getStr(v any) string {
 	if s, ok := v.(string); ok {
 		return s
@@ -785,7 +881,9 @@ func ModalChassis() [][2]string {
 // lists are set against each other.
 //
 // A Modal gets role="dialog" and aria-modal="true" from its node type rather
-// than from a Style, which is modalSemantics' subject.
+// than from a Style, which is modalSemantics' subject; a Switch gets
+// role="switch" the same way. selfRoleSemantics is the seam both arrive
+// through, and htmlout.ownRoles is the table of which types do this.
 //
 // The hint maps to aria-description rather than aria-describedby: the latter
 // takes an ID reference, and a static export has no stable IDs to point at
@@ -796,14 +894,20 @@ func ModalChassis() [][2]string {
 // reasoning as enterkeyhint above: the alternative is dropping the author's
 // hint entirely.
 func accessibilityAttrs(s *core.Style, nodeType string, roleImposed bool) []string {
-	// A Modal is the one node type whose semantics do not come from a Style at
+	// A Modal is the node type whose semantics do not come from a Style at
 	// all: core.ModalNode has no Style field, so `s` is nil for every dialog
 	// core.Modal builds, and the role would have nowhere to come from if this
 	// function only read styles.
-	dialog := nodeType == "Modal"
+	//
+	// A Switch is the other self-roling type and answers the nil case the same
+	// way, which is the point of asking CarriesOwnRole here rather than
+	// comparing against "Modal" twice: a hand-built node with no Style is
+	// still the control its type says it is, and a role that appeared only
+	// when a caller happened to style the node would be missing from exactly
+	// the trees nobody wrote a Style for.
 	if s == nil {
-		if dialog {
-			return modalSemantics(core.RoleNone)
+		if CarriesOwnRole(nodeType) {
+			return selfRoleSemantics(nodeType, core.RoleNone)
 		}
 		return nil
 	}
@@ -816,8 +920,8 @@ func accessibilityAttrs(s *core.Style, nodeType string, roleImposed bool) []stri
 	}
 	attrs := make([]string, 0, 16)
 	switch {
-	case dialog:
-		attrs = append(attrs, modalSemantics(s.AccessibilityRole)...)
+	case CarriesOwnRole(nodeType):
+		attrs = append(attrs, selfRoleSemantics(nodeType, s.AccessibilityRole)...)
 	case roleImposed:
 		// The container owns the slot; see the doc above.
 	default:
@@ -927,6 +1031,34 @@ func ariaRole(s *core.Style, nodeType string) string {
 		return ""
 	}
 	return string(core.RoleGroup)
+}
+
+// selfRoleSemantics is the one seam the self-roling node types arrive through:
+// the types in htmlout.ownRoles, whose role comes from what they *are* rather
+// than from a core.Style.
+//
+// It exists because there are two of them now. While Modal was alone the
+// question and the answer were one comparison in one place; the second entry
+// (core.Switch) is what makes the shape worth naming, because the failure mode
+// is a duplicate role= on one element and an attribute has one slot — a
+// browser keeps the first value it parses, so two writers would settle an
+// element's role by source order.
+//
+// An author's own role wins, which is Modal's rule generalised rather than a
+// new one: a caller who wrote a Style saying what this node is means it, and
+// nothing here outranks them. The aria-modal that rides along for a dialog is
+// Modal's alone — it is the one fact in this file that no Role could express,
+// since a Modal is the only node in the framework that knows the rest of the
+// screen is inert behind it.
+func selfRoleSemantics(nodeType string, authored core.Role) []string {
+	if nodeType == "Modal" {
+		return modalSemantics(authored)
+	}
+	role := string(authored)
+	if role == "" {
+		role = OwnRoleFor(nodeType)
+	}
+	return []string{"role", role}
 }
 
 // modalSemantics is the accessibility half of the Modal chassis: the pair of
@@ -1147,7 +1279,7 @@ func ariaExpanded(s *core.Style, nodeType string) string {
 // disabled is not a valid attribute and would simply be ignored.
 func isFormControl(nodeType string) bool {
 	switch nodeType {
-	case "Button", "Input", "InputPassword", "NumericInput", "TextArea", "Checkbox", "Slider", "Select":
+	case "Button", "Input", "InputPassword", "NumericInput", "TextArea", "Checkbox", "Switch", "Slider", "Select":
 		return true
 	}
 	return false

@@ -28,6 +28,14 @@ const GrMob = (() => {
             syncTabView(el);
         }
 
+        // Same slot, same reason: a map's markers are its children, so there is
+        // nothing to add to the Leaflet layer until they exist. The map itself
+        // may also have to wait for the tree to be appended before Leaflet can
+        // measure it, which syncMap handles by deferring a frame.
+        if (node.Type === "MapView") {
+            syncMap(el);
+        }
+
         // Likewise: the cell an overlay puts its layers in is a property of
         // the children, and there were none a moment ago.
         if (OVERLAY_TYPES.has(node.Type)) {
@@ -99,8 +107,21 @@ const GrMob = (() => {
             el.style.display = "none";
         }
 
+        // The map nodes' dataset, written here and on the update path for the
+        // reason applyEnterKeyHint is called in both: the sync pass reads the
+        // whole set at once, and Object.entries fixes no order between lat, lng
+        // and zoom. Before the props loop is fine too — this writes dataset
+        // entries the loop never touches — but after keeps the two call sites
+        // reading alike.
+        //
+        // Unconditional, and it answers for its own node types: a node that is
+        // neither a MapView nor a Marker leaves with nothing written.
+        if (node.Props) {
+            applyMapProps(el, node.Props, node.Type);
+        }
+
         // The <input> variant, which the tag alone cannot express: tagForType
-        // sends four Go node types to <input>, and an <input> with no type
+        // sends several Go node types to <input>, and an <input> with no type
         // attribute is a text box. Without this a Checkbox drew as a text
         // field and its state had nowhere to appear at all.
         //
@@ -111,6 +132,26 @@ const GrMob = (() => {
         const inputType = inputTypeFor(node.Type);
         if (inputType) {
             el.setAttribute("type", inputType);
+        }
+
+        // The one thing the type attribute cannot say: that this checkbox is a
+        // switch. HTML has no switch element and `switch` is its own answer (a
+        // boolean attribute on a checkbox, WHATWG); Safari draws a track and a
+        // thumb from it and most engines still draw the box, which is the same
+        // bool in the same state rather than a broken control. What makes it
+        // announce correctly everywhere is role="switch", and that arrives
+        // through applyAccessibility, because a role has one slot per element
+        // and an author's own Style may have filled it.
+        //
+        // The empty string is a *present* boolean attribute in the DOM, which
+        // is all the attribute means. htmlout writes switch="switch" for the
+        // same presence, because element emits key="value" pairs and repeating
+        // the name is the spec-blessed spelling of a bare one.
+        //
+        // Here rather than on the update path, for the reason above it: a node
+        // type cannot change under a patch.
+        if (node.Type === "Switch") {
+            el.setAttribute("switch", "");
         }
 
         if (node.Props) {
@@ -320,6 +361,34 @@ const GrMob = (() => {
     // plain `go test ./...`. That test reads this literal out of the source
     // textually, so keep it a flat array of string literals on one line.
     const GENERIC_TAGS = new Set(["div", "pre", "span"]);
+
+    // The node types that state their own ARIA role, and the role each states.
+    // Neither is a value in core.Role, which is the property this table
+    // carries: these are roles the framework emits and does not name.
+    //
+    //   Modal    a dialog by virtue of being an overlay; core.ModalNode has no
+    //            Style field, so the role has nothing else to ride on
+    //   Switch   a switch by virtue of being one; the DOM has no switch
+    //            element, so an <input type="checkbox"> plus this role is what
+    //            a reader needs to announce the control correctly
+    //
+    // Go states this table once, in ownRoles (htmlout/tag.go), and
+    // TestRuntimeOwnRolesMatchGo in wasm/verify compares the two under a plain
+    // `go test ./...` — the same treatment tagForType, inputTypeFor,
+    // GENERIC_TAGS and BORDER_RESET_TYPES get. That test reads this literal out
+    // of the source textually, so keep it a flat object literal in a function
+    // named ownRole.
+    //
+    // The cost of the two copies disagreeing is a role attribute on one target
+    // and not the other: a control that announces itself on the web build and
+    // not in the static export, or the reverse, which is a silence rather than
+    // an error.
+    function ownRole(nodeType) {
+        return {
+            Modal: "dialog",
+            Switch: "switch",
+        }[nodeType] || "";
+    }
 
     // The node types whose user-agent stylesheet draws a border of its own, and
     // which therefore need one written back to nothing when the Go style asks
@@ -1669,14 +1738,24 @@ const GrMob = (() => {
     // "unset now", and a guarded write would leave the old attribute standing.
     function applyAccessibility(el, style, nodeType) {
         const hidden = !!style.AccessibilityHidden;
-        // A Modal's semantics come from its node type, not from a Style:
-        // core.ModalNode has no Style field, so there is nothing for a role to
-        // ride on. Hidden still wins over both — an overlay pruned from the
-        // accessibility tree has no element for role="dialog" to describe, and
-        // aria-modal would claim the document behind it is inert.
+        // The self-roling node types: a role that comes from what the node IS
+        // rather than from a Style. A Modal is the one with nothing to ride on
+        // at all (core.ModalNode has no Style field); a Switch is the one the
+        // DOM has no element for, so the role is the only thing that says a
+        // checkbox is a switch. ownRole is the table, restated from Go's
+        // htmlout.ownRoles and pinned to it by wasm/verify.
+        //
+        // An author's own role wins over the supplied one, which is the rule
+        // htmlout's selfRoleSemantics states on the other side.
+        //
+        // Hidden wins over all of it — an element pruned from the
+        // accessibility tree has no role to describe, and a Modal's aria-modal
+        // would be claiming the document behind something a reader cannot
+        // reach is inert.
+        const own = hidden ? "" : ownRole(nodeType);
         const dialog = nodeType === "Modal" && !hidden;
-        const role = hidden ? "" : (dialog
-            ? (style.AccessibilityRole || "dialog")
+        const role = hidden ? "" : (own
+            ? (style.AccessibilityRole || own)
             : ariaRole(el, style));
         setOrRemove(el, "aria-hidden", hidden ? "true" : "");
         setOrRemove(el, "aria-label", hidden ? "" : (style.AccessibilityLabel || ""));
@@ -1807,8 +1886,12 @@ const GrMob = (() => {
     // htmlout has only the type). GENERIC_TAGS is the same set htmlout states
     // in genericTags, pinned by TestRuntimeGenericTagsMatchGo.
     //
-    // A Modal never reaches here — the caller answers the dialog case first —
-    // which is why there is no equivalent of htmlout's CarriesOwnRole guard.
+    // A self-roling node never reaches here — the caller answers ownRole
+    // first — which is why there is no equivalent of htmlout's CarriesOwnRole
+    // guard. That covers a Switch as well as a Modal, and it has to: an
+    // <input> is not a generic tag, so the fallback below would refuse it the
+    // group role and leave the slot empty rather than wrong, but the role it
+    // *does* need would never be written.
     function ariaRole(el, style) {
         const authored = style.AccessibilityRole || "";
         if (authored) return authored;
@@ -2171,6 +2254,413 @@ const GrMob = (() => {
                 }
             }
         }
+    }
+
+
+    // --- Live maps (core.MapView) --------------------------------------------
+    //
+    // The web half of core.MapView: a <div> handed to Leaflet, with the pins
+    // taken from the node's Marker children.
+    //
+    // # Leaflet is the host page's, not this runtime's
+    //
+    // Nothing here loads a library. The page that hosts the app adds Leaflet's
+    // script and stylesheet (see wasm/index.html), and this code uses
+    // window.L if it is there and draws a placeholder box if it is not.
+    //
+    // That is a deliberate split rather than a missing feature. A runtime that
+    // injected a script tag would be fetching third-party code on behalf of
+    // every app that uses it, including the ones with no map on any screen and
+    // the ones whose content policy forbids it — and it would do so at a moment
+    // (mid-patch) when there is nothing sensible to do about a failed load. The
+    // host page is where a dependency belongs, and the placeholder is what makes
+    // its absence legible rather than fatal.
+    //
+    // The placeholder adds no child element, which is a constraint rather than
+    // a preference: a MapView's children are Marker nodes addressed positionally
+    // by the patch stream, so chrome inside one would have to be counted by
+    // chromeOffset and would shift every marker that arrived later. A styled box
+    // with the region still on it in data attributes is exactly what htmlout
+    // exports for the same node, so the two web targets degrade identically.
+    //
+    // # The echo guard, which is the whole usability of the node
+    //
+    // Go's region is applied only when it *changes*. The record below keeps the
+    // last region this code handed to Leaflet and compares; a patch that
+    // re-states the same region touches nothing.
+    //
+    // Without it, a map is unusable. The user drags, Go re-renders for any
+    // unrelated reason, and setView puts the map back where Go last said —
+    // under the finger. With it, Go moving the map is an instruction and Go
+    // merely re-rendering is not. core.MapView's "The map is controlled, with
+    // the echo guard a drag needs" is the statement of this contract that all
+    // three live hosts implement.
+    //
+    // The same record closes the loop's other half. setView makes Leaflet fire
+    // moveend, and reporting that back to Go as a user gesture would have an app
+    // echoing its own instruction into its own state on every programmatic move.
+    // What suppresses it is the *same* comparison rather than a second
+    // mechanism: a gesture is reported only when it ends somewhere other than
+    // the region this code last applied.
+    //
+    // That was a boolean window at first — set around the setView call — and a
+    // test is what said it was wrong. The window only closes the case where
+    // Leaflet fires moveend synchronously from inside setView, which is what it
+    // does with animation off and is not a promise anyone made; an animated or
+    // deferred moveend would land after the flag was cleared and be reported as
+    // a user pan to a place the user never went. The comparison has no timing in
+    // it at all, and it is also simply the truth: a view that matches what Go
+    // asked for is not news for Go.
+
+    const MAP_RECORD = "__grmobMap";
+    const MARKER_RECORD = "__grmobMarker";
+
+    // OpenStreetMap's own tile servers, which have a usage policy: identify
+    // your app, do not bulk download, expect to be blocked above a modest
+    // volume. Right for a preview, for the tutorial and for a small app;
+    // wrong for anything with a real user base, which should point this at a
+    // provider it pays for.
+    //
+    // A constant here rather than a prop on the node, because the tile source
+    // is a deployment fact and not a property of a view — the same reasoning
+    // that keeps the osmdroid and MapKit tile decisions inside their hosts.
+    const MAP_TILE_URL = "https://tile.openstreetmap.org/{z}/{x}/{y}.png";
+    const MAP_TILE_ATTRIBUTION =
+        '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors';
+
+    // How long a gesture has to be quiet before its region is reported, in ms.
+    //
+    // Leaflet's moveend and zoomend already fire once per gesture rather than
+    // per frame, so this is not the throttle a raw stream would need — it is
+    // the coalescer for the gestures that fire *both*. A pinch-zoom ends as a
+    // zoomend and a moveend a few milliseconds apart, and two full Go render
+    // passes for one gesture is the cost this removes.
+    const MAP_REGION_QUIET_MS = 120;
+
+    let leafletWarned = false;
+
+    // The region a map element is currently asking for, read back off the
+    // dataset where applyMapProps wrote it.
+    //
+    // The dataset is the single source of truth for both web targets — htmlout
+    // writes the same three attributes into its static export — so this
+    // function is also what a loader upgrading an exported document would
+    // write. Numbers come back as strings from a dataset, hence the Number().
+    function mapRegion(el) {
+        return {
+            lat: Number(el.dataset.lat),
+            lng: Number(el.dataset.lng),
+            zoom: Number(el.dataset.zoom),
+        };
+    }
+
+    function sameRegion(a, b) {
+        return !!a && !!b && a.lat === b.lat && a.lng === b.lng && a.zoom === b.zoom;
+    }
+
+    // A map with no engine behind it: the region's box, drawn so the screen has
+    // the shape the layout gave it rather than a collapsed nothing.
+    //
+    // No children and no text, for the addressing reason in the section comment.
+    // The console line is the only place the reason can be said, and it is said
+    // once per page rather than per map per patch.
+    function drawMapPlaceholder(el) {
+        el.dataset.grmobMapPlaceholder = "1";
+        // A neutral fill, not a themed one: this code has no theme. The Go
+        // style still lands on the element (applyStyle ran in createElement),
+        // so a caller who gave the map a background gets theirs — this is only
+        // the floor under a map with no style at all.
+        if (!el.style.background) el.style.background = "#E5E3DF";
+        if (!leafletWarned) {
+            leafletWarned = true;
+            console.warn(
+                "grmob: core.MapView needs Leaflet on the host page. Add " +
+                "leaflet.css and leaflet.js to your index.html (see wasm/index.html) " +
+                "or use components.StaticMap, which needs no engine."
+            );
+        }
+    }
+
+    // Creates the Leaflet map for an element, once.
+    //
+    // Deferred to a frame when the element is not yet in the document, which is
+    // the initial-render case: renderNode builds the whole tree detached and
+    // mount appends it when it is assembled, and Leaflet measures the container
+    // when the map is created — a map built detached comes out 0x0 and stays
+    // that way. The same deferral is harmless on the patch path, where the
+    // element is already live.
+    function createLeafletMap(L, el) {
+        const region = mapRegion(el);
+        const map = L.map(el, {
+            center: [region.lat, region.lng],
+            zoom: region.zoom,
+            // Leaflet's default attribution control is a link, and the tile
+            // licence requires the credit — so it stays. zoomControl stays too:
+            // a map with no buttons is unusable with a mouse, and a phone user
+            // pinches past it.
+            attributionControl: true,
+        });
+        L.tileLayer(MAP_TILE_URL, {
+            attribution: MAP_TILE_ATTRIBUTION,
+            maxZoom: 19,
+        }).addTo(map);
+
+        const record = {
+            map,
+            // The region this code last handed to Leaflet — the echo guard's
+            // memory, read in both directions. Seeded with what the map was
+            // created at, so the first sync after creation applies nothing and
+            // a moveend at the starting position reports nothing.
+            applied: region,
+            markers: [],
+            userLayer: null,
+            userAccuracy: null,
+            locating: false,
+            quiet: null,
+        };
+        el[MAP_RECORD] = record;
+
+        const report = () => {
+            if (record.quiet) clearTimeout(record.quiet);
+            record.quiet = setTimeout(() => {
+                record.quiet = null;
+                const c = map.getCenter();
+                const next = { lat: c.lat, lng: c.lng, zoom: map.getZoom() };
+                // The echo guard, read in this direction: the map is sitting
+                // where this code put it, so there is nothing to tell Go. That
+                // covers the moveend setView itself causes, and it covers a
+                // gesture that happens to end where it started.
+                if (sameRegion(record.applied, next)) return;
+                // Re-read the ID at fire time, as every listener in this
+                // runtime does: IDs are positional and a pass landing mid-
+                // gesture may have refreshed or pruned this one.
+                const cbId = el.dataset.listener_onRegionChange;
+                // Recorded even with no handler attached, so a map that gains
+                // one later does not immediately report a pan that happened
+                // before anybody was listening.
+                record.applied = next;
+                if (!cbId) return;
+                // The same wire form core.FormatRegion writes and
+                // core.ParseRegion reads: "lat,lng,zoom". Go registered this
+                // through the text channel, so the envelope carries a string.
+                window.GoInvokeCallback(cbId, { value: `${next.lat},${next.lng},${next.zoom}` });
+            }, MAP_REGION_QUIET_MS);
+        };
+        map.on("moveend", report);
+        map.on("zoomend", report);
+
+        map.on("click", (e) => {
+            const cbId = el.dataset.listener_onMapTap;
+            if (!cbId || !e || !e.latlng) return;
+            window.GoInvokeCallback(cbId, { value: `${e.latlng.lat},${e.latlng.lng}` });
+        });
+
+        return record;
+    }
+
+    // Applies Go's region when it is Go's instruction rather than Go's echo.
+    // See the section comment.
+    function applyMapRegion(record, el) {
+        const want = mapRegion(el);
+        if (!Number.isFinite(want.lat) || !Number.isFinite(want.lng) || !Number.isFinite(want.zoom)) {
+            return;
+        }
+        if (sameRegion(record.applied, want)) return;
+        record.applied = want;
+        // No animation. Not for the echo — the comparison above and in report
+        // handles that whenever the moveend arrives — but because an animated
+        // setView on a map the app is driving from its own state (following a
+        // location, stepping through a list of places) queues animations behind
+        // each other and lags the data it is showing.
+        record.map.setView([want.lat, want.lng], want.zoom, { animate: false });
+    }
+
+    // Reconciles the Leaflet marker layer against the MapView's Marker child
+    // elements.
+    //
+    // The Leaflet marker lives on the child element that describes it
+    // (child[MARKER_RECORD]), which is what makes this a reconciliation rather
+    // than a rebuild: a child the patch stream moved is the same element, so its
+    // marker is moved; a child it removed is gone from el.children, so its
+    // marker is removed. Nothing is recreated for a sibling's sake, which is the
+    // whole reason core.Marker is a child node and not an entry in a prop array.
+    function syncMapMarkers(L, record, el) {
+        const live = [];
+        for (const child of el.children) {
+            if (!child.dataset || child.dataset.nodeType !== "Marker") continue;
+            const lat = Number(child.dataset.lat);
+            const lng = Number(child.dataset.lng);
+            if (!Number.isFinite(lat) || !Number.isFinite(lng)) continue;
+
+            let marker = child[MARKER_RECORD];
+            if (!marker) {
+                marker = L.marker([lat, lng]).addTo(record.map);
+                child[MARKER_RECORD] = marker;
+                marker.on("click", () => {
+                    const cbId = el.dataset.listener_onMarkerTap;
+                    if (!cbId) return;
+                    // The id off the element at fire time, not the one captured
+                    // when the marker was made: an update-props patch can
+                    // rewrite it, and a marker reporting the id it was born with
+                    // would open the wrong row.
+                    window.GoInvokeCallback(cbId, { value: child.dataset.markerId || "" });
+                });
+            } else {
+                const at = marker.getLatLng();
+                // Guarded, unlike most writes in this runtime: setLatLng on an
+                // open popup closes and reopens it, so a marker that has not
+                // moved must not be told where it is.
+                if (at.lat !== lat || at.lng !== lng) marker.setLatLng([lat, lng]);
+            }
+
+            const title = child.dataset.title || "";
+            if (marker.__grmobTitle !== title) {
+                marker.__grmobTitle = title;
+                if (title) {
+                    marker.bindPopup(title);
+                } else {
+                    marker.unbindPopup();
+                }
+            }
+            live.push(marker);
+        }
+
+        // Whatever is no longer among the children. The markers array is this
+        // code's own list rather than Leaflet's layer set, because the map also
+        // holds the tile layer and the user-location circles and removing those
+        // would blank the map.
+        for (const marker of record.markers) {
+            if (!live.includes(marker)) record.map.removeLayer(marker);
+        }
+        record.markers = live;
+    }
+
+    // core.ShowUserLocation, which Leaflet has no control for: the blue dot on
+    // the two natives is the platform map's own feature, and here it is
+    // Map.locate plus two circles.
+    //
+    // Watched rather than one-shot, because the dot is supposed to follow the
+    // user — and stopped when the prop goes away, because a watch left running
+    // is a GPS left running, which is the one cost in this file a user can
+    // measure.
+    //
+    // The accuracy circle is not decoration. A fix with a 2km radius drawn as a
+    // point is a confident lie, and on a desktop browser (where the position
+    // comes from the network) that is the normal case.
+    function syncMapUser(L, record, el) {
+        const want = el.dataset.showUser === "true";
+        if (want === record.locating) return;
+        record.locating = want;
+        if (!want) {
+            record.map.stopLocate();
+            if (record.userLayer) record.map.removeLayer(record.userLayer);
+            if (record.userAccuracy) record.map.removeLayer(record.userAccuracy);
+            record.userLayer = null;
+            record.userAccuracy = null;
+            return;
+        }
+        record.map.on("locationfound", (e) => {
+            if (!record.locating || !e || !e.latlng) return;
+            if (!record.userLayer) {
+                record.userLayer = L.circleMarker(e.latlng, {
+                    radius: 6, color: "#FFFFFF", weight: 2,
+                    fillColor: "#1A73E8", fillOpacity: 1,
+                }).addTo(record.map);
+                record.userAccuracy = L.circle(e.latlng, {
+                    radius: e.accuracy || 0, stroke: false,
+                    fillColor: "#1A73E8", fillOpacity: 0.12,
+                }).addTo(record.map);
+            } else {
+                record.userLayer.setLatLng(e.latlng);
+                record.userAccuracy.setLatLng(e.latlng);
+                record.userAccuracy.setRadius(e.accuracy || 0);
+            }
+        });
+        // setView false: the dot is information, not a command to go there.
+        // An app that wants to follow the user renders a Region from
+        // hooks.UseLocation, which is a decision it makes rather than one this
+        // code makes for it.
+        record.map.locate({ watch: true, setView: false, enableHighAccuracy: true });
+    }
+
+    // The one entry point: make the element's Leaflet state match the node.
+    // Called from renderNode once the Marker children exist, and from the
+    // post-batch pass for every map a patch reached.
+    function syncMap(el) {
+        const L = typeof window !== "undefined" ? window.L : undefined;
+        if (!L || typeof L.map !== "function") {
+            drawMapPlaceholder(el);
+            return;
+        }
+        let record = el[MAP_RECORD];
+        if (!record) {
+            // Leaflet measures the container at creation time, so a map built
+            // while the tree is still detached comes out 0x0 and stays that
+            // way. Wait a frame and try again — by then mount has appended the
+            // tree, exactly as the focus command's deferral relies on.
+            if (el.isConnected === false) {
+                requestAnimationFrame(() => syncMap(el));
+                return;
+            }
+            record = createLeafletMap(L, el);
+        }
+        applyMapRegion(record, el);
+        syncMapMarkers(L, record, el);
+        syncMapUser(L, record, el);
+    }
+
+    // The post-batch pass, sibling of syncTouchedEndReached and walking the same
+    // ancestor chains for the same reason: a patch addressed to a *marker* is a
+    // change to the map that holds it, and the map is the element with the
+    // Leaflet state to reconcile.
+    function syncTouchedMaps(touched) {
+        const done = new Set();
+        for (const start of touched) {
+            for (let el = start; el; el = el.parentNode) {
+                if (!el.dataset || done.has(el)) continue;
+                if (el.dataset.nodeType === "MapView") {
+                    done.add(el);
+                    syncMap(el);
+                }
+            }
+        }
+    }
+
+    // A MapView's region and a Marker's position, as dataset entries.
+    //
+    // The dataset rather than a closure over the props, because every listener
+    // and every sync pass in this runtime re-reads its inputs off the element:
+    // the element is what survives between a create and the patches that follow,
+    // and a value captured at creation is a value that goes stale on the first
+    // update-props. htmlout writes these same attributes into its static export,
+    // which is what lets a loader upgrade one into a live map.
+    //
+    // Total, like every other writer here: an update-props patch carries the
+    // whole new props map, so a key that is absent now means "gone", and a
+    // guarded write would leave the old value standing. Keyed on the node type
+    // because `lat`, `id` and `title` are plausible prop names for some future
+    // node that means something else by them — the gate applySpacerSize sets the
+    // precedent for.
+    function applyMapProps(el, props, nodeType) {
+        if (nodeType !== "MapView" && nodeType !== "Marker") return;
+        const write = (key, value) => {
+            if (value === undefined || value === null || value === "") {
+                delete el.dataset[key];
+            } else {
+                el.dataset[key] = String(value);
+            }
+        };
+        if (nodeType === "MapView") {
+            write("lat", props.lat);
+            write("lng", props.lng);
+            write("zoom", props.zoom);
+            write("showUser", props.showUser === true ? "true" : "");
+            return;
+        }
+        write("markerId", props.id);
+        write("lat", props.lat);
+        write("lng", props.lng);
+        write("title", props.title);
     }
 
     // Drops the callback IDs of handler props this node no longer carries.
@@ -2873,11 +3363,15 @@ const GrMob = (() => {
             // one.
             Select: "select",
 
-            // Told apart from each other by inputTypeFor, below.
+            // Told apart from each other by inputTypeFor, below — except for
+            // Checkbox and Switch, which inputTypeFor cannot tell apart at all
+            // (both are type="checkbox") and which differ by the `switch`
+            // attribute createElement writes for one of them.
             Input: "input",
             InputPassword: "input",
             NumericInput: "input",
             Checkbox: "input",
+            Switch: "input",
             Slider: "input",
 
             // A monospace grid and its rows (core.TextGrid); see
@@ -2896,6 +3390,12 @@ const GrMob = (() => {
             TabView: "div",
             Spacer: "div",
             CameraView: "div",
+
+            // The live map and its pins (core.MapView). The div is what gets
+            // handed to Leaflet; a Marker is data rather than a box and gets an
+            // element because patch paths are positional. See the map section.
+            MapView: "div",
+            Marker: "div",
 
             // The z-stack. A div like the rest — what makes it an overlay is
             // the single-cell grid styleFromGrMob gives it and the grid-area
@@ -2921,10 +3421,16 @@ const GrMob = (() => {
         }[type] || "div";
     }
 
-    // The Go node type -> the <input> type attribute. Only the four types
+    // The Go node type -> the <input> type attribute. Only the types
     // tagForType collapses onto <input> appear here; every other node has a
     // tag that already says what it is, and gets no type attribute (which is
     // why the fallback below is "" and not an error).
+    //
+    // Two keys share one value: a Switch is an <input type="checkbox"> with
+    // the `switch` attribute on it, because HTML has no switch element. This
+    // table stops one attribute short of separating them, and createElement
+    // finishes the job — see the attribute it writes there, and core.Switch
+    // for why a switch is a node type rather than a flag on a checkbox.
     //
     // Go states this table once, in htmlout/inputtype.go, and this is its
     // restatement in the language that actually sets the attribute — the
@@ -2945,6 +3451,7 @@ const GrMob = (() => {
             InputPassword: "password",
             NumericInput: "number",
             Checkbox: "checkbox",
+            Switch: "checkbox",
             Slider: "range",
         }[type] || "";
     }
@@ -3234,7 +3741,12 @@ const GrMob = (() => {
         if (["input", "textarea", "numericinput", "inputpassword", "slider", "select"].includes(goType)) {
             return { value: e.target.value };
         }
-        if (goType === "checkbox") {
+        // Both boolean controls report their .checked, not their .value — an
+        // <input type="checkbox">'s value is the string "on" whatever the box
+        // is doing. Go registered both handlers through the bool callback
+        // channel (core.Checkbox and core.Switch each take a func(bool)), so
+        // the boolean envelope is the right one for both.
+        if (goType === "checkbox" || goType === "switch") {
             return { value: e.target.checked };
         }
         return {};
@@ -3304,6 +3816,14 @@ const GrMob = (() => {
                     // was given when it had one, so the keyboard went on
                     // advertising a submit affordance the field no longer had.
                     applyEnterKeyHint(el, p.Changes);
+                    // The map nodes' dataset, before the per-key loop and for
+                    // the same reason the hint is: the sync pass reads lat, lng
+                    // and zoom together, and the patch carries the whole new
+                    // map. The Leaflet reconciliation itself runs once per batch
+                    // in syncTouchedMaps, not here — a batch can carry a marker
+                    // move and the map's own region, and doing the work per key
+                    // would re-read the layer several times for one change.
+                    applyMapProps(el, p.Changes, el.dataset.nodeType);
                     for (const [k, v] of Object.entries(p.Changes)) {
                         if (k === "value") {
                             // Loose equality on purpose: a range input's
@@ -3497,6 +4017,10 @@ const GrMob = (() => {
         // the observation target is the list's last child, and this batch is
         // exactly what may have replaced it.
         syncTouchedEndReached(touched);
+        // Last, and after every structural patch for the same reason: a map's
+        // Leaflet layer is reconciled against the Marker children this batch
+        // added, moved or removed.
+        syncTouchedMaps(touched);
     }
 
     // --- Toast overlay -------------------------------------------------------

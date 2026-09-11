@@ -265,17 +265,30 @@ something else held last pass, and the double-load comes back.
 | `Button` | `Button(label, onClick, props...)` — also `ButtonWithEvent(label, event, fn, ...)` |
 | `Input` | `Input(value, placeholder, onChange, ...)` — also `InputWithSubmit`, `InputPassword`, `NumericInput`, `TextArea` |
 | `Checkbox` | `Checkbox(checked, onToggle, ...)` |
+| `Switch` | `Switch(on, onToggle, ...)` — the *instant-effect* boolean: the control whose tap is the action, with no Submit behind it. Draws Material's `Switch`, SwiftUI's `Toggle`, and an `<input type="checkbox" switch role="switch">` on the web. A `Checkbox` is the other choice and means the other thing — a value something else will act on |
 | `Select` | `Select(value, []SelectOption{{Value, Label}}, onChange, ...)` — the picker. `onChange` carries the option's **Value**, never its label or index; an empty `Label` falls back to the value. Reads the theme's `Components.Input` base, so it matches the text fields beside it. An option may also carry a `Group` (a heading over the *run* of consecutive options sharing it) and `Disabled` (drawn and announced, not choosable) |
 | `Slider` | `Slider(value, min, max, onChange, ...)` with `OnSliderChangeEnd(fn)` (fires once on release — the one a seek bar acts on) and `SliderStep(s)` |
 | `Image` | `Image(src, styleProps...)` |
 | `TextGrid` | `TextGrid(rows []GridRow, props...)` — a monospace grid of styled runs (a terminal pane, a log tail); each `GridRun` has `Text`, `Fg`, `Bg` and `Attr` bits (`GridBold`, `GridDim`, `GridItalic`, `GridUnderline`, `GridStrike`). Rows are children, so a changed row is one patch |
 | `CameraView` | `CameraView(props...)` with `OnCapture`, `WithOverlay`, `SetFacing`, ... |
+| `MapView` | `MapView(Region{Lat, Lng, Zoom}, props...)` — the platform's own live map (MapKit, osmdroid, Leaflet). Pins are **child nodes**: `Marker(id, lat, lng, title)`, keyed by their id, so a marker that moves is one patch rather than a rebuilt annotation layer. `ShowUserLocation()`, `OnRegionChange(fn)`, `OnMarkerTap(fn)`, `OnMapTap(fn)`. Go's `Region` is applied only when it **changes** — see below. For "where is this", [`components.StaticMap`](../components.md#staticmap) is the smaller answer |
 | `Modal` | `Modal(Visible(b), OnDismiss(fn), Backdrop(color), ...)` |
 | `TabView` | native tab bar — prefer the [`components.Tabs`](../components.md#tabs) facade |
 
 Inputs are **controlled**: you pass the current value in and receive changes
 through `onChange`; the value on screen is whatever your state says it is.
 The [tutorial](../tutorial-todo.md) covers the echo/rewrite contract in depth.
+
+`MapView` is controlled too, with the one exception that makes it usable: its
+`Region` is applied to the host map **only when it changes**, never re-asserted
+on every patch. A map is the one widget whose value the user changes
+continuously by touching it, so a render that re-centred on Go's region would
+snap the map back under the user's finger — and an app echoing
+`OnRegionChange` into state would fight its own round trip, because the echo
+arrives a frame late. Each host remembers the region it last applied and
+compares: Go *moving* the map is an instruction, Go merely re-rendering is not.
+The same comparison suppresses the gesture report a host's own recentring would
+otherwise send back.
 
 ## Conditional rendering
 

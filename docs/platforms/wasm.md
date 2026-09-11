@@ -274,7 +274,7 @@ say something false:
 | has no tab at its index | a `tabpanel` outside a tab set, with nothing for the `aria-controls` to sit on |
 | renders as an element that already has a role (`<button>`, `<img>`, `<input>`) | `role="tabpanel"` would *replace* the role the browser gave it — see `GENERIC_TAGS`, pinned to Go's `genericTags` by `TestRuntimeGenericTagsMatchGo` |
 | carries a `core.AccessibilityRole` other than `RoleGroup` | the author already said what it is, and the same theft applies |
-| is a node type that states its own role (a `Modal` is a `dialog`) | the same theft, one layer down — and the attribute has one slot |
+| is a node type that states its own role (a `Modal` is a `dialog`, a `Switch` is a `switch`) | the same theft, one layer down — and the attribute has one slot. `ownRole` is the table, pinned to Go's `htmlout.ownRoles` by `TestRuntimeOwnRolesMatchGo` |
 | is `AccessibilityHidden` | the author severed the relationship on purpose |
 | carries a `core.AccessibilityID` | the author's own string is in the slot the wiring needs for the panel id, and something else on the page is pointing at it — taking it would break a relationship rather than replace a word |
 
@@ -1639,6 +1639,51 @@ use — pass boundaries, callback purging, and [debug mode](../concepts/debug-mo
 all behave identically. An app that runs clean in the browser preview is
 running the same Go code it will run on the phone; only the renderer
 differs.
+
+## Live maps
+
+`core.MapView` is a `<div>` handed to [Leaflet](https://leafletjs.com), with the
+node's `core.Marker` children reconciled into Leaflet markers. Region changes,
+marker taps and map taps come back through the text callback channel, in the
+wire forms `core.ParseRegion` and `core.ParseLatLng` read.
+
+**Leaflet is the host page's dependency, not the runtime's.** `wasm/index.html`
+adds the script and the stylesheet; the runtime uses `window.L` if it is there
+and draws a placeholder box if it is not. A runtime that injected a script tag
+would be fetching third-party code on behalf of every app that uses it,
+including the ones with no map on any screen and the ones whose content policy
+forbids it — and it would do so mid-patch, where there is nothing sensible to do
+about a failed load.
+
+The stylesheet is not optional: Leaflet positions its tiles, its controls and
+its markers from it, and a page with the script and no CSS renders a heap of
+overlapping tile images, which looks like a bug in the map rather than a missing
+`<link>`.
+
+**The placeholder adds no child element**, and that is a constraint rather than a
+preference: a `MapView`'s children are `Marker` nodes addressed positionally by
+the patch stream, so chrome inside one would have to be counted by
+`chromeOffset` and would shift every marker that arrived later. What it does
+instead is keep the region on the element as `data-lat`/`data-lng`/`data-zoom` —
+which is exactly what [htmlout](exporters.md) exports for the same node, so the
+two web targets degrade identically, and a page that loads Leaflet and reads
+those attributes can upgrade a static export into a live map.
+
+**Markers live on their own elements.** Each Leaflet marker is stored on the
+`Marker` child element that describes it, which is what makes the sync a
+reconciliation rather than a rebuild: a child the patch stream moved is the same
+element, so its marker is moved; a child it removed is gone from the parent, so
+its marker is removed. Nothing is recreated for a sibling's sake — the whole
+reason `core.Marker` is a child node and not an entry in a prop array.
+
+**The echo guard has no timing in it.** Go's region is applied only when it
+differs from the region this runtime last applied, and a gesture is reported only
+when it ends somewhere other than that same region. One comparison, read in both
+directions. It was a boolean window around the `setView` call at first, and
+`wasm/verify/mapview_test.mjs` is what said that was wrong: the window only
+closes the case where Leaflet fires `moveend` synchronously from inside
+`setView`, which is what it happens to do with animation off and is not a promise
+anybody made.
 
 ## Text grids
 

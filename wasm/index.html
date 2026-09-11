@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>GrMob · Interactive Tutorial</title>
-<meta name="description" content="Learn GrMob — native mobile apps in pure Go — by tapping it: 40 live lessons running in your browser via WebAssembly.">
+<meta name="description" content="Learn GrMob — native mobile apps in pure Go — by tapping it: 49 live lessons running in your browser via WebAssembly.">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%232b6cb0'/%3E%3Ctext x='16' y='22' font-family='monospace' font-size='15' font-weight='bold' text-anchor='middle' fill='%23ffffff'%3Egm%3C/text%3E%3C/svg%3E">
 <style>
   /* The page is a frame around the app, not part of it: the app paints its
@@ -140,7 +140,7 @@
 
 <header>
   <h1><span>GrMob</span> · Interactive Tutorial</h1>
-  <span class="meta">40 lessons · 8 chapters · every demo is live Go, running in your browser</span>
+  <span class="meta">49 lessons · 8 chapters · every demo is live Go, running in your browser</span>
   <span class="spacer"></span>
   <button id="copylink" class="copylink" type="button" title="Copy a link to this lesson" hidden>🔗 Copy link</button>
   <a href="https://github.com/rohanthewiz/grmob/tree/master/docs" target="_blank" rel="noopener">Docs</a>
@@ -162,6 +162,29 @@
 </main>
 
 <script src="wasm_exec.js"></script>
+
+<!-- Leaflet, for core.MapView.
+
+     The host page's dependency and not the runtime's, deliberately:
+     grmob-runtime.js uses window.L when it is here and draws a placeholder box
+     when it is not, so an app with no map on any screen pays nothing and an app
+     whose content policy forbids third-party script has somewhere to say so.
+     See the "Live maps" section of grmob-runtime.js.
+
+     The stylesheet is not optional. Leaflet positions its tiles, its controls
+     and its markers from this file, and a map with the script and not the CSS
+     renders as a heap of overlapping tile images — which looks like a bug in
+     the map rather than a missing link tag.
+
+     Pinned to an exact version, because this is the page a visitor loads: a
+     floating "latest" would let somebody else's release change this site.
+     There is no integrity hash, and that is worth naming rather than leaving as
+     an oversight — a wrong one fails closed and silently (the browser refuses
+     the script, window.L never appears, and every map on the site quietly
+     becomes a grey box), so it is a thing to add from a verified checksum
+     rather than from memory. -->
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
 <!-- Runtime JavaScript -->
 <script src="grmob-runtime.js"></script>

@@ -11,9 +11,14 @@ import (
 
 // chapter2 — State, Events & Lists: the interactive half of the framework.
 // Chapter 1's demos borrowed core.NewState on credit; this chapter pays the
-// debt. The through-line across all five lessons is one loop: state is the
+// debt. The through-line across all six lessons is one loop: state is the
 // source of truth, the tree is a pure function of it, and events are the only
 // place state changes — every demo is a different face of that loop.
+//
+// The last lesson turns that loop a quarter turn to ask a question the loop
+// cannot answer: two controls report the same bool, so which one a screen uses
+// is about *when the change takes effect*, which is a promise to the reader
+// rather than a fact about state.
 func chapter2() Chapter {
 	return Chapter{
 		Title:   "State, Events & Lists",
@@ -25,6 +30,7 @@ func chapter2() Chapter {
 			lessonInputs(),
 			lessonConditionals(),
 			lessonLists(),
+			lessonBooleans(),
 		},
 	}
 }
@@ -213,7 +219,7 @@ core.Input(name.Get(), "Your name", func(v string) {
 					"Inputs are controlled: value in, intent out — state is the single source of truth.",
 					"Transform or validate in the onChange callback; what you Set is what the field shows.",
 					"Writes from elsewhere (the Clear button) reach the field like any other render — it has no private copy to get stale.",
-					"Checkbox, TextArea, NumericInput, and InputWithSubmit (keyboard submit) all follow the same contract.",
+					"Checkbox, Switch, TextArea, NumericInput, and InputWithSubmit (keyboard submit) all follow the same contract.",
 				),
 			)
 		},
@@ -407,4 +413,107 @@ func taskRow(t demoTask, remove func()) core.View {
 			components.Button{Label: "✕", Emphasis: components.EmphasisGhost, OnTap: remove},
 		).Render(ctx)
 	})
+}
+
+// --- 2.6 -----------------------------------------------------------------
+
+func lessonBooleans() Lesson {
+	return Lesson{
+		Title:   "Two booleans: checkbox and switch",
+		Summary: "Both report a bool. What differs is when the change takes effect — and that is a promise to the reader.",
+		Body: func(ctx *core.Context) core.View {
+			// The switch's state is the setting itself: nothing else commits
+			// it, which is the whole affordance.
+			notify := core.NewState(ctx, true)
+			// The checkbox's is a value waiting for the button below it, which
+			// is the other affordance — and the reason the demo needs two
+			// slots for the one box (what is ticked, and what was saved).
+			terms := core.NewState(ctx, false)
+			saved := core.NewState(ctx, false)
+
+			return core.Column(
+				core.Gap(14),
+				prose("core.Checkbox and core.Switch both render a bool and report a bool "+
+					"through the same controlled contract as every other input. They are "+
+					"separate node types because they make different promises: a checkbox "+
+					"collects a value something else will act on, and a switch acts on the tap."),
+				codeBlock(`// A value this screen will submit later:
+core.Checkbox(terms.Get(), func(v bool) { terms.Set(v) })
+
+// A setting that has already changed:
+core.Switch(notify.Get(), func(v bool) { notify.Set(v) })`),
+				prose("A switch with a Save button beside it reads as broken, and a terms box "+
+					"that took effect on the tick would be a contract nobody agreed to. "+
+					"Each platform draws its own — Material's Switch, SwiftUI's Toggle, and "+
+					"an <input type=\"checkbox\" switch role=\"switch\"> on the web, which "+
+					"announces itself as a switch in every browser and is drawn as one where "+
+					"the engine supports the attribute."),
+				demoPanel("The switch changes the line under it; the checkbox changes nothing until Save.",
+					// The trailing slot is where a switch belongs: it is the
+					// row's setting, not a value being collected at its head.
+					components.ListRow{
+						Title:    "Notifications",
+						Subtitle: notifyState(notify.Get()),
+						Trailing: core.Switch(notify.Get(), func(v bool) {
+							notify.Set(v)
+						}),
+					},
+					caption(notifyEffect(notify.Get())),
+					// And the head is where a checkbox belongs, with the thing
+					// that commits it below.
+					components.ListRow{
+						Leading: core.Checkbox(terms.Get(), func(v bool) {
+							terms.Set(v)
+							// A tick revokes a save rather than keeping it: the
+							// saved value and the ticked one are two different
+							// facts, and the demo is about the gap between them.
+							saved.Set(false)
+						}),
+						Title: "I accept the terms",
+					},
+					core.Row(
+						core.Gap(10),
+						core.AlignItemsProp(core.AlignItemsCenter),
+						components.Button{Label: "Save", OnTap: func() { saved.Set(terms.Get()) }},
+						caption(termsState(terms.Get(), saved.Get())),
+					),
+				),
+				keyPoints(
+					"Both controls are controlled inputs: the state you pass is what shows, and the toggle is intent.",
+					"Switch means the tap was the action — a settings row, a preference, a mode. There is no Submit behind it.",
+					"Checkbox means a value something else will act on — a form field, a selection, a terms box.",
+					"The node types are separate so the reconciler can exchange one platform control for another: a changed type is a replace.",
+					"On the wire both carry `checked`, so the difference is the node type rather than the payload.",
+				),
+			)
+		},
+	}
+}
+
+// The three little sentence-builders the boolean demo reads its copy from.
+// Split out for the reason taskRow is: a lesson body is long enough already,
+// and each of these is a pure function of one or two bools.
+func notifyState(on bool) string {
+	if on {
+		return "Sending you a push when something happens"
+	}
+	return "Silent — nothing will be pushed"
+}
+
+func notifyEffect(on bool) string {
+	if on {
+		return "The switch is on and so is the setting. Nothing had to confirm it."
+	}
+	return "The switch is off and so is the setting — off the moment it was tapped."
+}
+
+func termsState(ticked, saved bool) string {
+	switch {
+	case saved:
+		return "Saved: accepted."
+	case ticked:
+		return "Ticked, not saved — the value is waiting for the button."
+	default:
+		return "Not ticked. Save would store a refusal."
+	}
 }

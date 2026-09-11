@@ -530,6 +530,7 @@ test("each <input> variant carries the type that decides what is drawn", () => {
         { Type: "InputPassword", Props: { value: "" } },
         { Type: "NumericInput", Props: { value: "0" } },
         { Type: "Checkbox", Props: { checked: false } },
+        { Type: "Switch", Props: { checked: false } },
         { Type: "TextArea", Props: { value: "", rows: 3 } },
         { Type: "Text", Props: { content: "not a control" } },
     ]);
@@ -538,11 +539,62 @@ test("each <input> variant carries the type that decides what is drawn", () => {
     assert.equal(at(1).getAttribute("type"), "password");
     assert.equal(at(2).getAttribute("type"), "number");
     assert.equal(at(3).getAttribute("type"), "checkbox");
+    // The one pair the type attribute does not separate: HTML has no switch
+    // element, so a Switch is a checkbox and one more attribute. See the test
+    // below for the attribute, and core.Switch for why the node types are two.
+    assert.equal(at(4).getAttribute("type"), "checkbox");
     // A tag that already says what it is gets no discriminator, matching what
     // htmlout emits.
-    assert.equal(at(4).tagName, "TEXTAREA");
-    assert.equal(at(4).getAttribute("type"), null);
+    assert.equal(at(5).tagName, "TEXTAREA");
     assert.equal(at(5).getAttribute("type"), null);
+    assert.equal(at(6).getAttribute("type"), null);
+});
+
+test("a switch is a checkbox plus the switch attribute and the role", () => {
+    const { at } = mount([
+        { Type: "Switch", Props: { checked: true, onToggle: "bool_cb_0" } },
+        { Type: "Checkbox", Props: { checked: true, onToggle: "bool_cb_1" } },
+    ]);
+
+    // The attribute HTML has for a switch: present, with the empty string as
+    // its value, which is all a boolean attribute means in the DOM. htmlout
+    // writes switch="switch" for the same presence, because element emits
+    // key="value" pairs only.
+    assert.equal(at(0).hasAttribute("switch"), true);
+    assert.equal(at(0).getAttribute("switch"), "");
+    // And the role, which is what makes a reader announce a switch in the
+    // engines that still draw the box. It comes from the node type, so it is
+    // here with no Style involved at all.
+    assert.equal(at(0).getAttribute("role"), "switch");
+
+    // Neither reaches the other control. A Checkbox that drew as a switch in
+    // Safari would be the same silent divergence in the other direction.
+    assert.equal(at(1).hasAttribute("switch"), false);
+    assert.equal(at(1).getAttribute("role"), null);
+});
+
+test("a switch reports its checked state and follows a patch", () => {
+    // The same two paths a Checkbox is held to next door, because the Switch
+    // shares the prop: the state crosses the wire as `checked` (core.Switch
+    // explains why it keeps the DOM's spelling) and the toggle goes up through
+    // the bool channel.
+    const { rt, at } = mount([{ Type: "Switch", Props: { checked: false, onToggle: "bool_cb_0" } }]);
+
+    at(0).checked = true;
+    at(0).dispatch("change", { target: at(0) });
+    assert.deepEqual(rt.dispatched, [{ id: "bool_cb_0", payload: { value: true } }]);
+
+    rt.GrMob.patch(
+        JSON.stringify([
+            { Type: "update-props", TargetID: "root/0", Changes: { checked: false, onToggle: "bool_cb_0" } },
+        ])
+    );
+    assert.equal(at(0).checked, false, "Go's state never reached the control");
+    // The attribute and the role survive a patch: both are written once at
+    // create time, which is sound only because a node type cannot change under
+    // a patch — the reconciler emits a replace for that.
+    assert.equal(at(0).hasAttribute("switch"), true);
+    assert.equal(at(0).getAttribute("role"), "switch");
 });
 
 test("a checkbox renders the state Go gave it", () => {

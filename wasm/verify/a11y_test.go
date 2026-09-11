@@ -22,9 +22,13 @@ func TestRuntimeWritesTheSameAccessibilityAttributes(t *testing.T) {
 		{`setOrRemove(el, "aria-modal", dialog ? "true" : "")`,
 			`the modal claim. htmlout's modalSemantics writes it, and it is not expressible ` +
 				`through core.Role, so a Modal is the only node that can`},
-		{`? (style.AccessibilityRole || "dialog")`,
-			`the dialog role, defaulted after the author's own core.Role so a hand-built ` +
-				`Modal that states one still wins`},
+		{`const own = hidden ? "" : ownRole(nodeType);`,
+			`the self-roling types' role, looked up from what the node IS. ownRole is the ` +
+				`runtime's copy of htmlout.ownRoles — a dialog for a Modal, a switch for a ` +
+				`core.Switch — and TestRuntimeOwnRolesMatchGo holds the two tables equal`},
+		{`? (style.AccessibilityRole || own)`,
+			`that role, defaulted after the author's own core.Role so a hand-built node ` +
+				`that states one still wins`},
 		{`setOrRemove(el, "aria-level", hidden ? "" : ariaLevel(style))`,
 			"the level — a heading's tier or a nested item's depth, whichever the role calls " +
 				"for — and aria-hidden winning over it as it does over the role"},
@@ -231,9 +235,12 @@ func TestRuntimeSuppliesTheGroupRole(t *testing.T) {
 		{`return GENERIC_TAGS.has(el.tagName.toLowerCase()) ? "group" : "";`,
 			"only the tags whose implicit role is `generic` may be given one — writing a role " +
 				"onto a <button> or an <img> replaces the role the browser already gives it"},
-		{"? (style.AccessibilityRole || \"dialog\")\n            : ariaRole(el, style))",
-			"a Modal answers the dialog case before the fallback is consulted, which is why " +
-				"ariaRole needs no equivalent of htmlout's CarriesOwnRole guard"},
+		{"? (style.AccessibilityRole || own)\n            : ariaRole(el, style))",
+			"a self-roling node answers from ownRole before the fallback is consulted, which " +
+				"is why ariaRole needs no equivalent of htmlout's CarriesOwnRole guard. It " +
+				"matters more for a Switch than it ever did for a Modal: an <input> is not a " +
+				"generic tag, so the fallback would decline to write any role at all and the " +
+				"control would announce itself as the checkbox it is made of"},
 	} {
 		if !strings.Contains(src, want.expr) {
 			t.Errorf("grmob-runtime.js: %q not found — %s. htmlout supplies the role, so the "+
