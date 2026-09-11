@@ -27,7 +27,7 @@ import (
 // # About the file counts quoted below, which are readings and ARE held
 //
 // Several sentences here and in timings_test.go price a walk against how many
-// files it touches. That number is a reading of a repository on a day — 387
+// files it touches. That number is a reading of a repository on a day — 389
 // tracked Go files where verifyTimingsTakenOn was taken — and it goes up with
 // every file anybody adds, silently, exactly like the wall clocks beside it.
 //
@@ -447,6 +447,22 @@ func TestTheRepositoryWideWalksInThisPackageAreTheOnesDecidedOn(t *testing.T) {
 				w.file, w.line, want, len(row.asks),
 				strings.Join(row.asks, "; "))
 		}
+		if len(row.asks) > walkQuestionBudget {
+			t.Errorf("%s:%d answers %d question(s) and the budget is %d: "+
+				"%s.\n\n"+
+				"See walkQuestionBudget. The question to ask is not whether "+
+				"the newest one belongs — it does, and so did the one before "+
+				"it, because a walk that already holds the repository's parse "+
+				"is the cheapest home for anything needing that parse and "+
+				"always will be. It is whether the things on this walk are "+
+				"still ONE thing.\n\n"+
+				"If they are not, some of them want a walk of their own, and "+
+				"that is repositoryWalkBudget's conversation rather than this "+
+				"one. If they are, raise this number and write the reason "+
+				"beside it.",
+				w.file, w.line, len(row.asks), walkQuestionBudget,
+				strings.Join(row.asks, "; "))
+		}
 		if row.depth != w.depth {
 			t.Errorf("%s:%d is listed as a walk that %s and it %s.\n\n"+
 				"The depths are not decoration: `%s` is one git process and "+
@@ -497,7 +513,7 @@ func TestTheRepositoryWideWalksInThisPackageAreTheOnesDecidedOn(t *testing.T) {
 			"This is the number that decides, not the total. Each parse is "+
 			"about 0.18s where verifyTimingsTakenOn was taken and none of it "+
 			"is shared: every Go file in the tree goes through go/parser once "+
-			"per arm — 387 tracked Go files where that record was taken — "+
+			"per arm — 389 tracked Go files where that record was taken — "+
 			"and every one of them throws the syntax trees away.\n\n"+
 			"A shared parse is a fixture with a lifetime — built once, "+
 			"invalidated never, read by tests that no longer say what they "+
@@ -694,7 +710,7 @@ const timingsRecordName = "verifyTimingsTakenOn"
 // How many of them may parse every Go file in the tree.
 //
 // Four, and this is the half that costs. The other two walks read bytes and
-// stop; these four hand every Go file in the tree — 387 tracked Go files
+// stop; these four hand every Go file in the tree — 389 tracked Go files
 // where verifyTimingsTakenOn was taken — to go/parser, build the syntax
 // trees, ask one question each and drop them.
 //
@@ -702,6 +718,37 @@ const timingsRecordName = "verifyTimingsTakenOn"
 // which is a real trade and not an obvious one, so it is written down here
 // rather than decided in advance.
 const repositoryParseBudget = 4
+
+// How many questions one walk may answer.
+//
+// # Why there has to be a number
+//
+// repositoryParseBudget is full, which means a new question needing a
+// repository-wide parse has exactly one cheap home: the walk that already has
+// one. That is the right answer and it is the answer EVERY TIME — the parse
+// budget is full whoever is asking, the shared walk always has the parse, and
+// the question always needs no enumeration of its own.
+//
+// A reason that always wins is not a reason. Two questions arrived on that
+// walk in a single session, each with that argument, each correct, and
+// nothing in the repository would have objected at nine. What the arrangement
+// was quietly becoming is the thing every row in this table exists to stop: a
+// walk that is a place to put things.
+//
+// # Why five and not four or six
+//
+// Five is where it stands, which is the same kind of number as
+// timingsRecordCopies: not a measured limit but a line drawn at the current
+// state, so that the next step past it is taken deliberately. The three
+// budgets bound the three ways this cost grows — how many walks, how many of
+// them parse, and how much any one of them is carrying — and this is the one
+// that had no number at all.
+//
+// The sixth question is a decision with two honest answers. Either the
+// questions on that walk are no longer one thing and some of them want a walk
+// of their own, which is repositoryWalkBudget's conversation; or they are,
+// and this moves with the reason written beside it.
+const walkQuestionBudget = 5
 
 // The enumeration entry points, and the functions that ARE them.
 //
@@ -786,10 +833,11 @@ var repositoryWalks = []repositoryWalkRow{{
 	// the decision repositoryParseBudget exists to force — and this walk is
 	// the answer that decision has, which is why questions land here rather
 	// than becoming walks. Each is a reading of what the one walk has already
-	// built, and each is a subtest with its own failure boundary; see the
-	// header of copies_test.go, including what the fifth costs its name.
-	fn:    "TestTheShapesThisRepositoryKeepsTwoCopiesOfAreInStep",
-	file:  "copies_test.go",
+	// built, and each is a subtest with its own failure boundary. What stops
+	// that arrangement absorbing every future question is walkQuestionBudget;
+	// see sharedparse_test.go.
+	fn:    "TestTheQuestionsOnTheSharedRepositoryParseAreTheOnesDecidedOn",
+	file:  "sharedparse_test.go",
 	depth: walkParses,
 	besides: []besidesRow{{
 		through: "identifiersIn",

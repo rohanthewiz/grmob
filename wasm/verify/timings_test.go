@@ -97,8 +97,10 @@ var verifyTimingsTakenOn = struct {
 	// # How many of them there are, which this comment used to get wrong
 	//
 	// It said three, naming the copies census — then called
-	// TestEveryTimingsRecordIsTheSameShape, now
-	// TestTheShapesThisRepositoryKeepsTwoCopiesOfAreInStep — as the last.
+	// TestEveryTimingsRecordIsTheSameShape, then
+	// TestTheShapesThisRepositoryKeepsTwoCopiesOfAreInStep, now
+	// TestTheQuestionsOnTheSharedRepositoryParseAreTheOnesDecidedOn — as
+	// the last.
 	// There were four: TestEveryGitListingAsksForNulSeparatedPaths has parsed
 	// the whole tree since before any of the other three existed and was
 	// simply not counted. And a walk in this package is not always a test —
@@ -123,8 +125,8 @@ var verifyTimingsTakenOn = struct {
 	//
 	// # And the readings the copies census grew, which is the same story again
 	//
-	// TestTheShapesThisRepositoryKeepsTwoCopiesOfAreInStep took on two more
-	// questions — the import-resolving helpers held identical across both
+	// TestTheQuestionsOnTheSharedRepositoryParseAreTheOnesDecidedOn took on two
+	// more questions — the import-resolving helpers held identical across both
 	// packages, and every core-count read held to being named in its package's
 	// cores note — and both are read off declarations the walk had already
 	// built. Measured by taking them out and putting them back: 0.18s to
@@ -256,7 +258,7 @@ var verifyTimingsTakenOn = struct {
 // # What this package's answer actually is, which is not "nothing"
 //
 // The expensive half of wholeFile does not move. The four repository-wide
-// walks hand every Go file in the tree to go/parser one after another — 387
+// walks hand every Go file in the tree to go/parser one after another — 389
 // tracked Go files where this record was taken, 0.18s each, single-threaded,
 // the same number on any machine — and foldWalk is a node process this package waits on
 // rather than shares a core with.
@@ -315,7 +317,7 @@ var verifyTimingsTakenOn = struct {
 // either direction reads — a term named in prose is neither claimed nor
 // checked.
 const coresAttribution = "The four repository-wide walks in this package are " +
-	"single-threaded — go/parser over 387 tracked Go files " +
+	"single-threaded — go/parser over 389 tracked Go files " +
 	"where this record was taken, 0.18s each — and " +
 	"`foldWalk` is a node process. Those do not move with the core count. " +
 	"Two declarations do, and they are the whole of it: " +
