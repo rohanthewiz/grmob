@@ -157,9 +157,14 @@ func run() -> Int32 {
     // checkFixedSizeContainer is part of the same sum because it is the same
     // solver: it is not a new rule, it is the fixed-size census's SwiftUI
     // main-axis row being measured here instead of reasoned about in a comment.
+    // checkMinContent is in the same sum for the same reason: the floors it
+    // produces are half of what the shrink arm does now, and a floor measured
+    // wrong is a layout bug that the solver's own arithmetic cannot see.
     let flexProblems = checkFlexSolver() + checkWrapSolver() + checkFixedSizeContainer()
+        + checkMinContent()
     if flexProblems.isEmpty {
-        print("OK: flex solver matches the CSS rules, including the fixed-size census")
+        print("OK: flex solver matches the CSS rules, including the fixed-size "
+            + "census and the min-content floors")
     } else {
         print("FAIL: \(flexProblems.count) flex solver difference(s)")
         for p in flexProblems { print("  " + p) }

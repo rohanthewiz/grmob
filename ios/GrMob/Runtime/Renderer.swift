@@ -547,6 +547,15 @@ private struct FlexChildren: View {
                 .layoutValue(key: GrMobFlexShrink.self,
                              value: child.style?.shrinkFactor ?? 1)
                 .layoutValue(key: GrMobFlexHugs.self, value: hugs)
+                // The CSS `min-width: auto` floor, measured off the node
+                // because no view on this host will report it. Rows only:
+                // a text's min-content HEIGHT is a function of the width it
+                // wraps at, which a tree walk does not know. See
+                // GrMobMinContent for that and for every other case it
+                // deliberately floors at zero.
+                .layoutValue(key: GrMobFlexMin.self,
+                             value: axis == .horizontal
+                                 ? GrMobMinContent.width(of: child) : 0)
         }
     }
 
@@ -588,6 +597,25 @@ private struct GrMobFlexShrink: LayoutValueKey {
 /// has to make when it proposes the cross size.
 private struct GrMobFlexHugs: LayoutValueKey {
     static let defaultValue = false
+}
+
+/// This child's automatic minimum size along the container's main axis — CSS
+/// `min-width: auto`, in points, carried the same way as the weight.
+///
+/// A number rather than a flag, because the layout cannot obtain it: SwiftUI's
+/// documented way to ask a subview for its minimum is a zero proposal, and a
+/// `Text` answers a zero proposal with zero (see GrMobMinContent for the
+/// measurement that established it). So the value is computed from the NODE,
+/// on the one side of the wall that still knows what the string is, and handed
+/// across with the weight and the shrink factor.
+///
+/// The default is 0 — no floor, and the behaviour every Row here had before
+/// this existed. That is the opposite choice from GrMobFlexShrink's CSS-initial
+/// default, and deliberately: an unset shrink factor has one right answer,
+/// while an unset floor would be a guess at a measurement, and a guessed floor
+/// that is too high overflows a line a browser would have fitted.
+private struct GrMobFlexMin: LayoutValueKey {
+    static let defaultValue: CGFloat = 0
 }
 
 /// The flex containers' layout: a SwiftUI `Layout` running the CSS algorithm.
@@ -658,8 +686,16 @@ private struct GrMobFlexLayout: Layout {
         let weights = subviews.map { $0[GrMobFlexWeight.self] }
         let offered = mainOf(proposal)
         let main = solver.containerMain(offered: offered, bases: bases, weights: weights)
-        let resolved = solver.resolve(main: main, bases: bases, weights: weights,
-                                      shrinks: subviews.map { $0[GrMobFlexShrink.self] })
+        // The container's own size is unchanged by the floor, and that is the
+        // CSS shape: a flex container that cannot fit its children OVERFLOWS
+        // them — it does not report itself bigger and take the room from its
+        // parent. Nesting still composes, because GrMobMinContent sums a
+        // nested Row's children itself, so the outer Row is told what the
+        // inner one cannot give up before it decides anything.
+        let resolved = solver.resolve(
+            main: main, bases: bases, weights: weights,
+            shrinks: subviews.map { $0[GrMobFlexShrink.self] },
+            mins: minMains(subviews, bases: bases))
 
         // Cross size is re-measured at each child's *final* main size: a Text
         // that had to shrink wraps to more lines, and asking it before the
@@ -678,8 +714,10 @@ private struct GrMobFlexLayout: Layout {
         let containerCross = crossOf(bounds.size)
         let bases = baseMains(subviews, crossBound: containerCross)
         let weights = subviews.map { $0[GrMobFlexWeight.self] }
-        let resolved = solver.resolve(main: mainOf(bounds.size), bases: bases, weights: weights,
-                                      shrinks: subviews.map { $0[GrMobFlexShrink.self] })
+        let resolved = solver.resolve(
+            main: mainOf(bounds.size), bases: bases, weights: weights,
+            shrinks: subviews.map { $0[GrMobFlexShrink.self] },
+            mins: minMains(subviews, bases: bases))
         // The same read FlexChildren makes, and it has to be the same one:
         // an unset value stretches on the vertical axis (the CSS default the
         // DOM targets have always drawn) and packs on the horizontal one.
@@ -735,6 +773,23 @@ private struct GrMobFlexLayout: Layout {
     /// ```
     private func baseMains(_ subviews: Subviews, crossBound: CGFloat?) -> [CGFloat] {
         subviews.map { mainOf($0.sizeThatFits(proposed(main: nil, cross: crossBound))) }
+    }
+
+    /// Each child's automatic minimum size along the main axis — the floor
+    /// the shrink arm may not push it below (CSS `min-width: auto`).
+    ///
+    /// Read off the layout value its parent computed rather than measured
+    /// here: the first attempt at this probed each subview with a zero main
+    /// proposal, which is SwiftUI's documented way of asking for a minimum,
+    /// and a `Text` answered 0.0 — it accepts any width and wraps to fit, so
+    /// there is no minimum in the view layer to read. GrMobMinContent computes
+    /// it from the node instead.
+    ///
+    /// The clamp to `base` is belt and braces: a floor above the ideal size is
+    /// not a shape GrMobMinContent produces, and the solver clamps again for
+    /// the same reason.
+    private func minMains(_ subviews: Subviews, bases: [CGFloat]) -> [CGFloat] {
+        subviews.enumerated().map { i, subview in min(subview[GrMobFlexMin.self], bases[i]) }
     }
 
     // -- axis-agnostic helpers ---------------------------------------------
@@ -1284,20 +1339,12 @@ extension View {
 
 /// Go's Weight constants are the CSS numeric scale (200/400/700...); map the
 /// hundreds onto SwiftUI's named weights.
-private func grMobFontWeight(_ w: Int) -> Font.Weight {
-    switch w {
-    case ..<1: .regular
-    case ..<200: .ultraLight
-    case ..<300: .thin
-    case ..<400: .light
-    case ..<500: .regular
-    case ..<600: .medium
-    case ..<700: .semibold
-    case ..<800: .bold
-    case ..<900: .heavy
-    default: .black
-    }
-}
+///
+/// The ladder itself is grMobFontWeightPair, in GrMobMinContent.swift, which
+/// answers in two vocabularies at once — this one and the number CoreText
+/// wants — so that the face the min-content floor is measured at is the face
+/// that gets drawn. See that function for why it lives on that side.
+private func grMobFontWeight(_ w: Int) -> Font.Weight { grMobFontWeightPair(w).0 }
 
 /// core.TextAlignments -> SwiftUI's TextAlignment.
 ///

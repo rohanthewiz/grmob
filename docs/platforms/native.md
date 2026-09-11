@@ -397,6 +397,39 @@ along with it: `justify-content` is exact rather than emulated with hidden
 the stack keeps SwiftUI's hug-unless-something-claims-the-space behavior, so
 layouts that predate it render unchanged.
 
+### The min-content floor, and where each target's comes from
+
+CSS gives every flex item `min-width: auto`, so an overflowing row **overflows**
+rather than grinding its children down to nothing. The three targets arrive at
+that from three different directions, and only one of them had to be built:
+
+| target | where the floor comes from |
+|---|---|
+| HTML / WASM | the browser's own `min-width: auto`. Nothing to do. |
+| Android | Compose's `Row` has no proportional shrink *at all* — an unweighted child is offered whatever the ones before it left, and measures itself within that — so there is no shrink arm for a floor to bound. The same fact is why the fixture in `internal/pinfixture` diverges from CSS on the *siblings*. |
+| iOS | built. `GrMobFlexSolver` really does share the deficit out, so without a floor it is the one renderer that can assign a child less than its content needs — and did: the tutorial's lesson numbers rendered as `4 / . / 1 / 2` down the side of each row on the first simulator run of that app. |
+
+The iOS floor is `GrMobMinContent`, and the shape of it is worth knowing because
+it is not where you would look for it. The floor is **computed from the node
+tree, not measured from the view.** SwiftUI documents `ProposedViewSize.zero`
+as the way to ask a subview for its minimum; a `Text` answers it with `0.0`,
+because a Text accepts any width it is offered and wraps to fit. So there is no
+minimum in the view layer to read, and the measurement is taken from the string
+and the style instead — the widest unbreakable run, with CoreText, which is why
+`ios/verify` can check it without a simulator.
+
+`GrMobFlexSolver.resolve` then runs CSS's own resolution loop rather than one
+division, because a child that stops at its floor is no longer absorbing its
+share of the deficit and the rest have to take what it refused.
+
+Every unknown in that computation resolves **downwards** — a floor that is too
+low leaves a child exactly as crushable as it was before, while one that is too
+high overflows a line a browser would have fitted. So a child with a declared
+width floors at 0 (CSS's automatic minimum is the *smaller* of the declared size
+and the content size, and this host cannot see the content behind the frame a
+declaration becomes), and every leaf that is not text floors at 0 as well.
+`GrMobMinContent`'s own doc carries the full table.
+
 ### `AlignItems: "stretch"`
 
 A stretched child is *sized* to the container's cross axis, not *placed*

@@ -29,32 +29,38 @@ import CoreGraphics
 /// states, and a child with a factor of 0 keeps its base size while the others
 /// absorb the whole deficit.
 ///
-/// # The part of the shrink arm that is missing, found on a simulator
+/// # The min-content floor, and the one case where it is not the whole rule
 ///
-/// CSS does not let the rule above run unbounded: every flex item carries
-/// `min-width: auto` by default, which floors it at its own min-content size.
-/// An overflowing row therefore overflows on the web — it does not grind its
-/// children down to nothing. This solver has no such floor, and the difference
-/// is visible on the first screen of the tutorial.
-///
-/// The lesson list is a components.ListRow per lesson: a Row with a
-/// FlexGrow(1) centre column and a bare `core.Text("4.12")` beside it. The
-/// two-line titles overflow a phone's width, so the deficit is shared out, and
-/// with no min-content floor the number is compressed to one glyph and wraps
+/// CSS does not let the shrink rule above run unbounded: every flex item
+/// carries `min-width: auto`, which floors it at its own AUTOMATIC MINIMUM
+/// SIZE. An overflowing row therefore overflows on the web — it does not grind
+/// its children down to nothing. This solver had no such floor, and the
+/// difference was visible on the first screen of the tutorial: a
+/// components.ListRow is a Row with a FlexGrow(1) centre column and a bare
+/// `core.Text("4.12")` beside it, the two-line titles overflow a phone's
+/// width, and with no floor the number was compressed to one glyph and wrapped
 /// down the side of the row as 4 / . / 1 / 2. The same tree on Android and in
-/// the browser prints "4.12".
+/// the browser printed "4.12".
 ///
-/// Fixing it properly means the solver clamping each child at its min-content
-/// size, which it cannot do from `bases` alone — those are ideal sizes.
-/// GrMobFlexLayout can get the minima (`subview.sizeThatFits(.zero)`) and pass
-/// them in, so the shape of the change is clear; what it is not is small, since
-/// every Row on this host lays out through here and ios/verify's fixtures,
-/// internal/pinfixture and wasm/verify all encode the current model. It is
-/// recorded as its own piece of work rather than done in passing.
+/// `resolve` takes the floors as `mins` and runs CSS's own resolution loop
+/// rather than one pass of arithmetic, because a floor changes the divisor:
+/// a child that stops at its minimum is no longer absorbing its share, and
+/// what it did not absorb has to go somewhere. A caller with no floors to give
+/// passes nil and gets exactly what it always got.
 ///
-/// The portable declaration in the meantime is `core.FlexShrink(0)` on a child
-/// whose size really is not negotiable — which is what a row number is, on
-/// every host, and what examples/tutorial's lessonRow now says.
+/// The floors themselves are not this file's to compute, and they turned out
+/// not to be the view layer's either. SwiftUI documents `ProposedViewSize.zero`
+/// as the way to ask a subview for its minimum, and a `Text` answers it with
+/// 0.0 — it accepts any width and wraps to fit, so there is nothing in the
+/// view to read. GrMobMinContent computes them from the NODE instead, where
+/// the string still is, and GrMobFlexLayout hands them across as a layout
+/// value. That file carries what CSS asks for and every place this host
+/// deliberately answers lower than a browser would.
+///
+/// `core.FlexShrink(0)` is still the stronger declaration and still worth
+/// writing where it is true: the floor says "no smaller than the content",
+/// the pin says "no smaller than the ideal size", and a row number is the
+/// second on every host — which is why examples/tutorial's lessonRow keeps it.
 struct GrMobFlexSolver {
     let spacing: CGFloat
     let justify: String
@@ -121,15 +127,43 @@ struct GrMobFlexSolver {
         ["center", "flex-end", "space-between", "space-around", "space-evenly"].contains(justify)
     }
 
-    /// `shrinks` is one flex-shrink factor per child; nil means the CSS
-    /// default of 1 for every one of them.
+    /// The smallest main size each child may be given, in child order.
     ///
-    /// Defaulted rather than required because most callers have no per-child
-    /// factor to give and "all 1" is what every one of them meant before the
-    /// parameter existed — a required argument would have turned a behaviour
-    /// that did not change into a diff at every call site.
+    /// Two rules, and the first outranks the second: a child that cannot
+    /// shrink at all (`core.FlexShrink(0)`) is floored at its base size, and
+    /// every other child at the `mins` entry it was given, clamped into
+    /// `0...base` — a floor above the base would mean the child grows under
+    /// overflow, which no reading of CSS produces and which would make the
+    /// resolution loop below run away from its own target.
+    ///
+    /// Named rather than inlined into the shrink loop because it is the whole
+    /// of what "the floor" means here — two rules and their order — and a
+    /// reader asking why a child stopped where it did should find one function
+    /// to read rather than a clause inside a loop.
+    private func floors(bases: [CGFloat], shrinks: [CGFloat]?, mins: [CGFloat]?) -> [CGFloat] {
+        (0..<bases.count).map { i in
+            if at(shrinks, i, 1) == 0 { return bases[i] }
+            return min(max(at(mins, i, 0), 0), bases[i])
+        }
+    }
+
+    /// One entry of a per-child array that the caller may not have given.
+    private func at(_ xs: [CGFloat]?, _ i: Int, _ fallback: CGFloat) -> CGFloat {
+        guard let xs, i < xs.count else { return fallback }
+        return xs[i]
+    }
+
+    /// `shrinks` is one flex-shrink factor per child; nil means the CSS
+    /// default of 1 for every one of them. `mins` is one automatic minimum
+    /// size per child; nil means no floor at all, which is what every caller
+    /// that cannot measure a view has to say.
+    ///
+    /// Both are defaulted rather than required because most callers have no
+    /// per-child value to give and the defaults are what every one of them
+    /// meant before the parameters existed — a required argument would have
+    /// turned a behaviour that did not change into a diff at every call site.
     func resolve(main: CGFloat, bases: [CGFloat], weights: [CGFloat],
-                 shrinks: [CGFloat]? = nil) -> Resolved {
+                 shrinks: [CGFloat]? = nil, mins: [CGFloat]? = nil) -> Resolved {
         let n = bases.count
         guard n > 0 else { return Resolved(mains: [], leading: 0, gap: 0) }
 
@@ -144,32 +178,87 @@ struct GrMobFlexSolver {
             return Resolved(mains: mains, leading: 0, gap: 0)
         }
         if free < 0 {
-            // Overflow: shrink in proportion to the child's base size SCALED BY
-            // its shrink factor, which is what CSS states. With every factor at
-            // 1 — the default, and what a nil `shrinks` means — the factors
-            // cancel and this is the plain proportional-to-base rule it used to
-            // be, which is why no existing case moves.
-            //
-            // A run whose scaled bases are all zero cannot shrink: either every
-            // child has a zero factor (they all keep their size and the
-            // container overflows, which is the instruction) or every base is
-            // zero (there is nothing to take). The guard covers both and also
-            // avoids dividing by zero.
-            let factors = shrinks ?? Array(repeating: 1, count: n)
-            let scaled = (0..<n).map { bases[$0] * (factors.count > $0 ? factors[$0] : 1) }
-            let totalScaled = scaled.reduce(0, +)
-            if totalScaled > 0 {
-                for i in 0..<n {
-                    mains[i] = max(0, bases[i] + free * scaled[i] / totalScaled)
-                }
-            }
-            return Resolved(mains: mains, leading: 0, gap: 0)
+            return Resolved(mains: shrink(main: main, bases: bases,
+                                          shrinks: shrinks, mins: mins),
+                            leading: 0, gap: 0)
         }
 
         // Nothing grew: the leftover becomes position, per justify-content.
         return Resolved(mains: mains,
                         leading: leading(free: free, count: n),
                         gap: gap(free: free, count: n))
+    }
+
+    /// CSS 9.7 "Resolving Flexible Lengths", shrink half, with the min
+    /// violations the spec's step 4 calls for.
+    ///
+    /// The deficit is shared out in proportion to each child's base size
+    /// SCALED BY its shrink factor, which is what CSS states. With every
+    /// factor at 1 — the default, and what a nil `shrinks` means — the factors
+    /// cancel and this is the plain proportional-to-base rule it has always
+    /// been.
+    ///
+    /// What makes it a loop rather than one division is the floor. A child
+    /// clamped at its minimum stops absorbing its share, and the share it did
+    /// not absorb is still owed by the line, so the remaining children have to
+    /// take it — which can push another one onto its own floor, and so on:
+    ///
+    /// ```
+    ///   freeze every child that cannot shrink (factor 0, or a zero base)
+    ///   repeat:
+    ///     deficit  = main - gaps - sum(frozen sizes) - sum(unfrozen bases)
+    ///     share it over the unfrozen, in proportion to their scaled bases
+    ///     clamp each to its floor
+    ///     if nothing was clamped -> done
+    ///     freeze the ones that were, at their floor, and go round again
+    /// ```
+    ///
+    /// Every pass freezes at least one child or exits, so it runs at most n
+    /// times. There is no max-size half of the loop because nothing in this
+    /// framework states a flex maximum — a `Width` is a base size here, not a
+    /// `max-width` — so a violation is always in one direction and the spec's
+    /// total-violation sign test collapses to "was anything clamped".
+    private func shrink(main: CGFloat, bases: [CGFloat],
+                        shrinks: [CGFloat]?, mins: [CGFloat]?) -> [CGFloat] {
+        let n = bases.count
+        let gaps = spacing * CGFloat(max(n - 1, 0))
+        let floor = floors(bases: bases, shrinks: shrinks, mins: mins)
+        let scaled = (0..<n).map { bases[$0] * at(shrinks, $0, 1) }
+
+        var sizes = bases
+        // A child with a zero scaled base has nothing to give — either it is
+        // pinned (it keeps its size and the container overflows, which is the
+        // instruction) or its base is already zero. Freezing both here is also
+        // what keeps the division below from dividing by zero.
+        var frozen = (0..<n).map { scaled[$0] <= 0 }
+        for i in 0..<n where frozen[i] { sizes[i] = bases[i] }
+
+        while true {
+            let thawed = (0..<n).filter { !frozen[$0] }
+            if thawed.isEmpty { break }
+
+            let used = (0..<n).reduce(gaps) { $0 + (frozen[$1] ? sizes[$1] : bases[$1]) }
+            let deficit = main - used
+            let totalScaled = thawed.reduce(0) { $0 + scaled[$1] }
+            for i in thawed {
+                // A deficit that has turned positive means the frozen children
+                // gave back more than the line needed. Nothing grows in the
+                // shrink arm — the thawed children simply keep their bases and
+                // the line ends up with space to spare, which is overflow's
+                // mirror image and just as much what was asked for.
+                sizes[i] = deficit < 0 ? bases[i] + deficit * scaled[i] / totalScaled
+                                       : bases[i]
+            }
+
+            var clamped = false
+            for i in thawed where sizes[i] < floor[i] {
+                sizes[i] = floor[i]
+                frozen[i] = true
+                clamped = true
+            }
+            if !clamped { break }
+        }
+        return sizes
     }
 
     /// The offset of the first child from the leading edge.

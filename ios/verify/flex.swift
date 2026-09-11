@@ -118,6 +118,68 @@ func checkFlexSolver() -> [String] {
         problems.append("shrink produced a negative size: \(crushed)")
     }
 
+    // --- the min-content floor --------------------------------------------
+    //
+    // CSS floors every flex item at its automatic minimum size, so an
+    // overflowing line overflows rather than grinding its children away. The
+    // bug this closes: the tutorial's lesson number, a bare Text beside a
+    // grow column, was compressed to one glyph and wrapped down the side of
+    // the row as 4 / . / 1 / 2.
+    //
+    // 300 of content into 200 with the first child floored at 90: the plain
+    // rule would give it 66.67, so it clamps, keeps 90, and the deficit it
+    // did not absorb lands on the only other child — 200 - 90 = 110.
+    check("a floored child keeps its minimum and the rest absorb the difference",
+          plain.resolve(main: 200, bases: [100, 200], weights: [0, 0],
+                        mins: [90, 0]).mains,
+          [90, 110], into: &problems)
+
+    // A floor the plain rule already clears changes nothing, which is what
+    // makes the floor safe to apply everywhere: 66.67 is above 50.
+    check("a floor below the shrunk size is not reached",
+          plain.resolve(main: 200, bases: [100, 200], weights: [0, 0],
+                        mins: [50, 0]).mains,
+          plain.resolve(main: 200, bases: [100, 200], weights: [0, 0]).mains,
+          into: &problems)
+
+    // The pass above is what makes this a loop rather than one division, and
+    // this is the case that shows the loop converging on the exact answer
+    // rather than merely on a bigger one. Two equal children, 30 of deficit:
+    // the plain rule gives them 85 each, the first clamps at its floor of 90,
+    // and the 5 it refused is owed by the second — which can pay it, landing
+    // at 80. The line then adds up to exactly the 170 it was given. A
+    // single-pass implementation gives [90, 85] and overflows by 5 that
+    // nothing accounts for.
+    check("the deficit a floored child refuses lands on the rest",
+          plain.resolve(main: 170, bases: [100, 100], weights: [0, 0],
+                        mins: [90, 0]).mains,
+          [90, 80], into: &problems)
+
+    // Floors that cannot all be met overflow, exactly as CSS does — the line
+    // is 200 wide and the two minima are 240 together. Nothing is crushed to
+    // make the arithmetic come out.
+    check("floors that do not fit overflow",
+          plain.resolve(main: 200, bases: [100, 200], weights: [0, 0],
+                        mins: [100, 140]).mains,
+          [100, 140], into: &problems)
+
+    // A pin outranks a floor: FlexShrink(0) is "no smaller than the ideal
+    // size", which is never below "no smaller than the content".
+    check("a pinned child is floored at its base, not at its min",
+          plain.resolve(main: 200, bases: [100, 200], weights: [0, 0],
+                        shrinks: [0, 1], mins: [10, 0]).mains,
+          [100, 100], into: &problems)
+
+    // Passing no floors has to be exactly what the solver did before they
+    // existed, or every caller that cannot measure a view has quietly
+    // changed — internal/pinfixture's CSS column is the one that matters, and
+    // it is a column a real browser has been watched producing.
+    check("all-zero mins are the same as none",
+          plain.resolve(main: 200, bases: [100, 200], weights: [0, 0],
+                        mins: [0, 0]).mains,
+          plain.resolve(main: 200, bases: [100, 200], weights: [0, 0]).mains,
+          into: &problems)
+
     // --- justify-content --------------------------------------------------
     //
     // Distribution is position, not size: the children keep their bases and

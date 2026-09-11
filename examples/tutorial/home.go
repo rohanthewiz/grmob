@@ -110,7 +110,8 @@ func (t *tutorial) lessonRow(ctx *core.Context, e lessonEntry) core.View {
 				// row: a chevron compressed below one glyph is a chevron
 				// sliced down the middle. One character is exactly the case
 				// where "shrink by a proportion of your base" has nothing
-				// left to give.
+				// left to give — and also the case the min-content floor now
+				// covers, since a single glyph has no break opportunity in it.
 				core.FlexShrink(0),
 			).Render(ctx)
 		})
@@ -129,16 +130,18 @@ func (t *tutorial) lessonRow(ctx *core.Context, e lessonEntry) core.View {
 				// the children that can shrink. On the web and on Compose this
 				// number survives anyway, because CSS gives every flex item
 				// `min-width: auto` and will not compress one below its
-				// min-content width. The iOS solver has no such floor, so
+				// min-content width. The iOS solver had no such floor, so
 				// "4.12" was compressed to the width of one glyph and wrapped
 				// down the side of the row as 4 / . / 1 / 2.
 				//
-				// FlexShrink(0) says the thing that is true of a row number on
-				// every host — it is four characters wide and that is not
-				// negotiable — rather than relying on a default two hosts have
-				// and one does not. The underlying divergence is recorded for
-				// the renderer to fix; this is not a workaround for it so much
-				// as the declaration that should always have been here.
+				// That floor exists on iOS now (GrMobMinContent), and a run
+				// with the two declarations below removed renders the numbers
+				// whole — so this is no longer load-bearing for the symptom.
+				// It stays because it says something stronger and true on
+				// every host: a row number is four characters wide and that is
+				// not negotiable, where the floor only promises "no narrower
+				// than the content", which for wrappable text is less. The
+				// declaration should always have been here.
 				core.FlexShrink(0),
 			).Render(ctx)
 		}),

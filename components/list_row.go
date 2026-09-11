@@ -95,18 +95,24 @@ import "github.com/rohanthewiz/grmob/core"
 // row to match, and a row that is asked for neither is exactly the unroled Box
 // it has always been.
 type ListRow struct {
-	// Leading whose width is text wants core.FlexShrink(0) on it, and this is
+	// Leading whose width is text is worth core.FlexShrink(0), and this is
 	// the one trap in the slot.
 	//
 	// The centre column claims the row's slack, so when the row's content
 	// overflows — a long title on a phone — the deficit is shared out among
 	// the children that can shrink, and a bare core.Text is the most
-	// compressible thing in the row. On the web and on Compose it survives
-	// anyway, because CSS floors every flex item at its own min-content width;
-	// the iOS solver has no such floor, so the text is ground down to a glyph
-	// and wraps. A simulator run of examples/tutorial found it doing exactly
-	// that to the lesson numbers. See GrMobFlex.swift for the divergence and
-	// what fixing it properly costs.
+	// compressible thing in the row. Every host floors that share at the
+	// text's min-content width, so a word is never ground down to a glyph:
+	// the web and Compose always did, and iOS does since GrMobMinContent,
+	// which a simulator run of examples/tutorial forced after it rendered the
+	// lesson numbers as 4 / . / 1 / 2.
+	//
+	// What the floor does NOT promise is that the text stays on one line. A
+	// row number has no break opportunity in it, so its min-content is the
+	// whole of it; a two-word label's is its longer word, and a row tight
+	// enough will wrap it. FlexShrink(0) is the declaration that says the
+	// slot's width is not negotiable at all, and a leading slot whose width
+	// is meant to be read at a glance wants it on every host.
 	//
 	// A fixed-size control — a Checkbox, an icon with a Width — is unaffected,
 	// which is why this is a note on the field rather than a wrapper around it:

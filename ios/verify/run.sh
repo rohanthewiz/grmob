@@ -32,6 +32,7 @@ go run . > "$out/transcript.json"
 swiftc -o "$out/harness" -target arm64-apple-macos14.0 \
   main.swift \
   flex.swift \
+  mincontent.swift \
   stack.swift \
   band.swift \
   pin.swift \
@@ -42,6 +43,7 @@ swiftc -o "$out/harness" -target arm64-apple-macos14.0 \
   ../GrMob/Runtime/GrMobNode.swift \
   ../GrMob/Runtime/GrMobStyle.swift \
   ../GrMob/Runtime/GrMobFlex.swift \
+  ../GrMob/Runtime/GrMobMinContent.swift \
   ../GrMob/Runtime/TreeStore.swift
 
 "$out/harness" "$out/transcript.json"
