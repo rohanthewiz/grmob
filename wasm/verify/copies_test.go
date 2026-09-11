@@ -271,31 +271,49 @@ func checkTimingsRecordCopies(t *testing.T, root, from string, filesSeen int,
 			"check is over nothing.", filesSeen, from)
 	}
 
-	// The arm beside each record. A record with no reporting test is a struct
-	// nothing reads: the numbers are attributed in the source and nothing puts
-	// the attribution in front of the person holding a different reading.
+	// The shape of each record's literal, which is the one question here that
+	// is about a RECORD. Read here rather than in the walk so that every
+	// reading of a record is in one place — and so that a record declared with
+	// no value is a record this says nothing about, which is what the
+	// `var x T` case is.
 	seen := map[string]bool{}
+	byDir := map[string][]timingsRecord{}
 	for _, r := range records {
 		dir := path.Dir(r.rel)
 		seen[dir] = true
-		// The shape of the literal itself. Read here rather than in the walk
-		// so that every reading of a record is in one place — and so that a
-		// record declared with no value is a record this says nothing about,
-		// which is what the `var x T` case is.
+		byDir[dir] = append(byDir[dir], r)
 		if r.val != nil {
 			checkRecordShape(t, r.rel, r.line, r.name, r.val)
 		}
+	}
+
+	// # Everything else here is about a PACKAGE, and is counted per package
+	//
+	// The arm and the note are declarations of a directory, not of a record:
+	// `arms` and `notes` are keyed by directory, and a second record in the
+	// same package does not need a second arm. Asking these once per record
+	// meant a package with two records reported each missing thing twice —
+	// two findings, one fact, and one edit that answers both — which is the
+	// wall this repository writes one-per-row rules against everywhere else.
+	//
+	// Nothing forbids a second record in one package below
+	// timingsRecordCopies, so this is a shape that is reachable rather than a
+	// hypothetical. The finding names every record in the directory, because
+	// what a reader wants is which numbers are unattributed, and that is all
+	// of them.
+	for _, dir := range keysOf(seen) {
+		here := recordList(byDir[dir])
 		if !arms[dir] {
-			t.Errorf("%s:%d declares %s and %s declares no `func %s`.\n\n"+
+			t.Errorf("%s declares %s and no `func %s`.\n\n"+
 				"A timings record with no reporting arm beside it is a struct "+
 				"nothing reads. The record is how a number in a comment is "+
 				"attributed; the arm is what puts that attribution in front of "+
 				"the person holding a reading that disagrees with it, which is "+
 				"the only moment either one is worth anything.",
-				r.rel, r.line, r.name, dir, timingsArm)
+				dir, here, timingsArm)
 		}
 		if !notes[dir] {
-			t.Errorf("%s:%d declares %s and %s declares no `%s`.\n\n"+
+			t.Errorf("%s declares %s and no `%s`.\n\n"+
 				"`cores` is the one machine field that changes a recorded "+
 				"number by a term a reader can NAME, and the arm above reports "+
 				"it as `8 cores against 4` — which says that the two "+
@@ -311,31 +329,20 @@ func checkTimingsRecordCopies(t *testing.T, root, from string, filesSeen int,
 				"and one gap. Declare a `%s` saying which of this package's "+
 				"terms scale and by how much — or that none of them do, and "+
 				"why — and print it from %s when the two counts differ.",
-				r.rel, r.line, r.name, dir, timingsCoresNote,
-				timingsCoresNote, timingsArm)
-		}
-	}
-
-	// And what each of those notes actually claims, against what its package
-	// does. `seen` is the set of directories that hold a record, which is the
-	// set the notes are about.
-	//
-	// The walk reaching each note's CONTENT, which is a different question
-	// from the record check above and was silent until it was asked. That
-	// check holds each package to declaring a `coresAttribution`; this holds
-	// the declaration to being something the two checks below can read.
-	//
-	// A note assembled by a function, or built from anything stringLiteralValue
-	// does not evaluate, is declared and unreadable — it passes the record
-	// check, comes back as "", and both directions then skip it in silence.
-	// That is a note claiming an attribution with nothing whatever holding it,
-	// which is the state the note itself was in two sessions ago.
-	for _, dir := range keysOf(seen) {
-		if !notes[dir] {
-			// No note at all, which the record check above has already said
-			// once per record. Saying it again here is the wall.
+				dir, here, timingsCoresNote, timingsCoresNote, timingsArm)
 			continue
 		}
+		// And the note being something the two checks below can READ. That
+		// check holds each package to declaring a `coresAttribution`; this
+		// holds the declaration to being evaluable without running the
+		// package.
+		//
+		// A note assembled by a function, or built from anything
+		// stringLiteralValue does not evaluate, is declared and unreadable —
+		// it passes the check above, comes back as "", and both directions
+		// then skip it in silence. That is a note claiming an attribution
+		// with nothing whatever holding it, which is the state the note itself
+		// was in two sessions ago.
 		if noteText[dir].text != "" {
 			continue
 		}
@@ -395,6 +402,20 @@ func checkTimingsRecordCopies(t *testing.T, root, from string, filesSeen int,
 		"and a `%s` in its package: %s. Enumerated by %s.",
 		len(records), len(timingsMachineFields), timingsArm, timingsCoresNote,
 		strings.Join(names, ", "), from)
+}
+
+// recordList is the records one package declares, for a message.
+//
+// Named with their file and line because the finding is about the package and
+// the edit is in a file: a reader told "internal/foo declares no arm" needs to
+// know which numbers are the ones going unattributed.
+func recordList(in []timingsRecord) string {
+	out := make([]string, 0, len(in))
+	for _, r := range in {
+		out = append(out, fmt.Sprintf("%s (%s:%d)", r.name, r.rel, r.line))
+	}
+	sort.Strings(out)
+	return strings.Join(out, ", ")
 }
 
 // timingsRecord is one `…TimingsTakenOn` declaration the walk found.
@@ -827,14 +848,17 @@ func checkCoresNoteNamesNothingThatIsGone(t *testing.T, root string,
 	// Worth doing and worth saying what it bought, because a structural
 	// argument that predicts a saving and delivers a thousandth is a
 	// structural argument somebody should be able to check.
+	// One reader for both passes, so the second does not re-open and re-parse
+	// what the first has already read. See packageSource.
+	src := newPackageSource()
 	has := map[string]map[string]bool{}
 	unresolved := map[string]bool{}
 	for _, dir := range dirs {
 		if len(wanted[dir]) == 0 {
 			continue
 		}
-		has[dir] = identifiersIn(t, filepath.Join(root, filepath.FromSlash(dir)),
-			wanted[dir])
+		has[dir] = identifiersIn(t, src,
+			filepath.Join(root, filepath.FromSlash(dir)), wanted[dir])
 		for _, term := range wanted[dir] {
 			if !has[dir][term] {
 				unresolved[term] = true
@@ -847,7 +871,7 @@ func checkCoresNoteNamesNothingThatIsGone(t *testing.T, root string,
 		// the terms that need it, which is none on a green run.
 		missing := keysOf(unresolved)
 		for _, dir := range dirs {
-			found := identifiersIn(t,
+			found := identifiersIn(t, src,
 				filepath.Join(root, filepath.FromSlash(dir)), missing)
 			if has[dir] == nil {
 				has[dir] = map[string]bool{}
@@ -975,6 +999,61 @@ func termsNamedIn(note string) []string {
 	return out
 }
 
+// packageSource is one or more directories' Go files, read and parsed at most
+// once each however many questions are asked of them.
+//
+// # What it exists for
+//
+// identifiersIn used to take a directory and a term list, read the directory,
+// read every file that might hold a term, parse it, and throw all of it away.
+// The cores-note check asks twice — once for each package's own terms, and
+// again over the other packages for whatever the first pass could not find —
+// so a repository where a note is WRONG did the os.ReadDir, the os.ReadFile
+// and the parser.ParseFile a second time, over files whose trees had been in
+// memory a microsecond earlier.
+//
+// It cost nothing while the second pass did not run, which is every green run,
+// and that is exactly the argument that stops being true at the moment
+// something breaks: the run already failing is the one that pays twice. A
+// census whose cost depends on whether it is about to report is a census
+// nobody measures under the conditions it matters in.
+//
+// # What is cached and what is not
+//
+// The listing, the bytes and the syntax trees, all keyed by path, and each
+// file's parse attempted once. The ANSWER is not cached: a second question
+// about a different term list re-reads the trees it already has, which is an
+// ast.Inspect over a handful of files and is not what was expensive.
+//
+// Errors are reported once per file for the same reason — a file that cannot
+// be opened is one finding about that file, not one per asking.
+type packageSource struct {
+	fset *token.FileSet
+	// dir -> its .go file names, sorted.
+	listed map[string][]string
+	// path -> its bytes, and whether they could be read.
+	raw  map[string][]byte
+	read map[string]bool
+	// path -> its tree, nil for a file that would not parse. Presence in
+	// `parsed` is what says the attempt has been made.
+	trees  map[string]*ast.File
+	parsed map[string]bool
+	// Files already reported as unreadable or unparseable.
+	told map[string]bool
+}
+
+func newPackageSource() *packageSource {
+	return &packageSource{
+		fset:   token.NewFileSet(),
+		listed: map[string][]string{},
+		raw:    map[string][]byte{},
+		read:   map[string]bool{},
+		trees:  map[string]*ast.File{},
+		parsed: map[string]bool{},
+		told:   map[string]bool{},
+	}
+}
+
 // identifiersIn is which of these names appear as an identifier somewhere in
 // the Go source of one directory.
 //
@@ -993,42 +1072,32 @@ func termsNamedIn(note string) []string {
 // packageLevelNames's reason: the answer it would otherwise give is "this name
 // is not here", which is the direction that invents a finding about somebody's
 // note out of a file this could not open.
-func identifiersIn(t *testing.T, dir string, want []string) map[string]bool {
+//
+// # Why this is a function and not a method on packageSource
+//
+// repositoryWalkRow.besides names it as the function this read goes through,
+// and the arm over that field finds a call the way every census in this
+// repository finds one: a BARE identifier, because a `pkg.Fn(…)` is another
+// package's and an `x.Fn(…)` is a method call, and neither is what an
+// unqualified call resolves to. A method here would be a read that arm cannot
+// see — the row would say nothing calls it and be right.
+//
+// That is the watched code being shaped by the watcher, which is worth saying
+// out loud rather than leaving as a puzzle. The cache is still a value with
+// methods; what stays a function is the one thing something else is holding.
+func identifiersIn(t *testing.T, p *packageSource, dir string,
+	want []string) map[string]bool {
+
 	t.Helper()
 	found := map[string]bool{}
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		t.Errorf("reading %s to check what its `%s` names: %v.\n\n"+
-			"Without it, every term that note names reads as one this "+
-			"package no longer has, which would be this arm inventing a "+
-			"finding out of a directory it could not open.", dir,
-			timingsCoresNote, err)
-		return found
-	}
-	names := make([]string, 0, len(entries))
-	for _, e := range entries {
-		if !e.IsDir() && strings.HasSuffix(e.Name(), ".go") {
-			names = append(names, e.Name())
-		}
-	}
-	// Sorted for the reason every walk in this package sorts: findings that
-	// arrive in directory order cannot be diffed against the last run.
-	sort.Strings(names)
-
-	fset := token.NewFileSet()
 	wanted := map[string]bool{}
 	for _, w := range want {
 		wanted[w] = true
 	}
-	for _, name := range names {
+	for _, name := range p.filesIn(t, dir) {
 		full := filepath.Join(dir, name)
-		raw, readErr := os.ReadFile(full)
-		if readErr != nil {
-			t.Errorf("%s could not be read while checking what `%s` names: "+
-				"%v.\n\nA file this cannot open is a file that might use "+
-				"every term in the note, and the answer it would otherwise "+
-				"give is that none of them are here.", full, timingsCoresNote,
-				readErr)
+		raw, ok := p.bytesOf(t, full)
+		if !ok {
 			continue
 		}
 		hit := false
@@ -1041,18 +1110,8 @@ func identifiersIn(t *testing.T, dir string, want []string) map[string]bool {
 		if !hit {
 			continue
 		}
-		file, parseErr := parser.ParseFile(fset, full, raw,
-			parser.SkipObjectResolution)
-		if parseErr != nil {
-			// Only for a file the byte scan kept: this one contains a term
-			// somewhere, and whether that is an identifier or a sentence is
-			// precisely what the parse was going to decide.
-			t.Errorf("%s contains one of the terms `%s` names and go/parser "+
-				"could not read it: %v.\n\nIf the build is failing this is "+
-				"the same failure said twice and the other one is more "+
-				"useful; if the build is green, this file is not what the "+
-				"build compiles, and the term may be in it.", full,
-				timingsCoresNote, parseErr)
+		file := p.treeOf(t, full, raw)
+		if file == nil {
 			continue
 		}
 		ast.Inspect(file, func(n ast.Node) bool {
@@ -1063,6 +1122,86 @@ func identifiersIn(t *testing.T, dir string, want []string) map[string]bool {
 		})
 	}
 	return found
+}
+
+// filesIn is a directory's .go files, sorted, listed once.
+func (p *packageSource) filesIn(t *testing.T, dir string) []string {
+	t.Helper()
+	if names, done := p.listed[dir]; done {
+		return names
+	}
+	p.listed[dir] = nil
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Errorf("reading %s to check what its `%s` names: %v.\n\n"+
+			"Without it, every term that note names reads as one this "+
+			"package no longer has, which would be this arm inventing a "+
+			"finding out of a directory it could not open.", dir,
+			timingsCoresNote, err)
+		return nil
+	}
+	names := make([]string, 0, len(entries))
+	for _, e := range entries {
+		if !e.IsDir() && strings.HasSuffix(e.Name(), ".go") {
+			names = append(names, e.Name())
+		}
+	}
+	// Sorted for the reason every walk in this package sorts: findings that
+	// arrive in directory order cannot be diffed against the last run.
+	sort.Strings(names)
+	p.listed[dir] = names
+	return names
+}
+
+// bytesOf is a file's contents, read once.
+func (p *packageSource) bytesOf(t *testing.T, full string) ([]byte, bool) {
+	t.Helper()
+	if done := p.read[full]; done {
+		raw, ok := p.raw[full]
+		return raw, ok
+	}
+	p.read[full] = true
+	raw, err := os.ReadFile(full)
+	if err != nil {
+		if !p.told[full] {
+			p.told[full] = true
+			t.Errorf("%s could not be read while checking what `%s` names: "+
+				"%v.\n\nA file this cannot open is a file that might use "+
+				"every term in the note, and the answer it would otherwise "+
+				"give is that none of them are here.", full, timingsCoresNote,
+				err)
+		}
+		return nil, false
+	}
+	p.raw[full] = raw
+	return raw, true
+}
+
+// treeOf is a file's syntax tree, parsed once, nil when go/parser refused it.
+func (p *packageSource) treeOf(t *testing.T, full string, raw []byte) *ast.File {
+	t.Helper()
+	if p.parsed[full] {
+		return p.trees[full]
+	}
+	p.parsed[full] = true
+	file, err := parser.ParseFile(p.fset, full, raw, parser.SkipObjectResolution)
+	if err != nil {
+		// Only for a file the byte scan kept: this one contains a term
+		// somewhere, and whether that is an identifier or a sentence is
+		// precisely what the parse was going to decide.
+		if !p.told[full] {
+			p.told[full] = true
+			t.Errorf("%s contains one of the terms `%s` names and go/parser "+
+				"could not read it: %v.\n\nIf the build is failing this is "+
+				"the same failure said twice and the other one is more "+
+				"useful; if the build is green, this file is not what the "+
+				"build compiles, and the term may be in it.", full,
+				timingsCoresNote, err)
+		}
+		return nil
+	}
+	p.trees[full] = file
+	return file
 }
 
 // coreCountSitesIn is every place this file reads the core count, and what

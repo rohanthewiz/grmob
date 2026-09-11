@@ -271,6 +271,20 @@ var verifyTimingsTakenOn = struct {
 // because its term is 88 git processes rather than one Go program's own
 // goroutines. A reader on a four-core machine should expect this package's
 // number and not that one.
+// # How this has to be written, which is a constraint from outside
+//
+// Literals joined by `+`, and nothing else. wasm/verify/copies_test.go reads
+// this note without running the package — stringLiteralValue evaluates a
+// string constant of exactly that shape — and holds what it names to being
+// terms this package still has, in both directions. A note assembled by a
+// function, or built out of other constants, comes back empty and is reported
+// rather than silently exempt, which is a finding about this declaration
+// arriving in another package's test.
+//
+// The terms themselves go in BACKQUOTES. That is what says a word is meant as
+// the name of a declaration rather than as English, and it is the only thing
+// either direction reads — a term named in prose is neither claimed nor
+// checked.
 const coresAttribution = "The four repository-wide walks in this package are " +
 	"single-threaded — go/parser over all 381 files, 0.18s each — and " +
 	"`foldWalk` is a node process. Those do not move with the core count. " +

@@ -75,7 +75,8 @@ import (
 //
 // Reporting both identically was one finding doing the work of two: the first
 // is a cost this arm declines to compute rather than one it cannot, and a row
-// forced to say `runs: 1` beside it is a row that cannot be right. See callsTo
+// forced to say `runs: 1` beside it is a row that cannot be right. See
+// priceCalls
 // for how a site is recognised, and why one would otherwise read exactly like
 // a row that is right.
 //
@@ -207,36 +208,24 @@ func TestTheRepositoryWideWalksInThisPackageAreTheOnesDecidedOn(t *testing.T) {
 		// Two lists and not one: a loop whose length is written in the source
 		// is a site this pass has already PRICED into `calls`, and one whose
 		// length is a run-time fact is a site nothing can price. Only the
-		// second is a finding — see callsTo.
+		// second is a finding — see priceCalls.
 		var looped, priced []string
-		for _, name := range names {
-			if !bytes.Contains(sources[name], []byte(w.fn)) {
-				continue
-			}
-			file := parse(name)
-			if file == nil {
-				continue
-			}
-			for _, d := range file.Decls {
-				fn, ok := d.(*ast.FuncDecl)
-				if !ok || fn.Body == nil || fn.Name.Name == w.fn {
+		_, callers := callSitesOf(w.fn, names, sources, parse)
+		for _, c := range callers {
+			n, sites := priceCalls(fset, c.fn, c.calls, packageInts, boundNames)
+			calls += n
+			for _, site := range sites {
+				where := fmt.Sprintf("%s:%d, in %s (%s)", c.file, site.line,
+					c.fn.Name.Name, strings.Join(site.how, " · "))
+				if site.known {
+					priced = append(priced,
+						fmt.Sprintf("%s ×%d", where, site.times))
 					continue
 				}
-				n, sites := callsTo(fset, fn, w.fn, packageInts, boundNames)
-				calls += n
-				for _, site := range sites {
-					where := fmt.Sprintf("%s:%d, in %s (%s)", name, site.line,
-						fn.Name.Name, strings.Join(site.how, " · "))
-					if site.known {
-						priced = append(priced,
-							fmt.Sprintf("%s ×%d", where, site.times))
-						continue
-					}
-					looped = append(looped, where)
-				}
-				if n > 0 && in == "" {
-					in = fn.Name.Name
-				}
+				looped = append(looped, where)
+			}
+			if n > 0 && in == "" {
+				in = c.fn.Name.Name
 			}
 		}
 		found[i].runs = calls
@@ -286,7 +275,7 @@ func TestTheRepositoryWideWalksInThisPackageAreTheOnesDecidedOn(t *testing.T) {
 		}
 		// A call SITE is not a call. Every row here is priced by counting
 		// sites, which is the same number only while each site is reached
-		// once per run — see callsTo, and the limit this closes one construct
+		// once per run — see priceCalls, and the limit this closes one construct
 		// along from the helper case it was written for.
 		if len(w.looped) > 0 {
 			t.Errorf("%s is called from inside a loop whose length this arm "+
@@ -361,8 +350,12 @@ func TestTheRepositoryWideWalksInThisPackageAreTheOnesDecidedOn(t *testing.T) {
 	// is this function here, and does anything call it.
 	for _, w := range repositoryWalks {
 		for _, b := range w.besides {
-			declared, callers := declaredAndCalledBy(b.through, names, sources,
-				parse)
+			declared, sites := callSitesOf(b.through, names, sources, parse)
+			callers := make([]string, 0, len(sites))
+			for _, c := range sites {
+				callers = append(callers, c.fn.Name.Name)
+			}
+			sort.Strings(callers)
 			if !declared {
 				t.Errorf("%s's row says it reads %s through %s, and nothing "+
 					"in this directory declares a `func %s`.\n\n"+
@@ -389,6 +382,29 @@ func TestTheRepositoryWideWalksInThisPackageAreTheOnesDecidedOn(t *testing.T) {
 					"`through` should name whatever is called directly.",
 					w.fn, b.reads, b.through, b.through)
 				continue
+			}
+			// And the figure beside it being attributed. The NUMBER cannot
+			// be held — a wall clock is a reading of a machine, which is why
+			// this repository keeps records instead of asserting timings —
+			// but which machine it was taken on can, and every other
+			// wall-clock figure in this package's prose says so. A cost with
+			// no record behind it is a number a reader on a different
+			// computer has no way to place, which is the whole thing
+			// verifyTimingsTakenOn exists to end.
+			if !strings.Contains(b.costs, timingsRecordName) {
+				t.Errorf("%s's row prices its read through %s at %q, and that "+
+					"figure does not name %s.\n\n"+
+					"A wall clock is a reading of a machine. This repository "+
+					"does not assert one — that is why the record exists — "+
+					"and the thing it does instead is attribute it, so that a "+
+					"reader holding a different number knows whether they are "+
+					"looking at a regression or at a different computer.\n\n"+
+					"Every other figure in this package's prose says where it "+
+					"was taken. Say it here: the cost is part of the same "+
+					"run, and a number in a field with no machine behind it "+
+					"is the state every timing in this repository was in "+
+					"before the record.",
+					w.fn, b.through, b.costs, timingsRecordName)
 			}
 			t.Logf("%s reads %s through %s, called from %s.", w.fn, b.reads,
 				b.through, strings.Join(callers, ", "))
@@ -503,6 +519,13 @@ const (
 // reach it first.
 const repositoryWalkBudget = 7
 
+// The record every wall-clock figure in this package is attributed to.
+//
+// Named rather than spelled inline because the `besides` arm quotes it in a
+// message and compares against it, and a constant one of those two knows about
+// and the other does not is a check that passes on the wrong string.
+const timingsRecordName = "verifyTimingsTakenOn"
+
 // How many of them may parse every Go file in the tree.
 //
 // Four, and this is the half that costs. The other two walks read bytes and
@@ -609,9 +632,9 @@ var repositoryWalks = []repositoryWalkRow{{
 			"the repository walk because the walk throws its trees away. " +
 			"os.ReadDir per directory, the bytes scanned first, and only the " +
 			"files that hold one of the terms parsed",
-		costs: "0.010s, measured by taking the call out and putting it back " +
-			"over seven takings of sixty runs — 12.19–12.28s against " +
-			"11.57–11.99s",
+		costs: "0.010s where verifyTimingsTakenOn was taken, measured by " +
+			"taking the call out and putting it back over seven takings of " +
+			"sixty runs — 12.19–12.28s against 11.57–11.99s",
 	}},
 	asks: []string{
 		"the `…TimingsTakenOn` records: whether each carries the five " +
@@ -680,7 +703,9 @@ type besidesRow struct {
 	through string
 	// What it reads, for a reader deciding whether it should have been a walk.
 	reads string
-	// What it costs, and how that was measured.
+	// What it costs, and how that was measured. Held to naming the timings
+	// record, which is the only thing a wall-clock figure in this repository
+	// can be held to — see the pass over `besides`.
 	costs string
 }
 
@@ -776,12 +801,12 @@ type loopSite struct {
 	how []string
 }
 
-// callsTo is how many times this body calls a package-level function by name,
-// and the call sites among them that are inside a loop.
+// priceCalls is what these call sites cost: how many times this body actually
+// makes them, and the ones inside a loop whose length no parse can read.
 //
-// Bare identifiers only, for the reason the git-wrapper census gives: a
-// `pkg.Fn(…)` is another package's, and a method call is `x.Fn(…)`, which is
-// not what an unqualified call in this package resolves to.
+// The sites are found by callSitesOf and handed in. Two things ask this file
+// where a function is called and only one of them cares what it costs, so
+// finding is shared and pricing is here.
 //
 // # Why the loops are found as well as the calls
 //
@@ -833,7 +858,7 @@ type loopSite struct {
 // be wrong in: its whole purpose is to stop a walk's price being understated
 // where nobody looks. There is no such site here, and `t.Run` and `defer` —
 // the two ways a closure in a test actually reaches a call — both run it.
-func callsTo(fset *token.FileSet, fn *ast.FuncDecl, name string,
+func priceCalls(fset *token.FileSet, fn *ast.FuncDecl, found []*ast.CallExpr,
 	packageInts func(string) (int, bool),
 	boundNames func(*ast.FuncDecl) map[string]bool) (calls int,
 	sites []loopSite) {
@@ -873,15 +898,11 @@ func callsTo(fset *token.FileSet, fn *ast.FuncDecl, name string,
 		}
 		return true
 	})
-	ast.Inspect(body, func(node ast.Node) bool {
-		call, ok := node.(*ast.CallExpr)
-		if !ok {
-			return true
-		}
-		id, ok := call.Fun.(*ast.Ident)
-		if !ok || id.Name != name {
-			return true
-		}
+	// The sites themselves were found by callSitesOf and are handed in, which
+	// is the whole of the split: finding a bare call to a name is one
+	// question this file asks in two places, and pricing it is a question only
+	// this one asks.
+	for _, call := range found {
 		// Every loop around this call, not the innermost: a site two `range`s
 		// deep runs the product of the two, and a row that quoted only the
 		// inner one would be wrong by the outer one's length.
@@ -901,7 +922,7 @@ func callsTo(fset *token.FileSet, fn *ast.FuncDecl, name string,
 		}
 		if !inside {
 			calls++
-			return true
+			continue
 		}
 		if known {
 			// Priced. The site costs what the loops make it cost, and the row
@@ -917,8 +938,7 @@ func callsTo(fset *token.FileSet, fn *ast.FuncDecl, name string,
 		}
 		sites = append(sites, loopSite{line: fset.Position(call.Pos()).Line,
 			times: times, known: known, how: how})
-		return true
-	})
+	}
 	return calls, sites
 }
 
@@ -1109,31 +1129,56 @@ func intValue(e ast.Expr, bound func(string) (int, bool)) (int, bool) {
 	return bound(id.Name)
 }
 
-// declaredAndCalledBy is whether this package declares a function of that name,
-// and which functions call it.
-//
-// # Why this and not callsTo
-//
-// callsTo prices a call: it reads the loops around each site and multiplies
-// the bounds in, because what it is counting is repository walks and the
-// budget is made of that number. This is asking a smaller question — is the
-// function here, and does anything reach it — for a read the budgets
-// deliberately do not govern. Pricing it would mean deciding what a `besides`
-// row's number means when the read is in a loop, which is a question nothing
-// has yet had to ask.
-//
-// The scan is the one everything in this file uses: the bytes say which files
-// could mention the name, and the memoised parse decides. A file that does not
-// contain the name cannot declare or call it, and this file's own prose — which
-// names every `through` there is — is read and discarded rather than counted.
-//
-// Callers come back sorted and without the declaration itself, which would
-// otherwise report a recursive helper as calling itself and a non-recursive
-// one not at all.
-func declaredAndCalledBy(name string, names []string, sources map[string][]byte,
-	parse func(string) *ast.File) (declared bool, callers []string) {
+// callsIn is every bare call to one name inside one function.
+type callsIn struct {
+	// The file the function is in, for a message.
+	file string
+	fn   *ast.FuncDecl
+	// The call expressions themselves, in source order. Kept rather than
+	// counted, because what a caller does with them differs: the walk census
+	// prices each one against the loops around it, and the `besides` pass only
+	// wants to know that somebody calls the function at all.
+	calls []*ast.CallExpr
+}
 
-	seen := map[string]bool{}
+// callSitesOf is every bare call to this name in this directory, grouped by
+// the function it is in, and whether this directory declares it.
+//
+// # Why the finding and the pricing are separate
+//
+// There used to be two of these — one that counted calls and priced the loops
+// around them, and one that only asked whether a function was declared and
+// reached. Two scans of the same trees looking for the same construct, kept
+// apart by an argument about what the ANSWER means rather than about the walk.
+// That argument is real and it is about priceCalls, which is now the only
+// thing that prices: this finds sites, and each caller decides what a site is
+// worth to it.
+//
+// So the walk census takes these and multiplies the loop bounds in, because
+// what it is counting is repository walks and the budget is made of that
+// number. The `besides` pass takes the same sites and reads off the names,
+// because a read the budgets do not govern needs to be known to happen and not
+// to be priced — and deciding what a `besides` number means when the read is
+// in a loop is a question nothing has yet had to ask.
+//
+// # The scan
+//
+// The one everything in this file uses: the bytes say which files could
+// mention the name, and the memoised parse decides. A file that does not
+// contain the name cannot declare or call it, and this file's own prose —
+// which names every walk and every `through` there is — is read and discarded
+// rather than counted.
+//
+// Bare identifiers only, for the reason the git-wrapper census gives: a
+// `pkg.Fn(…)` is another package's, and a method call is `x.Fn(…)`, which is
+// not what an unqualified call in this package resolves to.
+//
+// The declaration itself is never one of the callers, which would otherwise
+// report a recursive helper as its own caller and a non-recursive one as
+// having none.
+func callSitesOf(name string, names []string, sources map[string][]byte,
+	parse func(string) *ast.File) (declared bool, in []callsIn) {
+
 	for _, file := range names {
 		if !bytes.Contains(sources[file], []byte(name)) {
 			continue
@@ -1151,27 +1196,23 @@ func declaredAndCalledBy(name string, names []string, sources map[string][]byte,
 				declared = true
 				continue
 			}
+			var calls []*ast.CallExpr
 			ast.Inspect(fn.Body, func(n ast.Node) bool {
 				call, ok := n.(*ast.CallExpr)
 				if !ok {
 					return true
 				}
-				// Bare identifiers only, for the reason callsTo gives: a
-				// `pkg.Fn(…)` is another package's and a method call is
-				// `x.Fn(…)`, and neither is what an unqualified call in this
-				// package resolves to.
-				id, ok := call.Fun.(*ast.Ident)
-				if !ok || id.Name != name || seen[fn.Name.Name] {
-					return true
+				if id, ok := call.Fun.(*ast.Ident); ok && id.Name == name {
+					calls = append(calls, call)
 				}
-				seen[fn.Name.Name] = true
-				callers = append(callers, fn.Name.Name)
 				return true
 			})
+			if len(calls) > 0 {
+				in = append(in, callsIn{file: file, fn: fn, calls: calls})
+			}
 		}
 	}
-	sort.Strings(callers)
-	return declared, callers
+	return declared, in
 }
 
 // boundNamesIn is every identifier this function binds: its receiver, its

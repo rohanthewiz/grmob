@@ -93,7 +93,7 @@ var themehistoryTimingsTakenOn = struct {
 	//	8          0.21–0.23s         3.05–3.14s
 	//
 	// The one-core row is the figure this package had BEFORE the pool, which
-	// is what says the pool is the only thing that moved. So `3.01–3.22s`
+	// is what says the pool is the only thing that moved. So `2.92–3.22s`
 	// below is not a number about this code: it is a number about this code on
 	// eight cores, and a single-core CI runner pays about 0.7s more for the
 	// same green run.
@@ -102,8 +102,8 @@ var themehistoryTimingsTakenOn = struct {
 	// # to switch off — and `-short` is the switch
 	//
 	//	              default        -short
-	//	plain         3.01–3.22s     1.20–1.31s
-	//	-race         6.46–6.70s     2.40–2.44s
+	//	plain         2.92–3.22s     1.18–1.31s
+	//	-race         6.46–6.70s     2.39–2.44s
 	//
 	// Seven runs for the plain default, three for the other three, and every
 	// row here holds more than one afternoon's readings. The -race row is six
@@ -147,6 +147,45 @@ var themehistoryTimingsTakenOn = struct {
 	// What the table says about the ARM is unchanged, which is the thing it is
 	// for: about 1.8s of a plain run and about 4.2s of a -race one, the same
 	// as before the machine got a tenth slower.
+	//
+	// # And a third taking, which went back the other way
+	//
+	// An hour later, with nothing in this package changed but a comment, every
+	// row that moved moved DOWN — and by about what the taking before had
+	// moved it up:
+	//
+	//	plain           2.920–3.057s    the taking before: 3.06–3.19s
+	//	plain -short    1.181–1.189s    1.205–1.304s
+	//	-race           6.466–6.609s    6.549–6.697s
+	//	-race -short    2.391–2.436s    2.406–2.422s
+	//
+	// So the afternoon that read a tenth dear was not a machine that had got
+	// slower; it was one end of this machine's own spread across a session,
+	// and an hour of it is worth as much as every code change this package has
+	// seen. Three takings in, the honest width of the plain row is three
+	// tenths on a three-second figure — which is the number a reader holding a
+	// disagreeing reading actually needs, and is bigger than any one taking
+	// would have told them.
+	//
+	// # Sixteen readings and not three, because three was chasing
+	//
+	// The plain row was set from three readings, contradicted by the next run,
+	// set again, and contradicted again. That is a floor being chased rather
+	// than measured: three readings find a range that the fourth leaves, and
+	// the answer is not to take three more. So this row is sixteen —
+	// 2.920–3.057s — and the floor comes from the set rather than from
+	// whichever reading was last.
+	//
+	// The other three rows are three readings apiece and are therefore
+	// NARROWER THAN THE TRUTH, by about what the plain row gained: somewhere
+	// around a twentieth at each end. That is written here rather than fixed,
+	// because fixing it is thirty more runs to learn something this row has
+	// already said — and a reader who lands outside one of those rows by a
+	// few hundredths has been told, here, that the row is not wide enough to
+	// judge them.
+	//
+	// Every row is widened rather than replaced, again, and the whole table is
+	// taken together, again, for the reason the section above gives.
 	//
 	// The arm is around 1.8s of a plain run and around 4.2s of a -race one,
 	// which is the price of the only test here that runs the real program over
@@ -265,7 +304,7 @@ var themehistoryTimingsTakenOn = struct {
 	goarch:    "arm64",
 	goVersion: "go1.26.1",
 	cores:     8,
-	wholePackage: "3.01–3.22s over forty-two runs in two sessions, and " +
+	wholePackage: "2.92–3.22s over fifty-seven runs in three sessions, and " +
 		"3.69–3.82s on a single core",
 	wholeRun: "1.52–1.60s over seven runs, in process, 2906 objects fetched, " +
 		"the expectation enumerated alongside in 0.22s over 8 workers",
@@ -371,6 +410,20 @@ func TestTheTimingsInThisPackageSayWhichMachineTheyCameFrom(t *testing.T) {
 // wasm/verify's is one Go program's own goroutines, and its figure is flat
 // from two cores upwards. A reader on a four-core machine should expect a
 // different fraction of each.
+// # How this has to be written, which is a constraint from outside
+//
+// Literals joined by `+`, and nothing else. wasm/verify/copies_test.go reads
+// this note without running the package — stringLiteralValue evaluates a
+// string constant of exactly that shape — and holds what it names to being
+// terms this package still has, in both directions. A note assembled by a
+// function, or built out of other constants, comes back empty and is reported
+// rather than silently exempt, which is a finding about this declaration
+// arriving in another package's test.
+//
+// The terms themselves go in BACKQUOTES. That is what says a word is meant as
+// the name of a declaration rather than as English, and it is the only thing
+// either direction reads — a term named in prose is neither claimed nor
+// checked.
 const coresAttribution = "The enumeration is the largest single term in the " +
 	"package figure and it is pooled at `min(runtime.NumCPU(), 8)`: 0.22s " +
 	"at eight workers, 0.51s at two, 0.90s at one, with the package total " +
