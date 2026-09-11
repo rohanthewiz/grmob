@@ -27,7 +27,7 @@ import (
 // # About the file counts quoted below, which are readings and ARE held
 //
 // Several sentences here and in timings_test.go price a walk against how many
-// files it touches. That number is a reading of a repository on a day — 386
+// files it touches. That number is a reading of a repository on a day — 387
 // tracked Go files where verifyTimingsTakenOn was taken — and it goes up with
 // every file anybody adds, silently, exactly like the wall clocks beside it.
 //
@@ -187,10 +187,11 @@ func TestTheRepositoryWideWalksInThisPackageAreTheOnesDecidedOn(t *testing.T) {
 				continue
 			}
 			found = append(found, repositoryWalk{
-				fn:    fn.Name.Name,
-				file:  name,
-				line:  fset.Position(fn.Pos()).Line,
-				depth: depth,
+				fn:       fn.Name.Name,
+				file:     name,
+				line:     fset.Position(fn.Pos()).Line,
+				depth:    depth,
+				subtests: subtestSitesIn(fn),
 				// A test runs once. A helper runs as often as it is called,
 				// and the second pass below is what says how often.
 				runs: 1,
@@ -419,6 +420,33 @@ func TestTheRepositoryWideWalksInThisPackageAreTheOnesDecidedOn(t *testing.T) {
 				w.file, w.line, row.runs, row.drivenBy, w.runs, w.drivenBy,
 				looped)
 		}
+		// What the row SAYS it asks, against how many questions the body
+		// actually opens. See subtestSitesIn.
+		if want := w.subtests; want > 0 && len(row.asks) != want {
+			t.Errorf("%s:%d opens %d subtest(s) and its row lists %d "+
+				"question(s): %s.\n\n"+
+				"A question here is a subtest. That is not a coincidence in "+
+				"the arrangement — it is what copies_test.go's header argues "+
+				"for and what the incident behind it was: three questions in "+
+				"one function is three questions any one of which can end the "+
+				"other two, because each ends in a t.Fatalf over a walk that "+
+				"reached nothing, and a Fatalf stops the goroutine it is "+
+				"on.\n\n"+
+				"So `asks` is a count and not a paragraph, and this is what "+
+				"counts it. A row with fewer entries than the body has "+
+				"subtests is a walk that has quietly grown a census nobody "+
+				"reading the table would see; a row with more is a row "+
+				"describing a question that is no longer asked. Both were "+
+				"kept by hand until this arm, and the hand missed within one "+
+				"session of the field being written.\n\n"+
+				"If the subtests are STEPS of one question rather than "+
+				"questions of their own, that is the finding and not a false "+
+				"one: say so in the row by listing what each actually asks, "+
+				"or give the steps one boundary by folding them back into the "+
+				"body.",
+				w.file, w.line, want, len(row.asks),
+				strings.Join(row.asks, "; "))
+		}
 		if row.depth != w.depth {
 			t.Errorf("%s:%d is listed as a walk that %s and it %s.\n\n"+
 				"The depths are not decoration: `%s` is one git process and "+
@@ -469,7 +497,7 @@ func TestTheRepositoryWideWalksInThisPackageAreTheOnesDecidedOn(t *testing.T) {
 			"This is the number that decides, not the total. Each parse is "+
 			"about 0.18s where verifyTimingsTakenOn was taken and none of it "+
 			"is shared: every Go file in the tree goes through go/parser once "+
-			"per arm — 386 tracked Go files where that record was taken — "+
+			"per arm — 387 tracked Go files where that record was taken — "+
 			"and every one of them throws the syntax trees away.\n\n"+
 			"A shared parse is a fixture with a lifetime — built once, "+
 			"invalidated never, read by tests that no longer say what they "+
@@ -666,7 +694,7 @@ const timingsRecordName = "verifyTimingsTakenOn"
 // How many of them may parse every Go file in the tree.
 //
 // Four, and this is the half that costs. The other two walks read bytes and
-// stop; these four hand every Go file in the tree — 386 tracked Go files
+// stop; these four hand every Go file in the tree — 387 tracked Go files
 // where verifyTimingsTakenOn was taken — to go/parser, build the syntax
 // trees, ask one question each and drop them.
 //
@@ -754,11 +782,10 @@ var repositoryWalks = []repositoryWalkRow{{
 			"skips",
 	},
 }, {
-	// Three questions and one parse, because a fifth repository-wide parse is
+	// Four questions and one parse, because a fifth repository-wide parse is
 	// the decision repositoryParseBudget exists to force. Each of them is a
-	// reading of declarations the one walk has already built, and each is a
-	// subtest with its own failure boundary — see the header of
-	// copies_test.go.
+	// reading of what the one walk has already built, and each is a subtest
+	// with its own failure boundary — see the header of copies_test.go.
 	fn:    "TestTheShapesThisRepositoryKeepsTwoCopiesOfAreInStep",
 	file:  "copies_test.go",
 	depth: walkParses,
@@ -782,6 +809,9 @@ var repositoryWalks = []repositoryWalkRow{{
 			"being the same declarations in both packages",
 		"every import path those helpers are asked about, held to being one " +
 			"this module could actually import",
+		"every sentence in the repository quoting how many Go files the tree " +
+			"holds, held to the count this walk's own enumeration just made " +
+			"— the one shape in that file whose second copy is not source",
 	},
 }, {
 	fn:    "TestTheDottedVersionParsersAreTheOnesTheReasonCovers",
@@ -868,6 +898,10 @@ type repositoryWalk struct {
 	// log line can say that a count above one came from a bound in the source
 	// rather than from a second call site.
 	priced []string
+	// How many subtests the body opens at its own level, which is how many
+	// QUESTIONS this walk asks — see the asks check for why those are the
+	// same number, and for the one case where they are not.
+	subtests int
 	// The `var`/`const` declarations whose value calls this walk, as
 	// "name (file)". Empty for every walk in this package today. A call here
 	// is not in `runs`: it is in no function, so there is no caller to
@@ -875,6 +909,107 @@ type repositoryWalk struct {
 	// place a repository walk can hide from this census while still costing a
 	// run. See packageLevelCallsTo.
 	atInit []string
+}
+
+// subtestSitesIn is how many subtests this function opens at its own level.
+//
+// # Why this is the count of a walk's QUESTIONS
+//
+// copies_test.go is the argument, and it is not a stylistic one. Each of its
+// questions ends in a t.Fatalf over a walk that reached nothing — the only
+// honest thing to do about a census that passed because it found nothing to
+// look at — and a Fatalf ends the GOROUTINE. Three questions in one function
+// was three questions any one of which could silence the other two, and it
+// did: a repository where the timings records had been renamed reported that
+// and said nothing at all about whether the import resolver's two copies were
+// still in step.
+//
+// So a question gets a t.Run, and the number of them is a number this census
+// can read instead of one the table keeps by hand. Which it needed: the
+// fourth question was added to that walk and its row still said three, in the
+// same session that wrote the field to be countable.
+//
+// # What is counted, and what is not
+//
+//	t.Run at the body's own level      one question
+//	t.Run inside a function literal    not counted. That is a subtest of a
+//	                                   subtest, and the `t` it is called on is
+//	                                   the inner one whatever it is spelled
+//	t.Run inside a `for`               one SITE and as many subtests as the
+//	                                   loop is long, counted as one — the same
+//	                                   understatement `runs` makes for a walk
+//	                                   in a loop, and for the same reason: the
+//	                                   length is a run-time fact no parse has
+//
+// The receiver has to be the function's own *testing.T, found by its
+// parameter name rather than by assuming it is spelled `t`. A method called
+// `Run` on something else — a fixture, an exec.Cmd — is not a subtest, and
+// counting one would make a row look short by a question that does not exist.
+func subtestSitesIn(fn *ast.FuncDecl) int {
+	name := testingTParamOf(fn)
+	if name == "" || fn.Body == nil {
+		return 0
+	}
+	sites := 0
+	ast.Inspect(fn.Body, func(n ast.Node) bool {
+		// Function literals are where a subtest's own body lives, and a
+		// t.Run in there belongs to that subtest and not to this function.
+		if _, isLit := n.(*ast.FuncLit); isLit {
+			return false
+		}
+		call, ok := n.(*ast.CallExpr)
+		if !ok {
+			return true
+		}
+		sel, ok := call.Fun.(*ast.SelectorExpr)
+		if !ok || sel.Sel.Name != "Run" {
+			return true
+		}
+		if id, ok := sel.X.(*ast.Ident); ok && id.Name == name {
+			sites++
+		}
+		return true
+	})
+	return sites
+}
+
+// testingTParamOf is the name this function calls its *testing.T by, or "" if
+// it takes none.
+//
+// Read off the parameter rather than assumed, for the reason
+// importnames_test.go reads a qualifier off the import: `t` is a convention
+// and not a rule, and a census that only recognises the convention reports a
+// function written the other way as having no subtests at all — which is a
+// row that looks right while counting nothing.
+func testingTParamOf(fn *ast.FuncDecl) string {
+	if fn.Type.Params == nil {
+		return ""
+	}
+	for _, field := range fn.Type.Params.List {
+		star, ok := field.Type.(*ast.StarExpr)
+		if !ok {
+			continue
+		}
+		sel, ok := star.X.(*ast.SelectorExpr)
+		if !ok || sel.Sel.Name != "T" {
+			continue
+		}
+		pkg, ok := sel.X.(*ast.Ident)
+		// The package qualifier is `testing` as this repository imports it —
+		// every file here takes the plain import, and a renamed one would be
+		// a finding importnames_test.go is the right place for rather than
+		// a second resolver in this file.
+		if !ok || pkg.Name != "testing" {
+			continue
+		}
+		if len(field.Names) == 0 {
+			// An unnamed parameter cannot be called, so nothing in the body
+			// can open a subtest on it.
+			return ""
+		}
+		return field.Names[0].Name
+	}
+	return ""
 }
 
 // walkDepth is how far into the repository this body goes, or "" for a body

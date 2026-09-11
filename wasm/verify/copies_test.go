@@ -239,10 +239,16 @@ func TestTheShapesThisRepositoryKeepsTwoCopiesOfAreInStep(t *testing.T) {
 		// figure in the held form contains this word, in a comment or in a
 		// string, whatever else the file says. It matters because the scan
 		// below walks EVERY node of a syntax tree and builds a run of text
-		// out of every comment group and every string constant in it, and 11
-		// of these 386 files contain the word at all. Measured: 0.09s over
-		// all of them, 0.00s with the filter, which is 3% of this package's
-		// wall clock for a question with five answers in it.
+		// out of every comment group and every string constant in it, and
+		// eleven files in the tree contain the word at all. Measured: 0.09s
+		// over all of them and 0.00s with the filter, which is 3% of this
+		// package's wall clock for a question with five answers in it.
+		//
+		// The eleven is deliberately not written as a tracked-Go-file count.
+		// It is a reading like the ones the question below holds, and one
+		// this file's own skip would keep unheld — so it says what it is
+		// worth (almost every file is skipped) rather than a number that
+		// would drift with nothing watching it.
 		if bytes.Contains(raw, []byte("tracked")) {
 			figures = append(figures, fileCountFiguresIn(fset, rel, file)...)
 		}
@@ -1548,11 +1554,14 @@ func figureList(in []proseFigure) string {
 //
 // # Why the collapse is necessary
 //
-//	// … a reading of a repository on a day — 386
+//	// … a reading of a repository on a day — 387
 //	// tracked Go files where verifyTimingsTakenOn was taken — and it …
 //
 // That is one phrase to the person reading it and two to anything matching
 // raw lines, and it is how the first of the five figures is actually written.
+// The number in the quotation is not itself held — this is the file the walk
+// skips — and it is here to show where the line break falls rather than to
+// state a count.
 // Joining the group and matching the join is the only thing that reads it the
 // way a reader does.
 //
