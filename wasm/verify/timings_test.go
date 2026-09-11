@@ -241,13 +241,27 @@ var verifyTimingsTakenOn = struct {
 //	GOMAXPROCS    the whole package
 //	1             3.08–3.27s
 //	2             2.78–2.88s
-//	4             2.74–2.79s
+//	4             2.74–2.86s
 //	8             2.75–2.85s
 //
-// Six runs a row rather than three: the table was re-taken when the copies
-// census grew its two extra readings, and each row is the two takings' ranges
-// held together for the reason the other record's -race row is. The shape did
-// not move — one core is a tenth dearer and two is where it stops improving —
+// Nine runs a row rather than three: the table has been taken three times —
+// when it was first measured, when the copies census grew its two extra
+// readings, and again when the row above it was widened to 2.78–2.93s. Each
+// row holds every taking's range for the reason the other record's -race row
+// does.
+//
+// The third one was the whole table and not the row that had moved, which is
+// the point of it. Widening `wholeFile` and leaving these four would have made
+// a record where the figure at the top was from one afternoon and the table
+// explaining it was from another, with nothing on either saying which — a
+// reader comparing a one-core run against the number above would have been
+// comparing two days. That is the fault this record exists to end, and there
+// is no version of it that is acceptable inside the record itself.
+//
+// Only the four-core row moved, by seven hundredths at the top end. The other
+// three came back inside the ranges they already had, which is the useful
+// half of re-taking a table nothing has changed. The shape did not move —
+// one core is a tenth dearer and two is where it stops improving —
 // which is the part the sentence below is about.
 //
 // Which is a different SHAPE from the other record's, and that is the part

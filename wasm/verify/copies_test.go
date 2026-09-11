@@ -121,9 +121,11 @@ func TestTheShapesThisRepositoryKeepsTwoCopiesOfAreInStep(t *testing.T) {
 	var resolverDecls []importResolverDecl
 	var asks []importPathAsk
 	var coreSites []coreCountSite
-	// dir -> what its cores note actually says, for the completeness check
-	// below. The presence of the note is `notes`; this is its text.
-	noteText := map[string]string{}
+	// dir -> what its cores note says and what it names. The PRESENCE of the
+	// note is `notes`, which is what the record check holds each package to;
+	// this is the note itself, which is what the two checks over its content
+	// read. See coresNote.
+	noteText := map[string]coresNote{}
 	arms := map[string]bool{}
 	// dir -> whether the package says what its core count is worth. Kept
 	// beside the arm because it is the same kind of thing: a property of the
@@ -180,7 +182,11 @@ func TestTheShapesThisRepositoryKeepsTwoCopiesOfAreInStep(t *testing.T) {
 						}
 						notes[dir] = true
 						if i < len(vs.Values) {
-							noteText[dir] = stringLiteralValue(vs.Values[i])
+							text := stringLiteralValue(vs.Values[i])
+							noteText[dir] = coresNote{
+								text:  text,
+								terms: termsNamedIn(text),
+							}
 						}
 					}
 				}
@@ -248,7 +254,7 @@ func TestTheShapesThisRepositoryKeepsTwoCopiesOfAreInStep(t *testing.T) {
 // parses, reads or enumerates anything.
 func checkTimingsRecordCopies(t *testing.T, root, from string, filesSeen int,
 	records []timingsRecord, arms, notes map[string]bool,
-	coreSites []coreCountSite, noteText map[string]string) {
+	coreSites []coreCountSite, noteText map[string]coresNote) {
 
 	t.Helper()
 	// The walk reaching anything. Every arm in this package that walks the
@@ -314,17 +320,48 @@ func checkTimingsRecordCopies(t *testing.T, root, from string, filesSeen int,
 	// does. `seen` is the set of directories that hold a record, which is the
 	// set the notes are about.
 	//
-	// Two directions, because a note can be wrong in two ways: it can fail to
-	// name a term that exists, and it can name one that does not. One reading
-	// of what each note names, shared by both — see termsNamedIn: a term is
-	// what the note spells as code, which is the same rule whichever direction
-	// is asking.
-	noteTerms := map[string][]string{}
-	for dir, note := range noteText {
-		noteTerms[dir] = termsNamedIn(note)
+	// The walk reaching each note's CONTENT, which is a different question
+	// from the record check above and was silent until it was asked. That
+	// check holds each package to declaring a `coresAttribution`; this holds
+	// the declaration to being something the two checks below can read.
+	//
+	// A note assembled by a function, or built from anything stringLiteralValue
+	// does not evaluate, is declared and unreadable — it passes the record
+	// check, comes back as "", and both directions then skip it in silence.
+	// That is a note claiming an attribution with nothing whatever holding it,
+	// which is the state the note itself was in two sessions ago.
+	for _, dir := range keysOf(seen) {
+		if !notes[dir] {
+			// No note at all, which the record check above has already said
+			// once per record. Saying it again here is the wall.
+			continue
+		}
+		if noteText[dir].text != "" {
+			continue
+		}
+		t.Errorf("%s declares a `%s` and this check could not read its "+
+			"text.\n\n"+
+			"Both things held over that note read the note: one asks whether "+
+			"it names every term in this package that scales with the core "+
+			"count, and the other whether everything it names still exists. A "+
+			"note whose text cannot be read is exempt from both, silently, "+
+			"and goes on reading to a person as a measured attribution — "+
+			"which is exactly the state a note with no arm over it was in.\n\n"+
+			"stringLiteralValue reads a string constant written as literals "+
+			"joined by `+`, which is what a sentence that has to fit in a "+
+			"column of source looks like. A note assembled by a function, or "+
+			"built out of other constants, is one this cannot evaluate "+
+			"without running the package. Write it as literals, or teach "+
+			"stringLiteralValue the shape and say what it now costs.",
+			dir, timingsCoresNote)
 	}
-	checkCoresNoteNamesEveryScaledTerm(t, seen, coreSites, noteText, noteTerms)
-	checkCoresNoteNamesNothingThatIsGone(t, root, seen, noteTerms)
+
+	// Two directions, because a note can be wrong in two ways: it can fail to
+	// name a term that exists, and it can name one that does not. Both read
+	// the same coresNote, so there is one answer to "what does this note name"
+	// rather than two parameters that could disagree.
+	checkCoresNoteNamesEveryScaledTerm(t, seen, coreSites, noteText)
+	checkCoresNoteNamesNothingThatIsGone(t, root, seen, noteText)
 
 	names := make([]string, 0, len(records))
 	for _, r := range records {
@@ -526,6 +563,38 @@ func types(e ast.Expr) string {
 	return fmt.Sprintf("%T", e)
 }
 
+// coresNote is one package's standing sentence about what its core count is
+// worth, as the two checks over it need it.
+//
+// # Why one value and not a text map beside a terms map
+//
+// They were two parameters carrying one fact, which is how a caller comes to
+// pass a stale one: the text is what says whether the note could be READ at
+// all, and the terms are what it names, and the terms are derived from the
+// text. Deriving them once, where the text is found, means there is no
+// arrangement in which the two disagree.
+//
+// `text` is "" for a note this could not evaluate — see stringLiteralValue,
+// and the arm in checkTimingsRecordCopies that reports it rather than letting
+// both directions skip in silence.
+type coresNote struct {
+	text string
+	// The identifiers the note spells as code — see termsNamedIn. Empty for a
+	// note that names none, which is a legitimate note for a package with
+	// nothing to name.
+	terms []string
+}
+
+// names is the note's terms as a set, for the membership test the forward
+// check makes once per core-count site.
+func (n coresNote) names() map[string]bool {
+	set := make(map[string]bool, len(n.terms))
+	for _, term := range n.terms {
+		set[term] = true
+	}
+	return set
+}
+
 // coreCountSite is one place a package reads how many cores it is running on.
 type coreCountSite struct {
 	dir, rel string
@@ -577,8 +646,7 @@ type coreCountSite struct {
 // being divided, or a decision made on the core count, and both are things a
 // note about core counts has to have an opinion about.
 func checkCoresNoteNamesEveryScaledTerm(t *testing.T, recordDirs map[string]bool,
-	sites []coreCountSite, notes map[string]string,
-	noteTerms map[string][]string) {
+	sites []coreCountSite, notes map[string]coresNote) {
 
 	t.Helper()
 	// What each note names, as a set. This used to be a strings.Contains over
@@ -588,12 +656,8 @@ func checkCoresNoteNamesEveryScaledTerm(t *testing.T, recordDirs map[string]bool
 	// is now a term because the note spelled it as code — see termsNamedIn —
 	// and the membership is exact.
 	namesAsCode := map[string]map[string]bool{}
-	for dir, terms := range noteTerms {
-		set := make(map[string]bool, len(terms))
-		for _, term := range terms {
-			set[term] = true
-		}
-		namesAsCode[dir] = set
+	for dir, note := range notes {
+		namesAsCode[dir] = note.names()
 	}
 	sort.Slice(sites, func(i, j int) bool {
 		if sites[i].rel != sites[j].rel {
@@ -610,10 +674,12 @@ func checkCoresNoteNamesEveryScaledTerm(t *testing.T, recordDirs map[string]bool
 			continue
 		}
 		note, ok := notes[site.dir]
-		if !ok || note == "" {
-			// The record check above already says this package has no note,
-			// or has one this cannot read. Saying it a second time per site
-			// is the wall.
+		if !ok || note.text == "" {
+			// A package with no note, or with one nothing could read. Both
+			// are said once by the arms in checkTimingsRecordCopies — the
+			// record check for the first and the readability check for the
+			// second — and saying either a second time per core site is the
+			// wall this repository writes one-per-row rules against.
 			continue
 		}
 		if namesAsCode[site.dir][site.in] {
@@ -721,40 +787,75 @@ func checkCoresNoteNamesEveryScaledTerm(t *testing.T, recordDirs map[string]bool
 // nothing and is an answer — and the case where that is WRONG is already the
 // completeness check's finding, one per site it could not find in the note.
 func checkCoresNoteNamesNothingThatIsGone(t *testing.T, root string,
-	recordDirs map[string]bool, noteTerms map[string][]string) {
+	recordDirs map[string]bool, notes map[string]coresNote) {
 
 	t.Helper()
-	dirs := make([]string, 0, len(recordDirs))
-	for dir := range recordDirs {
-		dirs = append(dirs, dir)
-	}
-	sort.Strings(dirs)
+	dirs := keysOf(recordDirs)
 
-	// Every term any note names, so that each package's source is scanned
-	// once for the whole set rather than once per note.
 	wanted := map[string][]string{}
-	all := map[string]bool{}
+	terms := 0
 	for _, dir := range dirs {
-		terms := noteTerms[dir]
-		wanted[dir] = terms
-		for _, term := range terms {
-			all[term] = true
-		}
+		wanted[dir] = notes[dir].terms
+		terms += len(wanted[dir])
 	}
-	want := make([]string, 0, len(all))
-	for term := range all {
-		want = append(want, term)
-	}
-	sort.Strings(want)
-	if len(want) == 0 {
+	if terms == 0 {
 		return
 	}
 
-	// dir -> which of those names appear as an identifier in it.
+	// # Each package for its own note first, and the others only if it has to
+	//
+	// A note names its own package's terms. That is what it is for, and it is
+	// true of both notes today for every term either of them names. Scanning
+	// every record package for the UNION of every note's terms — which is what
+	// this did — pays the cross-reference case on every green run, and that
+	// case has never happened.
+	//
+	// So the first pass asks each package about its own note, and the second
+	// runs only over what the first could not find. On a repository where the
+	// notes are right, that second pass does not happen at all.
+	//
+	// # What that was worth, which is less than it looks
+	//
+	// Half the scan, and about a thousandth of a second: 0.011s before,
+	// 0.010s after, which is at the edge of what seven takings of sixty runs
+	// can see. The reason is in identifiersIn — it stops looking for a term
+	// once it has found one, and the terms the two notes share are words like
+	// `runtime` and `min`, which the first file answers. Scanning the wrong
+	// package for them was never expensive; it was just work for a case that
+	// has not happened.
+	//
+	// Worth doing and worth saying what it bought, because a structural
+	// argument that predicts a saving and delivers a thousandth is a
+	// structural argument somebody should be able to check.
 	has := map[string]map[string]bool{}
+	unresolved := map[string]bool{}
 	for _, dir := range dirs {
+		if len(wanted[dir]) == 0 {
+			continue
+		}
 		has[dir] = identifiersIn(t, filepath.Join(root, filepath.FromSlash(dir)),
-			want)
+			wanted[dir])
+		for _, term := range wanted[dir] {
+			if !has[dir][term] {
+				unresolved[term] = true
+			}
+		}
+	}
+	if len(unresolved) > 0 {
+		// The pair: each note ends by comparing its package with the other,
+		// so a term one of them names may belong to the other. Asked for only
+		// the terms that need it, which is none on a green run.
+		missing := keysOf(unresolved)
+		for _, dir := range dirs {
+			found := identifiersIn(t,
+				filepath.Join(root, filepath.FromSlash(dir)), missing)
+			if has[dir] == nil {
+				has[dir] = map[string]bool{}
+			}
+			for term := range found {
+				has[dir][term] = true
+			}
+		}
 	}
 
 	for _, dir := range dirs {

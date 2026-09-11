@@ -821,6 +821,21 @@ func checkImportPathsAreImportable(t *testing.T, root string, asks []importPathA
 	// they are not on disk. Read once: it is a stat of one directory, and the
 	// answer is the same for every path below.
 	stdlib := stdlibSource()
+	// Whether a directory under it holds a package, remembered. The loop
+	// below is over ASKINGS and not over paths — six censuses asking about
+	// `os/exec` is six times round it — and the finding stays per asking,
+	// because each call site is a place somebody would fix. The READ does
+	// not: what is in a directory does not change between two questions about
+	// it in one run.
+	holds := map[string]bool{}
+	holdsAPackageAt := func(dir string) bool {
+		if answer, done := holds[dir]; done {
+			return answer
+		}
+		answer := holdsAPackage(dir)
+		holds[dir] = answer
+		return answer
+	}
 	seen := map[string]bool{}
 	var paths []string
 	// Counted in distinct PATHS and not in askings, because that is what the
@@ -859,7 +874,7 @@ func checkImportPathsAreImportable(t *testing.T, root string, asks []importPathA
 				continue
 			}
 			dir := filepath.Join(stdlib, filepath.FromSlash(a.path))
-			if holdsAPackage(dir) {
+			if holdsAPackageAt(dir) {
 				continue
 			}
 			unimportable[a.path] = true

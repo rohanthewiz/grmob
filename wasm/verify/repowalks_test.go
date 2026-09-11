@@ -355,6 +355,46 @@ func TestTheRepositoryWideWalksInThisPackageAreTheOnesDecidedOn(t *testing.T) {
 			strings.Join(row.asks, "; "))
 	}
 
+	// Every read declared `besides` a walk still being there. See besidesRow:
+	// this is what makes that row a claim something can be wrong about rather
+	// than a sentence, and it is the same question `runs` asks of a helper —
+	// is this function here, and does anything call it.
+	for _, w := range repositoryWalks {
+		for _, b := range w.besides {
+			declared, callers := declaredAndCalledBy(b.through, names, sources,
+				parse)
+			if !declared {
+				t.Errorf("%s's row says it reads %s through %s, and nothing "+
+					"in this directory declares a `func %s`.\n\n"+
+					"That row is the only place this read is counted: the "+
+					"budgets above are about repository walks and this is "+
+					"not one, so a row describing a function that has gone "+
+					"is a read nobody is watching — or a row for a read that "+
+					"no longer happens, and a figure in the log that is "+
+					"about nothing.\n\nIf the read has moved, move the row "+
+					"with it; if it has gone, take the row out.",
+					w.fn, b.reads, b.through, b.through)
+				continue
+			}
+			if len(callers) == 0 {
+				t.Errorf("%s's row says it reads %s through %s, and nothing "+
+					"in this directory calls `%s`.\n\n"+
+					"A declared function nothing calls is a read that does "+
+					"not happen, and the row beside it is a cost being "+
+					"reported on every green run for work this package no "+
+					"longer does — the opposite failure from the one this "+
+					"field exists for, and as invisible.\n\nEither the "+
+					"call has gone and the row should go with it, or it has "+
+					"moved behind a name this scan cannot see, in which case "+
+					"`through` should name whatever is called directly.",
+					w.fn, b.reads, b.through, b.through)
+				continue
+			}
+			t.Logf("%s reads %s through %s, called from %s.", w.fn, b.reads,
+				b.through, strings.Join(callers, ", "))
+		}
+	}
+
 	// Counted in WALKS and not in functions: a helper called twice is two
 	// walks, and the budget is about what a run pays.
 	walks, parses := 0, 0
@@ -413,7 +453,8 @@ func TestTheRepositoryWideWalksInThisPackageAreTheOnesDecidedOn(t *testing.T) {
 	for _, w := range repositoryWalks {
 		questions += len(w.asks)
 		for _, b := range w.besides {
-			besides = append(besides, fmt.Sprintf("%s: %s", w.fn, b))
+			besides = append(besides, fmt.Sprintf("%s, through %s: %s. %s",
+				w.fn, b.through, b.reads, b.costs))
 		}
 	}
 	// And the reads that are not repository walks, which the budgets above do
@@ -560,16 +601,18 @@ var repositoryWalks = []repositoryWalkRow{{
 	fn:    "TestTheShapesThisRepositoryKeepsTwoCopiesOfAreInStep",
 	file:  "copies_test.go",
 	depth: walkParses,
-	besides: []string{
-		"the two directories that carry a timings record, for the second " +
-			"direction of the cores-note check — which asks whether the " +
-			"terms a note names still exist, and cannot be answered off the " +
-			"repository walk because the walk throws its trees away. " +
+	besides: []besidesRow{{
+		through: "identifiersIn",
+		reads: "the two directories that carry a timings record, for the " +
+			"second direction of the cores-note check — which asks whether " +
+			"the terms a note names still exist, and cannot be answered off " +
+			"the repository walk because the walk throws its trees away. " +
 			"os.ReadDir per directory, the bytes scanned first, and only the " +
-			"files that hold one of the terms parsed. 0.011s, measured by " +
-			"taking the call out and putting it back over sixty runs — " +
-			"12.11–12.30s against 11.38–11.56s. See identifiersIn",
-	},
+			"files that hold one of the terms parsed",
+		costs: "0.010s, measured by taking the call out and putting it back " +
+			"over seven takings of sixty runs — 12.19–12.28s against " +
+			"11.57–11.99s",
+	}},
 	asks: []string{
 		"the `…TimingsTakenOn` records: whether each carries the five " +
 			"machine fields, a reporting arm, and a cores note that names " +
@@ -597,27 +640,48 @@ type repositoryWalkRow struct {
 	asks []string
 	// Reads this walk makes that are NOT repository-wide, and what each one
 	// costs. Empty for a walk that only walks the repository, which is every
-	// row here but one.
-	//
-	// # Why this is a field and not a sentence somewhere
-	//
-	// The budgets above are about repository walks, and a read of two
-	// directories is not one — which is a correct exemption and is also
-	// exactly how four repository-wide parses got to exist before anything
-	// counted them. Something small enough not to be worth a row is something
-	// nothing is watching, and the next one is as easy to add as the first.
-	//
-	// So it is declared here, beside the walk that makes it, with the measured
-	// figure in it. Nothing verifies this field — a read that is not a
-	// repository walk has no shape a census could recognise, which is the
-	// whole reason it needs writing down — but it is printed on every green
-	// run, and a row growing a second entry is visible in the same place the
-	// walk count is.
-	besides []string
+	// row here but one. See besidesRow.
+	besides []besidesRow
 	// For a helper: how many calls a run makes, and which test drives it. Zero
 	// and "" for a test, which runs once and drives itself.
 	runs     int
 	drivenBy string
+}
+
+// besidesRow is one read a walk makes that is not repository-wide.
+//
+// # Why this exists as a row at all
+//
+// The budgets above are about repository walks, and a read of two directories
+// is not one — which is a correct exemption and is also exactly how four
+// repository-wide parses came to exist before anything counted them. Something
+// small enough not to be worth a row is something nothing is watching, and the
+// next one is as easy to add as the first.
+//
+// # And why it names a FUNCTION
+//
+// The first version of this was a sentence, and a sentence about a read is a
+// claim nothing can be wrong about: the call deleted, the function renamed,
+// the cost changed by a factor — every one of those leaves a row that reads
+// exactly as it did. `asks` does not have that problem, because it describes a
+// walk the census FINDS, so a row for a walk that has gone is a finding and an
+// unlisted walk is another.
+//
+// `through` is the handle that gives this the same property. It names the
+// function the read goes through, and the pass below holds it to being
+// declared in this package and to being called by something — which is what
+// `runs` already does for a helper, applied to a read instead of a walk. The
+// COST is still a measurement nobody re-takes automatically, and that part is
+// a written figure like every other number in this repository's prose; what is
+// no longer possible is the row outliving the read.
+type besidesRow struct {
+	// The function the read goes through. Held to being declared here and to
+	// being called — see the pass over `besides` below.
+	through string
+	// What it reads, for a reader deciding whether it should have been a walk.
+	reads string
+	// What it costs, and how that was measured.
+	costs string
 }
 
 // repositoryWalk is one the scan found.
@@ -1043,6 +1107,71 @@ func intValue(e ast.Expr, bound func(string) (int, bool)) (int, bool) {
 		return 0, false
 	}
 	return bound(id.Name)
+}
+
+// declaredAndCalledBy is whether this package declares a function of that name,
+// and which functions call it.
+//
+// # Why this and not callsTo
+//
+// callsTo prices a call: it reads the loops around each site and multiplies
+// the bounds in, because what it is counting is repository walks and the
+// budget is made of that number. This is asking a smaller question — is the
+// function here, and does anything reach it — for a read the budgets
+// deliberately do not govern. Pricing it would mean deciding what a `besides`
+// row's number means when the read is in a loop, which is a question nothing
+// has yet had to ask.
+//
+// The scan is the one everything in this file uses: the bytes say which files
+// could mention the name, and the memoised parse decides. A file that does not
+// contain the name cannot declare or call it, and this file's own prose — which
+// names every `through` there is — is read and discarded rather than counted.
+//
+// Callers come back sorted and without the declaration itself, which would
+// otherwise report a recursive helper as calling itself and a non-recursive
+// one not at all.
+func declaredAndCalledBy(name string, names []string, sources map[string][]byte,
+	parse func(string) *ast.File) (declared bool, callers []string) {
+
+	seen := map[string]bool{}
+	for _, file := range names {
+		if !bytes.Contains(sources[file], []byte(name)) {
+			continue
+		}
+		tree := parse(file)
+		if tree == nil {
+			continue
+		}
+		for _, d := range tree.Decls {
+			fn, ok := d.(*ast.FuncDecl)
+			if !ok || fn.Body == nil {
+				continue
+			}
+			if fn.Recv == nil && fn.Name.Name == name {
+				declared = true
+				continue
+			}
+			ast.Inspect(fn.Body, func(n ast.Node) bool {
+				call, ok := n.(*ast.CallExpr)
+				if !ok {
+					return true
+				}
+				// Bare identifiers only, for the reason callsTo gives: a
+				// `pkg.Fn(…)` is another package's and a method call is
+				// `x.Fn(…)`, and neither is what an unqualified call in this
+				// package resolves to.
+				id, ok := call.Fun.(*ast.Ident)
+				if !ok || id.Name != name || seen[fn.Name.Name] {
+					return true
+				}
+				seen[fn.Name.Name] = true
+				callers = append(callers, fn.Name.Name)
+				return true
+			})
+		}
+	}
+	sort.Strings(callers)
+	return declared, callers
 }
 
 // boundNamesIn is every identifier this function binds: its receiver, its
