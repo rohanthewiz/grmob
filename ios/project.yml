@@ -27,6 +27,25 @@ targets:
         # stream stops the moment the app leaves the foreground, whatever
         # the audio session category says. See App/AudioPlayer.swift.
         UIBackgroundModes: [audio]
+        # The inbound half of core.OpenURL: the scheme this app claims, so the
+        # OS hands it grmob:// links. SwiftUI's .onOpenURL (GrMobApp.swift)
+        # forwards them to Go as the "deeplink" host event; core/deeplink.go
+        # carries the contract and why the shell does not parse the URL.
+        #
+        # A private scheme rather than a Universal Link, deliberately: a
+        # Universal Link is verified against an apple-app-site-association
+        # file served from a domain, which is a deployment an adopting app owns
+        # and this framework shell cannot have. An app shipping to users adds
+        # its own verified https association beside this rather than instead of
+        # it — a custom scheme is claimable by any other app, so it is a
+        # convenience and not a trust boundary.
+        #
+        # It is also how a simulator run reaches a screen without scrolling to
+        # it:
+        #   xcrun simctl openurl booted "grmob://lesson/4.12"
+        CFBundleURLTypes:
+          - CFBundleURLName: com.grmob.deeplink
+            CFBundleURLSchemes: [grmob]
         # Development only: lets the simulator talk to a server on the Mac
         # over plain http (the church app's API_BASE=http://localhost:8088
         # build, and AVPlayer streaming its /sermon-audio URLs). ATS still

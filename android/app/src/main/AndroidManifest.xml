@@ -55,14 +55,54 @@
              has to arrive as a window inset the composition can read, which is
              what core.KeyboardAware turns into padding on a scroll region.
              Under adjustPan the platform slides the whole window instead and
-             nothing downstream can tell the keyboard is there. -->
+             nothing downstream can tell the keyboard is there.
+
+             singleTop for the deep link below: without it a link arriving
+             while the app is already running starts a SECOND MainActivity on
+             the back stack. The Go side is a process-wide singleton so nothing
+             breaks, but the user gets two of the same screen and a back press
+             that appears to do nothing. With it, the intent is delivered to
+             the running Activity's onNewIntent instead. -->
         <activity
             android:name=".MainActivity"
+            android:launchMode="singleTop"
             android:windowSoftInputMode="adjustResize"
             android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+            <!-- The inbound half of core.OpenURL: a URL the OS hands this app,
+                 forwarded to Go as the "deeplink" host event and parsed there
+                 (see core/deeplink.go on why the shell does not parse it).
+                 BROWSABLE is what lets a link in another app open this one;
+                 DEFAULT is what makes this activity a candidate for an
+                 implicit VIEW at all.
+
+                 A private scheme rather than an https host, deliberately. An
+                 App Link on a real domain is verified against a file served
+                 from it, which is a deployment an adopting app owns and this
+                 framework shell cannot have; a scheme needs nothing and is
+                 enough for the job. An app shipping to users should add its
+                 own verified https filter beside this rather than instead of
+                 it — a custom scheme is claimable by any other app, so it is
+                 a convenience and not a trust boundary.
+
+                 It is also how a device run reaches a screen without
+                 scrolling to it:
+                   adb shell am start -a android.intent.action.VIEW
+                     -d "grmob://lesson/4.12"
+
+                 The action is spelled out rather than left to `am` to infer:
+                 an intent with no action is matched by component and reaches
+                 MainActivity with a null action, which reportDeepLink drops.
+                 The app then opens at its front door and the link looks like
+                 it was ignored. -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="grmob" />
             </intent-filter>
         </activity>
 

@@ -1,6 +1,7 @@
 package tutorial
 
 import (
+	"strings"
 	"sync"
 
 	"github.com/rohanthewiz/grmob/core"
@@ -12,8 +13,8 @@ import (
 // (https://rohanthewiz.github.io/grmob/#2.3); the natives have no address
 // bar, and nothing here assumes one.
 //
-// The app does not know what a URL is. It speaks the two generic channels
-// core already has, and the host page translates:
+// On the web the app does not know what a URL is. It speaks the two generic
+// channels core already has, and the host page translates:
 //
 //	page ──HostEvent("route", {lesson: "2.3"})──▶ app   (boot, hashchange)
 //	page ◀──SendSystemEvent("route", {lesson})──── app   (every navigation)
@@ -23,8 +24,25 @@ import (
 // Prev/Next, ‹ Contents, Finish — reports the lesson now on screen, and the
 // page rewrites its hash. A native shell drops the unknown system event
 // (SystemEvents.swift / SystemEvents.kt fall through on names they do not
-// know) and never sends the host event, so the natives are unaffected by
-// construction rather than by a platform check.
+// know) and never sends the host event, so the natives ignore the outbound
+// half by construction rather than by a platform check.
+//
+// # The natives, where there is no page to translate
+//
+// A phone has no address bar, so nothing can send "route" — which for a long
+// time meant the natives had no deep links at all and reaching lesson 4.12 on
+// a device was a scroll through 49 rows. core.OnDeepLink is the other inbound
+// path, and on the natives it is the only one:
+//
+//	OS ──HostEvent("deeplink", {url: "grmob://lesson/4.12"})──▶ app
+//
+// So the app does have to know what a URL is here, and that is the right place
+// for it: the shells forward the string verbatim precisely so that what
+// "grmob://lesson/4.12" means is the tutorial's business and not theirs. See
+// core/deeplink.go.
+//
+// The two inbound paths converge on goTo and neither echoes back, so a link
+// resolves in one hop on every host.
 //
 // The two directions do not echo each other: a "route" host event makes the
 // app navigate *without* sending "route" back, because the page's hash is
@@ -71,12 +89,62 @@ func (t *tutorial) useDeepLinks(ctx *core.Context) {
 		id, _ := data["lesson"].(string)
 		t.goTo(ctx, id)
 	})
+	// And the natives' path, which carries a URL rather than a lesson ID. Both
+	// subscriptions are taken together and released together: they are two
+	// spellings of the same request and no host sends both.
+	cancelLink := core.OnDeepLink(func(url string) {
+		id, ok := lessonFromURL(url)
+		if !ok {
+			return
+		}
+		t.goTo(ctx, id)
+	})
 	ctx.OnClose(func() {
 		cancel()
+		cancelLink()
 		rec.mu.Lock()
 		rec.subscribed = false
 		rec.mu.Unlock()
 	})
+}
+
+// lessonLinkPrefix is the one URL shape this app answers to. A scheme the
+// shells declare (AndroidManifest.xml, ios/project.yml) and a single path
+// segment carrying what the "route" event calls `lesson`.
+const lessonLinkPrefix = "grmob://lesson/"
+
+// lessonFromURL reads a lesson reference out of a deep link, or reports that
+// there is not one.
+//
+// The accepted forms are exactly the ones routeEvent's payload accepts, which
+// is the point — a link is a second spelling of the same request and must not
+// be able to express anything the web hash cannot:
+//
+//	grmob://lesson/4.12   a lesson
+//	grmob://lesson/4      a chapter, which opens its first lesson
+//	grmob://lesson/       the contents screen
+//
+// Anything else returns false and is dropped. That includes a URL on this
+// app's scheme with some other path (grmob://settings), because a shell
+// forwards every URL it is handed and an app that treated an unrecognised one
+// as "" would navigate the reader to the contents screen for a link that was
+// not about lessons at all.
+//
+// Unresolvable IDs are not this function's problem: goTo puts them through
+// resolveRoute, which is the same gate the web hash goes through, so
+// "grmob://lesson/99.99" is dropped there rather than being validated twice.
+func lessonFromURL(url string) (string, bool) {
+	rest, ok := strings.CutPrefix(url, lessonLinkPrefix)
+	if !ok {
+		return "", false
+	}
+	// A trailing slash is the contents screen spelled the way a URL spells an
+	// empty last segment, and anything deeper is not a shape this app claims.
+	rest = strings.TrimSuffix(rest, "/")
+	if strings.Contains(rest, "/") {
+		return "", false
+	}
+	return rest, true
 }
 
 // goTo navigates to the lesson a host route names, or to the contents for

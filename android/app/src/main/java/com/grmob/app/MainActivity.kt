@@ -1,13 +1,22 @@
 package com.grmob.app
 
+import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import com.grmob.runtime.GrMobRoot
 import com.grmob.runtime.GrMobRuntime
+import org.json.JSONObject
 
 class MainActivity : ComponentActivity() {
+    /**
+     * Kept so [onNewIntent] can report a link, and so [onCreate] can report the
+     * one it was launched with. Null until the runtime exists, which is why the
+     * launch intent is reported at the end of onCreate rather than at the top.
+     */
+    private var runtime: GrMobRuntime? = null
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         // Edge to edge: the window stops fitting the system windows itself and
@@ -43,6 +52,46 @@ class MainActivity : ComponentActivity() {
         // Activity's.
         AppLifecycle.attach(runtime)
         runtime.start()
+        this.runtime = runtime
         setContent { GrMobRoot(runtime) }
+        // The URL this launch came from, if it came from one. After start(),
+        // because the app cannot be navigated before its tree exists — the
+        // subscriber lives in a hook slot and the hook has not run yet.
+        // See core/deeplink.go.
+        reportDeepLink(intent)
+    }
+
+    /**
+     * A link arriving while the app is already running.
+     *
+     * Reached because the manifest sets launchMode="singleTop": without it the
+     * system would start a second MainActivity instead and this would never
+     * fire. The Activity's own `intent` is also replaced, so a later
+     * recreation (a rotation) does not re-report the intent this launched with
+     * — which would navigate the reader away from wherever they had got to.
+     */
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        reportDeepLink(intent)
+    }
+
+    /**
+     * Forwards one ACTION_VIEW intent's data to Go as the "deeplink" host
+     * event, verbatim.
+     *
+     * Verbatim is the contract: a URL means whatever the app that registered
+     * the scheme says it means, so parsing it here would put an app's
+     * vocabulary in the shell. core/deeplink.go carries that argument.
+     *
+     * Everything that is not a VIEW with data is ignored, which is every
+     * launch from the home screen (ACTION_MAIN, no data) and every intent some
+     * other component might deliver.
+     */
+    private fun reportDeepLink(intent: Intent?) {
+        if (intent?.action != Intent.ACTION_VIEW) return
+        val url = intent.data?.toString() ?: return
+        if (url.isEmpty()) return
+        runtime?.hostEvent("deeplink", JSONObject().put("url", url).toString())
     }
 }

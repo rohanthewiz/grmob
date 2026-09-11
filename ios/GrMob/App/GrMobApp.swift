@@ -1,3 +1,4 @@
+import Foundation
 import SwiftUI
 
 /// The whole shell: build a runtime over the gomobile bridge, mount the Go
@@ -31,6 +32,40 @@ struct GrMobApp: App {
     var body: some Scene {
         WindowGroup {
             GrMobRoot(runtime: runtime)
+                // The inbound half of core.OpenURL: a URL the OS hands this
+                // app, forwarded to Go as the "deeplink" host event and parsed
+                // there. See core/deeplink.go on why the shell does not parse
+                // it, and Info.plist's CFBundleURLTypes for the scheme.
+                //
+                // One callback for both cases, which is the difference from
+                // Android: SwiftUI delivers the launch URL and a URL arriving
+                // at a running app through the same modifier, so there is no
+                // equivalent of onNewIntent to write. It is on the root view
+                // rather than the Scene because a Scene-level .onOpenURL fires
+                // before the first body evaluation on a cold launch, and the
+                // app's subscriber lives in a hook slot that has not run yet.
+                //
+                // One thing a simulator run makes clear and a reader would
+                // otherwise be surprised by: iOS puts a confirmation in front
+                // of a custom-scheme link from an unknown source ("Open in
+                // GrMobApp?"), so this is not the silent one-command hop
+                // Android's `am start -d` is. That gate is the platform's and
+                // is the reason a scheme is a convenience rather than a trust
+                // boundary — an app shipping to users wants a verified
+                // Universal Link, which does not prompt. Verified reaching Go
+                // through the prompt: tapping Open lands on the lesson the URL
+                // names.
+                .onOpenURL { url in
+                    // Serialised rather than interpolated into a literal: a
+                    // URL can carry a quote or a backslash in its query, and
+                    // "{\"url\":\"\(url)\"}" would hand Go malformed JSON
+                    // that ReceiveHostEvent drops with a log nobody reads.
+                    guard let data = try? JSONSerialization.data(
+                            withJSONObject: ["url": url.absoluteString]),
+                          let json = String(data: data, encoding: .utf8)
+                    else { return }
+                    runtime.hostEvent("deeplink", json)
+                }
         }
         .onChange(of: scenePhase) { _, phase in
             AppLifecycle.report(phase, to: runtime)

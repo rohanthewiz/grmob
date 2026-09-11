@@ -44,6 +44,12 @@ func route(id string) {
 	core.ReceiveHostEvent(routeEvent, map[string]any{"lesson": id})
 }
 
+// deepLink is the natives' inbound path, the way a shell delivers it: the URL
+// verbatim, unparsed, on the event core owns the name of.
+func deepLink(url string) {
+	core.ReceiveHostEvent("deeplink", map[string]any{"url": url})
+}
+
 // --- Outbound: every door reports the lesson on screen ----------------------
 
 func TestNavigationReportsRoutes(t *testing.T) {
@@ -209,5 +215,99 @@ func TestClosedAppStopsListening(t *testing.T) {
 	}
 	if !hasTextContaining(tree(t, second), "1.2  ") {
 		t.Fatal("the live app should have navigated")
+	}
+}
+
+// The natives' inbound path: a URL, not a lesson ID.
+//
+// # Why this is its own test and not a row in the route one
+//
+// The two paths are two spellings of the same request, and the gap between
+// them is exactly where the bug would be: the shells forward every URL they
+// are handed, verbatim and unparsed, so this app is the thing that has to
+// decide what it does and does not answer to. A link on this app's scheme
+// with some other path must not be read as "no lesson" and open the contents
+// screen, which is what a translation that returned "" for anything it did not
+// recognise would do.
+func TestDeepLinkOpensLessonAndIgnoresWhatItDoesNotClaim(t *testing.T) {
+	routes := recordRoutes(t)
+	mgr, ctx := newAppWithContext(t)
+	tree(t, mgr) // the first render is what subscribes the app
+
+	deepLink("grmob://lesson/4.12")
+	if !hasTextContaining(tree(t, mgr), "4.12  ") {
+		t.Fatal("a deep link to 4.12 did not open it — the natives' only route in")
+	}
+	if core.StackDepth(ctx) != 2 {
+		t.Fatalf("a link from the contents should Push, depth %d", core.StackDepth(ctx))
+	}
+	// Same no-echo rule the route event has: the shell is not an address bar
+	// waiting to be told where it ended up.
+	if len(*routes) != 0 {
+		t.Fatalf("a deep link must not report a route back, got %v", *routes)
+	}
+
+	// A chapter, which is the shorthand the web hash also accepts.
+	deepLink("grmob://lesson/6")
+	if !hasTextContaining(tree(t, mgr), "6.1  ") {
+		t.Fatal("a chapter link should open the chapter's first lesson")
+	}
+
+	// And everything this app does not claim, each of which must leave the
+	// reader exactly where they are. 6.1 is on screen for all of them.
+	for _, url := range []string{
+		"grmob://settings",             // this scheme, another feature
+		"grmob://lesson/4/12",          // deeper than one segment
+		"https://example.com/lesson/1", // another scheme entirely
+		"grmob://lesson/99.99",         // shaped right, resolves to nothing
+		"not a url at all",
+	} {
+		deepLink(url)
+		if !hasTextContaining(tree(t, mgr), "6.1  ") {
+			t.Errorf("%q moved the reader off the lesson they were reading", url)
+		}
+	}
+
+	// The contents screen, which a URL spells as an empty last segment.
+	deepLink("grmob://lesson/")
+	if core.StackDepth(ctx) != 1 {
+		t.Errorf("a link to the contents should pop to the root, depth %d",
+			core.StackDepth(ctx))
+	}
+	assertNoConcerns(t)
+}
+
+// lessonFromURL on its own, because most of its answers are invisible through
+// a navigation: "drop it" and "go to the contents screen" look the same from
+// outside if the second is what a dropped link does.
+func TestLessonFromURLClaimsOnlyItsOwnShape(t *testing.T) {
+	for _, c := range []struct {
+		url string
+		id  string
+		ok  bool
+		why string
+	}{
+		{"grmob://lesson/4.12", "4.12", true, "the ordinary case"},
+		{"grmob://lesson/6", "6", true, "a chapter, which goTo resolves to its first lesson"},
+		{"grmob://lesson/", "", true, "an empty last segment is the contents screen"},
+		{"grmob://lesson/99.99", "99.99", true,
+			"shaped right, so it is claimed here and dropped by resolveRoute — " +
+				"validating it twice would put the lesson table in two places"},
+		{"grmob://lesson", "", false, "no path at all is not the contents screen"},
+		{"grmob://lesson/4/12", "", false, "deeper than one segment"},
+		{"grmob://settings", "", false,
+			"this app's scheme, another app's feature: a shell forwards every " +
+				"URL, so an unclaimed one must not read as \"no lesson\""},
+		{"https://grmob.dev/lesson/4.12", "", false, "another scheme"},
+		{"", "", false, "nothing"},
+	} {
+		id, ok := lessonFromURL(c.url)
+		if ok != c.ok {
+			t.Errorf("%q: claimed=%v, want %v — %s", c.url, ok, c.ok, c.why)
+			continue
+		}
+		if ok && id != c.id {
+			t.Errorf("%q: id %q, want %q — %s", c.url, id, c.id, c.why)
+		}
 	}
 }

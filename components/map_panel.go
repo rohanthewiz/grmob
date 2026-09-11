@@ -3,6 +3,7 @@ package components
 import (
 	"fmt"
 	"math"
+	"sort"
 
 	"github.com/rohanthewiz/grmob/core"
 )
@@ -174,14 +175,25 @@ const (
 // screen, and a map of the whole planet would not have shown them usefully
 // anyway.
 //
-// A set straddling the antimeridian is measured the long way round. Tokyo and
-// Honolulu are 40 degrees apart going east and are read here as 200 degrees
-// apart, so the fit opens on the Atlantic with both pins at the edges. Fixing
-// it is a circular mean rather than an average, which is a different function
-// with a different contract for the centre — and no caller has yet had a set
-// that crosses it. A caller who does should compute the region themselves and
-// pass it to core.MapView, which is the arrangement this widget is a shortcut
-// for.
+// A set straddling the antimeridian used to be measured the long way round:
+// Tokyo and Honolulu are 62 degrees apart going east and were read as 298
+// going the other way, so the fit opened on the Atlantic with both pins off
+// the edges. That is fixed, and the fix is longitudeSpan — the smallest arc of
+// longitude containing every point, found as the complement of the widest gap
+// between adjacent points.
+//
+// The thing that makes it a fix rather than a trade is that the answer does
+// not change for any set that does not straddle. For those, the widest gap IS
+// the one that wraps from the easternmost point back round to the westernmost,
+// so its complement runs from min to max and the centre is (min+max)/2 — the
+// average this used to compute, arrived at by the general rule. Nothing that
+// worked before moves.
+//
+// The centre it returns is the middle of that arc, which is the contract a
+// *fit* wants. A circular mean — the direction of the summed unit vectors —
+// is the other candidate and is the wrong one here: it is pulled by clusters,
+// so nineteen pins in Tokyo and one in Honolulu would centre on Tokyo and
+// leave the twentieth off screen, which is precisely what a fit must not do.
 //
 // # An empty set has no answer
 //
@@ -196,21 +208,22 @@ func FitRegion(pins []MapPin) (core.Region, bool) {
 	}
 
 	minLat, maxLat := pins[0].Lat, pins[0].Lat
-	minLng, maxLng := pins[0].Lng, pins[0].Lng
-	for _, p := range pins[1:] {
+	lngs := make([]float64, 0, len(pins))
+	for _, p := range pins {
 		minLat = math.Min(minLat, p.Lat)
 		maxLat = math.Max(maxLat, p.Lat)
-		minLng = math.Min(minLng, p.Lng)
-		maxLng = math.Max(maxLng, p.Lng)
+		lngs = append(lngs, p.Lng)
 	}
 	lat := (minLat + maxLat) / 2
-	lng := (minLng + maxLng) / 2
+	// Latitude is a plain interval and longitude is not: it lives on a circle,
+	// where min and max are not the ends of anything. See longitudeSpan.
+	lng, lngSpread := longitudeSpan(lngs)
 
 	cos := math.Cos(lat * math.Pi / 180)
 	if cos < 0.01 {
 		cos = 0.01
 	}
-	spread := math.Max(maxLat-minLat, (maxLng-minLng)*cos)
+	spread := math.Max(maxLat-minLat, lngSpread*cos)
 	if spread < MinFitSpread {
 		spread = MinFitSpread
 	}
@@ -224,6 +237,70 @@ func FitRegion(pins []MapPin) (core.Region, bool) {
 		zoom = MinFitZoom
 	}
 	return core.Region{Lat: lat, Lng: lng, Zoom: zoom}, true
+}
+
+// longitudeSpan returns the centre and the width, in degrees, of the smallest
+// arc of longitude that contains every value in lngs.
+//
+// # Why longitude cannot be an interval
+//
+// Latitude has ends: -90 and +90 are places you can stand and there is nothing
+// past them, so min and max are the extremes of a set and (min+max)/2 is its
+// middle. Longitude has no ends. It is a circle, 180 and -180 are the same
+// meridian, and a set has no single "widest pair" — Tokyo and Honolulu are 62
+// degrees apart one way and 298 the other, and taking the max minus the min
+// silently picks the second.
+//
+// # The algorithm, which needs no special case
+//
+// Sort the values and walk round the circle measuring the gap to the next one,
+// counting the wrap from the last back to the first. The WIDEST of those gaps
+// is the part of the circle with nothing in it, so its complement is the
+// smallest arc that holds everything:
+//
+//	0°        90°       180°/-180°   -90°        0°
+//	|    T    |         |        H   |          |
+//	          └── widest gap: 298° ──┘
+//	arc = 360 - 298 = 62°, running H..T through 180°
+//
+// A set that does not straddle falls out of the same rule rather than being
+// detected: its widest gap is the wrap, so the arc runs from the westernmost
+// point to the easternmost and the centre is the ordinary average. That is why
+// this could replace the average outright instead of being a branch beside it.
+//
+// # Two details a reader should not have to rediscover
+//
+// The slice is sorted in place, so callers pass one they own — FitRegion
+// builds a fresh one for exactly this reason.
+//
+// Ties go to the first gap found, which matters only for a set whose points
+// divide the circle into equal empty halves (0° and 180°, say). Both arcs are
+// then 180 degrees wide and equally correct; there is no third answer to
+// prefer, and a map that wide is showing a hemisphere either way.
+func longitudeSpan(lngs []float64) (centre, width float64) {
+	sort.Float64s(lngs)
+	n := len(lngs)
+
+	widest, after := 0.0, 0
+	for i := 0; i < n; i++ {
+		gap := lngs[(i+1)%n] - lngs[i]
+		if i == n-1 {
+			// The wrap: from the easternmost value round through the
+			// antimeridian back to the westernmost. For n == 1 this is the
+			// whole circle, 360, which correctly leaves a zero-width arc at
+			// the single point.
+			gap += 360
+		}
+		if gap > widest {
+			widest, after = gap, i
+		}
+	}
+
+	width = 360 - widest
+	// The arc begins at the value on the far side of the empty stretch and
+	// runs `width` degrees east. Wrapped because that run can cross the
+	// antimeridian, which is the whole point of the exercise.
+	return core.WrapLongitude(lngs[(after+1)%n] + width/2), width
 }
 
 func (m MapPanel) Render(ctx *core.Context) *core.Node {
