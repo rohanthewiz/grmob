@@ -39,18 +39,42 @@ import (
 // modal dialog.
 //
 // What *is* different from the compass is that the dialog is expected rather
-// than exceptional, so the app should ask before it starts:
+// than exceptional, so a screen draws the permission's state beside the fix:
 //
-//	switch hooks.UsePermission(ctx, permission.Location) {
-//	case permission.Granted: loc := hooks.UseLocation(ctx)  // the fix
-//	case permission.Prompt:  askButton()                    // Request from a tap
+//	status := hooks.UsePermissionLive(ctx, permission.Location)
+//	loc := hooks.UseLocation(ctx)          // unconditionally; it is a hook
+//
+//	switch status {
+//	case permission.Granted: return readout(loc)
+//	case permission.Prompt:  return askButton()  // Request from a tap
 //	...
 //	}
 //
+// Both hooks on every pass, and the branch on what is *drawn*. This example
+// used to put UseLocation inside the Granted arm, which is a hook inside a
+// conditional: hook slots are handed out by call position (core.NewState), so
+// the arm turning on or off moves every slot after it and the component reads
+// somebody else's state. core/debug.go's cursor audit reports it by name.
+//
 // permission.Request is the prompt and it must come from a gesture — see the
-// permission package. Starting the sensor from a render pass on an undecided
-// permission is how an app spends its one chance at a dialog on a screen the
-// user had not asked for.
+// permission package.
+//
+// # Which leaves when the dialog appears, and the answer is the route
+//
+// Calling the hook unconditionally means mounting the screen starts the
+// sensor, and on iOS that is what shows the dialog. The gate is the
+// *navigation*: a hook's reference is released when the route's frame is
+// popped, so a screen the user navigated to is a screen the user asked for. A
+// feature that must not ask until a tap belongs behind a button that navigates
+// to it — the same mechanism, spelled with one more screen.
+//
+// A refusal is recoverable either way. The hosts keep a refused start open and
+// re-arm it when the permission answer changes, so the grant does not have to
+// arrive before the screen does; see LocationSensor.kt's awaitingPermission and
+// LocationSensor.swift's awaitingAuthorization. What is still stale in that
+// window is Error — it holds the refusal until the first fix lands.
+//
+// examples/tutorial lesson 4.12 runs all of this.
 //
 // # Accuracy is the field a location screen actually reads
 //

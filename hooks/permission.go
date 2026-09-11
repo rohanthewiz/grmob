@@ -45,6 +45,20 @@ type permissionRecord struct {
 // refusal, and a permanent refusal is much harder to undo than a permission
 // never asked for. Requesting stays the caller's, from a gesture.
 //
+// # What the branches may not contain
+//
+// Hooks. The switch above returns different subtrees per status, and a hook
+// called inside one of those arms is a hook inside a conditional: slots are
+// handed out by call position (core.NewState), so the arm turning on or off
+// moves every slot after it and the component reads state that belongs to
+// something else. core/debug.go's cursor audit reports it by name.
+//
+// `mapView(ctx)` above is therefore only safe if mapView draws and does not
+// hook. A branch that needs a sensor calls the sensor's hook *beside* this one,
+// unconditionally, and uses the status to decide what to draw with it — see
+// hooks.UseLocation, whose own doc used to get this wrong, and lesson 4.12 in
+// examples/tutorial, which is the pair written out.
+//
 // # Unknown is a state the caller has to draw
 //
 // The check is asynchronous, so the first pass returns permission.Unknown and
@@ -155,6 +169,13 @@ func UsePermission(ctx *core.Context, p permission.Permission) permission.Status
 // back, and stops there: permission.set notifies only on a change, so no
 // subscriber runs and no render is requested. Only the resume that actually
 // changed something reaches the screen.
+//
+// # The same rule about branches applies
+//
+// `scanner(ctx)` above must not call hooks, for the reason UsePermission's
+// "What the branches may not contain" gives: a hook in a status arm shifts
+// every slot after it. A sensor's hook goes beside this call, not inside a
+// branch of it.
 //
 // # Use this one by default
 //

@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/rohanthewiz/grmob/core"
 	"github.com/rohanthewiz/grmob/render"
 )
 
@@ -1537,5 +1538,105 @@ func TestLiveMapDemoAddsPinsAndKeepsTheTwoRegionsApart(t *testing.T) {
 	if got := markerIDs(t, mgr); len(got) != 3 {
 		t.Errorf("markers after a reset = %v, want the three seeds", got)
 	}
+	assertNoConcerns(t)
+}
+
+// The live map's position readout: the pair of hooks that used to have no
+// consumer anywhere in the repository.
+//
+// # Why this test is behavioural and not a grep
+//
+// Before this lesson panel existed, `hooks.UseLocation` appeared twice in
+// examples/tutorial and both were inside strings — one prose(...) and one
+// codeBlock(...). So the hook, core.OnLocation's subscription path and both
+// native sensors had no consumer any run could exercise, and a source search
+// for the name said otherwise. This drives the rendered tree instead: the
+// readout can only say what it says if the hook actually ran.
+//
+// # What a headless run is, and why that is the interesting case
+//
+// A Go test registers no system-event sink, so permission.Check resolves to
+// Unavailable immediately and core.StartLocation reaches nothing — which is
+// the state a static export and a browser with no geolocation are also in.
+// The lesson has to say so rather than spin, and the ordering that makes that
+// true is the permission being consulted before Received: with Received first
+// this screen would print "waiting for the first fix" forever on every host
+// that can never have one.
+//
+// The hooks being called unconditionally is checked by assertNoConcerns, which
+// is this package's TestMain audit — a UseLocation inside the permission's
+// Granted arm fails there, which is how the shape of the panel was decided and
+// why hooks.UseLocation's own doc no longer recommends the other one.
+func TestLiveMapDemoRunsTheLocationHookAndSaysWhenItCannot(t *testing.T) {
+	mgr := newApp(t)
+	openLesson(t, mgr, "Live maps: markers and the echo guard")
+	cur := tree(t, mgr)
+
+	if !hasTextContaining(cur, "No position, and none on the way") {
+		t.Error("the fix readout does not report a headless run as hopeless — a host " +
+			"that can never be granted the permission must not be shown a spinner")
+	}
+	if hasTextContaining(cur, "Waiting for the first fix") {
+		t.Error("the readout is waiting for a fix on a host with no sensor at all: " +
+			"Received is only a question about time once a permission exists for the " +
+			"fix to arrive under")
+	}
+	if !hasTextContaining(cur, "This platform cannot grant it at all") {
+		t.Error("the permission line does not draw the Unavailable state, so a reader " +
+			"in a browser preview is told nothing about why there is no position")
+	}
+	if hasTextContaining(cur, "Checking…") {
+		t.Error("the permission check never resolved; the panel would spin forever " +
+			"under test")
+	}
+
+	// The ask button belongs to Prompt alone — asking is pointless on a
+	// platform that cannot grant, and the compass lesson pins the same rule.
+	if findNode(cur, func(n *node) bool {
+		return n.Type == "Button" && n.Props["label"] == "Use my location"
+	}) != nil {
+		t.Error("an ask button on a platform that cannot grant anything")
+	}
+
+	// "Centre the map on me" is disabled rather than absent, because a tap
+	// with no fix would set the region to 0,0 — a real place in the Gulf of
+	// Guinea, and a map that looks like it worked.
+	centre := findNode(cur, func(n *node) bool {
+		return n.Type == "Button" && n.Props["label"] == "Centre the map on me"
+	})
+	if centre == nil {
+		t.Fatal("the centre-on-me button is missing, so the codeBlock above it shows " +
+			"a line the panel does not run")
+	}
+	if centre.Style == nil || !centre.Style.Disabled {
+		t.Error("the centre-on-me button is live with no fix in hand — tapping it " +
+			"would centre the map on 0,0 and look like a working feature")
+	}
+
+	// And the fix reaches the readout when one arrives, which is the path
+	// core.OnLocation -> ctx.RequestRender -> this text exists for. Fed
+	// through core.ReceiveLocation, the typed entry every host funnels into.
+	//
+	// core's location record is process-wide, so this leaks into whatever runs
+	// next unless it is put back. The cleanup can only put back so much —
+	// Received is a one-way latch by design, since "this device has answered
+	// once" is exactly what separates "not yet" from "never" — but an
+	// unavailable fix restores the sentence the panel shows, which is what a
+	// later test would read.
+	t.Cleanup(func() {
+		core.ReceiveLocation(core.Location{Error: "no location host in a test"})
+	})
+	core.ReceiveLocation(core.Location{
+		Lat: 38.7223, Lng: -9.1393, Accuracy: 12, Available: true,
+	})
+	cur = tree(t, mgr)
+	if !hasTextContaining(cur, "38.72230, -9.13930 — accurate to about 12 m") {
+		t.Error("a fix delivered to core never reached the lesson's readout, so the " +
+			"hook's subscription is not wired")
+	}
+	if hasTextContaining(cur, "No position, and none on the way") {
+		t.Error("the readout still says there is no position while holding one")
+	}
+
 	assertNoConcerns(t)
 }

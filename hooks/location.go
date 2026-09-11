@@ -42,22 +42,50 @@ type locationRecord struct {
 // effect of a screen appearing, which is the surest way to spend an app's one
 // chance at a yes.
 //
-// So a screen that can be reached cold should check first and ask from a
-// gesture:
+// So a screen that can be reached cold draws the permission's state beside the
+// fix, and asks from a gesture:
 //
-//	switch hooks.UsePermission(ctx, permission.Location) {
-//	case permission.Granted:     return mapScreen(ctx)   // UseLocation in here
+//	status := hooks.UsePermissionLive(ctx, permission.Location)
+//	loc := UseLocation(ctx)          // unconditionally — see below
+//
+//	switch status {
+//	case permission.Granted:     return readout(loc)
 //	case permission.Prompt:      return askButton()      // permission.Request
 //	case permission.Denied:      return settingsHint()
 //	case permission.Unavailable: return nil
 //	default:                     return components.Skeleton{}
 //	}
 //
-// The hook is deliberately not the thing that enforces that. A hook that
-// refused to start until a permission was granted would be a second
+// # Both hooks run on every pass, and the branch is about drawing
+//
+// This example used to read `case permission.Granted: return mapScreen(ctx)`
+// with the hook inside mapScreen, which is a hook inside a conditional. Hook
+// slots are handed out by call position (core.NewState), so an arm turning on
+// or off moves every slot after it and the component starts reading somebody
+// else's state. core/debug.go's cursor audit names that failure, and
+// examples/tutorial's TestMain turns the audit on — which is how the shape got
+// corrected: lesson 4.12 could not be written the way this doc described it.
+//
+// The consequence is that mounting the screen starts the sensor. What gates
+// that is the *route*: this hook's reference is released when the route frame
+// is popped, so a screen the user navigated to is a screen the user asked for.
+// A feature that must not ask until a tap goes behind a button that navigates.
+//
+// The hook is deliberately not the thing that enforces a permission check. A
+// hook that refused to start until a permission was granted would be a second
 // authorization policy living in the wrong package, and it would be wrong for
 // the app that genuinely wants the OS to ask at that moment — a "find my
 // nearest branch" button, where the dialog *is* the response to the tap.
+//
+// # A refusal is not the end of it
+//
+// The grant usually arrives after this hook has already run, because the tap
+// that asks for it is on this screen. Both native hosts keep a refused start
+// open and re-arm it when the permission answer changes, so no remount is
+// needed — see LocationSensor.kt's awaitingPermission. What stays stale for
+// the acquisition window is Error, which still holds the refusal until the
+// first fix lands; a screen that prints it will print the old reason while the
+// GPS is genuinely working on one.
 //
 // # Leaving the screen has to actually release it
 //

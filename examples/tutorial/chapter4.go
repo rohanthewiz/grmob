@@ -2184,6 +2184,30 @@ func lessonLiveMap() Lesson {
 			// between them.
 			reported := core.NewState(ctx, core.Region{})
 
+			// --- The live position, which is the closing prose made runnable ---
+			//
+			// UsePermissionLive rather than UsePermission, because the Denied
+			// branch below sends the reader to the system settings and the
+			// non-live hook would still say "off" when they came back: nothing
+			// on any platform announces a permission change. That is the hook's
+			// own documented reason to exist and this is its first consumer.
+			locationStatus := hooks.UsePermissionLive(ctx, permission.Location)
+			// And UNCONDITIONALLY, which is the part worth reading twice.
+			//
+			// core.NewState hands out hook slots by call position, so a hook
+			// inside a `case permission.Granted:` arm shifts every slot after it
+			// the moment the permission changes — core/debug.go's cursor audit
+			// names that failure, and this package's TestMain turns the audit on.
+			// So the shape this lesson cannot use is the one core.StartLocation
+			// and hooks.UseLocation used to recommend; both docs now say what
+			// this line does instead.
+			//
+			// What gates the sensor is the *route*, not a branch: a reader is
+			// here because they navigated to this lesson, and leaving it pops
+			// the route, whose cleanup registry releases the GPS. The permission
+			// gates what gets DRAWN, below.
+			fix := hooks.UseLocation(ctx)
+
 			markers := make([]core.PropsAndChildren, 0, len(pins.Get()))
 			for _, p := range pins.Get() {
 				markers = append(markers, core.Marker(p.id, p.lat, p.lng, p.id))
@@ -2208,6 +2232,73 @@ func lessonLiveMap() Lesson {
 			if r := reported.Get(); r.Zoom != 0 {
 				reportedNote = fmt.Sprintf("Reported: %.4f, %.4f at zoom %.2f",
 					r.Lat, r.Lng, r.Zoom)
+			}
+
+			// The four sentences a position has, which is most of the reason
+			// Location carries Received beside Available. "Not yet" and "never"
+			// are different screens, and cold GPS can take tens of seconds.
+			//
+			// The order of the arms is the part worth keeping, and both ends of
+			// it were got wrong once:
+			//
+			//   1. A fix in hand wins outright. A position that arrived is
+			//      ground truth and the permission record is bookkeeping, so a
+			//      status that has not caught up must not be able to hide a
+			//      coordinate the sensor actually delivered.
+			//   2. Then the permission, BEFORE Received. With Received tested
+			//      first, a browser preview and a Go test — neither of which can
+			//      ever be granted anything — would sit on "waiting for the
+			//      first fix" forever, which is a spinner telling a lie.
+			//      Received is a question about time only once there is a
+			//      permission for a fix to arrive under.
+			var fixNote string
+			switch {
+			case fix.Received && fix.Available:
+				// Accuracy printed beside the coordinates and not tucked away,
+				// because a 2000m radius is a fix of the city and looks exactly
+				// like a 5m one to any code that reads only Lat and Lng.
+				fixNote = fmt.Sprintf("%.5f, %.5f — accurate to about %.0f m",
+					fix.Lat, fix.Lng, fix.Accuracy)
+			case locationStatus == permission.Denied || locationStatus == permission.Unavailable:
+				fixNote = "No position, and none on the way — see the line below for why."
+			case !fix.Received:
+				fixNote = "Waiting for the first fix. Cold GPS can take half a minute outdoors " +
+					"and forever indoors, which is what Received is for."
+			default:
+				fixNote = "No fix: " + fix.Error
+			}
+
+			// The four states a permission-gated feature has to draw, which is
+			// the argument for Status having four values. Prompt is the only one
+			// with a button on it, and the button is a tap and never a render.
+			var fixPermissionNote string
+			var fixPermissionAction core.View = core.Fragment()
+			switch locationStatus {
+			case permission.Granted:
+				fixPermissionNote = "Granted. The sensor is running for as long as this lesson is."
+			case permission.Prompt:
+				fixPermissionNote = "Undecided, so the sensor has nothing to report yet. " +
+					"Asking shows the platform's dialog."
+				fixPermissionAction = components.Button{
+					Label:    "Use my location",
+					Emphasis: components.EmphasisOutlined,
+					// From a tap, never from the render pass — see the
+					// permission package. The readout above recovers on its own
+					// once this is granted: the hosts hold a refused start open
+					// and re-arm it when the answer changes, which they did not
+					// always do.
+					OnTap: func() { permission.Request(permission.Location) },
+				}
+			case permission.Denied:
+				fixPermissionNote = "Refused. Asking again shows nothing on most platforms — " +
+					"the fix is the system settings, and this readout updates when you come " +
+					"back, because the hook above is the Live one."
+			case permission.Unavailable:
+				fixPermissionNote = "This platform cannot grant it at all. A Go test and a " +
+					"static export are both here, which is why the readout says so rather " +
+					"than spinning."
+			default:
+				fixPermissionNote = "Checking…"
 			}
 
 			return core.Column(
@@ -2291,17 +2382,62 @@ core.OnRegionChange(func(r core.Region) { region.Set(r) })  // echo, if you want
 				codeBlock(`// The dot, drawn by the platform:
 core.MapView(region, core.ShowUserLocation())
 
-// The coordinates, in Go — ask for the permission first:
+// The coordinates, in Go. Call the hook unconditionally — it is a hook —
+// and gate what you DRAW on the permission:
+status := hooks.UsePermissionLive(ctx, permission.Location)
 loc := hooks.UseLocation(ctx)
 if loc.Received && loc.Available {
     region = core.Region{Lat: loc.Lat, Lng: loc.Lng, Zoom: 16}
 }`),
+				demoPanel("This panel runs the code above. On a phone it is a real fix; in a browser preview or a Go test it is the \"cannot\" branch.",
+					caption(fixNote),
+					caption(fixPermissionNote),
+					core.Row(
+						core.Gap(8),
+						fixPermissionAction,
+						components.Button{
+							Label:    "Centre the map on me",
+							Emphasis: components.EmphasisGhost,
+							// Disabled rather than hidden, so the button is a
+							// visible statement about the state rather than a
+							// control that comes and goes. A tap with no fix
+							// would set the region to 0,0 — which is a real
+							// place in the Gulf of Guinea and a confusing map.
+							Disabled: !fix.Received || !fix.Available,
+							OnTap: func() {
+								region.Set(core.Region{Lat: fix.Lat, Lng: fix.Lng, Zoom: 16})
+							},
+						},
+					),
+				),
+				prose("That panel is the one place in this tutorial that asks the OS for "+
+					"anything, and the order of the two hooks is the lesson. Both are called "+
+					"on every pass, unconditionally: hook slots are handed out by call "+
+					"position, so a UseLocation tucked inside a `case permission.Granted:` arm "+
+					"moves every slot after it the instant the permission changes. What the "+
+					"permission gates is the readout and the buttons, not the hook."),
+				prose("Which leaves the question of when the dialog appears, and the answer is "+
+					"the route. Mounting this lesson starts the sensor and leaving it stops "+
+					"the sensor, because a lesson is a navigation route and a route's cleanup "+
+					"registry is what releases the reference — so the reader asked for this by "+
+					"navigating here. A screen that must not ask until a tap belongs behind a "+
+					"button that navigates to it, which is the same mechanism spelled with one "+
+					"more screen."),
+				prose("Android reports \"not granted\" and waits; iOS shows the dialog from the "+
+					"sensor itself, because CLLocationManager can and startUpdatingLocation on "+
+					"an undecided authorization reports nothing at all, forever. Either way the "+
+					"refusal is an event and not a silence — Available: false with a reason — "+
+					"and either way granting it afterwards works: both hosts hold a refused "+
+					"start open and re-arm it when the answer changes, rather than needing the "+
+					"screen to be remounted."),
 				keyPoints(
 					"MapView is for maps that are part of the screen; StaticMap is for \"where is this\", and is smaller in every way.",
 					"Markers are keyed child nodes, so one that moves is one patch rather than a rebuilt layer.",
 					"The region is applied only when it changes — otherwise a re-render snaps the map out from under the user.",
 					"A pan is reported once, after it stops, and every host throttles on its own side.",
 					"ShowUserLocation is the platform's dot; hooks.UseLocation is a fix in Go. Same permission, different features.",
+					"Call both hooks unconditionally and gate what you draw — a hook inside a permission branch shifts every slot after it.",
+					"Accuracy is part of a position. 2000m is the cell tower's guess and looks exactly like a GPS fix to code that reads only Lat and Lng.",
 					"In the browser the map needs Leaflet on the host page. Without it the node draws a placeholder that still carries its region.",
 				),
 			)
