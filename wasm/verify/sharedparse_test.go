@@ -378,6 +378,13 @@ func TestTheQuestionsOnTheSharedRepositoryParseAreTheOnesDecidedOn(t *testing.T)
 	// programs, neither able to import the other's tests. Taken from the walk
 	// so that a record moving to a third package is a finding there rather
 	// than a silent change of subject here.
+	//
+	// A list of the two paths was considered and is worse. The three constants
+	// that bound this pair — timingsRecordCopies, twoCopyPackages and
+	// coresNoteScanDirs — are counts of it, and a list beside them would be a
+	// fourth statement of the same fact, this one a copy of something the walk
+	// computes on every run. What the counts are for is forcing a decision when
+	// the pair grows; what names the pair is the source.
 	recordDirs := map[string]bool{}
 	for _, r := range records {
 		recordDirs[path.Dir(r.rel)] = true

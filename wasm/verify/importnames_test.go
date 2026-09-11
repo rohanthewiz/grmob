@@ -605,10 +605,20 @@ func allTwoCopyShapes() []string {
 
 // How many packages the copy argument covers.
 //
-// Two, and it is the same constant as timingsRecordCopies with the same
-// reasoning behind it: two separate `package main` programs is a copy with a
-// written reason, and a third is a shape being kept in step across three
-// places by whoever remembers to.
+// Defined AS timingsRecordCopies rather than as 2, and the reason is that this
+// comment used to say "it is the same constant as timingsRecordCopies" while
+// being a literal. A sentence claiming two numbers are one number, beside a
+// second number, is the copy this repository spends most of its censuses on,
+// arriving in the constant that exists to bound a duplication.
+//
+// coresNoteScanDirs got this right two files over and says why: "a bare 2 here
+// would be a second number to keep in step by hand", and what the separate
+// NAME buys is a place for the second answer when somebody decides the two
+// should part. That argument applies here unchanged.
+//
+// The reasoning itself is the record's: two separate `package main` programs is
+// a copy with a written reason, and a third is a shape being kept in step
+// across three places by whoever remembers to.
 //
 // The difference from the timings record is what happens at two, and it is the
 // point of this pair of numbers sitting beside each other. The record's copy
@@ -617,7 +627,7 @@ func allTwoCopyShapes() []string {
 // to match. These are code, so the copies are held to being IDENTICAL, which
 // is the stronger thing and the cheaper one: there is nothing to decide about
 // whether a difference is meant.
-const twoCopyPackages = 2
+const twoCopyPackages = timingsRecordCopies
 
 // checkTwoCopyDecls holds every copy of the shapes above to being the
 // same declaration, and every package that has one to having all of them.
@@ -796,6 +806,36 @@ func checkTwoCopyDecls(t *testing.T, decls []twoCopyDecl) {
 		if len(byDir[dir]) == len(shapes) {
 			whole++
 		}
+	}
+	// Both directions, because the count can be wrong in two ways and only one
+	// of them was being asked about.
+	//
+	// Upwards is the trade changing: a third package means a shape kept in step
+	// across three places. Downwards is the copies quietly becoming ONE — and
+	// that is the direction nothing could see. A package that drops the whole
+	// set leaves the other one complete, the per-directory arm above with
+	// nothing to report, and this trigger under its limit; the comparison then
+	// runs over a single declaration and passes, which is exactly what a census
+	// over nothing looks like from the outside.
+	//
+	// It is reachable without a compile error: these helpers are used by the
+	// censuses in the file that declares them, so deleting the file and its
+	// callers together builds fine and halves the copies. The arm for "none of
+	// them anywhere" is above; this is the arm for "all of them, in one place".
+	if whole < twoCopyPackages {
+		t.Errorf("%d package(s) declare the whole set of %d two-copy shapes "+
+			"and the copy argument is written for %d: %s.\n\n"+
+			"Fewer copies than the argument covers is not a saving, it is the "+
+			"check going quiet: every shape is still found, every comparison "+
+			"still runs, and a comparison of one declaration against nothing "+
+			"passes. The two copies exist because two `package main` programs "+
+			"cannot import each other's tests — if that has stopped being "+
+			"true, the shapes belong in a package both import and these lists "+
+			"belong deleted, which is a better outcome than this check and is "+
+			"the one thing it cannot tell you has happened.\n\n"+
+			"Either restore the copy, or lower twoCopyPackages with the reason "+
+			"beside the copy argument.",
+			whole, len(shapes), twoCopyPackages, strings.Join(dirs, ", "))
 	}
 	if whole > twoCopyPackages {
 		t.Errorf("%d package(s) declare the two-copy shapes and the "+

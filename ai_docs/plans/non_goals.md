@@ -661,3 +661,37 @@ corpus is five sentences.
 **What would change this.** A fourth wrong width, or the same class appearing
 in a record that is not one of these two. Either makes the corpus big enough
 that extending the quoting convention is paid for by more than one rule.
+
+---
+
+## A constant whose doc names another constant is not held to being defined as it
+
+*Raised: 2026-09-11 · Moved here: 2026-09-11 · Code: the integer constants in
+`wasm/verify` and `internal/themehistory`*
+
+**What the defect was.** `twoCopyPackages` was `2`, and its own doc comment said
+"it is the same constant as `timingsRecordCopies`" — a sentence claiming two
+numbers are one number, beside a second number. `coresNoteScanDirs` had got this
+right two files over and written the argument down: "a bare 2 here would be a
+second number to keep in step by hand." Fixed: `twoCopyPackages` is now defined
+as `timingsRecordCopies`.
+
+**Why the rule is not written.** Measured: **27 integer constants across the two
+packages, 10 of them literals whose doc comment names another constant, and 1 of
+those 10 was a copy.** The other nine name a constant to point at a *pattern* —
+`gitWrapperAcceptRules` says `timingsRecordCopies` "is the same shape of
+constant for the same kind of reason", about acceptance rules in a git-wrapper
+census, and it is `2` by coincidence — and eight of the nine have a different
+value from the constant they name, so even a value comparison would not separate
+them.
+
+Telling "is the same constant as X" from "is the same shape of constant as X"
+is reading English, which is the thing the cores-note census learned not to do:
+"Every other way of deciding is this arm guessing at English." A rule that
+cannot make that distinction either reports nine false findings or waits for a
+convention nobody is following yet.
+
+**What would change this.** A second real instance, or a convention that marks
+the claim — a constant that says `= <other>` in its doc the way a taking table
+says its command. One defect in ten candidates is not enough to ask anybody to
+follow a new convention.
