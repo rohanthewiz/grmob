@@ -150,6 +150,31 @@ var verifyTimingsTakenOn = struct {
 	// was measured properly there — alternating the old code and the new —
 	// and came out the same for both. So this is the machine, said once in
 	// each record rather than argued about twice.
+	//
+	// # And how wide this range actually is, which is wider than it says
+	//
+	// It is twenty-one readings across two sessions, which is more than most
+	// figures here and is still not enough to have found its ends. The other
+	// record learned that the expensive way in the same afternoon: its plain
+	// row was set from three readings, contradicted by the next run, set
+	// again, and contradicted again — a floor being CHASED rather than
+	// measured — and settled only when it was taken from sixteen at once. The
+	// argument is written out at internal/themehistory/timings_test.go's
+	// wholePackage and it is not about that package.
+	//
+	// It applies to every figure in this record and to every inline number in
+	// this package's prose, all of which were set from three or seven
+	// readings. None of them is wrong. All of them are NARROWER THAN THE
+	// TRUTH by roughly what that row gained when it was taken properly —
+	// somewhere around a twentieth at each end — and a reader landing just
+	// outside one of them has been told, here, that the range is not tight
+	// enough to judge them by.
+	//
+	// Not fixed, because fixing it is a few hundred runs to learn what one
+	// row has already said, and because the direction it is wrong in is the
+	// harmless one: a range too narrow reports a difference that is not there,
+	// which sends somebody to look and find nothing. A range too wide would
+	// hide one.
 	wholeFile string
 	// TestHowWideTheNarrowerFoldIsAndWhatHoldsTheGap end to end, which is what
 	// inkglyph_test.go's `128ms` sits inside.

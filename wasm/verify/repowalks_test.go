@@ -210,7 +210,7 @@ func TestTheRepositoryWideWalksInThisPackageAreTheOnesDecidedOn(t *testing.T) {
 		// length is a run-time fact is a site nothing can price. Only the
 		// second is a finding — see priceCalls.
 		var looped, priced []string
-		_, callers := callSitesOf(w.fn, names, sources, parse)
+		_, _, callers := callSitesOf(w.fn, names, sources, parse)
 		for _, c := range callers {
 			n, sites := priceCalls(fset, c.fn, c.calls, packageInts, boundNames)
 			calls += n
@@ -233,6 +233,33 @@ func TestTheRepositoryWideWalksInThisPackageAreTheOnesDecidedOn(t *testing.T) {
 		found[i].looped = looped
 		found[i].priced = priced
 	}
+
+	// Every read declared `besides` a walk still being there, in a subtest of
+	// its own.
+	//
+	// # Why it is not a section of this one
+	//
+	// A `besides` row is defined as a read that is NOT a repository walk, and
+	// its findings were arriving under a test called
+	// TestTheRepositoryWideWalksInThisPackageAreTheOnesDecidedOn, sharing its
+	// log line and its failure. That is the one thing the field means, said
+	// under the one name that contradicts it.
+	//
+	// t.Run costs nothing here for the reason it costs nothing in
+	// copies_test.go: the parse has happened and the subtest reads what it
+	// built. What it buys is a name that says what failed and a boundary that
+	// keeps this question alive when the walk census stops.
+	//
+	// And it is BEFORE the reaching-anything arm below for the same reason
+	// copies_test.go orders its three the way it does. That arm is a t.Fatalf,
+	// which ends the goroutine, so a repository where the walks had been
+	// renamed used to report that and say nothing about whether the reads
+	// beside them still happen — the exact fault the subtests in
+	// copies_test.go were written to end, still open here because this one was
+	// added afterwards. Nothing in here reads `found`.
+	t.Run("the reads besides those walks", func(t *testing.T) {
+		checkReadsBesidesWalks(t, names, sources, parse)
+	})
 
 	// The walk reaching anything. A walk over nothing passes silently and
 	// reads as a clean result, and this one is looking for CALLS that a
@@ -344,74 +371,7 @@ func TestTheRepositoryWideWalksInThisPackageAreTheOnesDecidedOn(t *testing.T) {
 			strings.Join(row.asks, "; "))
 	}
 
-	// Every read declared `besides` a walk still being there. See besidesRow:
-	// this is what makes that row a claim something can be wrong about rather
-	// than a sentence, and it is the same question `runs` asks of a helper —
-	// is this function here, and does anything call it.
-	for _, w := range repositoryWalks {
-		for _, b := range w.besides {
-			declared, sites := callSitesOf(b.through, names, sources, parse)
-			callers := make([]string, 0, len(sites))
-			for _, c := range sites {
-				callers = append(callers, c.fn.Name.Name)
-			}
-			sort.Strings(callers)
-			if !declared {
-				t.Errorf("%s's row says it reads %s through %s, and nothing "+
-					"in this directory declares a `func %s`.\n\n"+
-					"That row is the only place this read is counted: the "+
-					"budgets above are about repository walks and this is "+
-					"not one, so a row describing a function that has gone "+
-					"is a read nobody is watching — or a row for a read that "+
-					"no longer happens, and a figure in the log that is "+
-					"about nothing.\n\nIf the read has moved, move the row "+
-					"with it; if it has gone, take the row out.",
-					w.fn, b.reads, b.through, b.through)
-				continue
-			}
-			if len(callers) == 0 {
-				t.Errorf("%s's row says it reads %s through %s, and nothing "+
-					"in this directory calls `%s`.\n\n"+
-					"A declared function nothing calls is a read that does "+
-					"not happen, and the row beside it is a cost being "+
-					"reported on every green run for work this package no "+
-					"longer does — the opposite failure from the one this "+
-					"field exists for, and as invisible.\n\nEither the "+
-					"call has gone and the row should go with it, or it has "+
-					"moved behind a name this scan cannot see, in which case "+
-					"`through` should name whatever is called directly.",
-					w.fn, b.reads, b.through, b.through)
-				continue
-			}
-			// And the figure beside it being attributed. The NUMBER cannot
-			// be held — a wall clock is a reading of a machine, which is why
-			// this repository keeps records instead of asserting timings —
-			// but which machine it was taken on can, and every other
-			// wall-clock figure in this package's prose says so. A cost with
-			// no record behind it is a number a reader on a different
-			// computer has no way to place, which is the whole thing
-			// verifyTimingsTakenOn exists to end.
-			if !strings.Contains(b.costs, timingsRecordName) {
-				t.Errorf("%s's row prices its read through %s at %q, and that "+
-					"figure does not name %s.\n\n"+
-					"A wall clock is a reading of a machine. This repository "+
-					"does not assert one — that is why the record exists — "+
-					"and the thing it does instead is attribute it, so that a "+
-					"reader holding a different number knows whether they are "+
-					"looking at a regression or at a different computer.\n\n"+
-					"Every other figure in this package's prose says where it "+
-					"was taken. Say it here: the cost is part of the same "+
-					"run, and a number in a field with no machine behind it "+
-					"is the state every timing in this repository was in "+
-					"before the record.",
-					w.fn, b.through, b.costs, timingsRecordName)
-			}
-			t.Logf("%s reads %s through %s, called from %s.", w.fn, b.reads,
-				b.through, strings.Join(callers, ", "))
-		}
-	}
-
-	// Counted in WALKS and not in functions: a helper called twice is two
+	// Counted in WALKS and not in functions: a helper called twice is two	// Counted in WALKS and not in functions: a helper called twice is two
 	// walks, and the budget is about what a run pays.
 	walks, parses := 0, 0
 	for _, w := range found {
@@ -465,30 +425,123 @@ func TestTheRepositoryWideWalksInThisPackageAreTheOnesDecidedOn(t *testing.T) {
 	// growing a fourth entry is a walk that has become a place to put things,
 	// and that is worth a number rather than a long field — see repositoryWalks.
 	questions := 0
-	var besides []string
 	for _, w := range repositoryWalks {
 		questions += len(w.asks)
-		for _, b := range w.besides {
-			besides = append(besides, fmt.Sprintf("%s, through %s: %s. %s",
-				w.fn, b.through, b.reads, b.costs))
-		}
-	}
-	// And the reads that are not repository walks, which the budgets above do
-	// not govern and which are therefore the ones worth printing by name. See
-	// repositoryWalkRow.besides.
-	aside := ""
-	if len(besides) > 0 {
-		aside = fmt.Sprintf("\n\n%d read(s) besides, which are not "+
-			"repository-wide and are not counted above:\n%s", len(besides),
-			strings.Join(besides, "\n"))
 	}
 	t.Logf("%d repository-wide walk(s) per run in this package, %d of them "+
 		"parsing every Go file, from %d function(s), asking %d question(s) "+
 		"between them: %s. Found by scanning %d Go file(s) in this directory "+
 		"and parsing the %d that named something. Their cost is part of "+
-		"verifyTimingsTakenOn.wholeFile.%s%s",
+		"verifyTimingsTakenOn.wholeFile.%s",
 		walks, parses, len(found), questions, walkList(found), len(names),
-		len(trees), bounded, aside)
+		len(trees), bounded)
+}
+
+// checkReadsBesidesWalks holds every `besides` row to describing a read that
+// still happens, and to attributing the figure beside it.
+//
+// # What is held, and what cannot be
+//
+//	the function     declared in this package, and called by something. Which
+//	                 is what `runs` already asks of a helper, applied to a
+//	                 read instead of a walk
+//	the attribution  the cost naming the timings record, because every other
+//	                 wall-clock figure in this package's prose does
+//	the number       nothing. A wall clock is a reading of a machine, which is
+//	                 the whole reason this repository keeps records rather
+//	                 than asserting timings
+//
+// Two of the three are exact and the third is impossible, which is worth
+// stating in that order: the field is not half-checked by oversight.
+func checkReadsBesidesWalks(t *testing.T, names []string,
+	sources map[string][]byte, parse func(string) *ast.File) {
+
+	t.Helper()
+	rows := 0
+	for _, w := range repositoryWalks {
+		for _, b := range w.besides {
+			rows++
+			declared, asMethod, sites := callSitesOf(b.through, names, sources,
+				parse)
+			callers := make([]string, 0, len(sites))
+			for _, c := range sites {
+				callers = append(callers, c.fn.Name.Name)
+			}
+			sort.Strings(callers)
+			if !declared {
+				// The limit named rather than described. A method of this
+				// name is a real declaration this scan cannot find calls to,
+				// and telling a reader "nothing declares it" would point them
+				// at code that is right.
+				method := ""
+				if asMethod {
+					method = fmt.Sprintf("\n\nThis package DOES declare a "+
+						"method `%s`, and that is the finding: `through` has "+
+						"to name a function, because this scan reads bare "+
+						"identifiers. A call spelled `x.%s(…)` needs the "+
+						"receiver's type to resolve, which is the cost every "+
+						"walk in this package declines — so a method here is "+
+						"a read nothing can hold. Point `through` at whatever "+
+						"is called without a receiver, or say in the row why "+
+						"there is nothing to point it at.", b.through,
+						b.through)
+				}
+				t.Errorf("%s's row says it reads %s through %s, and nothing "+
+					"in this directory declares a `func %s`.\n\n"+
+					"That row is the only place this read is counted: the "+
+					"budgets are about repository walks and this is not one, "+
+					"so a row describing a function that has gone is a read "+
+					"nobody is watching — or a row for a read that no longer "+
+					"happens, and a figure in the log that is about "+
+					"nothing.\n\nIf the read has moved, move the row with "+
+					"it; if it has gone, take the row out.%s",
+					w.fn, b.reads, b.through, b.through, method)
+				continue
+			}
+			if len(callers) == 0 {
+				t.Errorf("%s's row says it reads %s through %s, and nothing "+
+					"in this directory calls `%s`.\n\n"+
+					"A declared function nothing calls is a read that does "+
+					"not happen, and the row beside it is a cost being "+
+					"reported on every green run for work this package no "+
+					"longer does — the opposite failure from the one this "+
+					"field exists for, and as invisible.\n\nEither the "+
+					"call has gone and the row should go with it, or it has "+
+					"moved behind a spelling this scan cannot see: bare "+
+					"identifiers only, so a call through a method or a "+
+					"function value is one `through` cannot name.",
+					w.fn, b.reads, b.through, b.through)
+				continue
+			}
+			// And the figure beside it being attributed. The NUMBER cannot
+			// be held — a wall clock is a reading of a machine, which is why
+			// this repository keeps records instead of asserting timings —
+			// but which machine it was taken on can, and every other
+			// wall-clock figure in this package's prose says so. A cost with
+			// no record behind it is a number a reader on a different
+			// computer has no way to place, which is the whole thing
+			// verifyTimingsTakenOn exists to end.
+			if !strings.Contains(b.costs, timingsRecordName) {
+				t.Errorf("%s's row prices its read through %s at %q, and that "+
+					"figure does not name %s.\n\n"+
+					"A wall clock is a reading of a machine. This repository "+
+					"does not assert one — that is why the record exists — "+
+					"and the thing it does instead is attribute it, so that a "+
+					"reader holding a different number knows whether they are "+
+					"looking at a regression or at a different computer.\n\n"+
+					"Every other figure in this package's prose says where it "+
+					"was taken. Say it here: the cost is part of the same "+
+					"run, and a number in a field with no machine behind it "+
+					"is the state every timing in this repository was in "+
+					"before the record.",
+					w.fn, b.through, b.costs, timingsRecordName)
+			}
+			t.Logf("%s reads %s through %s, called from %s. %s", w.fn, b.reads,
+				b.through, strings.Join(callers, ", "), b.costs)
+		}
+	}
+	t.Logf("%d read(s) besides the repository walks, which the budgets there "+
+		"do not govern and which are therefore the ones worth naming.", rows)
 }
 
 // The three depths a repository walk comes in, cheapest first.
@@ -1176,8 +1229,16 @@ type callsIn struct {
 // The declaration itself is never one of the callers, which would otherwise
 // report a recursive helper as its own caller and a non-recursive one as
 // having none.
+//
+// # What `asMethod` is for
+//
+// Bare identifiers are what this finds, so a METHOD of the same name is a
+// declaration it cannot find calls to. Reporting that as "nothing declares a
+// func of this name" is true and useless — it points a reader at the code when
+// the answer is about the scan. `asMethod` says which of the two it is, so the
+// finding can name the limit instead of describing its symptom.
 func callSitesOf(name string, names []string, sources map[string][]byte,
-	parse func(string) *ast.File) (declared bool, in []callsIn) {
+	parse func(string) *ast.File) (declared, asMethod bool, in []callsIn) {
 
 	for _, file := range names {
 		if !bytes.Contains(sources[file], []byte(name)) {
@@ -1192,8 +1253,19 @@ func callSitesOf(name string, names []string, sources map[string][]byte,
 			if !ok || fn.Body == nil {
 				continue
 			}
-			if fn.Recv == nil && fn.Name.Name == name {
-				declared = true
+			if fn.Name.Name == name {
+				if fn.Recv == nil {
+					declared = true
+					continue
+				}
+				// A METHOD of the same name. Not a declaration this can find
+				// calls to — those are spelled `x.Fn(…)` and resolving the
+				// receiver means type information this walk declines — but
+				// knowing it is there turns a misleading finding into an
+				// exact one. See the `besides` pass: a row pointed at a
+				// method gets told that, rather than being told its function
+				// does not exist.
+				asMethod = true
 				continue
 			}
 			var calls []*ast.CallExpr
@@ -1212,7 +1284,7 @@ func callSitesOf(name string, names []string, sources map[string][]byte,
 			}
 		}
 	}
-	return declared, in
+	return declared, asMethod, in
 }
 
 // boundNamesIn is every identifier this function binds: its receiver, its
@@ -1455,34 +1527,51 @@ func mentionsAnEnumeration(raw []byte) bool {
 
 // enumerationList is the entry points, for a message.
 func enumerationList() string {
-	out := make([]string, 0, len(enumerationEntryPoints))
-	for name := range enumerationEntryPoints {
-		out = append(out, name)
-	}
-	sort.Strings(out)
-	return strings.Join(out, ", ")
+	return listOf(keysOf(enumerationEntryPoints), func(name string) string {
+		return name
+	})
 }
 
 // repositoryWalkList is the decided walks, for a message.
 func repositoryWalkList() string {
-	out := make([]string, 0, len(repositoryWalks))
-	for _, w := range repositoryWalks {
-		out = append(out, fmt.Sprintf("%s (%s)", w.fn, w.file))
-	}
-	sort.Strings(out)
-	return strings.Join(out, ", ")
+	return listOf(repositoryWalks, func(w repositoryWalkRow) string {
+		return fmt.Sprintf("%s (%s)", w.fn, w.file)
+	})
 }
 
 // walkList is what the scan found, for a message.
 func walkList(found []repositoryWalk) string {
-	out := make([]string, 0, len(found))
-	for _, w := range found {
+	return listOf(found, func(w repositoryWalk) string {
 		runs := ""
 		if w.runs != 1 {
 			runs = fmt.Sprintf(", ×%d", w.runs)
 		}
-		out = append(out, fmt.Sprintf("%s (%s:%d, %s%s)", w.fn, w.file, w.line,
-			w.depth, runs))
+		return fmt.Sprintf("%s (%s:%d, %s%s)", w.fn, w.file, w.line, w.depth,
+			runs)
+	})
+}
+
+// listOf is a slice rendered for a message: each element formatted, the
+// results sorted, joined with ", ".
+//
+// # Why this exists
+//
+// There were four of these in two files, each with the same three lines around
+// a different Sprintf, and the fourth was added by the session that noticed
+// the first three. That is the cheapest kind of duplication and the easiest to
+// keep adding to: nobody looks for a helper before writing six lines.
+//
+// # Why the sort is after the format and not before
+//
+// It is a sort of what a reader SEES. Sorting the elements and then formatting
+// would order a walk list by whatever field the struct happens to compare on;
+// sorting the strings orders it by the line a person reads, which is the only
+// order a failure message can be diffed in. Every one of the four did it this
+// way already — this makes it the helper's rule rather than four coincidences.
+func listOf[T any](in []T, format func(T) string) string {
+	out := make([]string, 0, len(in))
+	for _, item := range in {
+		out = append(out, format(item))
 	}
 	sort.Strings(out)
 	return strings.Join(out, ", ")

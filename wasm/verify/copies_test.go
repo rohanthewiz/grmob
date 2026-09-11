@@ -370,11 +370,9 @@ func checkTimingsRecordCopies(t *testing.T, root, from string, filesSeen int,
 	checkCoresNoteNamesEveryScaledTerm(t, seen, coreSites, noteText)
 	checkCoresNoteNamesNothingThatIsGone(t, root, seen, noteText)
 
-	names := make([]string, 0, len(records))
-	for _, r := range records {
-		names = append(names, fmt.Sprintf("%s (%s:%d)", r.name, r.rel, r.line))
-	}
-	sort.Strings(names)
+	// The same rendering the per-package findings above use, over every record
+	// rather than one package's — see recordList.
+	all := recordList(records)
 
 	// The trigger. See the header: two is a copy with a written reason, three
 	// is a shape being kept in step by memory.
@@ -394,14 +392,13 @@ func checkTimingsRecordCopies(t *testing.T, root, from string, filesSeen int,
 			"timingsRecordCopies and write that reason down where the copy "+
 			"argument is, so the next person reads a decision rather than a "+
 			"number.",
-			len(records), timingsRecordCopies, strings.Join(names, ", "),
-			len(records), len(records))
+			len(records), timingsRecordCopies, all, len(records), len(records))
 	}
 
 	t.Logf("%d timings record(s), each with the %d machine field(s), a `%s` "+
 		"and a `%s` in its package: %s. Enumerated by %s.",
 		len(records), len(timingsMachineFields), timingsArm, timingsCoresNote,
-		strings.Join(names, ", "), from)
+		all, from)
 }
 
 // recordList is the records one package declares, for a message.
@@ -410,12 +407,9 @@ func checkTimingsRecordCopies(t *testing.T, root, from string, filesSeen int,
 // the edit is in a file: a reader told "internal/foo declares no arm" needs to
 // know which numbers are the ones going unattributed.
 func recordList(in []timingsRecord) string {
-	out := make([]string, 0, len(in))
-	for _, r := range in {
-		out = append(out, fmt.Sprintf("%s (%s:%d)", r.name, r.rel, r.line))
-	}
-	sort.Strings(out)
-	return strings.Join(out, ", ")
+	return listOf(in, func(r timingsRecord) string {
+		return fmt.Sprintf("%s (%s:%d)", r.name, r.rel, r.line)
+	})
 }
 
 // timingsRecord is one `…TimingsTakenOn` declaration the walk found.
@@ -1027,6 +1021,20 @@ func termsNamedIn(note string) []string {
 //
 // Errors are reported once per file for the same reason — a file that cannot
 // be opened is one finding about that file, not one per asking.
+//
+// # What bounds it, which is the same constant that bounds the copies
+//
+// A cache with no stated limit is a cache nobody notices growing, and the
+// thing that would grow this one is named right here in the file: a third
+// package carrying a timings record, which timingsRecordCopies explicitly
+// contemplates and which the trigger above exists to prompt a decision about.
+//
+// So the directories this may hold is timingsRecordCopies, and asking about
+// one more is a finding rather than a quiet doubling. It is the same
+// arrangement repositoryParseBudget has — a number that forces a decision
+// rather than a limit for its own sake — and it fires at the same moment the
+// record's own trigger does, which is the moment somebody is already reading
+// about the trade.
 type packageSource struct {
 	fset *token.FileSet
 	// dir -> its .go file names, sorted.
@@ -1040,6 +1048,15 @@ type packageSource struct {
 	parsed map[string]bool
 	// Files already reported as unreadable or unparseable.
 	told map[string]bool
+}
+
+// listedDirs is the directories already held, as a set, for the message above.
+func (p *packageSource) listedDirs() map[string]bool {
+	out := make(map[string]bool, len(p.listed))
+	for dir := range p.listed {
+		out[dir] = true
+	}
+	return out
 }
 
 func newPackageSource() *packageSource {
@@ -1125,10 +1142,32 @@ func identifiersIn(t *testing.T, p *packageSource, dir string,
 }
 
 // filesIn is a directory's .go files, sorted, listed once.
+//
+// The first listing of a directory is what counts against the budget: a
+// question about a directory already held costs nothing, and a question about
+// a new one is the cache growing.
 func (p *packageSource) filesIn(t *testing.T, dir string) []string {
 	t.Helper()
 	if names, done := p.listed[dir]; done {
 		return names
+	}
+	if len(p.listed) >= timingsRecordCopies {
+		t.Errorf("the cores-note scan has been asked about %s, which makes %d "+
+			"directory(ies) this run — and this repository keeps %d "+
+			"package(s) with a timings record in them: %s.\n\n"+
+			"This scan holds every listing, every file's bytes and every "+
+			"syntax tree it reads until the check returns, and the set it "+
+			"reads is the set of packages that carry a record. A third "+
+			"directory is either that set having grown — in which case the "+
+			"record's own trigger is firing too, and the decision to make is "+
+			"the one it describes — or this scan being used for something "+
+			"else, in which case what bounds it is no longer a constant this "+
+			"file owns.\n\n"+
+			"Raise timingsRecordCopies with the reason beside the copy "+
+			"argument, as that trigger asks, or give this scan a budget of "+
+			"its own and say what it is.",
+			dir, len(p.listed)+1, timingsRecordCopies,
+			strings.Join(keysOf(p.listedDirs()), ", "))
 	}
 	p.listed[dir] = nil
 	entries, err := os.ReadDir(dir)
