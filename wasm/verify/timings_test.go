@@ -256,9 +256,9 @@ var verifyTimingsTakenOn = struct {
 // # What this package's answer actually is, which is not "nothing"
 //
 // The expensive half of wholeFile does not move. The four repository-wide
-// walks hand every tracked Go file to go/parser one after another — 386 of
-// them where this record was taken, 0.18s each, single-threaded, the same
-// number on any machine — and foldWalk is a node process this package waits on
+// walks hand every Go file in the tree to go/parser one after another — 386
+// tracked Go files where this record was taken, 0.18s each, single-threaded,
+// the same number on any machine — and foldWalk is a node process this package waits on
 // rather than shares a core with.
 //
 // What does move is the afforded* band family in themenearmiss_test.go —
@@ -315,7 +315,7 @@ var verifyTimingsTakenOn = struct {
 // either direction reads — a term named in prose is neither claimed nor
 // checked.
 const coresAttribution = "The four repository-wide walks in this package are " +
-	"single-threaded — go/parser over every tracked Go file, 386 of them " +
+	"single-threaded — go/parser over 386 tracked Go files " +
 	"where this record was taken, 0.18s each — and " +
 	"`foldWalk` is a node process. Those do not move with the core count. " +
 	"Two declarations do, and they are the whole of it: " +

@@ -9,6 +9,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -18,7 +19,7 @@ import (
 // Everything this repository deliberately keeps two copies of, held to being
 // two copies of the same thing.
 //
-// # The three shapes, and why they are in one walk
+// # The four shapes, and why they are in one walk
 //
 //	the timings record    five machine fields, a reporting arm and a standing
 //	                      sentence about what a core count is worth, in
@@ -33,6 +34,12 @@ import (
 //	                      package that reads the core count is named in that
 //	                      package's note, and every term the note names is
 //	                      still something that package has
+//	the file counts       every sentence in this repository that prices
+//	                      something against how many Go files the tree holds,
+//	                      held to the count this walk has just made. The
+//	                      second copy of that number is the TREE — the one
+//	                      shape here whose other copy is not source. See
+//	                      checkProseFileCounts
 //
 // They are one arm because they are one repository-wide parse, and a fifth of
 // those is the decision repositoryParseBudget exists to force. None of these
@@ -40,11 +47,11 @@ import (
 // walk has already built — so taking one would be spending the budget on the
 // arrangement of this file rather than on a question.
 //
-// # Why they are three subtests and not three sections
+// # Why they are four subtests and not four sections
 //
 // One walk is what the budget requires; one FUNCTION was what the first
 // arrangement made of it, and those are not the same thing. Each of these
-// three questions ends in a reaching-anything arm, and every one of those is a
+// questions ends in a reaching-anything arm, and every one of those is a
 // t.Fatalf — a walk over nothing passes silently and reads as a clean result,
 // so the only honest thing to do about it is to stop. A Fatalf stops the
 // GOROUTINE, so three questions in one function is three questions one of
@@ -59,8 +66,40 @@ import (
 // together.
 //
 // The order is the cheap-to-say first: the two that read declarations the walk
-// collected, then the records, whose own checks are the ones with the Fatalf
-// in them.
+// collected, then the file counts, which are one integer comparison, then the
+// records, whose own checks are the longest.
+//
+// # Why a figure in prose is a copy, which is the fourth shape
+//
+// A sentence that says "386 tracked Go files" is holding a number that lives
+// somewhere else — the tree — and nothing joins the two. That is this file's
+// subject exactly: a copy kept in step by somebody remembering to. It had
+// already drifted by four, across five sentences, in the package whose whole
+// argument is that a number nobody can attribute is worth nothing, and what
+// found it was a reader who had not written it rather than any of the eleven
+// verification paths.
+//
+// It is an ARM and not a report, which the wall clocks in the same sentences
+// are not allowed to be. The difference is what the number is a fact about: a
+// timing is a fact about one computer, so asserting it would fail on every
+// machine that is not that one, and a file count is a fact about the TREE, so
+// a count that disagrees here disagrees for everybody. See
+// verifyTimingsTakenOn for the other half of that argument.
+//
+// The cost is that adding a Go file to this repository now fails a test until
+// those sentences are edited. That is the point and not a side effect — the
+// alternative is the five sentences nobody could trust, which is what they
+// were — and the message names every one of them with its line so the fix is
+// one pass rather than a search.
+//
+// Two limits, both stated rather than resolved. This walk skips
+// copies_test.go by name, so a figure written HERE is not held — which is
+// load-bearing rather than incidental, because the paragraph above quotes one
+// as an example and would otherwise be a finding about itself. It is the same
+// trade the skip already makes, and this file prices nothing against the
+// count. And what is held is the FORM — see trackedGoFileFigure — not the
+// practice: a sentence that quotes the count some other way is not a finding,
+// it is a sentence this cannot read.
 //
 // # What this is about, which is a duplication that is currently correct
 //
@@ -121,6 +160,12 @@ func TestTheShapesThisRepositoryKeepsTwoCopiesOfAreInStep(t *testing.T) {
 	var resolverDecls []importResolverDecl
 	var asks []importPathAsk
 	var coreSites []coreCountSite
+	// Every sentence in the tree that quotes the tracked-Go-file count, and
+	// the count itself. Both are readings of this same walk: the figures come
+	// off the parse below and the number comes off the enumeration above, so
+	// the fourth question costs the walk nothing it was not already paying.
+	var figures []proseFigure
+	goFiles := 0
 	// dir -> what its cores note says and what it names. The PRESENCE of the
 	// note is `notes`, which is what the record check holds each package to;
 	// this is the note itself, which is what the two checks over its content
@@ -137,6 +182,11 @@ func TestTheShapesThisRepositoryKeepsTwoCopiesOfAreInStep(t *testing.T) {
 		if !strings.HasSuffix(rel, ".go") {
 			continue
 		}
+		// Counted BEFORE the skip below, because what the prose figures claim
+		// is the size of the tree and copies_test.go is a file in it. Counted
+		// before the parse too: a file go/parser cannot read is still a Go
+		// file git is tracking.
+		goFiles++
 		// This file names the fields and the arm in its own prose and declares
 		// neither. Skipped by name for the reason gitquoting_test.go skips
 		// itself: a check that reads its own explanation as a finding is a
@@ -145,7 +195,25 @@ func TestTheShapesThisRepositoryKeepsTwoCopiesOfAreInStep(t *testing.T) {
 			continue
 		}
 		src := filepath.Join(root, filepath.FromSlash(rel))
-		file, parseErr := parser.ParseFile(fset, src, nil, parser.SkipObjectResolution)
+		// Read here rather than left to go/parser so that the bytes can be
+		// used twice: once as the source of the parse, and once as the filter
+		// that decides whether this file's prose is worth walking at all.
+		// ParseFile reads the file itself when handed nil, so this is the
+		// same read moved rather than a second one.
+		raw, readErr := os.ReadFile(src)
+		if readErr != nil {
+			// Same reasoning as the parse failure below: git listed it, the
+			// stat in citingFiles found it, and a file that has gone away
+			// between then and now is not this check's business.
+			continue
+		}
+		// ParseComments because one of the four questions here is about the
+		// PROSE and go/parser throws comments away unless asked. Measured
+		// over this walk's own 386 files on the machine verifyTimingsTakenOn
+		// names, five runs apiece: 0.040s without the comments and 0.044s
+		// with them.
+		file, parseErr := parser.ParseFile(fset, src, raw,
+			parser.SkipObjectResolution|parser.ParseComments)
 		if parseErr != nil {
 			// A file go/parser cannot read is not this check's business — the
 			// build says so first, and every other reading here would be
@@ -162,6 +230,22 @@ func TestTheShapesThisRepositoryKeepsTwoCopiesOfAreInStep(t *testing.T) {
 		// And every place this file reads the core count, which is what makes
 		// a cores note checkable rather than merely present.
 		coreSites = append(coreSites, coreCountSitesIn(t, fset, rel, file)...)
+		// And every sentence in it that quotes the tracked-Go-file count,
+		// read off the comments and string constants the parse just built —
+		// which is why this is here and not in a scan of its own.
+		//
+		// Filtered by a byte scan first, which is the same move the walk
+		// census makes one file over and cannot produce a false negative: a
+		// figure in the held form contains this word, in a comment or in a
+		// string, whatever else the file says. It matters because the scan
+		// below walks EVERY node of a syntax tree and builds a run of text
+		// out of every comment group and every string constant in it, and 11
+		// of these 386 files contain the word at all. Measured: 0.09s over
+		// all of them, 0.00s with the filter, which is 3% of this package's
+		// wall clock for a question with five answers in it.
+		if bytes.Contains(raw, []byte("tracked")) {
+			figures = append(figures, fileCountFiguresIn(fset, rel, file)...)
+		}
 		for _, d := range file.Decls {
 			switch decl := d.(type) {
 			case *ast.FuncDecl:
@@ -218,8 +302,8 @@ func TestTheShapesThisRepositoryKeepsTwoCopiesOfAreInStep(t *testing.T) {
 		}
 	}
 
-	// One walk, three questions, three failure boundaries. See the header for
-	// why this is t.Run and not three sections of one function: each of these
+	// One walk, four questions, four failure boundaries. See the header for
+	// why this is t.Run and not four sections of one function: each of these
 	// ends in a t.Fatalf over a walk that reached nothing, and a Fatalf ends
 	// the goroutine it is on.
 	t.Run("the import-resolving helpers", func(t *testing.T) {
@@ -227,6 +311,9 @@ func TestTheShapesThisRepositoryKeepsTwoCopiesOfAreInStep(t *testing.T) {
 	})
 	t.Run("the paths those helpers are asked about", func(t *testing.T) {
 		checkImportPathsAreImportable(t, root, asks)
+	})
+	t.Run("the file counts in this repository's prose", func(t *testing.T) {
+		checkProseFileCounts(t, from, goFiles, figures)
 	})
 	t.Run("the timings records", func(t *testing.T) {
 		checkTimingsRecordCopies(t, root, from, len(paths), records, arms,
@@ -1177,6 +1264,25 @@ func identifiersIn(t *testing.T, p *packageSource, dir string,
 // The first listing of a directory is what counts against the budget: a
 // question about a directory already held costs nothing, and a question about
 // a new one is the cache growing.
+//
+// # The budget is advisory, deliberately
+//
+// Over it, this reports with t.Errorf and then lists the directory anyway.
+// Nothing about the reading is refused, and the cache really does grow past
+// coresNoteScanDirs on that run.
+//
+// The alternative is to return nil, and the cost of that is the wrong finding
+// in front of the wrong person. A check whose scan was truncated reports what
+// the truncation did — every term the note names reads as one this package no
+// longer has, because the files that declare them were never listed — so the
+// run would carry one true finding about a cache and a dozen invented ones
+// about a cores note, with nothing saying which was which. That is the same
+// argument the ReadDir failure below makes, and it ends the same way: say
+// what is wrong with the scan, and let the scan still give its real answer.
+//
+// So this is a TRIGGER and not a limit. What it bounds is how long a growing
+// cache can go unremarked, which is one run — not how much memory this may
+// hold, which is bounded by the repository.
 func (p *packageSource) filesIn(t *testing.T, dir string) []string {
 	t.Helper()
 	if names, done := p.listed[dir]; done {
@@ -1383,4 +1489,267 @@ func stringLiteralValue(e ast.Expr) string {
 		return stringLiteralValue(x.X)
 	}
 	return ""
+}
+
+// A sentence's claim about how many Go files this repository tracks.
+//
+// # Why the form is fixed
+//
+// The five sentences that quote this number wrote it three ways — `386
+// tracked Go files`, `386 of them`, `386 where` — and the last two are only
+// numbers because of the clause before them says what "them" is. That is a
+// reading no regexp makes, and guessing how far back a pronoun reaches, in
+// paragraphs that also quote wall clocks, core counts and budgets, is a check
+// that invents findings.
+//
+// So the convention is that the number and what it counts go in one breath.
+// It is the same rule coresAttribution states for the terms it names — those
+// go in backquotes, and a term named in prose is neither claimed nor checked
+// — applied to a figure instead of a name: a number written in this form is a
+// reading of the tree and is held to it, and a number written any other way
+// is English.
+//
+// Singular is matched as well as plural. `1 tracked Go file` is the same
+// claim, and a rule that could not read it would be a rule with a hole in it
+// at exactly the size where somebody would notice.
+var trackedGoFileFigure = regexp.MustCompile(`\b(\d+) tracked Go files?\b`)
+
+// proseFigure is one such claim: where it is written, what it says, and
+// whether it stands in a comment or in a string constant.
+//
+// The last is not decoration. A string constant in this repository can be
+// something another package's test reads without running this one —
+// coresAttribution is exactly that, evaluated out of the source by
+// stringLiteralValue — so editing one has a second consequence that editing a
+// comment does not, and a person handed a list of lines to fix wants to know
+// which kind each one is before they start.
+type proseFigure struct {
+	rel   string
+	line  int
+	count int
+	in    string
+}
+
+// figureList renders figures for a failure message. Beside the type rather
+// than in messagelists_test.go for the reason the other named renderers are:
+// what it encodes is which fields a reader needs in order to go and find the
+// sentence, which is a fact about this type. See messagelists_test.go for the
+// convention it follows.
+func figureList(in []proseFigure) string {
+	return listOf(in, func(f proseFigure) string {
+		return fmt.Sprintf("%s:%d says %d, in %s", f.rel, f.line, f.count, f.in)
+	})
+}
+
+// prose is a run of text assembled out of pieces that each have a line of
+// their own — the lines of a comment group, or the literals a `+` chain joins
+// — collapsed to single spaces, with enough kept to say which line any part
+// of the result was written on.
+//
+// # Why the collapse is necessary
+//
+//	// … a reading of a repository on a day — 386
+//	// tracked Go files where verifyTimingsTakenOn was taken — and it …
+//
+// That is one phrase to the person reading it and two to anything matching
+// raw lines, and it is how the first of the five figures is actually written.
+// Joining the group and matching the join is the only thing that reads it the
+// way a reader does.
+//
+// # Why the lines are kept
+//
+// A comment group here is routinely forty lines long. Reporting a figure at
+// the line the GROUP starts on would point a person at the top of a section
+// and leave them to find which sentence, which is most of the work the
+// message exists to save them. So each word carries the line it came from and
+// a match is attributed to the word it starts at.
+type prose struct {
+	text  strings.Builder
+	at    []int // byte offset within text of each word
+	lines []int // the line that word was written on
+}
+
+// add appends one piece — a comment line, or a string literal — written on
+// the given line. Words are separated by exactly one space whatever the piece
+// held, which is the collapse; a piece that splits a word in half (`"38" +
+// "6 tracked Go files"`) is therefore not found, and that is the one shape
+// this declines to read rather than guessing at.
+func (p *prose) add(line int, s string) {
+	for _, word := range strings.Fields(s) {
+		if p.text.Len() > 0 {
+			p.text.WriteByte(' ')
+		}
+		p.at = append(p.at, p.text.Len())
+		p.lines = append(p.lines, line)
+		p.text.WriteString(word)
+	}
+}
+
+// lineAt is the line the word covering this byte offset was written on.
+func (p *prose) lineAt(off int) int {
+	// The last word that starts at or before the offset. SearchInts finds the
+	// first start strictly greater, so one back from it is the word the
+	// offset is inside.
+	i := sort.SearchInts(p.at, off+1) - 1
+	if i < 0 || len(p.lines) == 0 {
+		return 0
+	}
+	return p.lines[i]
+}
+
+// figures is every tracked-Go-file claim in this run of text.
+func (p *prose) figures(rel, in string) []proseFigure {
+	text := p.text.String()
+	var out []proseFigure
+	for _, m := range trackedGoFileFigure.FindAllStringSubmatchIndex(text, -1) {
+		n, err := strconv.Atoi(text[m[2]:m[3]])
+		if err != nil {
+			// Unreachable while the pattern is `\d+`, and cheaper to handle
+			// than to argue about: a figure nobody can turn into a number is
+			// not a figure this can hold either way.
+			continue
+		}
+		out = append(out, proseFigure{rel: rel, line: p.lineAt(m[0]),
+			count: n, in: in})
+	}
+	return out
+}
+
+// fileCountFiguresIn is every tracked-Go-file figure in one file's prose.
+//
+// Comments and string constants both, because the count is quoted in both:
+// four of the five sentences are doc comments and the fifth is inside
+// coresAttribution, which is a paragraph that happens to be a constant so
+// that another package's test can read it without running this one.
+func fileCountFiguresIn(fset *token.FileSet, rel string,
+	file *ast.File) []proseFigure {
+
+	var out []proseFigure
+	for _, cg := range file.Comments {
+		var p prose
+		for _, c := range cg.List {
+			line := fset.Position(c.Pos()).Line
+			switch {
+			case strings.HasPrefix(c.Text, "//"):
+				p.add(line, c.Text[2:])
+			case strings.HasPrefix(c.Text, "/*"):
+				// One node holding many lines. Split so that each word still
+				// carries the line it is on, which is the whole point of
+				// prose keeping them.
+				body := strings.TrimSuffix(strings.TrimPrefix(c.Text, "/*"), "*/")
+				for i, l := range strings.Split(body, "\n") {
+					p.add(line+i, l)
+				}
+			}
+		}
+		out = append(out, p.figures(rel, "a comment")...)
+	}
+
+	ast.Inspect(file, func(n ast.Node) bool {
+		e, ok := n.(ast.Expr)
+		if !ok {
+			return true
+		}
+		// The gate is stringLiteralValue's own answer, so that what is read
+		// here is exactly the set of expressions this package already treats
+		// as a string constant. A `+` chain it can evaluate is taken whole
+		// and not descended into — otherwise the chain would be read once as
+		// itself and again as each of its halves, and one sentence would
+		// arrive as three findings.
+		if stringLiteralValue(e) == "" {
+			return true
+		}
+		var p prose
+		stringLiteralProse(fset, e, &p)
+		out = append(out, p.figures(rel, "a string constant")...)
+		return false
+	})
+	return out
+}
+
+// stringLiteralProse is the expression stringLiteralValue evaluates, kept as
+// its pieces instead of as one string, so that a figure is attributed to the
+// literal it is written in rather than to the head of the chain.
+//
+// The two walk the same shapes deliberately: a sentence this can read and
+// that cannot, or the other way round, would be a finding whose line number
+// pointed somewhere else.
+func stringLiteralProse(fset *token.FileSet, e ast.Expr, p *prose) {
+	switch x := e.(type) {
+	case *ast.BasicLit:
+		if x.Kind != token.STRING {
+			return
+		}
+		v, err := strconv.Unquote(x.Value)
+		if err != nil {
+			v = x.Value
+		}
+		p.add(fset.Position(x.Pos()).Line, v)
+	case *ast.BinaryExpr:
+		if x.Op != token.ADD {
+			return
+		}
+		stringLiteralProse(fset, x.X, p)
+		stringLiteralProse(fset, x.Y, p)
+	case *ast.ParenExpr:
+		stringLiteralProse(fset, x.X, p)
+	}
+}
+
+// checkProseFileCounts holds every sentence that quotes this repository's
+// tracked-Go-file count to the count the walk above has just made.
+//
+// Everything here is a reading of what that walk collected. Nothing in it
+// parses, reads or enumerates anything.
+func checkProseFileCounts(t *testing.T, from string, goFiles int,
+	figures []proseFigure) {
+
+	t.Helper()
+	// The walk reaching anything, for the reason every other question here
+	// says it: this one is looking for a PHRASE, and a rewrite that keeps
+	// every sentence and changes how each one says the number would leave a
+	// check over nothing that passes and reads as a clean result.
+	if len(figures) == 0 {
+		t.Fatalf("no sentence in this repository quotes a tracked-Go-file "+
+			"count, and %s found %d of them.\n\n"+
+			"Five sentences did, in wasm/verify/repowalks_test.go and "+
+			"wasm/verify/timings_test.go, each pricing a repository-wide "+
+			"walk against how many files it hands to go/parser. Either they "+
+			"are gone — in which case delete this question, because a walk "+
+			"nobody prices needs no arm over the price — or they now say the "+
+			"number some other way, in which case see trackedGoFileFigure "+
+			"for the form this reads and why it is the only one it can.",
+			from, goFiles)
+	}
+
+	var wrong []proseFigure
+	for _, f := range figures {
+		if f.count != goFiles {
+			wrong = append(wrong, f)
+		}
+	}
+	if len(wrong) > 0 {
+		t.Errorf("%d sentence(s) quote a tracked-Go-file count this "+
+			"repository does not have. %s enumerated %d: %s.\n\n"+
+			"Every one of these is a figure somebody wrote down while it was "+
+			"true, in a sentence pricing a walk against the number of files "+
+			"it parses, and the tree has moved under it since. That is not a "+
+			"bug in the walks and there is nothing to fix in the code: edit "+
+			"each line above to say %d.\n\n"+
+			"If this is firing on a commit that added or removed Go files "+
+			"and nothing else, that is this arm working. The figures used to "+
+			"drift silently and did, by four, over five sentences at once — "+
+			"which in a package whose argument is that an unattributed "+
+			"number is worth nothing left five numbers with nothing behind "+
+			"them. The trade is written up in this file's header.",
+			len(wrong), from, goFiles, figureList(wrong), goFiles)
+	}
+
+	// Logged whether or not anything failed, because the useful moment for
+	// this number is BEFORE somebody edits prose: `go test -v -run
+	// TestTheShapesThisRepositoryKeepsTwoCopiesOfAreInStep` is how a person
+	// adding a walk finds the count to write into the sentence they are
+	// about to add.
+	t.Logf("%d tracked Go file(s) by %s; %d sentence(s) quote that count: %s.",
+		goFiles, from, len(figures), figureList(figures))
 }

@@ -24,17 +24,27 @@ import (
 // others: each pays its own `git ls-files`, its own read of every tracked file
 // and its own parse.
 //
-// # About the file counts quoted below, which are readings and not constants
+// # About the file counts quoted below, which are readings and ARE held
 //
 // Several sentences here and in timings_test.go price a walk against how many
 // files it touches. That number is a reading of a repository on a day — 386
 // tracked Go files where verifyTimingsTakenOn was taken — and it goes up with
 // every file anybody adds, silently, exactly like the wall clocks beside it.
-// It is written the way the wall clocks are, attributed to the record, because
-// nothing holds it: a figure here that says 381 while the tree holds 386 is
-// the drift this package writes arms against, and it has already happened
-// once. See the Next list in the session doc for what an arm over it would
-// cost.
+//
+// Unlike the wall clocks, something now checks it. They drifted by four,
+// across five sentences at once, before a reader who had not written them
+// noticed — and the reason the clocks beside them cannot be armed the same
+// way does not apply here: a timing is a fact about one computer and a file
+// count is a fact about the TREE, so a figure that disagrees with the tree
+// disagrees for everybody. checkProseFileCounts in copies_test.go holds every
+// sentence in this repository that quotes the count, off a walk that was
+// already enumerating and already parsing.
+//
+// What that costs a person is that adding a Go file fails a test until these
+// sentences are edited, and the failure names each one with its line. The
+// form it reads is fixed — see trackedGoFileFigure — so a count written some
+// other way is prose rather than a claim, which is the same distinction
+// coresAttribution draws with backquotes one file over.
 //
 // That is about a second of a 2.7-second package (see verifyTimingsTakenOn),
 // and it is the right call at this size. The walks are INDEPENDENT by design:
@@ -458,8 +468,8 @@ func TestTheRepositoryWideWalksInThisPackageAreTheOnesDecidedOn(t *testing.T) {
 			"file in the tree, and the budget is %d: %s.\n\n"+
 			"This is the number that decides, not the total. Each parse is "+
 			"about 0.18s where verifyTimingsTakenOn was taken and none of it "+
-			"is shared: every tracked Go file goes through go/parser once "+
-			"per arm — 386 of them where that record was taken — "+
+			"is shared: every Go file in the tree goes through go/parser once "+
+			"per arm — 386 tracked Go files where that record was taken — "+
 			"and every one of them throws the syntax trees away.\n\n"+
 			"A shared parse is a fixture with a lifetime — built once, "+
 			"invalidated never, read by tests that no longer say what they "+
@@ -656,9 +666,9 @@ const timingsRecordName = "verifyTimingsTakenOn"
 // How many of them may parse every Go file in the tree.
 //
 // Four, and this is the half that costs. The other two walks read bytes and
-// stop; these four hand every tracked Go file in the tree — 386 where
-// verifyTimingsTakenOn was taken — to go/parser, build the syntax trees, ask
-// one question each and drop them.
+// stop; these four hand every Go file in the tree — 386 tracked Go files
+// where verifyTimingsTakenOn was taken — to go/parser, build the syntax
+// trees, ask one question each and drop them.
 //
 // A fifth is where a shared parse becomes the cheaper of two bad options —
 // which is a real trade and not an obvious one, so it is written down here
