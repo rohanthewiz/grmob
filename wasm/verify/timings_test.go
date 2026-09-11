@@ -113,10 +113,13 @@ var verifyTimingsTakenOn = struct {
 	// sentence here.
 	//
 	// That arm costs 0.01s: it reads this ONE DIRECTORY and parses only the
-	// files whose bytes name an enumeration, which is seven of thirty-five. A
-	// census of repository walks that was itself a repository walk would have
-	// been the eighth, and the figure below did not move for it — 2.70–2.80s
-	// became 2.73–2.84s, which is one machine's spread.
+	// files whose bytes name an enumeration — eight of thirty-seven where
+	// this record was taken, and a ratio that moves with every file added
+	// here, which is why the arm prints both numbers on every run rather than
+	// leaving this sentence to be the record of them. A census of repository
+	// walks that was itself a repository walk would have been the eighth
+	// walk, and the figure below did not move for it — 2.70–2.80s became
+	// 2.73–2.84s, which is one machine's spread.
 	//
 	// # And the readings the copies census grew, which is the same story again
 	//
@@ -253,9 +256,10 @@ var verifyTimingsTakenOn = struct {
 // # What this package's answer actually is, which is not "nothing"
 //
 // The expensive half of wholeFile does not move. The four repository-wide
-// walks hand all 381 Go files to go/parser one after another — 0.18s each,
-// single-threaded, the same number on any machine — and foldWalk is a node
-// process this package waits on rather than shares a core with.
+// walks hand every tracked Go file to go/parser one after another — 386 of
+// them where this record was taken, 0.18s each, single-threaded, the same
+// number on any machine — and foldWalk is a node process this package waits on
+// rather than shares a core with.
 //
 // What does move is the afforded* band family in themenearmiss_test.go —
 // affordedKLeafBandWalk and affordedTwoStepBands, which are the two that take
@@ -311,7 +315,8 @@ var verifyTimingsTakenOn = struct {
 // either direction reads — a term named in prose is neither claimed nor
 // checked.
 const coresAttribution = "The four repository-wide walks in this package are " +
-	"single-threaded — go/parser over all 381 files, 0.18s each — and " +
+	"single-threaded — go/parser over every tracked Go file, 386 of them " +
+	"where this record was taken, 0.18s each — and " +
 	"`foldWalk` is a node process. Those do not move with the core count. " +
 	"Two declarations do, and they are the whole of it: " +
 	"`affordedKLeafBandWalk` and `affordedTwoStepBands` in " +

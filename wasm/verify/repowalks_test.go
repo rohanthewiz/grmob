@@ -21,8 +21,20 @@ import (
 // citingFiles asks git for every tracked file, stats it, reads it and hands
 // back the lot. Six tests here call it, and four of those then parse every Go
 // file in the tree with go/parser. None of them shares anything with the
-// others: each pays its own `git ls-files`, its own 381 file reads and its own
-// parse.
+// others: each pays its own `git ls-files`, its own read of every tracked file
+// and its own parse.
+//
+// # About the file counts quoted below, which are readings and not constants
+//
+// Several sentences here and in timings_test.go price a walk against how many
+// files it touches. That number is a reading of a repository on a day — 386
+// tracked Go files where verifyTimingsTakenOn was taken — and it goes up with
+// every file anybody adds, silently, exactly like the wall clocks beside it.
+// It is written the way the wall clocks are, attributed to the record, because
+// nothing holds it: a figure here that says 381 while the tree holds 386 is
+// the drift this package writes arms against, and it has already happened
+// once. See the Next list in the session doc for what an arm over it would
+// cost.
 //
 // That is about a second of a 2.7-second package (see verifyTimingsTakenOn),
 // and it is the right call at this size. The walks are INDEPENDENT by design:
@@ -210,8 +222,12 @@ func TestTheRepositoryWideWalksInThisPackageAreTheOnesDecidedOn(t *testing.T) {
 		// length is a run-time fact is a site nothing can price. Only the
 		// second is a finding — see priceCalls.
 		var looped, priced []string
-		_, _, callers := callSitesOf(w.fn, names, sources, parse)
-		for _, c := range callers {
+		// The sites and the package-level declarations: what this pass is
+		// counting is how many times the walk runs, and a call in a `var`
+		// initializer runs too. Whether the package also declares a method of
+		// the name is a question the `besides` pass asks, not this one.
+		scan := callSitesOf(w.fn, names, sources, parse)
+		for _, c := range scan.in {
 			n, sites := priceCalls(fset, c.fn, c.calls, packageInts, boundNames)
 			calls += n
 			for _, site := range sites {
@@ -232,6 +248,7 @@ func TestTheRepositoryWideWalksInThisPackageAreTheOnesDecidedOn(t *testing.T) {
 		found[i].drivenBy = in
 		found[i].looped = looped
 		found[i].priced = priced
+		found[i].atInit = scan.atPackageLevel
 	}
 
 	// Every read declared `besides` a walk still being there, in a subtest of
@@ -257,6 +274,25 @@ func TestTheRepositoryWideWalksInThisPackageAreTheOnesDecidedOn(t *testing.T) {
 	// beside them still happen — the exact fault the subtests in
 	// copies_test.go were written to end, still open here because this one was
 	// added afterwards. Nothing in here reads `found`.
+	//
+	// # Why it is not a test of its own, given that
+	//
+	// Reading nothing the census produced is the definition of a question that
+	// could stand alone, and this one nearly does. What keeps it here is the
+	// three arguments it is handed: `names`, `sources` and the memoised
+	// `parse` — a listing of the directory, its files' bytes, and their trees,
+	// all of which exist because the census above built them.
+	//
+	// A top-level test would rebuild all three. That is a second read of this
+	// directory and a second parse of the files that mention a `through`, paid
+	// on every run to buy a name that t.Run already gives. And it would be
+	// spent against repositoryParseBudget, which is four — a number this
+	// package treats as a decision rather than a limit, so the trade would not
+	// be a quiet one either.
+	//
+	// The boundary the subtest was moved for is the one that matters: a name
+	// of its own, and a failure that does not end this question. Sharing a
+	// parse is not what was wrong with sharing a log line.
 	t.Run("the reads besides those walks", func(t *testing.T) {
 		checkReadsBesidesWalks(t, names, sources, parse)
 	})
@@ -323,9 +359,37 @@ func TestTheRepositoryWideWalksInThisPackageAreTheOnesDecidedOn(t *testing.T) {
 				"again, or give the loop a bound loopBound can read.",
 				w.fn, strings.Join(w.looped, "; "), row.runs)
 		}
+		// A call in no function at all. Reported before the count, and
+		// instead of it: `runs` is built out of call sites inside function
+		// bodies, so a walk reached only from a `var` initializer comes back
+		// as zero — and the message the count would print calls it a dead
+		// function, which is the scan's limit dressed up as a fact about the
+		// code.
+		if len(w.atInit) > 0 {
+			t.Errorf("%s is called from a package-level declaration: %s.\n\n"+
+				"That call is in no function, so nothing here attributes it "+
+				"to a caller or prices it against a loop, and `runs: %d` in "+
+				"its row is a number this census did not compute. It is also "+
+				"not free: a `var` initializer runs when the test binary "+
+				"starts, before any test does, so this walk's `git ls-files` "+
+				"— and its read of every tracked file, and possibly its "+
+				"go/parser pass — is paid on every run including `-run "+
+				"NoSuchTest`.\n\n"+
+				"This arm cannot tell an initializer that runs at start from "+
+				"a call inside a function value that a `var` happens to hold. "+
+				"Either is a walk the budgets below are not counting. Move "+
+				"the call into the function that needs the result and pass it "+
+				"in, which is what makes the cost a number again.",
+				w.fn, strings.Join(w.atInit, ", "), row.runs)
+		}
 		// Only for helpers: a test runs once by definition, and its row says
-		// nothing about how often.
-		if !strings.HasPrefix(w.fn, "Test") &&
+		// nothing about how often. And only when the count means something —
+		// the arm above has just said it does not, and printing a second
+		// finding about a number nothing computed would be the same fact
+		// twice with the useful half in only one of them. The depth check
+		// below still runs either way: what a walk READS is read off its body
+		// and does not depend on who calls it.
+		if !strings.HasPrefix(w.fn, "Test") && len(w.atInit) == 0 &&
 			(row.runs != w.runs || row.drivenBy != w.drivenBy) {
 			looped := ""
 			if len(w.priced) > 0 {
@@ -371,7 +435,7 @@ func TestTheRepositoryWideWalksInThisPackageAreTheOnesDecidedOn(t *testing.T) {
 			strings.Join(row.asks, "; "))
 	}
 
-	// Counted in WALKS and not in functions: a helper called twice is two	// Counted in WALKS and not in functions: a helper called twice is two
+	// Counted in WALKS and not in functions: a helper called twice is two
 	// walks, and the budget is about what a run pays.
 	walks, parses := 0, 0
 	for _, w := range found {
@@ -394,7 +458,8 @@ func TestTheRepositoryWideWalksInThisPackageAreTheOnesDecidedOn(t *testing.T) {
 			"file in the tree, and the budget is %d: %s.\n\n"+
 			"This is the number that decides, not the total. Each parse is "+
 			"about 0.18s where verifyTimingsTakenOn was taken and none of it "+
-			"is shared: the same 381 files go through go/parser once per arm, "+
+			"is shared: every tracked Go file goes through go/parser once "+
+			"per arm — 386 of them where that record was taken — "+
 			"and every one of them throws the syntax trees away.\n\n"+
 			"A shared parse is a fixture with a lifetime — built once, "+
 			"invalidated never, read by tests that no longer say what they "+
@@ -461,20 +526,27 @@ func checkReadsBesidesWalks(t *testing.T, names []string,
 	for _, w := range repositoryWalks {
 		for _, b := range w.besides {
 			rows++
-			declared, asMethod, sites := callSitesOf(b.through, names, sources,
-				parse)
-			callers := make([]string, 0, len(sites))
-			for _, c := range sites {
+			scan := callSitesOf(b.through, names, sources, parse)
+			callers := make([]string, 0, len(scan.in))
+			for _, c := range scan.in {
 				callers = append(callers, c.fn.Name.Name)
 			}
+			// A `var x = through(…)` is a caller too. This pass asks only
+			// whether the read still happens — it does not price it, which is
+			// what the walk census needs a function for — so a package-level
+			// initializer answers the question and belongs in the list rather
+			// than being the difference between "called" and "dead".
+			for _, at := range scan.atPackageLevel {
+				callers = append(callers, "the package-level "+at)
+			}
 			sort.Strings(callers)
-			if !declared {
+			if !scan.declared {
 				// The limit named rather than described. A method of this
 				// name is a real declaration this scan cannot find calls to,
 				// and telling a reader "nothing declares it" would point them
 				// at code that is right.
 				method := ""
-				if asMethod {
+				if scan.asMethod {
 					method = fmt.Sprintf("\n\nThis package DOES declare a "+
 						"method `%s`, and that is the finding: `through` has "+
 						"to name a function, because this scan reads bare "+
@@ -509,7 +581,9 @@ func checkReadsBesidesWalks(t *testing.T, names []string,
 					"call has gone and the row should go with it, or it has "+
 					"moved behind a spelling this scan cannot see: bare "+
 					"identifiers only, so a call through a method or a "+
-					"function value is one `through` cannot name.",
+					"function value is one `through` cannot name. A call in a "+
+					"`var` initializer IS seen — see packageLevelCallsTo — so "+
+					"it is not that.",
 					w.fn, b.reads, b.through, b.through)
 				continue
 			}
@@ -582,8 +656,9 @@ const timingsRecordName = "verifyTimingsTakenOn"
 // How many of them may parse every Go file in the tree.
 //
 // Four, and this is the half that costs. The other two walks read bytes and
-// stop; these four hand all 381 Go files to go/parser, build the syntax trees,
-// ask one question each and drop them.
+// stop; these four hand every tracked Go file in the tree — 386 where
+// verifyTimingsTakenOn was taken — to go/parser, build the syntax trees, ask
+// one question each and drop them.
 //
 // A fifth is where a shared parse becomes the cheaper of two bad options —
 // which is a real trade and not an obvious one, so it is written down here
@@ -783,6 +858,13 @@ type repositoryWalk struct {
 	// log line can say that a count above one came from a bound in the source
 	// rather than from a second call site.
 	priced []string
+	// The `var`/`const` declarations whose value calls this walk, as
+	// "name (file)". Empty for every walk in this package today. A call here
+	// is not in `runs`: it is in no function, so there is no caller to
+	// attribute it to and no loop to price it against — and it is the one
+	// place a repository walk can hide from this census while still costing a
+	// run. See packageLevelCallsTo.
+	atInit []string
 }
 
 // walkDepth is how far into the repository this body goes, or "" for a body
@@ -1237,8 +1319,24 @@ type callsIn struct {
 // func of this name" is true and useless — it points a reader at the code when
 // the answer is about the scan. `asMethod` says which of the two it is, so the
 // finding can name the limit instead of describing its symptom.
+//
+// # Why one value and not three results
+//
+// Neither caller wants all three. The walk census takes only `in`; the
+// `besides` pass takes `declared`, `asMethod` and the names off `in`. A
+// signature that is the union of two callers' needs grows by one every time
+// something asks a new question of the same scan — which is how this reached
+// three, `asMethod` having been the last — and every growth edits both call
+// sites, including the one that did not want the answer.
+//
+// A struct moves that: a fourth thing this scan can notice is a field, the
+// caller that cares reads it, and the other one is not touched. The cost is
+// that a caller must name what it wants, which is the same thing the blank
+// identifiers were doing less legibly.
 func callSitesOf(name string, names []string, sources map[string][]byte,
-	parse func(string) *ast.File) (declared, asMethod bool, in []callsIn) {
+	parse func(string) *ast.File) callSites {
+
+	var out callSites
 
 	for _, file := range names {
 		if !bytes.Contains(sources[file], []byte(name)) {
@@ -1255,7 +1353,7 @@ func callSitesOf(name string, names []string, sources map[string][]byte,
 			}
 			if fn.Name.Name == name {
 				if fn.Recv == nil {
-					declared = true
+					out.declared = true
 					continue
 				}
 				// A METHOD of the same name. Not a declaration this can find
@@ -1265,7 +1363,7 @@ func callSitesOf(name string, names []string, sources map[string][]byte,
 				// exact one. See the `besides` pass: a row pointed at a
 				// method gets told that, rather than being told its function
 				// does not exist.
-				asMethod = true
+				out.asMethod = true
 				continue
 			}
 			var calls []*ast.CallExpr
@@ -1280,11 +1378,100 @@ func callSitesOf(name string, names []string, sources map[string][]byte,
 				return true
 			})
 			if len(calls) > 0 {
-				in = append(in, callsIn{file: file, fn: fn, calls: calls})
+				out.in = append(out.in, callsIn{file: file, fn: fn,
+					calls: calls})
+			}
+		}
+		out.atPackageLevel = append(out.atPackageLevel,
+			packageLevelCallsTo(name, file, tree)...)
+	}
+	sort.Strings(out.atPackageLevel)
+	return out
+}
+
+// packageLevelCallsTo is the `var`/`const` declarations in one file whose
+// value contains a bare call to this name, rendered for a message.
+//
+// # Why this is looked for at all
+//
+// Everything above walks FuncDecl bodies, which is where a call to a helper
+// normally is. A `var x = someWalk(root)` is not there, and a scan that only
+// reads bodies gives the same answer for it as for a function nothing calls at
+// all — while the Go runtime runs that initializer before any test does.
+//
+// Both callers then report something false. The walk census says `runs: 0` and
+// calls the walk dead when it in fact runs once per binary; the `besides` pass
+// says nothing calls the read when something does. That is the shape asMethod
+// was added for, one construct along: a limit of the scan, described as a fact
+// about the code, pointing a reader at something that is right.
+//
+// # What it does not decide
+//
+// Whether the call RUNS at init. `var f = func() { someWalk() }` puts the call
+// inside a function value, which runs when something invokes f, and telling
+// the two apart is a data-flow question this scan is not. Both are reported
+// the same way and the message says so — because either way the count beside
+// the row is not a number this pass computed, which is the thing a reader
+// needs to know.
+func packageLevelCallsTo(name, file string, tree *ast.File) []string {
+	var out []string
+	for _, d := range tree.Decls {
+		gen, ok := d.(*ast.GenDecl)
+		if !ok {
+			continue
+		}
+		for _, sp := range gen.Specs {
+			vs, ok := sp.(*ast.ValueSpec)
+			if !ok {
+				continue
+			}
+			hit := false
+			for _, v := range vs.Values {
+				ast.Inspect(v, func(n ast.Node) bool {
+					call, ok := n.(*ast.CallExpr)
+					if !ok {
+						return true
+					}
+					if id, ok := call.Fun.(*ast.Ident); ok && id.Name == name {
+						hit = true
+					}
+					return true
+				})
+			}
+			if !hit {
+				continue
+			}
+			// Named by the declaration rather than by a line number: the
+			// thing a reader has to go and look at is the `var`, and every
+			// other message in this file addresses a declaration by name.
+			for _, n := range vs.Names {
+				out = append(out, fmt.Sprintf("%s (%s)", n.Name, file))
 			}
 		}
 	}
-	return declared, asMethod, in
+	return out
+}
+
+// callSites is what one callSitesOf scan of one name found.
+//
+// Three answers to one walk of the trees, and no caller reads all three — see
+// callSitesOf's note on why they arrive together in a value rather than as
+// results a caller has to spell blanks for.
+type callSites struct {
+	// Whether this directory declares a `func name` with no receiver: the
+	// only spelling a bare call resolves to.
+	declared bool
+	// Whether it declares a METHOD of that name. Not a declaration this scan
+	// can find calls to, and the difference between a finding that names its
+	// own limit and one that sends a reader to correct code.
+	asMethod bool
+	// The bare calls, grouped by the function they are in, in source order.
+	in []callsIn
+	// The `var`/`const` declarations whose value calls the name, sorted. Not
+	// in `in` because they are in no function: there is no body to price a
+	// loop against and no caller name to attribute the run to. See
+	// packageLevelCallsTo.
+	atPackageLevel []string
 }
 
 // boundNamesIn is every identifier this function binds: its receiver, its
@@ -1549,30 +1736,4 @@ func walkList(found []repositoryWalk) string {
 		return fmt.Sprintf("%s (%s:%d, %s%s)", w.fn, w.file, w.line, w.depth,
 			runs)
 	})
-}
-
-// listOf is a slice rendered for a message: each element formatted, the
-// results sorted, joined with ", ".
-//
-// # Why this exists
-//
-// There were four of these in two files, each with the same three lines around
-// a different Sprintf, and the fourth was added by the session that noticed
-// the first three. That is the cheapest kind of duplication and the easiest to
-// keep adding to: nobody looks for a helper before writing six lines.
-//
-// # Why the sort is after the format and not before
-//
-// It is a sort of what a reader SEES. Sorting the elements and then formatting
-// would order a walk list by whatever field the struct happens to compare on;
-// sorting the strings orders it by the line a person reads, which is the only
-// order a failure message can be diffed in. Every one of the four did it this
-// way already — this makes it the helper's rule rather than four coincidences.
-func listOf[T any](in []T, format func(T) string) string {
-	out := make([]string, 0, len(in))
-	for _, item := range in {
-		out = append(out, format(item))
-	}
-	sort.Strings(out)
-	return strings.Join(out, ", ")
 }

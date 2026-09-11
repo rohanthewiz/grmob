@@ -1022,19 +1022,19 @@ func termsNamedIn(note string) []string {
 // Errors are reported once per file for the same reason — a file that cannot
 // be opened is one finding about that file, not one per asking.
 //
-// # What bounds it, which is the same constant that bounds the copies
+// # What bounds it
 //
 // A cache with no stated limit is a cache nobody notices growing, and the
 // thing that would grow this one is named right here in the file: a third
 // package carrying a timings record, which timingsRecordCopies explicitly
 // contemplates and which the trigger above exists to prompt a decision about.
 //
-// So the directories this may hold is timingsRecordCopies, and asking about
-// one more is a finding rather than a quiet doubling. It is the same
-// arrangement repositoryParseBudget has — a number that forces a decision
-// rather than a limit for its own sake — and it fires at the same moment the
-// record's own trigger does, which is the moment somebody is already reading
-// about the trade.
+// So the directories this may hold is coresNoteScanDirs, and asking about one
+// more is a finding rather than a quiet doubling. It is the same arrangement
+// repositoryParseBudget has — a number that forces a decision rather than a
+// limit for its own sake — and it fires at the same moment the record's own
+// trigger does, which is the moment somebody is already reading about the
+// trade.
 type packageSource struct {
 	fset *token.FileSet
 	// dir -> its .go file names, sorted.
@@ -1049,6 +1049,37 @@ type packageSource struct {
 	// Files already reported as unreadable or unparseable.
 	told map[string]bool
 }
+
+// How many directories the cores-note scan may hold the source of at once.
+//
+// # Why it is its own name and not timingsRecordCopies spelled again
+//
+// The two are the same number today and they answer different questions.
+// timingsRecordCopies is how many copies of the record the written
+// copy-argument covers — a statement about a duplication somebody reasoned
+// about once, in internal/themehistory/timings_test.go. This is how much
+// source one check may keep in memory at once.
+//
+// Sharing the identifier made the second question invisible. A reader raising
+// timingsRecordCopies because a third package legitimately grew a record —
+// exactly what that trigger asks them to consider, and a decision the message
+// there walks them through — would have doubled this cache on the way past,
+// with no reason written for the second half and nothing prompting them to
+// supply one.
+//
+// # Why it is still defined as timingsRecordCopies rather than as 2
+//
+// Because the coupling is real, and a bare 2 here would be a second number to
+// keep in step by hand. The set this scan reads IS the set of packages
+// carrying a record: each record's package is listed once for its own terms,
+// and once more for the cross-package pass — over directories already held, so
+// costing nothing. Growing that set is the only thing that grows this.
+//
+// What the separate name buys is a place for the second answer. Somebody who
+// decides the copy count should go to three and this cache should not can say
+// so here in one edit, and the two numbers part without either of them
+// becoming a literal nobody can trace.
+const coresNoteScanDirs = timingsRecordCopies
 
 // listedDirs is the directories already held, as a set, for the message above.
 func (p *packageSource) listedDirs() map[string]bool {
@@ -1151,22 +1182,25 @@ func (p *packageSource) filesIn(t *testing.T, dir string) []string {
 	if names, done := p.listed[dir]; done {
 		return names
 	}
-	if len(p.listed) >= timingsRecordCopies {
+	if len(p.listed) >= coresNoteScanDirs {
 		t.Errorf("the cores-note scan has been asked about %s, which makes %d "+
-			"directory(ies) this run — and this repository keeps %d "+
-			"package(s) with a timings record in them: %s.\n\n"+
+			"directory(ies) this run, and coresNoteScanDirs is %d — the "+
+			"number of package(s) this repository keeps a timings record in: "+
+			"%s.\n\n"+
 			"This scan holds every listing, every file's bytes and every "+
 			"syntax tree it reads until the check returns, and the set it "+
 			"reads is the set of packages that carry a record. A third "+
 			"directory is either that set having grown — in which case the "+
 			"record's own trigger is firing too, and the decision to make is "+
 			"the one it describes — or this scan being used for something "+
-			"else, in which case what bounds it is no longer a constant this "+
-			"file owns.\n\n"+
-			"Raise timingsRecordCopies with the reason beside the copy "+
-			"argument, as that trigger asks, or give this scan a budget of "+
-			"its own and say what it is.",
-			dir, len(p.listed)+1, timingsRecordCopies,
+			"else, in which case what bounds it is no longer the size of that "+
+			"set.\n\n"+
+			"coresNoteScanDirs is defined as timingsRecordCopies and is not "+
+			"the same question: raising the copy count because a third "+
+			"package legitimately grew a record says nothing about what this "+
+			"cache should be allowed to hold. Decide both, and write the "+
+			"second reason beside coresNoteScanDirs.",
+			dir, len(p.listed)+1, coresNoteScanDirs,
 			strings.Join(keysOf(p.listedDirs()), ", "))
 	}
 	p.listed[dir] = nil

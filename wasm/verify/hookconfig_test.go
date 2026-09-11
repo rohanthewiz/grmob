@@ -8,7 +8,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
-	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -761,14 +760,3 @@ func TestOrderingTwoClaudeVersions(t *testing.T) {
 // A version and not a word: digits and dots, with an optional pre-release tail
 // that a nightly or a release candidate would carry.
 var versionish = regexp.MustCompile(`^[0-9]+(\.[0-9]+)*([-+][0-9A-Za-z.-]+)?$`)
-
-// keysOf is a map's keys, sorted, so a failure message reads the same on every
-// run and can be diffed.
-func keysOf[V any](m map[string]V) []string {
-	out := make([]string, 0, len(m))
-	for k := range m {
-		out = append(out, k)
-	}
-	sort.Strings(out)
-	return out
-}
