@@ -460,3 +460,47 @@ believed.
 **What would change this.** A sentence appearing that does restate a field's
 range. The scan is forty lines of Python and can be re-run; at the sentence
 granularity it is cheap and it is the granularity that means anything.
+
+---
+
+## A `GRMOB_` name in prose is not held to being an environment variable
+
+*Raised: 2026-09-11 · Moved here: 2026-09-11 · Code: the four env vars Go
+reads, and `android/app/src/main/java/com/grmob/runtime/GrMobProgress.kt`,
+which is why this does not work*
+
+**What was proposed.** `GRMOB_[A-Z0-9_]+` looked like the narrow shape that
+made the test-name rule work: one prefix this repository owns, screaming
+case, nothing in English like it. The rule would be that a `GRMOB_` name
+written in prose — a comment, a doc page, a shell script, a `.mjs` — is a
+variable something here actually reads.
+
+**The shape has two meanings, which is the test it fails.** Eleven distinct
+names match it:
+
+    7 environment variables   GRMOB_BAND_VERDICT, GRMOB_COMPOSE_SOURCES,
+                              GRMOB_IMPORTER, GRMOB_PER_OBJECT_FETCH read by
+                              Go; GRMOB_TRANSCRIPT and GRMOB_CHROME by the
+                              browser pass's JavaScript; GRMOB_AUDIO_OUT by
+                              a Swift UI test
+    4 Kotlin constants        GRMOB_PROGRESS_DETERMINATE, …_INDETERMINATE,
+                              …_UNSTATED and …_EMPTY_RANGE are `const val`
+                              declarations holding "determinate",
+                              "indeterminate", "unstated", "empty-range"
+
+Four of eleven — 36% of the corpus — are not environment variables. That is
+the same failure as the backquoted-name rule two entries up, and worse: a
+backquoted identifier is ambiguous across languages, and this one is
+ambiguous inside a single directory of one language.
+
+**And there is nothing to find.** 91 mentions across the repository, and
+every one resolves to a name something reads or declares, in whichever of
+the five languages owns it. **Zero stale.** A first scan said 32 were
+unresolved; all 32 were the scan looking only at Go string literals in a
+polyglot repository, which is a fault in the measurement and not a finding.
+
+**What would change this.** A prefix that means one thing — if the Kotlin
+constants were renamed, the shape would carry one meaning and the rule
+becomes writable. It would then have zero findings on today's corpus, which
+is the second reason not to write it. The scan is thirty lines of Python and
+can be re-run.

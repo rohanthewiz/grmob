@@ -95,7 +95,26 @@ import (
 // attributing the copy to the original does not make it one thing. Moving it
 // into the original does.
 //
-// # Re-taking it
+// # Re-taking it, and CHECKING it without re-taking it
+//
+// Set GRMOB_BAND_VERDICT=required and the run compares its own reading
+// against the band and says where it fell. That is how to find out whether a
+// figure here has gone stale, and it is cheaper than re-taking one: it is
+// the command below with four more words in front of it.
+//
+//	GRMOB_BAND_VERDICT=required go test -count=1 -v ./wasm/verify
+//
+// On a run of THIS package alone — `go test ./...` runs package binaries in
+// parallel and reports 0.3s more, which is a band's whole width. See
+// wholefileband_test.go for why that cannot be detected from inside and is
+// asked for instead.
+//
+// And not directly after something heavy. The first reading taken this way,
+// immediately after `go test -race ./...` and the three verify scripts, came
+// in at 3.176s and reported OVER; six runs later, with nothing else running,
+// it read 2.684–2.741s. Which is the verdict's own advice working — one
+// reading over a ceiling is not a regression, take it several times — and is
+// the reason that sentence is in the message.
 //
 //	go test -count=1 ./wasm/verify                                  wholeFile
 //	go test -count=1 -run TestHowWideTheNarrowerFold ./wasm/verify   foldWalk

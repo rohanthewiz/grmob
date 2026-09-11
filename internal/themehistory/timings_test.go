@@ -73,7 +73,19 @@ import (
 // live number on every run, which is the only place a count like this can be
 // right.
 //
-// # Re-taking it
+// # Re-taking it, and CHECKING it without re-taking it
+//
+// Set GRMOB_BAND_VERDICT=required and the three arms that take a reading
+// compare it against the band they record and say where it fell — which is
+// how to find out whether a figure here has gone stale, and is cheaper than
+// re-taking one:
+//
+//	GRMOB_BAND_VERDICT=required go test -count=1 -v ./internal/themehistory
+//
+// On a run of THIS package alone. `go test ./...` runs package binaries in
+// parallel and wholeRun reads 1.70s there against 1.4–1.6s on its own, which
+// is outside the band; see band_test.go for why that cannot be detected from
+// inside and is asked for instead.
 //
 //	go test -count=1 ./internal/themehistory                      wholePackage
 //	go test -count=1 -run TestRetiringAHealthyGit ./internal/…    batchRetire
