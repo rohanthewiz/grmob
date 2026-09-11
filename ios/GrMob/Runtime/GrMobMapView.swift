@@ -50,6 +50,12 @@ import SwiftUI
 /// echo guard a drag needs" is the contract; the WASM runtime implements the
 /// same comparison, and the same comparison suppresses the report MapKit
 /// generates from this renderer's own `setRegion`.
+///
+/// That last part needs a tolerance here, and it is the one place this host
+/// diverges from the other two. `setRegion` does not keep the region it is
+/// given — MapKit fits the span to the view and to what it can draw — so the
+/// comparison is exact in the one direction where both numbers came from Go and
+/// pixel-tolerant in the others. See GrMobRegion.
 #if canImport(MapKit) && canImport(UIKit)
 
 import MapKit
@@ -204,7 +210,11 @@ private struct GrMobMapRepresentable: UIViewRepresentable {
             // for this region and the next instruction is measured against it —
             // but not applied, because applying it is the round trip an echoing
             // app would otherwise fight.
-            if let settled, settled.isSame(as: want) { return }
+            // Tolerant, because `settled` holds a MapKit-derived region and
+            // `want` is what the app echoed out of OnRegionChange — possibly
+            // rounded on the way through its own state. See
+            // GrMobRegion.isSamePlace.
+            if let settled, settled.isSamePlace(as: want, width: width) { return }
 
             let span = grMobSpan(zoom: want.zoom, width: width, height: height, lat: want.lat)
             let region = MKCoordinateRegion(
@@ -254,12 +264,19 @@ private struct GrMobMapRepresentable: UIViewRepresentable {
             // renderer put it, so there is nothing to tell Go. That covers the
             // callback setRegion itself causes and a gesture that ends where it
             // started.
-            if let applied, applied.isSame(as: next) { return }
+            //
+            // Tolerant, not exact: `next` is derived from the region MapKit
+            // settled on, which is never the region it was handed — it fits
+            // the span to the view and to the tile pyramid, and the zoom is
+            // recovered through log2 on top of that. An exact comparison here
+            // reports every programmatic move to Go as a gesture. See
+            // GrMobRegion.isSamePlace.
+            if let applied, applied.isSamePlace(as: next, width: viewSize.width) { return }
             // The second half of the comparison, and the reason the user's
             // region does NOT go into `applied`: a map that fires two events
             // without moving between them has one thing to say, and Go's own
             // region is a separate fact a pan must not overwrite. See `settled`.
-            if let settled, settled.isSame(as: next) { return }
+            if let settled, settled.isSamePlace(as: next, width: viewSize.width) { return }
             // Recorded even with no handler attached, so a map that gains one
             // later does not immediately report a pan nobody was listening for.
             settled = next
@@ -431,19 +448,113 @@ struct GrMobMapView: View {
 
 #endif
 
-/// A region as this renderer compares them: the three numbers, with the
-/// tolerance-free equality the echo guard needs.
+/// How many of the map's own pixels two regions may differ by and still be the
+/// same place. See GrMobRegion for the measurement behind the number and for
+/// why MapKit's own share of the error is a separate question.
+private let GrMobMapTolerancePx: Double = 1.5
+
+/// A region as this renderer compares them: the three numbers, and the two
+/// comparisons the echo guard needs — one exact and one to the nearest pixel.
 ///
-/// Exact equality rather than an epsilon, deliberately. The comparison is
-/// between a number Go sent and a number this renderer stored from the same
-/// source, so they are bit-identical when nothing changed — and an epsilon
-/// would make a deliberate one-metre nudge from Go into a no-op.
+/// # Why there are two
+///
+/// `isSame` is the comparison between a number Go sent and a number this
+/// renderer stored from the same source. Those are bit-identical when nothing
+/// changed, so it is exact, and it has to stay exact: an epsilon there would
+/// make a deliberate small nudge from Go — following a location, stepping a
+/// marker along a path — into a no-op that never reaches the map.
+///
+/// `isSamePlace` is the comparison where one side came back out of MapKit, and
+/// that side is never the number that went in. `setRegion` does not store the
+/// region it is given: it fits the span to the view's aspect ratio and to the
+/// tile pyramid it can actually draw, and `regionDidChangeAnimated` reports
+/// what it settled on. This renderer then derives a zoom back out of that span
+/// through `log2`, which loses a little more. So the exact comparison can
+/// never match on the report path, and every programmatic move would be
+/// reported to Go as if the user had made it.
+///
+/// That is the same bug an Android emulator run found on osmdroid, whose cause
+/// is different and whose shape is identical: osmdroid quantises the centre to
+/// integer pixels, MapKit re-derives the whole region, and in both cases the
+/// echo guard is comparing a question with an answer. GrMobMapView.kt's
+/// samePlaceOnScreen carries the long form, including why the browser is the
+/// one host that does not need this — Leaflet caches the centre it was given
+/// and hands it straight back.
+///
+/// # In pixels, not in degrees
+///
+/// The finest move a map can represent is one pixel, so the tolerance is a
+/// number of pixels converted to degrees at the zoom in question. Web
+/// Mercator's own definition gives the conversion — 256 × 2^zoom pixels span
+/// 360° of longitude — and the latitude tolerance is that scaled by the cosine
+/// of the latitude, which is the same Mercator compression `grMobSpan` above
+/// applies for the same reason.
+///
+/// A fixed epsilon in degrees could not work: one pixel is 1.7e-4° at zoom 12
+/// and 1.3e-6° at zoom 19, a factor of 128.
+///
+/// # How wide, and what is still unmeasured here
+///
+/// `GrMobMapTolerancePx` is 1.5, which is the number the Android host arrived
+/// at by measurement: osmdroid truncates its Mercator y to an integer pixel and
+/// returned a centre 0.97 pixels out, so the bound is one pixel and the rest is
+/// headroom. It is affordable because no gesture is that small — a drag has to
+/// clear the platform's touch slop before it is a drag.
+///
+/// MapKit's error is a different quantity and is NOT the same measurement.
+/// `setRegion` fits the span to the view's aspect ratio and to what the tile
+/// pyramid can draw, which is a larger adjustment than a pixel of scroll, and
+/// the zoom tolerance below is the part meant to absorb it. Whether 1.5 pixels
+/// of centre is enough on this host is a question for a simulator run and not
+/// for this comment; what the structure guarantees is that the comparison is no
+/// longer exact, which is the half that was certainly wrong.
+///
+/// # Zoom, which is where iOS differs from Android
+///
+/// Android compares zooms with a small constant, because osmdroid speaks the
+/// slippy zoom level natively and round-trips it exactly. Here the zoom is a
+/// derived quantity on both sides of the conversion, and MapKit is free to
+/// settle on a span this code never asked for — so the tolerance is derived
+/// from the viewport too: changing the zoom by δ scales the view by 2^δ, which
+/// moves the edge of a `width`-point map by (width/2)(2^δ − 1) points. Solving
+/// that for half a point gives
+///
+///     δ = log2(1 + 1 / width)
+///
+/// which is 0.0037 on a 390-point iPhone — a tolerance that means "the map is
+/// showing the same pixels", which is the only thing the echo guard is asking.
 struct GrMobRegion {
     let lat: Double
     let lng: Double
     let zoom: Double
 
+    /// Exact. For the apply path's "has Go changed its mind" — see the type
+    /// comment for why a tolerance there would be a bug.
     func isSame(as other: GrMobRegion) -> Bool {
         lat == other.lat && lng == other.lng && zoom == other.zoom
+    }
+
+    /// Whether these two regions put the same pixels on screen, to within half
+    /// of one. For every comparison with a MapKit-derived region on either side.
+    ///
+    /// `width` is the live view's width in points, which is why this takes a
+    /// parameter at all: the zoom tolerance is a property of the viewport and
+    /// not of the region. A non-positive width — a map that has not been laid
+    /// out — falls back to exact equality rather than inventing a screen, and
+    /// the callers guard on it anyway.
+    func isSamePlace(as other: GrMobRegion, width: CGFloat) -> Bool {
+        guard width > 0 else { return isSame(as: other) }
+        // Either zoom will do for the pixel size once they are within the zoom
+        // tolerance; the map's own is used, because the map's pixels are what
+        // is being measured.
+        let zoomTolerance = log2(1 + 1 / Double(width))
+        guard abs(zoom - other.zoom) <= zoomTolerance else { return false }
+        let toleranceLng = 360 / (256 * pow(2, other.zoom)) * GrMobMapTolerancePx
+        guard abs(lng - other.lng) <= toleranceLng else { return false }
+        // ±85° is Web Mercator's own limit and is what keeps the cosine off
+        // zero at the pole, which would collapse this back to exact equality.
+        let clampedLat = min(max(other.lat, -85), 85)
+        let toleranceLat = toleranceLng * cos(clampedLat * .pi / 180)
+        return abs(lat - other.lat) <= toleranceLat
     }
 }

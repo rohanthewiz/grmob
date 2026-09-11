@@ -215,6 +215,90 @@ func TestBothHostsReportAnUnavailableLocation(t *testing.T) {
 	}
 }
 
+// A location start the permission refused must stay armed, on both hosts,
+// because on both hosts the refusal arrives before the grant does.
+//
+// # The bug this pins
+//
+// An emulator run granted the permission after the screen had mounted, and the
+// sensor stayed dead for the life of the context tree:
+//
+//	launch with permission revoked     permission: denied    Available: false
+//	grant it through the app           permission: granted   Available: false
+//	12s later, with a fix being fed    permission: granted   Available: false
+//
+// The permission answer reached Go and nothing reached the sensor. Both hosts'
+// start() returned without recording that a start was outstanding, and
+// core.StartLocation emits its "sensor" event only on the 0→1 transition of its
+// reference count — while hooks.UseLocation guards its own slot with
+// locationRecord.started — so the command that would re-arm the sensor is never
+// sent twice. The only recovery was a remount, which is the navigation route
+// hooks.UseLocation recommends for an unrelated reason.
+//
+// It is the likelier order rather than an edge case: the tap that asks for the
+// permission is on the screen that wants the fix, and permission.Request must
+// come from a gesture.
+//
+// # The two hosts wire it differently, and the platform is why
+//
+// CoreLocation reports authorization changes to its delegate, including ones
+// the user made in Settings while the app was backgrounded, so iOS re-arms from
+// locationManagerDidChangeAuthorization and needs no seam at all. Android's
+// LocationManager has no such callback, so Permissions.kt — which has the
+// answer in hand either way — calls into the sensor. Hence a third pin on that
+// file: the flag is worth nothing without something to clear it.
+//
+// Both must also disarm on stop. A screen that unmounts while still waiting
+// must not leave the sensor armed, or an answer arriving later starts a GPS
+// with no consumer.
+func TestBothHostsStayArmedForALateLocationGrant(t *testing.T) {
+	for _, pin := range []struct{ file, arm, retry, disarm string }{
+		{
+			file: swiftLocation,
+			arm:  "awaitingAuthorization = true",
+			// The guard that used to read `guard running else { return }`, which
+			// is what dropped the grant.
+			retry:  "guard running || awaitingAuthorization else { return }",
+			disarm: "awaitingAuthorization = false",
+		},
+		{
+			file:   kotlinLocation,
+			arm:    "awaitingPermission = true",
+			retry:  "fun permissionAnswer(kind: String, status: String)",
+			disarm: "awaitingPermission = false",
+		},
+	} {
+		src := valuesIn(t, pin.file)
+		if !strings.Contains(src, pin.arm) {
+			t.Errorf("%s: a start the permission refused is abandoned rather than armed "+
+				"(%s) — the grant arrives a tap later and no second start command is "+
+				"ever sent, so the sensor is dead for the life of the context tree",
+				pin.file, pin.arm)
+		}
+		if !strings.Contains(src, pin.retry) {
+			t.Errorf("%s: nothing retries the armed start (%s) — the flag is set and "+
+				"never read, which is the same dead sensor with bookkeeping",
+				pin.file, pin.retry)
+		}
+		if !strings.Contains(src, pin.disarm) {
+			t.Errorf("%s: the armed start is never cleared (%s) — a screen that unmounts "+
+				"while waiting leaves the sensor armed, and a grant arriving later for "+
+				"some other reason starts a GPS with no consumer", pin.file, pin.disarm)
+		}
+	}
+
+	// Android's half of the wiring, which iOS does not need: the answer has to
+	// be handed to the sensor, because LocationManager will not announce it.
+	kotlinPermissions := nativeFile("android", "app", "src", "main", "java", "com",
+		"grmob", "app", "Permissions.kt")
+	const handoff = "LocationSensor.permissionAnswer(kind, status)"
+	if src := valuesIn(t, kotlinPermissions); !strings.Contains(src, handoff) {
+		t.Errorf("%s: the permission answer never reaches the location sensor (%s) — "+
+			"on Android that is the only signal a refused start can recover from",
+			kotlinPermissions, handoff)
+	}
+}
+
 // Both hosts must throttle their fix stream, and here the throttle is about
 // power as much as about render passes: a provider asked for fixes ten times a
 // second keeps the radio awake.

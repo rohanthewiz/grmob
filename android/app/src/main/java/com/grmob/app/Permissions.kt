@@ -18,6 +18,12 @@ import org.json.JSONObject
  *   permission.Check   ──▶ "permission" {command:"check",   kind:…} ──▶ here
  *   permission.Request ──▶ "permission" {command:"request", kind:…} ──▶ here
  *   permission.Current ◀── "permission" host event ◀── here
+ *                       └──▶ LocationSensor.permissionAnswer  (see [send])
+ *
+ * That second arrow is this process talking to itself. It is there because one
+ * sensor here cannot hear the platform: LocationManager has no
+ * authorization-change callback, so a location start the permission refused
+ * learns it was granted from [send] or not at all. See [send].
  *
  * # Why this one needs the Activity when nothing else here does
  *
@@ -307,6 +313,19 @@ object Permissions {
     }
 
     private fun send(kind: String, status: String) {
+        // This process's own sensors first, because one of them cannot ask.
+        // LocationManager has no authorization-change callback — CoreLocation
+        // does, which is why iOS needs no equivalent line — so a location
+        // start that the permission refused has no way to learn it was granted
+        // except from here. Every answer goes through, a check's as well as a
+        // request's, which is what also covers the user granting it in Settings
+        // and coming back to a screen using hooks.UsePermissionLive.
+        //
+        // The dependency points this way round on purpose: the answer
+        // originates here, and LocationSensor.permissionAnswer ignores
+        // everything that is not an outstanding location start. An observer
+        // registry for one observer would be machinery around a fact.
+        LocationSensor.permissionAnswer(kind, status)
         val out = report
         if (out == null) {
             Log.w(TAG, "permission answer with no host-event channel attached")

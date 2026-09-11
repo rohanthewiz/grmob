@@ -65,21 +65,29 @@ func TestBothNativeMapsCompareBeforeTheyMove(t *testing.T) {
 			file: swiftMap,
 			// The apply path: compared against Go's own last region, compared
 			// against where the map is, then remembered on both counts.
+			//
+			// The first of those is the only exact comparison in either host —
+			// both its numbers came from Go. The other five face a region the
+			// host's own map produced; see
+			// TestBothNativeMapsTolerateTheirOwnRounding.
 			apply:      "if let applied, applied.isSame(as: want) { return }",
-			applyRest:  "if let settled, settled.isSame(as: want) { return }",
+			applyRest:  "if let settled, settled.isSamePlace(as: want, width: width) { return }",
 			record:     "applied = want",
 			recordRest: "settled = want",
 			// The report path: the same two comparisons, the other way round.
-			report:     "if let applied, applied.isSame(as: next) { return }",
-			reportRest: "if let settled, settled.isSame(as: next) { return }",
+			report:     "if let applied, applied.isSamePlace(as: next, width: viewSize.width) { return }",
+			reportRest: "if let settled, settled.isSamePlace(as: next, width: viewSize.width) { return }",
 		},
 		{
-			file:       kotlinMap,
-			apply:      "if (holder.hasApplied(lat, lng, zoom)) return",
-			applyRest:  "if (holder.hasSettled(lat, lng, zoom)) return",
-			record:     "holder.remember(lat, lng, zoom)",
+			file:      kotlinMap,
+			apply:     "if (holder.hasApplied(lat, lng, zoom)) return",
+			applyRest: "if (holder.hasSettled(lat, lng, zoom)) return",
+			record:    "holder.remember(lat, lng, zoom)",
+			// Two distinct spellings for the two directions, which is the
+			// point rather than an accident: hasApplied is the exact
+			// comparison and belongs to the apply path alone.
 			recordRest: "holder.rememberSettled(lat, lng, zoom)",
-			report:     "if (holder.hasApplied(lat, lng, zoom)) return",
+			report:     "if (holder.reportMatchesApplied(lat, lng, zoom)) return",
 			reportRest: "if (holder.hasSettled(lat, lng, zoom)) return",
 		},
 	} {
@@ -110,6 +118,78 @@ func TestBothNativeMapsCompareBeforeTheyMove(t *testing.T) {
 		if !strings.Contains(src, pin.reportRest) {
 			t.Errorf("%s: a map that has not moved since its last report reports again "+
 				"(%s)", pin.file, pin.reportRest)
+		}
+	}
+}
+
+// The echo guard's comparison must tolerate the host's own map, on both
+// natives, because on both natives the region that comes back out is not the
+// region that went in.
+//
+// # The bug this pins
+//
+// An emulator run found lesson 4.12's "Reported" readout changing to exactly
+// the region Go had just asked for, on a tap that should have reported nothing.
+// osmdroid holds its scroll position as integer pixels at the current zoom, so
+//
+//	map.controller.setCenter(GeoPoint(lat, lng))   // exact doubles in
+//	map.mapCenter                                  // quantised doubles out
+//
+// and an exact-equality guard can never match on that host. MapKit is the same
+// shape with a different cause — setRegion fits the span to the view and to the
+// tile pyramid, and this renderer recovers the zoom back out of it through log2.
+//
+// It converges rather than jumping: the echo lands on `settled`, the next pass
+// compares against it and skips. What it costs is honesty — OnRegionChange
+// fires for moves the user did not make, once per programmatic recentre and
+// once on load, and an app that treats the callback as a gesture (a "search
+// this area" fetch, an analytics event) fires it on arrival everywhere it sent
+// itself.
+//
+// # Why a name check and not a number
+//
+// The tolerance is half a pixel at the current zoom, which is a function and
+// not a constant — one coarse enough for zoom 12 swallows a real drag at zoom
+// 19, and one fine enough for zoom 19 does nothing at zoom 12. So what can be
+// read out of the source is that the arithmetic is there and that it is derived
+// from the zoom. The 256 is Web Mercator's tile size and appears in the
+// conversion on both hosts; the cosine is Mercator's latitude compression.
+//
+// The browser is deliberately not in this test. Leaflet caches the centre it
+// was given and getCenter() hands it straight back while the map has not moved,
+// so the web host's exact comparison matches on both paths — see the comment on
+// sameRegion in wasm/grmob-runtime.js.
+func TestBothNativeMapsTolerateTheirOwnRounding(t *testing.T) {
+	for _, pin := range []struct{ file, tolerance, perPixel, mercator string }{
+		{
+			file:      swiftMap,
+			tolerance: "func isSamePlace(",
+			perPixel:  "360 / (256 * pow(2, other.zoom)) * GrMobMapTolerancePx",
+			mercator:  "cos(clampedLat * .pi / 180)",
+		},
+		{
+			file:      kotlinMap,
+			tolerance: "private fun samePlaceOnScreen(",
+			perPixel:  "360.0 / (256.0 * 2.0.pow(bZoom)) * GRMOB_MAP_TOLERANCE_PX",
+			mercator:  "cos(clampedLat * Math.PI / 180.0)",
+		},
+	} {
+		src := valuesIn(t, pin.file)
+		if !strings.Contains(src, pin.tolerance) {
+			t.Errorf("%s: the echo guard has no tolerant comparison (%s) — this host "+
+				"cannot return the region it was handed, so an exact guard reports "+
+				"every programmatic move to Go as a user gesture", pin.file, pin.tolerance)
+		}
+		if !strings.Contains(src, pin.perPixel) {
+			t.Errorf("%s: the tolerance is not derived from the zoom (%s) — a fixed "+
+				"epsilon is either too coarse to notice a real drag at zoom 19 or too "+
+				"fine to absorb a pixel at zoom 12, and cannot be both", pin.file, pin.perPixel)
+		}
+		if !strings.Contains(src, pin.mercator) {
+			t.Errorf("%s: the latitude tolerance ignores Mercator's compression (%s) — "+
+				"a pixel covers fewer degrees of latitude away from the equator, so a "+
+				"longitude-sized tolerance is too generous by 1/cos(lat)",
+				pin.file, pin.mercator)
 		}
 	}
 }

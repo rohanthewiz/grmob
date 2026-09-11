@@ -52,6 +52,14 @@ import org.json.JSONObject
  * than this framework's: CLLocationManager requests authorization from anywhere,
  * ActivityCompat.requestPermissions needs the Activity that Permissions.kt
  * holds.
+ *
+ * # And a refusal is not final
+ *
+ * The grant usually arrives *after* the screen that wants it, because the tap
+ * that asks for it is on that screen. So a refused start stays armed and
+ * [Permissions] calls [permissionAnswer] when the answer changes — without
+ * which the sensor is dead for the life of the context tree, which is what an
+ * emulator run found. [awaitingPermission] carries the whole argument.
  */
 object LocationSensor : LocationListener {
     private const val TAG = "GrMobLocation"
@@ -80,6 +88,57 @@ object LocationSensor : LocationListener {
 
     private var running = false
     private var lastSentAt = 0L
+
+    /**
+     * A start is outstanding and cannot proceed until the location permission
+     * is granted. Set by [start] when it bails on the permission, cleared by a
+     * start that gets through and by [stop].
+     *
+     * # The bug this exists for
+     *
+     * An emulator run granted the permission *after* the screen had mounted and
+     * the sensor stayed dead for the life of the context tree:
+     *
+     *     launch with permission revoked     permission: denied    Available: false
+     *     grant it through the app           permission: granted   Available: false
+     *     12s later, with a fix being fed    permission: granted   Available: false
+     *
+     * The permission answer reached Go — the readout updated — and nothing
+     * reached the sensor. [start] returns early without setting [running], and
+     * `core.StartLocation` emits its "sensor" event only on the 0→1 transition
+     * of its reference count (and `hooks.UseLocation` guards its own slot with
+     * `locationRecord.started`), so the host command that would re-arm the
+     * sensor is never sent a second time. The only recovery was a remount.
+     *
+     * # Why the host and not Go
+     *
+     * Three reasons, and the third is the decisive one. The host is where the
+     * failure is *known* — this object is the only thing that knows the start
+     * did not take and why. The host is where the answer *arrives*:
+     * [Permissions] already has it in hand and calls [permissionAnswer] with
+     * it, so there is no new plumbing. And putting it in `hooks.UseLocation`
+     * would mean the hook reading a permission status to decide whether to
+     * start the sensor, which is the second authorization policy that hook's
+     * own doc argues against having.
+     *
+     * iOS reaches the same place by a different route: CoreLocation reports
+     * authorization changes to the delegate, including ones made in Settings,
+     * so LocationSensor.swift re-arms from `locationManagerDidChangeAuthorization`
+     * and needs no seam to Permissions at all. LocationManager has no such
+     * callback, which is why this flag is here and not there.
+     *
+     * # What it does not fix
+     *
+     * Go's last location event is still the refusal until the first fix lands,
+     * which on cold GPS is tens of seconds. So a screen written to the
+     * documented shape — `case !loc.Available: EmptyState{Hint: loc.Error}` —
+     * shows "location permission not granted" while the sensor is genuinely
+     * acquiring. Saying otherwise needs a state `core.Location` does not carry:
+     * `available:false` means the device cannot produce a fix, and an event
+     * with no coordinates would decode to 0,0, which is a real place off the
+     * coast of Ghana.
+     */
+    private var awaitingPermission = false
 
     fun attach(context: Context, report: (String, String) -> Unit) {
         this.report = report
@@ -112,6 +171,12 @@ object LocationSensor : LocationListener {
         if (!hasPermission(ctx)) {
             // Not a request: see the class comment. One event, and a screen can
             // draw the "ask me" state instead of a spinner that never ends.
+            //
+            // Armed rather than simply abandoned, which is the difference
+            // between "no" and "not yet": the grant may arrive a tap later and
+            // nothing else will tell this object to try again. See
+            // [awaitingPermission].
+            awaitingPermission = true
             send(
                 JSONObject().put("available", false)
                     .put("error", "location permission not granted")
@@ -147,10 +212,42 @@ object LocationSensor : LocationListener {
             return
         }
         running = true
+        awaitingPermission = false
         lastSentAt = 0L
     }
 
+    /**
+     * Retries a start that the permission refused, when the permission stops
+     * refusing.
+     *
+     * Called by [Permissions] for every answer it sends to Go — a check's and a
+     * request's alike, which is what also covers the user granting the
+     * permission in the system settings and coming back, since
+     * `hooks.UsePermissionLive` re-checks on every foreground.
+     *
+     * The [awaitingPermission] guard is what keeps this from being a second way
+     * to turn the GPS on: a "granted" answer with no outstanding start is
+     * somebody else's business — a camera screen checking its own permissions,
+     * a debug readout — and starting the radio from it would be this framework
+     * spending battery nobody asked for.
+     */
+    fun permissionAnswer(kind: String, status: String) {
+        if (kind != "location" || status != "granted") return
+        if (!awaitingPermission) return
+        // start() re-reads the permission itself rather than trusting the
+        // status it was handed: the two can disagree, because an answer posted
+        // from the launcher crosses a thread hop and the user can revoke from
+        // the notification shade inside it.
+        start()
+    }
+
     private fun stop() {
+        // Cleared even when nothing is running, and that is the point: a screen
+        // that unmounts while still waiting for the grant must not leave the
+        // sensor armed, or a permission granted later for some other reason
+        // would start a GPS with no consumer. core.StopLocation reaches here on
+        // the hook's close path whether the sensor ever got going or not.
+        awaitingPermission = false
         if (!running) return
         running = false
         try {
@@ -230,6 +327,13 @@ object LocationSensor : LocationListener {
                 JSONObject().put("available", false)
                     .put("error", "location is switched off")
             )
+            // This leaves the sensor in the same dead state the permission
+            // refusal used to leave it in, and deliberately does not arm
+            // [awaitingPermission] to recover: the signal that would re-arm it
+            // is [onProviderEnabled], which fires only while updates are still
+            // registered, and nothing has ever run that path. An untested
+            // recovery is worse than a documented gap — see the session notes
+            // for this one.
         }
     }
 

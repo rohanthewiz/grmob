@@ -2379,6 +2379,16 @@ const GrMob = (() => {
         };
     }
 
+    // Exact, and this is the one host where that is safe on both paths.
+    //
+    // Leaflet caches the centre it was given: getCenter() returns _lastCenter
+    // unchanged for as long as the map has not moved, so setView's own numbers
+    // come straight back out and the report the setView causes compares equal.
+    // The natives cannot do that — osmdroid quantises the centre to integer
+    // pixels and MapKit re-derives the whole region — so both of them compare
+    // to within half a pixel instead. GrMobMapView.kt's samePlaceOnScreen
+    // carries the argument; the reason it is not restated here is that there is
+    // nothing to tolerate.
     function sameRegion(a, b) {
         return !!a && !!b && a.lat === b.lat && a.lng === b.lng && a.zoom === b.zoom;
     }

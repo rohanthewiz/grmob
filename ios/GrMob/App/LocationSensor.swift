@@ -35,6 +35,15 @@ import Foundation
 /// reason, which is the shape Go's Location.Available and Location.Error are
 /// written against and the only thing that lets a screen stop waiting.
 ///
+/// # And a refusal is not final
+///
+/// The authorization usually settles *after* the screen that wants it, whether
+/// at the prompt or in Settings a minute later. So a refused start stays armed
+/// and `locationManagerDidChangeAuthorization` finishes it — without which the
+/// sensor is dead for the life of the context tree, which is what an Android
+/// emulator run found in the equivalent host. `awaitingAuthorization` carries
+/// the whole argument.
+///
 /// # Info.plist
 ///
 /// NSLocationWhenInUseUsageDescription must be present or the app *crashes*
@@ -49,6 +58,48 @@ final class LocationSensor: NSObject, CLLocationManagerDelegate {
     private let manager = CLLocationManager()
     private var running = false
     private var lastSentAt: TimeInterval = 0
+
+    /// A start is outstanding and cannot proceed until the authorization
+    /// changes. Set when `start` bails on a refusal or hands the prompt to the
+    /// user, cleared by a start that gets through and by `stop`.
+    ///
+    /// # The bug this exists for
+    ///
+    /// An Android emulator run found the same shape one file over: the grant
+    /// arrives *after* the screen that wants it, because the tap that asks for
+    /// it is on that screen, and a sensor that abandoned the start stays dead
+    /// for the life of the context tree — `core.StartLocation` emits its
+    /// "sensor" event only on the 0→1 transition of its reference count, so the
+    /// command never comes twice.
+    ///
+    /// Two of this file's three refusal paths had it. `notDetermined` was
+    /// already handled — it set `running` before prompting precisely so the
+    /// authorization callback would find a start outstanding — and that is the
+    /// pattern this flag generalises, without the lie that `running` means
+    /// updates are flowing.
+    ///
+    /// The path that did NOT recover is `denied`: `start` reported and gave up,
+    /// and the user flipping the switch in Settings and coming back reached
+    /// `locationManagerDidChangeAuthorization`, which bailed on `guard running`.
+    /// That is the same dead sensor, by the route iOS users are most likely to
+    /// take.
+    ///
+    /// # Why iOS needs no seam to Permissions
+    ///
+    /// CoreLocation delivers authorization changes to the delegate, including
+    /// ones the user made in Settings while the app was backgrounded. So the
+    /// signal arrives here on its own. LocationManager on Android has no such
+    /// callback, which is why LocationSensor.kt's equivalent flag is re-armed by
+    /// Permissions.kt calling into it — the same fix, and the platform is what
+    /// decides how it is wired.
+    ///
+    /// # What it does not fix
+    ///
+    /// Go's last location event is still the refusal until the first fix lands.
+    /// See the note under LocationSensor.kt's `awaitingPermission`; the state
+    /// that would say "acquiring after a refusal" is one `core.Location` does
+    /// not carry.
+    private var awaitingAuthorization = false
 
     /// Throttle floor, as the compass has: CoreLocation can deliver faster than
     /// any screen needs, and every event that reaches Go costs a full render
@@ -90,26 +141,44 @@ final class LocationSensor: NSObject, CLLocationManagerDelegate {
         }
         switch manager.authorizationStatus {
         case .notDetermined:
-            // The prompt. running is set first so the authorization callback
-            // below knows a start is outstanding; nothing is reported yet,
-            // because the answer is the user's and has not arrived.
-            running = true
+            // The prompt. The start is recorded as outstanding so the
+            // authorization callback below knows to finish it; nothing is
+            // reported yet, because the answer is the user's and has not
+            // arrived. This used to set `running`, which is the same signal
+            // spelled as a claim that updates were flowing.
+            awaitingAuthorization = true
             manager.requestWhenInUseAuthorization()
             return
         case .restricted, .denied:
+            // Reported *and* left armed, which is the difference between "no"
+            // and "not yet": the user can grant this in Settings and come back,
+            // and CoreLocation will say so. See `awaitingAuthorization`.
+            //
+            // `restricted` is a parental-controls or MDM state the user cannot
+            // lift from Settings, so arming it will usually earn nothing — but
+            // it costs one Bool and the profile can change.
+            awaitingAuthorization = true
             send(["available": false, "error": "location permission denied"])
             return
         default:
             break
         }
         running = true
+        awaitingAuthorization = false
         lastSentAt = 0
         manager.startUpdatingLocation()
     }
 
     private func stop() {
-        guard running else { return }
+        // Cleared even when nothing is running, and that is the point: a screen
+        // that unmounts while still waiting for the authorization must not leave
+        // the sensor armed, or an answer arriving later would start a GPS with
+        // no consumer. core.StopLocation reaches here on the hook's close path
+        // whether the sensor ever got going or not.
+        let wasArmed = running || awaitingAuthorization
         running = false
+        awaitingAuthorization = false
+        guard wasArmed else { return }
         manager.stopUpdatingLocation()
     }
 
@@ -118,14 +187,23 @@ final class LocationSensor: NSObject, CLLocationManagerDelegate {
     func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
         // Only interesting while a start is outstanding: an authorization that
         // changes while nothing asked for a fix is Permissions' business, not
-        // this object's.
-        guard running else { return }
+        // this object's. `awaitingAuthorization` is the half of "outstanding"
+        // that used to be missing — a start refused for want of the permission
+        // is exactly the start this callback exists to finish, and a `running`-
+        // only guard dropped it.
+        guard running || awaitingAuthorization else { return }
         switch manager.authorizationStatus {
         case .authorizedWhenInUse, .authorizedAlways:
+            running = true
+            awaitingAuthorization = false
             lastSentAt = 0
             manager.startUpdatingLocation()
         case .restricted, .denied:
+            // Revoked while running, or refused at the prompt. Either way the
+            // start stays armed: this is the one authorization on iOS the user
+            // can change from outside the app at any time.
             running = false
+            awaitingAuthorization = true
             send(["available": false, "error": "location permission denied"])
         case .notDetermined:
             // The prompt is still on screen. Nothing to say yet.
