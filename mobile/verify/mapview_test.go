@@ -15,8 +15,13 @@ import (
 // report a gesture only when it ends somewhere else, move a marker rather than
 // rebuilding the layer — are decisions each host makes for itself. The web half
 // has a real test (wasm/verify/mapview_test.mjs, against a fake Leaflet); the
-// iOS half is type-checked by ios/verify and the Kotlin half is compiled by
-// nothing in this repository, because that needs gradle and the Android SDK.
+// iOS half is type-checked by ios/verify, and the Kotlin half compiles under
+//
+//	android/build.sh && (cd android && ./gradlew :app:assembleDebug)
+//
+// which needs the Android SDK and an NDK and so is not part of `go test ./...`.
+// A compile is not a behaviour check either way: it says the calls exist, not
+// that they are made in the right order.
 //
 // So what is held here is the shape of the contract, read out of the source. It
 // is a weaker instrument than a test that drives the code, and it is the
@@ -35,27 +40,47 @@ var (
 
 // The echo guard, which is the rule that makes a controlled map usable at all.
 //
-// Every host must compare Go's region against the one it last applied, and must
-// record what it applied on both paths — the apply and the report. A host
-// missing either half is not subtly wrong: it either snaps the map out from
-// under the user's finger on the next unrelated render, or it reports its own
-// recentring back to Go as a gesture the user never made, which an app echoing
-// the region turns into an infinite loop.
+// Every host must keep TWO memories and compare against both. `applied` is the
+// region Go last asked for; `settled` is where the map last came to rest. A
+// host that folds them into one slot is not subtly wrong — it is the failure
+// the guard is named for, and it was shipped in all three hosts until a browser
+// session found it: a pan wrote the user's region into the apply path's slot,
+// Go's unchanged region then read as a change, and the next patch to reach the
+// map snapped it back to the opening view.
+//
+// So the apply path must skip a region Go has not changed AND a region the map
+// already rests at, and the report path must skip a region this host applied
+// AND one already reported. Six pins per host, because each missing line is its
+// own failure: a map that yanks, a map that fights an echoing app's round trip,
+// a host reporting its own recentring as a gesture, a double report.
+//
+// wasm/verify/mapview_test.mjs drives all four of those against a fake Leaflet.
+// These are the same four rules read out of two files this package cannot run.
 func TestBothNativeMapsCompareBeforeTheyMove(t *testing.T) {
-	for _, pin := range []struct{ file, apply, record, report string }{
+	for _, pin := range []struct {
+		file                                                     string
+		apply, applyRest, record, recordRest, report, reportRest string
+	}{
 		{
 			file: swiftMap,
-			// The apply path: compared, then remembered, then set.
-			apply:  "if let applied, applied.isSame(as: want) { return }",
-			record: "applied = want",
-			// The report path: the same comparison, the other way round.
-			report: "if let applied, applied.isSame(as: next) { return }",
+			// The apply path: compared against Go's own last region, compared
+			// against where the map is, then remembered on both counts.
+			apply:      "if let applied, applied.isSame(as: want) { return }",
+			applyRest:  "if let settled, settled.isSame(as: want) { return }",
+			record:     "applied = want",
+			recordRest: "settled = want",
+			// The report path: the same two comparisons, the other way round.
+			report:     "if let applied, applied.isSame(as: next) { return }",
+			reportRest: "if let settled, settled.isSame(as: next) { return }",
 		},
 		{
-			file:   kotlinMap,
-			apply:  "if (holder.hasApplied(lat, lng, zoom)) return",
-			record: "holder.remember(lat, lng, zoom)",
-			report: "if (holder.hasApplied(lat, lng, zoom)) return",
+			file:       kotlinMap,
+			apply:      "if (holder.hasApplied(lat, lng, zoom)) return",
+			applyRest:  "if (holder.hasSettled(lat, lng, zoom)) return",
+			record:     "holder.remember(lat, lng, zoom)",
+			recordRest: "holder.rememberSettled(lat, lng, zoom)",
+			report:     "if (holder.hasApplied(lat, lng, zoom)) return",
+			reportRest: "if (holder.hasSettled(lat, lng, zoom)) return",
 		},
 	} {
 		src := valuesIn(t, pin.file)
@@ -64,13 +89,27 @@ func TestBothNativeMapsCompareBeforeTheyMove(t *testing.T) {
 				"re-render would put the map back where Go last said, under the user's "+
 				"finger", pin.file, pin.apply)
 		}
+		if !strings.Contains(src, pin.applyRest) {
+			t.Errorf("%s: a region the map already rests at is applied anyway (%s) — an "+
+				"app that echoes OnRegionChange into its own state fights its own round "+
+				"trip, a frame late", pin.file, pin.applyRest)
+		}
 		if !strings.Contains(src, pin.record) {
 			t.Errorf("%s: the applied region is never recorded (%s), so the comparison "+
 				"above has nothing to compare against", pin.file, pin.record)
 		}
+		if !strings.Contains(src, pin.recordRest) {
+			t.Errorf("%s: a programmatic move does not update where the map rests (%s), "+
+				"so a later instruction back to the user's old view is skipped as "+
+				"\"already there\" while the map sits somewhere else", pin.file, pin.recordRest)
+		}
 		if !strings.Contains(src, pin.report) {
 			t.Errorf("%s: a region is reported without being compared (%s) — this host's "+
 				"own recentring reaches Go as a user gesture", pin.file, pin.report)
+		}
+		if !strings.Contains(src, pin.reportRest) {
+			t.Errorf("%s: a map that has not moved since its last report reports again "+
+				"(%s)", pin.file, pin.reportRest)
 		}
 	}
 }

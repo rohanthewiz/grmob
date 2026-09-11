@@ -2021,6 +2021,14 @@ func lessonStaticMap() Lesson {
 				Zoom:   zoom.Get(),
 				Marker: marker.Get(),
 				Label:  current.name,
+				// Stated, because there is no default to inherit any more —
+				// and stated as the dead one on purpose. This lesson is about
+				// the URL the widget builds, which OSMStaticMap still builds
+				// correctly; the picture under the caption stays empty, and
+				// the prose below says why. A lesson that hid that behind a
+				// key nobody here has would teach the seam and not the
+				// decision.
+				Provider: components.OSMStaticMap,
 			}
 			// The URL the widget will request, asked for rather than rebuilt:
 			// Area() is the widget's own resolution of the defaults and the
@@ -2059,11 +2067,18 @@ func lessonStaticMap() Lesson {
 						current.name, current.lat, current.lng, zoom.Get())),
 					caption("Requested: "+requested),
 				),
-				prose("The provider is the seam, and it is a policy rather than a detail. The default "+
-					"is the OpenStreetMap community's keyless service, which is what makes the widget "+
-					"evaluable without buying anything — and which is a volunteer-run, low-volume "+
-					"service, so a screen every user opens ten times a day belongs on a paid one. "+
-					"GoogleStaticMap(key) is in the box; anything else is one function."),
+				prose("The frame above is empty, and that is this lesson's real subject. The URL in "+
+					"the caption is correct and the host it names is gone: staticmap.openstreetmap.de "+
+					"was the OpenStreetMap community's keyless static-image service, it has been "+
+					"discontinued, and it no longer resolves. It used to be this widget's default, "+
+					"which is exactly why the widget no longer has one — a default is a decision "+
+					"taken on a caller's behalf, and this is what it looks like when one expires "+
+					"under them."),
+				prose("So the provider is the seam, and it is a policy an app owns. GoogleStaticMap(key) "+
+					"is in the box and resolves; anything else is one function. A StaticMap with no "+
+					"Provider at all renders this same empty frame and reports "+
+					"components.ConcernNoMapProvider in debug mode, so a build that has not chosen "+
+					"says so during development rather than shipping a grey rectangle."),
 				codeBlock(`// A provider is one function, and it sees values already
 // defaulted and already clamped — no zero Zoom, no 4000px width.
 Provider: func(a components.StaticMapArea) string {
@@ -2243,6 +2258,14 @@ func lessonLiveMap() Lesson {
 					"state it renders from. The map stays where you left it anyway, and that is "+
 					"the one rule that makes a controlled map usable: Go's region is applied only "+
 					"when it *changes*."),
+				prose("Which is also why \"Back to the centre\" does nothing after a pan, if the "+
+					"centre is what this demo is already asking for. Re-rendering the same region "+
+					"is never a re-centre — from a host's side that is indistinguishable from the "+
+					"unrelated re-render the guard exists to ignore. \"Show Belém\" moves the map "+
+					"because it is a different region, and after it \"Back to the centre\" is a "+
+					"different region too. An app that wants the button to work from a pan echoes "+
+					"OnRegionChange into the state it renders from, which is one line and is what "+
+					"core.MapView recommends."),
 				prose("Without that rule a map is unusable. A map is the one widget whose value "+
 					"the user changes continuously by touching it — so if every render re-centred "+
 					"on Go's region, any unrelated re-render would snap the map back under the "+

@@ -41,27 +41,68 @@ import (
 // is the thing to build when an app needs to *interact* with a map rather than
 // point at one.
 //
-// # The image is a network fetch, and the provider is a policy
+// # The image is a network fetch, and the provider is required
 //
 // Nothing here draws a map. The widget builds a URL and hands it to
 // core.Image, so what arrives is whatever the provider serves — which makes
-// the provider a decision an app has to own, not a default to inherit
-// silently:
+// the provider a decision an app has to own:
 //
-//	OSMStaticMap (the default)  no key, no signup. It is a volunteer-run
-//	                            service (staticmap.openstreetmap.de) with a
-//	                            low-volume policy, which makes it right for a
-//	                            church's address card and wrong for a screen
-//	                            every user opens ten times a day.
-//	GoogleStaticMap(key)        a paid API with an availability promise, for
-//	                            an app whose map is load-bearing.
-//	a func of your own          StaticMapProvider is one function; a provider
-//	                            this package has never heard of is five lines.
+//	GoogleStaticMap(key)  a paid API with an availability promise, and the
+//	                      only bundled provider whose host resolves.
+//	a func of your own    StaticMapProvider is one function; a provider this
+//	                      package has never heard of is five lines.
+//	OSMStaticMap          deprecated, and dead. See that function.
 //
-// The default is the keyless one because a widget nobody can render without
-// first buying something is a widget nobody evaluates. The caveat is in the
-// doc rather than in a panic, because which side of that line an app sits on
-// is not knowable from here.
+// There is no default, and there used to be. OSMStaticMap was it, on the
+// argument that a widget nobody can render without first buying something is
+// a widget nobody evaluates — which was the right argument for as long as
+// there was a keyless service to point at. There is not one now: every
+// static-map service the OpenStreetMap wiki still lists takes a key, and the
+// two keyless entries on that page are a web form and an HTML-embed
+// generator, neither of which is a URL an image node can fetch.
+//
+// So a StaticMap with no Provider renders its frame and no image, exactly as
+// GoogleStaticMap("") does, and records ConcernNoMapProvider in debug mode.
+// A build that has not chosen should look unfinished and say so, rather than
+// draw a map of a host it cannot reach.
+//
+// # Why this cannot just draw the tiles itself
+//
+// The obvious escape is to stop asking for a rendered image and compose one
+// out of the raster tiles this repository already uses — tile.openstreetmap.org
+// is keyless, alive, and is what core.MapView draws through on all three
+// hosts. It is not available here. A tile grid centred on an arbitrary point
+// needs its tiles placed at pixel offsets inside a clipped box, which is
+// absolute positioning, and absolute positioning is the one Style.Position
+// value with no Compose analog (see GrMobStyle.kt, which says so). A widget
+// that laid out correctly on web and iOS and drifted on Android is worse than
+// one that asks for a key.
+//
+// # Device pixel ratio
+//
+// Width and Height are *logical* pixels: they set the size of the box on the
+// screen. Scale is how many device pixels the provider should put inside each
+// of them. Two numbers because they answer two questions — how big is this,
+// and how sharp is it — and until Scale existed one number answered both: a
+// 320px request stretched across a 2x phone's 640 real pixels, which arrives
+// visibly soft and could not be said otherwise from the call site.
+//
+//	Width: 320, Scale: 2    a 320-logical-px box holding a 640px image
+//
+// Nothing reads the ratio off the device, because nothing in this framework
+// knows it: there is no host event that reports screen metrics, on any of the
+// three renderers. A caller who has the number states it; a caller who says
+// nothing is choosing 1x, which is what every caller got before the field
+// existed.
+//
+// Whether the number can be spent is the provider's business. Google's API
+// has a scale parameter that doubles the raster without touching the
+// cartography; a provider with no such parameter ignores the field, which is
+// why this is a StaticMapArea value rather than a multiply applied to Width
+// before the provider sees it. The multiply would be wrong twice over: asking
+// a map service for twice the pixels at the same zoom returns twice as much
+// *map*, and asking at zoom+1 returns the same ground drawn for a deeper
+// zoom, whose labels then land at half the physical size they were drawn for.
 //
 // # The hand-off is one URL for three platforms
 //
@@ -129,6 +170,16 @@ type StaticMap struct {
 	// "a slightly smaller map than you asked for".
 	Width, Height int
 
+	// Scale is the device pixel ratio to ask the provider for: 1, 2 or 3.
+	// 0 means DefaultMapScale, which is 1x.
+	//
+	// It changes the image, never the box: a Scale of 2 leaves the widget
+	// exactly Width by Height logical pixels on screen and asks for four
+	// times as many actual pixels to fill them. Clamped to MaxMapScale and
+	// then spent, or ignored, by the provider — see "Device pixel ratio" on
+	// the type for both halves of that.
+	Scale int
+
 	// Marker draws a pin at the point. Off by default: a map whose centre *is*
 	// the subject does not always need one, and a single pin in the middle of
 	// a small image can hide the very corner a reader is looking at.
@@ -144,8 +195,10 @@ type StaticMap struct {
 	// "Map at 38.7223, -9.1393". Worth setting for that reason alone.
 	Label string
 
-	// Provider builds the image URL. nil means OSMStaticMap; see the type
-	// comment for why that default is a decision an app should revisit.
+	// Provider builds the image URL. Required: nil renders no image at all
+	// and reports ConcernNoMapProvider in debug mode. See "The image is a
+	// network fetch, and the provider is required" on the type for why this
+	// stopped having a default.
 	Provider StaticMapProvider
 
 	// Handoff builds the URL a tap opens. nil means GoogleMapsHandoff.
@@ -203,6 +256,28 @@ const (
 	// rather than passing the request through to be refused.
 	MaxMapDimension = 640
 
+	// DefaultMapScale is one image pixel per logical pixel, which is what a
+	// caller who says nothing about the device gets — and what every caller
+	// got before Scale existed. See "Device pixel ratio" on StaticMap for why
+	// it is not read off the screen.
+	DefaultMapScale = 1
+
+	// MaxMapScale is 3, the deepest ratio shipping phones use. It clamps the
+	// *request*, and is not a promise about the answer: Google's API tops out
+	// at MaxGoogleMapScale and a provider with no scale of its own serves 1x
+	// whatever it is handed.
+	MaxMapScale = 3
+
+	// MaxGoogleMapScale is what the Maps Static API accepts — 1 or 2, and
+	// nothing else. A 3x device therefore gets the 2x image, which is the
+	// sharpest thing that API will serve and still four times the pixels of
+	// the 1x it used to get.
+	//
+	// Google applies its size limit *before* scaling, which is why Width and
+	// Height are not also divided down to make room: a scale=2 request for a
+	// 640px box is accepted and served as 1280px.
+	MaxGoogleMapScale = 2
+
 	// MercatorLatLimit is where Web Mercator stops. Every tile provider here
 	// projects with it, so this is the edge of the addressable world rather
 	// than a choice — see StaticMap.Lat.
@@ -224,20 +299,56 @@ type StaticMapArea struct {
 	Lat, Lng      float64
 	Zoom          int
 	Width, Height int
-	Marker        bool
+
+	// Scale is the device pixel ratio asked for, already defaulted and
+	// clamped. Width and Height stay logical: a provider that honours Scale
+	// returns Width*Scale actual pixels for the same map, and a provider that
+	// cannot honour it returns Width by Height and is not wrong to. See
+	// "Device pixel ratio" on StaticMap.
+	Scale int
+
+	Marker bool
 }
+
+// ConcernNoMapProvider: a StaticMap rendered with no Provider, which draws an
+// empty frame. It is a development-time finding rather than a panic because
+// the failure is survivable — a screen missing its map is still a screen — and
+// because the fix is configuration, which is exactly the class of mistake that
+// is invisible in a running app and obvious in a concern list.
+const ConcernNoMapProvider = "no-map-provider"
 
 // StaticMapProvider turns a view into an image URL. See StaticMap.Provider.
 type StaticMapProvider func(StaticMapArea) string
+
+// noStaticMapProvider is what an unconfigured widget renders through: a
+// provider that declines. Named rather than written inline at the call site so
+// that "no provider" and "a provider with no key" travel the same path to the
+// same empty src, instead of being two shapes of nothing that could drift.
+func noStaticMapProvider(StaticMapArea) string { return "" }
 
 // MapHandoff turns a point and its name into a URL for core.OpenURL. See
 // StaticMap.Handoff.
 type MapHandoff func(lat, lng float64, label string) string
 
 // OSMStaticMap renders through staticmap.openstreetmap.de, the OpenStreetMap
-// community's static-image service. No key, no signup, and a low-volume
-// policy: see StaticMap's type comment on why that makes it the right default
-// and the wrong choice for a high-traffic screen.
+// community's static-image service.
+//
+// Deprecated: that service no longer exists. The OpenStreetMap wiki's
+// StaticMapLite page says "This service has been discontinued", and the host
+// stopped resolving — NXDOMAIN, checked 2026-09-11. Every URL this function
+// builds is now a fetch that fails and a frame that stays empty.
+//
+// It is kept rather than deleted for two reasons. A caller that names it still
+// compiles, which is the difference between a deprecation and a breakage; and
+// a provider that returns a URL to a dead host is a far easier thing to
+// diagnose than a symbol that has gone away, because the URL is printable and
+// the failure is one nslookup from being understood.
+//
+// It was this package's default, on the strength of being keyless. See "The
+// image is a network fetch, and the provider is required" on StaticMap for
+// what replaced it, which is nothing, and why.
+//
+// Scale is ignored. The service had no scale parameter while it was up.
 //
 // The marker style name ("ol-marker") is the service's own vocabulary rather
 // than anything this package defines, which is the general shape of a provider
@@ -275,6 +386,13 @@ func GoogleStaticMap(key string) StaticMapProvider {
 		q.Set("center", coordPair(a.Lat, a.Lng))
 		q.Set("zoom", strconv.Itoa(a.Zoom))
 		q.Set("size", fmt.Sprintf("%dx%d", a.Width, a.Height))
+		// size stays logical and scale multiplies it, which is the API's own
+		// arrangement — see MaxGoogleMapScale. Written only when it is asked
+		// for, because scale=1 is the documented default and a parameter that
+		// says the default says nothing except in a diff.
+		if a.Scale > 1 {
+			q.Set("scale", strconv.Itoa(MaxGoogleMapScale))
+		}
 		if a.Marker {
 			q.Set("markers", "color:red|"+coordPair(a.Lat, a.Lng))
 		}
@@ -383,12 +501,26 @@ func (m StaticMap) Area() StaticMapArea {
 		h = MaxMapDimension
 	}
 
+	// The size clamp above is on the LOGICAL size, and the scale is resolved
+	// after it rather than folded into it. Google applies its own 640 limit
+	// before scaling, so a 640px box at 2x is a legal request for a 1280px
+	// image — folding the two together here would refuse that request on
+	// behalf of a service that accepts it. See MaxGoogleMapScale.
+	scale := m.Scale
+	if scale <= 0 {
+		scale = DefaultMapScale
+	}
+	if scale > MaxMapScale {
+		scale = MaxMapScale
+	}
+
 	return StaticMapArea{
 		Lat:    clampLat(m.Lat),
 		Lng:    wrapLng(m.Lng),
 		Zoom:   zoom,
 		Width:  w,
 		Height: h,
+		Scale:  scale,
 		Marker: m.Marker,
 	}
 }
@@ -454,7 +586,24 @@ func (m StaticMap) Render(ctx *core.Context) *core.Node {
 
 	provider := m.Provider
 	if provider == nil {
-		provider = OSMStaticMap
+		// No default any more — see "The image is a network fetch, and the
+		// provider is required" on the type. Reported rather than substituted,
+		// so a build that has not chosen one gets an empty frame in production
+		// and a named concern in development: the same two outcomes
+		// GoogleStaticMap("") already produces, reached one step earlier.
+		//
+		// Gated on IsDebugMode per ReportConcern's contract: the detail costs
+		// a Sprintf, and a release build should not pay for one on every
+		// frame this widget renders.
+		if core.IsDebugMode() {
+			core.ReportConcern(ConcernNoMapProvider, fmt.Sprintf(
+				"a StaticMap at %s has no Provider, so it renders an empty "+
+					"%dx%d frame. Set Provider to GoogleStaticMap(key) or a "+
+					"func of your own; OSMStaticMap is deprecated and its host "+
+					"no longer resolves.",
+				coordPair(a.Lat, a.Lng), a.Width, a.Height))
+		}
+		provider = noStaticMapProvider
 	}
 
 	// Whether this map is a control at all, decided once. OnTap wins outright

@@ -77,6 +77,31 @@ import (
 // chose. An app that wants "show me this place, then let the user wander"
 // renders a constant Region, which is applied once.
 //
+// # Two memories, and the one thing that cannot be said
+//
+// Each host keeps the Region *Go* last asked for and, separately, where the
+// *map* last came to rest. They are the same value until somebody touches the
+// map, and each direction reads the one that answers its own question — Go
+// changing its mind is an instruction; the map already being there is not.
+//
+// Folding those into one slot is the bug this contract exists to prevent, and
+// it shipped in all three hosts: a pan wrote the user's Region into the slot
+// the apply path reads, so Go's *unchanged* Region read as a change and the
+// next patch to reach the map — a pin dropped, a marker moved, any unrelated
+// re-render — snapped the map back. It survived a unit test because a fake map
+// can be panned without firing the event a real one always fires, and it was
+// found by opening a browser.
+//
+// The consequence a caller can see is this: re-rendering the *same* Region is
+// never a re-centre. An app that pans away and then wants the opening view
+// back cannot get it by handing the same numbers over again, because from
+// here that is indistinguishable from the unrelated re-render above. The
+// remedy is the one this node already recommends — echo OnRegionChange into
+// state, so the Region an app renders tracks where the map is and a "back to
+// the start" button is a genuine change. There is deliberately no imperative
+// recentre command; adding one is a host feature in three languages, and the
+// echo costs one line.
+//
 // # Tiles are somebody else's bandwidth
 //
 // Two of the three hosts draw OpenStreetMap tiles from the project's own

@@ -185,6 +185,17 @@
       circle until core had a z-axis container) and announcing itself as one
       spoken sentence because four letters whose positions carry the meaning
       are exactly what a screen reader cannot convey (tutorial lesson 4.10)
+- [x] `MapPanel` — "where are these": a live map over a set of points, opened at
+      a view that contains all of them. The facade `core.MapView` was missing,
+      and what justifies it is one thing rather than the wrapping: the opening
+      region. A controlled map applies its Region only when it changes, which
+      leaves every caller with a set of points deriving the same bounding box,
+      the same cosine correction for longitude narrowing towards the poles, and
+      the same logarithm — so `FitRegion` is exported beside the widget for the
+      callers who drive `core.MapView` themselves. Two sets it will not fit are
+      stated rather than papered over (more than half the globe, and anything
+      straddling the antimeridian), and an empty set has no region at all
+      rather than 0,0
 - [x] `StaticMap` — "where is this": a map image from a tile provider, which
       hands off to the platform's own maps app on a tap. A `core.Image` plus a
       `core.OpenURL`, so it works on all four targets with no renderer behind
@@ -192,8 +203,13 @@
       an app asking "where is the church" wants a picture and then directions,
       and directions belong to the maps app with the user's own home address in
       it. Three decisions carry the widget: the provider is a *policy* (the
-      keyless default is a volunteer service, named as such, with
-      `GoogleStaticMap(key)` and a one-function seam beside it), the hand-off is
+      keyless default was a volunteer service, named as such — and it has since
+      been discontinued, which is why the widget now has no default at all and
+      reports `ConcernNoMapProvider` instead: a default is a decision taken on a
+      caller's behalf, and this is what it looks like when one expires under
+      them. `GoogleStaticMap(key)` and a one-function seam sit beside it, and
+      `Scale` carries the device pixel ratio into the URL without changing the
+      box), the hand-off is
       one https URL because nothing here knows its platform, and a tappable map
       is `RoleLink` rather than `RoleButton` because the tap leaves the app.
       Latitude clamps at Web Mercator's limit and longitude wraps — two rules,

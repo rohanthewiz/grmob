@@ -167,6 +167,92 @@ test("after a reported pan, Go's old region is no longer an instruction", () => 
         "the app echoing the region it was just told fought its own round trip");
 });
 
+// The test the browser found, and the one the fake's own pan test was one line
+// short of. The pan above sets the map's centre and does NOT fire moveend, so
+// the report path never runs — which is the one arrangement real Leaflet never
+// produces. With moveend fired, the report path used to write the user's region
+// into the slot the apply path reads, and the very next patch to reach this map
+// read Go's unchanged region as a change.
+//
+// Every patch in this test is one an ordinary app produces: a pin added to a
+// map the user has panned is the demo in tutorial lesson 4.12, and it snapped
+// the map back to the opening view on every tap.
+test("an unrelated patch after a reported pan leaves the user's view alone", () => {
+    const { rt, maps } = mountMap({ onRegionChange: "txt_cb_0" });
+
+    // The user pans. Real Leaflet fires moveend, so the runtime reports it.
+    maps[0].center = { lat: 40.5, lng: -8.25 };
+    maps[0].zoom = 15;
+    maps[0].fire("moveend", {});
+    rt.drainTimers();
+    assert.equal(rt.dispatched.length, 1, "the pan should have been reported");
+
+    // The app does not echo the region — the ordinary case, and the one
+    // core.MapView's doc says needs nothing special. So the next render still
+    // carries the region it always had, alongside whatever actually changed.
+    rt.GrMob.patch(JSON.stringify([{
+        Type: "update-props", TargetID: "root/0",
+        Changes: { lat: REGION.lat, lng: REGION.lng, zoom: REGION.zoom,
+                   onRegionChange: "txt_cb_0" },
+    }]));
+    rt.drainFrames();
+
+    assert.deepEqual(maps[0].views, [],
+        "an unrelated patch yanked the map back from under the finger");
+    assert.deepEqual(maps[0].center, { lat: 40.5, lng: -8.25 },
+        "the user's view survived");
+});
+
+// And the same sequence read from the other end: after the app HAS echoed the
+// pan into its state, a genuine instruction back to the opening region is still
+// obeyed. The fix must not turn "already there" into "never move again".
+test("after an echoed pan, Go can still move the map somewhere else", () => {
+    const { rt, maps } = mountMap({ onRegionChange: "txt_cb_0" });
+
+    maps[0].center = { lat: 40.5, lng: -8.25 };
+    maps[0].zoom = 15;
+    maps[0].fire("moveend", {});
+    rt.drainTimers();
+
+    // The echo, which moves nothing.
+    rt.GrMob.patch(JSON.stringify([{
+        Type: "update-props", TargetID: "root/0",
+        Changes: { lat: 40.5, lng: -8.25, zoom: 15, onRegionChange: "txt_cb_0" },
+    }]));
+    rt.drainFrames();
+    assert.deepEqual(maps[0].views, [], "the echo fought its own round trip");
+
+    // And now a real instruction, back to where the map opened.
+    rt.GrMob.patch(JSON.stringify([{
+        Type: "update-props", TargetID: "root/0",
+        Changes: { lat: REGION.lat, lng: REGION.lng, zoom: REGION.zoom,
+                   onRegionChange: "txt_cb_0" },
+    }]));
+    rt.drainFrames();
+    assert.equal(maps[0].views.length, 1,
+        "Go moving the map back is an instruction like any other");
+    assert.equal(maps[0].views[0].lat, REGION.lat);
+});
+
+// A second event for a map that has not moved since the last one says nothing,
+// and must not reach Go — which is the other half of keeping the user's region
+// in a slot of its own. A pinch that ends as a zoomend and a moveend is already
+// coalesced by the quiet timer; this is the pair that arrives further apart.
+test("a map that has not moved since its last report reports nothing again", () => {
+    const { rt, maps } = mountMap({ onRegionChange: "txt_cb_0" });
+
+    maps[0].center = { lat: 40.5, lng: -8.25 };
+    maps[0].zoom = 15;
+    maps[0].fire("moveend", {});
+    rt.drainTimers();
+    assert.equal(rt.dispatched.length, 1);
+
+    maps[0].fire("moveend", {});
+    rt.drainTimers();
+    assert.equal(rt.dispatched.length, 1,
+        "the same region was reported twice");
+});
+
 test("a tap on the map reports where, and carries no marker id", () => {
     const { rt, maps } = mountMap({ onMapTap: "txt_cb_1" });
 

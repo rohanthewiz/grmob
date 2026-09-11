@@ -26,10 +26,15 @@ func mapImage(t *testing.T, n *core.Node) *core.Node {
 }
 
 // The defaults, which are most of what this widget is: a caller who states a
-// coordinate and nothing else gets a street-level card-width map through the
-// keyless provider.
-func TestStaticMapDefaultsToAStreetLevelOSMImage(t *testing.T) {
-	n := renderStaticMap(t, StaticMap{Lat: 38.7223, Lng: -9.1393})
+// coordinate and a provider gets a street-level card-width map.
+//
+// The provider is stated because there is no longer a default one to inherit
+// — see StaticMap's "The image is a network fetch, and the provider is
+// required" — so this test drives OSMStaticMap by name to pin the URL shape a
+// provider is asked for, which is a different claim from whether that host is
+// still up.
+func TestStaticMapDefaultsToAStreetLevelImage(t *testing.T) {
+	n := renderStaticMap(t, StaticMap{Lat: 38.7223, Lng: -9.1393, Provider: OSMStaticMap})
 	src, _ := mapImage(t, n).Props["src"].(string)
 
 	for _, want := range []string{
@@ -48,6 +53,37 @@ func TestStaticMapDefaultsToAStreetLevelOSMImage(t *testing.T) {
 	}
 }
 
+// A widget with no Provider draws nothing and says so. Both halves matter:
+// the empty src is what a user sees, and the concern is the only thing that
+// distinguishes "nobody configured this" from "the fetch failed" — which are
+// the same grey rectangle on screen.
+func TestAMapWithNoProviderRendersNothingAndReportsIt(t *testing.T) {
+	core.SetDebugMode(true)
+	core.ClearConcerns()
+	defer func() { core.SetDebugMode(false); core.ClearConcerns() }()
+
+	n := renderStaticMap(t, StaticMap{Lat: 38.7223, Lng: -9.1393})
+	if src, _ := mapImage(t, n).Props["src"].(string); src != "" {
+		t.Errorf("src = %q, want empty: there is no provider to have built one", src)
+	}
+	if !hasConcern(ConcernNoMapProvider) {
+		t.Errorf("no %s concern; a build that has not chosen a provider is told nothing",
+			ConcernNoMapProvider)
+	}
+}
+
+// And the concern is a development-time cost only. A release build renders the
+// same empty frame without paying for the Sprintf that describes it.
+func TestTheNoProviderConcernCostsNothingOutsideDebug(t *testing.T) {
+	core.ClearConcerns()
+	defer core.ClearConcerns()
+
+	renderStaticMap(t, StaticMap{Lat: 1, Lng: 2})
+	if hasConcern(ConcernNoMapProvider) {
+		t.Error("a concern was recorded with debug mode off")
+	}
+}
+
 // A provider is handed values that are already resolved, so every provider is
 // spared the defaulting and none of them can disagree about what a zero means.
 // This is the contract StaticMapArea's doc states, pinned by observing it.
@@ -59,7 +95,8 @@ func TestAProviderSeesResolvedValues(t *testing.T) {
 		Provider: func(a StaticMapArea) string { seen = a; return "x" },
 	})
 	want := StaticMapArea{Lat: 10, Lng: 20, Zoom: DefaultMapZoom,
-		Width: DefaultMapWidth, Height: DefaultMapHeight, Marker: true}
+		Width: DefaultMapWidth, Height: DefaultMapHeight,
+		Scale: DefaultMapScale, Marker: true}
 	if seen != want {
 		t.Errorf("provider saw %+v, want %+v", seen, want)
 	}
@@ -253,4 +290,80 @@ func roleOf(n *core.Node) core.Role {
 		return core.RoleNone
 	}
 	return n.Style.AccessibilityRole
+}
+
+// Scale is the device pixel ratio, and the whole of its claim is that it
+// changes the image without changing the box. A widget that grew with its
+// scale would be a widget no layout could hold.
+func TestScaleChangesTheRequestAndNotTheFrame(t *testing.T) {
+	n := renderStaticMap(t, StaticMap{
+		Lat: 1, Lng: 2, Scale: 2,
+		Provider: GoogleStaticMap("k"),
+	})
+	if n.Style.Width != "320px" || n.Style.Height != "180px" {
+		t.Errorf("frame = %s x %s, want the logical 320px x 180px",
+			n.Style.Width, n.Style.Height)
+	}
+	src, _ := mapImage(t, n).Props["src"].(string)
+	if !strings.Contains(src, "size=320x180") {
+		t.Errorf("size should stay logical — Google scales it itself:\n%s", src)
+	}
+	if !strings.Contains(src, "scale=2") {
+		t.Errorf("src lacks scale=2:\n%s", src)
+	}
+}
+
+// The scale a provider is handed, across the range a caller can write. The
+// clamp is MaxMapScale and the default is 1x — the ratio every caller got
+// before the field existed, which is what makes adding it a no-op for them.
+func TestScaleIsDefaultedAndClampedBeforeAProviderSeesIt(t *testing.T) {
+	cases := []struct {
+		in, want int
+		why      string
+	}{
+		{0, DefaultMapScale, "unset is 1x, the ratio callers had before this field"},
+		{1, 1, "1x asked for is 1x"},
+		{2, 2, "the ordinary retina phone"},
+		{3, 3, "the deepest ratio shipping phones use"},
+		{4, MaxMapScale, "past the clamp, held at it"},
+		{-1, DefaultMapScale, "a negative is not a ratio; it means the same as unset"},
+	}
+	for _, c := range cases {
+		var seen StaticMapArea
+		renderStaticMap(t, StaticMap{Lat: 1, Lng: 2, Scale: c.in,
+			Provider: func(a StaticMapArea) string { seen = a; return "x" }})
+		if seen.Scale != c.want {
+			t.Errorf("Scale %d -> %d, want %d: %s", c.in, seen.Scale, c.want, c.why)
+		}
+	}
+}
+
+// Google accepts 1 or 2 and nothing else, so a 3x device gets the 2x image.
+// The clamp lives in the provider rather than in Area() because it is one
+// service's limit: a provider that can serve 3x must still be handed the 3.
+func TestGoogleSpendsAtMostTwoOfWhateverScaleItIsHanded(t *testing.T) {
+	for _, scale := range []int{2, 3} {
+		src := GoogleStaticMap("k")(StaticMapArea{Zoom: 15, Width: 320, Height: 180, Scale: scale})
+		if !strings.Contains(src, "scale=2") {
+			t.Errorf("scale %d produced %q, want scale=2", scale, src)
+		}
+	}
+	// And 1x writes no parameter at all: scale=1 is the API's own default, so
+	// a parameter saying it adds a byte and no information.
+	src := GoogleStaticMap("k")(StaticMapArea{Zoom: 15, Width: 320, Height: 180, Scale: 1})
+	if strings.Contains(src, "scale") {
+		t.Errorf("a 1x request wrote a scale parameter: %s", src)
+	}
+}
+
+// OSMStaticMap ignores Scale, which is the case the field's doc names: a
+// provider with no scale of its own serves 1x whatever it is asked. Pinned
+// because a silently-honoured scale would be a URL parameter the dead service
+// never had.
+func TestOSMStaticMapIgnoresScale(t *testing.T) {
+	one := OSMStaticMap(StaticMapArea{Lat: 1, Lng: 2, Zoom: 15, Width: 320, Height: 180, Scale: 1})
+	two := OSMStaticMap(StaticMapArea{Lat: 1, Lng: 2, Zoom: 15, Width: 320, Height: 180, Scale: 2})
+	if one != two {
+		t.Errorf("scale changed a URL that has no scale parameter:\n%s\n%s", one, two)
+	}
 }

@@ -1746,16 +1746,34 @@ user's own home address and transport preferences. A live panning map is a node
 type with MapKit, osmdroid and Leaflet behind it, and it is the thing to build
 when an app needs to *interact* with a map.
 
-**The provider is a policy.** `Provider` is one function —
-`func(components.StaticMapArea) string` — and the default is `OSMStaticMap`,
-the OpenStreetMap community's keyless service. That default is what makes the
-widget evaluable without buying anything, and it is a volunteer-run, low-volume
-service: a screen every user opens ten times a day belongs on
-`GoogleStaticMap(key)` or on a provider of your own. A provider sees values
-already defaulted and already clamped — no zero `Zoom`, no 4000px `Width` — so
-every provider is spared the same four lines and none of them can disagree
-about what a zero means. `StaticMap.Area()` is that resolution, exported so a
-caller can ask what will be requested rather than re-deriving it.
+**The provider is required, and there is no default.** `Provider` is one
+function — `func(components.StaticMapArea) string` — and a widget with none
+renders its frame, no image, and `components.ConcernNoMapProvider` in debug
+mode. It used to default to `OSMStaticMap`, the OpenStreetMap community's
+keyless service, on the argument that a widget nobody can render without first
+buying something is a widget nobody evaluates. That service has been
+discontinued and its host no longer resolves, and no keyless replacement
+exists: every static-map service the OpenStreetMap wiki still lists takes a
+key. So the choice is `GoogleStaticMap(key)` or a provider of your own, and the
+widget says so instead of drawing a map of a host it cannot reach.
+
+A provider sees values already defaulted and already clamped — no zero `Zoom`,
+no 4000px `Width` — so every provider is spared the same four lines and none of
+them can disagree about what a zero means. `StaticMap.Area()` is that
+resolution, exported so a caller can ask what will be requested rather than
+re-deriving it.
+
+**`Width`/`Height` size the box; `Scale` sharpens the picture.** The first two
+are logical pixels and the third is the device pixel ratio — `Scale: 2` leaves
+the widget 320×180 on screen and asks the provider for 640×360 actual pixels.
+Two numbers because one number cannot answer both questions, which is what made
+every map before this field a 1x asset upscaled on a retina phone. Nothing
+reads the ratio off the device: no renderer here reports screen metrics, so a
+caller who has the number states it and a caller who says nothing gets 1x.
+Whether it can be spent is the provider's business — Google's API has a `scale`
+parameter (1 or 2, so a 3x device gets the 2x image); a provider without one
+ignores the field, which is why this is not a multiply applied to `Width`
+before the provider sees it.
 
 **One hand-off URL for three platforms.** Nothing in this framework knows which
 platform it is on — `core.OpenURL` promises only the portable part — so the
@@ -1783,6 +1801,63 @@ and clamping it to 180 would move the point rather than name it.
 **Lat 0, Lng 0 is the Gulf of Guinea.** There is no unset coordinate — a
 `float64` pair has no third state — so a screen whose location has not loaded
 yet renders a `Skeleton` rather than this widget.
+
+## MapPanel
+
+A live map over a set of points, opened at a view that contains all of them.
+
+```go
+components.MapPanel{
+    Pins: []components.MapPin{
+        {ID: "hall", Lat: 38.7223, Lng: -9.1393, Title: "The hall"},
+        {ID: "annex", Lat: 38.7251, Lng: -9.1402, Title: "The annex"},
+    },
+    OnPinTap: func(id string) { open(id) },
+    Caption:  components.PlaceCount(2),
+}
+```
+
+**One thing it adds to [`core.MapView`](concepts/views.md#leaves), and that is
+its whole case.** The *opening region*. `core.MapView` takes a `Region` and
+applies it only when it changes, which is correct and leaves the caller holding
+a question — what region shows all my points? — whose answer is a bounding box,
+a projection correction and a logarithm. `components.FitRegion(pins)` is that
+arithmetic, exported for a caller who wants it without the widget. Everything
+else here is arrangement: the pins as keyed children, the empty state for a set
+with nothing in it, an optional caption.
+
+**The longitude spread is scaled by the cosine of the centre latitude.** A
+degree of longitude narrows towards the poles and a degree of latitude does
+not, so a fit computed from raw degrees is too tight in Reykjavík and about
+right in Quito. Whichever span needs the wider view decides. A single pin has a
+spread of zero and no logarithm, so the spread is *floored* rather than
+branched on — one rule, and the floor is the view a single pin wants anyway.
+
+**Two sets it does not fit, and says so rather than pretending.** A set spanning
+more than half the globe is clamped to `MinFitZoom` (a view 180° wide), because
+`core.Region` reads a zero `Zoom` as "unstated" and would substitute the
+neighbourhood default. And a set straddling the antimeridian is measured the
+long way round — Tokyo and Honolulu read as 298° apart rather than 62 — which
+needs a circular mean and a different contract for the centre. Both are pinned
+by tests, so fixing either is a change to a line rather than a surprise.
+
+**An empty set has no region and renders no map.** `FitRegion` returns `false`,
+and the panel draws its `Empty` state. The tempting answer — 0,0 — is a real
+place in the Gulf of Guinea that a map will happily draw, which is the same
+rule `StaticMap` states under "Lat 0, Lng 0".
+
+**No region state, no recentre control, no echo.** The region is computed once
+from the pins and handed over; where the reader takes the map from there is the
+reader's. An app that wants to follow the map reaches for `core.MapView`
+directly and holds the `Region` itself. Changing the *pins* does move the map,
+because a new set is a new fitted region — right when the set is the subject,
+and the reason a caller whose pins update every few seconds wants `core.MapView`
+instead.
+
+**No key, unlike `StaticMap`.** Each host's own engine draws the map with its
+own tiles, so nothing here asks the app for a credential — the odd asymmetry
+that the richer widget is the free one. The tile usage policy in
+[`core.MapView`](concepts/views.md#leaves) still applies.
 
 ## Writing your own
 

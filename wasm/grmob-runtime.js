@@ -2296,12 +2296,37 @@ const GrMob = (() => {
     // the echo guard a drag needs" is the statement of this contract that all
     // three live hosts implement.
     //
-    // The same record closes the loop's other half. setView makes Leaflet fire
+    // The record closes the loop's other half. setView makes Leaflet fire
     // moveend, and reporting that back to Go as a user gesture would have an app
     // echoing its own instruction into its own state on every programmatic move.
     // What suppresses it is the *same* comparison rather than a second
     // mechanism: a gesture is reported only when it ends somewhere other than
     // the region this code last applied.
+    //
+    // # Two memories, because they are two facts
+    //
+    // `applied` is the region GO last asked for. `settled` is where the MAP
+    // last came to rest. They are equal for as long as nobody touches the map
+    // and they diverge the moment somebody does, and each direction reads the
+    // one that answers its own question:
+    //
+    //	apply   want !== applied   Go changed its mind — an instruction
+    //	        want === settled   the map is already there — Go echoing the pan
+    //	                           back into its own state, which must not turn
+    //	                           into a setView landing a frame late
+    //	report  next !== applied   not the moveend our own setView caused
+    //	        next !== settled   not a second event for a map that has not
+    //	                           moved since the last one
+    //
+    // These were one slot, and the browser is where that was caught. A pan
+    // wrote the user's region into `applied`, so Go's UNCHANGED region then
+    // read as a change, and the next patch to reach this map — a dropped pin,
+    // a marker moving, any unrelated re-render — snapped the map back to where
+    // Go last said. That is the exact failure this guard is named for, and the
+    // fake never saw it: its pan test moves the map's centre without firing
+    // moveend, so the report path never ran and never corrupted the slot. Real
+    // Leaflet always fires moveend, which is what made it visible in a browser
+    // and invisible in a unit test.
     //
     // That was a boolean window at first — set around the setView call — and a
     // test is what said it was wrong. The window only closes the case where
@@ -2407,11 +2432,16 @@ const GrMob = (() => {
 
         const record = {
             map,
-            // The region this code last handed to Leaflet — the echo guard's
-            // memory, read in both directions. Seeded with what the map was
-            // created at, so the first sync after creation applies nothing and
-            // a moveend at the starting position reports nothing.
+            // The region GO last asked for, which is also the region this code
+            // last handed to Leaflet. Written only on the apply path. Seeded
+            // with what the map was created at, so the first sync after
+            // creation applies nothing.
             applied: region,
+            // Where the MAP last came to rest, and so also the last thing told
+            // to Go. Written only on the report path. Seeded with the creation
+            // region because that is where the map is resting — which is what
+            // makes a gesture that ends where it started report nothing.
+            settled: region,
             markers: [],
             userLayer: null,
             userAccuracy: null,
@@ -2430,7 +2460,14 @@ const GrMob = (() => {
                 // where this code put it, so there is nothing to tell Go. That
                 // covers the moveend setView itself causes, and it covers a
                 // gesture that happens to end where it started.
+                //
+                // `settled` is the second half, and it is why the user's
+                // region does NOT go into `applied`: a map that fires two
+                // events without moving between them has one thing to say, and
+                // Go's own region is a separate fact that a pan must not
+                // overwrite. See "Two memories, because they are two facts".
                 if (sameRegion(record.applied, next)) return;
+                if (sameRegion(record.settled, next)) return;
                 // Re-read the ID at fire time, as every listener in this
                 // runtime does: IDs are positional and a pass landing mid-
                 // gesture may have refreshed or pruned this one.
@@ -2438,7 +2475,7 @@ const GrMob = (() => {
                 // Recorded even with no handler attached, so a map that gains
                 // one later does not immediately report a pan that happened
                 // before anybody was listening.
-                record.applied = next;
+                record.settled = next;
                 if (!cbId) return;
                 // The same wire form core.FormatRegion writes and
                 // core.ParseRegion reads: "lat,lng,zoom". Go registered this
@@ -2465,14 +2502,31 @@ const GrMob = (() => {
         if (!Number.isFinite(want.lat) || !Number.isFinite(want.lng) || !Number.isFinite(want.zoom)) {
             return;
         }
+        // Go has not changed its mind. Nothing to do — and emphatically not a
+        // reason to re-centre: the map may be somewhere else entirely because
+        // the user put it there, and this is the patch that would yank it back.
         if (sameRegion(record.applied, want)) return;
         record.applied = want;
+        // Go HAS changed its mind, and has changed it to where the map already
+        // is: the app echoed OnRegionChange into its own state, and this is
+        // that value arriving a frame later. Recorded above, because Go is now
+        // asking for this region and the next instruction has to be measured
+        // against it — but not applied, because applying it is the round trip
+        // an echoing app would otherwise fight, landing a setView on a map the
+        // user may already have started moving again.
+        if (sameRegion(record.settled, want)) return;
         // No animation. Not for the echo — the comparison above and in report
         // handles that whenever the moveend arrives — but because an animated
         // setView on a map the app is driving from its own state (following a
         // location, stepping through a list of places) queues animations behind
         // each other and lags the data it is showing.
         record.map.setView([want.lat, want.lng], want.zoom, { animate: false });
+        // The map now rests here, so `settled` says so. Without this line the
+        // slot holds wherever the user last left it, and a later instruction
+        // back to that place would be skipped as "already there" while the map
+        // sat somewhere else entirely — the invariant is that `settled` is
+        // where the map is, however it got there.
+        record.settled = want;
     }
 
     // Reconciles the Leaflet marker layer against the MapView's Marker child

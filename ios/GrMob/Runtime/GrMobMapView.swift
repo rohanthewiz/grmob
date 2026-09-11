@@ -141,10 +141,34 @@ private struct GrMobMapRepresentable: UIViewRepresentable {
         weak var map: MKMapView?
         var viewSize: CGSize = .zero
 
-        /// The region this renderer last handed to MapKit: the echo guard's
-        /// memory, read in both directions. nil until the first apply, so the
-        /// first region is always applied.
+        /// The region Go last asked for, which is also the region this
+        /// renderer last handed to MapKit. Written only on the apply path. nil
+        /// until the first apply, so the first region is always applied.
         private var applied: GrMobRegion?
+        /// Where the map last came to rest, and so also the last thing told to
+        /// Go. Written only on the report path.
+        ///
+        /// Two memories rather than one, because they are two facts. They are
+        /// equal for as long as nobody touches the map and they diverge the
+        /// moment somebody does:
+        ///
+        ///     apply    want != applied   Go changed its mind — an instruction
+        ///              want == settled   the map is already there — Go echoing
+        ///                                the pan back, which must not become a
+        ///                                setRegion landing a frame late
+        ///     report   next != applied   not the callback our own setRegion
+        ///                                caused
+        ///              next != settled   not a second event for a map that has
+        ///                                not moved since the last one
+        ///
+        /// These were one slot in all three hosts, and a browser session is
+        /// what caught it: a pan wrote the user's region into `applied`, so
+        /// Go's UNCHANGED region then read as a change and the next patch to
+        /// reach the map — a dropped pin, a marker moving, any unrelated
+        /// re-render — snapped the map back to where Go last said. That is the
+        /// exact failure the guard is named for. The long form is in the web
+        /// host, under "Two memories, because they are two facts".
+        private var settled: GrMobRegion?
         /// Set while `setRegion` is running, and read by the delegate callback
         /// MapKit fires from inside it. The comparison below would catch that
         /// case on its own; this makes the synchronous one free rather than a
@@ -168,8 +192,19 @@ private struct GrMobMapRepresentable: UIViewRepresentable {
                 lat: node.doubleProp("lat"),
                 lng: node.doubleProp("lng"),
                 zoom: node.doubleProp("zoom"))
+            // Go has not changed its mind. Nothing to do — and emphatically
+            // not a reason to re-centre: the map may be somewhere else
+            // entirely because the user put it there, and this is the patch
+            // that would yank it back.
             if let applied, applied.isSame(as: want) { return }
             applied = want
+            // Go HAS changed its mind, and to where the map already is: the app
+            // echoed OnRegionChange into its own state and this is that value
+            // arriving a frame later. Recorded above, because Go is now asking
+            // for this region and the next instruction is measured against it —
+            // but not applied, because applying it is the round trip an echoing
+            // app would otherwise fight.
+            if let settled, settled.isSame(as: want) { return }
 
             let span = grMobSpan(zoom: want.zoom, width: width, height: height, lat: want.lat)
             let region = MKCoordinateRegion(
@@ -182,6 +217,12 @@ private struct GrMobMapRepresentable: UIViewRepresentable {
             // data it is showing.
             map.setRegion(region, animated: false)
             applying = false
+            // The map now rests here, so `settled` says so. Without this the
+            // slot holds wherever the user last left it, and a later
+            // instruction back to that place would be skipped as "already
+            // there" while the map sat somewhere else — the invariant is that
+            // `settled` is where the map is, however it got there.
+            settled = want
         }
 
         func mapView(_ map: MKMapView, regionDidChangeAnimated animated: Bool) {
@@ -214,9 +255,14 @@ private struct GrMobMapRepresentable: UIViewRepresentable {
             // callback setRegion itself causes and a gesture that ends where it
             // started.
             if let applied, applied.isSame(as: next) { return }
+            // The second half of the comparison, and the reason the user's
+            // region does NOT go into `applied`: a map that fires two events
+            // without moving between them has one thing to say, and Go's own
+            // region is a separate fact a pan must not overwrite. See `settled`.
+            if let settled, settled.isSame(as: next) { return }
             // Recorded even with no handler attached, so a map that gains one
             // later does not immediately report a pan nobody was listening for.
-            applied = next
+            settled = next
             let cb = node?.stringProp("onRegionChange") ?? ""
             guard !cb.isEmpty else { return }
             // The wire form core.ParseRegion reads. String(Double) is

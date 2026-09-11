@@ -124,13 +124,42 @@ private class GrMobMapHolder {
     var report: ((String, String) -> Unit)? = null
 
     /**
-     * The region this renderer last handed to osmdroid. NaN until the first
+     * The region GO last asked for, which is also the region this renderer last
+     * handed to osmdroid. Written only on the apply path. NaN until the first
      * apply, which is what makes the first region always an instruction: NaN
      * equals nothing, including itself.
      */
     var appliedLat = Double.NaN
     var appliedLng = Double.NaN
     var appliedZoom = Double.NaN
+
+    /**
+     * Where the MAP last came to rest, and so also the last thing told to Go.
+     * Written only on the report path.
+     *
+     * Two memories rather than one, because they are two facts. They are equal
+     * for as long as nobody touches the map and they diverge the moment
+     * somebody does:
+     *
+     *     apply    want != applied   Go changed its mind — an instruction
+     *              want == settled   the map is already there — Go echoing the
+     *                                pan back, which must not become a
+     *                                setCenter landing a frame late
+     *     report   next != applied   not the callback our own setCenter caused
+     *              next != settled   not a second event for a map that has not
+     *                                moved since the last one
+     *
+     * These were one slot in all three hosts, and a browser session is what
+     * caught it: a pan wrote the user's region into `applied`, so Go's
+     * UNCHANGED region then read as a change and the next patch to reach the
+     * map — a dropped pin, a marker moving, any unrelated re-render — snapped
+     * the map back to where Go last said. That is the exact failure the guard
+     * is named for. See the web host's "Two memories, because they are two
+     * facts", which carries the long form.
+     */
+    var settledLat = Double.NaN
+    var settledLng = Double.NaN
+    var settledZoom = Double.NaN
 
     /** Markers by their Go id. */
     val markers = HashMap<String, Marker>()
@@ -152,6 +181,15 @@ private class GrMobMapHolder {
         appliedLat = lat
         appliedLng = lng
         appliedZoom = zoom
+    }
+
+    fun hasSettled(lat: Double, lng: Double, zoom: Double): Boolean =
+        settledLat == lat && settledLng == lng && settledZoom == zoom
+
+    fun rememberSettled(lat: Double, lng: Double, zoom: Double) {
+        settledLat = lat
+        settledLng = lng
+        settledZoom = zoom
     }
 }
 
@@ -239,13 +277,27 @@ private fun applyMapRegion(map: MapView, holder: GrMobMapHolder, node: GrMobNode
     val lat = node.doubleProp("lat")
     val lng = node.doubleProp("lng")
     val zoom = node.doubleProp("zoom")
+    // Go has not changed its mind. Nothing to do — and emphatically not a
+    // reason to re-centre: the map may be somewhere else entirely because the
+    // user put it there, and this is the patch that would yank it back.
     if (holder.hasApplied(lat, lng, zoom)) return
     holder.remember(lat, lng, zoom)
+    // Go HAS changed its mind, and to where the map already is: the app echoed
+    // OnRegionChange into its own state and this is that value arriving a frame
+    // later. Recorded above, because Go is now asking for this region and the
+    // next instruction is measured against it — but not applied, because
+    // applying it is the round trip an echoing app would otherwise fight.
+    if (holder.hasSettled(lat, lng, zoom)) return
     // setZoom before setCenter: osmdroid re-centres on the current zoom's tile
     // grid, and doing it the other way round leaves the centre a fraction of a
     // tile out at the moment both change.
     map.controller.setZoom(zoom)
     map.controller.setCenter(GeoPoint(lat, lng))
+    // The map now rests here, so `settled` says so. Without this the slot holds
+    // wherever the user last left it, and a later instruction back to that place
+    // would be skipped as "already there" while the map sat somewhere else — the
+    // invariant is that `settled` is where the map is, however it got there.
+    holder.rememberSettled(lat, lng, zoom)
 }
 
 /**
@@ -263,9 +315,14 @@ private fun reportRegion(holder: GrMobMapHolder) {
     val lng = center.longitude
     val zoom = map.zoomLevelDouble
     if (holder.hasApplied(lat, lng, zoom)) return
+    // The second half of the comparison, and the reason the user's region does
+    // NOT go into `applied`: a map that fires two events without moving between
+    // them has one thing to say, and Go's own region is a separate fact a pan
+    // must not overwrite. See GrMobMapHolder.settledLat.
+    if (holder.hasSettled(lat, lng, zoom)) return
     // Recorded even with no handler attached, so a map that gains one later does
     // not immediately report a pan nobody was listening for.
-    holder.remember(lat, lng, zoom)
+    holder.rememberSettled(lat, lng, zoom)
     val cb = holder.node?.stringProp("onRegionChange") ?: ""
     if (cb.isEmpty()) return
     holder.report?.invoke(cb, "$lat,$lng,$zoom")
