@@ -29,11 +29,15 @@ import (
 // than an unattributed number.
 //
 // What a timing CAN carry is where it came from. `go test ./wasm/verify`
-// spreads over 2.49–2.59s across seven runs on one idle machine, roughly 4%
-// wide by itself — so a reader holding a 2.7s run against a 2.54s written down
-// somewhere has nothing to reason with: the difference is inside one machine's
-// own spread, or it is a regression, or it is a different computer, and the
-// number alone distinguishes none of them. The spread is why the recorded
+// spread over 2.49–2.59s across seven runs on one idle machine when that
+// sentence was first written, roughly 4% wide by itself — so a reader holding
+// a 2.7s run against a 2.54s written down somewhere has nothing to reason
+// with: the difference is inside one machine's own spread, or it is a
+// regression, or it is a different computer, and the number alone
+// distinguishes none of them. Those two figures are kept as the illustration
+// they were rather than re-taken, because what they demonstrate is the WIDTH
+// of one machine's spread and that has not changed; `wholeFile` below is what
+// this package actually costs now, and it is 3% wide. The spread is why the recorded
 // figures are RANGES and the machine is why there is a record at all; the arm
 // below says which computer this run is standing on when it is not this one.
 //
@@ -54,10 +58,58 @@ import (
 // answers for itself. A mismatch in those is a machine difference stated as a
 // fact rather than guessed at from a number that looks wrong.
 //
+// # What a re-taking also moves, which attribution alone does not cover
+//
+// Every wall clock in this package's prose says "where verifyTimingsTakenOn
+// was taken". That is the discipline this record exists for and it turns out
+// not to be sufficient, because the reference MOVES: when `wholeFile` was
+// re-taken and went from 2.78–2.93s to 2.88–2.97s, every sentence citing this
+// record silently began claiming to be from a taking it was not from. One of
+// the figures had moved with it and two had not, and nothing said which.
+//
+// A wall clock cannot be an arm — that is the argument above and it still
+// holds — so what there is instead is a list, and the list is short because
+// most of these are now fields:
+//
+//	walkEnumerate, walkRead, walkParse   fields. Two failure messages in
+//	                                     repowalks_test.go read them, so a
+//	                                     re-taking is one edit here
+//	repowalks_test.go's header           "1.18–1.40s of a 2.88–2.97s
+//	                                     package", which is four walkParse,
+//	                                     two walkRead and one walkEnumerate
+//	                                     summed against `wholeFile`. Prose
+//	                                     cannot read a field, so this one is
+//	                                     by hand — and it is the only one
+//	                                     left that is
+//	the 0.01s below                      the walk census's own cost, and the
+//	                                     "ten of forty-one" beside it
+//	the besides row in repowalks         0.010s, and it carries its own method
+//
+// The general lesson is the one this repository keeps arriving at from
+// different directions: a figure quoted in two places is a copy, and
+// attributing the copy to the original does not make it one thing. Moving it
+// into the original does.
+//
 // # Re-taking it
 //
 //	go test -count=1 ./wasm/verify                                  wholeFile
 //	go test -count=1 -run TestHowWideTheNarrowerFold ./wasm/verify   foldWalk
+//
+// And the three walk depths, which are the wall clock of ONE TEST and not of
+// the package — read off `-v`'s own `--- PASS:` line, seven runs apiece:
+//
+//	-v -run TestTheCitationSkipsGitAlreadyMakes              walkEnumerate
+//	-v -run TestEveryGitListingInAScriptAsksForNul…          walkRead
+//	-v -run TestTheDottedVersionParsersAreTheOnes…           walkParse
+//
+// The command matters more here than anywhere else in this table, because
+// these three were once written with no method beside them and a re-taking
+// that reconstructed the work by hand — git ls-files, a stat, a read, a parse
+// — came back at a FIFTH of them. What the recorded figures include and that
+// reconstruction did not is the rest of what each test does: citingFiles
+// scans every file's text for citations on the way past, and the test then
+// asks its own question of what came back. The depth is the shape of the
+// walk, not the whole of the cost, and the figure is the whole of the cost.
 //
 // There is no third line, and there was: this table used to offer `go test
 // -bench . -run '^$' ./wasm/verify` for "the per-walk ones" — the 96.7us,
@@ -115,9 +167,9 @@ var verifyTimingsTakenOn = struct {
 	// sentence here.
 	//
 	// That arm costs 0.01s: it reads this ONE DIRECTORY and parses only the
-	// files whose bytes name an enumeration — eight of thirty-seven where
-	// this record was taken, and a ratio that moves with every file added
-	// here, which is why the arm prints both numbers on every run rather than
+	// files whose bytes name an enumeration — ten of forty-one where this
+	// record was taken, and a ratio that moves with every file added here,
+	// which is why the arm prints both numbers on every run rather than
 	// leaving this sentence to be the record of them. A census of repository
 	// walks that was itself a repository walk would have been the eighth
 	// walk, and the figure below did not move for it — 2.70–2.80s became
@@ -237,6 +289,40 @@ var verifyTimingsTakenOn = struct {
 	// This field, foldWalk, is the one that IS re-takeable, and the command
 	// for it is in the table above.
 	foldWalk string
+
+	// What one repository-wide walk costs at each of the three depths
+	// repositoryWalks records, as the whole wall clock of a test that does
+	// only that.
+	//
+	// # Why these live here and not in the sentences that quote them
+	//
+	// They were literals inside two failure messages in repowalks_test.go,
+	// attributed — "0.18s where verifyTimingsTakenOn was taken" — which is
+	// the discipline this record exists for and is not enough. Attribution by
+	// reference to a record that gets re-taken is a pointer that moves: when
+	// `wholeFile` was re-taken and went from 2.78–2.93s to 2.88–2.97s, every
+	// figure citing this record silently began claiming to be from a taking
+	// it was not from. One of these three had moved with it and two had not,
+	// and nothing anywhere said which.
+	//
+	// So they are fields. A re-taking edits the record, the messages read the
+	// record, and there is one place the figure lives — which is the whole of
+	// what this repository's copies census is about, applied to a number
+	// instead of a struct.
+	//
+	// # What the three depths are
+	//
+	//	walkEnumerate  one `git ls-files`, a stat per file, and the citation
+	//	               scan citingFiles does on the way past
+	//	walkRead       that, plus every tracked file read into memory
+	//	walkParse      that, plus go/parser over every Go file in the tree
+	//
+	// Cumulative, so the interesting number is the step: reading the tree
+	// costs about as much again as enumerating it, and parsing it costs about
+	// as much again as both. A walk that grows a parse has roughly doubled,
+	// which is what makes repositoryParseBudget the number that decides and
+	// not repositoryWalkBudget.
+	walkEnumerate, walkRead, walkParse string
 }{
 	machine:   "Apple M3 (Mac15,13), macOS 26.2",
 	goos:      "darwin",
@@ -245,7 +331,10 @@ var verifyTimingsTakenOn = struct {
 	cores:     8,
 	wholeFile: "2.88–2.97s over twenty-one runs, re-taken when the shared " +
 		"repository parse grew from three questions to six",
-	foldWalk: "0.40–0.52s over seven runs, node v22.12.0",
+	walkEnumerate: "0.08–0.10s",
+	walkRead:      "0.15–0.17s",
+	walkParse:     "0.20–0.24s",
+	foldWalk:      "0.40–0.52s over seven runs, node v22.12.0",
 }
 
 // Which of this package's figures move with the core count, and which do not.

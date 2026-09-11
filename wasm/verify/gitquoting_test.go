@@ -1067,9 +1067,11 @@ func isPredeclared(name string) bool {
 // closed. Then repowalks_test.go had to answer the same question about itself
 // and MEASURED the shape: read one directory, byte-scan each file for the
 // name, parse only the files whose bytes contain it. That is a hundredth of a
-// second here, against the 0.18s a repository-wide parse costs — so the limit
-// was closable at a price this package had already taken, and a limit that
-// cheap to close is one nobody should have to read twice.
+// second here, against a repository-wide parse at twenty times that — see
+// verifyTimingsTakenOn.walkParse, which is where that figure lives rather
+// than in this sentence. So the limit was closable at a price this package had
+// already taken, and a limit that cheap to close is one nobody should have to
+// read twice.
 //
 // The scan is over the CANDIDATES and not over the language: only the
 // predeclared names this body actually calls are looked for, which today is

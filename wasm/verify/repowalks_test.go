@@ -46,8 +46,13 @@ import (
 // other way is prose rather than a claim, which is the same distinction
 // coresAttribution draws with backquotes one file over.
 //
-// That is about a second of a 2.7-second package (see verifyTimingsTakenOn),
-// and it is the right call at this size. The walks are INDEPENDENT by design:
+// That is 1.18–1.40s of a 2.88–2.97s package — getting on for half of it —
+// where verifyTimingsTakenOn was taken, and it is still the right call at
+// this size. The figure is four parse walks at the record's walkParse, two
+// reads at its walkRead and one enumeration at its walkEnumerate, summed at
+// both ends; the arm below prints the counts on every run, and the per-walk
+// figures are fields on the record rather than numbers here, so a re-taking
+// moves them in one place and this sentence in a second. The walks are INDEPENDENT by design:
 // each asks a different question, each fails on its own, and a shared cache
 // between them would be a fixture with lifetime rules — built once, invalidated
 // never, and read by tests that no longer say what they read. Four cheap
@@ -467,13 +472,16 @@ func TestTheRepositoryWideWalksInThisPackageAreTheOnesDecidedOn(t *testing.T) {
 			t.Errorf("%s:%d is listed as a walk that %s and it %s.\n\n"+
 				"The depths are not decoration: `%s` is one git process and "+
 				"a stat per file, `%s` reads every one of them, and `%s` runs "+
-				"go/parser over every Go file on top of that — roughly 0.09s, "+
-				"0.16s and 0.18s respectively where verifyTimingsTakenOn was "+
-				"taken. A walk that has grown a parse has roughly doubled, and "+
-				"the count that decides when a shared parse is worth building "+
-				"is repositoryParseBudget, not the total.",
+				"go/parser over every Go file on top of that — %s, %s and %s "+
+				"respectively where verifyTimingsTakenOn was taken. A walk "+
+				"that has grown a parse has roughly doubled, and the count "+
+				"that decides when a shared parse is worth building is "+
+				"repositoryParseBudget, not the total.",
 				w.file, w.line, row.depth, w.depth,
-				walkEnumerates, walkReads, walkParses)
+				walkEnumerates, walkReads, walkParses,
+				verifyTimingsTakenOn.walkEnumerate,
+				verifyTimingsTakenOn.walkRead,
+				verifyTimingsTakenOn.walkParse)
 		}
 	}
 	for key, row := range want {
@@ -511,8 +519,8 @@ func TestTheRepositoryWideWalksInThisPackageAreTheOnesDecidedOn(t *testing.T) {
 		t.Errorf("%d of this package's %d repository walks parse every Go "+
 			"file in the tree, and the budget is %d: %s.\n\n"+
 			"This is the number that decides, not the total. Each parse is "+
-			"about 0.18s where verifyTimingsTakenOn was taken and none of it "+
-			"is shared: every Go file in the tree goes through go/parser once "+
+			"%s where verifyTimingsTakenOn was taken and none of it is "+
+			"shared: every Go file in the tree goes through go/parser once "+
 			"per arm — 390 tracked Go files where that record was taken — "+
 			"and every one of them throws the syntax trees away.\n\n"+
 			"A shared parse is a fixture with a lifetime — built once, "+
@@ -521,7 +529,8 @@ func TestTheRepositoryWideWalksInThisPackageAreTheOnesDecidedOn(t *testing.T) {
 			"and say what each arm now depends on, or raise "+
 			"repositoryParseBudget with the reading that says the walks are "+
 			"still cheap enough to keep separate.",
-			parses, walks, repositoryParseBudget, walkList(found))
+			parses, walks, repositoryParseBudget, walkList(found),
+			verifyTimingsTakenOn.walkParse)
 	}
 
 	// Reported as what was found rather than as what should have been found:
