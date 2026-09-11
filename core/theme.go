@@ -198,6 +198,33 @@ type ColorPalette struct {
 	// empty and the fallback returns the role — which is the right answer,
 	// and the reason these are four extra fields rather than a second
 	// palette every theme has to fill in twice.
+	//
+	// # Overriding a role means releasing its tone
+	//
+	// These are *measurements*, taken against the role colour beside them. An
+	// app that brands a theme by copying DefaultTheme and assigning
+	// Colors.Primary therefore inherits a tone measured against a colour that
+	// is no longer there:
+	//
+	//	theme := *core.DefaultTheme
+	//	theme.Colors.Primary = siteColor   // and PrimaryOnLight is still #0040DD
+	//
+	// The result is a half-branded app, and a quiet one — filled controls take
+	// the new colour (they read Primary, or the Button base) while every
+	// unfilled one keeps the default's blue, because Outlined, Ghost, Chip and
+	// the calendar's month arrows all spend the *tone*. The first downstream
+	// app to brand a theme shipped exactly that.
+	//
+	// So an override sets the pair or clears it:
+	//
+	//	theme.Colors.Primary = siteColor
+	//	theme.Colors.PrimaryOnLight = ""   // no measurement, use the role
+	//
+	// Clearing is the honest default. The fallback then returns siteColor,
+	// which is the same treatment every widget gave before these fields
+	// existed; writing siteColor into the tone renders identically but claims
+	// a contrast check nobody ran. Either way, what is not available is
+	// leaving the old number in place.
 	PrimaryOnLight string
 	SuccessOnLight string
 	WarningOnLight string
