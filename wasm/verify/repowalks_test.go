@@ -59,6 +59,15 @@ import (
 // name does not begin with `Test` is counted by its call sites in this
 // directory, and a row that says which test drives it.
 //
+// A SITE is still not a call, and that is the same understatement one
+// construct along: a walk inside a `for`, or inside a subtest closure that a
+// `range` drives, is one site and as many walks as the loop is long. A parse
+// cannot price that — the loop's length is a run-time fact — so it is
+// REPORTED instead of counted, which is the honest version of the same
+// finding. There is no such site in this package; see callsTo for how one
+// would be recognised, and why it would otherwise read exactly like a row
+// that is right.
+//
 // # Why this arm is not itself a repository walk
 //
 // It reads THIS DIRECTORY, which is where every caller of citingFiles is and
@@ -121,6 +130,14 @@ func TestTheRepositoryWideWalksInThisPackageAreTheOnesDecidedOn(t *testing.T) {
 		if file == nil {
 			continue
 		}
+		// Which identifier THIS FILE binds to go/parser. The deepest of the
+		// three depths is "runs go/parser over every Go file", and reading
+		// that off the conventional qualifier would miss `import goparser
+		// "go/parser"` — a walk that had grown its parse and a row that still
+		// said it only reads bytes, which is the cost being understated in
+		// exactly the direction this arm exists to stop. See
+		// importnames_test.go.
+		parserNames := qualifiersFor(t, name, file, "go/parser")
 		for _, d := range file.Decls {
 			fn, ok := d.(*ast.FuncDecl)
 			if !ok || fn.Body == nil {
@@ -131,7 +148,7 @@ func TestTheRepositoryWideWalksInThisPackageAreTheOnesDecidedOn(t *testing.T) {
 			if enumerationEntryPoints[fn.Name.Name] {
 				continue
 			}
-			depth := walkDepth(fn.Body)
+			depth := walkDepth(fn.Body, parserNames)
 			if depth == "" {
 				continue
 			}
@@ -155,6 +172,7 @@ func TestTheRepositoryWideWalksInThisPackageAreTheOnesDecidedOn(t *testing.T) {
 			continue
 		}
 		calls, in := 0, ""
+		var looped []string
 		for _, name := range names {
 			if !bytes.Contains(sources[name], []byte(w.fn)) {
 				continue
@@ -168,8 +186,12 @@ func TestTheRepositoryWideWalksInThisPackageAreTheOnesDecidedOn(t *testing.T) {
 				if !ok || fn.Body == nil || fn.Name.Name == w.fn {
 					continue
 				}
-				n := callsTo(fn.Body, w.fn)
+				n, inLoops := callsTo(fset, fn.Body, w.fn)
 				calls += n
+				for _, line := range inLoops {
+					looped = append(looped, fmt.Sprintf("%s:%d, in %s",
+						name, line, fn.Name.Name))
+				}
 				if n > 0 && in == "" {
 					in = fn.Name.Name
 				}
@@ -177,6 +199,7 @@ func TestTheRepositoryWideWalksInThisPackageAreTheOnesDecidedOn(t *testing.T) {
 		}
 		found[i].runs = calls
 		found[i].drivenBy = in
+		found[i].looped = looped
 	}
 
 	// The walk reaching anything. A walk over nothing passes silently and
@@ -217,6 +240,27 @@ func TestTheRepositoryWideWalksInThisPackageAreTheOnesDecidedOn(t *testing.T) {
 				w.file, w.line, w.fn, w.depth, len(repositoryWalks),
 				repositoryWalkList())
 			continue
+		}
+		// A call SITE is not a call. Every row here is priced by counting
+		// sites, which is the same number only while each site is reached
+		// once per run — see callsTo, and the limit this closes one construct
+		// along from the helper case it was written for.
+		if len(w.looped) > 0 {
+			t.Errorf("%s is called from inside a loop: %s.\n\n"+
+				"The count beside it is a count of call SITES, and a site "+
+				"inside a `for` or a `range` is one site and as many walks as "+
+				"the loop has iterations — a `git ls-files`, a read of every "+
+				"tracked file and possibly a go/parser pass, each time round. "+
+				"So `runs: %d` in its row understates the cost by whatever "+
+				"that loop's length turns out to be, and the budget below is "+
+				"counting the wrong thing.\n\n"+
+				"This is the same shape as the helper case this arm does "+
+				"close — a unit that runs more often than it is written — one "+
+				"construct further along, and a parse cannot price it: the "+
+				"loop's length is a run-time fact. Hoist the walk out of the "+
+				"loop and pass its result in, which is what makes the cost a "+
+				"number again, or teach this arm how to read the bound.",
+				w.fn, strings.Join(w.looped, "; "), row.runs)
 		}
 		// Only for helpers: a test runs once by definition, and its row says
 		// nothing about how often.
@@ -428,6 +472,11 @@ type repositoryWalk struct {
 	runs int
 	// The first function found calling it, for a helper. "" for a test.
 	drivenBy string
+	// Call sites that are inside a loop, as "file:line, in F". Empty for
+	// every walk in this package today; a site here is one whose cost `runs`
+	// cannot state, because the number of walks it makes is the number of
+	// times the loop goes round.
+	looped []string
 }
 
 // walkDepth is how far into the repository this body goes, or "" for a body
@@ -436,12 +485,18 @@ type repositoryWalk struct {
 // Deepest wins: a function that calls citingFiles AND go/parser is paying for
 // both, and what its row has to say is the larger number.
 //
-// The go/parser pass is recognised by the call and not by the import, because
+// The go/parser pass is recognised by the CALL and not by the import, because
 // an import is a fact about a FILE and several files here parse something
 // small — a fragment, their own source — without walking anything. What makes
 // a parse a repository-wide parse is that the same body also enumerated the
 // repository, which is what the ordering below says.
-func walkDepth(body *ast.BlockStmt) string {
+//
+// The import block is still what says which qualifier is go/parser's. Those
+// are two different questions and only the first one was ever about the
+// import: `parsers` is the calling file's own binding, so an aliased import
+// resolves and a `parser.ParseFoo` in a file that imports no such package
+// does not. See importnames_test.go.
+func walkDepth(body *ast.BlockStmt, parsers map[string]bool) string {
 	reads, enumerates, parses := false, false, false
 	ast.Inspect(body, func(n ast.Node) bool {
 		call, ok := n.(*ast.CallExpr)
@@ -457,7 +512,7 @@ func walkDepth(body *ast.BlockStmt) string {
 				enumerates = true
 			}
 		case *ast.SelectorExpr:
-			if pkg, ok := fn.X.(*ast.Ident); ok && pkg.Name == "parser" &&
+			if pkg, ok := fn.X.(*ast.Ident); ok && parsers[pkg.Name] &&
 				strings.HasPrefix(fn.Sel.Name, "Parse") {
 				parses = true
 			}
@@ -475,24 +530,68 @@ func walkDepth(body *ast.BlockStmt) string {
 	return ""
 }
 
-// callsTo is how many times this body calls a package-level function by name.
+// callsTo is how many times this body calls a package-level function by name,
+// and the lines of those calls that are inside a loop.
 //
 // Bare identifiers only, for the reason the git-wrapper census gives: a
 // `pkg.Fn(…)` is another package's, and a method call is `x.Fn(…)`, which is
 // not what an unqualified call in this package resolves to.
-func callsTo(body *ast.BlockStmt, name string) int {
-	n := 0
+//
+// # Why the loops are found as well as the calls
+//
+// The count is of SITES. That is the same number as the count of walks
+// exactly while every site is reached once, and there are two ways it is not:
+//
+//	for _, c := range cases { checkCitationsResolve(t, c) }   one site, N walks
+//	t.Run(c.name, func(t *testing.T){ … })  inside that range — the same, with
+//	                                        the site one function literal down
+//
+// Both are the same construct from this walk's point of view: the call sits
+// inside a `for` or a `range` in the same function body, wherever the closures
+// between them are, because ast.Inspect descends into a FuncLit like any other
+// node and the position arithmetic does not care what it descended through.
+//
+// There is no such site in this package. What is here is the reporting of one
+// if it arrives, because the number it would break is the one the budget above
+// is made of, and it would break it silently: a row saying `runs: 1` beside a
+// walk that runs eleven times reads exactly like a row that is right.
+//
+// The loops are collected first and the calls tested against them by POSITION,
+// for the reason shortlever_test.go's containsPos gives: one parse, one
+// FileSet, and a call inside a loop is exactly a call whose Pos lies between
+// that statement's ends. Nothing here has to know what the loop is made of.
+func callsTo(fset *token.FileSet, body *ast.BlockStmt, name string) (calls int, looped []int) {
+	// Every loop in the body, as a source range. `for {}`, a three-clause
+	// `for` and a `range` are one question here — how many times does what is
+	// inside this run — so both statement kinds go in.
+	type span struct{ from, to token.Pos }
+	var loops []span
+	ast.Inspect(body, func(node ast.Node) bool {
+		switch node.(type) {
+		case *ast.ForStmt, *ast.RangeStmt:
+			loops = append(loops, span{from: node.Pos(), to: node.End()})
+		}
+		return true
+	})
 	ast.Inspect(body, func(node ast.Node) bool {
 		call, ok := node.(*ast.CallExpr)
 		if !ok {
 			return true
 		}
-		if id, ok := call.Fun.(*ast.Ident); ok && id.Name == name {
-			n++
+		id, ok := call.Fun.(*ast.Ident)
+		if !ok || id.Name != name {
+			return true
+		}
+		calls++
+		for _, l := range loops {
+			if l.from <= call.Pos() && call.Pos() < l.to {
+				looped = append(looped, fset.Position(call.Pos()).Line)
+				break
+			}
 		}
 		return true
 	})
-	return n
+	return calls, looped
 }
 
 // mentionsAnEnumeration is whether this source names any entry point, as a

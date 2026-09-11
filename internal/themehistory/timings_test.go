@@ -103,9 +103,15 @@ var themehistoryTimingsTakenOn = struct {
 	//
 	//	              default        -short
 	//	plain         3.01–3.11s     1.22–1.27s
-	//	-race         6.52–6.64s     2.41s
+	//	-race         6.46–6.64s     2.41s
 	//
-	// Seven runs for the plain default, three for the other three. The arm is
+	// Seven runs for the plain default, three for the other three. The -race
+	// row is six readings rather than three: it was 6.52–6.64s, and a re-take
+	// after the concurrency census grew came in at 6.46–6.58s. Nothing in
+	// that arm changed and the two ranges overlap across most of their width,
+	// so the row is widened to hold both rather than replaced — which is what
+	// a range is for, and the alternative is a record that reports the last
+	// afternoon. The arm is
 	// around 1.8s of a plain run and around 4.2s of a -race one, which is the
 	// price of the only test here that runs the real program over the real
 	// history.
@@ -201,6 +207,11 @@ var themehistoryTimingsTakenOn = struct {
 	// was the largest unmeasured term and because this arm already holds every
 	// source in memory — which is what made it measurable here and nowhere
 	// else.
+	//
+	// Declined rather than deferred. See ai_docs/plans/non_goals.md, which
+	// carries the argument in full and the condition under which it stops
+	// holding — so that the fourth clock is something a reader finds decided
+	// rather than missing.
 	perObjectRun string
 	// One healthy retire: close stdin, drain stdout, Wait. See
 	// TestRetiringAHealthyGitLeavesBeforeTheDeadline, which takes this, and
@@ -271,22 +282,17 @@ func TestTheTimingsInThisPackageSayWhichMachineTheyCameFrom(t *testing.T) {
 		differs = append(differs, fmt.Sprintf("%d cores against %d", cores,
 			rec.cores))
 	}
-	// The enumeration in the whole-walk arm runs min(NumCPU, 8) workers and is
-	// the largest single term in wholePackage — 0.22s here against 0.90s on
-	// one core, which is 0.7s of the figure. Said out loud whenever the two
-	// core counts differ, because a reader holding 3.1s against a 3.7s run on
-	// a small runner has a difference this line explains entirely.
+	// Which term the core count moves, said out loud whenever the two differ:
+	// a reader told "8 cores against 4" and nothing else has to go and find
+	// out what that is worth. The standing half is coresAttribution, which
+	// wasm/verify/timingsrecords_test.go holds every record to carrying; the
+	// worker counts are this run's and belong here.
 	pooled := ""
 	if cores != rec.cores {
 		pooled = fmt.Sprintf("\n\nThe whole-walk arm enumerates its "+
 			"expectation over min(NumCPU, 8) workers — %d here against %d "+
-			"where the record was taken — and that is the largest term in "+
-			"the package figure: 0.22s at eight, 0.90s at one, with the "+
-			"total moving 3.05s to 3.75s across the same range. See "+
-			"enumWorkers and the table in wholePackage's comment. A "+
-			"difference of that size between this run and the number above "+
-			"is accounted for before anything else is.",
-			min(cores, 8), min(rec.cores, 8))
+			"where the record was taken. %s",
+			min(cores, 8), min(rec.cores, 8), coresAttribution)
 	}
 
 	if len(differs) == 0 {
@@ -310,6 +316,32 @@ func TestTheTimingsInThisPackageSayWhichMachineTheyCameFrom(t *testing.T) {
 		strings.Join(differs, ", "), rec.wholePackage, rec.wholeRun,
 		rec.batchRetire, rec.perObjectRun, pooled)
 }
+
+// Which of this package's figures move with the core count, and by how much.
+//
+// # Why every record carries one of these
+//
+// `cores` is the one machine field that changes a recorded number by a term a
+// reader can name, and the two records in this repository used to say
+// different amounts about it. This one carried the table and wasm/verify's
+// said nothing — which a reader holding a run that disagrees reads as "nobody
+// measured that" rather than as "that is not where the difference is". Both
+// now state it, and wasm/verify/timingsrecords_test.go holds every record to
+// having one, in the same pass that holds them to the five machine fields.
+//
+// What is worth comparing between the two is the SHAPE. This package's term is
+// 88 git processes, so the improvement runs all the way to eight workers;
+// wasm/verify's is one Go program's own goroutines, and its figure is flat
+// from two cores upwards. A reader on a four-core machine should expect a
+// different fraction of each.
+const coresAttribution = "The enumeration is the largest single term in the " +
+	"package figure and it is pooled at min(NumCPU, 8): 0.22s at eight " +
+	"workers, 0.51s at two, 0.90s at one, with the package total moving " +
+	"3.05s to 3.75s across the same range. See enumWorkers and the table in " +
+	"wholePackage's comment. A difference of that size between this run and " +
+	"the number above is accounted for before anything else is — and it runs " +
+	"all the way to eight, which is the opposite of wasm/verify's figure, " +
+	"where the core-scaled term is flat from two cores upwards."
 
 // How many healthy retires the measurement below takes.
 //
@@ -440,9 +472,10 @@ const wholeWalkCommitsFloor = 50
 //
 // The whole-walk arm holds the batch reader's fetch count to an EQUALITY
 // against what themeSourcesAt names across the history, and that expectation
-// is one `git ls-tree` per commit — 88 processes over this repository, 0.83s
-// serial, which was 35% of the arm's wall clock and the largest single thing
-// `-short` skips. Almost none of that is git doing anything: it is fork, exec,
+// is one `git ls-tree` per commit — 88 processes over this repository, 0.90s
+// serial (0.87–0.92s measured, which is what the 0.83s this line used to quote
+// was an estimate of), which was 35% of the arm's wall clock and the largest
+// single thing `-short` skips. Almost none of that is git doing anything: it is fork, exec,
 // the repository being opened and the process being torn down, which is the
 // same cost blob's comment is an argument about, once per commit instead of
 // once per object.
@@ -680,7 +713,38 @@ func batchesStartedSince() func() int64 {
 //
 // So the trade is made, and the price is paid down rather than accepted: the
 // enumeration runs in a bounded pool (see enumWorkers), which takes it from
-// 0.83s to 0.22s and from 35% of this arm to about a seventh of it.
+// 0.90s to 0.22s and from 35% of this arm to about a seventh of it.
+//
+// # And the price it was made at, which is not the price everybody pays
+//
+// That paragraph settled it against 0.22s, on eight cores, and 0.22s is the
+// BEST case of a term that is 0.90s at one worker — the figure this package
+// had before the pool existed. On a single-core runner the equality is a third
+// of this arm again, and the decision to keep it was never taken at that
+// number: it was taken at the one the machine it was written on happened to
+// produce.
+//
+// Taken at 0.90s, deliberately, it is the same decision:
+//
+//	what it buys      a fetch-path off-by-one, which is a failure this program
+//	                  has a mechanism for — the newline path above — and which
+//	                  every other assertion in this arm passes through
+//	                  unchanged. Not a hypothetical class: a shape that is one
+//	                  file rename away, and invisible when it happens
+//	what it costs     0.22s to 0.90s, on the one test in this repository that
+//	                  runs the real program over the real history, which is
+//	                  already the expensive arm by construction
+//	the alternative   a floor scaled off HEAD, which is what this replaced. It
+//	                  costs one `ls-tree` and cannot see the thing the
+//	                  equality is for
+//	the lever         `-short`, which skips the whole arm. It is worth the
+//	                  whole 0.90s where the pool is worth nothing, which is
+//	                  the machine most likely to mind — see enumWorkers
+//
+// What stops that argument going stale a second time is that the share is no
+// longer quoted from a comment: the log line below reports the enumeration as
+// a fraction of this arm on the machine that just ran it, so a reader on one
+// core is told a third rather than a seventh.
 //
 // # And what is only recorded
 //
@@ -899,17 +963,37 @@ func TestTheWholeWalkGoesRoundOneBatchProcess(t *testing.T) {
 	// it were. The serial figure is taken by the per-object arm and the
 	// subtraction is done there — see themehistoryTimingsTakenOn.perObjectRun,
 	// which is where the measured terms of this number live.
+	// What the equality cost, as a share of this arm on THIS machine. The
+	// header argues that price at 0.22s and again at 0.90s, which are the two
+	// ends of a term that moves with the core count — and a share quoted from
+	// a comment is a share taken on somebody else's computer. This one is
+	// taken here, so a reader on one core is told a third and a reader on
+	// eight is told a seventh, without either of them having to work out
+	// which end of the range they are standing at.
+	armTook := took + enumTook
+	share := 0.0
+	if armTook > 0 {
+		share = 100 * float64(enumTook) / float64(armTook)
+	}
 	t.Logf("the whole walk: %v over %d commit(s), %d object(s) fetched through "+
 		"%d `git cat-file --batch` process(es), against the %d object(s) "+
-		"themeSourcesAt names, enumerated here in %v over %d worker(s). "+
-		"Recorded as themehistoryTimingsTakenOn.wholeRun.\n\n"+
+		"themeSourcesAt names, enumerated here in %v over %d worker(s) — "+
+		"%.0f%% of this arm's %v. Recorded as "+
+		"themehistoryTimingsTakenOn.wholeRun.\n\n"+
 		"Not asserted — see this file's header. The assertions above are the "+
 		"process count, the fetch count and the table; the clock is a reading "+
 		"of this machine. What the walk spent it ON is not read off this "+
 		"line: the enumeration above it is pooled and the walk's is not, so "+
-		"the split is in perObjectRun rather than in a subtraction here.",
+		"the split is in perObjectRun rather than in a subtraction here.\n\n"+
+		"The share IS worth reading off it. That is what the equality costs "+
+		"to have, on the machine in front of you, and the decision to keep it "+
+		"was argued at both ends of the range that number moves through — "+
+		"about a seventh where the pool has eight workers and about a third "+
+		"where it has one. `-short` is the lever, and it is worth most "+
+		"exactly where this percentage is largest.",
 		took.Round(time.Millisecond), commits, reader.reads, started,
-		wantReads, enumTook.Round(time.Millisecond), enumWorkers)
+		wantReads, enumTook.Round(time.Millisecond), enumWorkers,
+		share, armTook.Round(time.Millisecond))
 }
 
 // The switch that runs the per-object re-creation below, and the one value it

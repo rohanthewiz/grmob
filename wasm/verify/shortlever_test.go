@@ -71,6 +71,17 @@ import (
 // test skipping. That is a syntactic question about one parameter name and not
 // the dataflow question gitquoting_test.go declines: nothing here follows a
 // value, it compares two identifiers.
+//
+// # And which `testing` is the testing package
+//
+// Both of those readings were spelled against the qualifier `testing`, which
+// is what every file in this repository happens to call it. An alias —
+// `import gotesting "testing"` — is a lever this census does not see, and an
+// unseen lever is not a near miss: it is `-short` meaning something nobody
+// wrote down, which is the failure this whole arm is about. So the qualifier
+// comes off each file's own import block, which also lets the walk skip a file
+// that does not import testing before looking at a single declaration. See
+// importnames_test.go.
 func TestTheShortLeversAreTheOnesThisRepositoryHasDecidedOn(t *testing.T) {
 	root := filepath.Join("..", "..")
 	_, considered, from, err := citingFiles(root)
@@ -98,6 +109,19 @@ func TestTheShortLeversAreTheOnesThisRepositoryHasDecidedOn(t *testing.T) {
 			// build says so first.
 			continue
 		}
+		// Which identifier THIS FILE binds to the testing package. A lever
+		// spelled `import gotesting "testing"` and `gotesting.Short()` is a
+		// second lever the census would not see, and an unseen lever is the
+		// exact failure this arm exists for: `-short` quietly means something
+		// nobody wrote down. Read off the import block; see
+		// importnames_test.go.
+		testingNames := qualifiersFor(t, rel, file, "testing")
+		if len(testingNames) == 0 {
+			// A file that does not import testing has no lever in it and no
+			// *testing.T either. Skipped before the declarations rather than
+			// inside them, because that is most of the repository.
+			continue
+		}
 		for _, d := range file.Decls {
 			fn, ok := d.(*ast.FuncDecl)
 			if !ok || fn.Body == nil {
@@ -107,8 +131,8 @@ func TestTheShortLeversAreTheOnesThisRepositoryHasDecidedOn(t *testing.T) {
 			// A function that reads testing.Short() without one is not a test
 			// at all, and `recv` is "" for it — which shortLeverSkip reports
 			// as its own finding rather than treating as a missing skip.
-			recv := testParamName(fn)
-			at, guarded := shortLeverCall(fset, fn.Body)
+			recv := testParamName(fn, testingNames)
+			at, guarded := shortLeverCall(fset, fn.Body, testingNames)
 			if at == 0 {
 				continue
 			}
@@ -304,7 +328,7 @@ func leverList(found []shortLever) []string {
 //	                                      rather than a pass
 //
 // Returns the call's line, which is what every message here points at.
-func shortLeverCall(fset *token.FileSet, body *ast.BlockStmt) (line int, guarded *ast.BlockStmt) {
+func shortLeverCall(fset *token.FileSet, body *ast.BlockStmt, testingPkg map[string]bool) (line int, guarded *ast.BlockStmt) {
 	// The chain of `if` statements this walk is currently inside, innermost
 	// last. ast.Inspect calls back with nil on the way out of a node, which is
 	// what pops it.
@@ -332,7 +356,7 @@ func shortLeverCall(fset *token.FileSet, body *ast.BlockStmt) (line int, guarded
 			return true
 		}
 		pkg, ok := sel.X.(*ast.Ident)
-		if !ok || pkg.Name != "testing" {
+		if !ok || !testingPkg[pkg.Name] {
 			return true
 		}
 		line = fset.Position(call.Pos()).Line
@@ -412,7 +436,7 @@ func shortLeverSkip(guarded *ast.BlockStmt, recv string) string {
 // "" when there is no such parameter, which shortLeverSkip reports as its own
 // finding: a testing.Short() outside a test is not a lever this convention is
 // about.
-func testParamName(fn *ast.FuncDecl) string {
+func testParamName(fn *ast.FuncDecl, testingPkg map[string]bool) string {
 	if fn.Type.Params == nil {
 		return ""
 	}
@@ -426,7 +450,7 @@ func testParamName(fn *ast.FuncDecl) string {
 			continue
 		}
 		pkg, ok := sel.X.(*ast.Ident)
-		if !ok || pkg.Name != "testing" {
+		if !ok || !testingPkg[pkg.Name] {
 			continue
 		}
 		switch sel.Sel.Name {

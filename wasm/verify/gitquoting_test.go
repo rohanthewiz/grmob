@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"fmt"
 	"go/ast"
 	"go/parser"
@@ -10,6 +11,7 @@ import (
 	// alias is here rather than a rename there because the collision is one
 	// import's problem and the other name is load-bearing in its own file.
 	gotypes "go/types"
+	"os"
 	"path"
 	"path/filepath"
 	"sort"
@@ -108,6 +110,13 @@ func TestEveryGitListingAsksForNulSeparatedPaths(t *testing.T) {
 		rel  string
 		dir  string
 		file *ast.File
+		// What this file calls os/exec. Every reading below that recognises
+		// `exec.Command("git", …)` goes through this rather than through the
+		// conventional spelling: `import osexec "os/exec"` is a git call this
+		// check would not see, which is a listing going unchecked in silence
+		// — and the same alias in a `func git` is a wrapper reported as "runs
+		// no git" while it does. See importnames_test.go.
+		exec map[string]bool
 	}
 	var files []parsed
 	// dir -> the position of the `func git` declared in it.
@@ -131,7 +140,9 @@ func TestEveryGitListingAsksForNulSeparatedPaths(t *testing.T) {
 			continue
 		}
 		dir := path.Dir(rel)
-		files = append(files, parsed{rel: rel, dir: dir, file: file})
+		execNames := qualifiersFor(t, rel, file, "os/exec")
+		files = append(files, parsed{rel: rel, dir: dir, file: file,
+			exec: execNames})
 		for _, d := range file.Decls {
 			fn, ok := d.(*ast.FuncDecl)
 			// Recv nil because a METHOD called git is not what a bare `git(…)`
@@ -158,7 +169,7 @@ func TestEveryGitListingAsksForNulSeparatedPaths(t *testing.T) {
 			// GIVEN. A helper that did something else would make every call to
 			// it a finding about the wrong thing, stated with a line number
 			// and a subcommand.
-			if why := whyNotAGitWrapper(fn); why != "" {
+			if why := whyNotAGitWrapper(fn, execNames); why != "" {
 				t.Errorf("%s:%d declares `func git` and it %s.\n\n"+
 					"Calls to a bare `git(…)` in %s are read by this check as "+
 					"git command lines — `git(\"ls-tree\", \"--name-only\")` is "+
@@ -181,7 +192,7 @@ func TestEveryGitListingAsksForNulSeparatedPaths(t *testing.T) {
 			if !ok {
 				return true
 			}
-			args, ok := gitArgs(call, local)
+			args, ok := gitArgs(call, local, pf.exec)
 			if !ok {
 				return true
 			}
@@ -257,7 +268,7 @@ func TestEveryGitListingAsksForNulSeparatedPaths(t *testing.T) {
 // beyond what a parse can say, and there are none: every git call here names
 // its subcommand as a constant, which is the property that makes this check
 // possible rather than an assumption it makes.
-func gitArgs(call *ast.CallExpr, local bool) ([]string, bool) {
+func gitArgs(call *ast.CallExpr, local bool, execPkg map[string]bool) ([]string, bool) {
 	args := call.Args
 	switch fn := call.Fun.(type) {
 	case *ast.Ident:
@@ -268,7 +279,7 @@ func gitArgs(call *ast.CallExpr, local bool) ([]string, bool) {
 		// exec.Command("git", …) — and the first argument is the program, so
 		// it is consumed here rather than counted as an argument.
 		pkg, ok := fn.X.(*ast.Ident)
-		if !ok || pkg.Name != "exec" || fn.Sel.Name != "Command" {
+		if !ok || !execPkg[pkg.Name] || fn.Sel.Name != "Command" {
 			return nil, false
 		}
 		if len(args) == 0 || literal(args[0]) != "git" {
@@ -352,7 +363,18 @@ func literal(e ast.Expr) string {
 // this check's purpose is to stop a wrong premise being stated confidently,
 // not to audit wrappers. A helper that would fool this has to launder its
 // arguments through something with no syntactic connection to them at all.
-func whyNotAGitWrapper(fn *ast.FuncDecl) string {
+//
+// # Which `exec` is os/exec, which is not loose in that direction at all
+//
+// `execPkg` is what the DECLARING FILE binds to os/exec, resolved by the walk
+// and handed in rather than assumed from the qualifier. That one was loose the
+// other way: an aliased import made every `osexec.Command("git", …)` in the
+// body invisible, so a real wrapper came back as "contains no
+// exec.Command(\"git\", …)" — a finding about a correct file, which the case
+// table below calls the one kind of noise a check nobody can weigh cannot
+// afford. Reading the import block answers it exactly and costs a walk over a
+// handful of specs; see importnames_test.go.
+func whyNotAGitWrapper(fn *ast.FuncDecl, execPkg map[string]bool) string {
 	if fn.Body == nil {
 		return "has no body, so nothing in it reaches git"
 	}
@@ -413,14 +435,14 @@ func whyNotAGitWrapper(fn *ast.FuncDecl) string {
 			}
 			// And which name holds the command, for the field rule above.
 			if len(node.Lhs) > 0 && len(node.Rhs) == 1 {
-				if isGitCommandCall(node.Rhs[0]) {
+				if isGitCommandCall(node.Rhs[0], execPkg) {
 					if id, ok := node.Lhs[0].(*ast.Ident); ok {
 						cmds[id.Name] = true
 					}
 				}
 			}
 		case *ast.CallExpr:
-			if !isGitCommandCall(node) {
+			if !isGitCommandCall(node, execPkg) {
 				return true
 			}
 			sawGit = true
@@ -443,8 +465,9 @@ func whyNotAGitWrapper(fn *ast.FuncDecl) string {
 	}
 }
 
-// isGitCommandCall is whether an expression is `exec.Command("git", …)`.
-func isGitCommandCall(e ast.Expr) bool {
+// isGitCommandCall is whether an expression is `exec.Command("git", …)`,
+// where `exec` is whatever the declaring file binds to os/exec.
+func isGitCommandCall(e ast.Expr, execPkg map[string]bool) bool {
 	call, ok := e.(*ast.CallExpr)
 	if !ok || len(call.Args) == 0 {
 		return false
@@ -454,7 +477,7 @@ func isGitCommandCall(e ast.Expr) bool {
 		return false
 	}
 	pkg, ok := sel.X.(*ast.Ident)
-	return ok && pkg.Name == "exec" && literal(call.Args[0]) == "git"
+	return ok && execPkg[pkg.Name] && literal(call.Args[0]) == "git"
 }
 
 // mentionsAny is whether any of these expressions names a tainted identifier.
@@ -617,8 +640,13 @@ func TestWhatCountsAsAGitWrapper(t *testing.T) {
 
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			fn := parseOneFunc(t, c.src)
-			got := whyNotAGitWrapper(fn)
+			frag, fn := parseOneFunc(t, c.src)
+			// The fragment's own import block, read the way the walk reads
+			// every file's: the preamble imports os/exec plainly, so this is
+			// {"exec"} — and a case written with an alias would resolve to
+			// that alias instead, which is the property being exercised.
+			got := whyNotAGitWrapper(fn,
+				qualifiersFor(t, "fragment.go", frag, "os/exec"))
 			switch {
 			case c.want == "" && got != "":
 				t.Errorf("this is a git wrapper and the check rejected it: %s\n\n"+
@@ -797,10 +825,13 @@ func TestTheGitWrapperTaintWalkIsTheSizeItsReasonCovers(t *testing.T) {
 	// has no body in this repository, so there is nothing in it to hide.
 	//
 	// `shadowsAPredeclaredName` is what makes that true rather than assumed:
-	// see it for the one spelling that would make a bare `len(…)` a call into
-	// this repository after all, and gitWrapperTaintLimits for the one it
-	// cannot see.
-	shadowed := shadowsAPredeclaredName(file, fn)
+	// see it for the spellings that would make a bare `len(…)` a call into
+	// this repository after all. It now reads the whole PACKAGE rather than
+	// this file, which was the last limit under this exclusion and was left
+	// open because a package-wide parse looked expensive — a cost
+	// repowalks_test.go has since measured at a hundredth of a second for
+	// this directory.
+	shadowed := shadowsAPredeclaredName(t, file, fn, callees)
 	named := 0
 	for name := range callees {
 		if gitWrapperTaintHelpers[name] != "" {
@@ -899,8 +930,9 @@ func TestTheGitWrapperTaintWalkIsTheSizeItsReasonCovers(t *testing.T) {
 		"`reaches = true`, each with a row in gitWrapperTaintRules and a case "+
 		"in %s; %d looseness(es) written down beside them, and %d helper(s) "+
 		"called out of a body with one way out — of %d bare name(s) called, "+
-		"the rest predeclared. Counted out of %s rather than listed, so a "+
-		"rule added without a row fails this arm in the commit that adds it.",
+		"the rest predeclared and declared nowhere in this package. Counted "+
+		"out of %s rather than listed, so a rule added without a row fails "+
+		"this arm in the commit that adds it.",
 		accepts, gitWrapperCaseTable, len(gitWrapperTaintLimits),
 		named, len(callees), self)
 }
@@ -972,11 +1004,15 @@ var gitWrapperTaintLimits = []string{
 		"is still the parameter",
 	"only this function's body is read, so a helper that hands its arguments " +
 		"to another function in the package is not followed",
-	"a predeclared name shadowed by a package-level declaration in ANOTHER " +
-		"file of this package is read as the builtin: shadowsAPredeclaredName " +
-		"sees this file's top level and this function's own scope, which is " +
-		"where such a declaration would have to be to be worth reading, and " +
-		"not the rest of the package",
+	"a predeclared name declared by a DOT-IMPORTED package would be in file " +
+		"scope and read here as the builtin. shadowsAPredeclaredName reads " +
+		"declarations, and a dot import declares nothing it can see; nothing " +
+		"in this package dot-imports anything, and qualifiersFor is what says " +
+		"so for the qualifiers this file resolves",
+	"the package scan reads every .go file in this directory, build tags " +
+		"included, so a declaration in a file this build excludes still " +
+		"counts. That is in the direction of ASKING about a call the census " +
+		"would otherwise skip, which is the safe one",
 }
 
 // isPredeclared is whether this bare name is one of Go's own.
@@ -1008,23 +1044,42 @@ func isPredeclared(name string) bool {
 // the two are spelled identically at the call site — so a redeclaration is the
 // one thing that turns the class exclusion above from a fact into a guess.
 //
-// # What it reads, which is the two scopes a redeclaration would sit in
+// # What it reads, which is the three scopes a redeclaration would sit in
 //
 //	this file's top level    `func len(…)`, `var len = …`, `type len …` — any
 //	                         package-level declaration in gitquoting_test.go
 //	whyNotAGitWrapper's own  its parameters, and anything the body declares
 //	                         with `:=`, `var`, `const` or `type`
+//	the rest of the package  the same package-level declarations, in the other
+//	                         .go files of this directory. A package's scope is
+//	                         the package, so a `func len` two files over is
+//	                         what a bare `len(…)` here resolves to
 //
 // A `for len := range …` inside the body is caught by the same walk: the
 // census is not tracking scope (see gitWrapperTaintLimits), so a shadow
 // anywhere in the function counts everywhere in it. That is the safe
 // direction — it makes the census ASK about a call it would otherwise skip.
 //
-// The rest of the package is not read, which is the limit written down beside
-// the others. A redeclaration of a builtin in this package's other files would
-// be visible here as a name, and reading thirty files to find it is a walk
-// this package has three of already.
-func shadowsAPredeclaredName(file *ast.File, fn *ast.FuncDecl) map[string]bool {
+// # Why the third scope is read now and was not before
+//
+// It was left out because a package-wide parse looked like a cost worth
+// arguing about, and the limit was written down beside the others rather than
+// closed. Then repowalks_test.go had to answer the same question about itself
+// and MEASURED the shape: read one directory, byte-scan each file for the
+// name, parse only the files whose bytes contain it. That is a hundredth of a
+// second here, against the 0.18s a repository-wide parse costs — so the limit
+// was closable at a price this package had already taken, and a limit that
+// cheap to close is one nobody should have to read twice.
+//
+// The scan is over the CANDIDATES and not over the language: only the
+// predeclared names this body actually calls are looked for, which today is
+// one. A file whose bytes do not contain `len` cannot declare it, whatever
+// else is in it, so the byte scan has no false negative and its false
+// positives cost a parse the arm then discards.
+func shadowsAPredeclaredName(t *testing.T, file *ast.File, fn *ast.FuncDecl,
+	callees map[string]bool) map[string]bool {
+
+	t.Helper()
 	out := map[string]bool{}
 	note := func(name string) {
 		if name != "" && name != "_" && isPredeclared(name) {
@@ -1092,6 +1147,131 @@ func shadowsAPredeclaredName(file *ast.File, fn *ast.FuncDecl) map[string]bool {
 		}
 		return true
 	})
+
+	// The rest of the package. Only the names this body calls that are
+	// predeclared and not already known to be shadowed are worth looking for:
+	// everything else either has a body the census already accounts for, or
+	// is a name no call here could resolve to.
+	var candidates []string
+	for name := range callees {
+		if isPredeclared(name) && !out[name] {
+			candidates = append(candidates, name)
+		}
+	}
+	if len(candidates) == 0 {
+		return out
+	}
+	sort.Strings(candidates)
+	for _, name := range packageLevelNames(t, candidates) {
+		out[name] = true
+	}
+	return out
+}
+
+// packageLevelNames is which of these names something in this directory
+// declares at package level.
+//
+// # The shape, which is repowalks_test.go's and is measured there
+//
+//	read the directory     one os.ReadDir, the .go files in it
+//	scan the bytes         a file that does not contain the name cannot
+//	                       declare it. No false negative: a declaration of
+//	                       `len` contains the bytes `len`
+//	parse the hits         and the parse is what DECIDES, so this file's own
+//	                       prose — which says `len` a dozen times — is read
+//	                       and discarded rather than counted, which is the
+//	                       failure a grep would have
+//
+// A read or a parse that fails is skipped rather than reported: the build says
+// so first, and a file this walk cannot read is one whose declarations are not
+// this census's business. That is loose in the direction of NOT finding a
+// shadow, which is the unsafe direction here — so it is worth saying that the
+// only way to reach it is a file that does not compile, in which case the
+// whole package's tests are failing for a better reason.
+func packageLevelNames(t *testing.T, want []string) []string {
+	t.Helper()
+	entries, err := os.ReadDir(".")
+	if err != nil {
+		t.Fatalf("reading this package's directory to look for a "+
+			"redeclaration of %s: %v.\n\nWithout it, dropping predeclared "+
+			"names from the helper census is an assumption again rather than "+
+			"a fact — see shadowsAPredeclaredName.", strings.Join(want, ", "), err)
+	}
+	names := make([]string, 0, len(entries))
+	for _, e := range entries {
+		if !e.IsDir() && strings.HasSuffix(e.Name(), ".go") {
+			names = append(names, e.Name())
+		}
+	}
+	// Sorted for the reason every walk in this package sorts: findings that
+	// arrive in directory order cannot be diffed against the last run.
+	sort.Strings(names)
+
+	fset := token.NewFileSet()
+	var found []string
+	seen := map[string]bool{}
+	for _, file := range names {
+		raw, readErr := os.ReadFile(file)
+		if readErr != nil {
+			continue
+		}
+		hit := false
+		for _, w := range want {
+			if bytes.Contains(raw, []byte(w)) {
+				hit = true
+				break
+			}
+		}
+		if !hit {
+			continue
+		}
+		parsed, parseErr := parser.ParseFile(fset, file, raw,
+			parser.SkipObjectResolution)
+		if parseErr != nil {
+			continue
+		}
+		for _, d := range parsed.Decls {
+			switch decl := d.(type) {
+			case *ast.FuncDecl:
+				// Recv nil: a METHOD called len is not what a bare `len(…)`
+				// resolves to, for the reason the git-helper pass gives.
+				if decl.Recv == nil && !seen[decl.Name.Name] {
+					seen[decl.Name.Name] = true
+					found = append(found, decl.Name.Name)
+				}
+			case *ast.GenDecl:
+				for _, spec := range decl.Specs {
+					switch sp := spec.(type) {
+					case *ast.ValueSpec:
+						for _, id := range sp.Names {
+							if !seen[id.Name] {
+								seen[id.Name] = true
+								found = append(found, id.Name)
+							}
+						}
+					case *ast.TypeSpec:
+						if !seen[sp.Name.Name] {
+							seen[sp.Name.Name] = true
+							found = append(found, sp.Name.Name)
+						}
+					}
+				}
+			}
+		}
+	}
+	// Only the names that were asked about. Everything else this directory
+	// declares is somebody else's question.
+	wanted := map[string]bool{}
+	for _, w := range want {
+		wanted[w] = true
+	}
+	out := found[:0]
+	for _, f := range found {
+		if wanted[f] {
+			out = append(out, f)
+		}
+	}
+	sort.Strings(out)
 	return out
 }
 
@@ -1141,14 +1321,19 @@ func taintCaseNames(t *testing.T, file *ast.File) map[string]bool {
 	return names
 }
 
-// parseOneFunc is the declaration in a fragment of Go source.
+// parseOneFunc is the declaration in a fragment of Go source, and the file it
+// was wrapped in.
+//
+// The file is returned as well as the declaration because whyNotAGitWrapper
+// takes the exec qualifier its caller resolved, and resolving it means reading
+// the import block — which for a fragment is the preamble below.
 //
 // Wrapped in a package clause and the imports the fragments use, because
 // go/parser wants a file and the fragments are written as bodies. Parsed with
 // SkipObjectResolution for the reason the walk above uses it: nothing here
 // resolves an identifier to a declaration, and the resolution pass is the
 // expensive half.
-func parseOneFunc(t *testing.T, src string) *ast.FuncDecl {
+func parseOneFunc(t *testing.T, src string) (*ast.File, *ast.FuncDecl) {
 	t.Helper()
 	const preamble = "package p\n\nimport (\n\t\"bytes\"\n\t\"os/exec\"\n\t" +
 		"\"path/filepath\"\n)\n\nvar root string\n\n" +
@@ -1160,9 +1345,9 @@ func parseOneFunc(t *testing.T, src string) *ast.FuncDecl {
 	}
 	for _, d := range file.Decls {
 		if fn, ok := d.(*ast.FuncDecl); ok && fn.Name.Name == "git" {
-			return fn
+			return file, fn
 		}
 	}
 	t.Fatalf("the fragment declares no `func git`:\n%s", src)
-	return nil
+	return nil, nil
 }

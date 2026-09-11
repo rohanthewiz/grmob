@@ -69,3 +69,46 @@ WITHOUT censusing the populations at that size — a closed form, or a bound rea
 off the ratio structure rather than off the members. Then the cost argument
 inverts and the construction is worth having at every k. Nothing in this file
 currently suggests one exists.
+
+---
+
+## The diff-and-print remainder stays unmeasured
+
+*Raised: 2026-09-10 · Moved here: 2026-09-10 · Code:
+`internal/themehistory/timings_test.go`,
+`themehistoryTimingsTakenOn.perObjectRun`*
+
+**What was declined.** `wholeRun` is 1.52–1.60s and three of its terms are now
+measured in the same arm that produces them — the batched fetches at
+398–405ms, the 88 `ls-tree` the walk pays serially at 0.87–0.92s, and
+`themeleaves.Of` over the same sources at 0.118–0.120s, which is 1.39–1.44s
+together. What is left is the diff between consecutive revisions and the
+printing. The obvious next step is a fourth clock around those two, so that
+the decomposition adds up with no remainder in it.
+
+**The argument.** The remainder is 0.1–0.2s, and 0.1–0.2s is the size of the
+disagreement between three separate readings of this machine. The parse was
+worth a clock because it was the largest unmeasured term AND because the arm
+already held every source in memory, so timing it cost nothing but the call;
+this one is under the noise floor of the instrument being used to take it. A
+clock on it would report a number that moves by its own magnitude between
+runs, and a figure like that in a record whose whole subject is attribution is
+worse than a stated remainder: it reads as measured.
+
+The other half is that a remainder which says so is not a gap. `perObjectRun`
+names the three terms, their sum and the total, and says what the difference
+is and why it is not a reading. A person deciding whether this program is
+worth optimising has everything they would get from the fourth clock except a
+false precision.
+
+**What would change this.** The remainder growing past the spread around it —
+a diff that started doing real work per revision, or a table that grew enough
+for the printing to matter. The condition is written down in the field's own
+comment rather than an intention to get to it later, which is the difference
+between a decision and a deferral: this is not an open question until the
+number moves.
+
+It would also change if the readings around it got tighter — a quieter
+machine, or more runs — since what makes the term unmeasurable is the ratio
+between it and the noise rather than its own size. Nothing currently suggests
+either is worth arranging for it.

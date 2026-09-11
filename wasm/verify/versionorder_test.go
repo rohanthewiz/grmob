@@ -101,6 +101,18 @@ import (
 //	2 of anything             two comparators. The failure, whichever way they
 //	                          are built, because that is the thing the reason
 //	                          is about
+//
+// # And which `semver` is x/mod's, which is the same blind spot one along
+//
+// Adding the semver construction closed the gap at the level of the NOUN and
+// left it open at the level of the identifier: a detector that matches the
+// qualifier `semver` does not see `import sv "golang.org/x/mod/semver"`, which
+// is a second comparator arriving in precisely the form this arm's message
+// asks somebody to write. So the qualifiers here — semver's, and the `strings`
+// and `strconv` the hand-rolled construction is made of — are read off each
+// file's own import block. That is exact in both directions and costs nothing
+// on a parse that has already happened; see importnames_test.go, which says
+// what it still cannot resolve and reports rather than skips it.
 func TestTheDottedVersionParsersAreTheOnesTheReasonCovers(t *testing.T) {
 	root := filepath.Join("..", "..")
 	_, considered, from, err := citingFiles(root)
@@ -128,6 +140,16 @@ func TestTheDottedVersionParsersAreTheOnesTheReasonCovers(t *testing.T) {
 			// failing too.
 			continue
 		}
+		// Which identifiers THIS FILE binds to the three packages the two
+		// constructions are made of. Read off the import block rather than
+		// taken from the conventional spelling: `import sv
+		// "golang.org/x/mod/semver"` is the way a second comparator arrives
+		// and is invisible here, and it is invisible in SILENCE — see
+		// importnames_test.go. Resolved once per file, because an import is a
+		// fact about a file and not about a declaration.
+		semverNames := qualifiersFor(t, rel, file, "golang.org/x/mod/semver")
+		stringsNames := qualifiersFor(t, rel, file, "strings")
+		strconvNames := qualifiersFor(t, rel, file, "strconv")
 		for _, d := range file.Decls {
 			fn, ok := d.(*ast.FuncDecl)
 			if !ok || fn.Body == nil {
@@ -139,9 +161,10 @@ func TestTheDottedVersionParsersAreTheOnesTheReasonCovers(t *testing.T) {
 			// need rewriting.
 			kind := ""
 			switch {
-			case splitsOnADot(fn.Body) && parsesANumber(fn.Body):
+			case splitsOnADot(fn.Body, stringsNames) &&
+				parsesANumber(fn.Body, strconvNames):
 				kind = "hand-rolled"
-			case ordersViaSemver(fn.Body):
+			case ordersViaSemver(fn.Body, semverNames):
 				kind = "x/mod/semver"
 			default:
 				continue
@@ -313,12 +336,20 @@ func comparatorList(found []versionComparator) string {
 // deciding which of several versions is ahead, which is precisely the thing
 // two comparators can disagree about.
 //
-// The package name is matched and the import path is not, for the reason
-// callsStrings matches `strings`: this file is reading a bare parse with no
-// object resolution behind it, and a local package aliased to `semver` that
-// exported a `Compare` would be a second comparator being reported as one —
-// which is the safe direction.
-func ordersViaSemver(body *ast.BlockStmt) bool {
+// # Which qualifier is semver's, which used to be whichever one said `semver`
+//
+// The name was matched and the import path was not, on the reasoning that a
+// local package aliased to `semver` exporting a `Compare` would be a second
+// comparator reported as one — the safe direction. That argument covers the
+// false POSITIVE and says nothing about the other end, which is the one that
+// matters here: `import sv "golang.org/x/mod/semver"` and a `sv.Compare` is a
+// second comparator this arm was written to prompt for, arriving in the
+// spelling the arm's own message asks for, and the name test cannot see it.
+//
+// So `semver` is whatever the calling file binds to golang.org/x/mod/semver,
+// which is exact in both directions — a file that does not import it has no
+// call into it, whatever its identifiers are called. See importnames_test.go.
+func ordersViaSemver(body *ast.BlockStmt, semver map[string]bool) bool {
 	hit := false
 	ast.Inspect(body, func(n ast.Node) bool {
 		if hit {
@@ -337,7 +368,7 @@ func ordersViaSemver(body *ast.BlockStmt) bool {
 		default:
 			return true
 		}
-		if pkg, ok := sel.X.(*ast.Ident); ok && pkg.Name == "semver" {
+		if pkg, ok := sel.X.(*ast.Ident); ok && semver[pkg.Name] {
 			hit = true
 			return false
 		}
@@ -352,22 +383,26 @@ func ordersViaSemver(body *ast.BlockStmt) bool {
 // here — every strings call with a "." in it — would match path handling all
 // over the repository and turn the count above into a list somebody has to
 // argue with.
-func splitsOnADot(body *ast.BlockStmt) bool {
-	return callsStrings(body, map[string]bool{
+func splitsOnADot(body *ast.BlockStmt, strs map[string]bool) bool {
+	return callsStrings(body, strs, map[string]bool{
 		"Split": true, "SplitN": true, "SplitSeq": true, "Cut": true,
 	}, ".")
 }
 
 // parsesANumber is whether this body converts a string to an integer.
-func parsesANumber(body *ast.BlockStmt) bool {
-	return callsStrconv(body, map[string]bool{
+func parsesANumber(body *ast.BlockStmt, conv map[string]bool) bool {
+	return callsStrconv(body, conv, map[string]bool{
 		"Atoi": true, "ParseInt": true, "ParseUint": true,
 	})
 }
 
 // callsStrings is whether the body calls one of these strings functions with
 // `lit` as its second argument.
-func callsStrings(body *ast.BlockStmt, names map[string]bool, lit string) bool {
+//
+// `strs` is what the calling file binds to the `strings` import, for the
+// reason ordersViaSemver takes its own: a qualifier is a fact about one file's
+// import block, and reading it there is both cheaper and exact.
+func callsStrings(body *ast.BlockStmt, strs, names map[string]bool, lit string) bool {
 	hit := false
 	ast.Inspect(body, func(n ast.Node) bool {
 		if hit {
@@ -382,7 +417,7 @@ func callsStrings(body *ast.BlockStmt, names map[string]bool, lit string) bool {
 			return true
 		}
 		pkg, ok := sel.X.(*ast.Ident)
-		if !ok || pkg.Name != "strings" {
+		if !ok || !strs[pkg.Name] {
 			return true
 		}
 		if literal(call.Args[1]) == lit {
@@ -395,7 +430,10 @@ func callsStrings(body *ast.BlockStmt, names map[string]bool, lit string) bool {
 }
 
 // callsStrconv is whether the body calls one of these strconv functions.
-func callsStrconv(body *ast.BlockStmt, names map[string]bool) bool {
+//
+// `conv` is the calling file's own binding for the strconv import; see
+// callsStrings.
+func callsStrconv(body *ast.BlockStmt, conv, names map[string]bool) bool {
 	hit := false
 	ast.Inspect(body, func(n ast.Node) bool {
 		if hit {
@@ -409,7 +447,7 @@ func callsStrconv(body *ast.BlockStmt, names map[string]bool) bool {
 		if !ok || !names[sel.Sel.Name] {
 			return true
 		}
-		if pkg, ok := sel.X.(*ast.Ident); ok && pkg.Name == "strconv" {
+		if pkg, ok := sel.X.(*ast.Ident); ok && conv[pkg.Name] {
 			hit = true
 			return false
 		}

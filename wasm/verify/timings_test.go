@@ -160,6 +160,55 @@ var verifyTimingsTakenOn = struct {
 	foldWalk:  "0.40–0.52s over seven runs, node v22.12.0",
 }
 
+// Which of this package's figures move with the core count, and which do not.
+//
+// # Why every record carries one of these
+//
+// `cores` is the one machine field that changes a recorded number by a term a
+// reader can name, and the two records in this repository were saying
+// different amounts about it: internal/themehistory's carries a measured table
+// — 0.90s at one worker down to 0.22s at eight — and this one said nothing,
+// which a reader holding a 3.1s run against the 2.78s below reads as "nobody
+// measured that" rather than as "that is not where the difference is".
+//
+// Silence is the wrong answer either way round, so both records now state it
+// and wasm/verify/timingsrecords_test.go holds every record to having one.
+//
+// # What this package's answer actually is, which is not "nothing"
+//
+// The expensive half of wholeFile does not move. The four repository-wide
+// walks hand all 381 Go files to go/parser one after another — 0.18s each,
+// single-threaded, the same number on any machine — and foldWalk is a node
+// process this package waits on rather than shares a core with.
+//
+// What does move is the afforded* band family in themenearmiss_test.go, which
+// splits its combinations across runtime.GOMAXPROCS. Measured by fixing it and
+// re-running, three runs apiece on the eight cores named above:
+//
+//	GOMAXPROCS    the whole package
+//	1             3.08–3.21s
+//	2             2.78–2.84s
+//	4             2.74–2.76s
+//	8             2.75–2.84s
+//
+// Which is a different SHAPE from the other record's, and that is the part
+// worth having: this one is flat from two cores upwards, so a core count that
+// differs from eight is worth about a tenth of the figure and only between one
+// and two. internal/themehistory's keeps improving all the way to eight,
+// because its term is 88 git processes rather than one Go program's own
+// goroutines. A reader on a four-core machine should expect this package's
+// number and not that one.
+const coresAttribution = "The four repository-wide walks in this package are " +
+	"single-threaded — go/parser over all 381 files, 0.18s each — and " +
+	"foldWalk is a node process. Those do not move with the core count. The " +
+	"afforded* band family in themenearmiss_test.go splits across " +
+	"runtime.GOMAXPROCS and does: the package is 3.08–3.21s at one core, " +
+	"2.78–2.84s at two, and flat from there to eight. So a differing core " +
+	"count is worth about a tenth of the figure above, and only between one " +
+	"core and two — which is the opposite shape from " +
+	"internal/themehistory's, where the term is 88 git processes and the " +
+	"improvement runs all the way to eight."
+
 // This run says whether it is standing on the machine the timings came from.
 //
 // # Why this reports and does not assert
@@ -224,13 +273,22 @@ func TestTheTimingsInThisPackageSayWhichMachineTheyCameFrom(t *testing.T) {
 			rec.wholeFile, rec.foldWalk)
 		return
 	}
+	// The core count, said out loud whenever it differs. A reader told "8
+	// cores against 4" and nothing else has to go and find out which term
+	// that moves, and the honest answer here is "a tenth of it, and only
+	// below two" — which is worth as much as a table would be, and is the
+	// half that used to be missing. See coresAttribution.
+	cores := ""
+	if runtime.NumCPU() != rec.cores {
+		cores = "\n\n" + coresAttribution
+	}
 	t.Logf("the wall-clock numbers in this package's comments were taken on %s "+
 		"(%s, %s/%s, %d cores), and this run is not on it: %s.\n\n"+
 		"The whole package was %s there and the fold walk %s, `go test "+
 		"-count=1 ./wasm/verify`. A reading of these tests that is some "+
 		"percent off one of their numbers is a difference between two "+
 		"computers before it is anything else — which is what this record is "+
-		"for, and why none of these numbers is an assertion.",
+		"for, and why none of these numbers is an assertion.%s",
 		rec.machine, rec.goVersion, rec.goos, rec.goarch, rec.cores,
-		strings.Join(differs, ", "), rec.wholeFile, rec.foldWalk)
+		strings.Join(differs, ", "), rec.wholeFile, rec.foldWalk, cores)
 }

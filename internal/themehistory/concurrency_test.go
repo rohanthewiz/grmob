@@ -6,6 +6,7 @@ import (
 	"go/parser"
 	"go/token"
 	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"testing"
@@ -62,6 +63,23 @@ import (
 // blob to `blobs` can tell. The walk is over THIS PACKAGE's declarations only,
 // which is the whole call graph that matters: everything below it is the
 // standard library and os/exec.
+//
+// # What a finding here says, which is three things it used to say loosely
+//
+//	all of them        every guarded row a goroutine reaches is reported on
+//	                   the run that reaches it. The first-hit version left the
+//	                   second finding to be discovered after the first was
+//	                   fixed — see touchesGuarded
+//	by its own name    a `t.Fatalf` is reported as `t.Fatalf`. Four selectors
+//	                   share the row `t.Fatal` and three share `fmt.Print`,
+//	                   and the row is what the REASON is keyed by, not what
+//	                   the source says
+//	with the collapse  the graph is keyed by name with no receiver, so a
+//	                   method `read` and a function `read` are one node. The
+//	                   report stays — over-approximating is the safe direction
+//	                   — and it now arrives saying which declarations share
+//	                   the name, because the route in a finding is the half a
+//	                   reader cannot check for themselves. See ambiguity
 func TestTheGoroutinesInThisPackageAreTheOnesDecidedOn(t *testing.T) {
 	entries, err := os.ReadDir(".")
 	if err != nil {
@@ -81,9 +99,12 @@ func TestTheGoroutinesInThisPackageAreTheOnesDecidedOn(t *testing.T) {
 	// name -> what its body calls, and whether it names something guarded.
 	// Methods are keyed by their own name with no receiver: two `read`s in one
 	// package would be conflated, which over-approximates and is the safe
-	// direction for a check whose failure is a question.
+	// direction for a check whose failure is a question. `declaredAs` is what
+	// makes that approximation visible in the message when it happens — see
+	// declarationOf.
 	calls := map[string][]string{}
 	touches := map[string]string{}
+	declaredAs := map[string][]string{}
 	var found []goroutineSite
 
 	for _, name := range names {
@@ -93,28 +114,55 @@ func TestTheGoroutinesInThisPackageAreTheOnesDecidedOn(t *testing.T) {
 			// build says so first.
 			continue
 		}
+		// Which identifiers THIS FILE binds to os and fmt. Two of the four
+		// guarded things are selectors on a package, and matching the
+		// conventional qualifier makes an alias invisible: `import stdio
+		// "fmt"` and a `stdio.Printf` in a worker is the entire failure the
+		// os.Stdout row describes, arriving under a name this census would
+		// not have looked at. See importedAs.
+		osPkg, osDot := importedAs(file, "os")
+		fmtPkg, fmtDot := importedAs(file, "fmt")
+		if osDot || fmtDot {
+			t.Errorf("%s dot-imports os or fmt, and this census reads "+
+				"os.Stdout and the fmt.Print family off the qualifier they "+
+				"are written with.\n\nA dot import puts those names into "+
+				"this file's own scope, so a print is spelled `Printf(…)` "+
+				"with nothing to resolve, and the two claims in this file's "+
+				"header are no longer checkable here. Import them the "+
+				"ordinary way — under their own name or an alias, both of "+
+				"which resolve exactly.", name)
+		}
 		for _, d := range file.Decls {
 			fn, ok := d.(*ast.FuncDecl)
 			if !ok || fn.Body == nil {
 				continue
 			}
 			calls[fn.Name.Name] = append(calls[fn.Name.Name], calleeNames(fn.Body)...)
-			if what := touchesGuarded(fn.Body); what != "" {
-				touches[fn.Name.Name] = what
+			declaredAs[fn.Name.Name] = append(declaredAs[fn.Name.Name],
+				declarationOf(fset, fn))
+			if hits := touchesGuarded(fset, fn.Body, osPkg, fmtPkg); len(hits) > 0 {
+				// One key per function is all the call graph needs: what the
+				// graph answers is whether a chain reaches something guarded,
+				// and the DIRECT check below is where every hit is reported.
+				touches[fn.Name.Name] = hits[0].key
 			}
 			// The `go` statements themselves. Reported against the function
 			// they are IN, which is what a row names: a goroutine is a cost
-			// its enclosing function decided to pay.
+			// its enclosing function decided to pay. The file's own qualifiers
+			// travel with the site, because the direct check below re-reads
+			// the body and an import is a fact about a file.
 			ast.Inspect(fn.Body, func(n ast.Node) bool {
 				stmt, ok := n.(*ast.GoStmt)
 				if !ok {
 					return true
 				}
 				found = append(found, goroutineSite{
-					file: name,
-					fn:   fn.Name.Name,
-					line: fset.Position(stmt.Pos()).Line,
-					body: stmt,
+					file:   name,
+					fn:     fn.Name.Name,
+					line:   fset.Position(stmt.Pos()).Line,
+					body:   stmt,
+					osPkg:  osPkg,
+					fmtPkg: fmtPkg,
 				})
 				return true
 			})
@@ -161,25 +209,39 @@ func TestTheGoroutinesInThisPackageAreTheOnesDecidedOn(t *testing.T) {
 
 		// And the thing the rows cannot say for themselves: what it reaches.
 		// Directly first, so the message can name the line.
-		if what := touchesGuarded(g.body); what != "" {
-			t.Errorf("the goroutine at %s:%d names %s.\n\n%s\n\n"+
+		//
+		// EVERY direct hit, not the first one. A worker with both a t.Fatalf
+		// and an fmt.Printf in it has two findings, and reporting one of them
+		// means the second is found on the next run after the first is fixed
+		// — which is the "three thousand identical failures is a wall" shape
+		// one size too small. The wall is a repeated finding; these are
+		// different ones.
+		direct := touchesGuarded(fset, g.body, g.osPkg, g.fmtPkg)
+		reported := map[string]bool{}
+		for _, h := range direct {
+			reported[h.key] = true
+			t.Errorf("the goroutine at %s:%d names %s, at line %d.\n\n%s\n\n"+
 				"This is the assumption the two claims above are made of, and "+
 				"it is not a style rule: the redirect and the mutex comment "+
 				"are both correct today because the goroutines here touch "+
-				"none of this.", g.file, g.line, what,
-				goroutineMustNotTouch[what])
-			continue
+				"none of this.", g.file, g.line, h.spelled, h.line,
+				goroutineMustNotTouch[h.key])
 		}
-		// Then through the package's own call graph.
-		if via, what := reachesFrom(g.body, calls, touches); what != "" {
-			t.Errorf("the goroutine at %s:%d calls %s, which reaches %s.\n\n"+
+		// Then through the package's own call graph — and still, when the
+		// direct check found something: a goroutine that prints AND calls its
+		// way to the shared reader has two findings for the same reason as
+		// above. Only a guarded name the direct pass has already named is
+		// dropped, since that would be the same finding twice.
+		if via, what := reachesFrom(g.body, calls, touches); what != "" &&
+			!reported[what] {
+			t.Errorf("the goroutine at %s:%d calls %s, which reaches %s.%s\n\n"+
 				"%s\n\n"+
 				"The call chain is followed through this package's own "+
 				"declarations, which is where it can go: a `go func(){ "+
 				"leavesAt(sha) }()` is one hop from blob and two from the "+
 				"shared reader, and it is the spelling somebody would "+
 				"actually write.", g.file, g.line, via, what,
-				goroutineMustNotTouch[what])
+				ambiguity(via, declaredAs), goroutineMustNotTouch[what])
 		}
 	}
 	for key, g := range want {
@@ -310,6 +372,10 @@ type goroutineSite struct {
 	file, fn string
 	line     int
 	body     *ast.GoStmt
+	// What the file this statement is in calls os and fmt. Carried with the
+	// site because the guarded-name check re-reads the body after the walk,
+	// and by then the import block it has to be read against is gone.
+	osPkg, fmtPkg map[string]bool
 }
 
 // decidedGoroutineList is the decided sites, for a message.
@@ -342,18 +408,48 @@ func mustNotTouchList() string {
 	return strings.Join(out, ", ")
 }
 
-// touchesGuarded is the first thing in goroutineMustNotTouch this node
-// reaches directly, or "" for one that reaches none.
+// guardedHit is one thing in goroutineMustNotTouch that a node reaches: which
+// ROW it belongs to, how the source actually spells it, and where.
+//
+// The two names are not the same and used to be reported as if they were. Four
+// selectors come back under the row `t.Fatal` and three under `fmt.Print`, so
+// a `t.Fatalf` was reported as "names t.Fatal" — a line number that is exact
+// beside a noun that is not what the source says. The reason text is right for
+// every member of the row, which is why the row is the key; what a reader has
+// to be able to find is the call, which is why the spelling travels with it.
+type guardedHit struct {
+	// The row in goroutineMustNotTouch, which is what the reason is keyed by.
+	key string
+	// What the source says: `t.Fatalf`, `fmt.Println`, `os.Stdout`, `blobs`.
+	spelled string
+	line    int
+}
+
+// touchesGuarded is everything in goroutineMustNotTouch this node reaches
+// directly, in source order, one hit per ROW.
+//
+// # Why all of them and not the first
+//
+// A goroutine with a `t.Fatalf` and an `fmt.Printf` in it is two findings, and
+// stopping at the first means the second arrives on the next run, after the
+// first is fixed. What justifies stopping early elsewhere in this repository
+// is a wall of IDENTICAL findings; two different reasons are not that.
+//
+// One hit per row rather than per occurrence, for the same reason from the
+// other side: four prints in one worker is one thing to fix and four lines
+// saying so is the wall. The line reported is the first of them.
 //
 // # How each is recognised, and what that is loose about
 //
 //	blobs          a bare identifier. There is one such name in this package
 //	               and nothing shadows it
 //	os.Stdout      the selector, whatever is done with it. Reading it to save
-//	               it is as much a use as writing it
-//	fmt.Print*     the three that write to os.Stdout. fmt.Fprintf(os.Stderr, …)
-//	               is not one of them and is not a hazard: stderr is never
-//	               swapped here
+//	               it is as much a use as writing it. `os` is what the
+//	               enclosing FILE binds to the os import, not the conventional
+//	               spelling — see importedAs
+//	fmt.Print*     the three that write to os.Stdout, resolved the same way.
+//	               fmt.Fprintf(os.Stderr, …) is not one of them and is not a
+//	               hazard: stderr is never swapped here
 //	t.Fatal…       the selector NAME, with no receiver check — the same
 //	               approximation wasm/verify's git-wrapper census makes and
 //	               for the same reason. Nothing else in this package declares
@@ -361,42 +457,175 @@ func mustNotTouchList() string {
 //	               a *testing.T would be a dataflow question worth more than
 //	               the answer
 //
-// Every one of these is loose in the direction of REPORTING, which is the safe
+// The receiver looseness is in the direction of REPORTING, which is the safe
 // direction for a census whose failure is a question rather than a verdict.
-func touchesGuarded(n ast.Node) string {
-	hit := ""
-	ast.Inspect(n, func(node ast.Node) bool {
-		if hit != "" {
-			return false
+// The two package qualifiers were loose in BOTH directions until they were
+// resolved, and the second one is silent: an aliased fmt is a print nothing
+// reports at all.
+func touchesGuarded(fset *token.FileSet, n ast.Node, osPkg, fmtPkg map[string]bool) []guardedHit {
+	var hits []guardedHit
+	seen := map[string]bool{}
+	note := func(key, spelled string, pos token.Pos) {
+		if seen[key] {
+			return
 		}
+		seen[key] = true
+		hits = append(hits, guardedHit{key: key, spelled: spelled,
+			line: fset.Position(pos).Line})
+	}
+	ast.Inspect(n, func(node ast.Node) bool {
 		switch e := node.(type) {
 		case *ast.Ident:
 			if e.Name == "blobs" {
-				hit = "blobs"
-				return false
+				note("blobs", "blobs", e.Pos())
 			}
 		case *ast.SelectorExpr:
 			pkg, ok := e.X.(*ast.Ident)
-			if ok && pkg.Name == "os" && e.Sel.Name == "Stdout" {
-				hit = "os.Stdout"
-				return false
+			if ok && osPkg[pkg.Name] && e.Sel.Name == "Stdout" {
+				note("os.Stdout", pkg.Name+"."+e.Sel.Name, e.Pos())
+				return true
 			}
-			if ok && pkg.Name == "fmt" {
+			if ok && fmtPkg[pkg.Name] {
 				switch e.Sel.Name {
 				case "Print", "Printf", "Println":
-					hit = "fmt.Print"
-					return false
+					note("fmt.Print", pkg.Name+"."+e.Sel.Name, e.Pos())
+					return true
 				}
 			}
 			switch e.Sel.Name {
 			case "Fatal", "Fatalf", "FailNow", "SkipNow":
-				hit = "t.Fatal"
-				return false
+				// Spelled with the receiver the source used, which is the
+				// thing a reader greps for. The row is still `t.Fatal`.
+				recv := "?"
+				if ok {
+					recv = pkg.Name
+				}
+				note("t.Fatal", recv+"."+e.Sel.Name, e.Pos())
 			}
 		}
 		return true
 	})
-	return hit
+	return hits
+}
+
+// declarationOf is how this package spells one declaration, for the ambiguity
+// note below.
+//
+// A method carries its receiver type because that is the whole distinction the
+// call graph cannot make: `func read` and `func (b *batchReader) read` are one
+// node in it, and a reader told the chain passes through `read` needs to be
+// able to see that there are two of them.
+func declarationOf(fset *token.FileSet, fn *ast.FuncDecl) string {
+	at := fset.Position(fn.Pos())
+	if fn.Recv == nil || len(fn.Recv.List) == 0 {
+		return fmt.Sprintf("func %s (%s:%d)", fn.Name.Name,
+			filepath.Base(at.Filename), at.Line)
+	}
+	recv := fn.Recv.List[0].Type
+	star := ""
+	if s, ok := recv.(*ast.StarExpr); ok {
+		star, recv = "*", s.X
+	}
+	name := "?"
+	if id, ok := recv.(*ast.Ident); ok {
+		name = id.Name
+	}
+	return fmt.Sprintf("method (%s%s).%s (%s:%d)", star, name, fn.Name.Name,
+		filepath.Base(at.Filename), at.Line)
+}
+
+// ambiguity is the sentence a message needs when the name it just blamed is
+// declared more than once in this package, or "" when it is not.
+//
+// # What this is about
+//
+// The call graph is keyed by NAME with no receiver, which is written down in
+// the walk above as an over-approximation and therefore the safe direction.
+// That is true of whether a finding is REPORTED and false of what the finding
+// SAYS: with a method `read` on batchReader and a package function `read`
+// collapsed into one node, a goroutine calling one of them is told it reaches
+// the shared reader through the other. The report is right and the route in it
+// is a route nothing takes, which is the one thing a reader cannot check
+// without doing the walk again by hand.
+//
+// Telling the two apart needs the receiver's type at the CALL SITE, which is
+// the dataflow question this package's censuses decline for the reason
+// gitquoting_test.go writes down. What can be done without it is to say so:
+// the collapse is visible from the declarations alone, and a reader who is
+// told there are two `read`s knows which half of the message to check.
+//
+// There is no such collision in this package today. This exists so that the
+// first one arrives with its own explanation rather than as a chain somebody
+// has to disprove.
+func ambiguity(via string, declaredAs map[string][]string) string {
+	where := declaredAs[via]
+	if len(where) < 2 {
+		return ""
+	}
+	sorted := append([]string(nil), where...)
+	sort.Strings(sorted)
+	return fmt.Sprintf("\n\nThis package declares `%s` %d times — %s — and "+
+		"the call graph above is keyed by name with no receiver, so all of "+
+		"them are one node in it. The goroutine reaches something guarded "+
+		"through a `%s`; which of those declarations it actually called is "+
+		"not a question this walk answers, and the chain named here may run "+
+		"through one it never touched.", via, len(where),
+		strings.Join(sorted, ", "), via)
+}
+
+// importedAs is the identifiers this file binds to the package at `path`, and
+// whether it dot-imports it.
+//
+// # Why this is here and also in wasm/verify
+//
+// It is the same twenty lines as wasm/verify/importnames_test.go, which is
+// where the reasoning is written down: a census that resolves a package by its
+// conventional NAME is blind to an alias, and blind in silence, which is the
+// direction nobody argued for. The copy is for the reason the timings record
+// is a copy — these are two separate `package main` programs, one under wasm/
+// and one under internal/, and a package existing so that one function could
+// be one function is the more expensive of the two options.
+//
+// What that reasoning covers is TWO, and the thing that would change it is a
+// third package needing the same reading. There is no arm over this one, and
+// naming that is better than implying there is: wasm/verify/timingsrecords_-
+// test.go can count `…TimingsTakenOn` declarations because the record is a
+// NAME; a helper is a shape, and a census over shapes is the kind of thing
+// this file is an argument against building on a guess.
+//
+// # What it does not resolve
+//
+// The package's real name is taken as the last segment of the import path,
+// which is exact for `os` and `fmt` and for any path either census here names,
+// and wrong for the handful like `gopkg.in/yaml.v2`. Getting that right means
+// loading the package, which is the cost every walk in this repository
+// declines. A blank import binds nothing and contributes no name; a dot import
+// binds the package's names into file scope, where no qualifier can find them,
+// and the caller reports that rather than reading the file as clean.
+func importedAs(file *ast.File, importPath string) (names map[string]bool, dot bool) {
+	names = map[string]bool{}
+	base := importPath
+	if i := strings.LastIndex(base, "/"); i >= 0 {
+		base = base[i+1:]
+	}
+	for _, spec := range file.Imports {
+		if strings.Trim(spec.Path.Value, "`\"") != importPath {
+			continue
+		}
+		if spec.Name == nil {
+			names[base] = true
+			continue
+		}
+		switch spec.Name.Name {
+		case "_":
+			// Imported for its initialisation. Nothing is called through it.
+		case ".":
+			dot = true
+		default:
+			names[spec.Name.Name] = true
+		}
+	}
+	return names, dot
 }
 
 // calleeNames is every function this body calls by a name this package could

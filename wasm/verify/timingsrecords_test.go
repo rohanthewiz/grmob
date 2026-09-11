@@ -45,6 +45,11 @@ import (
 // over them, because that is what makes a number in this repository
 // attributable at all — a record with no `cores` in it is a record a reader on
 // another machine cannot use.
+//
+// And what a `cores` is WORTH, which is the third thing held here and was the
+// one place the two records had drifted apart: one of them carried a measured
+// table of which term scales and the other said nothing at all. See
+// timingsCoresNote.
 func TestEveryTimingsRecordIsTheSameShape(t *testing.T) {
 	root := filepath.Join("..", "..")
 	_, considered, from, err := citingFiles(root)
@@ -70,6 +75,10 @@ func TestEveryTimingsRecordIsTheSameShape(t *testing.T) {
 	}
 	var records []found
 	arms := map[string]bool{}
+	// dir -> whether the package says what its core count is worth. Kept
+	// beside the arm because it is the same kind of thing: a property of the
+	// package rather than of the file the record happens to sit in.
+	notes := map[string]bool{}
 
 	fset := token.NewFileSet()
 	for _, rel := range paths {
@@ -99,6 +108,19 @@ func TestEveryTimingsRecordIsTheSameShape(t *testing.T) {
 					arms[dir] = true
 				}
 			case *ast.GenDecl:
+				// The cores note, which may be a const or a var — what
+				// matters is that the package declares one, not how.
+				for _, sp := range decl.Specs {
+					vs, ok := sp.(*ast.ValueSpec)
+					if !ok {
+						continue
+					}
+					for _, n := range vs.Names {
+						if n.Name == timingsCoresNote {
+							notes[dir] = true
+						}
+					}
+				}
 				if decl.Tok != token.VAR {
 					continue
 				}
@@ -153,6 +175,26 @@ func TestEveryTimingsRecordIsTheSameShape(t *testing.T) {
 				"the only moment either one is worth anything.",
 				r.rel, r.line, r.name, dir, timingsArm)
 		}
+		if !notes[dir] {
+			t.Errorf("%s:%d declares %s and %s declares no `%s`.\n\n"+
+				"`cores` is the one machine field that changes a recorded "+
+				"number by a term a reader can NAME, and the arm above reports "+
+				"it as `8 cores against 4` — which says that the two "+
+				"computers differ and not what the difference is worth. "+
+				"Whichever the answer is, it has to be written down: a record "+
+				"whose figures do not move with the core count is as useful to "+
+				"a reader as one whose figures do, and silence reads as "+
+				"\"nobody measured that\" rather than as \"that is not where "+
+				"the difference is\".\n\n"+
+				"This was two records disagreeing about it rather than a "+
+				"missing feature: one carried a measured table and the other "+
+				"said nothing, so a reader holding both had one attribution "+
+				"and one gap. Declare a `%s` saying which of this package's "+
+				"terms scale and by how much — or that none of them do, and "+
+				"why — and print it from %s when the two counts differ.",
+				r.rel, r.line, r.name, dir, timingsCoresNote,
+				timingsCoresNote, timingsArm)
+		}
 	}
 
 	names := make([]string, 0, len(records))
@@ -183,9 +225,9 @@ func TestEveryTimingsRecordIsTheSameShape(t *testing.T) {
 			len(records), len(records))
 	}
 
-	t.Logf("%d timings record(s), each with the %d machine field(s) and a "+
-		"`%s` in its package: %s. Enumerated by %s.",
-		len(records), len(timingsMachineFields), timingsArm,
+	t.Logf("%d timings record(s), each with the %d machine field(s), a `%s` "+
+		"and a `%s` in its package: %s. Enumerated by %s.",
+		len(records), len(timingsMachineFields), timingsArm, timingsCoresNote,
 		strings.Join(names, ", "), from)
 }
 
@@ -229,6 +271,25 @@ const timingsRecordCopies = 2
 // The reporting arm's name, which is the same in both packages and is what
 // makes the two a pair rather than two structs that happen to look alike.
 const timingsArm = "TestTheTimingsInThisPackageSayWhichMachineTheyCameFrom"
+
+// The name of the standing sentence about what a core count is worth here.
+//
+// # Why this is part of the shape and the other four fields are not
+//
+// The record's five fields are what makes a number ATTRIBUTABLE. Four of them
+// are answered by runtime and differ or do not; `cores` is the only one that
+// moves a recorded figure by an amount somebody could subtract, and it is
+// therefore the only one where "these two machines differ" is an unfinished
+// sentence.
+//
+// Both packages have an answer and they are different answers —
+// internal/themehistory's largest term is 88 git processes and improves to
+// eight workers; wasm/verify's is one program's own goroutines and is flat
+// from two cores up. Neither is guessable from the other, which is exactly why
+// having one and not the other was worse than having neither: a reader
+// comparing the two records found an attribution beside a silence and no way
+// to tell a package that does not vary from one nobody measured.
+const timingsCoresNote = "coresAttribution"
 
 // The fields every record has, and the type each one is.
 //
