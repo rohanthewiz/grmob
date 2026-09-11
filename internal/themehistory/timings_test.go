@@ -87,11 +87,25 @@ import (
 // is outside the band; see band_test.go for why that cannot be detected from
 // inside and is asked for instead.
 //
-//	go test -count=1 ./internal/themehistory                      wholePackage
-//	go test -count=1 -run TestRetiringAHealthyGit ./internal/…    batchRetire
-//	go test -count=1 -v -run TestTheWholeWalk ./internal/…        wholeRun
-//	GRMOB_PER_OBJECT_FETCH=required go test -count=1 -v \
-//	    -run TestOneProcessPerObject ./internal/…                 perObjectRun
+// One command per field, written out rather than abbreviated. Three of these
+// carried `./internal/…` for several sessions — shortened to keep a column
+// aligned, and not runnable as written, which is the fault the wholeRun field
+// below names in its own history: "a recipe rather than a command, and it
+// made this the only figure in either record a person could not re-derive by
+// running something". A table of recipes is the same defect one level up.
+//
+//	wholePackage
+//	  go test -count=1 ./internal/themehistory
+//
+//	batchRetire
+//	  go test -count=1 -run TestRetiringAHealthyGit ./internal/themehistory
+//
+//	wholeRun
+//	  go test -count=1 -v -run TestTheWholeWalk ./internal/themehistory
+//
+//	perObjectRun
+//	  GRMOB_PER_OBJECT_FETCH=required go test -count=1 -v \
+//	      -run TestOneProcessPerObject ./internal/themehistory
 //
 // Anything re-taken here is re-taken WITH this record: a run on another
 // machine that updates a timing and leaves the machine alone has put the same

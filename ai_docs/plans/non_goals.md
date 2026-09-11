@@ -504,3 +504,43 @@ constants were renamed, the shape would carry one meaning and the rule
 becomes writable. It would then have zero findings on today's corpus, which
 is the second reason not to write it. The scan is thirty lines of Python and
 can be re-run.
+
+---
+
+## A command in a "Re-taking it" table is not held to being runnable
+
+*Raised: 2026-09-11 · Moved here: 2026-09-11 · Code: the two
+`…TimingsTakenOn` records' doc comments*
+
+**What the defect was.** Both records' re-taking tables carried commands that
+did not run. `internal/themehistory` wrote `./internal/…` on three of four
+lines, and `wasm/verify` wrote its three walk depths as fragments — no
+`go test`, no package path, and two of the three test names cut off at an
+ellipsis. All shortened to keep a column aligned, in a repository with no
+line-width census and 195-character comment lines elsewhere. All ten
+commands are now written out and every one was run.
+
+That is the second time this defect class has been found here; a session in
+September found "a command nobody ran" for the same reason.
+
+**Why the rule that should have caught it could not.** The prose-names rule
+holds every `Test`-shaped name in prose to being a test this repository has,
+and it reads these tables. It passed on
+`TestEveryGitListingInAScriptAsksForNul…` — because the regexp stops at the
+ellipsis, leaving `…AsksForNul`, which is a PREFIX of the real test, and a
+prefix resolves **by design**: `go test -run X` runs everything X begins. The
+rule's own header argues for that and is right to. It means an elided command
+is invisible to it.
+
+**The narrow shape, and why it is not written.** A tab-indented comment line
+containing `go test` and a typographic `…` is one shape with one meaning —
+`./...` is three ASCII dots and Go's own wildcard, so there is no collision.
+Measured: **2 lines, both real defects.** Both are now fixed, so the rule
+would find nothing, and it catches only one of the two ways these commands
+were broken — the other three lines were fragments with no ellipsis in them
+at all. A rule that scores zero on today's corpus and covers half the fault
+is the shape this file exists for.
+
+**What would change this.** A third instance. Two is a coincidence a person
+fixed; three is a habit, and the argument for a five-line check is then
+already written above.

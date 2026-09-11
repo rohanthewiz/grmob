@@ -116,15 +116,41 @@ import (
 // reading over a ceiling is not a regression, take it several times — and is
 // the reason that sentence is in the message.
 //
-//	go test -count=1 ./wasm/verify                                  wholeFile
-//	go test -count=1 -run TestHowWideTheNarrowerFold ./wasm/verify   foldWalk
+// One command per field, written out rather than abbreviated. The three walk
+// depths below were fragments for several sessions — no `go test`, no package
+// path, and two of the three test names cut off at an ellipsis — which is the
+// fault internal/themehistory's wholeRun field names in its own history: "a
+// recipe rather than a command, and it made this the only figure in either
+// record a person could not re-derive by running something".
+//
+//	wholeFile
+//	  go test -count=1 ./wasm/verify
+//
+//	wholeFileInProcess
+//	  GRMOB_BAND_VERDICT=required go test -count=1 -v ./wasm/verify
+//
+// That last one is the verdict command above, read for its reading rather
+// than for its verdict — the line says what this run took before it says
+// where that fell. This field had NO entry here for six iterations after it
+// was added, which is the failure a table of takings has: a field arrives
+// with a band and the method it was taken by stays in whoever's head took
+// it. Nine of the ten band fields across the two records had one; this was
+// the tenth.
+//
+//	foldWalk
+//	  go test -count=1 -run TestHowWideTheNarrowerFold ./wasm/verify
 //
 // And the three walk depths, which are the wall clock of ONE TEST and not of
 // the package — read off `-v`'s own `--- PASS:` line, seven runs apiece:
 //
-//	-v -run TestTheCitationSkipsGitAlreadyMakes              walkEnumerate
-//	-v -run TestEveryGitListingInAScriptAsksForNul…          walkRead
-//	-v -run TestTheDottedVersionParsersAreTheOnes…           walkParse
+//	walkEnumerate
+//	  go test -count=1 -v -run TestTheCitationSkipsGitAlreadyMakes ./wasm/verify
+//
+//	walkRead
+//	  go test -count=1 -v -run TestEveryGitListingInAScriptAsksForNulSeparatedPaths ./wasm/verify
+//
+//	walkParse
+//	  go test -count=1 -v -run TestTheDottedVersionParsersAreTheOnesTheReasonCovers ./wasm/verify
 //
 // The command matters more here than anywhere else in this table, because
 // these three were once written with no method beside them and a re-taking
