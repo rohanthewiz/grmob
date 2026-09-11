@@ -916,8 +916,8 @@ func newBatchReader(dir string) (*batchReader, error) {
 // "four orders of magnitude under this" was a claim about a pipe drain that
 // nobody had timed. It is now taken on every run.
 // TestRetiringAHealthyGitLeavesBeforeTheDeadline retires seven healthy batch
-// readers and records what they cost — 0.18–0.30ms on the machine in
-// themehistoryTimingsTakenOn, so the slowest is about 1/17000 of the grace,
+// readers and records what they cost — themehistoryTimingsTakenOn.batchRetire
+// is the reading, and the slowest of them is about 1/17000 of the grace,
 // and the a priori figure was right to the order.
 //
 // That is the smaller half of what the measurement buys. The larger half is

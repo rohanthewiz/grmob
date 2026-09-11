@@ -259,3 +259,69 @@ reasons, the arm is then cheap and this is worth re-reading.
 It would also change if the residue started containing defects. The scan above
 is fifty lines and can be re-run; what makes this a non-goal is the measured
 ratio, not the idea.
+
+---
+
+## A wall clock in prose is not held to living in a record
+
+*Raised: 2026-09-11 · Moved here: 2026-09-11 · Code: the two
+`…TimingsTakenOn` records, and `wasm/verify/prosefigures_test.go`, which holds
+the one figure in prose that CAN be checked*
+
+**What was declined.** Two sessions established that a reading copied into
+prose goes out of step with the record it names, silently, and found six such
+copies by hand. The obvious arm is the mechanical version: a wall clock in a
+comment must live inside a timings record's declaration.
+
+**The discriminator, which does work.** A duration in a comment is one of two
+things and they are spelled identically — `250ms` is a debounce this code
+performs, and `250ms` is also something somebody timed. The records' own
+doctrine separates them: a reading of a machine is a SPREAD, because the spread
+is why recorded figures are ranges, and a specified duration is one number
+because the code specifies one. Measured over every Go comment outside
+`ai_docs`: **215 duration figures, 140 of them single values**, and every
+single value sampled is a duration the code performs — a CSS transition, a
+debounce, a poll period, a long-press threshold. The 75 ranges are the
+readings. That part of the rule is sound.
+
+**What killed it was the escape, in both settings.** A figure is plainly fine
+when the paragraph it stands in is *about* a record, so the first form let a
+comment group naming a record through. Tested against the tree as it stood
+before the copies were fixed by hand, it found **none of them** — because every
+one of those paragraphs named the record it was out of step with. main.go's
+table said "Three runs on the machine themehistoryTimingsTakenOn names"
+directly above numbers that record did not carry.
+
+Removing the escape makes the rule fire, and on the current tree it finds six:
+
+    main.go:919      0.18–0.30ms against a recorded 0.18–0.29ms   REAL
+    main.go:661 ×2   "this table said 30.14–30.42s against
+                     399–401ms" — a sentence about what was wrong
+    timings_test.go  "0.87–0.92s measured, which is what the
+                     0.83s this line used to quote"
+    repowalks_test.go:49 ×2   "1.18–1.40s of a 2.88–2.97s package",
+                     a sum of record fields, named in the record's own
+                     re-taking list
+
+One real in six, against the test-name rule's four in six. And the five are two
+classes that will both recur: **a sentence quoting what a figure used to say**,
+which every re-taking adds one of, and **a figure derived from record fields**,
+which is the arrangement the previous session deliberately built. Neither
+carries a marker distinguishing it from a copy, and an exemption table that
+grows by one entry per re-taking is a table that documents the record's own
+history in a checker.
+
+**The one real defect was fixed on the way past** — main.go now names
+`themehistoryTimingsTakenOn.batchRetire` instead of restating it, and the hand
+sweep had missed it because it grepped for the record's exact strings and a
+rounded copy is not one.
+
+**What would change this.** A marker that says "this figure is a quotation of a
+past reading" — which is the same missing convention that
+`renamedTestsStillNamed` is a table instead of. If one is ever introduced for
+its own reasons, both rules become writable at once, and the measurement above
+is fifty lines and can be re-run.
+
+It would also change if the ratio moved: one real in six is a residue worth
+reading by hand once a session, which is what this session did, and not worth a
+check that fails on five sentences that are right.
