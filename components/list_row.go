@@ -95,6 +95,25 @@ import "github.com/rohanthewiz/grmob/core"
 // row to match, and a row that is asked for neither is exactly the unroled Box
 // it has always been.
 type ListRow struct {
+	// Leading whose width is text wants core.FlexShrink(0) on it, and this is
+	// the one trap in the slot.
+	//
+	// The centre column claims the row's slack, so when the row's content
+	// overflows — a long title on a phone — the deficit is shared out among
+	// the children that can shrink, and a bare core.Text is the most
+	// compressible thing in the row. On the web and on Compose it survives
+	// anyway, because CSS floors every flex item at its own min-content width;
+	// the iOS solver has no such floor, so the text is ground down to a glyph
+	// and wraps. A simulator run of examples/tutorial found it doing exactly
+	// that to the lesson numbers. See GrMobFlex.swift for the divergence and
+	// what fixing it properly costs.
+	//
+	// A fixed-size control — a Checkbox, an icon with a Width — is unaffected,
+	// which is why this is a note on the field rather than a wrapper around it:
+	// ListRow cannot add a style prop to a View a caller handed it, and
+	// wrapping every slot in a pinned Box would be two extra nodes per row of
+	// every list to fix the case where the caller passes text.
+	//
 	// Leading is the control at the start of the row: a checkbox, an icon,
 	// an avatar. Nil renders nothing and costs no node.
 	Leading core.View

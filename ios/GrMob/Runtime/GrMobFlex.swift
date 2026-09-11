@@ -28,6 +28,33 @@ import CoreGraphics
 /// core.ShrinkNone), so the shrink arm is now the scaled-base rule CSS actually
 /// states, and a child with a factor of 0 keeps its base size while the others
 /// absorb the whole deficit.
+///
+/// # The part of the shrink arm that is missing, found on a simulator
+///
+/// CSS does not let the rule above run unbounded: every flex item carries
+/// `min-width: auto` by default, which floors it at its own min-content size.
+/// An overflowing row therefore overflows on the web — it does not grind its
+/// children down to nothing. This solver has no such floor, and the difference
+/// is visible on the first screen of the tutorial.
+///
+/// The lesson list is a components.ListRow per lesson: a Row with a
+/// FlexGrow(1) centre column and a bare `core.Text("4.12")` beside it. The
+/// two-line titles overflow a phone's width, so the deficit is shared out, and
+/// with no min-content floor the number is compressed to one glyph and wraps
+/// down the side of the row as 4 / . / 1 / 2. The same tree on Android and in
+/// the browser prints "4.12".
+///
+/// Fixing it properly means the solver clamping each child at its min-content
+/// size, which it cannot do from `bases` alone — those are ideal sizes.
+/// GrMobFlexLayout can get the minima (`subview.sizeThatFits(.zero)`) and pass
+/// them in, so the shape of the change is clear; what it is not is small, since
+/// every Row on this host lays out through here and ios/verify's fixtures,
+/// internal/pinfixture and wasm/verify all encode the current model. It is
+/// recorded as its own piece of work rather than done in passing.
+///
+/// The portable declaration in the meantime is `core.FlexShrink(0)` on a child
+/// whose size really is not negotiable — which is what a row number is, on
+/// every host, and what examples/tutorial's lessonRow now says.
 struct GrMobFlexSolver {
     let spacing: CGFloat
     let justify: String

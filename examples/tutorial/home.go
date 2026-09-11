@@ -105,6 +105,13 @@ func (t *tutorial) lessonRow(ctx *core.Context, e lessonEntry) core.View {
 			return core.Text("›",
 				core.FontSize(20),
 				core.TextColor(ctx.Theme().Colors.TextSecondary),
+				// Pinned for the reason the leading number is, and the
+				// simulator showed the same symptom at the other end of the
+				// row: a chevron compressed below one glyph is a chevron
+				// sliced down the middle. One character is exactly the case
+				// where "shrink by a proportion of your base" has nothing
+				// left to give.
+				core.FlexShrink(0),
 			).Render(ctx)
 		})
 	}
@@ -114,6 +121,25 @@ func (t *tutorial) lessonRow(ctx *core.Context, e lessonEntry) core.View {
 			return core.Text(entry.ID,
 				core.TextColor(ctx.Theme().Colors.Primary),
 				core.FontWeight(core.Bold),
+				// Pinned, and the first simulator run of this app is why.
+				//
+				// A ListRow is a Row whose centre column claims the slack
+				// (FlexGrow(1)), and these two-line titles overflow it on a
+				// phone — at which point the flex deficit is shared out among
+				// the children that can shrink. On the web and on Compose this
+				// number survives anyway, because CSS gives every flex item
+				// `min-width: auto` and will not compress one below its
+				// min-content width. The iOS solver has no such floor, so
+				// "4.12" was compressed to the width of one glyph and wrapped
+				// down the side of the row as 4 / . / 1 / 2.
+				//
+				// FlexShrink(0) says the thing that is true of a row number on
+				// every host — it is four characters wide and that is not
+				// negotiable — rather than relying on a default two hosts have
+				// and one does not. The underlying divergence is recorded for
+				// the renderer to fix; this is not a workaround for it so much
+				// as the declaration that should always have been here.
+				core.FlexShrink(0),
 			).Render(ctx)
 		}),
 		Title:    entry.Title,

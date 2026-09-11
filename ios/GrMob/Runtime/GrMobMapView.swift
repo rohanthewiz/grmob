@@ -493,7 +493,7 @@ private let GrMobMapTolerancePx: Double = 1.5
 /// A fixed epsilon in degrees could not work: one pixel is 1.7e-4° at zoom 12
 /// and 1.3e-6° at zoom 19, a factor of 128.
 ///
-/// # How wide, and what is still unmeasured here
+/// # How wide, and the experiment that settled it here
 ///
 /// `GrMobMapTolerancePx` is 1.5, which is the number the Android host arrived
 /// at by measurement: osmdroid truncates its Mercator y to an integer pixel and
@@ -501,13 +501,23 @@ private let GrMobMapTolerancePx: Double = 1.5
 /// headroom. It is affordable because no gesture is that small — a drag has to
 /// clear the platform's touch slop before it is a drag.
 ///
-/// MapKit's error is a different quantity and is NOT the same measurement.
-/// `setRegion` fits the span to the view's aspect ratio and to what the tile
-/// pyramid can draw, which is a larger adjustment than a pixel of scroll, and
-/// the zoom tolerance below is the part meant to absorb it. Whether 1.5 pixels
-/// of centre is enough on this host is a question for a simulator run and not
-/// for this comment; what the structure guarantees is that the comparison is no
-/// longer exact, which is the half that was certainly wrong.
+/// MapKit's error is a different quantity, so whether the same number served
+/// was a real question. It was answered by running it both ways against a
+/// simulator, with GrMobUITests/LiveMapUITests and one line changed:
+///
+///     isSamePlace   lesson 4.12 shows "Nothing reported yet" on load,
+///                   "Show Belém" moves the map and reports nothing,
+///                   a swipe reports, a dropped pin does not move the map
+///     isSame        the readout never says "Nothing reported yet" at all —
+///                   the map reports a region change on load, before anybody
+///                   has touched it
+///
+/// So MapKit has the bug too, the tolerance is what fixes it, and 1.5 pixels is
+/// enough. Worth knowing *why* the existing `applying` flag did not already
+/// cover it: that flag is set across the `setRegion` call and catches the
+/// callback MapKit fires synchronously from inside it, but MapKit fires
+/// `regionDidChangeAnimated` again after the next layout pass, outside any
+/// flag a caller can hold. The comparison is the only thing standing there.
 ///
 /// # Zoom, which is where iOS differs from Android
 ///
