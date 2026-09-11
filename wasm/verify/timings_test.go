@@ -127,6 +127,21 @@ import (
 // Anything re-taken here is re-taken WITH this record: a run on another machine
 // that updates a timing and leaves the machine alone has put the same
 // unattributed number back, one commit later.
+//
+// # And a band is taken from SITTINGS, not from runs
+//
+// Three bands in this repository were re-taken in one evening and every one
+// of them was contradicted by the next sitting, because every one was set
+// from runs taken back to back. Consecutive runs of a package are
+// correlated: a dozen of them sample about half the spread of the figure and
+// look tight doing it.
+//
+// So the count beside a range is the weaker half of its method and the
+// number of separated sittings is the stronger one. Ten runs at three
+// different times beats fifty in a row. The argument and the measurement
+// are at wholeFileInProcess, which is the field that cost the most to learn
+// it on; the fields here that carry only a count are older than the lesson
+// and should gain a sitting count the next time anybody re-takes them.
 var verifyTimingsTakenOn = struct {
 	// For a reader. Nothing checks this.
 	machine string
@@ -320,10 +335,11 @@ var verifyTimingsTakenOn = struct {
 	//
 	// # Why this is a second figure and not a check on the first
 	//
-	// It is a smaller quantity and reliably so: 2.67–2.77s against a
-	// wholeFile of 2.84–2.97s, a gap of about 170ms that is the build check,
-	// the process starting, and package initialisation — everything
-	// `go test` counts and a clock inside the process cannot see. Comparing
+	// It is a smaller quantity and reliably so: 2.55–2.78s against a
+	// wholeFile of 2.80–2.97s, a gap of about 190ms that is the build
+	// check, the process starting, and package initialisation — everything
+	// `go test` counts and a clock inside the process cannot see. The build
+	// itself is NOT in it, which was measured: see below. Comparing
 	// this reading against wholeFile's band would be comparing two different
 	// things and reporting the difference as drift, which is the mistake
 	// this whole record exists to stop somebody making.
@@ -369,43 +385,72 @@ var verifyTimingsTakenOn = struct {
 	// # And the reason outward rounding was not enough either
 	//
 	// The band was set at 2.65–2.78s from sixteen runs, and read 2.608s two
-	// hours later in the same session with nothing changed in between. Over
-	// that session this figure went from 2.767s at its widest down to
-	// 2.608s — about 6%, one direction, no code.
+	// hours later in the same session with nothing changed in between. It
+	// was re-set at 2.60s and reported UNDER within four runs. It is the
+	// third band re-taken in one evening, at which point the re-taking is
+	// the finding — but the first explanation for it was wrong and is worth
+	// keeping here beside the right one.
 	//
-	// Which is the third band re-taken in one evening, and at that point the
-	// re-taking is the finding. **A reading of this package falls over the
-	// course of a session.** The build cache and the file cache warm, the
-	// same binary is run for the tenth time, and a figure taken in one
-	// sitting is a figure about that sitting rather than about this code.
+	// **What it looked like**: a fall. 2.767s early, 2.593s hours later,
+	// one direction, no code change — so the account written first was that
+	// a reading of this package falls over a session as caches warm.
 	//
-	// So this range holds both ends of the session rather than the middle of
-	// it, and the count says as much — a band over thirty runs in one hour
-	// is worth less than a band over ten at three different times, and the
-	// method line is the only place a reader can tell those apart.
+	// **What it is**: a spread. A later sitting of twelve consecutive runs
+	// went the OTHER way, 2.555s up to 2.733s with no trend. Across the
+	// whole session the figure runs 2.555–2.767s, a spread of 210ms, and
+	// any one sitting of eight or twelve samples about half of that and
+	// looks tight.
 	//
-	// The rule this settles, which every field here now follows: widen to
-	// hold what has been SEEN, then leave it alone until something is known
-	// to have changed. Chasing each reading down produces a band that is
-	// always correct about the last run and never correct about the next.
+	// # Consecutive runs are correlated, which is the whole lesson
 	//
-	// # Which is why this floor is not the lowest reading either
+	// That is why three bands were re-taken in one evening and why each
+	// re-taking was contradicted by the next sitting. Every one of them was
+	// set from runs taken back to back. Sixteen consecutive runs are not
+	// sixteen samples of this figure; they are something closer to one
+	// sample of a sitting, and the next sitting lands somewhere else in a
+	// distribution twice as wide as they suggested.
+	//
+	// So the count of runs is the wrong statistic and always was. **A band
+	// needs sittings, spread apart, not runs.** Ten runs at three different
+	// times of day is worth more than fifty back to back, and the method
+	// line is the only place a reader can tell one from the other — which
+	// is why this field carries one and why every field that has a band
+	// should.
+	//
+	// # What was ruled out by experiment
+	//
+	// The build cache: a run under a fresh empty GOCACHE, which rebuilds
+	// the standard library and everything else, produced an in-process
+	// figure of 2.643s — indistinguishable from the warm runs either side
+	// of it. Obvious in hindsight, since this clock starts after the binary
+	// is built, and it was measured rather than assumed because the first
+	// written explanation named a warming cache.
+	//
+	// Compilation is ruled out of `wholeFile` too, and that corrects
+	// something this record said one session ago. That cold run took 6.57s
+	// of wall clock and `go test` still REPORTED 2.849s: the reported
+	// figure excludes compiling. The ~190ms between the two fields is the
+	// process starting, package initialisation and the build CHECK — not
+	// the build.
+	//
+	// What is left is the machine: the file cache, and whatever else about
+	// an eight-core laptop differs between one ten-minute stretch and
+	// another. Unmeasurable here without a reboot or a cache purge, and
+	// bounded rather than explained — 210ms, which is what the band holds.
+	//
+	// # So the floor is not the lowest reading
 	//
 	// Outward rounding to two decimals is the right treatment for sampling
-	// noise and it is not enough for a systematic drift. A floor set at
-	// 2.60s — outward-rounded from a 2.608s low — reported UNDER within four
-	// runs, because the fall had not finished.
+	// noise within a sitting. It is not enough for a spread BETWEEN
+	// sittings, because the next sitting is not drawn from the one that set
+	// the band.
 	//
-	// So the floor carries a MARGIN, and the margin is measured rather than
-	// picked: the within-session fall was 160ms end to end, and the floor
-	// sits about a third of that under the lowest reading. That is the one
-	// number in this record that is not a reading, and it is here because
-	// the alternative is a verdict about the time of night.
-	//
-	// It widens the band to 230ms, which is real and is the cost of the
-	// drift being unexplained. A reader who works out what warms — the build
-	// cache, the file cache, the same binary run for the tenth time — can
-	// take the margin back out and say why.
+	// The floor sits at 2.55s under a lowest reading of 2.555s and the
+	// ceiling at 2.78s over a highest of 2.767s. The band is 230ms for a
+	// figure whose observed spread is 210ms, which is the honest width and
+	// not a padded one: it is wide because the figure is, and the way it
+	// gets narrower is somebody explaining the machine rather than somebody
+	// taking more readings.
 	wholeFileInProcess string
 	// TestHowWideTheNarrowerFoldIsAndWhatHoldsTheGap end to end, which is what
 	// inkglyph_test.go's `128ms` sits inside.
@@ -481,15 +526,15 @@ var verifyTimingsTakenOn = struct {
 	goarch:    "arm64",
 	goVersion: "go1.26.1",
 	cores:     8,
-	wholeFileInProcess: "2.55–2.78s over thirty-four runs taken across one " +
-		"session, the clock TestMain puts around m.Run(). The floor carries " +
-		"a margin for the within-session fall rather than sitting on the " +
-		"lowest reading — see the comment",
-	wholeFile: "2.80–2.97s over forty runs in two sessions, the floor " +
-		"widened twice — once after the taking that set it read under its " +
-		"own figure nine times out of twelve, and again at the end of the " +
-		"session that found this package reads faster the longer a session " +
-		"runs. See wholeFileInProcess",
+	wholeFileInProcess: "2.55–2.78s over about sixty runs in five sittings " +
+		"across one session, the clock TestMain puts around m.Run(). The " +
+		"sittings are the statistic and the runs are not — see the comment",
+	wholeFile: "2.78–2.97s over forty-six runs in four sittings across two " +
+		"sessions, the floor " +
+		"widened three times in two sessions — twice on readings under it, " +
+		"and once by the session that worked out why that keeps happening: " +
+		"consecutive runs are correlated and a band needs sittings rather " +
+		"than runs. See wholeFileInProcess",
 	walkEnumerate: "0.08–0.10s",
 	walkRead:      "0.15–0.17s",
 	walkParse:     "0.20–0.24s",
