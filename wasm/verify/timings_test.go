@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"os"
 	"runtime"
 	"strings"
 	"testing"
@@ -153,11 +154,46 @@ import (
 //
 // What separates them is what is being timed, not whether it has a band. A
 // single CPU-bound test over a warm tree repeats to the limit of the
-// reporting. A whole package of most of a thousand tests, with node and git
-// subprocesses in it, spreads 8%. So the sittings a band needs is a question
-// about the figure and the answer is written beside each one: see the three
-// depths, which say they are reproducible, and wholeFileInProcess, which
-// says it is not.
+// reporting for twenty-odd runs at a time. A whole package of most of a
+// thousand tests, with node and git subprocesses in it, spreads 8% and does
+// so continuously.
+//
+// But "reproducible" is the wrong word for the first of those and this
+// record said it for one iteration before thirty-two runs took it back. The
+// middle of walkParse is two values and its tail reaches 0.24s, which is
+// where its ceiling already was. See that field.
+//
+// # Three rules about ends, which cost five re-takings to arrive at
+//
+// Every band in this repository was re-taken at least once in one evening,
+// several of them twice, and every re-taking that went wrong went wrong the
+// same way.
+//
+//	widen, almost never narrow    a ceiling nothing has reached costs a
+//	                              reader nothing. A ceiling somebody
+//	                              tightened costs a false verdict the first
+//	                              time the tail shows up, and walkParse's
+//	                              did, five runs after it was tightened
+//
+//	an unreached end is           walkEnumerate's floor is 0.08s and seven
+//	evidence of NOTHING           runs read 0.09–0.10s. That is not a floor
+//	                              to raise. It is an end nobody sampled this
+//	                              time, and walkParse's ceiling looked
+//	                              exactly the same way for twenty-six runs
+//	                              before a run landed on it
+//
+//	an end is a READING, not      which is the same rule stated so it can be
+//	a choice                      checked. If an end is not a number
+//	                              somebody took, it is a guess, and a guess
+//	                              at an end is precisely where a false
+//	                              verdict comes from. Outward rounding to
+//	                              the record's two decimals is the one
+//	                              allowed departure, and it rounds OUT
+//
+// The corollary worth saying out loud, because it is counter-intuitive and
+// it was got wrong here: a band that looks too wide is cheap and a band that
+// looks right is expensive. Re-taking a band is for when a reading falls
+// OUTSIDE it. A reading comfortably inside is not an invitation.
 var verifyTimingsTakenOn = struct {
 	// For a reader. Nothing checks this.
 	machine string
@@ -746,6 +782,35 @@ const coresAttribution = "The four repository-wide walks in this package are " +
 	"count in the package, which is stricter than naming every term that " +
 	"scales with it."
 
+// The verdict is asked for, and the reason is `go test ./...`.
+//
+// `go test` runs package binaries in PARALLEL. The bands here were taken
+// with one package running alone, which is the command their method lines
+// name, and a package sharing an eight-core laptop with fifteen other test
+// binaries is not that command. Measured: this package reads 2.5-2.7s alone
+// and 2.98-3.10s inside `go test ./...`, and internal/themehistory's
+// wholeRun reads 1.4-1.6s alone and 1.70s there. Both report OVER.
+//
+// That path runs in every session's verification. A verdict that is wrong
+// every time somebody runs the whole tree is not a weaker verdict — it is
+// the noise this file's own header says argues for deleting the record, and
+// it would teach a reader to skip the line in the one case it is right.
+//
+// There is no way for a test binary to know what else `go test` is running.
+// So it is asked for instead, spelled out the way GRMOB_PER_OBJECT_FETCH is
+// and for the same reason: a typo should be a setting that names itself
+// rather than one that silently did nothing. The reporting arm, which
+// prints on every `-v` run, says how to ask.
+const (
+	bandVerdictEnv   = "GRMOB_BAND_VERDICT"
+	bandVerdictAsked = "required"
+)
+
+// bandVerdictWanted is whether this run asked for a band verdict. See above.
+func bandVerdictWanted() bool {
+	return os.Getenv(bandVerdictEnv) == bandVerdictAsked
+}
+
 // This run says whether it is standing on the machine the timings came from.
 //
 // # Why this reports and does not assert
@@ -806,9 +871,14 @@ func TestTheTimingsInThisPackageSayWhichMachineTheyCameFrom(t *testing.T) {
 	if len(differs) == 0 {
 		t.Logf("this run is on the machine the timings in this package were "+
 			"taken on: %s, %s, %s/%s, %d cores. The whole package was %s "+
-			"there, and the fold walk %s.",
+			"there, and the fold walk %s.\n\n"+
+			"To have this run's own reading compared against the band it "+
+			"records, set %s=%s — on a run of THIS package alone, because "+
+			"`go test ./...` runs package binaries in parallel and the "+
+			"bands are of a package running on its own. See "+
+			"wholefileband_test.go.",
 			rec.machine, rec.goVersion, rec.goos, rec.goarch, rec.cores,
-			rec.wholeFile, rec.foldWalk)
+			rec.wholeFile, rec.foldWalk, bandVerdictEnv, bandVerdictAsked)
 		return
 	}
 	// The core count, said out loud whenever it differs. A reader told "8

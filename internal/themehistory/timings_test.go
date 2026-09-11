@@ -453,9 +453,15 @@ func TestTheTimingsInThisPackageSayWhichMachineTheyCameFrom(t *testing.T) {
 		t.Logf("this run is on the machine the timings in this package were "+
 			"taken on: %s, %s, %s/%s, %d cores. The package's tests were %s "+
 			"there, the command itself %s, one healthy retire %s, and the "+
-			"pre-batch shape %s.",
+			"pre-batch shape %s.\n\n"+
+			"To have this run's own readings compared against the bands "+
+			"they record, set %s=%s — on a run of THIS package alone, "+
+			"because `go test ./...` runs package binaries in parallel and "+
+			"the bands are of a package running on its own. See "+
+			"band_test.go.",
 			rec.machine, rec.goVersion, rec.goos, rec.goarch, rec.cores,
-			rec.wholePackage, rec.wholeRun, rec.batchRetire, rec.perObjectRun)
+			rec.wholePackage, rec.wholeRun, rec.batchRetire, rec.perObjectRun,
+			bandVerdictEnv, bandVerdictAsked)
 		return
 	}
 	t.Logf("the wall-clock numbers in this package's comments were taken on %s "+

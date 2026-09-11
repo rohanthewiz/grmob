@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"os"
 	"regexp"
 	"runtime"
 	"strconv"
@@ -146,7 +147,40 @@ func recordMachineDiffers() []string {
 //
 // The name is the field's, spelled as a reader would go and edit it, because
 // what the out-of-band case asks for is an edit to that field.
+
+// The verdict is asked for, and the reason is `go test ./...`.
+//
+// `go test` runs package binaries in PARALLEL. The bands here were taken
+// with one package running alone, which is the command their method lines
+// name, and a package sharing an eight-core laptop with fifteen other test
+// binaries is not that command. Measured: this package reads 2.5-2.7s alone
+// and 2.98-3.10s inside `go test ./...`, and internal/themehistory's
+// wholeRun reads 1.4-1.6s alone and 1.70s there. Both report OVER.
+//
+// That path runs in every session's verification. A verdict that is wrong
+// every time somebody runs the whole tree is not a weaker verdict — it is
+// the noise this file's own header says argues for deleting the record, and
+// it would teach a reader to skip the line in the one case it is right.
+//
+// There is no way for a test binary to know what else `go test` is running.
+// So it is asked for instead, spelled out the way GRMOB_PER_OBJECT_FETCH is
+// and for the same reason: a typo should be a setting that names itself
+// rather than one that silently did nothing. The reporting arm, which
+// prints on every `-v` run, says how to ask.
+const (
+	bandVerdictEnv   = "GRMOB_BAND_VERDICT"
+	bandVerdictAsked = "required"
+)
+
+// bandVerdictWanted is whether this run asked for a band verdict. See above.
+func bandVerdictWanted() bool {
+	return os.Getenv(bandVerdictEnv) == bandVerdictAsked
+}
+
 func againstBand(fieldName, field string, got time.Duration) string {
+	if !bandVerdictWanted() {
+		return ""
+	}
 	lo, hi, ok := recordedBand(field)
 	if !ok {
 		return fmt.Sprintf("\n\nNo band was read out of %s. Its value has to "+

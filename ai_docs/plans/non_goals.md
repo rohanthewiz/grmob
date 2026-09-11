@@ -421,3 +421,42 @@ the point at which two copies become the shape kept in step by whoever
 remembers to — the argument `twoCopyPackages` already makes for its own
 value. At three, a real shared package earns its keep and the durations come
 with it. At two, the census is the cheaper answer and it is in place.
+
+---
+
+## A sentence naming a record field is not held to quoting that field's range
+
+*Raised: 2026-09-11 · Moved here: 2026-09-11 · Code: the two
+`…TimingsTakenOn` records*
+
+**What was proposed.** The defect class this repository kept fixing by hand
+for several sessions was a sentence quoting a record's numbers while the
+record said something else — `main.go` carried `30.14–30.42s against
+399–401ms` attributed to a record that had moved. The mechanical version: a
+sentence that names `record.field` AND quotes a range must quote the range
+that field carries.
+
+**Measured at the comment group, it reads nothing.** 5 groups name a field
+and quote a range; 25 figures in them, 0 matching the named field. That is
+not 25 defects — it is the check being meaningless at that granularity. A
+comment group here is routinely forty lines and discusses a figure's history,
+the sibling package, and three takings that are deliberately different
+numbers. Proximity within a group says nothing, which is exactly the reading
+that killed the wall-clock rule one entry above.
+
+**Measured at the sentence, the corpus is one.** Over every Go comment
+outside `ai_docs`: **one sentence** in the repository names a record field and
+quotes a range in the same sentence, and it is a history sentence with the
+field backquoted under the quoting convention. Zero defects.
+
+**And the reason is the useful part.** The corpus is empty by construction.
+This repository's own doctrine, arrived at over several sessions and now
+stated in both records, is *name the field, do not restate the number*. A
+rule to catch "named the field and restated the number" has nothing to catch
+because the doctrine already won. The measurement is worth more than the rule
+would be: it says the doctrine is complete in the Go prose rather than merely
+believed.
+
+**What would change this.** A sentence appearing that does restate a field's
+range. The scan is forty lines of Python and can be re-run; at the sentence
+granularity it is cheap and it is the granularity that means anything.

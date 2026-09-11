@@ -193,7 +193,11 @@ func wholeFileRunIsTheRecordedOne() (why string, ok bool) {
 
 // wholeFileVerdict is the line this package prints about its own wall clock,
 // or the empty string when there is nothing it can honestly say.
+
 func wholeFileVerdict(took time.Duration) string {
+	if !bandVerdictWanted() {
+		return ""
+	}
 	if _, ok := wholeFileRunIsTheRecordedOne(); !ok {
 		return ""
 	}
