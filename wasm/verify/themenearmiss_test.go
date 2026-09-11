@@ -1006,8 +1006,8 @@ func affordedPrediction(ending string, scale float64) (float64, bool) {
 // product, and it had four spellings: affordedPrediction's, the one
 // affordedShortfallCause decided a floor with, the one the share-edge arm
 // decided the SAME floor with in the opposite direction, and the four failure
-// messages. See TestNoFloatThisFileComparesIsDerivedTwice for what now stops a
-// fifth appearing.
+// messages. See TestNoFloatAComparisonRestsOnIsDerivedTwice for what now
+// stops a fifth appearing.
 func affordedPredictedFrom(recorded int, scale float64) float64 {
 	return float64(recorded) * scale
 }

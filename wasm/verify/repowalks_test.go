@@ -27,7 +27,7 @@ import (
 // # About the file counts quoted below, which are readings and ARE held
 //
 // Several sentences here and in timings_test.go price a walk against how many
-// files it touches. That number is a reading of a repository on a day — 389
+// files it touches. That number is a reading of a repository on a day — 390
 // tracked Go files where verifyTimingsTakenOn was taken — and it goes up with
 // every file anybody adds, silently, exactly like the wall clocks beside it.
 //
@@ -513,7 +513,7 @@ func TestTheRepositoryWideWalksInThisPackageAreTheOnesDecidedOn(t *testing.T) {
 			"This is the number that decides, not the total. Each parse is "+
 			"about 0.18s where verifyTimingsTakenOn was taken and none of it "+
 			"is shared: every Go file in the tree goes through go/parser once "+
-			"per arm — 389 tracked Go files where that record was taken — "+
+			"per arm — 390 tracked Go files where that record was taken — "+
 			"and every one of them throws the syntax trees away.\n\n"+
 			"A shared parse is a fixture with a lifetime — built once, "+
 			"invalidated never, read by tests that no longer say what they "+
@@ -710,7 +710,7 @@ const timingsRecordName = "verifyTimingsTakenOn"
 // How many of them may parse every Go file in the tree.
 //
 // Four, and this is the half that costs. The other two walks read bytes and
-// stop; these four hand every Go file in the tree — 389 tracked Go files
+// stop; these four hand every Go file in the tree — 390 tracked Go files
 // where verifyTimingsTakenOn was taken — to go/parser, build the syntax
 // trees, ask one question each and drop them.
 //
@@ -735,20 +735,46 @@ const repositoryParseBudget = 4
 // was quietly becoming is the thing every row in this table exists to stop: a
 // walk that is a place to put things.
 //
-// # Why five and not four or six
+// # Why six, and why it was five
 //
-// Five is where it stands, which is the same kind of number as
-// timingsRecordCopies: not a measured limit but a line drawn at the current
-// state, so that the next step past it is taken deliberately. The three
-// budgets bound the three ways this cost grows — how many walks, how many of
-// them parse, and how much any one of them is carrying — and this is the one
-// that had no number at all.
+// It is the same kind of number as timingsRecordCopies: not a measured limit
+// but a line drawn at the current state, so that the next step past it is
+// taken deliberately. The three budgets bound the three ways this cost grows
+// — how many walks, how many of them parse, and how much any one of them is
+// carrying — and this is the one that had no number at all.
 //
-// The sixth question is a decision with two honest answers. Either the
-// questions on that walk are no longer one thing and some of them want a walk
-// of their own, which is repositoryWalkBudget's conversation; or they are,
-// and this moves with the reason written beside it.
-const walkQuestionBudget = 5
+// It was five, and it was raised the session after it was written, which is
+// the thing worth recording about it. The question that raised it holds every
+// test named in this repository's prose to being a test that exists, and it
+// was written because a rename had left five sentences naming a function that
+// was gone, through every verification path clean.
+//
+// The raise is the first of the two honest answers this constant's doc
+// offered, and the argument had to be made rather than assumed:
+//
+//	it needs both halves of one parse   what tests EXIST comes off the
+//	                                    declarations, what prose POINTS AT
+//	                                    comes off the comments, and no other
+//	                                    walk has both
+//	a walk of its own is not available  repositoryWalkBudget is 7 against 7,
+//	                                    and that budget's conversation is the
+//	                                    more expensive one
+//	it is not the comment question      that question is two rules about
+//	                                    characters in a line and has its own
+//	                                    reaching arm; this one's reaching arm
+//	                                    is that the DECLARATIONS were found,
+//	                                    which is a different failure and a
+//	                                    much louder one
+//
+// The last row is the one that mattered. Folding this into the comment
+// question would have kept the number at five, and a number kept at five by
+// arranging the questions to suit it is worth nothing at all.
+//
+// The seventh question is the same decision again. Either the questions on
+// that walk are no longer one thing and some of them want a walk of their
+// own, which is repositoryWalkBudget's conversation; or they are, and this
+// moves with the reason written beside it.
+const walkQuestionBudget = 6
 
 // The enumeration entry points, and the functions that ARE them.
 //
@@ -829,7 +855,7 @@ var repositoryWalks = []repositoryWalkRow{{
 			"skips",
 	},
 }, {
-	// Five questions and one parse, because a fifth repository-wide parse is
+	// Six questions and one parse, because a fifth repository-wide parse is
 	// the decision repositoryParseBudget exists to force — and this walk is
 	// the answer that decision has, which is why questions land here rather
 	// than becoming walks. Each is a reading of what the one walk has already
@@ -866,6 +892,10 @@ var repositoryWalks = []repositoryWalkRow{{
 			"nothing else reads as text: a line that is one comment written " +
 			"twice, and a tab anywhere but the leading indent. See " +
 			"commenttext_test.go, which owns the rules and the check",
+		"every Go test named in a comment or a string constant, held to " +
+			"being a test this repository has — the declarations and the " +
+			"prose being the two halves of this one parse. See " +
+			"prosenames_test.go",
 	},
 }, {
 	fn:    "TestTheDottedVersionParsersAreTheOnesTheReasonCovers",

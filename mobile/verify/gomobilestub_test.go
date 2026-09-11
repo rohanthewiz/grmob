@@ -1555,7 +1555,8 @@ func TestTheTableDescribesTheShapesNoBridgeFunctionHas(t *testing.T) {
 // It skips when the module cache has no copy, which is the stance ios/verify
 // takes toward a missing iPhoneOS SDK: `go test ./...` must not fail on a
 // machine that has the repository and not the download. The pin on go.mod
-// (TestTheGobindPinIsTheOneInGoMod) is what still runs there.
+// (TestTheGobindReadingsArePinnedToTheModulesOwnVersion) is what still runs
+// there.
 func TestTheResultArmsAreReadOffThePinnedGobind(t *testing.T) {
 	src, ok := gobindSource(t, "bind", "genobjc.go")
 	if !ok {

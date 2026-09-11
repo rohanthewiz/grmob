@@ -112,7 +112,7 @@ func figureList(in []proseFigure) string {
 // message exists to save them. So each word carries the line it came from and
 // a match is attributed to the word it starts at.
 type prose struct {
-	text  strings.Builder
+	text  []byte
 	at    []int // byte offset within text of each word
 	lines []int // the line that word was written on
 }
@@ -122,14 +122,36 @@ type prose struct {
 // held, which is the collapse; a piece that splits a word in half (`"38" +
 // "6 tracked Go files"`) is therefore not found, and that is the one shape
 // this declines to read rather than guessing at.
+//
+// # The one exception, which is a hyphen at the end of a piece
+//
+// A long name wrapped across two comment lines is written here the way it is
+// written in print:
+//
+//	// because TestEveryGitListingAsksForNul-
+//	// SeparatedPaths has parsed the whole tree since…
+//
+// That is one word to a reader and the hyphen is the split rather than part
+// of it, so a piece beginning where the last one ended in `-` is joined with
+// the hyphen removed and no space. Measured over every Go comment in this
+// repository: twelve lines end in a hyphen and every one of them is a word
+// split across lines. There is no counterexample to exempt.
+//
+// The rule is applied at a PIECE boundary and not between words, because
+// within a line a trailing `-` is punctuation somebody typed and the next
+// word is a different word.
 func (p *prose) add(line int, s string) {
-	for _, word := range strings.Fields(s) {
-		if p.text.Len() > 0 {
-			p.text.WriteByte(' ')
+	for i, word := range strings.Fields(s) {
+		if len(p.text) > 0 {
+			if i == 0 && p.text[len(p.text)-1] == '-' {
+				p.text = p.text[:len(p.text)-1]
+			} else {
+				p.text = append(p.text, ' ')
+			}
 		}
-		p.at = append(p.at, p.text.Len())
+		p.at = append(p.at, len(p.text))
 		p.lines = append(p.lines, line)
-		p.text.WriteString(word)
+		p.text = append(p.text, word...)
 	}
 }
 
@@ -147,7 +169,7 @@ func (p *prose) lineAt(off int) int {
 
 // figures is every tracked-Go-file claim in this run of text.
 func (p *prose) figures(rel, in string) []proseFigure {
-	text := p.text.String()
+	text := string(p.text)
 	var out []proseFigure
 	for _, m := range trackedGoFileFigure.FindAllStringSubmatchIndex(text, -1) {
 		n, err := strconv.Atoi(text[m[2]:m[3]])

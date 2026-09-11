@@ -273,7 +273,7 @@ func TestAppBarNamesItselfAndItsTitle(t *testing.T) {
 	// Level 1, because an AppBar is the screen's own bar: there is nothing
 	// above it for it to be a section of. The tier is what keeps it from
 	// announcing as a peer of the section headings below it — see
-	// TestGroupHeaderLabelIsASecondLevelHeading for the other half of the pair.
+	// TestGroupHeaderLabelIsAHeading for the other half of the pair.
 	if title := findText(n, "Sermons"); title == nil || title.Style.AccessibilityHeadingLevel != 1 {
 		t.Errorf("the title should be a level-1 heading, got %+v", title)
 	}

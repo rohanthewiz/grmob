@@ -41,6 +41,9 @@ import (
 //	the comment text      two rules over every comment there is: a line that
 //	                      is one comment written twice, and a tab anywhere but
 //	                      the leading indent. See checkCommentText
+//	the names in prose    every Go test named in a comment or a string
+//	                      constant, held to being a test this repository has.
+//	                      See checkProseNamesResolve
 //
 // # Why this file exists, which is a name that had stopped being true
 //
@@ -58,7 +61,7 @@ import (
 // questions arrived. Two arrived in one session.
 //
 // So the walk is here and each question's check is owned by the file that
-// owns its subject — which was already true of three of the five before this
+// owns its subject — which was already true of three of them before this
 // file existed. What is left in copies_test.go is the copies questions, which
 // is what that name was always about.
 //
@@ -83,7 +86,7 @@ import (
 //
 // # What stops this becoming a place to put things
 //
-// walkQuestionBudget, which is five. Every question here arrived with a good
+// walkQuestionBudget, which is six. Every question here arrived with a good
 // individual argument — the parse budget is full, this walk has the parse,
 // the question needs no walk of its own — and that argument will keep being
 // true of every future question, which is exactly what makes it dangerous. A
@@ -91,9 +94,14 @@ import (
 //
 // So the number is written down and the census in repowalks_test.go holds it,
 // beside repositoryWalkBudget and repositoryParseBudget, which bound the two
-// other ways this cost can grow. The sixth question is a decision: either the
-// questions here are no longer one thing and some of them want a walk, or the
-// budget moves and the reason goes beside it.
+// other ways this cost can grow. The seventh question is a decision: either
+// the questions here are no longer one thing and some of them want a walk, or
+// the budget moves and the reason goes beside it.
+//
+// That is not hypothetical and it has happened once. The budget was five, and
+// the question that made it six — the tests named in prose — arrived in the
+// session after it was written. It did what it was for: the raise is argued
+// in the constant's own doc rather than having been a line nobody noticed.
 //
 // # The two files this walk cannot read
 //
@@ -107,6 +115,17 @@ import (
 //	proseFigureRulesFile   quotes counts as examples of the form it holds
 //	commentRulesFile       quotes the incident verbatim, which breaks both of
 //	                       its own two rules
+//	proseNameRulesFile     quotes four dead test names as the evidence for
+//	                       its rule. The exemption is on its PROSE and not on
+//	                       the file: it declares no test, so skipping it
+//	                       outright would exempt nothing and lose nothing
+//
+// Three of the six questions carry one, and it is the same shape every time:
+// a rule worth writing down is worth showing an example of, and an example of
+// a rule is a thing the rule catches. The fourth time this happens it is
+// worth asking whether the exemption should be a convention rather than a
+// list — a marker in the prose, say — but three lines with three reasons is
+// cheaper than a mechanism, and each of these says what it is protecting.
 //
 // A check that reads its own explanation as a finding is a check nobody can
 // leave a comment in. That is the same reason gitquoting_test.go skips
@@ -146,6 +165,11 @@ func TestTheQuestionsOnTheSharedRepositoryParseAreTheOnesDecidedOn(t *testing.T)
 	// commentFindingsIn.
 	var twice, tabbed []commentLine
 	commentLines, commentFiles := 0, 0
+	// And what the prose points AT: every test this repository declares, and
+	// every Test-shaped name its comments and string constants mention. Both
+	// halves come off this one parse, which is why the question is here.
+	var declaredTests []string
+	var namedTests []proseName
 	// dir -> what its cores note says and what it names. The PRESENCE of the
 	// note is `notes`, which is what the record check holds each package to;
 	// this is the note itself, which is what the two checks over its content
@@ -213,6 +237,16 @@ func TestTheQuestionsOnTheSharedRepositoryParseAreTheOnesDecidedOn(t *testing.T)
 			commentLines += n
 			twice = append(twice, fileTwice...)
 			tabbed = append(tabbed, fileTabbed...)
+		}
+		// The tests this file declares, and the ones its prose names. The
+		// exemption is on the MENTIONS only: prosenames_test.go's header
+		// quotes four dead names as the evidence for the rule, and declares
+		// no test of its own, so skipping the file outright would be
+		// exempting nothing and skipping the prose is the whole of it.
+		fileTests, fileNames := testNamesIn(fset, rel, file)
+		declaredTests = append(declaredTests, fileTests...)
+		if rel != proseNameRulesFile {
+			namedTests = append(namedTests, fileNames...)
 		}
 		// And every sentence in it that quotes the tracked-Go-file count,
 		// read off the comments and string constants the parse just built —
@@ -294,8 +328,8 @@ func TestTheQuestionsOnTheSharedRepositoryParseAreTheOnesDecidedOn(t *testing.T)
 		}
 	}
 
-	// One walk, five questions, five failure boundaries. See the header for
-	// why this is t.Run and not five sections of one function: each of these
+	// One walk, six questions, six failure boundaries. See the header for
+	// why this is t.Run and not six sections of one function: each of these
 	// ends in a t.Fatalf over a walk that reached nothing, and a Fatalf ends
 	// the goroutine it is on.
 	t.Run("the import-resolving helpers", func(t *testing.T) {
@@ -309,6 +343,9 @@ func TestTheQuestionsOnTheSharedRepositoryParseAreTheOnesDecidedOn(t *testing.T)
 	})
 	t.Run("the comment text", func(t *testing.T) {
 		checkCommentText(t, commentFiles, commentLines, twice, tabbed)
+	})
+	t.Run("the tests named in prose", func(t *testing.T) {
+		checkProseNamesResolve(t, from, declaredTests, namedTests)
 	})
 	t.Run("the timings records", func(t *testing.T) {
 		checkTimingsRecordCopies(t, root, from, len(paths), records, arms,

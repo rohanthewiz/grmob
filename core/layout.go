@@ -226,7 +226,7 @@ func Column(stylePropsAndChildren ...PropsAndChildren) View {
 // Compose Box, a SwiftUI ZStack, each pinned to the top-start corner) while
 // the DOM targets stacked its children, so a Box with two children rendered
 // two different pictures. mobile/verify's
-// TestNativeBoxIsAVerticalStackNotAnOverlay pins the agreement.
+// TestNativeContainersStackTheirChildrenAndDoNotOverlay pins the agreement.
 //
 // ZStack, below, is the container that does overlay — and it exists because
 // this one stopped. The two are the same argument from both ends: one shape
