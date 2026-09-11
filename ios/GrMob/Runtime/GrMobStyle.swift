@@ -386,27 +386,51 @@ extension View {
     }
 }
 
-extension View {
-    /// Applies this node's box styling in CSS box-model order. CSS lists the
-    /// layers outermost-first (margin → size → shadow → clip → background →
-    /// border → padding) while SwiftUI modifier chains read innermost-first,
-    /// so the chain below is that list reversed — and the order is
-    /// load-bearing: background before clipShape would leave square corners
-    /// painted, padding after background would paint outside the box, etc.
-    ///
-    /// `onTap`/`onLongPress` are the node's gesture callback IDs (empty when
-    /// absent); see GrMobGestures for where they sit in the layer order.
-    ///
-    /// `axis` is set by the flex containers (Row: horizontal, Column and
-    /// List: vertical) and nil for everything else; it only decides how the
-    /// node's alignment styles map onto its fill frames (grMobFrameAlignment).
-    func grMobBox(
-        _ s: GrMobStyle?, grow: GrMobGrow = .none,
-        onTap: String = "", onLongPress: String = "", axis: Axis? = nil
-    ) -> some View {
+/// The box chain as a named modifier rather than as a chain of generic
+/// `some View` extensions applied at each call site.
+///
+/// # Why this is a struct and not simply the chain
+///
+/// Every `.grMobXxx` below returns an opaque `some View`, and most of them
+/// are `@ViewBuilder`s, so each one roughly doubles the size of the type it
+/// produces. Written as a chain returning `some View`, that tower is
+/// re-derived for every `Self` it is ever applied to — one instantiation per
+/// view type in the renderer.
+///
+/// A Debug build never notices, because opaque types declared in another
+/// file are left abstract when the module is compiled file-by-file. A
+/// **Release** build enables whole-module optimisation, which substitutes
+/// every opaque type with its underlying type — and the substitution of that
+/// tower aborts the Swift compiler outright:
+///
+///     Abort: function substOpaqueTypesWithUnderlyingTypes
+///            at SubstitutionMap.cpp:651
+///     Possible non-terminating type substitution detected
+///     While silgen emitFunction SIL function "$s8GrMobApp0aB7MapViewV4bodyQrvg"
+///
+/// (GrMobMapView is merely the first file SILGen reaches; every view in
+/// Renderer.swift carries the same tower.)
+///
+/// A `ViewModifier` struct is not generic over the view it wraps, so the
+/// tower is built exactly once — inside this one `body(content:)`, over the
+/// single fixed type `_ViewModifier_Content<GrMobBoxModifier>` — and every
+/// call site gets the shallow, concrete `ModifiedContent<Self,
+/// GrMobBoxModifier>` instead. Nothing about the rendering changes: the
+/// modifier order below is the chain verbatim.
+struct GrMobBoxModifier: ViewModifier {
+    let style: GrMobStyle?
+    let grow: GrMobGrow
+    let onTap: String
+    let onLongPress: String
+    let axis: Axis?
+
+    func body(content: Content) -> some View {
+        // Bound once so the chain below reads exactly as it did when it was
+        // a chain of extensions on `self`.
+        let s = style
         let shape = RoundedCornerShapeIfAny(radius: s?.borderRadius ?? 0)
         let alignment = grMobFrameAlignment(s, axis: axis)
-        return self
+        return content
             .padding((s?.padding ?? .zero).insets)
             .background(s?.background ?? .clear)
             .modifier(GrMobGestures(onTap: onTap, onLongPress: onLongPress,
@@ -448,6 +472,33 @@ extension View {
             .grMobRole(s)
             .grMobValueText(s)
             .grMobTransition(s)
+    }
+}
+
+extension View {
+    /// Applies this node's box styling in CSS box-model order. CSS lists the
+    /// layers outermost-first (margin → size → shadow → clip → background →
+    /// border → padding) while SwiftUI modifier chains read innermost-first,
+    /// so the chain below is that list reversed — and the order is
+    /// load-bearing: background before clipShape would leave square corners
+    /// painted, padding after background would paint outside the box, etc.
+    ///
+    /// `onTap`/`onLongPress` are the node's gesture callback IDs (empty when
+    /// absent); see GrMobGestures for where they sit in the layer order.
+    ///
+    /// `axis` is set by the flex containers (Row: horizontal, Column and
+    /// List: vertical) and nil for everything else; it only decides how the
+    /// node's alignment styles map onto its fill frames (grMobFrameAlignment).
+    ///
+    /// Returns a concrete `ModifiedContent` rather than `some View`: see
+    /// GrMobBoxModifier for the Release-build compiler crash that an opaque
+    /// return type here reintroduces.
+    func grMobBox(
+        _ s: GrMobStyle?, grow: GrMobGrow = .none,
+        onTap: String = "", onLongPress: String = "", axis: Axis? = nil
+    ) -> ModifiedContent<Self, GrMobBoxModifier> {
+        modifier(GrMobBoxModifier(style: s, grow: grow, onTap: onTap,
+                                  onLongPress: onLongPress, axis: axis))
     }
 
     /// The property-change half of Transition support: when the style

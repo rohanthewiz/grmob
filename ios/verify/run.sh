@@ -57,6 +57,38 @@ swiftc -typecheck -target arm64-apple-macos14.0 ../GrMob/Runtime/*.swift
 
 echo "OK: view layer type-checks"
 
+# The same files again, this time OPTIMISED and WHOLE-MODULE — which is a
+# different question from whether they type-check, and one that had never been
+# asked here.
+#
+# A Debug build compiles file by file and leaves an opaque `some View` declared
+# in another file abstract. A Release build substitutes it with its underlying
+# type, and the view-modifier chains in this runtime nest deeply enough that
+# doing so used to abort the compiler outright:
+#
+#     Abort: function substOpaqueTypesWithUnderlyingTypes at ...:651
+#     Possible non-terminating type substitution detected
+#
+# So the app could be run, tested and demonstrated for months while being
+# impossible to ship — every pass in this script was green, every simulator run
+# worked, and `xcodebuild -configuration Release` had simply never been run.
+# GrMobBoxModifier is the fix; this line is what keeps it fixed.
+#
+# It costs about seven seconds and needs nothing xcodebuild needs: -O -wmo on
+# the Command Line Tools' own compiler reproduces the abort exactly (verified
+# by removing the fix: SIGABRT, 134). The object file is thrown away — it is
+# for a different platform than the app's and is of no use; the exit code is
+# the whole result.
+if ! wmo=$(swiftc -c -O -wmo -target arm64-apple-macos14.0 \
+        ../GrMob/Runtime/*.swift -o "$out/wmo.o" 2>&1); then
+  echo "$wmo"
+  echo "FAIL: the view layer does not survive whole-module optimisation, so the"
+  echo "      app cannot be built for Release. See GrMobBoxModifier."
+  exit 1
+fi
+
+echo "OK: view layer survives whole-module optimisation (the Release build)"
+
 # What the Swift importer makes of gobind's C spellings.
 #
 # mobile/verify maps every bound Go type onto the Swift type the shell will see,
