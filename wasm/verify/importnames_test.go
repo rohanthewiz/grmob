@@ -487,6 +487,15 @@ var twoCopyFunctionShapes = []string{
 	// internal/themehistory/band_test.go and
 	// wasm/verify/wholefileband_test.go.
 	"recordedBand",
+	// The sentence recordedBand's two callers print about where a reading
+	// fell in the band. Here for a reason the others are not: the two
+	// verdicts are DIFFERENT functions — one is a t.Logf fragment and the
+	// other a TestMain line to stderr — and the one thing they must not
+	// diverge on is what a placement means. A reading "at the floor" in one
+	// package and "3% up" in the other, from the same arithmetic spelled
+	// twice, is two records that cannot be read against each other, which is
+	// the whole purpose of their being a pair.
+	"bandPlacement",
 }
 
 // The package-level STATE those functions keep, held to being the same

@@ -579,3 +579,84 @@ eleven verification paths, run together — is what fixed it both times.
 than by the race suite in the same session. That would be evidence the
 verification path is not running where it needs to, and the answer then is
 about when `-race` runs rather than about a new census.
+
+---
+
+## A band field does not carry a mark saying which of its ends have been reached
+
+*Raised: 2026-09-11 · Moved here: 2026-09-11 · Code:
+the two `…TimingsTakenOn` records, and `bandPlacement`*
+
+**What was asked for.** "Record which band ends have actually been reached."
+It follows from the rule this repository paid five re-takings for — an end is a
+reading, not a choice — and it names a real gap: an end no reading has ever
+landed on is indistinguishable, in the source, from one twenty runs have
+landed on. Both are two decimals in a struct literal.
+
+**What was built instead.** The verdict line says it, per reading:
+`bandPlacement` reports where in the band the reading fell and whether it
+reaches an end at the precision the end is written to. So the evidence arrives
+beside the figure, in the line a person reads when they take figures at the end
+of a session.
+
+**Why the mark itself is not.** It would be a hand-kept claim with nothing able
+to check it. Every other claim in these records is held by something: the
+machine fields by the reporting arm, the cores note by two censuses, the taking
+table by `checkEveryBandFieldHasATakingCommand`. A "floor reached" mark has no
+such backstop, because the evidence for it is a wall clock — the one thing in
+this repository that cannot be asserted. A mark a session writes by hand, with
+no arm over it, is exactly the state the taking table was in for six iterations
+and the cores note was in before it had a census.
+
+The alternative — the test writing the mark back into the source — is declined
+under its own entry above: a record a test can rewrite is a record that
+re-baselines an accident.
+
+**What would change this.** A mark that something can check. If a future
+session finds a way for a reading to be recorded by the run that took it,
+without that run being able to edit the claim it is evidence for, the gap this
+describes is worth closing and the argument above stops holding.
+
+---
+
+## A width stated in prose is not held to quoting the range it comes from
+
+*Raised: 2026-09-11 · Moved here: 2026-09-11 · Code: the two
+`…TimingsTakenOn` records' comments*
+
+**What the defect was.** Five sentences in these two records state a band's
+width as a number. **Three of the five were wrong**: `3% wide` of a band that
+is 6.8%, `300ms wide` of one that is 360ms, and `130ms wide against 130ms` for
+a comparison that has since reversed — this band is now the wider of the two.
+Every one of the three is derivable from two numbers in the same file. All
+three are fixed: two now read in the past tense as the instrument that was
+used, and the third is struck.
+
+**The form separates them exactly.** The two correct claims both quote the
+range they are computed from in the same sentence (`2.49–2.59s … roughly 4%
+wide`, `1.40–1.67s is a band 19% wide`). None of the three wrong ones names a
+range or a field — they say "that package's whole-package figure" and "the two".
+So a form rule would have scored **3 of 3 on the defects and 0 of 2 false
+positives**, which is a better separation than any rule this file has declined.
+
+**Why it is not written anyway.** Two reasons, and the second is the one that
+decides.
+
+The residue is zero: the three are fixed and the remaining instances are either
+self-contained or quotations. That alone would only postpone it.
+
+What decides is that the rule's own explanation breaks it. The sentence that
+strikes the `130ms` claim quotes the claim, and `bandPlacement`'s doc comment
+lists all three as the reason the width is printed at all. Both are prose about
+a width with no range beside it, and both are correct. Three of the six
+questions on the shared parse already carry a self-exemption, and that file's
+header says the fourth is the point at which the exemption should become a
+convention rather than a list. This would be the fourth — and the convention it
+needs (a quoted span is not a claim) already exists for test names in
+`quotedprose_test.go`, so the honest cost is extending that convention to
+double-quoted prose and teaching a census to respect it, for a rule whose
+corpus is five sentences.
+
+**What would change this.** A fourth wrong width, or the same class appearing
+in a record that is not one of these two. Either makes the corpus big enough
+that extending the quoting convention is paid for by more than one rule.

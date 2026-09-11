@@ -7,6 +7,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"testing"
 	"time"
 )
 
@@ -79,10 +80,10 @@ var recordedBandForm = regexp.MustCompile(
 // microseconds. There is no field in either record that mixes units within a
 // range, and a range that did would be unreadable to a person before it was
 // unreadable here.
-func recordedBand(field string) (lo, hi time.Duration, ok bool) {
+func recordedBand(field string) (lo, hi, step time.Duration, ok bool) {
 	m := recordedBandForm.FindStringSubmatch(field)
 	if m == nil {
-		return 0, 0, false
+		return 0, 0, 0, false
 	}
 	unit := map[string]time.Duration{
 		"µs": time.Microsecond,
@@ -97,13 +98,103 @@ func recordedBand(field string) (lo, hi time.Duration, ok bool) {
 		return time.Duration(f * float64(unit))
 	}
 	lo, hi = parse(m[1]), parse(m[2])
+	// And the PRECISION the ends are written at, which is the third thing a
+	// band says and the one nothing was reading.
+	//
+	// An end is a reading rounded outward to the record's own two decimals —
+	// that is the one departure from "an end is a reading" the record allows
+	// — so "does this reading reach the floor" has an exact answer at that
+	// precision and no answer at all without it. A reading of 2.5512s is the
+	// floor of a band written 2.55–2.78s; it is not the floor of one written
+	// 2.551–2.780s.
+	//
+	// Taken from the FINER of the two ends. A band spelled "0.19–0.245s" is a
+	// hundredth at one end and a thousandth at the other, and the step has to
+	// be fine enough not to call a reading an end it is not.
+	digits := 0
+	for _, end := range []string{m[1], m[2]} {
+		if dot := strings.IndexByte(end, '.'); dot >= 0 {
+			if d := len(end) - dot - 1; d > digits {
+				digits = d
+			}
+		}
+	}
+	step = unit
+	for i := 0; i < digits && step > 1; i++ {
+		step /= 10
+	}
 	// A range written backwards is a typing error in the record rather than a
 	// reading of anything, and it would otherwise make every run "outside the
 	// band" with no clue as to why.
 	if lo <= 0 || hi <= 0 || hi < lo {
-		return 0, 0, false
+		return 0, 0, 0, false
 	}
-	return lo, hi, true
+	return lo, hi, step, true
+}
+
+// bandPlacement is where in a band a reading fell, and which of the band's two
+// ends — if either — the reading is evidence FOR.
+//
+// # What this is for, which is an end nobody took
+//
+// A band's ends are readings, not choices. That rule is written out at
+// wasm/verify/timings_test.go and it cost five re-takings to arrive at, and it
+// has a consequence nothing was acting on: an end that no reading has reached
+// is an end standing on whatever the session that wrote it had in front of it,
+// and there is no way to tell one of those from an end twenty runs have landed
+// on. Both are two decimals in a struct literal.
+//
+// What can be said cheaply, on every run that asks for a verdict, is whether
+// THIS reading reaches an end. That is the evidence accumulating in the only
+// place it honestly can — beside the reading, in the line a person reads when
+// they take figures at the end of a session — rather than in a mark somebody
+// has to remember to keep.
+//
+// # Why it does not suggest moving anything
+//
+// Because the rule says not to, and the rule is the expensive half of this
+// record's history. A reading in the middle of a band says nothing about
+// either end; a band nothing has reached the ends of is not a band to narrow,
+// and walkParse was narrowed on exactly that evidence and falsified five runs
+// later. So the sentence names what the reading is evidence for and stops,
+// and the one instruction it carries is the one that was got wrong.
+//
+// # The width, which is here because prose kept copying it
+//
+// Three sentences in these two records stated a band's width as a number —
+// `3% wide`, `300ms wide`, `130ms wide against 130ms` — and all three were
+// stale, two of them describing bands that had since been widened and one
+// making a comparison that had since reversed. Every one of them was
+// derivable from two numbers in the same file. So the width is printed here,
+// beside the reading, and the prose says what it is FOR instead of what it
+// was.
+func bandPlacement(lo, hi, got, step time.Duration) string {
+	width := hi - lo
+	reaches := func(end time.Duration) bool {
+		if step <= 0 {
+			return got == end
+		}
+		return got.Round(step) == end
+	}
+	if width <= 0 {
+		return fmt.Sprintf("a band with one value in it, %v wide", width)
+	}
+	switch {
+	case reaches(lo):
+		return fmt.Sprintf("at the floor of a band %v wide, at the precision "+
+			"the band is written to (%v) — so this reading is one the floor "+
+			"stands on", width, step)
+	case reaches(hi):
+		return fmt.Sprintf("at the ceiling of a band %v wide, at the "+
+			"precision the band is written to (%v) — so this reading is one "+
+			"the ceiling stands on", width, step)
+	}
+	// A ratio of two durations is a count rather than a duration, which is
+	// why it is converted before it is printed: %d over a time.Duration
+	// prints its nanoseconds.
+	return fmt.Sprintf("%d%% up a band %v wide, so it reaches neither end. An "+
+		"end no reading has reached is evidence of nothing, and not a reason "+
+		"to move one", int(100*(got-lo)/width), width)
 }
 
 // recordMachineDiffers is every way this computer is not the one the record
@@ -181,7 +272,7 @@ func againstBand(fieldName, field string, got time.Duration) string {
 	if !bandVerdictWanted() {
 		return ""
 	}
-	lo, hi, ok := recordedBand(field)
+	lo, hi, step, ok := recordedBand(field)
 	if !ok {
 		return fmt.Sprintf("\n\nNo band was read out of %s. Its value has to "+
 			"OPEN with the range, the way every field in both records is "+
@@ -239,7 +330,135 @@ func againstBand(fieldName, field string, got time.Duration) string {
 			"place that says so.",
 			fieldName, lo, hi, round(got-hi))
 	default:
+		// The placement is the half of this line that is about the BAND
+		// rather than about the reading: a reading inside a band is a pass,
+		// and which part of the band it is in is the only thing it tells
+		// anybody about the two ends. See bandPlacement.
 		return fmt.Sprintf("\n\nIn the band %s records (%v–%v), on the "+
-			"machine it names.", fieldName, lo, hi)
+			"machine it names — %s.", fieldName, lo, hi,
+			bandPlacement(lo, hi, got, step))
 	}
+}
+
+// Where a reading fell in its band, asserted — which nothing else about a band
+// in this repository can be.
+//
+// # Why this one IS a test when the rest of the file is not
+//
+// Everything else here is a reading of a machine and cannot be asserted: that
+// argument is at the top of this file and it has not changed. bandPlacement is
+// not. It takes four durations and returns a sentence, and given the four the
+// answer is the same on every computer — so the one piece of this machinery
+// that can be held to being right is held to it.
+//
+// What that covers is the half that was actually got wrong twice in this
+// record's history by hand: which end a reading is evidence for. A person
+// comparing 2.5512s against a floor of 2.55s decides it "is" the floor, and a
+// person comparing it against 2.551s decides it is not, and both of those are
+// arithmetic about a written precision rather than judgements. The rest of the
+// line — the reading itself — is a wall clock and stays a report.
+//
+// # And it covers both copies
+//
+// bandPlacement is in twoCopyFunctionShapes, so wasm/verify's copy is held to
+// being this same declaration by the shared repository parse. A second test in
+// that package would assert the same arithmetic about a function a census
+// already says is identical; this is the cheaper arrangement and it is the one
+// the other two-copy shapes use.
+func TestWhereAReadingFellInItsBandIsReadOffTheBandsOwnPrecision(t *testing.T) {
+	const (
+		ms  = time.Millisecond
+		sec = time.Second
+	)
+	// Named rather than ranged over inline so that the count in the log line
+	// below is the list's own length. A hand-written "7 placements" is a copy
+	// of a fact about the list, which is the defect class this repository
+	// spends most of its censuses on.
+	cases := []struct {
+		why             string
+		lo, hi, got     time.Duration
+		step            time.Duration
+		wants, wantsNot []string
+	}{
+		{
+			why: "a reading exactly at the floor",
+			lo:  2550 * ms, hi: 2780 * ms, got: 2550 * ms, step: 10 * ms,
+			wants: []string{"at the floor", "230ms wide", "the floor stands on"},
+		},
+		{
+			// The case the precision exists for: 1.2ms above a floor written
+			// to the hundredth is the floor, because the hundredth is what
+			// the record claims to know.
+			why: "a reading inside half a step of the floor",
+			lo:  2550 * ms, hi: 2780 * ms, got: 2551200 * time.Microsecond,
+			step:  10 * ms,
+			wants: []string{"at the floor"},
+		},
+		{
+			// The same reading against the same numbers written one decimal
+			// finer. Nothing about the machine changed; what changed is what
+			// the record says it knows.
+			why: "the same reading against a band written to the thousandth",
+			lo:  2550 * ms, hi: 2780 * ms, got: 2551200 * time.Microsecond,
+			step:     ms,
+			wants:    []string{"reaches neither end"},
+			wantsNot: []string{"at the floor"},
+		},
+		{
+			why: "a reading exactly at the ceiling",
+			lo:  2550 * ms, hi: 2780 * ms, got: 2780 * ms, step: 10 * ms,
+			wants: []string{"at the ceiling", "the ceiling stands on"},
+		},
+		{
+			why: "a reading a quarter of the way up",
+			lo:  2000 * ms, hi: 2400 * ms, got: 2100 * ms, step: 10 * ms,
+			wants: []string{"25% up a band 400ms wide", "reaches neither end",
+				"not a reason to move one"},
+		},
+		{
+			// A microsecond band, which is batchRetire's shape: the point is
+			// that the same arithmetic reads at a scale three orders down,
+			// because the step comes off the record rather than from a unit
+			// chosen here.
+			why: "a microsecond band, at its floor",
+			lo:  180 * time.Microsecond, hi: 290 * time.Microsecond,
+			got: 184 * time.Microsecond, step: 10 * time.Microsecond,
+			wants: []string{"at the floor", "110µs wide"},
+		},
+		{
+			// Not reachable from a record today — recordedBand rejects hi<lo
+			// and both records write two ends — and cheap to be right about
+			// rather than to divide by.
+			why: "a band with no width",
+			lo:  sec, hi: sec, got: sec, step: 10 * ms,
+			wants:    []string{"one value in it"},
+			wantsNot: []string{"%"},
+		},
+	}
+	for _, c := range cases {
+		got := bandPlacement(c.lo, c.hi, c.got, c.step)
+		for _, want := range c.wants {
+			if !strings.Contains(got, want) {
+				t.Errorf("%s: the placement of %v in %v–%v at a step of %v "+
+					"does not say %q.\n\nIt says: %s\n\n"+
+					"This sentence is what a reader taking figures is told "+
+					"about the band's ENDS, which are the half of a band "+
+					"nothing else in this repository checks — an end is a "+
+					"reading, and a reading that reaches one is the only "+
+					"evidence there is that it is.",
+					c.why, c.got, c.lo, c.hi, c.step, want, got)
+			}
+		}
+		for _, not := range c.wantsNot {
+			if strings.Contains(got, not) {
+				t.Errorf("%s: the placement of %v in %v–%v at a step of %v "+
+					"says %q and should not.\n\nIt says: %s",
+					c.why, c.got, c.lo, c.hi, c.step, not, got)
+			}
+		}
+	}
+	t.Logf("%d placement(s) asserted, including both ends at two precisions "+
+		"and a microsecond band. bandPlacement is in twoCopyFunctionShapes, "+
+		"so wasm/verify's copy is held to being this same declaration.",
+		len(cases))
 }

@@ -41,7 +41,19 @@ import (
 // distinguishes none of them. Those two figures are kept as the illustration
 // they were rather than re-taken, because what they demonstrate is the WIDTH
 // of one machine's spread and that has not changed; `wholeFile` below is what
-// this package actually costs now, and it is 3% wide. The spread is why the recorded
+// this package actually costs now, and it is wider than that.
+//
+// How much wider is deliberately not written here. It said "3% wide" for
+// several sessions, which was true of the band as it stood when somebody
+// computed it — 2.88–2.97s — and not of the widened band under it, which is
+// 6.8% and which the field below says was widened three times. A derivable
+// figure copied into prose, which is
+// the defect class this repository spends most of its censuses on, arriving in
+// the record that exists to stop it. The verdict line prints the width of
+// whichever band it compared against, so a reader who wants the number runs
+// the command rather than believing a sentence. See bandPlacement.
+//
+// The spread is why the recorded
 // figures are RANGES and the machine is why there is a record at all; the arm
 // below says which computer this run is standing on when it is not this one.
 //
@@ -385,7 +397,11 @@ var verifyTimingsTakenOn = struct {
 	// # That reading was wrong, and the next iteration found out how
 	//
 	// The sibling consulted was that package's whole-package figure, whose
-	// band is 300ms wide. Its TIGHT figures were checked an hour later and
+	// band was 300ms wide WHEN IT WAS CONSULTED. It has been widened since
+	// and is wider now; the figure is kept in the past tense because it is
+	// the instrument that was used, and re-taking it here would describe an
+	// instrument nobody reached for. Its TIGHT figures were checked an hour
+	// later and
 	// every one of them was under its floor — `wholeRun` by 10%,
 	// `perObjectRun` by 6%, and all three of the terms on that arm's table.
 	// Six figures across two packages, all low, in one session.
@@ -469,9 +485,25 @@ var verifyTimingsTakenOn = struct {
 	// first. What is left unwatched is only the 170ms of overhead, which is
 	// the part no change to this repository's code can move.
 	//
-	// It is also the TIGHTER of the two — 130ms wide against 130ms, over a
-	// smaller figure — for exactly that reason: the overhead it excludes is
-	// the noisiest part of what `go test` reports.
+	// # And a prediction about its width, which the takings since have
+	// # refuted — and which was not evidence about anything
+	//
+	// This said "the TIGHTER of the two — 130ms wide against 130ms, over a
+	// smaller figure", the reasoning being that the overhead this excludes is
+	// the noisiest part of what `go test` reports, so the in-process figure
+	// should spread less.
+	//
+	// Both bands have been widened several times since and the order has
+	// reversed: this one is now the WIDER of the two. That is not a refutation
+	// of where the noise lives, because the comparison was never about that —
+	// this band is taken over five sittings and `wholeFile`'s over four, and
+	// the sittings rule at the top of this record says a band grows with
+	// sittings until it has found its ends. Two bands with different numbers
+	// of sittings behind them cannot be compared for width at all.
+	//
+	// So the claim is struck rather than re-taken, and the two numbers it
+	// carried are gone: the verdict line prints the width of the band it
+	// compared against, which is the one place it cannot go stale.
 	//
 	// # Rounded outward, which is the part that had to be learned twice
 	//
@@ -862,10 +894,10 @@ var recordedBandForm = regexp.MustCompile(
 	`^(\d+(?:\.\d+)?)–(\d+(?:\.\d+)?)(µs|ms|s)\b`)
 
 // recordedBand reads that prefix back as two durations. See the other copy.
-func recordedBand(field string) (lo, hi time.Duration, ok bool) {
+func recordedBand(field string) (lo, hi, step time.Duration, ok bool) {
 	m := recordedBandForm.FindStringSubmatch(field)
 	if m == nil {
-		return 0, 0, false
+		return 0, 0, 0, false
 	}
 	unit := map[string]time.Duration{
 		"µs": time.Microsecond,
@@ -880,13 +912,103 @@ func recordedBand(field string) (lo, hi time.Duration, ok bool) {
 		return time.Duration(f * float64(unit))
 	}
 	lo, hi = parse(m[1]), parse(m[2])
+	// And the PRECISION the ends are written at, which is the third thing a
+	// band says and the one nothing was reading.
+	//
+	// An end is a reading rounded outward to the record's own two decimals —
+	// that is the one departure from "an end is a reading" the record allows
+	// — so "does this reading reach the floor" has an exact answer at that
+	// precision and no answer at all without it. A reading of 2.5512s is the
+	// floor of a band written 2.55–2.78s; it is not the floor of one written
+	// 2.551–2.780s.
+	//
+	// Taken from the FINER of the two ends. A band spelled "0.19–0.245s" is a
+	// hundredth at one end and a thousandth at the other, and the step has to
+	// be fine enough not to call a reading an end it is not.
+	digits := 0
+	for _, end := range []string{m[1], m[2]} {
+		if dot := strings.IndexByte(end, '.'); dot >= 0 {
+			if d := len(end) - dot - 1; d > digits {
+				digits = d
+			}
+		}
+	}
+	step = unit
+	for i := 0; i < digits && step > 1; i++ {
+		step /= 10
+	}
 	// A range written backwards is a typing error in the record rather than a
 	// reading of anything, and it would otherwise make every run "outside the
 	// band" with no clue as to why.
 	if lo <= 0 || hi <= 0 || hi < lo {
-		return 0, 0, false
+		return 0, 0, 0, false
 	}
-	return lo, hi, true
+	return lo, hi, step, true
+}
+
+// bandPlacement is where in a band a reading fell, and which of the band's two
+// ends — if either — the reading is evidence FOR.
+//
+// # What this is for, which is an end nobody took
+//
+// A band's ends are readings, not choices. That rule is written out at
+// wasm/verify/timings_test.go and it cost five re-takings to arrive at, and it
+// has a consequence nothing was acting on: an end that no reading has reached
+// is an end standing on whatever the session that wrote it had in front of it,
+// and there is no way to tell one of those from an end twenty runs have landed
+// on. Both are two decimals in a struct literal.
+//
+// What can be said cheaply, on every run that asks for a verdict, is whether
+// THIS reading reaches an end. That is the evidence accumulating in the only
+// place it honestly can — beside the reading, in the line a person reads when
+// they take figures at the end of a session — rather than in a mark somebody
+// has to remember to keep.
+//
+// # Why it does not suggest moving anything
+//
+// Because the rule says not to, and the rule is the expensive half of this
+// record's history. A reading in the middle of a band says nothing about
+// either end; a band nothing has reached the ends of is not a band to narrow,
+// and walkParse was narrowed on exactly that evidence and falsified five runs
+// later. So the sentence names what the reading is evidence for and stops,
+// and the one instruction it carries is the one that was got wrong.
+//
+// # The width, which is here because prose kept copying it
+//
+// Three sentences in these two records stated a band's width as a number —
+// `3% wide`, `300ms wide`, `130ms wide against 130ms` — and all three were
+// stale, two of them describing bands that had since been widened and one
+// making a comparison that had since reversed. Every one of them was
+// derivable from two numbers in the same file. So the width is printed here,
+// beside the reading, and the prose says what it is FOR instead of what it
+// was.
+func bandPlacement(lo, hi, got, step time.Duration) string {
+	width := hi - lo
+	reaches := func(end time.Duration) bool {
+		if step <= 0 {
+			return got == end
+		}
+		return got.Round(step) == end
+	}
+	if width <= 0 {
+		return fmt.Sprintf("a band with one value in it, %v wide", width)
+	}
+	switch {
+	case reaches(lo):
+		return fmt.Sprintf("at the floor of a band %v wide, at the precision "+
+			"the band is written to (%v) — so this reading is one the floor "+
+			"stands on", width, step)
+	case reaches(hi):
+		return fmt.Sprintf("at the ceiling of a band %v wide, at the "+
+			"precision the band is written to (%v) — so this reading is one "+
+			"the ceiling stands on", width, step)
+	}
+	// A ratio of two durations is a count rather than a duration, which is
+	// why it is converted before it is printed: %d over a time.Duration
+	// prints its nanoseconds.
+	return fmt.Sprintf("%d%% up a band %v wide, so it reaches neither end. An "+
+		"end no reading has reached is evidence of nothing, and not a reason "+
+		"to move one", int(100*(got-lo)/width), width)
 }
 
 // The verdict is asked for, and the reason is `go test ./...`.

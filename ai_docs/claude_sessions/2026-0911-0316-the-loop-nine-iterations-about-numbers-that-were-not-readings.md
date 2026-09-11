@@ -187,5 +187,7 @@ filing.
    two runs now. The useful form has not changed: an item's instruction is
    worth more than its conclusion, and the conclusion is worth writing down
    anyway because it can be checked.
-5. **(declined, non-goal)** Nine entries now. See
-   `ai_docs/plans/non_goals.md`.
+5. **(declined, non-goal)** Ten entries now. See
+   `ai_docs/plans/non_goals.md`. (Said "nine" when written; the file held ten
+   at that commit. Corrected by the session that found the same count one low
+   in its own doc.)

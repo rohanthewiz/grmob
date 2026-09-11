@@ -1138,7 +1138,7 @@ func recordLiteralFields(val ast.Expr) (names map[string]bool,
 		if text == "" {
 			continue
 		}
-		if _, _, ok := recordedBand(text); !ok {
+		if _, _, _, ok := recordedBand(text); !ok {
 			continue
 		}
 		bands[key.Name] = text

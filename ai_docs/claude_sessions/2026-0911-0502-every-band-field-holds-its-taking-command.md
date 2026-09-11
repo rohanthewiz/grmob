@@ -60,7 +60,9 @@ its record.
 
 ## What was declined, with numbers
 
-One entry added to `ai_docs/plans/non_goals.md`, which now has ten:
+One entry added to `ai_docs/plans/non_goals.md`, which now has eleven
+(counted by `grep -c '^## '` less the file's own two section headings — the
+two session docs before this one each stated the figure one low):
 
     a declaration a census reads      the Go toolchain is the arm and it is
     is not held to living outside     already in the verification path. Two
@@ -157,5 +159,5 @@ Five files, +512 −55.
    session that would not work it.** Twenty iterations of evidence. Both
    conclusions on this iteration's item were refuted and its instruction paid
    in full, which is the same result as the nineteen before it.
-4. **(declined, non-goal)** Ten entries now, including this iteration's. See
+4. **(declined, non-goal)** Eleven entries, including this iteration's. See
    `ai_docs/plans/non_goals.md`.

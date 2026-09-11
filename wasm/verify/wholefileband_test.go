@@ -166,7 +166,7 @@ func wholeFileVerdict(took time.Duration) string {
 	if _, ok := wholeFileRunIsTheRecordedOne(); !ok {
 		return ""
 	}
-	lo, hi, ok := recordedBand(verifyTimingsTakenOn.wholeFileInProcess)
+	lo, hi, step, ok := recordedBand(verifyTimingsTakenOn.wholeFileInProcess)
 	if !ok {
 		return "verifyTimingsTakenOn.wholeFileInProcess does not OPEN with a range, " +
 			"so this run was not compared with anything. Every field in " +
@@ -211,9 +211,12 @@ func wholeFileVerdict(took time.Duration) string {
 			"several times before believing it.",
 			took.Round(time.Millisecond), lo, hi, round(took-hi))
 	default:
+		// The same placement sentence the other copy prints, for the same
+		// reason and from the same function — see bandPlacement.
 		return fmt.Sprintf("this package took %v, in the %v–%v that "+
-			"verifyTimingsTakenOn.wholeFileInProcess records.",
-			took.Round(time.Millisecond), lo, hi)
+			"verifyTimingsTakenOn.wholeFileInProcess records — %s.",
+			took.Round(time.Millisecond), lo, hi,
+			bandPlacement(lo, hi, took, step))
 	}
 }
 
