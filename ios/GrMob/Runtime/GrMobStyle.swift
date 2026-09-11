@@ -3,7 +3,12 @@ import SwiftUI
 /// Swift mirror of Go's core.Style, decoded from the tree/patch JSON.
 ///
 /// Field names in the JSON are the Go struct's exported names verbatim
-/// ("FontSize", "TextColor", ...) because core.Style carries no json tags.
+/// ("FontSize", "TextColor", ...) because core.Style's json tags set no names
+/// — every tag on it is `,omitzero`, which changes what is *present* and never
+/// what a present field is called. Every read below defaults a missing key to
+/// the zero value, so an omitted field and a field written as zero decode
+/// alike; that equivalence is the contract those tags rely on, and it predates
+/// them.
 /// Only the subset the Go DSL can actually produce today is mapped; the
 /// web-oriented fields (Position, ZIndex, Animation, pseudo states) have no
 /// SwiftUI analog at this layer and are intentionally ignored rather than

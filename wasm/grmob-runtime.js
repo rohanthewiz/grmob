@@ -3019,6 +3019,24 @@ const GrMob = (() => {
         // call so the text-align table cannot go unread on this target.
         out.textAlign = textAlignFor(style.Align);
         out.background = style.Background || "";
+        // The ternary is load-bearing in a way it did not used to be, and the
+        // change made this target agree with the other one.
+        //
+        // core.Style's fields are `,omitzero` (see the note above that struct),
+        // so an all-zero EdgeInsets is now absent from the payload rather than
+        // present as an object of zeros. Every other line in this function was
+        // already blind to that distinction — `style.FontSize ? ... : ""`
+        // answers "" for a zero as well as for a missing key — but an object
+        // full of zeros is truthy in JavaScript, so these two lines were the
+        // only ones that could tell "the author said nothing" from "the author
+        // said zero", and they answered "0px 0px 0px 0px" to both.
+        //
+        // htmlout has always omitted the declaration in that case (see
+        // export.go, `if s.Padding != (core.EdgeInsets{})`), so the two web
+        // targets disagreed: static HTML let a <button> keep the UA's own
+        // padding and this runtime forced it to zero. They agree now. Do not
+        // "fix" this by defaulting to an empty object — that would restore the
+        // divergence in the other direction.
         out.padding = style.Padding ? edgeToCSS(style.Padding) : "";
         out.margin = style.Margin ? edgeToCSS(style.Margin) : "";
         out.borderRadius = style.BorderRadius ? `${style.BorderRadius}px` : "";

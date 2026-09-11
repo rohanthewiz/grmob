@@ -63,7 +63,7 @@ func TestBothNativeParsersReadTheStackAlignment(t *testing.T) {
 	for _, pin := range []struct {
 		file string
 		// The JSON lookup the parser must perform. The key is the Go field
-		// name verbatim, since core.Style carries no json tags.
+		// name verbatim, since core.Style's json tags set no names (they are all ,omitzero).
 		key string
 	}{
 		{file: swiftStyle, key: `str("StackAlign")`},

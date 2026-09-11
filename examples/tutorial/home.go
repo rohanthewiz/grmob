@@ -27,12 +27,19 @@ func (t *tutorial) Home(ctx *core.Context) core.View {
 	// The two hosts agree on the direction and disagree on how much of the
 	// launch it was, which is worth knowing before reaching for this on a
 	// third screen. On iOS the scrolled Column WAS the launch. On Android it
-	// is 29% of the screen's cost: the same binary with these cards taken off
-	// the screen launches in 2.5s, and the rest is what happens to 423KB of
+	// was 29% of the screen's cost: the same binary with these cards taken off
+	// the screen launches in 2.5s, and the rest was what happened to 423KB of
 	// JSON on its way across the bridge — paid for all 49 rows whether or not
-	// Compose composes them. See android/device/launch.sh for the four arms
-	// and TestHomeTreeSize for the bytes; LiveMapUITests carries the iOS
-	// readings and what else was in that number.
+	// Compose composes them.
+	//
+	// That 423KB is 53KB now, and the Android launch 3.5s: 92% of it was
+	// core.Style's zero-valued fields, written out for every node, and the
+	// fields are `,omitzero`. So the second number above is the reading that
+	// prompted the fix rather than the reading today. See
+	// android/device/launch.sh for the four arms and the attribution,
+	// TestHomeTreeSize for the bytes, and the note above core.Style for the
+	// tags; LiveMapUITests carries the iOS readings and what else was in that
+	// number.
 	//
 	// This is also what the tutorial teaches one lesson over ("Use Scroll for
 	// short content and core.List for long data-driven collections"), applied

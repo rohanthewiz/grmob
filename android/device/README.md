@@ -41,6 +41,26 @@ on Compose. It does, in the same direction and for the same reason, and it is
 29% of the screen's cost rather than all of it: the four arms and what they
 attribute are in `launch.sh`'s header.
 
+Then it was used to find the other 71%, which is the more useful thing it has
+done. The runtime times its own mount now — `adb shell setprop
+log.tag.GrMobStartup DEBUG`, then read `GrMobStartup:D` — and the split said
+the cost was neither Go nor the JNI crossing but **org.json**, parsing a
+payload that was 92.4% zero-valued `core.Style` fields. The tags on that struct
+are `,omitzero` as a result:
+
+```
+                     bytes on the wire    parse     cold launch
+before                       423,472     1666 ms       4850 ms
+after                         53,408      249 ms       3530 ms
+```
+
+The lesson worth carrying to the next screen is the one the instrument made
+cheap: **measure the stages before choosing a lever.** The obvious fix here was
+windowing `core.List` over the bridge, which is a protocol change; the
+measurement said the parse was the cost, a probe said a streaming parser would
+not help (`android.util.JsonReader` is no faster on the same string), and the
+actual fix was a struct tag.
+
 ## Why these are checked in
 
 Both were written in a scratchpad during a session that found three bugs with

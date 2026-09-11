@@ -10,9 +10,14 @@ package core
 // pass and Diff treats pointer equality as proof the subtree is unchanged, so
 // a post-render mutation would silently never reach the screen.
 type Node struct {
-	Type     string
-	Key      string
-	Props    map[string]any
-	Style    *Style
-	Children []*Node
+	Type string
+	// Everything but Type is omitted from JSON when it is at its zero value,
+	// for the reason core.Style's fields are — see the note above that struct.
+	// Type is not, because a node without one is not a node, and a renderer
+	// reading an absent Type would fall through its dispatch to whatever its
+	// default arm is rather than say what is wrong.
+	Key      string         `json:",omitzero"`
+	Props    map[string]any `json:",omitzero"`
+	Style    *Style         `json:",omitzero"`
+	Children []*Node        `json:",omitzero"`
 }

@@ -44,7 +44,7 @@ func TestBothNativeParsersReadTheGapLonghands(t *testing.T) {
 	for _, pin := range []struct {
 		file string
 		// keys are the JSON lookups the parser must perform. They are the Go
-		// field names verbatim, since core.Style carries no json tags.
+		// field names verbatim, since core.Style's json tags set no names (they are all ,omitzero).
 		keys []string
 	}{
 		{file: swiftStyle, keys: []string{`num("RowGap")`, `num("ColumnGap")`}},

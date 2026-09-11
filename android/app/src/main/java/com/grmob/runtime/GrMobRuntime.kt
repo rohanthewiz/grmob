@@ -72,9 +72,37 @@ class GrMobRuntime(private val bridge: GrMobBridge) {
         Thread(r, "grmob-events").apply { isDaemon = true }
     }
 
+    /**
+     * What the initial mount cost, plus the bridge call that fed it, or null
+     * until [start] has run.
+     *
+     * Kept rather than only logged because the numbers answer a question that
+     * outlives one logcat session — how much of a cold launch is the tree — and
+     * a caller that wants to put them on screen or into an instrumented test
+     * should not have to scrape a log line for them. [Startup] is what prints
+     * them; this is where they live.
+     */
+    var startupStats: MountStats? = null
+        private set
+
+    /** Time spent inside `bridge.renderInitial()` on the [start] call, in nanoseconds. */
+    var startupBridgeNanos: Long = 0
+        private set
+
     /** Mounts the initial tree and opens the push channel. Call once, on the main thread. */
     fun start() {
-        store.mount(bridge.renderInitial())
+        // Three clock reads around the two calls that scale with the screen's
+        // node count. They cost nothing here — this path runs once per process
+        // — and they are the only place the split between "Go produced and
+        // handed over the payload" and "we turned it into a tree" is visible.
+        // See Startup for what the split is for.
+        val t0 = System.nanoTime()
+        val json = bridge.renderInitial()
+        val t1 = System.nanoTime()
+        val stats = store.mount(json)
+        startupBridgeNanos = t1 - t0
+        startupStats = stats
+        Startup.report(bridgeNanos = t1 - t0, stats = stats)
         // Listener attaches after the initial mount so a pre-mount push can
         // never race tree construction; Go re-flushes pending changes on
         // attach, so nothing that happened in between is lost.

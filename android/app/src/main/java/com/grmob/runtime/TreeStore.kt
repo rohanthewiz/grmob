@@ -22,20 +22,54 @@ import org.json.JSONObject
  * through a single main-thread handler, which also preserves the bridge's
  * arrival-order contract.
  */
+/**
+ * What one [TreeStore.mount] cost, split at its one internal seam.
+ *
+ * Both stages scale with the payload, which is the whole reason they are
+ * measured: the open question on Android is how much of a cold launch a
+ * smaller initial tree would buy back. See [Startup] for the diagram and for
+ * how to get these printed.
+ *
+ * @param chars the payload's length in UTF-16 code units, which is what a
+ *   Kotlin String can report without re-encoding 400KB on the launch path.
+ *   Equal to Go's byte count for ASCII and smaller wherever the payload is
+ *   not — a "—" is one unit here and three bytes there — so read it as the
+ *   same number to within the prose's punctuation, not as the byte count.
+ * @param parseNanos org.json's time turning the string into JSONObjects.
+ * @param buildNanos GrMobNode.parse's time turning those into the snapshot
+ *   state tree Compose reads.
+ */
+data class MountStats(val chars: Int, val parseNanos: Long, val buildNanos: Long)
+
 class TreeStore {
     var root by mutableStateOf<GrMobNode?>(null)
         private set
 
-    /** Mounts the initial full tree (the RenderInitial payload). */
-    fun mount(json: String) {
+    /**
+     * Mounts the initial full tree (the RenderInitial payload).
+     *
+     * Returns what the mount cost, split at the one seam inside it, or null if
+     * the payload was not a tree. See [MountStats] and [Startup] for why the
+     * split is worth the two extra clock reads on a once-per-process path.
+     */
+    fun mount(json: String): MountStats? {
         if (!json.trimStart().startsWith("{")) {
             // Not a tree — most likely a Go-side error report. Surface it in
             // full (logcat truncates single lines) instead of crashing on the
             // JSON parse and burying the real failure.
             json.chunked(3000).forEach { Log.e("GrMob", it) }
-            return
+            return null
         }
-        root = GrMobNode.parse(JSONObject(json))
+        // The two stages are timed separately because they are separate levers:
+        // the parse is org.json's cost for the bytes, the build is ours for the
+        // nodes, and a payload that halved in bytes but not in nodes (or the
+        // reverse) would move only one of them.
+        val t0 = System.nanoTime()
+        val obj = JSONObject(json)
+        val t1 = System.nanoTime()
+        root = GrMobNode.parse(obj)
+        val t2 = System.nanoTime()
+        return MountStats(chars = json.length, parseNanos = t1 - t0, buildNanos = t2 - t1)
     }
 
     /** Applies one patch batch (the RenderAgain / push payload). */

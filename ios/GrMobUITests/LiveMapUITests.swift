@@ -207,6 +207,17 @@ final class LiveMapUITests: XCTestCase {
     ///     JSON parse + GrMobNode tree, 424603 bytes         6ms
     ///     Go's own render of the same tree (a Go program)   ~1ms
     ///
+    /// # The third line is the one that mattered — on the other host
+    ///
+    /// Six milliseconds is why this list reads as "already accounted for" and
+    /// why the only lever left on iOS was building fewer views. Android's
+    /// org.json spent **1666ms** on the same bytes, which is what sent that
+    /// host looking at the payload instead of the view layer; the fields of
+    /// core.Style are `,omitzero` as a result, and the tree is 53,408 bytes
+    /// now rather than 424,603. This side gains a few milliseconds from that
+    /// and loses nothing: JSONSerialization was never the cost here, and every
+    /// read in GrMobStyle.parse already defaulted a missing key to zero.
+    ///
     /// The wait below stays at 20s rather than tracking the reading: it is a
     /// timeout, and its job is to fail on a hang rather than on a slow host.
     func testEchoGuardOnMapKit() throws {

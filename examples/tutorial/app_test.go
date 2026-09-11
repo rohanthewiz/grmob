@@ -502,9 +502,10 @@ func TestStacksDemoSwitchesAxis(t *testing.T) {
 // This is not a performance test and it does not assert a budget; it prints a
 // number that is otherwise invisible and fails only if the screen's cost
 // changes by an order of magnitude. What it records is the half of an emulator
-// measurement that no device was needed to explain.
+// measurement that no device was needed to explain — and then the fix that
+// halved it, which no device was needed to find either.
 //
-// # The measurement
+// # The measurement that made this number interesting
 //
 // Four arms on one emulator, means of five cold launches, from
 // android/device/launch.sh, which carries the table:
@@ -515,30 +516,52 @@ func TestStacksDemoSwitchesAxis(t *testing.T) {
 //
 // The lazy container wins 1017ms — Compose composes the rows on screen and not
 // the other 45 — which is the win iOS saw and the reason this screen is a
-// core.List. But the List arm is still 2516ms above the same binary with the
+// core.List. But the List arm was still 2516ms above the same binary with the
 // cards taken off the screen, and laziness cannot touch any of it: the whole
 // tree crosses the bridge whether or not Compose composes it.
 //
-// That is what this test prints. Go builds and serialises the number below in
-// well under a millisecond; everything the Android side does with it — the JNI
-// crossing, the parse, the node tree Kotlin builds — scales with it. So on
-// Android the lever is sending fewer nodes rather than composing fewer views,
-// and the first step of any such work is knowing what is being sent.
+// # Where that 2516ms actually went
 //
-// The bound is a factor of ten in each direction because the number is a fact
-// about 49 lessons of prose, which is edited: a new chapter should not fail a
-// test, and a screen that suddenly sends four megabytes should.
+// Attributed by GrMobRuntime's own stage clocks (see Startup.kt), five cold
+// launches, the same emulator:
+//
+//	bridge  Go's render + marshal + the gomobile crossing     17 ms
+//	parse   org.json turning 423,472 bytes into JSONObjects  1666 ms
+//	build   GrMobNode.parse walking those into the tree       427 ms
+//
+// So it was never the bridge and never Go. It was the parse, and the parse was
+// large because the payload was: 92.4% of those bytes were core.Style, written
+// out field by field for 336 nodes that had 1,168 non-zero style fields
+// between them — three and a half each, out of fifty-eight.
+//
+// core.Style's fields are `,omitzero` now, which is the whole fix. The size
+// below is the after; the before was 423,472.
+//
+//	                    bytes      parse    build    cold launch
+//	every field       423,472    1666 ms   427 ms      4850 ms
+//	zero omitted       53,408     249 ms   185 ms      3530 ms
+//
+// # Why the number is still worth printing
+//
+// Because the next screen can undo it. Nothing in the type system stops a
+// widget from putting a kilobyte in Props, and the parse is still the largest
+// single stage of an Android launch — it is simply now proportional to
+// something small. The bound is a factor of ten in each direction because the
+// number is a fact about 49 lessons of prose, which is edited: a new chapter
+// should not fail a test, and a screen that suddenly sends four megabytes
+// should.
 func TestHomeTreeSize(t *testing.T) {
 	mgr := newApp(t)
 	size := len(mgr.RenderInitial())
 	t.Logf("the contents screen is %d bytes of JSON on the wire", size)
 
-	const recorded = 423472
+	const recorded = 53408
 	if size < recorded/10 || size > recorded*10 {
 		t.Errorf("the contents screen is %d bytes of JSON, an order of magnitude "+
 			"from the %d recorded when android/device/launch.sh attributed "+
-			"2516ms of the Android launch to it. Not a budget failure — a "+
-			"prompt to re-measure and rewrite that table.", size, recorded)
+			"1320ms of the Android launch to the difference the omitzero tags "+
+			"made. Not a budget failure — a prompt to re-measure and rewrite "+
+			"that table.", size, recorded)
 	}
 	assertNoConcerns(t)
 }

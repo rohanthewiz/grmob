@@ -8,6 +8,11 @@
 #                                               by frame, for the one check
 #                                               below that `am start -W` cannot
 #                                               make of itself
+#   android/device/launch.sh 5 --stages         also print, per launch, what the
+#                                               app spent inside the bridge, the
+#                                               JSON parse and the node build —
+#                                               the three stages that scale with
+#                                               the screen's tree. See Startup.kt
 #
 # # What it answers
 #
@@ -41,16 +46,57 @@
 # So the lazy container wins on Android, in the direction and for the reason
 # predicted — and it wins 29% of the screen's cost where on iOS it won all of
 # it. **The finding was about SwiftUI, not about tree size**, which is what the
-# question was asking. The 2516ms is the more interesting half: a Go screen
-# reaches Compose as JSON, and this one is 423,472 bytes of it (12,382 without
-# the cards; both from a test in examples/tutorial). Go builds and serialises
-# all of it in under a millisecond on a desktop. Everything that happens to
-# those bytes afterwards — the JNI crossing, the parse, the node tree Kotlin
-# builds from it — is paid for all 49 rows whether or not Compose composes them,
-# because the whole tree crosses either way.
+# question was asking.
 #
-# That is the lever Android has and iOS did not need: send fewer nodes, not
-# compose fewer views. Nothing here does that yet.
+# # What the 2516ms turned out to be
+#
+# The obvious next move was windowing: teach core.List to send a slice of its
+# rows and ask for more as the host scrolls, which is a protocol change. It was
+# worth measuring before building, and the measurement said not to build it.
+#
+# GrMobRuntime times the two calls that scale with the screen and Startup.kt
+# prints them (`adb shell setprop log.tag.GrMobStartup DEBUG`). Five cold
+# launches of the List arm, this emulator:
+#
+#     bridge  Go's render + marshal + the gomobile crossing        17 ms
+#     parse   org.json turning 423,472 bytes into JSONObjects    1666 ms
+#     build   GrMobNode.parse walking those into the node tree    427 ms
+#
+# Neither Go nor the FFI is in it. It is the parse, and a probe run in the same
+# process settled what kind of cost that is: org.json takes ~1.1s on a second
+# and third pass over the same string, so it is the parser and not a cold JIT,
+# and android.util.JsonReader consuming every token of it takes 0.9-1.4s, so
+# swapping to a streaming parser buys nothing. The payload was the lever.
+#
+# And the payload was mostly nothing. 92.4% of those bytes were core.Style,
+# written out field by field for 336 nodes carrying 1,168 non-zero style fields
+# between them — about three and a half each, out of fifty-eight. The fix is
+# `json:",omitzero"` on core.Style and core.Node; see the note above core.Style.
+#
+#     home = the whole contents as a core.List, before      4850 ms
+#     home = the whole contents as a core.List, after       3530 ms
+#
+#     bytes on the wire      423,472 -> 53,408      7.9x
+#     parse                   1666ms -> 249ms
+#     build                    427ms -> 185ms
+#     TotalTime               4850ms -> 3530ms      -27% of the whole launch
+#
+# (4850 rather than 5045 for the before because both arms of THIS A/B were
+# measured with the stage clocks compiled in, an hour apart from the four arms
+# above and on a busier machine. Compare within a table, not across them.)
+#
+# So the screen's own cost is now about 1000ms over the near-empty control
+# rather than 2516ms, and roughly 450ms of that is still the parse and build.
+# Windowing would attack what is left, and what is left is no longer the
+# largest thing in the launch — which is exactly what sizing it first was for.
+#
+# # Why iOS never needed any of this
+#
+# The same payload, on the simulator: 6ms to parse and build the node tree
+# (LiveMapUITests carries that reading). Android's org.json spent 1666ms on the
+# identical bytes. Two hundred times is not a device-speed difference, it is a
+# parser, and it is why one host's lever was the view layer and the other's was
+# the wire.
 #
 # One emulator, one device shape, and Debug builds of both halves. The A/B is
 # sound — every arm ran on the same machine within the same hour — but the
@@ -111,7 +157,17 @@ set -e
 pkg="${PKG:-com.grmob.app}"
 activity="${ACTIVITY:-.MainActivity}"
 runs="${1:-3}"
-frames="${2:-}"
+# The two optional switches, either order, so neither has to be remembered as
+# "the second argument". --frames is the check on the instrument; --stages is
+# the attribution inside the app.
+frames=""
+stages=""
+for arg in "$@"; do
+  case "$arg" in
+    --frames) frames="--frames" ;;
+    --stages) stages="--stages" ;;
+  esac
+done
 
 here="$(cd "$(dirname "$0")" && pwd)"
 tmp="${TMPDIR:-/tmp}/grmob-device/launch"
@@ -127,8 +183,22 @@ cold_launch() {
   # The system needs a moment to finish tearing the process down; without it the
   # next start occasionally reports LaunchState: WARM and a number half the size.
   sleep 2
+  # Only when the stage line is wanted: a cleared buffer is what makes "the
+  # first matching line" mean "this launch's". Skipped otherwise so the default
+  # run leaves the reader's logcat alone.
+  [ -n "$stages" ] && adb logcat -c
   adb shell am start -W -n "$pkg/$activity" 2>&1
 }
+
+# GrMobRuntime measures its own mount and Startup.kt prints it, gated on the
+# platform's per-tag switch so a library does not narrate every launch of every
+# app built on it. Setting the property here rather than telling the reader to
+# is the difference between an instrument and a note about one; it survives
+# until reboot, which is harmless and is also what lets a later manual run print
+# the same line.
+if [ -n "$stages" ]; then
+  adb shell setprop log.tag.GrMobStartup DEBUG
+fi
 
 echo "$runs cold launches of $pkg"
 
@@ -144,6 +214,14 @@ for i in $(seq 1 "$runs"); do
     continue
   fi
   printf '  run %d: %5s ms   (WaitTime %s)\n' "$i" "$ms" "$wait_ms"
+  if [ -n "$stages" ]; then
+    # The mount finishes before the first frame, so by the time `am start -W`
+    # has returned the line is already in the buffer — no sleep needed. A miss
+    # means the app was built without the tag enabled or the property did not
+    # take, and saying so beats printing nothing.
+    line="$(adb logcat -d -s GrMobStartup:D 2>/dev/null | sed -n 's/.*GrMobStartup: //p' | head -1)"
+    printf '           %s\n' "${line:-no GrMobStartup line — is this a build with Startup.kt?}"
+  fi
   total=$(( total + ms ))
   n=$(( n + 1 ))
 done

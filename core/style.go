@@ -1,34 +1,75 @@
 package core
 
+// Style is the visual and semantic description a node carries to whichever
+// renderer is drawing it — Compose, SwiftUI, the DOM, or static HTML.
+//
+// # Why every field is `omitzero`
+//
+// The three JSON hosts each decode this struct key by key with a zero default
+// for an absent key ("missing" and "present but zero" have always meant the
+// same thing to GrMobStyle.kt, GrMobStyle.swift and styleFromGrMob), so a
+// field at its zero value carries no information across the wire. Before the
+// tags it was still written out, and on a real screen almost every field is
+// at its zero value: the tutorial's contents screen has 336 nodes and 1,168
+// non-zero style fields between them — about three and a half per node, out
+// of fifty-eight.
+//
+// The cost of writing the other fifty-four was not theoretical. That screen
+// serialized to 423,472 bytes, of which 92.4% was Style, and org.json spent
+// 1.6 seconds of a 5-second cold launch parsing it on an emulator:
+//
+//	                        bytes      Android cold launch
+//	every field written    423,472     bridge 17ms · parse 1,600ms · build 430ms
+//	zero fields omitted     51,231     see android/device/launch.sh for the after
+//
+// The tags are `omitzero` rather than `omitempty` because two of the fields
+// are structs — Padding and Margin are EdgeInsets, AccessibilityValue is a
+// ValueRange — and `omitempty` has never omitted an empty struct. omitzero
+// (Go 1.24) does, and it means the same thing for every other kind here, so
+// one spelling covers the struct instead of two.
+//
+// # The one field whose zero is not its value
+//
+// FlexShrink. Its "unset" and its "explicitly zero" are different states, and
+// the difference is carried by a non-zero sentinel (ShrinkNone) rather than by
+// the field's presence — which is exactly why these tags are safe on it. See
+// ShrinkNone.
+//
+// # What this constrains
+//
+// A future renderer must not read presence as meaning. If some field ever
+// needs to distinguish "the author said nothing" from "the author said zero",
+// it needs a sentinel like FlexShrink's or a pointer type; it cannot get that
+// distinction back from the wire format.
 type Style struct {
-	FontSize     float64
-	FontWeight   Weight
-	TextColor    string
-	Background   string
-	Padding      EdgeInsets
-	Margin       EdgeInsets
-	BorderRadius float64
-	Shadow       float64
-	Align        Alignment
-	Display      DisplayMode
-	Width        string
-	Height       string
-	BorderColor  string
-	BorderWidth  float64
-	Position     Position
-	Top          string
-	Left         string
-	Right        string
-	Bottom       string
-	ZIndex       int
-	Overflow     string // "hidden", "scroll", "visible"
-	WhiteSpace   string // "nowrap", "normal", "pre-line"
-	LineHeight   int
-	MaxWidth     string
-	MaxHeight    string
-	Gap          float64
-	Transition   string // "all 0.3s ease"
-	Animation    string // "bounce 2s infinite"
+	FontSize     float64     `json:",omitzero"`
+	FontWeight   Weight      `json:",omitzero"`
+	TextColor    string      `json:",omitzero"`
+	Background   string      `json:",omitzero"`
+	Padding      EdgeInsets  `json:",omitzero"`
+	Margin       EdgeInsets  `json:",omitzero"`
+	BorderRadius float64     `json:",omitzero"`
+	Shadow       float64     `json:",omitzero"`
+	Align        Alignment   `json:",omitzero"`
+	Display      DisplayMode `json:",omitzero"`
+	Width        string      `json:",omitzero"`
+	Height       string      `json:",omitzero"`
+	BorderColor  string      `json:",omitzero"`
+	BorderWidth  float64     `json:",omitzero"`
+	Position     Position    `json:",omitzero"`
+	Top          string      `json:",omitzero"`
+	Left         string      `json:",omitzero"`
+	Right        string      `json:",omitzero"`
+	Bottom       string      `json:",omitzero"`
+	ZIndex       int         `json:",omitzero"`
+	Overflow     string      `json:",omitzero"` // "hidden", "scroll", "visible"
+	WhiteSpace   string      `json:",omitzero"` // "nowrap", "normal", "pre-line"
+	LineHeight   int         `json:",omitzero"`
+	MaxWidth     string      `json:",omitzero"`
+	MaxHeight    string      `json:",omitzero"`
+	Gap          float64     `json:",omitzero"`
+	Transition   string      `json:",omitzero"` // "all 0.3s ease"
+	Animation    string      `json:",omitzero"` // "bounce 2s infinite"
 
 	// Rotate turns the node clockwise by this many degrees about its own
 	// centre. It is a paint-time transform on all four targets, not a layout
@@ -70,22 +111,22 @@ type Style struct {
 	// folded into [0, 360) unwinds the whole rose backwards every time the
 	// user turns past north. core.AngleDelta (heading.go) is the arithmetic
 	// for accumulating an unwrapped angle when a caller wants one.
-	Rotate float64
+	Rotate float64 `json:",omitzero"`
 
-	HoverStyle   *Style
-	FocusStyle   *Style
-	PseudoStates map[string]Style // ":hover", ":focus"
+	HoverStyle   *Style           `json:",omitzero"`
+	FocusStyle   *Style           `json:",omitzero"`
+	PseudoStates map[string]Style `json:",omitzero"` // ":hover", ":focus"
 
-	FlexDirection  FlexDirection
-	JustifyContent JustifyContent
-	AlignItems     AlignItems
-	MinHeight      string
-	MinWidth       string
-	ColumnGap      float64
-	RowGap         float64
-	FlexWrap       string
-	AlignSelf      AlignItems
-	FlexBasis      string
+	FlexDirection  FlexDirection  `json:",omitzero"`
+	JustifyContent JustifyContent `json:",omitzero"`
+	AlignItems     AlignItems     `json:",omitzero"`
+	MinHeight      string         `json:",omitzero"`
+	MinWidth       string         `json:",omitzero"`
+	ColumnGap      float64        `json:",omitzero"`
+	RowGap         float64        `json:",omitzero"`
+	FlexWrap       string         `json:",omitzero"`
+	AlignSelf      AlignItems     `json:",omitzero"`
+	FlexBasis      string         `json:",omitzero"`
 
 	// FlexShrink is a flex item's shrink factor, and it is the one number in
 	// this struct whose zero is not its own value. Read it through
@@ -93,8 +134,8 @@ type Style struct {
 	// core.FlexShrink, which is what puts the sentinel here.
 	//
 	// See ShrinkNone for the whole of why.
-	FlexShrink float64
-	FlexGrow   float64
+	FlexShrink float64 `json:",omitzero"`
+	FlexGrow   float64 `json:",omitzero"`
 
 	// StackAlign is where this node sits inside the core.ZStack it is a layer
 	// of: the per-layer opt-out from the stack's centre-on-both-axes contract.
@@ -106,7 +147,7 @@ type Style struct {
 	// child's say in its own placement — and deliberately not next to them in
 	// meaning: those are read by the two DOM targets alone, and this one is
 	// honoured on all four.
-	StackAlign StackAlignment
+	StackAlign StackAlignment `json:",omitzero"`
 
 	// Accessibility semantics. These live on Style rather than Props so every
 	// builder that takes StyleProps — leaves and containers alike — supports
@@ -115,9 +156,9 @@ type Style struct {
 	// Renderers map them onto the platform's semantics layer: contentDescription
 	// / clearAndSetSemantics on Android, accessibilityLabel / accessibilityHint /
 	// accessibilityHidden on iOS.
-	AccessibilityLabel  string
-	AccessibilityHint   string
-	AccessibilityHidden bool
+	AccessibilityLabel  string `json:",omitzero"`
+	AccessibilityHint   string `json:",omitzero"`
+	AccessibilityHidden bool   `json:",omitzero"`
 
 	// AccessibilityRole is what the node *is* — a heading, a table cell, a
 	// search landmark — as opposed to what it is called and what tapping it
@@ -128,7 +169,7 @@ type Style struct {
 	// It sits with the three fields above and travels the same way: on Style
 	// rather than in Props, so every builder supports it without a signature
 	// change and a change to it patches like any other style property.
-	AccessibilityRole Role
+	AccessibilityRole Role `json:",omitzero"`
 
 	// AccessibilityHeadingLevel is the tier of a heading — 1 for the screen's
 	// own name, 2 for a section within it, and so on to 6.
@@ -174,7 +215,7 @@ type Style struct {
 	// spelling on any of the three targets that can express a level, and
 	// silently rewriting a 7 to a 6 would invent a structure the caller did
 	// not describe.
-	AccessibilityHeadingLevel int
+	AccessibilityHeadingLevel int `json:",omitzero"`
 
 	// AccessibilityNestingLevel is how deep an item sits inside a nested
 	// collection — 1 for a top-level item, 2 for one inside it, and so on with
@@ -221,7 +262,7 @@ type Style struct {
 	// Values below 1 are dropped, as they are for a heading: 0 is the zero
 	// value and means "an item, depth unstated", which is what every list item
 	// in every tree is unless something says otherwise.
-	AccessibilityNestingLevel int
+	AccessibilityNestingLevel int `json:",omitzero"`
 
 	// AccessibilitySelected is whether this control is *on* — the applied
 	// filter chip, the tab that is showing, the chosen calendar day. See
@@ -284,7 +325,7 @@ type Style struct {
 	// natives and neither web target. The web is the strict one because ARIA
 	// is; each platform says the truest thing it can, which is the same rule
 	// the nine unmapped roles follow.
-	AccessibilitySelected SelectedState
+	AccessibilitySelected SelectedState `json:",omitzero"`
 
 	// AccessibilityExpanded is whether this disclosure is *open* — the
 	// accordion section showing its body, the twisty that has been turned. See
@@ -354,7 +395,7 @@ type Style struct {
 	// move components.Chip's ", selected" name suffix was deleted for. So the
 	// key crosses the bridge, is deliberately not parsed, and the note in
 	// GrMobStyle.swift says which property it is turning down.
-	AccessibilityExpanded ExpandedState
+	AccessibilityExpanded ExpandedState `json:",omitzero"`
 
 	// AccessibilityValue is where a valued control sits inside its range —
 	// how far an upload has got, which step a wizard is on. See ValueRange
@@ -398,7 +439,7 @@ type Style struct {
 	// Both natives honour their equivalent on any node and so do not scope it,
 	// the same asymmetry a selection has: the web is strict because ARIA is,
 	// not because the framework is.
-	AccessibilityValue ValueRange
+	AccessibilityValue ValueRange `json:",omitzero"`
 
 	// AccessibilityID names this element so another one can point at it, and
 	// AccessibilityControls is the pointing. Both are web-only, and they are
@@ -480,8 +521,8 @@ type Style struct {
 	// relationship: they are what a UI test selects by, they are not exposed to
 	// VoiceOver or TalkBack, and filling them from an ARIA wiring string would
 	// silently make every hand-built tab a test selector.
-	AccessibilityID       string
-	AccessibilityControls string
+	AccessibilityID       string `json:",omitzero"`
+	AccessibilityControls string `json:",omitzero"`
 
 	// AccessibilitySelectionFollowsFocus makes a composite widget choose the
 	// member the arrow keys land on, rather than only focusing it.
@@ -549,7 +590,7 @@ type Style struct {
 	// does not exist there. Both natives write nothing either, and for the
 	// original reason — VoiceOver and TalkBack cross a collection by swipe, so
 	// there is no arrow key for a selection to follow.
-	AccessibilitySelectionFollowsFocus bool
+	AccessibilitySelectionFollowsFocus bool `json:",omitzero"`
 
 	// Disabled marks the node inert: the renderers hand it to the platform's
 	// own disabled state rather than emulating one, so the control stops
@@ -572,7 +613,7 @@ type Style struct {
 	// Visual muting is deliberately not implied. What "disabled" looks like
 	// is a palette decision (components.Button spends Surface/TextSecondary
 	// on it); what it *means* is this flag.
-	Disabled bool
+	Disabled bool `json:",omitzero"`
 }
 
 type Weight int
