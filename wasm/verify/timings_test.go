@@ -96,7 +96,9 @@ var verifyTimingsTakenOn = struct {
 	//
 	// # How many of them there are, which this comment used to get wrong
 	//
-	// It said three, naming TestEveryTimingsRecordIsTheSameShape as the last.
+	// It said three, naming the copies census — then called
+	// TestEveryTimingsRecordIsTheSameShape, now
+	// TestTheShapesThisRepositoryKeepsTwoCopiesOfAreInStep — as the last.
 	// There were four: TestEveryGitListingAsksForNulSeparatedPaths has parsed
 	// the whole tree since before any of the other three existed and was
 	// simply not counted. And a walk in this package is not always a test —
@@ -115,6 +117,22 @@ var verifyTimingsTakenOn = struct {
 	// census of repository walks that was itself a repository walk would have
 	// been the eighth, and the figure below did not move for it — 2.70–2.80s
 	// became 2.73–2.84s, which is one machine's spread.
+	//
+	// # And the readings the copies census grew, which is the same story again
+	//
+	// TestTheShapesThisRepositoryKeepsTwoCopiesOfAreInStep took on two more
+	// questions — the import-resolving helpers held identical across both
+	// packages, and every core-count read held to being named in its package's
+	// cores note — and both are read off declarations the walk had already
+	// built. Measured by taking them out and putting them back: 0.18s to
+	// 0.19s, which is the fourth parse walk costing a hundredth more than the
+	// three beside it.
+	//
+	// The figure below moved further than that, 2.73–2.84s to 2.78–2.92s over
+	// fourteen runs, and the 0.01s does not account for it. What the rest is
+	// cannot be said from here — it is the width of one machine's own spread,
+	// which is the reason this record holds ranges and the reason none of
+	// these numbers is an assertion.
 	wholeFile string
 	// TestHowWideTheNarrowerFoldIsAndWhatHoldsTheGap end to end, which is what
 	// inkglyph_test.go's `128ms` sits inside.
@@ -156,7 +174,7 @@ var verifyTimingsTakenOn = struct {
 	goarch:    "arm64",
 	goVersion: "go1.26.1",
 	cores:     8,
-	wholeFile: "2.73–2.84s over seven runs",
+	wholeFile: "2.78–2.92s over fourteen runs",
 	foldWalk:  "0.40–0.52s over seven runs, node v22.12.0",
 }
 
@@ -172,7 +190,23 @@ var verifyTimingsTakenOn = struct {
 // measured that" rather than as "that is not where the difference is".
 //
 // Silence is the wrong answer either way round, so both records now state it
-// and wasm/verify/timingsrecords_test.go holds every record to having one.
+// and wasm/verify/copies_test.go holds every record to having one — and holds
+// this one to naming every term in this package that actually scales.
+//
+// # Why the note names declarations and not only a family
+//
+// It is held to being COMPLETE, not merely to being there — copies_test.go's
+// checkCoresNoteNamesEveryScaledTerm finds every declaration in this package
+// that reads runtime.NumCPU or runtime.GOMAXPROCS and requires this sentence
+// to name it. A note that says which terms scale is a claim about an inventory,
+// and the inventory is the half a parse can settle: the numbers below are a
+// wall clock and cannot be asserted, but a pool arriving in a third place is
+// somebody adding code, and this fails on it.
+//
+// So `affordedKLeafBandWalk` and `affordedTwoStepBands` are written out. They
+// are the whole of the `afforded*` family's concurrency — the reporting arm's
+// own NumCPU is the comparison against the record rather than a term, and is
+// skipped there by name.
 //
 // # What this package's answer actually is, which is not "nothing"
 //
@@ -181,15 +215,23 @@ var verifyTimingsTakenOn = struct {
 // single-threaded, the same number on any machine — and foldWalk is a node
 // process this package waits on rather than shares a core with.
 //
-// What does move is the afforded* band family in themenearmiss_test.go, which
-// splits its combinations across runtime.GOMAXPROCS. Measured by fixing it and
-// re-running, three runs apiece on the eight cores named above:
+// What does move is the afforded* band family in themenearmiss_test.go —
+// affordedKLeafBandWalk and affordedTwoStepBands, which are the two that take
+// `workers := runtime.GOMAXPROCS(0)` and divide their combinations across it.
+// Measured by fixing GOMAXPROCS and re-running, three runs apiece on the eight
+// cores named above:
 //
 //	GOMAXPROCS    the whole package
-//	1             3.08–3.21s
-//	2             2.78–2.84s
-//	4             2.74–2.76s
-//	8             2.75–2.84s
+//	1             3.08–3.27s
+//	2             2.78–2.88s
+//	4             2.74–2.79s
+//	8             2.75–2.85s
+//
+// Six runs a row rather than three: the table was re-taken when the copies
+// census grew its two extra readings, and each row is the two takings' ranges
+// held together for the reason the other record's -race row is. The shape did
+// not move — one core is a tenth dearer and two is where it stops improving —
+// which is the part the sentence below is about.
 //
 // Which is a different SHAPE from the other record's, and that is the part
 // worth having: this one is flat from two cores upwards, so a core count that
@@ -200,10 +242,12 @@ var verifyTimingsTakenOn = struct {
 // number and not that one.
 const coresAttribution = "The four repository-wide walks in this package are " +
 	"single-threaded — go/parser over all 381 files, 0.18s each — and " +
-	"foldWalk is a node process. Those do not move with the core count. The " +
-	"afforded* band family in themenearmiss_test.go splits across " +
-	"runtime.GOMAXPROCS and does: the package is 3.08–3.21s at one core, " +
-	"2.78–2.84s at two, and flat from there to eight. So a differing core " +
+	"foldWalk is a node process. Those do not move with the core count. Two " +
+	"declarations do, and they are the whole of it: affordedKLeafBandWalk " +
+	"and affordedTwoStepBands in themenearmiss_test.go each take `workers " +
+	":= runtime.GOMAXPROCS(0)` and divide the afforded* band family's " +
+	"combinations across it. The package is 3.08–3.27s at one core, " +
+	"2.78–2.88s at two, and flat from there to eight. So a differing core " +
 	"count is worth about a tenth of the figure above, and only between one " +
 	"core and two — which is the opposite shape from " +
 	"internal/themehistory's, where the term is 88 git processes and the " +

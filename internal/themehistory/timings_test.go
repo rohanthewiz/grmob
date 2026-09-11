@@ -33,7 +33,7 @@ import (
 // moments and were never meant to match.
 //
 // That argument is about TWO, and it is held to two by an arm rather than by
-// this paragraph: wasm/verify/timingsrecords_test.go finds every
+// this paragraph: wasm/verify/copies_test.go finds every
 // `…TimingsTakenOn` in the repository, holds each to the five machine fields
 // and to having this reporting test in its package, and FAILS at the third —
 // where the trade stops being one package's cost against one duplicate and
@@ -93,7 +93,7 @@ var themehistoryTimingsTakenOn = struct {
 	//	8          0.21–0.23s         3.05–3.14s
 	//
 	// The one-core row is the figure this package had BEFORE the pool, which
-	// is what says the pool is the only thing that moved. So `3.01–3.11s`
+	// is what says the pool is the only thing that moved. So `3.01–3.12s`
 	// below is not a number about this code: it is a number about this code on
 	// eight cores, and a single-core CI runner pays about 0.7s more for the
 	// same green run.
@@ -102,16 +102,19 @@ var themehistoryTimingsTakenOn = struct {
 	// # to switch off — and `-short` is the switch
 	//
 	//	              default        -short
-	//	plain         3.01–3.11s     1.22–1.27s
-	//	-race         6.46–6.64s     2.41s
+	//	plain         3.01–3.12s     1.20–1.27s
+	//	-race         6.46–6.64s     2.41–2.44s
 	//
-	// Seven runs for the plain default, three for the other three. The -race
-	// row is six readings rather than three: it was 6.52–6.64s, and a re-take
-	// after the concurrency census grew came in at 6.46–6.58s. Nothing in
-	// that arm changed and the two ranges overlap across most of their width,
-	// so the row is widened to hold both rather than replaced — which is what
-	// a range is for, and the alternative is a record that reports the last
-	// afternoon. The arm is
+	// Seven runs for the plain default, three for the other three, and every
+	// row here holds more than one afternoon's readings. The -race row is six
+	// rather than three: it was 6.52–6.64s, and a re-take after the
+	// concurrency census grew came in at 6.46–6.58s. Nothing in that arm
+	// changed and the two ranges overlap across most of their width, so the
+	// row is widened to hold both rather than replaced — which is what a range
+	// is for, and the alternative is a record that reports the last afternoon.
+	// The two `-short` figures and the plain default were widened the same
+	// way by a later re-take, by a hundredth or two at one end apiece. The arm
+	// is
 	// around 1.8s of a plain run and around 4.2s of a -race one, which is the
 	// price of the only test here that runs the real program over the real
 	// history.
@@ -229,7 +232,7 @@ var themehistoryTimingsTakenOn = struct {
 	goarch:       "arm64",
 	goVersion:    "go1.26.1",
 	cores:        8,
-	wholePackage: "3.01–3.11s over seven runs, and 3.69–3.82s on a single core",
+	wholePackage: "3.01–3.12s over fourteen runs, and 3.69–3.82s on a single core",
 	wholeRun: "1.52–1.60s over seven runs, in process, 2906 objects fetched, " +
 		"the expectation enumerated alongside in 0.22s over 8 workers",
 	perObjectRun: "30.40–30.52s over three runs, 2906 objects, one process " +
@@ -285,7 +288,7 @@ func TestTheTimingsInThisPackageSayWhichMachineTheyCameFrom(t *testing.T) {
 	// Which term the core count moves, said out loud whenever the two differ:
 	// a reader told "8 cores against 4" and nothing else has to go and find
 	// out what that is worth. The standing half is coresAttribution, which
-	// wasm/verify/timingsrecords_test.go holds every record to carrying; the
+	// wasm/verify/copies_test.go holds every record to carrying; the
 	// worker counts are this run's and belong here.
 	pooled := ""
 	if cores != rec.cores {
@@ -326,7 +329,7 @@ func TestTheTimingsInThisPackageSayWhichMachineTheyCameFrom(t *testing.T) {
 // different amounts about it. This one carried the table and wasm/verify's
 // said nothing — which a reader holding a run that disagrees reads as "nobody
 // measured that" rather than as "that is not where the difference is". Both
-// now state it, and wasm/verify/timingsrecords_test.go holds every record to
+// now state it, and wasm/verify/copies_test.go holds every record to
 // having one, in the same pass that holds them to the five machine fields.
 //
 // What is worth comparing between the two is the SHAPE. This package's term is

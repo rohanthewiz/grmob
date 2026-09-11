@@ -8,6 +8,7 @@ import (
 	"go/token"
 	"os"
 	"sort"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -61,12 +62,22 @@ import (
 //
 // A SITE is still not a call, and that is the same understatement one
 // construct along: a walk inside a `for`, or inside a subtest closure that a
-// `range` drives, is one site and as many walks as the loop is long. A parse
-// cannot price that — the loop's length is a run-time fact — so it is
-// REPORTED instead of counted, which is the honest version of the same
-// finding. There is no such site in this package; see callsTo for how one
-// would be recognised, and why it would otherwise read exactly like a row
-// that is right.
+// `range` drives, is one site and as many walks as the loop is long. There is
+// no such site in this package, and the two kinds it would come in are not the
+// same finding:
+//
+//	for range 2 { … }          two walks, and the two is in the source. Read
+//	                           off the loop and multiplied into the count, so
+//	                           the row states the real number — see loopBound
+//	for _, c := range cases    len(cases), which is a run-time fact no parse
+//	                           has. REPORTED, which is the honest version of
+//	                           a number that does not exist yet
+//
+// Reporting both identically was one finding doing the work of two: the first
+// is a cost this arm declines to compute rather than one it cannot, and a row
+// forced to say `runs: 1` beside it is a row that cannot be right. See callsTo
+// for how a site is recognised, and why one would otherwise read exactly like
+// a row that is right.
 //
 // # Why this arm is not itself a repository walk
 //
@@ -172,7 +183,11 @@ func TestTheRepositoryWideWalksInThisPackageAreTheOnesDecidedOn(t *testing.T) {
 			continue
 		}
 		calls, in := 0, ""
-		var looped []string
+		// Two lists and not one: a loop whose length is written in the source
+		// is a site this pass has already PRICED into `calls`, and one whose
+		// length is a run-time fact is a site nothing can price. Only the
+		// second is a finding — see callsTo.
+		var looped, priced []string
 		for _, name := range names {
 			if !bytes.Contains(sources[name], []byte(w.fn)) {
 				continue
@@ -186,11 +201,17 @@ func TestTheRepositoryWideWalksInThisPackageAreTheOnesDecidedOn(t *testing.T) {
 				if !ok || fn.Body == nil || fn.Name.Name == w.fn {
 					continue
 				}
-				n, inLoops := callsTo(fset, fn.Body, w.fn)
+				n, sites := callsTo(fset, fn.Body, w.fn)
 				calls += n
-				for _, line := range inLoops {
-					looped = append(looped, fmt.Sprintf("%s:%d, in %s",
-						name, line, fn.Name.Name))
+				for _, site := range sites {
+					where := fmt.Sprintf("%s:%d, in %s (%s)", name, site.line,
+						fn.Name.Name, strings.Join(site.how, " · "))
+					if site.known {
+						priced = append(priced,
+							fmt.Sprintf("%s ×%d", where, site.times))
+						continue
+					}
+					looped = append(looped, where)
 				}
 				if n > 0 && in == "" {
 					in = fn.Name.Name
@@ -200,6 +221,7 @@ func TestTheRepositoryWideWalksInThisPackageAreTheOnesDecidedOn(t *testing.T) {
 		found[i].runs = calls
 		found[i].drivenBy = in
 		found[i].looped = looped
+		found[i].priced = priced
 	}
 
 	// The walk reaching anything. A walk over nothing passes silently and
@@ -246,35 +268,45 @@ func TestTheRepositoryWideWalksInThisPackageAreTheOnesDecidedOn(t *testing.T) {
 		// once per run — see callsTo, and the limit this closes one construct
 		// along from the helper case it was written for.
 		if len(w.looped) > 0 {
-			t.Errorf("%s is called from inside a loop: %s.\n\n"+
+			t.Errorf("%s is called from inside a loop whose length this arm "+
+				"cannot read: %s.\n\n"+
 				"The count beside it is a count of call SITES, and a site "+
 				"inside a `for` or a `range` is one site and as many walks as "+
 				"the loop has iterations — a `git ls-files`, a read of every "+
 				"tracked file and possibly a go/parser pass, each time round. "+
-				"So `runs: %d` in its row understates the cost by whatever "+
-				"that loop's length turns out to be, and the budget below is "+
-				"counting the wrong thing.\n\n"+
-				"This is the same shape as the helper case this arm does "+
-				"close — a unit that runs more often than it is written — one "+
-				"construct further along, and a parse cannot price it: the "+
-				"loop's length is a run-time fact. Hoist the walk out of the "+
-				"loop and pass its result in, which is what makes the cost a "+
-				"number again, or teach this arm how to read the bound.",
+				"So `runs: %d` in its row is a floor rather than a total, and "+
+				"the budget below is counting the wrong thing.\n\n"+
+				"A loop whose length is WRITTEN DOWN is not this finding: "+
+				"`for range 2` and `for i := 0; i < 3; i++` are read off the "+
+				"source and multiplied into the count, so the row states the "+
+				"real number and nothing is reported. This one is the other "+
+				"case — a range over something whose length is decided at run "+
+				"time, which no parse has. Hoist the walk out of the loop and "+
+				"pass its result in, which is what makes the cost a number "+
+				"again, or give the loop a bound loopBound can read.",
 				w.fn, strings.Join(w.looped, "; "), row.runs)
 		}
 		// Only for helpers: a test runs once by definition, and its row says
 		// nothing about how often.
 		if !strings.HasPrefix(w.fn, "Test") &&
 			(row.runs != w.runs || row.drivenBy != w.drivenBy) {
+			looped := ""
+			if len(w.priced) > 0 {
+				looped = fmt.Sprintf("\n\nSome of that count is a loop "+
+					"rather than a second call: %s. A bound written in the "+
+					"source is read and multiplied in, so the row states "+
+					"walks and not sites.", strings.Join(w.priced, "; "))
+			}
 			t.Errorf("%s:%d is listed as running %d time(s) per run, driven by "+
-				"%q, and the source has %d call site(s), the first in %q.\n\n"+
+				"%q, and the source makes %d call(s), the first in %q.%s\n\n"+
 				"A helper that walks the repository costs its walk once per "+
 				"caller. A second caller is a second `git ls-files`, a second "+
 				"read of every tracked file, and a row that still says one — "+
 				"which is the cost being understated in the direction nobody "+
-				"notices. Zero call sites is the other end: a walk nothing "+
-				"makes, and a row describing a dead function.",
-				w.file, w.line, row.runs, row.drivenBy, w.runs, w.drivenBy)
+				"notices. Zero calls is the other end: a walk nothing makes, "+
+				"and a row describing a dead function.",
+				w.file, w.line, row.runs, row.drivenBy, w.runs, w.drivenBy,
+				looped)
 		}
 		if row.depth != w.depth {
 			t.Errorf("%s:%d is listed as a walk that %s and it %s.\n\n"+
@@ -337,11 +369,24 @@ func TestTheRepositoryWideWalksInThisPackageAreTheOnesDecidedOn(t *testing.T) {
 
 	// Reported as what was found rather than as what should have been found:
 	// this line is printed on a failing run too.
+	// Any site whose count came from a loop bound rather than from a second
+	// call site, said out loud: a `runs: 2` that a reader cannot find two
+	// calls for is a row that looks wrong, and the loop it came from is the
+	// answer.
+	bounded := ""
+	for _, w := range found {
+		if len(w.priced) > 0 {
+			bounded += fmt.Sprintf("\n%s is called inside a loop of a length "+
+				"this arm could read, and the count above includes it: %s.",
+				w.fn, strings.Join(w.priced, "; "))
+		}
+	}
 	t.Logf("%d repository-wide walk(s) per run in this package, %d of them "+
 		"parsing every Go file, from %d function(s): %s. Found by scanning %d "+
 		"Go file(s) in this directory and parsing the %d that named "+
-		"something. Their cost is part of verifyTimingsTakenOn.wholeFile.",
-		walks, parses, len(found), walkList(found), len(names), len(trees))
+		"something. Their cost is part of verifyTimingsTakenOn.wholeFile.%s",
+		walks, parses, len(found), walkList(found), len(names), len(trees),
+		bounded)
 }
 
 // The three depths a repository walk comes in, cheapest first.
@@ -438,11 +483,16 @@ var repositoryWalks = []repositoryWalkRow{{
 	asks: "every testing.Short() there is, and whether the branch it guards " +
 		"skips",
 }, {
-	fn:    "TestEveryTimingsRecordIsTheSameShape",
-	file:  "timingsrecords_test.go",
+	fn:    "TestTheShapesThisRepositoryKeepsTwoCopiesOfAreInStep",
+	file:  "copies_test.go",
 	depth: walkParses,
-	asks: "every `…TimingsTakenOn` record, and whether each carries the five " +
-		"machine fields and a reporting arm in its own package",
+	asks: "everything this repository keeps two copies of on purpose — the " +
+		"`…TimingsTakenOn` records and whether each carries the five machine " +
+		"fields, a reporting arm and a cores note that names every term in " +
+		"its package that scales; and the import-resolving helpers, held to " +
+		"being the same code in both packages. Three questions and one parse, " +
+		"because a fifth repository-wide parse is the decision " +
+		"repositoryParseBudget exists to force",
 }, {
 	fn:    "TestTheDottedVersionParsersAreTheOnesTheReasonCovers",
 	file:  "versionorder_test.go",
@@ -472,11 +522,16 @@ type repositoryWalk struct {
 	runs int
 	// The first function found calling it, for a helper. "" for a test.
 	drivenBy string
-	// Call sites that are inside a loop, as "file:line, in F". Empty for
-	// every walk in this package today; a site here is one whose cost `runs`
-	// cannot state, because the number of walks it makes is the number of
-	// times the loop goes round.
+	// Call sites inside a loop whose length no parse can read, as
+	// "file:line, in F (how)". Empty for every walk in this package today; a
+	// site here is one whose cost `runs` cannot state, because the number of
+	// walks it makes is the number of times the loop goes round.
 	looped []string
+	// And the ones inside a loop that DOES say how long it is, which are
+	// already multiplied into `runs`. Not a finding — they are carried so the
+	// log line can say that a count above one came from a bound in the source
+	// rather than from a second call site.
+	priced []string
 }
 
 // walkDepth is how far into the repository this body goes, or "" for a body
@@ -530,8 +585,26 @@ func walkDepth(body *ast.BlockStmt, parsers map[string]bool) string {
 	return ""
 }
 
+// loopSite is one call site that sits inside a loop, and what a parse can say
+// about how many times it runs.
+//
+// `times` is the product of the bounds of every loop around it and `known`
+// says whether a parse could read them all. The two are separate because the
+// finding is different in each case — a bound this arm CAN read is a cost it
+// declines to compute if it only reports it, and a bound it cannot read is a
+// number that does not exist until the run happens.
+type loopSite struct {
+	line  int
+	times int
+	known bool
+	// How the bounds were read, as "for range 2" or "for range cases", so a
+	// message can say which loop it could not price rather than only that
+	// there was one.
+	how []string
+}
+
 // callsTo is how many times this body calls a package-level function by name,
-// and the lines of those calls that are inside a loop.
+// and the call sites among them that are inside a loop.
 //
 // Bare identifiers only, for the reason the git-wrapper census gives: a
 // `pkg.Fn(…)` is another package's, and a method call is `x.Fn(…)`, which is
@@ -560,16 +633,51 @@ func walkDepth(body *ast.BlockStmt, parsers map[string]bool) string {
 // for the reason shortlever_test.go's containsPos gives: one parse, one
 // FileSet, and a call inside a loop is exactly a call whose Pos lies between
 // that statement's ends. Nothing here has to know what the loop is made of.
-func callsTo(fset *token.FileSet, body *ast.BlockStmt, name string) (calls int, looped []int) {
-	// Every loop in the body, as a source range. `for {}`, a three-clause
-	// `for` and a `range` are one question here — how many times does what is
-	// inside this run — so both statement kinds go in.
-	type span struct{ from, to token.Pos }
+//
+// # Which of those loops is a number and which is a question
+//
+// Reporting every loop identically was one finding doing the work of two.
+// `for range 2 { … }` is two walks and the two is IN THE SOURCE; `for _, c :=
+// range cases` is len(cases), which is a run-time fact a parse cannot have.
+// The first is a cost this arm was declining to compute rather than one it
+// could not, and a row that has to say `runs: 1` beside a bounded loop is a
+// row that cannot be right.
+//
+// So a bound a parse can read is READ — see loopBound — and the site is priced
+// rather than reported: `calls` comes back as the product, the row states it,
+// and the budget counts it. A bound it cannot read comes back as a site with
+// `known` false, which is the finding that was there before.
+//
+// Nested loops multiply, and one unreadable bound anywhere in the nest makes
+// the whole product unknown: two known loops around one unknown one is still
+// "as many as that range is long", times a constant nobody needs to be told.
+//
+// # What the pricing is loose about, which is the reporting direction
+//
+// A call inside a loop whose enclosing FuncLit is never invoked — stored in a
+// variable, passed somewhere that drops it — is priced as though the loop ran
+// it. That overstates the cost, which is the direction this arm is allowed to
+// be wrong in: its whole purpose is to stop a walk's price being understated
+// where nobody looks. There is no such site here, and `t.Run` and `defer` —
+// the two ways a closure in a test actually reaches a call — both run it.
+func callsTo(fset *token.FileSet, body *ast.BlockStmt, name string) (calls int, sites []loopSite) {
+	// Every loop in the body, as a source range with whatever bound could be
+	// read off it. `for {}`, a three-clause `for` and a `range` are one
+	// question here — how many times does what is inside this run — so both
+	// statement kinds go in.
+	type span struct {
+		from, to token.Pos
+		times    int
+		known    bool
+		how      string
+	}
 	var loops []span
 	ast.Inspect(body, func(node ast.Node) bool {
 		switch node.(type) {
 		case *ast.ForStmt, *ast.RangeStmt:
-			loops = append(loops, span{from: node.Pos(), to: node.End()})
+			times, known, how := loopBound(node)
+			loops = append(loops, span{from: node.Pos(), to: node.End(),
+				times: times, known: known, how: how})
 		}
 		return true
 	})
@@ -582,16 +690,215 @@ func callsTo(fset *token.FileSet, body *ast.BlockStmt, name string) (calls int, 
 		if !ok || id.Name != name {
 			return true
 		}
-		calls++
+		// Every loop around this call, not the innermost: a site two `range`s
+		// deep runs the product of the two, and a row that quoted only the
+		// inner one would be wrong by the outer one's length.
+		times, known, inside := 1, true, false
+		var how []string
 		for _, l := range loops {
-			if l.from <= call.Pos() && call.Pos() < l.to {
-				looped = append(looped, fset.Position(call.Pos()).Line)
-				break
+			if l.from > call.Pos() || call.Pos() >= l.to {
+				continue
 			}
+			inside = true
+			how = append(how, l.how)
+			if !l.known {
+				known = false
+				continue
+			}
+			times *= l.times
 		}
+		if !inside {
+			calls++
+			return true
+		}
+		if known {
+			// Priced. The site costs what the loops make it cost, and the row
+			// beside it is expected to say so — which is the whole difference
+			// between a number this arm computes and one it hands back as a
+			// question.
+			calls += times
+		} else {
+			// Still one site as far as the count goes, because the alternative
+			// is inventing a number. The finding below is what says the count
+			// is a floor rather than a total.
+			calls++
+		}
+		sites = append(sites, loopSite{line: fset.Position(call.Pos()).Line,
+			times: times, known: known, how: how})
 		return true
 	})
-	return calls, looped
+	return calls, sites
+}
+
+// loopBound is how many times this loop's body runs, when the source says so.
+//
+// # Why only these shapes
+//
+// The question is not "what does this loop do" — that is the halting problem
+// with extra steps — it is "is the number of iterations written down here". It
+// is written down in exactly two constructions, and both of them are the ones
+// somebody actually writes around a call they meant to make a fixed number of
+// times:
+//
+//	for range 3                 the count is the literal
+//	for range []T{a, b, c}      the count is the number of elements. An array
+//	                            type with a written length is that length
+//	                            instead, because `[8]int{}` ranges eight times
+//	                            and has one element
+//	for i := 0; i < 3; i++      the count is the difference, with `<=` one
+//	                            more. Only a literal start, a literal bound
+//	                            and a ++ post — anything else is arithmetic
+//	                            this is not going to do
+//
+// Everything else comes back unknown, and unknown is not a failure: it is the
+// case the report above exists for. In particular `for _, c := range cases` —
+// the shape that actually threatens the walk count — is a slice whose length
+// is decided somewhere else, and pretending to read it by finding the `cases`
+// declaration would be a dataflow walk in a census that declines those for the
+// reason gitquoting_test.go writes down.
+//
+// A string range is deliberately unknown: `for range "héllo"` goes round once
+// per RUNE and the literal's length is in bytes, and a census that got that
+// wrong by one on a non-ASCII literal would be worse than one that asks.
+//
+// `how` is the loop as a reader would say it, for the message: "for range
+// cases" names the thing that could not be priced, and "there is a loop" does
+// not.
+func loopBound(n ast.Node) (times int, known bool, how string) {
+	switch loop := n.(type) {
+	case *ast.RangeStmt:
+		how = "for range " + exprText(loop.X)
+		switch x := loop.X.(type) {
+		case *ast.BasicLit:
+			if x.Kind == token.INT {
+				if v, err := strconv.Atoi(x.Value); err == nil && v >= 0 {
+					return v, true, how
+				}
+			}
+			// A string literal ranges by rune and its length is in bytes.
+			return 0, false, how
+		case *ast.CompositeLit:
+			// `[N]T{…}` is N iterations whatever the literal fills in; a
+			// slice or a map is one per element.
+			if arr, ok := x.Type.(*ast.ArrayType); ok && arr.Len != nil {
+				if lit, ok := arr.Len.(*ast.BasicLit); ok && lit.Kind == token.INT {
+					if v, err := strconv.Atoi(lit.Value); err == nil && v >= 0 {
+						return v, true, how
+					}
+				}
+				return 0, false, how
+			}
+			return len(x.Elts), true, how
+		}
+		return 0, false, how
+	case *ast.ForStmt:
+		how = "for " + forHeaderText(loop)
+		if loop.Cond == nil {
+			// `for {}` and `for … ;; …` run until something breaks, which is
+			// not a number in this file.
+			return 0, false, how
+		}
+		cond, ok := loop.Cond.(*ast.BinaryExpr)
+		if !ok {
+			return 0, false, how
+		}
+		// The counter, its start and its bound all have to be literal for the
+		// difference to mean anything.
+		name, from, ok := literalInit(loop.Init)
+		if !ok {
+			return 0, false, how
+		}
+		id, ok := cond.X.(*ast.Ident)
+		if !ok || id.Name != name {
+			return 0, false, how
+		}
+		to, ok := intLit(cond.Y)
+		if !ok {
+			return 0, false, how
+		}
+		inc, ok := loop.Post.(*ast.IncDecStmt)
+		if !ok || inc.Tok != token.INC {
+			return 0, false, how
+		}
+		if incID, ok := inc.X.(*ast.Ident); !ok || incID.Name != name {
+			return 0, false, how
+		}
+		switch cond.Op {
+		case token.LSS:
+			// Fewer than none is none, not a negative number of walks.
+			return max(to-from, 0), true, how
+		case token.LEQ:
+			return max(to-from+1, 0), true, how
+		}
+		return 0, false, how
+	}
+	return 0, false, ""
+}
+
+// literalInit is the name and starting value of a `i := 0` init statement.
+func literalInit(init ast.Stmt) (name string, from int, ok bool) {
+	assign, ok := init.(*ast.AssignStmt)
+	if !ok || assign.Tok != token.DEFINE || len(assign.Lhs) != 1 ||
+		len(assign.Rhs) != 1 {
+		return "", 0, false
+	}
+	id, ok := assign.Lhs[0].(*ast.Ident)
+	if !ok {
+		return "", 0, false
+	}
+	from, ok = intLit(assign.Rhs[0])
+	if !ok {
+		return "", 0, false
+	}
+	return id.Name, from, true
+}
+
+// intLit is an expression's value when it is a non-negative integer literal.
+func intLit(e ast.Expr) (int, bool) {
+	lit, ok := e.(*ast.BasicLit)
+	if !ok || lit.Kind != token.INT {
+		return 0, false
+	}
+	v, err := strconv.Atoi(lit.Value)
+	if err != nil || v < 0 {
+		return 0, false
+	}
+	return v, true
+}
+
+// exprText is an expression as a reader would say it, for a message.
+//
+// Only the spellings a range clause actually takes are rendered; anything else
+// comes back as a placeholder, because a message saying "for range …" is still
+// pointing at a line and a half-printed expression is a message that looks
+// like a bug in the census.
+func exprText(e ast.Expr) string {
+	switch x := e.(type) {
+	case *ast.Ident:
+		return x.Name
+	case *ast.BasicLit:
+		return x.Value
+	case *ast.SelectorExpr:
+		return exprText(x.X) + "." + x.Sel.Name
+	case *ast.CallExpr:
+		return exprText(x.Fun) + "(…)"
+	case *ast.CompositeLit:
+		return "a composite literal"
+	}
+	return "…"
+}
+
+// forHeaderText is a three-clause `for`'s header, as much of it as a message
+// needs to point at the right line.
+func forHeaderText(loop *ast.ForStmt) string {
+	if loop.Cond == nil {
+		return "{…}"
+	}
+	if cond, ok := loop.Cond.(*ast.BinaryExpr); ok {
+		return fmt.Sprintf("…; %s %s %s; …", exprText(cond.X), cond.Op,
+			exprText(cond.Y))
+	}
+	return "…; …; …"
 }
 
 // mentionsAnEnumeration is whether this source names any entry point, as a

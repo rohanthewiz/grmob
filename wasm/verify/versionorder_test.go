@@ -55,7 +55,8 @@ import (
 //
 // A census somebody has to remember to update is what this repository writes
 // arms instead of — see TestTheGitWrapperTaintWalkIsTheSizeItsReasonCovers and
-// TestEveryTimingsRecordIsTheSameShape, which are the same shape of check for
+// TestTheShapesThisRepositoryKeepsTwoCopiesOfAreInStep, which are the same
+// shape of check for
 // the same kind of reason.
 //
 // # What is being counted, which used to be the wrong noun
@@ -299,7 +300,8 @@ var versionReaders = []struct {
 }, {
 	file: "internal/themehistory/timings_test.go",
 	what: "the same prefix comparison, in the other timings record. Held to " +
-		"being the same shape by TestEveryTimingsRecordIsTheSameShape",
+		"being the same shape by " +
+		"TestTheShapesThisRepositoryKeepsTwoCopiesOfAreInStep",
 }, {
 	file: "mobile/verify/composelayout_test.go",
 	what: "a Compose release DERIVED out of the BOM's own pom and used to " +

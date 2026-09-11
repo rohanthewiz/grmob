@@ -7,7 +7,7 @@ import (
 	"go/parser"
 	"go/token"
 	// Aliased: this package already declares a `types` function
-	// (timingsrecords_test.go), and a bare import would collide with it. The
+	// (copies_test.go), and a bare import would collide with it. The
 	// alias is here rather than a rename there because the collision is one
 	// import's problem and the other name is load-bearing in its own file.
 	gotypes "go/types"
@@ -1182,12 +1182,26 @@ func shadowsAPredeclaredName(t *testing.T, file *ast.File, fn *ast.FuncDecl,
 //	                       and discarded rather than counted, which is the
 //	                       failure a grep would have
 //
-// A read or a parse that fails is skipped rather than reported: the build says
-// so first, and a file this walk cannot read is one whose declarations are not
-// this census's business. That is loose in the direction of NOT finding a
-// shadow, which is the unsafe direction here — so it is worth saying that the
-// only way to reach it is a file that does not compile, in which case the
-// whole package's tests are failing for a better reason.
+// # What a file it cannot read does, which used to be nothing
+//
+// A read or a parse that fails was skipped in silence, with the reason written
+// down beside it: the build says so first, so the only way to reach it is a
+// file that does not compile, in which case the whole package is failing for a
+// better reason. That argument is sound and it is an ASSUMPTION — and it is
+// loose in the direction of NOT finding a shadow, which is the unsafe
+// direction here. A `func len` in a file go/parser rejects is a shadow this
+// census misses and a call it then drops as predeclared.
+//
+// It is also an assumption this walk is already holding the evidence for: the
+// bytes are read before the parse, and the byte scan has already said this
+// file might declare the name. So the skip is REPORTED instead, and only for a
+// file that got that far — a file whose bytes do not contain the name cannot
+// declare it, whatever go/parser makes of the rest of it, so nothing is said
+// about the ones the scan already dropped.
+//
+// The finding is not "this file does not compile". It is that the census
+// cannot tell whether the class exclusion still holds, which is a different
+// sentence and the one a reader needs.
 func packageLevelNames(t *testing.T, want []string) []string {
 	t.Helper()
 	entries, err := os.ReadDir(".")
@@ -1213,6 +1227,18 @@ func packageLevelNames(t *testing.T, want []string) []string {
 	for _, file := range names {
 		raw, readErr := os.ReadFile(file)
 		if readErr != nil {
+			// Reported and not skipped: a file this walk cannot open is one
+			// whose declarations it has no opinion about, and the opinion it
+			// would otherwise give is "no shadow", which is the unsafe one.
+			t.Errorf("%s could not be read while looking for a "+
+				"redeclaration of %s: %v.\n\n"+
+				"The helper census drops predeclared names on the grounds "+
+				"that nothing in this repository declares one, and this scan "+
+				"is what makes that a fact rather than an assumption. A file "+
+				"it cannot open is a file that might declare `%s`, and "+
+				"skipping it silently would turn the class exclusion back "+
+				"into a guess — see shadowsAPredeclaredName.",
+				file, strings.Join(want, ", "), readErr, want[0])
 			continue
 		}
 		hit := false
@@ -1228,6 +1254,23 @@ func packageLevelNames(t *testing.T, want []string) []string {
 		parsed, parseErr := parser.ParseFile(fset, file, raw,
 			parser.SkipObjectResolution)
 		if parseErr != nil {
+			// Only for a file the byte scan kept: this one contains the name
+			// somewhere, and whether that is a declaration or a sentence is
+			// precisely what the parse was going to decide.
+			t.Errorf("%s contains %s and go/parser could not read it: %v.\n\n"+
+				"This scan decides whether anything in this directory "+
+				"redeclares a predeclared name, which is the one thing that "+
+				"would make the helper census wrong to drop those names. A "+
+				"file it cannot parse is a file that might contain `func "+
+				"%s`, and the answer it would otherwise give — no shadow — is "+
+				"the direction that loses a finding rather than the one that "+
+				"asks for one.\n\n"+
+				"If the build is failing this is the same failure said twice "+
+				"and the other one is more useful; if the build is green, "+
+				"this file is not what the build compiles, and "+
+				"shadowsAPredeclaredName's limits say why that is read here "+
+				"at all.",
+				file, strings.Join(want, ", "), parseErr, want[0])
 			continue
 		}
 		for _, d := range parsed.Decls {

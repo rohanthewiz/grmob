@@ -8,12 +8,32 @@ import (
 	"path"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"testing"
 )
 
-// Every wall-clock record in this repository has the same five machine fields
-// and the same reporting arm — and there are two of them.
+// Everything this repository deliberately keeps two copies of, held to being
+// two copies of the same thing.
+//
+// # The three shapes, and why they are in one walk
+//
+//	the timings record    five machine fields, a reporting arm and a standing
+//	                      sentence about what a core count is worth, in
+//	                      wasm/verify/timings_test.go and
+//	                      internal/themehistory/timings_test.go
+//	the import resolver   the five functions every census resolves a qualifier
+//	                      with, in the importnames_test.go of both packages.
+//	                      See importResolverShapes
+//	the cores note        held to being COMPLETE rather than merely present:
+//	                      every place in a record's package that reads the
+//	                      core count is named in that package's note
+//
+// They are one arm because they are one repository-wide parse, and a fifth of
+// those is the decision repositoryParseBudget exists to force. None of these
+// questions needs a walk of its own — each is a reading of declarations the
+// walk has already built — so taking one would be spending the budget on the
+// arrangement of this file rather than on a question.
 //
 // # What this is about, which is a duplication that is currently correct
 //
@@ -49,8 +69,9 @@ import (
 // And what a `cores` is WORTH, which is the third thing held here and was the
 // one place the two records had drifted apart: one of them carried a measured
 // table of which term scales and the other said nothing at all. See
-// timingsCoresNote.
-func TestEveryTimingsRecordIsTheSameShape(t *testing.T) {
+// timingsCoresNote — and checkCoresNoteNamesEveryScaledTerm, which is what
+// makes that note a claim about this package rather than a paragraph.
+func TestTheShapesThisRepositoryKeepsTwoCopiesOfAreInStep(t *testing.T) {
 	root := filepath.Join("..", "..")
 	_, considered, from, err := citingFiles(root)
 	if err != nil {
@@ -74,6 +95,16 @@ func TestEveryTimingsRecordIsTheSameShape(t *testing.T) {
 		line int
 	}
 	var records []found
+	// The other two shapes, read off the same parse. Kept beside the record
+	// rather than in walks of their own because a fifth repository-wide parse
+	// is the decision repositoryParseBudget exists to force, and neither of
+	// these needs one.
+	var resolverDecls []importResolverDecl
+	var asks []importPathAsk
+	var coreSites []coreCountSite
+	// dir -> what its cores note actually says, for the completeness check
+	// below. The presence of the note is `notes`; this is its text.
+	noteText := map[string]string{}
 	arms := map[string]bool{}
 	// dir -> whether the package says what its core count is worth. Kept
 	// beside the arm because it is the same kind of thing: a property of the
@@ -89,7 +120,7 @@ func TestEveryTimingsRecordIsTheSameShape(t *testing.T) {
 		// neither. Skipped by name for the reason gitquoting_test.go skips
 		// itself: a check that reads its own explanation as a finding is a
 		// check nobody can leave a comment in.
-		if rel == "wasm/verify/timingsrecords_test.go" {
+		if rel == "wasm/verify/copies_test.go" {
 			continue
 		}
 		src := filepath.Join(root, filepath.FromSlash(rel))
@@ -101,6 +132,15 @@ func TestEveryTimingsRecordIsTheSameShape(t *testing.T) {
 			continue
 		}
 		dir := path.Dir(rel)
+		// Which of the import-resolving shapes this file declares, and which
+		// import paths its censuses name. One walk over the declarations, two
+		// questions — see importResolverDeclarationsIn.
+		fileDecls, fileAsks := importResolverDeclarationsIn(fset, rel, file)
+		resolverDecls = append(resolverDecls, fileDecls...)
+		asks = append(asks, fileAsks...)
+		// And every place this file reads the core count, which is what makes
+		// a cores note checkable rather than merely present.
+		coreSites = append(coreSites, coreCountSitesIn(t, fset, rel, file)...)
 		for _, d := range file.Decls {
 			switch decl := d.(type) {
 			case *ast.FuncDecl:
@@ -115,9 +155,13 @@ func TestEveryTimingsRecordIsTheSameShape(t *testing.T) {
 					if !ok {
 						continue
 					}
-					for _, n := range vs.Names {
-						if n.Name == timingsCoresNote {
-							notes[dir] = true
+					for i, n := range vs.Names {
+						if n.Name != timingsCoresNote {
+							continue
+						}
+						notes[dir] = true
+						if i < len(vs.Values) {
+							noteText[dir] = stringLiteralValue(vs.Values[i])
 						}
 					}
 				}
@@ -144,6 +188,12 @@ func TestEveryTimingsRecordIsTheSameShape(t *testing.T) {
 			}
 		}
 	}
+
+	// The other two shapes, before the record's own checks: each is a whole
+	// question with its own reaching-anything arm, and a record that has gone
+	// missing should not take them with it.
+	checkImportResolverCopies(t, resolverDecls)
+	checkImportPathsAreImportable(t, root, asks)
 
 	// The walk reaching anything. Every arm in this package that walks the
 	// repository says this, and for the same reason: a walk over nothing
@@ -196,6 +246,11 @@ func TestEveryTimingsRecordIsTheSameShape(t *testing.T) {
 				timingsCoresNote, timingsArm)
 		}
 	}
+
+	// And what each of those notes actually claims, against what its package
+	// does. `seen` is the set of directories that hold a record, which is the
+	// set the notes are about.
+	checkCoresNoteNamesEveryScaledTerm(t, seen, coreSites, noteText)
 
 	names := make([]string, 0, len(records))
 	for _, r := range records {
@@ -377,4 +432,222 @@ func types(e ast.Expr) string {
 		return id.Name
 	}
 	return fmt.Sprintf("%T", e)
+}
+
+// coreCountSite is one place a package reads how many cores it is running on.
+type coreCountSite struct {
+	dir, rel string
+	line     int
+	// The declaration it is in — the function, or the variable whose
+	// initialiser it is. This is the name the note has to contain, because it
+	// is the only handle a reader has on the term.
+	in string
+	// How it is spelled, for the message: `runtime.NumCPU` or
+	// `runtime.GOMAXPROCS`.
+	how string
+}
+
+// checkCoresNoteNamesEveryScaledTerm holds each package's cores note to naming
+// every term in that package that scales with the core count.
+//
+// # What was wrong with holding the note to EXISTING
+//
+// The record check above makes each package declare a `coresAttribution`, and
+// both of them contain a measured table today. Nothing re-derived either one.
+// A note saying "nothing in this package moves with the core count", left
+// standing after somebody adds a worker pool, passes exactly as well as one
+// that is right — which is the state the record itself was in before it had an
+// arm, arriving one level along in the thing the arm asks for.
+//
+// # What a parse can hold it to, and what it cannot
+//
+// Not the numbers. `0.22s at eight workers` is a wall clock and an assertion
+// over one fails on a busy laptop, which is the reason both records exist
+// instead of being tests. What a parse CAN settle is the INVENTORY: which
+// declarations in this package read the core count, which is exactly the set
+// of terms a note about core counts is a claim about.
+//
+// So the rule is that every such declaration is NAMED in the note. That is a
+// finding a reader can act on in one edit — the term is there in front of them
+// — and it fires on the change that makes a note wrong, which is a new term
+// arriving rather than an old measurement drifting.
+//
+// The measurement drifting is still not covered and cannot be from here. What
+// changes is that the note now goes stale LOUDLY in the one way that is
+// somebody's fault, and the figures are what they always were: a reading of a
+// machine, attributed.
+//
+// # Why the reporting arm is not one of these
+//
+// It reads runtime.NumCPU to compare this machine against the record, which is
+// the arm doing its job rather than a term that scales — so a site inside the
+// declaration named by timingsArm is skipped. Every other reading is work
+// being divided, or a decision made on the core count, and both are things a
+// note about core counts has to have an opinion about.
+func checkCoresNoteNamesEveryScaledTerm(t *testing.T, recordDirs map[string]bool,
+	sites []coreCountSite, notes map[string]string) {
+
+	t.Helper()
+	sort.Slice(sites, func(i, j int) bool {
+		if sites[i].rel != sites[j].rel {
+			return sites[i].rel < sites[j].rel
+		}
+		return sites[i].line < sites[j].line
+	})
+	named := map[string][]string{}
+	for _, site := range sites {
+		if !recordDirs[site.dir] {
+			// A package with no timings record has no note to be complete,
+			// and nothing here is asking every package in the repository to
+			// grow one.
+			continue
+		}
+		note, ok := notes[site.dir]
+		if !ok || note == "" {
+			// The record check above already says this package has no note,
+			// or has one this cannot read. Saying it a second time per site
+			// is the wall.
+			continue
+		}
+		if strings.Contains(note, site.in) {
+			named[site.dir] = append(named[site.dir], site.in)
+			continue
+		}
+		t.Errorf("%s:%d reads the core count in %s (`%s`), and %s's `%s` "+
+			"does not mention %s.\n\n"+
+			"That note is what a reader on a different machine is handed when "+
+			"the arm reports `8 cores against 4`, and it is a claim about "+
+			"WHICH of this package's terms move with the count. A term the "+
+			"note has never heard of is the note being wrong in the direction "+
+			"nobody can see: the figures still read as attributed and the "+
+			"sentence under them is about a package that no longer exists.\n\n"+
+			"The numbers in it cannot be checked from here — a wall clock is "+
+			"a reading of a machine, which is why these are records and not "+
+			"assertions — but the inventory can, and this is the half that "+
+			"goes stale by somebody adding code rather than by a measurement "+
+			"drifting.\n\n"+
+			"Measure what %s is worth at one core and at this machine's "+
+			"count, and say so in `%s`; or say that it does not move and why, "+
+			"which is as useful and is also an answer.",
+			site.rel, site.line, site.in, site.how, site.dir,
+			timingsCoresNote, site.in, site.in, timingsCoresNote)
+	}
+	dirs := make([]string, 0, len(named))
+	for dir := range named {
+		dirs = append(dirs, dir)
+		sort.Strings(named[dir])
+	}
+	sort.Strings(dirs)
+	for _, dir := range dirs {
+		t.Logf("%s's `%s` names all %d of its core-scaled term(s): %s.", dir,
+			timingsCoresNote, len(named[dir]), strings.Join(named[dir], ", "))
+	}
+}
+
+// coreCountSitesIn is every place this file reads the core count, and what
+// declaration each reading is in.
+//
+// `runtime` is resolved off the file's own import block for the reason
+// importnames_test.go gives — an `import rt "runtime"` and an `rt.NumCPU()` is
+// a term this check would otherwise not see, which is the silent direction.
+//
+// A package-level variable counts as much as a function does: enumWorkers is
+// `min(runtime.NumCPU(), 8)` and is the largest single term in one of the two
+// records. What is wanted is the name a note would have to use, and for a
+// `var` that is the variable.
+func coreCountSitesIn(t *testing.T, fset *token.FileSet, rel string,
+	file *ast.File) []coreCountSite {
+
+	t.Helper()
+	runtimeNames := qualifiersFor(t, rel, file, "runtime")
+	if len(runtimeNames) == 0 {
+		return nil
+	}
+	dir := path.Dir(rel)
+	read := func(in string, n ast.Node) []coreCountSite {
+		var out []coreCountSite
+		ast.Inspect(n, func(node ast.Node) bool {
+			call, ok := node.(*ast.CallExpr)
+			if !ok {
+				return true
+			}
+			sel, ok := call.Fun.(*ast.SelectorExpr)
+			if !ok {
+				return true
+			}
+			pkg, ok := sel.X.(*ast.Ident)
+			if !ok || !runtimeNames[pkg.Name] {
+				return true
+			}
+			switch sel.Sel.Name {
+			case "NumCPU", "GOMAXPROCS":
+				out = append(out, coreCountSite{dir: dir, rel: rel,
+					line: fset.Position(call.Pos()).Line, in: in,
+					how: pkg.Name + "." + sel.Sel.Name})
+			}
+			return true
+		})
+		return out
+	}
+	var sites []coreCountSite
+	for _, d := range file.Decls {
+		switch decl := d.(type) {
+		case *ast.FuncDecl:
+			if decl.Body == nil {
+				continue
+			}
+			// The reporting arm's own comparison is not a term — see the
+			// header above.
+			if decl.Recv == nil && decl.Name.Name == timingsArm {
+				continue
+			}
+			sites = append(sites, read(decl.Name.Name, decl.Body)...)
+		case *ast.GenDecl:
+			for _, sp := range decl.Specs {
+				vs, ok := sp.(*ast.ValueSpec)
+				if !ok {
+					continue
+				}
+				for i, n := range vs.Names {
+					if i < len(vs.Values) {
+						sites = append(sites, read(n.Name, vs.Values[i])...)
+					}
+				}
+			}
+		}
+	}
+	return sites
+}
+
+// stringLiteralValue is the value of a string constant written as literals and
+// `+`, or "" for anything else.
+//
+// Both cores notes are one long sentence built by concatenation, which is what
+// a string constant that has to fit in a column of source looks like. Nothing
+// here evaluates anything: a note assembled by a function is a note this
+// returns "" for, and the caller reads that as "no text to check against"
+// rather than as an empty note.
+func stringLiteralValue(e ast.Expr) string {
+	switch x := e.(type) {
+	case *ast.BasicLit:
+		if x.Kind != token.STRING {
+			return ""
+		}
+		if v, err := strconv.Unquote(x.Value); err == nil {
+			return v
+		}
+		return x.Value
+	case *ast.BinaryExpr:
+		if x.Op != token.ADD {
+			return ""
+		}
+		left, right := stringLiteralValue(x.X), stringLiteralValue(x.Y)
+		if left == "" || right == "" {
+			return ""
+		}
+		return left + right
+	case *ast.ParenExpr:
+		return stringLiteralValue(x.X)
+	}
+	return ""
 }

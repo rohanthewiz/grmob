@@ -67,9 +67,11 @@ import (
 // # What a finding here says, which is three things it used to say loosely
 //
 //	all of them        every guarded row a goroutine reaches is reported on
-//	                   the run that reaches it. The first-hit version left the
-//	                   second finding to be discovered after the first was
-//	                   fixed — see touchesGuarded
+//	                   the run that reaches it, by BOTH passes. The first-hit
+//	                   version left the second finding to be discovered after
+//	                   the first was fixed, and it was still doing that in the
+//	                   call graph after the direct pass had stopped — see
+//	                   touchesGuarded and reachesFrom
 //	by its own name    a `t.Fatalf` is reported as `t.Fatalf`. Four selectors
 //	                   share the row `t.Fatal` and three share `fmt.Print`,
 //	                   and the row is what the REASON is keyed by, not what
@@ -103,8 +105,16 @@ func TestTheGoroutinesInThisPackageAreTheOnesDecidedOn(t *testing.T) {
 	// makes that approximation visible in the message when it happens — see
 	// declarationOf.
 	calls := map[string][]string{}
-	touches := map[string]string{}
-	declaredAs := map[string][]string{}
+	// EVERY guarded row each function touches directly, not the first. The
+	// call graph below reports one finding per row, and a `touches` that kept
+	// one key per function could only ever produce one of them — see
+	// reachesFrom.
+	touches := map[string][]string{}
+	// The declarations themselves, not their rendered form: `declarationOf`
+	// is read on a collision and there has never been one, so formatting
+	// every function in the package on every run is four files' worth of
+	// strings built for a message nothing prints. See ambiguity.
+	declaredAs := map[string][]*ast.FuncDecl{}
 	var found []goroutineSite
 
 	for _, name := range names {
@@ -119,32 +129,28 @@ func TestTheGoroutinesInThisPackageAreTheOnesDecidedOn(t *testing.T) {
 		// conventional qualifier makes an alias invisible: `import stdio
 		// "fmt"` and a `stdio.Printf` in a worker is the entire failure the
 		// os.Stdout row describes, arriving under a name this census would
-		// not have looked at. See importedAs.
-		osPkg, osDot := importedAs(file, "os")
-		fmtPkg, fmtDot := importedAs(file, "fmt")
-		if osDot || fmtDot {
-			t.Errorf("%s dot-imports os or fmt, and this census reads "+
-				"os.Stdout and the fmt.Print family off the qualifier they "+
-				"are written with.\n\nA dot import puts those names into "+
-				"this file's own scope, so a print is spelled `Printf(…)` "+
-				"with nothing to resolve, and the two claims in this file's "+
-				"header are no longer checkable here. Import them the "+
-				"ordinary way — under their own name or an alias, both of "+
-				"which resolve exactly.", name)
-		}
+		// not have looked at. See importnames_test.go.
+		//
+		// Asked through qualifiersFor rather than importedAs, so that the one
+		// case an import block cannot answer — a dot import, which puts those
+		// names into file scope where no qualifier reaches them — arrives as
+		// a finding in the same words every other census in this repository
+		// gives it, and once per file however many of them ask.
+		osPkg := qualifiersFor(t, name, file, "os")
+		fmtPkg := qualifiersFor(t, name, file, "fmt")
 		for _, d := range file.Decls {
 			fn, ok := d.(*ast.FuncDecl)
 			if !ok || fn.Body == nil {
 				continue
 			}
 			calls[fn.Name.Name] = append(calls[fn.Name.Name], calleeNames(fn.Body)...)
-			declaredAs[fn.Name.Name] = append(declaredAs[fn.Name.Name],
-				declarationOf(fset, fn))
-			if hits := touchesGuarded(fset, fn.Body, osPkg, fmtPkg); len(hits) > 0 {
-				// One key per function is all the call graph needs: what the
-				// graph answers is whether a chain reaches something guarded,
-				// and the DIRECT check below is where every hit is reported.
-				touches[fn.Name.Name] = hits[0].key
+			declaredAs[fn.Name.Name] = append(declaredAs[fn.Name.Name], fn)
+			for _, hit := range touchesGuarded(fset, fn.Body, osPkg, fmtPkg) {
+				// Every row, because a callee that prints AND drives the
+				// shared reader is two reasons a chain through it is a
+				// finding, and one key per function would report whichever of
+				// them the source happened to spell first.
+				touches[fn.Name.Name] = append(touches[fn.Name.Name], hit.key)
 			}
 			// The `go` statements themselves. Reported against the function
 			// they are IN, which is what a row names: a goroutine is a cost
@@ -232,16 +238,27 @@ func TestTheGoroutinesInThisPackageAreTheOnesDecidedOn(t *testing.T) {
 		// way to the shared reader has two findings for the same reason as
 		// above. Only a guarded name the direct pass has already named is
 		// dropped, since that would be the same finding twice.
-		if via, what := reachesFrom(g.body, calls, touches); what != "" &&
-			!reported[what] {
+		//
+		// EVERY row the chains reach, for the same reason the direct pass
+		// reports every one it names. This half used to return the first: a
+		// goroutine reaching `blobs` through one callee and `fmt.Print`
+		// through another was told about whichever the breadth-first walk met
+		// first, and the other arrived on the next run after the first was
+		// fixed — which is the wall-one-size-too-small shape, in the half of
+		// the check the direct pass does not cover.
+		for _, r := range reachesFrom(g.body, calls, touches) {
+			if reported[r.what] {
+				continue
+			}
 			t.Errorf("the goroutine at %s:%d calls %s, which reaches %s.%s\n\n"+
 				"%s\n\n"+
 				"The call chain is followed through this package's own "+
 				"declarations, which is where it can go: a `go func(){ "+
 				"leavesAt(sha) }()` is one hop from blob and two from the "+
 				"shared reader, and it is the spelling somebody would "+
-				"actually write.", g.file, g.line, via, what,
-				ambiguity(via, declaredAs), goroutineMustNotTouch[what])
+				"actually write.", g.file, g.line, r.via, r.what,
+				ambiguity(fset, r.via, declaredAs),
+				goroutineMustNotTouch[r.what])
 		}
 	}
 	for key, g := range want {
@@ -446,7 +463,7 @@ type guardedHit struct {
 //	os.Stdout      the selector, whatever is done with it. Reading it to save
 //	               it is as much a use as writing it. `os` is what the
 //	               enclosing FILE binds to the os import, not the conventional
-//	               spelling — see importedAs
+//	               spelling — see importnames_test.go
 //	fmt.Print*     the three that write to os.Stdout, resolved the same way.
 //	               fmt.Fprintf(os.Stderr, …) is not one of them and is not a
 //	               hazard: stderr is never swapped here
@@ -515,6 +532,9 @@ func touchesGuarded(fset *token.FileSet, n ast.Node, osPkg, fmtPkg map[string]bo
 // call graph cannot make: `func read` and `func (b *batchReader) read` are one
 // node in it, and a reader told the chain passes through `read` needs to be
 // able to see that there are two of them.
+//
+// Called from the message and not from the walk — see ambiguity for why the
+// rendering is on this side of the call.
 func declarationOf(fset *token.FileSet, fn *ast.FuncDecl) string {
 	at := fset.Position(fn.Pos())
 	if fn.Recv == nil || len(fn.Recv.List) == 0 {
@@ -557,12 +577,23 @@ func declarationOf(fset *token.FileSet, fn *ast.FuncDecl) string {
 // There is no such collision in this package today. This exists so that the
 // first one arrives with its own explanation rather than as a chain somebody
 // has to disprove.
-func ambiguity(via string, declaredAs map[string][]string) string {
+func ambiguity(fset *token.FileSet, via string,
+	declaredAs map[string][]*ast.FuncDecl) string {
+
 	where := declaredAs[via]
 	if len(where) < 2 {
 		return ""
 	}
-	sorted := append([]string(nil), where...)
+	// Formatted HERE and not during the walk. There is no collision in this
+	// package and there never has been, so building a rendered declaration
+	// for every function in four files was work for a message nothing prints
+	// — and the shape matters in exactly the package this feature is for, one
+	// where names collide often and the rendering would therefore be paid for
+	// every name in order to be read for a handful.
+	sorted := make([]string, 0, len(where))
+	for _, fn := range where {
+		sorted = append(sorted, declarationOf(fset, fn))
+	}
 	sort.Strings(sorted)
 	return fmt.Sprintf("\n\nThis package declares `%s` %d times — %s — and "+
 		"the call graph above is keyed by name with no receiver, so all of "+
@@ -571,61 +602,6 @@ func ambiguity(via string, declaredAs map[string][]string) string {
 		"not a question this walk answers, and the chain named here may run "+
 		"through one it never touched.", via, len(where),
 		strings.Join(sorted, ", "), via)
-}
-
-// importedAs is the identifiers this file binds to the package at `path`, and
-// whether it dot-imports it.
-//
-// # Why this is here and also in wasm/verify
-//
-// It is the same twenty lines as wasm/verify/importnames_test.go, which is
-// where the reasoning is written down: a census that resolves a package by its
-// conventional NAME is blind to an alias, and blind in silence, which is the
-// direction nobody argued for. The copy is for the reason the timings record
-// is a copy — these are two separate `package main` programs, one under wasm/
-// and one under internal/, and a package existing so that one function could
-// be one function is the more expensive of the two options.
-//
-// What that reasoning covers is TWO, and the thing that would change it is a
-// third package needing the same reading. There is no arm over this one, and
-// naming that is better than implying there is: wasm/verify/timingsrecords_-
-// test.go can count `…TimingsTakenOn` declarations because the record is a
-// NAME; a helper is a shape, and a census over shapes is the kind of thing
-// this file is an argument against building on a guess.
-//
-// # What it does not resolve
-//
-// The package's real name is taken as the last segment of the import path,
-// which is exact for `os` and `fmt` and for any path either census here names,
-// and wrong for the handful like `gopkg.in/yaml.v2`. Getting that right means
-// loading the package, which is the cost every walk in this repository
-// declines. A blank import binds nothing and contributes no name; a dot import
-// binds the package's names into file scope, where no qualifier can find them,
-// and the caller reports that rather than reading the file as clean.
-func importedAs(file *ast.File, importPath string) (names map[string]bool, dot bool) {
-	names = map[string]bool{}
-	base := importPath
-	if i := strings.LastIndex(base, "/"); i >= 0 {
-		base = base[i+1:]
-	}
-	for _, spec := range file.Imports {
-		if strings.Trim(spec.Path.Value, "`\"") != importPath {
-			continue
-		}
-		if spec.Name == nil {
-			names[base] = true
-			continue
-		}
-		switch spec.Name.Name {
-		case "_":
-			// Imported for its initialisation. Nothing is called through it.
-		case ".":
-			dot = true
-		default:
-			names[spec.Name.Name] = true
-		}
-	}
-	return names, dot
 }
 
 // calleeNames is every function this body calls by a name this package could
@@ -657,21 +633,45 @@ func calleeNames(body *ast.BlockStmt) []string {
 	return out
 }
 
+// reachedGuard is one guarded row a goroutine's call chains arrive at, and the
+// callee to blame for it.
+//
+// Both halves are the finding: "calls leavesAt, which reaches blobs" is
+// something somebody can act on, and "reaches blobs" is not.
+type reachedGuard struct{ via, what string }
+
 // reachesFrom follows this node's calls through the package's own declarations
-// until one of them touches something guarded.
+// and returns every guarded row they arrive at.
 //
 // Breadth-first from the goroutine's own callees, with a seen-set, so a
-// recursive or mutually recursive pair terminates. Returns the name that was
-// called and what it reached, so the message can say both — "calls leavesAt,
-// which reaches blobs" is a finding somebody can act on and "reaches blobs" is
-// not.
+// recursive or mutually recursive pair terminates.
+//
+// # One per ROW, and why that is the unit here too
+//
+// This used to return the first hit and stop. A goroutine that reaches `blobs`
+// through one callee and `fmt.Print` through another was told about one of
+// them, and the other was found on the next run after the first was fixed —
+// which is exactly what the direct pass was changed away from, left standing
+// in the other half of the same check. Two different reasons are two findings;
+// what justifies stopping early anywhere in this repository is a wall of
+// IDENTICAL ones.
+//
+// So the walk runs to completion and collects a row at most once. The blame is
+// the FIRST callee that reached it, which is breadth-first order and therefore
+// the shortest chain — a reader given the shortest route to a guarded name has
+// the least to check.
+//
+// The rows come back in the order the walk met them, which is stable for a
+// given source: the goroutine's own callees are collected in source order and
+// the queue is drained in order, so a run's findings can be diffed against the
+// last one.
 //
 // Only names this package declares are followed. Everything else is the
 // standard library, which cannot name a package-level variable of ours; the
 // four selectors that ARE hazards regardless of package are checked by
 // touchesGuarded at every step rather than followed.
 func reachesFrom(from ast.Node, calls map[string][]string,
-	touches map[string]string) (via, what string) {
+	touches map[string][]string) []reachedGuard {
 
 	// The goroutine's own callees, each carrying itself as the name to blame.
 	type step struct{ name, blame string }
@@ -697,11 +697,20 @@ func reachesFrom(from ast.Node, calls map[string][]string,
 		}
 		return true
 	})
+	var out []reachedGuard
+	found := map[string]bool{}
 	for len(work) > 0 {
 		s := work[0]
 		work = work[1:]
-		if guarded, bad := touches[s.name]; bad {
-			return s.blame, guarded
+		for _, guarded := range touches[s.name] {
+			if found[guarded] {
+				// The same row by a second route is the same finding: the
+				// chain already reported is the shorter one, and a reader
+				// fixing it fixes both.
+				continue
+			}
+			found[guarded] = true
+			out = append(out, reachedGuard{via: s.blame, what: guarded})
 		}
 		for _, next := range calls[s.name] {
 			if _, ours := calls[next]; !ours || seen[next] {
@@ -711,5 +720,5 @@ func reachesFrom(from ast.Node, calls map[string][]string,
 			work = append(work, step{name: next, blame: s.blame})
 		}
 	}
-	return "", ""
+	return out
 }
