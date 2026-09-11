@@ -166,9 +166,25 @@ func againstBand(fieldName, field string, got time.Duration) string {
 	// a range and then says by nothing, which is worse than not printing it.
 	// A hundredth of the band's own width is fine enough to be true at every
 	// scale either record holds and coarse enough not to print seven digits.
-	step := (hi - lo) / 100
-	if step <= 0 {
-		step = time.Nanosecond
+	// Rounded against the BAND and not against a fixed unit: batchRetire's
+	// range is 180µs–290µs, and a difference rounded to the millisecond
+	// printed there as "by 0s".
+	//
+	// That was the first half of the fix and it was not enough. A reading
+	// one step under the floor still rounds to zero, and "outside the band
+	// by nothing" is the same useless sentence arrived at from the other
+	// side. So a difference that rounds away is reported at microsecond
+	// resolution instead — whatever it is, it is not nothing, because the
+	// arm that prints it only runs when the reading is outside.
+	round := func(d time.Duration) time.Duration {
+		step := (hi - lo) / 100
+		if step <= 0 {
+			step = time.Microsecond
+		}
+		if r := d.Round(step); r != 0 {
+			return r
+		}
+		return d.Round(time.Microsecond)
 	}
 	switch {
 	case got < lo:
@@ -179,7 +195,7 @@ func againstBand(fieldName, field string, got time.Duration) string {
 			"this repository and is why this line is printed at all. Re-take "+
 			"it: widen the range to hold both takings rather than replacing "+
 			"it, unless something is known to have changed the code.",
-			fieldName, lo, hi, (lo - got).Round(step))
+			fieldName, lo, hi, round(lo-got))
 	case got > hi:
 		return fmt.Sprintf("\n\nOVER the band %s records (%v–%v), by %v. On "+
 			"the machine that record names, so it is not another computer — "+
@@ -187,7 +203,7 @@ func againstBand(fieldName, field string, got time.Duration) string {
 			"is not a regression. Take it several times. If it holds, "+
 			"something here costs more than it did and the record is the "+
 			"place that says so.",
-			fieldName, lo, hi, (got - hi).Round(step))
+			fieldName, lo, hi, round(got-hi))
 	default:
 		return fmt.Sprintf("\n\nIn the band %s records (%v–%v), on the "+
 			"machine it names.", fieldName, lo, hi)

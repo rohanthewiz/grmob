@@ -6712,6 +6712,14 @@ func affordedNodeText(n ast.Node) string {
 // syntactically is that no derivation is spelled in two functions — a
 // derivation in one place cannot disagree with itself.
 var affordedFloatDerivations = []struct{ expr, what string }{
+	{"f * float64(unit)",
+		"a recorded band's endpoint, turned from the decimal the record " +
+			"writes into a Duration. NOT COMPARED as a float: the " +
+			"multiplication happens once per endpoint, the result is a " +
+			"Duration immediately, and every comparison downstream of it is " +
+			"integer. A rounding difference here moves a band edge by less " +
+			"than a nanosecond, which is smaller than the clock that feeds " +
+			"the other side. See recordedBand"},
 	{"float64(recorded) * scale",
 		"the prediction: a recorded count scaled by this run's population. " +
 			"COMPARED — the share-edge arm and affordedShortfallCause both decide a " +

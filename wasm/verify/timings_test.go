@@ -313,6 +313,57 @@ var verifyTimingsTakenOn = struct {
 	// was taken from, so the two are comparable — and still, by the argument
 	// above, narrower than the truth.
 	wholeFile string
+	// The same tests, timed from INSIDE the binary — the clock TestMain puts
+	// around m.Run(). See wholefileband_test.go.
+	//
+	// # Why this is a second figure and not a check on the first
+	//
+	// It is a smaller quantity and reliably so: 2.67–2.77s against a
+	// wholeFile of 2.84–2.97s, a gap of about 170ms that is the build check,
+	// the process starting, and package initialisation — everything
+	// `go test` counts and a clock inside the process cannot see. Comparing
+	// this reading against wholeFile's band would be comparing two different
+	// things and reporting the difference as drift, which is the mistake
+	// this whole record exists to stop somebody making.
+	//
+	// So it sits beside wholeFile exactly as wholeRun sits beside
+	// wholePackage in internal/themehistory: the package total a person
+	// reads off `go test`, and the in-process figure something can actually
+	// measure. That record grew the pair for this reason and this one
+	// arrives at it two sessions later from the other direction.
+	//
+	// # What having it buys
+	//
+	// wholeFile drifted twice and both times a person found it by running
+	// the command a dozen times and comparing by eye, because nothing in
+	// this package could see the number. This one is measured on every run
+	// and reported against its band, so a real regression shows up here
+	// first. What is left unwatched is only the 170ms of overhead, which is
+	// the part no change to this repository's code can move.
+	//
+	// It is also the TIGHTER of the two — 130ms wide against 130ms, over a
+	// smaller figure — for exactly that reason: the overhead it excludes is
+	// the noisiest part of what `go test` reports.
+	//
+	// # Rounded outward, which is the part that had to be learned twice
+	//
+	// Sixteen runs read 2.666–2.767s and the band says 2.65–2.78s. The
+	// first attempt wrote the observed ends exactly, and the next run came
+	// in a fraction under the floor and reported itself outside a band it
+	// had helped set.
+	//
+	// A range taken from N runs is a sample, and its ends are the two most
+	// extreme readings in it rather than the limits of anything. Writing
+	// them down as limits guarantees the next sample argues with them. The
+	// two decimal places every figure in both records carries are the
+	// rounding: outward at both ends, to the precision the record writes.
+	//
+	// This is the same lesson wholeRun arrived at by having its floor set
+	// three times in one evening, and it is worth stating here because it
+	// is cheaper than that: it costs a hundredth of a second of width and
+	// it removes a whole class of verdict that is about the sample rather
+	// than about the code.
+	wholeFileInProcess string
 	// TestHowWideTheNarrowerFoldIsAndWhatHoldsTheGap end to end, which is what
 	// inkglyph_test.go's `128ms` sits inside.
 	//
@@ -387,6 +438,8 @@ var verifyTimingsTakenOn = struct {
 	goarch:    "arm64",
 	goVersion: "go1.26.1",
 	cores:     8,
+	wholeFileInProcess: "2.65–2.78s over sixteen runs, the clock TestMain " +
+		"puts around m.Run()",
 	wholeFile: "2.84–2.97s over thirty-three runs in two sessions, the " +
 		"floor widened after the taking that set it read under its own " +
 		"figure nine times out of twelve",
@@ -429,7 +482,7 @@ var verifyTimingsTakenOn = struct {
 // # What this package's answer actually is, which is not "nothing"
 //
 // The expensive half of wholeFile does not move. The four repository-wide
-// walks hand every Go file in the tree to go/parser one after another — 392
+// walks hand every Go file in the tree to go/parser one after another — 393
 // tracked Go files where this record was taken, 0.18s each, single-threaded,
 // the same number on any machine — and foldWalk is a node process this package waits on
 // rather than shares a core with.
@@ -498,7 +551,7 @@ var verifyTimingsTakenOn = struct {
 // either direction reads — a term named in prose is neither claimed nor
 // checked.
 const coresAttribution = "The four repository-wide walks in this package are " +
-	"single-threaded — go/parser over 392 tracked Go files " +
+	"single-threaded — go/parser over 393 tracked Go files " +
 	"where this record was taken, 0.18s each — and " +
 	"`foldWalk` is a node process. Those do not move with the core count. " +
 	"Two declarations do, and they are the whole of it: " +
@@ -511,7 +564,13 @@ const coresAttribution = "The four repository-wide walks in this package are " +
 	"from " +
 	"internal/themehistory's, where the term is a git process per commit " +
 	"and the " +
-	"improvement runs all the way to eight."
+	"improvement runs all the way to eight. `wholeFileRunIsTheRecordedOne` " +
+	"also reads the count and does not scale with it: it compares this " +
+	"machine's cores against the record's, so that the whole-package " +
+	"verdict says nothing at all on a computer the band is not about. It " +
+	"is named here because this note is held to naming every reader of the " +
+	"count in the package, which is stricter than naming every term that " +
+	"scales with it."
 
 // This run says whether it is standing on the machine the timings came from.
 //
@@ -537,6 +596,7 @@ func TestTheTimingsInThisPackageSayWhichMachineTheyCameFrom(t *testing.T) {
 	rec := verifyTimingsTakenOn
 	if rec.machine == "" || rec.goos == "" || rec.goarch == "" ||
 		rec.goVersion == "" || rec.cores == 0 || rec.wholeFile == "" ||
+		rec.wholeFileInProcess == "" ||
 		rec.foldWalk == "" {
 		t.Fatalf("verifyTimingsTakenOn has an empty field (%+v).\n\n"+
 			"Every wall-clock number in this package's prose is attributed to "+
