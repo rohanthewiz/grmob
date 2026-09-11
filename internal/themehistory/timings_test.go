@@ -102,8 +102,8 @@ var themehistoryTimingsTakenOn = struct {
 	// # to switch off — and `-short` is the switch
 	//
 	//	              default        -short
-	//	plain         3.01–3.22s     1.20–1.27s
-	//	-race         6.46–6.64s     2.41–2.44s
+	//	plain         3.01–3.22s     1.20–1.31s
+	//	-race         6.46–6.70s     2.40–2.44s
 	//
 	// Seven runs for the plain default, three for the other three, and every
 	// row here holds more than one afternoon's readings. The -race row is six
@@ -123,6 +123,30 @@ var themehistoryTimingsTakenOn = struct {
 	// afternoon is a tenth dearer than the last one and the change is not why;
 	// this row is a reading of a machine on a day, which is the whole reason
 	// it is a record rather than an assertion.
+	//
+	// # And then the other three, because half a table is worse than none
+	//
+	// Widening the plain default and leaving the rest made this a table where
+	// one row was an afternoon old and the three under it were not, with
+	// nothing on any of them saying which — a reader comparing the -race cost
+	// against the plain one would have been comparing two different days and
+	// had no way to know. That is the same fault the whole record exists to
+	// end, arriving inside it.
+	//
+	// So all four were re-taken, three runs each, run one after another with
+	// nothing else on the machine — which is not how the first re-take of the
+	// plain row was taken, and is why that one needed fourteen readings and
+	// an A/B to be worth anything. Every row moved by a hundredth or two in
+	// the same direction as the plain one, and every row is widened to hold
+	// both takings:
+	//
+	//	plain -short    1.205–1.304s    was 1.20–1.27s
+	//	-race           6.549–6.697s    was 6.46–6.64s
+	//	-race -short    2.406–2.422s    was 2.41–2.44s
+	//
+	// What the table says about the ARM is unchanged, which is the thing it is
+	// for: about 1.8s of a plain run and about 4.2s of a -race one, the same
+	// as before the machine got a tenth slower.
 	//
 	// The arm is around 1.8s of a plain run and around 4.2s of a -race one,
 	// which is the price of the only test here that runs the real program over
@@ -348,10 +372,10 @@ func TestTheTimingsInThisPackageSayWhichMachineTheyCameFrom(t *testing.T) {
 // from two cores upwards. A reader on a four-core machine should expect a
 // different fraction of each.
 const coresAttribution = "The enumeration is the largest single term in the " +
-	"package figure and it is pooled at min(NumCPU, 8): 0.22s at eight " +
-	"workers, 0.51s at two, 0.90s at one, with the package total moving " +
-	"3.05s to 3.75s across the same range. See enumWorkers and the table in " +
-	"wholePackage's comment. A difference of that size between this run and " +
+	"package figure and it is pooled at `min(runtime.NumCPU(), 8)`: 0.22s " +
+	"at eight workers, 0.51s at two, 0.90s at one, with the package total " +
+	"moving 3.05s to 3.75s across the same range. See `enumWorkers` and the " +
+	"table in `wholePackage`'s comment. A difference of that size between this run and " +
 	"the number above is accounted for before anything else is — and it runs " +
 	"all the way to eight, which is the opposite of wasm/verify's figure, " +
 	"where the core-scaled term is flat from two cores upwards."

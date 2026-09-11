@@ -133,6 +133,23 @@ var verifyTimingsTakenOn = struct {
 	// cannot be said from here — it is the width of one machine's own spread,
 	// which is the reason this record holds ranges and the reason none of
 	// these numbers is an assertion.
+	//
+	// # A hundredth further, and what was under it
+	//
+	// The top end went to 2.93s on one reading of seven the next time this
+	// was taken, and the row is widened rather than left to be contradicted by
+	// a run. Two things changed in between and they pull opposite ways: the
+	// cores-note check grew a second direction, which reads the two
+	// record-carrying directories at 0.011s (see repositoryWalkRow.besides),
+	// and the walk-counting pass stopped recomputing what each function binds
+	// once per walk name, which took six traversals out of seven.
+	//
+	// Neither is a hundredth of a second on its own and the pair of them
+	// certainly is not. The same afternoon put internal/themehistory a tenth
+	// above ITS recorded range with no change to that package at all, which
+	// was measured properly there — alternating the old code and the new —
+	// and came out the same for both. So this is the machine, said once in
+	// each record rather than argued about twice.
 	wholeFile string
 	// TestHowWideTheNarrowerFoldIsAndWhatHoldsTheGap end to end, which is what
 	// inkglyph_test.go's `128ms` sits inside.
@@ -174,7 +191,7 @@ var verifyTimingsTakenOn = struct {
 	goarch:    "arm64",
 	goVersion: "go1.26.1",
 	cores:     8,
-	wholeFile: "2.78–2.92s over fourteen runs",
+	wholeFile: "2.78–2.93s over twenty-one runs in two sessions",
 	foldWalk:  "0.40–0.52s over seven runs, node v22.12.0",
 }
 
@@ -242,11 +259,11 @@ var verifyTimingsTakenOn = struct {
 // number and not that one.
 const coresAttribution = "The four repository-wide walks in this package are " +
 	"single-threaded — go/parser over all 381 files, 0.18s each — and " +
-	"foldWalk is a node process. Those do not move with the core count. Two " +
-	"declarations do, and they are the whole of it: affordedKLeafBandWalk " +
-	"and affordedTwoStepBands in themenearmiss_test.go each take `workers " +
-	":= runtime.GOMAXPROCS(0)` and divide the afforded* band family's " +
-	"combinations across it. The package is 3.08–3.27s at one core, " +
+	"`foldWalk` is a node process. Those do not move with the core count. " +
+	"Two declarations do, and they are the whole of it: " +
+	"`affordedKLeafBandWalk` and `affordedTwoStepBands` in " +
+	"themenearmiss_test.go each take `workers := runtime.GOMAXPROCS(0)` and " +
+	"divide the afforded* band family's combinations across it. The package is 3.08–3.27s at one core, " +
 	"2.78–2.88s at two, and flat from there to eight. So a differing core " +
 	"count is worth about a tenth of the figure above, and only between one " +
 	"core and two — which is the opposite shape from " +

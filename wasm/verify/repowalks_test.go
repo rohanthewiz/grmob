@@ -179,6 +179,22 @@ func TestTheRepositoryWideWalksInThisPackageAreTheOnesDecidedOn(t *testing.T) {
 	// lazily, over the files already read, using the same memoised parse. See
 	// packageLevelInts and loopBound.
 	packageInts := packageLevelInts(names, sources, parse)
+	// And what each function binds, remembered. The loop below visits every
+	// function once per walk NAME — seven of them — and what a function binds
+	// does not depend on which walk is being asked about. See boundNamesIn:
+	// the answer is an ast.Inspect of the whole body, which is the most
+	// expensive thing in this pass and was being recomputed six times out of
+	// seven. The parse is memoised, so the same *ast.FuncDecl comes back each
+	// time and is the key.
+	binds := map[*ast.FuncDecl]map[string]bool{}
+	boundNames := func(fn *ast.FuncDecl) map[string]bool {
+		if known, done := binds[fn]; done {
+			return known
+		}
+		known := boundNamesIn(fn)
+		binds[fn] = known
+		return known
+	}
 
 	// The second pass: how many times each non-test walker is actually called.
 	// A helper that walks the repository and is called from two tests is two
@@ -206,7 +222,7 @@ func TestTheRepositoryWideWalksInThisPackageAreTheOnesDecidedOn(t *testing.T) {
 				if !ok || fn.Body == nil || fn.Name.Name == w.fn {
 					continue
 				}
-				n, sites := callsTo(fset, fn, w.fn, packageInts)
+				n, sites := callsTo(fset, fn, w.fn, packageInts, boundNames)
 				calls += n
 				for _, site := range sites {
 					where := fmt.Sprintf("%s:%d, in %s (%s)", name, site.line,
@@ -393,16 +409,29 @@ func TestTheRepositoryWideWalksInThisPackageAreTheOnesDecidedOn(t *testing.T) {
 	// growing a fourth entry is a walk that has become a place to put things,
 	// and that is worth a number rather than a long field — see repositoryWalks.
 	questions := 0
+	var besides []string
 	for _, w := range repositoryWalks {
 		questions += len(w.asks)
+		for _, b := range w.besides {
+			besides = append(besides, fmt.Sprintf("%s: %s", w.fn, b))
+		}
+	}
+	// And the reads that are not repository walks, which the budgets above do
+	// not govern and which are therefore the ones worth printing by name. See
+	// repositoryWalkRow.besides.
+	aside := ""
+	if len(besides) > 0 {
+		aside = fmt.Sprintf("\n\n%d read(s) besides, which are not "+
+			"repository-wide and are not counted above:\n%s", len(besides),
+			strings.Join(besides, "\n"))
 	}
 	t.Logf("%d repository-wide walk(s) per run in this package, %d of them "+
 		"parsing every Go file, from %d function(s), asking %d question(s) "+
 		"between them: %s. Found by scanning %d Go file(s) in this directory "+
 		"and parsing the %d that named something. Their cost is part of "+
-		"verifyTimingsTakenOn.wholeFile.%s",
+		"verifyTimingsTakenOn.wholeFile.%s%s",
 		walks, parses, len(found), questions, walkList(found), len(names),
-		len(trees), bounded)
+		len(trees), bounded, aside)
 }
 
 // The three depths a repository walk comes in, cheapest first.
@@ -531,6 +560,16 @@ var repositoryWalks = []repositoryWalkRow{{
 	fn:    "TestTheShapesThisRepositoryKeepsTwoCopiesOfAreInStep",
 	file:  "copies_test.go",
 	depth: walkParses,
+	besides: []string{
+		"the two directories that carry a timings record, for the second " +
+			"direction of the cores-note check — which asks whether the " +
+			"terms a note names still exist, and cannot be answered off the " +
+			"repository walk because the walk throws its trees away. " +
+			"os.ReadDir per directory, the bytes scanned first, and only the " +
+			"files that hold one of the terms parsed. 0.011s, measured by " +
+			"taking the call out and putting it back over sixty runs — " +
+			"12.11–12.30s against 11.38–11.56s. See identifiersIn",
+	},
 	asks: []string{
 		"the `…TimingsTakenOn` records: whether each carries the five " +
 			"machine fields, a reporting arm, and a cores note that names " +
@@ -556,6 +595,25 @@ type repositoryWalkRow struct {
 	// What this walk asks the repository, one entry per question. See the
 	// list above for why the unit is a question rather than a row.
 	asks []string
+	// Reads this walk makes that are NOT repository-wide, and what each one
+	// costs. Empty for a walk that only walks the repository, which is every
+	// row here but one.
+	//
+	// # Why this is a field and not a sentence somewhere
+	//
+	// The budgets above are about repository walks, and a read of two
+	// directories is not one — which is a correct exemption and is also
+	// exactly how four repository-wide parses got to exist before anything
+	// counted them. Something small enough not to be worth a row is something
+	// nothing is watching, and the next one is as easy to add as the first.
+	//
+	// So it is declared here, beside the walk that makes it, with the measured
+	// figure in it. Nothing verifies this field — a read that is not a
+	// repository walk has no shape a census could recognise, which is the
+	// whole reason it needs writing down — but it is printed on every green
+	// run, and a row growing a second entry is visible in the same place the
+	// walk count is.
+	besides []string
 	// For a helper: how many calls a run makes, and which test drives it. Zero
 	// and "" for a test, which runs once and drives itself.
 	runs     int
@@ -712,14 +770,19 @@ type loopSite struct {
 // where nobody looks. There is no such site here, and `t.Run` and `defer` —
 // the two ways a closure in a test actually reaches a call — both run it.
 func callsTo(fset *token.FileSet, fn *ast.FuncDecl, name string,
-	packageInts func(string) (int, bool)) (calls int, sites []loopSite) {
+	packageInts func(string) (int, bool),
+	boundNames func(*ast.FuncDecl) map[string]bool) (calls int,
+	sites []loopSite) {
 
 	body := fn.Body
 	// A bound written as a name is read off this package's declarations — but
 	// only when the name is not bound inside this function. See boundNamesIn:
 	// a local `n` shadowing a package-level `n` would otherwise be priced at
 	// the package's number, which is a count invented out of a coincidence.
-	shadowed := boundNamesIn(fn)
+	//
+	// Handed in rather than computed, because this is called once per walk
+	// name over the same functions and the answer does not vary with the walk.
+	shadowed := boundNames(fn)
 	bound := func(id string) (int, bool) {
 		if shadowed[id] || packageInts == nil {
 			return 0, false
@@ -1006,6 +1069,15 @@ func intValue(e ast.Expr, bound func(string) (int, bool)) (int, bool) {
 // inside it, which is right: a call in a closure is a call in this function as
 // far as the position arithmetic goes, so a name the closure binds is a name
 // that could be the one in the loop.
+//
+// # Called once per function and not once per asking
+//
+// This is the most expensive thing the second pass does — a full traversal of
+// a body — and that pass visits every function once per walk name. The answer
+// does not depend on which walk is being counted, so the caller memoises it on
+// the *ast.FuncDecl and hands the result in. Seven walk names over the
+// functions of this package is the difference between one traversal each and
+// seven.
 func boundNamesIn(fn *ast.FuncDecl) map[string]bool {
 	bound := map[string]bool{}
 	add := func(e ast.Expr) {

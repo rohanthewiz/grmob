@@ -744,7 +744,8 @@ func checkImportResolverCopies(t *testing.T, decls []importResolverDecl) {
 //	                        a module path must have a dot in its first element,
 //	                        so a path without one is the standard library or
 //	                        nothing. WHICH of the two is then settled against
-//	                        the toolchain's own sources — see stdlibSource
+//	                        the toolchain's own sources — see stdlibSource and
+//	                        holdsAPackage
 //	everything else         has to be this module or something go.mod
 //	                        requires, by prefix. A path under a required
 //	                        module might still be a directory that does not
@@ -763,16 +764,21 @@ func checkImportResolverCopies(t *testing.T, decls []importResolverDecl) {
 // a second copy of something that changes every release — and a build, which
 // is the cost every walk here declines. There is a third, and it is cheaper
 // than both: a standard library package is a DIRECTORY under the toolchain's
-// own `$GOROOT/src`, and asking whether that directory exists is one stat
-// against the very toolchain this test is running on. Nothing is copied,
+// own `$GOROOT/src`, and asking whether that directory holds a Go file is one
+// read against the very toolchain this test is running on. Nothing is copied,
 // nothing is loaded, and the answer moves with the release because it IS the
 // release.
 //
-// The one thing it is not is a guarantee that the directory holds a package
-// this build would accept — a directory with no .go files in it, or one whose
-// files are all excluded by build tags, is still a stat that succeeds. That is
-// the same residue the module half has and for the same reason, and it is a
-// much smaller one than "no dot, therefore fine".
+// It is a read and not a stat, and that is the difference between "the
+// directory is there" and "there is a package in it": a path removed from the
+// standard library can leave its directory behind, and a check that only
+// stat'd would pass it. See holdsAPackage.
+//
+// The one thing it is still not is a guarantee that THIS build would accept
+// those files — a directory whose Go files are all excluded by build tags
+// holds a `.go` file and no package. That is the same residue the module half
+// has and for the same reason, and it is a much smaller one than "no dot,
+// therefore fine".
 //
 // When GOROOT is not on disk — a stripped container, a toolchain shipped
 // without its sources — there is nothing to stat and the half goes back to
@@ -821,6 +827,10 @@ func checkImportPathsAreImportable(t *testing.T, root string, asks []importPathA
 	// line below lists: six censuses asking about `os/exec` is one path this
 	// half either judged or did not.
 	stdlibPaths := map[string]bool{}
+	// And the ones this arm judged and refused, so that the line at the bottom
+	// says what the run found rather than repeating a claim the run has just
+	// contradicted. See the Logf.
+	unimportable := map[string]bool{}
 	for _, a := range asks {
 		if a.path == "" {
 			t.Errorf("%s:%d asks about an import path that is not a literal "+
@@ -849,11 +859,12 @@ func checkImportPathsAreImportable(t *testing.T, root string, asks []importPathA
 				continue
 			}
 			dir := filepath.Join(stdlib, filepath.FromSlash(a.path))
-			if info, statErr := os.Stat(dir); statErr == nil && info.IsDir() {
+			if holdsAPackage(dir) {
 				continue
 			}
+			unimportable[a.path] = true
 			t.Errorf("%s:%d asks about %q, and this toolchain's standard "+
-				"library has no such package: %s does not exist.\n\n"+
+				"library has no such package: %s holds no Go file.\n\n"+
 				"A path with no dot in its first element cannot be a module "+
 				"path, so it is the standard library or it is nothing, and "+
 				"this is which. A path that is nothing binds no identifier, "+
@@ -880,6 +891,7 @@ func checkImportPathsAreImportable(t *testing.T, root string, asks []importPathA
 				}
 			}
 			if !provided {
+				unimportable[a.path] = true
 				t.Errorf("%s:%d asks about %q, and go.mod requires no module "+
 					"that provides it (module %s; %d requirement(s): %s).\n\n"+
 					"A path nothing can import binds no identifier, so "+
@@ -918,18 +930,83 @@ func checkImportPathsAreImportable(t *testing.T, root string, asks []importPathA
 	// What the standard-library half was actually worth on this run, said out
 	// loud. A check that has stopped asking reads exactly like one that asked
 	// and found nothing, which is the whole subject of this file.
-	std := fmt.Sprintf(" %d of them in the standard library, each a directory "+
-		"under %s", len(stdlibPaths), stdlib)
+	// Counted as the ones that ANSWERED, not the ones that were asked: a path
+	// this half judged and refused is reported above, and including it here
+	// under "each a package" would be the line contradicting the finding two
+	// lines up.
+	stdOK := 0
+	for path := range stdlibPaths {
+		if !unimportable[path] {
+			stdOK++
+		}
+	}
+	std := fmt.Sprintf("%d of them in the standard library, each a package "+
+		"under %s", stdOK, stdlib)
 	if stdlib == "" {
-		std = fmt.Sprintf(" %d of them in the standard library, which this "+
+		std = fmt.Sprintf("%d of them in the standard library, which this "+
 			"run could not check: go/build reports GOROOT as %q and there is "+
 			"no `src` directory there, so those paths are held only to the "+
 			"rule that a module path has a dot in its first element",
 			len(stdlibPaths), build.Default.GOROOT)
 	}
-	t.Logf("%d import path(s) asked about by the censuses here, each one this "+
-		"module could import —%s: %s.", len(paths), std,
-		strings.Join(paths, ", "))
+	// The claim, made about the paths that actually earned it. This line used
+	// to say "each one this module could import" on every run, including the
+	// run that had just reported one it could not — the one sentence on it
+	// that the findings above had contradicted. A count is a reading; "each
+	// one" was an assertion, and the arm above is the thing entitled to make
+	// it.
+	judged := fmt.Sprintf("all %d of which this module could import", len(paths))
+	if n := len(unimportable); n > 0 {
+		refused := make([]string, 0, n)
+		for path := range unimportable {
+			refused = append(refused, path)
+		}
+		sort.Strings(refused)
+		judged = fmt.Sprintf("%d of which this module could import and %d of "+
+			"which it could not (%s — see the finding(s) above)",
+			len(paths)-n, n, strings.Join(refused, ", "))
+	}
+	t.Logf("%d import path(s) asked about by the censuses here, %s; %s: %s.",
+		len(paths), judged, std, strings.Join(paths, ", "))
+}
+
+// holdsAPackage is whether this directory is one the Go build could compile a
+// package out of: it exists, and it has a `.go` file in it.
+//
+// # Why the stat was not enough
+//
+// The standard-library half of the check above turns a path into a directory
+// under `$GOROOT/src` and asked whether that directory was there. That is
+// exact for a typo, which is what it was written for, and it is loose about
+// the case it did not consider: a directory with no Go file in it. A package
+// removed from the standard library can leave its directory behind — a
+// testdata tree, a README, an empty shell — and `os.Stat` says yes to all of
+// them, which is the arm passing a path nothing can import.
+//
+// One `os.ReadDir` closes it and the cost is the same order as the stat it
+// replaces: seven directories on a green run, read once each, stopping at the
+// first `.go` file.
+//
+// # What it still does not settle
+//
+// Whether THIS build would accept those files. A directory whose Go files are
+// all excluded by build tags — `//go:build ignore`, or a GOOS this run is not
+// — holds a `.go` file and no package, and telling the two apart is
+// go/build.Import, which loads. That is the cost every walk in this repository
+// declines, and the residue left is much smaller than the directory it
+// replaced: a path in the standard library whose only Go files are excluded
+// everywhere is not a path a census here is going to be asking about.
+func holdsAPackage(dir string) bool {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return false
+	}
+	for _, e := range entries {
+		if !e.IsDir() && strings.HasSuffix(e.Name(), ".go") {
+			return true
+		}
+	}
+	return false
 }
 
 // stdlibSource is where this toolchain keeps the standard library's sources,

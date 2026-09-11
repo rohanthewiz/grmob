@@ -315,9 +315,16 @@ func checkTimingsRecordCopies(t *testing.T, root, from string, filesSeen int,
 	// set the notes are about.
 	//
 	// Two directions, because a note can be wrong in two ways: it can fail to
-	// name a term that exists, and it can name one that does not.
-	checkCoresNoteNamesEveryScaledTerm(t, seen, coreSites, noteText)
-	checkCoresNoteNamesNothingThatIsGone(t, root, seen, noteText)
+	// name a term that exists, and it can name one that does not. One reading
+	// of what each note names, shared by both — see termsNamedIn: a term is
+	// what the note spells as code, which is the same rule whichever direction
+	// is asking.
+	noteTerms := map[string][]string{}
+	for dir, note := range noteText {
+		noteTerms[dir] = termsNamedIn(note)
+	}
+	checkCoresNoteNamesEveryScaledTerm(t, seen, coreSites, noteText, noteTerms)
+	checkCoresNoteNamesNothingThatIsGone(t, root, seen, noteTerms)
 
 	names := make([]string, 0, len(records))
 	for _, r := range records {
@@ -570,9 +577,24 @@ type coreCountSite struct {
 // being divided, or a decision made on the core count, and both are things a
 // note about core counts has to have an opinion about.
 func checkCoresNoteNamesEveryScaledTerm(t *testing.T, recordDirs map[string]bool,
-	sites []coreCountSite, notes map[string]string) {
+	sites []coreCountSite, notes map[string]string,
+	noteTerms map[string][]string) {
 
 	t.Helper()
+	// What each note names, as a set. This used to be a strings.Contains over
+	// the note's whole text, which is loose in a way nothing would have
+	// noticed: a note mentioning `enumWorkersPool` satisfied a check asking
+	// about `enumWorkers`, because one name is a prefix of the other. A term
+	// is now a term because the note spelled it as code — see termsNamedIn —
+	// and the membership is exact.
+	namesAsCode := map[string]map[string]bool{}
+	for dir, terms := range noteTerms {
+		set := make(map[string]bool, len(terms))
+		for _, term := range terms {
+			set[term] = true
+		}
+		namesAsCode[dir] = set
+	}
 	sort.Slice(sites, func(i, j int) bool {
 		if sites[i].rel != sites[j].rel {
 			return sites[i].rel < sites[j].rel
@@ -594,12 +616,12 @@ func checkCoresNoteNamesEveryScaledTerm(t *testing.T, recordDirs map[string]bool
 			// is the wall.
 			continue
 		}
-		if strings.Contains(note, site.in) {
+		if namesAsCode[site.dir][site.in] {
 			named[site.dir] = append(named[site.dir], site.in)
 			continue
 		}
 		t.Errorf("%s:%d reads the core count in %s (`%s`), and %s's `%s` "+
-			"does not mention %s.\n\n"+
+			"does not name %s as code.\n\n"+
 			"That note is what a reader on a different machine is handed when "+
 			"the arm reports `8 cores against 4`, and it is a claim about "+
 			"WHICH of this package's terms move with the count. A term the "+
@@ -611,6 +633,10 @@ func checkCoresNoteNamesEveryScaledTerm(t *testing.T, recordDirs map[string]bool
 			"assertions — but the inventory can, and this is the half that "+
 			"goes stale by somebody adding code rather than by a measurement "+
 			"drifting.\n\n"+
+			"A term counts as named when the note spells it inside "+
+			"backquotes, which is the note saying it means a declaration "+
+			"rather than a word — the same rule the other direction reads, so "+
+			"a name mentioned in prose is neither claimed nor checked.\n\n"+
 			"Measure what %s is worth at one core and at this machine's "+
 			"count, and say so in `%s`; or say that it does not move and why, "+
 			"which is as useful and is also an answer.",
@@ -644,29 +670,28 @@ func checkCoresNoteNamesEveryScaledTerm(t *testing.T, recordDirs map[string]bool
 //
 // # Which words in a paragraph are a claim about code
 //
-// The note is prose, so something has to decide what in it is meant as a name.
-// The rule is camelCase — an identifier-shaped word with a lowercase letter
-// somewhere before an uppercase one — and it is chosen because it is what this
-// repository's declarations look like and what English words never do:
+// The note is prose, so something has to decide what in it is meant as a name,
+// and the author is the only one who can. What is read as a term is what the
+// note spells inside BACKQUOTES — see termsNamedIn. That is a convention both
+// notes already half-followed and it is now the whole rule, which is what
+// makes checkCoresNoteNamesEveryScaledTerm exact as well: a term is named when
+// it is named AS CODE, and not when its letters happen to appear in a word.
 //
-//	affordedKLeafBandWalk    a term. Checked
-//	foldWalk                 a field of the record. Checked
-//	NumCPU                   a selector this package writes. Checked, and it
-//	                         is there, because the package that has a note
-//	                         about core counts reads the core count
-//	GOMAXPROCS               all capitals, no lowercase before an uppercase.
-//	                         Not a candidate, and it does not need to be: it
-//	                         is another package's exported name
-//	themenearmiss_test       a file name. No uppercase, so not a candidate
-//	workers                  a local variable the note quotes. No uppercase,
-//	                         so not checked — which is the loose direction,
-//	                         and there is nothing in a lowercase word to tell
-//	                         a variable from a noun
+// The rule this replaced was camelCase — an identifier-shaped word with a
+// lowercase letter somewhere before an uppercase one — chosen because it is
+// what this repository's declarations look like and what English words never
+// do. It was right about most of a note and wrong at both ends:
 //
-// So this is loose about terms spelled in lower case and exact about the ones
-// spelled the way this repository spells its declarations. Loose in the
-// direction of not reporting, which is the direction a census that reads
-// English has to be wrong in.
+//	workers                  a real local the note quotes, invisible to the
+//	                         rule, because nothing in a lowercase word tells a
+//	                         variable from a noun
+//	a prose word in camel    reported as a term that has gone, about a
+//	                         sentence that was never a claim about code
+//
+// Backquotes have neither end. They also cost nothing to comply with: a note
+// that spells its terms as code is a note that reads better, and the arm's
+// finding when one is missed says so in one line rather than asking the author
+// to guess at a spelling rule.
 //
 // # What counts as the term still existing
 //
@@ -696,7 +721,7 @@ func checkCoresNoteNamesEveryScaledTerm(t *testing.T, recordDirs map[string]bool
 // nothing and is an answer — and the case where that is WRONG is already the
 // completeness check's finding, one per site it could not find in the note.
 func checkCoresNoteNamesNothingThatIsGone(t *testing.T, root string,
-	recordDirs map[string]bool, notes map[string]string) {
+	recordDirs map[string]bool, noteTerms map[string][]string) {
 
 	t.Helper()
 	dirs := make([]string, 0, len(recordDirs))
@@ -710,7 +735,7 @@ func checkCoresNoteNamesNothingThatIsGone(t *testing.T, root string,
 	wanted := map[string][]string{}
 	all := map[string]bool{}
 	for _, dir := range dirs {
-		terms := termsNamedIn(notes[dir])
+		terms := noteTerms[dir]
 		wanted[dir] = terms
 		for _, term := range terms {
 			all[term] = true
@@ -766,11 +791,11 @@ func checkCoresNoteNamesNothingThatIsGone(t *testing.T, root string,
 				"needs the new name and probably a new number; or it has gone, "+
 				"in which case the sentence about it has gone too and what is "+
 				"left is the measurement the remaining terms account for.\n\n"+
-				"A word is read as a term when it is spelled the way this "+
-				"repository spells a declaration — camelCase. A word in the "+
-				"note that is prose rather than a name and happens to be "+
-				"spelled that way is this arm being wrong; say it in lower "+
-				"case, or with the package in front of it.",
+				"A word is read as a term when the note spells it inside "+
+				"backquotes, which is the note saying it means a declaration "+
+				"rather than a word. If this one is prose, take the "+
+				"backquotes off it and nothing here will have an opinion "+
+				"about it.",
 				dir, timingsCoresNote, term,
 				"checkCoresNoteNamesEveryScaledTerm")
 		}
@@ -787,51 +812,63 @@ func checkCoresNoteNamesNothingThatIsGone(t *testing.T, root string,
 	}
 }
 
-// termsNamedIn is the words in a note that are meant as the name of something
-// in the code, sorted and without repeats.
+// termsNamedIn is every identifier a note spells inside backquotes, sorted and
+// without repeats.
 //
-// camelCase and nothing else — see the header above for the rule and the two
-// directions it is wrong in. The split is on everything that cannot be part of
-// a Go identifier, so `runtime.GOMAXPROCS(0)` yields `runtime`, `GOMAXPROCS`
-// and `0`, and the rule then keeps none of them.
+// # Why the backquotes are the rule
 //
-// Four characters is the floor. Nothing shorter than that is a camelCase name
-// somebody would put in a paragraph, and the words that are — `isOK`, say —
-// are still four.
+// They are the author saying "this is code". Every other way of deciding is
+// this arm guessing at English, and the guess it used to make — camelCase —
+// missed `workers` and would have reported a prose word that happened to be
+// spelled that way. A convention the note follows is exact in both directions
+// and costs nothing, because a note that spells its terms as code is a note
+// that reads better anyway.
+//
+// # What is taken out of a backquoted span
+//
+// Every identifier in it, not the span itself. A note writes
+// `workers := runtime.GOMAXPROCS(0)` as one quoted phrase because that is how
+// somebody says what a declaration DOES, and what is being claimed to exist is
+// each of the three names in it. So the span is split on everything that
+// cannot be part of a Go identifier and what is left that starts like one is a
+// term — which makes `0` not a term, and `:=` not a term, without either being
+// a special case.
+//
+// A backquoted span with no identifier in it contributes nothing, which is
+// what makes quoting a number or a flag harmless.
 func termsNamedIn(note string) []string {
 	seen := map[string]bool{}
 	var out []string
-	for _, word := range strings.FieldsFunc(note, func(r rune) bool {
-		return !(r == '_' || r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' ||
-			r >= '0' && r <= '9')
-	}) {
-		if len(word) < 4 || seen[word] {
-			continue
+	for i := 0; ; {
+		open := strings.Index(note[i:], "`")
+		if open < 0 {
+			break
 		}
-		if c := word[0]; !(c == '_' || c >= 'a' && c <= 'z' ||
-			c >= 'A' && c <= 'Z') {
-			continue
+		open += i
+		close := strings.Index(note[open+1:], "`")
+		if close < 0 {
+			// An unpaired backquote is the end of the quoted spans, not the
+			// start of one running to the end of the note.
+			break
 		}
-		// A lowercase letter with an uppercase one somewhere after it. Any
-		// capital at all would take `NumCPU` and also `The`; this takes the
-		// first and not the second.
-		lower := false
-		camel := false
-		for i := 0; i < len(word); i++ {
-			switch c := word[i]; {
-			case c >= 'a' && c <= 'z':
-				lower = true
-			case c >= 'A' && c <= 'Z':
-				if lower {
-					camel = true
-				}
+		close += open + 1
+		for _, word := range strings.FieldsFunc(note[open+1:close], func(r rune) bool {
+			return !(r == '_' || r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' ||
+				r >= '0' && r <= '9')
+		}) {
+			if seen[word] {
+				continue
 			}
+			// A Go identifier starts with a letter or an underscore, which is
+			// what separates a name from the `0` in `GOMAXPROCS(0)`.
+			if c := word[0]; !(c == '_' || c >= 'a' && c <= 'z' ||
+				c >= 'A' && c <= 'Z') {
+				continue
+			}
+			seen[word] = true
+			out = append(out, word)
 		}
-		if !camel {
-			continue
-		}
-		seen[word] = true
-		out = append(out, word)
+		i = close + 1
 	}
 	sort.Strings(out)
 	return out
