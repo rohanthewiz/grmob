@@ -140,8 +140,24 @@ import (
 // number of separated sittings is the stronger one. Ten runs at three
 // different times beats fifty in a row. The argument and the measurement
 // are at wholeFileInProcess, which is the field that cost the most to learn
-// it on; the fields here that carry only a count are older than the lesson
-// and should gain a sitting count the next time anybody re-takes them.
+// it on.
+//
+// # And it applies to the AGGREGATE figures only, which was tested
+//
+// The rule above was written as though it governed every band here. It does
+// not. The three walk depths were taken across three sittings with the whole
+// verification suite run in between, twenty-one runs of walkParse, and the
+// spread did not widen — it is two values, 0.19s and 0.20s, and 0.01s is the
+// resolution of the line they are read off. The other two depths behave the
+// same way.
+//
+// What separates them is what is being timed, not whether it has a band. A
+// single CPU-bound test over a warm tree repeats to the limit of the
+// reporting. A whole package of most of a thousand tests, with node and git
+// subprocesses in it, spreads 8%. So the sittings a band needs is a question
+// about the figure and the answer is written beside each one: see the three
+// depths, which say they are reproducible, and wholeFileInProcess, which
+// says it is not.
 var verifyTimingsTakenOn = struct {
 	// For a reader. Nothing checks this.
 	machine string
@@ -519,6 +535,72 @@ var verifyTimingsTakenOn = struct {
 	// as much again as both. A walk that grows a parse has roughly doubled,
 	// which is what makes repositoryParseBudget the number that decides and
 	// not repositoryWalkBudget.
+	//
+	// # How reproducible these three are, which took four sittings to get
+	// # right and was got wrong twice on the way
+	//
+	// Measured because the sittings rule at the top of this record predicted
+	// these would spread across sittings the way the package figure does.
+	// Twenty-one runs of walkParse in three sittings, with the whole
+	// verification suite run in between to move the machine:
+	//
+	//	sitting 1   0.20 0.19 0.19 0.20 0.20 0.20 0.19
+	//	sitting 2   0.20 0.20 0.19 0.20 0.20 0.20 0.19
+	//	sitting 3   0.20 0.20 0.20 0.20 0.19 0.19 0.20
+	//
+	// Two values, in all three sittings, where 0.01s is the resolution of
+	// the `--- PASS:` line these are read off. On that evidence this comment
+	// said the three depths were REPRODUCIBLE and the band was re-taken at
+	// 0.19–0.20s.
+	//
+	//	sitting 4   0.19 0.19 0.20 0.20 0.22
+	//
+	// Five runs later. One reading in twenty-six, outside a band set on the
+	// other twenty-five, in the sitting immediately after the one that set
+	// it.
+	//
+	// # What that actually settles
+	//
+	// Not "these are reproducible" and not "bands need sittings". Both were
+	// written tonight off a sample that had not finished. What twenty-six
+	// runs say is narrower and more useful: **the middle of this figure is
+	// tight and its tail is not**, which is what a wall clock on a shared
+	// machine is, and three sittings of seven did not find the tail.
+	//
+	// The recorded band was 0.20–0.24s and it would have HELD that 0.22s.
+	// What was wrong with it was only its floor. So the fix is the floor,
+	// one resolution step down, and the ceiling stays where somebody put it.
+	//
+	//	sitting 5   0.20 0.19 0.19 0.24 0.19 0.19
+	//
+	// Which is the ceiling, exactly, on the sitting after that decision.
+	// Thirty-two runs: twenty-nine at 0.19 or 0.20, one at 0.22, one at
+	// 0.24. Whoever first wrote 0.20–0.24s had seen the tail and put the
+	// ceiling on it, and three sittings of this session's re-measuring had
+	// not reached it. The band is the original with its floor let out.
+	//
+	// # The rule that was broken in the re-taking, by the session that wrote
+	// # the rule
+	//
+	// "Widen to hold what has been SEEN, then leave it alone." Re-taking
+	// 0.20–0.24s as 0.19–0.20s is not widening: it is re-centring on the
+	// latest sitting, which is the thing the rule exists to forbid, and it
+	// was falsified within five runs. The rule was written two iterations
+	// before it was broken, by the same hand, on the same record.
+	//
+	// Which is the argument for a band being widened and almost never
+	// narrowed. A ceiling nothing has reached in twenty-six runs costs a
+	// reader nothing; a ceiling somebody tightened costs a false verdict the
+	// first time the tail shows up.
+	//
+	// # Why these three alone carry no method in their VALUE
+	//
+	// Because they are the only figures in either record interpolated into a
+	// sentence. repowalks_test.go's failure messages read them into a list —
+	// "%s, %s and %s respectively where verifyTimingsTakenOn was taken" —
+	// and a value carrying a comma turns that list into nonsense, which is
+	// what a first attempt at writing the method here produced. So the
+	// method lives in this comment and the values stay bare.
 	walkEnumerate, walkRead, walkParse string
 }{
 	machine:   "Apple M3 (Mac15,13), macOS 26.2",
@@ -537,7 +619,7 @@ var verifyTimingsTakenOn = struct {
 		"than runs. See wholeFileInProcess",
 	walkEnumerate: "0.08–0.10s",
 	walkRead:      "0.15–0.17s",
-	walkParse:     "0.20–0.24s",
+	walkParse:     "0.19–0.24s",
 	foldWalk:      "0.40–0.52s over seven runs, node v22.12.0",
 }
 
