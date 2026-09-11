@@ -93,7 +93,7 @@ var themehistoryTimingsTakenOn = struct {
 	//	8          0.21–0.23s         3.05–3.14s
 	//
 	// The one-core row is the figure this package had BEFORE the pool, which
-	// is what says the pool is the only thing that moved. So `3.01–3.12s`
+	// is what says the pool is the only thing that moved. So `3.01–3.22s`
 	// below is not a number about this code: it is a number about this code on
 	// eight cores, and a single-core CI runner pays about 0.7s more for the
 	// same green run.
@@ -102,7 +102,7 @@ var themehistoryTimingsTakenOn = struct {
 	// # to switch off — and `-short` is the switch
 	//
 	//	              default        -short
-	//	plain         3.01–3.12s     1.20–1.27s
+	//	plain         3.01–3.22s     1.20–1.27s
 	//	-race         6.46–6.64s     2.41–2.44s
 	//
 	// Seven runs for the plain default, three for the other three, and every
@@ -112,12 +112,21 @@ var themehistoryTimingsTakenOn = struct {
 	// changed and the two ranges overlap across most of their width, so the
 	// row is widened to hold both rather than replaced — which is what a range
 	// is for, and the alternative is a record that reports the last afternoon.
-	// The two `-short` figures and the plain default were widened the same
-	// way by a later re-take, by a hundredth or two at one end apiece. The arm
-	// is
-	// around 1.8s of a plain run and around 4.2s of a -race one, which is the
-	// price of the only test here that runs the real program over the real
-	// history.
+	// The two `-short` figures and the plain default were widened the same way
+	// by a later re-take, by a hundredth or two at one end apiece.
+	//
+	// The plain default was widened again, by a tenth this time, and the
+	// widening is worth more than the number: fourteen readings came in at
+	// 3.06–3.19s, and fourteen more taken by putting the session's changes
+	// back and forth — the code as it was, then as it is, alternating — came
+	// in at 3.08–3.22s for the OLD code and 3.04–3.19s for the new. So the
+	// afternoon is a tenth dearer than the last one and the change is not why;
+	// this row is a reading of a machine on a day, which is the whole reason
+	// it is a record rather than an assertion.
+	//
+	// The arm is around 1.8s of a plain run and around 4.2s of a -race one,
+	// which is the price of the only test here that runs the real program over
+	// the real history.
 	//
 	// That saving is the half of the table that moves with the machine, and it
 	// moves the OTHER way: a short run skips the enumeration entirely, so what
@@ -227,12 +236,13 @@ var themehistoryTimingsTakenOn = struct {
 	// a process exit, and it was never timed.
 	batchRetire string
 }{
-	machine:      "Apple M3 (Mac15,13), macOS 26.2",
-	goos:         "darwin",
-	goarch:       "arm64",
-	goVersion:    "go1.26.1",
-	cores:        8,
-	wholePackage: "3.01–3.12s over fourteen runs, and 3.69–3.82s on a single core",
+	machine:   "Apple M3 (Mac15,13), macOS 26.2",
+	goos:      "darwin",
+	goarch:    "arm64",
+	goVersion: "go1.26.1",
+	cores:     8,
+	wholePackage: "3.01–3.22s over forty-two runs in two sessions, and " +
+		"3.69–3.82s on a single core",
 	wholeRun: "1.52–1.60s over seven runs, in process, 2906 objects fetched, " +
 		"the expectation enumerated alongside in 0.22s over 8 workers",
 	perObjectRun: "30.40–30.52s over three runs, 2906 objects, one process " +

@@ -1,10 +1,12 @@
 package main
 
 import (
+	"bytes"
 	"fmt"
 	"go/ast"
 	"go/parser"
 	"go/token"
+	"os"
 	"path"
 	"path/filepath"
 	"sort"
@@ -22,18 +24,43 @@ import (
 //	                      sentence about what a core count is worth, in
 //	                      wasm/verify/timings_test.go and
 //	                      internal/themehistory/timings_test.go
-//	the import resolver   the five functions every census resolves a qualifier
-//	                      with, in the importnames_test.go of both packages.
-//	                      See importResolverShapes
-//	the cores note        held to being COMPLETE rather than merely present:
-//	                      every place in a record's package that reads the
-//	                      core count is named in that package's note
+//	the import resolver   the functions every census resolves a qualifier
+//	                      with, and the package-level state they keep, in the
+//	                      importnames_test.go of both packages. See
+//	                      importResolverShapes and importResolverStateShapes
+//	the cores note        held to being COMPLETE rather than merely present,
+//	                      in both directions: every place in a record's
+//	                      package that reads the core count is named in that
+//	                      package's note, and every term the note names is
+//	                      still something that package has
 //
 // They are one arm because they are one repository-wide parse, and a fifth of
 // those is the decision repositoryParseBudget exists to force. None of these
 // questions needs a walk of its own — each is a reading of declarations the
 // walk has already built — so taking one would be spending the budget on the
 // arrangement of this file rather than on a question.
+//
+// # Why they are three subtests and not three sections
+//
+// One walk is what the budget requires; one FUNCTION was what the first
+// arrangement made of it, and those are not the same thing. Each of these
+// three questions ends in a reaching-anything arm, and every one of those is a
+// t.Fatalf — a walk over nothing passes silently and reads as a clean result,
+// so the only honest thing to do about it is to stop. A Fatalf stops the
+// GOROUTINE, so three questions in one function is three questions one of
+// which can end the other two: a repository where the records had been renamed
+// reported that and said nothing about whether the import resolver's two
+// copies were still in step.
+//
+// t.Run gives each question its own goroutine and its own failure boundary at
+// no cost to the walk — the parse has already happened and the subtests read
+// what it built. So the unit of the WALK is the repository and the unit of a
+// FINDING is the question, which is what it was before these were folded
+// together.
+//
+// The order is the cheap-to-say first: the two that read declarations the walk
+// collected, then the records, whose own checks are the ones with the Fatalf
+// in them.
 //
 // # What this is about, which is a duplication that is currently correct
 //
@@ -69,8 +96,9 @@ import (
 // And what a `cores` is WORTH, which is the third thing held here and was the
 // one place the two records had drifted apart: one of them carried a measured
 // table of which term scales and the other said nothing at all. See
-// timingsCoresNote — and checkCoresNoteNamesEveryScaledTerm, which is what
-// makes that note a claim about this package rather than a paragraph.
+// timingsCoresNote, checkCoresNoteNamesEveryScaledTerm and
+// checkCoresNoteNamesNothingThatIsGone, which between them make that note a
+// claim about this package rather than a paragraph.
 func TestTheShapesThisRepositoryKeepsTwoCopiesOfAreInStep(t *testing.T) {
 	root := filepath.Join("..", "..")
 	_, considered, from, err := citingFiles(root)
@@ -85,16 +113,7 @@ func TestTheShapesThisRepositoryKeepsTwoCopiesOfAreInStep(t *testing.T) {
 	// that arrive in map order cannot be diffed against the last run.
 	sort.Strings(paths)
 
-	// dir -> the records declared in it, and whether the reporting arm is
-	// there. Keyed by directory rather than by file because the arm and the
-	// record need not share one, and the thing that has to hold is a property
-	// of the package.
-	type found struct {
-		name string
-		rel  string
-		line int
-	}
-	var records []found
+	var records []timingsRecord
 	// The other two shapes, read off the same parse. Kept beside the record
 	// rather than in walks of their own because a fifth repository-wide parse
 	// is the decision repositoryParseBudget exists to force, and neither of
@@ -178,23 +197,60 @@ func TestTheShapesThisRepositoryKeepsTwoCopiesOfAreInStep(t *testing.T) {
 							continue
 						}
 						at := fset.Position(n.Pos())
-						records = append(records, found{name: n.Name, rel: rel,
-							line: at.Line})
+						rec := timingsRecord{name: n.Name, rel: rel,
+							line: at.Line}
+						// The literal is kept rather than read here: the
+						// shape check belongs to the records question, which
+						// is a subtest of its own — see the header.
 						if i < len(vs.Values) {
-							checkRecordShape(t, rel, at.Line, n.Name, vs.Values[i])
+							rec.val = vs.Values[i]
 						}
+						records = append(records, rec)
 					}
 				}
 			}
 		}
 	}
 
-	// The other two shapes, before the record's own checks: each is a whole
-	// question with its own reaching-anything arm, and a record that has gone
-	// missing should not take them with it.
-	checkImportResolverCopies(t, resolverDecls)
-	checkImportPathsAreImportable(t, root, asks)
+	// One walk, three questions, three failure boundaries. See the header for
+	// why this is t.Run and not three sections of one function: each of these
+	// ends in a t.Fatalf over a walk that reached nothing, and a Fatalf ends
+	// the goroutine it is on.
+	t.Run("the import-resolving helpers", func(t *testing.T) {
+		checkImportResolverCopies(t, resolverDecls)
+	})
+	t.Run("the paths those helpers are asked about", func(t *testing.T) {
+		checkImportPathsAreImportable(t, root, asks)
+	})
+	t.Run("the timings records", func(t *testing.T) {
+		checkTimingsRecordCopies(t, root, from, len(paths), records, arms,
+			notes, coreSites, noteText)
+	})
+}
 
+// checkTimingsRecordCopies is the timings-record question: every record
+// carrying the five machine fields, an arm and a note beside it, the note
+// being complete, and there being no more copies than the written argument
+// covers.
+//
+// # Why this is a function and not the tail of the walk
+//
+// It is one of three questions the walk above answers, and the only one whose
+// reaching-anything arm can silence the others: `records` being empty is a
+// t.Fatalf, which ends the goroutine, and a repository where the records had
+// been renamed used to report that and say nothing at all about whether the
+// import resolver's two copies were still in step. Splitting the questions
+// into subtests is what fixes that; splitting this one out into a function of
+// its own is what keeps the walk readable now that its result is read in three
+// places.
+//
+// Everything here is a reading of what the walk collected. Nothing in it
+// parses, reads or enumerates anything.
+func checkTimingsRecordCopies(t *testing.T, root, from string, filesSeen int,
+	records []timingsRecord, arms, notes map[string]bool,
+	coreSites []coreCountSite, noteText map[string]string) {
+
+	t.Helper()
 	// The walk reaching anything. Every arm in this package that walks the
 	// repository says this, and for the same reason: a walk over nothing
 	// passes silently and reads as a clean result — and this one is looking
@@ -206,7 +262,7 @@ func TestTheShapesThisRepositoryKeepsTwoCopiesOfAreInStep(t *testing.T) {
 			"wasm/verify/timings_test.go and "+
 			"internal/themehistory/timings_test.go. Either the walk is not "+
 			"reaching them or they have been renamed, and in both cases this "+
-			"check is over nothing.", len(paths), from)
+			"check is over nothing.", filesSeen, from)
 	}
 
 	// The arm beside each record. A record with no reporting test is a struct
@@ -216,6 +272,13 @@ func TestTheShapesThisRepositoryKeepsTwoCopiesOfAreInStep(t *testing.T) {
 	for _, r := range records {
 		dir := path.Dir(r.rel)
 		seen[dir] = true
+		// The shape of the literal itself. Read here rather than in the walk
+		// so that every reading of a record is in one place — and so that a
+		// record declared with no value is a record this says nothing about,
+		// which is what the `var x T` case is.
+		if r.val != nil {
+			checkRecordShape(t, r.rel, r.line, r.name, r.val)
+		}
 		if !arms[dir] {
 			t.Errorf("%s:%d declares %s and %s declares no `func %s`.\n\n"+
 				"A timings record with no reporting arm beside it is a struct "+
@@ -250,7 +313,11 @@ func TestTheShapesThisRepositoryKeepsTwoCopiesOfAreInStep(t *testing.T) {
 	// And what each of those notes actually claims, against what its package
 	// does. `seen` is the set of directories that hold a record, which is the
 	// set the notes are about.
+	//
+	// Two directions, because a note can be wrong in two ways: it can fail to
+	// name a term that exists, and it can name one that does not.
 	checkCoresNoteNamesEveryScaledTerm(t, seen, coreSites, noteText)
+	checkCoresNoteNamesNothingThatIsGone(t, root, seen, noteText)
 
 	names := make([]string, 0, len(records))
 	for _, r := range records {
@@ -284,6 +351,24 @@ func TestTheShapesThisRepositoryKeepsTwoCopiesOfAreInStep(t *testing.T) {
 		"and a `%s` in its package: %s. Enumerated by %s.",
 		len(records), len(timingsMachineFields), timingsArm, timingsCoresNote,
 		strings.Join(names, ", "), from)
+}
+
+// timingsRecord is one `…TimingsTakenOn` declaration the walk found.
+//
+// The declaration's VALUE travels with it rather than being read where it was
+// found. The walk's job is to collect; the three questions are answered
+// afterwards, each in its own subtest, and a shape check made during the walk
+// would be a finding belonging to one question raised on another's goroutine.
+//
+// `val` is nil for a record declared without one — `var x T` — which is a
+// declaration this check has no opinion about: the five machine fields are
+// read out of the composite literal's own type, and there is no literal there
+// to read.
+type timingsRecord struct {
+	name string
+	rel  string
+	line int
+	val  ast.Expr
 }
 
 // How many copies of the record the written argument covers.
@@ -542,6 +627,304 @@ func checkCoresNoteNamesEveryScaledTerm(t *testing.T, recordDirs map[string]bool
 		t.Logf("%s's `%s` names all %d of its core-scaled term(s): %s.", dir,
 			timingsCoresNote, len(named[dir]), strings.Join(named[dir], ", "))
 	}
+}
+
+// checkCoresNoteNamesNothingThatIsGone holds each note to the other
+// direction: every term it names still being something its package has.
+//
+// # The half the completeness check could not see
+//
+// checkCoresNoteNamesEveryScaledTerm reads the note for a substring, once per
+// core-count site. That makes a note that has never heard of a new term a
+// finding, and it says nothing whatever about a term the note names that no
+// longer exists — the check only ever asks in the direction of the code. A
+// function deleted leaves its name in the sentence, the sentence still reads
+// as a measured attribution, and nothing anywhere says otherwise. It is the
+// same silence one step round from the one the completeness check closed.
+//
+// # Which words in a paragraph are a claim about code
+//
+// The note is prose, so something has to decide what in it is meant as a name.
+// The rule is camelCase — an identifier-shaped word with a lowercase letter
+// somewhere before an uppercase one — and it is chosen because it is what this
+// repository's declarations look like and what English words never do:
+//
+//	affordedKLeafBandWalk    a term. Checked
+//	foldWalk                 a field of the record. Checked
+//	NumCPU                   a selector this package writes. Checked, and it
+//	                         is there, because the package that has a note
+//	                         about core counts reads the core count
+//	GOMAXPROCS               all capitals, no lowercase before an uppercase.
+//	                         Not a candidate, and it does not need to be: it
+//	                         is another package's exported name
+//	themenearmiss_test       a file name. No uppercase, so not a candidate
+//	workers                  a local variable the note quotes. No uppercase,
+//	                         so not checked — which is the loose direction,
+//	                         and there is nothing in a lowercase word to tell
+//	                         a variable from a noun
+//
+// So this is loose about terms spelled in lower case and exact about the ones
+// spelled the way this repository spells its declarations. Loose in the
+// direction of not reporting, which is the direction a census that reads
+// English has to be wrong in.
+//
+// # What counts as the term still existing
+//
+// Any identifier anywhere in the package — a declaration, a field, a use.
+// Deliberately the widest reading: the finding this exists for is a name that
+// has gone from the package ENTIRELY, and asking for a declaration in
+// particular would report a note that names a field of a struct declared
+// elsewhere, or a method, as though the term had been deleted.
+//
+// The scan is packageLevelNames's shape and for the same reasons — read the
+// directory, scan the bytes, parse the hits, and let the PARSE decide, so that
+// a name appearing only inside the note's own string literal is read and
+// discarded rather than counted. A substring search over the source would
+// match every note against itself and find nothing, ever.
+//
+// # The cross-reference, which is not a finding
+//
+// These two notes are written as a pair: each ends by comparing its package
+// against the other one, because the whole point of the field is that the two
+// answers are different. A note naming the other record package's term is
+// therefore ordinary and correct, and it is logged rather than reported. What
+// is left as a finding is a name no record-carrying package has at all, which
+// is exactly the deletion this is about.
+//
+// There is no reaching-anything arm here. A note that names no terms is a
+// legitimate note — "nothing in this package moves with the core count" names
+// nothing and is an answer — and the case where that is WRONG is already the
+// completeness check's finding, one per site it could not find in the note.
+func checkCoresNoteNamesNothingThatIsGone(t *testing.T, root string,
+	recordDirs map[string]bool, notes map[string]string) {
+
+	t.Helper()
+	dirs := make([]string, 0, len(recordDirs))
+	for dir := range recordDirs {
+		dirs = append(dirs, dir)
+	}
+	sort.Strings(dirs)
+
+	// Every term any note names, so that each package's source is scanned
+	// once for the whole set rather than once per note.
+	wanted := map[string][]string{}
+	all := map[string]bool{}
+	for _, dir := range dirs {
+		terms := termsNamedIn(notes[dir])
+		wanted[dir] = terms
+		for _, term := range terms {
+			all[term] = true
+		}
+	}
+	want := make([]string, 0, len(all))
+	for term := range all {
+		want = append(want, term)
+	}
+	sort.Strings(want)
+	if len(want) == 0 {
+		return
+	}
+
+	// dir -> which of those names appear as an identifier in it.
+	has := map[string]map[string]bool{}
+	for _, dir := range dirs {
+		has[dir] = identifiersIn(t, filepath.Join(root, filepath.FromSlash(dir)),
+			want)
+	}
+
+	for _, dir := range dirs {
+		var held, elsewhere []string
+		for _, term := range wanted[dir] {
+			if has[dir][term] {
+				held = append(held, term)
+				continue
+			}
+			// The pair: each note compares its package with the other one, so
+			// a term belonging to the other record package is the note doing
+			// what it was written to do.
+			from := ""
+			for _, other := range dirs {
+				if other != dir && has[other][term] {
+					from = other
+					break
+				}
+			}
+			if from != "" {
+				elsewhere = append(elsewhere, term+" ("+from+")")
+				continue
+			}
+			t.Errorf("%s's `%s` names %s, and no package in this repository "+
+				"that carries a timings record has such an identifier.\n\n"+
+				"That note is a claim about which of this package's terms "+
+				"move with the core count, and it is read by somebody the arm "+
+				"has just told they are on a different machine. A term that "+
+				"has been deleted leaves its name in the sentence, and the "+
+				"sentence goes on reading as a measured attribution — which "+
+				"is the note being wrong in the direction nobody can see, one "+
+				"step round from the direction %s already covers.\n\n"+
+				"Either the term has been renamed, in which case the note "+
+				"needs the new name and probably a new number; or it has gone, "+
+				"in which case the sentence about it has gone too and what is "+
+				"left is the measurement the remaining terms account for.\n\n"+
+				"A word is read as a term when it is spelled the way this "+
+				"repository spells a declaration — camelCase. A word in the "+
+				"note that is prose rather than a name and happens to be "+
+				"spelled that way is this arm being wrong; say it in lower "+
+				"case, or with the package in front of it.",
+				dir, timingsCoresNote, term,
+				"checkCoresNoteNamesEveryScaledTerm")
+		}
+		if len(held) == 0 && len(elsewhere) == 0 {
+			continue
+		}
+		also := ""
+		if len(elsewhere) > 0 {
+			also = fmt.Sprintf(", and %d belonging to the package it compares "+
+				"itself with: %s", len(elsewhere), strings.Join(elsewhere, ", "))
+		}
+		t.Logf("%s's `%s` names %d term(s) this package still has: %s%s.", dir,
+			timingsCoresNote, len(held), strings.Join(held, ", "), also)
+	}
+}
+
+// termsNamedIn is the words in a note that are meant as the name of something
+// in the code, sorted and without repeats.
+//
+// camelCase and nothing else — see the header above for the rule and the two
+// directions it is wrong in. The split is on everything that cannot be part of
+// a Go identifier, so `runtime.GOMAXPROCS(0)` yields `runtime`, `GOMAXPROCS`
+// and `0`, and the rule then keeps none of them.
+//
+// Four characters is the floor. Nothing shorter than that is a camelCase name
+// somebody would put in a paragraph, and the words that are — `isOK`, say —
+// are still four.
+func termsNamedIn(note string) []string {
+	seen := map[string]bool{}
+	var out []string
+	for _, word := range strings.FieldsFunc(note, func(r rune) bool {
+		return !(r == '_' || r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' ||
+			r >= '0' && r <= '9')
+	}) {
+		if len(word) < 4 || seen[word] {
+			continue
+		}
+		if c := word[0]; !(c == '_' || c >= 'a' && c <= 'z' ||
+			c >= 'A' && c <= 'Z') {
+			continue
+		}
+		// A lowercase letter with an uppercase one somewhere after it. Any
+		// capital at all would take `NumCPU` and also `The`; this takes the
+		// first and not the second.
+		lower := false
+		camel := false
+		for i := 0; i < len(word); i++ {
+			switch c := word[i]; {
+			case c >= 'a' && c <= 'z':
+				lower = true
+			case c >= 'A' && c <= 'Z':
+				if lower {
+					camel = true
+				}
+			}
+		}
+		if !camel {
+			continue
+		}
+		seen[word] = true
+		out = append(out, word)
+	}
+	sort.Strings(out)
+	return out
+}
+
+// identifiersIn is which of these names appear as an identifier somewhere in
+// the Go source of one directory.
+//
+// # The shape, which is packageLevelNames's
+//
+//	read the directory     one os.ReadDir, the .go files in it
+//	scan the bytes         a file that does not contain the name cannot use
+//	                       it. No false negative: a use of `foldWalk` contains
+//	                       the bytes `foldWalk`
+//	parse the hits         and the PARSE is what decides, which is the whole
+//	                       reason this is not a grep — the note being checked
+//	                       is itself a string in one of these files, and every
+//	                       term in it would match its own text
+//
+// A read or a parse that fails is reported rather than skipped, for
+// packageLevelNames's reason: the answer it would otherwise give is "this name
+// is not here", which is the direction that invents a finding about somebody's
+// note out of a file this could not open.
+func identifiersIn(t *testing.T, dir string, want []string) map[string]bool {
+	t.Helper()
+	found := map[string]bool{}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Errorf("reading %s to check what its `%s` names: %v.\n\n"+
+			"Without it, every term that note names reads as one this "+
+			"package no longer has, which would be this arm inventing a "+
+			"finding out of a directory it could not open.", dir,
+			timingsCoresNote, err)
+		return found
+	}
+	names := make([]string, 0, len(entries))
+	for _, e := range entries {
+		if !e.IsDir() && strings.HasSuffix(e.Name(), ".go") {
+			names = append(names, e.Name())
+		}
+	}
+	// Sorted for the reason every walk in this package sorts: findings that
+	// arrive in directory order cannot be diffed against the last run.
+	sort.Strings(names)
+
+	fset := token.NewFileSet()
+	wanted := map[string]bool{}
+	for _, w := range want {
+		wanted[w] = true
+	}
+	for _, name := range names {
+		full := filepath.Join(dir, name)
+		raw, readErr := os.ReadFile(full)
+		if readErr != nil {
+			t.Errorf("%s could not be read while checking what `%s` names: "+
+				"%v.\n\nA file this cannot open is a file that might use "+
+				"every term in the note, and the answer it would otherwise "+
+				"give is that none of them are here.", full, timingsCoresNote,
+				readErr)
+			continue
+		}
+		hit := false
+		for _, w := range want {
+			if !found[w] && bytes.Contains(raw, []byte(w)) {
+				hit = true
+				break
+			}
+		}
+		if !hit {
+			continue
+		}
+		file, parseErr := parser.ParseFile(fset, full, raw,
+			parser.SkipObjectResolution)
+		if parseErr != nil {
+			// Only for a file the byte scan kept: this one contains a term
+			// somewhere, and whether that is an identifier or a sentence is
+			// precisely what the parse was going to decide.
+			t.Errorf("%s contains one of the terms `%s` names and go/parser "+
+				"could not read it: %v.\n\nIf the build is failing this is "+
+				"the same failure said twice and the other one is more "+
+				"useful; if the build is green, this file is not what the "+
+				"build compiles, and the term may be in it.", full,
+				timingsCoresNote, parseErr)
+			continue
+		}
+		ast.Inspect(file, func(n ast.Node) bool {
+			if id, ok := n.(*ast.Ident); ok && wanted[id.Name] {
+				found[id.Name] = true
+			}
+			return true
+		})
+	}
+	return found
 }
 
 // coreCountSitesIn is every place this file reads the core count, and what

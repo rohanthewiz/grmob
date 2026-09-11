@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"fmt"
 	"go/ast"
+	"go/build"
+	"go/parser"
 	"go/printer"
 	"go/token"
 	"os"
@@ -88,12 +90,12 @@ import (
 // The last is the only residue, and it is a finding rather than a silence,
 // which is the whole difference this file is about.
 //
-// # And why these five functions are also in internal/themehistory
+// # And why these functions are also in internal/themehistory
 //
 // They are a copy, for the reason the timings record is a copy: two separate
 // `package main` programs, one under wasm/ and one under internal/, and a
-// package existing so that five helpers could be five helpers is the more
-// expensive of the two options.
+// package existing so that a handful of helpers could be a handful of helpers
+// is the more expensive of the two options.
 //
 // What is new is that the copy is HELD. The timings record could be counted
 // because a record is a NAME — `…TimingsTakenOn`, readable off a parse — and
@@ -121,7 +123,146 @@ import (
 // given a t.Parallel() at any point and this is the only state these helpers
 // keep. It lives for the test binary, which is the right lifetime: the fact it
 // records is about a file on disk, and nothing in a run changes that.
+//
+// forgetDotImportsReported is the way back out, for the one reader that is not
+// a run.
 var dotImportsReported sync.Map
+
+// forgetDotImportsReported empties the registry above and returns the
+// `file\x00path` keys it held, sorted.
+//
+// # Why the registry needed a way out at all
+//
+// A binary-long lifetime is the right one for a run: the fact recorded is a
+// fact about a file on disk, and re-reporting it would be the same sentence
+// twice about one import block. It is the wrong one for the reader that is not
+// a run — a break-test, which puts a deliberately broken input in front of a
+// census and asserts the finding. Without this, qualifiersFor was the only
+// census here that could not be broken and re-run in place: the second asking
+// in a binary is silent by design, and nothing could ask what the first one
+// had recorded.
+//
+// # Why one function and not two
+//
+// Reading and clearing are the same moment for the only caller there is. A
+// break-test wants to know what its own asking recorded AND to leave the
+// registry as it found it, and two calls would be two chances to do one of
+// them and not the other — which would leave a key behind and make the NEXT
+// census silent about a file nobody had reported.
+//
+// The keys come back sorted for the reason every finding here is sorted: a
+// result that arrives in map order cannot be diffed against the last run.
+//
+// Nothing in an ordinary run calls this, and a census that did would be back
+// to reporting one dot import once per asking, which is the wall this whole
+// registry exists to stop.
+func forgetDotImportsReported() []string {
+	var keys []string
+	dotImportsReported.Range(func(k, _ any) bool {
+		if s, ok := k.(string); ok {
+			keys = append(keys, s)
+		}
+		// Deleting during a Range is defined behaviour for sync.Map: the
+		// iteration reflects at most one snapshot of the contents, and a key
+		// removed while it runs is simply not visited again.
+		dotImportsReported.Delete(k)
+		return true
+	})
+	sort.Strings(keys)
+	return keys
+}
+
+// The registry above being readable and clearable, and being what makes the
+// second asking silent.
+//
+// # Which half of the rule this can hold, and which half is a break-test
+//
+// The rule has two directions and only one of them can be asserted from
+// inside the binary it is about:
+//
+//	the first asking     reports, and records the fact. Asserting that means
+//	                     catching a t.Errorf, and a *testing.T cannot be made
+//	                     to fail quietly — a subtest that fails fails its
+//	                     parent, which is the whole point of it. This half is
+//	                     a break-test: put a dot import in a file, run any
+//	                     census, read the finding
+//	the second asking    is silent, because the fact is already recorded. That
+//	                     is a `qualifiersFor` that must NOT report, which is
+//	                     exactly the shape a test can assert
+//
+// So the fact is recorded first — by hand, which is what the registry's own
+// key format is for — and the asking below is therefore the second one. What
+// it proves is the thing the previous arrangement could not: that the
+// suppression is real, that what was recorded can be read back, and that it
+// can be taken out again.
+//
+// # Why the registry is put back
+//
+// It lives for the test binary and every census in this package reads it. A
+// test that emptied it would make the NEXT census report a dot import that
+// something had already reported — the same sentence twice about one import
+// block, which is the wall the registry exists to be. Nothing here dot-imports
+// anything today, so the set being restored is empty; the restore is for the
+// day it is not.
+func TestTheDotImportRegistryCanBeReadAndCleared(t *testing.T) {
+	// A path no file has, so that seeding it cannot collide with a real
+	// finding some census in this binary is about to make.
+	const rel = "wasm/verify/testdata/no-such-file.go"
+	// The import path is spelled out at each use rather than held in a
+	// constant, and that is a fact about the arm two functions down:
+	// checkImportPathsAreImportable reads the last argument of every
+	// qualifiersFor call and holds it to being a path this module could
+	// import, and what it reads is a LITERAL. A constant here would be
+	// reported as a path nothing can check — correctly, and about this test
+	// rather than about any census.
+	key := rel + "\x00" + "go/parser"
+
+	held := forgetDotImportsReported()
+	defer func() {
+		for _, k := range held {
+			dotImportsReported.Store(k, true)
+		}
+	}()
+
+	src := "package p\n\nimport . \"go/parser\"\n\nvar _ = Mode(0)\n"
+	file, err := parser.ParseFile(token.NewFileSet(), rel, src,
+		parser.SkipObjectResolution)
+	if err != nil {
+		t.Fatalf("parsing the synthetic dot-importing file this test asks "+
+			"about: %v.\n\nWithout it there is nothing to ask, and the "+
+			"registry's suppression is unchecked.", err)
+	}
+
+	// The fact, recorded as the first asking would have recorded it.
+	dotImportsReported.Store(key, true)
+	if names := qualifiersFor(t, rel, file, "go/parser"); len(names) != 0 {
+		// A dot import binds nothing a qualifier can reach, which is the
+		// reason the finding exists at all.
+		t.Errorf("qualifiersFor returned %d name(s) for a file that only "+
+			"dot-imports go/parser, and a dot import binds the package's "+
+			"names into file scope where no qualifier reaches them.",
+			len(names))
+	}
+	// If the suppression had not worked, the call above would have failed this
+	// test with the dot-import finding, which is the assertion.
+
+	after := forgetDotImportsReported()
+	if len(after) != 1 || after[0] != key {
+		t.Errorf("the registry held %d key(s) after one asking about a "+
+			"dot-imported path, and the one recorded was %q: %q.\n\n"+
+			"forgetDotImportsReported is what makes this census breakable "+
+			"and re-runnable in place — see its header. A registry that "+
+			"cannot be read back is one whose suppression nothing can tell "+
+			"from a census that never asked.", len(after), key, after)
+	}
+	if left := forgetDotImportsReported(); len(left) != 0 {
+		t.Errorf("the registry still held %d key(s) after being cleared: "+
+			"%q.\n\nClearing and reading are one call because a break-test "+
+			"has to leave the registry as it found it; one that only read "+
+			"would leave the key behind and make the next census silent "+
+			"about a file nobody had reported.", len(left), left)
+	}
+}
 
 // packageBase is the identifier an import of this path binds, by convention.
 //
@@ -320,12 +461,12 @@ func unquote(lit string) string {
 //
 // # Why the whole set and not just the one that matters
 //
-// `importedAs` is the function with the reasoning behind it; the other four
-// are what it is made of and what reports its one residue. A package that had
-// `importedAs` and resolved the version suffix its own way, or that had it and
-// reported dot imports in its own words, would be the divergence this is about
-// — and both of those are exactly what the two copies had actually done before
-// anything compared them.
+// `importedAs` is the function with the reasoning behind it; the others are
+// what it is made of, what reports its one residue, and what lets that residue
+// be unrecorded again. A package that had `importedAs` and resolved the
+// version suffix its own way, or that had it and reported dot imports in its
+// own words, would be the divergence this is about — and both of those are
+// exactly what the two copies had actually done before anything compared them.
 //
 // So the unit is the SET. A package declaring some of these and not the others
 // is a copy being taken apart, which is a finding while the file is still in
@@ -337,6 +478,52 @@ var importResolverShapes = []string{
 	"dotImportsIn",
 	"qualifiersFor",
 	"unquote",
+	"forgetDotImportsReported",
+}
+
+// The package-level STATE those functions keep, held to being the same
+// declaration in every copy for the same reason the functions are.
+//
+// # What the compiler was already holding, and what it was not
+//
+// `dotImportsReported` has to exist in both packages or neither builds:
+// qualifiersFor reads it, and a copy without it is a compile error rather than
+// a divergence. That is real and it is only the NAME. The compiler has no
+// opinion about what kind of thing it is, so a plain `map[string]bool` in one
+// package and a `sync.Map` in the other compiles in both places, reads
+// identically, and differs the moment either package's tests are given a
+// t.Parallel() — which is exactly the state the two `importedAs` bodies were
+// in before anything compared them: two packages answering the same question
+// differently, with the reasoning written down once.
+//
+// So the state is held to the same rule the code is. The walk finds it the
+// same way — a package-level declaration with this name — and the comparison
+// is of the declaration as the printer renders it, which for a `var` is the
+// name and the type and whatever initialiser there is.
+//
+// # Why this is a separate list and not seven entries in the one above
+//
+// The two are found differently. A function is an *ast.FuncDecl and this is a
+// ValueSpec inside a GenDecl, and the walk has to know which it is looking for
+// before it can look. Keeping them apart makes that a fact about the list
+// rather than a guess about the name — and a `func dotImportsReported` added
+// by mistake is then a shape that is MISSING from its package rather than one
+// that quietly matched.
+var importResolverStateShapes = []string{
+	"dotImportsReported",
+}
+
+// importResolverAllShapes is both lists, in the order a reader would read
+// them: the functions, then the state they keep.
+//
+// Built rather than written out a third time, because a shape named in two
+// places and not the third is precisely the drift these lists exist to catch,
+// arriving in the check itself.
+func importResolverAllShapes() []string {
+	all := make([]string, 0, len(importResolverShapes)+len(importResolverStateShapes))
+	all = append(all, importResolverShapes...)
+	all = append(all, importResolverStateShapes...)
+	return all
 }
 
 // How many packages the copy argument covers.
@@ -356,7 +543,7 @@ var importResolverShapes = []string{
 const importResolverCopies = 2
 
 // checkImportResolverCopies holds every copy of the shapes above to being the
-// same function, and every package that has one to having all of them.
+// same declaration, and every package that has one to having all of them.
 //
 // # What is compared, and why it is not the bytes
 //
@@ -366,10 +553,24 @@ const importResolverCopies = 2
 // and interior comments and whitespace are normalised by the printer rather
 // than argued about.
 //
+// The set is both lists — the functions and the package-level state they keep
+// — because the compiler's hold on the state is only its NAME, and a copy that
+// declares that name as a different kind of thing compiles in both places and
+// differs under t.Parallel(). See importResolverStateShapes.
+//
 // What it cannot see is a difference in something the copies both call. That
 // is the reason the set is the unit: a `packageBase` that had drifted is a
 // `packageBase` this compares, and a helper outside the set would have to be
 // added to it.
+//
+// # A comparison that could not be made is not a difference
+//
+// A declaration go/printer rejects used to come back as the string
+// `unprintable: …`, which compares unequal to the other copy and produced a
+// drift finding naming a file — the right file, for the wrong reason, with a
+// message sending a reader to look for a difference that is not there. It is
+// reported as itself instead, and the comparison for that shape is skipped
+// rather than made against nothing.
 func checkImportResolverCopies(t *testing.T, decls []importResolverDecl) {
 	t.Helper()
 
@@ -387,13 +588,14 @@ func checkImportResolverCopies(t *testing.T, decls []importResolverDecl) {
 	// nothing passes silently and reads as a clean result, and this one is
 	// looking for NAMES that a rename would take away without touching a line
 	// of what they do.
+	shapes := importResolverAllShapes()
 	var missing []string
-	for _, name := range importResolverShapes {
+	for _, name := range shapes {
 		if len(byName[name]) == 0 {
 			missing = append(missing, name)
 		}
 	}
-	if len(missing) == len(importResolverShapes) {
+	if len(missing) == len(shapes) {
 		t.Errorf("none of the %d import-resolving shape(s) was found in the "+
 			"repository: %s.\n\n"+
 			"These are what every census that asks \"is this a call into "+
@@ -403,7 +605,7 @@ func checkImportResolverCopies(t *testing.T, decls []importResolverDecl) {
 			"not reaching them or they have been renamed, and in both cases "+
 			"the two copies are back to being kept in step by whoever "+
 			"remembers to.",
-			len(importResolverShapes), strings.Join(importResolverShapes, ", "))
+			len(shapes), strings.Join(shapes, ", "))
 		return
 	}
 
@@ -417,7 +619,7 @@ func checkImportResolverCopies(t *testing.T, decls []importResolverDecl) {
 	sort.Strings(dirs)
 	for _, dir := range dirs {
 		var absent []string
-		for _, name := range importResolverShapes {
+		for _, name := range shapes {
 			if !byDir[dir][name] {
 				absent = append(absent, name)
 			}
@@ -436,31 +638,56 @@ func checkImportResolverCopies(t *testing.T, decls []importResolverDecl) {
 			"Either take the whole set or none of it, and if this package "+
 			"genuinely needs a different answer, that is a reason to write "+
 			"down rather than a function to leave out.",
-			dir, len(byDir[dir]), len(importResolverShapes),
+			dir, len(byDir[dir]), len(shapes),
 			strings.Join(absent, ", "))
 	}
 
-	// And the copies themselves being the same function.
-	for _, name := range importResolverShapes {
+	// And the copies themselves being the same declaration.
+	for _, name := range shapes {
 		found := byName[name]
 		sort.Slice(found, func(i, j int) bool { return found[i].rel < found[j].rel })
+		// A declaration the printer could not render is its own finding, and
+		// it is reported before the comparison rather than inside it: the
+		// text for such a declaration is "", which compares unequal to every
+		// real one and would report a drift that is not there.
+		unprintable := false
+		for _, d := range found {
+			if d.printErr == nil {
+				continue
+			}
+			unprintable = true
+			t.Errorf("%s at %s:%d could not be rendered by go/printer: %v.\n\n"+
+				"This is not a difference between the copies — it is the "+
+				"comparison not being MADE. Every other copy of %s is "+
+				"therefore unchecked on this run, which is the state all of "+
+				"them were in before anything compared them.\n\n"+
+				"The printer failing on a declaration go/parser accepted is "+
+				"either a syntax tree something has edited in place or a "+
+				"toolchain fault; in both cases the finding is about this "+
+				"check and not about the copy.",
+				d.name, d.rel, d.line, d.printErr, d.name)
+		}
+		if unprintable {
+			continue
+		}
 		for i := 1; i < len(found); i++ {
 			if found[i].text == found[0].text {
 				continue
 			}
 			t.Errorf("%s is declared at %s:%d and at %s:%d and the two are "+
-				"not the same function.\n\n"+
+				"not the same declaration.\n\n"+
 				"These are a copy on purpose — see the header of either file "+
 				"— and a copy that has drifted is the worst of both: two "+
 				"packages answering the same question differently, with the "+
 				"reasoning written down once. The comparison is of the code "+
 				"alone, with doc comments removed and the printer's "+
 				"formatting, so the two headers are free to say different "+
-				"things and this is a real difference in what the function "+
-				"does.\n\n%s:%d has:\n\n%s\n\n%s:%d has:\n\n%s\n\n"+
+				"things and this is a real difference in what the "+
+				"declaration is.\n\n%s:%d has:\n\n%s\n\n%s:%d has:\n\n%s\n\n"+
 				"Make one a copy of the other, or — if the two packages now "+
 				"need different answers — say so where the copy argument is "+
-				"and take this shape out of importResolverShapes.",
+				"and take this shape out of importResolverShapes or "+
+				"importResolverStateShapes.",
 				name, found[0].rel, found[0].line, found[i].rel, found[i].line,
 				found[0].rel, found[0].line, found[0].text,
 				found[i].rel, found[i].line, found[i].text)
@@ -471,7 +698,7 @@ func checkImportResolverCopies(t *testing.T, decls []importResolverDecl) {
 	// same reason.
 	whole := 0
 	for _, dir := range dirs {
-		if len(byDir[dir]) == len(importResolverShapes) {
+		if len(byDir[dir]) == len(shapes) {
 			whole++
 		}
 	}
@@ -488,12 +715,13 @@ func checkImportResolverCopies(t *testing.T, decls []importResolverDecl) {
 			"importResolverCopies with the reason beside the copy argument, so "+
 			"the next person reads a decision rather than a number.",
 			whole, importResolverCopies, strings.Join(dirs, ", "),
-			len(importResolverShapes), len(importResolverShapes), whole, whole)
+			len(shapes), len(shapes), whole, whole)
 	}
 
-	t.Logf("%d import-resolving shape(s), %d copy(ies) each, held identical "+
-		"across %s.", len(importResolverShapes), whole,
-		strings.Join(dirs, ", "))
+	t.Logf("%d import-resolving shape(s) — %d function(s) and %d piece(s) of "+
+		"package-level state — %d copy(ies) each, held identical across %s.",
+		len(shapes), len(importResolverShapes), len(importResolverStateShapes),
+		whole, strings.Join(dirs, ", "))
 }
 
 // checkImportPathsAreImportable holds every import path a census names to
@@ -515,7 +743,8 @@ func checkImportResolverCopies(t *testing.T, decls []importResolverDecl) {
 //	                        module-path rule read backwards, and it is exact:
 //	                        a module path must have a dot in its first element,
 //	                        so a path without one is the standard library or
-//	                        nothing
+//	                        nothing. WHICH of the two is then settled against
+//	                        the toolchain's own sources — see stdlibSource
 //	everything else         has to be this module or something go.mod
 //	                        requires, by prefix. A path under a required
 //	                        module might still be a directory that does not
@@ -523,11 +752,33 @@ func checkImportResolverCopies(t *testing.T, decls []importResolverDecl) {
 //	                        under NO required module cannot be imported by
 //	                        anything here, whatever is on disk
 //
-// The standard library side is the looser one: `os/exex` has no dot and passes.
-// Closing that means a list of every stdlib path, which is a second copy of
-// something that changes every release — so it is a written limit rather than
-// a check, and the module side, which is where the version suffixes and the
-// interesting names live, is exact.
+// # The standard-library half, which used to be a written limit
+//
+// It was this: no dot in the first element, therefore stdlib, therefore fine.
+// `os/exex` passed, and the census asking about it reported nothing forever —
+// which matters more here than anywhere, because five of the eight paths asked
+// about today are stdlib, so the half that was exact covered three of them.
+//
+// What was written down as the only two ways to close it were `go list std` —
+// a second copy of something that changes every release — and a build, which
+// is the cost every walk here declines. There is a third, and it is cheaper
+// than both: a standard library package is a DIRECTORY under the toolchain's
+// own `$GOROOT/src`, and asking whether that directory exists is one stat
+// against the very toolchain this test is running on. Nothing is copied,
+// nothing is loaded, and the answer moves with the release because it IS the
+// release.
+//
+// The one thing it is not is a guarantee that the directory holds a package
+// this build would accept — a directory with no .go files in it, or one whose
+// files are all excluded by build tags, is still a stat that succeeds. That is
+// the same residue the module half has and for the same reason, and it is a
+// much smaller one than "no dot, therefore fine".
+//
+// When GOROOT is not on disk — a stripped container, a toolchain shipped
+// without its sources — there is nothing to stat and the half goes back to
+// being the rule it was. That is said out loud in the log rather than passed
+// over, because a check that quietly stops asking is the shape this whole file
+// is about.
 //
 // # And the argument that is not a literal
 //
@@ -560,8 +811,16 @@ func checkImportPathsAreImportable(t *testing.T, root string, asks []importPathA
 		}
 		return asks[i].line < asks[j].line
 	})
+	// Where this toolchain keeps the standard library's sources, or "" when
+	// they are not on disk. Read once: it is a stat of one directory, and the
+	// answer is the same for every path below.
+	stdlib := stdlibSource()
 	seen := map[string]bool{}
 	var paths []string
+	// Counted in distinct PATHS and not in askings, because that is what the
+	// line below lists: six censuses asking about `os/exec` is one path this
+	// half either judged or did not.
+	stdlibPaths := map[string]bool{}
 	for _, a := range asks {
 		if a.path == "" {
 			t.Errorf("%s:%d asks about an import path that is not a literal "+
@@ -583,7 +842,33 @@ func checkImportPathsAreImportable(t *testing.T, root string, asks []importPathA
 			first = first[:i]
 		}
 		if !strings.Contains(first, ".") {
-			// The standard library, by the module-path rule read backwards.
+			// The standard library, by the module-path rule read backwards —
+			// or a typo, which is what the stat settles.
+			stdlibPaths[a.path] = true
+			if stdlib == "" {
+				continue
+			}
+			dir := filepath.Join(stdlib, filepath.FromSlash(a.path))
+			if info, statErr := os.Stat(dir); statErr == nil && info.IsDir() {
+				continue
+			}
+			t.Errorf("%s:%d asks about %q, and this toolchain's standard "+
+				"library has no such package: %s does not exist.\n\n"+
+				"A path with no dot in its first element cannot be a module "+
+				"path, so it is the standard library or it is nothing, and "+
+				"this is which. A path that is nothing binds no identifier, "+
+				"so importedAs comes back empty for every file, every call "+
+				"into the package is invisible, and the census passes over "+
+				"the whole repository having asked nothing.\n\n"+
+				"That is the same silence an aliased import used to produce, "+
+				"one level up — the path the question is about rather than "+
+				"the name the answer is written with — and it is worth more "+
+				"here than on the module half, because most of what these "+
+				"censuses ask about is stdlib.\n\n"+
+				"If the package has MOVED between releases, this is the "+
+				"census being told so by the toolchain it is running on; if "+
+				"it is a typo, the census has been reporting nothing since it "+
+				"was written.", a.rel, a.line, a.path, dir)
 			continue
 		}
 		if a.path != module && !strings.HasPrefix(a.path, module+"/") {
@@ -630,8 +915,60 @@ func checkImportPathsAreImportable(t *testing.T, root string, asks []importPathA
 		}
 	}
 	sort.Strings(paths)
+	// What the standard-library half was actually worth on this run, said out
+	// loud. A check that has stopped asking reads exactly like one that asked
+	// and found nothing, which is the whole subject of this file.
+	std := fmt.Sprintf(" %d of them in the standard library, each a directory "+
+		"under %s", len(stdlibPaths), stdlib)
+	if stdlib == "" {
+		std = fmt.Sprintf(" %d of them in the standard library, which this "+
+			"run could not check: go/build reports GOROOT as %q and there is "+
+			"no `src` directory there, so those paths are held only to the "+
+			"rule that a module path has a dot in its first element",
+			len(stdlibPaths), build.Default.GOROOT)
+	}
 	t.Logf("%d import path(s) asked about by the censuses here, each one this "+
-		"module could import: %s.", len(paths), strings.Join(paths, ", "))
+		"module could import —%s: %s.", len(paths), std,
+		strings.Join(paths, ", "))
+}
+
+// stdlibSource is where this toolchain keeps the standard library's sources,
+// or "" when they are not on disk.
+//
+// # Why go/build and not `go env GOROOT`
+//
+// go/build.Default is the same answer the toolchain gives itself — the GOROOT
+// environment variable if it is set, and otherwise the path this binary's
+// toolchain was built at — and reading it is a field access rather than a
+// process. `go env` would be a subprocess in a package whose own timings
+// record counts git processes as its largest term, to learn something already
+// in memory.
+//
+// runtime.GOROOT() is the same value and is deprecated as of Go 1.24, which is
+// the other reason this is spelled the way it is.
+//
+// # Why the stat, and what "" means to the caller
+//
+// GOROOT can name a directory that is not there: a toolchain installed without
+// its sources, a container with `src` stripped, an environment variable
+// pointing somewhere stale. A join against a path like that produces a stat
+// that fails for every package in the standard library, which would report
+// every stdlib path a census names as a typo — a census failing loudly about
+// the machine it is on rather than about the repository.
+//
+// So the directory is checked once, and "" is the caller's signal to fall back
+// to the rule this replaced rather than to report. The fallback is logged, not
+// silent.
+func stdlibSource() string {
+	root := build.Default.GOROOT
+	if root == "" {
+		return ""
+	}
+	src := filepath.Join(root, "src")
+	if info, err := os.Stat(src); err != nil || !info.IsDir() {
+		return ""
+	}
+	return src
 }
 
 // moduleRequirements is this module's own path and the module paths it
@@ -709,8 +1046,11 @@ type importResolverDecl struct {
 	rel  string
 	line int
 	// The declaration printed with its doc comment removed — see
-	// declarationText.
-	text string
+	// declarationText. "" when the printer could not render it, in which case
+	// `printErr` says so and the comparison is reported as one that could not
+	// be made rather than as a difference.
+	text     string
+	printErr error
 }
 
 // importPathAsk is one place a census names an import path.
@@ -725,24 +1065,51 @@ type importPathAsk struct {
 	fn string
 }
 
-// declarationText is a function declaration as code, with its doc comment
-// removed.
+// declarationText is a declaration as code, with its doc comment removed.
 //
 // The doc comment is the part two copies are SUPPOSED to differ in — one
 // header says what the function is, the other says why there is a second one
 // — and the printer normalises everything else, so what comes back is exactly
 // the thing a copy has to keep in step.
-func declarationText(fset *token.FileSet, fn *ast.FuncDecl) string {
-	stripped := *fn
-	stripped.Doc = nil
+//
+// # The two shapes, and why a var is printed from its spec
+//
+// A function is an *ast.FuncDecl and prints whole. The state is a ValueSpec
+// inside a GenDecl, and printing the GenDecl would compare a `var (…)` block
+// against a single `var` line — a difference in how the file is arranged
+// rather than in what is declared. So the SPEC is printed and `var ` is put in
+// front of it, which renders `dotImportsReported sync.Map` the same way
+// wherever it sits.
+//
+// # Why the error comes back rather than travelling as the text
+//
+// It used to be returned as `unprintable: …`, which compares unequal to the
+// other copy and produces a drift finding naming a file — right by accident
+// and wrong in what it says. The real finding is that the comparison could not
+// be MADE, and a reader told that two functions differ will go looking for a
+// difference that is not there.
+func declarationText(fset *token.FileSet, node ast.Node) (string, error) {
 	var buf bytes.Buffer
-	if err := printer.Fprint(&buf, fset, &stripped); err != nil {
-		// A declaration the printer cannot render is not a comparison this
-		// can make; the error travels as the text so that two of them compare
-		// unequal and the finding names the file.
-		return "unprintable: " + err.Error()
+	switch decl := node.(type) {
+	case *ast.FuncDecl:
+		stripped := *decl
+		stripped.Doc = nil
+		if err := printer.Fprint(&buf, fset, &stripped); err != nil {
+			return "", err
+		}
+		return buf.String(), nil
+	case *ast.ValueSpec:
+		stripped := *decl
+		stripped.Doc = nil
+		// The trailing `// …` on the same line goes too: it is a comment, and
+		// the two copies are free to differ in those.
+		stripped.Comment = nil
+		if err := printer.Fprint(&buf, fset, &stripped); err != nil {
+			return "", err
+		}
+		return "var " + buf.String(), nil
 	}
-	return buf.String()
+	return "", fmt.Errorf("a %T is not a declaration this compares", node)
 }
 
 // importResolverDeclarationsIn collects the shared shapes this file declares,
@@ -763,21 +1130,54 @@ func importResolverDeclarationsIn(fset *token.FileSet, rel string,
 	for _, name := range importResolverShapes {
 		shape[name] = true
 	}
+	state := map[string]bool{}
+	for _, name := range importResolverStateShapes {
+		state[name] = true
+	}
+	dir := path.Dir(rel)
+	// One declaration of a shared shape, however it is spelled. The two arms
+	// below differ only in what they hand the printer.
+	record := func(name string, at token.Pos, node ast.Node) importResolverDecl {
+		text, err := declarationText(fset, node)
+		return importResolverDecl{
+			name:     name,
+			dir:      dir,
+			rel:      rel,
+			line:     fset.Position(at).Line,
+			text:     text,
+			printErr: err,
+		}
+	}
 	var decls []importResolverDecl
 	var asks []importPathAsk
 	for _, d := range file.Decls {
+		// The package-level state, which is a ValueSpec inside a GenDecl
+		// rather than a declaration of its own — see importResolverStateShapes
+		// for why it is held to the same rule as the code that reads it.
+		if gen, ok := d.(*ast.GenDecl); ok {
+			if gen.Tok != token.VAR {
+				continue
+			}
+			for _, sp := range gen.Specs {
+				vs, ok := sp.(*ast.ValueSpec)
+				if !ok {
+					continue
+				}
+				for _, n := range vs.Names {
+					if !state[n.Name] {
+						continue
+					}
+					decls = append(decls, record(n.Name, n.Pos(), vs))
+				}
+			}
+			continue
+		}
 		fn, ok := d.(*ast.FuncDecl)
 		if !ok || fn.Body == nil {
 			continue
 		}
 		if fn.Recv == nil && shape[fn.Name.Name] {
-			decls = append(decls, importResolverDecl{
-				name: fn.Name.Name,
-				dir:  path.Dir(rel),
-				rel:  rel,
-				line: fset.Position(fn.Pos()).Line,
-				text: declarationText(fset, fn),
-			})
+			decls = append(decls, record(fn.Name.Name, fn.Pos(), fn))
 			// The shapes calling each other is what they are made of.
 			continue
 		}

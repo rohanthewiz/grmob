@@ -175,6 +175,11 @@ func TestTheRepositoryWideWalksInThisPackageAreTheOnesDecidedOn(t *testing.T) {
 		}
 	}
 
+	// A bound written as a name, read off this package's own declarations —
+	// lazily, over the files already read, using the same memoised parse. See
+	// packageLevelInts and loopBound.
+	packageInts := packageLevelInts(names, sources, parse)
+
 	// The second pass: how many times each non-test walker is actually called.
 	// A helper that walks the repository and is called from two tests is two
 	// walks, and the budget is about walks.
@@ -201,7 +206,7 @@ func TestTheRepositoryWideWalksInThisPackageAreTheOnesDecidedOn(t *testing.T) {
 				if !ok || fn.Body == nil || fn.Name.Name == w.fn {
 					continue
 				}
-				n, sites := callsTo(fset, fn.Body, w.fn)
+				n, sites := callsTo(fset, fn, w.fn, packageInts)
 				calls += n
 				for _, site := range sites {
 					where := fmt.Sprintf("%s:%d, in %s (%s)", name, site.line,
@@ -330,7 +335,8 @@ func TestTheRepositoryWideWalksInThisPackageAreTheOnesDecidedOn(t *testing.T) {
 			"What it asked: %s. If the walk has moved, this row describes "+
 			"nothing; if it has gone, the cost recorded in "+
 			"verifyTimingsTakenOn is now high by that walk's share and the "+
-			"question it was asking is unasked.", key, row.depth, row.asks)
+			"question(s) it was asking are unasked.", key, row.depth,
+			strings.Join(row.asks, "; "))
 	}
 
 	// Counted in WALKS and not in functions: a helper called twice is two
@@ -381,12 +387,22 @@ func TestTheRepositoryWideWalksInThisPackageAreTheOnesDecidedOn(t *testing.T) {
 				w.fn, strings.Join(w.priced, "; "))
 		}
 	}
+	// And how many QUESTIONS those walks are between them answering. The two
+	// numbers used to be the same and no longer are: copies_test.go is one
+	// parse and three censuses, which is what the parse budget bought. A row
+	// growing a fourth entry is a walk that has become a place to put things,
+	// and that is worth a number rather than a long field — see repositoryWalks.
+	questions := 0
+	for _, w := range repositoryWalks {
+		questions += len(w.asks)
+	}
 	t.Logf("%d repository-wide walk(s) per run in this package, %d of them "+
-		"parsing every Go file, from %d function(s): %s. Found by scanning %d "+
-		"Go file(s) in this directory and parsing the %d that named "+
-		"something. Their cost is part of verifyTimingsTakenOn.wholeFile.%s",
-		walks, parses, len(found), walkList(found), len(names), len(trees),
-		bounded)
+		"parsing every Go file, from %d function(s), asking %d question(s) "+
+		"between them: %s. Found by scanning %d Go file(s) in this directory "+
+		"and parsing the %d that named something. Their cost is part of "+
+		"verifyTimingsTakenOn.wholeFile.%s",
+		walks, parses, len(found), questions, walkList(found), len(names),
+		len(trees), bounded)
 }
 
 // The three depths a repository walk comes in, cheapest first.
@@ -445,66 +461,101 @@ var enumerationEntryPoints = map[string]bool{
 // `asks` is the part worth having. A row that only named the test would say
 // where the cost is; what a reader deciding whether to share a parse needs is
 // what each walk would then be sharing.
+//
+// # Why it is a list and not a sentence
+//
+// The field was written to hold what ONE walk asks, because that was the unit:
+// one walk, one question, one row. copies_test.go stopped being that — it is
+// one parse answering three questions, which is the arrangement the parse
+// budget forced and is the right one — and the row it left behind was three
+// sentences run together in a field built for one.
+//
+// A paragraph is not countable. A list is: a row with four entries is a walk
+// that has quietly become four censuses sharing a parse, and the number is
+// printed on every green run rather than being something a reader notices by
+// finding the field long. That is the same move as `runs` — the cost of a walk
+// was a sentence until something counted it.
 var repositoryWalks = []repositoryWalkRow{{
 	fn:       "checkCitationsResolve",
 	file:     "checknumbering_test.go",
 	depth:    walkReads,
 	runs:     1,
 	drivenBy: "TestTheBrowserChecksAreOneNumberedSequence",
-	asks: "every `check N` citation in the repository, in one numbered " +
-		"sequence — which is why citingFiles reads every file rather than " +
-		"every Go file. A HELPER and not a test: it walks once per caller, " +
-		"and it also asks repositoryFiles separately first, on purpose, so " +
-		"that a git which succeeds and lists nothing is told apart from a " +
-		"machine with no git",
+	asks: []string{
+		"every `check N` citation in the repository, in one numbered " +
+			"sequence — which is why citingFiles reads every file rather " +
+			"than every Go file. A HELPER and not a test: it walks once per " +
+			"caller, and it also asks repositoryFiles separately first, on " +
+			"purpose, so that a git which succeeds and lists nothing is told " +
+			"apart from a machine with no git",
+	},
 }, {
 	fn:    "TestTheCitationSkipsGitAlreadyMakes",
 	file:  "checknumbering_test.go",
 	depth: walkEnumerates,
-	asks: "which of citationSkipDirs git's own exclude rules already make, " +
-		"which is a question about the FILE LIST and not about any file's " +
-		"contents",
+	asks: []string{
+		"which of citationSkipDirs git's own exclude rules already make, " +
+			"which is a question about the FILE LIST and not about any " +
+			"file's contents",
+	},
 }, {
 	fn:    "TestEveryGitListingAsksForNulSeparatedPaths",
 	file:  "gitquoting_test.go",
 	depth: walkParses,
-	asks: "every git invocation in Go source that lists paths, and whether " +
-		"it asks for them NUL-separated",
+	asks: []string{
+		"every git invocation in Go source that lists paths, and whether it " +
+			"asks for them NUL-separated",
+	},
 }, {
 	fn:    "TestEveryGitListingInAScriptAsksForNulSeparatedPaths",
 	file:  "gitscript_test.go",
 	depth: walkReads,
-	asks: "the same rule in shell scripts, which are lexed rather than " +
-		"parsed — so this one reads bytes and never reaches go/parser",
+	asks: []string{
+		"the same rule in shell scripts, which are lexed rather than parsed " +
+			"— so this one reads bytes and never reaches go/parser",
+	},
 }, {
 	fn:    "TestTheShortLeversAreTheOnesThisRepositoryHasDecidedOn",
 	file:  "shortlever_test.go",
 	depth: walkParses,
-	asks: "every testing.Short() there is, and whether the branch it guards " +
-		"skips",
+	asks: []string{
+		"every testing.Short() there is, and whether the branch it guards " +
+			"skips",
+	},
 }, {
+	// Three questions and one parse, because a fifth repository-wide parse is
+	// the decision repositoryParseBudget exists to force. Each of them is a
+	// reading of declarations the one walk has already built, and each is a
+	// subtest with its own failure boundary — see the header of
+	// copies_test.go.
 	fn:    "TestTheShapesThisRepositoryKeepsTwoCopiesOfAreInStep",
 	file:  "copies_test.go",
 	depth: walkParses,
-	asks: "everything this repository keeps two copies of on purpose — the " +
-		"`…TimingsTakenOn` records and whether each carries the five machine " +
-		"fields, a reporting arm and a cores note that names every term in " +
-		"its package that scales; and the import-resolving helpers, held to " +
-		"being the same code in both packages. Three questions and one parse, " +
-		"because a fifth repository-wide parse is the decision " +
-		"repositoryParseBudget exists to force",
+	asks: []string{
+		"the `…TimingsTakenOn` records: whether each carries the five " +
+			"machine fields, a reporting arm, and a cores note that names " +
+			"every term in its package that scales and nothing that has gone",
+		"the import-resolving helpers and the registry they share, held to " +
+			"being the same declarations in both packages",
+		"every import path those helpers are asked about, held to being one " +
+			"this module could actually import",
+	},
 }, {
 	fn:    "TestTheDottedVersionParsersAreTheOnesTheReasonCovers",
 	file:  "versionorder_test.go",
 	depth: walkParses,
-	asks:  "every function that orders dotted versions, by either construction",
+	asks: []string{
+		"every function that orders dotted versions, by either construction",
+	},
 }}
 
 // repositoryWalkRow is one decided walk.
 type repositoryWalkRow struct {
 	fn, file string
 	depth    string
-	asks     string
+	// What this walk asks the repository, one entry per question. See the
+	// list above for why the unit is a question rather than a row.
+	asks []string
 	// For a helper: how many calls a run makes, and which test drives it. Zero
 	// and "" for a test, which runs once and drives itself.
 	runs     int
@@ -660,7 +711,21 @@ type loopSite struct {
 // be wrong in: its whole purpose is to stop a walk's price being understated
 // where nobody looks. There is no such site here, and `t.Run` and `defer` —
 // the two ways a closure in a test actually reaches a call — both run it.
-func callsTo(fset *token.FileSet, body *ast.BlockStmt, name string) (calls int, sites []loopSite) {
+func callsTo(fset *token.FileSet, fn *ast.FuncDecl, name string,
+	packageInts func(string) (int, bool)) (calls int, sites []loopSite) {
+
+	body := fn.Body
+	// A bound written as a name is read off this package's declarations — but
+	// only when the name is not bound inside this function. See boundNamesIn:
+	// a local `n` shadowing a package-level `n` would otherwise be priced at
+	// the package's number, which is a count invented out of a coincidence.
+	shadowed := boundNamesIn(fn)
+	bound := func(id string) (int, bool) {
+		if shadowed[id] || packageInts == nil {
+			return 0, false
+		}
+		return packageInts(id)
+	}
 	// Every loop in the body, as a source range with whatever bound could be
 	// read off it. `for {}`, a three-clause `for` and a `range` are one
 	// question here — how many times does what is inside this run — so both
@@ -675,7 +740,7 @@ func callsTo(fset *token.FileSet, body *ast.BlockStmt, name string) (calls int, 
 	ast.Inspect(body, func(node ast.Node) bool {
 		switch node.(type) {
 		case *ast.ForStmt, *ast.RangeStmt:
-			times, known, how := loopBound(node)
+			times, known, how := loopBound(node, bound)
 			loops = append(loops, span{from: node.Pos(), to: node.End(),
 				times: times, known: known, how: how})
 		}
@@ -746,7 +811,7 @@ func callsTo(fset *token.FileSet, body *ast.BlockStmt, name string) (calls int, 
 //	                            instead, because `[8]int{}` ranges eight times
 //	                            and has one element
 //	for i := 0; i < 3; i++      the count is the difference, with `<=` one
-//	                            more. Only a literal start, a literal bound
+//	                            more. Only a written start, a written bound
 //	                            and a ++ post — anything else is arithmetic
 //	                            this is not going to do
 //
@@ -757,6 +822,30 @@ func callsTo(fset *token.FileSet, body *ast.BlockStmt, name string) (calls int, 
 // declaration would be a dataflow walk in a census that declines those for the
 // reason gitquoting_test.go writes down.
 //
+// # A name is written down too, when it is a package-level integer
+//
+// `for i := 0; i < enumWorkers; i++` is a bound this repository HAS written
+// down. It is not a run-time fact and it is not dataflow: enumWorkers is a
+// package-level declaration with an integer on the right of it, sitting in the
+// same directory this walk has already read, which is how packageLevelNames
+// answers a question of exactly this shape for a hundredth of a second.
+//
+// Reporting it was the arm declining to compute a cost rather than being
+// unable to — the same thing `for range 2` was before the literal case was
+// read — so the `bound` resolver is handed every identifier that appears where
+// a number would do, and a name it can settle is priced like a literal.
+//
+// Two things it will not do. A name whose initialiser is anything but an
+// integer literal comes back unknown, because `min(NumCPU, 8)` is a bound that
+// depends on the machine and 8 is its ceiling rather than its value — and
+// pricing a walk at its ceiling is the overstating direction on a number the
+// budget is made of. And a name bound anywhere inside the function is refused
+// outright: see boundNamesIn.
+//
+// `how` says which name and what it resolved to, because a row reading
+// `runs: 8` beside a loop written `i < enumWorkers` is a number a reader
+// cannot check without opening another file.
+//
 // A string range is deliberately unknown: `for range "héllo"` goes round once
 // per RUNE and the literal's length is in bytes, and a census that got that
 // wrong by one on a non-ASCII literal would be worse than one that asks.
@@ -764,11 +853,20 @@ func callsTo(fset *token.FileSet, body *ast.BlockStmt, name string) (calls int, 
 // `how` is the loop as a reader would say it, for the message: "for range
 // cases" names the thing that could not be priced, and "there is a loop" does
 // not.
-func loopBound(n ast.Node) (times int, known bool, how string) {
+func loopBound(n ast.Node, bound func(string) (int, bool)) (times int,
+	known bool, how string) {
+
 	switch loop := n.(type) {
 	case *ast.RangeStmt:
 		how = "for range " + exprText(loop.X)
 		switch x := loop.X.(type) {
+		case *ast.Ident:
+			// `for range n`, which ranges over an integer. A name here is the
+			// same question as a name in a `<` — see the header.
+			if v, ok := bound(x.Name); ok {
+				return v, true, fmt.Sprintf("%s, %s = %d", how, x.Name, v)
+			}
+			return 0, false, how
 		case *ast.BasicLit:
 			if x.Kind == token.INT {
 				if v, err := strconv.Atoi(x.Value); err == nil && v >= 0 {
@@ -802,9 +900,9 @@ func loopBound(n ast.Node) (times int, known bool, how string) {
 		if !ok {
 			return 0, false, how
 		}
-		// The counter, its start and its bound all have to be literal for the
-		// difference to mean anything.
-		name, from, ok := literalInit(loop.Init)
+		// The counter, its start and its bound all have to be a number this
+		// can read for the difference to mean anything.
+		name, from, ok := counterStart(loop.Init, bound)
 		if !ok {
 			return 0, false, how
 		}
@@ -812,9 +910,15 @@ func loopBound(n ast.Node) (times int, known bool, how string) {
 		if !ok || id.Name != name {
 			return 0, false, how
 		}
-		to, ok := intLit(cond.Y)
+		to, ok := intValue(cond.Y, bound)
 		if !ok {
 			return 0, false, how
+		}
+		// Which name the number came from, if it came from one. A row saying
+		// `runs: 8` beside `i < enumWorkers` is otherwise a figure a reader
+		// has to go and look up.
+		if named, isName := cond.Y.(*ast.Ident); isName {
+			how = fmt.Sprintf("%s, %s = %d", how, named.Name, to)
 		}
 		inc, ok := loop.Post.(*ast.IncDecStmt)
 		if !ok || inc.Tok != token.INC {
@@ -835,8 +939,16 @@ func loopBound(n ast.Node) (times int, known bool, how string) {
 	return 0, false, ""
 }
 
-// literalInit is the name and starting value of a `i := 0` init statement.
-func literalInit(init ast.Stmt) (name string, from int, ok bool) {
+// counterStart is the name and starting value of an `i := 0` init statement.
+//
+// The starting value goes through the same resolver the bound does, so
+// `for i := firstCheck; i < lastCheck; i++` is as readable as `0` and `3` are.
+// Named counterStart rather than literalInit because the start no longer has
+// to be a literal — only a number this arm can settle without running
+// anything.
+func counterStart(init ast.Stmt, bound func(string) (int, bool)) (name string,
+	from int, ok bool) {
+
 	assign, ok := init.(*ast.AssignStmt)
 	if !ok || assign.Tok != token.DEFINE || len(assign.Lhs) != 1 ||
 		len(assign.Rhs) != 1 {
@@ -846,11 +958,193 @@ func literalInit(init ast.Stmt) (name string, from int, ok bool) {
 	if !ok {
 		return "", 0, false
 	}
-	from, ok = intLit(assign.Rhs[0])
+	from, ok = intValue(assign.Rhs[0], bound)
 	if !ok {
 		return "", 0, false
 	}
 	return id.Name, from, true
+}
+
+// intValue is an expression's value when the source says what it is: a
+// non-negative integer literal, or a name the resolver can settle.
+//
+// The resolver is the only place a name is read, and it is what decides
+// whether `enumWorkers` is a number or a question — see loopBound's header and
+// packageLevelInts.
+func intValue(e ast.Expr, bound func(string) (int, bool)) (int, bool) {
+	if v, ok := intLit(e); ok {
+		return v, true
+	}
+	id, ok := e.(*ast.Ident)
+	if !ok || bound == nil {
+		return 0, false
+	}
+	return bound(id.Name)
+}
+
+// boundNamesIn is every identifier this function binds: its receiver, its
+// parameters and results, and everything declared anywhere in its body.
+//
+// # Why the shadow is refused rather than resolved
+//
+// A bound written as a name is read off the package's declarations, and that
+// is only sound while the name in the loop IS the package's. A local `n`,
+// a parameter `n`, a `for _, n := range …` — each of them makes
+// `for i := 0; i < n; i++` a run-time fact spelled exactly like a written-down
+// one, and pricing it at the package-level `n` would be a number invented out
+// of two declarations sharing a name.
+//
+// Resolving it properly means scope, which means a walk that knows which
+// block a call is in and what each of them binds — dataflow, which this census
+// declines for the reason gitquoting_test.go writes down. Refusing every name
+// the function binds ANYWHERE costs a real bound now and then — a body that
+// happens to declare `enumWorkers` somewhere unrelated makes a loop elsewhere
+// in it unreadable — and what it costs is a finding, which is the direction
+// this arm is allowed to be wrong in. It cannot cost a wrong number.
+//
+// The body is read with ast.Inspect and therefore includes every FuncLit
+// inside it, which is right: a call in a closure is a call in this function as
+// far as the position arithmetic goes, so a name the closure binds is a name
+// that could be the one in the loop.
+func boundNamesIn(fn *ast.FuncDecl) map[string]bool {
+	bound := map[string]bool{}
+	add := func(e ast.Expr) {
+		if id, ok := e.(*ast.Ident); ok && id.Name != "_" {
+			bound[id.Name] = true
+		}
+	}
+	fields := func(list *ast.FieldList) {
+		if list == nil {
+			return
+		}
+		for _, f := range list.List {
+			for _, n := range f.Names {
+				add(n)
+			}
+		}
+	}
+	fields(fn.Recv)
+	if fn.Type != nil {
+		fields(fn.Type.Params)
+		fields(fn.Type.Results)
+	}
+	if fn.Body == nil {
+		return bound
+	}
+	ast.Inspect(fn.Body, func(n ast.Node) bool {
+		switch node := n.(type) {
+		case *ast.AssignStmt:
+			if node.Tok == token.DEFINE {
+				for _, lhs := range node.Lhs {
+					add(lhs)
+				}
+			}
+		case *ast.RangeStmt:
+			add(node.Key)
+			add(node.Value)
+		case *ast.ValueSpec:
+			for _, name := range node.Names {
+				add(name)
+			}
+		case *ast.TypeSpec:
+			add(node.Name)
+		case *ast.FuncLit:
+			if node.Type != nil {
+				fields(node.Type.Params)
+				fields(node.Type.Results)
+			}
+		}
+		return true
+	})
+	return bound
+}
+
+// packageLevelInts is a resolver for names this directory declares as an
+// integer, built over the files the walk above has already read.
+//
+// # What it will settle, and what it will not
+//
+// A package-level `const` or `var` whose value is a non-negative integer
+// LITERAL. That is the whole rule, and everything about it is deliberate:
+//
+//	const enumWorkers = 8            settled. The source says 8
+//	var retries = 3                  settled. A var is as written down as a
+//	                                 const for this purpose — nothing here
+//	                                 runs, so what matters is that the number
+//	                                 is in the file
+//	const n = min(NumCPU, 8)         unknown. That is a bound on the value and
+//	                                 not the value, and pricing a walk at its
+//	                                 ceiling overstates a number the budget is
+//	                                 made of
+//	const n = other + 1              unknown. Arithmetic is the halting problem
+//	                                 with extra steps, one expression in
+//	iota                             unknown, because a ValueSpec in an iota
+//	                                 block often has no value of its own and
+//	                                 the ones that do are counted from a
+//	                                 position rather than written
+//
+// # The cost, which is the reason it is lazy
+//
+// The walk above reads every .go file in this directory once and parses only
+// the ones that name an enumeration entry point. A resolver that parsed them
+// all to build a table would double that parse for a question asked, today,
+// zero times — so a name is looked up when one is asked for, over the files
+// whose BYTES contain it, using the same memoised parse. That is
+// packageLevelNames's shape, and its argument: a file that does not contain
+// the name cannot declare it, and the parse is what decides.
+//
+// Both answers are remembered, the absent one included, so a bound in a loop
+// that is asked about once per call site is read once.
+func packageLevelInts(names []string, sources map[string][]byte,
+	parse func(string) *ast.File) func(string) (int, bool) {
+
+	known := map[string]int{}
+	absent := map[string]bool{}
+	return func(name string) (int, bool) {
+		if v, ok := known[name]; ok {
+			return v, true
+		}
+		if absent[name] {
+			return 0, false
+		}
+		for _, file := range names {
+			if !bytes.Contains(sources[file], []byte(name)) {
+				continue
+			}
+			tree := parse(file)
+			if tree == nil {
+				continue
+			}
+			for _, d := range tree.Decls {
+				gen, ok := d.(*ast.GenDecl)
+				if !ok || (gen.Tok != token.CONST && gen.Tok != token.VAR) {
+					continue
+				}
+				for _, sp := range gen.Specs {
+					vs, ok := sp.(*ast.ValueSpec)
+					if !ok {
+						continue
+					}
+					for i, n := range vs.Names {
+						if n.Name != name || i >= len(vs.Values) {
+							continue
+						}
+						if v, ok := intLit(vs.Values[i]); ok {
+							known[name] = v
+							return v, true
+						}
+						// Declared here and not a written-down integer, which
+						// is an answer: nothing further along will make it
+						// one.
+						absent[name] = true
+						return 0, false
+					}
+				}
+			}
+		}
+		absent[name] = true
+		return 0, false
+	}
 }
 
 // intLit is an expression's value when it is a non-negative integer literal.

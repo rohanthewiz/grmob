@@ -14,20 +14,21 @@ import (
 //
 // # Why this is here and also in wasm/verify
 //
-// It is the same five functions as wasm/verify/importnames_test.go, which is
-// where the reasoning is written down: a census that resolves a package by its
-// conventional NAME is blind to an alias, and blind in silence, which is the
-// direction nobody argued for. Two of this package's four guarded names are
-// selectors on a package — `os.Stdout` and the `fmt.Print` family — so
-// concurrency_test.go asks exactly that question of every file here, and
+// It is the same set of functions — and the same registry they share — as
+// wasm/verify/importnames_test.go, which is where the reasoning is written
+// down: a census that resolves a package by its conventional NAME is blind to
+// an alias, and blind in silence, which is the direction nobody argued for.
+// Two of this package's four guarded names are selectors on a package —
+// `os.Stdout` and the `fmt.Print` family — so concurrency_test.go asks
+// exactly that question of every file here, and
 // `import stdio "fmt"` with a `stdio.Printf` in a worker is the whole failure
 // the os.Stdout row describes arriving under a name a conventional match would
 // not look at.
 //
 // The copy is for the reason the timings record is a copy: these are two
 // separate `package main` programs, one under wasm/ and one under internal/,
-// and a package existing so that five helpers could be five helpers is the
-// more expensive of the two options.
+// and a package existing so that a handful of helpers could be a handful of
+// helpers is the more expensive of the two options.
 //
 // # What holds the two together, which used to be nothing
 //
@@ -37,7 +38,9 @@ import (
 // NAME, and two declarations can be COMPARED whatever they are. wasm/verify/
 // copies_test.go prints each of these with its doc comment removed and holds
 // the results to being identical across every package that declares them, and
-// holds those packages to declaring the same set.
+// holds those packages to declaring the same set — the functions and the
+// package-level state, because the compiler's hold on `dotImportsReported` is
+// its name and nothing else.
 //
 // So the doc comments differ — this one says why it is here, that one says
 // what it is — and the code does not, by the same kind of check that holds the
@@ -63,7 +66,54 @@ import (
 // given a t.Parallel() at any point and this is the only state these helpers
 // keep. It lives for the test binary, which is the right lifetime: the fact it
 // records is about a file on disk, and nothing in a run changes that.
+//
+// forgetDotImportsReported is the way back out, for the one reader that is not
+// a run.
 var dotImportsReported sync.Map
+
+// forgetDotImportsReported empties the registry above and returns the
+// `file\x00path` keys it held, sorted.
+//
+// # Why the registry needed a way out at all
+//
+// A binary-long lifetime is the right one for a run: the fact recorded is a
+// fact about a file on disk, and re-reporting it would be the same sentence
+// twice about one import block. It is the wrong one for the reader that is not
+// a run — a break-test, which puts a deliberately broken input in front of a
+// census and asserts the finding. Without this, qualifiersFor was the only
+// census here that could not be broken and re-run in place: the second asking
+// in a binary is silent by design, and nothing could ask what the first one
+// had recorded.
+//
+// # Why one function and not two
+//
+// Reading and clearing are the same moment for the only caller there is. A
+// break-test wants to know what its own asking recorded AND to leave the
+// registry as it found it, and two calls would be two chances to do one of
+// them and not the other — which would leave a key behind and make the NEXT
+// census silent about a file nobody had reported.
+//
+// The keys come back sorted for the reason every finding here is sorted: a
+// result that arrives in map order cannot be diffed against the last run.
+//
+// Nothing in an ordinary run calls this, and a census that did would be back
+// to reporting one dot import once per asking, which is the wall this whole
+// registry exists to stop.
+func forgetDotImportsReported() []string {
+	var keys []string
+	dotImportsReported.Range(func(k, _ any) bool {
+		if s, ok := k.(string); ok {
+			keys = append(keys, s)
+		}
+		// Deleting during a Range is defined behaviour for sync.Map: the
+		// iteration reflects at most one snapshot of the contents, and a key
+		// removed while it runs is simply not visited again.
+		dotImportsReported.Delete(k)
+		return true
+	})
+	sort.Strings(keys)
+	return keys
+}
 
 // packageBase is the identifier an import of this path binds, by convention.
 //
