@@ -744,3 +744,154 @@ the shapes they have are the right shapes for each.
 count in one of them that stops being re-derived. Either makes it the same kind
 of record as the timings ones, and the machinery is then worth copying rather
 than discussing.
+
+---
+
+## The iOS cold deep-link path is not driven end to end by a script
+
+*Raised: 2026-09-11 · Moved here: 2026-09-11 · Code: `ios/GrMobUITests/`,
+and `mobile/verify`'s manifest pins*
+
+**What was declined.** `core.OnDeepLink` was verified on iOS by a throwaway
+XCUITest that attached to the running app and tapped through a system prompt.
+The obvious next step is the Android arrangement — one command, repeatable,
+checked in: `xcrun simctl openurl booted grmob://lesson/4.12`.
+
+**The argument is a platform's, not this repository's.** iOS puts "Open in
+GrMobApp?" in front of a custom-scheme link from an unknown source, and that
+prompt belongs to SpringBoard rather than to the app. A script cannot dismiss
+it; only something driving the device can, which means either Safari automation
+or XCUITest — and an XCUITest that exists to tap one system alert is a test
+whose whole subject is the alert.
+
+The alternative the platform actually intends is a **Universal Link**, which
+raises no prompt because the association is verified. That needs a domain
+serving `apple-app-site-association` over HTTPS at a path Apple fetches, which
+is an operational commitment rather than a piece of code, and this repository
+has no domain.
+
+**What is checked instead.** `mobile/verify` pins the manifest half on both
+platforms — `CFBundleURLTypes` and the intent filter — which is the part
+nothing else can check, since the OS reads those at install time with no
+compiler holding an opinion. A missing scheme is not a crash: the OS simply
+never offers the app the link. And the Android side IS driven end to end, cold
+and warm, by one `adb` command, so the *Go* half of `core.OnDeepLink` has a
+repeatable runner; what iOS adds on top of it is one shell's `.onOpenURL`.
+
+**What would change this.** A domain. With a verified Universal Link there is
+no prompt, `xcrun simctl openurl` reaches the app directly, and the script is
+worth writing that afternoon. Failing that, a second iOS deep-link defect —
+the first one would be evidence that the shell's half needs a runner of its
+own, and the XCUITest that taps the alert is then paying for itself.
+
+---
+
+## `components.MapPanel` is not rearranged until it has a second consumer
+
+*Raised: 2026-09-09 · Moved here: 2026-09-11 · Code: `components/map_panel.go`*
+
+**What was declined.** `MapPanel` was extracted from one screen and still has
+exactly one consumer. The standing question is whether its arrangement — which
+props it takes, what it decides for the caller — is right, and the obvious move
+is to keep revisiting it.
+
+**The argument.** The extraction was made with the condition written down: a
+component with one consumer is a component whose shape is a guess, and the
+second consumer is what turns the guess into a measurement — it is the one that
+either fits or says exactly which prop is wrong. Rearranging it before then is
+designing against an imagined caller, and the cost of being wrong is paid twice
+(once now, once when the real second caller arrives and disagrees).
+
+The part that WAS worth improving has been: `FitRegion`, the arithmetic
+underneath, which crosses the antimeridian now and is held to it by tests. That
+is a fact about geometry rather than about an arrangement, and it is right or
+wrong independently of how many screens call it.
+
+**What would change this.** A second consumer. Not a hypothetical one — a
+screen somebody is actually writing. Until then the entry exists so that
+"nothing has happened to MapPanel" reads as a decision rather than as neglect.
+
+---
+
+## `prefs` and `session` stay two bytdb files
+
+*Raised: 2026-09-08 · Moved here: 2026-09-11 · Code:
+`internal/prefs/prefs.go`'s package comment, in `church_mobile`*
+
+**What was declined.** Two bytdb files means two locks and two write-ahead
+logs for what is, from a distance, one application's local state. Merging them
+into one store with two tables is the obvious simplification.
+
+**The argument is already written where it belongs.** `prefs.go`'s package comment opens with
+"Why a second bytdb file and not a second table in the session store", and the
+reason is a lifetime difference rather than a schema one: a session is
+disposable and is cleared on sign-out, preferences outlive every session and
+must survive exactly that clearing. One file with two tables makes "throw the
+session away" a selective delete that somebody has to get right, where two
+files make it a file the app removes.
+
+**What would change this.** The cost being paid for rather than merely counted:
+a measurement showing the second lock or the second WAL costing something on a
+real device. Two locks nothing contends for and two WALs nothing flushes under
+load are a cost on paper. This entry exists because the simplification looks
+obvious from outside the file and the answer is inside it.
+
+---
+
+## The OpenStreetMap tile sources stay as they are
+
+*Raised: 2026-09-09 · Moved here: 2026-09-11 · Code:
+`android/.../runtime/GrMobMapView.kt`, `wasm/grmob-runtime.js`, and
+`components/map_panel.go`'s own doc*
+
+**What was declined.** Both the Android host (osmdroid) and the browser host
+(Leaflet) draw from `tile.openstreetmap.org`, which is the OpenStreetMap
+project's own infrastructure, donated and rate-limited. Pointing them at a paid
+provider is the responsible-looking move.
+
+**The argument is about who is running this.** The usage policy is written into
+every host that draws those tiles — three files, each beside the URL — along
+with the User-Agent the policy requires and the instruction to change the
+source before shipping to a real user base. What this repository is is a
+framework and a tutorial: a demo app, an emulator, and whoever is reading the
+lesson. That traffic is what the OSM policy contemplates, and it was confirmed
+serving normally as recently as this session.
+
+Choosing a provider *for* a downstream app would also be choosing its billing
+relationship, which is not a framework's decision to make. The keyless default
+is what makes the map node work on arrival, which is the same argument
+`LocationSensor.kt` makes for LocationManager over the fused provider and
+`GrMobMapView.kt` makes for osmdroid over Google Maps.
+
+**What would change this.** A real user base on a build that ships from here,
+or OSM's policy changing. The note beside each URL is where somebody in that
+position will read it, which is the condition this file asks entries to state.
+
+---
+
+## `android/device` has no instrumented-test runner
+
+*Raised: 2026-09-11 · Moved here: 2026-09-11 · Code: `android/device/README.md`*
+
+**What was declined.** `ui.sh` and `paint.py` drive a real device and found
+three bugs in one week that every automated check in this repository passes
+either way. iOS's equivalent is a real XCUITest, wired to a scheme and runnable
+by one command. Android's would be an `androidTest` source set and a
+connected-check task, and the two scripts are its content.
+
+**The argument, which the README already makes.** These are run by a person on
+purpose. A harness wired to a runner that cannot run — no device attached, no
+emulator booted, a CI machine with neither — is a red build nobody can fix, and
+a red build nobody can fix is one every reader learns to ignore. The iOS side
+went the other way only because XCUITest is a test framework with a simulator
+under it: the runner already exists and already knows how to skip.
+
+The asymmetry is therefore the platforms' rather than a decision that half the
+work was done. Adding `androidTest` is a build-system change — a second source
+set, a second dependency tree, a `connectedDebugAndroidTest` task — for scripts
+that are a shell function and a Python file.
+
+**What would change this.** Something needing Android's equivalent of
+`LiveMapUITests`: an assertion about a running Android app that has to hold on
+every commit rather than when somebody looks. That is the day the build-system
+change pays for itself, and these two files are what it starts from.

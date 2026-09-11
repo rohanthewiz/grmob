@@ -90,6 +90,27 @@ final class LiveMapUITests: XCTestCase {
         return false
     }
 
+    /// # The 20-second wait, which is measured rather than generous
+    ///
+    /// The tutorial's first screen takes **18.0–18.1 seconds** to appear on
+    /// this simulator, over three cold launches, measured from the host by
+    /// screenshotting at 0.5s and fingerprinting the band of the frame the
+    /// title occupies. It is not the framework being slow in general, and it
+    /// is not Go:
+    ///
+    ///     examples/mobileapp, same build and simulator      1.8s
+    ///     bridge.renderInitial() (Go, across gomobile)      4ms
+    ///     JSON parse + GrMobNode tree, 424603 bytes         6ms
+    ///     Go's own render of the same tree (a Go program)   ~1ms
+    ///     everything after the mount, i.e. SwiftUI          ~17.7s
+    ///
+    /// So the whole of it is SwiftUI building a view per node for a contents
+    /// screen of 49 two-line rows, in a DEBUG build. What that would be in a
+    /// release build is not known and cannot currently be measured: the
+    /// Release configuration crashes the Swift compiler in GrMobMapView's body
+    /// getter (`Abort: function substOpaqueTypesWithUnderlyingTypes`), which
+    /// reproduces identically on the commit before this measurement was taken
+    /// and is therefore not something the measurement introduced.
     func testEchoGuardOnMapKit() throws {
         let app = XCUIApplication()
         app.launch()
