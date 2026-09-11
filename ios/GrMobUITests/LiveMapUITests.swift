@@ -72,6 +72,48 @@ final class LiveMapUITests: XCTestCase {
         return match.label
     }
 
+    /// One page scroll: a long, deliberate drag rather than `app.swipeUp()`.
+    ///
+    /// Two things are wrong with the flick, and both of them bit.
+    ///
+    /// **Reach.** A flick travels about a third of the screen. Lesson 4.12's
+    /// location panel sits 2989 points down a window 874 points tall, so
+    /// twelve flicks came to within a few points of enough — and whether it
+    /// arrived depended on how tall the rows above happened to be that run. An
+    /// "opened" badge appearing on a row was the difference between the test
+    /// passing alone and failing when it ran second. A drag across three
+    /// quarters of the screen covers the same distance in a quarter of the
+    /// gestures, with room to spare.
+    ///
+    /// **Where the gesture starts.** A flick starts at the centre of the
+    /// screen, and on these lessons the centre of the screen is sometimes a
+    /// MapView — which owns the drag that begins on it and pans instead of
+    /// scrolling. On a lesson about the echo guard that is not a slow test,
+    /// it is a wrong one: a pan reports a region, and the assertion three
+    /// lines down says no region has been reported. So the start point is
+    /// chosen to miss every map on screen, and only the start point matters —
+    /// UIKit hands the whole gesture to the view under the initial touch, so
+    /// the path may cross the map freely.
+    private func pageDrag(_ app: XCUIApplication, down: Bool) {
+        let window = app.windows.firstMatch.frame
+        let maps = app.maps.allElementsBoundByIndex.map { $0.frame }
+        func clear(_ dy: CGFloat) -> Bool {
+            let y = window.minY + window.height * dy
+            return !maps.contains { $0.minY <= y && y <= $0.maxY }
+        }
+        // Preferred first, then progressively further from the map band. One
+        // of five positions spread across the screen is clear of a 260-point
+        // map in an 874-point window by arithmetic, so the fallback is a
+        // formality rather than a hope.
+        let preferred: [CGFloat] = down ? [0.90, 0.80, 0.12, 0.22, 0.50]
+                                        : [0.12, 0.22, 0.90, 0.80, 0.50]
+        let from = preferred.first(where: clear) ?? preferred[0]
+        let to: CGFloat = down ? 0.12 : 0.90
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: from))
+            .press(forDuration: 0.05,
+                   thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: to)))
+    }
+
     /// Scrolls until a text with `prefix` is on screen, in either direction.
     /// A lesson is much taller than a phone and the map sits in the middle of
     /// it, so a panel can be either side of where a tap left the scroll.
@@ -80,37 +122,93 @@ final class LiveMapUITests: XCTestCase {
             .matching(NSPredicate(format: "label BEGINSWITH %@", prefix)).firstMatch
         if match.exists && match.isHittable { return true }
         for _ in 0..<12 {
-            app.swipeUp()
+            pageDrag(app, down: true)
             if match.exists && match.isHittable { return true }
         }
         for _ in 0..<24 {
-            app.swipeDown()
+            pageDrag(app, down: false)
             if match.exists && match.isHittable { return true }
         }
         return false
     }
 
+    /// Brings `element` **entirely** inside the window, rather than merely
+    /// within reach.
+    ///
+    /// `scrollTo` above stops as soon as a label is *hittable*, which for a
+    /// one-line readout can mean as little as its own height showing. That is
+    /// enough to read a value and enough to tap a button. It is not enough to
+    /// drag a map: `swipeLeft()` starts its gesture at the element's CENTRE,
+    /// and a 260-point map scrolled to within 72 points of the top of the
+    /// screen has its centre at y = -58 — outside the window, where the
+    /// gesture lands on nothing and the map never moves.
+    ///
+    ///     window  (0, 0, 402, 874)
+    ///     map     (46, -188, 310, 260)      centre y = -58   ← off-window
+    ///
+    /// Whether that happens depends on the screen: a taller simulator leaves
+    /// both the map and the readout below it on screen at once and a shorter
+    /// one does not, so the assertion this precedes used to pass or fail by
+    /// device. Scrolling explicitly is what makes it mean the same thing
+    /// everywhere.
+    ///
+    /// The scroll goes through pageDrag, which picks a start point clear of
+    /// every map on screen. That is not a nicety here: the element being
+    /// scrolled to IS the map, and a gesture that began on it would pan it —
+    /// producing the region report the caller is about to assert the
+    /// existence of, without the swipe under test having done anything.
+    @discardableResult
+    private func scrollFullyIntoView(_ app: XCUIApplication, _ element: XCUIElement,
+                                     limit: Int = 12) -> Bool {
+        func onScreen() -> Bool {
+            let w = app.windows.firstMatch.frame, f = element.frame
+            return f.minY >= w.minY && f.maxY <= w.maxY
+        }
+        for _ in 0..<limit {
+            if onScreen() { return true }
+            // Above the top of the window: pull the content back down. Below
+            // the bottom: push it up. pageDrag keeps the gesture off any map,
+            // which matters most here — the element being scrolled to IS the
+            // map, and a drag that landed on it would move the map instead of
+            // the page and satisfy the caller's assertion by accident.
+            pageDrag(app, down: element.frame.minY >= app.windows.firstMatch.frame.minY)
+        }
+        return onScreen()
+    }
+
     /// # The 20-second wait, which is measured rather than generous
     ///
-    /// The tutorial's first screen takes **18.0–18.1 seconds** to appear on
-    /// this simulator, over three cold launches, measured from the host by
-    /// screenshotting at 0.5s and fingerprinting the band of the frame the
-    /// title occupies. It is not the framework being slow in general, and it
-    /// is not Go:
+    /// The tutorial's first screen takes **7.3–7.5 seconds** to appear on this
+    /// simulator (iPhone 17 Pro, 402×874), over three cold launches each,
+    /// measured from the host: install, launch, screenshot on a fixed cadence,
+    /// and take the first frame whose title band matches the settled one.
+    ///
+    ///     Debug,   grMobBox as a chain of `some View`   17.45  17.68  17.62
+    ///     Debug,   grMobBox as GrMobBoxModifier          7.40   7.32   7.52
+    ///     Release, grMobBox as GrMobBoxModifier          7.50   7.19   7.29
+    ///
+    /// Two things are in that table.
+    ///
+    /// **Ten of the eighteen seconds were the opaque-type tower.** Collapsing
+    /// grMobBox's chain into one named ViewModifier (see GrMobBoxModifier,
+    /// which did it to stop the Release build crashing the compiler) cut the
+    /// launch by 58%. The cost was runtime: a distinct tower type per view
+    /// type means generic metadata instantiated per node on the way up.
+    ///
+    /// **Optimisation buys nothing.** Release and Debug are the same reading
+    /// to within the spread of either. So the remaining 7.4s is not slow Swift
+    /// that `-O` would tighten; it is SwiftUI building a view per node for a
+    /// contents screen of 49 two-line rows, and the only lever left is
+    /// building fewer of them. The rest of the launch is already accounted
+    /// for and is not the framework:
     ///
     ///     examples/mobileapp, same build and simulator      1.8s
     ///     bridge.renderInitial() (Go, across gomobile)      4ms
     ///     JSON parse + GrMobNode tree, 424603 bytes         6ms
     ///     Go's own render of the same tree (a Go program)   ~1ms
-    ///     everything after the mount, i.e. SwiftUI          ~17.7s
     ///
-    /// So the whole of it is SwiftUI building a view per node for a contents
-    /// screen of 49 two-line rows, in a DEBUG build. What that would be in a
-    /// release build is not known and cannot currently be measured: the
-    /// Release configuration crashes the Swift compiler in GrMobMapView's body
-    /// getter (`Abort: function substOpaqueTypesWithUnderlyingTypes`), which
-    /// reproduces identically on the commit before this measurement was taken
-    /// and is therefore not something the measurement introduced.
+    /// The wait below stays at 20s rather than tracking the reading: it is a
+    /// timeout, and its job is to fail on a hang rather than on a slow host.
     func testEchoGuardOnMapKit() throws {
         let app = XCUIApplication()
         app.launch()
@@ -158,6 +256,15 @@ final class LiveMapUITests: XCTestCase {
 
         // 3. A real gesture IS reported, which is the other half: a tolerance
         // wide enough to hide a drag would be a guard that never fires.
+        //
+        // Steps 1 and 2 scrolled down to the readout and the button, which on
+        // this screen sits the map partly above the top of the window — and a
+        // swipe aimed at an element whose centre is off-window moves nothing.
+        // See scrollFullyIntoView for the measurement and for why the failure
+        // it caused depended on which simulator ran the test.
+        XCTAssertTrue(scrollFullyIntoView(app, app.maps.firstMatch),
+                      "could not get the whole map on screen, so the swipe below would "
+                      + "gesture at a point outside the window and prove nothing")
         app.maps.firstMatch.swipeLeft()
         let reported = app.staticTexts
             .matching(NSPredicate(format: "label BEGINSWITH 'Reported:'")).firstMatch
