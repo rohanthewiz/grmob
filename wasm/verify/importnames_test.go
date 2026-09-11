@@ -654,6 +654,14 @@ func checkTwoCopyDecls(t *testing.T, decls []twoCopyDecl) {
 	byName := map[string][]twoCopyDecl{}
 	byDir := map[string]map[string]bool{}
 	for _, d := range decls {
+		// The declarations recorded as differing on purpose ride the same
+		// walk and are not shapes — see twoCopyDecl.excused. They are read by
+		// checkSharedNamesAreAccountedFor, which holds them to still
+		// differing; counting them here would make every `package main` in
+		// the repository a package that declares some of the two-copy shapes.
+		if d.excused {
+			continue
+		}
 		byName[d.name] = append(byName[d.name], d)
 		if byDir[d.dir] == nil {
 			byDir[d.dir] = map[string]bool{}
@@ -704,6 +712,16 @@ func checkTwoCopyDecls(t *testing.T, decls []twoCopyDecl) {
 		if len(absent) == 0 {
 			continue
 		}
+		// Counted as the shapes this directory has, not as everything the
+		// walk collected for it: the walk also collects the names recorded as
+		// differing on purpose, and len(byDir[dir]) would count those too —
+		// a numerator about a different set from its denominator.
+		hasShapes := 0
+		for _, name := range shapes {
+			if byDir[dir][name] {
+				hasShapes++
+			}
+		}
 		t.Errorf("%s declares %d of the %d two-copy shapes and not "+
 			"%s.\n\n"+
 			"The set is the unit. `importedAs` is the function with the "+
@@ -715,7 +733,7 @@ func checkTwoCopyDecls(t *testing.T, decls []twoCopyDecl) {
 			"Either take the whole set or none of it, and if this package "+
 			"genuinely needs a different answer, that is a reason to write "+
 			"down rather than a function to leave out.",
-			dir, len(byDir[dir]), len(shapes),
+			dir, hasShapes, len(shapes),
 			strings.Join(absent, ", "))
 	}
 
@@ -804,6 +822,300 @@ func checkTwoCopyDecls(t *testing.T, decls []twoCopyDecl) {
 		"identical, across %s.",
 		len(shapes), len(twoCopyFunctionShapes), len(twoCopyValueShapes),
 		whole, strings.Join(dirs, ", "))
+}
+
+// namesDeclaredBy is what one top-level declaration declares, as names.
+//
+// Not `packageLevelNames`, which this package already has: that one scans this
+// directory for redeclarations of predeclared identifiers, and it is a
+// different question with a name that would fit either. This is about one
+// declaration; that is about one package.
+//
+// Methods are left out: a method is a name on a type rather than a name in the
+// package, and two packages declaring `func (x foo) String()` on their own
+// `foo` types are not keeping a copy of anything. Imports are left out for the
+// same reason one level along — an import spec names a package, not a
+// declaration of this one.
+//
+// Types and funcs give one name each, a value spec gives all of its, and that
+// is the whole of what the inversion needs: it asks which names exist in both
+// packages, and leaves what they ARE to the comparison that already runs.
+func namesDeclaredBy(d ast.Decl) []string {
+	switch decl := d.(type) {
+	case *ast.FuncDecl:
+		if decl.Recv != nil {
+			return nil
+		}
+		return []string{decl.Name.Name}
+	case *ast.GenDecl:
+		var out []string
+		for _, sp := range decl.Specs {
+			switch spec := sp.(type) {
+			case *ast.ValueSpec:
+				for _, n := range spec.Names {
+					out = append(out, n.Name)
+				}
+			case *ast.TypeSpec:
+				out = append(out, spec.Name.Name)
+			}
+		}
+		return out
+	}
+	return nil
+}
+
+// The names both record packages declare and which are NOT copies of each
+// other, with the reason for each.
+//
+// # Why this list exists, which is the measurement that prompted it
+//
+// The two-copy lists above are an INCLUSION list: a shape is held identical
+// because somebody registered it. That arrangement can only fail one way, and
+// it is the way nothing can see — a declaration that arrives in both packages
+// and is registered in neither is simply unheld, and reads exactly like a
+// declaration nobody has drifted yet.
+//
+// Measured: of **21 names declared in both packages, 16 were identical and 4
+// of those 16 were unregistered**, three of them for several sessions with the
+// argument for registering them already written down twice. The only thing
+// that found them was a session happening to scan for them.
+//
+// So the question is asked the other way round as well:
+// checkSharedNamesAreAccountedFor holds every shared name to being in one of
+// the two-copy lists or in this one. A name in neither is a finding that names
+// both declarations and asks for a decision — register it, or say here why the
+// two differ.
+//
+// # Why the reasons are values and not a comment
+//
+// Each entry is read back in the finding that reports a stale exemption, so a
+// reason written here is a reason a reader is handed rather than one they have
+// to come and find. And the reasons are all the same SHAPE, which is worth
+// seeing in one place: every one of these differs because it reads something
+// that belongs to its own package — its own record, its own note, its own
+// program.
+var twoCopyNamesThatDiffer = map[string]string{
+	"main": "two different programs. wasm/verify generates a transcript for " +
+		"the browser pass; internal/themehistory walks this repository's " +
+		"theme history. They share a name because Go requires it of a " +
+		"`package main`, and nothing else",
+	timingsArm: "each reports on its own record, which is an anonymous " +
+		"struct literal in its own package — see timingsRecordCopies for why " +
+		"the records are two copies rather than one type",
+	timingsCoresNote: "each says what a core count is worth in ITS package, " +
+		"and the two answers are measured and different: a git process per " +
+		"commit improving to eight workers in one, one program's own " +
+		"goroutines flat from two cores up in the other. Two notes saying " +
+		"the same thing would mean one of them was not measured",
+	"recordMachineDiffers": "each compares this machine against its own " +
+		"record, for the same reason the arms do. A shared function would " +
+		"need a shared type and there is none — which is the copy argument " +
+		"itself, one level down",
+	"TestTheFigureGoTestPrintedForThisPackageIsPlacedInItsBand": "each " +
+		"places its own record's headline field — wholeFile against " +
+		"wholePackage — and names its own package in the recipe it prints " +
+		"when the lever is unset. The sentence they both build out of that " +
+		"reading IS held identical: see againstBandGiven",
+}
+
+// checkSharedNamesAreAccountedFor holds every name both record packages
+// declare to being either a shape held identical or a difference with a reason.
+//
+// # The three directions
+//
+// A shared name in neither list is the gap this closes: unheld, and
+// indistinguishable from held until the day the two answers diverge.
+//
+// An exemption that names a shape which is NOT shared is an exemption for
+// something that has been renamed or moved, and it silences nothing any more —
+// the same rot the cores note's second direction exists for.
+//
+// An exemption whose two declarations turn out to be IDENTICAL is the
+// interesting one: the reason written here has stopped being true, and the
+// shape is a copy nobody is holding. That is read off the comparison the
+// census above already makes, which is why the differing names are collected
+// by the same walk — there is one reading of "are these the same declaration"
+// in this repository and this is not a second one.
+func checkSharedNamesAreAccountedFor(t *testing.T, recordDirs []string,
+	declaredIn map[string]map[string]bool, decls []twoCopyDecl) {
+
+	t.Helper()
+	// The subject is the pair of packages carrying a timings record. With
+	// fewer than two there is nothing to share, and the records question's own
+	// Fatalf is where that is reported — saying it again here would be one
+	// fact twice.
+	if len(recordDirs) < 2 {
+		return
+	}
+	held := map[string]bool{}
+	for _, name := range allTwoCopyShapes() {
+		held[name] = true
+	}
+	// The text of the EXCUSED declarations only. The held ones are compared by
+	// checkTwoCopyDecls and nothing here needs to repeat that; what this needs
+	// is the text of the exemptions, to say whether an exemption still exempts
+	// anything.
+	text := map[string]map[string]string{}
+	for _, d := range decls {
+		if !d.excused {
+			continue
+		}
+		if text[d.name] == nil {
+			text[d.name] = map[string]string{}
+		}
+		text[d.name][d.dir] = d.text
+	}
+
+	// A name in a shape list AND in the exemption list, which is a
+	// contradiction rather than a drift: one says hold these identical and the
+	// other says they differ on purpose. Reported before anything else,
+	// because the walk resolves it in favour of HELD and that choice is this
+	// check's to explain rather than the walk's to make quietly.
+	for _, name := range keysOf(twoCopyNamesThatDiffer) {
+		if !held[name] {
+			continue
+		}
+		t.Errorf("%s is in a two-copy shape list and in "+
+			"twoCopyNamesThatDiffer.\n\n"+
+			"The first says the two packages must declare it identically; the "+
+			"second says they differ on purpose, for this reason: %q.\n\n"+
+			"Both cannot be true. The walk treats it as held, so the "+
+			"comparison is being made and the exemption is doing nothing — "+
+			"but which of the two somebody meant is not readable from here. "+
+			"Take it out of one of them.",
+			name, twoCopyNamesThatDiffer[name])
+	}
+
+	var shared, unaccounted []string
+	for name, dirs := range declaredIn {
+		in := 0
+		for _, dir := range recordDirs {
+			if dirs[dir] {
+				in++
+			}
+		}
+		if in < 2 {
+			continue
+		}
+		shared = append(shared, name)
+		if held[name] {
+			continue
+		}
+		if _, excused := twoCopyNamesThatDiffer[name]; excused {
+			continue
+		}
+		unaccounted = append(unaccounted, name)
+	}
+	sort.Strings(shared)
+	sort.Strings(unaccounted)
+
+	// The walk reaching anything. These two packages share a couple of dozen
+	// names and always have; zero is this reading being broken rather than a
+	// repository that has stopped duplicating.
+	if len(shared) == 0 {
+		t.Errorf("no name is declared in both %s, and they share the "+
+			"import-resolving helpers, the band reader and the verdict "+
+			"levers.\n\n"+
+			"Either the walk is not collecting package-level names or the two "+
+			"packages no longer exist under these paths, and in both cases "+
+			"this check says nothing while passing.",
+			strings.Join(recordDirs, " and "))
+		return
+	}
+
+	for _, name := range unaccounted {
+		t.Errorf("%s is declared in both %s and is in neither two-copy "+
+			"list.\n\n"+
+			"A name in both packages is either a copy kept in step on purpose "+
+			"or two declarations that differ on purpose, and which one it is "+
+			"cannot be read off the source. Unregistered, it is simply "+
+			"unheld: the two can drift and every test in this repository "+
+			"passes.\n\n"+
+			"That is not hypothetical. Four names were in exactly this state "+
+			"when this check was written — the three `GRMOB_` levers and the "+
+			"function that reads them — and three of them had been for "+
+			"several sessions, with the argument for holding them already "+
+			"written twice.\n\n"+
+			"Add it to twoCopyFunctionShapes or twoCopyValueShapes if the two "+
+			"are meant to be the same declaration, or to "+
+			"twoCopyNamesThatDiffer with the reason if they are not.",
+			name, strings.Join(recordDirs, " and "))
+	}
+
+	for _, name := range keysOf(twoCopyNamesThatDiffer) {
+		// A name the lists contradict each other about has been reported
+		// above, and the walk resolved it as held — so it has no excused text
+		// and the arms below would report that as a collection failure. One
+		// fact, one finding.
+		if held[name] {
+			continue
+		}
+		dirs := declaredIn[name]
+		in := 0
+		for _, dir := range recordDirs {
+			if dirs[dir] {
+				in++
+			}
+		}
+		if in < 2 {
+			t.Errorf("twoCopyNamesThatDiffer has an entry for %s and it is "+
+				"not declared in both %s.\n\n"+
+				"The reason it carries is %q, which is about a pair that no "+
+				"longer exists: one of the two has been renamed, moved or "+
+				"deleted. An exemption for a shape that is not shared "+
+				"silences nothing and reads as a decision somebody made "+
+				"about the code that is there.",
+				name, strings.Join(recordDirs, " and "),
+				twoCopyNamesThatDiffer[name])
+			continue
+		}
+		if len(text[name]) < 2 {
+			// Not collected for comparison, which means the name is in this
+			// list and not in the walk's set. Reported rather than skipped:
+			// the direction below is the one that finds a stale reason, and
+			// it cannot run on a shape nothing rendered.
+			t.Errorf("twoCopyNamesThatDiffer has an entry for %s and the walk "+
+				"collected %d of its declarations rather than 2.\n\n"+
+				"The names in this list are collected the same way the held "+
+				"shapes are, so that an exemption whose two declarations have "+
+				"become identical can be reported. One that is not collected "+
+				"is an exemption nothing checks — see "+
+				"twoCopyDeclarationsIn, which reads both lists.",
+				name, len(text[name]))
+			continue
+		}
+		same := ""
+		for dir, body := range text[name] {
+			if same == "" {
+				same = body
+				continue
+			}
+			if body != same {
+				same = ""
+				break
+			}
+			_ = dir
+		}
+		if same == "" {
+			continue
+		}
+		t.Errorf("twoCopyNamesThatDiffer says %s differs between the two "+
+			"packages and the two declarations are identical.\n\n"+
+			"The reason recorded is %q.\n\n"+
+			"So either that reason has stopped being true — in which case "+
+			"this is a copy nothing is holding, and it belongs in "+
+			"twoCopyFunctionShapes or twoCopyValueShapes — or the two have "+
+			"been made the same by accident, which is the same finding from "+
+			"the other side. An exemption that exempts nothing is worse than "+
+			"no exemption: it reads as a decision and it holds a shape out of "+
+			"the one check that would notice it drifting.",
+			name, twoCopyNamesThatDiffer[name])
+	}
+
+	t.Logf("%d name(s) declared in both %s: %d held identical, %d recorded as "+
+		"differing with a reason.", len(shared),
+		strings.Join(recordDirs, " and "),
+		len(shared)-len(twoCopyNamesThatDiffer), len(twoCopyNamesThatDiffer))
 }
 
 // checkImportPathsAreImportable holds every import path a census names to
@@ -1225,6 +1537,18 @@ type twoCopyDecl struct {
 	// be made rather than as a difference.
 	text     string
 	printErr error
+	// Whether this declaration was collected because it is recorded as
+	// DIFFERING between the two packages rather than because it is a shape
+	// held identical — see twoCopyNamesThatDiffer.
+	//
+	// One walk collects both, so there is one reading of what a declaration
+	// is, and the flag is what keeps the two questions apart: an excused
+	// declaration is not a two-copy shape and must not be counted as one.
+	// Leaving it out cost a run: `main` is an excused name, every `package
+	// main` in the repository declares it, and the arm that holds a package
+	// declaring SOME of the shapes to declaring all of them reported every
+	// one of them.
+	excused bool
 }
 
 // importPathAsk is one place a census names an import path.
@@ -1309,12 +1633,34 @@ func declarationText(fset *token.FileSet, node ast.Node,
 func twoCopyDeclarationsIn(fset *token.FileSet, rel string,
 	file *ast.File) ([]twoCopyDecl, []importPathAsk) {
 
+	// Two memberships, and they are not the same question. `held` is what the
+	// lists say must be IDENTICAL; `shape` and `values` are what this walk
+	// collects, which is that plus the names recorded as differing on purpose.
+	// Conflating them made every excused name read as a held one.
+	held := map[string]bool{}
 	shape := map[string]bool{}
 	for _, name := range twoCopyFunctionShapes {
 		shape[name] = true
+		held[name] = true
 	}
 	values := map[string]bool{}
 	for _, name := range twoCopyValueShapes {
+		values[name] = true
+		held[name] = true
+	}
+	// And the names recorded as DIFFERING on purpose, collected the same way.
+	//
+	// They are not held to being identical — that is what the exemption means
+	// — but their text is needed for the direction that reports an exemption
+	// whose two declarations have BECOME identical. Collected here rather than
+	// by a second walk so that there is one reading of what a declaration is
+	// in this repository, and the check that holds shapes together and the
+	// check that holds exemptions apart are reading the same text.
+	//
+	// A differing name can be a func or a value, so both sets get it: these
+	// are membership tests, and a name in the wrong one simply never matches.
+	for name := range twoCopyNamesThatDiffer {
+		shape[name] = true
 		values[name] = true
 	}
 	dir := path.Dir(rel)
@@ -1324,6 +1670,7 @@ func twoCopyDeclarationsIn(fset *token.FileSet, rel string,
 		keyword string) twoCopyDecl {
 
 		text, err := declarationText(fset, node, keyword)
+		_, excused := twoCopyNamesThatDiffer[name]
 		return twoCopyDecl{
 			name:     name,
 			dir:      dir,
@@ -1331,6 +1678,12 @@ func twoCopyDeclarationsIn(fset *token.FileSet, rel string,
 			line:     fset.Position(at).Line,
 			text:     text,
 			printErr: err,
+			// A name in a shape list is HELD, whatever else it is in. The
+			// contradiction — a name in both lists — is reported by
+			// checkSharedNamesAreAccountedFor rather than resolved silently
+			// here, because which list the author meant is not something
+			// this can know.
+			excused: excused && !held[name],
 		}
 	}
 	var decls []twoCopyDecl

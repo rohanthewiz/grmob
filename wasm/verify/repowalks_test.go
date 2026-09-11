@@ -899,9 +899,11 @@ var repositoryWalks = []repositoryWalkRow{{
 			"machine fields, a reporting arm, and a cores note that names " +
 			"every term in its package that scales and nothing that has gone",
 		"the declarations this repository keeps two copies of — the " +
-			"import-resolving helpers, the registry they share, and the " +
-			"band reader both timings records compare against — held to " +
-			"being the same declarations in both packages",
+			"import-resolving helpers, the registry they share, the band " +
+			"reader and the verdict levers both timings records use — held " +
+			"to being the same declarations in both packages, and every " +
+			"other name both packages declare held to being in one of the " +
+			"two lists",
 		"every import path those helpers are asked about, held to being one " +
 			"this module could actually import",
 		"every sentence in the repository quoting how many Go files the tree " +

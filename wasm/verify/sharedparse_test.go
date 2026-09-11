@@ -31,10 +31,13 @@ import (
 //	                      checkTimingsRecordCopies
 //	the two-copy shapes   every declaration this repository deliberately
 //	                      keeps two copies of — the functions each census
-//	                      resolves a qualifier with and the state they keep,
-//	                      and the band reader both timings records compare a
-//	                      reading against — held to being the same
-//	                      declaration in both packages. See checkTwoCopyDecls
+//	                      resolves a qualifier with, the state they keep, the
+//	                      band reader and the verdict levers — held to being
+//	                      the same declaration in both packages. See
+//	                      checkTwoCopyDecls; and, asked the other way round,
+//	                      every name both record packages declare held to
+//	                      being in one of the two lists at all. See
+//	                      checkSharedNamesAreAccountedFor
 //	the paths it is asked the import paths those censuses name, held to being
 //	                      ones this module could actually import. See
 //	                      checkImportPathsAreImportable
@@ -153,6 +156,13 @@ func TestTheQuestionsOnTheSharedRepositoryParseAreTheOnesDecidedOn(t *testing.T)
 	sort.Strings(paths)
 
 	var records []timingsRecord
+	// Every package-level name each directory declares, which is what makes
+	// the two-copy lists answerable in the other direction: not "is every
+	// registered shape the same in both packages" but "is every name both
+	// packages declare in one of the lists at all". Names only — the text
+	// comparison stays where it was, over the shapes the lists name. See
+	// checkSharedNamesAreAccountedFor.
+	declaredIn := map[string]map[string]bool{}
 	// The other two shapes, read off the same parse. Kept beside the record
 	// rather than in walks of their own because a fifth repository-wide parse
 	// is the decision repositoryParseBudget exists to force, and neither of
@@ -291,6 +301,18 @@ func TestTheQuestionsOnTheSharedRepositoryParseAreTheOnesDecidedOn(t *testing.T)
 			}
 		}
 		for _, d := range file.Decls {
+			// The names first, whatever kind of declaration this is: the
+			// question the inversion asks is about a NAME being declared in
+			// two packages, and it has to see every declaration to ask it.
+			// Methods are left out — a method on a type is not a
+			// package-level name, and two packages declaring the same method
+			// on their own types is not a copy.
+			for _, name := range namesDeclaredBy(d) {
+				if declaredIn[name] == nil {
+					declaredIn[name] = map[string]bool{}
+				}
+				declaredIn[name][dir] = true
+			}
 			switch decl := d.(type) {
 			case *ast.FuncDecl:
 				if decl.Recv == nil && decl.Name.Name == timingsArm {
@@ -350,8 +372,21 @@ func TestTheQuestionsOnTheSharedRepositoryParseAreTheOnesDecidedOn(t *testing.T)
 	// why this is t.Run and not six sections of one function: each of these
 	// ends in a t.Fatalf over a walk that reached nothing, and a Fatalf ends
 	// the goroutine it is on.
+	// Which directories the two-copy questions are ABOUT, derived rather than
+	// written down: they are the packages carrying a timings record, which is
+	// what both lists' doc comments describe — two separate `package main`
+	// programs, neither able to import the other's tests. Taken from the walk
+	// so that a record moving to a third package is a finding there rather
+	// than a silent change of subject here.
+	recordDirs := map[string]bool{}
+	for _, r := range records {
+		recordDirs[path.Dir(r.rel)] = true
+	}
+
 	t.Run("the declarations kept in two copies", func(t *testing.T) {
 		checkTwoCopyDecls(t, resolverDecls)
+		checkSharedNamesAreAccountedFor(t, keysOf(recordDirs), declaredIn,
+			resolverDecls)
 	})
 	t.Run("the paths those helpers are asked about", func(t *testing.T) {
 		checkImportPathsAreImportable(t, root, asks)
