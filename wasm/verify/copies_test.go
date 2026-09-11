@@ -19,7 +19,7 @@ import (
 // Everything this repository deliberately keeps two copies of, held to being
 // two copies of the same thing.
 //
-// # The four shapes, and why they are in one walk
+// # The five questions, and why they are in one walk
 //
 //	the timings record    five machine fields, a reporting arm and a standing
 //	                      sentence about what a core count is worth, in
@@ -40,6 +40,11 @@ import (
 //	                      second copy of that number is the TREE — the one
 //	                      shape here whose other copy is not source. See
 //	                      checkProseFileCounts
+//	the comment text      two rules over every comment in the repository: a
+//	                      line that is one comment written twice, and a tab
+//	                      anywhere but the leading indent. Not a copy of
+//	                      anything — see below. The rules and the check are
+//	                      in commenttext_test.go
 //
 // They are one arm because they are one repository-wide parse, and a fifth of
 // those is the decision repositoryParseBudget exists to force. None of these
@@ -47,7 +52,26 @@ import (
 // walk has already built — so taking one would be spending the budget on the
 // arrangement of this file rather than on a question.
 //
-// # Why they are four subtests and not four sections
+// # Why the fifth question is here, and what that costs the name
+//
+// It is not about a shape kept in two copies, and it does not pretend to be.
+// It is here because this walk is the repository's one shared PARSE, which is
+// what actually unifies the questions on it — the section below says so in
+// the terms the parse budget forced — and because the alternative was an
+// eighth repository walk against a budget of seven, paying its own
+// `git ls-files` and its own read of every tracked file to reach files this
+// one has already parsed. That is the trade repositoryWalkBudget and
+// repositoryParseBudget exist to force, and both are at their limit, so it is
+// not a close call.
+//
+// What it costs is that this file's name now describes its largest question
+// rather than all of them. That was already half true: two of the four checks
+// above live in importnames_test.go, because a question's check belongs with
+// the subject it is about rather than with the walk that feeds it. The
+// arrangement is one parse, five questions, five failure boundaries, and five
+// checks owned by the files that own their subjects.
+//
+// # Why they are five subtests and not five sections
 //
 // One walk is what the budget requires; one FUNCTION was what the first
 // arrangement made of it, and those are not the same thing. Each of these
@@ -67,7 +91,7 @@ import (
 //
 // The order is the cheap-to-say first: the two that read declarations the walk
 // collected, then the file counts, which are one integer comparison, then the
-// records, whose own checks are the longest.
+// comment text, then the records, whose own checks are the longest.
 //
 // # Why a figure in prose is a copy, which is the fourth shape
 //
@@ -166,6 +190,12 @@ func TestTheShapesThisRepositoryKeepsTwoCopiesOfAreInStep(t *testing.T) {
 	// the fourth question costs the walk nothing it was not already paying.
 	var figures []proseFigure
 	goFiles := 0
+	// And the comment text, which is the one question here that is about
+	// neither a declaration nor a copy. Collected as two finding lists and a
+	// count, because the walk collects and the subtests judge — see
+	// commentFindingsIn.
+	var twice, tabbed []commentLine
+	commentLines, commentFiles := 0, 0
 	// dir -> what its cores note says and what it names. The PRESENCE of the
 	// note is `notes`, which is what the record check holds each package to;
 	// this is the note itself, which is what the two checks over its content
@@ -230,6 +260,17 @@ func TestTheShapesThisRepositoryKeepsTwoCopiesOfAreInStep(t *testing.T) {
 		// And every place this file reads the core count, which is what makes
 		// a cores note checkable rather than merely present.
 		coreSites = append(coreSites, coreCountSitesIn(t, fset, rel, file)...)
+		// The two comment rules, off the comment groups this parse has just
+		// built. No filter and no second pass: the rules are about every
+		// comment line there is, which is the whole of what makes them worth
+		// having over a directory's worth.
+		if rel != commentRulesFile {
+			commentFiles++
+			n, fileTwice, fileTabbed := commentFindingsIn(fset, rel, file)
+			commentLines += n
+			twice = append(twice, fileTwice...)
+			tabbed = append(tabbed, fileTabbed...)
+		}
 		// And every sentence in it that quotes the tracked-Go-file count,
 		// read off the comments and string constants the parse just built —
 		// which is why this is here and not in a scan of its own.
@@ -308,8 +349,8 @@ func TestTheShapesThisRepositoryKeepsTwoCopiesOfAreInStep(t *testing.T) {
 		}
 	}
 
-	// One walk, four questions, four failure boundaries. See the header for
-	// why this is t.Run and not four sections of one function: each of these
+	// One walk, five questions, five failure boundaries. See the header for
+	// why this is t.Run and not five sections of one function: each of these
 	// ends in a t.Fatalf over a walk that reached nothing, and a Fatalf ends
 	// the goroutine it is on.
 	t.Run("the import-resolving helpers", func(t *testing.T) {
@@ -320,6 +361,9 @@ func TestTheShapesThisRepositoryKeepsTwoCopiesOfAreInStep(t *testing.T) {
 	})
 	t.Run("the file counts in this repository's prose", func(t *testing.T) {
 		checkProseFileCounts(t, from, goFiles, figures)
+	})
+	t.Run("the comment text", func(t *testing.T) {
+		checkCommentText(t, commentFiles, commentLines, twice, tabbed)
 	})
 	t.Run("the timings records", func(t *testing.T) {
 		checkTimingsRecordCopies(t, root, from, len(paths), records, arms,

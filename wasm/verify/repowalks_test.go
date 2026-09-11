@@ -782,10 +782,12 @@ var repositoryWalks = []repositoryWalkRow{{
 			"skips",
 	},
 }, {
-	// Four questions and one parse, because a fifth repository-wide parse is
-	// the decision repositoryParseBudget exists to force. Each of them is a
-	// reading of what the one walk has already built, and each is a subtest
-	// with its own failure boundary — see the header of copies_test.go.
+	// Five questions and one parse, because a fifth repository-wide parse is
+	// the decision repositoryParseBudget exists to force — and this walk is
+	// the answer that decision has, which is why questions land here rather
+	// than becoming walks. Each is a reading of what the one walk has already
+	// built, and each is a subtest with its own failure boundary; see the
+	// header of copies_test.go, including what the fifth costs its name.
 	fn:    "TestTheShapesThisRepositoryKeepsTwoCopiesOfAreInStep",
 	file:  "copies_test.go",
 	depth: walkParses,
@@ -812,6 +814,10 @@ var repositoryWalks = []repositoryWalkRow{{
 		"every sentence in the repository quoting how many Go files the tree " +
 			"holds, held to the count this walk's own enumeration just made " +
 			"— the one shape in that file whose second copy is not source",
+		"every comment line in the repository, held to two rules about text " +
+			"nothing else reads as text: a line that is one comment written " +
+			"twice, and a tab anywhere but the leading indent. See " +
+			"commenttext_test.go, which owns the rules and the check",
 	},
 }, {
 	fn:    "TestTheDottedVersionParsersAreTheOnesTheReasonCovers",

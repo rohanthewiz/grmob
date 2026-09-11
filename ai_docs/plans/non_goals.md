@@ -112,3 +112,73 @@ It would also change if the readings around it got tighter — a quieter
 machine, or more runs — since what makes the term unmeasurable is the ratio
 between it and the noise rather than its own size. Nothing currently suggests
 either is worth arranging for it.
+
+---
+
+## A t.Run inside a loop is counted as one question
+
+*Raised: 2026-09-10 · Moved here: 2026-09-10 · Code:
+`wasm/verify/repowalks_test.go`, `subtestSitesIn`*
+
+**What was declined.** `subtestSitesIn` counts the subtest SITES a walk's body
+opens, and `repositoryWalks` holds each row's `asks` list to that number. A
+site inside a `for` is one site and as many subtests as the loop is long, so a
+table-driven walk test would open one site and ask several questions, and its
+row would be held to saying one.
+
+**The argument.** The loop's length is a run-time fact and no parse has it.
+This is the same limit `priceCalls` already writes up one pass over for a WALK
+inside a loop, and it is resolved there in the only way it can be: a bound
+written in the source — `for range 2`, `for i := 0; i < 3; i++` — is read off
+the source and multiplied in, and a `range` over something whose length is
+decided at run time is REPORTED rather than guessed at.
+
+Doing the same here would mean building the loop-bound reader a second time
+for a shape that does not exist: there is no `t.Run` inside a loop anywhere in
+this package, and the walks it would apply to are seven functions that each
+open between zero and five subtests by hand. The cost is not the code, which
+is already written next door; it is a second caller of `loopBound` and
+`packageLevelInts` threaded into a census that currently reads nothing but
+declarations, to price a shape nobody has written.
+
+**What would change this.** A table-driven repository walk appearing — a walk
+test whose questions come out of a slice of cases rather than being spelled
+out. At that point the row would be saying one where the body asks several,
+which is the count being wrong in the direction that hides work, and the
+machinery to fix it is `priceCalls`'s and already exists. Until then the limit
+is stated in `subtestSitesIn`'s own doc, which is where somebody writing that
+loop will be reading.
+
+---
+
+## `packageLevelCallsTo` does not distinguish an initializer from a stored function value
+
+*Raised: 2026-09-10 · Moved here: 2026-09-10 · Code:
+`wasm/verify/repowalks_test.go`, `packageLevelCallsTo`*
+
+**What was declined.** A walk called from a package-level declaration is
+reported rather than counted, because a `var` initializer runs when the test
+binary starts and nothing attributes it to a caller. `var x = someWalk(root)`
+runs at init; `var f = func() { someWalk() }` does not run until something
+calls `f`. The census reports both identically and says so.
+
+**The argument.** Telling them apart is data flow. It means knowing whether
+the call is evaluated when the declaration is, which for anything but the two
+literal cases above needs to follow values through assignments, struct
+literals and function returns — and the walks in this package decline type
+information on purpose, because every one of them is a syntax census that
+stays cheap by not resolving anything.
+
+The finding is also already correct without it. Both shapes are a walk the
+budgets are not counting, both need the same fix — move the call into the
+function that needs the result and pass it in — and the message says that the
+number beside the row is not one this pass computed, which is the honest
+statement either way. What the distinction would buy is a more precise
+sentence about a case that has never occurred: no package-level declaration in
+this directory calls anything either caller asks about.
+
+**What would change this.** The case occurring, and the two kinds needing
+different advice. If a package-level `var` ever holds a function value that
+walks the repository, and somebody is told to move a call that never ran, the
+message is wrong in a way a reader can act on badly — and that is the moment
+to decide whether the distinction is worth type information, not before.

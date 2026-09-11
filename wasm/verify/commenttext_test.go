@@ -3,15 +3,12 @@ package main
 import (
 	"fmt"
 	"go/ast"
-	"go/parser"
 	"go/token"
-	"os"
-	"sort"
 	"strings"
 	"testing"
 )
 
-// The comment text in this package, held to being text somebody typed.
+// The comment text in this repository, held to being text somebody typed.
 //
 // # What this is about
 //
@@ -66,12 +63,10 @@ import (
 //
 // So go/parser says WHERE the comments are and ast.Comment.Text says what
 // each one says — which is the source as written, tabs and all, because the
-// parser does not normalise a comment's interior. One directory, about ten
-// milliseconds over twelve thousand comment lines — the count is logged on
-// every run rather than written here, because a figure in prose is a figure
-// that drifts. It is not a repository walk and does not count
-// against repositoryWalkBudget or repositoryParseBudget; see repowalks_test.go
-// for what those bound and why this is not one of them.
+// parser does not normalise a comment's interior. The count of lines read is
+// logged on every run rather than written here, because a figure in prose is
+// a figure that drifts — and the parse is not this check's to pay at all: see
+// below.
 //
 // # Why this file is not read by it
 //
@@ -88,80 +83,60 @@ import (
 // the next reader has to reconstruct — which for two rules about invisible
 // characters is most of what the header is for.
 //
-// # Why this directory and not the repository
+// # Why it is the repository and rides somebody else's walk
 //
-// Because widening it is not free and the scope is not arbitrary. The
-// incident was here, and this is the package that is mostly prose — the
-// comments in these files outweigh their code, which is what makes a garbled
-// one both likely and invisible.
+// It was this directory first, on the argument that the incident was here and
+// that this package is mostly prose. Measured, that argument does not survive:
+// wasm/verify is 12,326 of the repository's 50,190 comment lines — a reading
+// taken when this was widened, and one that drifts upward the way every other
+// count here does — so a rule scoped to it reads a QUARTER of what it is
+// about. core and components carry another third between them and are written
+// the same way. The live number is in the log line on every run.
 //
-// A repository-wide version would be a fifth question on the copies walk,
-// which is the only arm that already has every Go file's bytes and its parse.
-// That walk is four questions about shapes kept in two copies; a garbled
-// comment is not one of those, and putting this there because the bytes
-// happen to be in scope is how a walk becomes a place to put things. The
-// price of widening is therefore honest to state: either that fifth question,
-// with the argument for why it belongs, or a sixth repository walk against a
-// budget of six.
-func TestTheCommentsInThisPackageAreWhatSomebodyTyped(t *testing.T) {
-	entries, err := os.ReadDir(".")
-	if err != nil {
-		t.Fatalf("reading this package's directory: %v", err)
-	}
-	names := make([]string, 0, len(entries))
-	for _, e := range entries {
-		if !e.IsDir() && strings.HasSuffix(e.Name(), ".go") {
-			names = append(names, e.Name())
-		}
-	}
-	// Sorted for the reason every walk in this package sorts: findings that
-	// arrive in directory order cannot be diffed against the last run.
-	sort.Strings(names)
+// Widening it cannot be a walk of its own. Both budgets are full —
+// repositoryWalkBudget is 7 against 7 walks, repositoryParseBudget is 4
+// against 4 parses — and an eighth walk would pay its own `git ls-files` and
+// its own read of every tracked file to reach files that four existing walks
+// have already parsed. That is precisely what those budgets exist to stop, so
+// the answer they force is the one taken: this rides the shared parse.
+//
+// # Why the copies walk, whose subject this is not
+//
+// Because it is the shared parse, and has been since the budget made it one.
+// That walk's unifying principle was never its subject — its own header says
+// the three shapes are one arm BECAUSE they are one repository-wide parse —
+// and two of its four existing questions already have their checks in
+// importnames_test.go rather than in the file the walk is named after. The
+// arrangement is: one parse, and each question's check owned by the file that
+// owns its subject.
+//
+// So this is the fifth question and checkCommentText lives here, beside the
+// rules and the argument for them, which is where somebody changing either
+// would look. What that costs is a walk whose name describes its largest
+// question rather than all of them; see the header of copies_test.go, which
+// now says so.
+// checkCommentText holds the repository's comment text to the two rules
+// above, off the syntax trees the copies walk has already built.
+//
+// Everything here is a reading of what that walk collected. Nothing in it
+// parses, reads or enumerates anything.
+func checkCommentText(t *testing.T, filesRead, lines int,
+	twice, tabbed []commentLine) {
 
-	fset := token.NewFileSet()
-	lines := 0
-	var twice, tabbed []commentLine
-	for _, name := range names {
-		// See the header: this file quotes the incident verbatim and is a
-		// finding about itself under both rules.
-		if name == commentRulesFile {
-			continue
-		}
-		file, parseErr := parser.ParseFile(fset, name, nil,
-			parser.SkipObjectResolution|parser.ParseComments)
-		if parseErr != nil {
-			// A file go/parser cannot read is not this check's business — the
-			// build says so first, and every other reading here would be
-			// failing too.
-			continue
-		}
-		for _, cg := range file.Comments {
-			for _, c := range cg.List {
-				for _, line := range commentLinesOf(fset, name, c) {
-					lines++
-					if line.writtenTwice() {
-						twice = append(twice, line)
-					}
-					if line.hasInteriorTab() {
-						tabbed = append(tabbed, line)
-					}
-				}
-			}
-		}
-	}
-
-	// The scan reaching anything. Every arm in this package says this, and
-	// this one has a version of the failure that is easy to arrive at: a
-	// parse mode without ParseComments returns files whose Comments slice is
-	// empty, and every rule below then passes over nothing on every run.
+	t.Helper()
+	// The scan reaching anything, for the reason every other question on that
+	// walk says it — and this one has a version of the failure that is easy
+	// to arrive at: go/parser discards comments unless asked for them with
+	// parser.ParseComments, and a file parsed without it comes back with an
+	// empty Comments slice and no error at all. Every rule below would then
+	// pass over nothing, on every run, for as long as it took somebody to
+	// notice.
 	if lines == 0 {
-		t.Fatalf("no comment line was found in %d Go file(s) in this "+
-			"directory.\n\n"+
-			"This package is mostly comment, so the reading is wrong rather "+
-			"than the repository being bare. The likeliest cause is the "+
-			"parse mode: go/parser discards comments unless asked for them "+
-			"with parser.ParseComments, and a file parsed without it comes "+
-			"back with an empty Comments slice and no error.", len(names))
+		t.Fatalf("no comment line was found in %d Go file(s).\n\n"+
+			"This repository is nearly fifty thousand comment lines, so the "+
+			"reading is wrong rather than the tree being bare. The likeliest "+
+			"cause is the parse mode on the walk above: comments are only "+
+			"built when parser.ParseComments is asked for.", filesRead)
 	}
 
 	if len(twice) > 0 {
@@ -169,9 +144,9 @@ func TestTheCommentsInThisPackageAreWhatSomebodyTyped(t *testing.T) {
 			"A botched edit, and nothing else produces this shape: the text "+
 			"before the second `//` and the text after it are the same "+
 			"sentence. gofmt is clean on it, go vet is clean on it, and no "+
-			"other check in this package reads a comment as text — the last "+
-			"one survived at least a session in a file that is itself six "+
-			"censuses.\n\n"+
+			"other check in this repository reads a comment as text — the "+
+			"last one survived at least a session in a file that is itself "+
+			"six censuses.\n\n"+
 			"Only EQUAL halves are a finding. A comment line carrying a "+
 			"second, different comment is ordinary — this repository has "+
 			"forty-odd of them, mostly annotated code samples inside doc "+
@@ -182,39 +157,66 @@ func TestTheCommentsInThisPackageAreWhatSomebodyTyped(t *testing.T) {
 
 	if len(tabbed) > 0 {
 		t.Errorf("%d comment line(s) contain a tab inside the text: %s.\n\n"+
-			"A tab that is not this package's table indent is not something "+
-			"anybody types. It is a join, a paste out of aligned output, or "+
-			"an editor — and the last one to appear here was the separator "+
-			"holding two copies of one sentence together on a single line.\n\n"+
+			"A tab that is not a table indent is not something anybody "+
+			"types. It is a join, a paste out of aligned output, or an "+
+			"editor — and the last one to appear here was the separator "+
+			"holding two copies of one sentence together on a single "+
+			"line.\n\n"+
 			"The indent is exempt and nothing else is: a comment whose text "+
 			"begins with tabs is the gofmt-rendered code block or table this "+
-			"package uses everywhere, and those are stripped before the rule "+
-			"looks. Leading SPACES are not stripped, so a space-then-tab "+
+			"repository uses everywhere, and those are stripped before the "+
+			"rule looks. Leading SPACES are not stripped, so a space-then-tab "+
 			"indent is a finding — that is mixed indentation, which renders "+
 			"differently in every viewer and is the artifact rather than the "+
 			"convention.\n\n"+
 			"If a tab is genuinely wanted mid-line, it is being used to align "+
 			"something, and alignment inside a comment is a thing this "+
-			"package spells with spaces so that it survives being read "+
+			"repository spells with spaces so that it survives being read "+
 			"anywhere.",
 			len(tabbed), commentLineList(tabbed))
 	}
 
-	t.Logf("%d comment line(s) in %d of %d Go file(s) in this directory, "+
-		"held to 2 rule(s). %s is the one not read; see the header.",
-		lines, len(names)-1, len(names), commentRulesFile)
+	t.Logf("%d comment line(s) in %d Go file(s), held to 2 rule(s). %s is the "+
+		"one file not read; see its header.", lines, filesRead,
+		commentRulesFile)
+}
+
+// commentFindingsIn is the two rules applied to one file's comments.
+//
+// Returned as two slices rather than reported here because the walk that
+// calls this is collecting, not judging: every question on it reports in its
+// own subtest, with its own failure boundary. See the header of
+// copies_test.go.
+func commentFindingsIn(fset *token.FileSet, rel string,
+	file *ast.File) (lines int, twice, tabbed []commentLine) {
+
+	for _, cg := range file.Comments {
+		for _, c := range cg.List {
+			for _, line := range commentLinesOf(fset, rel, c) {
+				lines++
+				if line.writtenTwice() {
+					twice = append(twice, line)
+				}
+				if line.hasInteriorTab() {
+					tabbed = append(tabbed, line)
+				}
+			}
+		}
+	}
+	return lines, twice, tabbed
 }
 
 // The file the rules are written in, and the one file they are not applied
-// to. Named as a constant so that the skip and the sentence explaining it
-// cannot come apart.
+// to. A repository path, because the walk that applies them enumerates the
+// repository. Named as a constant so that the skip and the sentence
+// explaining it cannot come apart.
 //
 // Renaming the file does not break the constant — it is a string, and nothing
-// checks that it names anything. What it does is make this test fail loudly
-// on its own two examples, which is the right end of that: the skip goes
-// missing in a way somebody sees on the next run rather than one that widens
-// coverage silently and correctly until it does not.
-const commentRulesFile = "commenttext_test.go"
+// checks that it names anything. What it does is make the comment question
+// fail loudly on this file's own two examples, which is the right end of
+// that: the skip goes missing in a way somebody sees on the next run rather
+// than one that widens coverage silently and correctly until it does not.
+const commentRulesFile = "wasm/verify/commenttext_test.go"
 
 // commentLine is one line of one comment, as written.
 type commentLine struct {
