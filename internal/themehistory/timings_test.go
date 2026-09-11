@@ -596,13 +596,25 @@ const wholeWalkCommitsFloor = 50
 //
 // The whole-walk arm holds the batch reader's fetch count to an EQUALITY
 // against what themeSourcesAt names across the history, and that expectation
-// is one `git ls-tree` per commit — 88 processes over this repository, 0.90s
-// serial (0.87–0.92s measured, which is what the 0.83s this line used to quote
-// was an estimate of), which was 35% of the arm's wall clock and the largest
-// single thing `-short` skips. Almost none of that is git doing anything: it is fork, exec,
-// the repository being opened and the process being torn down, which is the
-// same cost blob's comment is an argument about, once per commit instead of
-// once per object.
+// is one `git ls-tree` per commit — 0.90s serial, the figure
+// themehistoryTimingsTakenOn.perObjectRun carries as the trees, which was 35%
+// of the arm's wall clock and the largest single thing `-short` skips. The
+// process count is not restated here: it is a reading of this repository's
+// own history and it grows, which is the second fault that record's header
+// describes and the reason fourteen other sentences stopped quoting it. The
+// arm prints the live number on every run.
+//
+// This line used to quote `0.83s`, which was an estimate, and then
+// `0.87–0.92s`, which was a measurement copied out of the record and a
+// hundredth out of step with it. Both are in backquotes because they are
+// what this sentence used to say rather than figures anybody should hold to
+// anything — see wasm/verify/quotedprose_test.go — and the live reading is
+// named rather than restated, which is what stops there being a third.
+//
+// Almost none of that 0.90s is git doing anything: it is fork, exec, the
+// repository being opened and the process being torn down, which is the same
+// cost blob's comment is an argument about, once per commit instead of once
+// per object.
 //
 // The listings are independent of each other and of everything else here —
 // themeSourcesAt calls treePaths calls git(), which is an exec.Command with no
@@ -814,8 +826,8 @@ func batchesStartedSince() func() int64 {
 //
 // # Whether that price buys anything, which was an open question
 //
-// The equality costs 88 `git ls-tree` processes to assert a number a floor
-// scaled off HEAD would have got within a few of for one process. What settles
+// The equality costs one `git ls-tree` process per commit to assert a number
+// a floor scaled off HEAD would have got within a few of for one process. What settles
 // it is whether an OFF-BY-ONE in the fetch path is a failure mode anybody
 // expects — and it is, because this program has one written into it:
 //

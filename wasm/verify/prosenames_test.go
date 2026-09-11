@@ -125,11 +125,21 @@ func testNamesInText(rel string, raw []byte) []proseName {
 		if !mightNameATest(line) {
 			continue
 		}
+		// Per line rather than over the file, because none of these is Go and
+		// a backquote pairs within a line in all three of markdown, shell and
+		// JavaScript. Over the whole file a fenced block's ``` would pair
+		// with something a screen away.
+		runs := quotedRuns(line)
 		for _, loc := range testNameInProse.FindAllStringIndex(line, -1) {
 			// A sample somebody is meant to write, not a citation. See the
 			// header: the docs declare example tests, and a declaration is
 			// not a claim that this repository has one.
 			if strings.HasSuffix(line[:loc[0]], "func ") {
+				continue
+			}
+			// A name the sentence is ABOUT rather than pointing at. See
+			// quotedprose_test.go.
+			if quotedAt(runs, loc[0]) {
 				continue
 			}
 			out = append(out, proseName{
@@ -181,32 +191,28 @@ func proseNameList(in []proseName) string {
 	})
 }
 
-// The tests this repository deliberately names after they are gone.
+// The tests this repository deliberately names after they are gone used to
+// be listed here, by name, with the reason for each.
 //
-// A rename is worth recording — "it said three, naming the copies census,
-// then called X, now Y" is a sentence that explains a number's history, and
-// deleting the dead name from it would leave a reader unable to match the
-// record to anything. So these are exempt, by name, with the reason.
+// They are not listed any more, and nothing replaced the list with a smaller
+// list: the two sentences that needed it now say what they mean in the
+// prose itself, by putting the dead name in backquotes. See
+// quotedprose_test.go for the convention and for what it was measured to
+// cost, which is one mention repository-wide and that one a code sample.
 //
-// The bar is that the mention is ABOUT the name having changed. A sentence
-// that merely uses a dead name to point at a live test is the finding this
-// rule exists for, and belongs in neither this table nor the file.
+// Worth recording because the table was the shape of a real argument and the
+// argument survives: a rename IS worth writing down — "it said three, naming
+// the copies census, then called X, now Y" explains a number's history and
+// deleting the dead name from it leaves a reader unable to match the record
+// to anything — and the bar for saying so has not moved. The mention has to
+// be ABOUT the name having changed. What changed is only where that is
+// stated: in the sentence, where a reader is, rather than in a table one
+// file over that a reader has to be told exists.
 //
-// It is a graveyard and it should stay small. An entry here whose sentence
-// has since been rewritten is dead weight that reads as a guard, which is the
-// failure citationExempt's own assertion catches one file over; if this table
-// ever gets long enough to be worth an arm of its own, that is the same
-// check.
-var renamedTestsStillNamed = map[string]string{
-	"TestEveryTimingsRecordIsTheSameShape": "wasm/verify/timings_test.go " +
-		"tells the history of the number it records — the copies census was " +
-		"called this, then something else, and is now a third thing. The " +
-		"sentence is about the renaming",
-	"TestTheShapesThisRepositoryKeepsTwoCopiesOfAreInStep": "the middle name " +
-		"in that same history, and the one sharedparse_test.go's header " +
-		"explains itself by: the walk moved out of copies_test.go because a " +
-		"name describing its first question had stopped describing the set",
-}
+// The table's own doc predicted its failure mode — an entry whose sentence
+// had since been rewritten, reading as a guard over nothing — and a
+// convention carried in the sentence cannot have that failure, because
+// rewriting the sentence takes the marker with it.
 
 // testNamesIn is every test this file declares, and every Test-shaped name
 // its prose mentions.
@@ -231,7 +237,28 @@ func testNamesIn(fset *token.FileSet, rel string, file *ast.File) (
 
 	add := func(p *prose, in string) {
 		text := string(p.text)
+		// Over the JOINED group, so that a backquoted name wrapped across two
+		// comment lines is one quoted run here as it is to a reader. The
+		// pairing is left to right and a stray backquote opens nothing, which
+		// means a malformed comment gets checked rather than skipped — see
+		// quotedRuns.
+		runs := quotedRuns(text)
 		for _, loc := range testNameInProse.FindAllStringIndex(text, -1) {
+			// A name the sentence is ABOUT rather than pointing at. See
+			// quotedprose_test.go.
+			if quotedAt(runs, loc[0]) {
+				continue
+			}
+			// A sample somebody is meant to write, not a citation — the same
+			// skip testNamesInText applies to the documentation, and for the
+			// same reason the header gives: a citation in prose is never
+			// spelled with `func` in front of it. It is needed on this side
+			// too because this repository keeps code samples in raw string
+			// literals, and examples/tutorial/chapter8.go's is a
+			// `func TestMain(` that resolves today only by prefix accident.
+			if strings.HasSuffix(text[:loc[0]], "func ") {
+				continue
+			}
 			mentioned = append(mentioned, proseName{
 				name: text[loc[0]:loc[1]], rel: rel,
 				line: p.lineAt(loc[0]), in: in,
@@ -293,8 +320,11 @@ func testNamesIn(fset *token.FileSet, rel string, file *ast.File) (
 		if !mightNameATest(lit.Value) {
 			return false
 		}
+		// Unwrapped first, because a raw literal is delimited with the same
+		// byte the quoting convention uses and its own delimiters would
+		// otherwise pair around everything inside it. See unwrapRawLiteral.
 		var p prose
-		p.add(fset.Position(lit.Pos()).Line, lit.Value)
+		p.add(fset.Position(lit.Pos()).Line, unwrapRawLiteral(lit.Value))
 		add(&p, "a string constant")
 		return false
 	})
@@ -329,7 +359,7 @@ func checkProseNamesResolve(t *testing.T, from string, declared []string,
 		exact[d] = true
 	}
 	resolves := func(name string) bool {
-		if exact[name] || renamedTestsStillNamed[name] != "" {
+		if exact[name] {
 			return true
 		}
 		// `go test -run X` matches every test X is a prefix of, so a prefix
@@ -364,12 +394,19 @@ func checkProseNamesResolve(t *testing.T, from string, declared []string,
 			"and the sentence is describing a guard this repository no "+
 			"longer has, which is worth more than a broken link.\n\n"+
 			"If the sentence is ABOUT the renaming, which is a thing several "+
-			"records here do on purpose, put the name in "+
-			"renamedTestsStillNamed with the reason.",
+			"records here do on purpose, put the dead name in backquotes: a "+
+			"token in backquotes is quoted rather than claimed, and this "+
+			"question does not read it. That is the same convention "+
+			"coresAttribution states for the terms it names. The bar is that "+
+			"the sentence is about the name having CHANGED — using a dead "+
+			"name to point at a live test and backquoting it hides this "+
+			"finding rather than recording anything.",
 			len(stale), proseNameList(stale))
 	}
 
-	t.Logf("%d test(s) declared, %d mention(s) in prose, %d name(s) "+
-		"deliberately kept after renaming. Enumerated by %s.",
-		len(declared), len(mentioned), len(renamedTestsStillNamed), from)
+	t.Logf("%d test(s) declared, %d mention(s) in prose held to resolving. "+
+		"Enumerated by %s.\n\n"+
+		"A mention in backquotes is not counted here and not checked: it is "+
+		"a name the sentence is about rather than one it points at. See "+
+		"quotedprose_test.go.", len(declared), len(mentioned), from)
 }

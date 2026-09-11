@@ -260,6 +260,15 @@ It would also change if the residue started containing defects. The scan above
 is fifty lines and can be re-run; what makes this a non-goal is the measured
 ratio, not the idea.
 
+**A later session gave backquotes a meaning, and it is the opposite one.**
+`wasm/verify/quotedprose_test.go` states that a token in backquotes is quoted
+rather than claimed — a name the sentence is ABOUT rather than pointing at.
+That does not collide with the finding here; it is the same finding written
+from the other side. A backquoted token is precisely the one this repository
+declines to resolve, which is why a rule reading backquotes as "a declaration
+in this module" scored zero, and why the marker that DID prove writable was
+the one that means "do not resolve this".
+
 ---
 
 ## A wall clock in prose is not held to living in a record
@@ -316,12 +325,51 @@ history in a checker.
 sweep had missed it because it grepped for the record's exact strings and a
 rounded copy is not one.
 
-**What would change this.** A marker that says "this figure is a quotation of a
-past reading" — which is the same missing convention that
-`renamedTestsStillNamed` is a table instead of. If one is ever introduced for
-its own reasons, both rules become writable at once, and the measurement above
-is fifty lines and can be re-run.
+**The marker arrived, and it was not enough.** The session after this was
+written introduced the convention the paragraph below used to ask for: a token
+in backquotes is quoted rather than claimed, stated in
+`wasm/verify/quotedprose_test.go`. It did for the test-name rule exactly what
+was predicted — `renamedTestsStillNamed` is gone, and the two sentences it
+existed for say what they mean in the prose. Re-running the measurement above
+against the marked tree, the five sentences that were RIGHT are all resolved:
 
-It would also change if the ratio moved: one real in six is a residue worth
-reading by hand once a session, which is what this session did, and not worth a
-check that fails on five sentences that are right.
+    main.go:661 ×2            backquoted. The sentence is unchanged in
+                              substance; the marker alone did it
+    timings_test.go           the live figure now names the record field, and
+                              the two figures the line used to carry are
+                              backquoted as what it used to say. The marker
+                              did not remove this finding — naming the field
+                              did — but it is why the history survived the fix
+    repowalks_test.go:49 ×2   states the PROPORTION and names the fields. This
+                              was the last figure on `verifyTimingsTakenOn`'s
+                              re-taking list that a re-taking moved by hand
+
+So the quotation class is closed and the rule is still declined, for a reason
+that is sharper than the one it was declined on. **"Lives in a record" is not a
+span anything can define.** Readings legitimately live in three shapes, and
+only the first is a `…TimingsTakenOn` declaration:
+
+    the record itself         76 range figures, and the rule protects these
+    a table in the prose      the GOMAXPROCS table in
+    beside it                 wasm/verify/timings_test.go, and the string
+                              constant that restates it for a failure
+                              message — 7 figures, every one a reading with
+                              its method written beside it
+    a `costs:` field of       repowalks_test.go's walk census carries
+    another structure         "12.19–12.28s against 11.57–11.99s" with its own
+                              taking method, in a structure that is a record
+                              in everything but name
+
+And one figure that is not a reading at all: `hooks/hooks_test.go:26` says test
+producers run at `5–20ms` periods. That is the discriminator's own
+counterexample — a SPECIFIED duration written as a range — measured at one
+across the repository, which is small but is not zero, and the discriminator
+was the part of this rule that was sound.
+
+**What would change this now.** Not a marker. Either a way to say "this
+paragraph is a record" that is narrower than a comment group naming one — the
+escape that already failed, because every drifted sentence named the record it
+had drifted from — or the second and third shapes above becoming records
+proper, at which point "inside a declaration" is a span again and the rule is
+one function. The residue to re-read by hand is ten figures and the scan is
+sixty lines.

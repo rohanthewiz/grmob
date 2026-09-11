@@ -50,7 +50,9 @@ import (
 // # Why this file exists, which is a name that had stopped being true
 //
 // The walk was in copies_test.go and was called
-// TestTheShapesThisRepositoryKeepsTwoCopiesOfAreInStep, because the first
+// `TestTheShapesThisRepositoryKeepsTwoCopiesOfAreInStep` — backquoted
+// because the sentence is about the name having changed, which is the
+// convention quotedprose_test.go states — because the first
 // three questions on it are about shapes this repository keeps two copies of
 // and the parse was built for them. The last two are not. A figure in prose
 // is a copy of a fact about the TREE, which is already a stretch; a garbled

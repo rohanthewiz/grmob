@@ -658,8 +658,11 @@ func wrap(names []string, width int, indent string) string {
 // readings live in themehistoryTimingsTakenOn.perObjectRun, which is where
 // they are re-taken, and a copy of them in this comment would be a second
 // place to keep in step. They were exactly that until tonight — this table
-// said 30.14–30.42s against 399–401ms while the record said something else,
-// both attributed to the same afternoon.
+// said `30.14–30.42s` against `399–401ms` while the record said something
+// else, both attributed to the same afternoon. Those two are in backquotes
+// because they are quotations of what this comment used to claim rather than
+// readings anybody should hold to a record; timings_test.go writes the same
+// pair the same way.
 //
 // The batched figure there is the fetches on their own, which is why it is
 // well under wholeRun — that one also pays an `ls-tree` per commit and every

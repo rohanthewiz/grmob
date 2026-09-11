@@ -27,7 +27,7 @@ import (
 // # About the file counts quoted below, which are readings and ARE held
 //
 // Several sentences here and in timings_test.go price a walk against how many
-// files it touches. That number is a reading of a repository on a day — 390
+// files it touches. That number is a reading of a repository on a day — 391
 // tracked Go files where verifyTimingsTakenOn was taken — and it goes up with
 // every file anybody adds, silently, exactly like the wall clocks beside it.
 //
@@ -46,13 +46,21 @@ import (
 // other way is prose rather than a claim, which is the same distinction
 // coresAttribution draws with backquotes one file over.
 //
-// That is 1.18–1.40s of a 2.88–2.97s package — getting on for half of it —
-// where verifyTimingsTakenOn was taken, and it is still the right call at
-// this size. The figure is four parse walks at the record's walkParse, two
-// reads at its walkRead and one enumeration at its walkEnumerate, summed at
-// both ends; the arm below prints the counts on every run, and the per-walk
-// figures are fields on the record rather than numbers here, so a re-taking
-// moves them in one place and this sentence in a second. The walks are INDEPENDENT by design:
+// That is getting on for half the package where verifyTimingsTakenOn was
+// taken, and it is still the right call at this size. The figure is four
+// parse walks at the record's walkParse, two reads at its walkRead and one
+// enumeration at its walkEnumerate, summed at both ends and set against its
+// wholeFile; the arm below prints the counts on every run.
+//
+// What is stated here is the PROPORTION and not the two readings it is a
+// proportion of, which is a change from how this sentence read for several
+// sessions. It carried `1.18–1.40s of a 2.88–2.97s package`, and the record's
+// own re-taking list named it as the last figure in this repository that a
+// re-taking had to move by hand. A proportion does not drift and a reading
+// does: that is the resolution internal/themehistory/main.go reached for the
+// same shape, and the general lesson verifyTimingsTakenOn's header states
+// three lines under the entry that used to point here — a figure quoted in
+// two places is a copy, and attributing the copy does not make it one thing. The walks are INDEPENDENT by design:
 // each asks a different question, each fails on its own, and a shared cache
 // between them would be a fixture with lifetime rules — built once, invalidated
 // never, and read by tests that no longer say what they read. Four cheap
@@ -521,7 +529,7 @@ func TestTheRepositoryWideWalksInThisPackageAreTheOnesDecidedOn(t *testing.T) {
 			"This is the number that decides, not the total. Each parse is "+
 			"%s where verifyTimingsTakenOn was taken and none of it is "+
 			"shared: every Go file in the tree goes through go/parser once "+
-			"per arm — 390 tracked Go files where that record was taken — "+
+			"per arm — 391 tracked Go files where that record was taken — "+
 			"and every one of them throws the syntax trees away.\n\n"+
 			"A shared parse is a fixture with a lifetime — built once, "+
 			"invalidated never, read by tests that no longer say what they "+
@@ -719,7 +727,7 @@ const timingsRecordName = "verifyTimingsTakenOn"
 // How many of them may parse every Go file in the tree.
 //
 // Four, and this is the half that costs. The other two walks read bytes and
-// stop; these four hand every Go file in the tree — 390 tracked Go files
+// stop; these four hand every Go file in the tree — 391 tracked Go files
 // where verifyTimingsTakenOn was taken — to go/parser, build the syntax
 // trees, ask one question each and drop them.
 //

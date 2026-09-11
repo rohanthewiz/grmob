@@ -63,8 +63,8 @@ import (
 // Every wall clock in this package's prose says "where verifyTimingsTakenOn
 // was taken". That is the discipline this record exists for and it turns out
 // not to be sufficient, because the reference MOVES: when `wholeFile` was
-// re-taken and went from 2.78–2.93s to 2.88–2.97s, every sentence citing this
-// record silently began claiming to be from a taking it was not from. One of
+// re-taken and went from `2.78–2.93s` to `2.88–2.97s`, every sentence citing
+// this record silently began claiming to be from a taking it was not from. One of
 // the figures had moved with it and two had not, and nothing said which.
 //
 // A wall clock cannot be an arm — that is the argument above and it still
@@ -74,13 +74,17 @@ import (
 //	walkEnumerate, walkRead, walkParse   fields. Two failure messages in
 //	                                     repowalks_test.go read them, so a
 //	                                     re-taking is one edit here
-//	repowalks_test.go's header           "1.18–1.40s of a 2.88–2.97s
-//	                                     package", which is four walkParse,
-//	                                     two walkRead and one walkEnumerate
-//	                                     summed against `wholeFile`. Prose
-//	                                     cannot read a field, so this one is
-//	                                     by hand — and it is the only one
-//	                                     left that is
+//	repowalks_test.go's header           nothing to move any more. It said
+//	                                     "1.18–1.40s of a 2.88–2.97s
+//	                                     package" — four walkParse, two
+//	                                     walkRead and one walkEnumerate
+//	                                     summed against `wholeFile` — and it
+//	                                     was the last entry on this list that
+//	                                     a re-taking moved by hand. It now
+//	                                     states the PROPORTION and names the
+//	                                     fields, because prose cannot read a
+//	                                     field but a reader can, and a
+//	                                     proportion does not drift
 //	the 0.01s below                      the walk census's own cost, and the
 //	                                     "ten of forty-one" beside it
 //	the besides row in repowalks         0.010s, and it carries its own method
@@ -149,10 +153,12 @@ var verifyTimingsTakenOn = struct {
 	// # How many of them there are, which this comment used to get wrong
 	//
 	// It said three, naming the copies census — then called
-	// TestEveryTimingsRecordIsTheSameShape, then
-	// TestTheShapesThisRepositoryKeepsTwoCopiesOfAreInStep, now
+	// `TestEveryTimingsRecordIsTheSameShape`, then
+	// `TestTheShapesThisRepositoryKeepsTwoCopiesOfAreInStep`, now
 	// TestTheQuestionsOnTheSharedRepositoryParseAreTheOnesDecidedOn — as
-	// the last.
+	// the last. The two dead names are in backquotes and the live one is
+	// not, which is the whole convention in one sentence: see
+	// quotedprose_test.go.
 	// There were four: TestEveryGitListingAsksForNulSeparatedPaths has parsed
 	// the whole tree since before any of the other three existed and was
 	// simply not counted. And a walk in this package is not always a test —
@@ -233,9 +239,41 @@ var verifyTimingsTakenOn = struct {
 	// which sends somebody to look and find nothing. A range too wide would
 	// hide one.
 	//
-	// # The re-taking, and how it was told apart from the machine
+	// # The floor, which the taking that set it was already under
 	//
-	// It said 2.78–2.93s and now says 2.88–2.97s. What moved is this package:
+	// The session after that re-taking read this package twelve times and got
+	// 2.840–2.955s — nine of the twelve under the `2.88s` floor it had just
+	// written. Nothing had been made faster; one file and one code path had
+	// been ADDED. So the floor was wrong when it was typed, and it can be
+	// seen to have been wrong in the session that typed it: that session's
+	// own closing figures were "2.866–2.946s, in band", and 2.866 is not in
+	// a band that starts at 2.88.
+	//
+	// The machine was ruled out the way this record always rules it out, by
+	// reading the untouched sibling at the same moment: internal/themehistory
+	// came back 3.018–3.131s against a recorded 2.92–3.22s, which is mid-band
+	// and slightly SLOW rather than fast. An afternoon that made this package
+	// quick would have made that one quick too.
+	//
+	// So the range is widened to hold both takings rather than replaced with
+	// the newer one — the same treatment, and for the same reason, as the
+	// -race row in internal/themehistory's record. Two overlapping readings
+	// of one program are one thing measured twice, and a record that reports
+	// only the last afternoon is a record that cannot be checked against the
+	// afternoon before it.
+	//
+	// What this cost is worth stating plainly, because it is the argument for
+	// the whole file: the error was a hundredth of a second, it was in the
+	// record's own headline figure, it was written and read and quoted in a
+	// wrap-up on the same day, and nothing caught it — because a band is
+	// checked by a person comparing two numbers, and that is the one kind of
+	// check this repository has no arm for. See the header for why it cannot
+	// have one.
+	//
+	// # The re-taking before it, and how that was told apart from the machine
+	//
+	// It said `2.78–2.93s` and then said `2.88–2.97s`. What moved is this
+	// package:
 	// the shared repository parse went from three questions to six in one
 	// session, and the three that arrived — the file counts in prose, the two
 	// comment rules, and the tests named in prose — cost between nothing and
@@ -300,9 +338,9 @@ var verifyTimingsTakenOn = struct {
 	// attributed — "0.18s where verifyTimingsTakenOn was taken" — which is
 	// the discipline this record exists for and is not enough. Attribution by
 	// reference to a record that gets re-taken is a pointer that moves: when
-	// `wholeFile` was re-taken and went from 2.78–2.93s to 2.88–2.97s, every
-	// figure citing this record silently began claiming to be from a taking
-	// it was not from. One of these three had moved with it and two had not,
+	// `wholeFile` was re-taken and went from `2.78–2.93s` to `2.88–2.97s`,
+	// every figure citing this record silently began claiming to be from a
+	// taking it was not from. One of these three had moved with it and two had not,
 	// and nothing anywhere said which.
 	//
 	// So they are fields. A re-taking edits the record, the messages read the
@@ -329,8 +367,9 @@ var verifyTimingsTakenOn = struct {
 	goarch:    "arm64",
 	goVersion: "go1.26.1",
 	cores:     8,
-	wholeFile: "2.88–2.97s over twenty-one runs, re-taken when the shared " +
-		"repository parse grew from three questions to six",
+	wholeFile: "2.84–2.97s over thirty-three runs in two sessions, the " +
+		"floor widened after the taking that set it read under its own " +
+		"figure nine times out of twelve",
 	walkEnumerate: "0.08–0.10s",
 	walkRead:      "0.15–0.17s",
 	walkParse:     "0.20–0.24s",
@@ -370,7 +409,7 @@ var verifyTimingsTakenOn = struct {
 // # What this package's answer actually is, which is not "nothing"
 //
 // The expensive half of wholeFile does not move. The four repository-wide
-// walks hand every Go file in the tree to go/parser one after another — 390
+// walks hand every Go file in the tree to go/parser one after another — 391
 // tracked Go files where this record was taken, 0.18s each, single-threaded,
 // the same number on any machine — and foldWalk is a node process this package waits on
 // rather than shares a core with.
@@ -439,7 +478,7 @@ var verifyTimingsTakenOn = struct {
 // either direction reads — a term named in prose is neither claimed nor
 // checked.
 const coresAttribution = "The four repository-wide walks in this package are " +
-	"single-threaded — go/parser over 390 tracked Go files " +
+	"single-threaded — go/parser over 391 tracked Go files " +
 	"where this record was taken, 0.18s each — and " +
 	"`foldWalk` is a node process. Those do not move with the core count. " +
 	"Two declarations do, and they are the whole of it: " +
