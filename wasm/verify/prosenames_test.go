@@ -81,6 +81,28 @@ import (
 // exempt is its MENTIONS and not the file. Nothing about it is invisible to
 // the other five questions on that walk.
 //
+// # And the files that are not Go
+//
+// This repository names its tests outside its Go sources too — in the docs,
+// in a hook script, in the browser pass's own .mjs — and three of those were
+// stale when this was widened to reach them: a shell comment naming
+// `TestEveryGitListingInAScriptAsksForZ`, a page naming
+// `TestNoRoleCollidesWithTheTabPanelWiring`, and browser.mjs pointing at a
+// mobile/verify census that had become two tests.
+//
+// Those files are read rather than parsed, because there is nothing to parse:
+// a test name in a shell comment is a word in a file. The walk's enumeration
+// already lists them and the cost of reading them again is 136 files and 2.5
+// megabytes, measured at 0.003s — which is why this is a read here rather
+// than a change to what citingFiles hands back to its six callers.
+//
+// One shape is skipped: a name written as `func TestX(`. The documentation
+// contains example tests a reader is meant to WRITE — `func TestCounter(t
+// *testing.T)` in the getting-started page, `func TestNoHookDrift` in the
+// debug-mode one — and those are declarations in a sample rather than
+// citations of anything. A citation in prose is never spelled with `func` in
+// front of it.
+//
 // # Where this runs
 //
 // On the shared repository parse — see sharedparse_test.go. It needs every Go
@@ -89,6 +111,35 @@ import (
 // five to six, one session after that budget was written, and the argument
 // for the raise is in the constant's own doc.
 var testNameInProse = regexp.MustCompile(`\bTest[A-Z][A-Za-z0-9_]{3,}\b`)
+
+// testNamesInText is every test named in a file this repository does not
+// parse: documentation, scripts, the browser pass's JavaScript.
+//
+// Line by line rather than joined, because none of these is Go and none of
+// them wraps a name across lines the way a gofmt'd comment does. What that
+// gives up is a name split across a line break in a markdown paragraph, and
+// there is no instance of one.
+func testNamesInText(rel string, raw []byte) []proseName {
+	var out []proseName
+	for i, line := range strings.Split(string(raw), "\n") {
+		if !mightNameATest(line) {
+			continue
+		}
+		for _, loc := range testNameInProse.FindAllStringIndex(line, -1) {
+			// A sample somebody is meant to write, not a citation. See the
+			// header: the docs declare example tests, and a declaration is
+			// not a claim that this repository has one.
+			if strings.HasSuffix(line[:loc[0]], "func ") {
+				continue
+			}
+			out = append(out, proseName{
+				name: line[loc[0]:loc[1]], rel: rel, line: i + 1,
+				in: "text",
+			})
+		}
+	}
+	return out
+}
 
 // mightNameATest is the cheap half of the filter above.
 //

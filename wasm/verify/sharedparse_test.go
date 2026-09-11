@@ -41,9 +41,11 @@ import (
 //	the comment text      two rules over every comment there is: a line that
 //	                      is one comment written twice, and a tab anywhere but
 //	                      the leading indent. See checkCommentText
-//	the names in prose    every Go test named in a comment or a string
-//	                      constant, held to being a test this repository has.
-//	                      See checkProseNamesResolve
+//	the names in prose    every Go test named in a comment, in a string
+//	                      constant, or anywhere in a tracked file this
+//	                      repository does not parse — the docs, the scripts,
+//	                      the browser pass's .mjs — held to being a test this
+//	                      repository has. See checkProseNamesResolve
 //
 // # Why this file exists, which is a name that had stopped being true
 //
@@ -184,6 +186,17 @@ func TestTheQuestionsOnTheSharedRepositoryParseAreTheOnesDecidedOn(t *testing.T)
 	fset := token.NewFileSet()
 	for _, rel := range paths {
 		if !strings.HasSuffix(rel, ".go") {
+			// The tests this repository names outside its Go sources: the
+			// documentation, a hook script, the browser pass's own .mjs.
+			// Read rather than parsed, because a test name in a shell
+			// comment is a word in a file — see testNamesInText, including
+			// what 136 files cost.
+			raw, readErr := os.ReadFile(filepath.Join(root,
+				filepath.FromSlash(rel)))
+			if readErr == nil {
+				namedTests = append(namedTests,
+					testNamesInText(rel, raw)...)
+			}
 			continue
 		}
 		// Counted BEFORE the skip below, because what the prose figures claim

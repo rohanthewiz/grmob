@@ -4349,8 +4349,9 @@ const bandRenderSame = (a, b) => Math.abs(a - b) <= BAND_EPSILON;
 // So the four targets do not agree, and they do not disagree the way the note
 // said either: the DOM and Compose agree on the main axis and differ on the
 // cross one. See docs/platforms/native.md for the whole census, and
-// mobile/verify's TestTheNativesFixedSizeArmsAreTheOnesTheCensusDescribes for
-// the two native call sites this rests on.
+// mobile/verify's TestTheComposeFixedDimensionSetsAMaximum and
+// TestTheSwiftUIFixedDimensionProposesAndDoesNotClip for the two native call
+// sites this rests on.
 const VOID_W = 120, VOID_H = 40;
 const OVERSIZE_W = 200, OVERSIZE_H = 80;
 

@@ -180,6 +180,28 @@ var verifyTimingsTakenOn = struct {
 	// harmless one: a range too narrow reports a difference that is not there,
 	// which sends somebody to look and find nothing. A range too wide would
 	// hide one.
+	//
+	// # The re-taking, and how it was told apart from the machine
+	//
+	// It said 2.78–2.93s and now says 2.88–2.97s. What moved is this package:
+	// the shared repository parse went from three questions to six in one
+	// session, and the three that arrived — the file counts in prose, the two
+	// comment rules, and the tests named in prose — cost between nothing and
+	// ten milliseconds each, measured one at a time by taking each out and
+	// putting it back. They do not add up to the whole of it, and the rest is
+	// the same walk reading more: a per-question exemption replaced a
+	// walk-level skip, so a file that used to be invisible is now parsed and
+	// read by every rule.
+	//
+	// The reason this is recorded as the CODE and not as the afternoon is
+	// that the other record was read at the same time, on the same machine,
+	// against a package this session did not touch: internal/themehistory
+	// came back at 3.01–3.16s against a recorded 2.92–3.22s, which is the
+	// middle of its own range. A slow machine moves both. This moved one.
+	//
+	// Twenty-one runs again, which is the same sample the figure it replaces
+	// was taken from, so the two are comparable — and still, by the argument
+	// above, narrower than the truth.
 	wholeFile string
 	// TestHowWideTheNarrowerFoldIsAndWhatHoldsTheGap end to end, which is what
 	// inkglyph_test.go's `128ms` sits inside.
@@ -221,8 +243,9 @@ var verifyTimingsTakenOn = struct {
 	goarch:    "arm64",
 	goVersion: "go1.26.1",
 	cores:     8,
-	wholeFile: "2.78–2.93s over twenty-one runs in two sessions",
-	foldWalk:  "0.40–0.52s over seven runs, node v22.12.0",
+	wholeFile: "2.88–2.97s over twenty-one runs, re-taken when the shared " +
+		"repository parse grew from three questions to six",
+	foldWalk: "0.40–0.52s over seven runs, node v22.12.0",
 }
 
 // Which of this package's figures move with the core count, and which do not.
@@ -270,38 +293,47 @@ var verifyTimingsTakenOn = struct {
 // cores named above:
 //
 //	GOMAXPROCS    the whole package
-//	1             3.08–3.27s
-//	2             2.78–2.88s
-//	4             2.74–2.86s
-//	8             2.75–2.85s
+//	1             3.35–3.49s
+//	2             2.92–3.00s
+//	4             2.87–2.91s
+//	8             2.88–2.92s
 //
-// Nine runs a row rather than three: the table has been taken three times —
-// when it was first measured, when the copies census grew its two extra
-// readings, and again when the row above it was widened to 2.78–2.93s. Each
-// row holds every taking's range for the reason the other record's -race row
-// does.
+// Three runs a row, and this taking REPLACES the ranges rather than widening
+// them, which is a departure from how the three takings before it were
+// recorded and is the reason it is written down.
 //
-// The third one was the whole table and not the row that had moved, which is
-// the point of it. Widening `wholeFile` and leaving these four would have made
-// a record where the figure at the top was from one afternoon and the table
-// explaining it was from another, with nothing on either saying which — a
-// reader comparing a one-core run against the number above would have been
-// comparing two days. That is the fault this record exists to end, and there
-// is no version of it that is acceptable inside the record itself.
+// Those three each held every taking's range together, because each was of
+// the same program: the row above had not moved, so a reading from a
+// different afternoon was another reading of one thing. This one is not. The
+// shared repository parse went from three questions to six and the row above
+// left its range, so unioning would produce a span covering two programs — a
+// one-core figure of 3.08–3.49s, most of which no version of this package has
+// ever taken. A range that wide hides a difference, which is the failure the
+// other direction at least does not have.
 //
-// Only the four-core row moved, by seven hundredths at the top end. The other
-// three came back inside the ranges they already had, which is the useful
-// half of re-taking a table nothing has changed. The shape did not move —
-// one core is a tenth dearer and two is where it stops improving —
-// which is the part the sentence below is about.
+// The whole table and not the row that moved, which is the part the previous
+// taking established and this one keeps. Widening `wholeFile` and leaving
+// these four would make a record where the figure at the top is from one
+// afternoon and the table explaining it is from another, with nothing on
+// either saying which — a reader comparing a one-core run against the number
+// above would be comparing two days. That is the fault this record exists to
+// end, and there is no version of it that is acceptable inside the record
+// itself.
 //
-// Which is a different SHAPE from the other record's, and that is the part
-// worth having: this one is flat from two cores upwards, so a core count that
-// differs from eight is worth about a tenth of the figure and only between one
-// and two. internal/themehistory's keeps improving all the way to eight,
-// because its term is 88 git processes rather than one Go program's own
-// goroutines. A reader on a four-core machine should expect this package's
-// number and not that one.
+// Every row moved, by about the same amount, which is the useful half of
+// re-taking a whole table: the added work is single-threaded, so it lands on
+// every core count equally and none of the movement is about concurrency.
+//
+// The SHAPE is what the sentence below is about and it did not change, though
+// the size of it did. One core is now about a sixth dearer than four rather
+// than a tenth, because the denominator went up and the serial half of the
+// package went up with it; two is a couple of hundredths above four, and four
+// and eight are the same number. So: a core count that differs from eight is
+// worth a sixth of the figure between one and two, a fiftieth between two and
+// four, and nothing above that. internal/themehistory's keeps improving all
+// the way to eight, because its term is 88 git processes rather than one Go
+// program's own goroutines. A reader on a four-core machine should expect
+// this package's number and not that one.
 // # How this has to be written, which is a constraint from outside
 //
 // Literals joined by `+`, and nothing else. wasm/verify/copies_test.go reads
@@ -323,10 +355,11 @@ const coresAttribution = "The four repository-wide walks in this package are " +
 	"Two declarations do, and they are the whole of it: " +
 	"`affordedKLeafBandWalk` and `affordedTwoStepBands` in " +
 	"themenearmiss_test.go each take `workers := runtime.GOMAXPROCS(0)` and " +
-	"divide the afforded* band family's combinations across it. The package is 3.08–3.27s at one core, " +
-	"2.78–2.88s at two, and flat from there to eight. So a differing core " +
-	"count is worth about a tenth of the figure above, and only between one " +
-	"core and two — which is the opposite shape from " +
+	"divide the afforded* band family's combinations across it. The package is 3.35–3.49s at one core, " +
+	"2.92–3.00s at two, and flat from four to eight. So a differing core " +
+	"count is worth about a sixth of the figure above between one core and " +
+	"two and a fiftieth between two and four — which is the opposite shape " +
+	"from " +
 	"internal/themehistory's, where the term is 88 git processes and the " +
 	"improvement runs all the way to eight."
 

@@ -91,8 +91,9 @@ printf '%s\n' "$cmd" | grep -qE '(^|[^A-Za-z0-9_./-])git[^;&|]*[[:space:]]commit
 # -z for the reason internal/themehistory asks for it: git C-quotes any path it
 # cannot write literally, and a quoted path matches no prefix test. See
 # wasm/verify/gitquoting_test.go, which holds every git listing in the Go
-# sources to this rule — and, since TestEveryGitListingInAScriptAsksForZ was
-# added beside it, this file too.
+# sources to this rule — and, since
+# TestEveryGitListingInAScriptAsksForNulSeparatedPaths was added beside it,
+# this file too.
 #
 # The NUL records are then turned into lines, which gives back exactly one of
 # the two problems -z solves: a path containing a real newline splits into two

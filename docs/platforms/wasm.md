@@ -293,8 +293,8 @@ chassis, and this wiring — so the runtime tells them apart by value: `tabpanel
 is not one of `core.Role`'s spellings and is not a chassis role, so an element
 carrying it got it from the wiring and nothing else ever did. That is what lets
 the sync clear its own mark without clearing the author's, and it is pinned by
-`TestNoRoleCollidesWithTheTabPanelWiring`. When it does clear the mark it puts
-back what the exporter would have left — `group` on a named page, nothing on an
+`TestAPageThatRolesItselfATabPanelIsStillNotWired`. When it does clear the
+mark it puts back what the exporter would have left — `group` on a named page, nothing on an
 unnamed one — because a page that stops being wired must not fall back into the
 silence the group role exists to close.
 

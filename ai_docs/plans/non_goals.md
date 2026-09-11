@@ -182,3 +182,80 @@ different advice. If a package-level `var` ever holds a function value that
 walks the repository, and somebody is told to move a call that never ran, the
 message is wrong in a way a reader can act on badly — and that is the moment
 to decide whether the distinction is worth type information, not before.
+
+---
+
+## A backquoted name in prose is not held to being a declaration
+
+*Raised: 2026-09-10 · Moved here: 2026-09-10 · Code:
+`wasm/verify/prosenames_test.go`, which holds the narrow case that does work*
+
+**What was declined.** The generalisation of the test-name rule. That one
+holds every Go test named in a comment to being a test this repository has,
+and it found four real defects the day it was written. The obvious next step
+is the same rule for everything else this repository names in prose — helpers,
+types, constants — recognised by the convention already used for them: a name
+in backquotes.
+
+**The argument, which is a measurement.** Over every Go comment outside
+`ai_docs`, taking each backquoted span that is a single Go identifier and
+excluding keywords and predeclared names:
+
+    896   backquoted single-identifier mentions
+    786   unresolved against package-level declarations
+    334   unresolved, adding methods, struct fields and interface methods
+    304   unresolved, adding every imported package name
+    205   unresolved, adding every local variable and parameter in the tree
+
+205 findings in 93 distinct names, against a rule whose whole value is that
+its findings are few and real.
+
+Narrowing to lowerCamelCase with at least one hump — which removes the
+all-lowercase vocabulary in one cut — gets it to a size worth reading:
+
+    69    mentions
+    15    unresolved, 14 distinct names
+
+**And none of the fifteen is a defect.** Every one was read:
+
+    accessibilityIdentifier, accessibilityValue, simultaneousGesture,
+    measureWithoutPlacing                        Swift and Compose API names
+    getOrNull                                    Kotlin's standard library
+    compileDebugKotlin, fetchComposeLayoutSources  Gradle task names
+    flexShrink, shrinkFactor                     CSS
+    measureText                                  a canvas API
+    shrinkPinned                                 a native property name, read
+                                                 out of generated source by
+                                                 `strings.Contains`
+    inkCanaryAgreement                           a JavaScript function in
+                                                 browser.mjs, named from Go
+    dottedVersionParsers                         a deliberate historical
+                                                 mention: "this used to be…"
+    enumWorkersPool                              a hypothetical, in a sentence
+                                                 explaining a failure mode
+
+**What the numbers say.** The backquote convention in this repository does not
+mean "a Go declaration". It means "a literal token of some language" — and
+this repository's subject is the agreement between four of them, plus CSS and
+ARIA vocabularies and a build system's task names. A rule asking whether a
+backquoted word is a Go declaration is asking a question the convention does
+not answer, and its exemption table would be a list of other languages'
+identifiers, maintained in Go, to keep a Go rule quiet. That shape is the tell.
+
+**Why the test-name rule is not the same bet.** `Test` followed by an
+upper-case letter is a shape only a Go test has. Nothing in Swift, Kotlin,
+JavaScript, CSS or ARIA is spelled that way, and nothing in English is. A
+lowerCamelCase identifier is a shape every language in this repository has,
+which is exactly why the residue is what it is.
+
+**What would change this.** A convention that separates the two — a distinct
+marker for "a declaration in this module", as opposed to a token of whatever
+language is under discussion. That is a repository-wide editing convention
+rather than a check, it would have to be applied to 896 existing mentions
+before any arm over it could run, and the thing it would buy is a rule that
+scored zero on today's corpus. If such a convention ever arrives for its own
+reasons, the arm is then cheap and this is worth re-reading.
+
+It would also change if the residue started containing defects. The scan above
+is fifty lines and can be re-run; what makes this a non-goal is the measured
+ratio, not the idea.
