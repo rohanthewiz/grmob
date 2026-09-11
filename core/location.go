@@ -116,12 +116,23 @@ type Location struct {
 	// Available reports whether this device can produce a fix. False before
 	// the first event, and false after a refusal or a hardware failure; see
 	// Received for the difference between "no" and "not yet".
+	//
+	// It is the best answer anyone has rather than a guarantee: while the
+	// sensor is running and has not reported yet — Active with Received false,
+	// which is what LocationAcquiring puts the record back into — it is true,
+	// because a sensor that accepted the start is one that can try.
 	Available bool
 
 	// Received is true once any location event has arrived. A first fix can
 	// take tens of seconds on cold GPS, so this is the flag that separates
 	// "still acquiring" — which is a spinner, and a long one — from "this
 	// device will never tell you", which is a different screen.
+	//
+	// Reset to false when a run begins, which is the half of it that took a
+	// second emulator run to find: a refused start that is later granted
+	// re-arms on both natives, and without the reset the record still carried
+	// the refusal all the way to the first fix. Active && !Received is the
+	// acquiring state, and LocationAcquiring is how a host gets back to it.
 	Received bool
 
 	// Active is true while the sensor is running, which is core's own
@@ -131,7 +142,9 @@ type Location struct {
 
 	// Error is the host's message when it could not start or keep the sensor:
 	// a permission refused, location services switched off system-wide, a
-	// browser with no geolocation. Set alongside Available: false.
+	// browser with no geolocation. Set alongside Available: false, and cleared
+	// whenever a run begins — the reason a previous attempt failed is not a
+	// statement about the one now running.
 	Error string
 }
 
@@ -202,6 +215,15 @@ func StartLocation() {
 	locationRefs++
 	first := locationRefs == 1
 	if first {
+		// A refusal is evidence about the run it happened in, not about the
+		// device, so a new run does not inherit it: two screens apart, or one
+		// screen after the user has been to Settings, the reason the last
+		// start failed is history and a screen shown it is shown a lie. A FIX
+		// is not discarded the same way — a place does not stop being true —
+		// so only a failed record is cleared.
+		if !locationCurrent.Available {
+			locationCurrent = Location{Accuracy: -1, Available: true}
+		}
 		locationCurrent.Active = true
 	}
 	next := locationCurrent
@@ -319,6 +341,55 @@ func ReceiveLocation(l Location) {
 	notifyLocation(l, false)
 }
 
+// LocationAcquiring is the host saying the sensor has just started — or
+// started again — and has nothing to report yet.
+//
+// # The window it exists for
+//
+// A refused start stays armed on both natives, because the grant usually
+// arrives after the screen that wants it: the tap that asks is on that screen.
+// When it does arrive the host re-arms and the GPS begins working, but the
+// last thing Go was told is still the refusal, and a cold first fix is tens of
+// seconds away. A screen written to the documented shape — `case
+// !loc.Available: EmptyState{Hint: loc.Error}` — therefore prints "location
+// permission not granted" for the whole of that window, about a sensor that is
+// running.
+//
+// The refusal is the host's statement about a run, so only the host can
+// withdraw it, which is why this is an event a host sends rather than
+// something core could infer: nothing in Go knows that a re-arm happened.
+//
+// # Why it is not a field on Location
+//
+// Because the state it produces is one the record could already express and
+// never reached: **Active and not Received** is a sensor that is running and
+// has said nothing, which is exactly "acquiring". What was missing was a way
+// to get BACK to it after a refusal, not a way to describe it. So this resets
+// the report — the coordinates, the accuracy, the altitude, Received, Error —
+// leaving Available true, because a sensor that accepted the start is one that
+// can try and nobody yet knows better.
+//
+// The reset is what makes a screen that has never heard of this improve
+// without being touched: with Error cleared and Available true, the arm that
+// used to print the refusal no longer matches, and the arm that draws a
+// spinner does.
+//
+// Ignored when nothing is running. A host reporting a re-arm with no consumer
+// is a host bug, and acting on it would mean a record moving for a sensor
+// nobody asked for.
+func LocationAcquiring() {
+	locationMu.Lock()
+	if locationRefs == 0 {
+		locationMu.Unlock()
+		return
+	}
+	locationCurrent = Location{Accuracy: -1, Available: true, Active: true}
+	next := locationCurrent
+	locationMu.Unlock()
+
+	notifyLocation(next, true)
+}
+
 // receiveLocation decodes the "location" host event. The payload keys are the
 // contract every host writes:
 //
@@ -328,7 +399,13 @@ func ReceiveLocation(l Location) {
 //	altitude   number   metres above the ellipsoid; omitted when unknown
 //	available  bool     omitted means true — see below
 //	error      string   why the sensor could not start or keep running
+//	acquiring  bool     the sensor has (re)started with nothing to report yet
 //	ts         number   host timestamp in ms; read by nobody in Go today
+//
+// `acquiring: true` is the one payload that is not a fix and not a refusal. It
+// carries no other key — every one of them would be a claim about a reading
+// that has not happened — and it routes to LocationAcquiring, which says what
+// it is for.
 //
 // `available` defaults to *true* when absent, the same asymmetry receiveHeading
 // justifies: a host sending a fix has demonstrably got a sensor, and requiring
@@ -341,6 +418,13 @@ func ReceiveLocation(l Location) {
 // The refusal shape is available:false with an error, where the coordinates are
 // not read.
 func receiveLocation(data map[string]any) {
+	// Before anything is decoded, because there is nothing in the payload to
+	// decode: an acquiring report is a state, not a reading, and reading the
+	// absent coordinates out of it would put the device at 0,0.
+	if acq, ok := data["acquiring"].(bool); ok && acq {
+		LocationAcquiring()
+		return
+	}
 	l := Location{Accuracy: -1, Available: true}
 	l.Lat, _ = numberProp(data, "lat")
 	l.Lng, _ = numberProp(data, "lng")

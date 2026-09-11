@@ -315,6 +315,37 @@ the IP address — and the last one looks exactly like the first to any code tha
 reads only `Lat` and `Lng`. A position drawn without its uncertainty is the
 commonest mistake in this area.
 
+**`UseLocationWhen` is the gate for a screen that cannot be its own route.**
+The paragraph above says a location screen should be a navigation route,
+because a route frame is what releases the reference — and that costs a screen.
+A settings pane with a map preview beside a permission toggle has nowhere to
+navigate to, and the shape a caller reaches for is the one the hook rules
+forbid:
+
+```go
+status := hooks.UsePermissionLive(ctx, permission.Location)
+loc := hooks.UseLocationWhen(ctx, status == permission.Granted)   // one slot, every pass
+
+// NOT this — the slot moves the moment the flag changes, and every hook
+// after it starts reading somebody else's state:
+// if status == permission.Granted { loc = hooks.UseLocation(ctx) }
+```
+
+The flag is the caller's and does not have to be a permission — "the map tab is
+the visible one", "the user asked to be followed" are equally good. A false flag
+releases this slot's reference through the same path a close takes, so the GPS
+goes off when the last holder lets go; a true flag re-subscribes and starts
+again. `UseLocation(ctx)` is this hook with the flag nailed to true.
+
+**A refusal does not stay on the record.** The grant usually arrives after the
+screen that wants it, and both native hosts keep a refused start armed and
+re-arm it when the answer changes. A re-armed start reports before any fix
+exists (`core.LocationAcquiring`), which puts the record back to `Active` with
+`Received` false — the acquiring state — rather than carrying "location
+permission not granted" through the tens of seconds a cold first fix takes. A
+new run does not inherit a previous one's refusal either; a *fix* does survive,
+because a place does not stop being true.
+
 The blue dot on a map is *not* this hook.
 [`core.MapView`](views.md#leaves)'s `ShowUserLocation` asks the host's own map
 widget to draw the user's position, which every map SDK does from its own

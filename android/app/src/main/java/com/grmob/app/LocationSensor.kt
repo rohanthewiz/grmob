@@ -60,6 +60,14 @@ import org.json.JSONObject
  * [Permissions] calls [permissionAnswer] when the answer changes — without
  * which the sensor is dead for the life of the context tree, which is what an
  * emulator run found. [awaitingPermission] carries the whole argument.
+ *
+ * The same is true of location services being switched off system-wide, and
+ * for the same reason: the user goes to fix it and comes back. That arm is
+ * [awaitingProvider], and it recovers through LocationListener's own
+ * `onProviderEnabled` rather than through [Permissions].
+ *
+ * Either way, a start that gets through says `acquiring: true` before any fix
+ * exists, so that Go stops reporting the reason the previous attempt failed.
  */
 object LocationSensor : LocationListener {
     private const val TAG = "GrMobLocation"
@@ -127,18 +135,53 @@ object LocationSensor : LocationListener {
      * and needs no seam to Permissions at all. LocationManager has no such
      * callback, which is why this flag is here and not there.
      *
-     * # What it does not fix
+     * # And the window it used to leave open
      *
-     * Go's last location event is still the refusal until the first fix lands,
-     * which on cold GPS is tens of seconds. So a screen written to the
-     * documented shape — `case !loc.Available: EmptyState{Hint: loc.Error}` —
-     * shows "location permission not granted" while the sensor is genuinely
-     * acquiring. Saying otherwise needs a state `core.Location` does not carry:
-     * `available:false` means the device cannot produce a fix, and an event
-     * with no coordinates would decode to 0,0, which is a real place off the
-     * coast of Ghana.
+     * Go's last location event used to stay the refusal until the first fix
+     * landed, which on cold GPS is tens of seconds — so a screen written to
+     * the documented shape (`case !loc.Available: EmptyState{Hint: loc.Error}`)
+     * printed "location permission not granted" about a sensor that was
+     * working. A start that gets through now reports `acquiring: true`, which
+     * is `core.LocationAcquiring`: it withdraws the refusal and puts the record
+     * back into Active-with-nothing-received, which is the spinner state. The
+     * coordinates are deliberately absent from that payload rather than sent as
+     * zeros, which would be a real place off the coast of Ghana.
      */
     private var awaitingPermission = false
+
+    /**
+     * Both providers were switched off — location services are off system-wide
+     * — and this object is waiting for one of them to come back.
+     *
+     * The twin of [awaitingPermission], and it exists for the same reason: the
+     * user is expected to go and fix the thing that refused the start, and
+     * nothing else will tell this object to try again. The difference is which
+     * callback carries the good news. A permission answer arrives through
+     * [Permissions], because LocationManager has no authorization callback; a
+     * provider coming back arrives at [onProviderEnabled], which is
+     * LocationListener's own.
+     *
+     * # Why that callback can fire at all, which it could not before
+     *
+     * `onProviderEnabled` only reaches a listener that is registered, and this
+     * object used to register only with providers that were *already* enabled —
+     * so the one case that needed the callback was the one case with nothing to
+     * deliver it. [start] now registers with both providers whether or not they
+     * are enabled, which is what LocationManager documents the callback pair
+     * for, and decides separately whether any of them can actually answer.
+     */
+    private var awaitingProvider = false
+
+    /**
+     * Whether [this] is registered with LocationManager, which is NOT the same
+     * as [running].
+     *
+     * A listener stays registered while [awaitingProvider] waits — that is the
+     * whole mechanism — so `running` cannot be the flag [stop] consults before
+     * calling removeUpdates, or a screen that unmounts while location services
+     * are off would leave this object registered for the life of the process.
+     */
+    private var registered = false
 
     fun attach(context: Context, report: (String, String) -> Unit) {
         this.report = report
@@ -189,22 +232,59 @@ object LocationSensor : LocationListener {
         // first fix or no fix in a building, and Go's consumer takes whichever
         // arrives — the accuracy field is what tells the two apart, which is
         // exactly what Location.Accuracy is documented for.
-        var any = false
+        //
+        // Registered whether or not the provider is currently enabled, which is
+        // the change that makes [awaitingProvider] possible: a disabled provider
+        // sends no fixes but does send `onProviderEnabled` when it comes back,
+        // and only to a listener that is registered with it. The old shape
+        // skipped disabled providers, so the one case that needed the callback
+        // was the one case with nothing registered to receive it. Whether any
+        // provider can actually answer is a separate question, asked below.
+        // A re-registration starts by tearing the old one down, and an
+        // emulator run is why. [onProviderEnabled] reaches here with the
+        // listener still registered from the original request — that is the
+        // whole mechanism — and requesting again on top of it leaves the
+        // platform's own MIN_DISTANCE_M filter holding the last fix as its
+        // reference point. A device that has not MOVED five metres since
+        // location services were switched off therefore gets no callback at
+        // all, and the screen sits on "waiting for the first fix" until
+        // somebody walks. Observed exactly that way: the recovery re-armed and
+        // reported, a stop-and-start in the same session produced a fix
+        // instantly, and the only difference between them was removeUpdates.
+        if (registered) {
+            registered = false
+            try {
+                m.removeUpdates(this)
+            } catch (e: SecurityException) {
+                Log.w(TAG, "removing location updates before re-registering", e)
+            }
+        }
+        var live = false
         for (provider in listOf(LocationManager.NETWORK_PROVIDER, LocationManager.GPS_PROVIDER)) {
-            if (!m.isProviderEnabled(provider)) continue
             try {
                 m.requestLocationUpdates(
                     provider, MIN_INTERVAL_MS, MIN_DISTANCE_M, this, Looper.getMainLooper()
                 )
-                any = true
+                registered = true
+                if (m.isProviderEnabled(provider)) live = true
             } catch (e: SecurityException) {
                 // The permission was revoked between the check above and here,
                 // which is a real sequence on Android: the user can revoke from
                 // the notification shade while the app is running.
                 Log.w(TAG, "location updates refused", e)
+            } catch (e: IllegalArgumentException) {
+                // No such provider on this device. Caught rather than guarded
+                // against, because the guard that used to make it unreachable —
+                // isProviderEnabled — is the one that had to go.
+                Log.w(TAG, "no $provider on this device", e)
             }
         }
-        if (!any) {
+        if (!live) {
+            // Armed, on the same argument as the permission: the user is
+            // expected to go and switch location services on, and nothing else
+            // would tell this object to try again. It can only be armed if
+            // something is registered to hear the callback.
+            awaitingProvider = registered
             send(
                 JSONObject().put("available", false)
                     .put("error", "location is switched off")
@@ -213,7 +293,12 @@ object LocationSensor : LocationListener {
         }
         running = true
         awaitingPermission = false
+        awaitingProvider = false
         lastSentAt = 0L
+        // The sensor is on and has nothing yet. Said out loud because Go's last
+        // event may be a refusal this start has just made untrue, and a cold
+        // first fix is tens of seconds away — see core.LocationAcquiring.
+        send(JSONObject().put("acquiring", true))
     }
 
     /**
@@ -248,8 +333,15 @@ object LocationSensor : LocationListener {
         // would start a GPS with no consumer. core.StopLocation reaches here on
         // the hook's close path whether the sensor ever got going or not.
         awaitingPermission = false
-        if (!running) return
+        awaitingProvider = false
         running = false
+        // [registered] rather than [running], because the two came apart when
+        // the provider wait arrived: a listener registered with switched-off
+        // providers is not running and must still be removed, or unmounting
+        // that screen leaves this object attached to LocationManager for the
+        // life of the process.
+        if (!registered) return
+        registered = false
         try {
             manager?.removeUpdates(this)
         } catch (e: SecurityException) {
@@ -303,16 +395,26 @@ object LocationSensor : LocationListener {
     }
 
     /**
-     * The deprecated three-argument callbacks. LocationListener's other methods
-     * have default implementations only from API 30, and this app's minSdk is
-     * 24 — so they are declared here rather than inherited.
+     * A provider came back. LocationListener's other methods have default
+     * implementations only from API 30, and this app's minSdk is 24 — so both
+     * of these are declared here rather than inherited.
      *
-     * Nothing is reported from them. A provider going out of service is not the
-     * same as location being unavailable (the other provider may be answering),
-     * and Go's Available is a fact about the device rather than about one
-     * provider's weather.
+     * This one used to report nothing, on the argument that one provider's
+     * weather is not a fact about the device — which is right for the ordinary
+     * case and left one case dead: [onProviderDisabled] had already given up
+     * when BOTH went, and nothing could ever start again. [awaitingProvider] is
+     * that case and only that case, so the ordinary enable still reports
+     * nothing.
+     *
+     * [start] is called rather than the flag simply cleared, because the state
+     * it has to rebuild is more than a boolean: the registrations, the throttle
+     * clock, and the acquiring report that withdraws the "location is switched
+     * off" a screen is currently displaying.
      */
-    override fun onProviderEnabled(provider: String) {}
+    override fun onProviderEnabled(provider: String) {
+        if (!awaitingProvider) return
+        start()
+    }
 
     override fun onProviderDisabled(provider: String) {
         // Unless both are gone, in which case no fix is coming and a screen
@@ -323,17 +425,16 @@ object LocationSensor : LocationListener {
             .any { m.isProviderEnabled(it) }
         if (!live) {
             running = false
+            // Armed for the recovery, which is the half that was missing: the
+            // listener stays registered (nothing is removed here), so
+            // [onProviderEnabled] will fire when the user switches location
+            // services back on, and [awaitingProvider] is what tells it that
+            // this object is the one waiting.
+            awaitingProvider = true
             send(
                 JSONObject().put("available", false)
                     .put("error", "location is switched off")
             )
-            // This leaves the sensor in the same dead state the permission
-            // refusal used to leave it in, and deliberately does not arm
-            // [awaitingPermission] to recover: the signal that would re-arm it
-            // is [onProviderEnabled], which fires only while updates are still
-            // registered, and nothing has ever run that path. An untested
-            // recovery is worse than a documented gap — see the session notes
-            // for this one.
         }
     }
 

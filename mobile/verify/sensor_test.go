@@ -1,6 +1,7 @@
 package verify
 
 import (
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -255,11 +256,11 @@ func TestBothHostsStayArmedForALateLocationGrant(t *testing.T) {
 	for _, pin := range []struct{ file, arm, retry, disarm string }{
 		{
 			file: swiftLocation,
-			arm:  "awaitingAuthorization = true",
+			arm:  "armed = true",
 			// The guard that used to read `guard running else { return }`, which
 			// is what dropped the grant.
-			retry:  "guard running || awaitingAuthorization else { return }",
-			disarm: "awaitingAuthorization = false",
+			retry:  "guard running || armed else { return }",
+			disarm: "armed = false",
 		},
 		{
 			file:   kotlinLocation,
@@ -327,5 +328,103 @@ func TestNeitherHostNormalisesItsCoordinates(t *testing.T) {
 			t.Errorf("%s: the platform's own latitude is not what gets sent (%s)",
 				pin.file, pin.sent)
 		}
+	}
+}
+
+// Both hosts must withdraw a refusal when the start that follows it gets
+// through, and the only way to do that is to say so before any fix exists.
+//
+// # The window this closes
+//
+// A refused start stays armed on both hosts (the test above). When the grant
+// arrives the sensor begins working — and Go's last event is still the refusal,
+// for as long as the first fix takes, which on cold GPS is tens of seconds. A
+// screen written to the documented shape prints "location permission not
+// granted" about a sensor that is running.
+//
+// `acquiring: true` is core.LocationAcquiring, and it carries no other key: it
+// is a state rather than a reading, and coordinates sent with it would be a
+// claim about a fix the host has just said it does not have. It reaches Go
+// through the same "location" host event as everything else, which is why this
+// is pinned as text rather than inferred from the flags.
+//
+// The pin is on the *payload*, not on where it is sent from, because the two
+// hosts have different numbers of places a start can succeed: Android has one
+// (start), iOS has one shared helper that both start and the authorization
+// callback go through. What has to be true on both is that the sentence exists.
+func TestBothHostsSayTheSensorIsAcquiringBeforeTheFirstFix(t *testing.T) {
+	for _, pin := range []struct{ file, report string }{
+		{swiftLocation, `send(["acquiring": true])`},
+		{kotlinLocation, `send(JSONObject().put("acquiring", true))`},
+	} {
+		if src := valuesIn(t, pin.file); !strings.Contains(src, pin.report) {
+			t.Errorf("%s: a start that gets through never says so (%s) — Go's last event "+
+				"stays the refusal until the first fix lands, so a screen prints the "+
+				"reason a previous attempt failed about a sensor that is working",
+				pin.file, pin.report)
+		}
+	}
+
+	// And Go has to understand it. The key is the contract between the two
+	// sides and is spelled once on each; a host renaming it would fail above,
+	// and core renaming it would fail here.
+	const decode = `if acq, ok := data["acquiring"].(bool); ok && acq {`
+	loc := filepath.Join("..", "..", "core", "location.go")
+	if src := valuesIn(t, loc); !strings.Contains(src, decode) {
+		t.Errorf("%s: the acquiring payload is not decoded (%s) — both hosts send a key "+
+			"nothing reads", loc, decode)
+	}
+}
+
+// Android's location sensor must recover from location services being switched
+// off and switched back on, which is the same shape as the permission arm one
+// test up and a different callback.
+//
+// # Why this needs a pin of its own
+//
+// The recovery turns on something invisible: `onProviderEnabled` only reaches a
+// listener that is REGISTERED with that provider, and the sensor used to skip
+// disabled providers when registering — so the one case that needed the
+// callback was the one case with nothing registered to deliver it. The fix is
+// to register with both providers whether or not they are enabled and decide
+// separately whether any can answer, and the thing that would quietly undo it
+// is somebody putting the `isProviderEnabled` guard back in front of the
+// request. That is what the first pin is for.
+//
+// iOS has no equivalent pin because it has no equivalent mechanism:
+// CoreLocation exposes the device-wide switch only through
+// locationServicesEnabled() and the authorization callback, and whether that
+// callback fires for the global toggle is stated as unverified in the file
+// rather than claimed here.
+func TestTheAndroidLocationSensorRecoversFromAProviderComingBack(t *testing.T) {
+	src := valuesIn(t, kotlinLocation)
+	for _, pin := range []struct{ needle, why string }{
+		{
+			"awaitingProvider = true",
+			"a start with every provider switched off is abandoned rather than armed, " +
+				"so switching location services back on recovers nothing",
+		},
+		{
+			"if (!awaitingProvider) return",
+			"onProviderEnabled reports nothing and retries nothing, which is the dead " +
+				"sensor the permission arm was written to fix, by the other route",
+		},
+		{
+			"if (!registered) return",
+			"stop() consults `running`, which is false while the provider wait is " +
+				"outstanding — so unmounting that screen leaves the sensor registered " +
+				"with LocationManager for the life of the process",
+		},
+	} {
+		if !strings.Contains(src, pin.needle) {
+			t.Errorf("%s: %s (%s)", kotlinLocation, pin.why, pin.needle)
+		}
+	}
+	// The registration must not be gated on the provider being enabled, which
+	// is the guard whose removal makes the callback reachable at all.
+	if strings.Contains(src, "if (!m.isProviderEnabled(provider)) continue") {
+		t.Errorf("%s: registration skips disabled providers again — onProviderEnabled "+
+			"only reaches a registered listener, so the arm above can never fire",
+			kotlinLocation)
 	}
 }

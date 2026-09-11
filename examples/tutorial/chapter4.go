@@ -2206,7 +2206,14 @@ func lessonLiveMap() Lesson {
 			// here because they navigated to this lesson, and leaving it pops
 			// the route, whose cleanup registry releases the GPS. The permission
 			// gates what gets DRAWN, below.
-			fix := hooks.UseLocation(ctx)
+			//
+			// And the second gate, which is what UseLocationWhen is: the flag
+			// below turns the sensor off without unmounting anything. It
+			// defaults to true, so mounting this lesson behaves exactly as it
+			// did when this line read `hooks.UseLocation(ctx)` — the switch is
+			// the demonstration, not the behaviour.
+			gpsOn := core.NewState(ctx, true)
+			fix := hooks.UseLocationWhen(ctx, gpsOn.Get())
 
 			markers := make([]core.PropsAndChildren, 0, len(pins.Get()))
 			for _, p := range pins.Get() {
@@ -2253,6 +2260,13 @@ func lessonLiveMap() Lesson {
 			//      permission for a fix to arrive under.
 			var fixNote string
 			switch {
+			case !gpsOn.Get():
+				// First, because it is the app's own instruction and outranks
+				// every reading: core keeps the last fix, so without this arm
+				// the panel would print a coordinate beside a switch that says
+				// the GPS is off.
+				fixNote = "The GPS is off. The hook is still called on every pass — it is " +
+					"the same slot — and it is holding no reference to the sensor."
 			case fix.Received && fix.Available:
 				// Accuracy printed beside the coordinates and not tucked away,
 				// because a 2000m radius is a fix of the city and looks exactly
@@ -2275,7 +2289,8 @@ func lessonLiveMap() Lesson {
 			var fixPermissionAction core.View = core.Fragment()
 			switch locationStatus {
 			case permission.Granted:
-				fixPermissionNote = "Granted. The sensor is running for as long as this lesson is."
+				fixPermissionNote = "Granted. The sensor runs for as long as this lesson is " +
+					"and the switch below is on."
 			case permission.Prompt:
 				fixPermissionNote = "Undecided, so the sensor has nothing to report yet. " +
 					"Asking shows the platform's dialog."
@@ -2409,6 +2424,15 @@ if loc.Received && loc.Available {
 							},
 						},
 					),
+					// The flag, as a control the reader can flick. A switch
+					// rather than a button because it shows its own state:
+					// "the GPS is on" is a fact about right now, and a button
+					// would only say what tapping it does.
+					components.ListRow{
+						Title:    "Keep the GPS on",
+						Subtitle: "The flag hooks.UseLocationWhen takes",
+						Trailing: core.Switch(gpsOn.Get(), func(v bool) { gpsOn.Set(v) }),
+					},
 				),
 				prose("That panel is the one place in this tutorial that asks the OS for "+
 					"anything, and the order of the two hooks is the lesson. Both are called "+
@@ -2423,6 +2447,19 @@ if loc.Received && loc.Available {
 					"navigating here. A screen that must not ask until a tap belongs behind a "+
 					"button that navigates to it, which is the same mechanism spelled with one "+
 					"more screen."),
+				prose("The switch in that panel is the other gate, for the screen that cannot "+
+					"be its own route — a settings pane with a map preview beside a permission "+
+					"toggle. hooks.UseLocationWhen takes the flag as an argument, so the call "+
+					"site never moves and the sensor follows the answer: flick it off and the "+
+					"GPS is released, flick it on and the hook rejoins. That is the same intent "+
+					"as wrapping the hook in an `if`, with the one difference that matters — "+
+					"one slot, every pass, whatever the flag says."),
+				codeBlock(`// The gate that is not a route, and not a conditional hook:
+gpsOn := core.NewState(ctx, true)
+fix := hooks.UseLocationWhen(ctx, gpsOn.Get())   // one slot either way
+
+// NOT this — the slot moves the moment the flag changes:
+// if gpsOn.Get() { fix = hooks.UseLocation(ctx) }`),
 				prose("Android reports \"not granted\" and waits; iOS shows the dialog from the "+
 					"sensor itself, because CLLocationManager can and startUpdatingLocation on "+
 					"an undecided authorization reports nothing at all, forever. Either way the "+
@@ -2437,6 +2474,7 @@ if loc.Received && loc.Available {
 					"A pan is reported once, after it stops, and every host throttles on its own side.",
 					"ShowUserLocation is the platform's dot; hooks.UseLocation is a fix in Go. Same permission, different features.",
 					"Call both hooks unconditionally and gate what you draw — a hook inside a permission branch shifts every slot after it.",
+					"UseLocationWhen is the gate for a screen that cannot be its own route: one slot on every pass, with the sensor following a flag.",
 					"Accuracy is part of a position. 2000m is the cell tower's guess and looks exactly like a GPS fix to code that reads only Lat and Lng.",
 					"In the browser the map needs Leaflet on the host page. Without it the node draws a placeholder that still carries its region.",
 				),

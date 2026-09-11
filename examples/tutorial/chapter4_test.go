@@ -1640,3 +1640,54 @@ func TestLiveMapDemoRunsTheLocationHookAndSaysWhenItCannot(t *testing.T) {
 
 	assertNoConcerns(t)
 }
+
+// The second gate: the lesson's GPS switch, which is hooks.UseLocationWhen's
+// first screen consumer.
+//
+// # Why a test and not just a demo
+//
+// The hook it exercises is the one a session added with nothing but its own
+// unit tests behind it, which is the shape the live-map readout above exists to
+// avoid: a hook whose documented use appears only inside strings. This drives
+// the rendered tree, so the switch can only read the way it reads if the flag
+// actually reached the hook.
+//
+// The default is true, deliberately — flipping it is what a reader does, and
+// the lesson's behaviour on mount has to be what it was before the switch
+// existed, or the emulator run that verified this panel would be verifying
+// something else.
+func TestTheLiveMapLessonGatesItsSensorWithAFlag(t *testing.T) {
+	mgr := newApp(t)
+	openLesson(t, mgr, "Live maps: markers and the echo guard")
+	cur := tree(t, mgr)
+
+	toggle := findNode(cur, func(n *node) bool { return n.Type == "Switch" })
+	if toggle == nil {
+		t.Fatal("the GPS switch is missing, so the prose beside it describes a control " +
+			"the panel does not have")
+	}
+	if on, _ := toggle.Props["checked"].(bool); !on {
+		t.Fatal("the GPS switch starts off — mounting the lesson must behave exactly as " +
+			"it did when the hook was called unconditionally")
+	}
+	if hasTextContaining(cur, "The GPS is off") {
+		t.Error("the readout says the GPS is off while the switch says it is on")
+	}
+
+	// By position, which is the only address a Switch has here — the same walk
+	// the checkbox demos use. It is the lesson's only one.
+	toggleBool(t, mgr, "Switch", 0, false)
+	cur = tree(t, mgr)
+	if !hasTextContaining(cur, "The GPS is off") {
+		t.Error("flicking the switch off never reached the readout, so the flag is not " +
+			"the thing the hook is reading")
+	}
+	// The arm has to outrank a fix, because core keeps the last one: a
+	// coordinate printed beside a switch that says the GPS is off is the panel
+	// contradicting itself.
+	if hasTextContaining(cur, "accurate to about") {
+		t.Error("a coordinate is printed while the GPS is switched off")
+	}
+
+	assertNoConcerns(t)
+}
