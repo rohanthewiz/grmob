@@ -6,9 +6,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
-	"regexp"
 	"runtime"
-	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -87,54 +85,21 @@ import (
 // reporting arm already says the machine differs; a band verdict from
 // another computer is noise that argues for deleting the record.
 
-// The range a record field opens with.
+// The band reader and its pattern are NOT here, and were until this package's
+// record census grew a question about them.
 //
-// A second copy. The first is recordedBand in
-// internal/themehistory/band_test.go and this is the same function, for the
-// same reason the import-resolving helpers are two copies: these are two
-// separate `package main` programs and neither can import the other's tests.
+// This file is `//go:build !race` — see the four runs above — and a
+// declaration in it does not exist under `-race`. That is right for the
+// TestMain clock and wrong for the band READER, which is ordinary parsing with
+// no clock in it: `checkEveryBandFieldHasATakingCommand` asks whether a record
+// field's value opens with a band, on every run including the race one, and a
+// reader behind this tag made that census a build failure in exactly the suite
+// that is most likely to be run last.
 //
-// The two ARE held identical, by checkTwoCopyDecls — the same census that
-// holds the seven import-resolving helpers, and the reason that census is no
-// longer named for them. This function is in twoCopyFunctionShapes and the
-// pattern above is in twoCopyStateShapes; change one copy and the shared
-// repository parse fails, naming both files.
-//
-// The alternative considered and declined was for the records to carry their
-// bands as DURATIONS and render the prose, which would leave nothing to
-// parse. It does not remove the copy — two `package main` programs cannot
-// import each other's tests, so a renderer is duplicated exactly as a parser
-// is — and it costs more than it saves. See ai_docs/plans/non_goals.md.
-var recordedBandForm = regexp.MustCompile(
-	`^(\d+(?:\.\d+)?)–(\d+(?:\.\d+)?)(µs|ms|s)\b`)
-
-// recordedBand reads that prefix back as two durations. See the other copy.
-func recordedBand(field string) (lo, hi time.Duration, ok bool) {
-	m := recordedBandForm.FindStringSubmatch(field)
-	if m == nil {
-		return 0, 0, false
-	}
-	unit := map[string]time.Duration{
-		"µs": time.Microsecond,
-		"ms": time.Millisecond,
-		"s":  time.Second,
-	}[m[3]]
-	parse := func(s string) time.Duration {
-		f, err := strconv.ParseFloat(s, 64)
-		if err != nil {
-			return 0
-		}
-		return time.Duration(f * float64(unit))
-	}
-	lo, hi = parse(m[1]), parse(m[2])
-	// A range written backwards is a typing error in the record rather than a
-	// reading of anything, and it would otherwise make every run "outside the
-	// band" with no clue as to why.
-	if lo <= 0 || hi <= 0 || hi < lo {
-		return 0, 0, false
-	}
-	return lo, hi, true
-}
+// So recordedBand and recordedBandForm are in timings_test.go, beside
+// bandVerdictEnv, which was moved out of this file one iteration earlier for
+// the same reason. The tag bounds what must not RUN outside one command; it is
+// not where a package keeps the things that read its record.
 
 // wholeFileRunIsTheRecordedOne says whether this invocation is the command
 // the band is a reading of, and names what it is instead when it is not.

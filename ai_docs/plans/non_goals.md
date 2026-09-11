@@ -544,3 +544,38 @@ is the shape this file exists for.
 **What would change this.** A third instance. Two is a coincidence a person
 fixed; three is a habit, and the argument for a five-line check is then
 already written above.
+
+---
+
+## A declaration a census reads is not held to living outside a build tag
+
+*Raised: 2026-09-11 · Moved here: 2026-09-11 · Code:
+`wasm/verify/wholefileband_test.go`'s `//go:build !race`*
+
+**What the defect was, twice.** `wasm/verify/wholefileband_test.go` is
+`//go:build !race`, because the TestMain clock in it measures a figure that a
+race build is not a reading of. Two iterations running, something a census
+needed was declared inside it and the package stopped compiling under `-race`:
+first `bandVerdictEnv`, read by the reporting arm, and then `recordedBand` and
+`recordedBandForm`, read by `checkEveryBandFieldHasATakingCommand`. Both were
+moved into `timings_test.go`, which carries no tag.
+
+The fault is easy to make and invisible while writing: the tag is at the top of
+a 270-line file, the declarations are ordinary Go, and `go test ./...` — the
+command a session runs first — is green either way.
+
+**Why no rule is written.** The Go toolchain is the arm, and it is already in
+the verification path: `go test -race ./...` reports `undefined: recordedBand`
+with the file and line of every reader, which is a better finding than any
+parse of build tags would produce. It caught both instances, in the session
+that introduced each. A check over build constraints would be a second,
+weaker implementation of something the compiler does exactly.
+
+What made the first instance cost anything was running `-race` late. That is an
+ordering habit, not a missing rule, and the habit this repository already has —
+eleven verification paths, run together — is what fixed it both times.
+
+**What would change this.** A third instance found *after* a commit, rather
+than by the race suite in the same session. That would be evidence the
+verification path is not running where it needs to, and the answer then is
+about when `-race` runs rather than about a new census.

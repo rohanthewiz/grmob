@@ -94,6 +94,12 @@ import (
 // made this the only figure in either record a person could not re-derive by
 // running something". A table of recipes is the same defect one level up.
 //
+// That this table has an entry for every band below is held by an arm rather
+// than by hand — see checkEveryBandFieldHasATakingCommand in
+// wasm/verify/copies_test.go, which reads the labels out of this comment and
+// the bands out of the literal. What it cannot check is that a command still
+// RUNS, which is declined with its count in ai_docs/plans/non_goals.md.
+//
 //	wholePackage
 //	  go test -count=1 ./internal/themehistory
 //

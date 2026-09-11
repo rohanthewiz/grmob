@@ -23,8 +23,9 @@ import (
 // parse and does not need a walk of its own, it becomes a question here
 // rather than a fifth parse.
 //
-//	the timings records   five machine fields, a reporting arm and a standing
-//	                      sentence about what a core count is worth, in
+//	the timings records   five machine fields, a reporting arm, a standing
+//	                      sentence about what a core count is worth, and a
+//	                      taking command for every band, in
 //	                      wasm/verify/timings_test.go and
 //	                      internal/themehistory/timings_test.go. See
 //	                      checkTimingsRecordCopies
@@ -331,7 +332,7 @@ func TestTheQuestionsOnTheSharedRepositoryParseAreTheOnesDecidedOn(t *testing.T)
 						}
 						at := fset.Position(n.Pos())
 						rec := timingsRecord{name: n.Name, rel: rel,
-							line: at.Line}
+							line: at.Line, doc: recordDoc(decl, vs)}
 						// The literal is kept rather than read here: the
 						// shape check belongs to the records question, which
 						// is a subtest of its own — see the header.

@@ -3,9 +3,12 @@ package main
 import (
 	"fmt"
 	"os"
+	"regexp"
 	"runtime"
+	"strconv"
 	"strings"
 	"testing"
+	"time"
 )
 
 // The machine every wall-clock number in this package's prose was taken on.
@@ -136,6 +139,16 @@ import (
 // with a band and the method it was taken by stays in whoever's head took
 // it. Nine of the ten band fields across the two records had one; this was
 // the tenth.
+//
+// It is held by an arm now rather than by whoever notices:
+// checkEveryBandFieldHasATakingCommand reads this table out of this comment
+// and every band out of the literal below, and says which fields each one has
+// that the other does not. It was measured on the way in — ten band fields,
+// ten entries, zero findings — which is the residue a rule is normally
+// declined for, and is not the measurement that matters here: the defect it
+// covers was real, it was this field, and it stood for six iterations because
+// a table kept by hand goes stale when somebody adds a field rather than when
+// anything changes.
 //
 //	foldWalk
 //	  go test -count=1 -run TestHowWideTheNarrowerFold ./wasm/verify
@@ -826,6 +839,55 @@ const coresAttribution = "The four repository-wide walks in this package are " +
 	"is named here because this note is held to naming every reader of the " +
 	"count in the package, which is stricter than naming every term that " +
 	"scales with it."
+
+// The range a record field opens with.
+//
+// A second copy. The first is recordedBand in
+// internal/themehistory/band_test.go and this is the same function, for the
+// same reason the import-resolving helpers are two copies: these are two
+// separate `package main` programs and neither can import the other's tests.
+//
+// The two ARE held identical, by checkTwoCopyDecls — the same census that
+// holds the seven import-resolving helpers, and the reason that census is no
+// longer named for them. This function is in twoCopyFunctionShapes and the
+// pattern above is in twoCopyStateShapes; change one copy and the shared
+// repository parse fails, naming both files.
+//
+// The alternative considered and declined was for the records to carry their
+// bands as DURATIONS and render the prose, which would leave nothing to
+// parse. It does not remove the copy — two `package main` programs cannot
+// import each other's tests, so a renderer is duplicated exactly as a parser
+// is — and it costs more than it saves. See ai_docs/plans/non_goals.md.
+var recordedBandForm = regexp.MustCompile(
+	`^(\d+(?:\.\d+)?)–(\d+(?:\.\d+)?)(µs|ms|s)\b`)
+
+// recordedBand reads that prefix back as two durations. See the other copy.
+func recordedBand(field string) (lo, hi time.Duration, ok bool) {
+	m := recordedBandForm.FindStringSubmatch(field)
+	if m == nil {
+		return 0, 0, false
+	}
+	unit := map[string]time.Duration{
+		"µs": time.Microsecond,
+		"ms": time.Millisecond,
+		"s":  time.Second,
+	}[m[3]]
+	parse := func(s string) time.Duration {
+		f, err := strconv.ParseFloat(s, 64)
+		if err != nil {
+			return 0
+		}
+		return time.Duration(f * float64(unit))
+	}
+	lo, hi = parse(m[1]), parse(m[2])
+	// A range written backwards is a typing error in the record rather than a
+	// reading of anything, and it would otherwise make every run "outside the
+	// band" with no clue as to why.
+	if lo <= 0 || hi <= 0 || hi < lo {
+		return 0, 0, false
+	}
+	return lo, hi, true
+}
 
 // The verdict is asked for, and the reason is `go test ./...`.
 //

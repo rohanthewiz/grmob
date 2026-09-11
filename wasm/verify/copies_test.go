@@ -66,8 +66,8 @@ import (
 
 // checkTimingsRecordCopies is the timings-record question: every record
 // carrying the five machine fields, an arm and a note beside it, the note
-// being complete, and there being no more copies than the written argument
-// covers.
+// being complete, every band it records having the command it was taken by,
+// and there being no more copies than the written argument covers.
 //
 // # Why this is a function and not the tail of the walk
 //
@@ -200,6 +200,29 @@ func checkTimingsRecordCopies(t *testing.T, root, from string, filesSeen int,
 	checkCoresNoteNamesEveryScaledTerm(t, seen, coreSites, noteText)
 	checkCoresNoteNamesNothingThatIsGone(t, root, seen, noteText)
 
+	// And every band a record carries being re-derivable — the field's name in
+	// the record's own taking table, with the command under it.
+	//
+	// # Why this is a reading here and not a seventh question on the walk
+	//
+	// The Next list that asked for it predicted a walkQuestionBudget raise,
+	// because a question on that walk is a subtest and the budget counts
+	// subtests. It is not one. Everything this reads was collected for the
+	// record question already — the literal, and now the doc comment beside it
+	// — and what it asks is the same thing the arm and the note arms ask: is
+	// this record enough for a reader holding a number to act on. The five
+	// machine fields say which computer; the cores note says what a core count
+	// is worth; the taking table says what to run. A record missing any of the
+	// three is unusable in the same way.
+	//
+	// So the budget stays at six and this costs the walk one field. The test
+	// of whether that was right is the one the budget's own message states: if
+	// these stop being one thing, they want separate boundaries. They have not
+	// — and a boundary of its own would in fact be worse here, because this
+	// and the shape check read the same literal and a reader wants both
+	// findings about a record at once.
+	checkEveryBandFieldHasATakingCommand(t, records)
+
 	// The same rendering the per-package findings above use, over every record
 	// rather than one package's — see recordList.
 	all := recordList(records)
@@ -258,6 +281,16 @@ type timingsRecord struct {
 	rel  string
 	line int
 	val  ast.Expr
+	// The record's own doc comment, as go/ast renders it: the comment markers
+	// gone and the tab indentation of its tables kept.
+	//
+	// Carried for one question. Each record's doc comment holds the table of
+	// commands its band fields were taken by, and a field with a band and no
+	// command in that table is a figure nobody can re-derive — see
+	// checkEveryBandFieldHasATakingCommand. It is "" for a record declared
+	// with no doc comment at all, which that check reports rather than reading
+	// as an empty table.
+	doc string
 }
 
 // How many copies of the record the written argument covers.
@@ -822,6 +855,396 @@ func termsNamedIn(note string) []string {
 	}
 	sort.Strings(out)
 	return out
+}
+
+// recordDoc is the doc comment a record declaration carries, wherever Go let
+// the author put it.
+//
+// Two places, because `var x = …` and `var ( x = … )` put the comment on
+// different nodes: a plain declaration's comment belongs to the GenDecl and a
+// grouped one's to the ValueSpec inside it. Both records in this repository are
+// the first shape today, and a record moved into a `var` block would otherwise
+// come back with no doc and be reported as a record with no taking table —
+// a finding about the spelling of a declaration dressed up as one about a
+// missing command.
+//
+// The spec is preferred over the decl: in a group the spec's comment is the one
+// written about that record, and a GenDecl comment there is about the group.
+func recordDoc(decl *ast.GenDecl, vs *ast.ValueSpec) string {
+	if vs.Doc != nil {
+		return vs.Doc.Text()
+	}
+	if decl.Doc != nil {
+		return decl.Doc.Text()
+	}
+	return ""
+}
+
+// checkEveryBandFieldHasATakingCommand holds every band a record carries to
+// having, in that record's own doc comment, the command it was taken by — and
+// holds the table to naming nothing else.
+//
+// # What this is about, which is a figure whose method lived in somebody's head
+//
+// A band is two wall clocks, and the rest of this file's argument is that a
+// wall clock cannot be an arm: it is a reading of one machine under one load,
+// so asserting it fails everywhere that is not that machine. What a band CAN
+// be held to is being re-derivable — a reader who lands outside one needs to
+// know what to run, and the verdict the band prints asks them to take it
+// several times.
+//
+// Both records answer that with a table in their own doc comment, one entry per
+// field:
+//
+//	wholeFile
+//	  go test -count=1 ./wasm/verify
+//
+// `wholeFileInProcess` had no entry in that table for six iterations after it
+// was added. Nothing noticed, because a table kept by hand goes stale by
+// somebody adding a field rather than by anything changing, and the field was
+// added in the session that needed the figure and read the method off its own
+// shell history.
+//
+// # What this measured, which is nothing, and why it is here anyway
+//
+// The count comes from the iteration BEFORE this one, which read the two tables
+// against the two literals by hand: ten band fields, nine with a command, one
+// without — and the one without was the field that session had itself added
+// four iterations earlier. It wrote the missing entry. So this check's own
+// first run found ten of ten, and its residue is zero.
+//
+// That is the measurement this repository normally declines a rule on, and the
+// reason it does not here is the other half of the same reading: the defect was
+// REAL, it lasted six iterations, and no rule in this repository could see it —
+// it was found by a person reading a table beside a literal. A rule whose
+// corpus is clean because somebody just cleaned it is not the same as one whose
+// corpus was never dirty, and the fault here recurs by the one action nobody
+// treats as a change: adding a field.
+//
+// # Both directions, for the reason the cores note has both
+//
+// A table can be wrong by being short and by being long. A field with no entry
+// is a figure with no method; an entry naming a field that is gone is an
+// instruction for re-taking something that no longer exists, which is the fault
+// this package's own history records twice over — the `-bench` line in
+// wasm/verify/timings_test.go that named benchmarks removed once they had been
+// taken, and the three walk depths whose commands were fragments. Both
+// directions read the same two sets, so there is one answer to "what does this
+// table cover" rather than two that can disagree.
+//
+// A RENAMED label reports in both directions at once — the field it used to
+// cover now has no entry, and the new spelling names nothing — which is two
+// findings a reader answers with one edit. That is the arrangement this file
+// argues against elsewhere and it is kept here, because the two halves do not
+// say the same thing: one names the figure that has gone uncovered and the
+// other the label that is dead, and a rename is indistinguishable from a
+// deletion plus an addition until somebody reads both.
+//
+// # What decides a field is a BAND field, which is the field's own value
+//
+// Not a list here. A band field is one whose value opens with a range
+// recordedBand can read, which is the same test the verdict itself makes — so a
+// field this asks for a command is exactly a field something compares a reading
+// against. `machine` is prose and is not one; `cores` is an int and is not one;
+// a timing written as a single number rather than a range is not one either,
+// and that is the honest scope rather than an oversight: nothing compares such
+// a figure, so nothing here can say it went stale.
+//
+// # Why only the `…TimingsTakenOn` records
+//
+// They are the records nothing re-derives. affordedMeasuredOn and
+// foldMeasuredOn carry bands too, and every one of them is recomputed by the
+// run that reads it — a number that moved there is a finding about the DATA,
+// and the run prints the record in source shape for pasting. A taking command
+// for those would be the command the reader has already run.
+//
+// # Not whether the command RUNS
+//
+// Declined, and ai_docs/plans/non_goals.md carries the count. Every line in
+// both tables was run as written one iteration before this check; the ones that
+// did not run — shortened package paths, test names cut off at an ellipsis —
+// were fixed in the same session, and the narrow rule that would catch one of
+// those two shapes measured two lines, both real, both now gone. What is held
+// here is the weaker and cheaper half: that the entry EXISTS at all.
+func checkEveryBandFieldHasATakingCommand(t *testing.T, records []timingsRecord) {
+	t.Helper()
+	bandFields, withCommand := 0, 0
+	for _, rec := range records {
+		if rec.val == nil {
+			// A record declared without a value — `var x T`. The same case the
+			// shape check says nothing about, and for the same reason: there is
+			// no literal to read the fields out of.
+			continue
+		}
+		names, bands := recordLiteralFields(rec.val)
+		bandFields += len(bands)
+		if len(bands) == 0 {
+			continue
+		}
+		table := takingTableIn(rec.doc)
+		if rec.doc == "" {
+			// One finding for the record rather than one per field: the edit
+			// that answers it is a doc comment, and naming every band here
+			// would be the same fact repeated as many times as the record has
+			// figures.
+			t.Errorf("%s:%d declares %s with %d band field(s) and the "+
+				"declaration has no doc comment.\n\n"+
+				"That comment is where this record's taking table lives: one "+
+				"entry per field, the field's name alone on a line and the "+
+				"command indented under it. A band with no command beside it "+
+				"is a figure a reader who lands outside it cannot re-derive, "+
+				"which is the whole of what the printed verdict asks them to "+
+				"do.\n\n"+
+				"The fields wanting an entry are %s.",
+				rec.rel, rec.line, rec.name, len(bands),
+				strings.Join(keysOf(bands), ", "))
+			continue
+		}
+		for _, field := range keysOf(bands) {
+			command, listed := table[field]
+			if !listed {
+				t.Errorf("%s:%d records %s.%s with a band of `%s` and its doc "+
+					"comment's taking table has no entry for it.\n\n"+
+					"A band is two readings of one machine, so nothing here "+
+					"asserts it — what the record owes a reader instead is "+
+					"the command that produced it. Without one the figure is "+
+					"re-taken by reconstructing the work, and the session "+
+					"that tried that on the three walk depths came back with "+
+					"a fifth of them.\n\n"+
+					"This is how the table goes stale, and it has: a field "+
+					"added in the session that needed its figure, with the "+
+					"method read off whoever's shell history took it. One of "+
+					"the ten band fields here was in that state for six "+
+					"iterations.\n\n"+
+					"Add the field's name alone on a line at one tab and the "+
+					"command indented under it — %s — written out in full. A "+
+					"fragment is the fault the other record's wholeRun names "+
+					"in its own history, \"a recipe rather than a command\".",
+					rec.rel, rec.line, rec.name, field,
+					recordedBandForm.FindString(bands[field]),
+					timingsTakingTableExample)
+				continue
+			}
+			if len(command) == 0 {
+				t.Errorf("%s:%d records %s.%s with a band of `%s` and its "+
+					"taking table lists the field with nothing under it.\n\n"+
+					"A label is read as an entry the moment it appears, so "+
+					"this is a table that names the field and does not say "+
+					"what to run — which reads to a person as a covered "+
+					"field and is the one state worse than an absent entry.\n\n"+
+					"The command goes on the following line, indented past "+
+					"the label: %s.",
+					rec.rel, rec.line, rec.name, field,
+					recordedBandForm.FindString(bands[field]),
+					timingsTakingTableExample)
+				continue
+			}
+			withCommand++
+		}
+		for _, label := range keysOf(table) {
+			if _, isBand := bands[label]; isBand {
+				continue
+			}
+			if names[label] {
+				t.Errorf("%s:%d's taking table has an entry for %s.%s and "+
+					"that field's value does not open with a band.\n\n"+
+					"Its value is %.120q. A field is compared against a band "+
+					"when its value OPENS with the range — see "+
+					"recordedBandForm, "+
+					"which is what both records' verdicts read — so a field "+
+					"written the other way round is one nothing compares, and "+
+					"which this table is offering a re-taking of anyway.\n\n"+
+					"Either put the range first, which is how every other "+
+					"field in both records is written, or take the entry out: "+
+					"a command beside a figure nothing checks is an "+
+					"instruction no verdict will ever send anybody to.",
+					rec.rel, rec.line, rec.name, label, fieldValueOf(rec.val, label))
+				continue
+			}
+			t.Errorf("%s:%d's taking table has an entry for %s.%s and the "+
+				"record has no such field.\n\n"+
+				"The fields it does have a band for are %s.\n\n"+
+				"A command for a field that is gone is a re-taking "+
+				"instruction that outlived the thing it instructed, which has "+
+				"happened twice in this record: a `-bench` line naming "+
+				"benchmarks that were deleted once they had been taken, and "+
+				"three depths whose commands were cut off at an ellipsis. "+
+				"Rename the entry if the field was renamed, or delete it if "+
+				"the figure is gone.",
+				rec.rel, rec.line, rec.name, label,
+				strings.Join(keysOf(bands), ", "))
+		}
+	}
+	// The walk reaching nothing, said here rather than left to read as a pass.
+	// The records question's own Fatalf covers a rename of the records
+	// themselves; this covers the narrower way this check can end up over
+	// nothing, which is both literals still being there and no value in either
+	// one parsing as a band — a recordedBandForm that stopped matching, or a
+	// record whose ranges were rewritten in some other form.
+	if bandFields == 0 {
+		t.Errorf("no field in any of the %d timings record(s) has a value "+
+			"that opens with a band, and both records in this repository "+
+			"carry several: %s.\n\n"+
+			"So either the ranges have been rewritten in a form "+
+			"recordedBandForm does not read — in which case the verdicts "+
+			"those records print have stopped comparing anything too, and "+
+			"that is the finding — or this check is reading the literal "+
+			"wrongly and says nothing while passing.",
+			len(records), recordList(records))
+		return
+	}
+	t.Logf("%d band field(s) across %d record(s), %d with a taking command in "+
+		"the record's own doc comment.", bandFields, len(records), withCommand)
+}
+
+// The shape of a taking table entry, for the two messages that ask for one.
+//
+// Written once rather than spelled out in each: the messages are about the same
+// table and a reader given two different renderings of it has to decide which
+// is the form.
+const timingsTakingTableExample = "`wholeFile` then `  go test -count=1 " +
+	"./wasm/verify` on the next line"
+
+// recordLiteralFields is one record literal's field names, and of those the
+// ones whose value opens with a band.
+//
+// Both come off the same pass because the backward direction needs to tell a
+// label naming a field that is NOT a band from a label naming nothing at all,
+// and those are different findings with different edits.
+//
+// `names` holds every key in the literal whatever its type, which is what makes
+// `cores` a field this knows about rather than a label it would call missing.
+func recordLiteralFields(val ast.Expr) (names map[string]bool,
+	bands map[string]string) {
+
+	names, bands = map[string]bool{}, map[string]string{}
+	lit, ok := val.(*ast.CompositeLit)
+	if !ok {
+		// Not a struct literal. The shape check reports that, with the type it
+		// found; a second finding about it here would be the same fact twice.
+		return names, bands
+	}
+	for _, el := range lit.Elts {
+		kv, ok := el.(*ast.KeyValueExpr)
+		if !ok {
+			continue
+		}
+		key, ok := kv.Key.(*ast.Ident)
+		if !ok {
+			continue
+		}
+		names[key.Name] = true
+		text := stringLiteralValue(kv.Value)
+		if text == "" {
+			continue
+		}
+		if _, _, ok := recordedBand(text); !ok {
+			continue
+		}
+		bands[key.Name] = text
+	}
+	return names, bands
+}
+
+// fieldValueOf is one field's value as the literal spells it, for the message
+// about a field whose value does not open with a band.
+//
+// The finding is that a value is written the wrong way round, so the message
+// has to show the value. It comes back "" for anything stringLiteralValue
+// cannot evaluate, which prints as the empty string and is true: this could not
+// read it either.
+func fieldValueOf(val ast.Expr, field string) string {
+	lit, ok := val.(*ast.CompositeLit)
+	if !ok {
+		return ""
+	}
+	for _, el := range lit.Elts {
+		kv, ok := el.(*ast.KeyValueExpr)
+		if !ok {
+			continue
+		}
+		if key, ok := kv.Key.(*ast.Ident); !ok || key.Name != field {
+			continue
+		}
+		return stringLiteralValue(kv.Value)
+	}
+	return ""
+}
+
+// takingTableIn reads a record's taking table out of its doc comment: label to
+// the command lines under it.
+//
+// # Why the table is read rather than declared
+//
+// The alternative is a map in this package naming each field's command, and
+// that is a second copy of the table with the same failure the table has: a
+// field added in one place and not the other. Worse, the copy a person reads
+// would be the one not checked. The table a reader reads IS the table, and this
+// reads it where it is.
+//
+// # The form, which both records already follow
+//
+// A label is a field name alone on a line at one tab — the indent go/doc
+// renders as a block — and the command is whatever follows it indented further.
+// That is the shape both tables have been written in since they existed, and it
+// is exact in both directions: across both records' doc comments there are
+// exactly ten lines of that shape and all ten are table labels. A prose table
+// elsewhere in the same comment has its term and its text on one line, so it
+// cannot be mistaken for a label, and its wrapped continuation lines are only
+// read when a label is open.
+//
+// A label with nothing under it is kept, as a label with no command, because
+// that is a finding and not an absence: see the caller.
+func takingTableIn(doc string) map[string][]string {
+	table := map[string][]string{}
+	open := ""
+	for _, line := range strings.Split(doc, "\n") {
+		if label, ok := takingLabel(line); ok {
+			open = label
+			if _, seen := table[open]; !seen {
+				table[open] = nil
+			}
+			continue
+		}
+		if open == "" {
+			continue
+		}
+		if command := strings.TrimSpace(line); command != "" &&
+			strings.HasPrefix(line, "\t ") {
+			table[open] = append(table[open], command)
+			continue
+		}
+		// Anything else closes the entry — the blank line after a command, or
+		// the next paragraph. Without this every indented line in the rest of
+		// the comment would be read as a continuation of the last command.
+		open = ""
+	}
+	return table
+}
+
+// takingLabel is the field name a line is a table label for.
+//
+// One tab and then an identifier, with nothing else on the line. The
+// no-spaces part is what separates a label from the other tables in the same
+// comments, which write `walkEnumerate, walkRead, walkParse   fields. Two
+// failure messages…` — a term and its prose on one line.
+func takingLabel(line string) (string, bool) {
+	if !strings.HasPrefix(line, "\t") {
+		return "", false
+	}
+	name := line[1:]
+	if name == "" {
+		return "", false
+	}
+	for i, r := range name {
+		switch {
+		case r == '_', r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z':
+		case i > 0 && r >= '0' && r <= '9':
+		default:
+			return "", false
+		}
+	}
+	return name, true
 }
 
 // packageSource is one or more directories' Go files, read and parsed at most
