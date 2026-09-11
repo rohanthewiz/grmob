@@ -264,6 +264,60 @@ var themehistoryTimingsTakenOn = struct {
 	// produced by something in the table above. `go run` is the one spelling
 	// that is NOT equivalent: it folds a build into the reading and measures
 	// the toolchain's cache as much as this program.
+	//
+	// # The re-taking, and the six figures that moved together
+	//
+	// This said `1.56–1.67s` over seven runs. The session that put a band
+	// comparison on the line printing it — see againstBand, which exists
+	// because `verifyTimingsTakenOn.wholeFile` had recorded a floor its own
+	// taking was under — got the verdict UNDER on the first run it made, and
+	// sixteen readings of the whole package came in at 1.406–1.571s.
+	//
+	// Then the per-object arm was run, and it was under too. And every term
+	// on its table was under. And re-reading the other record's re-taking
+	// from the same evening, that had been under its floor as well. Six
+	// figures across two packages, one session:
+	//
+	//	verifyTimingsTakenOn.wholeFile   floor 2.88s, read from 2.840s
+	//	wholeRun                         floor 1.56s, read from 1.406s
+	//	perObjectRun                     floor 30.53s, read from 28.65s
+	//	its batched fetches              floor 409ms, read 396ms
+	//	its serial trees                 floor 0.87s, read 835ms
+	//	its themeleaves.Of               floor 0.125s, read 124ms
+	//
+	// # Which is why these are WIDENED and not replaced
+	//
+	// Six independent figures do not all get faster in one evening for six
+	// reasons. They get read low for one, and the one this machine offers is
+	// that the takings above were made during working sessions and these
+	// were made at two in the morning on an idle laptop. That is not a
+	// conclusion anybody verified — it is the hypothesis with one cause
+	// instead of six, and the readings are consistent with it and not with
+	// any change to this code, none of which happened.
+	//
+	// So each range is widened to hold both takings, which is the treatment
+	// the -race row above already argues for and the treatment a reading
+	// that is not understood deserves: a record that reports the last
+	// afternoon cannot be checked against the afternoon before it.
+	//
+	// The cost is honest and is the reason this is written down rather than
+	// just done. 1.40–1.67s is a band 19% wide, and a band that wide hides a
+	// difference — which is the failure the top of this record weighs and
+	// deliberately chose the other side of. It is wide because nobody knows
+	// which of the two takings is the anomaly, and the way it gets narrow
+	// again is that somebody reads the printed verdict over several sessions
+	// and finds out. That is a thing the record could not ask for before,
+	// because nothing printed the verdict.
+	//
+	// The one figure that did NOT move is worth naming: batchRetire read
+	// inside its band, at the ceiling. It is the only reading here measured
+	// in microseconds, and the only one that is not dominated by process
+	// spawning.
+	//
+	// Taken as the package runs it — `go test -count=1 -v` over the whole
+	// package, reading the arm's own line — because that is the command a
+	// person takes figures with, and the same arm under `-run` on a warm
+	// cache reads 1.40–1.44s. The method is part of the reading.
 	wholeRun string
 	// The shape this program REPLACED, re-created on demand: one
 	// `git cat-file -p` per object, over the same objects the batch fetches,
@@ -339,12 +393,13 @@ var themehistoryTimingsTakenOn = struct {
 	cores:     8,
 	wholePackage: "2.92–3.22s over fifty-seven runs in three sessions, and " +
 		"3.69–3.82s on a single core",
-	wholeRun: "1.56–1.67s over seven runs, in process, 2955 objects fetched, " +
-		"the expectation enumerated alongside in 0.22s over 8 workers",
-	perObjectRun: "30.53–30.84s over three runs, 2955 objects, one process " +
-		"each, against 409–412ms for the same fetches batched — 74.7–75.1×; " +
-		"the 89 `ls-tree` the walk pays serially, 0.87–0.91s; themeleaves.Of " +
-		"over the same sources, 0.125–0.145s",
+	wholeRun: "1.40–1.67s over twenty-three runs of the whole package in " +
+		"two sessions, in process, 2955 objects fetched, the expectation " +
+		"enumerated alongside in 0.22s over 8 workers",
+	perObjectRun: "28.65–30.84s over eight runs in two sessions, 2955 " +
+		"objects, one process each, against 396–412ms for the same fetches " +
+		"batched — 72.4–75.1×; the 89 `ls-tree` the walk pays serially, " +
+		"0.835–0.91s; themeleaves.Of over the same sources, 0.124–0.145s",
 	batchRetire: "0.18–0.29ms over four sets of seven",
 }
 
@@ -369,28 +424,15 @@ func TestTheTimingsInThisPackageSayWhichMachineTheyCameFrom(t *testing.T) {
 			"nothing.", rec)
 	}
 
-	var differs []string
-	if got := runtime.GOOS; got != rec.goos {
-		differs = append(differs, fmt.Sprintf("GOOS %s against %s", got, rec.goos))
-	}
-	if got := runtime.GOARCH; got != rec.goarch {
-		differs = append(differs, fmt.Sprintf("GOARCH %s against %s", got,
-			rec.goarch))
-	}
-	// Compared as a prefix: a patch release is a different toolchain and worth
-	// naming, and `devel` builds carry a suffix no equality test would match.
-	if got := runtime.Version(); !strings.HasPrefix(got, rec.goVersion) {
-		differs = append(differs, fmt.Sprintf("%s against %s", got, rec.goVersion))
-	}
-	// NumCPU and not GOMAXPROCS, the way the other record puts it: what this
-	// is about is the machine underneath. It is also the one field here that
-	// changes a recorded number by a term a reader can name, so the messages
-	// below say which term.
+	// The four comparisons live in band_test.go, because the band verdict
+	// needs the same answer and a second copy of a machine check is the
+	// shape this package's censuses exist to find. NumCPU and not GOMAXPROCS
+	// there, the way the other record puts it: what this is about is the
+	// machine underneath. It is also the one field that changes a recorded
+	// number by a term a reader can name, so the messages below say which
+	// term.
+	differs := recordMachineDiffers()
 	cores := runtime.NumCPU()
-	if cores != rec.cores {
-		differs = append(differs, fmt.Sprintf("%d cores against %d", cores,
-			rec.cores))
-	}
 	// Which term the core count moves, said out loud whenever the two differ:
 	// a reader told "8 cores against 4" and nothing else has to go and find
 	// out what that is worth. The standing half is coresAttribution, which
@@ -465,7 +507,13 @@ const coresAttribution = "The enumeration is the largest single term in the " +
 	"table in `wholePackage`'s comment. A difference of that size between this run and " +
 	"the number above is accounted for before anything else is — and it runs " +
 	"all the way to eight, which is the opposite of wasm/verify's figure, " +
-	"where the core-scaled term is flat from two cores upwards."
+	"where the core-scaled term is flat from two cores upwards. " +
+	"`recordMachineDiffers` also reads the count, and does not scale with " +
+	"it: it compares this machine's cores against the record's so that a " +
+	"reading taken somewhere else is reported as such and not compared to " +
+	"a band. It is named here because this note is held to naming every " +
+	"reader of the count in the package, which is a stricter thing than " +
+	"naming every term that scales with it."
 
 // How many healthy retires the measurement below takes.
 //
@@ -573,9 +621,13 @@ func TestRetiringAHealthyGitLeavesBeforeTheDeadline(t *testing.T) {
 	// what this one was doing.
 	t.Logf("%d healthy retire(s): %v–%v, against a %v grace — the slowest is "+
 		"1/%.0f of it. Recorded as themehistoryTimingsTakenOn.batchRetire; "+
-		"see batchRetireGrace for what that ratio is holding up.",
+		// The SLOWEST of the set, because that is the end of the range a
+		// grace has to clear and the end the record's ceiling is about.
+		"see batchRetireGrace for what that ratio is holding up.%s",
 		len(took), lo.Round(time.Microsecond), hi.Round(time.Microsecond),
-		batchRetireGrace, float64(batchRetireGrace)/float64(hi))
+		batchRetireGrace, float64(batchRetireGrace)/float64(hi),
+		againstBand("themehistoryTimingsTakenOn.batchRetire",
+			themehistoryTimingsTakenOn.batchRetire, hi))
 }
 
 // The history this repository has to have for the reading below to mean
@@ -1127,10 +1179,16 @@ func TestTheWholeWalkGoesRoundOneBatchProcess(t *testing.T) {
 		"was argued at both ends of the range that number moves through — "+
 		"about a seventh where the pool has eight workers and about a third "+
 		"where it has one. `-short` is the lever, and it is worth most "+
-		"exactly where this percentage is largest.",
+		"exactly where this percentage is largest.%s",
 		took.Round(time.Millisecond), commits, reader.reads, started,
 		wantReads, enumTook.Round(time.Millisecond), enumWorkers,
-		share, armTook.Round(time.Millisecond))
+		share, armTook.Round(time.Millisecond),
+		// `took` and not `armTook`: wholeRun is the command, and the
+		// enumeration beside it is this arm's own cost rather than the
+		// walk's. The record's own wording says so — "in process, 2955
+		// objects fetched, the expectation enumerated ALONGSIDE".
+		againstBand("themehistoryTimingsTakenOn.wholeRun",
+			themehistoryTimingsTakenOn.wholeRun, took))
 }
 
 // The switch that runs the per-object re-creation below, and the one value it
@@ -1475,11 +1533,17 @@ func TestOneProcessPerObjectIsSlowerThanOneProcessForAllOfThem(t *testing.T) {
 		"the three need not, and do not, land exactly under the total in "+
 		"either direction. That gap IS the remainder plus the noise between "+
 		"readings, and it is smaller than either on its own.\n\n"+
-		"Only the ratio is asserted; see perObjectSlowdownFloor.",
+		"Only the ratio is asserted; see perObjectSlowdownFloor.%s",
 		len(objects), len(shas), batchTook.Round(time.Millisecond),
 		perTook.Round(time.Millisecond), len(objects), ratio,
 		perObjectSlowdownFloor, enumTook.Round(time.Millisecond), len(shas),
 		parseTook.Round(time.Millisecond), len(perRev), leaves,
 		(batchTook + enumTook + parseTook).Round(time.Millisecond),
-		themehistoryTimingsTakenOn.wholeRun)
+		themehistoryTimingsTakenOn.wholeRun,
+		// The per-object reading itself, which is what that field opens
+		// with. The other figures on this line are terms of wholeRun and
+		// each has its own home; only this one is what perObjectRun is a
+		// band for.
+		againstBand("themehistoryTimingsTakenOn.perObjectRun",
+			themehistoryTimingsTakenOn.perObjectRun, perTook))
 }

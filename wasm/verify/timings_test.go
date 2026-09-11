@@ -255,6 +255,26 @@ var verifyTimingsTakenOn = struct {
 	// and slightly SLOW rather than fast. An afternoon that made this package
 	// quick would have made that one quick too.
 	//
+	// # That reading was wrong, and the next iteration found out how
+	//
+	// The sibling consulted was that package's whole-package figure, whose
+	// band is 300ms wide. Its TIGHT figures were checked an hour later and
+	// every one of them was under its floor — `wholeRun` by 10%,
+	// `perObjectRun` by 6%, and all three of the terms on that arm's table.
+	// Six figures across two packages, all low, in one session.
+	//
+	// So the machine was not ruled out. It was consulted through the one
+	// instrument in either record too blunt to answer, and the answer came
+	// back "no difference" because a 140ms difference does not show in a
+	// 300ms band. See themehistoryTimingsTakenOn.wholeRun, which carries the
+	// six readings and the argument.
+	//
+	// The floor here is still widened rather than replaced, which is what
+	// this paragraph concluded and is the right treatment for a reading
+	// whose cause is not known — it is only the REASON that was wrong. And
+	// the lesson generalises past this record: a sibling is a control only
+	// if its band is tighter than the difference being ruled out.
+	//
 	// So the range is widened to hold both takings rather than replaced with
 	// the newer one — the same treatment, and for the same reason, as the
 	// -race row in internal/themehistory's record. Two overlapping readings
@@ -409,7 +429,7 @@ var verifyTimingsTakenOn = struct {
 // # What this package's answer actually is, which is not "nothing"
 //
 // The expensive half of wholeFile does not move. The four repository-wide
-// walks hand every Go file in the tree to go/parser one after another — 391
+// walks hand every Go file in the tree to go/parser one after another — 392
 // tracked Go files where this record was taken, 0.18s each, single-threaded,
 // the same number on any machine — and foldWalk is a node process this package waits on
 // rather than shares a core with.
@@ -478,7 +498,7 @@ var verifyTimingsTakenOn = struct {
 // either direction reads — a term named in prose is neither claimed nor
 // checked.
 const coresAttribution = "The four repository-wide walks in this package are " +
-	"single-threaded — go/parser over 391 tracked Go files " +
+	"single-threaded — go/parser over 392 tracked Go files " +
 	"where this record was taken, 0.18s each — and " +
 	"`foldWalk` is a node process. Those do not move with the core count. " +
 	"Two declarations do, and they are the whole of it: " +
