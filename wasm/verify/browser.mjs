@@ -815,8 +815,12 @@ function inkBandRows(where, subject, m, dpr, why) {
 //	notFill   some pixel is not the backdrop. A run of words rendered in the
 //	          fill colour, or not rendered at all, has none.
 //	ink       some pixel IS the declared ink. A stem's interior is unblended at
-//	          any size a caption is set at, so the declared colour is present
-//	          when it is the colour being used.
+//	          any size a caption is set at — which turned out to be a claim
+//	          about one face at one size, see INK_STEM_REACH.
+//	reach     how far the furthest pixel got from the backdrop toward that ink,
+//	          as a fraction of the distance between them. The reading `ink` is
+//	          the special case of this at 1, and it is the reading that survives
+//	          a stem too thin to fill a pixel.
 //	offBy     the worst pixel that is not a blend of the two. See offSegment.
 //
 // x0 and x1 are CSS pixels and half-open, so a caller can hand it a window
@@ -827,6 +831,10 @@ function scanInk(img, dpr, rows, x0, x1, fill, want) {
     const from = Math.round(x0 * dpr), to = Math.round(x1 * dpr);
     let notFill = false, ink = false, darkest = null, best = -1;
     let offBy = 0, stranger = null;
+    // The whole distance the ink is from the backdrop, which is what `best` is
+    // read as a fraction of. Never zero where this is asked: both callers have
+    // already refused a composite within INK_EPSILON × INK_MARGIN of the fill.
+    const span = channelDistance(want, fill);
     for (const y of rows) {
         for (let x = from; x < to; x++) {
             const got = pixelAt(img, x, y);
@@ -843,7 +851,14 @@ function scanInk(img, dpr, rows, x0, x1, fill, want) {
             if (off > offBy) { offBy = off; stranger = got; }
         }
     }
-    return { notFill, ink, darkest, offBy, stranger, columns: to - from };
+    // `best` is the widest single-channel gap any pixel opened with the
+    // backdrop and `span` is the gap the declared ink opens with it, both by
+    // the same predicate — so their ratio is how far the furthest pixel got
+    // along that road. Capped at 1: a pixel can be further from the fill than
+    // the ink is (an overshoot, a rounding), and "more than all the way" is not
+    // a reading this is asked for.
+    return { notFill, ink, darkest, offBy, stranger, columns: to - from,
+        reach: span > 0 && best > 0 ? Math.min(1, best / span) : 0 };
 }
 
 // How much of one device row of a window is glyph rather than backdrop.
@@ -1654,6 +1669,49 @@ function surplusInk(img, dpr, rows, box, keepFrom, keepTo, fill) {
 // eight-bit colours rounded to eight bits is at most half a channel off it, so
 // what is being absorbed is the browser's rounding and nothing else.
 const OFF_SEGMENT_EPSILON = INK_EPSILON;
+
+// How far the furthest pixel of a run has to get from the backdrop toward the
+// declared ink, as a fraction of the distance between them.
+//
+// # The premise this replaces, which was one face at one size
+//
+// scanInk's `ink` reading is "some pixel IS the declared colour", and the
+// sentence under it was: a stem's interior is unblended at any size a caption
+// is set at, so the declared colour is present when it is the colour being
+// used. That is true of a stem wide enough to cover a whole device pixel, and
+// whether a stem is that wide is a fact about the face, the size and the
+// rasterizer — the same three things INK_ROWS turned out to be about.
+//
+// Measured, over the eight count pills, at dpr 1:
+//
+//	                    the furthest pixel, as a fraction of the way to the ink
+//	Times               1.000   in all eight — the premise, holding
+//	Liberation Serif    0.915   in six of eight, 1.000 in the two tall ones
+//
+// Liberation Serif's digits in a caption-sized pill never fill a pixel, so the
+// whitest pixel in a white number on a #0040DD pill is #EAEFFC. Nothing is
+// wrong with it: it is a correctly drawn number, at a size where every pixel of
+// it is a blend. The tall-caption pills, which are the same face two points
+// bigger, come back exactly at 1.000 — so the reading is about SIZE and the
+// face only through it, which is why this is a fraction rather than another
+// entry in INK_CALIBRATED_ON.
+//
+// # Why 0.8, and what it still refuses
+//
+// The floor has one measurement under it (0.915, the thinnest stem in the grid)
+// and none above it, so it is set below the measurement with room rather than
+// in the middle of a bracket the way INK_ROW_ROUNDING is — the honest shape for
+// a bound with one side measured.
+//
+// What it refuses is the failure the `ink` reading was written for: a count
+// that lost its declaration and inherited another colour. Such a colour is
+// caught twice over, and this is the weaker of the two catches. Off the line
+// between the pill and the declared ink — any hue at all — is offSegment's, at
+// a tolerance of 3 channels. On that line but dimmer is this one: an ink at
+// half strength reaches 0.5 and an ink at four fifths is where this stops
+// believing a thin stem. The pair is what makes "it is THIS ink" still mean
+// something when no pixel of it is undiluted.
+const INK_STEM_REACH = 0.8;
 
 // How far a pixel is from being a blend of the two colours the label's box is
 // declared to hold.
@@ -5196,6 +5254,12 @@ async function main() {
         // are what the census reports. See the note above `declared`.
         targets: 0, targetLead: 0, targetTrail: 0, targetStretch: 0,
         insets: 0, fills: 0, words: 0, counts: 0,
+        // The thinnest stem in the grid, as a fraction of the way from its
+        // backdrop to its own declared ink. Recited by the tail rather than
+        // asserted: INK_STEM_REACH's floor is under one measurement and over
+        // nothing, so what keeps it honest is the number being printed on every
+        // run instead of living in a comment. Null until a box is scanned.
+        inkReach: null,
         // And what the refusal behind the glyph-per-character claim comes to
         // on the face this browser resolved. Not a count of anything asserted
         // — see inkLigatureCensus, where neither answer is a failure — but the
@@ -8085,14 +8149,20 @@ async function main() {
                                     `count was the one of the three read as a colour ` +
                                     `and never as digits — a pill that painted itself ` +
                                     `over an empty box passed every assertion here`);
-                            } else if (!scan.ink) {
+                            } else if (!scan.ink && scan.reach < INK_STEM_REACH) {
                                 problems.push(`${where}: the count pill has ink in it ` +
                                     `and the pixel furthest from its ${b.badgeFill} is ` +
-                                    `${scan.darkest}. components.Badge declares ` +
+                                    `${scan.darkest}, which is ` +
+                                    `${(scan.reach * 100).toFixed(1)}% of the way to ` +
+                                    `the ink against a floor of ` +
+                                    `${(INK_STEM_REACH * 100).toFixed(0)}%. ` +
+                                    `components.Badge declares ` +
                                     `${b.badgeInk} for the digits, which over the pill ` +
                                     `composites to ${ink}. Something is drawn there in ` +
                                     `another colour, which is what a count that lost ` +
-                                    `its declaration and inherited one looks like`);
+                                    `its declaration and inherited one looks like — a ` +
+                                    `stem too thin to fill a pixel lands near 1, not ` +
+                                    `here. See INK_STEM_REACH`);
                             }
                             // Not credited when the window came back empty: the
                             // three verdicts above all ran, and every one of
@@ -8101,6 +8171,10 @@ async function main() {
                             // goes on to say what it found in nothing, so the
                             // ledger is what has to decline it. See `asked`.
                             if (scan.columns >= 1) asked.counts++;
+                            if (scan.columns >= 1 && (asked.inkReach === null ||
+                                scan.reach < asked.inkReach)) {
+                                asked.inkReach = scan.reach;
+                            }
                         }
                     }
                 }
@@ -8992,7 +9066,10 @@ async function main() {
         ? `their words and their counts unread — this machine does not have the face ` +
           `those readings were calibrated on, and the SKIP above says so`
         : `${asked.words} of them their words in their own ink and ${asked.counts}
-    their counts as digits inside their own pills`} — every one of those counted
+    their counts as digits inside their own pills — the thinnest stem among them
+    reaching ${asked.inkReach === null ? "no box at all" :
+        `${(asked.inkReach * 100).toFixed(1)}% of the way from its pill to its own
+    declared ink, against a floor of ${(INK_STEM_REACH * 100).toFixed(0)}%`}`} — every one of those counted
     where its own check ran rather than off the size of gen.go's table, and held to
     it — on three rows
     taken as fractions of the ink band of the

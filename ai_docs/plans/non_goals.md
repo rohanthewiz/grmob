@@ -1082,6 +1082,15 @@ And that emulator is the machine most favourable to the argument. Its
 tree, so a byte is worth more there than anywhere else this runtime ships. A
 physical phone would make the prize smaller, not larger.
 
+That last sentence is the only part of this that is still owed a measurement,
+and it is owed one whichever way this decision goes: every startup figure this
+project quotes is one emulator's. It is tracked as an instrument problem in
+`ai_docs/plans/need_hardware.md`, under "`launch.sh`'s numbers are one
+emulator's", which says in its own words that it no longer gates this item. So
+a reader who arrives here wondering whether the device number would reopen the
+question has an answer and a place to watch: it would have to make the prize
+*larger*, and the direction of the only evidence anybody has is the other way.
+
 So: a protocol change, a bootstrap guess, and placeholder children in four
 renderers, for 1.7% of one host's launch on one screen.
 
