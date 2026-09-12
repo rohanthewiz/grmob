@@ -2609,6 +2609,92 @@ const INK_OWN_MEASURED_ON = {
     props: 476,
 };
 
+// The platform face every number in the ink scan was measured on.
+//
+// # Why the scan has to know this, when nothing above it did
+//
+// The paragraph above says a computed style is in CSS pixels and moves with
+// nothing, and names the ink scan's sample points as the thing that does. It
+// understated it. Those points are not merely dpr-scaled: the three rows are
+// fractions of the ink band of the face that drew the run, the clearance that
+// keeps them off the baseline is one device row, and INK_ROW_GLYPH_FLOOR is a
+// coverage a row of THESE glyphs produces. All three are readings of one face's
+// outline, and none of them survives a different one:
+//
+//	this machine, Times      the scanned row is 60-80% glyph, the row
+//	                         beside it a few percent
+//	a Linux runner           the scanned row lands on a glyph edge and the
+//	                         row beside it reads 2.7% against a floor of 15%
+//
+// Nothing was wrong with the bands in that second column. A different face puts
+// its baseline and x-height somewhere else, so a fraction calibrated on Times
+// picks a different row, and a row on an edge is the case INK_EDGE_CLEARANCE
+// exists to avoid — measured, on Times.
+//
+// # Why "Times" and not the family the grid asks for
+//
+// The grid asks for core.Theme's typography and this Chrome has none of it, so
+// every band, badge and probe falls through to the default serif. That is not
+// a defect to fix here — the fallback is uniform, one face across the whole
+// grid, which is the property inkFaceFault checks and the only one the scan
+// needs. It does mean the recorded name is a PLATFORM default rather than a
+// choice, and so is exactly the thing that differs between machines.
+//
+// # Skipped rather than failed, and rather than re-derived per face
+//
+// Re-deriving the fractions from whatever face resolved is the fix that looks
+// principled and is not: the floor, the clearance and the three fractions were
+// each arrived at by looking at readings on one face, and a formula that
+// reproduced them for Times would be fitted to one point. What this can say
+// honestly is that it does not know, which is the stance ios/verify takes
+// toward a missing iPhoneOS SDK and android/verify toward a missing Android
+// one.
+//
+// The skip is the ink scan only. The layout assertions are rects and the fill
+// is a solid colour, and neither has an opinion about outlines; the
+// antialiasing probes stay too, because they answer about the RENDERING MODE
+// and are as true on one face as another. What goes quiet is the two readings
+// that are about glyphs — that the words are there in their own ink, and that
+// the counts are digits — and the tail says so instead of reciting zero.
+const INK_MEASURED_ON = {
+    face: "Times",
+};
+
+// Whether every glyph the ink scan reads was drawn by the face its numbers came
+// from. Returns null when it was, and the sentence to skip with when it was
+// not.
+//
+// The bands are what is scanned and the probes are what the scan's tolerance
+// comes from, so both are asked. Only distinct names are reported: a grid where
+// all twenty bands fell to one other face is one fact, and printing it twenty
+// times would bury it.
+function inkFaceCalibration(bandFaces, probeFaces) {
+    const seen = new Set();
+    for (const b of bandFaces || []) {
+        for (const f of [...(b.label || []), ...(b.badge || [])]) seen.add(f.family);
+    }
+    for (const p of probeFaces || []) {
+        for (const f of p || []) seen.add(f.family);
+    }
+    // No face read at all is not this guard's business. inkFaceFault reports a
+    // box the browser names no platform font for, and answering "uncalibrated"
+    // here would take that failure and turn it into a skip.
+    if (seen.size === 0) return null;
+    const others = [...seen].filter((f) => f !== INK_MEASURED_ON.face).sort();
+    if (others.length === 0) return null;
+    return `this grid's glyphs are drawn by ${others.join(", ")} and every number ` +
+        `in the ink scan was measured on ${INK_MEASURED_ON.face} — the three rows are ` +
+        `fractions of that face's ink band, the clearance that keeps them off its ` +
+        `baseline is one device row of it, and the glyph-coverage floor is what a row ` +
+        `of its outlines comes to. On another face those fractions pick a different ` +
+        `row and a correct band reads as a failure, which is what this used to do on ` +
+        `every Linux runner. The layout assertions, the fill and the antialiasing ` +
+        `probes all ran; what is unread is that the words are in their own ink and ` +
+        `that the counts are digits. To check them here, install ` +
+        `${INK_MEASURED_ON.face} — or re-measure INK_ROWS, INK_EDGE_CLEARANCE and ` +
+        `INK_ROW_GLYPH_FLOOR against this face and record it beside that one`;
+}
+
 // How many string values make a computed style, taken from the enumeration
 // above.
 //
@@ -4823,6 +4909,12 @@ async function main() {
         // And the axes the requests actually differ in, which is what bounds
         // the reads. See inkCanaryReqAxes.
         canvasGenericAxes: null,
+        // And the ink scan's own precondition, carried out here for the same
+        // reason as everything else in this object: the tail is printed after
+        // the try block, and the two counts it recites go to zero when this is
+        // set. A zero with no reason beside it reads as a grid that stopped
+        // finding words.
+        inkFaceSkip: null,
     };
     try {
         const port = await devtoolsPort(profile, chromeExit, chromeErr);
@@ -6553,6 +6645,16 @@ async function main() {
         // decision for the reads the tree fingerprint holds.
         const pixelsHeld = !gridClipped && !layoutFault;
 
+        // And whether the glyphs below were drawn by the face the scan's
+        // numbers came from. A second name beside pixelsHeld, and for the same
+        // reason: one decision rather than a condition repeated at each
+        // sampling site. It suppresses strictly less — pixelsHeld takes the
+        // fill with it and this does not, because a fill is a solid colour and
+        // has no outline to have been calibrated on.
+        const inkFaceSkip = inkFaceCalibration(bandFaces, probeFaces);
+        const inkFaceHeld = inkFaceSkip === null;
+        asked.inkFaceSkip = inkFaceSkip;
+
         // The rendering mode every ink assertion below rests on. See
         // INK_PROBE_GRID for the argument; here it is one pass per probe.
         //
@@ -7178,7 +7280,7 @@ async function main() {
             // two colours the band declares for that box — see offSegment,
             // which is confusableInk's claim asked of the capture rather than
             // of the declaration.
-            if (r.label && pixelsHeld) {
+            if (r.label && pixelsHeld && inkFaceHeld) {
                 // What the ink is supposed to LOOK like, which is not always
                 // what it is declared as. DefaultTheme's TextSecondary is
                 // #3C3C4399 — eight digits, so the words are drawn at 60%
@@ -7447,7 +7549,7 @@ async function main() {
             // every assertion here, which is exactly the state the label was in
             // before any of this existed. A number cannot be sampled at a point
             // any more than a word can.
-            if (r.badge && pixelsHeld) {
+            if (r.badge && pixelsHeld && inkFaceHeld) {
                 // Computed once: it is the same sentence either way, and it was
                 // being built twice to be tested and then reported.
                 const digitsUnreadable = inkUnreadable(
@@ -7761,6 +7863,32 @@ async function main() {
         //
         // It is a census and not a second failure. Every path that suppresses a
         // scan has already said why; what none of them said is how many.
+        //
+        // # The one suppression this does not count, and why it is not a hole
+        //
+        // An uncalibrated face (inkFaceSkip) takes the words and the counts to
+        // zero, and those two rows are left out when it does. That is a
+        // weakening of this guard and it is worth being exact about what
+        // separates it from the cases the guard is for.
+        //
+        // Every other suppression here is PARTIAL and UNINTENDED: a probe came
+        // back coloured, a label's node was missing, the grid was clipped at
+        // some row. Some bands were read and some were not, the difference is
+        // the interesting quantity, and no single message carries it — which is
+        // exactly the gap this census fills.
+        //
+        // The face skip is total and declared. Nothing was read, one sentence
+        // printed as a SKIP says so and says what would make it readable, and
+        // the tail below refuses to recite a number at all rather than reciting
+        // zero. So the thing this guard exists to prevent — a zero that reads
+        // like a grid — cannot happen on that path, and counting it here would
+        // turn a machine's missing font into a red pass. That is the inversion
+        // android/verify/gate.sh was extracted to make impossible, one check
+        // over.
+        //
+        // The other rows still apply on that run: the tap targets, the insets
+        // and the fills are rects and solid colours, they were all read, and a
+        // shortfall in any of them is still a shortfall.
         for (const [what, population, subject] of [
             // The tap target's three rows come from the table that owns them,
             // population and phrase together. See bandTargetCensus.
@@ -7771,6 +7899,7 @@ async function main() {
             ["words", "bands that declare a label", "their words in their own ink"],
             ["counts", "bands that declare a count", "their counts as digits"],
         ]) {
+            if (inkFaceSkip && (what === "words" || what === "counts")) continue;
             if (asked[what] >= declared[what]) continue;
             problems.push(`${declared[what] - asked[what]} of the ${declared[what]} ` +
                 `${population} did not get ${subject} — ${asked[what]} did.
@@ -8385,6 +8514,14 @@ async function main() {
         server.close();
     }
 
+    // Said before the verdict rather than inside the OK, so a run that also
+    // FAILS on something else still reports what it did not look at. A skip
+    // that only appears on the happy path is a skip that goes missing exactly
+    // when the log is long.
+    if (asked.inkFaceSkip) {
+        console.log(`SKIP: the band grid's ink scan (${asked.inkFaceSkip})`);
+    }
+
     if (problems.length) {
         console.error("FAIL: the browser disagrees with the keyboard pattern:");
         for (const p of problems) console.error(`  ${p}`);
@@ -8400,8 +8537,11 @@ async function main() {
     hug their own natural width under every intrinsic keyword,
     ${asked.targets} real bands span their own tap targets, ${asked.insets} indent their
     own content by their own declared inset and ${asked.fills} paint their own
-    fill, ${asked.words} of them their words in their own ink and ${asked.counts}
-    their counts as digits inside their own pills — every one of those five counted
+    fill, ${asked.inkFaceSkip
+        ? `their words and their counts unread — this machine does not have the face ` +
+          `those readings were calibrated on, and the SKIP above says so`
+        : `${asked.words} of them their words in their own ink and ${asked.counts}
+    their counts as digits inside their own pills`} — every one of those counted
     where its own check ran rather than off the size of gen.go's table, and held to
     it — on three rows
     taken as fractions of the ink band of the
