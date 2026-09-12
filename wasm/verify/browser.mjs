@@ -1684,17 +1684,25 @@ const OFF_SEGMENT_EPSILON = INK_EPSILON;
 //
 // Measured, over the eight count pills, at dpr 1:
 //
-//	                    the furthest pixel, as a fraction of the way to the ink
-//	Times               1.000   in all eight — the premise, holding
-//	Liberation Serif    0.915   in six of eight, 1.000 in the two tall ones
+//	                    the thinnest stem in the grid, as a fraction of the
+//	                    way from its backdrop to its own declared ink
+//	Times               1.000   — the premise, holding in all eight pills
+//	Liberation Serif    0.907
 //
 // Liberation Serif's digits in a caption-sized pill never fill a pixel, so the
 // whitest pixel in a white number on a #0040DD pill is #EAEFFC. Nothing is
 // wrong with it: it is a correctly drawn number, at a size where every pixel of
-// it is a blend. The tall-caption pills, which are the same face two points
-// bigger, come back exactly at 1.000 — so the reading is about SIZE and the
-// face only through it, which is why this is a fraction rather than another
-// entry in INK_CALIBRATED_ON.
+// it is a blend. Its tall-caption pills, the same face two points bigger, pass
+// the `ink` reading outright — so this is about SIZE and reaches the face only
+// through it, which is why it is a fraction rather than another entry in
+// INK_CALIBRATED_ON.
+//
+// The second row is the runner's own recitation, and it is a correction: this
+// comment first said 0.915, which was arithmetic done by hand on the one pixel
+// a failure message happened to print. The tail prints the thinnest stem of the
+// whole grid on every run for exactly that reason — 0.907 is what the machine
+// says, and a number worked out beside the machine is how the ascender table
+// three constants up went stale.
 //
 // # Why 0.8, and what it still refuses
 //
@@ -1863,9 +1871,36 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 // seconds for a port file from a dead process is time spent proving something
 // already known, and it delayed every one of those failures by most of the
 // timeout.
+//
+// # And what the instrument then said, which is why the bound moved
+//
+// It was ten seconds, and a CI run had already failed here once with no
+// evidence at all. The next failure came with the evidence:
+//
+//	Chrome never reported a DevTools port: Chrome is still running and has
+//	not written one after 10s.
+//
+// Alive. Not a rejected flag, not a crash, not a missing library — a cold
+// Chrome on a contended runner that had not got there yet. Ten seconds was
+// never derived from anything; it is the number somebody writes when they need
+// a number, and on the class of machine nobody here can attach to it was the
+// difference between a green run and a red one.
+//
+// So it is a bound on "a browser that is going to start has started", not a
+// timeout tuned to a workload — the same distinction batchRetireGrace draws in
+// internal/themehistory. The cost of being generous is paid only by a run that
+// is already failing: this returns the instant the port file appears, and the
+// arm above returns the instant Chrome exits, so the full wait is reached only
+// by a browser that is alive and has produced nothing. A minute is long enough
+// that a runner doing something else is not a failure and short enough that a
+// wedged browser does not hold a job for its whole timeout.
+const DEVTOOLS_PORT_WAIT_MS = 60000;
+const DEVTOOLS_PORT_POLL_MS = 100;
+
 async function devtoolsPort(profile, exit, errLines) {
     const portFile = join(profile, "DevToolsActivePort");
-    for (let i = 0; i < 100; i++) {
+    const polls = Math.ceil(DEVTOOLS_PORT_WAIT_MS / DEVTOOLS_PORT_POLL_MS);
+    for (let i = 0; i < polls; i++) {
         if (existsSync(portFile)) {
             const first = readFileSync(portFile, "utf8").split("\n")[0].trim();
             if (first) return Number(first);
@@ -1874,12 +1909,13 @@ async function devtoolsPort(profile, exit, errLines) {
         // then exited still leaves a usable answer on disk, and the point of
         // this arm is a process that died BEFORE saying anything.
         if (exit && exit.done) break;
-        await sleep(100);
+        await sleep(DEVTOOLS_PORT_POLL_MS);
     }
     const how = exit && exit.done
         ? `Chrome exited (${exit.signal ? `signal ${exit.signal}` : `status ${exit.code}`}) ` +
           `without writing one`
-        : `Chrome is still running and has not written one after 10s`;
+        : `Chrome is still running and has not written one after ` +
+          `${DEVTOOLS_PORT_WAIT_MS / 1000}s`;
     const tail = errLines && errLines.length
         ? `\n\nIts last ${errLines.length} line(s) of stderr:\n  ` + errLines.join("\n  ")
         : `\n\nIt wrote nothing to stderr, which for a rejected flag or a missing ` +
