@@ -813,14 +813,37 @@ function inkRowCoverage(img, dpr, y, x0, x1, fill) {
 // reaches above the x-height (the ascenders and the capitals) and the rest, and
 // ask what fraction of THE REST has ink on a given row:
 //
-//	at the x-height line       0.708 to 0.947 across the twenty bands
-//	one device row above it    0.011 to 0.154
+//	                           when the constant was set    read today
+//	at the x-height line       0.708 to 0.947               0.658 to 0.867
+//	one device row above it    0.011 to 0.154               0.009 to 0.128
 //
 // A row above the line reads a tenth of the round letters. The line itself
-// reads three quarters of them and more. INK_ASCENDER_SEPARATION is the
-// midpoint of those two brackets, so the margin is the same on each side
-// (0.276 below it, 0.278 above), and it is held in BOTH directions: the row
-// above must be under it and the line itself must be over it.
+// reads three quarters of them and more. INK_ASCENDER_SEPARATION was the
+// midpoint of the first pair of brackets, so the margin was the same on each
+// side (0.276 below it, 0.278 above), and it is held in BOTH directions: the
+// row above must be under it and the line itself must be over it.
+//
+// # The second column, and how it got there
+//
+// It is the same grid, measured again — by inkCalibrationReport, which exists
+// to take these readings on a face this file has no numbers for and was run
+// against this one first, precisely so that an instrument for measuring a
+// stranger could be checked against the face already measured. The floor's two
+// brackets came back at 0.100 and 0.239, which is what INK_ROW_ROUNDING's own
+// comment records to three decimals. This pair did not.
+//
+// So the table above had drifted: the grid grew its tall-caption rows, whose
+// larger type puts more of a lower-case run's ink above the x-height line, and
+// every extreme in this pair belongs to one of them. Nothing failed and nothing
+// would have — 0.43 still separates 0.128 from 0.658 — and that is the point.
+// It is the same silence TestWhatWindowingWouldSave was rewritten for in
+// examples/tutorial: a number written in a comment and checked by nothing has
+// already moved. The margins are no longer symmetric (0.302 below, 0.228
+// above), and the constant is left where it is: 0.43 was derived from a
+// measurement, and moving it to today's midpoint (0.393) would be re-deriving
+// it from a second one for no gain, while the sentence it stands on — that
+// these two rows read different populations — is exactly as true at either
+// number.
 //
 // The second direction is not decoration. On its own the first is satisfied by
 // a title with no round letters in it — "Illinois" set in ascenders would score
@@ -954,6 +977,223 @@ function inkRoundingVerdict(where, subject, img, dpr, band, x0, x1, fill) {
             `falls under it` };
     }
     return { outside };
+}
+
+// --------------------------------------------------------------------------
+// Calibrating a face this file has no numbers for
+// --------------------------------------------------------------------------
+
+// How many device rows beyond each edge of the band the profile below reads.
+//
+// Two, because that is what INK_ASCENDER_PROBE is: the partition into ascender
+// and non-ascender columns is taken two rows above the x-height line, and a
+// profile that stopped at the line itself would not show the reader the row its
+// own partition was drawn on. At the baseline end the same two rows cover the
+// row the clearance protects (`bottom + 1`, which is what inkRoundingVerdict
+// keeps) and one more below it, so a face whose ink stops short of its declared
+// baseline is visible as a run of zeroes rather than as a single number.
+const INK_PROFILE_MARGIN = 2;
+
+// Every reading the ink scan's four constants were derived from, taken on
+// whatever face this machine resolved, for one box.
+//
+// # Why this exists at all
+//
+// INK_ROWS, INK_EDGE_CLEARANCE, INK_ROW_ROUNDING and INK_ASCENDER_SEPARATION
+// are each a number with a table under it, and every one of those tables was
+// read off one face (see INK_CALIBRATIONS). A machine that resolves another
+// face gets the skip, and the skip's remedy is "re-measure them against this
+// face" — which, until this function, meant editing the file, adding print
+// statements, and running the grid by hand on a machine that has the face. On a
+// CI runner nobody can attach to, that is not a remedy anybody was ever going
+// to carry out, and the two sessions that met the skip did not.
+//
+// So the run takes the readings itself. The skip already knows it cannot judge
+// this face; what it does instead is hand back the table the judgement would
+// need, from the same pixels, through the same coverage predicate the verdicts
+// use (inkRowCoverage — a pixel within INK_EPSILON of the fill is backdrop).
+// The numbers a reader writes into INK_CALIBRATIONS are therefore the numbers
+// the checks will compare against, rather than a second measurement of the same
+// thing by a different route.
+//
+// # What is in the profile, and why a profile rather than four numbers
+//
+// A row-by-row sweep of the band and two rows past each end, rather than the
+// four summary statistics the constants are set from. The summaries answer
+// "does this face fit the constants"; the profile answers "what would fit this
+// face", and the second question is the one a calibration session is actually
+// asking. INK_ROWS is a case in point: if a face's ink stops a row short of its
+// declared baseline, no floor makes 0.25-of-the-band a good row to read — the
+// fractions themselves are what has to move, and only a profile shows that.
+//
+// Each row carries two coverages, because the constants are set from two
+// different populations:
+//
+//	all     every column of the run. This is what INK_ROW_ROUNDING is a floor
+//	        on, and what a scanned row's neighbours are read as.
+//	plain   only the columns with no ink two rows above the x-height line —
+//	        the non-ascender columns, the partition INK_ASCENDER_SEPARATION is
+//	        measured over. Null when the run is all ascenders, which is the
+//	        case inkAscenderVerdict refuses to draw a conclusion from.
+//
+// Returns null when any row of the sweep falls outside the capture. A partial
+// profile would be a table with holes in it presented as a measurement, and
+// this is the one output of this file that somebody is going to copy numbers
+// out of by hand.
+function inkBandProfile(where, subject, kind, img, dpr, band, x0, x1, fill) {
+    const from = Math.round(x0 * dpr), to = Math.round(x1 * dpr);
+    const inked = (y, x) => {
+        const got = pixelAt(img, x, y);
+        return got !== null && channelDistance(got, fill) > INK_EPSILON;
+    };
+    // The partition, taken exactly where inkAscenderVerdict takes it: same row,
+    // same predicate. Two spellings of one partition would let the profile
+    // describe a population the check does not use.
+    const plain = [];
+    for (let x = from; x < to; x++) {
+        if (!inked(band.top - INK_ASCENDER_PROBE, x)) plain.push(x);
+    }
+    const rows = [];
+    for (let y = band.top - INK_PROFILE_MARGIN; y <= band.bottom + INK_PROFILE_MARGIN; y++) {
+        const all = inkRowCoverage(img, dpr, y, x0, x1, fill);
+        if (all === null) return null;
+        rows.push({
+            y, all,
+            plain: plain.length === 0
+                ? null
+                : plain.filter((x) => inked(y, x)).length / plain.length,
+            // Which of these rows the scan would have read, so a reader can see
+            // the three fractions' landing places against the ink around them.
+            scanned: band.rows.includes(y),
+        });
+    }
+    return {
+        where, subject, kind, rows,
+        top: band.top, bottom: band.bottom, scan: band.rows,
+        columns: to - from, plainColumns: plain.length,
+    };
+}
+
+// The four brackets the constants sit in, derived from the profiles.
+//
+// Each constant is a number with a measurement on each side of it, and the two
+// sides come from different rows of the same sweep:
+//
+//	constant                   must be over            and at or under
+//	INK_ROW_ROUNDING           the worst row just       the thinnest neighbour
+//	                           outside the band         of a scanned row
+//	INK_ASCENDER_SEPARATION    the widest reading one   the narrowest reading
+//	                           row above the x-height   at the line itself
+//
+// Over and under are taken across every box in the grid, so the bracket is the
+// one that holds for all of them — a constant that cleared it on average and
+// failed on one band would be a constant that fails the run.
+//
+// INK_EDGE_CLEARANCE is reported rather than bracketed: it is a distance in
+// device rows, not a coverage, and what a reader needs from it is the tightest
+// one the grid produced (inkBandRows refuses anything under the constant, so a
+// face whose bands are too short to clear it never reaches this function).
+//
+// Returns the brackets and whether each one is non-empty. An empty bracket is
+// the interesting outcome rather than an error: it says this face's ink does
+// not separate the two populations the constant exists to tell apart, and that
+// no value of the constant would make the scan mean what it says here.
+function inkCalibrationBrackets(profiles) {
+    const at = (p, y) => p.rows.find((r) => r.y === y);
+    let neighbour = null, outside = null, atLine = null, aboveLine = null;
+    const lower = (a, b) => (b === null || b === undefined ? a : a === null ? b : Math.min(a, b));
+    const upper = (a, b) => (b === null || b === undefined ? a : a === null ? b : Math.max(a, b));
+    for (const p of profiles) {
+        for (const y of p.scan) {
+            const above = at(p, y - 1), below = at(p, y + 1);
+            if (above) neighbour = lower(neighbour, above.all);
+            if (below) neighbour = lower(neighbour, below.all);
+        }
+        const out = at(p, p.bottom + 1);
+        if (out) outside = upper(outside, out.all);
+        // The ascender pair is a statement about lower-case words, so two
+        // populations are left out of it. A run with no non-ascender columns,
+        // which is the exclusion inkAscenderVerdict makes when it declines to
+        // judge — and the count pills, which inkAscenderVerdict is never asked
+        // about at all: digits are lining figures cut to one height, so every
+        // column of a pill is an "ascender" by this partition and the reading
+        // is a sixth-of-a-window artefact rather than a fact about round
+        // letters. Pooling them in was worth catching on the first drill: the
+        // bracket came back 33.3% on both sides, which is two digits of a
+        // six-column pill, and it would have been copied into the table as a
+        // face that separates nothing.
+        if (p.kind === "words" && p.plainColumns > 0) {
+            const line = at(p, p.top), up = at(p, p.top - 1);
+            if (line) atLine = lower(atLine, line.plain);
+            if (up) aboveLine = upper(aboveLine, up.plain);
+        }
+    }
+    return {
+        rounding: { over: outside, under: neighbour,
+            separates: outside !== null && neighbour !== null && outside < neighbour },
+        ascender: { over: aboveLine, under: atLine,
+            separates: aboveLine !== null && atLine !== null && aboveLine < atLine },
+    };
+}
+
+// The calibration table, printed under the skip that asked for it.
+//
+// # Why it is printed rather than asserted
+//
+// Nothing here is a pass or a failure. The run has already said it cannot judge
+// this face; this is the measurement a person needs in order to teach the file
+// about it, and the only honest verdict a machine can attach to a measurement
+// of an uncalibrated face is "here it is".
+//
+// The one judgement it does make is about the brackets: a bracket that does not
+// separate is called out, because that is the case where copying a midpoint
+// into INK_CALIBRATIONS would produce a constant that passes and means nothing,
+// which is the failure mode this whole apparatus is built against.
+//
+// Percentages to one decimal, matching every message the verdicts print, so a
+// reading here and a reading in a failure are the same number spelled the same
+// way.
+function inkCalibrationReport(face, dpr, profiles) {
+    const pct = (v) => (v === null || v === undefined ? "    —" :
+        (v * 100).toFixed(1).padStart(5));
+    const out = [];
+    out.push(`the ink scan's readings on ${face}, at dpr ${dpr}, over ` +
+        `${profiles.length} box${profiles.length === 1 ? "" : "es"}:`);
+    const b = inkCalibrationBrackets(profiles);
+    const bracket = (name, current, br, over, under) => {
+        const midpoint = br.separates ? (br.over + br.under) / 2 : null;
+        out.push(`  ${name} is ${current} on the calibrated face. Here: ` +
+            `over ${pct(br.over)}% (${over}) and at or under ${pct(br.under)}% ` +
+            `(${under})` +
+            (br.separates
+                ? ` — a bracket, whose midpoint is ${midpoint.toFixed(3)}`
+                : ` — WHICH DOES NOT SEPARATE. No value of it makes this reading ` +
+                  `mean what the constant says; the rows themselves are in the ` +
+                  `wrong place for this face, which is INK_ROWS rather than this`));
+    };
+    bracket("INK_ROW_ROUNDING", INK_ROW_ROUNDING, b.rounding,
+        "the row below the band, at its worst",
+        "the thinnest neighbour of a scanned row");
+    bracket("INK_ASCENDER_SEPARATION", INK_ASCENDER_SEPARATION, b.ascender,
+        "one row above the x-height line, at its widest",
+        "the line itself, at its narrowest");
+    // And the profiles themselves, which is what a reader re-chooses INK_ROWS
+    // from. `*` marks the rows the three fractions landed on, `|` the band's
+    // own two edges: the picture a reader is looking for is whether the starred
+    // rows sit in the middle of the ink or on the edge of it.
+    out.push(`  each box's band, row by row — ` +
+        `y:all%/non-ascender%, \`*\` a scanned row, \`|\` a band edge:`);
+    for (const p of profiles) {
+        const cells = p.rows.map((r) => {
+            const mark = r.scanned ? "*" : (r.y === p.top || r.y === p.bottom) ? "|" : " ";
+            const plain = r.plain === null ? "—" : (r.plain * 100).toFixed(0);
+            return `${mark}${r.y}:${(r.all * 100).toFixed(0)}/${plain}`;
+        });
+        out.push(`    ${p.where}, ${p.subject} ` +
+            `(${p.columns} columns, ${p.plainColumns} of them non-ascender): ` +
+            cells.join("  "));
+    }
+    return out.join("\n");
 }
 
 // How far the paint and the run's own client rect may part company at either
@@ -2617,7 +2857,7 @@ const INK_OWN_MEASURED_ON = {
 // nothing, and names the ink scan's sample points as the thing that does. It
 // understated it. Those points are not merely dpr-scaled: the three rows are
 // fractions of the ink band of the face that drew the run, the clearance that
-// keeps them off the baseline is one device row, and INK_ROW_GLYPH_FLOOR is a
+// keeps them off the baseline is one device row, and INK_ROW_ROUNDING is a
 // coverage a row of THESE glyphs produces. All three are readings of one face's
 // outline, and none of them survives a different one:
 //
@@ -2660,6 +2900,23 @@ const INK_MEASURED_ON = {
     face: "Times",
 };
 
+// Every platform face this grid's glyphs and its probes resolved to.
+//
+// One enumeration rather than two: the skip names the faces it could not use
+// and the calibration report names the face it took its readings on, and those
+// have to be the same list or the table a reader copies from is a table about a
+// different font than the sentence above it.
+function inkFacesSeen(bandFaces, probeFaces) {
+    const seen = new Set();
+    for (const b of bandFaces || []) {
+        for (const f of [...(b.label || []), ...(b.badge || [])]) seen.add(f.family);
+    }
+    for (const p of probeFaces || []) {
+        for (const f of p || []) seen.add(f.family);
+    }
+    return seen;
+}
+
 // Whether every glyph the ink scan reads was drawn by the face its numbers came
 // from. Returns null when it was, and the sentence to skip with when it was
 // not.
@@ -2669,13 +2926,7 @@ const INK_MEASURED_ON = {
 // all twenty bands fell to one other face is one fact, and printing it twenty
 // times would bury it.
 function inkFaceCalibration(bandFaces, probeFaces) {
-    const seen = new Set();
-    for (const b of bandFaces || []) {
-        for (const f of [...(b.label || []), ...(b.badge || [])]) seen.add(f.family);
-    }
-    for (const p of probeFaces || []) {
-        for (const f of p || []) seen.add(f.family);
-    }
+    const seen = inkFacesSeen(bandFaces, probeFaces);
     // No face read at all is not this guard's business. inkFaceFault reports a
     // box the browser names no platform font for, and answering "uncalibrated"
     // here would take that failure and turn it into a skip.
@@ -2691,8 +2942,9 @@ function inkFaceCalibration(bandFaces, probeFaces) {
         `every Linux runner. The layout assertions, the fill and the antialiasing ` +
         `probes all ran; what is unread is that the words are in their own ink and ` +
         `that the counts are digits. To check them here, install ` +
-        `${INK_MEASURED_ON.face} — or re-measure INK_ROWS, INK_EDGE_CLEARANCE and ` +
-        `INK_ROW_GLYPH_FLOOR against this face and record it beside that one`;
+        `${INK_MEASURED_ON.face} — or take the readings printed under this skip, ` +
+        `which are INK_ROW_ROUNDING's and INK_ASCENDER_SEPARATION's own brackets ` +
+        `measured on this face, and record them beside ${INK_MEASURED_ON.face}'s`;
 }
 
 // How many string values make a computed style, taken from the enumeration
@@ -4915,6 +5167,10 @@ async function main() {
         // set. A zero with no reason beside it reads as a grid that stopped
         // finding words.
         inkFaceSkip: null,
+        // The table the skip's remedy asks for, and the boxes it could not be
+        // taken from. Null on a calibrated run, where nothing measures them.
+        inkCalibration: null,
+        inkCalibrationMissed: [],
     };
     try {
         const port = await devtoolsPort(profile, chromeExit, chromeErr);
@@ -7075,6 +7331,19 @@ async function main() {
         // separating something. See INK_ROW_ROUNDING and inkRoundingVerdict.
         const inkOutsideBand = [];
 
+        // And, when the face is not the one those numbers came from, the
+        // readings a calibration of THIS face would be made out of.
+        //
+        // Only populated on the skip path, so a calibrated run pays nothing for
+        // it: the profiles are a second sweep of the same rows, which is the
+        // kind of cost that is free exactly while the alternative is a check
+        // that did not run at all. `missed` is the boxes the sweep could not
+        // read, kept because a table that silently described twelve boxes of a
+        // grid of twenty-eight would be the same shape of quiet the band census
+        // exists to refuse. See inkBandProfile.
+        const inkProfiles = [];
+        const inkProfilesMissed = [];
+
         // What the tail of this check is allowed to recite.
         //
         // # A pass for a question nobody asked
@@ -7280,6 +7549,27 @@ async function main() {
             // two colours the band declares for that box — see offSegment,
             // which is confusableInk's claim asked of the capture rather than
             // of the declaration.
+            // The calibration sweep, which runs instead of the scan below
+            // rather than beside it: an uncalibrated face is one this file
+            // cannot judge, and what it can do is measure. See
+            // inkCalibrationReport for what is done with these.
+            if (r.label && pixelsHeld && inkFaceSkip) {
+                const band = inkBandRows(where, "the label's words", r.labelBand,
+                    bandDpr, `A word set in lower case has ink only between its ` +
+                    `baseline and its x-height, so that band is all there is to ` +
+                    `spread three rows across`);
+                if (band.problem) {
+                    inkProfilesMissed.push(band.problem);
+                } else {
+                    const p = inkBandProfile(where, "the label's words", "words",
+                        bandImg, bandDpr, band, r.labelBand.runX,
+                        r.labelBand.runX + r.labelBand.runW, b.fill);
+                    if (p) inkProfiles.push(p);
+                    else inkProfilesMissed.push(`${where}: the label's words — the ` +
+                        `capture does not contain every row of the band and the two ` +
+                        `either side of it`);
+                }
+            }
             if (r.label && pixelsHeld && inkFaceHeld) {
                 // What the ink is supposed to LOOK like, which is not always
                 // what it is declared as. DefaultTheme's TextSecondary is
@@ -7549,6 +7839,25 @@ async function main() {
             // every assertion here, which is exactly the state the label was in
             // before any of this existed. A number cannot be sampled at a point
             // any more than a word can.
+            // The same sweep over the count pill's window, which is the pill
+            // less its own two paddings — the window the digits are scanned in.
+            if (r.badge && pixelsHeld && inkFaceSkip) {
+                const band = inkBandRows(where, "the count's digits", r.badgeBand,
+                    bandDpr, `Digits are lining figures — every one of them runs ` +
+                    `from the baseline to the same cap height — so that band is ` +
+                    `all there is to spread three rows across`);
+                if (band.problem) {
+                    inkProfilesMissed.push(band.problem);
+                } else {
+                    const p = inkBandProfile(where, "the count's digits", "digits",
+                        bandImg, bandDpr, band, r.badge.x + b.badgePadLeft,
+                        r.badge.x + r.badge.w - b.badgePadRight, b.badgeFill);
+                    if (p) inkProfiles.push(p);
+                    else inkProfilesMissed.push(`${where}: the count's digits — the ` +
+                        `capture does not contain every row of the band and the two ` +
+                        `either side of it`);
+                }
+            }
             if (r.badge && pixelsHeld && inkFaceHeld) {
                 // Computed once: it is the same sentence either way, and it was
                 // being built twice to be tested and then reported.
@@ -7912,6 +8221,22 @@ async function main() {
                 `says so, and pass every rect-shaped assertion in the same breath — ` +
                 `and a reader who skimmed the tail would find twenty bands recited ` +
                 `and no way to tell how many had been looked at`);
+        }
+
+        // The calibration, on the runs that could not be judged.
+        //
+        // Assembled here rather than at the tail because this is where the
+        // profiles and the dpr they were taken at are in scope, and because the
+        // tail's job is to print what the run found rather than to compute it.
+        // A skip with no profiles at all is reported as such: the face was
+        // uncalibrated AND nothing could be swept, which is two facts, and the
+        // second one is about the capture rather than about the font.
+        if (inkFaceSkip) {
+            asked.inkCalibration = inkProfiles.length > 0
+                ? inkCalibrationReport([...inkFacesSeen(bandFaces, probeFaces)].sort()
+                    .join(", "), bandDpr, inkProfiles)
+                : null;
+            asked.inkCalibrationMissed = inkProfilesMissed;
         }
 
         // And what the floor those scans were held to actually separates.
@@ -8520,6 +8845,15 @@ async function main() {
     // when the log is long.
     if (asked.inkFaceSkip) {
         console.log(`SKIP: the band grid's ink scan (${asked.inkFaceSkip})`);
+        // And the measurement that remedy needs, taken on the way past. A skip
+        // that asks a reader to re-measure three constants, on a machine the
+        // reader does not have, is a remedy nobody can carry out; this is the
+        // difference between naming the work and doing the half of it that a
+        // machine can. See inkBandProfile.
+        if (asked.inkCalibration) console.log(asked.inkCalibration);
+        for (const m of asked.inkCalibrationMissed) {
+            console.log(`  not swept — ${m.split("\n")[0]}`);
+        }
     }
 
     if (problems.length) {
