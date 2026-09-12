@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>GrMob · hero</title>
+<style>
+  /* The composite. Three finished screenshots on one ground, scaled to a
+     common height so the phones read as a set rather than as three
+     pictures that happen to be adjacent.
+
+     Height and not width, because the shots are framed to their content —
+     a counter is short and the tutorial is tall — so equal widths would
+     leave them ragged along the bottom, which is the edge the eye reads
+     a row of phones against. */
+  body { margin: 0; background: #f5f6f8; }
+  #hero {
+    display: inline-flex; align-items: flex-end; gap: 14px; padding: 20px;
+    background: #f5f6f8;
+  }
+  #hero img { height: 420px; width: auto; display: block; }
+</style>
+</head>
+<body>
+<div id="hero">
+  <img src="images/todo.png" alt="">
+  <img src="images/signup.png" alt="">
+  <img src="images/tabs-list.png" alt="">
+</div>
+<script>
+    // The same flag index.html sets, for the same driver. There is no
+    // module here, so what this waits for is the images having decoded:
+    // a capture taken before that is a picture of three empty boxes, and
+    // it would be a consistent one, because a browser lays the boxes out
+    // at their intrinsic size the moment it knows it.
+    window.__grmobReady = false;
+    window.__grmobFailed = "";
+    Promise.all(Array.from(document.images).map((img) =>
+        img.decode().catch(() => {
+            throw new Error(`missing or unreadable: ${img.getAttribute("src")}` +
+                ` — shoot the parts before the composite`);
+        })
+    )).then(() => { window.__grmobReady = true; })
+      .catch((err) => { window.__grmobFailed = err.message; });
+</script>
+</body>
+</html>

@@ -11,10 +11,11 @@ go get github.com/rohanthewiz/grmob
 ## A first app
 
 A GrMob app is a package with a root view function and an `init` that
-registers it with the mobile bridge:
+registers it with the mobile bridge. This one is in the repository —
+`examples/counter` — and the fence below is its source:
 
 ```go
-// counter/app.go
+// examples/counter/app.go
 package counter
 
 import (
@@ -38,6 +39,7 @@ func App(ctx *core.Context) core.View {
     return core.SafeArea(
         core.Column(
             core.Gap(12),
+            core.Padding(24),
             core.Text("Counter", core.FontSize(28), core.FontWeight(core.Bold)),
             core.Text(fmt.Sprintf("Count: %d", count.Get())),
             core.Row(
@@ -81,8 +83,10 @@ func TestCounter(t *testing.T) {
 }
 ```
 
-`examples/todoapp/app_test.go` shows this pattern at three levels of depth,
-including asserting on exported HTML via [`htmlout`](platforms/exporters.md).
+`examples/counter/app_test.go` is that test written out, against the package
+above. `examples/todoapp/app_test.go` shows the same pattern at three levels of
+depth, including asserting on exported HTML via
+[`htmlout`](platforms/exporters.md).
 
 ### 2. Preview in the browser
 

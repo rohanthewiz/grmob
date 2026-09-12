@@ -6,12 +6,29 @@
 # check actually needs:
 #
 #   go       ubuntu   Go toolchain + Node        formatting, vet, tests, WASM
-#   ios      macOS    Go + Swift (arm64 host)    ios/verify/run.sh
-#   android  ubuntu   Go + JDK 17 + SDK/NDK      android/verify, gomobile bind,
-#                                                Gradle, android/verify again
+#   ios      macOS    Go + Swift (arm64 host)    ios/verify/run.sh, and the
+#                                                remedy drill over its gate
+#   android  ubuntu   Go + JDK 17 + SDK/NDK      android/verify, the remedy
+#                                                drill over its gradle-cache
+#                                                gates, gomobile bind, Gradle,
+#                                                android/verify again
 #
 # The three are independent and run in parallel; a red iOS job does not hide a
 # red Go job. The Go job is the fast one and is what a contributor watches.
+#
+# # The remedy drills, and why they are here and not in a test
+#
+# Each verify pass decides in shell whether it can run on this machine, and
+# prints a skip naming what to do about it. gate_test.sh proves those sentences
+# are different sentences chosen in the right order; nothing proved any of them
+# was TRUE — and android/verify's two compiler skips once named a gradle task
+# that fetches no compiler, so a reader who ran what they said met the same skip
+# again.
+#
+# The only instrument for that is running the remedy on a machine that has the
+# fault, which is a machine with an SDK, a network and a cache it has never
+# filled. That is this workflow and nowhere else: `go test ./...` has none of
+# them. See internal/gateharness/remedy.sh.
 name: CI
 
 on:
@@ -97,7 +114,8 @@ jobs:
     # GitHub macOS image qualifies; `latest` avoids a hardcoded image label
     # going out of support.
     runs-on: macos-latest
-    timeout-minutes: 20
+    # Twenty for the pass, plus the drill below, which runs it twice more.
+    timeout-minutes: 35
     steps:
       - uses: actions/checkout@v4
 
@@ -114,10 +132,27 @@ jobs:
         # would catch. Neither needs a simulator.
         run: ./ios/verify/run.sh
 
+      - name: Drill the app-layer gate's remedy sentence
+        # The gate's one remedy is "install Xcode", which is not a command — so
+        # the executable form is the other direction: hide the iPhoneOS SDK
+        # behind an xcrun shim, require the pass to skip with the sentence that
+        # names Xcode, put it back, and require the app layer to type-check.
+        #
+        # After the pass above rather than before it, so that a genuinely
+        # broken runtime is reported as a broken runtime rather than as a drill
+        # whose second half did not print an OK.
+        #
+        # This is the only place it can run: it needs a machine that HAS an
+        # Xcode, because the second half of a drill has to be the same machine
+        # in the same run as the first.
+        run: ./ios/verify/remedy.sh
+
   android:
     name: Android AAR and Compose renderer
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # Thirty for the build, plus the drill below, which fills a gradle cache of
+    # its own from cold before the job fills the real one.
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
 
@@ -140,6 +175,22 @@ jobs:
         run: |
           "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" \
             "platforms;android-34" "build-tools;34.0.0" > /dev/null
+
+      - name: Drill the gradle-cache gates' remedy sentences
+        # Before the cache is populated, and with a GRADLE_USER_HOME of its own
+        # so it stays that way for the step below.
+        #
+        # The fault this drills IS a cache that has never been filled, which is
+        # the state the next step exists to leave. Run afterwards it would have
+        # to unfill one; run here it only has to not disturb the real one, and
+        # a scratch home is the whole of that. The two sentences it drills are
+        # the two the step below runs commands for, which is not a coincidence:
+        # those commands are what the sentences tell a reader to run, and this
+        # is what says they work.
+        #
+        # It needs the SDK installed above and a network, and it takes both
+        # from the runner. See android/verify/remedy.sh.
+        run: ./android/verify/remedy.sh
 
       # Everything android/verify needs, and the two network calls it will not
       # make itself.

@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>GrMob · shots</title>
+<style>
+  /* This page is wasm/index.html with everything a reader needs removed.
+     What is left is the three things a photograph of an app is made of:
+     the bezel, the screen inside it, and the mount rules that make the
+     app fill that screen the way it fills a phone.
+
+     Gone, and each for a reason:
+
+       the header       it is site chrome, and a picture of it is a
+                        picture of the site rather than of the framework
+       the deep links   the hash translation layer is the tutorial site's
+                        contract with the browser's address bar; a camera
+                        has no address bar
+       Leaflet          no shot has a map in it, and a third-party script
+                        in the frame is a dependency on somebody else's
+                        release for a picture in a README
+
+     What is added is two things the site does not need: a size that can
+     be set per shot, and a flag saying the app is really on screen. */
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    margin: 0; background: #f5f6f8;
+    font: 14px/1.45 system-ui, sans-serif;
+    display: flex; align-items: center; justify-content: center;
+  }
+
+  /* The bezel. Its box is what the driver clips the capture to, so these
+     numbers ARE the picture's dimensions: whatever size Chrome decided
+     its window should be never reaches the PNG. The width and height come
+     from the query string (see below) because a three-control counter in
+     a phone-height frame is mostly blank paper, and a screenful of blank
+     paper is the part of a screenshot a reader has to scroll past. */
+  .phone {
+    position: relative; display: flex; flex-direction: column;
+    width: 414px; height: 800px;
+    background: #0b0c0f; border-radius: 34px; padding: 12px;
+    box-shadow: 0 20px 50px rgba(0,0,0,.35), 0 0 0 1px #d7dbe2;
+  }
+  .screen {
+    flex: 1; min-height: 0; position: relative;
+    background: #ffffff; border-radius: 24px; overflow: hidden;
+    /* The app's ink as well as its paper, and the containing block for
+       core.Modal's fixed overlay chassis — both for the reasons
+       wasm/index.html states at length. */
+    color: #000000;
+    transform: translateZ(0);
+  }
+  #app { position: absolute; inset: 0; display: flex; flex-direction: column; }
+  #app > * { flex: 1; min-height: 0; }
+  /* The rule that turns a Scroll node into the viewport the natives make
+     of it. Without it the document scrolls instead, and a clipped capture
+     of a fixed-size bezel would show the top of the page whatever the
+     action script scrolled to. */
+  #app [data-node-type="Scroll"] {
+    flex: 1 1 0; min-height: 0; overflow-y: auto; overscroll-behavior: contain;
+  }
+  .boot {
+    position: absolute; inset: 0; display: flex;
+    align-items: center; justify-content: center;
+    color: #667085; background: #ffffff; font-size: .9rem;
+  }
+</style>
+</head>
+<body>
+
+<div class="phone">
+  <div class="screen">
+    <div id="app"><div class="boot">Loading…</div></div>
+  </div>
+</div>
+
+<script src="wasm_exec.js"></script>
+<script src="grmob-runtime.js"></script>
+<script>
+    // Size the bezel from the query string, before the module is fetched,
+    // so the app's first layout pass is already at the size it will be
+    // photographed at. Sizing afterwards would make every shot a picture
+    // of a re-layout.
+    const params = new URLSearchParams(location.search);
+    const phone = document.querySelector(".phone");
+    if (params.get("w")) phone.style.width = params.get("w") + "px";
+    if (params.get("h")) phone.style.height = params.get("h") + "px";
+
+    // The ready flag, and why the driver cannot simply wait for `load`.
+    //
+    // main.wasm is several megabytes and the first paint of this page is
+    // the "Loading…" placeholder above. The load event fires when the
+    // page's own resources are in, which is before the module has been
+    // instantiated, before RenderInitial has been called, and therefore
+    // before there is an app to photograph. A driver waiting on `load`
+    // takes a very consistent picture of the word "Loading".
+    //
+    // So the flag is set after mount, and the driver polls for it.
+    window.__grmobReady = false;
+    window.__grmobFailed = "";
+
+    (async () => {
+        try {
+            const go = new Go();
+            const source = fetch("main.wasm").then(r => {
+                if (!r.ok) throw new Error(`main.wasm: HTTP ${r.status}`);
+                return r;
+            });
+            const result = await (("instantiateStreaming" in WebAssembly)
+                ? WebAssembly.instantiateStreaming(source, go.importObject)
+                    .catch(() => source.then(r => r.arrayBuffer())
+                        .then(b => WebAssembly.instantiate(b, go.importObject)))
+                : source.then(r => r.arrayBuffer())
+                    .then(b => WebAssembly.instantiate(b, go.importObject)));
+            go.run(result.instance);
+            GrMob.mount(window.GrMobWASM.RenderInitial());
+            window.__grmobReady = true;
+        } catch (err) {
+            // Recorded rather than thrown: the driver polls two globals,
+            // and a failure it can read is a failure it can report with
+            // the browser's own words in it.
+            window.__grmobFailed = (err && err.message) ? err.message : String(err);
+        }
+    })();
+
+    // The one entry point every action below goes through — the same one
+    // grmob-runtime.js calls when a real click lands on a real element.
+    // That is what makes a driven state a state the app produced rather
+    // than one the harness wrote into the DOM.
+    window.GoInvokeCallback = (id, payload) => {
+        window.GrMobWASM.ReceiveEvent(id, JSON.stringify(payload));
+        GrMob.patch(window.GrMobWASM.RenderAgain());
+    };
+</script>
+</body>
+</html>

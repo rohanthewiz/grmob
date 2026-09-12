@@ -820,7 +820,7 @@ var verifyTimingsTakenOn = struct {
 // # What this package's answer actually is, which is not "nothing"
 //
 // The expensive half of wholeFile does not move. The four repository-wide
-// walks hand every Go file in the tree to go/parser one after another — 441
+// walks hand every Go file in the tree to go/parser one after another — 450
 // tracked Go files where this record was taken, 0.18s each, single-threaded,
 // the same number on any machine — and foldWalk is a node process this package waits on
 // rather than shares a core with.
@@ -889,7 +889,7 @@ var verifyTimingsTakenOn = struct {
 // either direction reads — a term named in prose is neither claimed nor
 // checked.
 const coresAttribution = "The four repository-wide walks in this package are " +
-	"single-threaded — go/parser over 441 tracked Go files " +
+	"single-threaded — go/parser over 450 tracked Go files " +
 	"where this record was taken, 0.18s each — and " +
 	"`foldWalk` is a node process. Those do not move with the core count. " +
 	"Two declarations do, and they are the whole of it: " +

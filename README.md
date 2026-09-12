@@ -12,7 +12,7 @@ language, no JavaScript, no manual bridge to wire up.
 </p>
 
 <p align="center">
-  <em>Every screenshot in this README is a real GrMob app — the examples in this repository, captured from the browser build.</em>
+  <em>Every screenshot in this README is a real GrMob app — the examples in this repository, driven through the same event path a finger takes and captured from the browser build. <code>wasm/shots</code> re-takes them; <code>internal/shotclaims</code> is what holds them to still being true.</em>
 </p>
 
 ---
@@ -20,10 +20,12 @@ language, no JavaScript, no manual bridge to wire up.
 ## Your first app
 
 A GrMob app is a function from a context to a view. That is the whole idea —
-here is a complete, working screen:
+here is a complete, working screen, and it is a real package in this
+repository rather than a snippet: [`examples/counter`](examples/counter).
 
 ```go
-package main
+// examples/counter/app.go
+package counter
 
 import (
     "fmt"
@@ -67,7 +69,8 @@ Three things are worth noticing, and they carry most of the framework:
    the differences to whichever renderer is attached.
 
 To put that screen on a phone, one `init` registers it — that is the whole
-integration contract, and the native shells and the browser host both use it:
+integration contract, and the native shells and the browser host both use it.
+The rest of `examples/counter/app.go` is these two declarations:
 
 ```go
 func init() {

@@ -1,12 +1,12 @@
 // The facts a shimmed DOM cannot check, checked in a browser: four about the
-// keyboard, two about paint, five about layout, and one about what a browser
+// keyboard, three about paint, five about layout, and one about what a browser
 // does with an accessibility value nobody here resolves.
 //
 // wasm/verify's other suites run the real grmob-runtime.js against dom.mjs — a
 // few hundred lines that model element trees, attributes, listeners and which
 // element holds focus. That is enough for almost everything, and its limits
 // are stated in its own header: there is no layout, no bubbling, and `focus()`
-// is an assignment, and nothing is ever painted. Twelve claims sit exactly in
+// is an assignment, and nothing is ever painted. Thirteen claims sit exactly in
 // that blind spot, and no amount of widening the shim would settle them,
 // because each one is a claim about what a *browser* does:
 //
@@ -112,6 +112,19 @@
 //      company a second time — a flex line charges its gap between every
 //      adjacent pair and a Compose Row clamps each one to what is left, and
 //      every case carried gap 0 until one of them did not.
+//  13. a count painted in a dimmer version of its own ink reads as that
+//      dilution, and the ink floor refuses it. Check 10 reads a count pill's
+//      digits and accepts them when the furthest pixel from the pill gets far
+//      enough toward the declared ink — INK_STEM_REACH, which is 0.8 — because
+//      a stem too thin to cover a device pixel never reaches its own colour
+//      outright. That floor had one measurement above it, the thinnest stem
+//      the grid finds, and none below: the sentence saying what a half-strength
+//      ink would read as was arithmetic nobody had asked a browser about. This
+//      paints the failure the floor exists to catch, at five known strengths of
+//      a real pill's own two colours, and holds the scan to reading each one as
+//      the dilution it is. It also measures why the floor is needed beside the
+//      stronger catch: a dilution sits ON the segment between fill and ink, so
+//      offSegment cannot see it, and that had been reasoning too.
 //
 // The numbering is one sequence, and it is the order the checks run in rather
 // than the order they were written. It is also load-bearing: a dozen comments
@@ -1704,21 +1717,39 @@ const OFF_SEGMENT_EPSILON = INK_EPSILON;
 // says, and a number worked out beside the machine is how the ascender table
 // three constants up went stale.
 //
-// # Why 0.8, and what it still refuses
+// # Why 0.8, and where it now sits
 //
-// The floor has one measurement under it (0.915, the thinnest stem in the grid)
-// and none above it, so it is set below the measurement with room rather than
-// in the middle of a bracket the way INK_ROW_ROUNDING is — the honest shape for
-// a bound with one side measured.
+// It was set with one measurement above it and none below — 0.907, the thinnest
+// stem in the grid on a machine that resolves Liberation Serif, and 1.000 on one
+// that resolves Times — so it went under that reading with room rather than in
+// the middle of a bracket the way INK_ROW_ROUNDING is, which is the honest shape
+// for a bound with one side measured. It is no longer that shape.
+//
+// Check 13 is the other side. It paints a real count pill's own two colours at
+// five known dilutions and reads what this scan says of each, which turns the
+// paragraph below from arithmetic into a measurement:
+//
+//	dilution   read as   verdict
+//	1.000      100.0%    accepted — a full-strength ink, the `ink` reading's own case
+//	0.850       85.0%    accepted — the lowest reading over the floor
+//	0.750       75.1%    refused  — the highest reading under it
+//	0.700       70.0%    refused
+//	0.500       50.0%    refused
+//
+// So the floor is bracketed on both sides by things a browser said: three
+// quarters of an ink is caught, five sixths is not, and the thinnest legitimate
+// stem the grid has ever drawn is 0.907. The tail recites both ends on every run
+// for the reason it recites the thinnest stem — a bound whose brackets live only
+// in a comment is a bound nothing is watching.
 //
 // What it refuses is the failure the `ink` reading was written for: a count
 // that lost its declaration and inherited another colour. Such a colour is
 // caught twice over, and this is the weaker of the two catches. Off the line
 // between the pill and the declared ink — any hue at all — is offSegment's, at
-// a tolerance of 3 channels. On that line but dimmer is this one: an ink at
-// half strength reaches 0.5 and an ink at four fifths is where this stops
-// believing a thin stem. The pair is what makes "it is THIS ink" still mean
-// something when no pixel of it is undiluted.
+// a tolerance of 3 channels. On that line but dimmer is this one, and that the
+// stronger catch cannot see a dilution at all is measured rather than reasoned:
+// check 13's boxes come back on the segment to within a fraction of a channel,
+// which is what makes the pair non-redundant rather than belt and braces.
 const INK_STEM_REACH = 0.8;
 
 // How far a pixel is from being a blend of the two colours the label's box is
@@ -5151,6 +5182,154 @@ const PIN_GRID = {
 };
 
 // --------------------------------------------------------------------------
+// The ink floor's other bracket
+// --------------------------------------------------------------------------
+
+// The dilutions a count is painted at, as fractions of the way from the pill's
+// fill to the pill's own declared ink.
+//
+// # What this is the other half of
+//
+// INK_STEM_REACH is 0.8 and it had ONE measurement under it: the thinnest stem
+// the band grid finds, which is 1.000 on a machine that resolves Times and
+// 0.907 on one that resolves Liberation Serif. Nothing had ever been measured
+// on the other side. The constant's own comment says what it believes — "an ink
+// at half strength reaches 0.5 and an ink at four fifths is where this stops
+// believing a thin stem" — and that sentence was arithmetic nobody had asked a
+// browser about. A floor with one side measured is a floor that could be
+// anywhere below the reading it clears.
+//
+// So this paints the failure the constant exists to catch, at known strengths,
+// and reads what the scan says. The grid measures a FULL-strength ink drawn
+// thinly; this measures a THICK ink drawn at a fraction of its strength. Put
+// together, 0.8 sits between two measurements instead of above one.
+//
+// # Why the digits are set large and bold
+//
+// Because thinness is the other experiment. A stem narrower than a device pixel
+// never reaches its own colour — that is the whole reason the `ink` reading
+// needed a fraction beside it — so a dilution measured on a thin stem would be
+// two effects in one number, and neither would be readable out of it. At a size
+// where every stem covers a pixel outright, the furthest pixel from the fill IS
+// the colour the digits were painted in, and the reading is the dilution alone.
+//
+// # The fractions
+//
+// Two well under the floor, one just under it, one just over, and one at full
+// strength. The pair either side is what makes the bracket tight: the file can
+// then say that 0.75 is refused and 0.85 is accepted, which is a statement
+// about where 0.8 actually sits rather than about where it was put.
+//
+// None of them is 0.8 itself. A fraction ON the boundary would be a reading
+// whose verdict depends on the rounding of an eight-bit mix, which is a coin
+// toss written down as a check.
+const INK_DILUTIONS = [0.5, 0.7, 0.75, 0.85, 1.0];
+
+// mixHex is the colour `f` of the way from `a` to `b`, per channel, in eight
+// bits — which is exactly the arithmetic antialiasing does at coverage f, and
+// therefore exactly what a stem interior would be if the ink had been declared
+// that much weaker.
+function mixHex(a, b, f) {
+    let out = "#";
+    for (let i = 1; i < 7; i += 2) {
+        const from = parseInt(a.slice(i, i + 2), 16);
+        const to = parseInt(b.slice(i, i + 2), 16);
+        out += hex2(Math.round(from + f * (to - from)));
+    }
+    return out;
+}
+
+// The pill the dilutions are painted in, taken from a real band.
+//
+// Not a pair of hexes written here. The question is about a COUNT that lost its
+// declaration and inherited a dimmer colour, so the two ends of the segment
+// have to be the ones a real components.Badge actually paints — and gen.go
+// already reads them off the rendered node for every band in the grid. A
+// literal pair would be this check agreeing with itself about a widget it had
+// stopped describing.
+//
+// The first badged band, because every one of them would do and the grid is
+// stable: what varies across the grid is the palette, and a dilution is a
+// fraction of whatever distance the palette happens to leave between the two.
+const INK_FLOOR_BAND = BAND_RENDERS.find((b) => b.badge && b.badgeFill && b.badgeInk);
+
+// The size the digits are drawn at. Twice a caption and bold, for the reason
+// the header above gives: this fixture is about strength and the other one is
+// about thinness, and a stem that covers a device pixel outright is what keeps
+// them apart.
+const INK_FLOOR_SIZE = 26;
+
+// One box per dilution: a pill's fill, with a digit on it in an ink that much
+// of the way to the declared one.
+//
+// Square corners and no radius, deliberately. A real pill's 999-radius edge is
+// a blend with the BAND behind it, which is why the grid's scan has to work
+// between the pill's two paddings; here there is no band and no curve, so the
+// box's whole interior is fill and digit and the window needs no argument.
+function inkFloorTree() {
+    if (!INK_FLOOR_BAND) return null;
+    const fill = INK_FLOOR_BAND.badgeFill;
+    const ink = over(INK_FLOOR_BAND.badgeInk, fill);
+    return {
+        Type: "Row",
+        Style: {
+            Padding: { Top: 0, Right: 0, Bottom: 0, Left: 0 }, Gap: 6,
+            AlignItems: "flex-start",
+        },
+        Children: INK_DILUTIONS.map((f) => ({
+            Type: "Row",
+            Style: {
+                Background: fill,
+                Padding: { Top: 6, Right: 10, Bottom: 6, Left: 10 },
+                FlexShrink: SHRINK_NONE,
+            },
+            Children: [{
+                Type: "Text",
+                Props: { content: "3" },
+                Style: {
+                    TextColor: mixHex(fill, ink, f),
+                    FontSize: INK_FLOOR_SIZE,
+                    FontWeight: 700,
+                },
+            }],
+        })),
+    };
+}
+
+// How far the scan's reading may sit from the dilution that was painted.
+//
+// Expressed in CHANNELS and converted, rather than as a fraction, because that
+// is the unit every other tolerance in this file is in and the unit the two
+// roundings are in: the mix above is rounded to eight bits and the screenshot
+// is eight bits. INK_EPSILON is what this file already calls "as close as two
+// roundings get", and a dilution read to within it is a dilution read exactly.
+const INK_FLOOR_EPSILON = INK_EPSILON;
+
+// How far apart the two readings either side of the floor may be.
+//
+// # Why a bracket needs a width at all
+//
+// Without one, this check is true of any floor. Both halves of its verdict are
+// derived from INK_STEM_REACH — "should this be refused" and "was it refused"
+// — so moving the constant to 0.6 moves the expectation with it and everything
+// still passes, with the tail then reciting a refusal at 50% and an acceptance
+// at 70% as though that said where the line is. A pair of readings a fifth
+// apart brackets nothing in particular.
+//
+// So the pair has to be CLOSE to the floor, and that is this number. It is
+// wider than the gap INK_DILUTIONS actually produces (0.85 − 0.75 = 0.10, and
+// the browser reads them at 0.850 and 0.751) and narrower than any pair the
+// set could produce if the constant moved off the step it sits between: at 0.6
+// the nearest pair is 0.50/0.70, at 0.9 it is 0.85/1.00, and both are 0.20.
+//
+// What that buys is a conversation rather than a silent pass. Moving
+// INK_STEM_REACH now fails here until somebody chooses dilutions that straddle
+// the new number as closely — which is the work that makes the new number
+// bracketed too, and exactly the work that was skipped when 0.8 was written
+// with a reading on one side only.
+const INK_FLOOR_BRACKET = 0.15;
+
+// --------------------------------------------------------------------------
 
 async function main() {
     const chromePath = findChrome();
@@ -5292,10 +5471,20 @@ async function main() {
         insets: 0, fills: 0, words: 0, counts: 0,
         // The thinnest stem in the grid, as a fraction of the way from its
         // backdrop to its own declared ink. Recited by the tail rather than
-        // asserted: INK_STEM_REACH's floor is under one measurement and over
-        // nothing, so what keeps it honest is the number being printed on every
-        // run instead of living in a comment. Null until a box is scanned.
+        // asserted, which is a different thing from the pair below it: this is
+        // a reading of whatever face the machine happens to resolve, and a
+        // legitimate one can be anywhere from 0.907 to 1.000, so what keeps
+        // INK_STEM_REACH honest on this side is the number being printed on
+        // every run instead of living in a comment. Null until a box is
+        // scanned.
         inkReach: null,
+        // And the other end of the same bracket, from check 13: the highest
+        // dilution of a count's own ink the floor still refused, and the
+        // lowest it accepted. Both, because a bound is only bracketed by a
+        // pair — a refusal on its own says the floor catches something and
+        // not where it sits. Null until that check has run, which is what the
+        // tail's own phrasing is written around.
+        inkFloorRefused: null, inkFloorAccepted: null,
         // And what the refusal behind the glyph-per-character claim comes to
         // on the face this browser resolved. Not a count of anything asserted
         // — see inkLigatureCensus, where neither answer is a failure — but the
@@ -9060,6 +9249,158 @@ async function main() {
                 `carries it`);
         }
 
+
+        // ------------------------------------------------------------------
+        // 13. a count painted in a dimmer version of its own ink reads as
+        //     that dilution, and the ink floor refuses it
+        // ------------------------------------------------------------------
+        //
+        // See INK_DILUTIONS for what this brackets and why the digits are set
+        // large. In short: check 10 measures a full-strength ink drawn thinly
+        // and nothing had ever measured a weak ink drawn thickly, so
+        // INK_STEM_REACH had a reading above it and none below.
+        const inkFloorTreeValue = inkFloorTree();
+        if (!inkFloorTreeValue) {
+            problems.push(`the ink floor: no band in gen.go's grid carries a ` +
+                `count pill with both a fill and an ink on it, so there is no ` +
+                `real pair of colours to dilute. Every reading below would be ` +
+                `about a pair this file made up`);
+        } else {
+            await mount(inkFloorTreeValue);
+            const floorRects = await evaluate(`${JSON.stringify(
+                INK_DILUTIONS.map((_, i) => `root/${i}/0`))}.map((p) => {
+                const el = document.querySelector('[data-node-path="' + p + '"]');
+                if (!el) return null;
+                const r = el.getBoundingClientRect();
+                return { x: r.x, y: r.y, w: r.width, h: r.height };
+            })`);
+            const floorShot = await session.send("Page.captureScreenshot",
+                { format: "png", captureBeyondViewport: true });
+            const floorImg = decodePNG(Buffer.from(floorShot.data, "base64"));
+            const floorDpr = await evaluate(`window.devicePixelRatio`);
+
+            const fill = INK_FLOOR_BAND.badgeFill;
+            const ink = over(INK_FLOOR_BAND.badgeInk, fill);
+            const span = channelDistance(ink, fill);
+
+            // The tightest pair either side of the floor, for the tail. Kept
+            // as the readings rather than as the fractions asked for: what
+            // the constant is bracketed by is what the browser said, not what
+            // this file requested.
+            let refused = null, accepted = null;
+            for (let i = 0; i < INK_DILUTIONS.length; i++) {
+                const f = INK_DILUTIONS[i];
+                const where = `the ink floor at ${(f * 100).toFixed(0)}%`;
+                const rect = floorRects[i];
+                if (!rect || rect.w <= 0 || rect.h <= 0) {
+                    problems.push(`${where}: the digit has no rect, so nothing ` +
+                        `below is a reading of a painted box`);
+                    continue;
+                }
+                // Every device row of the digit's own line box. The box holds
+                // the fill and the digit and nothing else — see inkFloorTree
+                // on why there is no curve and no third colour here — so the
+                // band machinery check 10 needs has nothing to do: the pixel
+                // furthest from the fill is a stem interior wherever it falls.
+                const rows = [];
+                for (let y = Math.ceil(rect.y * floorDpr);
+                     y < Math.floor((rect.y + rect.h) * floorDpr); y++) {
+                    rows.push(y);
+                }
+                const scan = scanInk(floorImg, floorDpr, rows,
+                    rect.x, rect.x + rect.w, fill, ink);
+                if (!scan.notFill) {
+                    problems.push(`${where}: every pixel of the digit's box is ` +
+                        `${fill}. Nothing was painted, so the reading below is ` +
+                        `about an empty box`);
+                    continue;
+                }
+
+                // What the scan should say, computed from the colour that was
+                // actually asked for rather than from the fraction — the mix
+                // is rounded to eight bits, and holding the reading to the
+                // request rather than to the rounding would be spending the
+                // tolerance on this file's own arithmetic.
+                const painted = mixHex(fill, ink, f);
+                const want = Math.min(1, channelDistance(painted, fill) / span);
+                if (Math.abs(scan.reach - want) * span > INK_FLOOR_EPSILON) {
+                    problems.push(`${where}: the digit is painted ${painted}, ` +
+                        `which is ${(want * 100).toFixed(1)}% of the way from the ` +
+                        `pill's ${fill} to its ink ${ink}, and the scan read ` +
+                        `${(scan.reach * 100).toFixed(1)}% (its furthest pixel ` +
+                        `was ${scan.darkest}). The reach reading is supposed to ` +
+                        `BE the dilution — that is the whole of what ` +
+                        `INK_STEM_REACH is a floor on — and here it is not`);
+                }
+
+                // And the reason the floor has to exist at all: a dilution is
+                // a point ON the segment between the fill and the ink, so
+                // offSegment — the other and stronger of the two catches —
+                // cannot see it. This is that claim measured rather than
+                // reasoned, and it is what makes the pair non-redundant.
+                if (scan.offBy > OFF_SEGMENT_EPSILON) {
+                    problems.push(`${where}: a diluted ink came back ` +
+                        `${scan.offBy.toFixed(1)} channels off the line between ` +
+                        `${fill} and ${ink}, and a dilution is a point on that ` +
+                        `line by construction. Either the browser is not ` +
+                        `blending linearly here or the box holds a third ` +
+                        `colour — and if a dilution were catchable by ` +
+                        `offSegment, INK_STEM_REACH would have nothing to do`);
+                }
+
+                // The verdict itself, which is the check. A dilution under the
+                // floor must be refused and one over it must be accepted, and
+                // the failure says which way round it went because the two are
+                // different faults: a floor too low passes a count that lost
+                // its declaration, and a floor too high fails a correct one.
+                const refusedHere = !scan.ink && scan.reach < INK_STEM_REACH;
+                const shouldRefuse = f < INK_STEM_REACH;
+                if (refusedHere !== shouldRefuse) {
+                    problems.push(`${where}: a count at ${(f * 100).toFixed(0)}% ` +
+                        `of its own ink was ${refusedHere ? "refused" : "accepted"} ` +
+                        `by a floor of ${(INK_STEM_REACH * 100).toFixed(0)}%, and ` +
+                        `${shouldRefuse ? "it is under the floor" : "it is over it"}. ` +
+                        `${shouldRefuse
+                            ? "A floor that accepts this accepts a count that lost " +
+                              "its declaration and inherited a dimmer colour."
+                            : "A floor that refuses this refuses a correctly " +
+                              "painted count, which is the other and worse half " +
+                              "of getting the number wrong."}`);
+                }
+                if (refusedHere && (refused === null || scan.reach > refused)) {
+                    refused = scan.reach;
+                }
+                if (!refusedHere && (accepted === null || scan.reach < accepted)) {
+                    accepted = scan.reach;
+                }
+            }
+            // The bracket, for the tail. Both ends or neither: a half-bracket
+            // recited as a bracket is the state this check was written to end.
+            if (refused === null || accepted === null) {
+                problems.push(`the ink floor: the dilutions produced ` +
+                    `${refused === null ? "nothing it refused " : ""}` +
+                    `${accepted === null ? "nothing it accepted " : ""}` +
+                    `— INK_DILUTIONS is supposed to straddle the floor, and a ` +
+                    `set that falls entirely on one side of it measures which ` +
+                    `side and not where the line is`);
+            } else if (accepted - refused > INK_FLOOR_BRACKET) {
+                problems.push(`the ink floor: the closest dilutions either side ` +
+                    `of ${(INK_STEM_REACH * 100).toFixed(0)}% read ` +
+                    `${(refused * 100).toFixed(1)}% and ` +
+                    `${(accepted * 100).toFixed(1)}%, which is ` +
+                    `${((accepted - refused) * 100).toFixed(1)} points apart ` +
+                    `against a bound of ${(INK_FLOOR_BRACKET * 100).toFixed(0)}. ` +
+                    `A pair that wide brackets the floor the way "somewhere ` +
+                    `between nothing and everything" brackets a number. If ` +
+                    `INK_STEM_REACH has moved, INK_DILUTIONS has to move with ` +
+                    `it — see INK_FLOOR_BRACKET for why that is the point ` +
+                    `rather than an inconvenience`);
+            } else {
+                asked.inkFloorRefused = refused;
+                asked.inkFloorAccepted = accepted;
+            }
+        }
+
     } finally {
         if (session) session.close();
         chrome.kill();
@@ -9105,7 +9446,12 @@ async function main() {
     their counts as digits inside their own pills — the thinnest stem among them
     reaching ${asked.inkReach === null ? "no box at all" :
         `${(asked.inkReach * 100).toFixed(1)}% of the way from its pill to its own
-    declared ink, against a floor of ${(INK_STEM_REACH * 100).toFixed(0)}%`}`} — every one of those counted
+    declared ink, against a floor of ${(INK_STEM_REACH * 100).toFixed(0)}% that the same
+    ink deliberately diluted brackets from the other side — ${
+        asked.inkFloorRefused === null || asked.inkFloorAccepted === null
+            ? "which nothing measured on this run"
+            : `refused at ${(asked.inkFloorRefused * 100).toFixed(1)}% and accepted at
+    ${(asked.inkFloorAccepted * 100).toFixed(1)}%`}`}`} — every one of those counted
     where its own check ran rather than off the size of gen.go's table, and held to
     it — on three rows
     taken as fractions of the ink band of the
