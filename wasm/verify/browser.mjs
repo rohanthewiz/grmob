@@ -1476,16 +1476,44 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 // Chrome writes its chosen port into the profile directory when started with
 // --remote-debugging-port=0, which is how this avoids picking a fixed port
 // that another process (or another copy of this script) might hold.
-async function devtoolsPort(profile) {
+//
+// # What the failure says, and why it used to say nothing
+//
+// This threw a bare "Chrome never reported a DevTools port" after ten seconds,
+// which is the one symptom every startup failure has: a rejected flag, a crash,
+// a missing shared library, and a machine that is merely slow all arrive here
+// looking identical. On a CI runner nobody can attach to, that is the whole of
+// the evidence. So the browser's own stderr comes along, and so does whether
+// the process is still alive — which are the two facts that tell those cases
+// apart.
+//
+// It also stops as soon as Chrome has exited. Waiting the remaining nine
+// seconds for a port file from a dead process is time spent proving something
+// already known, and it delayed every one of those failures by most of the
+// timeout.
+async function devtoolsPort(profile, exit, errLines) {
     const portFile = join(profile, "DevToolsActivePort");
     for (let i = 0; i < 100; i++) {
         if (existsSync(portFile)) {
             const first = readFileSync(portFile, "utf8").split("\n")[0].trim();
             if (first) return Number(first);
         }
+        // Checked after the file, not before: a Chrome that wrote its port and
+        // then exited still leaves a usable answer on disk, and the point of
+        // this arm is a process that died BEFORE saying anything.
+        if (exit && exit.done) break;
         await sleep(100);
     }
-    throw new Error("Chrome never reported a DevTools port");
+    const how = exit && exit.done
+        ? `Chrome exited (${exit.signal ? `signal ${exit.signal}` : `status ${exit.code}`}) ` +
+          `without writing one`
+        : `Chrome is still running and has not written one after 10s`;
+    const tail = errLines && errLines.length
+        ? `\n\nIts last ${errLines.length} line(s) of stderr:\n  ` + errLines.join("\n  ")
+        : `\n\nIt wrote nothing to stderr, which for a rejected flag or a missing ` +
+          `shared library it would have. That points at the launch itself — the ` +
+          `binary, the profile directory, or a sandbox this runner will not grant.`;
+    throw new Error(`Chrome never reported a DevTools port: ${how}.${tail}`);
 }
 
 /** A single page target's CDP session, as a send(method, params) function. */
@@ -4670,7 +4698,36 @@ async function main() {
         // flag did what it claims, on a build where it might one day not.
         "--disable-lcd-text",
         "about:blank",
-    ], { stdio: ["ignore", "ignore", "ignore"] });
+    ], { stdio: ["ignore", "ignore", "pipe"] });
+
+    // Why Chrome's stderr is kept, when every other stream here is discarded.
+    //
+    // A browser that will not start produces exactly one symptom in this
+    // harness: devtoolsPort times out and says "Chrome never reported a
+    // DevTools port". That sentence is the same for a rejected flag, a crash,
+    // a missing shared library and a machine too slow to have written the file
+    // yet — four different things to do about it, and no way from a CI log to
+    // tell which one happened. Chrome says which, on the stream this used to
+    // throw away.
+    //
+    // Capped, because a Chrome that is running writes plenty that is not about
+    // startup, and only the tail is ever about the failure. Kept as lines so
+    // the cap cannot cut one in half.
+    const chromeErr = [];
+    chrome.stderr.on("data", (c) => {
+        for (const line of String(c).split("\n")) {
+            if (line.trim()) chromeErr.push(line.trimEnd());
+        }
+        if (chromeErr.length > 40) chromeErr.splice(0, chromeErr.length - 40);
+    });
+    // And whether it is still running at all, so the wait below can stop when
+    // there is nothing left to wait for.
+    const chromeExit = { code: null, signal: null, done: false };
+    chrome.on("exit", (code, signal) => {
+        chromeExit.code = code;
+        chromeExit.signal = signal;
+        chromeExit.done = true;
+    });
 
     let session;
     const problems = [];
@@ -4768,7 +4825,7 @@ async function main() {
         canvasGenericAxes: null,
     };
     try {
-        const port = await devtoolsPort(profile);
+        const port = await devtoolsPort(profile, chromeExit, chromeErr);
         // Which browser this is, read before anything is measured in it.
         //
         // See INK_OWN_MEASURED_ON: the exception table is a list of properties
