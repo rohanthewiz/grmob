@@ -8,6 +8,31 @@ GrMob is a Go module; requires Go 1.26+.
 go get github.com/rohanthewiz/grmob
 ```
 
+## Start your own app
+
+`cmd/grmob` scaffolds an app in its own module. It targets the browser from
+the first command — no SDKs — and the natives once their SDKs are installed:
+
+```bash
+go run github.com/rohanthewiz/grmob/cmd/grmob@latest new myapp
+cd myapp
+./dev.sh     # http://localhost:8080 — rebuilds and hot-swaps on every save
+
+go run github.com/rohanthewiz/grmob/cmd/grmob doctor    # which targets this machine can build
+go run github.com/rohanthewiz/grmob/cmd/grmob android   # APK: Android SDK + NDK, JDK 17+
+go run github.com/rohanthewiz/grmob/cmd/grmob ios       # simulator build: Xcode + xcodegen
+```
+
+The rule the scaffold keeps is that anything grmob owns comes from the grmob
+version in the app's `go.mod`, at build time: the browser host is the
+`webhost` package, `build.sh` copies `grmob-runtime.js` from the module on
+every build, and the dev server is `go run` of grmob's own. So a runtime can
+never be older than the Go side it renders, and upgrading grmob upgrades all
+of it. The native shells are the exception — they are copied into the app
+once, because an app edits them — and a native build warns when `go.mod` has
+moved past the version they came from. `app/` holds a counter like the one
+below.
+
 ## A first app
 
 A GrMob app is a package with a root view function and an `init` that

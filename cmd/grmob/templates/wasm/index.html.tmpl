@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>[[.Name]]</title>
+<style>
+  /* The page is a frame around the app. On a phone-width screen the app takes
+     the whole viewport; on a wide one it sits in a phone-sized column, so a
+     layout is judged at the width it will ship at rather than at 1400px. */
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    background: #eef0f3; font: 14px/1.45 system-ui, sans-serif;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .screen {
+    position: relative; width: 100%; max-width: 430px; height: 100%; max-height: 900px;
+    background: #ffffff; color: #000000; overflow: hidden;
+    box-shadow: 0 10px 40px rgba(0,0,0,.18); border-radius: 18px;
+    /* Makes the screen the containing block for position:fixed descendants
+       (core.Modal's overlay), so a modal dims the app rather than the page. */
+    transform: translateZ(0);
+  }
+  @media (max-width: 520px) {
+    .screen { max-width: none; max-height: none; border-radius: 0; box-shadow: none; }
+  }
+
+  /* #app is the mount point grmob-runtime.js fills. The root view is
+     stretched to the screen so FlexGrow has space to grow into. */
+  #app { position: absolute; inset: 0; display: flex; flex-direction: column; }
+  #app > * { flex: 1; min-height: 0; }
+  /* Inside a fixed-height screen a Scroll node must be the scrolling viewport,
+     as it is on the natives; the runtime leaves overflow to the host page. */
+  #app [data-node-type="Scroll"] {
+    flex: 1 1 0; min-height: 0; overflow-y: auto; overscroll-behavior: contain;
+  }
+
+  .boot {
+    position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+    color: #667085; padding: 1.5rem; text-align: center;
+  }
+  .boot.err {
+    color: #9b1c32; background: #fdeef0; align-items: flex-start; justify-content: flex-start;
+    text-align: left; white-space: pre-wrap; font: 12px/1.5 ui-monospace, Menlo, monospace;
+  }
+</style>
+</head>
+<body>
+<div class="screen">
+  <div id="app"><div class="boot" id="boot">Loading…</div></div>
+</div>
+
+<!-- Written by build.sh, from the Go toolchain and from the grmob module in
+     go.mod. They are build products: edit the Go side or bump grmob instead of
+     editing them, because the next build replaces them. -->
+<script src="wasm_exec.js"></script>
+<script src="grmob-runtime.js"></script>
+<script src="camera.js"></script>
+
+<!-- core.MapView draws a placeholder unless Leaflet is on the page. To use
+     live maps, add (pinned, like this):
+       <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+       <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script> -->
+
+<script>
+  // Host wiring. The contract is docs/platforms/wasm.md in the grmob module.
+  const bootEl = document.getElementById("boot");
+
+  // boot is a re-callable function, not a run-once script, because the dev
+  // server's hot reload (serve -dev) calls it again after stopping the old
+  // module with GrMobWASM.Shutdown. It resolves to {go, exited}; `exited`
+  // settles when the module's main returns, which the reload client awaits
+  // before starting the next build.
+  async function boot() {
+    const go = new Go();
+    const source = fetch("main.wasm").then(r => {
+      if (!r.ok) throw new Error(`main.wasm: HTTP ${r.status} (run ./build.sh first?)`);
+      return r;
+    });
+    // instantiateStreaming needs an application/wasm response; fall back to a
+    // buffered instantiate for servers that send another type.
+    const result = await (("instantiateStreaming" in WebAssembly)
+      ? WebAssembly.instantiateStreaming(source, go.importObject)
+          .catch(() => source.then(r => r.arrayBuffer()).then(b => WebAssembly.instantiate(b, go.importObject)))
+      : source.then(r => r.arrayBuffer()).then(b => WebAssembly.instantiate(b, go.importObject)));
+    const exited = go.run(result.instance); // settles only when main returns
+    GrMob.mount(window.GrMobWASM.RenderInitial());
+    return { go, exited };
+  }
+
+  // GrMobHost is what serve -dev's client looks for; without it the client
+  // falls back to full page reloads.
+  window.GrMobHost = { boot, running: null };
+  window.GrMobHost.running = boot();
+  window.GrMobHost.running.catch(err => {
+    console.error(err);
+    bootEl.className = "boot err";
+    bootEl.textContent = "[[.Name]] failed to start.\n\n" + (err && err.message ? err.message : String(err));
+  });
+
+  // DOM events → Go → patches back to the DOM.
+  window.GoInvokeCallback = (id, payload) => {
+    window.GrMobWASM.ReceiveEvent(id, JSON.stringify(payload));
+    GrMob.patch(window.GrMobWASM.RenderAgain());
+  };
+</script>
+</body>
+</html>

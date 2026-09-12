@@ -1,0 +1,28 @@
+# Browser build products (./build.sh). The .js files are copied from the Go
+# toolchain and the grmob module on every build; see build.sh for why they
+# are never committed.
+wasm/main.wasm
+wasm/wasm_exec.js
+wasm/grmob-runtime.js
+wasm/camera.js
+
+# gomobile and gobind, built from this module's graph by `grmob android|ios`.
+.grmob/
+
+# Android shell build state (the shell's sources under android/ are yours to commit).
+android/.gradle/
+android/build/
+android/app/build/
+android/app/libs/
+android/local.properties
+android/.kotlin/
+
+# iOS shell build state (ios/project.yml is the source of truth for the project).
+ios/Frameworks/
+ios/GrMobApp.xcodeproj/
+ios/build/
+ios/GrMob/Info.plist
+DerivedData/
+xcuserdata/
+
+.DS_Store

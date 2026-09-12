@@ -25,6 +25,24 @@ files the site workflow publishes to
 <https://rohanthewiz.github.io/grmob/>, so the local page and the live one
 are the same bytes.
 
+**An app in its own module** cannot dot-import itself into this repository's
+`wasm` package, so the host wiring is also a library: `webhost.Run` installs
+the whole `GrMobWASM` surface below (including `Shutdown`, so hot reload
+works) and blocks until the page stops the module. The browser host of such
+an app is one line:
+
+```go
+func main() { webhost.Run(nil, app.App) } // nil: a fresh context with core.DefaultTheme
+```
+
+`grmob new` (see [Getting Started](../getting-started.md#start-your-own-app))
+generates that file, a host page, and a `build.sh` that copies
+`grmob-runtime.js` and `camera.js` from the grmob module in `go.mod` on every
+build — only when their content changed, because the dev server reads a
+changed `.js` in the served directory as a page edit. `wasm/main.go` and the
+screenshot host keep their own copies of the wiring; `webhost`'s tests hold
+both to installing the same bindings.
+
 The shipped host page (`wasm/index.html`) frames the app in a phone-sized
 screen rather than letting it fill the browser window. That changes one
 thing for the runtime: a `Scroll` node on a bare page never had to scroll —

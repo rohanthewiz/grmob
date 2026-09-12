@@ -37,6 +37,8 @@
 // Where a behavior is deliberately simplified, the comment says so, because a
 // shim that quietly lies is worse than no shim at all.
 
+import { makeStyle } from "./cssstyle.mjs";
+
 // dataset property name <-> attribute name, the standard's mapping:
 // `nodeType` <-> `data-node-type`. Implemented rather than faked because the
 // runtime both writes dataset properties (el.dataset.focusEpoch) and reads
@@ -101,10 +103,13 @@ class Element {
         this.children = [];
         this.parentNode = null;
         this.listeners = new Map();
-        // style is a plain object: the runtime only ever assigns properties
-        // onto it (Object.assign in applyStyle, el.style.height for Spacer),
-        // and never reads the cascade back.
-        this.style = {};
+        // style expands CSS shorthands into their longhands, as a real
+        // CSSStyleDeclaration does. It was a plain object, which is faithful
+        // for independent properties and blind to the one relationship
+        // styleFromGrMob's totality can break: assigning `gap` and then
+        // clearing row-gap and column-gap erases the gap in a browser and
+        // did nothing here. See cssstyle.mjs for the model and its limits.
+        this.style = makeStyle();
         this.textContent = "";
         // The form-control properties the runtime sets directly rather than
         // as attributes, exactly as a browser distinguishes them. `value` in

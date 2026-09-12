@@ -105,6 +105,16 @@ package whose `init` calls `mobile.Register` (and exports one bindable
 symbol) drops into the same shells — that is the whole integration contract,
 and it's why the examples are structured as packages, not mains.
 
+An app in its own module (one made by `grmob new`) does not run these
+scripts, which bind from this repository's root. `grmob android` and
+`grmob ios` do the same work from the app's root: they check the target's
+prerequisites (the same table `grmob doctor` prints), copy this repository's
+shell into the app's `android/` or `ios/` once — setting the application ID
+and launcher name from the app's `grmob.json` — build gomobile and gobind
+from the app's module graph, bind `mobile` plus `./app`, and finish with
+Gradle `assembleDebug` or `xcodegen` and a simulator `xcodebuild`. The copied
+shell belongs to the app from then on; `-refresh` copies a newer one over it.
+
 ## Text grids
 
 `core.TextGrid` renders one monospace `Text` per row: Compose builds an

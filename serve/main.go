@@ -36,9 +36,11 @@ func main() {
 		}
 		handler = d
 		go d.watch()
-		log.Printf("GrMob tutorial on http://localhost%s (serving %s, hot reload on)", *addr, *dir)
+		// "GrMob app", not "tutorial": apps made by `grmob new` run this same
+		// server from their own module (see cmd/grmob and its dev.sh).
+		log.Printf("GrMob app on http://localhost%s (serving %s, hot reload on)", *addr, *dir)
 	} else {
-		log.Printf("GrMob tutorial on http://localhost%s (serving %s)", *addr, *dir)
+		log.Printf("GrMob app on http://localhost%s (serving %s)", *addr, *dir)
 	}
 	log.Fatal(http.ListenAndServe(*addr, handler))
 }

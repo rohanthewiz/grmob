@@ -5201,7 +5201,15 @@ const GrMob = (() => {
             out.margin = out.margin || "0";
             out.lineHeight = out.lineHeight || "1.2";
             out.whiteSpace = out.whiteSpace || "normal";
-            out.overflowX = out.overflow ? "" : "auto";
+            // Sideways scrolling unless the author said otherwise — and never
+            // "". overflow-x is a longhand of the `overflow` shorthand assigned
+            // above, so the "" this line used to write when the author set
+            // Overflow did not mean "leave it alone": it removed the x half of
+            // the author's declaration, and Overflow("hidden") measured
+            // overflow-x: auto, overflow-y: hidden. Restating the author's value
+            // keeps both halves, and matches htmlout, where textGridChassis's
+            // overflow-x:auto comes before the author's overflow and loses to it.
+            out.overflowX = out.overflow || "auto";
         }
         if (nodeType === "GridRow") {
             out.minHeight = out.minHeight || "1.2em";

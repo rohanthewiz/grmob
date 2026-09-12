@@ -47,6 +47,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 import { loadRuntime, nodeAt } from "./load.mjs";
+import { erasedShorthands } from "./cssstyle.mjs";
 
 const RUNTIME = new URL("../grmob-runtime.js", import.meta.url);
 
@@ -74,7 +75,14 @@ const EXEMPTIONS = [
 
 // A Style touching every property the mapping manages, used to prove the pass
 // clears what it set. The values are arbitrary; only "not the default" matters.
+//
+// Overflow was missing, and its absence is how a TextGrid's Overflow went
+// half-erased with every sweep here green: the grid chassis followed the
+// `overflow` shorthand with an overflowX of "" whenever the author set one.
+// Nothing checks this list against the fields styleFromGrMob reads, so an
+// addition to the mapping has to be added here by hand.
 const FULL_STYLE = {
+    Overflow: "hidden",
     FontSize: 14, FontWeight: 700, TextColor: "#111111", Align: "center",
     Background: "#eeeeee",
     Padding: { Top: 1, Right: 2, Bottom: 3, Left: 4 },
@@ -179,6 +187,34 @@ test("after an empty style patch every node type is a freshly built styleless on
                 `field returns to zero (core.BorderRadius(0) is the canonical victim)`,
             );
         }
+    }
+});
+
+test("no shorthand a Style sets is erased by a declaration after it", () => {
+    // Totality's other failure, and the one the sweep above cannot see. That
+    // sweep asks whether "" clears what a Style set; this asks whether "" clears
+    // what the SAME pass just set. A total mapping writes "" for every unset
+    // property, so assigning a shorthand and then a "" longhand of it in one
+    // object removes the shorthand's declaration on that axis — `gap` then
+    // rowGap/columnGap erased every core.Gap, and `overflow` then a "" overflowX
+    // erased half of a TextGrid's Overflow.
+    //
+    // It needs dom.mjs's style to expand shorthands (cssstyle.mjs), and every
+    // path a Style reaches an element by: creation, and an update-style patch
+    // from a styled and from a styleless node.
+    for (const type of NODE_TYPES) {
+        const why = (when) => `${type} ${when}: a shorthand was assigned and then a longhand of it ` +
+            `was cleared in the same pass — write one authority per property (see how Gap resolves ` +
+            `into rowGap/columnGap in styleFromGrMob)`;
+
+        const styled = mountOne(type, FULL_STYLE);
+        assert.deepEqual(erasedShorthands(styled.el.style), [], why("on creation"));
+        patchStyle(styled.rt, FULL_STYLE);
+        assert.deepEqual(erasedShorthands(styled.el.style), [], why("after a restyling patch"));
+
+        const bare = mountOne(type, null);
+        patchStyle(bare.rt, FULL_STYLE);
+        assert.deepEqual(erasedShorthands(bare.el.style), [], why("after a patch that styles it"));
     }
 });
 

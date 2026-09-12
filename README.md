@@ -87,12 +87,47 @@ func AppName() string { return "Counter" }
 
 GrMob is a Go module and needs Go 1.26+.
 
+### Start your own app
+
+The `grmob` command creates an app in its own module. It runs in the browser
+from the first command — no simulator, no device, no SDKs, no npm — and builds
+for Android and iOS once their SDKs are installed:
+
+```bash
+go run github.com/rohanthewiz/grmob/cmd/grmob@latest new myapp
+cd myapp
+./dev.sh          # http://localhost:8080 — rebuilds and hot-swaps on every save
+go test ./app     # drive the app from a plain Go test
+```
+
+`myapp/app/app.go` starts as a counter like the one above, already registered
+for every target. When you want it on a phone:
+
+```bash
+go run github.com/rohanthewiz/grmob/cmd/grmob doctor    # what this machine can build, and what to install
+go run github.com/rohanthewiz/grmob/cmd/grmob android   # APK: Android SDK + NDK, JDK 17+ (-install puts it on a device)
+go run github.com/rohanthewiz/grmob/cmd/grmob ios       # simulator build: Xcode + xcodegen (-open opens Xcode)
+```
+
+Everything GrMob owns — the browser host (`webhost`), the runtime JavaScript,
+the dev server — comes from the GrMob version in the app's `go.mod`, at build
+time. Upgrading GrMob upgrades all of it, and there is no copied runtime to go
+stale or hand-patch. The one exception is the native shells: the first native
+build copies them into `android/` and `ios/`, because an app edits them (its
+icon, its permissions), and later builds warn when `go.mod` has moved past the
+version they came from. [Getting Started](docs/getting-started.md#start-your-own-app)
+has the rest.
+
+To add GrMob to a module you already have instead:
+
 ```bash
 go get github.com/rohanthewiz/grmob
 ```
 
-The fastest way to see a GrMob app is the browser build — no simulator, no
-device, no npm:
+### Run this repository's apps
+
+Inside a checkout, the fastest way to see a GrMob app is the browser build of
+the interactive tutorial — no simulator, no device, no npm:
 
 ```bash
 ./build.sh        # compiles the app to wasm/main.wasm
@@ -329,6 +364,12 @@ ios/build.sh ./examples/todoapp       # needs full Xcode; produces the xcframewo
 Then open `android/` in Android Studio, or the Xcode project under `ios/`.
 The full walkthrough, including the bridge contract the shells implement, is
 in [Native Android & iOS](docs/platforms/native.md).
+
+Those scripts bind from this repository's root. An app made with `grmob new`
+uses `grmob android` and `grmob ios` from its own root instead (see
+[Start your own app](#start-your-own-app)): they check the SDKs, copy the
+shell into the app, build gomobile from the app's module graph, bind, and run
+Gradle or Xcode — no global gomobile install.
 
 ---
 

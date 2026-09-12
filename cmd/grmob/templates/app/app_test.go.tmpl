@@ -1,0 +1,83 @@
+package app
+
+import (
+	"encoding/json"
+	"testing"
+
+	"github.com/rohanthewiz/grmob/core"
+	"github.com/rohanthewiz/grmob/render"
+)
+
+// The fastest loop there is: render.Manager is the same engine every target
+// runs, and it needs no browser, simulator or device. Taps go through the
+// same dispatch path a finger does.
+
+// TestMain turns on debug mode, which audits every render pass for hook-order
+// drift and duplicate keys; assertNoConcerns fails the test on any finding.
+func TestMain(m *testing.M) {
+	core.SetDebugMode(true)
+	m.Run()
+}
+
+func TestCounter(t *testing.T) {
+	core.ClearConcerns()
+	mgr := render.New(core.NewContext(), App)
+	defer mgr.Close()
+
+	if !shows(tree(t, mgr), "Count: 0") {
+		t.Fatal("the counter does not start at 0")
+	}
+	tap(t, mgr, "+")
+	tap(t, mgr, "+")
+	tap(t, mgr, "-")
+	if !shows(tree(t, mgr), "Count: 1") {
+		t.Fatal("+, +, - did not reach 1")
+	}
+	if cs := core.Concerns(); len(cs) != 0 {
+		t.Fatalf("debug concerns raised:\n%s", core.DumpConcerns())
+	}
+}
+
+// --- helpers ---------------------------------------------------------------
+
+type node struct {
+	Type     string
+	Props    map[string]any
+	Children []*node
+}
+
+// tree renders and parses the current tree. Callback IDs are assigned per
+// pass, so each tap reads its ID from a fresh tree rather than reusing one.
+func tree(t *testing.T, mgr *render.Manager) *node {
+	t.Helper()
+	var root node
+	if err := json.Unmarshal([]byte(mgr.RenderInitial()), &root); err != nil {
+		t.Fatalf("tree is not valid JSON: %v", err)
+	}
+	return &root
+}
+
+func find(n *node, pred func(*node) bool) *node {
+	if n == nil || pred(n) {
+		return n
+	}
+	for _, c := range n.Children {
+		if f := find(c, pred); f != nil {
+			return f
+		}
+	}
+	return nil
+}
+
+func tap(t *testing.T, mgr *render.Manager, label string) {
+	t.Helper()
+	b := find(tree(t, mgr), func(n *node) bool { return n.Type == "Button" && n.Props["label"] == label })
+	if b == nil {
+		t.Fatalf("no Button labeled %q", label)
+	}
+	mgr.DispatchCallback(b.Props["onClick"].(string))
+}
+
+func shows(root *node, text string) bool {
+	return find(root, func(n *node) bool { return n.Type == "Text" && n.Props["content"] == text }) != nil
+}

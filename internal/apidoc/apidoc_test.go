@@ -314,6 +314,11 @@ func excluded(rel string) bool {
 		return true // conformance harnesses and generators
 	case rel == "android" || rel == "ios" || rel == "wasm" || rel == "serve":
 		return true // native shells and package main
+	case rel == "webhost":
+		// Importable, but everything it does is behind //go:build js && wasm,
+		// which load reads against the host GOOS and would render as a page
+		// holding one variable. Documented in docs/platforms/wasm.md instead.
+		return true
 	case strings.HasPrefix(rel, "wasm/"):
 		return true // the JS runtime's harness and its shot host
 	case rel == "docs" || strings.HasPrefix(rel, "docs/"):

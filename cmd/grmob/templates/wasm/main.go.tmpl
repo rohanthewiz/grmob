@@ -1,0 +1,19 @@
+//go:build js && wasm
+
+// Command wasm is [[.Name]]'s browser host. All of the host wiring (the
+// GrMobWASM bindings, events, push patches, the hot-reload Shutdown hook)
+// lives in grmob's webhost package, versioned with the runtime JS that
+// build.sh copies beside this file.
+package main
+
+import (
+	"github.com/rohanthewiz/grmob/webhost"
+
+	"[[.Module]]/app"
+)
+
+func main() {
+	// nil: a fresh context with core.DefaultTheme. Pass
+	// core.NewContext().WithTheme(yourTheme) to start from another theme.
+	webhost.Run(nil, app.App)
+}

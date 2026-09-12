@@ -1189,23 +1189,25 @@ test("a styled toast keeps the defaults it does not override", () => {
 // --------------------------------------------------------------------------
 
 // core.Gap renders through row-gap and column-gap, never through the `gap`
-// shorthand. The distinction is invisible in this file's plain-object style
-// (dom.mjs), and that is exactly why it is pinned here: in a real CSSOM `gap`
-// IS row-gap plus column-gap, so the runtime writing the shorthand and then
-// assigning the two longhands — which it does unconditionally, because
-// styleFromGrMob is total and states "" for whatever the Style left unset —
-// erased the gap it had just set. Every core.Gap() in every app rendered as no
-// spacing at all on the web, while both natives and htmlout honored it.
+// shorthand. In a real CSSOM `gap` IS row-gap plus column-gap, so the runtime
+// writing the shorthand and then assigning the two longhands — which it does
+// unconditionally, because styleFromGrMob is total and states "" for whatever
+// the Style left unset — erased the gap it had just set. Every core.Gap() in
+// every app rendered as no spacing at all on the web, while both natives and
+// htmlout honored it.
 //
-// Asserting "the shorthand is absent" rather than "the longhands are right"
-// alone is the point: the longhands were always right, and the bug was the
-// shorthand sitting in front of them.
+// The bug was invisible here while dom.mjs's style was a plain object. It
+// expands shorthands now (cssstyle.mjs), so the erasure itself would fail
+// totality_test.mjs's sweep; this test keeps the narrower decision — one
+// authority per property — by asserting the runtime never assigns `gap` at all.
+// Reading `gap` back is a browser's answer composed from the two longhands.
 test("Gap is written as the two axis longhands, not the gap shorthand", () => {
     const { at } = mount([{ Type: "Row", Style: { Gap: 8 } }]);
 
     assert.equal(at(0).style.rowGap, "8px");
     assert.equal(at(0).style.columnGap, "8px");
-    assert.equal(at(0).style.gap, undefined);
+    assert.ok(!Object.keys(at(0).style).includes("gap"), "the runtime assigned the gap shorthand");
+    assert.equal(at(0).style.gap, "8px");
 });
 
 test("an axis gap overrides the isotropic one on its own axis", () => {

@@ -1,0 +1,49 @@
+// Package app is [[.Name]]'s root view. Every target mounts this package:
+// wasm/main.go for the browser, and `grmob android` / `grmob ios`, which bind
+// it into the native shells.
+package app
+
+import (
+	"fmt"
+
+	"github.com/rohanthewiz/grmob/core"
+	"github.com/rohanthewiz/grmob/mobile"
+)
+
+// init registers the root view with the mobile bridge, which is the whole
+// integration contract for the native shells: they call the bridge, and the
+// bridge renders whatever registered here. The browser host mounts App
+// directly (see wasm/main.go), so on that target this registration is unused.
+func init() {
+	mobile.Register(core.NewContext(), App)
+}
+
+// AppName gives gomobile a bindable symbol. gomobile links a bound package
+// only if it exports something it can bind, and App — a function-typed value
+// — is not, so without this the package and the init above would be dropped
+// from the native library and the shell would start with no app.
+func AppName() string { return "[[.Name]]" }
+
+// App is called again on every render pass: it reads state, returns a tree,
+// and never mutates the screen itself. count.Set marks the tree dirty; the
+// framework re-renders, diffs, and sends only the differences to whichever
+// renderer is attached.
+func App(ctx *core.Context) core.View {
+	// NewState is a positional hook: call it unconditionally, in the same
+	// order, on every pass.
+	count := core.NewState(ctx, 0)
+
+	return core.SafeArea(
+		core.Column(
+			core.Gap(12),
+			core.Padding(24),
+			core.Text("[[.Name]]", core.FontSize(28), core.FontWeight(core.Bold)),
+			core.Text(fmt.Sprintf("Count: %d", count.Get())),
+			core.Row(
+				core.Gap(8),
+				core.Button("-", func() { count.Set(count.Get() - 1) }),
+				core.Button("+", func() { count.Set(count.Get() + 1) }),
+			),
+		),
+	)
+}
