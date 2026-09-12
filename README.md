@@ -15,6 +15,10 @@ language, no JavaScript, no manual bridge to wire up.
   <em>Every screenshot in this README is a real GrMob app — the examples in this repository, driven through the same event path a finger takes and captured from the browser build. <code>wasm/shots</code> re-takes them; <code>internal/shotclaims</code> is what holds them to still being true.</em>
 </p>
 
+> **Upgrading to v0.3.0?** The widget library moved from
+> `github.com/rohanthewiz/grmob/components` to `github.com/rohanthewiz/grmob/comps`.
+> See [Upgrading](#upgrading) for the one-line fix.
+
 ---
 
 ## Your first app
@@ -458,6 +462,40 @@ go run ./internal/apidoc/gen   # -> docs/api/
 It too is committed, and `go test ./...` fails when it has drifted from the
 declarations it describes — so changing an exported signature and forgetting to
 regenerate is a red build rather than a docs site that quietly lies.
+
+---
+
+## Upgrading
+
+### v0.2.x → v0.3.0: `components` is now `comps`
+
+The widget library's package was renamed, and so was its import path. It is a
+rename only: every type, field, function and constant is spelled exactly as
+before, and nothing that crosses to a renderer changed — including
+`RichToolLink`'s value, `"components:link"`, so a toolbar configuration you
+stored keeps working.
+
+| v0.2.x | v0.3.0 |
+|---|---|
+| `import "github.com/rohanthewiz/grmob/components"` | `import "github.com/rohanthewiz/grmob/comps"` |
+| `components.Button{Label: "Add"}` | `comps.Button{Label: "Add"}` |
+
+From your module's root:
+
+```bash
+go get github.com/rohanthewiz/grmob@v0.3.0
+grep -rl --include='*.go' 'grmob/components' . | xargs perl -pi -e \
+  's{grmob/components"}{grmob/comps"}; s{\bcomponents\.(?=[A-Z])}{comps.}g'
+go build ./...
+```
+
+The second substitution rewrites `components.` only where a capitalised name
+follows, which is how an exported symbol is spelled, and only in files that
+import the package. If you imported it under an alias, just the path changes
+and your alias keeps working. One thing to look over afterwards: a local
+variable or field of your own named `components` that you call exported
+methods on (`components.Len()`) will have been rewritten too, and the compiler
+will say so.
 
 ---
 
