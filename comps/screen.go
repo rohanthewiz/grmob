@@ -133,6 +133,29 @@ type Screen struct {
 	// on a short page. It does not make a scroll view fill anything.
 	Fill bool
 
+	// Footer is pinned below the content, outside the scroll region: the slot
+	// for a comps.BottomBar, a checkout bar, or a composer that must not scroll
+	// away. Nil keeps the scaffold exactly as it is without it.
+	//
+	// With a Footer the SafeArea holds two children instead of one, and the
+	// content region takes the leftover height so the footer sits on the
+	// bottom edge even when the content is short:
+	//
+	//	SafeArea
+	//	  ├─ Scroll FlexGrow(1)   (or the Column, growing, when Scroll is false)
+	//	  │    └─ Column
+	//	  └─ Footer
+	//
+	// Growing is implied rather than requiring Fill as well, because a footer
+	// that floats up under short content is never what a bottom bar means. The
+	// footer takes no inset or style from the scaffold: it is the caller's
+	// widget, full-width, and draws its own background and padding.
+	//
+	// KeyboardAware still lands on the scroll region or the column, so a
+	// focused field in the content is kept visible. The footer itself is not
+	// lifted over the keyboard, which is how both platforms treat a tab bar.
+	Footer core.View
+
 	// Style is applied to the column, after Gap and Fill, so a caller can
 	// override either — or add padding and a background the scaffold itself
 	// has no opinion about.
@@ -210,7 +233,10 @@ func (s Screen) Render(ctx *core.Context) *core.Node {
 	// overrides, and the children.
 	items := make([]core.PropsAndChildren, 0, len(s.Style)+len(s.Children)+4)
 
-	if s.Fill {
+	// A Footer implies growth for a non-scrolling column, so the footer is
+	// pushed to the bottom edge. A scrolling screen grows its Scroll instead
+	// (below), and the scrolled column keeps meaning only what Fill says.
+	if s.Fill || (s.Footer != nil && !s.Scroll) {
 		items = append(items, core.FlexGrow(1))
 	}
 	if s.Gap != 0 {
@@ -254,7 +280,14 @@ func (s Screen) Render(ctx *core.Context) *core.Node {
 		// MaybeProp rather than a second Scroll call: its false path is an
 		// untyped nil, which the container argument loop skips, so a screen
 		// that did not ask carries no prop and renders the tree it used to.
-		inner = core.Scroll(core.MaybeProp(s.KeyboardAware, core.KeyboardAware()), inner)
+		inner = core.Scroll(
+			core.MaybeProp(s.KeyboardAware, core.KeyboardAware()),
+			// With a Footer sharing the SafeArea, the viewport takes the
+			// leftover height so the footer sits below it. Without one the
+			// false path is nil and the Scroll keeps its unstyled shape.
+			core.MaybeProp(s.Footer != nil, core.FlexGrow(1)),
+			inner,
+		)
 	}
 	// The screen's background is painted on the safe area as well as on the
 	// column. The column's own background stops at the inset, and on both
@@ -276,5 +309,8 @@ func (s Screen) Render(ctx *core.Context) *core.Node {
 	return core.SafeArea(
 		core.MaybeProp(probe.Background != "", core.BackgroundColor(probe.Background)),
 		inner,
+		// A nil Footer is skipped by the container's argument walk, so a screen
+		// without one renders the same single-child SafeArea as before.
+		s.Footer,
 	).Render(ctx)
 }

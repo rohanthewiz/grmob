@@ -64,6 +64,11 @@ type nodeStyle struct {
 	// in the tree that says which way the widget is pointing.
 	Rotate float64
 
+	// Chapter 4's small-controls lesson asserts on this one. A hidden
+	// comps.Spinner stays in the tree (it owns hook slots) and is hidden by
+	// Display, so this is the only field that says whether it is showing.
+	Display core.DisplayMode
+
 	// Chapter 4's tab-strip arrangement asserts on these two. They are the
 	// whole subject of that demo — the same widget announcing itself
 	// differently — and neither is visible anywhere else in the tree: a tab
@@ -679,7 +684,7 @@ func TestStacksDemoSwitchesAxis(t *testing.T) {
 // widget from putting a kilobyte in Props, and the parse is still the largest
 // single stage of an Android launch — it is simply now proportional to
 // something small. The bound is a factor of ten in each direction because the
-// number is a fact about 52 lessons of prose, which is edited: a new chapter
+// number is a fact about 53 lessons of prose, which is edited: a new chapter
 // should not fail a test, and a screen that suddenly sends four megabytes
 // should.
 func TestHomeTreeSize(t *testing.T) {

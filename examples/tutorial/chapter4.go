@@ -43,6 +43,7 @@ func chapter4() Chapter {
 			lessonLiveMap(),
 			lessonCodeEditor(),
 			lessonRichText(),
+			lessonSmallControls(),
 		},
 	}
 }
@@ -2809,4 +2810,108 @@ func markdownToggleLabel(showing bool) string {
 		return "Hide the Markdown"
 	}
 	return "Show the Markdown"
+}
+
+// lessonSmallControls is the Tier A bundle of comps that every app reaches for
+// and used to hand-roll: a Stepper for small counts, a Rating, a Spinner for
+// unshaped waiting, and a BottomBar with Screen.Footer to pin it. It is
+// appended at the end of the chapter rather than beside ListRow so the numbers
+// deep links already use (grmob://lesson/4.12 is the live map) do not move.
+//
+// The Spinner is the lesson's hook lesson in miniature: it is rendered on every
+// pass and toggled with Hidden, never with core.If, because it owns two hook
+// slots and leaving it out would shift every hook rendered after it.
+func lessonSmallControls() Lesson {
+	return Lesson{
+		Title:   "Small controls: Stepper, Rating, Spinner & BottomBar",
+		Summary: "Four widgets every app hand-rolls — a clamped counter, a star row, a spinner that costs nothing when hidden, and a bar pinned by Screen.Footer.",
+		Body: func(ctx *core.Context) core.View {
+			// Hooks first and unconditionally, as in every lesson.
+			guests := core.NewState(ctx, 2)
+			stars := core.NewState(ctx, 0)
+			loading := core.NewState(ctx, false)
+			tab := core.NewState(ctx, 0)
+
+			tabs := []string{"Home", "Search", "Me"}
+			icons := []string{"🏠", "🔍", "👤"}
+			items := make([]comps.BarItem, len(tabs))
+			for i := range tabs {
+				i := i // captured per item: OnTap outlives this loop pass
+				items[i] = comps.BarItem{Icon: icons[i], Label: tabs[i], OnTap: func() { tab.Set(i) }}
+			}
+
+			rated := "Not rated yet"
+			if stars.Get() > 0 {
+				rated = fmt.Sprintf("You rated it %d of 5", stars.Get())
+			}
+			loadLabel := "Simulate loading"
+			if loading.Get() {
+				loadLabel = "Stop loading"
+			}
+
+			return core.Column(
+				core.Gap(14),
+				prose("A Stepper is the tapping form of a number. It clamps into Min..Max and "+
+					"calls OnChange only when the value actually moves, so the handler is a "+
+					"setter and the button that would leave the range is disabled for you. "+
+					"Bounds are opt-in: they apply when Max > Min."),
+				codeBlock(`comps.ListRow{
+    Title:    "Guests",
+    Trailing: comps.Stepper{Value: guests.Get(), Min: 1, Max: 8,
+        OnChange: guests.Set, Label: "Guests"},
+}`),
+				prose("A Rating is a row of glyphs. Interactive, each star is a named button "+
+					"(\"3 of 5\"); ReadOnly, the stars are decoration and the group's value is "+
+					"the one announcement. Value is a float, so half-stars can arrive later "+
+					"without changing your type."),
+				prose("A Spinner steps its rotation from Go, so it owns hook slots. Render it "+
+					"every pass and flip Hidden: a hidden spinner pauses its interval and asks "+
+					"for no render passes at all."),
+				codeBlock(`comps.Spinner{Hidden: !loading.Get()}   // never core.If(loading, …)`),
+				prose("A BottomBar is navigation when Selected >= 0 and a toolbar when it is "+
+					"negative. Put it in Screen.Footer, which pins it outside the scroll "+
+					"region; among Children it would scroll away."),
+				codeBlock(`comps.Screen{
+    Scroll:   true,
+    Children: []core.View{feed},
+    Footer:   comps.BottomBar{Items: items, Selected: tab.Get()},
+}`),
+				demoPanel("Step the guests to a bound, rate it, start the spinner, and switch tabs.",
+					comps.ListRow{
+						Title:    "Guests",
+						Subtitle: fmt.Sprintf("Booking for %d", guests.Get()),
+						Trailing: comps.Stepper{
+							Value: guests.Get(), Min: 1, Max: 8,
+							OnChange: guests.Set, Label: "Guests",
+						},
+					},
+					comps.Rating{
+						Value:    float64(stars.Get()),
+						OnChange: stars.Set,
+						Label:    "Your rating",
+					},
+					caption(rated),
+					core.Row(
+						core.Gap(12),
+						core.AlignItemsProp(core.AlignItemsCenter),
+						comps.Button{
+							Label:    loadLabel,
+							Emphasis: comps.EmphasisOutlined,
+							OnTap:    func() { loading.Set(!loading.Get()) },
+						},
+						comps.Spinner{Hidden: !loading.Get(), Label: "Loading the demo"},
+					),
+					comps.BottomBar{Items: items, Selected: tab.Get()},
+					caption("Showing: "+tabs[tab.Get()]),
+				),
+				keyPoints(
+					"Stepper clamps and reports only real changes; the button at a bound is disabled, and Label names the group.",
+					"Rating's interactive stars are named buttons; read-only stars are hidden and the group states the score.",
+					"Spinner owns hooks: render it every pass and flip Hidden, which also pauses its ticks.",
+					"BottomBar is navigation with Selected >= 0 and a toolbar below zero; each cell takes an equal share of the width.",
+					"Screen.Footer pins a bar outside the scroll region and grows the content to push it to the bottom edge.",
+				),
+			)
+		},
+	}
 }

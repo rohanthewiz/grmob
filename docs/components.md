@@ -42,11 +42,12 @@ vertical column that holds the screen's content.
 
 ```
 SafeArea
-  └─ Scroll            (only when Scroll is true; KeyboardAware lands here)
-       └─ Column       ← Gap / Fill / Style land here
-                         (and KeyboardAware, when there is no Scroll)
-            ├─ Children[0]
-            └─ …
+  ├─ Scroll            (only when Scroll is true; KeyboardAware lands here)
+  │    └─ Column       ← Gap / Fill / Style land here
+  │                      (and KeyboardAware, when there is no Scroll)
+  │         ├─ Children[0]
+  │         └─ …
+  └─ Footer            (only when Footer is set; pinned, never scrolls)
 ```
 
 ```go
@@ -77,6 +78,7 @@ comps.Screen{
 | `Gap` | uniform vertical spacing, in points; zero means *unset* |
 | `Fill` | `FlexGrow(1)` on the column — claim the full safe-area height |
 | `Style` | applied to the column **after** `Gap` and `Fill`, so it overrides both |
+| `Footer` | pinned below the content, outside the scroll region; the content grows to push it to the bottom edge |
 
 **Every field defaults to contributing nothing**, so the zero value renders
 the bare scaffold with no style props at all and the theme's `Column` base
@@ -149,6 +151,25 @@ comps.Screen{Scroll: true, KeyboardAware: true, Children: fields}
 // A chat: no scroll here, so the column lifts and the composer rides up.
 comps.Screen{KeyboardAware: true, Children: []core.View{header, thread, composer}}
 ```
+
+**`Footer` is the slot for a bar that must not scroll.** A `comps.BottomBar`,
+a checkout bar or a chat composer placed among `Children` scrolls away with
+the content. In `Footer` it becomes the `SafeArea`'s second child, and the
+content region takes the leftover height so the footer sits on the bottom edge
+even under short content. With `Scroll` the `Scroll` grows and the column
+inside it does not; without `Scroll` the column grows, as if `Fill` were set.
+
+```go
+comps.Screen{
+    Scroll:   true,
+    Children: []core.View{feed},
+    Footer:   comps.BottomBar{Items: tabs, Selected: tab.Get()},
+}
+```
+
+The footer takes no inset or style from the scaffold. It is the caller's
+widget and draws its own background and padding. A nil `Footer` leaves the
+tree exactly as it was.
 
 **`Fill` is load-bearing wherever a child grows.** A `FlexGrow` child can only
 grow inside a parent that has height to give, so a screen whose list should
@@ -882,6 +903,66 @@ HTML but they drive reconciler matching and native view recycling, so captions
 are assumed distinct — two identical captions collide, which debug mode reports
 rather than silently mismatching segments.
 
+## Stepper
+
+A number with a − and a + beside it, for small ranges where two taps beat
+opening a keyboard: a quantity, a guest count, a font size.
+
+```go
+comps.ListRow{
+    Title:    "Guests",
+    Trailing: comps.Stepper{Value: guests.Get(), Min: 1, Max: 8,
+        OnChange: guests.Set, Label: "Guests"},
+}
+```
+
+**Clamped in the widget, reported only on change.** A tap computes the next
+value, clamps it into `Min`..`Max` and calls `OnChange` only when the result
+differs, so the handler is a plain setter. At a bound the button that would
+leave the range is disabled.
+
+**Bounds are opt-in.** They apply when `Max > Min`. A zero-value pair leaves
+the stepper unbounded, because `Min: 0, Max: 0` is not a range anyone means.
+
+Other notes:
+
+- `Label` is the group's accessible name and is not drawn. Put the stepper in
+  a `ListRow`'s `Trailing` or a `FormField` for a visible label.
+- The buttons are outlined rather than ghost. A ghost "−" has no visible edge
+  and reads as text on a phone.
+- The row is `RoleGroup` with the value stated as an accessibility value. The
+  natives read its text; the web scopes value attributes to progress bars and
+  reads the visible number instead.
+- The buttons are announced "Decrease" and "Increase". `DecreaseLabel` and
+  `IncreaseLabel` localise them, and `Format` changes how the value is drawn
+  and announced.
+
+## Rating
+
+A row of stars, or any glyph, read-only or tappable.
+
+```go
+comps.Rating{Value: stars.Get(), OnChange: func(v int) { stars.Set(float64(v)) }}
+comps.Rating{Value: 4.5, ReadOnly: true, Label: "Average score"}
+```
+
+**`Value` is a float.** Version 1 rounds to whole glyphs, so a caller can store
+an average today and gain half-glyphs later without a type change. `OnChange`
+reports whole positions because a tap lands on one glyph. Tapping the glyph
+that is already the value does nothing.
+
+**Interactive glyphs are buttons, read-only glyphs are decoration.** Each
+tappable glyph is a button named "3 of 5". A read-only rating registers no
+callbacks and hides its glyphs, so the group's "4 of 5" is the one
+announcement rather than five "black star" readings.
+
+Other notes:
+
+- `Max` sets the glyph count and defaults to 5. `Glyph` and `EmptyGlyph`
+  default to ★ and ☆.
+- Filled glyphs use the warning role's on-light tone, which holds contrast on
+  a light surface where the raw warning colour does not.
+
 ## Separator
 
 The hairline rule between rows and between sections. The zero value is the
@@ -1513,6 +1594,46 @@ It is an ordinary `Row`, not a platform navigation bar: nothing floats,
 collapses on scroll, or claims the status bar. `Screen`'s `SafeArea` is what
 keeps it clear of the notch.
 
+## BottomBar
+
+The strip pinned to the bottom of a screen: two to five destinations or
+actions, each an icon over a label. It belongs in `Screen.Footer`.
+
+```go
+comps.Screen{
+    Children: []core.View{content},
+    Footer: comps.BottomBar{
+        Items: []comps.BarItem{
+            {Icon: "🏠", Label: "Home",   OnTap: func() { tab.Set(0) }},
+            {Icon: "🔍", Label: "Search", OnTap: func() { tab.Set(1) }},
+            {Icon: "👤", Label: "Me",     OnTap: func() { tab.Set(2) }},
+        },
+        Selected: tab.Get(),
+    },
+}
+```
+
+**The role follows `Selected`.**
+
+| `Selected` | Role | Meaning |
+|---|---|---|
+| 0 or more | `RoleNavigation` | destinations, one of them current |
+| negative | `RoleToolbar` | actions, none of them current |
+
+The zero value selects the first item, as `SegmentedControl` and `Tabs` do, so
+an action strip says `Selected: -1`.
+
+**Items share the width.** Each cell grows equally, so the tap targets tile the
+bar with no dead gaps between them.
+
+Other notes:
+
+- The current item is drawn bold in the primary on-light tone, and its
+  accessible name gains ", selected". Core has no current-page state, and a tab
+  role would claim a panel the bar does not control.
+- The icon is decoration and hidden from assistive technology.
+- `BarItem.AccessibilityLabel` replaces an abbreviated label as the spoken name.
+
 ## Banner
 
 The inline strip that tells the user something about the screen they are on:
@@ -1774,6 +1895,40 @@ exists to avoid.
 Skeleton and EmptyState answer different questions: a skeleton says content is
 coming and will look roughly like this (worth saying when the layout is
 known); an empty state says there is nothing here and why.
+
+## Spinner
+
+The "something is happening, shape unknown" indicator. `Skeleton` covers a
+known layout, `ProgressBar` covers measurable work, and `Spinner` covers the
+rest.
+
+```go
+comps.Spinner{Hidden: !loading.Get()}
+comps.Spinner{Size: comps.SpinnerLarge, Label: "Uploading"}
+```
+
+**It holds hooks, so render it unconditionally.** No renderer draws a looping
+animation on its own, so the spin is stepped from Go: 30 degrees every 80
+milliseconds, through a state slot and `hooks.UseIntervalWhile`. Like
+`Accordion` and `DatePicker`, it must be rendered in a stable position on every
+pass. Set `Hidden` to stop showing it; leaving it out of the tree moves its
+hook slots.
+
+**`Hidden` is also what makes it free.** A visible spinner costs a render pass
+per step. `Hidden` hides the node and pauses the interval, and a paused
+`UseIntervalWhile` tick requests no render. A spinner built on plain
+`UseInterval` would re-render the whole app on every tick for the life of the
+process.
+
+Other notes:
+
+- The ring carries an orbiting dot, because a uniform ring turned about its
+  centre draws the same pixels at every angle.
+- The outer box is a `RoleStatus` live region named by `Label`, which defaults
+  to "Loading". The ring is hidden from assistive technology so its steps are
+  never read.
+- `SpinnerSmall`, the default medium and `SpinnerLarge` read the theme's
+  `Spacing.MD`, `LG` and `XL`.
 
 ## StatTile
 

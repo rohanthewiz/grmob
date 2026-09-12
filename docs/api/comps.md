@@ -47,6 +47,9 @@ Two widgets do: Accordion (expanded or collapsed) and DatePicker (is the sheet o
     - [`func (Badge) Render`](#func-badge-render)
 - [`type Banner`](#type-banner)
     - [`func (Banner) Render`](#func-banner-render)
+- [`type BarItem`](#type-baritem)
+- [`type BottomBar`](#type-bottombar)
+    - [`func (BottomBar) Render`](#func-bottombar-render)
 - [`type Button`](#type-button)
     - [`func (Button) Render`](#func-button-render)
 - [`type Calendar`](#type-calendar)
@@ -100,6 +103,8 @@ Two widgets do: Accordion (expanded or collapsed) and DatePicker (is the sheet o
 - [`type ProgressBar`](#type-progressbar)
     - [`func (ProgressBar) Render`](#func-progressbar-render)
 - [`type Prominence`](#type-prominence)
+- [`type Rating`](#type-rating)
+    - [`func (Rating) Render`](#func-rating-render)
 - [`type RichTextEditor`](#type-richtexteditor)
     - [`func (RichTextEditor) Render`](#func-richtexteditor-render)
 - [`type RichToolItem`](#type-richtoolitem)
@@ -117,6 +122,9 @@ Two widgets do: Accordion (expanded or collapsed) and DatePicker (is the sheet o
 - [`type Skeleton`](#type-skeleton)
     - [`func (Skeleton) Render`](#func-skeleton-render)
 - [`type Sort`](#type-sort)
+- [`type Spinner`](#type-spinner)
+    - [`func (Spinner) Render`](#func-spinner-render)
+- [`type SpinnerSize`](#type-spinnersize)
 - [`type StatTile`](#type-stattile)
     - [`func (StatTile) Render`](#func-stattile-render)
 - [`type StaticMap`](#type-staticmap)
@@ -125,6 +133,8 @@ Two widgets do: Accordion (expanded or collapsed) and DatePicker (is the sheet o
 - [`type StaticMapArea`](#type-staticmaparea)
 - [`type StaticMapProvider`](#type-staticmapprovider)
     - [`func GoogleStaticMap`](#func-googlestaticmap)
+- [`type Stepper`](#type-stepper)
+    - [`func (Stepper) Render`](#func-stepper-render)
 - [`type SwitchRow`](#type-switchrow)
     - [`func (SwitchRow) Render`](#func-switchrow-render)
 - [`type Tabs`](#type-tabs)
@@ -772,6 +782,98 @@ func (b Banner) Render(ctx *core.Context) *core.Node
 ```
 
 <small>[comps/banner.go:113](https://github.com/rohanthewiz/grmob/blob/master/comps/banner.go#L113)</small>
+
+### type BarItem
+
+```go
+type BarItem struct {
+	// Label is the text under the icon and the item's accessible name.
+	Label string
+
+	// Icon is an optional glyph or emoji drawn above the label.
+	Icon string
+
+	// OnTap is called when the item is pressed.
+	OnTap func()
+
+	// AccessibilityLabel replaces Label as the spoken name, for a bar whose
+	// labels are abbreviated.
+	AccessibilityLabel string
+}
+```
+
+BarItem is one cell of a BottomBar.
+
+<small>[comps/bottom_bar.go:72](https://github.com/rohanthewiz/grmob/blob/master/comps/bottom_bar.go#L72)</small>
+
+### type BottomBar
+
+```go
+type BottomBar struct {
+	// Items are the destinations or actions, drawn leading to trailing.
+	Items []BarItem
+
+	// Selected is the index of the current destination. A negative value makes
+	// the bar an action toolbar with no current item.
+	Selected int
+
+	// Style is applied to the bar row after the widget's own props.
+	Style []core.StyleProp
+}
+```
+
+BottomBar is the strip pinned to the bottom of a screen: two to five destinations (Home, Search, Me) or two to five actions (Reply, Archive, Delete), each an icon over a label.
+
+	comps.Screen{
+	    Children: []core.View{feed},
+	    Footer: comps.BottomBar{
+	        Items: []comps.BarItem{
+	            {Icon: "🏠", Label: "Home", OnTap: home},
+	            {Icon: "🔍", Label: "Search", OnTap: find},
+	            {Icon: "👤", Label: "Me", OnTap: profile},
+	        },
+	        Selected: tab.Get(),
+	    },
+	}
+
+It belongs in Screen.Footer, which pins it outside the scrolling region; a bar placed among Screen.Children scrolls away with the content.
+
+#### Destinations or actions: the role follows Selected
+
+SegmentedControl is a choice between views of one thing and styles its live segment as a filled chip, which is wrong for a bar. The bar's one design decision is what it announces itself as, and it is made by the field the caller already has to set:
+
+	Selected >= 0   RoleNavigation   a set of destinations, one of them current
+	Selected <  0   RoleToolbar      a strip of actions, none of them "current"
+
+Selected's zero value picks the first item, the same rule SegmentedControl and Tabs follow, so an action strip says Selected: -1.
+
+#### Items share the width equally
+
+Each item is a Column with FlexGrow(1), so the tap targets tile the whole bar. Justify(JustifyAround) on content-sized buttons would draw the same spacing but leave dead gaps between targets, which is exactly where a thumb aimed at a small label lands.
+
+#### How the current item is announced
+
+There is no aria-current in core's vocabulary and RoleTab would claim a tab panel this bar does not control (examples/social builds that relationship explicitly when it wants it). So the current item takes ListRow's fallback: its accessible name gains ", selected". The Icon is decoration and is hidden from assistive technology, so the Label is what is read.
+
+#### Theme roles read
+
+	Bar background   Colors.Surface
+	Current item     Colors.PrimaryOnLightColor(), bold
+	Other items      Colors.TextSecondary
+	Label text       Typography.Caption; Icon uses Typography.Subtitle
+	Padding          Spacing.XS
+
+<small>[comps/bottom_bar.go:59](https://github.com/rohanthewiz/grmob/blob/master/comps/bottom_bar.go#L59)</small>
+
+#### func (BottomBar) Render
+
+```go
+func (b BottomBar) Render(ctx *core.Context) *core.Node
+```
+
+Render builds Row(Column(icon, label)...) with the role chosen by Selected.
+
+<small>[comps/bottom_bar.go:88](https://github.com/rohanthewiz/grmob/blob/master/comps/bottom_bar.go#L88)</small>
 
 ### type Button
 
@@ -3403,6 +3505,77 @@ const (
 )
 ```
 
+### type Rating
+
+```go
+type Rating struct {
+	// Value is the score, from 0 to Max. It is rounded to whole glyphs.
+	Value float64
+
+	// Max is the number of glyphs. Zero means 5.
+	Max int
+
+	// OnChange receives the tapped glyph's 1-based position. Nil, like
+	// ReadOnly, draws a display-only rating.
+	OnChange func(int)
+
+	// ReadOnly drops the handlers and the per-glyph buttons.
+	ReadOnly bool
+
+	// Glyph and EmptyGlyph draw filled and unfilled positions. Empty uses
+	// "★" and "☆".
+	Glyph, EmptyGlyph string
+
+	// Label is the group's accessible name. Empty uses "Rating".
+	Label string
+
+	// Style is applied to the row after the widget's own props.
+	Style []core.StyleProp
+}
+```
+
+Rating is a row of stars (or any glyph), read-only or tappable: a review score on a product row, or the "how was it?" prompt after an order.
+
+	comps.Rating{Value: 3, OnChange: stars.Set}              // interactive
+	comps.Rating{Value: 4.5, ReadOnly: true, Label: "Score"} // display only
+
+	┌ Row  role=group  label="Rating"  value="3 of 5" ─┐
+	│   ★     ★     ★     ☆     ☆                      │
+	│  btn   btn   btn   btn   btn   (interactive only) │
+	└───────────────────────────────────────────────────┘
+
+#### Value is a float so half-stars need no signature change
+
+v1 rounds to the nearest whole glyph (4.5 draws five). A future half-glyph renders from the same field, so a caller storing an average today does not change type when that lands. OnChange reports whole numbers, because a tap lands on a whole glyph.
+
+#### Interactive glyphs are buttons; read-only glyphs are decoration
+
+An interactive glyph is a Box with RoleButton, named "3 of 5", so each star is a separate, labelled tab stop and activation target. Tapping the star that is already the value does nothing, the same "report only changes" rule Stepper follows. A read-only rating registers no callbacks and hides the glyphs from assistive technology: the group's value ("4 of 5") is the one announcement, instead of five "black star" readings.
+
+#### Accessibility
+
+The row is RoleGroup with Label (default "Rating") as its name and the rounded score as an AccessibilityValue. As with Stepper, the natives read the value's text on any node and the web scopes aria-value\* to progressbar, so on the web the read-only group is announced by name and the per-star labels carry the score for the interactive one.
+
+#### Theme roles read
+
+	Filled glyph   Colors.WarningOnLightColor() — amber that holds contrast on
+	               a light surface, where Colors.Warning is about 2:1
+	Empty glyph    Colors.TextSecondary
+	Glyph size     Typography.Subtitle
+	Gap            Spacing.XS
+
+<small>[comps/rating.go:52](https://github.com/rohanthewiz/grmob/blob/master/comps/rating.go#L52)</small>
+
+#### func (Rating) Render
+
+```go
+func (r Rating) Render(ctx *core.Context) *core.Node
+```
+
+Render builds the glyph row described in the type doc.
+
+<small>[comps/rating.go:78](https://github.com/rohanthewiz/grmob/blob/master/comps/rating.go#L78)</small>
+
 ### type RichTextEditor
 
 ```go
@@ -3596,6 +3769,29 @@ type Screen struct {
 	// on a short page. It does not make a scroll view fill anything.
 	Fill bool
 
+	// Footer is pinned below the content, outside the scroll region: the slot
+	// for a comps.BottomBar, a checkout bar, or a composer that must not scroll
+	// away. Nil keeps the scaffold exactly as it is without it.
+	//
+	// With a Footer the SafeArea holds two children instead of one, and the
+	// content region takes the leftover height so the footer sits on the
+	// bottom edge even when the content is short:
+	//
+	//	SafeArea
+	//	  ├─ Scroll FlexGrow(1)   (or the Column, growing, when Scroll is false)
+	//	  │    └─ Column
+	//	  └─ Footer
+	//
+	// Growing is implied rather than requiring Fill as well, because a footer
+	// that floats up under short content is never what a bottom bar means. The
+	// footer takes no inset or style from the scaffold: it is the caller's
+	// widget, full-width, and draws its own background and padding.
+	//
+	// KeyboardAware still lands on the scroll region or the column, so a
+	// focused field in the content is kept visible. The footer itself is not
+	// lifted over the keyboard, which is how both platforms treat a tab bar.
+	Footer core.View
+
 	// Style is applied to the column, after Gap and Fill, so a caller can
 	// override either — or add padding and a background the scaffold itself
 	// has no opinion about.
@@ -3657,7 +3853,7 @@ Style still wins. The cleared padding is applied ahead of the caller's Style pro
 func (s Screen) Render(ctx *core.Context) *core.Node
 ```
 
-<small>[comps/screen.go:192](https://github.com/rohanthewiz/grmob/blob/master/comps/screen.go#L192)</small>
+<small>[comps/screen.go:215](https://github.com/rohanthewiz/grmob/blob/master/comps/screen.go#L215)</small>
 
 ### type SearchField
 
@@ -4040,6 +4236,95 @@ Sort names the active sort column and direction. DataTable.Sort is a pointer so 
 
 <small>[comps/data_table.go:49](https://github.com/rohanthewiz/grmob/blob/master/comps/data_table.go#L49)</small>
 
+### type Spinner
+
+```go
+type Spinner struct {
+	// Hidden removes the spinner from display and pauses its ticks. Use it
+	// instead of conditionally rendering the widget; see the type doc.
+	Hidden bool
+
+	// Size picks the diameter. The zero value is SpinnerMedium.
+	Size SpinnerSize
+
+	// Label is the status announcement. Empty uses "Loading".
+	Label string
+
+	// Style is applied to the outer Box after the widget's own props.
+	Style []core.StyleProp
+}
+```
+
+Spinner is the "something is happening, shape unknown" indicator: a ring with a dot orbiting it.
+
+	comps.Spinner{Hidden: !loading.Get()}
+	comps.Spinner{Size: comps.SpinnerLarge, Label: "Uploading"}
+
+It completes the loading trio. Skeleton is for content whose layout is known and whose data is not; ProgressBar is for work that knows how far it has got; Spinner is for everything else.
+
+#### It holds hooks, so render it unconditionally
+
+There is no looping animation any renderer draws on its own: core.Transition animates one change and stops, Style.Rotate is applied without interpolation on both natives, and Style.Animation is honoured only by the two web targets. So the spin is stepped from Go: one core.NewState for the angle and one hooks.UseIntervalWhile advancing it by stepDegrees every stepEvery.
+
+That makes this the third widget in the package with hook obligations, after Accordion and DatePicker, and the rules are theirs: render a Spinner in a stable position on every pass. To stop showing it, set Hidden rather than leaving it out of the tree; leaving it out moves the two hook slots and every hook after them.
+
+#### What it costs, and why Hidden is the switch
+
+Each step is a state change, so a visible spinner costs a render pass per step (about twelve a second). Hidden both hides the node and pauses the interval; UseIntervalWhile drops a paused tick before it can request a render, so a hidden spinner costs nothing but a goroutine wake. That is the reason the hook exists: with plain UseInterval, a spinner that had ever been mounted would re-render the whole app on every tick for the life of the process. A looping transition prop on all four renderers would remove the stepping altogether and is recorded as a follow-up.
+
+	┌ Box  role=status  label="Loading" ┐
+	│  ┌ Column  ring, Rotate(angle) ┐  │
+	│  │            ●                │  │
+	│  │                             │  │
+	│  └─────────────────────────────┘  │
+	└───────────────────────────────────┘
+
+The dot is what makes the rotation visible. A ring of uniform colour turned about its centre draws the same pixels at every angle, and core has no per-side border colour to draw a gap in the ring with.
+
+#### Accessibility
+
+The outer Box is RoleStatus with Label (default "Loading"), a polite live region announced when it appears. The ring beneath it changes style every step and is hidden from assistive technology, so the steps are never read. A hidden spinner is display:none and so is not announced at all.
+
+#### Theme roles read
+
+	Ring       Colors.BorderColor()
+	Dot        Colors.Primary
+	Diameter   Spacing.MD / LG / XL for Small / Medium / Large
+
+<small>[comps/spinner.go:69](https://github.com/rohanthewiz/grmob/blob/master/comps/spinner.go#L69)</small>
+
+#### func (Spinner) Render
+
+```go
+func (s Spinner) Render(ctx *core.Context) *core.Node
+```
+
+Render builds the status box and the rotating ring.
+
+<small>[comps/spinner.go:118](https://github.com/rohanthewiz/grmob/blob/master/comps/spinner.go#L118)</small>
+
+### type SpinnerSize
+
+```go
+type SpinnerSize string
+```
+
+SpinnerSize selects a Spinner's diameter from the theme's spacing scale.
+
+<small>[comps/spinner.go:85](https://github.com/rohanthewiz/grmob/blob/master/comps/spinner.go#L85)</small>
+
+```go
+const (
+	// SpinnerMedium is Spacing.LG across; the zero value.
+	SpinnerMedium SpinnerSize = ""
+	// SpinnerSmall is Spacing.MD across, for inline use beside text.
+	SpinnerSmall SpinnerSize = "small"
+	// SpinnerLarge is Spacing.XL across, for a spinner that is the screen's
+	// whole content.
+	SpinnerLarge SpinnerSize = "large"
+)
+```
+
 ### type StatTile
 
 ```go
@@ -4366,6 +4651,90 @@ A constructor rather than a bare provider because the key is the caller's: it is
 An empty key yields a provider that returns "", which renders the widget as a box with no image in it rather than as a map of Google's "this request is not authorized" error tile. A misconfigured build should look unfinished, not broken.
 
 <small>[comps/static_map.go:380](https://github.com/rohanthewiz/grmob/blob/master/comps/static_map.go#L380)</small>
+
+### type Stepper
+
+```go
+type Stepper struct {
+	// Value is the caller's current number.
+	Value int
+
+	// Min and Max bound the value when Max > Min; otherwise it is unbounded.
+	Min, Max int
+
+	// Step is the amount one tap adds or removes. Zero or negative means 1.
+	Step int
+
+	// OnChange receives the new, clamped value. It is not called when a tap
+	// would leave the value unchanged.
+	OnChange func(int)
+
+	// Label is the group's accessible name ("Quantity"). It is not drawn:
+	// place the stepper in a ListRow's Trailing or a FormField for a visible
+	// label, which keeps the stepper usable inside either.
+	Label string
+
+	// Format renders the value between the buttons and in the accessibility
+	// value. Nil uses strconv.Itoa.
+	Format func(int) string
+
+	// Disabled disables both buttons regardless of the bounds.
+	Disabled bool
+
+	// DecreaseLabel and IncreaseLabel name the two buttons for screen readers.
+	// Empty uses "Decrease" and "Increase".
+	DecreaseLabel, IncreaseLabel string
+
+	// Style is applied to the row after the widget's own props.
+	Style []core.StyleProp
+}
+```
+
+Stepper is a number with a − and a + beside it: a quantity in a cart, the guests on a booking, the font size in a settings screen.
+
+	comps.Stepper{Value: qty.Get(), Min: 1, Max: 20, OnChange: qty.Set, Label: "Quantity"}
+
+core.NumericInput is the typing form of the same value. A Stepper is the tapping form, for small ranges where two taps beat opening a keyboard; the examples hand-rolled it three times in chapter 1 of the tutorial alone.
+
+	┌ Row  role=group  label=Label  value="3" ─┐
+	│  [ − ]      3      [ + ]                 │
+	└──────────────────────────────────────────┘
+	   disabled          disabled
+	   at Min            at Max
+
+#### Controlled, and clamped in the widget
+
+The widget holds no state. A tap computes Value∓Step, clamps it into the bounds and calls OnChange only when the result differs from Value, so a caller's handler is a plain setter and never sees a no-op or an out-of-range number. At a bound the button that would leave the range is rendered Disabled, which is what both natives and the browser announce as unavailable; the handler still stays registered, per core.Style.Disabled.
+
+#### Bounds are opt-in: they apply when Max > Min
+
+Go has no "unset" int, and Min: 0, Max: 0 is not a range anyone means, so a zero-value pair leaves the stepper unbounded. Any range where Max > Min is enforced at both ends; a caller wanting only a floor sets a large Max.
+
+#### Buttons are outlined, not ghost
+
+The plan sketched ghost buttons to keep the pair quiet. A ghost "−" is a bare glyph with no visible edge, which on a phone reads as text rather than as a target, so both buttons are EmphasisOutlined — the treatment the tutorial's hand-rolled stepper had already settled on.
+
+#### Accessibility
+
+There is no spinbutton role in core.Role and none is added for this: the row is RoleGroup with Label as its name and the current value as an AccessibilityValue. Both natives read the value's Text on any node (Compose stateDescription, SwiftUI accessibilityValue). The web scopes aria-value\* to progressbar and drops it here, and on the web the visible number between the buttons is read in document order instead. The buttons are named "Decrease"/"Increase" by default, because "−" is announced as "minus" or not at all; DecreaseLabel and IncreaseLabel localise them.
+
+#### Theme roles read
+
+	Row gap         Spacing.SM
+	Value text      Typography.Body, bold
+	Buttons         comps.Button outlined: Colors.Primary's on-light tone
+
+<small>[comps/stepper.go:62](https://github.com/rohanthewiz/grmob/blob/master/comps/stepper.go#L62)</small>
+
+#### func (Stepper) Render
+
+```go
+func (s Stepper) Render(ctx *core.Context) *core.Node
+```
+
+Render builds the group row described in the type doc.
+
+<small>[comps/stepper.go:124](https://github.com/rohanthewiz/grmob/blob/master/comps/stepper.go#L124)</small>
 
 ### type SwitchRow
 

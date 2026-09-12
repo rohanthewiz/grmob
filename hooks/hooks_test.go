@@ -337,3 +337,51 @@ func TestUseTimeoutRearmsAfterCloseAndRemount(t *testing.T) {
 	renderPass(ctx, body)
 	awaitSignal(t, fires, "timeout fire after close and re-mount")
 }
+
+// UseIntervalWhile: an inactive render pauses the ticks entirely, an active
+// one resumes them, and Close still stops the ticker.
+func TestUseIntervalWhilePausesAndResumes(t *testing.T) {
+	ctx := core.NewContext()
+	ticks := make(chan struct{}, 64)
+	pass := func(active bool) {
+		renderPass(ctx, func(ctx *core.Context) {
+			hooks.UseIntervalWhile(ctx, active, func() { ticks <- struct{}{} }, 10*time.Millisecond)
+		})
+	}
+
+	pass(false)
+	assertQuiet(t, ticks, 80*time.Millisecond, "tick while the first render was inactive")
+
+	pass(true)
+	awaitSignal(t, ticks, "tick after an active render")
+
+	pass(false)
+	// Drain a tick that was already past the pause check when the render landed.
+	for {
+		select {
+		case <-ticks:
+			continue
+		case <-time.After(40 * time.Millisecond):
+		}
+		break
+	}
+	assertQuiet(t, ticks, 80*time.Millisecond, "tick after pausing")
+
+	pass(true)
+	awaitSignal(t, ticks, "tick after resuming")
+	ctx.Close()
+}
+
+// A paused tick must not request a render: the whole point of the hook is that
+// an idle widget costs no render passes.
+func TestUseIntervalWhilePausedRequestsNoRender(t *testing.T) {
+	ctx := core.NewContext()
+	renders := make(chan struct{}, 64)
+	ctx.OnStateChange(func() { renders <- struct{}{} })
+
+	renderPass(ctx, func(ctx *core.Context) {
+		hooks.UseIntervalWhile(ctx, false, func() {}, 10*time.Millisecond)
+	})
+	assertQuiet(t, renders, 80*time.Millisecond, "render requested by a paused interval")
+	ctx.Close()
+}

@@ -534,3 +534,51 @@ func TestScreenRendersItsSoleChildExactlyOnce(t *testing.T) {
 		})
 	}
 }
+
+// --- Footer ------------------------------------------------------------------
+
+func TestScreenFooterIsPinnedBelowAGrowingColumn(t *testing.T) {
+	_, n := renderDebug(t, Screen{
+		Children: []core.View{core.Text("body")},
+		Footer:   core.Text("footer"),
+	})
+	if n.Type != "SafeArea" || len(n.Children) != 2 {
+		t.Fatalf("want SafeArea(content, footer), got %q with %d children", n.Type, len(n.Children))
+	}
+	content, footer := n.Children[0], n.Children[1]
+	if content.Type != "Column" || content.Style.FlexGrow != 1 {
+		t.Errorf("content = %q grow=%v; a footer needs the column to take the leftover height",
+			content.Type, content.Style.FlexGrow)
+	}
+	if footer.Props["content"] != "footer" {
+		t.Errorf("footer must render last, got %v", footer.Props)
+	}
+}
+
+func TestScreenFooterWithScrollGrowsTheViewportNotTheColumn(t *testing.T) {
+	_, n := renderDebug(t, Screen{
+		Scroll:   true,
+		Children: []core.View{core.Text("body")},
+		Footer:   core.Text("footer"),
+	})
+	scroll := n.Children[0]
+	if scroll.Type != "Scroll" || scroll.Style == nil || scroll.Style.FlexGrow != 1 {
+		t.Fatalf("the Scroll must grow so the footer stays outside it, got %q %+v", scroll.Type, scroll.Style)
+	}
+	if col := scroll.Children[0]; col.Style != nil && col.Style.FlexGrow != 0 {
+		t.Errorf("the scrolled column must not be forced to grow, got %v", col.Style.FlexGrow)
+	}
+	if findText(scroll, "footer") != nil {
+		t.Error("the footer must not be inside the scroll region")
+	}
+}
+
+func TestScreenWithoutFooterKeepsItsSingleChild(t *testing.T) {
+	_, n := renderDebug(t, Screen{Scroll: true, Children: []core.View{core.Text("body")}})
+	if len(n.Children) != 1 {
+		t.Fatalf("children = %d, want 1", len(n.Children))
+	}
+	if s := n.Children[0].Style; s != nil && s.FlexGrow != 0 {
+		t.Errorf("no footer means no FlexGrow on the Scroll, got %v", s.FlexGrow)
+	}
+}

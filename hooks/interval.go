@@ -30,6 +30,11 @@ type intervalRecord struct {
 	mu      sync.Mutex
 	fn      func()
 	started bool
+	// paused is the latest render's answer to "should a tick do anything?".
+	// Always false for UseInterval; UseIntervalWhile writes !active every
+	// pass. Guarded by mu for the same reason fn is: written by the render
+	// goroutine, read by the ticker goroutine.
+	paused bool
 }
 
 // UseInterval invokes fn every interval for as long as the app lives. The
@@ -43,6 +48,40 @@ type intervalRecord struct {
 // (ctx.Close, normally reached via render.Manager.Close), not when the
 // component leaves the view tree — hooks have no unmount signal today.
 func UseInterval(ctx *core.Context, fn func(), interval time.Duration) {
+	useInterval(ctx, fn, interval, true)
+}
+
+// UseIntervalWhile is UseInterval with an off switch the render controls: a
+// tick calls fn and requests a render only while the most recent render passed
+// active = true. A paused tick does nothing at all — no fn, no render pass.
+//
+//	hooks.UseIntervalWhile(ctx, loading, func() { angle.Set(angle.Get() + 30) }, 80*time.Millisecond)
+//
+// # Why a second hook rather than a no-op fn
+//
+// UseInterval requests a render after every tick, because it cannot know
+// whether fn changed anything. That is right for a clock and wrong for a
+// widget that is only sometimes animating: a spinner written on UseInterval
+// with an `if !active { return }` inside fn still costs the whole app a render
+// pass every tick for as long as the process lives (hooks have no unmount
+// signal, so the ticker outlives the spinner's visibility). Here the pause is
+// read on the ticker goroutine before either call, so an idle widget costs one
+// goroutine wake per interval and nothing else.
+//
+// # What it does not change
+//
+// The hook still occupies one slot and must be called unconditionally in a
+// stable position; the ticker still starts on the first render (even a paused
+// one) and stops only on ctx.Close. The duration is fixed by the first render,
+// as with UseInterval. Resuming is not immediate: the first effective tick
+// arrives on the ticker's next beat after a render passes active = true.
+func UseIntervalWhile(ctx *core.Context, active bool, fn func(), interval time.Duration) {
+	useInterval(ctx, fn, interval, active)
+}
+
+// useInterval is the shared body. active is stored every pass so the ticker
+// goroutine always sees the latest render's decision.
+func useInterval(ctx *core.Context, fn func(), interval time.Duration, active bool) {
 	// The record doubles as this hook's cursor slot. Reserving the slot
 	// through NewState (rather than a bare Cursor++) keeps the slot array and
 	// the cursor aligned: a bare increment leaves no slot behind, so every
@@ -55,6 +94,7 @@ func UseInterval(ctx *core.Context, fn func(), interval time.Duration) {
 
 	rec.mu.Lock()
 	rec.fn = fn
+	rec.paused = !active
 	alreadyRunning := rec.started
 	rec.started = true
 	rec.mu.Unlock()
@@ -94,8 +134,13 @@ func UseInterval(ctx *core.Context, fn func(), interval time.Duration) {
 				return
 			case <-ticker.C:
 				rec.mu.Lock()
-				f := rec.fn
+				f, paused := rec.fn, rec.paused
 				rec.mu.Unlock()
+				// A paused tick is dropped whole: skipping only f would still
+				// request the render pass this hook exists to avoid.
+				if paused {
+					continue
+				}
 				f()
 				// RequestRender (not just MarkDirty) so a timer tick reaches
 				// the screen through the push channel even when no native

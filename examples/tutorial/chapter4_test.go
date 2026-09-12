@@ -1691,3 +1691,73 @@ func TestTheLiveMapLessonGatesItsSensorWithAFlag(t *testing.T) {
 
 	assertNoConcerns(t)
 }
+
+// --- 4.15 Small controls ------------------------------------------------------
+
+// tapLabelled dispatches the click of the node whose accessibility label is
+// name: the glyph buttons and bar cells carry their names as labels rather
+// than as Button props.
+func tapLabelled(t *testing.T, mgr *render.Manager, name string) {
+	t.Helper()
+	n := findNode(tree(t, mgr), func(n *node) bool {
+		_, clickable := n.Props["onClick"].(string)
+		return clickable && n.Style != nil && n.Style.AccessibilityLabel == name
+	})
+	if n == nil {
+		t.Fatalf("no tappable node labelled %q", name)
+	}
+	mgr.DispatchCallback(n.Props["onClick"].(string))
+}
+
+func TestSmallControlsDemoDrivesAllFourWidgets(t *testing.T) {
+	mgr := newApp(t)
+	openLesson(t, mgr, "Small controls: Stepper, Rating, Spinner & BottomBar")
+
+	// Stepper: the + clamps at Max 8 and stops reporting.
+	for range 10 {
+		tapLabelled(t, mgr, "Increase")
+	}
+	if !hasText(tree(t, mgr), "Booking for 8") {
+		t.Fatal("ten taps of + should clamp the guests at 8")
+	}
+
+	// Rating: tap the fourth star.
+	if !hasText(tree(t, mgr), "Not rated yet") {
+		t.Fatal("the rating starts empty")
+	}
+	tapLabelled(t, mgr, "4 of 5")
+	if !hasText(tree(t, mgr), "You rated it 4 of 5") {
+		t.Fatal("tapping the fourth star should rate 4")
+	}
+
+	// Spinner: rendered hidden until loading starts, then shown, then hidden.
+	status := func() *node {
+		return findNode(tree(t, mgr), func(n *node) bool {
+			return n.Style != nil && n.Style.AccessibilityLabel == "Loading the demo"
+		})
+	}
+	if s := status(); s == nil || s.Style.Display != core.DisplayNone {
+		t.Fatal("the spinner is in the tree from the start, hidden")
+	}
+	tap(t, mgr, "Simulate loading")
+	if s := status(); s.Style.Display == core.DisplayNone {
+		t.Fatal("loading should show the spinner")
+	}
+	tap(t, mgr, "Stop loading")
+	if s := status(); s.Style.Display != core.DisplayNone {
+		t.Fatal("stopping should hide the spinner again")
+	}
+
+	// BottomBar: the current cell's name carries the selection.
+	tapLabelled(t, mgr, "Search")
+	cur := tree(t, mgr)
+	if !hasText(cur, "Showing: Search") {
+		t.Fatal("tapping Search should switch the tab")
+	}
+	if findNode(cur, func(n *node) bool {
+		return n.Style != nil && n.Style.AccessibilityLabel == "Search, selected"
+	}) == nil {
+		t.Fatal("the current cell should announce itself as selected")
+	}
+	assertNoConcerns(t)
+}

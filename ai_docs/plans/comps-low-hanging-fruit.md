@@ -1,7 +1,26 @@
 # Low-hanging fruit for `comps`
 
-**Status:** In progress. A1 `Dialog` and A2 `SwitchRow`/`CheckboxRow` landed
-2026-09-12, with tutorial lesson 6.6 "Dialog and settings rows".
+**Status:** Tier A landed 2026-09-12. A1 `Dialog` and A2
+`SwitchRow`/`CheckboxRow` shipped with tutorial lesson 6.6 "Dialog and settings
+rows". A3 `Stepper`, A4 `BottomBar` + `Screen.Footer`, A5 `Spinner` and A6
+`Rating` shipped with lesson 4.15 "Small controls". Tier B and C are open.
+
+**Decisions that differ from the Tier A sketches below:**
+
+- A3 `Stepper` buttons are outlined, not ghost: a ghost "−" has no visible
+  edge. Bounds apply only when `Max > Min`, so the zero value is unbounded.
+- A4 `BottomBar` cells each take `FlexGrow(1)` instead of `JustifyAround`, so
+  the tap targets tile the bar. The current item is announced with ListRow's
+  ", selected" name suffix. `Selected: -1` is the toolbar form.
+- A5 `Spinner` uses a new `hooks.UseIntervalWhile` rather than
+  `hooks.UseInterval`. `UseInterval` requests a render on every tick, so a
+  spinner that had ever mounted would re-render the app ~12 times a second for
+  the life of the process. `Hidden` pauses the ticks outright. `Rotate` is not
+  interpolated on either native, so host-side transitions could not stand in
+  for the steps. The ring carries an orbiting dot because a uniform ring looks
+  static when rotated.
+- A6 `Rating` fills with the warning on-light tone, not `Colors.Warning`,
+  which is about 2:1 on a light surface.
 
 **Correction found while landing A2:** rendering the row's control
 `core.Disabled(true)` (the approach sketched under A2) was rejected. Disabled

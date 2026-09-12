@@ -31,6 +31,7 @@ Comparison is by value equality on the dependency list. A dependency that is a f
 - [`func UseEffect`](#func-useeffect)
 - [`func UseHeading`](#func-useheading)
 - [`func UseInterval`](#func-useinterval)
+- [`func UseIntervalWhile`](#func-useintervalwhile)
 - [`func UseLifecycle`](#func-uselifecycle)
 - [`func UseLocation`](#func-uselocation)
 - [`func UseLocationWhen`](#func-uselocationwhen)
@@ -126,7 +127,27 @@ UseInterval invokes fn every interval for as long as the app lives. The ticker s
 
 The ticker is owned by the context tree: it stops when the tree is closed (ctx.Close, normally reached via render.Manager.Close), not when the component leaves the view tree — hooks have no unmount signal today.
 
-<small>[hooks/interval.go:45](https://github.com/rohanthewiz/grmob/blob/master/hooks/interval.go#L45)</small>
+<small>[hooks/interval.go:50](https://github.com/rohanthewiz/grmob/blob/master/hooks/interval.go#L50)</small>
+
+### func UseIntervalWhile
+
+```go
+func UseIntervalWhile(ctx *core.Context, active bool, fn func(), interval time.Duration)
+```
+
+UseIntervalWhile is UseInterval with an off switch the render controls: a tick calls fn and requests a render only while the most recent render passed active = true. A paused tick does nothing at all — no fn, no render pass.
+
+	hooks.UseIntervalWhile(ctx, loading, func() { angle.Set(angle.Get() + 30) }, 80*time.Millisecond)
+
+#### Why a second hook rather than a no-op fn
+
+UseInterval requests a render after every tick, because it cannot know whether fn changed anything. That is right for a clock and wrong for a widget that is only sometimes animating: a spinner written on UseInterval with an \`if !active { return }\` inside fn still costs the whole app a render pass every tick for as long as the process lives (hooks have no unmount signal, so the ticker outlives the spinner's visibility). Here the pause is read on the ticker goroutine before either call, so an idle widget costs one goroutine wake per interval and nothing else.
+
+#### What it does not change
+
+The hook still occupies one slot and must be called unconditionally in a stable position; the ticker still starts on the first render (even a paused one) and stops only on ctx.Close. The duration is fixed by the first render, as with UseInterval. Resuming is not immediate: the first effective tick arrives on the ticker's next beat after a render passes active = true.
+
+<small>[hooks/interval.go:78](https://github.com/rohanthewiz/grmob/blob/master/hooks/interval.go#L78)</small>
 
 ### func UseLifecycle
 
@@ -390,7 +411,7 @@ UseTimeout invokes fn once, delay after the hook's first render. Renders while t
 
 A pending timer is cancelled when the context tree is closed, so a Manager shutdown cannot leak a late fn call into a dead app.
 
-<small>[hooks/interval.go:127](https://github.com/rohanthewiz/grmob/blob/master/hooks/interval.go#L127)</small>
+<small>[hooks/interval.go:172](https://github.com/rohanthewiz/grmob/blob/master/hooks/interval.go#L172)</small>
 
 ## Types
 
