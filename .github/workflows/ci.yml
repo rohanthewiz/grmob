@@ -7,7 +7,8 @@
 #
 #   go       ubuntu   Go toolchain + Node        formatting, vet, tests, WASM
 #   ios      macOS    Go + Swift (arm64 host)    ios/verify/run.sh
-#   android  ubuntu   Go + JDK 17 + SDK/NDK      gomobile bind, then Gradle
+#   android  ubuntu   Go + JDK 17 + SDK/NDK      android/verify, gomobile bind,
+#                                                Gradle, android/verify again
 #
 # The three are independent and run in parallel; a red iOS job does not hide a
 # red Go job. The Go job is the fast one and is what a contributor watches.
@@ -140,6 +141,55 @@ jobs:
           "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" \
             "platforms;android-34" "build-tools;34.0.0" > /dev/null
 
+      # Everything android/verify needs, and the two network calls it will not
+      # make itself.
+      #
+      # The passes below run `--offline` on purpose: a verify script that
+      # reached the network would stop being runnable in the position the
+      # Android build already occupies. That stance is what makes a cold cache
+      # — which is every first CI run — skip every Kotlin check with a sentence
+      # nobody reads. So the fetching is a step of its own, named as such, and
+      # the scripts keep their offline promise.
+      #
+      # Three commands, and between them the whole of it. Measured from an empty
+      # GRADLE_USER_HOME on a developer machine:
+      #
+      #   printVerifyClasspath      the app's compile classpath + AGP's
+      #                             platform jars, which sources.sh type-checks
+      #                             against. ~20s cold.
+      #   fetchKotlinCompiler       the command-line compiler and the Compose
+      #                             compiler plugin, at the build's own Kotlin
+      #                             version. Nothing else pulls these: they are
+      #                             not on anybody's compile classpath.
+      #   fetchComposeLayoutSources foundation-layout's sources jar, which
+      #                             mobile/verify reads androidx's own
+      #                             arithmetic out of. Without it that check
+      #                             skips, and it is the one most likely to
+      #                             catch an androidx release changing under us.
+      #
+      # None of it needs the NDK, gomobile or libs/grmob.aar, which is the whole
+      # reason the step can sit here rather than after the bind below.
+      - name: Populate the gradle cache android/verify reads
+        working-directory: android
+        run: |
+          ./gradlew --no-daemon -q :app:printVerifyClasspath > /dev/null
+          ./gradlew --no-daemon -q :app:fetchKotlinCompiler
+          ./gradlew --no-daemon -q :app:fetchComposeLayoutSources
+
+      # Does the Kotlin that imports Compose and the Android SDK compile?
+      #
+      # Before the bind below, deliberately. com.grmob.runtime imports nothing
+      # from the .aar, so this stage needs no NDK and no gomobile — and a broken
+      # renderer, style solver or editor is the commonest way this job goes red.
+      # Placed here it is reported in seconds; placed after the bind it would be
+      # reported two and a half minutes later, having built a binding nobody was
+      # going to use.
+      #
+      # It runs the runtime stage only and says so: the app stage needs the
+      # .aar and is picked up by the full pass at the end of this job.
+      - name: Compile the Compose runtime (no NDK, no gomobile)
+        run: ./android/verify/sources.sh
+
       - name: Build the AAR with the pinned gomobile
         # go.mod pins gomobile/gobind in a `tool` block, but `go tool gomobile`
         # alone is not enough: gomobile shells out to a *gobind executable* and
@@ -163,9 +213,27 @@ jobs:
             ./mobile ./examples/mobileapp
 
       - name: Assemble the debug APK
-        # Compiles the Compose renderer against the freshly bound AAR. This is
-        # the only guard on the Kotlin runtime — Renderer.kt, TreeStore.kt and
-        # GrMobStyle.kt have no unit tests, so a compile failure here is the
-        # first signal that a Go-side bridge change broke the native side.
+        # Compiles the Compose renderer against the freshly bound AAR, and is
+        # the only thing here that builds the app the way a developer does —
+        # resources, manifest, dexing and all.
         working-directory: android
         run: ./gradlew assembleDebug --no-daemon
+
+      # The rest of android/verify, which needs the .aar the bind produced.
+      #
+      # Three things, none of which assembleDebug above can say:
+      #
+      #   the gate tests      every arm of both gates, as a function of values —
+      #                       the arms nobody can reach by owning a machine
+      #   the Compose census  androidx's own arithmetic, read out of the sources
+      #                       jar the fetch step put in the cache
+      #   the JVM harness     GrMobSelectMenu.kt and GrMobProgress.kt EXECUTED
+      #                       against Go's case tables and compared. A compile
+      #                       proves a file parses; this proves it computes the
+      #                       same answers as the Go it mirrors.
+      #
+      # It re-runs sources.sh as its first act, and this time both stages: the
+      # .aar exists now, so com.grmob.app is type-checked as well. That is the
+      # one part of the Kotlin compile the early step above could not do.
+      - name: Run android/verify against the built AAR
+        run: ./android/verify/run.sh

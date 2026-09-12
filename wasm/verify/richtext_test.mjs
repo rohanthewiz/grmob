@@ -526,3 +526,103 @@ test("a zero epoch is never an instruction", () => {
     focusCommand(rt, editor, 0, "focus");
     assert.equal(rt.document.activeElement, null);
 });
+
+// --- What a rewrite costs the live tree ------------------------------------
+
+// countLiveAppends runs fn with appendChild instrumented, and reports how many
+// calls landed on a node that was ATTACHED to the document at the time.
+//
+// Attached rather than "on the editor", because the quantity that matters is
+// how much of the build the browser's editing machinery and any
+// MutationObserver can see: an append into a <ul> that is itself already in the
+// editor is just as visible as one into the editor. Walking to the root per
+// call is O(depth) and this is a test.
+function countLiveAppends(document, fn) {
+    const proto = Object.getPrototypeOf(document.createElement("p"));
+    const real = proto.appendChild;
+    let live = 0;
+    const attached = (el) => {
+        for (let n = el; n; n = n.parentNode) if (n === document.body) return true;
+        return false;
+    };
+    proto.appendChild = function (child) {
+        if (attached(this)) live++;
+        return real.call(this, child);
+    };
+    try {
+        fn();
+    } finally {
+        proto.appendChild = real;
+    }
+    return live;
+}
+
+// A paragraph document of n blocks, six runs each — the shape the table above
+// richTextToDOM is measured in.
+const paragraphs = (n) =>
+    doc(...Array.from({ length: n }, (_, i) =>
+        block("p", ...Array.from({ length: 6 }, (_, j) => run(`b${i}r${j} `)))));
+
+function rewrite(rt, value) {
+    rt.GrMob.patch(JSON.stringify([{
+        Type: "update-props", TargetID: "root/0",
+        Changes: {
+            doc: JSON.stringify(value),
+            placeholder: "", readOnly: false, onChange: "cb-change",
+        },
+    }]));
+    rt.drainFrames();
+}
+
+// The property the detached build exists for, and the only one it claims.
+//
+// richTextToDOM recreates every element on every write — see the long note
+// above it, and ai_docs/plans/non_goals.md for why the partial rewrite that
+// would not is declined. What it does NOT do any more is put those elements
+// into the live tree one at a time. `el` carries contenteditable, so every
+// intermediate state was a document mid-edit that was never true: partially
+// rewritten, briefly missing every block after the one being appended.
+//
+// One is the whole budget: the single appendChild that splices the fragment in.
+// The clear before it is `el.innerHTML = ""`, a setter rather than an insertion
+// and so not counted here — two mutations in total, one of which this
+// instrument can see.
+//
+// Asserted as a constant against three document sizes two orders of magnitude
+// apart, because the failure this guards is not "it got slower". It is
+// somebody appending one more thing to `el` inside the loop, which would make
+// the count a function of n again and would be invisible in every other test in
+// this file, all of which assert shape and would go on passing.
+test("a rewrite inserts into the live tree once, whatever the document's size", () => {
+    for (const n of [1, 100, 2000]) {
+        const { rt } = mountEditor(doc(block("p", run("start"))));
+        const live = countLiveAppends(rt.document, () => rewrite(rt, paragraphs(n)));
+        assert.equal(live, 1,
+            `${n} blocks: ${live} appends landed on the attached tree, not 1. ` +
+            `A count that grows with the document means the build is back in ` +
+            `the live contenteditable element.`);
+    }
+});
+
+// And the shape is unchanged by the way it is built, at a size where a
+// fragment that spliced wrongly would be obvious. The test above counts; this
+// one is what says the counting is of a build that still produces the document.
+test("a fragment-built document is the same tree a live-built one was", () => {
+    const { rt, editor } = mountEditor(doc(block("p", run("start"))));
+    rewrite(rt, doc(
+        block("p", run("intro")),
+        block("bullet", run("one")),
+        block("bullet", run("two")),
+        block("p", run("outro")),
+    ));
+    assert.equal(shape(editor),
+        "<p><span>intro</span></p>" +
+        "<ul><li><span>one</span></li><li><span>two</span></li></ul>" +
+        "<p><span>outro</span></p>");
+    // No fragment survived into the tree: appendChild splices a fragment's
+    // children and leaves the fragment behind, and a harness that got that
+    // wrong would show a node no browser ever has.
+    for (const c of editor.children) {
+        assert.notEqual(c.tagName, "#document-fragment");
+    }
+});

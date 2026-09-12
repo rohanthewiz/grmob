@@ -114,16 +114,12 @@ sh ./sources.sh
 out="${TMPDIR:-/tmp}/grmob-android-verify"
 mkdir -p "$out"
 
-# The generated case table, written to the scratch directory and never into
-# the repo — the same arrangement ios/verify's transcript has.
-go run . > "$out/Cases.kt"
-
-SRC="../app/src/main/java/com/grmob/runtime/GrMobSelectMenu.kt ../app/src/main/java/com/grmob/runtime/GrMobProgress.kt Harness.kt $out/Cases.kt"
-
-# The decision, once, before either path. See gate.sh: java is asked about
-# first because kotlinc is itself a JVM application, so the old order — kotlinc
-# first, java afterwards — turned a machine with a kotlinc and no JDK into a
-# failing pass rather than a skipped one.
+# The decision, once, before either path — and before anything is RUN. See
+# gate.sh: java is asked about before kotlinc because kotlinc is itself a JVM
+# application, so the old order turned a machine with a kotlinc and no JDK into
+# a failing pass; and go is asked about before both because the `go run .` below
+# used to sit ABOVE this block and did the same thing to a machine with a JDK
+# and no Go. A gate consulted after the first executable line is not a gate.
 have() { command -v "$1" >/dev/null && echo yes || echo no; }
 
 # Whether the cache can supply a compiler is not known until the jars have been
@@ -132,21 +128,34 @@ have() { command -v "$1" >/dev/null && echo yes || echo no; }
 # jars only matter on the path this call cannot take — with a kotlinc on PATH
 # the verdict is "kotlinc" whatever they say, and without one the verdict here
 # would be a skip that the second call re-decides with the real answer.
-verdict="$(jvm_harness_verdict "$(have java)" "$(have kotlinc)" no)"
+verdict="$(jvm_harness_verdict "$(have go)" "$(have java)" "$(have kotlinc)" no)"
 case "${verdict%%:*}" in
   skip)
-    if [ "$(have kotlinc)" = yes ] || [ "$(have java)" != yes ]; then
+    # Every skip this call can produce is final EXCEPT the one about the jars,
+    # which the second call re-decides with the real answer. That arm is
+    # reachable only with a go, a java and no kotlinc, which is exactly the
+    # condition this guard lets fall through.
+    if [ "$(have go)" != yes ] || [ "$(have java)" != yes ] || \
+       [ "$(have kotlinc)" = yes ]; then
       echo "SKIP: JVM harness (${verdict#*:})"
       exit 0
     fi
     ;;
-  kotlinc)
-    # shellcheck disable=SC2086
-    kotlinc $SRC -include-runtime -d "$out/harness.jar" -nowarn
-    java -jar "$out/harness.jar"
-    exit 0
-    ;;
 esac
+
+# The generated case table, written to the scratch directory and never into
+# the repo — the same arrangement ios/verify's transcript has. Below the gate,
+# because this is the line that needs a Go.
+go run . > "$out/Cases.kt"
+
+SRC="../app/src/main/java/com/grmob/runtime/GrMobSelectMenu.kt ../app/src/main/java/com/grmob/runtime/GrMobProgress.kt Harness.kt $out/Cases.kt"
+
+if [ "${verdict%%:*}" = kotlinc ]; then
+  # shellcheck disable=SC2086
+  kotlinc $SRC -include-runtime -d "$out/harness.jar" -nowarn
+  java -jar "$out/harness.jar"
+  exit 0
+fi
 
 # No kotlinc, and a java. Assemble the compiler out of the gradle cache the
 # Android build already populates — kotlinc.sh does the finding, because
@@ -161,9 +170,9 @@ if kotlin_cache_compiler; then
 fi
 
 # Now the jars are known, so the gate is asked again with the real answer. The
-# java arm has already been settled above and cannot change; what this decides
-# is the cache-versus-skip half.
-verdict="$(jvm_harness_verdict "$(have java)" no "$jars")"
+# go and java arms have already been settled above and cannot change; what this
+# decides is the cache-versus-skip half.
+verdict="$(jvm_harness_verdict "$(have go)" "$(have java)" no "$jars")"
 if [ "${verdict%%:*}" = skip ]; then
   echo "SKIP: JVM harness (${verdict#*:})"
   exit 0

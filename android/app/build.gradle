@@ -295,3 +295,68 @@ tasks.register('printVerifyClasspath') {
         verifyCompileClasspath.files.each { println 'CP\t' + it }
     }
 }
+
+// The command-line Kotlin compiler android/verify assembles by hand, pulled
+// into the gradle cache where kotlinc.sh looks for it.
+//
+// # The gap this closes, which was a sentence rather than a task
+//
+// Both of android/verify's gates skip when the cache has no Kotlin compiler,
+// and each names its own remedy. Neither remedy worked. `printVerifyClasspath`
+// resolves the APP's compile classpath, which contains no compiler at all;
+// `compileDebugKotlin` does pull one, and needs libs/grmob.aar, which is the
+// gomobile build the source pass exists to not require. So a reader who met
+// the skip, followed the sentence and ran the pass again met the same skip.
+//
+// Measured on an empty GRADLE_USER_HOME: after printVerifyClasspath the cache
+// held kotlin-stdlib, kotlin-reflect, coroutines and annotations — four of the
+// six jars — and neither kotlin-compiler-embeddable nor the Compose plugin,
+// which are the two that are not anybody's compile dependency. Four of six is
+// the worst shape for this: enough that the cache looks populated, not enough
+// to compile a line.
+//
+// # Why a configuration of its own
+//
+// The same reason composeLayoutSources above has one: these jars are a
+// TOOLCHAIN this repository runs, not code it builds against, and a compiler
+// on the app's compile classpath would put the whole of kotlinc's internals in
+// scope for every file in the module.
+//
+// # What it resolves, and what it leaves to transitivity
+//
+// The two coordinates that are nobody else's dependency, at the build's own
+// Kotlin version. kotlin-compiler-embeddable brings the standard library, the
+// daemon, reflection and JetBrains' annotations with it — the rest of the six
+// jars kotlinc.sh assembles — so they are not named here. Naming them would be
+// a second, weaker statement of a dependency the compiler already declares,
+// and it would pin versions this repository has no opinion about.
+configurations {
+    kotlinCliCompiler
+}
+
+dependencies {
+    kotlinCliCompiler "org.jetbrains.kotlin:kotlin-compiler-embeddable:" +
+        rootProject.ext.kotlinVersion
+    // The plugin has to be the compiler's own version and not merely a recent
+    // one; see kotlinc.sh, whose one versioned lookup is this artifact.
+    kotlinCliCompiler "org.jetbrains.kotlin:kotlin-compose-compiler-plugin-embeddable:" +
+        rootProject.ext.kotlinVersion
+}
+
+tasks.register('fetchKotlinCompiler') {
+    group = 'verification'
+    description = 'Downloads the Kotlin command-line compiler and the Compose ' +
+        'compiler plugin that android/verify compiles with.'
+    // Captured outside doLast so the task holds the file collection rather than
+    // the project, which is what lets it run under the configuration cache —
+    // the same care fetchComposeLayoutSources and printVerifyClasspath take.
+    def compiler = configurations.kotlinCliCompiler
+    doLast {
+        // Printed, so a reader who ran this because a gate told them to can see
+        // that something arrived. There is no receipt file: kotlinc.sh finds
+        // these by walking the cache and reads the version off the path, so
+        // gradle writing down what it resolved would be a second spelling of
+        // something the consumer derives for itself.
+        compiler.files.each { println it }
+    }
+}

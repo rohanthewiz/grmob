@@ -1838,9 +1838,38 @@ func TestEveryPlaceACollisionCanSitIsToldApart(t *testing.T) {
 // Nothing can make git behave that way on demand, which is exactly why the
 // reader is built around an *exec.Cmd and a pair of pipes rather than around
 // git: the shape retire has to survive is "a child that keeps its stdout open
-// and ignores its stdin", and `sh -c 'sleep …'` is that shape with none of
-// git's cooperativeness. What is under test is retire, not the batch protocol,
-// and this is the process that tells the two apart.
+// and ignores its stdin", and a bare `sleep` is that shape with none of git's
+// cooperativeness. What is under test is retire, not the batch protocol, and
+// this is the process that tells the two apart.
+//
+// # Why the child is `sleep` and not `sh -c "sleep …"`
+//
+// It was the shell form, and that form made this test a statement about which
+// shell the machine has. A shell given one simple command MAY replace itself
+// with it and may instead fork and wait — and the two produce different process
+// trees under the same pipe:
+//
+//	sh execs     one process holding stdout      Kill reaches the pipe, EOF
+//	sh forks     sh + sleep, the GRANDCHILD      Kill reaches sh only; sleep
+//	             holding stdout                  holds the write end open and
+//	                                             the drain never ends
+//
+// retire's deadline fires either way. What the deadline buys is the `<-done`
+// after the Kill, and that wait is unbounded when the Kill does not reach
+// whatever holds the pipe. So on the forking shell the test wedged for its
+// whole 10s patience and reported retire as having no deadline — a true
+// symptom with the wrong cause, from a fixture the assertion never named.
+//
+// macOS's /bin/sh execs here and Ubuntu's did not, so this passed on the
+// machine it was written on and failed on every CI run from the day it landed.
+// `sleep` with no shell is one process by construction, which is the shape the
+// sentence above always meant.
+//
+// # What that leaves said about retire
+//
+// retire is bounded for a child that does not fork, which `git cat-file
+// --batch` does not — see the note on retire itself. The bound is not
+// unconditional and this test does not claim it is.
 //
 // # And why the grace is a variable
 //
@@ -1852,8 +1881,8 @@ func TestEveryPlaceACollisionCanSitIsToldApart(t *testing.T) {
 func TestRetiringAWedgedProcessDoesNotWaitForever(t *testing.T) {
 	// Long enough that a retire without a deadline would hang past any
 	// patience this test has, and bounded so a failing run leaves nothing
-	// behind for a minute.
-	cmd := exec.Command("sh", "-c", "sleep 60")
+	// behind for a minute. No shell between here and it, for the reason above.
+	cmd := exec.Command("sleep", "60")
 	in, err := cmd.StdinPipe()
 	if err != nil {
 		t.Skipf("cannot open a stdin pipe on this machine: %v", err)
@@ -1867,9 +1896,9 @@ func TestRetiringAWedgedProcessDoesNotWaitForever(t *testing.T) {
 	}
 	b := &batchReader{cmd: cmd, in: in, pipe: out, out: bufio.NewReader(out)}
 
-	// The premise. `sleep` holds the stdout its shell gave it and never reads
-	// stdin, so closing the write end tells it nothing — which is the whole
-	// state, and asserting it here means a future `sh` that behaved
+	// The premise. `sleep` holds the stdout it was started with and never
+	// reads stdin, so closing the write end tells it nothing — which is the
+	// whole state, and asserting it here means a future `sleep` that behaved
 	// differently would fail loudly rather than make this test vacuous.
 	if err := in.Close(); err != nil {
 		t.Fatalf("closing the child's stdin: %v", err)

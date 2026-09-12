@@ -955,6 +955,23 @@ var batchRetireGrace = 5 * time.Second
 // it, and the Kill is what makes the wait terminate: it closes the process's
 // end of the pipe, the drain reaches EOF, and Wait returns.
 //
+// # What the deadline does not bound
+//
+// The `<-done` after the Kill. Kill signals THIS process, so it ends the drain
+// only if this process is the last thing holding the pipe's write end — true of
+// a child that did not fork, and `git cat-file --batch` does not: it answers
+// out of its own object store and spawns nothing. (Not even a filter process:
+// `--batch` hands back raw blob contents, and running clean/smudge filters over
+// them is the opt-in `--filters` this never passes.)
+//
+// It is stated rather than defended against, because defending costs a process
+// group on every reader — Setpgid at Start, a negative Kill here — to bound a
+// case this command cannot produce. If a forking child ever ends up on the
+// other end of these pipes, that is the change to make, and this is the
+// paragraph that says so. TestRetiringAWedgedProcessDoesNotWaitForever spent
+// its first day accidentally exercising exactly that case, through a shell that
+// forked instead of exec'ing, and the symptom was a retire that never returned.
+//
 // Errors are dropped on purpose. Every caller is already on its way to
 // starting a fresh reader, and there is no answer this could give that would
 // change that.

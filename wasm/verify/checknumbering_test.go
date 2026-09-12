@@ -1481,8 +1481,27 @@ func TestTheCitationSkipsGitAlreadyMakes(t *testing.T) {
 		// it does not, and it answers for a path that does not exist — which is
 		// the case that matters, since a build directory is absent on a clean
 		// checkout and its entry has to be checkable there too.
+		//
+		// # Why the query carries a trailing slash
+		//
+		// Every rule these entries lean on is written directory-only —
+		// `build/`, `.gradle/` — and a directory-only pattern matches only a
+		// path git believes is a directory. For a path that EXISTS git asks the
+		// filesystem; for one that does not it can only believe what the query
+		// says, and a bare `android/build` is a path of unknown kind that no
+		// `build/` rule will match. So the answer flipped with whether the
+		// machine had run a build:
+		//
+		//	this laptop, android/build on disk     ignored     the test passed
+		//	a fresh checkout, nothing built        not ignored the test failed
+		//
+		// Which made the whole table a statement about one developer's working
+		// tree, and made it fail everywhere else — this is how it was found.
+		// The slash states the kind the entry already means: every prefix in
+		// citationSkipDirs is a directory, and a citation walk descends into
+		// nothing else.
 		ignored := exec.Command("git", "-C", root, "check-ignore", "-q",
-			skip.prefix).Run() == nil
+			skip.prefix+"/").Run() == nil
 
 		switch skip.kind {
 		case gitNeverLists:

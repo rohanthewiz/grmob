@@ -3987,9 +3987,60 @@ const GrMob = (() => {
     // So the trade is: a rebuild proportional to the document on an action the
     // user initiated, against a normalisation hole that only a browser can
     // show. Taken deliberately, with the numbers above, and revisitable by
-    // anyone who has a profile from a real document that says otherwise.
+    // anyone who has a profile from a real document that says otherwise. The
+    // proposal is written down in ai_docs/plans/non_goals.md rather than left
+    // as a Next item that is re-argued every time somebody reads this function.
+    //
+    // # What was taken instead: the tree is built detached and attached once
+    //
+    // The element count above is unchanged and cannot be improved without the
+    // partial rewrite this declines. What CAN be improved, with no bearing on
+    // normalisation at all, is how many of those elements are inserted into a
+    // LIVE contenteditable subtree.
+    //
+    // Each block's runs already went into a detached box; what did not was the
+    // box itself, and the <ul>/<ol> a run of list blocks shares — both were
+    // appended to `el`, which is in the document and is the element the browser
+    // is editing. So the number of INSERTIONS into the attached tree was:
+    //
+    //	blocks x runs      appendChild onto an attached node
+    //	   1 x 1                          1
+    //	 100 x 6                        101      (100 blocks + their <ul>)
+    //	2000 x 6                      2,001
+    //
+    // and it is 1 for every one of those rows now, whatever the document's
+    // size: a fragment's children are spliced in by that single call, which is
+    // the one case where appendChild is not "put this node here". The clear
+    // before it is an innerHTML assignment, so the live tree is touched twice
+    // in total rather than n+1 times.
+    //
+    // Pinned by wasm/verify/richtext_test.mjs at 1, 100 and 2000 blocks. As a
+    // constant, because the regression to guard against is not a slowdown but
+    // one more `el.appendChild` inside the loop — which every other test of
+    // this function would go on passing, since they all assert shape and the
+    // shape is identical either way.
+    //
+    // # Why that is worth a line of code, stated in the terms this file uses
+    //
+    // Not for layout. Browsers batch layout and nothing here reads geometry
+    // back, so there was never a forced reflow per block to remove.
+    //
+    // For the editing machinery. `el` carries contenteditable, so the browser's
+    // own editing implementation is watching this subtree, and so is any
+    // MutationObserver an embedder attached. Building incrementally showed both
+    // of them ~N intermediate states of a document mid-edit — partially
+    // rewritten, briefly missing every block after the one being appended.
+    // Building detached shows them one transition from the old document to the
+    // new one, which is the only state that was ever true.
+    //
+    // It is also the half of the patch proposal that carries none of its risk:
+    // every element is still new on every call, so the normalisation argument
+    // above is untouched, word for word.
     function richTextToDOM(el, doc) {
-        el.innerHTML = "";
+        // The fragment stands in for `el` everywhere below, which is why
+        // nothing in the loop had to change: appending a block to a fragment
+        // and appending it to the editor are the same call.
+        const frag = document.createDocumentFragment();
         let list = null;
         let listKind = "";
         for (const block of (doc && doc.b) || []) {
@@ -4000,7 +4051,7 @@ const GrMob = (() => {
                 if (listKind !== kind) {
                     list = document.createElement(kind === "bullet" ? "ul" : "ol");
                     list.dataset.grmobChrome = "richblock";
-                    el.appendChild(list);
+                    frag.appendChild(list);
                     listKind = kind;
                 }
             } else {
@@ -4020,8 +4071,14 @@ const GrMob = (() => {
             } else {
                 richRunsToDOM(box, (block && block.r) || []);
             }
-            (list || el).appendChild(box);
+            (list || frag).appendChild(box);
         }
+        // Cleared as late as possible: between here and the line above, `el`
+        // still holds the document the reader was looking at. A clear at the
+        // top would have emptied the editor for the duration of the build,
+        // which is the intermediate state this arrangement exists to remove.
+        el.innerHTML = "";
+        el.appendChild(frag);
     }
 
     // richRunsToDOM writes one block's runs, nesting the mark elements in

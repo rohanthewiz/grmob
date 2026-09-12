@@ -1,10 +1,10 @@
 // A minimal DOM for the WASM runtime harness.
 //
-// The runtime touches 26 distinct DOM members in total (createElement,
-// querySelector, activeElement, dataset, style, textContent, value,
-// placeholder, src, disabled, checked, rows, children, parentNode,
-// setAttribute, removeAttribute, appendChild, insertBefore, replaceWith,
-// remove, addEventListener, focus, blur, tagName, innerHTML,
+// The runtime touches 27 distinct DOM members in total (createElement,
+// createDocumentFragment, querySelector, activeElement, dataset, style,
+// textContent, value, placeholder, src, disabled, checked, rows, children,
+// parentNode, setAttribute, removeAttribute, appendChild, insertBefore,
+// replaceWith, remove, addEventListener, focus, blur, tagName, innerHTML,
 // getElementById). That is small enough to
 // implement rather than approximate, which is why this file exists instead of
 // a jsdom dependency — the same trade ios/verify makes with its hand-written
@@ -153,6 +153,23 @@ class Element {
                 `harness DOM: appendChild onto <${this.tagName.toLowerCase()}> which already has textContent`
             );
         }
+        // A fragment is spliced, not inserted. This is the one place the DOM's
+        // appendChild does something other than "put this node here", and it
+        // is the whole reason richTextToDOM builds into one: the fragment's
+        // CHILDREN move and the fragment itself is left empty and unparented.
+        // Modelled rather than approximated, because a harness that appended
+        // the fragment as if it were an element would put a node in the tree
+        // that no browser ever shows and every shape assertion below would be
+        // describing a document the browser does not have.
+        if (child instanceof DocumentFragment) {
+            const moved = child.children;
+            child.children = [];
+            for (const c of moved) {
+                c.parentNode = this;
+                this.children.push(c);
+            }
+            return child;
+        }
         if (child.parentNode) child.parentNode.removeChild(child);
         child.parentNode = this;
         this.children.push(child);
@@ -275,6 +292,25 @@ class Element {
     }
 }
 
+// A DocumentFragment: a parentless container whose children move out of it
+// when it is appended somewhere.
+//
+// It is an Element with no tagName rather than a class of its own, so that the
+// code building into it — richTextToDOM, which appends block elements and list
+// containers exactly as it would to the editor — needs no branch for which
+// kind of node it is holding. What makes it a fragment is Element.appendChild
+// recognising the type, and nothing else here behaves differently.
+//
+// The nodeName is what a browser reports and is here only so that a harness
+// bug that DID leave one in the tree names itself in an assertion rather than
+// printing an empty tag.
+class DocumentFragment extends Element {
+    constructor(doc) {
+        super(doc, "#document-fragment");
+        this.tagName = "#document-fragment";
+    }
+}
+
 class Document {
     constructor() {
         this.activeElement = null;
@@ -284,6 +320,10 @@ class Document {
 
     createElement(tag) {
         return new Element(this, tag);
+    }
+
+    createDocumentFragment() {
+        return new DocumentFragment(this);
     }
 
     // A mount point the harness registers by hand; the runtime only ever

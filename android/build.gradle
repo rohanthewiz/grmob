@@ -1,4 +1,19 @@
+// The Kotlin release this build compiles with, named once.
+//
+// It was spelled twice below and is now spelled a third time in app/build.gradle
+// — the kotlinCliCompiler configuration, which pulls the SAME release's command
+// line compiler and Compose plugin into the gradle cache for android/verify to
+// assemble by hand. Three copies of a version that must agree is the pairing
+// the comment below is glad to be rid of, arriving by another door.
+//
+// ext on the buildscript so the value is in scope for the classpath lines that
+// need it here and, through `rootProject.ext`, for the module that needs it
+// there. Kotlin's compiler, its standard library and the Compose plugin are
+// published in lockstep, and a mismatched pair fails inside the compiler rather
+// than at resolution — which is a stack trace, not a message.
 buildscript {
+    ext.kotlinVersion = '2.4.10'
+
     repositories {
         google()
         mavenCentral()
@@ -13,12 +28,12 @@ buildscript {
         // is deliberately absent from the app module for that reason. The
         // Kotlin plugin stays on the classpath because the Compose plugin
         // below is versioned against it.
-        classpath 'org.jetbrains.kotlin:kotlin-gradle-plugin:2.4.10'
+        classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:$kotlinVersion"
         // Kotlin 2.x moved the Compose compiler out of a separately-versioned
         // artifact and into a first-party plugin locked to the Kotlin version.
         // This replaces the app module's old composeOptions block, so there is
         // no longer a compose-compiler <-> Kotlin pairing to keep in sync.
-        classpath 'org.jetbrains.kotlin:compose-compiler-gradle-plugin:2.4.10'
+        classpath "org.jetbrains.kotlin:compose-compiler-gradle-plugin:$kotlinVersion"
     }
 }
 

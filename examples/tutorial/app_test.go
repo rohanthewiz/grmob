@@ -714,12 +714,19 @@ func TestHomeTreeSize(t *testing.T) {
 	// it here because 49 rows is far more than eight bands; it would not be
 	// worth it for a screen with three rows per section.
 	//
-	// This is also the comparison item 7 of the next list wanted: windowing
+	// This is also the comparison the windowing proposal wanted: windowing
 	// core.List over the bridge was sized at 66-76% of the payload and needs a
 	// bootstrap guess plus placeholder children. The collapse is 67% with no
-	// protocol change at all, which does not retire windowing — a single open
-	// chapter of forty lessons would still send forty rows — but it does mean
-	// the tutorial is no longer the screen that motivates it.
+	// protocol change at all.
+	//
+	// Re-profiled after it, windowing is worth 42-50% of a payload a quarter
+	// the size — about 7-9KB where it was 34-39KB — because the bytes a window
+	// would have declined to send are mostly the bytes the collapse already
+	// stopped sending. It is declined on that number in
+	// ai_docs/plans/non_goals.md, with the re-taken table in
+	// TestWhatWindowingWouldSave. Not retired as an idea: a single open chapter
+	// of forty lessons would still send forty rows, and that is the screen that
+	// would argue for it.
 	const recorded = 17366
 	if size < recorded/10 || size > recorded*10 {
 		t.Errorf("the contents screen is %d bytes of JSON, an order of magnitude "+
@@ -740,15 +747,16 @@ func TestHomeTreeSize(t *testing.T) {
 // memory: the estimate it replaces ("worth ~450ms") was a whole-stage figure
 // that nobody had split by what a window could actually remove.
 //
-// # What the profile said when it was written
+// # The profile, re-taken after the collapse
 //
 //	 n  child                bytes    cumulative   sent    % of screen
-//	 1  title                  459           459     681      1.3%
-//	 2  progress card          696         1,155   1,377      2.7%
-//	 3  chapter-0 card       5,011         6,166   6,388     12.5%
-//	 4  chapter-1 card       5,959        12,125  12,347     24.1%
+//	 1  title                  459           459     681      3.9%
+//	 2  progress card          696         1,155   1,377      7.9%
+//	 3  chapter-0 card       5,872         7,027   7,249     41.7%
+//	 4  chapter-1 band       1,436         8,463   8,685     50.0%
+//	 5  chapter-2 band       1,427         9,890  10,112     58.2%
 //	 …
-//	10  chapter-7 card       5,301        51,020  51,242    100.0%
+//	10  chapter-7 band       1,429        17,144  17,366    100.0%
 //
 // "sent" is the whole payload for that window: everything outside the List
 // (the scaffold, the List's own node) plus the children in it.
@@ -756,17 +764,49 @@ func TestHomeTreeSize(t *testing.T) {
 // # The three things this changes about the proposal
 //
 // **The granularity is the chapter, not the lesson.** The List has ten
-// children — a title, a progress card, and eight chapter Cards of 5-12KB —
-// not the 49 rows Home's comment counts, because the rows are nested inside
-// the cards. So a window cannot be "the rows that fit"; the smallest one it
-// can express is "the cards that fit".
+// children — a title, a progress card, and eight chapter Cards — not the 49
+// rows Home's comment counts, because the rows are nested inside the cards.
+// So a window cannot be "the rows that fit"; the smallest one it can express
+// is "the cards that fit".
 //
 // On a 1080x2400 emulator that fold falls inside the fourth child: title,
-// progress, the whole of chapter-0's card (its five lesson rows), and the
-// header of chapter-1's. So the honest window is n=4 — 24.1% of the payload —
-// and one card of overscan is n=5, at 34.0%. Windowing is therefore worth
-// **66-76% of the bytes**, against 45 lesson rows that are composed by nobody
-// and read by no one on the first frame.
+// progress, the whole of chapter-0's card (its five lesson rows), and the top
+// of chapter-1's. The collapse did not move it — children 1 to 3 occupy
+// exactly the pixels they did before, because chapter-0 is the open card and
+// is unchanged — so the honest window is still n=4 and one card of overscan
+// is n=5.
+//
+// # And what it changed is the prize
+//
+// Those two windows are 50.0% and 58.2% of the payload now, where the same
+// two were 24.1% and 34.0% before. Windowing is worth **42-50% of the bytes**
+// rather than 66-76% — and the percentage is the wrong number to read, because
+// what an org.json parse costs is a function of bytes:
+//
+//	                          payload    window n=4-5 removes
+//	before the collapse        51,242    33,800 - 38,900 bytes
+//	today                      17,366     7,254 -  8,681 bytes
+//
+// A quarter of what it was. The seven shut chapters are bands of ~1,430 bytes
+// where they were cards of ~5,300, so the bytes a window would have declined
+// to send are the bytes the collapse already stopped sending — the two
+// optimisations were mostly aimed at the same 45 lesson rows, and one of them
+// got there first.
+//
+// Priced against the same emulator's attribution — ~377ms of parse-and-build
+// for 51,242 bytes, so ~128ms for today's 17,366 if the parse is linear in
+// length, which is the assumption the 8ms noise floor was derived under — a
+// window saves about **54-64ms**. Still seven times the floor, so that
+// instrument would still see it. But it is 1.7% of a 3,200ms launch where it
+// used to be 7.7%, and the cost is unchanged: a visible-range event, a
+// bootstrap guess, and placeholder children in four renderers.
+//
+// That is the re-decision, and it is why this test now asserts instead of only
+// printing. The table above went stale in silence — it was taken at 51,242
+// bytes and was still being quoted as the price after the screen became a
+// third of that — which is the exact failure this repository writes numbers
+// down to avoid. A printed number nothing checks is a number that has already
+// moved.
 //
 // **The protocol change it was priced with already exists.** The item assumed
 // a new bridge surface for the host to report a visible range. It does not
@@ -786,24 +826,30 @@ func TestHomeTreeSize(t *testing.T) {
 // which keeps the extent right and still drops ~76% of the payload. That is a
 // design the measurement supports and the original framing did not describe.
 //
-// # Why this is still not built
+// # Why this is not built
 //
-// Because the only reading that prices it is one emulator's, and that
-// emulator's org.json spends ~200ms on 51KB where iOS's parser spends 6ms on
-// the same tree. If a physical phone's ART parses this screen in 30ms, an
-// 88% cut is worth 26ms of a launch and the placeholder machinery is not
-// worth owning in four renderers. That is the open question in item 1 of the
-// last session's Next list, it needs one device and five cold launches, and
-// this table is what to multiply its answer by.
+// Because no screen in this repository prices it any more. See
+// ai_docs/plans/non_goals.md, where the proposal now lives with this table.
+//
+// The short of it: 54-64ms on the one emulator anybody has measured, and that
+// emulator is the machine most favourable to the argument — its org.json
+// spends ~200ms on 51KB where iOS's parser spends 6ms on the same tree, so
+// every byte is worth more there than anywhere else this runtime ships. A
+// physical phone's ART would make it smaller, not larger, and the device pass
+// that would say by how much is in ai_docs/plans/need_hardware.md.
 //
 // What is *not* in the way is the measurement. The same emulator's five-launch
 // noise floor is about 8ms, established by an A/B of a 4% payload change that
-// it could not see (TestHomeTreeSize above, and android/device/README.md). A
-// 66-76% cut is ~250-290ms of parse-and-build there, thirty times the floor. So
-// whatever a device says, windowing is the one remaining lever on this screen
-// whose effect that instrument would report unambiguously — which is the
-// opposite of the situation the shorter-key-names proposal is in, at 17-28%
-// and declined on the note above core.Style.
+// it could not see (TestHomeTreeSize above, and android/device/README.md), so
+// 54-64ms is still seven times what that instrument can resolve. The reason to
+// decline is not that the effect is unmeasurable. It is that the effect is now
+// 1.7% of a launch and the cost is a protocol change plus placeholder children
+// in four renderers.
+//
+// What would bring it back is a long list — a forty-lesson chapter open, or
+// any app built on this framework with a genuinely long core.List. Windowing
+// was always a framework answer rather than a tutorial one; what changed is
+// that the tutorial stopped being the screen that argued for it.
 func TestWhatWindowingWouldSave(t *testing.T) {
 	mgr := newApp(t)
 	tree := mgr.RenderInitial()
@@ -841,6 +887,11 @@ func TestWhatWindowingWouldSave(t *testing.T) {
 		"n", "key", "type", "bytes", "cumulative", "sent", "% sent")
 
 	var cum int
+	// What a window of four children would send, which is the one row of the
+	// table the decision is actually taken on. Captured while the table is
+	// printed rather than recomputed after it, so the number asserted below and
+	// the number a reader sees are the same arithmetic.
+	var windowFour int
 	for i, raw := range list.Children {
 		var c wireNode
 		if err := json.Unmarshal(raw, &c); err != nil {
@@ -848,12 +899,61 @@ func TestWhatWindowingWouldSave(t *testing.T) {
 		}
 		cum += len(raw)
 		sent := outside + cum
+		if i+1 == windowChildren {
+			windowFour = sent
+		}
 		t.Logf("%-3d %-14s %-8s %9d %11d %9d %8.1f%%",
 			i+1, c.Key, c.Type, len(raw), cum, sent,
 			100*float64(sent)/float64(total))
 	}
+
+	// And the assertion the printing did without for too long.
+	//
+	// This test asserted nothing, so when the chapter collapse took the screen
+	// from 51,242 bytes to 17,366 the table above did not change and did not
+	// complain: it went on describing a screen that no longer existed, and the
+	// proposal went on being priced at 66-76% when the true figure had become
+	// 42-50% of a quarter as many bytes. A printed number nothing checks is a
+	// number that has already moved.
+	//
+	// What is checked is the SHARE, not the byte count, and deliberately: the
+	// share is what the decision turns on, and it is the quantity that stays
+	// still while lessons are added. A band rather than an equality, because
+	// this is not a budget — one more chapter moves it a point or two and that
+	// is not a failure. The band is wide enough to ignore ordinary drift and
+	// narrow enough to catch the kind of change that happened here, which moved
+	// it twenty-six points.
+	if windowFour == 0 {
+		t.Fatalf("the List has %d children, fewer than the %d a window was "+
+			"priced at. The table above describes a screen with eight chapter "+
+			"cards and this one has something else.",
+			len(list.Children), windowChildren)
+	}
+	share := 100 * float64(windowFour) / float64(total)
+	if share < windowShareLow || share > windowShareHigh {
+		t.Errorf("a window of %d children would send %.1f%% of the payload, "+
+			"outside the %.0f-%.0f%% the table above was written at.\n\n"+
+			"Not a budget failure. It is a prompt to re-take the profile and "+
+			"rewrite that table and the decision under it, the way the chapter "+
+			"collapse should have and did not: the proposal's price is this "+
+			"number, and the last time it moved without anybody noticing it "+
+			"went on being quoted at the old one for a session.",
+			windowChildren, share, windowShareLow, windowShareHigh)
+	}
 	assertNoConcerns(t)
 }
+
+// The window the profile is read at, and the share of the payload it sent when
+// the table above was written.
+//
+// Four is where a 1080x2400 emulator's fold falls: the title, the progress
+// card, the whole of the open chapter's card, and the top of the next
+// chapter's band. See the comment above TestWhatWindowingWouldSave.
+const (
+	windowChildren  = 4
+	windowShareLow  = 40.0
+	windowShareHigh = 60.0
+)
 
 // wireNode reads the three fields the byte profile needs off a node without
 // decoding the rest of it. Children stay raw so their exact serialized length

@@ -30,6 +30,14 @@ comment in place. The comment is where somebody reading that function will look;
 this file is where somebody planning work will look, and neither replaces the
 other.
 
+## The sibling file
+
+`need_hardware.md` is this file's opposite number: items that are **not**
+declined, are designed and written, and cannot be checked without a physical
+device. They carry in Next lists forever for a reason that is not indecision,
+and they were being read as deferred work. An item belongs there rather than
+here when running it would settle something; here when running it would not.
+
 ---
 
 ## A sound chain bound at k = 3
@@ -1028,3 +1036,123 @@ waiting item in a work list is work done repeatedly.
 **What would change this.** A key. The change is one argument to one
 constructor in a repository that is not this one, and nothing here has to move
 for it.
+
+---
+
+## Windowing `core.List` over the bridge
+
+*Raised: 2026-09-10 · Moved here: 2026-09-11 · Code:
+`examples/tutorial/app_test.go`, `TestWhatWindowingWouldSave` (the profile);
+`core/host_events.go` (the channel it would have used)*
+
+**What was declined.** Teaching `core.List` to send only the children near the
+viewport: the host reports a visible range, the app renders a window of
+children plus placeholders for the rest, and the payload for a long list stops
+being paid all at once on the first frame.
+
+**The shape, which is fully worked out.** It needs no new bridge surface —
+`core.OnHostEvent` / `mobile.ReportHostEvent` already carries a name and a JSON
+payload, already returns the following pass's patches on the event path, and is
+already serialized with render passes by the manager. A visible range is one
+more event name. What it does need is a bootstrap guess (a cold launch has no
+visible range, because the host cannot lay out what it has not received) and
+**placeholder children** rather than absent ones — a LazyColumn sent three
+children believes there are three, so the scroll extent is wrong and the scroll
+stops short until more arrive. Placeholders keep the extent right at ~40 bytes
+each.
+
+**The argument.** It was sized twice, and the second sizing is why it is here.
+
+```
+                          payload    a window of 4-5 children removes
+before the chapter cards
+  learned to collapse      51,242    33,800 - 38,900 bytes   (66-76%)
+today                      17,366     7,254 -  8,681 bytes   (42-50%)
+```
+
+The collapse and the window were aimed at the same 45 lesson rows, and the
+collapse got there first — with no protocol change at all. What is left is
+about 8KB, which on the one emulator anybody has measured is **54-64ms** of
+parse-and-build: still seven times that instrument's ~8ms noise floor, so the
+effect is real and would be visible. It is 1.7% of a 3,200ms launch, where the
+first sizing made it 7.7%.
+
+And that emulator is the machine most favourable to the argument. Its
+`org.json` spends ~200ms on 51KB where iOS's parser spends 6ms on the same
+tree, so a byte is worth more there than anywhere else this runtime ships. A
+physical phone would make the prize smaller, not larger.
+
+So: a protocol change, a bootstrap guess, and placeholder children in four
+renderers, for 1.7% of one host's launch on one screen.
+
+**What would have to change.** A long list. Forty lessons in one open chapter
+puts forty rows back on the screen, and any app built on this framework with a
+genuinely long `core.List` is in the same position — windowing was always a
+framework answer rather than a tutorial one, and what changed is only that the
+tutorial stopped being the screen that argued for it. The profile to re-take is
+`TestWhatWindowingWouldSave`, which asserts its own share now: it printed a
+table nothing checked, and went on quoting 66-76% for a session after the
+collapse made that false.
+
+---
+
+## A block-level patch for the rich-text editor's DOM
+
+*Raised: 2026-09-11 · Moved here: 2026-09-11 · Code:
+`wasm/grmob-runtime.js`, `richTextToDOM`*
+
+**What was declined.** Rewriting only the blocks an edit touched, instead of
+recreating the whole document on every write. The sketch is a group-level diff
+where a group is a maximal run of blocks sharing a container, with a full
+rebuild whenever the group shape changes.
+
+**The cost it would remove, measured.** Every write comes through one function
+— a pending mark, a paste, undo/redo, any toolbar command, any rewrite arriving
+from Go — and each recreates the document entire:
+
+```
+blocks x runs      elements destroyed and recreated
+   1 x 1                          2
+ 100 x 6                      1,000
+2000 x 6                     20,000
+```
+
+A patch would put ~10 in every row. The ratio is real and it is why this entry
+exists rather than a shrug.
+
+**The argument, which is about correctness and not effort.**
+
+*A block is not an element.* Consecutive list blocks share one `<ul>`, so
+"replace block N's element" is not a well-defined operation. The replaceable
+unit is a maximal run of blocks sharing a container, and computing that run
+correctly on every edit is the whole of the work.
+
+*And the one that decided it:* leaving an element in place is only safe if the
+element still describes its block, and between two calls the **browser** has
+been editing this DOM. Typing under `contenteditable` splits text nodes and
+inserts elements of its own. A full rebuild normalises all of that away every
+time; a partial one would normalise the blocks it rewrote and leave the rest in
+whatever shape the browser last left them. That is a drift between the model
+and the screen, in an editor — and nothing in this repository can test for it.
+The harness DOM has no Selection API and no `contenteditable` behaviour at all,
+which is the same limit that made the whole command vocabulary a pure document
+transformation in the first place.
+
+So the trade is a rebuild proportional to the document, on an action the user
+initiated, against a normalisation hole only a browser can show.
+
+**What was taken instead.** The half that carries none of the risk: the tree is
+built into a `DocumentFragment` and attached with one `appendChild`. Every
+element is still new, so the normalisation argument above is untouched word for
+word; what changed is that insertions into the *live* `contenteditable` subtree
+went from n+1 to one, so the browser's editing machinery and any
+MutationObserver see a single transition rather than ~n states of a document
+mid-edit. Pinned at 1, 100 and 2000 blocks in `wasm/verify/richtext_test.mjs`.
+
+**What would have to change.** A profile from a real document that says the
+rebuild is felt — and, before any of it ships, somewhere to run the
+normalisation check. That means a browser, not this harness: the pass would
+have to type into a `contenteditable`, apply a partial rewrite, and compare the
+resulting DOM with what a full rebuild produces from the same document.
+`wasm/verify` already drives a real browser for other claims; that is where it
+would go.

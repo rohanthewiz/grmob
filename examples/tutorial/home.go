@@ -60,6 +60,14 @@ func (t *tutorial) Home(ctx *core.Context) core.View {
 	// windowing is what keeps that from being paid for all at once. What has
 	// changed is that the tutorial is no longer the screen arguing for it.
 	// TestHomeTreeSize carries the three measurements.
+	//
+	// Windowing was then re-profiled against this screen rather than the one it
+	// was sized on, and declined: 42-50% of 17,366 bytes is ~7-9KB, about 55ms
+	// on the one emulator anybody has measured, against a protocol change and
+	// placeholder children in four renderers. See ai_docs/plans/non_goals.md
+	// and TestWhatWindowingWouldSave, which asserts its own share now — the
+	// old table was quoted at 66-76% for a session after this collapse made it
+	// false, because nothing checked it.
 	page := []core.PropsAndChildren{
 		core.Gap(16), core.FlexGrow(1),
 		core.Keyed("title", core.Column(
