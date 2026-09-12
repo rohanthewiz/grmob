@@ -38,5 +38,74 @@ gate_distinct "the two skips" \
     "$(jvm_harness_verdict no no no)" "$(jvm_harness_verdict yes no no)" \
     "so a missing JDK and a missing Kotlin compiler send the reader to the same place"
 
-gate_verdict "android/verify's JVM harness gate" \
-    "the JVM harness gate answers every precondition, in order"
+# --- kotlin_source_verdict --------------------------------------------------
+#
+# The source pass has five preconditions where the harness has three, and the
+# two extra ones are the interesting cases: an Android SDK and a Compose
+# compiler plugin are each absent on machines where everything else is present,
+# so both arms are ordinary rather than exotic — and neither can be reached by
+# running this on a working developer machine, which is the whole reason the
+# gate is a function of values.
+
+# java, sdk, classpath, compiler, plugin
+gate_expect "everything present runs" "run:" \
+    "$(kotlin_source_verdict yes yes yes yes yes)"
+gate_expect "no java skips" "skip:no java" \
+    "$(kotlin_source_verdict no yes yes yes yes)"
+gate_expect "no SDK skips" "skip:no Android SDK" \
+    "$(kotlin_source_verdict yes no yes yes yes)"
+gate_expect "no classpath skips" "skip:gradle" \
+    "$(kotlin_source_verdict yes yes no yes yes)"
+gate_expect "no compiler skips" "skip:the gradle cache has no Kotlin compiler" \
+    "$(kotlin_source_verdict yes yes yes no yes)"
+gate_expect "no Compose plugin skips" "skip:the gradle cache has no Compose" \
+    "$(kotlin_source_verdict yes yes yes yes no)"
+
+# The order. Each precondition has to be asked before the one its absence would
+# make a guess, and every one of these is a machine on which the LATER answer is
+# also "no" — which is exactly when a misordered gate sends the reader to fix
+# the wrong thing.
+gate_expect "no java outranks no SDK" "skip:no java" \
+    "$(kotlin_source_verdict no no no no no)"
+gate_expect "no SDK outranks a failed resolution" "skip:no Android SDK" \
+    "$(kotlin_source_verdict yes no no no no)"
+gate_expect "a failed resolution outranks a missing compiler" "skip:gradle" \
+    "$(kotlin_source_verdict yes yes no no no)"
+gate_expect "a missing compiler outranks a missing plugin" \
+    "skip:the gradle cache has no Kotlin compiler" \
+    "$(kotlin_source_verdict yes yes yes no no)"
+
+# The plugin arm is the one that must not quietly become a weaker run. Without
+# the Compose compiler plugin a @Composable called from a plain function
+# compiles clean, so a gate that answered "run:" here would keep the pass green
+# over the single largest class of Compose mistake.
+gate_distinct "a missing plugin and a working machine" \
+    "$(kotlin_source_verdict yes yes yes yes no)" \
+    "$(kotlin_source_verdict yes yes yes yes yes)" \
+    "so a machine that cannot check @Composable contexts reports the same
+  verdict as one that can"
+
+# And the five skips are five different sentences: each names a different thing
+# to install or run, and a gate that reused one would send four readers in five
+# to the wrong remedy. Every pair, because the reuse that matters is whichever
+# two somebody happens to collapse.
+no_java="$(kotlin_source_verdict no yes yes yes yes)"
+no_sdk="$(kotlin_source_verdict yes no yes yes yes)"
+no_cp="$(kotlin_source_verdict yes yes no yes yes)"
+no_kotlin="$(kotlin_source_verdict yes yes yes no yes)"
+no_plugin="$(kotlin_source_verdict yes yes yes yes no)"
+
+why="so two machines needing different things are told to fix the same one"
+gate_distinct "no java / no SDK"       "$no_java"   "$no_sdk"    "$why"
+gate_distinct "no java / no classpath" "$no_java"   "$no_cp"     "$why"
+gate_distinct "no java / no compiler"  "$no_java"   "$no_kotlin" "$why"
+gate_distinct "no java / no plugin"    "$no_java"   "$no_plugin" "$why"
+gate_distinct "no SDK / no classpath"  "$no_sdk"    "$no_cp"     "$why"
+gate_distinct "no SDK / no compiler"   "$no_sdk"    "$no_kotlin" "$why"
+gate_distinct "no SDK / no plugin"     "$no_sdk"    "$no_plugin" "$why"
+gate_distinct "no classpath / no compiler" "$no_cp" "$no_kotlin" "$why"
+gate_distinct "no classpath / no plugin"   "$no_cp" "$no_plugin" "$why"
+gate_distinct "no compiler / no plugin" "$no_kotlin" "$no_plugin" "$why"
+
+gate_verdict "android/verify's gates" \
+    "both gates answer every precondition, in order"

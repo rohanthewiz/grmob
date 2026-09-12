@@ -20,9 +20,12 @@ import (
 // ios/verify against the real iOS SDK, which says the calls exist and not that
 // they are made in the right order. The Kotlin half compiles under
 //
-//	android/build.sh && (cd android && ./gradlew :app:assembleDebug)
-//
-// which needs the Android SDK and an NDK and so is not part of `go test ./...`.
+// android/verify/sources.sh, which type-checks the whole com.grmob.runtime
+// package against the classpath gradle resolves, with the Compose compiler
+// plugin. That needs an Android SDK and a populated gradle cache but no NDK and
+// no gomobile — the runtime package imports nothing from the bound .aar — so it
+// runs on an ordinary checkout, and it is not part of `go test ./...` only
+// because it is a shell script over a JVM toolchain.
 //
 // So what is held here is the shape of the contract, read out of the source. It
 // is a weaker instrument than a test that drives the code, and it is the
@@ -272,5 +275,38 @@ func TestBothNativeCodeEditorsDrawTheGutterBesideTheBuffer(t *testing.T) {
 		{"Row(s.boxModifier(extra).verticalScroll(vertical))",
 			"the gutter and the field share one vertical scroll, so number N " +
 				"stays beside line N"},
+	})
+}
+
+// Focus commands, on the two hosts that had to resolve them.
+//
+// core.Focus and core.DismissKeyboard reach a CodeEditor now (core/focus.go's
+// focusableLeafTypes), and the node they are stamped on is a *box* — a scroll
+// container holding a gutter and a buffer — where every other focusable leaf is
+// the control itself. So each host has to point the command at the buffer, and
+// the failure of pointing it at the container is the quiet one: Compose gives
+// focus to the wrapper and no keyboard comes up; UIKit's becomeFirstResponder
+// on a plain UIView returns false and nothing happens at all. Neither logs.
+//
+// What is pinned is therefore the *destination* as much as the mechanism.
+func TestBothNativeCodeEditorsTakeFocusCommands(t *testing.T) {
+	pinExprs(t, swiftCodeEditor, []struct{ expr, why string }{
+		{`node.intProp("focusEpoch")`,
+			"the command's generation, which is what makes a repeat observable"},
+		{`node.stringProp("focusAction")`,
+			"focus / blur / \"\" — what to do, where the epoch says when"},
+		{"focus.apply(epoch: epoch, action: action, to: view?.textView)",
+			"the buffer, not the editor's own UIView, which holds the gutter too"},
+	})
+	pinExprs(t, kotlinCodeEditor, []struct{ expr, why string }{
+		{`node.intProp("focusEpoch")`, "same generation counter"},
+		{`node.stringProp("focusAction")`, "same three-valued action"},
+		{"LaunchedEffect(focusEpoch)",
+			"keyed on the epoch alone: a second core.Focus on the focused editor" +
+				" has to re-fire, which only a changed value can express"},
+		{"Modifier.focusRequester(focusRequester).onPreviewKeyEvent",
+			"the requester on the field, not on the Row that also holds the gutter"},
+		{`"blur" -> if (focused) focusManager.clearFocus()`,
+			"one dismiss reaches every leaf; only the one holding focus acts"},
 	})
 }

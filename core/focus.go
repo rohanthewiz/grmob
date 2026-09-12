@@ -304,9 +304,38 @@ func DismissKeyboard(ctx *Context) {
 //
 // An app that really wants the stamp on one of those can still apply
 // FocusTarget explicitly; this set only decides what is stamped by default.
+//
+// # The two editors, added later
+//
+// CodeEditor and RichTextEditor were absent from this set when they landed,
+// and the absence was recorded on both node types as a known gap rather than
+// left silent. They pass the same test every other member passes: each is a
+// text control that takes the caret and brings a soft keyboard up with it, so
+// a background tap on a form containing one has something to dismiss.
+//
+// They cost one thing the four fields above do not, and it is worth knowing
+// before reading the renderers. On every other member the node the renderer
+// builds *is* the focusable control. On these two it is a box:
+//
+//	CodeEditor       a scroll box whose focusable child is the buffer — a
+//	                 <textarea> on the web, a UITextView on iOS, a
+//	                 BasicTextField on Compose. The gutter beside it is chrome
+//	                 and must never take the caret.
+//	RichTextEditor   one contenteditable element on the web, and a hosted
+//	                 classic text view on both phones (UITextView, EditText),
+//	                 neither of which is under its platform's own declarative
+//	                 focus system.
+//
+// So each renderer resolves the stamp to the control rather than applying it
+// where it landed. htmlout is the exception and applies it nowhere: its
+// editors are read-only snapshots with no editable element in them, so the
+// autofocus it exports for a field has no target here. That is stated in
+// isFormControl rather than left to be inferred from an absence.
 var focusableLeafTypes = map[string]bool{
-	"Input":         true,
-	"InputPassword": true,
-	"NumericInput":  true,
-	"TextArea":      true,
+	"Input":          true,
+	"InputPassword":  true,
+	"NumericInput":   true,
+	"TextArea":       true,
+	"CodeEditor":     true,
+	"RichTextEditor": true,
 }

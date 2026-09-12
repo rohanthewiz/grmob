@@ -20,6 +20,8 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
@@ -32,6 +34,7 @@ import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.withStyle
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -109,9 +112,16 @@ internal fun GrMobCodeEditor(node: GrMobNode, extra: Modifier) {
     val commentPrefix = node.stringProp("commentPrefix")
     val editorEpoch = node.intProp("editorEpoch")
     val editorCommand = node.stringProp("editorCommand")
+    // The imperative half: core.Focus / core.DismissKeyboard reach the screen as
+    // these two props, exactly as they do for an ordinary field. See the
+    // LaunchedEffect below and core/focus.go.
+    val focusEpoch = node.intProp("focusEpoch")
+    val focusAction = node.stringProp("focusAction")
 
     val interactions = remember { MutableInteractionSource() }
     val focused by interactions.collectIsFocusedAsState()
+    val focusRequester = remember { FocusRequester() }
+    val focusManager = LocalFocusManager.current
 
     var buffer by remember { mutableStateOf(TextFieldValue(upstream)) }
     val pendingEchoes = remember { mutableListOf<String>() }
@@ -213,6 +223,38 @@ internal fun GrMobCodeEditor(node: GrMobNode, extra: Modifier) {
     val vertical = rememberScrollState()
     val horizontal = rememberScrollState()
 
+    // Go's focus commands. Keyed on the epoch alone, never on the action: the
+    // action is what to do, the epoch is when — and a second core.Focus on an
+    // already-focused editor has to re-fire, which only a changed value can
+    // express.
+    //
+    // The rule here is GrMobTextField's, not runCommand's one line up the file,
+    // and the difference is deliberate. An editor command names a moment and an
+    // edit, so an editor that was off screen when it was issued missed it and
+    // adopts the epoch silently. A focus command is the opposite: an editor that
+    // mounts while it is already the target should take the caret, because
+    // "open a screen with the cursor in its editor" issues the command one pass
+    // before the editor exists. LaunchedEffect runs on first composition, which
+    // is exactly that behaviour.
+    //
+    // "blur" is guarded on this editor actually holding focus, so one dismiss
+    // does not have every editor on screen calling clearFocus(). Only the target
+    // acts on "focus"; everything else is told "" and does nothing, because
+    // requesting focus over there already takes it from here.
+    LaunchedEffect(focusEpoch) {
+        if (focusEpoch == 0) return@LaunchedEffect
+        when (focusAction) {
+            // requestFocus throws if the requester is not attached to a placed
+            // node yet. A LaunchedEffect already runs after composition, which
+            // covers the ordinary case; the catch covers the editor being
+            // composed but not yet placed — inside a lazy list row that has not
+            // laid out — where the honest outcome is "the command missed"
+            // rather than a crashed screen. GrMobTextField says the same.
+            "focus" -> runCatching { focusRequester.requestFocus() }
+            "blur" -> if (focused) focusManager.clearFocus()
+        }
+    }
+
     // The gutter is a sibling of the field, inside the same vertical scroll, so
     // number N stays beside line N with nothing measured. The horizontal scroll
     // wraps the field alone: the buffer pans sideways for a long line and the
@@ -274,7 +316,11 @@ internal fun GrMobCodeEditor(node: GrMobNode, extra: Modifier) {
                     autoCorrect = false,
                     capitalization = KeyboardCapitalization.None,
                 ),
-                modifier = Modifier.onPreviewKeyEvent { event ->
+                // The requester sits on the field and not on the Row above it:
+                // the Row is the scroll box and holds the gutter, which is
+                // chrome the caret must never reach. Compose would happily give
+                // focus to the container, and the keyboard would not come up.
+                modifier = Modifier.focusRequester(focusRequester).onPreviewKeyEvent { event ->
                     // Tab, which would otherwise move focus out of the editor
                     // and make indenting impossible. Hardware keyboards only —
                     // a soft keyboard has no Tab — which is why this is the one

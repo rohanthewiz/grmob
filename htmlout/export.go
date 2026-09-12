@@ -1311,6 +1311,13 @@ func ariaExpanded(s *core.Style, nodeType string) string {
 // isFormControl reports whether the node exports as an HTML element that
 // accepts the disabled attribute. Everything else is a div or a span, where
 // disabled is not a valid attribute and would simply be ignored.
+// CodeEditor and RichTextEditor are deliberately absent, and the absence is
+// the interesting half. Both are in core's focusableLeafTypes, so both carry a
+// focus stamp and every other renderer acts on it — but this exporter draws
+// them read-only: a CodeEditor is a <pre> with a gutter and a RichTextEditor is
+// the document's own HTML in a box. Neither contains an element a browser would
+// focus, so `autofocus` here would be an attribute on a <pre> with nothing to
+// put a caret in. A snapshot that cannot be typed into has no focus to set.
 func isFormControl(nodeType string) bool {
 	switch nodeType {
 	case "Button", "Input", "InputPassword", "NumericInput", "TextArea", "Checkbox", "Switch", "Slider", "Select":

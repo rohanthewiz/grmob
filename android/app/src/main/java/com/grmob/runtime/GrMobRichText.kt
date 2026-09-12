@@ -16,6 +16,7 @@ import android.text.style.URLSpan
 import android.text.style.UnderlineSpan
 import android.util.TypedValue
 import android.view.Gravity
+import android.view.inputmethod.InputMethodManager
 import android.widget.EditText
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
@@ -108,6 +109,9 @@ internal fun GrMobRichTextEditor(node: GrMobNode, extra: Modifier) {
             view.hint = node.stringProp("placeholder")
             state.applyDoc(node.stringProp("doc"))
             state.runCommand(node.intProp("editorEpoch"), node.stringProp("editorCommand"))
+            // core.Focus / core.DismissKeyboard, last: the responder arrives at
+            // a document this pass has already settled.
+            state.applyFocus(node.intProp("focusEpoch"), node.stringProp("focusAction"))
         },
         modifier = node.style.boxModifier(extra),
     )
@@ -156,6 +160,11 @@ internal class GrMobRichTextState {
     /** The JSON of every document sent upstream and not yet seen come back. */
     private val pendingEchoes = ArrayList<String>()
     private var lastEpoch: Int? = null
+    /** The last focus-command epoch applied. Zero is safe as the initial value
+     *  because zero is core's own sentinel for "no command has ever been
+     *  issued"; see applyFocus for why this does NOT take lastEpoch's
+     *  adopt-on-first-sight shape. */
+    private var lastFocusEpoch = 0
     private var lastSelection = ""
 
     /** Set while this class is writing the Editable, so the TextWatcher does not
@@ -279,6 +288,70 @@ internal class GrMobRichTextState {
      * See GrMobCodeEditor.kt for why an editor adopts a standing epoch without
      * running it; the rule is the same on all four hosts.
      */
+    /**
+     * core.Focus / core.DismissKeyboard, applied to the hosted EditText.
+     *
+     * # Why this is not Compose's focus system
+     *
+     * An ordinary field is a BasicTextField and takes its command through a
+     * FocusRequester — Compose moves the focus and the text input session
+     * follows. This editor is a classic EditText inside an AndroidView, which
+     * Compose's focus system does not own: a FocusRequester on the AndroidView
+     * would focus the *wrapper*, and the keyboard would not come up. So the
+     * command drives the View's own focus and the input method directly.
+     *
+     * That is also why the keyboard is named twice here where every other
+     * renderer names it never. Compose and SwiftUI both raise and lower the
+     * soft keyboard as a consequence of focus; a classic View does not —
+     * requestFocus() leaves the keyboard down and clearFocus() leaves it up —
+     * so the InputMethodManager is asked explicitly on both edges.
+     *
+     * # Why the epoch is remembered rather than read per pass
+     *
+     * `update` runs on every composition for every reason. Without the memory a
+     * single core.Focus would re-take focus on every later pass, because the
+     * stamp stays on the node forever (core/focus.go: nothing consumes it).
+     *
+     * It differs from runCommand's first-sight rule deliberately: this one DOES
+     * fire the first time it sees a non-zero epoch, because an editor that
+     * mounts while it is already the target should take the caret — "open a
+     * screen with the cursor in its editor" issues the command one pass before
+     * the editor exists. An editor *command* names a moment and an edit, and
+     * one issued while this editor was off screen was missed.
+     */
+    fun applyFocus(epoch: Int, action: String) {
+        if (epoch == 0 || epoch == lastFocusEpoch) return
+        lastFocusEpoch = epoch
+        val editText = view ?: return
+        // getSystemService(Class) rather than the string-keyed overload and a
+        // cast: it is API 23 and this module's floor is 24, and it needs no
+        // android.content.Context import in a file that otherwise has none.
+        val imm = editText.context?.getSystemService(InputMethodManager::class.java)
+        when (action) {
+            "focus" -> {
+                // requestFocus returns false for a view that is not attached or
+                // not focusable yet; the keyboard request is made anyway and is
+                // itself a no-op in that case. A command that misses misses
+                // quietly, which is what core/focus.go describes for a ref whose
+                // node is not in the tree.
+                editText.requestFocus()
+                imm?.showSoftInput(editText, InputMethodManager.SHOW_IMPLICIT)
+            }
+            // Guarded on this editor actually holding focus: a dismiss reaches
+            // every focusable leaf on screen and exactly one of them has the
+            // keyboard. Hiding unconditionally would work and would also mean
+            // every editor on the screen asked, which is the traffic the guard
+            // on the other renderers exists to avoid.
+            "blur" -> if (editText.isFocused) {
+                editText.clearFocus()
+                imm?.hideSoftInputFromWindow(editText.windowToken, 0)
+            }
+            // "" — some other node is being focused. The platform takes focus
+            // away from this one on its own, and acting here as well would make
+            // the outcome depend on which ran first.
+        }
+    }
+
     fun runCommand(epoch: Int, command: String) {
         val previous = lastEpoch
         lastEpoch = epoch

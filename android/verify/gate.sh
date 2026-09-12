@@ -52,3 +52,76 @@ jvm_harness_verdict() {
     fi
     echo "cache:"
 }
+
+# The preconditions android/verify's Kotlin SOURCE pass has, as a function of
+# values. See sources.sh for what the pass does; this decides whether it can run.
+#
+# # Why this gate is separate from the one above
+#
+# They answer about different machines. jvm_harness_verdict is about executing
+# two import-free Kotlin files on a JVM, and its whole toolchain is a compiler.
+# This one is about type-checking Kotlin that imports Compose, the Android SDK,
+# osmdroid and coil, which needs three more things — an Android SDK, a resolved
+# compile classpath, and the Compose compiler plugin — each of which can be
+# absent on a machine where the other pass runs perfectly.
+#
+# # The order, and why it is this order
+#
+# Each precondition is asked before the one whose answer its absence would make
+# a guess:
+#
+#	java         gradle and the Kotlin compiler are both JVM applications. With
+#	             no JDK neither can be run, so "the classpath did not resolve"
+#	             and "no compiler in the cache" would both be true and neither
+#	             would be the reader's problem.
+#	sdk          the gradle task prints the platform jars from AGP's own
+#	             bootClasspath, and AGP fails the whole task when it cannot find
+#	             an SDK. Asked first, a missing SDK is reported as a missing SDK;
+#	             asked after, it arrives as a gradle failure whose message is
+#	             four lines of stack.
+#	classpath    whether that gradle call actually produced one.
+#	compiler     and only then the Kotlin side, which is the one precondition
+#	             that is about the machine's Kotlin cache rather than its
+#	             Android setup.
+#
+# # Why a missing Compose plugin is a skip and not a weaker run
+#
+# Without the plugin `@Composable` is an ordinary annotation with no meaning to
+# the compiler, and this file compiles clean:
+#
+#	fun Bad() { Text("nope") }
+#
+# With it, two errors — a @Composable invoked outside a @Composable context is
+# the single largest class of Compose-specific mistake, and the plugin is the
+# only thing that knows the rule. A compile without it is a different, weaker
+# check wearing the same OK, which is exactly the shape this repository's guards
+# exist to refuse. So its absence is named rather than absorbed.
+#
+# The plugin also has to be the compiler's own version, which is why sources.sh
+# asks the cache for it by version rather than taking the newest: they are
+# published in lockstep and a mismatched pair fails inside the compiler.
+
+# kotlin_source_verdict <have-java> <have-sdk> <have-classpath> <have-compiler> <have-plugin>
+kotlin_source_verdict() {
+    if [ "$1" != "yes" ]; then
+        echo "skip:no java; install a JDK to check it"
+        return
+    fi
+    if [ "$2" != "yes" ]; then
+        echo "skip:no Android SDK; export ANDROID_HOME, or write sdk.dir into android/local.properties"
+        return
+    fi
+    if [ "$3" != "yes" ]; then
+        echo "skip:gradle did not resolve a compile classpath; run android/gradlew -p android :app:dependencies to see why"
+        return
+    fi
+    if [ "$4" != "yes" ]; then
+        echo "skip:the gradle cache has no Kotlin compiler; run android/gradlew -p android :app:printVerifyClasspath once to populate it"
+        return
+    fi
+    if [ "$5" != "yes" ]; then
+        echo "skip:the gradle cache has no Compose compiler plugin at the Kotlin compiler's version, and without it a @Composable called from a plain function compiles clean"
+        return
+    fi
+    echo "run:"
+}

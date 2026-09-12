@@ -448,3 +448,84 @@ test("an editor with no selection handler reports nothing", () => {
     buffer.dispatch("keyup");
     assert.deepEqual(rt.dispatched, []);
 });
+
+// --- Focus commands -------------------------------------------------------
+//
+// core.Focus and core.DismissKeyboard reach a CodeEditor now, and the thing
+// worth testing on this target is *where* they land. The node's element is a
+// <pre> — a scroll box, not a form control — and calling focus() on it would be
+// a silent no-op in a browser while looking perfectly fine here, because this
+// DOM's focus() is a one-line assignment that any element accepts. So every
+// assertion below names the element that ended up active rather than merely
+// checking that something did.
+
+// focusCommand issues one core.Focus / core.DismissKeyboard as it reaches the
+// page: the whole props map, as an update-props patch always carries.
+function focusCommand(rt, epoch, action) {
+    rt.GrMob.patch(JSON.stringify([{
+        Type: "update-props", TargetID: "root/0",
+        Changes: {
+            value: nodeAt(rt.document, "root/0").children[1].value,
+            lineNumbers: false, readOnly: false, tabSize: 4, commentPrefix: "//",
+            focusEpoch: epoch, focusAction: action,
+        },
+    }]));
+    rt.drainFrames();
+}
+
+test("a focus command lands on the buffer, not on the scroll box around it", () => {
+    const { rt, editor, buffer } = mountEditor("a\nb");
+    focusCommand(rt, 1, "focus");
+    assert.equal(rt.document.activeElement, buffer);
+    assert.notEqual(rt.document.activeElement, editor);
+});
+
+test("a dismiss releases the buffer's focus", () => {
+    const { rt, buffer } = mountEditor("a\nb");
+    focusCommand(rt, 1, "focus");
+    focusCommand(rt, 2, "blur");
+    assert.equal(rt.document.activeElement, null);
+});
+
+test("a dismiss aimed elsewhere leaves this editor's focus alone", () => {
+    // Every focusable leaf is told to blur, and each one acts only if it holds
+    // the focus — so an editor that is not the active element must not take the
+    // focus away from whatever is. Here the other element is focused first and
+    // has to still be active afterwards.
+    const { rt, buffer } = mountEditor("a\nb");
+    const other = rt.document.createElement("input");
+    rt.document.body.appendChild(other);
+    other.focus();
+    focusCommand(rt, 1, "blur");
+    assert.equal(rt.document.activeElement, other);
+});
+
+test("an empty action carries the epoch and does nothing", () => {
+    // The action Go stamps on every leaf that is not the target. It must be
+    // inert: the platform takes focus away from this editor when the real
+    // target asks for it, and acting here as well would make the outcome depend
+    // on which ran first.
+    const { rt, buffer } = mountEditor("a\nb");
+    focusCommand(rt, 1, "");
+    assert.equal(rt.document.activeElement, null);
+});
+
+test("a repeated command re-fires, because the epoch is what changed", () => {
+    // core.Focus on the already-focused editor — the "try again after a failed
+    // submit" case the epoch counter exists for.
+    const { rt, buffer } = mountEditor("a\nb");
+    focusCommand(rt, 1, "focus");
+    buffer.blur();
+    assert.equal(rt.document.activeElement, null);
+    focusCommand(rt, 2, "focus");
+    assert.equal(rt.document.activeElement, buffer);
+});
+
+test("a zero epoch is never an instruction", () => {
+    // Both props always travel together, so a node that has never seen a
+    // command still carries focusAction alongside a 0. Reading the action there
+    // would focus every editor on the page on its first patch.
+    const { rt, buffer } = mountEditor("a\nb");
+    focusCommand(rt, 0, "focus");
+    assert.equal(rt.document.activeElement, null);
+});

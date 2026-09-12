@@ -43,8 +43,12 @@ import (
 //
 // # Known gaps in v1
 //
-// core.Focus and core.DismissKeyboard do not reach an editor — the type is
-// deliberately absent from focusableLeafTypes, exactly as CodeEditor is.
+// core.Focus and core.DismissKeyboard reach an editor — the type is in
+// focusableLeafTypes, exactly as CodeEditor is. On both phones the control is
+// a classic text view hosted inside the declarative framework (a UITextView,
+// an EditText), so neither renderer can hand the command to its platform's own
+// focus system and each drives the responder directly; see core/focus.go.
+//
 // Collaborative editing, images, tables and per-run fonts are non-goals; each
 // is a driver away and none changes the design above.
 func RichTextEditor(doc richtext.Doc, onChange func(richtext.Doc), props ...PropsAndChildren) View {

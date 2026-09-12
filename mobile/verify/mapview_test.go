@@ -17,9 +17,13 @@ import (
 // has a real test (wasm/verify/mapview_test.mjs, against a fake Leaflet); the
 // iOS half is type-checked by ios/verify, and the Kotlin half compiles under
 //
-//	android/build.sh && (cd android && ./gradlew :app:assembleDebug)
+// android/verify/sources.sh, which type-checks the whole com.grmob.runtime
+// package against the classpath gradle resolves, with the Compose compiler
+// plugin. That needs an Android SDK and a populated gradle cache but no NDK and
+// no gomobile — the runtime package imports nothing from the bound .aar — so it
+// runs on an ordinary checkout, and it is not part of `go test ./...` only
+// because it is a shell script over a JVM toolchain.
 //
-// which needs the Android SDK and an NDK and so is not part of `go test ./...`.
 // A compile is not a behaviour check either way: it says the calls exist, not
 // that they are made in the right order.
 //

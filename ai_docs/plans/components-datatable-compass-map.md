@@ -33,6 +33,11 @@ osmdroid — so they are held to the contract textually (`mobile/verify/
 mapview_test.go`, `sensor_test.go`) and have never been through `kotlinc`. The
 iOS half type-checks against the real SDK through `ios/verify`, and the web half
 runs against a fake Leaflet in `wasm/verify/mapview_test.mjs`.
+
+> **Closed 2026-09-11.** `android/verify/sources.sh` compiles `com.grmob.runtime`
+> — `GrMobMapView.kt` included — against the classpath gradle resolves, with the
+> Compose compiler plugin, and adds `com.grmob.app` (`LocationSensor.kt`) when a
+> gomobile-built `grmob.aar` is present. Both halves of D1 now type-check.
 **Date:** 2026-09-04
 **Driver:** `../church/church_mobile` (sermons list wants grouping + paging; events want
 a "where" affordance), plus general widget-library gaps.

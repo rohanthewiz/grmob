@@ -134,9 +134,16 @@ val LocalGrMobRuntime = compositionLocalOf<GrMobRuntime> {
  */
 val LocalGrMobDisabled = compositionLocalOf { false }
 
-/** This node's effective disabled state: its own flag, or an ancestor's. */
+/**
+ * This node's effective disabled state: its own flag, or an ancestor's.
+ *
+ * `internal` rather than `private`: Kotlin's `private` on a top-level
+ * declaration is file-private, and GrMobCodeEditor.kt asks the same question of
+ * the same node. Module-wide is the accurate visibility for a helper the
+ * runtime's own widget files share and nothing outside the module should see.
+ */
 @Composable
-private fun GrMobNode.isDisabled(): Boolean =
+internal fun GrMobNode.isDisabled(): Boolean =
     style?.disabled == true || LocalGrMobDisabled.current
 
 @Composable

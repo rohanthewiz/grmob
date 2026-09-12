@@ -45,6 +45,21 @@ func (t *tutorial) Home(ctx *core.Context) core.View {
 	// This is also what the tutorial teaches one lesson over ("Use Scroll for
 	// short content and core.List for long data-driven collections"), applied
 	// to itself: 49 rows is not short content.
+	//
+	// # And then the rows stopped being on the screen at all
+	//
+	// The chapter cards collapse now — one open, the rest shut — so the List
+	// is materializing eight cards of which seven are a band and a summary.
+	// That took the screen from 53,156 bytes to 17,366, which is more than
+	// windowing the List over the bridge was sized at, with no protocol change
+	// and no placeholder children.
+	//
+	// The List stays, and not out of caution: the two answers are to different
+	// questions. Collapsing decides what is *on the screen*, and a reader who
+	// opens a forty-lesson chapter is back to a screen of forty rows —
+	// windowing is what keeps that from being paid for all at once. What has
+	// changed is that the tutorial is no longer the screen arguing for it.
+	// TestHomeTreeSize carries the three measurements.
 	page := []core.PropsAndChildren{
 		core.Gap(16), core.FlexGrow(1),
 		core.Keyed("title", core.Column(
@@ -99,21 +114,75 @@ func progressCard(opened, total int) core.View {
 // at all. Keyed for the same reason every List child is — the lazy containers
 // on both natives keep row state attached to the key across changes.
 func (t *tutorial) chapterCardViews(ctx *core.Context) []core.View {
+	seen := t.visited.Get()
+	open := t.expanded.Get()
+
 	var cards []core.View
 	var rows []core.PropsAndChildren
+	var opened int
 	flush := func(ci int) {
 		if len(rows) == 0 {
 			return
 		}
 		ch := Chapters[ci]
-		cards = append(cards, core.Card(
+		chapter := ci // captured per card: the toggle below outlives this loop
+
+		// The accessible name of both the heading and the button. The icon is
+		// not in it: a CollapseBand names its control from Group.Label and
+		// treats Content as presentational, so the glyph is drawn and never
+		// announced — which is what "decoration only" on Chapter.Icon has
+		// always claimed and nothing enforced until the title became a button.
+		label := fmt.Sprintf("Chapter %d — %s", ci+1, ch.Title)
+
+		// "6 lessons" until the reader has opened one, then "2 of 6". The
+		// count is outside the button deliberately: a CollapseBand's Content
+		// is inside the control, and a button's children are presentational,
+		// so a progress count put there would stop being announced at exactly
+		// the moment it started being worth announcing.
+		count := fmt.Sprintf("%d lessons", len(rows))
+		if opened > 0 {
+			count = fmt.Sprintf("%d of %d", opened, len(rows))
+		}
+
+		card := []core.PropsAndChildren{
 			core.Gap(2),
-			core.Text(fmt.Sprintf("%s  Chapter %d — %s", ch.Icon, ci+1, ch.Title),
-				core.FontWeight(core.Bold)),
+			core.Row(
+				core.AlignItemsProp(core.AlignItemsCenter),
+				core.Gap(8),
+				components.CollapseBand{
+					Collapse: components.Collapse{
+						IsCollapsed: func(g components.Group) bool { return !open[chapter] },
+						OnToggle:    func(g components.Group) { t.setExpanded(chapter, !open[chapter]) },
+					},
+					Group: components.Group{Key: fmt.Sprintf("chapter-%d", ci), Label: label},
+					// The tutorial's own title typing, so collapsing a card did
+					// not also restyle it: a CollapseBand with no Content draws
+					// the label in Caption weight and secondary ink, which is
+					// right for a list band and wrong for a card title.
+					Content: []core.View{core.Text(
+						chapterBandText(ci),
+						core.FontWeight(core.Bold),
+					)},
+					Style: []core.StyleProp{core.FlexGrow(1)},
+				},
+				caption(count),
+			),
+			// The summary stays visible while the card is shut. It is one line
+			// per chapter and it is the whole of what a reader has to choose
+			// from when the rows are away — collapsing the cards to save the
+			// rows and then hiding the description of what is behind them
+			// would be a contents screen that contains nothing.
 			caption(ch.Summary),
-			core.Column(rows...),
-		))
+		}
+		// The rows, only while open. This is where the payload goes: the
+		// lesson rows are 97.4% of this screen's JSON, and a shut chapter puts
+		// none of them on the wire. See TestHomeTreeSize.
+		if open[chapter] {
+			card = append(card, core.Column(rows...))
+		}
+		cards = append(cards, core.Card(card...))
 		rows = nil
+		opened = 0
 	}
 
 	current := 0
@@ -122,6 +191,14 @@ func (t *tutorial) chapterCardViews(ctx *core.Context) []core.View {
 			flush(current)
 			current = e.ChapterNum - 1
 		}
+		if seen[e.ID] {
+			opened++
+		}
+		// Built even for a shut chapter, and dropped by flush if it stays
+		// shut. Rendering a row is building a Go value; what costs anything is
+		// the node reaching the wire, and keeping the walk uniform is what
+		// keeps the per-chapter count above honest whether or not the card
+		// happens to be open.
 		rows = append(rows, t.lessonRow(ctx, e))
 	}
 	flush(current)
@@ -130,6 +207,17 @@ func (t *tutorial) chapterCardViews(ctx *core.Context) []core.View {
 		cards[i] = core.Keyed(fmt.Sprintf("chapter-%d", i), c)
 	}
 	return cards
+}
+
+// chapterBandText is the words drawn inside a chapter card's disclosure
+// button: the icon, then the same "Chapter N — Title" that names the control.
+//
+// A function rather than a Sprintf at the one call site because the tests need
+// the same string to press the band with, and a contents screen whose chapters
+// could not be opened from a test would be a screen no lesson test could reach
+// past. See openLesson in app_test.go.
+func chapterBandText(ci int) string {
+	return fmt.Sprintf("%s  Chapter %d — %s", Chapters[ci].Icon, ci+1, Chapters[ci].Title)
 }
 
 // lessonRow is one tappable line of the contents. The row is keyed by lesson

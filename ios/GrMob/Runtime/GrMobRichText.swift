@@ -113,6 +113,11 @@ private struct GrMobRichTextRepresentable: UIViewRepresentable {
         coordinator.applyPlaceholder(node.stringProp("placeholder"))
         coordinator.runCommand(epoch: node.intProp("editorEpoch"),
                                command: node.stringProp("editorCommand"))
+        // core.Focus / core.DismissKeyboard, last, for the reason the code
+        // editor's is last: the responder arrives at a document this pass has
+        // already settled. See GrMobEditorFocus.swift.
+        coordinator.applyFocus(epoch: node.intProp("focusEpoch"),
+                               action: node.stringProp("focusAction"))
     }
 }
 
@@ -181,6 +186,9 @@ final class GrMobRichTextCoordinator: NSObject, UITextViewDelegate {
     /// The JSON of every document sent upstream and not yet seen come back.
     private var pendingEchoes: [String] = []
     private var lastEpoch: Int?
+    /// The focus-command memory, shared in shape with the code editor's. See
+    /// GrMobEditorFocus.swift.
+    private var focus = GrMobEditorFocus()
     private var lastSelection = ""
     private var placeholderLabel: UILabel?
 
@@ -307,6 +315,11 @@ final class GrMobRichTextCoordinator: NSObject, UITextViewDelegate {
     /// One core.RunEditorCommand. See GrMobCodeCoordinator.runCommand for why an
     /// editor adopts a standing epoch without running it; the rule is the same
     /// on all four hosts.
+    /// One core.Focus or core.DismissKeyboard, applied to the document.
+    func applyFocus(epoch: Int, action: String) {
+        focus.apply(epoch: epoch, action: action, to: view)
+    }
+
     func runCommand(epoch: Int, command: String) {
         guard let last = lastEpoch else {
             lastEpoch = epoch

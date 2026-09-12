@@ -479,3 +479,50 @@ test("a rewrite from Go forgets the remembered selection", () => {
     command(rt, editor, 1, "bold");
     assert.equal(shape(editor), "<p><span>something else entirely</span></p>");
 });
+
+// --- Focus commands -------------------------------------------------------
+//
+// A RichTextEditor needs no resolution where a CodeEditor does: the node's own
+// element carries contenteditable, so it *is* the focusable thing. That is
+// worth a test rather than an assumption, because the two editors share one
+// code path on this target and only one of them has chrome to look through.
+
+function focusCommand(rt, editor, epoch, action) {
+    rt.GrMob.patch(JSON.stringify([{
+        Type: "update-props", TargetID: "root/0",
+        Changes: {
+            doc: JSON.stringify(editor.__richDoc),
+            readOnly: false, placeholder: "", onChange: "cb-change",
+            focusEpoch: epoch, focusAction: action,
+        },
+    }]));
+    rt.drainFrames();
+}
+
+test("a focus command lands on the contenteditable element itself", () => {
+    const { rt, editor } = mountEditor(doc(block("p", run("a"))));
+    focusCommand(rt, editor, 1, "focus");
+    assert.equal(rt.document.activeElement, editor);
+});
+
+test("a dismiss releases the document's focus", () => {
+    const { rt, editor } = mountEditor(doc(block("p", run("a"))));
+    focusCommand(rt, editor, 1, "focus");
+    focusCommand(rt, editor, 2, "blur");
+    assert.equal(rt.document.activeElement, null);
+});
+
+test("a dismiss aimed elsewhere leaves this editor's focus alone", () => {
+    const { rt, editor } = mountEditor(doc(block("p", run("a"))));
+    const other = rt.document.createElement("input");
+    rt.document.body.appendChild(other);
+    other.focus();
+    focusCommand(rt, editor, 1, "blur");
+    assert.equal(rt.document.activeElement, other);
+});
+
+test("a zero epoch is never an instruction", () => {
+    const { rt, editor } = mountEditor(doc(block("p", run("a"))));
+    focusCommand(rt, editor, 0, "focus");
+    assert.equal(rt.document.activeElement, null);
+});

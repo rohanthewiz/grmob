@@ -219,3 +219,79 @@ dependencies {
     implementation 'androidx.media3:media3-exoplayer:1.4.1'
     implementation 'androidx.media3:media3-session:1.4.1'
 }
+
+// The compile classpath and the platform jar, printed for android/verify.
+//
+// # What reads this, and why it is gradle that answers
+//
+// android/verify/sources.sh compiles the Kotlin that imports Compose, the
+// Android SDK, osmdroid and coil — which is every runtime file except the two
+// that import nothing. To do that it needs a classpath, and the only honest
+// source of one is the resolution this module already performs: `debugCompile
+// Classpath` is what the app is built against, at the versions the BOM and the
+// declarations above pin.
+//
+// The obvious alternative — glob the gradle cache for each artifact and take
+// the newest — was tried and is wrong here in a way that is worth recording.
+// This machine's cache holds TWO of every Compose artifact: 1.6.8, which the
+// BOM pins, and 1.10.0, which something else once resolved. Newest-wins picks
+// 1.10.0, and the pass then fails on `Modifier.animateItemPlacement` — an API
+// that 1.6.8 has and 1.10.0 removed. A classpath assembled by guesswork fails
+// on the library rather than on the source, which is the one thing a compile
+// check must never do.
+//
+// That is the same lesson TestTheComposeCensusClaimsAreWhatTheSourceSays
+// records about the sources jar, arriving from the other direction: there a
+// wrong version made a paragraph quietly stale, here it makes the pass loudly
+// wrong about code that is fine.
+//
+// # Two outputs, tab-separated, one per line
+//
+//	BOOT<TAB><path>   the platform jars for compileSdk — android.jar and the
+//	                  build tools' lambda stubs. AGP picks these from compileSdk
+//	                  above, so the verify script never parses a version out of
+//	                  this file.
+//	CP<TAB><path>     one entry of the compile classpath; .aar and .jar both
+//	                  appear, and the caller extracts classes.jar from the .aar
+//	                  ones (an AGP artifact transform this task deliberately
+//	                  does not run, because running it would pull in the rest of
+//	                  the variant).
+//
+// Printed rather than written to a file: the caller wants both lists in one
+// shell pipeline, and an output file would need an up-to-date check whose
+// inputs are the whole resolution.
+//
+// # Why this is not `compileDebugKotlin`
+//
+// Because that task needs libs/grmob.aar, which is gitignored and produced by
+// ../build.sh — gomobile, the NDK and a Go toolchain. `com.grmob.runtime`
+// imports nothing from that .aar, deliberately, so it can be compiled on a
+// checkout that has never run gomobile. A check that needs half an hour of
+// setup before it can run is a check nobody runs; see android/verify/run.sh,
+// which makes the same argument about JUnit one step down.
+//
+// # Why the compile classpath is collected in afterEvaluate
+//
+// `debugCompileClasspath` does not exist while this file is being evaluated:
+// AGP creates the per-variant configurations afterwards, so a direct
+// `configurations.getByName(...)` here fails the whole build with
+// "Configuration with name 'debugCompileClasspath' not found" — for every
+// task, not just this one. A file collection filled in afterEvaluate keeps the
+// task holding a resolvable collection rather than the project, which is what
+// lets it run under the configuration cache (the same care fetchComposeLayout
+// Sources takes above, for the same reason).
+def verifyBootClasspath = androidComponents.sdkComponents.bootClasspath
+def verifyCompileClasspath = objects.fileCollection()
+afterEvaluate {
+    verifyCompileClasspath.from(configurations.getByName('debugCompileClasspath'))
+}
+
+tasks.register('printVerifyClasspath') {
+    group = 'verification'
+    description = 'Prints the debug compile classpath and the platform jars, ' +
+        'for android/verify/sources.sh.'
+    doLast {
+        verifyBootClasspath.get().each { println 'BOOT\t' + it.asFile }
+        verifyCompileClasspath.files.each { println 'CP\t' + it }
+    }
+}

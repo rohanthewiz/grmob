@@ -10,8 +10,10 @@ import "testing"
 // something ugly — it changes what is stored. The web half has a real test
 // (wasm/verify/richtext_test.mjs, which drives both directions and the whole
 // command vocabulary); the iOS half type-checks against the real iOS SDK; the
-// Kotlin half compiles only under the Android SDK and an NDK. So what is held
-// here is the shape of the contract, read out of the source.
+// Kotlin half type-checks under android/verify/sources.sh, against the classpath
+// gradle resolves. So what is held here is the shape of the contract, read out
+// of the source — which is still the only instrument for the ORDER of the calls,
+// since a type-check says they exist and nothing more.
 //
 // See mapview_test.go for the long version of why that is the strongest
 // instrument available for "all four hosts implement the same rule", and
@@ -212,5 +214,43 @@ func TestTheAndroidRichTextEditorUsesAClassicEditText(t *testing.T) {
 			"the escape hatch osmdroid is hosted through"},
 		{"EditText(context).apply {",
 			"an Editable is a string plus spans, which is richtext.Doc's own shape"},
+	})
+}
+
+// Focus commands, on the two hosts that host a classic text view.
+//
+// This node is the one place in the runtime where neither phone can hand a
+// focus command to its own framework. Both editors are a UIKit/Android View
+// inside the declarative tree — a UITextView in a UIViewRepresentable, an
+// EditText in an AndroidView — so SwiftUI's @FocusState and Compose's
+// FocusRequester both address the *wrapper* and the text control never hears
+// them.
+//
+// Android carries one extra obligation that no other node in this runtime has,
+// and it is the one most likely to be dropped by someone copying the Compose
+// field's implementation: a classic View does not raise or lower the soft
+// keyboard as a consequence of focus. requestFocus() leaves the keyboard down
+// and clearFocus() leaves it up, so the InputMethodManager has to be asked on
+// both edges — which is the whole point of core.DismissKeyboard reaching here.
+func TestBothNativeRichTextEditorsTakeFocusCommands(t *testing.T) {
+	pinExprs(t, swiftRichText, []struct{ expr, why string }{
+		{`node.intProp("focusEpoch")`, "the command's generation"},
+		{`node.stringProp("focusAction")`, "focus / blur / \"\""},
+		{"focus.apply(epoch: epoch, action: action, to: view)",
+			"applied to the hosted UITextView's responder, which is the only" +
+				" thing SwiftUI's focus system cannot reach"},
+	})
+	pinExprs(t, kotlinRichText, []struct{ expr, why string }{
+		{`node.intProp("focusEpoch")`, "the command's generation"},
+		{`node.stringProp("focusAction")`, "focus / blur / \"\""},
+		{"if (epoch == 0 || epoch == lastFocusEpoch) return",
+			"a remembered epoch: update runs every pass, and the stamp stays on" +
+				" the node forever, so without this one command re-takes focus" +
+				" on every later pass"},
+		{"imm?.showSoftInput(editText, InputMethodManager.SHOW_IMPLICIT)",
+			"a classic View leaves the keyboard down after requestFocus()"},
+		{"imm?.hideSoftInputFromWindow(editText.windowToken, 0)",
+			"and leaves it up after clearFocus(), which is the half" +
+				" core.DismissKeyboard exists for"},
 	})
 }

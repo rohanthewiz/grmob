@@ -57,6 +57,28 @@ type tutorial struct {
 	// toContents, goTo — so it is always the stack's top frame by another
 	// name.
 	current core.State[string]
+	// expanded maps a chapter's zero-based index → whether its card is open
+	// on the contents screen. A chapter that is not in the map is shut.
+	//
+	// # Why the contents screen does not own this
+	//
+	// components.Accordion owns its own expansion and is the right answer for
+	// a single section; components.Collapse's doc says where that stops, and
+	// this is the case it names. Eight cards means eight independent NewStates
+	// that the screen cannot address — no way to open the chapter a reader just
+	// came back from, and no way to shut them all. Holding the map here makes
+	// the expansion a fact about the session rather than about eight widgets,
+	// which is also what lets `open` set it.
+	//
+	// # Why it is seeded open rather than empty
+	//
+	// A contents screen whose every chapter is shut is eight headers and
+	// nothing else, and a reader arriving for the first time has no reason to
+	// guess which one to press. Chapter 1 is the answer for somebody who has
+	// opened nothing, and it stops being the answer the moment they open a
+	// lesson — `open` expands whatever chapter they landed in, so backing out
+	// lands on a card already showing the row they came from.
+	expanded core.State[map[int]bool]
 }
 
 // App is the root view: a Navigator whose initial route is the table of
@@ -74,6 +96,9 @@ func App(ctx *core.Context) core.View {
 	t := &tutorial{
 		visited: core.NewState(sctx, map[string]bool{}),
 		current: core.NewState(sctx, ""),
+		// Chapter 1 open, the rest shut. See the field's doc for why this is a
+		// seed rather than an empty map.
+		expanded: core.NewState(sctx, map[int]bool{0: true}),
 	}
 	// Same scope, for the same reason: the route handler moves frames, so
 	// it must outlive them.
@@ -89,12 +114,55 @@ func App(ctx *core.Context) core.View {
 // Only ever called from event handlers (a row tap, the Next button), never
 // during a render pass: Set marks the tree dirty, and a Set inside render
 // would schedule renders forever.
+//
+// # It also opens the lesson's chapter, and that is deliberate
+//
+// The contents screen's chapter cards are collapsed by default, so backing out
+// of a lesson has to land on a card that is showing the row the reader came
+// from. The obvious place for that is the door they went through — and there
+// are two doors, `open` for the app's own controls and `goTo` for an inbound
+// deep link, which is exactly the drift this file already worries about one
+// function down ("so the address bar cannot drift from the screen because one
+// path forgot to report"). Putting it here instead makes it true by
+// construction: every path that records a lesson as opened opens its chapter,
+// because recording it *is* opening it.
+//
+// A lesson ID that names no lesson leaves the expansion alone rather than
+// guessing a chapter. Nothing produces one today — both callers hold a
+// lessonEntry — and resolveRoute is the function that would have to start
+// lying for it to happen.
 func (t *tutorial) markVisited(id string) {
 	old := t.visited.Get()
 	next := make(map[string]bool, len(old)+1)
 	maps.Copy(next, old)
 	next[id] = true
 	t.visited.Set(next)
+
+	if e, ok := resolveRoute(id); ok {
+		t.setExpanded(e.ChapterNum-1, true)
+	}
+}
+
+// setExpanded opens or shuts one chapter's card on the contents screen.
+//
+// Replaced rather than mutated, for markVisited's reason one function up:
+// earlier render passes hold the previous map and the reconciler diffs the old
+// tree against the new, so a map edited in place would make the two agree about
+// a change that has not been rendered yet.
+//
+// Shut is a deletion rather than a false, so the map holds only what is open.
+// Nothing reads the difference today; it is what keeps the map from growing a
+// permanent entry per chapter the reader ever closed.
+func (t *tutorial) setExpanded(chapter int, open bool) {
+	old := t.expanded.Get()
+	next := make(map[int]bool, len(old)+1)
+	maps.Copy(next, old)
+	if open {
+		next[chapter] = true
+	} else {
+		delete(next, chapter)
+	}
+	t.expanded.Set(next)
 }
 
 // progress reports how many lessons have been opened, out of how many exist.

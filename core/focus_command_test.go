@@ -2,6 +2,8 @@ package core
 
 import (
 	"testing"
+
+	"github.com/rohanthewiz/grmob/richtext"
 )
 
 // The imperative half of focus: core.Focus and core.DismissKeyboard, which
@@ -442,5 +444,75 @@ func TestButtonWithEventKeepsItsShape(t *testing.T) {
 	}
 	if n.Style.FontSize != 11 {
 		t.Errorf("FontSize = %v, want 11", n.Style.FontSize)
+	}
+}
+
+// Both editors take focus commands, which they did not when they landed.
+//
+// A separate fixture rather than two more children on focusFixture's: that one
+// asserts by index across half a dozen tests, and the question here is
+// different enough to be worth asking on its own.
+//
+// # Why neither editor carries a FocusTarget here
+//
+// That is the whole point of the arrangement. FocusTarget stamps the node it is
+// applied to unconditionally — it calls stampFocus directly, precisely so an
+// app can name a node the default set does not cover — so an editor holding one
+// would be stamped whether or not focusableLeafTypes mentions it, and this test
+// would pass over a set that had lost both entries. The ref goes on the plain
+// Input instead, and each editor is reached only the way leafNode reaches it:
+// by type.
+func TestBothEditorsTakeFocusCommands(t *testing.T) {
+	ctx := NewContext()
+	var fieldRef *FocusRef
+
+	pass := func() []*Node {
+		ctx.BeginRenderPass()
+		ctx.Reset()
+		view := ComponentFunc(func(ctx *Context) *Node {
+			fieldRef = UseFocusRef(ctx)
+			return containerNode(ctx, "Column", Style{}, []PropsAndChildren{
+				Input("a", "", func(string) {}, FocusTarget(fieldRef)),
+				CodeEditor("x", func(string) {}, nil),
+				RichTextEditor(richtext.Doc{}, func(richtext.Doc) {}),
+			})
+		})
+		return view.Render(ctx).Children
+	}
+
+	// Nothing issued: nothing stamped, on the editors as on everything else.
+	for i, n := range pass() {
+		if _, _, ok := stamp(n); ok {
+			t.Errorf("child %d (%s) carries a stamp before any command", i, n.Type)
+		}
+	}
+
+	// A command aimed at the field. Both editors are focusable leaves no app
+	// code named, so both are told "" — carrying the epoch with nothing to do,
+	// which is what keeps a later dismiss from being the first stamp they ever
+	// saw. A missing key here rather than "" would be invisible on the far side
+	// of an update-props patch; see stamp.
+	Focus(fieldRef)
+	kids := pass()
+	if epoch, action, ok := stamp(kids[0]); !ok || epoch != 1 || action != "focus" {
+		t.Errorf("Input stamp = (%d, %q, %v), want (1, focus, true)", epoch, action, ok)
+	}
+	for _, i := range []int{1, 2} {
+		if epoch, action, ok := stamp(kids[i]); !ok || epoch != 1 || action != "" {
+			t.Errorf("%s stamp = (%d, %q, %v), want (1, \"\", true)",
+				kids[i].Type, epoch, action, ok)
+		}
+	}
+
+	// A dismiss reaches both editors, which is the half the gap note was
+	// actually about: a tap on the background of a form has to put an editor's
+	// keyboard away, and Go was never told which control the user tapped into.
+	DismissKeyboard(ctx)
+	kids = pass()
+	for i, n := range kids {
+		if epoch, action, ok := stamp(n); !ok || epoch != 2 || action != "blur" {
+			t.Errorf("child %d (%s) stamp = (%d, %q, %v), want (2, blur, true)",
+				i, n.Type, epoch, action, ok)
+		}
 	}
 }

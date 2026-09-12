@@ -3940,6 +3940,54 @@ const GrMob = (() => {
     // serializer's element path and its text path then exercise the same shape,
     // and the harness DOM in wasm/verify has no text nodes at all, so a
     // structure that depended on them could not be tested anywhere.
+    // # What this costs, measured, and why it is still a full rebuild
+    //
+    // Every write to this editor's DOM comes through here, and every one of
+    // them recreates the whole document: the five callers are a pending mark
+    // being applied, a paste, an undo or redo, any toolbar command, and any
+    // rewrite arriving from Go. So the cost of one bold press is a function of
+    // the document's size rather than of the edit's.
+    //
+    // Counted rather than timed, because a count is the same number in a
+    // browser as it is against the harness DOM and a millisecond is not:
+    //
+    //	blocks x runs      elements destroyed and recreated
+    //	   1 x 1                          2
+    //	  10 x 4                         70
+    //	 100 x 6                      1,000
+    //	 500 x 6                      5,000
+    //	2000 x 6                     20,000
+    //
+    // A patch that rewrote only the blocks an edit touched would put ~10 in
+    // every one of those rows. That is the ratio, and it is why this is written
+    // down rather than left to be re-derived: the next person to look at it
+    // should start from the number.
+    //
+    // It is still a full rebuild for two reasons that are about correctness
+    // rather than effort.
+    //
+    // First, a block is not an element here. Consecutive list blocks share one
+    // <ul>, which this function's `list` variable is doing, so "replace block
+    // N's element" is not a well-defined operation — the unit that can be
+    // replaced is a maximal run of blocks sharing a container, and computing
+    // that run is the part a partial rewrite has to get right on every edit.
+    //
+    // Second, and this is the one that decided it: leaving an element in place
+    // is only safe if the element still describes its block, and between two
+    // calls to this function the *browser* has been editing this DOM. Typing
+    // under contenteditable splits text nodes and inserts elements of its own.
+    // A full rebuild normalises all of that away every time; a partial one
+    // would normalise the blocks it rewrote and leave the rest in whatever
+    // shape the browser last left them. That is a drift between the model and
+    // the screen, in an editor, and nothing in this repository can test for it
+    // — the harness DOM has no Selection API and no contenteditable behaviour
+    // at all, which is the same limit that made the whole command vocabulary a
+    // pure document transformation in the first place.
+    //
+    // So the trade is: a rebuild proportional to the document on an action the
+    // user initiated, against a normalisation hole that only a browser can
+    // show. Taken deliberately, with the numbers above, and revisitable by
+    // anyone who has a profile from a real document that says otherwise.
     function richTextToDOM(el, doc) {
         el.innerHTML = "";
         let list = null;
@@ -4620,12 +4668,40 @@ const GrMob = (() => {
         if (!epoch) return;
         if (action !== "focus" && action !== "blur") return;
         requestAnimationFrame(() => {
+            const target = focusTargetOf(el);
+            if (!target) return;
             if (action === "focus") {
-                el.focus();
-            } else if (document.activeElement === el) {
-                el.blur();
+                target.focus();
+            } else if (document.activeElement === target) {
+                target.blur();
             }
         });
+    }
+
+    // The element a focus command actually lands on.
+    //
+    // For every field this is the node's own element — an <input>, a
+    // <textarea> — and the resolution is the identity. A CodeEditor is the
+    // exception: the node is a <pre> acting as the scroll box, and the thing a
+    // browser can put a caret in is the transparent <textarea> this runtime
+    // built inside it. Calling focus() on the <pre> would do nothing at all
+    // (an element with no tabindex is not focusable), so a dismiss would leave
+    // the keyboard up and a core.Focus would be silently lost.
+    //
+    // A RichTextEditor needs no resolution: the node's own element carries
+    // contenteditable, so it *is* the focusable thing, and document.active
+    // Element reports it as such. The gutter is never a candidate either way —
+    // it is aria-hidden chrome, and nothing but the buffer is looked for here.
+    //
+    // Returning null rather than falling back to `el` is deliberate: a
+    // CodeEditor whose chrome has not been built yet has nowhere to put a
+    // caret, and focusing its <pre> instead would move focus off whatever
+    // legitimately holds it. A command that misses is the honest outcome.
+    function focusTargetOf(el) {
+        if (el.dataset.nodeType === "CodeEditor") {
+            return codeChrome(el, "codebuffer");
+        }
+        return el;
     }
 
     // core.ContentMode -> CSS object-fit. Go states this table once, in

@@ -45,8 +45,11 @@ string, wrapped, proportional font, no decoration.
   `tag.go`, `wasm/grmob-runtime.js` (+ a `wasm/verify/*_test.mjs` against the fake
   DOM), `android/.../runtime/Renderer.kt` (+ a textual contract test in
   `mobile/verify`), `ios/GrMob/Runtime/Renderer.swift` (+ `ios/verify` type-check).
-  Known gap carried from the MapView plan: **Kotlin that imports Compose is compiled
-  by nothing in this repo**; it is held to the contract textually.
+  Known gap carried from the MapView plan, and **closed 2026-09-11**: Kotlin that
+  imports Compose is now compiled by `android/verify/sources.sh`, against the
+  classpath `:app:printVerifyClasspath` resolves and with the Compose compiler
+  plugin. The textual contract tests stay — they check the rules, which a compile
+  cannot.
 
 The two editors share one design and are ordered so the smaller one proves it.
 
@@ -145,6 +148,14 @@ one keystroke can patch N rows; measure on the tutorial's largest snippet before
 deciding whether rows need keys. (2) The Compose half is not compiled here; the
 textual contract test is the only check until `android/verify` grows a Compose
 classpath, which this plan does not take on.
+
+> **Risk (2) came true, and was closed afterwards.** `android/verify` grew that
+> classpath on 2026-09-11 (`sources.sh`), and the first run of it found that
+> `GrMobCodeEditor.kt` called `GrMobNode.isDisabled()` — which `Renderer.kt`
+> declares `private`, and a `private` top-level declaration in Kotlin is
+> file-private. The Android app had not compiled since this tier landed, and the
+> textual contract test could not have said so: it checks that the right calls
+> are made, not that they resolve.
 
 ### A3. `components.CodeEditor` widget (pure Go)
 

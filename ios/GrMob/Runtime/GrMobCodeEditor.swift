@@ -107,6 +107,16 @@ private struct GrMobCodeEditorRepresentable: UIViewRepresentable {
         view.refreshGutter()
         coordinator.runCommand(epoch: node.intProp("editorEpoch"),
                                command: node.stringProp("editorCommand"))
+        // core.Focus / core.DismissKeyboard, last: the responder should arrive
+        // at a buffer this pass has already settled, so that a command issued
+        // alongside a value change does not put the caret in a stale one.
+        //
+        // The command lands on textView and never on the view itself: the
+        // editor's own UIView is the box holding the buffer and the gutter, and
+        // the gutter is chrome the caret must never reach. See
+        // GrMobEditorFocus.swift.
+        coordinator.applyFocus(epoch: node.intProp("focusEpoch"),
+                               action: node.stringProp("focusAction"))
     }
 }
 
@@ -253,6 +263,10 @@ final class GrMobCodeCoordinator: NSObject, UITextViewDelegate {
     private var lastSelection = ""
     /// nil until the first pass has been seen. See runCommand.
     private var lastEpoch: Int?
+    /// The focus-command memory. See GrMobEditorFocus.swift for why it is
+    /// separate from lastEpoch above, which tracks a different kind of command
+    /// with a deliberately different first-sight rule.
+    private var focus = GrMobEditorFocus()
 
     /// One indent: tabSize spaces, or a literal tab when tabSize is 0 — which
     /// is what Go source wants.
@@ -450,6 +464,11 @@ final class GrMobCodeCoordinator: NSObject, UITextViewDelegate {
     /// missed it. Running it at mount would indent a buffer every time its
     /// screen came back. So the first pass records the epoch and runs nothing;
     /// only a change after that is an instruction. All four hosts agree on this.
+    /// One core.Focus or core.DismissKeyboard, applied to the buffer.
+    func applyFocus(epoch: Int, action: String) {
+        focus.apply(epoch: epoch, action: action, to: view?.textView)
+    }
+
     func runCommand(epoch: Int, command: String) {
         guard let last = lastEpoch else {
             lastEpoch = epoch

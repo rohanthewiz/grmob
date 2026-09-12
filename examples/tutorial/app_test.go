@@ -240,16 +240,63 @@ func tap(t *testing.T, mgr *render.Manager, label string) {
 // A row is any clickable node (ListRow registers OnClick only when OnTap is
 // set) with the title Text beneath it — matching by structure rather than by
 // an ID prop, since the tree carries none.
+//
+// # It opens the chapter first when it has to
+//
+// The chapter cards are collapsed by default, so a lesson's row is not on the
+// screen until its card is. Pressing the band and then the row is what a reader
+// does, and doing it here rather than in forty tests is what keeps every lesson
+// test about its own lesson.
+//
+// The band is pressed only when the row is already absent, because pressing an
+// open chapter's band shuts it — so an unconditional press would hide the row
+// this function exists to find, on every test whose chapter happened to be open
+// already (chapter 1 always is, and so is whichever one a previous step
+// visited).
 func openLesson(t *testing.T, mgr *render.Manager, title string) {
 	t.Helper()
-	n := findNode(tree(t, mgr), func(n *node) bool {
-		_, clickable := n.Props["onClick"].(string)
-		return clickable && n.Type != "Button" && hasText(n, title)
-	})
+	row := func() *node {
+		return findNode(tree(t, mgr), func(n *node) bool {
+			_, clickable := n.Props["onClick"].(string)
+			return clickable && n.Type != "Button" && hasText(n, title)
+		})
+	}
+	n := row()
+	if n == nil {
+		expandChapterFor(t, mgr, title)
+		n = row()
+	}
 	if n == nil {
 		t.Fatalf("no tappable contents row titled %q", title)
 	}
 	mgr.DispatchCallback(n.Props["onClick"].(string))
+}
+
+// expandChapterFor presses the disclosure on the chapter card holding the
+// lesson with this title.
+//
+// The chapter is looked up in flatLessons rather than found by walking the
+// tree: the index is the curriculum's own answer to "which chapter is this
+// lesson in", and deriving it from the screen would make the helper agree with
+// whatever the screen currently draws — including a screen that had put the
+// lesson in the wrong card.
+//
+// The band itself is matched on the exact words it draws (chapterBandText), and
+// those words are only ever inside the disclosure's button, so there is nothing
+// else in the tree for this to land on.
+func expandChapterFor(t *testing.T, mgr *render.Manager, title string) {
+	t.Helper()
+	chapter := -1
+	for _, e := range flatLessons {
+		if e.Title == title {
+			chapter = e.ChapterNum - 1
+			break
+		}
+	}
+	if chapter < 0 {
+		t.Fatalf("no lesson titled %q in the curriculum", title)
+	}
+	expandChapter(t, mgr, chapter)
 }
 
 // toggleCheckbox flips the idx-th checkbox in tree order. The demos'
@@ -304,26 +351,88 @@ func newApp(t *testing.T) *render.Manager {
 
 // --- The contents screen -------------------------------------------------
 
-func TestHomeListsEveryLesson(t *testing.T) {
+// The contents screen lists every chapter, and every lesson of the chapters
+// that are open.
+//
+// It used to list all 49 lessons at once and this test used to say so. The
+// cards collapse now, so the claim splits in two: the *curriculum* is still
+// wholly reachable — that is the part a reader would notice going missing —
+// and what is on the screen at any moment is the chapters plus one chapter's
+// rows. Both halves are checked, because a screen that had stopped drawing the
+// rows of an OPEN chapter would pass a check that only counted headers.
+func TestHomeListsEveryChapterAndTheOpenChapterSLessons(t *testing.T) {
 	mgr := newApp(t)
 	root := tree(t, mgr)
 
 	if !hasText(root, "GrMob Interactive Tutorial") {
 		t.Fatal("home is missing its title")
 	}
-	for _, e := range flatLessons {
-		if !hasText(root, e.Title) {
-			t.Errorf("home is missing lesson %s (%s)", e.ID, e.Title)
-		}
-		if !hasText(root, e.ID) {
-			t.Errorf("home is missing the %s ordinal", e.ID)
+
+	// Every chapter has a band, open or shut.
+	for ci := range Chapters {
+		if !hasText(root, chapterBandText(ci)) {
+			t.Errorf("home is missing chapter %d's disclosure", ci+1)
 		}
 	}
+
+	// Chapter 1 is the one seeded open: its rows are on the screen and no
+	// other chapter's are. The second half is what makes this a test of the
+	// collapse rather than of the curriculum — without it, a card that had
+	// stopped collapsing would pass.
+	for _, e := range flatLessons {
+		open := e.ChapterNum == 1
+		if got := hasText(root, e.Title); got != open {
+			t.Errorf("lesson %s (%s) on screen = %v, want %v",
+				e.ID, e.Title, got, open)
+		}
+		if got := hasText(root, e.ID); got != open {
+			t.Errorf("the %s ordinal on screen = %v, want %v", e.ID, got, open)
+		}
+	}
+
+	// And every lesson is reachable by opening its chapter, which is the claim
+	// the old whole-screen check was really making.
+	for ci := range Chapters {
+		if ci > 0 {
+			expandChapter(t, mgr, ci)
+		}
+		now := tree(t, mgr)
+		for _, e := range flatLessons {
+			if e.ChapterNum-1 != ci {
+				continue
+			}
+			if !hasText(now, e.Title) {
+				t.Errorf("lesson %s (%s) is unreachable with chapter %d open",
+					e.ID, e.Title, ci+1)
+			}
+			if !hasText(now, e.ID) {
+				t.Errorf("the %s ordinal is unreachable with chapter %d open",
+					e.ID, ci+1)
+			}
+		}
+	}
+
 	want := fmt.Sprintf("0 of %d lessons opened", len(flatLessons))
-	if !hasText(root, want) {
+	if !hasText(tree(t, mgr), want) {
 		t.Fatalf("home is missing the progress caption %q", want)
 	}
 	assertNoConcerns(t)
+}
+
+// A chapter card's disclosure, pressed once. Toggles: the caller has to know
+// which way it will go, which is why openLesson asks whether the row is
+// already showing before it comes here.
+func expandChapter(t *testing.T, mgr *render.Manager, chapter int) {
+	t.Helper()
+	words := chapterBandText(chapter)
+	n := findNode(tree(t, mgr), func(n *node) bool {
+		_, clickable := n.Props["onClick"].(string)
+		return clickable && hasText(n, words)
+	})
+	if n == nil {
+		t.Fatalf("no chapter disclosure showing %q", words)
+	}
+	mgr.DispatchCallback(n.Props["onClick"].(string))
 }
 
 // The contents screen is inset once, by its List.
@@ -582,7 +691,36 @@ func TestHomeTreeSize(t *testing.T) {
 	// at 53,408 and the EdgeInsets pass took it to here; the baseline this
 	// guards drift from should be what the screen costs today, and the table
 	// is where the measured arms keep their own numbers.
-	const recorded = 51242
+	//
+	// # The collapse took another 67% off, and none of it was a wire change
+	//
+	// The chapter cards collapse now (one open, the rest shut — see the
+	// tutorial's `expanded` field), so the rows of seven chapters are simply
+	// not in the tree:
+	//
+	//	all eight cards open      53,156    what this screen used to send
+	//	one card open             17,366    what it sends today
+	//	every card shut           12,889    the floor: eight bands and their
+	//	                                    summaries, plus the title and the
+	//	                                    progress card
+	//
+	// Two things are worth taking from those numbers rather than from the
+	// percentage. A row costs about 800 bytes, so the saving is a linear
+	// function of how many rows are on screen and would be the same on any
+	// screen that stops drawing rows nobody asked for. And the floor is
+	// 12,889 — a quarter of the original — which is what a disclosure per
+	// chapter costs: the heading-around-button-around-chevron shape is four
+	// nodes with styles, and eight of them are not free. Collapsing is worth
+	// it here because 49 rows is far more than eight bands; it would not be
+	// worth it for a screen with three rows per section.
+	//
+	// This is also the comparison item 7 of the next list wanted: windowing
+	// core.List over the bridge was sized at 66-76% of the payload and needs a
+	// bootstrap guess plus placeholder children. The collapse is 67% with no
+	// protocol change at all, which does not retire windowing — a single open
+	// chapter of forty lessons would still send forty rows — but it does mean
+	// the tutorial is no longer the screen that motivates it.
+	const recorded = 17366
 	if size < recorded/10 || size > recorded*10 {
 		t.Errorf("the contents screen is %d bytes of JSON, an order of magnitude "+
 			"from the %d it costs today — a screen whose 53,408-byte arm is what "+
@@ -744,4 +882,73 @@ func findList(n *wireNode) (*wireNode, bool) {
 		}
 	}
 	return nil, false
+}
+
+// The chapter a reader came out of is open when they land back on the contents.
+//
+// This is the whole reason the expansion is session state rather than eight
+// widgets' own: a components.Accordion would have collapsed itself again on the
+// way back, and nothing on the contents screen could have reached in to say
+// otherwise. Both doors into a lesson are checked, because there are two and
+// the rule lives in neither of them — see markVisited.
+func TestTheChapterAReaderCameOutOfIsOpen(t *testing.T) {
+	// Door one: the app's own controls, crossing a chapter boundary.
+	//
+	// The route is the last lesson of chapter 1 — which is open already, so
+	// nothing about this arm depends on openLesson having expanded anything —
+	// and then Next, which lands in chapter 2. Chapter 2 is shut at that
+	// moment, and what is being checked is that coming back finds it open.
+	mgr := newApp(t)
+	last := flatLessons[0]
+	for _, e := range flatLessons {
+		if e.ChapterNum == 1 {
+			last = e
+		}
+	}
+	openLesson(t, mgr, last.Title)
+	tap(t, mgr, "Next ›")
+	tap(t, mgr, "‹ Contents")
+	next := flatLessons[last.Index+1]
+	if next.ChapterNum != 2 {
+		t.Fatalf("the lesson after %s is %s, not the start of chapter 2 —"+
+			" this test's route through the curriculum no longer crosses a"+
+			" chapter boundary", last.ID, next.ID)
+	}
+	if !hasText(tree(t, mgr), next.Title) {
+		t.Errorf("chapter 2 is shut after coming back from %s", next.ID)
+	}
+
+	// Door two: a deep link, which never passes through the row or through
+	// `open`. This is the path that was actually broken when the rule lived on
+	// one door — grmob://lesson/2.3 opens a lesson the reader never pressed a
+	// row for, and ‹ Contents afterwards landed them on a shut card.
+	mgr2 := newApp(t)
+	tree(t, mgr2) // the first render is what subscribes the app
+	route("2.3")
+	tap(t, mgr2, "‹ Contents")
+	linked, _ := resolveRoute("2.3")
+	if !hasText(tree(t, mgr2), linked.Title) {
+		t.Errorf("chapter 2 is shut after a deep link to 2.3 and back")
+	}
+}
+
+// A chapter's band says how far the reader has gotten in it, which is the only
+// progress a shut card can show.
+func TestAChapterBandCountsItsLessons(t *testing.T) {
+	mgr := newApp(t)
+	n := len(Chapters[0].Lessons)
+
+	root := tree(t, mgr)
+	if want := fmt.Sprintf("%d lessons", n); !hasText(root, want) {
+		t.Errorf("chapter 1's band is missing %q", want)
+	}
+
+	// Open one, come back: the count becomes a ratio. "1 of 6" rather than
+	// "6 lessons" is the difference between a card that says how big it is and
+	// one that says where the reader is in it.
+	openLesson(t, mgr, Chapters[0].Lessons[0].Title)
+	tap(t, mgr, "‹ Contents")
+	if want := fmt.Sprintf("1 of %d", n); !hasText(tree(t, mgr), want) {
+		t.Errorf("chapter 1's band is missing %q after opening one lesson", want)
+	}
 }

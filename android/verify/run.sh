@@ -31,9 +31,19 @@
 # # Finding a compiler
 #
 # In order of preference: a `kotlinc` on PATH, then the compiler jars in the
-# gradle cache. If neither is there the pass is SKIPPED rather than failed —
-# the same stance ios/verify takes toward the iPhoneOS SDK, and for the same
-# reason: the script's promise is that it catches what the machine can catch.
+# gradle cache (kotlinc.sh). If neither is there the pass is SKIPPED rather than
+# failed — the same stance ios/verify takes toward the iPhoneOS SDK, and for the
+# same reason: the script's promise is that it catches what the machine can
+# catch.
+#
+# # The other half of the pass
+#
+# This script also runs sources.sh, which asks the prior question about the same
+# tree: does the Kotlin that imports Compose and the Android SDK compile? Those
+# files cannot be executed off a device and were held to their contracts
+# textually; a type-check against the classpath gradle resolves is the strongest
+# thing available without one. See that script for the two stages and the
+# reasoning, and gate.sh for both gates.
 set -e
 cd "$(dirname "$0")"
 
@@ -49,6 +59,7 @@ cd "$(dirname "$0")"
 # a helper that had stopped counting would take both gate tests green with it.
 sh ../../internal/gateharness/harness_test.sh
 . ./gate.sh
+. ./kotlinc.sh
 sh ./gate_test.sh
 
 # The Compose census's source half, reported here rather than skipped in
@@ -92,6 +103,14 @@ else
   echo "SKIP: the Compose census's source half (no go on PATH to run it with)"
 fi
 
+# Does the Kotlin that imports Compose and the Android SDK compile at all.
+#
+# Ahead of the harness below because it is the prior question: the harness asks
+# whether two functions compute the right answers, and that is only worth asking
+# of a package that resolves. See sources.sh, which carries its own gate and
+# skips rather than fails on a machine missing the Android half of the toolchain.
+sh ./sources.sh
+
 out="${TMPDIR:-/tmp}/grmob-android-verify"
 mkdir -p "$out"
 
@@ -129,52 +148,32 @@ case "${verdict%%:*}" in
     ;;
 esac
 
-# No kotlinc, and a java. Assemble the compiler out of the gradle cache the Android build
-# already populates. Six jars, because kotlin-compiler-embeddable is
-# deliberately *not* a fat jar: it expects the standard library, reflection,
-# the daemon client, coroutines and JetBrains' own annotations to be supplied
-# alongside it. (The last is needed only by the code generator, which stamps
-# @NotNull onto every non-nullable parameter it emits — so a hello-world
-# compiles without it and anything with a function signature does not.) The
-# newest of each is taken, on the reasoning that the cache holds whatever
-# versions the app's own resolution pulled and the compiler is
-# backward-compatible with older stdlibs.
-cache="$HOME/.gradle/caches/modules-2/files-2.1"
-newest_jar() {
-  # $1 is a group/artifact directory under the cache; jars with a classifier
-  # (-sources, -javadoc) are skipped, and the highest version wins.
-  find "$cache/$1" -name '*.jar' 2>/dev/null \
-    | grep -v -e '-sources\.jar$' -e '-javadoc\.jar$' \
-    | sort -V | tail -1
-}
-
-KOTLINC_JAR=$(newest_jar org.jetbrains.kotlin/kotlin-compiler-embeddable)
-STDLIB=$(newest_jar org.jetbrains.kotlin/kotlin-stdlib)
-REFLECT=$(newest_jar org.jetbrains.kotlin/kotlin-reflect)
-DAEMON=$(newest_jar org.jetbrains.kotlin/kotlin-daemon-embeddable)
-COROUTINES=$(newest_jar org.jetbrains.kotlinx/kotlinx-coroutines-core-jvm)
-ANNOTATIONS=$(newest_jar org.jetbrains/annotations)
+# No kotlinc, and a java. Assemble the compiler out of the gradle cache the
+# Android build already populates — kotlinc.sh does the finding, because
+# sources.sh needs the same six jars and a toolchain lookup written out twice
+# proves only that one person made the same choice twice.
+# An `if` rather than `kotlin_cache_compiler && jars=yes`: whether `set -e`
+# fires on the failing half of an AND-OR list that is itself the last command
+# differs between shells, and this script is run by whatever /bin/sh is.
+jars=no
+if kotlin_cache_compiler; then
+  jars=yes
+fi
 
 # Now the jars are known, so the gate is asked again with the real answer. The
 # java arm has already been settled above and cannot change; what this decides
 # is the cache-versus-skip half.
-jars=yes
-for jar in "$KOTLINC_JAR" "$STDLIB" "$REFLECT" "$DAEMON" "$COROUTINES" "$ANNOTATIONS"; do
-  [ -z "$jar" ] && jars=no
-done
 verdict="$(jvm_harness_verdict "$(have java)" no "$jars")"
 if [ "${verdict%%:*}" = skip ]; then
   echo "SKIP: JVM harness (${verdict#*:})"
   exit 0
 fi
 
-CP="$KOTLINC_JAR:$STDLIB:$REFLECT:$DAEMON:$COROUTINES:$ANNOTATIONS"
-
-# -no-stdlib because the standard library is supplied explicitly above; the
-# compiler would otherwise look for one beside its own jar, where an
-# embeddable build has none.
+# -no-stdlib because the standard library is supplied explicitly; the compiler
+# would otherwise look for one beside its own jar, where an embeddable build has
+# none.
 # shellcheck disable=SC2086
-java -cp "$CP" org.jetbrains.kotlin.cli.jvm.K2JVMCompiler \
-  $SRC -d "$out/classes" -no-stdlib -classpath "$STDLIB" -nowarn
+java -cp "$KOTLIN_COMPILER_CP" org.jetbrains.kotlin.cli.jvm.K2JVMCompiler \
+  $SRC -d "$out/classes" -no-stdlib -classpath "$KOTLIN_STDLIB" -nowarn
 
-java -cp "$out/classes:$STDLIB" com.grmob.runtime.HarnessKt
+java -cp "$out/classes:$KOTLIN_STDLIB" com.grmob.runtime.HarnessKt

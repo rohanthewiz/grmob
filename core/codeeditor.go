@@ -54,13 +54,24 @@ package core
 // corrupts source. A readOnly buffer is still selectable and still shows a
 // caret, because a code block the user cannot copy out of is a screenshot.
 //
+// # Focus commands
+//
+// core.Focus and core.DismissKeyboard reach an editor: CodeEditor is in
+// focusableLeafTypes, so every command stamps it like any other text control
+// and a background tap puts its keyboard away.
+//
+// The one thing worth knowing is where the command lands. This node is a
+// *box* — a scroll container holding a gutter and a buffer — where an Input is
+// the control itself, so each renderer resolves the stamp to the buffer rather
+// than applying it where it arrived. The gutter is chrome and never takes the
+// caret. htmlout applies it nowhere at all: its editor is a read-only snapshot
+// with no editable element to autofocus.
+//
 // # Known gaps in v1
 //
-// core.Focus and core.DismissKeyboard do not reach an editor: CodeEditor is
-// deliberately absent from focusableLeafTypes, so no focus command is stamped
-// on it and a background tap will not put its keyboard away. Adding it is four
-// renderer changes and no core change, and is not done here because nothing
-// drives it yet.
+// Nothing that needs a caret is exercised by any harness here — the IME
+// composing region, a hardware Tab on iPad, and paste from another app are
+// arguments rather than tests.
 //
 // # value and rows are two facts about one buffer, and they can disagree
 //

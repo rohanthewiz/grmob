@@ -1010,6 +1010,54 @@ in the gradle cache the Android build already populates. If neither is present
 the pass **skips** rather than fails, the same stance `ios/verify` takes toward
 a missing iPhoneOS SDK.
 
+#### And the Kotlin that *does* import Compose
+
+Everything above is about the two files that import nothing. The other nine
+runtime files — the renderer, the style solver, the map, both editors — import
+Compose and the Android SDK, and for a long while nothing in this repository
+compiled any of them: they were held to their contracts **textually**, by
+`mobile/verify` searching their source for the calls they are supposed to make.
+Those tests are real checks of the rules and no check at all of whether the file
+resolves.
+
+`android/verify/sources.sh` closes that. It type-checks the whole package:
+
+    android/gradlew :app:printVerifyClasspath    the resolution + the platform jars
+    the Kotlin compiler from the gradle cache    with the Compose compiler plugin
+    com.grmob.runtime                            always
+    com.grmob.app                                when app/libs/grmob.aar exists
+
+Three choices in it are worth knowing about.
+
+**It is not `:app:compileDebugKotlin`.** That task needs `app/libs/grmob.aar`,
+which is gitignored and produced by `android/build.sh` — gomobile, the NDK and a
+Go toolchain. `com.grmob.runtime` imports nothing from that `.aar`, deliberately,
+so it can be compiled on a checkout that has never run gomobile. That is the
+difference between a check that runs and a check that needs half an hour of
+setup first, and it is why the app layer is a second stage rather than the whole
+thing.
+
+**The classpath comes from gradle, not from a glob over its cache.** A cache
+holds whatever versions anything ever resolved, and this one holds two of every
+Compose artifact: 1.6.8, which the BOM pins, and 1.10.0. Newest-wins picks
+1.10.0 and the pass then fails on `Modifier.animateItemPlacement`, an API that
+1.6.8 has and 1.10.0 removed — a classpath assembled by guesswork failing on the
+library rather than on the source, which is the one thing a compile check must
+never do. Same lesson the fixed-size census records about its sources jar,
+arriving from the other direction.
+
+**The Compose compiler plugin is required, not preferred.** Without it
+`@Composable` is an ordinary annotation and `fun Bad() { Text("x") }` compiles
+clean; with it, that is two errors. A compile without the plugin is a weaker
+check wearing the same OK, so its absence is a named SKIP. It also has to be the
+compiler's own version — which is why this pass always uses the cache's matched
+pair and never a `kotlinc` on `PATH`, the opposite of what `run.sh` prefers.
+
+The first run of it found that `GrMobCodeEditor.kt` called
+`GrMobNode.isDisabled()`, which `Renderer.kt` declared `private` — file-private,
+in Kotlin, for a top-level declaration. The Android app had not compiled since
+the editors landed and nothing here could have said so.
+
 Whether the menu is **open** is the renderer's own state and nothing else's.
 There is no prop for it and no patch describes it; the *selection* stays
 controlled like every other input's value. A picker that closed on every
