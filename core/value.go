@@ -67,25 +67,42 @@ import (
 // ARIA scopes aria-valuetext to the range roles, so a Text on an unroled
 // container is dropped by a browser and announced by both phones. Each platform
 // says the truest thing it can.
+//
+// # Why every field is `omitzero`
+//
+// The same rule Style and EdgeInsets carry, and here it is the rule rather
+// than the bytes: an empty field on this struct already means "unstated" by
+// construction — that is the whole reason the three numbers are strings, per
+// the argument above — and all four readers turn a missing key back into the
+// empty string (optString, `as? String ?? ""`, `v.Now || ""`, and htmlout,
+// which reads the Go value and never sees JSON). So presence carries nothing
+// and the tags cost nothing.
+//
+// The saving on the tutorial's contents screen is ten bytes, because one node
+// on it states a range. That is not the point. The point is that "every
+// struct that crosses this bridge omits its zeros" is now true without
+// exception, which is what TestEveryWireFieldOmitsZero pins — an untagged
+// field added to a wire struct is the failure mode the Style tags were worth
+// 370KB catching late.
 type ValueRange struct {
 	// Now is the current position, as ARIA's aria-valuenow. Empty means
 	// unstated, which for a progressbar is ARIA's own spelling of
 	// "indeterminate" — a bar that is running with no idea how far.
-	Now string
+	Now string `json:",omitzero"`
 
 	// Min and Max are the ends of the range, aria-valuemin and aria-valuemax.
 	// Empty on both means ARIA's defaults, which are 0 and 100 — so a bare
 	// Now reads as a percentage, which is what a progress fraction wants and
 	// is why ValueOf's two-argument sibling would have been a trap: "3" with
 	// no range announces as 3%, not as step 3.
-	Min string
-	Max string
+	Min string `json:",omitzero"`
+	Max string `json:",omitzero"`
 
 	// Text replaces the number in the announcement when the digits are not
 	// what a listener wants to hear — "3 of 5", "medium", "£12.50". ARIA says
 	// a reader announces this *instead of* Now, so a Text that disagrees with
 	// the number is the version the user gets.
-	Text string
+	Text string `json:",omitzero"`
 }
 
 // ValueOf states a range from the three numbers a caller is holding.

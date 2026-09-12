@@ -541,6 +541,29 @@ func TestStacksDemoSwitchesAxis(t *testing.T) {
 //	every field       423,472    1666 ms   427 ms      4850 ms
 //	zero omitted       53,408     249 ms   185 ms      3530 ms
 //
+// # The third row that is not in the table
+//
+// The tags had stopped one level too high: a *present* Padding still wrote all
+// six of core.EdgeInsets' untagged ints, and the axis pair was zero in all 77
+// insets on this screen. Tagging them took the payload to 51,242 — 2,166
+// bytes, 4.0% — and the same five-launch A/B on the same emulator an hour
+// after the one above says that bought no time it can resolve:
+//
+//	                 bytes    parse            build            launch
+//	untagged        53,408    201.3 ±16.8 ms   178.4 ±51.9 ms   3464 ±411 ms
+//	tagged          51,242    197.4 ±31.1 ms   180.5 ± 8.7 ms   3233 ±186 ms
+//
+// Parse and build together move 379.8 ms → 377.9 ms, which is 1.9 ms against
+// run-to-run spreads of 17 to 52. A 4% byte cut predicts about 8 ms if the
+// parse is linear in length, and 8 ms is where this instrument stops seeing.
+// The 231 ms in the launch column is not the tags either — the untagged arm's
+// five runs fall 4000, 3764, 3394, 3106, 3058, which is a machine warming up.
+//
+// So it is in the tree for the bytes and for the rule, not for a reading. The
+// bytes are certain and free; the milliseconds are below the floor. See the
+// note on core.EdgeInsets, and TestEveryWireFieldOmitsZero for what now stops
+// the same omission recurring a level further down.
+//
 // # Why the number is still worth printing
 //
 // Because the next screen can undo it. Nothing in the type system stops a
@@ -555,13 +578,170 @@ func TestHomeTreeSize(t *testing.T) {
 	size := len(mgr.RenderInitial())
 	t.Logf("the contents screen is %d bytes of JSON on the wire", size)
 
-	const recorded = 53408
+	// The current size, not the launch-measured one. The A/B above was taken
+	// at 53,408 and the EdgeInsets pass took it to here; the baseline this
+	// guards drift from should be what the screen costs today, and the table
+	// is where the measured arms keep their own numbers.
+	const recorded = 51242
 	if size < recorded/10 || size > recorded*10 {
 		t.Errorf("the contents screen is %d bytes of JSON, an order of magnitude "+
-			"from the %d recorded when android/device/launch.sh attributed "+
-			"1320ms of the Android launch to the difference the omitzero tags "+
-			"made. Not a budget failure — a prompt to re-measure and rewrite "+
-			"that table.", size, recorded)
+			"from the %d it costs today — a screen whose 53,408-byte arm is what "+
+			"android/device/launch.sh attributed 1320ms of the Android launch to. "+
+			"Not a budget failure — a prompt to re-measure and rewrite that "+
+			"table.", size, recorded)
 	}
 	assertNoConcerns(t)
+}
+
+// TestWhatWindowingWouldSave prints how much of the contents screen lies in
+// each child of its core.List, cumulatively, so the value of sending only the
+// children near the viewport can be read off rather than re-derived.
+//
+// It asserts nothing about the numbers. Windowing is an open proposal, not a
+// budget, and what this exists to stop is the proposal being re-priced from
+// memory: the estimate it replaces ("worth ~450ms") was a whole-stage figure
+// that nobody had split by what a window could actually remove.
+//
+// # What the profile said when it was written
+//
+//	 n  child                bytes    cumulative   sent    % of screen
+//	 1  title                  459           459     681      1.3%
+//	 2  progress card          696         1,155   1,377      2.7%
+//	 3  chapter-0 card       5,011         6,166   6,388     12.5%
+//	 4  chapter-1 card       5,959        12,125  12,347     24.1%
+//	 …
+//	10  chapter-7 card       5,301        51,020  51,242    100.0%
+//
+// "sent" is the whole payload for that window: everything outside the List
+// (the scaffold, the List's own node) plus the children in it.
+//
+// # The three things this changes about the proposal
+//
+// **The granularity is the chapter, not the lesson.** The List has ten
+// children — a title, a progress card, and eight chapter Cards of 5-12KB —
+// not the 49 rows Home's comment counts, because the rows are nested inside
+// the cards. So a window cannot be "the rows that fit"; the smallest one it
+// can express is "the cards that fit".
+//
+// On a 1080x2400 emulator that fold falls inside the fourth child: title,
+// progress, the whole of chapter-0's card (its five lesson rows), and the
+// header of chapter-1's. So the honest window is n=4 — 24.1% of the payload —
+// and one card of overscan is n=5, at 34.0%. Windowing is therefore worth
+// **66-76% of the bytes**, against 45 lesson rows that are composed by nobody
+// and read by no one on the first frame.
+//
+// **The protocol change it was priced with already exists.** The item assumed
+// a new bridge surface for the host to report a visible range. It does not
+// need one: core.OnHostEvent / mobile.ReportHostEvent is a generic host→app
+// channel that already carries a name and a JSON payload, already returns the
+// following pass's patches on the event path, and is already serialized with
+// render passes by the manager (see core/host_events.go). A visible range is
+// one more event name.
+//
+// **What it actually costs is two things nobody had named.** First, the
+// bootstrap: a cold launch has no visible range, because the host cannot lay
+// out what it has not received, so the first render has to guess a window and
+// be corrected. Second, and worse, the scroll extent — a LazyColumn sent
+// three children believes there are three, so the scrollbar is wrong and the
+// scroll stops short until more arrive. The honest fix is placeholder
+// children (right key, estimated height, ~40 bytes) rather than absent ones,
+// which keeps the extent right and still drops ~76% of the payload. That is a
+// design the measurement supports and the original framing did not describe.
+//
+// # Why this is still not built
+//
+// Because the only reading that prices it is one emulator's, and that
+// emulator's org.json spends ~200ms on 51KB where iOS's parser spends 6ms on
+// the same tree. If a physical phone's ART parses this screen in 30ms, an
+// 88% cut is worth 26ms of a launch and the placeholder machinery is not
+// worth owning in four renderers. That is the open question in item 1 of the
+// last session's Next list, it needs one device and five cold launches, and
+// this table is what to multiply its answer by.
+//
+// What is *not* in the way is the measurement. The same emulator's five-launch
+// noise floor is about 8ms, established by an A/B of a 4% payload change that
+// it could not see (TestHomeTreeSize above, and android/device/README.md). A
+// 66-76% cut is ~250-290ms of parse-and-build there, thirty times the floor. So
+// whatever a device says, windowing is the one remaining lever on this screen
+// whose effect that instrument would report unambiguously — which is the
+// opposite of the situation the shorter-key-names proposal is in, at 17-28%
+// and declined on the note above core.Style.
+func TestWhatWindowingWouldSave(t *testing.T) {
+	mgr := newApp(t)
+	tree := mgr.RenderInitial()
+
+	// Decoded through json.RawMessage rather than the `node` type above,
+	// because the interesting quantity is the exact byte count each child
+	// occupies on the wire — and a decode-then-re-encode round trip through
+	// map[string]any would renormalize key order and report a different
+	// number than the one that crossed the bridge.
+	var root wireNode
+	if err := json.Unmarshal([]byte(tree), &root); err != nil {
+		t.Fatalf("initial tree is not valid JSON: %v", err)
+	}
+	list, ok := findList(&root)
+	if !ok {
+		t.Fatal("the contents screen has no core.List — Home built one when this " +
+			"profile was taken, and the whole proposal this prices is about that " +
+			"container. Either the screen changed shape or the table below now " +
+			"describes something that is not there.")
+	}
+
+	total := len(tree)
+	var inChildren int
+	for _, c := range list.Children {
+		inChildren += len(c)
+	}
+	// Everything the host receives no matter how narrow the window: the
+	// scaffold above the List and the List's own node, less its children.
+	outside := total - inChildren
+
+	t.Logf("the contents screen is %d bytes; %d of them (%.1f%%) are the "+
+		"%d children of its core.List",
+		total, inChildren, 100*float64(inChildren)/float64(total), len(list.Children))
+	t.Logf("%-3s %-14s %-8s %9s %11s %9s %9s",
+		"n", "key", "type", "bytes", "cumulative", "sent", "% sent")
+
+	var cum int
+	for i, raw := range list.Children {
+		var c wireNode
+		if err := json.Unmarshal(raw, &c); err != nil {
+			t.Fatalf("List child %d is not valid JSON: %v", i, err)
+		}
+		cum += len(raw)
+		sent := outside + cum
+		t.Logf("%-3d %-14s %-8s %9d %11d %9d %8.1f%%",
+			i+1, c.Key, c.Type, len(raw), cum, sent,
+			100*float64(sent)/float64(total))
+	}
+	assertNoConcerns(t)
+}
+
+// wireNode reads the three fields the byte profile needs off a node without
+// decoding the rest of it. Children stay raw so their exact serialized length
+// is available; see TestWhatWindowingWouldSave for why that matters.
+type wireNode struct {
+	Type     string
+	Key      string
+	Children []json.RawMessage
+}
+
+// findList returns the first core.List in document order, which on the
+// contents screen is the page itself. Depth-first rather than by a fixed path
+// so that wrapping the screen in another container does not silently turn
+// this into a test of nothing.
+func findList(n *wireNode) (*wireNode, bool) {
+	if n.Type == "List" {
+		return n, true
+	}
+	for _, raw := range n.Children {
+		var c wireNode
+		if err := json.Unmarshal(raw, &c); err != nil {
+			continue
+		}
+		if found, ok := findList(&c); ok {
+			return found, true
+		}
+	}
+	return nil, false
 }

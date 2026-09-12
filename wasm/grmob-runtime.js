@@ -3411,6 +3411,15 @@ const GrMob = (() => {
         return Math.round(v * 100) / 100;
     }
 
+    // The four-value CSS shorthand from one core.EdgeInsets, resolving the
+    // Horizontal/Vertical pair the way htmlout.EdgeCSS and both natives do.
+    //
+    // All six fields are `json:",omitzero"` in Go, so most insets arrive here
+    // with only the sides that were set. That needs no handling beyond what is
+    // already written: `explicit || 0` reads undefined and 0 identically, which
+    // is correct because the resolution rule itself defines a zero side as
+    // "unset, take the axis". An absent key and a zero one have never been
+    // different questions here, and Go no longer sends the second one.
     function edgeToCSS(edge) {
         const side = (explicit, shorthand) => (explicit || 0) || (shorthand || 0);
         const h = edge.Horizontal, v = edge.Vertical;

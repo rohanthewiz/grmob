@@ -364,6 +364,15 @@ data class GrMobStyle(
          * Go's EdgeInsets carries per-side values plus Horizontal/Vertical
          * shorthands; the shorthand fills any side not set explicitly, which
          * matches how the DSL's PaddingHorizontal-style helpers are used.
+         *
+         * Every one of the six is `json:",omitzero"` on the Go side, so a key
+         * that is absent here is a field that was zero there. Nothing below
+         * needs to change for that, and the reason is the `explicit != 0`
+         * test: this function has always defined a zero side as "unset, take
+         * the axis", so "absent" and "present and zero" were already the same
+         * question. The defaults on optInt are what make them the same answer
+         * — do not replace them with a has()/optInt pair thinking it recovers
+         * a distinction, because Go no longer sends one.
          */
         private fun parseEdges(obj: JSONObject?): Edges {
             if (obj == null) return Edges(0, 0, 0, 0)

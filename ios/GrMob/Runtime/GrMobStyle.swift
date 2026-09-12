@@ -239,6 +239,15 @@ struct GrMobStyle: Equatable {
     /// Go's EdgeInsets carries per-side values plus Horizontal/Vertical
     /// shorthands; the shorthand fills any side not set explicitly, which
     /// matches how the DSL's PaddingHorizontal-style helpers are used.
+    ///
+    /// Every one of the six is `json:",omitzero"` on the Go side, so a key
+    /// that is absent here is a field that was zero there. Nothing below needs
+    /// to change for that, and the reason is the `explicit != 0` test: this
+    /// function has always defined a zero side as "unset, take the axis", so
+    /// "absent" and "present and zero" were already the same question. The
+    /// `?? 0` is what makes them the same answer — do not replace it with an
+    /// optional thinking it recovers a distinction, because Go no longer sends
+    /// one.
     private static func parseEdges(_ obj: [String: Any]?) -> Edges {
         guard let obj else { return .zero }
         func int(_ key: String) -> Int { (obj[key] as? NSNumber)?.intValue ?? 0 }

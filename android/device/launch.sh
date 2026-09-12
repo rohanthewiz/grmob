@@ -81,6 +81,26 @@
 #     build                    427ms -> 185ms
 #     TotalTime               4850ms -> 3530ms      -27% of the whole launch
 #
+# A later pass took the payload to 51,242: the tags had stopped one level too
+# high, so a present Padding still wrote all six of core.EdgeInsets' untagged
+# ints and the axis pair was zero in all 77 insets on that screen. Five cold
+# launches each way, same emulator, an hour after the arms above:
+#
+#     bytes on the wire       53,408 -> 51,242      4.0%
+#     parse                   201.3ms -> 197.4ms    +-17 / +-31
+#     build                   178.4ms -> 180.5ms    +-52 / +-9
+#     TotalTime               3464ms -> 3233ms      and not because of this
+#
+# Nothing in that is a reading. Parse and build together move 1.9ms where the
+# spread is 17-52ms, and a 4% cut predicts about 8ms if the parse is linear in
+# length — under the floor. The 231ms in the last row is the machine: the
+# untagged arm's five runs fall 4000, 3764, 3394, 3106, 3058, which is warming,
+# not the tags.
+#
+# That is the other use of this script, and it is worth saying because it is
+# the less obvious one: it sets the size below which a payload change cannot be
+# reported as a win here. It is about 8ms, or 4% of this screen.
+#
 # (4850 rather than 5045 for the before because both arms of THIS A/B were
 # measured with the stage clocks compiled in, an hour apart from the four arms
 # above and on a busier machine. Compare within a table, not across them.)

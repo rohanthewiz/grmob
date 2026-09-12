@@ -54,6 +54,17 @@ before                       423,472     1666 ms       4850 ms
 after                         53,408      249 ms       3530 ms
 ```
 
+A later pass took the payload to **51,242**, finding that the tags had stopped
+one level too high: a present `Padding` still wrote all six of
+`core.EdgeInsets`' untagged ints. Five cold launches each way put parse+build
+at 379.8 ms before and 377.9 ms after, against a run-to-run spread of 17-52 ms
+— so the 4% is real in bytes and invisible in time, and the table above keeps
+the two arms that were not.
+
+That is the second thing this script is good for. It says where the floor is:
+about **8 ms**, or a 4% payload change, is the smallest effect a five-launch
+run on this emulator can tell from noise.
+
 The lesson worth carrying to the next screen is the one the instrument made
 cheap: **measure the stages before choosing a lever.** The obvious fix here was
 windowing `core.List` over the bridge, which is a protocol change; the

@@ -53,6 +53,14 @@ import android.util.Log
  * 53,408 bytes, and the same five launches read bridge 13ms, parse 249ms,
  * build 185ms, for 1320ms off the whole launch.
  *
+ * A later pass found the tags had stopped one level too high — a present
+ * Padding still wrote all six of core.EdgeInsets' untagged ints — and took the
+ * payload to 51,242. Five launches each way say that bought nothing this
+ * instrument can see: parse+build 379.8ms -> 377.9ms against run-to-run
+ * spreads of 17-52ms. Which is the other thing these clocks are for. A 4%
+ * payload cut predicts ~8ms, 8ms is under the floor here, and knowing where
+ * the floor is is what stops the next 4% being reported as a win.
+ *
  * Two things about that are worth keeping. The parse is still the largest of
  * the three, so this stays the right instrument for the next round. And the
  * identical payload costs **6ms** to parse and build on the iOS simulator

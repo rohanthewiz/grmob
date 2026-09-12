@@ -38,6 +38,15 @@ import (
 // core/padding_sides.go, and TestSettlingAnAxisPreservesEveryResolvedSide for
 // the proof that it leaves every other side resolving as it did.
 //
+// # The rule is also what lets the struct go on the wire sparsely
+//
+// core.EdgeInsets' six fields are `json:",omitzero"`, which is safe precisely
+// because of the rule above: a zero side already means "unset, take the axis",
+// so a field at zero carries nothing and the three JSON readers each turn a
+// missing key back into 0. This function never sees JSON — htmlout walks the
+// Go tree directly — so it is unaffected either way; the note is here because
+// this is where the rule is written down, and the tags rest on it.
+//
 // This is a restatement of GrMobStyle.swift's parseEdges and GrMobStyle.kt's
 // parseEdges, which have honored the shorthand since they were written. Until
 // this function existed the two web targets read the four per-side fields

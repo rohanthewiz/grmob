@@ -20,7 +20,8 @@ package core
 //
 //	                        bytes      Android cold launch
 //	every field written    423,472     bridge 17ms · parse 1,600ms · build 430ms
-//	zero fields omitted     51,231     see android/device/launch.sh for the after
+//	zero fields omitted     53,408     see android/device/launch.sh for the after
+//	EdgeInsets too          51,242     a later pass, and no reading — see below
 //
 // The tags are `omitzero` rather than `omitempty` because two of the fields
 // are structs — Padding and Margin are EdgeInsets, AccessibilityValue is a
@@ -41,6 +42,54 @@ package core
 // needs to distinguish "the author said nothing" from "the author said zero",
 // it needs a sentinel like FlexShrink's or a pointer type; it cannot get that
 // distinction back from the wire format.
+//
+// # The tags stopped one level too high, and the fix is the same one
+//
+// These tags made an all-zero Padding vanish, which made it easy to miss that
+// a *present* one still wrote all six of core.EdgeInsets' untagged ints. The
+// axis pair was zero in all 77 insets on the contents screen — the DSL's side
+// props settle the shorthand before writing — so 2,156 bytes were being spent
+// saying "Horizontal":0. EdgeInsets and core.ValueRange carry the tags now,
+// and TestEveryWireFieldOmitsZero (core/wire_omitzero_test.go) walks the whole
+// tree so the next nested struct cannot be added without them.
+//
+// It bought no measurable time, and that is worth stating rather than eliding:
+// five cold launches each way on the same emulator move parse-and-build by
+// 1.9ms against a run-to-run spread of 17-52ms. A 4% cut predicts ~8ms and 8ms
+// is under that instrument's floor. The bytes are certain; the reading is not
+// available at this size. TestHomeTreeSize carries both arms.
+//
+// # What is left, and why the next idea is not a shorter vocabulary
+//
+// Of the 51,242 bytes now, roughly half are key names:
+//
+//	Style field names       16,261    31.7%   1,479 fields
+//	Node field names         8,826    17.2%   Type/Style/Props/Children/Key
+//	Props key names          2,640     5.2%   "content" ×215, "onClick" ×49
+//	                        ──────
+//	                        27,727    54.1%
+//
+// The obvious move is a short wire vocabulary — two-character codes instead of
+// the Go field names. Sized: recoding Style alone saves 8,866 bytes (17.3% of
+// the payload), and recoding all three groups saves 14,552 (28.4%). Against
+// the 378ms of parse-and-build that emulator actually measures, and assuming
+// the parse is linear in length, that is **65ms and 107ms** of a ~3,200ms cold
+// launch: 2% and 3%.
+//
+// It is declined, and the number is only half of why. The other half is that
+// verbatim Go field names are load-bearing: they are the reason core.Role's
+// ARIA spellings need no mapping table on either DOM target (see role.go), the
+// reason a tree dumped from the bridge is readable in a debugger, and the
+// reason app_test.go's nodeStyle, wasm/verify and ios/verify can each decode
+// the half of the tree they care about without a shared schema. A vocabulary
+// puts a 58-entry table in three readers and a writer, and puts every one of
+// those tools behind it.
+//
+// And it is dominated. The same payload's other lever — sending only the
+// core.List children near the viewport — is worth 66-76% of the bytes rather
+// than 17-28%, on the same screen, with no change to how a field is spelled.
+// See TestWhatWindowingWouldSave in examples/tutorial for that profile and for
+// what it is still waiting on.
 type Style struct {
 	FontSize     float64     `json:",omitzero"`
 	FontWeight   Weight      `json:",omitzero"`
@@ -624,9 +673,65 @@ const (
 	Bold   Weight = 700
 )
 
+// EdgeInsets is a box's inset on each of its four sides, plus the two axis
+// shorthands the PaddingHorizontal / PaddingVertical props write.
+//
+// # Why every field is `omitzero`, and why the argument is not Style's
+//
+// Style's fields carry these tags because a zero field tells a renderer
+// nothing it does not already assume (see the note on Style). That argument
+// is about a *default*. This struct's is stronger and older: all four
+// renderers resolve a side by asking whether it is non-zero, and take the
+// axis shorthand when it is not —
+//
+//	top = Top != 0 ? Top : Vertical        htmlout.edgeSide
+//	                                       GrMobStyle.kt   parseEdges
+//	                                       GrMobStyle.swift parseEdges
+//	                                       grmob-runtime.js edgeToCSS
+//
+// — so a zero side is already *defined* to mean "unset, use the axis". A
+// field whose zero means "I said nothing" is precisely a field that can be
+// left off the wire, and every one of the four reads a missing key back as 0
+// (optInt(name, 0), (obj[key] as? NSNumber)?.intValue ?? 0, `explicit || 0`).
+// htmlout takes the Go value directly and never sees JSON at all.
+//
+// This is lossy in exactly the way it has always been lossy — a hand-built
+// {Horizontal: 16, Left: 0} cannot ask for a real zero left inset, which
+// htmlout/edges.go documents at length — and the tags neither widen nor
+// narrow that. They only stop writing the fields that were already saying
+// nothing.
+//
+// # What it was costing
+//
+// Six untagged ints wrote all six every time. On the tutorial's contents
+// screen, 77 insets (68 Padding, 9 Margin) crossed the bridge and the axis
+// pair was zero in every one of them, because the DSL's side props settle the
+// shorthand into the sides before writing (core/padding_sides.go) — so the
+// two fields that exist to be a shorthand were, on this screen, pure
+// overhead:
+//
+//	"Horizontal":0   77 × 15 bytes   1,155
+//	"Vertical":0     77 × 13 bytes   1,001
+//	                                 ─────
+//	                                 2,156 bytes, 4.0% of the screen
+//
+// Small next to the 370KB the Style-level tags took off, and free in a way
+// that one was not: no renderer changed, because none of them could tell the
+// difference.
 type EdgeInsets struct {
-	Top, Right, Bottom, Left int
-	Horizontal, Vertical     int
+	Top    int `json:",omitzero"`
+	Right  int `json:",omitzero"`
+	Bottom int `json:",omitzero"`
+	Left   int `json:",omitzero"`
+
+	// Horizontal and Vertical stand in for the pair of sides on their axis,
+	// and are read only where that side is zero. They are the two fields the
+	// tags above were worth adding for: the DSL writes both a side and its
+	// axis (PaddingHorizontal sets Left, Right *and* Horizontal, so a later
+	// PaddingLeft(0) can settle it), which leaves the axis fields zero on
+	// every inset a side prop built.
+	Horizontal int `json:",omitzero"`
+	Vertical   int `json:",omitzero"`
 }
 type StyleProp interface {
 	Apply(*Style)

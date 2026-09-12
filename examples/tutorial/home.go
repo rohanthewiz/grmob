@@ -32,10 +32,11 @@ func (t *tutorial) Home(ctx *core.Context) core.View {
 	// JSON on its way across the bridge — paid for all 49 rows whether or not
 	// Compose composes them.
 	//
-	// That 423KB is 53KB now, and the Android launch 3.5s: 92% of it was
+	// That 423KB is 51KB now, and the Android launch 3.5s: 92% of it was
 	// core.Style's zero-valued fields, written out for every node, and the
-	// fields are `,omitzero`. So the second number above is the reading that
-	// prompted the fix rather than the reading today. See
+	// fields are `,omitzero` (the last 2KB of it came off later, when the same
+	// tags reached core.EdgeInsets). So the second number above is the reading
+	// that prompted the fix rather than the reading today. See
 	// android/device/launch.sh for the four arms and the attribution,
 	// TestHomeTreeSize for the bytes, and the note above core.Style for the
 	// tags; LiveMapUITests carries the iOS readings and what else was in that
