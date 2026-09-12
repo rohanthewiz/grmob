@@ -1,6 +1,14 @@
 # Low-hanging fruit for `comps`
 
-**Status:** Proposed 2026-09-12. Nothing here has landed.
+**Status:** In progress. A1 `Dialog` and A2 `SwitchRow`/`CheckboxRow` landed
+2026-09-12, with tutorial lesson 6.6 "Dialog and settings rows".
+
+**Correction found while landing A2:** rendering the row's control
+`core.Disabled(true)` (the approach sketched under A2) was rejected. Disabled
+is the platform disabled state, so every target draws the control greyed and
+screen readers call it dimmed. The shipped row keeps the control live and
+routes both the row's tap and the control's toggle through one guarded
+setter; see the `SwitchRow` doc comment for the per-target dispatch table.
 **Date:** 2026-09-12
 **Driver:** A survey of `comps/` against the widget set a typical mobile app
 reaches for first, filtered by one question: *can it be built entirely on
@@ -350,7 +358,7 @@ with the decision it settled recorded in the widget's doc comment.
   change.
 - A `## <Name>` section in `docs/components.md` and the generated
   `docs/api/comps.md` regenerated with `go run ./internal/apidoc/gen`.
-- The widget appears in `examples/components.go` so the gallery shows it on
-  all four targets.
+- The widget appears in a tutorial lesson so it is exercised on all four
+  targets. (`examples/components.go` is a small input demo, not a gallery.)
 - No file under `htmlout/`, `wasm/`, `android/` or `ios/` changed. If one had
   to be, the widget was not low-hanging and belongs in a different plan.

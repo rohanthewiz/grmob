@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/rohanthewiz/grmob/core"
+	"github.com/rohanthewiz/grmob/render"
 )
 
 // Chapter 6 demo-liveness tests. The navigation lessons drive the app's real
@@ -278,4 +279,74 @@ func TestToastEmitsSystemEvents(t *testing.T) {
 		t.Fatal("the lesson's counter should have seen all three")
 	}
 	assertNoConcerns(t)
+}
+
+// --- 6.6 Dialog and settings rows ------------------------------------------
+
+// tapRowTitled dispatches the click of the tappable non-Button row whose
+// subtree shows title, which is how a reader taps a settings row off its
+// control. It matches the deepest such node, so the lesson's scaffold (which
+// is not clickable) can never be picked instead.
+func tapRowTitled(t *testing.T, mgr *render.Manager, title string) {
+	t.Helper()
+	rows := findNodes(tree(t, mgr), func(n *node) bool {
+		_, clickable := n.Props["onClick"].(string)
+		return clickable && n.Type == "Row" && hasText(n, title)
+	})
+	if len(rows) == 0 {
+		t.Fatalf("no tappable row titled %q", title)
+	}
+	mgr.DispatchCallback(rows[len(rows)-1].Props["onClick"].(string))
+}
+
+func TestDialogLessonConfirmsOnlyWhenTheSwitchIsOn(t *testing.T) {
+	mgr := newApp(t)
+	openLesson(t, mgr, "Dialog and settings rows")
+
+	if modalNode(t, tree(t, mgr)).Props["visible"] != false {
+		t.Fatal("the dialog must start closed")
+	}
+
+	// Switch on (the default): delete asks first, Keep backs out.
+	tap(t, mgr, "Delete a note")
+	if modalNode(t, tree(t, mgr)).Props["visible"] != true {
+		t.Fatal("with the switch on, delete must open the dialog")
+	}
+	tap(t, mgr, "Keep")
+	cur := tree(t, mgr)
+	if modalNode(t, cur).Props["visible"] != false || !hasText(cur, "Notes left: 3") {
+		t.Fatal("Keep must close the dialog through OnDismiss and delete nothing")
+	}
+
+	// Confirm, with the checkbox ticked by tapping its row, not the box.
+	tapRowTitled(t, mgr, "Also delete attachments")
+	tap(t, mgr, "Delete a note")
+	tap(t, mgr, "Delete")
+	cur = tree(t, mgr)
+	if !hasText(cur, "Notes left: 2") || !hasText(cur, "✓ note and attachments deleted") {
+		t.Fatal("Delete must remove one note and report the checkbox's value")
+	}
+
+	// Switch off by its row: delete now happens with no dialog.
+	tapRowTitled(t, mgr, "Confirm before deleting")
+	tap(t, mgr, "Delete a note")
+	cur = tree(t, mgr)
+	if modalNode(t, cur).Props["visible"] != false || !hasText(cur, "Notes left: 1") {
+		t.Fatal("with the switch off, delete must skip the dialog")
+	}
+	assertNoConcerns(t)
+}
+
+// The web's double dispatch through the real Manager: the row's click, then
+// the switch's change reporting the value the row already set. One flip.
+func TestDialogLessonSwitchTapReachingGoTwiceFlipsOnce(t *testing.T) {
+	mgr := newApp(t)
+	openLesson(t, mgr, "Dialog and settings rows")
+
+	tapRowTitled(t, mgr, "Confirm before deleting") // bubbled click: true → false
+	toggleBool(t, mgr, "Switch", 0, false)          // change reports false
+	tap(t, mgr, "Delete a note")
+	if modalNode(t, tree(t, mgr)).Props["visible"] != false {
+		t.Fatal("the switch should be off after one tap, so delete must not open the dialog")
+	}
 }

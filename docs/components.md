@@ -542,6 +542,57 @@ the process — `mobileapp`'s feed row no longer appends to a
 is that conditional, declared), and `todoapp`'s footer no longer wraps its
 bulk-clear button in `core.If` (a nil `Trailing` emits no node at all).
 
+## SwitchRow & CheckboxRow
+
+The settings-screen row: a title, an optional subtitle, the control on the
+trailing edge, and the **whole row** tappable rather than only the control.
+
+```go
+comps.SwitchRow{Title: "Notifications", Subtitle: "Push and email",
+    On: notify.Get(), OnToggle: notify.Set}
+
+comps.CheckboxRow{Title: "I agree to the terms",
+    Checked: agreed.Get(), OnToggle: agreed.Set}
+```
+
+Both are a `ListRow` with the trailing slot fixed to `core.Switch` or
+`core.Checkbox` and `OnTap` wired to the same setter. Pick the switch for a
+setting that takes effect on the tap and the checkbox for a value a form
+collects later; see `core.Switch` for why those are different controls.
+
+**One tap, one change.** The row and the control are both tappable, and the
+targets disagree about what a tap on the control reaches:
+
+| Target | Tap on the control | Handlers that fire |
+|---|---|---|
+| Compose | the Switch consumes the press | control only |
+| SwiftUI | the Toggle's gesture wins | control only |
+| Web | native toggle, then the click bubbles to the row | row, then control |
+
+Go cannot tell where a web click landed, so the widget makes the double
+dispatch harmless instead: both handlers **set** a value through one guard
+that drops a report of the value already rendered. The row sets `!On`; the
+control sets whatever the platform reports. After the row's dispatch the app
+re-renders, and the control's `change` then reports the value that is already
+current, so it is dropped.
+
+That is why `OnToggle` is a setter. Apply the value it hands you; do not
+invert your own state inside it.
+
+Rendering the control `Disabled` so only the row handles taps was rejected.
+`Disabled` is the platform's disabled state, so every target would draw the
+switch greyed and every screen reader would call it dimmed.
+
+Other notes:
+
+- The control is named by the row: `Title` becomes its accessibility label
+  and `Subtitle` its hint, so a reader hears "Notifications, switch, on".
+  The row itself takes no role.
+- `Disabled` disables both the row and the control. The row's handler stays
+  registered, as `core.Style.Disabled` requires.
+- `Leading` takes an icon or avatar, and `Style` reaches the underlying
+  `ListRow`.
+
 ## Badge
 
 A small **non-interactive** status pill — a count, a "verified" mark, a
@@ -1506,6 +1557,57 @@ error interrupts, everything else waits for a pause. Override it through
 It is not a toast: `core.ShowToast` disappears on a timer, a Banner stays
 until the state that produced it changes. For an edge-to-edge strip with no
 frame, pass `core.BorderWidth(0)` and `core.BorderRadius(0)` in `Style`.
+
+## Dialog
+
+The "Delete this note?" moment: a title, a sentence, and at most two buttons
+over the screen, built on `core.Modal` and `comps.Card`.
+
+```go
+comps.Dialog{
+    Visible:   confirming.Get(),
+    Title:     "Delete note?",
+    Message:   "This cannot be undone.",
+    Confirm:   comps.DialogAction{Label: "Delete", Variant: comps.VariantError, OnTap: del},
+    Cancel:    comps.DialogAction{Label: "Keep"},        // nil OnTap uses OnDismiss
+    OnDismiss: func() { confirming.Set(false) },
+}
+```
+
+**One struct, three shapes.** Which actions carry a `Label` decides the shape.
+
+| Confirm | Cancel | Shape |
+|---|---|---|
+| set | set | confirm, the two-button "are you sure?" |
+| set | empty | alert, one acknowledgement button |
+| empty | empty | sheet, title and `Body` only |
+
+**Button order is fixed.** Cancel sits on the leading side and is drawn ghost.
+Confirm sits on the trailing side, filled with its own `Variant`, so
+`VariantError` gets the theme's Error fill. The pair is packed to the trailing
+edge. Material 3 and Apple's guidelines agree on this order, and there is no
+knob, because an order field is exactly the disagreement the widget removes.
+
+**Controlled, like `core.Modal`.** The dialog never closes itself.
+
+- A scrim tap, the Android back gesture and an iOS swipe-down all report
+  through `OnDismiss`. Leave it nil for a dialog that must be answered.
+- A `Cancel` with a nil `OnTap` calls `OnDismiss`, so "Keep" and a scrim tap
+  cannot drift apart.
+- `Confirm.OnTap` does not close the dialog. The handler sets `Visible` false
+  once the work it started has an outcome.
+
+Other notes:
+
+- `Body` replaces `Message` with any view: a field, a checkbox row, a list.
+- `DialogAction.Disabled` holds a Confirm back until a `Body` field is valid.
+- The Modal chassis already writes `role="dialog"` on the web and the natives
+  present a platform dialog. The widget adds only the name: the card carries
+  `AccessibilityLabel(Title)` and the title text is a heading.
+- `Style` lands on the card after the widget's own props, so a caller can
+  cap the width with `core.MaxWidth` or replace the label.
+- iOS presents a `core.Modal` as a sheet rather than a centred card. That is
+  the host's rendering of the chassis, not something the widget chooses.
 
 ## EmptyState
 

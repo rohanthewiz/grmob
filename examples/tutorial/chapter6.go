@@ -20,13 +20,14 @@ func chapter6() Chapter {
 	return Chapter{
 		Title:   "Navigation & Overlays",
 		Icon:    "🧭",
-		Summary: "Push, Pop, Replace and the two unwinds — plus Modal and Toast, the overlays that never touch the stack.",
+		Summary: "Push, Pop, Replace and the two unwinds — plus Modal, Toast and Dialog, the overlays that never touch the stack.",
 		Lessons: []Lesson{
 			lessonStack(),
 			lessonReplace(),
 			lessonUnwind(),
 			lessonModal(),
 			lessonToast(),
+			lessonDialogAndSettingsRows(),
 		},
 	}
 }
@@ -538,6 +539,130 @@ core.SetSystemEventHandler(func(name string, data map[string]any) { ... })`),
 					"It is not in the tree: nothing to reconcile, nothing to dismiss, nothing to assert on but the event itself.",
 					"Confirmation only — the moment a notice needs a button or a decision, it has outgrown the toast.",
 					"Hosts opt in with core.SetSystemEventHandler; with none registered, toasts drop silently — correct for headless runs.",
+				),
+			)
+		},
+	}
+}
+
+// --- 6.6 -----------------------------------------------------------------
+
+// lessonDialogAndSettingsRows is 6.4's hand-rolled modal rebuilt from the two
+// comps that replace it: a Dialog for the question and settings rows for the
+// preferences that decide whether the question is asked at all. The demo is a
+// tiny note list whose delete goes through a confirm dialog only when the
+// "Confirm before deleting" switch is on, so a reader sees a SwitchRow change
+// behaviour immediately (a switch's contract) and a CheckboxRow collect a
+// value the dialog acts on later (a checkbox's contract).
+func lessonDialogAndSettingsRows() Lesson {
+	return Lesson{
+		Title:   "Dialog and settings rows",
+		Summary: "comps.Dialog fixes the button order; SwitchRow and CheckboxRow make the whole row the target.",
+		Body: func(ctx *core.Context) core.View {
+			// Slot order is fixed: every hook runs on every pass, above any
+			// branch, so the dialog's visibility never shifts another slot.
+			notes := core.NewState(ctx, 3)
+			confirmFirst := core.NewState(ctx, true)
+			withAttachments := core.NewState(ctx, false)
+			confirming := core.NewState(ctx, false)
+			last := core.NewState(ctx, "")
+
+			// deleteNote is the one place a note is removed, so the dialog
+			// path and the no-confirm path cannot report different outcomes.
+			deleteNote := func() {
+				if notes.Get() > 0 {
+					notes.Set(notes.Get() - 1)
+				}
+				detail := "note deleted"
+				if withAttachments.Get() {
+					detail = "note and attachments deleted"
+				}
+				last.Set(detail)
+				confirming.Set(false)
+			}
+
+			return core.Column(
+				core.Gap(14),
+				prose("6.4 built a dialog by hand: a Modal, a Card, a title, a Row of two "+
+					"Buttons. Every app writes that shape, and the hand-rolls disagree on the "+
+					"two things a dialog must agree on — which side Cancel sits, and which "+
+					"button looks dangerous. comps.Dialog settles both: Cancel is leading and "+
+					"ghost, Confirm is trailing and filled with its own Variant. There is no "+
+					"order knob."),
+				codeBlock(`comps.Dialog{
+    Visible:   confirming.Get(),
+    Title:     "Delete note?",
+    Message:   "This cannot be undone.",
+    Confirm:   comps.DialogAction{Label: "Delete", Variant: comps.VariantError, OnTap: del},
+    Cancel:    comps.DialogAction{Label: "Keep"},   // nil OnTap → OnDismiss
+    OnDismiss: func() { confirming.Set(false) },
+}`),
+				prose("Leave Cancel's label empty and it is an alert with one button; leave "+
+					"both empty and it is a sheet whose Body carries its own controls. One "+
+					"struct, three shapes. It is still controlled: the dialog never closes "+
+					"itself, and Confirm's handler decides when Visible goes false."),
+				prose("SwitchRow and CheckboxRow are the settings-screen row: the whole row is "+
+					"the tap target, not just the control. On the web a tap on the switch "+
+					"reaches Go twice (the click bubbles to the row, then the input's change "+
+					"fires), so both handlers set a value through one guard rather than flip "+
+					"it. That is why OnToggle is a setter — hand it notify.Set, not a toggle."),
+				codeBlock(`comps.SwitchRow{Title: "Confirm before deleting",
+    On: confirmFirst.Get(), OnToggle: confirmFirst.Set}
+comps.CheckboxRow{Title: "Also delete attachments",
+    Checked: withAttachments.Get(), OnToggle: withAttachments.Set}`),
+				demoPanel("Tap anywhere on a row, not just its control. Then delete a note with the switch on, and again with it off.",
+					comps.SwitchRow{
+						Title:    "Confirm before deleting",
+						Subtitle: "Ask before a note is removed",
+						On:       confirmFirst.Get(),
+						OnToggle: confirmFirst.Set,
+					},
+					comps.CheckboxRow{
+						Title:    "Also delete attachments",
+						Checked:  withAttachments.Get(),
+						OnToggle: withAttachments.Set,
+					},
+					core.Row(
+						core.Gap(8),
+						comps.Button{
+							Label:    "Delete a note",
+							Variant:  comps.VariantError,
+							Disabled: notes.Get() == 0,
+							OnTap: func() {
+								if confirmFirst.Get() {
+									confirming.Set(true)
+									return
+								}
+								deleteNote()
+							},
+						},
+						comps.Button{
+							Label:    "Restore notes",
+							Emphasis: comps.EmphasisOutlined,
+							OnTap:    func() { notes.Set(3); last.Set("") },
+						},
+					),
+					caption(fmt.Sprintf("Notes left: %d", notes.Get())),
+					core.If(last.Get() != "", caption("✓ "+last.Get())),
+					comps.Dialog{
+						Visible: confirming.Get(),
+						Title:   "Delete note?",
+						Message: "This cannot be undone.",
+						Confirm: comps.DialogAction{
+							Label:   "Delete",
+							Variant: comps.VariantError,
+							OnTap:   deleteNote,
+						},
+						Cancel:    comps.DialogAction{Label: "Keep"},
+						OnDismiss: func() { confirming.Set(false) },
+					},
+				),
+				keyPoints(
+					"Dialog is Modal + Card + a fixed button row: Cancel leading and ghost, Confirm trailing and filled with its Variant.",
+					"Which actions carry a Label picks the shape — confirm, alert, or a sheet with a Body slot.",
+					"Controlled like Modal: OnDismiss reports the scrim tap, a nil Cancel.OnTap falls back to it, and Confirm never closes the dialog for you.",
+					"SwitchRow and CheckboxRow make the whole row the target and name the control after the row's Title.",
+					"OnToggle is a setter: the web reports a tap on the control twice, and a guarded set is what turns that into one change.",
 				),
 			)
 		},

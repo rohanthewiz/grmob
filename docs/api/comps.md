@@ -53,6 +53,8 @@ Two widgets do: Accordion (expanded or collapsed) and DatePicker (is the sheet o
     - [`func (Calendar) Render`](#func-calendar-render)
 - [`type Card`](#type-card)
     - [`func (Card) Render`](#func-card-render)
+- [`type CheckboxRow`](#type-checkboxrow)
+    - [`func (CheckboxRow) Render`](#func-checkboxrow-render)
 - [`type Chip`](#type-chip)
     - [`func (Chip) Render`](#func-chip-render)
 - [`type ChipStrip`](#type-chipstrip)
@@ -69,6 +71,9 @@ Two widgets do: Accordion (expanded or collapsed) and DatePicker (is the sheet o
     - [`func (DataTable) Render`](#func-datatable-render)
 - [`type DatePicker`](#type-datepicker)
     - [`func (DatePicker) Render`](#func-datepicker-render)
+- [`type Dialog`](#type-dialog)
+    - [`func (Dialog) Render`](#func-dialog-render)
+- [`type DialogAction`](#type-dialogaction)
 - [`type Emphasis`](#type-emphasis)
 - [`type EmptyState`](#type-emptystate)
     - [`func (EmptyState) Render`](#func-emptystate-render)
@@ -120,6 +125,8 @@ Two widgets do: Accordion (expanded or collapsed) and DatePicker (is the sheet o
 - [`type StaticMapArea`](#type-staticmaparea)
 - [`type StaticMapProvider`](#type-staticmapprovider)
     - [`func GoogleStaticMap`](#func-googlestaticmap)
+- [`type SwitchRow`](#type-switchrow)
+    - [`func (SwitchRow) Render`](#func-switchrow-render)
 - [`type Tabs`](#type-tabs)
     - [`func (Tabs) Render`](#func-tabs-render)
 - [`type Variant`](#type-variant)
@@ -1098,6 +1105,52 @@ func (c Card) Render(ctx *core.Context) *core.Node
 
 <small>[comps/card.go:35](https://github.com/rohanthewiz/grmob/blob/master/comps/card.go#L35)</small>
 
+### type CheckboxRow
+
+```go
+type CheckboxRow struct {
+	// Title is the choice's text. It is also the checkbox's accessible label.
+	Title string
+
+	// Subtitle is the secondary line under the title, and the checkbox's
+	// accessibility hint.
+	Subtitle string
+
+	// Leading is an optional icon or avatar before the text.
+	Leading core.View
+
+	// Checked is the caller's current value.
+	Checked bool
+
+	// OnToggle receives the new value. It is a setter; see SwitchRow.OnToggle.
+	OnToggle func(checked bool)
+
+	// Disabled disables both the checkbox and the row.
+	Disabled bool
+
+	// Style is passed to the underlying ListRow and so beats its defaults.
+	Style []core.StyleProp
+}
+```
+
+CheckboxRow is SwitchRow with a core.Checkbox on the trailing edge: the "I agree to the terms" row, or a filter a form will apply later. Everything in SwitchRow's doc applies unchanged, including OnToggle being a setter.
+
+	comps.CheckboxRow{Title: "I agree to the terms", Checked: ok.Get(), OnToggle: ok.Set}
+
+Inside a comps.FormField the field owns the label, so leave Title empty and put the sentence in the field's Label, or keep Title and give the field no label; the row renders the same either way.
+
+<small>[comps/settings_row.go:116](https://github.com/rohanthewiz/grmob/blob/master/comps/settings_row.go#L116)</small>
+
+#### func (CheckboxRow) Render
+
+```go
+func (r CheckboxRow) Render(ctx *core.Context) *core.Node
+```
+
+Render builds the ListRow described in SwitchRow's doc.
+
+<small>[comps/settings_row.go:141](https://github.com/rohanthewiz/grmob/blob/master/comps/settings_row.go#L141)</small>
+
 ### type Chip
 
 ```go
@@ -1893,6 +1946,153 @@ func (p DatePicker) Render(ctx *core.Context) *core.Node
 ```
 
 <small>[comps/date_picker.go:139](https://github.com/rohanthewiz/grmob/blob/master/comps/date_picker.go#L139)</small>
+
+### type Dialog
+
+```go
+type Dialog struct {
+	// Visible is the caller's open/closed state. The Modal renders its content
+	// on every pass regardless and the host maps this to visibility.
+	Visible bool
+
+	// Title names the dialog. It is drawn as the card's heading and doubles as
+	// the dialog's accessible name. Leave it empty only when Body names itself.
+	Title string
+
+	// Message is the one or two sentences under the title. Ignored when Body
+	// is set.
+	Message string
+
+	// Body replaces Message with arbitrary content: a checkbox, a text field,
+	// a list. It is the escape hatch in the same simple-path-plus-slot idiom
+	// as ListRow.Content and Card.Header.
+	Body core.View
+
+	// Confirm is the affirmative action, drawn filled on the trailing side. A
+	// zero Label omits it.
+	Confirm DialogAction
+
+	// Cancel is the dismissive action, drawn ghost on the leading side. A zero
+	// Label omits it. A nil OnTap falls back to OnDismiss.
+	Cancel DialogAction
+
+	// OnDismiss is called for a backdrop tap and as Cancel's fallback. Nil
+	// makes the scrim inert.
+	OnDismiss func()
+
+	// Backdrop overrides the scrim colour. Empty keeps core.Modal's default.
+	Backdrop string
+
+	// Style is applied to the card, after the widget's own props, so it can
+	// override padding, width or background.
+	Style []core.StyleProp
+}
+```
+
+Dialog is the "Delete this note?" moment: a title, a sentence, and a row of at most two buttons, drawn over the screen in a core.Modal.
+
+	comps.Dialog{
+	    Visible:   confirming.Get(),
+	    Title:     "Delete note?",
+	    Message:   "This cannot be undone.",
+	    Confirm:   comps.DialogAction{Label: "Delete", Variant: comps.VariantError, OnTap: del},
+	    Cancel:    comps.DialogAction{Label: "Keep"},
+	    OnDismiss: func() { confirming.Set(false) },
+	}
+
+#### Why the widget exists
+
+core.Modal draws the scrim and the sheet and nothing inside them, so every caller hand-rolled the card, the title and the button row — and the hand-rolls disagreed on the two things a dialog must be consistent about: which side the cancel button sits on, and which button looks dangerous. Dialog settles both and adds nothing else.
+
+#### One struct, three shapes
+
+The shape follows from which actions carry a Label, not from a mode field:
+
+	Confirm  Cancel   shape
+	───────  ──────   ─────────────────────────────────────────────
+	  set     set     confirm — the two-button "are you sure?"
+	  set      —      alert   — one acknowledgement button
+	   —       —      sheet   — title and body only; the Body slot
+	                            carries its own controls, and a backdrop
+	                            tap (OnDismiss) is the way out
+
+Three widgets for these would share every line but the footer, and a caller moving from an alert to a confirm would have to change type rather than add a field. A Cancel with no Confirm is drawn as a lone button too; it is an alert whose one button happens to be the dismissive one.
+
+#### Button order is fixed: cancel leading, confirm trailing
+
+Material 3 and Apple's HIG both put the dismissive action on the leading side and the affirmative one on the trailing side of a horizontal pair, and the web has no convention strong enough to argue with them. There is no order knob: an order field is exactly the per-call-site disagreement this widget exists to remove. The pair is packed against the trailing edge (JustifyEnd), which is where both platforms put it and where a thumb is.
+
+Cancel is always drawn EmphasisGhost so it reads as the way out. Confirm is filled and takes its own Variant, so a destructive action says VariantError and gets the theme's Error fill with an ink chosen for contrast by Button.
+
+#### Controlled, like core.Modal
+
+Dialog holds no state and never closes itself. Visible renders the caller's state; every way out reports intent and leaves the decision with the caller:
+
+  - A backdrop tap calls OnDismiss, and so do the platform gestures the hosts route through the same prop: Compose's Dialog reports the back gesture and an outside tap through onDismissRequest, and SwiftUI (which presents a Modal as a sheet, not a centred card) reports a swipe-down. With OnDismiss nil the web scrim is inert, which is how a dialog that must be answered is written; the natives may still hide the sheet, but Visible stays true in Go and the next render shows it again.
+  - Cancel.OnTap, when nil, falls back to OnDismiss. "Keep" and a tap on the scrim almost always mean the same thing, and writing the same closure twice is how the two drift apart.
+  - Confirm.OnTap does not close the dialog. Confirming usually starts work whose outcome decides what shows next (close, or show an error), so the caller's handler sets Visible false when it is ready to.
+
+Because core.Modal hides rather than unmounts, a Body slot's hook state survives a close; reset it in OnDismiss if the dialog should forget.
+
+#### Accessibility
+
+Both web targets write role="dialog" and aria-modal on the Modal chassis and both natives present a platform dialog, so the widget does not add a role (core.Role deliberately has no RoleDialog; see core/role.go). What the chassis cannot know is the dialog's name, so the card carries AccessibilityLabel(Title). The title text is also a section heading, via Card, so a reader can jump to it.
+
+#### Theme roles read
+
+	Card base       Components.Card, through core.Card
+	Title           Typography.Subtitle, bold (Card's title treatment)
+	Message         Typography.Body
+	Confirm fill    Variant.Color — Colors.Primary, or Error/Success/Warning
+	Cancel ink      Colors.Primary's on-light tone (ghost Button)
+	Button gap      Spacing.SM
+
+<small>[comps/dialog.go:94](https://github.com/rohanthewiz/grmob/blob/master/comps/dialog.go#L94)</small>
+
+#### func (Dialog) Render
+
+```go
+func (d Dialog) Render(ctx *core.Context) *core.Node
+```
+
+Render builds Modal > Card(title, body, footer).
+
+	┌ Modal (scrim; role=dialog on the web) ────────────────┐
+	│  ┌ Card  AccessibilityLabel(Title) ────────────────┐  │
+	│  │ Title                                (heading)  │  │
+	│  │ Message  — or —  Body                           │  │
+	│  │                        ┌ Row JustifyEnd ──────┐ │  │
+	│  │                        │ [Cancel]  [Confirm]  │ │  │
+	│  │                        └──────────────────────┘ │  │
+	│  └─────────────────────────────────────────────────┘  │
+	└───────────────────────────────────────────────────────┘
+
+<small>[comps/dialog.go:161](https://github.com/rohanthewiz/grmob/blob/master/comps/dialog.go#L161)</small>
+
+### type DialogAction
+
+```go
+type DialogAction struct {
+	// Label is the button text. Empty means the action is absent.
+	Label string
+
+	// OnTap is called when the button is pressed.
+	OnTap func()
+
+	// Variant colours a Confirm button's fill (VariantError for a destructive
+	// action). A Cancel button is always ghost and reads only the variant's
+	// on-light ink, so Cancel's Variant is rarely worth setting.
+	Variant Variant
+
+	// Disabled greys the button and drops its taps, for a Confirm that waits
+	// on a Body field ("type DELETE to confirm") or on work in flight.
+	Disabled bool
+}
+```
+
+DialogAction is one button in a Dialog's footer.
+
+<small>[comps/dialog.go:133](https://github.com/rohanthewiz/grmob/blob/master/comps/dialog.go#L133)</small>
 
 ### type Emphasis
 
@@ -4166,6 +4366,88 @@ A constructor rather than a bare provider because the key is the caller's: it is
 An empty key yields a provider that returns "", which renders the widget as a box with no image in it rather than as a map of Google's "this request is not authorized" error tile. A misconfigured build should look unfinished, not broken.
 
 <small>[comps/static_map.go:380](https://github.com/rohanthewiz/grmob/blob/master/comps/static_map.go#L380)</small>
+
+### type SwitchRow
+
+```go
+type SwitchRow struct {
+	// Title is the setting's name. It is also the control's accessible label.
+	Title string
+
+	// Subtitle is the secondary line under the title, and the control's
+	// accessibility hint.
+	Subtitle string
+
+	// Leading is an optional icon or avatar before the text, as in ListRow.
+	Leading core.View
+
+	// On is the caller's current value.
+	On bool
+
+	// OnToggle receives the new value. It is a setter — apply the value; do
+	// not invert your own state — because on the web the row and the switch
+	// can both report one tap (see the type doc).
+	OnToggle func(on bool)
+
+	// Disabled disables both the switch and the row: no taps reach OnToggle,
+	// and the control is announced as disabled.
+	Disabled bool
+
+	// Style is passed to the underlying ListRow and so beats its defaults.
+	Style []core.StyleProp
+}
+```
+
+SwitchRow is the settings-screen row: a title, an optional subtitle, a switch on the trailing edge, and the whole row tappable rather than only the switch.
+
+	comps.SwitchRow{Title: "Notifications", Subtitle: "Push and email",
+	    On: notify.Get(), OnToggle: notify.Set}
+
+It is ListRow with the trailing slot fixed to core.Switch and OnTap wired to the same setter. CheckboxRow, below, is the same row with a core.Checkbox: the switch for a setting that takes effect on the tap, the checkbox for a value a form collects (see core.Switch for why the two are different controls).
+
+#### One tap, one state change
+
+The row and the control are both tappable, and the targets disagree about what a tap on the control does:
+
+	target    tap on the control                      handlers that fire
+	───────   ─────────────────────────────────────   ──────────────────────
+	Compose   Switch's toggleable consumes the press   control only
+	SwiftUI   Toggle's gesture wins over the row's     control only
+	web       native toggle, then the click BUBBLES    row (click), then
+	          to the row <div>, then `change` fires    control (change)
+
+On the web one tap therefore reaches Go twice. Go cannot tell which element the click landed on, so the row cannot skip its handler for taps "on the control". Two other ways out were considered and rejected:
+
+  - Render the control Disabled and let the row be the only handler. That is what the web runtime would need (a disabled control gets pointer-events:none, so the click falls through), but Disabled is the platform's disabled state, not a hit-test flag: Material, SwiftUI and the browser all draw the control greyed, and every screen reader says "dimmed". A settings screen of disabled-looking switches is broken.
+  - Give the control a no-op handler. On both natives the control consumes its own press, so tapping the switch itself would do nothing.
+
+What makes the double dispatch harmless is that both handlers \*set\* a value rather than flip one, and both go through one guard:
+
+	set(v) = if v != On { OnToggle(v) }
+
+The row calls set(!On) with the On it was rendered with. The control calls set(v) with the value the platform reports. On the web the row's click is dispatched first, Go re-renders, and the registry now holds closures over the new On (callback IDs are positional per pass and a pass overwrites each handler; see core's callbackRegistry). The \`change\` that follows reports the same v, which now equals On, so the guard drops it. If the two events ever arrived within one pass, both would compute the same target value and a setter is idempotent. Either way OnToggle sees exactly one change per tap.
+
+OnToggle is therefore documented as a setter: it receives the new value, and a caller should apply it rather than invert its own state.
+
+#### Accessibility
+
+The control carries AccessibilityLabel(Title) and, when present, AccessibilityHint(Subtitle), so a reader landing on it hears "Notifications, switch, on" rather than an unnamed switch; a platform control has no label of its own (core.Switch leaves it to the caller). The row takes no role: ListRow's rule is that a container is not relabelled, and the switch or checkbox is the control a reader is looking for.
+
+#### Theme roles read
+
+Everything ListRow reads (Spacing.SM gap, Typography.Body and Caption for the text), plus Components.CheckBox through the control.
+
+<small>[comps/settings_row.go:73](https://github.com/rohanthewiz/grmob/blob/master/comps/settings_row.go#L73)</small>
+
+#### func (SwitchRow) Render
+
+```go
+func (r SwitchRow) Render(ctx *core.Context) *core.Node
+```
+
+Render builds the ListRow described in the type doc.
+
+<small>[comps/settings_row.go:101](https://github.com/rohanthewiz/grmob/blob/master/comps/settings_row.go#L101)</small>
 
 ### type Tabs
 
