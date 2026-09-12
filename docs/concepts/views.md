@@ -270,6 +270,8 @@ something else held last pass, and the double-load comes back.
 | `Slider` | `Slider(value, min, max, onChange, ...)` with `OnSliderChangeEnd(fn)` (fires once on release — the one a seek bar acts on) and `SliderStep(s)` |
 | `Image` | `Image(src, styleProps...)` |
 | `TextGrid` | `TextGrid(rows []GridRow, props...)` — a monospace grid of styled runs (a terminal pane, a log tail); each `GridRun` has `Text`, `Fg`, `Bg` and `Attr` bits (`GridBold`, `GridDim`, `GridItalic`, `GridUnderline`, `GridStrike`). Rows are children, so a changed row is one patch |
+| `CodeEditor` | `CodeEditor(value, onChange, rows []GridRow, props...)` — an editable monospace buffer whose decoration is a `TextGrid`'s rows. `LineNumbers()`, `ReadOnly()`, `TabSize(n)`, `CommentPrefix(s)`, `OnSelectionChange(fn)`, `EditorTarget(ref)`. A node type rather than a composition because `Style` has no font family, so a transparent `TextArea` over a `TextGrid` cannot be pitch-matched from outside — see below. Prefer the [`components.CodeEditor`](../components.md#codeeditor) facade, which runs the lexer for you |
+| `RichTextEditor` | `RichTextEditor(doc richtext.Doc, onChange, props...)` — an editable formatted document. `Placeholder(s)`, `ReadOnly()`, `OnRichSelectionChange(fn)`, `EditorTarget(ref)`. The value is a `richtext.Doc` on every target, crossing as JSON, so storage never sees a platform's own markup. Prefer the [`components.RichTextEditor`](../components.md#richtexteditor) facade |
 | `CameraView` | `CameraView(props...)` with `OnCapture`, `WithOverlay`, `SetFacing`, ... |
 | `MapView` | `MapView(Region{Lat, Lng, Zoom}, props...)` — the platform's own live map (MapKit, osmdroid, Leaflet). Pins are **child nodes**: `Marker(id, lat, lng, title)`, keyed by their id, so a marker that moves is one patch rather than a rebuilt annotation layer. `ShowUserLocation()`, `OnRegionChange(fn)`, `OnMarkerTap(fn)`, `OnMapTap(fn)`. Go's `Region` is applied only when it **changes** — see below. For "where is this", [`components.StaticMap`](../components.md#staticmap) is the smaller answer |
 | `Modal` | `Modal(Visible(b), OnDismiss(fn), Backdrop(color), ...)` |
@@ -278,6 +280,25 @@ something else held last pass, and the double-load comes back.
 Inputs are **controlled**: you pass the current value in and receive changes
 through `onChange`; the value on screen is whatever your state says it is.
 The [tutorial](../tutorial-todo.md) covers the echo/rewrite contract in depth.
+
+`CodeEditor` is controlled with two more rules on top, because Go owns the
+*colours* of a buffer the host owns. **Decoration is advisory and per line**: a
+host applies row *N*'s styling only when that row's text still equals its own
+line *N*, so the line being typed goes plain for the frame Go is behind and no
+other line does — and never the other way round, so a wrong lexer can make the
+screen ugly and can never make it lose a character. **Commands are
+epoch-stamped props**: `RunEditorCommand(ref, EditIndent)` bumps a counter on an
+`EditorRef` and the host acts once when the counter changes, on its own
+selection. A counter rather than a flag for `Focus`'s reason — the same command
+twice has to reach the host twice — with one deliberate difference from a focus
+command: an editor that mounts under a standing epoch adopts it without running
+it, because a command names a moment and an editor that was not there missed it.
+
+`RichTextEditor` shares the echo guard and the command epoch, and needs no
+stale-line rule: the doc **is** the styled buffer, so there is no second fact to
+disagree with the first. Its commands are `EditBold` and friends, plus
+`EditLink(url)` and `EditBlock(kind)` — the two that carry an argument, which
+rides in the command string after the first colon.
 
 `MapView` is controlled too, with the one exception that makes it usable: its
 `Region` is applied to the host map **only when it changes**, never re-asserted

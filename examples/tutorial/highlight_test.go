@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/rohanthewiz/grmob/core"
+	"github.com/rohanthewiz/grmob/highlight"
 )
 
 // rowsText reassembles a highlighted snippet from its rows and runs. Every
@@ -25,6 +26,26 @@ func rowsText(rows []core.GridRow) string {
 		lines[i] = b.String()
 	}
 	return strings.Join(lines, "\n")
+}
+
+// rowsEqual compares two highlightings run for run — text, colours and
+// attribute bits. Used to ask whether a snippet came back uncoloured, so it
+// has to be sensitive to the colours and not only to the text.
+func rowsEqual(a, b []core.GridRow) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if len(a[i]) != len(b[i]) {
+			return false
+		}
+		for j := range a[i] {
+			if a[i][j] != b[i][j] {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 // tutorialSnippets reads every literal Go snippet the tutorial ships, by
@@ -100,9 +121,22 @@ func TestEveryTutorialSnippetHighlights(t *testing.T) {
 			"the extraction above has probably stopped matching", len(snippets))
 	}
 	for pos, code := range snippets {
+		// "Lexes cleanly" is asked the only way the public highlighter can be
+		// asked it: a snippet that fell back is *identical* to the same
+		// snippet through highlight.Plain, because that is precisely what the
+		// fallback returns. The two differ for every snippet the tutorial
+		// ships, because every one of them contains at least one keyword,
+		// literal, comment or call — so a fallback shows up here as a snippet
+		// that came back plain.
+		//
+		// Asked this way rather than by reaching into the package's scanner,
+		// which is where it used to be asked from when the scanner was in this
+		// file. The claim is about the rendered rows anyway: a snippet whose
+		// scan failed but whose colours came out right would not be a bug.
 		src := strings.Trim(code, "\n")
-		if _, ok := scanGo(src); !ok {
-			t.Errorf("%s: snippet does not lex cleanly, so it renders unhighlighted:\n%s", pos, src)
+		if rowsEqual(highlightGo(code), highlight.Plain().Rows(src, highlight.Darcula)) {
+			t.Errorf("%s: snippet renders with no colour at all, which means it did not "+
+				"lex cleanly and fell back:\n%s", pos, src)
 		}
 	}
 }

@@ -72,6 +72,15 @@ struct RenderNode: View {
             case "Switch": GrMobSwitch(node: node, grow: grow)
             case "Slider": GrMobSlider(node: node, grow: grow)
             case "TextGrid": GrMobTextGrid(node: node, grow: grow)
+            // The programmer's editor. Its rows are a grid's rows and it draws
+            // them itself, over a UITextView that owns the buffer — see
+            // GrMobCodeEditor.swift, and core/codeeditor.go for why neither
+            // SwiftUI nor a Go-side overlay can express this.
+            case "CodeEditor": GrMobCodeEditor(node: node, grow: grow)
+            // The prose editor. Its value is a richtext.Doc, mapped to and from
+            // an NSAttributedString — see GrMobRichText.swift, and
+            // core/richtext.go for why the document is Go's on every target.
+            case "RichTextEditor": GrMobRichTextEditor(node: node, grow: grow)
             // A row reached on its own (never from core.TextGrid, which draws
             // its rows itself) still renders as a line of runs.
             case "GridRow": GrMobGridRow(node: node, base: nil)

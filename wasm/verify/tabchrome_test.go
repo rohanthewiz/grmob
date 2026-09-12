@@ -45,20 +45,35 @@ func TestRuntimeDrawsTheSameTabChrome(t *testing.T) {
 
 // The other half of the contract: the bar is chrome, so nothing in the runtime
 // may give it a data-node-path, and both places that turn a node child index
-// into a DOM child index have to shift past it.
+// into a DOM child index have to account for it.
 //
 // The two index sites are the failure this pass could most easily have
 // introduced and the one no visual check would catch: a page added to a TabView
 // landing in front of the bar, and every path after it one slot out of step
 // with the element that answers to it.
+//
+// # Why the two sites are spelled differently
+//
+// They were one expression and its inverse — `index + chromeOffset` going in,
+// `children.length - chromeOffset` coming back — and the second stopped being
+// correct when a second kind of chrome appeared. A CodeEditor's filler rows
+// (the stand-ins for buffer lines Go has not sent a row for yet) *trail* the
+// node children, so subtracting the leading chrome from the total counts them
+// as node children and names the next row after a slot that is already taken.
+// Counting the children that carry a path answers the same question for a
+// TabView and keeps answering it for an editor, so that is what nodeChildCount
+// does; the insertion site is unchanged, because inserting before the first
+// filler is exactly where a row appended at the end belongs.
 func TestRuntimeShiftsChildIndicesPastTheChrome(t *testing.T) {
 	src := runtimeSource(t)
 	for _, want := range []string{
-		// "add": the slot a path names, shifted past the chrome.
+		// "add": the slot a path names, shifted past the leading chrome.
 		`parent.children[index + chromeOffset(parent)]`,
-		// "add-child": the new child's node index, which is the DOM count
-		// minus the chrome ahead of it.
-		`el.children.length - chromeOffset(el)`,
+		// "add-child": the new child's node index, counted rather than derived.
+		`const index = nodeChildCount(el);`,
+		// And what that counts, which is the whole reason it is not a
+		// subtraction: children that answer to a path.
+		`if (child.getAttribute("data-node-path") !== null) n++;`,
 	} {
 		if !strings.Contains(src, want) {
 			t.Errorf("grmob-runtime.js: %q not found — a TabView's bar occupies a DOM child slot, "+

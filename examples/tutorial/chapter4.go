@@ -11,6 +11,7 @@ import (
 	"github.com/rohanthewiz/grmob/core"
 	"github.com/rohanthewiz/grmob/hooks"
 	"github.com/rohanthewiz/grmob/permission"
+	"github.com/rohanthewiz/grmob/richtext"
 )
 
 // chapter4 — The Widget Library: a tour of the components package and the
@@ -40,6 +41,8 @@ func chapter4() Chapter {
 			lessonCompass(),
 			lessonStaticMap(),
 			lessonLiveMap(),
+			lessonCodeEditor(),
+			lessonRichText(),
 		},
 	}
 }
@@ -2491,4 +2494,319 @@ func selectedNote(id string) string {
 		return ""
 	}
 	return ", " + id + " selected"
+}
+
+// --- 4.13 ----------------------------------------------------------------
+
+// codeEditorSeed is the snippet the editing demo opens with. Short enough to
+// read on a phone, and deliberately made of four different token classes — a
+// comment, a keyword, a call and a string — so the colours are visible before
+// the reader has typed anything.
+//
+// A raw literal rather than a codeBlock argument, because this one is *data*:
+// it is the demo's initial state, not a snippet the lesson is showing. That
+// difference is why it is not picked up by highlight_test.go's corpus walk,
+// which reads codeBlock call sites.
+const codeEditorSeed = `// Try me: edit, and the colours follow.
+func greet(name string) string {
+	return "hello, " + name
+}`
+
+func lessonCodeEditor() Lesson {
+	return Lesson{
+		Title:   "Editing code: the decorated buffer",
+		Summary: "components.CodeEditor — a real buffer with Go's own lexer behind it, and the three rules that make a host-owned buffer controllable from Go.",
+		Body: func(ctx *core.Context) core.View {
+			src := core.NewState(ctx, codeEditorSeed)
+			// The toolbar's ref. A hook, and therefore called unconditionally
+			// and before anything that might return early — the same rule every
+			// other hook in this tutorial is under. The widget deliberately does
+			// not call it for you; see its doc for why a code *block* must be
+			// free of hook obligations.
+			ref := core.UseEditorRef(ctx)
+			// The caret, as the editor reports it. Two ints, because core parsed
+			// the "start:end" the hosts send before this handler ever ran.
+			selStart := core.NewState(ctx, 0)
+			selEnd := core.NewState(ctx, 0)
+
+			return core.Column(
+				core.Gap(16),
+				prose("Everything up to here has been a picture of code. core.TextGrid draws "+
+					"rows of coloured runs and nothing can be typed into it, which is right "+
+					"for a snippet in a document and useless for a config screen, a snippet "+
+					"runner, or a rule the user is meant to write. components.CodeEditor is "+
+					"the other half: the same rows, over a buffer the platform owns."),
+				demoPanel("Edit it. The lexer re-runs on every keystroke.",
+					core.Column(
+						core.Gap(10),
+						components.CodeEditor{
+							Value:       src.Get(),
+							OnChange:    src.Set,
+							Language:    "go",
+							LineNumbers: true,
+							Toolbar:     ref,
+							Height:      "170px",
+							OnSelectionChange: func(start, end int) {
+								selStart.Set(start)
+								selEnd.Set(end)
+							},
+						},
+						core.Text(selectionNote(selStart.Get(), selEnd.Get(), src.Get()),
+							core.FontSize(13),
+						),
+					),
+				),
+				prose("The widget did three things. It ran highlight.Go() over the value and "+
+					"handed the result to the node as one styled row per line. It painted the "+
+					"surface from highlight.Darcula, because the token colours and the "+
+					"background have to come from one scheme or the code is legible by "+
+					"accident. And it built that toolbar out of components.Buttons, each of "+
+					"which sends one command to the ref you gave it."),
+				codeBlock(`ref := core.UseEditorRef(ctx)      // the toolbar's address
+
+components.CodeEditor{
+    Value:       src.Get(),
+    OnChange:    src.Set,
+    Language:    "go",        // or Highlighter: a highlight.Highlighter
+    LineNumbers: true,
+    Toolbar:     ref,         // no ref, no toolbar, and no hook either
+    Height:      "170px",
+}`),
+				prose("The ref is yours and not the widget's, and that is a deliberate "+
+					"asymmetry. A ref has to be stable across passes, which means a hook, which "+
+					"means anything holding one must be rendered unconditionally on every "+
+					"pass. That is a fine obligation for an editor with a toolbar and a bad one "+
+					"for a read-only code block — which is what every snippet in this tutorial "+
+					"now is, rendered inside conditionals and loops and lesson bodies. So the "+
+					"toolbar names the ref, and an editor without one touches no hook."),
+				components.Separator{},
+				prose("Underneath, the hard part is not the colours. It is that the buffer "+
+					"belongs to the platform — a UITextView, a BasicTextField, a <textarea> — "+
+					"while the value belongs to Go, and the round trip between them takes a "+
+					"few milliseconds that the typist can out-run. Three rules make that "+
+					"work, and all four renderers implement the same three."),
+				prose("One: the echo guard, which core.TextArea has lived under since it "+
+					"existed. Every value the host sends upstream is queued, and Go's echo of "+
+					"it is dropped rather than written back — assigning it would throw the "+
+					"caret to the end of the buffer, mid-word. A value Go sends that the host "+
+					"never sent is something else entirely: a validator normalizing the text, "+
+					"a draft cleared after a submit. That one lands even mid-typing, and "+
+					"moving the caret is then correct, because the text under it was replaced."),
+				prose("Two: decoration is advisory, and per line. Go's rows are a description "+
+					"of the text as it was when Go last saw it, so the line being typed is "+
+					"described wrongly for a frame. Each host compares a row's text with the "+
+					"line under it and paints only where the two agree; the line you are "+
+					"typing goes plain for one frame and every other line keeps its colours. "+
+					"The rule never runs the other way — a row's text is never written into "+
+					"the buffer — so a lexer that is wrong can make the screen ugly and can "+
+					"never make it lose a character."),
+				prose("Three: commands are epoch-stamped props, the same mechanism core.Focus "+
+					"uses. RunEditorCommand bumps a counter on the ref, the next render pass "+
+					"stamps the counter and the command string onto the editor, and the host "+
+					"acts once when the counter changes. A counter rather than a flag because "+
+					"indenting twice is two commands with the same string, and two identical "+
+					"prop maps produce no patch at all."),
+				codeBlock(`// The toolbar's whole body. The command acts on the host's
+// own selection, which Go never has to know.
+core.Button("Indent", func() {
+    core.RunEditorCommand(ref, core.EditIndent)
+})`),
+				prose("There is one place an editor command deliberately differs from a focus "+
+					"command. A focus command re-fires on a field that mounts while it is the "+
+					"target — that is what makes \"push a screen and put the cursor in its "+
+					"search box\" work. An editor command names a moment and an edit, so an "+
+					"editor that was not on screen when it was issued missed it: every host "+
+					"adopts a standing epoch without running it. Otherwise coming back to this "+
+					"lesson would re-indent the snippet."),
+				prose("The selection travels the same way a NumericInput's number does: as "+
+					"text. The bridge has four channels — void, bool, int, text — and a "+
+					"selection is two numbers, so the hosts send \"start:end\" and core parses "+
+					"it before your func(start, end int) is called. The offsets are bytes into "+
+					"the UTF-8 value, which is the one unit all four hosts can agree on: "+
+					"Android and the browser count UTF-16, and iOS counts String.Index."),
+				keyPoints(
+					"components.CodeEditor is the widget; core.CodeEditor is the node and highlight is the lexer.",
+					"A read-only editor with no toolbar is the display half — a code block you can select and copy.",
+					"No toolbar, no hook: the ref is the caller's, so an editor can be rendered inside a conditional.",
+					"Language picks the lexer by name; Highlighter takes one of your own, including one that caches.",
+					"The zero Scheme is picked from the theme's background, so a light app does not get a dark rectangle.",
+					"The buffer is the host's while focused and Go's otherwise; Go's echo of your own keystroke never moves the caret.",
+					"A row is applied only where it still describes its line, so a stale lexer costs one line's colour for one frame.",
+					"Commands ride an epoch, not a flag, so the same command twice is two commands.",
+					"Selection crosses as bytes into the UTF-8 value; each host converts from its own unit.",
+					"Not in v1: autocomplete, folding, find-and-replace, a host-side grammar. Each is a driver away.",
+				),
+			)
+		},
+	}
+}
+
+// selectionNote is the editor demo's status line: where the caret is, in the
+// unit the callback reports it in, plus the line it lands on.
+//
+// The line number is derived here rather than reported by the host, and that is
+// the honest split: a host knows about characters and the wire carries byte
+// offsets, while "which line is that" is a question about the value — which Go
+// has. Counting newlines in the prefix is the whole calculation.
+func selectionNote(start, end int, src string) string {
+	if start > len(src) {
+		// The report can arrive one pass ahead of the value it describes, which
+		// is the same skew rule 2 exists for one level down. Saying nothing is
+		// better than printing an offset past the end of the buffer.
+		return ""
+	}
+	line := strings.Count(src[:start], "\n") + 1
+	if start == end {
+		return fmt.Sprintf("caret at byte %d — line %d", start, line)
+	}
+	return fmt.Sprintf("bytes %d–%d selected (%d) — from line %d", start, end, end-start, line)
+}
+
+// --- 4.14 ----------------------------------------------------------------
+
+// richNoteSeed is the note the rich-text demo opens with: one of every block
+// kind the toolbar offers and several of the marks, so the reader can see what
+// the buttons do before pressing one.
+//
+// Built as values rather than parsed from Markdown, because the lesson's own
+// point is that the document is the value — a parse here would quietly make the
+// demo depend on the import door it is only supposed to illustrate.
+var richNoteSeed = richtext.Doc{Blocks: []richtext.Block{
+	{Kind: richtext.Heading2, Runs: []richtext.Run{{Text: "A note"}}},
+	{Kind: richtext.Paragraph, Runs: []richtext.Run{
+		{Text: "Some "},
+		{Text: "bold", Bold: true},
+		{Text: " and some "},
+		{Text: "italic", Italic: true},
+		{Text: ", and a "},
+		{Text: "link", Link: "https://example.com"},
+		{Text: "."},
+	}},
+	{Kind: richtext.Bullet, Runs: []richtext.Run{{Text: "a bullet"}}},
+	{Kind: richtext.Bullet, Runs: []richtext.Run{{Text: "another"}}},
+	{Kind: richtext.Quote, Runs: []richtext.Run{{Text: "Someone said this."}}},
+}}
+
+func lessonRichText() Lesson {
+	return Lesson{
+		Title:   "Rich text: a document as the value",
+		Summary: "components.RichTextEditor — formatted text whose value is a richtext.Doc, owned by Go and mapped by each host.",
+		Body: func(ctx *core.Context) core.View {
+			note := core.NewState(ctx, richNoteSeed)
+			// The toolbar's state: the ref its buttons command, the last
+			// selection its buttons are drawn from, and the link prompt. Four
+			// hook slots, called unconditionally and before anything that could
+			// return early — the same rule every other hook in this tutorial is
+			// under.
+			bar := components.UseRichToolbar(ctx)
+			showMarkdown := core.NewState(ctx, false)
+
+			return core.Column(
+				core.Gap(16),
+				prose("A code editor's value is a string and its colours are computed from "+
+					"it. A rich-text editor has no such split: the formatting is not derived "+
+					"from the text, it *is* part of the value, and the user edits it "+
+					"directly. So the value is a document — richtext.Doc — and every host "+
+					"maps that document to and from its own text engine."),
+				demoPanel("Write in it. The toolbar shows what is active under the caret.",
+					core.Column(
+						core.Gap(10),
+						components.RichTextEditor{
+							Doc:         note.Get(),
+							OnChange:    note.Set,
+							Placeholder: "Write something…",
+							Toolbar:     bar,
+							MinHeight:   "150px",
+						},
+						components.Button{
+							Label:    markdownToggleLabel(showMarkdown.Get()),
+							Emphasis: components.EmphasisGhost,
+							OnTap:    func() { showMarkdown.Set(!showMarkdown.Get()) },
+						},
+						core.If(showMarkdown.Get(),
+							components.CodeEditor{
+								Value:    note.Get().Markdown(),
+								ReadOnly: true,
+								Height:   "150px",
+							},
+						),
+					),
+				),
+				prose("That second panel is the same document through Doc.Markdown(), "+
+					"re-rendered on every keystroke. It is import and export, not the wire: "+
+					"Markdown cannot represent a selection-preserving edit, and making it the "+
+					"value would put a Markdown parser in four hosts. What actually crosses "+
+					"is the document's JSON, and that is also what you persist — bytdb takes "+
+					"it as it is."),
+				codeBlock(`bar := components.UseRichToolbar(ctx)    // ref + selection + link prompt
+
+components.RichTextEditor{
+    Doc:         note.Get(),
+    OnChange:    note.Set,
+    Placeholder: "Write something…",
+    Toolbar:     bar,          // no bar, no toolbar, and no hook either
+    MinHeight:   "150px",
+}`),
+				prose("The toolbar is the caller's for the same reason the code editor's is. "+
+					"A ref has to be stable across passes, which means a hook, which means "+
+					"anything holding one must be rendered unconditionally. A note being "+
+					"*displayed* — a comment, a description, the body of a card in a list — "+
+					"is the thing rendered inside an `if`, so the read-only editor has to be "+
+					"free of hook obligations. ReadOnly with no toolbar is the display half, "+
+					"and there is no separate \"RichTextView\" node because there does not "+
+					"need to be one: the renderer's own text engine draws the document either "+
+					"way."),
+				components.Separator{},
+				prose("Which buttons look pressed is the one thing Go cannot work out. Go "+
+					"owns the document and the host owns the caret, so \"is the text under "+
+					"the cursor bold\" is a question only the host can answer — it comes back "+
+					"through OnRichSelectionChange as a core.RichSelection, and the toolbar "+
+					"draws itself from the last one. That is widget-private state, the same "+
+					"kind DatePicker's open sheet is: presentation only, nothing an app would "+
+					"want to read."),
+				prose("The commands ride the same epoch-stamped prop pair the code editor's "+
+					"do. Two of them carry an argument in the string — core.EditBlock(kind) "+
+					"and core.EditLink(url) — because the command channel is one prop, and "+
+					"widening it to a map would change the shape all four hosts read for the "+
+					"sake of two commands. Everything after the first colon is the argument, "+
+					"so a URL keeps its own colons."),
+				prose("The four hosts do genuinely different work here, and it is worth "+
+					"knowing which. iOS maps the document onto an NSAttributedString and "+
+					"edits marks straight into the text storage, which preserves the caret. "+
+					"Android reaches past Compose to a classic EditText, because Spannable "+
+					"has had a span type for every mark and every paragraph treatment for a "+
+					"decade. The browser gets a contenteditable whose every command is a pure "+
+					"transformation of the document — the selection is only ever read and "+
+					"restored, never operated on, because a Range under contenteditable is "+
+					"the least predictable surface on the web. And htmlout writes "+
+					"Doc.HTML() and stops, because a snapshot has no caret."),
+				prose("Paste is worth a sentence of its own. On the web it is intercepted, "+
+					"and what reaches the document is the clipboard's text/plain — so nothing "+
+					"a word processor put on the clipboard becomes part of the value. That is "+
+					"the only way a document stays a richtext.Doc rather than whatever HTML "+
+					"happened to be copied."),
+				keyPoints(
+					"The value is a richtext.Doc, not a string and not the platform's markup.",
+					"The JSON is the wire and the storage; Markdown is the import/export door.",
+					"Seven block kinds and six marks. Tables, images and nesting are non-goals until something drives them.",
+					"A ReadOnly editor with no toolbar is the display half — and takes no hook, so it can be rendered anywhere.",
+					"UseRichToolbar is the hook: the ref, the last selection, and the link prompt.",
+					"Which buttons are pressed comes from the host, because Go owns the document and the host owns the caret.",
+					"Commands are epoch-stamped props; EditBlock and EditLink carry their argument in the string.",
+					"Paste is serialized through the document, so foreign markup dies at the edge.",
+					"Undo is the platform's on the natives and the runtime's own stack of Docs on the web.",
+				),
+			)
+		},
+	}
+}
+
+// markdownToggleLabel is the caption of 4.14's Markdown button, kept out of the
+// body for the reason the other sentence-builders in this chapter are: one
+// conditional, read once.
+func markdownToggleLabel(showing bool) string {
+	if showing {
+		return "Hide the Markdown"
+	}
+	return "Show the Markdown"
 }

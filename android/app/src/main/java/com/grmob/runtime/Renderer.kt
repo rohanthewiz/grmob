@@ -193,6 +193,16 @@ private fun RenderNodeContent(node: GrMobNode, extra: Modifier) {
         "Switch" -> GrMobSwitch(node, extra)
         "Slider" -> GrMobSlider(node, extra)
         "TextGrid" -> GrMobTextGrid(node, extra)
+        // The programmer's editor. Its rows are a grid's rows and it colours a
+        // BasicTextField with them through a VisualTransformation — see
+        // GrMobCodeEditor.kt, and core/codeeditor.go for why neither Compose
+        // alone nor a Go-side overlay can express this.
+        "CodeEditor" -> GrMobCodeEditor(node, extra)
+        // The prose editor. Its value is a richtext.Doc, mapped to and from an
+        // Editable's spans — and hosted through AndroidView rather than Compose,
+        // which is the one deliberate reach past Compose in this renderer. See
+        // GrMobRichText.kt for the argument.
+        "RichTextEditor" -> GrMobRichTextEditor(node, extra)
         // A row reached on its own (never from core.TextGrid, which draws
         // its rows itself) still renders as a line of runs.
         "GridRow" -> GrMobGridRow(node, TextStyle.Default)
@@ -638,7 +648,11 @@ private fun GrMobText(node: GrMobNode, extra: Modifier) {
     )
 }
 
-private fun textStyle(s: GrMobStyle?): TextStyle {
+// internal rather than private so GrMobCodeEditor.kt can build its own style on
+// top of this one: a code editor is this style plus a monospace family and a
+// smaller default pitch, and restating the whole conversion over there would be
+// a second answer to "what does a Go style mean in Compose".
+internal fun textStyle(s: GrMobStyle?): TextStyle {
     if (s == null) return TextStyle.Default
     return TextStyle(
         color = s.textColor ?: Color.Unspecified,

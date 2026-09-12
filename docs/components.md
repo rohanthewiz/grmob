@@ -1896,6 +1896,225 @@ own tiles, so nothing here asks the app for a credential — the odd asymmetry
 that the richer widget is the free one. The tile usage policy in
 [`core.MapView`](concepts/views.md#leaves) still applies.
 
+## CodeEditor
+
+A programmer's editor: a monospace buffer with syntax colour, an optional
+line-number gutter, and an optional toolbar of the editing commands a code
+surface needs.
+
+```go
+ref := core.UseEditorRef(ctx)      // the toolbar's address
+
+components.CodeEditor{
+    Value:       src.Get(),
+    OnChange:    src.Set,
+    Language:    "go",             // or Highlighter: a highlight.Highlighter
+    LineNumbers: true,
+    Toolbar:     ref,              // no ref, no toolbar
+    Height:      "240px",
+}
+```
+
+**Read-only, with no toolbar, is the display half** — a code block in a
+document, a payload in a log viewer, the snippet a tutorial is teaching. That
+is deliberately *not* `Disabled`: a disabled control is inert and greyed and is
+skipped by assistive technology, while a read-only one is content the reader is
+meant to select and copy. On the web the runtime lays a transparent
+`<textarea>` over the rows so the caret is real, and that element leaves the tab
+order when the editor is read-only — so a page of code blocks gains no tab stops.
+
+**The ref is yours, and that is what keeps this widget hook-free.** A ref has to
+be stable across passes, which means `core.UseEditorRef`, which is a hook —
+and anything holding a hook slot must be rendered unconditionally on every
+pass. That is a fine obligation for an editor with a toolbar and a bad one for a
+code block, which is exactly the thing rendered inside an `if`, inside a loop,
+inside a lesson body. So the toolbar *names* the ref and an editor without one
+touches no hook. (`Accordion` and `DatePicker` are the two widgets that do own
+slots; this is not one of them.)
+
+**The highlighter runs on every pass, with no memoization.** `go/scanner` over a
+thousand lines is well under a millisecond. The alternative is `hooks.UseMemo`,
+which is the hook obligation above. A buffer big enough to change that arithmetic
+wants a caller-supplied `Highlighter` that caches, not a widget that starts
+consuming slots.
+
+**`Language` picks the lexer by name and the comment marker with it.** `"go"`
+and `"json"` in v1; anything else, including `""`, is uncoloured rather than an
+error, so a screen whose editor mis-spells its language still renders. JSON has
+no line comment, so the toolbar drops its comment button rather than showing a
+permanently inert one.
+
+**The zero `Scheme` is derived from the theme's own `Background`.** A code
+surface has to be a deliberate colour — `highlight.Darcula` on a dark app,
+`highlight.Light` on a light one — because no palette role means "the background
+of a code listing", and an editor that took the app's Surface would be legible
+by accident.
+
+`OnSelectionChange` reports the caret as byte offsets into `Value`, parsed in
+core from the `"start:end"` the hosts send. Bytes, because that is the one unit
+all four hosts can agree on: Android and the browser count UTF-16 and iOS counts
+`String.Index`.
+
+### The node underneath
+
+[`core.CodeEditor`](concepts/views.md#leaves) is the primitive, and it is a node
+type rather than a composition for one reason: `core.Style` has no font family,
+so a transparent `core.TextArea` in a `ZStack` over a `core.TextGrid` cannot be
+pitch-matched to the grid under it from outside. The overlay has to be built by
+something that owns both elements, which is the renderer.
+
+Three rules every host implements, and they are what make a host-owned buffer
+controllable from Go:
+
+1. **Echo guard**, unchanged from `core.TextArea`. The buffer is the host's
+   while focused and Go's otherwise, and Go's echo of the host's own last
+   `onChange` never moves the caret. A value Go sends that the host never sent
+   is a deliberate rewrite and lands even mid-typing.
+2. **Decoration is advisory and per line.** A host applies row *N*'s styling
+   only if that row's text equals the host's current line *N*. Go is a keystroke
+   behind for a few milliseconds after every keypress, so the line being typed
+   goes plain for one frame and no other line does. Never the other way round:
+   decoration never rewrites the buffer.
+3. **Commands are epoch-stamped props.** `core.RunEditorCommand(ref, cmd)` bumps
+   a counter; the host acts once when the counter changes, on its own selection.
+   A counter rather than a flag, because indenting twice is two commands with
+   the same string and two identical prop maps produce no patch. Unlike a focus
+   command, an editor that mounts under a standing epoch *adopts* it without
+   running it — a command names a moment, and an editor that was not there
+   missed it.
+
+The commands in v1 are `core.EditIndent`, `core.EditOutdent`,
+`core.EditCommentLine` and `core.EditSelectAll`. Not in v1: autocomplete,
+folding, find-and-replace, and a host-side grammar.
+
+### The lexers
+
+`highlight` is a package of its own at the module root, beside `hooks` and
+`permission`, because it is a model with no view:
+
+```go
+rows := highlight.Go().Rows(src, highlight.Darcula)   // []core.GridRow
+core.TextGrid(rows, core.BackgroundColor(highlight.Darcula.Bg))
+```
+
+`highlight.Go()` is `go/scanner`, not a set of regexps — so a `//` inside a
+string is a string without anything being told so, and the token set cannot
+drift as the language grows. `highlight.JSON()` is a small hand lexer, written
+to be tolerant rather than correct: a buffer mid-edit is invalid JSON most of
+the time, and `encoding/json` would answer "invalid" for all of it.
+`highlight.Plain()` colours nothing, and `highlight.ForLanguage(name)` is the
+table.
+
+Every lexer obeys one contract: `len(Rows(src, scheme)) ==
+strings.Count(src, "\n") + 1`. The rows are line-for-line with the input,
+because both consumers address them by line — `core.TextGrid` pairs them by
+index, and the stale-line rule above compares row *N* with line *N*.
+
+## RichTextEditor
+
+Formatted text — bold, italics, headings, lists, quotes, links — whose value is
+a document rather than a string.
+
+```go
+bar := components.UseRichToolbar(ctx)
+
+components.RichTextEditor{
+    Doc:         note.Get(),
+    OnChange:    note.Set,
+    Placeholder: "Write something…",
+    Toolbar:     bar,
+    MinHeight:   "160px",
+}
+```
+
+**A read-only editor with no toolbar is the display half** — a comment, a note,
+a description, the body of a card in a list. There is no separate
+"RichTextView" node because there does not need to be one: the renderer's own
+text engine draws the document either way, and `ReadOnly` is the difference
+between reading it and writing it.
+
+**The toolbar is the caller's, and that is what keeps the display half
+hook-free.** A toolbar needs three things that must survive a render pass — the
+`core.EditorRef` its buttons command, the last reported selection (so the bold
+button can look pressed), and whether the link prompt is open. All three are
+hooks. `UseRichToolbar(ctx)` is where they live, so an editor without one
+touches nothing and can be rendered inside an `if`, inside a loop, inside a list
+of comments. `CodeEditor` makes the same split for the same reason.
+
+**Which buttons look pressed is the host's answer, not Go's.** Go owns the
+document and the host owns the caret, so "is the text under the cursor bold" is
+a question only the platform can answer. It comes back through
+`OnRichSelectionChange` as a `core.RichSelection` and the toolbar draws itself
+from the last one — widget-private state of the same kind `DatePicker`'s open
+sheet is: presentation only, nothing an app would want to read.
+
+`RichToolbarDefault` is the list of buttons; `bar.Items` is a copy of it, so
+append to it, reorder it or replace it per screen. A `RichToolItem`'s `Command`
+is a core `Edit*` constant or one of the two builders, plus one sentinel:
+`components.RichToolLink` opens the link prompt, because a URL has to be typed
+before there is a command to send.
+
+The strip carries no `core.RoleToolbar`, and that is deliberate: a widget in
+this package may not declare a keyboard composite's container role, because it
+would make a *nested* composite reachable by ordinary composition. Declare it on
+your own box if you want the landmark.
+
+### The document
+
+[`richtext.Doc`](https://pkg.go.dev/github.com/rohanthewiz/grmob/richtext) is a
+package at the module root, beside `hooks` and `highlight`, because it is a
+model with no view:
+
+```go
+type Doc struct{ Blocks []Block }
+type Block struct { Kind BlockKind; Runs []Run }
+type Run struct {
+    Text                                  string
+    Bold, Italic, Underline, Strike, Code bool
+    Link                                  string  // "" = not a link
+}
+```
+
+Seven block kinds (paragraph, three headings, two lists, quote) plus a code
+block, and six marks. No tables, no images, no nested lists, no colours — each
+is a real feature with a real driver behind it and none has one yet.
+
+**JSON is the wire and the storage.** `Doc.JSON()` is what crosses on every
+keystroke and what `bytdb` takes as-is; short keys for the reason
+`core.GridRun`'s are short. `Markdown()` / `FromMarkdown()` are the import and
+export door, not the value: Markdown cannot represent a selection-preserving
+edit, and making it the wire would put a Markdown parser in four hosts. `HTML()`
+is what htmlout writes and what anything outside this system wants.
+
+Markdown loses exactly two things, and both are pinned by tests rather than
+discovered: an **empty paragraph** (a blank line is Markdown's block separator
+and nothing else) and the **other marks on a code span** (a code span's content
+is literal by definition). The JSON keeps both.
+
+### The node underneath
+
+[`core.RichTextEditor`](concepts/views.md#leaves) takes the document and a
+`func(richtext.Doc)`, and shares two of `CodeEditor`'s three rules: the echo
+guard (compared on the doc's JSON, since Go marshals with a fixed key order) and
+the epoch-stamped command props. The *stale-line* rule is absent and does not
+need to be there — here the doc **is** the styled buffer, so there is no second
+fact to disagree with the first.
+
+The commands are `core.EditBold`, `EditItalic`, `EditUnderline`, `EditStrike`,
+`EditCode`, `EditUnlink`, `EditUndo`, `EditRedo`, plus `core.EditLink(url)` and
+`core.EditBlock(kind)` — the two that carry an argument, which rides in the
+command string because the channel is one prop and everything after the first
+colon is the argument.
+
+Each host does genuinely different work, and it is worth knowing which:
+
+| Target | Construction |
+|---|---|
+| htmlout | `richtext.Doc.HTML()` inside the node's box, read-only. A snapshot has no caret. |
+| WASM | A `contenteditable` `<div>`. Every command is a **pure transformation of the document** — the selection is only read and restored, never operated on, because a `Range` under `contenteditable` is the least predictable surface on the web. No `execCommand`. Paste is intercepted and re-done as a text insertion, so foreign markup dies at the edge. Undo is the runtime's own stack of Docs. |
+| iOS | `UITextView`. Marks are attributes edited straight into the `textStorage`, which preserves the caret and gives "press bold, then type" free through `typingAttributes`; block kinds take the long way round (read out, transform, rebuild, restore), because a prefix and an indent have no in-place spelling. |
+| Android | `EditText` + `Spannable` through `AndroidView` — the one deliberate reach past Compose in the renderer. `Spannable` has had a span type for every mark and every paragraph treatment for a decade; building block structure into one `AnnotatedString` rebuilt per keystroke is the riskiest thing this design could ask for, and the classic-view route removes it. |
+
 ## Writing your own
 
 The package doc (`components/doc.go`) is the reference for the idiom. In

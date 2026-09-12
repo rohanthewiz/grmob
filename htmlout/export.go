@@ -137,6 +137,19 @@ func renderNode(b *element.Builder, node *core.Node, from imposed, path string) 
 	if node.Type == "GridRow" {
 		sv = addDecl(gridRowChassis, sv)
 	}
+	// The editor chassis, and the gutter inset that goes with it. Ahead of the
+	// author's style for the same reason the three above are, and in two
+	// pieces because only one of them depends on the node's props: the fixed
+	// rules are a constant, the padding is a function of whether there is a
+	// gutter and how many digits it needs. See codeeditor.go.
+	if node.Type == "CodeEditor" {
+		sv = addDecl(codeEditorChassis, sv)
+	}
+	// And the prose editor's, which is the opposite chassis: a code surface
+	// does not wrap and a document does. See richtext.go.
+	if node.Type == "RichTextEditor" {
+		sv = addDecl(richTextChassis, sv)
+	}
 	// The Spacer's chassis, ahead of the author's style for the same reason
 	// as the three above.
 	if node.Type == "Spacer" {
@@ -150,6 +163,16 @@ func renderNode(b *element.Builder, node *core.Node, from imposed, path string) 
 		// `enabled = false` and SwiftUI's `.disabled(true)` do natively.
 		sv = addDecl(sv, "pointer-events:none")
 		attrs = append(attrs, "aria-disabled", "true")
+	}
+	// The gutter's inset, after the author's own declarations rather than
+	// before them like every other chassis above. The exception is deliberate:
+	// the other chassis rules are a *look* an author may disagree with, and
+	// this one is layout the line numbers depend on — a padding-left the author
+	// set would slide the numbers over the code. The WASM runtime writes it
+	// after every style patch for the same reason (syncCodeGutter), so the two
+	// DOM targets draw one picture.
+	if node.Type == "CodeEditor" {
+		sv = addDecl(sv, codeEditorPadding(node))
 	}
 	// Last, so it outranks the node's own declarations — including the
 	// display:flex a stack container is given unconditionally, which is
@@ -196,6 +219,10 @@ func renderNode(b *element.Builder, node *core.Node, from imposed, path string) 
 		// behavior — which is what makes an exported map upgradeable: a page
 		// that loads Leaflet, reads the region off data-lat/lng/zoom and wires
 		// these three IDs is the live node, built out of the static document.
+		// The editing surfaces' selection report (core.OnSelectionChange).
+		// Recorded like the rest — the ID, not the behavior — because a static
+		// document has no caret whose movement could be reported.
+		{"onSelectionChange", "data-onselectionchange"},
 		{"onRegionChange", "data-onregionchange"},
 		{"onMarkerTap", "data-onmarkertap"},
 		{"onMapTap", "data-onmaptap"},
@@ -348,6 +375,13 @@ func renderNode(b *element.Builder, node *core.Node, from imposed, path string) 
 		b.Span(attrs...).TE(getStr(node.Props["content"]))
 	case "GridRow":
 		renderGridRow(b, node, attrs)
+	case "CodeEditor":
+		// A box like any other container, plus the line-number gutter ahead of
+		// the rows; see codeeditor.go.
+		renderCodeEditor(b, node, attrs, path)
+	case "RichTextEditor":
+		// The document as markup, read-only; see richtext.go.
+		renderRichTextEditor(b, node, attrs)
 	case "Button":
 		b.Button(attrs...).TE(getStr(node.Props["label"]))
 	case "CameraView":

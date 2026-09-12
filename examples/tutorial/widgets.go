@@ -10,8 +10,11 @@
 package tutorial
 
 import (
+	"strings"
+
 	"github.com/rohanthewiz/grmob/components"
 	"github.com/rohanthewiz/grmob/core"
+	"github.com/rohanthewiz/grmob/highlight"
 )
 
 // prose is a body paragraph in the theme's Body typography.
@@ -34,52 +37,66 @@ func caption(text string) core.View {
 
 // Code blocks keep their own fixed dark palette instead of theme roles: an
 // editor-dark surface reads as "this is code" under any app theme, and the
-// palette has no role for it. These two are the surface and its default ink;
-// the syntax colours layered on top are in highlight.go. Together they are
-// the only hard-coded colors in the tutorial chrome.
+// palette has no role for it.
 //
-// The pair is Darcula's own editor background and default foreground, so the
-// surface and the token colours come from one scheme rather than from two
-// that happen to both be dark.
-const (
-	codeBg  = "#2B2B2B" // Darcula editor background
-	codeInk = "#A9B7C6" // Darcula default foreground
-)
+// The surface, its default ink and the token colours are all one scheme now —
+// highlight.Darcula, named on the widget below — where they used to be a pair
+// of hex literals here plus a palette in highlight.go that happened to agree
+// with them. Nothing hard-codes a colour in the tutorial chrome any more.
 
 // codeBlock renders a Go snippet, syntax-highlighted.
 //
-// It is a core.TextGrid — the node type built for "rows of styled runs" —
-// because that is the shape highlighting needs: a code line is several
-// colours, so the unit carrying a colour has to be smaller than a line. The
-// grid's Style is the surface and the default ink; every run that is not
-// default ink comes from highlightGo, which lexes the snippet with
-// go/scanner.
+// It is a read-only components.CodeEditor, which is the widget's display half:
+// the same monospace rows a core.TextGrid draws, plus a caret the reader can
+// put in the code and a selection they can copy out of. A code block in a
+// tutorial is exactly that — something to read and to take away — and the
+// editor is the node built for it.
 //
-// Three things this used to do by hand come free with the grid, and are worth
-// naming because their absence here is not an oversight:
+// It was a core.TextGrid until the editor existed, and the properties that made
+// the grid right are the ones the editor inherits rather than replaces:
 //
-//   - Monospace. Style still has no font-family prop, and a TextGrid does not
-//     need one: it is fixed-pitch on every target by construction. The old
-//     block's own comment recorded this as a limitation it was living with.
+//   - Monospace. core.Style still has no font-family prop, and neither node
+//     needs one: both are fixed-pitch on every target by construction.
 //   - No wrapping, and sideways scrolling when a snippet is wider than the
-//     phone. A wrapped code line restarts at column zero, which reads as a
-//     new statement at the outermost indent — so wrapping destroys exactly
-//     the structure indentation exists to show. The grid's rows are
-//     single-line and its chassis scrolls horizontally, which is what the old
-//     block spelled out per-line with WhiteSpace("nowrap") plus an Overflow.
+//     phone. A wrapped code line restarts at column zero, which reads as a new
+//     statement at the outermost indent — so wrapping destroys exactly the
+//     structure indentation exists to show.
 //   - Indentation, and blank lines that keep their height. A <span> in
-//     ordinary flow collapses leading spaces, which is why the old block
-//     substituted non-breaking spaces and padded empty lines with one of
-//     them; a grid row preserves its spaces and an empty row still takes a
-//     line.
+//     ordinary flow collapses leading spaces; a grid row preserves them and an
+//     empty row still takes a line.
+//
+// # What ReadOnly buys and what it costs
+//
+// It is not core.Disabled, and the difference is the whole point: a disabled
+// control is inert and greyed and is skipped by assistive technology, while a
+// read-only one is content the reader is meant to select. The cost on the web
+// is one element — the runtime lays a transparent <textarea> over the rows so
+// that the caret is real — and that element leaves the tab order when the
+// editor is read-only, so a lesson with nine snippets in it still has no tab
+// stops it did not have before.
+//
+// # No hooks, which is why this can be called anywhere
+//
+// components.CodeEditor consumes no hook slot unless it is given a toolbar, and
+// this one is not. That matters here more than anywhere: code blocks are built
+// inside lesson bodies, inside conditionals, inside loops over a demo's state,
+// and a widget with hook obligations could not be.
+//
+// The Trim is the tutorial's own: a snippet is written as a raw string literal
+// that starts and ends with a newline, and those two newlines are formatting.
+// See highlightGo, which says why the highlight package must not do it.
 func codeBlock(code string) core.View {
-	return core.TextGrid(highlightGo(code),
-		core.BackgroundColor(codeBg),
-		core.Padding(14),
-		core.BorderRadius(10),
-		core.FontSize(13),
-		core.TextColor(codeInk),
-	)
+	return components.CodeEditor{
+		Value:    strings.Trim(code, "\n"),
+		Language: "go",
+		Scheme:   highlight.Darcula,
+		ReadOnly: true,
+		Style: []core.StyleProp{
+			core.Padding(14),
+			core.BorderRadius(10),
+			core.FontSize(13),
+		},
+	}
 }
 
 // demoPanel frames a live demo: a "TRY IT" badge and caption on top, then the

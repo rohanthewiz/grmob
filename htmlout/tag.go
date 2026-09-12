@@ -54,6 +54,19 @@ var tags = map[string]string{
 	"TextGrid": "pre",
 	"GridRow":  "div",
 
+	// The prose editor (core.RichTextEditor). A <div>, because what it holds is
+	// a *document* — headings, paragraphs, lists — and there is no element that
+	// means "a document". On the web target the same div is made
+	// contenteditable; here it holds richtext.Doc.HTML() and nothing else.
+	"RichTextEditor": "div",
+
+	// The programmer's editor (core.CodeEditor). The same <pre> a TextGrid is,
+	// and for the same reason — its rows *are* a grid's rows, built by the same
+	// gridRowNode — with the gutter and, in the live runtime, a transparent
+	// <textarea> overlaid on it as chrome inside the same box. See
+	// codeeditor.go for why the rows stay the <pre>'s direct children.
+	"CodeEditor": "pre",
+
 	// The six that share one tag and are told apart by inputTypes — except
 	// for the last pair, which inputTypes cannot tell apart at all: a Switch
 	// and a Checkbox are both type="checkbox", and what separates them is the

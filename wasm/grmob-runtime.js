@@ -28,6 +28,14 @@ const GrMob = (() => {
             syncTabView(el);
         }
 
+        // Same slot, same reason: an editor's rows are its children, and the
+        // stale-line rule is a comparison between those rows and the buffer —
+        // there was nothing to compare a moment ago. This is also what draws
+        // the gutter, whose width is a function of how many rows there are.
+        if (node.Type === "CodeEditor") {
+            syncCodeEditor(el);
+        }
+
         // Same slot, same reason: a map's markers are its children, so there is
         // nothing to add to the Leaflet layer until they exist. The map itself
         // may also have to wait for the tree to be appended before Leaflet can
@@ -182,6 +190,18 @@ const GrMob = (() => {
                     // once they do, and every later read (syncTabView) takes
                     // it from the element.
                     el.dataset.tabSelected = value;
+                } else if (node.Type === "RichTextEditor" && RICH_EDITOR_PROPS.has(key)) {
+                    // Handled together by applyRichTextProps after the loop, for
+                    // the same reason the CodeEditor branch below exists: two of
+                    // these keys would otherwise attach listeners for events the
+                    // div never fires and mark the listener slot taken.
+                } else if (node.Type === "CodeEditor" && CODE_EDITOR_PROPS.has(key)) {
+                    // Handled together by applyCodeEditorProps after the loop.
+                    // Ahead of every branch below for the reason onLongPress
+                    // and onEndReached are ahead of the generic on* arm: two
+                    // of these keys would otherwise attach listeners for
+                    // events the <pre> never fires *and* mark the listener
+                    // slot taken, so the real wiring could never be installed.
                 } else if (key === "onLongPress") {
                     // Before the generic on* branch for the same reason
                     // onDismiss is: there is no "longpress" DOM event, so the
@@ -233,6 +253,13 @@ const GrMob = (() => {
                     applyRows(el, value);
                 }
                 else if (key === "runs") {
+                    // Remembered on the element as well as drawn, because a
+                    // row inside a CodeEditor has to re-decide on every
+                    // keystroke whether Go's colours still describe the
+                    // buffer's line — and Go sends no new patch for a row
+                    // whose runs did not change. See syncCodeRow. Harmless
+                    // for a TextGrid row, which nothing ever asks again.
+                    el.__grmobRuns = value;
                     applyGridRuns(el, value);
                 }
                 else if (key === "src" && node.Type === "Image") {
@@ -270,6 +297,18 @@ const GrMob = (() => {
             if (node.Type === "Select") {
                 applySelectOptions(el, node.Props.options, node.Props.value);
             }
+        }
+
+        // After the loop, and outside the `if (node.Props)` above, because an
+        // editor with no props at all still needs its chrome: a <pre> with no
+        // textarea in it is a picture of a code editor, not one.
+        if (node.Type === "CodeEditor") {
+            buildCodeEditor(el);
+            applyCodeEditorProps(el, node.Props, true);
+        }
+        if (node.Type === "RichTextEditor") {
+            buildRichTextEditor(el);
+            applyRichTextProps(el, node.Props, true);
         }
 
         return el;
@@ -636,6 +675,23 @@ const GrMob = (() => {
         let n = 0;
         while (n < el.children.length && el.children[n].dataset.grmobChrome !== undefined) {
             n++;
+        }
+        return n;
+    }
+
+    // How many of this element's children are *nodes* — the ones carrying a
+    // data-node-path — rather than chrome the runtime drew itself.
+    //
+    // Deliberately not `children.length - chromeOffset(el)`, which is the same
+    // number only while every piece of chrome is leading. A CodeEditor's filler
+    // rows are trailing (they stand in for buffer lines Go has not sent a row
+    // for yet), so counting the node children directly is the only formulation
+    // that survives them. It is also the more honest question: "how many
+    // children answer to a path" is what an add-child index means.
+    function nodeChildCount(el) {
+        let n = 0;
+        for (const child of el.children) {
+            if (child.getAttribute("data-node-path") !== null) n++;
         }
         return n;
     }
@@ -2799,6 +2855,1738 @@ const GrMob = (() => {
         }
     }
 
+
+    // --- CodeEditor ----------------------------------------------------------
+    //
+    // core.CodeEditor is a transparent <textarea> laid over a mirror of
+    // coloured rows, both inside one <pre>. The runtime owns both elements,
+    // which is the whole reason this is a node type rather than a pure-Go
+    // composition: only something that creates both can guarantee they are the
+    // same font at the same pitch with the same line height, and a Go-side
+    // ZStack of a TextArea over a TextGrid cannot (core.Style has no
+    // font-family). See core/codeeditor.go for the long version.
+    //
+    //	<pre data-node-type="CodeEditor">          the scroll box, position:relative
+    //	  <div data-grmob-chrome="codegutter">     line numbers, out of flow
+    //	  <textarea data-grmob-chrome="codebuffer">the real buffer, ink transparent
+    //	  <div data-node-path=".../0">             row 0: the coloured mirror
+    //	  <div data-node-path=".../1">             row 1
+    //	  <div data-grmob-chrome="codefiller">     a line Go has no row for yet
+    //	</pre>
+    //
+    // # Why the rows stay direct children
+    //
+    // Patches are addressed positionally, so the DOM has to stay isomorphic to
+    // the node tree: a wrapper around the rows would send every row patch to
+    // the wrong element. htmlout emits the identical shape for the same reason.
+    //
+    // The chrome is not part of that tree — no data-node-path, marked
+    // data-grmob-chrome — and the gutter and buffer are always *leading*, which
+    // is what keeps chromeOffset a fixed shift rather than a search. The
+    // fillers are the one exception and are trailing, which is why the
+    // add-child arm counts node children rather than subtracting the leading
+    // chrome; see nodeChildCount.
+    //
+    // # No CodeMirror
+    //
+    // Deliberately: a large optional dependency for colours Go has already
+    // computed, and untestable against wasm/verify's DOM. Reconsider if
+    // autocomplete or folding become drivers.
+
+    // The line-number column. Out of flow at the left edge of the padding the
+    // box opens for it, right-aligned so the digits line up on their units
+    // column, and inert to the pointer so a drag that starts over the numbers
+    // still selects text in the buffer behind them. Same declarations as
+    // htmlout's codeGutterStyle.
+    const CODE_GUTTER_STYLE = {
+        position: "absolute",
+        left: "0",
+        top: "0",
+        paddingRight: "1ch",
+        boxSizing: "border-box",
+        textAlign: "right",
+        whiteSpace: "pre",
+        opacity: "0.45",
+        userSelect: "none",
+        pointerEvents: "none",
+    };
+
+    // The real buffer, made invisible without being hidden.
+    //
+    // `color: transparent` rather than `opacity: 0` or `visibility: hidden`: an
+    // invisible textarea still has to show a caret and a selection highlight,
+    // and only the colour is transparent — `caret-color: currentColor` paints
+    // the caret in the editor's own ink, and ::selection still paints behind
+    // the glyphs. The other two spellings would take all three away.
+    //
+    // font and line-height inherit from the <pre>, which is what puts the
+    // buffer's glyphs on exactly the mirror's cell grid; the shorthand is
+    // assigned before lineHeight because `font` resets line-height.
+    const CODE_BUFFER_STYLE = {
+        position: "absolute",
+        top: "0",
+        left: "0",
+        margin: "0",
+        padding: "0",
+        border: "0",
+        outline: "none",
+        resize: "none",
+        overflow: "hidden",
+        background: "transparent",
+        color: "transparent",
+        caretColor: "currentColor",
+        font: "inherit",
+        lineHeight: "inherit",
+        whiteSpace: "pre",
+    };
+
+    // A blank stand-in for a buffer line the mirror has no row for. Same two
+    // declarations a GridRow gets (styleFromGrMob), because it stands where a
+    // row would and has to take the same height.
+    const CODE_FILLER_STYLE = { minHeight: "1.2em", whiteSpace: "nowrap" };
+
+    // The props this runtime handles through applyCodeEditorProps rather than
+    // through createElement's generic per-key chain.
+    //
+    // Every one of them would otherwise be mishandled rather than merely
+    // ignored: `onChange` and `onSelectionChange` would attach listeners to the
+    // <pre> (and mark the listener slot taken, so the real wiring could never
+    // be installed), `value` and `placeholder` would be written onto an element
+    // that has neither, and the editor's own four would be dropped on the
+    // floor. Same interception onLongPress and onEndReached need, for the same
+    // reason.
+    const CODE_EDITOR_PROPS = new Set([
+        "value", "placeholder", "onChange", "onSelectionChange",
+        "lineNumbers", "readOnly", "tabSize", "commentPrefix",
+        "editorEpoch", "editorCommand",
+    ]);
+
+    // codeChrome finds one of an editor's chrome elements by its marker.
+    // A loop rather than querySelector because the harness DOM supports one
+    // selector shape and because the chrome is always within the first few
+    // children anyway.
+    function codeChrome(el, kind) {
+        for (const child of el.children) {
+            if (child.dataset.grmobChrome === kind) return child;
+        }
+        return null;
+    }
+
+    // buildCodeEditor creates the gutter and the buffer, once, and wires the
+    // buffer's listeners. Idempotent: called from createElement on the create
+    // path and defensively from the update path, because an editor that
+    // arrived through some future route with no chrome would otherwise be a
+    // read-only mirror with no way to type into it.
+    //
+    // Both elements are created even when lineNumbers is off — the gutter is
+    // merely display:none — so that chromeOffset is the same number for the
+    // life of the element. A gutter that came and went would change every
+    // add-child index at the moment the toggle flipped.
+    function buildCodeEditor(el) {
+        if (codeChrome(el, "codebuffer")) return;
+
+        const gutter = document.createElement("div");
+        gutter.dataset.grmobChrome = "codegutter";
+        // The numbers are not content: a reader announcing "one two three"
+        // before every line is reading the chrome, not the code.
+        gutter.setAttribute("aria-hidden", "true");
+        Object.assign(gutter.style, CODE_GUTTER_STYLE);
+        gutter.style.display = "none";
+
+        const buffer = document.createElement("textarea");
+        buffer.dataset.grmobChrome = "codebuffer";
+        Object.assign(buffer.style, CODE_BUFFER_STYLE);
+        // Every one of these corrupts source. They are attributes rather than
+        // properties because three of the four are only attributes, and
+        // because an exported document would carry the same four.
+        buffer.setAttribute("spellcheck", "false");
+        buffer.setAttribute("autocapitalize", "off");
+        buffer.setAttribute("autocorrect", "off");
+        buffer.setAttribute("autocomplete", "off");
+        // A code line is one line: no soft wrapping, and a horizontal scroll
+        // instead. The mirror says the same thing with white-space:nowrap.
+        buffer.setAttribute("wrap", "off");
+        buffer.value = "";
+
+        // The echo ledger, exactly the pendingEchoes list both natives keep:
+        // every value this editor sends upstream is queued, and an upstream
+        // change matching a queued entry is an echo of our own edit rather
+        // than Go speaking for itself. See applyCodeValue.
+        el.__grmobEchoes = [];
+
+        buffer.addEventListener("input", () => emitCodeChange(el, buffer));
+        buffer.addEventListener("keydown", (e) => codeKeydown(el, buffer, e));
+        // The selection, reported from the events that can move a caret.
+        // Deliberately not document's `selectionchange`: it is the event
+        // designed for this and it is also the one this runtime cannot rely on
+        // — it is a document-level event, and reaching for the document to
+        // learn about one element's caret is a listener that outlives the
+        // element. reportCodeSelection dedupes, so the overlap between these
+        // four costs nothing.
+        for (const type of ["keyup", "mouseup", "select", "focus"]) {
+            buffer.addEventListener(type, () => reportCodeSelection(el, buffer));
+        }
+
+        // Leading, and in this order, for the life of the element.
+        el.insertBefore(gutter, el.children[0] || null);
+        el.insertBefore(buffer, el.children[1] || null);
+    }
+
+    // applyCodeEditorProps is the editor's whole prop surface, on both the
+    // create and the update path. props is the complete new props map in both
+    // cases — reconcile emits new.Props and never a delta — so an `in` test
+    // asks "did Go describe this", and core seeds every option on every pass
+    // precisely so that the answer is always yes and "off" is a value rather
+    // than an absence.
+    function applyCodeEditorProps(el, props, created = false) {
+        const buffer = codeChrome(el, "codebuffer");
+        if (!buffer || !props) return;
+
+        if ("readOnly" in props) {
+            // The property, not the attribute, for the reason `checked` is a
+            // property: this is live state, and the live state is what Go is
+            // describing. A read-only textarea still focuses, still shows a
+            // caret and still selects — which is the whole difference between
+            // read-only and disabled.
+            buffer.readOnly = !!props.readOnly;
+            // And it leaves the tab order. This is the one thing the overlay
+            // costs a *document*: a page of read-only code blocks would put a
+            // tab stop in front of each one, where the <pre> they replace had
+            // none — and there is nothing to do at that stop, because the
+            // browser already lets anyone select and copy the mirror behind it.
+            // tabindex="-1" rather than removing the element, so a programmatic
+            // focus (the selectAll command) still works and chromeOffset stays
+            // the same number for the life of the editor.
+            buffer.setAttribute("tabindex", props.readOnly ? "-1" : "0");
+        }
+        if ("tabSize" in props) {
+            const n = Number(props.tabSize) || 0;
+            el.dataset.tabSize = n;
+            // How wide a literal tab renders, which matters whenever the
+            // buffer already contains tabs — the indent this runtime *inserts*
+            // is spaces unless tabSize is 0. Set on both layers or the mirror
+            // and the buffer disagree about where a tab ends.
+            const stops = n > 0 ? String(n) : "4";
+            el.style.tabSize = stops;
+            buffer.style.tabSize = stops;
+        }
+        if ("commentPrefix" in props) {
+            el.dataset.commentPrefix = String(props.commentPrefix ?? "");
+        }
+        if ("lineNumbers" in props) {
+            el.dataset.lineNumbers = props.lineNumbers ? "true" : "false";
+        }
+        if ("placeholder" in props) {
+            buffer.placeholder = String(props.placeholder ?? "");
+        }
+        // The callback IDs live on the *editor*, not on the buffer, and are
+        // re-read at fire time — the same arrangement a TabView's bar uses,
+        // and for the same reason: IDs are positional and a later pass may
+        // have refreshed or pruned this one. pruneStaleListeners drops them
+        // when a pass stops carrying them, leaving the editor inert rather
+        // than dispatching to a dead handler.
+        if ("onChange" in props) el.dataset.listener_onChange = props.onChange;
+        if ("onSelectionChange" in props) {
+            el.dataset.listener_onSelectionChange = props.onSelectionChange;
+        }
+        if ("value" in props) applyCodeValue(el, buffer, String(props.value ?? ""));
+        if ("editorEpoch" in props) {
+            // The epoch is the whole trigger; the command is only read once it
+            // has moved. An update-props patch carries the entire new props
+            // map, so an editor re-rendered for its value would otherwise
+            // re-run whatever command was last issued. Epoch 0 means Go has
+            // never issued one and stamps nothing at all, so it is unreachable
+            // for an editor with no toolbar — checked anyway, because the two
+            // props always travel together and a 0 must never be read as an
+            // instruction.
+            const changed = String(el.dataset.editorEpoch) !== String(props.editorEpoch);
+            el.dataset.editorEpoch = props.editorEpoch;
+            // `created` is why a freshly built editor adopts the stamp without
+            // acting on it. A focus command deliberately re-fires on a field
+            // that mounts while it is the target — that is what makes "push a
+            // screen and put the cursor in its search box" work. An editor
+            // command is the opposite: it names a *moment* and an edit, and an
+            // editor that was not on the page when it was issued missed it.
+            // Running it at creation would indent the buffer every time its
+            // screen came back. All four hosts agree on this.
+            if (changed && !created && Number(props.editorEpoch) !== 0) {
+                runCodeCommand(el, String(props.editorCommand ?? ""));
+            }
+        }
+    }
+
+    // The echo guard, the same bookkeeping GrMobTextField keeps on both
+    // natives: the buffer is the host's while focused and Go's otherwise.
+    //
+    // An upstream value that matches a queued echo is this editor's own edit
+    // coming back, and is dropped — assigning it would move the caret to the
+    // end mid-typing. The queue is dropped *through* the match rather than at
+    // it, because Go may coalesce renders and skip intermediate values.
+    //
+    // An upstream value matching nothing we sent can only be Go speaking for
+    // itself — a validator normalizing the text, a draft being cleared after a
+    // submit — so it wins even mid-typing. Moving the caret then is correct:
+    // the text under it was replaced.
+    function applyCodeValue(el, buffer, value) {
+        const echoes = el.__grmobEchoes || (el.__grmobEchoes = []);
+        if (document.activeElement !== buffer) {
+            // Go-owned while blurred; any queued echoes died with the session.
+            echoes.length = 0;
+            if (buffer.value !== value) buffer.value = value;
+            return;
+        }
+        const echo = echoes.indexOf(value);
+        if (echo >= 0) {
+            echoes.splice(0, echo + 1);
+            return;
+        }
+        echoes.length = 0;
+        if (buffer.value !== value) {
+            buffer.value = value;
+            setCodeCaret(buffer, value.length, value.length);
+        }
+    }
+
+    // emitCodeChange is the one path every local edit leaves by: the typing
+    // the browser did for us, and the two keystrokes this runtime handles
+    // itself. It repaints first and dispatches second, so the glyph is on
+    // screen before Go has heard about it.
+    function emitCodeChange(el, buffer) {
+        const value = buffer.value;
+        (el.__grmobEchoes || (el.__grmobEchoes = [])).push(value);
+        syncCodeEditor(el);
+        const cbId = el.dataset.listener_onChange;
+        if (cbId) window.GoInvokeCallback(cbId, { value });
+        reportCodeSelection(el, buffer);
+    }
+
+    // Tab and Enter, the two keys a programmer's editor must take away from
+    // the browser.
+    //
+    // Tab would otherwise move focus out of the editor, which makes indenting
+    // impossible; Enter would insert a bare newline at column zero, which
+    // un-indents every block as it is written. Both are prevented and
+    // re-implemented; every other key is left to the browser, including the
+    // ones that make a textarea worth using (undo, word motion, IME
+    // composition).
+    function codeKeydown(el, buffer, e) {
+        if (buffer.readOnly) return;
+        if (e.key === "Tab") {
+            e.preventDefault();
+            insertInCode(el, buffer, codeIndentUnit(el));
+            return;
+        }
+        if (e.key === "Enter") {
+            e.preventDefault();
+            insertInCode(el, buffer, "\n" + codeLeadingSpace(buffer));
+        }
+    }
+
+    // codeIndentUnit is what one indent is made of: tabSize spaces, or a
+    // literal tab when tabSize is 0 — which is what Go source wants.
+    function codeIndentUnit(el) {
+        const n = Number(el.dataset.tabSize) || 0;
+        return n > 0 ? " ".repeat(n) : "\t";
+    }
+
+    // codeLeadingSpace is the indentation of the line the caret is in, which
+    // Enter copies onto the new line. Read from the text before the caret so
+    // that splitting a line mid-way still continues at that line's indent.
+    function codeLeadingSpace(buffer) {
+        const value = String(buffer.value ?? "");
+        const caret = codeSelection(buffer).start;
+        const lineStart = value.lastIndexOf("\n", caret - 1) + 1;
+        const line = value.slice(lineStart, caret);
+        return line.slice(0, line.length - line.trimStart().length);
+    }
+
+    // codeSelection reads the caret as two UTF-16 offsets, which is the unit
+    // the DOM speaks. Defaulted rather than assumed present because the
+    // harness DOM has no selection of its own and because a textarea that has
+    // never been focused reports null in some browsers.
+    function codeSelection(buffer) {
+        const length = String(buffer.value ?? "").length;
+        const start = Number(buffer.selectionStart ?? length) || 0;
+        const end = Number(buffer.selectionEnd ?? start) || 0;
+        return start <= end ? { start, end } : { start: end, end: start };
+    }
+
+    // setCodeCaret moves the selection, through the DOM's own method where
+    // there is one. The fallback assignment is for the harness, which models
+    // the two offsets as plain properties — and is also what a browser does
+    // when the element is not focused.
+    function setCodeCaret(buffer, start, end) {
+        if (typeof buffer.setSelectionRange === "function") {
+            buffer.setSelectionRange(start, end);
+            return;
+        }
+        buffer.selectionStart = start;
+        buffer.selectionEnd = end;
+    }
+
+    // insertInCode replaces the selection with text and leaves the caret after
+    // it — the browser's own typing behaviour, re-implemented for the two keys
+    // whose default this runtime had to prevent.
+    function insertInCode(el, buffer, text) {
+        const value = String(buffer.value ?? "");
+        const { start, end } = codeSelection(buffer);
+        buffer.value = value.slice(0, start) + text + value.slice(end);
+        setCodeCaret(buffer, start + text.length, start + text.length);
+        emitCodeChange(el, buffer);
+    }
+
+    // runCodeCommand applies one core.RunEditorCommand to the buffer. An
+    // unknown command is a no-op rather than an error: a toolbar that outgrew
+    // its editor must not crash the screen.
+    function runCodeCommand(el, command) {
+        const buffer = codeChrome(el, "codebuffer");
+        if (!buffer) return;
+        if (command === "selectAll") {
+            // Allowed on a read-only buffer: selecting is reading, which is
+            // exactly what read-only permits.
+            setCodeCaret(buffer, 0, String(buffer.value ?? "").length);
+            if (typeof buffer.focus === "function") buffer.focus();
+            reportCodeSelection(el, buffer);
+            return;
+        }
+        if (buffer.readOnly) return;
+        if (command === "indent" || command === "outdent" || command === "commentLine") {
+            transformCodeLines(el, buffer, command);
+        }
+    }
+
+    // transformCodeLines rewrites every line the selection touches.
+    //
+    // The selection is first widened to whole lines, because all three
+    // commands are line commands: indenting "the middle of line 4" means
+    // indenting line 4. The rewritten block then takes the selection, so a
+    // second indent indents the same lines rather than a range that has
+    // drifted under the first one's inserted characters.
+    function transformCodeLines(el, buffer, command) {
+        const value = String(buffer.value ?? "");
+        const { start, end } = codeSelection(buffer);
+        const from = value.lastIndexOf("\n", start - 1) + 1;
+        const nextNewline = value.indexOf("\n", end);
+        const to = nextNewline < 0 ? value.length : nextNewline;
+
+        const lines = value.slice(from, to).split("\n");
+        const unit = codeIndentUnit(el);
+        const prefix = el.dataset.commentPrefix ?? "";
+        let out;
+
+        if (command === "indent") {
+            out = lines.map((line) => unit + line);
+        } else if (command === "outdent") {
+            out = lines.map((line) => outdentCodeLine(line, unit));
+        } else {
+            // A language with no line comment (JSON) sets an empty prefix and
+            // gets a command that does nothing, rather than one that inserts a
+            // marker making the document invalid.
+            if (!prefix) return;
+            // The toggle is decided for the whole run, not per line: a
+            // partially-commented block becomes fully commented rather than
+            // inverting line by line, which is what every editor does and what
+            // makes the command its own undo. Blank lines do not vote.
+            const allCommented = lines.every(
+                (line) => line.trim() === "" || line.trimStart().startsWith(prefix)
+            );
+            out = allCommented
+                ? lines.map((line) => uncommentCodeLine(line, prefix))
+                : lines.map((line) => commentCodeLine(line, prefix));
+        }
+
+        const replaced = out.join("\n");
+        buffer.value = value.slice(0, from) + replaced + value.slice(to);
+        setCodeCaret(buffer, from, from + replaced.length);
+        emitCodeChange(el, buffer);
+    }
+
+    // outdentCodeLine removes one indent's worth of leading white space, and
+    // leaves a line that has none alone rather than eating a glyph.
+    //
+    // The tab is stripped whatever the unit is, because a buffer mixes them:
+    // a file indented with tabs outdented by a four-space unit would otherwise
+    // lose nothing at all.
+    function outdentCodeLine(line, unit) {
+        if (line.startsWith(unit)) return line.slice(unit.length);
+        if (line.startsWith("\t")) return line.slice(1);
+        let i = 0;
+        while (i < unit.length && line[i] === " ") i++;
+        return line.slice(i);
+    }
+
+    // commentCodeLine inserts the prefix at the start of the line's
+    // *indentation*, not at column zero, so a commented block keeps the shape
+    // of the code it came from. The space after the prefix is what every
+    // formatter writes and what uncommentCodeLine takes back off.
+    //
+    // A blank line is left blank: a file of "// " on its empty lines is
+    // trailing white space that a formatter will strip on the next save.
+    function commentCodeLine(line, prefix) {
+        if (line.trim() === "") return line;
+        const indent = line.length - line.trimStart().length;
+        return line.slice(0, indent) + prefix + " " + line.slice(indent);
+    }
+
+    // uncommentCodeLine removes the first prefix and the single space that
+    // usually follows it. One space, not all of them: "//     aligned" is a
+    // comment whose own indentation is part of what it says.
+    function uncommentCodeLine(line, prefix) {
+        const at = line.indexOf(prefix);
+        if (at < 0) return line;
+        let after = at + prefix.length;
+        if (line[after] === " ") after++;
+        return line.slice(0, at) + line.slice(after);
+    }
+
+    // reportCodeSelection dispatches the caret as "start:end" in *byte*
+    // offsets into the UTF-8 value, which is the unit core.OnSelectionChange
+    // promises and the one all four hosts can agree on. The DOM counts UTF-16
+    // code units, so the conversion is this function's whole job beyond the
+    // dispatch.
+    //
+    // Deduped against the last payload because the four events this is wired
+    // to overlap heavily — a keystroke fires input and keyup — and each
+    // dispatch is a Go render pass. An unchanged selection is not news.
+    function reportCodeSelection(el, buffer) {
+        const cbId = el.dataset.listener_onSelectionChange;
+        if (!cbId) return;
+        const value = String(buffer.value ?? "");
+        const { start, end } = codeSelection(buffer);
+        const payload =
+            utf8Length(value.slice(0, start)) + ":" + utf8Length(value.slice(0, end));
+        if (el.dataset.codeSelection === payload) return;
+        el.dataset.codeSelection = payload;
+        window.GoInvokeCallback(cbId, { value: payload });
+    }
+
+    // utf8Length is the byte length of a JavaScript string as UTF-8.
+    //
+    // Hand-counted rather than `new TextEncoder().encode(s).length` because
+    // this runtime is evaluated in contexts that provide a deliberately small
+    // set of globals (see wasm/verify/load.mjs), and because the count is the
+    // only part of the encoder that is wanted — encoding a whole prefix to
+    // measure it allocates a buffer per keystroke.
+    //
+    // The surrogate arithmetic is the part worth reading: a code point above
+    // the BMP is two UTF-16 units and four UTF-8 bytes, so a high surrogate
+    // contributes 4 and its partner is skipped.
+    function utf8Length(s) {
+        let bytes = 0;
+        for (let i = 0; i < s.length; i++) {
+            const c = s.charCodeAt(i);
+            if (c < 0x80) bytes += 1;
+            else if (c < 0x800) bytes += 2;
+            else if (c >= 0xd800 && c <= 0xdbff && i + 1 < s.length) {
+                bytes += 4;
+                i++;
+            } else bytes += 3;
+        }
+        return bytes;
+    }
+
+    // syncCodeEditor brings the mirror, the fillers and the gutter into
+    // agreement with the buffer. Idempotent and cheap, and called from every
+    // place either half can have moved: after the children exist on the create
+    // path, after every patch batch that touched the editor, and after every
+    // local edit.
+    //
+    // This is where rule 2 of the shared editor design lives — decoration is
+    // advisory and per line — so it is worth stating plainly what it protects
+    // against. Go is a keystroke behind for a few milliseconds after every
+    // keypress: its rows describe the text as it was *before* the key. Painting
+    // them anyway would show the user the old line while they type the new one.
+    // Refusing to paint the whole editor would make it flash plain on every
+    // keystroke. So the decision is per line, and only the line being edited
+    // loses its colours, for one frame.
+    function syncCodeEditor(el) {
+        const buffer = codeChrome(el, "codebuffer");
+        if (!buffer) return;
+        const lines = String(buffer.value ?? "").split("\n");
+
+        const rows = [];
+        for (const child of el.children) {
+            if (child.getAttribute("data-node-path") !== null) rows.push(child);
+        }
+        rows.forEach((row, i) => syncCodeRow(row, lines[i]));
+        syncCodeFillers(el, rows.length, lines);
+        // The gutter numbers what is on screen, which is the longer of the two
+        // sides: the buffer's lines (Go is behind, and the fillers are standing
+        // in) or Go's rows (Go is ahead, and the extra rows are still showing
+        // their own text). Numbering only the buffer would leave a drawn line
+        // with no number beside it for a frame, which reads as a dropped line.
+        syncCodeGutter(el, Math.max(rows.length, lines.length));
+        sizeCodeBuffer(el, buffer);
+    }
+
+    // syncCodeRow decides whether row i shows Go's colours or the buffer's own
+    // plain text, and rebuilds it only when that decision (or the text behind
+    // it) has actually changed.
+    //
+    // The runs are kept on the element rather than re-read from a patch,
+    // because the decision has to be *re-made* on every keystroke while the
+    // runs stand still: a line that disagreed a moment ago and agrees now must
+    // get its colours back, and Go sends no new patch for a row whose runs did
+    // not change. Storing them is what makes the rule reversible.
+    function syncCodeRow(row, line) {
+        const runs = Array.isArray(row.__grmobRuns) ? row.__grmobRuns : [];
+        let text = "";
+        for (const run of runs) text += String((run && run.t) ?? "");
+
+        if (line !== undefined && text === line) {
+            if (row.dataset.codeRow !== "decorated") {
+                applyGridRuns(row, runs);
+                row.dataset.codeRow = "decorated";
+                delete row.dataset.codeText;
+            }
+            return;
+        }
+        // A row with no line under it at all (Go is ahead: it still has rows
+        // for text the user has deleted) shows its own text rather than
+        // nothing, so the mirror never goes blank under a live buffer.
+        const plain = line === undefined ? text : line;
+        if (row.dataset.codeRow === "plain" && row.dataset.codeText === plain) return;
+        applyGridRuns(row, plain === "" ? [] : [{ t: plain }]);
+        row.dataset.codeRow = "plain";
+        row.dataset.codeText = plain;
+    }
+
+    // syncCodeFillers keeps one blank stand-in per buffer line the mirror has
+    // no row for. Without them, the first thing a new line does is disappear:
+    // the user presses Enter, the buffer has a line Go has not sent a row for,
+    // and its glyphs are transparent over nothing.
+    //
+    // They are chrome — no data-node-path, no patch addressed to one — and
+    // they are the only chrome in this runtime that *trails* the node
+    // children, which is why nodeChildCount exists.
+    function syncCodeFillers(el, rowCount, lines) {
+        const have = [];
+        for (const child of el.children) {
+            if (child.dataset.grmobChrome === "codefiller") have.push(child);
+        }
+        const want = Math.max(0, lines.length - rowCount);
+        while (have.length > want) have.pop().remove();
+        while (have.length < want) {
+            const filler = document.createElement("div");
+            filler.dataset.grmobChrome = "codefiller";
+            Object.assign(filler.style, CODE_FILLER_STYLE);
+            el.appendChild(filler);
+            have.push(filler);
+        }
+        have.forEach((filler, i) => {
+            const text = lines[rowCount + i] ?? "";
+            if (filler.dataset.codeText === text) return;
+            filler.dataset.codeText = text;
+            applyGridRuns(filler, text === "" ? [] : [{ t: text }]);
+        });
+    }
+
+    // syncCodeGutter draws the line numbers and opens the padding they sit in.
+    //
+    // One text node with newlines in it rather than one element per line: the
+    // gutter is `white-space: pre` at the box's own line height, so number N
+    // lands beside row N by construction instead of by two element lists being
+    // kept the same length.
+    //
+    // The width is in `ch` — the width of a "0", which in a fixed-pitch box is
+    // the width of every glyph — so the gutter is exactly as wide as its widest
+    // number at any font size, with nothing measured. htmlout computes the
+    // same string (gutterWidth).
+    function syncCodeGutter(el, lines) {
+        const gutter = codeChrome(el, "codegutter");
+        if (!gutter) return;
+        if (el.dataset.lineNumbers !== "true") {
+            gutter.style.display = "none";
+            el.style.paddingLeft = "";
+            return;
+        }
+        gutter.style.display = "";
+        const width = String(String(lines).length + 2) + "ch";
+        gutter.style.width = width;
+        // Written after any update-style patch in the same batch, which is what
+        // the sync pass running at the end of patch() buys: a style patch
+        // assigns the `padding` shorthand and would otherwise wipe this.
+        el.style.paddingLeft = width;
+
+        let text = "";
+        for (let i = 1; i <= lines; i++) text += (i > 1 ? "\n" : "") + i;
+        if (gutter.textContent !== text) gutter.textContent = text;
+    }
+
+    // sizeCodeBuffer stretches the transparent textarea over the whole mirror,
+    // including the parts of it that are scrolled out of view.
+    //
+    // An absolutely positioned child sized with `inset: 0` would cover the
+    // *visible* box only, so a click below the fold — or the caret arriving
+    // there — would miss the buffer entirely. The mirror's scroll size is the
+    // only thing that knows how big "the whole buffer" is.
+    //
+    // Skipped whole where there is no layout to read (the wasm/verify DOM),
+    // which is honest rather than convenient: a shim cannot answer a question
+    // about pixels, and a number invented here would be a lie in a style
+    // property. The claim this function makes is one for a browser to check.
+    function sizeCodeBuffer(el, buffer) {
+        if (typeof el.scrollWidth !== "number" || typeof el.scrollHeight !== "number") return;
+        const gutter = codeChrome(el, "codegutter");
+        const inset =
+            gutter && gutter.style.display !== "none" ? gutter.offsetWidth || 0 : 0;
+        buffer.style.left = inset + "px";
+        buffer.style.width = Math.max(0, el.scrollWidth - inset) + "px";
+        buffer.style.height = el.scrollHeight + "px";
+    }
+
+    // The patch pass. Up from each touched element as well as at it, because a
+    // row's runs patch names the row and the editor is what has to re-decide
+    // the stale-line rule for it.
+    function syncTouchedCodeEditors(touched) {
+        const done = new Set();
+        for (const start of touched) {
+            for (let el = start; el && el.dataset; el = el.parentNode) {
+                if (el.dataset.nodeType !== "CodeEditor" || done.has(el)) continue;
+                done.add(el);
+                syncCodeEditor(el);
+            }
+        }
+    }
+
+
+    // --- RichTextEditor ------------------------------------------------------
+    //
+    // core.RichTextEditor is a `contenteditable` <div> whose value is a
+    // richtext.Doc. The runtime owns both serializers — Doc to DOM and DOM back
+    // to Doc — and every command is a *pure transformation of the Doc*.
+    //
+    // # Why the commands are Doc transformations and not Range surgery
+    //
+    // The obvious implementation of "make this bold" in a contenteditable is to
+    // wrap the Range in a <strong>, and it is a trap. Browsers split and merge
+    // nodes freely under contenteditable, a Range can start inside one element
+    // and end inside another, and the result of the surgery is markup that the
+    // serializer then has to make sense of anyway. document.execCommand would do
+    // it for us and is deprecated, differs per browser, and produces a different
+    // document in each.
+    //
+    // So the selection is only ever *read* and *restored*, never operated on:
+    //
+    //	 selection ──▶ two character offsets into the document's plain text
+    //	                    │
+    //	                    ▼
+    //	 doc + offsets + command ──▶ a new doc          (pure, and tested)
+    //	                    │
+    //	                    ▼
+    //	 rebuild the DOM, restore the caret at the same offsets
+    //
+    // Everything in the middle is a function of values with no DOM in it, which
+    // is what lets wasm/verify test the whole command vocabulary against a DOM
+    // that has no Selection API at all. The two browser-only steps are small
+    // enough to read in one sitting and are the only things a real browser is
+    // needed for.
+    //
+    // # Typing is the other direction, and does not re-render
+    //
+    // While the user types, the DOM is authoritative: the `input` handler reads
+    // the DOM back into a Doc and sends it upstream, and nothing rebuilds. A
+    // rebuild on every keystroke would put the caret at the start of the
+    // document on every keystroke. Go's echo of that Doc is dropped by the same
+    // guard core.TextArea has always used; a Doc Go sends that this editor never
+    // sent is a deliberate rewrite and *does* rebuild.
+    //
+    // # Paste goes through the serializer, so foreign markup dies at the edge
+    //
+    // A paste is prevented, its text/plain taken, and inserted into the Doc as
+    // text. Nothing a word processor or another web page puts on the clipboard
+    // reaches the document — which is the only way to keep the value a
+    // richtext.Doc rather than whatever HTML happened to be copied.
+    //
+    // # Undo is this runtime's own stack
+    //
+    // A browser's native undo does not survive the programmatic rebuilds a
+    // command makes, so the runtime keeps a stack of Docs and their selections.
+    // The two natives use their platform's undo manager, which does survive
+    // their own edits; this is the one place the three live hosts genuinely
+    // differ in mechanism rather than in spelling.
+
+    // The wire shape, restated: core/richtext.go sends richtext.Doc's JSON, so
+    // everything below works on `{b:[{k,r:[{t,b,i,u,s,c,l}]}]}` directly rather
+    // than converting to some other shape first. One representation, and it is
+    // the one that crosses the wire in both directions.
+    //
+    // The block kinds are richtext.BlockKind's values, which is why that type is
+    // a string in Go: the `block:` command, the document and this table all name
+    // a heading with the same token.
+    const RICH_BLOCK_TAG = {
+        p: "p",
+        h1: "h1",
+        h2: "h2",
+        h3: "h3",
+        bullet: "li",
+        numbered: "li",
+        quote: "blockquote",
+        code: "pre",
+    };
+
+    // The inverse, for DOM -> Doc. `li` is absent because a list item's kind
+    // depends on the list it is in, which richTextFromDOM reads from the parent.
+    const RICH_TAG_KIND = {
+        P: "p",
+        H1: "h1",
+        H2: "h2",
+        H3: "h3",
+        BLOCKQUOTE: "quote",
+        PRE: "code",
+    };
+
+    // The five marks, as (Doc key, tag) pairs in the order they nest — link
+    // outermost, code innermost. The order is the same one richtext's Markdown
+    // and HTML emitters use, so a document drawn here and the same document
+    // exported by htmlout have the same shape.
+    const RICH_MARKS = [
+        { key: "b", tag: "STRONG" },
+        { key: "i", tag: "EM" },
+        { key: "s", tag: "S" },
+        { key: "u", tag: "U" },
+        { key: "c", tag: "CODE" },
+    ];
+
+    const RICH_EDITOR_PROPS = new Set([
+        "doc", "placeholder", "onChange", "onSelectionChange",
+        "readOnly", "editorEpoch", "editorCommand",
+    ]);
+
+    // --- The pure half: a Doc, two offsets, and a command --------------------
+
+    // richBlockText is one block's text; richDocText is the whole document's,
+    // with blocks joined by a newline.
+    //
+    // This is the coordinate system every offset below is in, and it is
+    // deliberately richtext.Doc.PlainText's: one newline per block boundary, so
+    // an empty block is one character wide and a caret can sit in it.
+    function richBlockText(block) {
+        let out = "";
+        for (const run of (block && block.r) || []) out += (run && run.t) || "";
+        return out;
+    }
+
+    function richDocText(doc) {
+        return ((doc && doc.b) || []).map(richBlockText).join("\n");
+    }
+
+    // richLocate converts a document offset into a block index and an offset
+    // within it. Clamped at both ends, because a selection restored after a
+    // command may name a position the new document is shorter than.
+    function richLocate(doc, offset) {
+        const blocks = (doc && doc.b) || [];
+        let at = Math.max(0, offset);
+        for (let i = 0; i < blocks.length; i++) {
+            const length = richBlockText(blocks[i]).length;
+            if (at <= length) return { block: i, offset: at };
+            at -= length + 1; // the newline between this block and the next
+        }
+        const last = Math.max(0, blocks.length - 1);
+        return { block: last, offset: richBlockText(blocks[last]).length };
+    }
+
+    // richSplitRuns cuts a block's runs at a character offset, so that a range
+    // ending mid-run can be given its own marks without disturbing the rest.
+    //
+    // Returns a new array; nothing here mutates a Doc it was handed, which is
+    // what makes the undo stack a stack of values rather than a stack of
+    // promises.
+    function richSplitRuns(runs, offset) {
+        const out = [];
+        let at = 0;
+        for (const run of runs || []) {
+            const text = (run && run.t) || "";
+            const end = at + text.length;
+            if (offset > at && offset < end) {
+                out.push({ ...run, t: text.slice(0, offset - at) });
+                out.push({ ...run, t: text.slice(offset - at) });
+            } else {
+                out.push({ ...run });
+            }
+            at = end;
+        }
+        return out;
+    }
+
+    // richMergeRuns collapses adjacent runs that carry identical formatting and
+    // drops the empty ones.
+    //
+    // Not tidiness: the runs are the wire, and a document that gained a run
+    // boundary on every keystroke would grow without bound while looking
+    // identical on screen. It is the same maximal-run rule the highlight package
+    // states for a GridRow, for the same reason.
+    function richMergeRuns(runs) {
+        const out = [];
+        for (const run of runs || []) {
+            if (!run || !run.t) continue;
+            const previous = out[out.length - 1];
+            if (previous && richSameMarks(previous, run)) {
+                previous.t += run.t;
+                continue;
+            }
+            out.push({ ...run });
+        }
+        return out;
+    }
+
+    function richSameMarks(a, b) {
+        for (const mark of RICH_MARKS) {
+            if (!!a[mark.key] !== !!b[mark.key]) return false;
+        }
+        return (a.l || "") === (b.l || "");
+    }
+
+    // richMapRange applies `edit` to every run inside [start, end) of the
+    // document, splitting at both ends first so the range is run-aligned.
+    //
+    // An empty range touches nothing and returns the document unchanged, which
+    // is what makes a mark command with a bare caret a no-op here — see
+    // richPendingMarks for what happens instead.
+    function richMapRange(doc, start, end, edit) {
+        if (end <= start) return doc;
+        const from = richLocate(doc, start);
+        const to = richLocate(doc, end);
+        const blocks = ((doc && doc.b) || []).map((block) => ({ ...block, r: (block.r || []).map((r) => ({ ...r })) }));
+
+        for (let i = from.block; i <= to.block && i < blocks.length; i++) {
+            const text = richBlockText(blocks[i]);
+            const lo = i === from.block ? from.offset : 0;
+            const hi = i === to.block ? to.offset : text.length;
+            if (hi <= lo) continue;
+
+            let runs = richSplitRuns(blocks[i].r || [], lo);
+            runs = richSplitRuns(runs, hi);
+            let at = 0;
+            runs = runs.map((run) => {
+                const next = at + run.t.length;
+                const inside = at >= lo && next <= hi;
+                at = next;
+                return inside ? edit({ ...run }) : run;
+            });
+            blocks[i].r = richMergeRuns(runs);
+        }
+        return { b: blocks };
+    }
+
+    // richRangeHasMark reports whether *every* run in the range already carries
+    // the mark, which is what decides a toggle's direction.
+    //
+    // All rather than any: selecting a sentence with one bold word in it and
+    // pressing bold should make the sentence bold, not unbold the word. That is
+    // what every editor does and the rule richtext's own commentLine toggle
+    // makes one package over.
+    function richRangeHasMark(doc, start, end, key) {
+        if (end <= start) return false;
+        let all = true;
+        let seen = false;
+        richMapRange(doc, start, end, (run) => {
+            seen = true;
+            if (!run[key]) all = false;
+            return run;
+        });
+        return seen && all;
+    }
+
+    // richSetBlockKind makes every block the range touches the given kind.
+    function richSetBlockKind(doc, start, end, kind) {
+        const from = richLocate(doc, start).block;
+        const to = richLocate(doc, Math.max(start, end)).block;
+        const blocks = ((doc && doc.b) || []).map((block, i) => {
+            if (i < from || i > to) return block;
+            const next = { ...block, k: kind };
+            // Paragraph is the wire's absent kind, so writing it explicitly
+            // would make a document that round-trips through here differ from
+            // one Go marshalled — same bytes, different keys.
+            if (kind === "p") delete next.k;
+            return next;
+        });
+        return { b: blocks };
+    }
+
+    // richInsertText replaces [start, end) with text, splitting blocks at every
+    // newline in it.
+    //
+    // This is the paste path and the pending-mark path, and it is the one edit
+    // that changes the document's *shape* rather than its marks — which is why
+    // it is spelled out here rather than left to the browser. The inserted text
+    // takes the marks of the run it lands in, which is what typing into the
+    // middle of a bold word does.
+    function richInsertText(doc, start, end, text) {
+        const cleaned = String(text ?? "").replace(/\r\n/g, "\n");
+        const cut = richMapRange(doc, start, end, () => ({ t: "" }));
+        const at = richLocate(cut, start);
+        const blocks = ((cut && cut.b) || []).map((block) => ({ ...block, r: (block.r || []).map((r) => ({ ...r })) }));
+        if (blocks.length === 0) blocks.push({ r: [] });
+
+        const target = blocks[Math.min(at.block, blocks.length - 1)];
+        const runs = richSplitRuns(target.r || [], at.offset);
+        // The marks the insertion inherits: the run to the left of the caret,
+        // or the one to the right at the start of a block.
+        let carried = {};
+        let seen = 0;
+        for (const run of runs) {
+            if (seen >= at.offset) break;
+            seen += run.t.length;
+            carried = { ...run, t: "" };
+        }
+        if (seen === 0 && runs.length) carried = { ...runs[0], t: "" };
+
+        const lines = cleaned.split("\n");
+        const head = [];
+        const tail = [];
+        let position = 0;
+        for (const run of runs) {
+            (position < at.offset ? head : tail).push(run);
+            position += run.t.length;
+        }
+
+        if (lines.length === 1) {
+            target.r = richMergeRuns([...head, { ...carried, t: lines[0] }, ...tail]);
+            return { b: blocks };
+        }
+        // A multi-line insertion splits the block: the first line joins what was
+        // before the caret, the last joins what was after, and the lines between
+        // become blocks of their own.
+        const made = [{ ...target, r: richMergeRuns([...head, { ...carried, t: lines[0] }]) }];
+        for (let i = 1; i < lines.length - 1; i++) {
+            made.push({ ...target, r: richMergeRuns([{ ...carried, t: lines[i] }]) });
+        }
+        made.push({ ...target, r: richMergeRuns([{ ...carried, t: lines[lines.length - 1] }, ...tail]) });
+        blocks.splice(at.block, 1, ...made);
+        return { b: blocks };
+    }
+
+    // applyRichCommand is the whole command vocabulary as one pure function.
+    //
+    // Returns the new document, or null for a command this editor does not know
+    // — which the caller treats as a no-op, because a toolbar that outgrew its
+    // editor must not break the screen.
+    //
+    // `undo` and `redo` are absent on purpose: they are not transformations of
+    // the document, they are movements through a history, so they are handled by
+    // the caller where the history lives.
+    function applyRichCommand(doc, start, end, command) {
+        if (command.startsWith("block:")) {
+            return richSetBlockKind(doc, start, end, command.slice("block:".length));
+        }
+        if (command.startsWith("link:")) {
+            const url = command.slice("link:".length);
+            return richMapRange(doc, start, end, (run) => ({ ...run, l: url }));
+        }
+        if (command === "unlink") {
+            return richMapRange(doc, start, end, (run) => {
+                const next = { ...run };
+                delete next.l;
+                return next;
+            });
+        }
+        for (const mark of RICH_MARKS) {
+            if (command !== richMarkCommand(mark.key)) continue;
+            const on = !richRangeHasMark(doc, start, end, mark.key);
+            return richMapRange(doc, start, end, (run) => {
+                const next = { ...run };
+                if (on) next[mark.key] = 1;
+                else delete next[mark.key];
+                return next;
+            });
+        }
+        return null;
+    }
+
+    // The command name for a mark key. One table rather than two: the keys are
+    // the wire's and the commands are core's Edit* constants, and this is the
+    // one place they are paired.
+    function richMarkCommand(key) {
+        return { b: "bold", i: "italic", u: "underline", s: "strike", c: "code" }[key];
+    }
+
+    // richMarksAt reports the formatting active at a position, which is what a
+    // toolbar draws its pressed state from.
+    //
+    // For a selection it is the marks every run in it carries; for a bare caret
+    // it is the marks of the run to its left, which is what the next character
+    // typed there would inherit.
+    function richMarksAt(doc, start, end) {
+        const marks = [];
+        let link = "";
+        const probeStart = end > start ? start : Math.max(0, start - 1);
+        const probeEnd = end > start ? end : start;
+        if (probeEnd > probeStart) {
+            for (const mark of RICH_MARKS) {
+                if (richRangeHasMark(doc, probeStart, probeEnd, mark.key)) {
+                    marks.push(richMarkCommand(mark.key));
+                }
+            }
+            richMapRange(doc, probeStart, probeEnd, (run) => {
+                if (run.l) link = run.l;
+                return run;
+            });
+        }
+        return { marks, link };
+    }
+
+    // --- Doc -> DOM ----------------------------------------------------------
+
+    // richTextToDOM rebuilds the editor's contents from a document.
+    //
+    // Every element it makes is chrome: no data-node-path, marked
+    // data-grmob-chrome, and no patch is ever addressed to one. A
+    // RichTextEditor has no node children at all — the document is one prop —
+    // so, exactly like a <select>'s options, nothing has to count past these.
+    //
+    // Each run is wrapped in an element even when it carries no marks, and even
+    // though a browser would be happy with a bare text node. Two reasons: the
+    // serializer's element path and its text path then exercise the same shape,
+    // and the harness DOM in wasm/verify has no text nodes at all, so a
+    // structure that depended on them could not be tested anywhere.
+    function richTextToDOM(el, doc) {
+        el.innerHTML = "";
+        let list = null;
+        let listKind = "";
+        for (const block of (doc && doc.b) || []) {
+            const kind = block && block.k ? block.k : "p";
+            const tag = RICH_BLOCK_TAG[kind] || "p";
+
+            if (kind === "bullet" || kind === "numbered") {
+                if (listKind !== kind) {
+                    list = document.createElement(kind === "bullet" ? "ul" : "ol");
+                    list.dataset.grmobChrome = "richblock";
+                    el.appendChild(list);
+                    listKind = kind;
+                }
+            } else {
+                list = null;
+                listKind = "";
+            }
+
+            const box = document.createElement(tag);
+            box.dataset.grmobChrome = "richblock";
+            if (kind === "code") {
+                // <pre> keeps its newlines, which is the whole reason it is the
+                // element, and the inner <code> is what richtext.HTML writes.
+                const code = document.createElement("code");
+                code.dataset.grmobChrome = "richrun";
+                code.textContent = richBlockText(block);
+                box.appendChild(code);
+            } else {
+                richRunsToDOM(box, (block && block.r) || []);
+            }
+            (list || el).appendChild(box);
+        }
+    }
+
+    // richRunsToDOM writes one block's runs, nesting the mark elements in
+    // RICH_MARKS' order with the link outermost — the same order richtext's own
+    // HTML() uses, so a document drawn here and one exported by htmlout are the
+    // same tree.
+    function richRunsToDOM(box, runs) {
+        for (const run of runs) {
+            let node = document.createElement("span");
+            node.dataset.grmobChrome = "richrun";
+            node.textContent = (run && run.t) || "";
+            // Reversed, so the *first* entry in RICH_MARKS ends up outermost:
+            // each wrap encloses what came before it, so applying them in order
+            // would put the last one on the outside. The order that results —
+            // link, strong, em, s, u, code — is richtext's own HTML() order, so
+            // a document drawn here and one exported by htmlout are the same
+            // tree.
+            for (const mark of [...RICH_MARKS].reverse()) {
+                if (!run[mark.key]) continue;
+                const wrapper = document.createElement(mark.tag.toLowerCase());
+                wrapper.dataset.grmobChrome = "richrun";
+                wrapper.appendChild(node);
+                node = wrapper;
+            }
+            if (run.l) {
+                const link = document.createElement("a");
+                link.dataset.grmobChrome = "richrun";
+                link.setAttribute("href", run.l);
+                link.appendChild(node);
+                node = link;
+            }
+            box.appendChild(node);
+        }
+        if (!runs.length) {
+            // An empty block is a blank line the writer typed, and an empty
+            // block element has no height. The <br> is what browsers put in an
+            // empty contenteditable paragraph themselves, and it is what keeps a
+            // caret able to sit there.
+            const br = document.createElement("br");
+            br.dataset.grmobChrome = "richrun";
+            box.appendChild(br);
+        }
+    }
+
+    // --- DOM -> Doc ----------------------------------------------------------
+
+    // richTextFromDOM reads the editor's contents back into a document.
+    //
+    // Normalizing rather than trusting, which is the rule this whole direction
+    // is written under: a browser under contenteditable splits and merges
+    // elements freely, promotes a <span> to a <font>, leaves a stray <div> where
+    // a paragraph was, and inserts <br>s nobody asked for. So nothing here reads
+    // the structure it expects to find — it reads whatever is there and decides
+    // what each piece *is*.
+    //
+    // The one thing it will not do is guess. An element whose tag means nothing
+    // to this model contributes its text and none of its own meaning, which is
+    // the same degradation richtext.normalizeKind makes for a block kind it does
+    // not know: the words are never at risk, only their presentation.
+    function richTextFromDOM(el) {
+        const blocks = [];
+        richCollectBlocks(el, blocks, "");
+        if (!blocks.length) blocks.push({ r: [] });
+        return { b: blocks };
+    }
+
+    function richCollectBlocks(parent, blocks, listKind) {
+        for (const child of parent.children) {
+            const tag = child.tagName;
+            if (tag === "UL" || tag === "OL") {
+                richCollectBlocks(child, blocks, tag === "UL" ? "bullet" : "numbered");
+                continue;
+            }
+            if (tag === "PRE") {
+                blocks.push({ k: "code", r: richTextOf(child) ? [{ t: richTextOf(child) }] : [] });
+                continue;
+            }
+            const kind = tag === "LI" ? listKind || "bullet" : RICH_TAG_KIND[tag] || "p";
+            const runs = richMergeRuns(richCollectRuns(child, {}));
+            const block = { r: runs };
+            if (kind !== "p") block.k = kind;
+            blocks.push(block);
+        }
+        // A contenteditable whose blocks the browser stripped leaves bare text
+        // under the editor itself. It is a paragraph, which is the only thing it
+        // can be.
+        if (!blocks.length && richTextOf(parent)) {
+            blocks.push({ r: [{ t: richTextOf(parent) }] });
+        }
+    }
+
+    // richCollectRuns walks one block, carrying the marks of whatever it is
+    // nested inside. Both node kinds are handled: element children, which is
+    // what this runtime builds, and text nodes, which is what a browser produces
+    // the moment anybody types.
+    function richCollectRuns(node, carried) {
+        const out = [];
+        const kids = richChildNodes(node);
+        // The harness DOM (wasm/verify/dom.mjs) models elements only: an
+        // element's text is a property on it rather than a child text node. So a
+        // childless element carrying text is a text run there, and is never
+        // reached in a browser — where a leaf element's childNodes holds the
+        // text node this branch stands in for.
+        if (!node.childNodes && kids.length === 0) {
+            if (node.textContent) out.push({ ...carried, t: node.textContent });
+            return out;
+        }
+        for (const child of kids) {
+            if (child.nodeType === 3) {
+                if (child.data) out.push({ ...carried, t: child.data });
+                continue;
+            }
+            if (!child.tagName) continue;
+            if (child.tagName === "BR") {
+                // The filler a browser puts in an empty paragraph. It is not
+                // content and must not become a newline inside a block: a block
+                // is a line, and a newline in one would make the offsets
+                // disagree with richDocText.
+                continue;
+            }
+            const marks = { ...carried };
+            for (const mark of RICH_MARKS) {
+                if (child.tagName === mark.tag) marks[mark.key] = 1;
+            }
+            // The presentational spellings a browser substitutes for the
+            // semantic ones, read as the same marks. A contenteditable that has
+            // been through a paste or a native bold shortcut is full of them.
+            if (child.tagName === "B") marks.b = 1;
+            if (child.tagName === "I") marks.i = 1;
+            if (child.tagName === "STRIKE" || child.tagName === "DEL") marks.s = 1;
+            if (child.tagName === "INS") marks.u = 1;
+            if (child.tagName === "A") {
+                const href = child.getAttribute("href");
+                if (href) marks.l = href;
+            }
+            out.push(...richCollectRuns(child, marks));
+        }
+        return out;
+    }
+
+    // richChildNodes is childNodes where there is one and children where there
+    // is not — the harness DOM models elements only, and the element path is the
+    // one this runtime's own output exercises.
+    function richChildNodes(node) {
+        return node.childNodes || node.children || [];
+    }
+
+    // richTextOf is textContent where the DOM computes it and a manual walk
+    // where it does not. The harness stores textContent per element rather than
+    // deriving it, so a <pre> holding a <code> reads as "" there.
+    function richTextOf(node) {
+        if (node.childNodes) return node.textContent || "";
+        let out = node.textContent || "";
+        for (const child of node.children || []) out += richTextOf(child);
+        return out;
+    }
+
+    // --- The browser-only half: the selection, and the element's wiring ------
+
+    // richSelectionOffsets reads the caret as two character offsets into the
+    // document's plain text — the coordinate system every pure function above
+    // works in — falling back to the last selection this editor remembered.
+    //
+    // # Why the fallback is not a convenience
+    //
+    // Clicking a toolbar button can take focus out of a contenteditable before
+    // the click handler runs, and a browser collapses the selection when it
+    // does. So by the time "make this bold" arrives, the live selection is
+    // often gone — which would silently make every toolbar command act on a
+    // bare caret at wherever the collapse left it. Remembering the selection as
+    // it moves is the standard fix and the only one that does not depend on
+    // intercepting mousedown on a button this runtime does not own: the toolbar
+    // is Go's, several nodes away.
+    //
+    // It is also what makes the command vocabulary testable. wasm/verify's DOM
+    // has no Selection API — a shim cannot answer a question about a caret, and
+    // a number invented there would make every command test pass for the wrong
+    // reason — so a test sets the remembered selection and drives the real path.
+    function richSelectionOffsets(el) {
+        const live = richLiveSelection(el);
+        if (live) {
+            el.__richSelection = live;
+            return live;
+        }
+        return el.__richSelection || null;
+    }
+
+    function richLiveSelection(el) {
+        if (typeof window.getSelection !== "function") return null;
+        const selection = window.getSelection();
+        if (!selection || selection.rangeCount === 0) return null;
+        const range = selection.getRangeAt(0);
+        if (typeof el.contains !== "function" || !el.contains(range.startContainer)) return null;
+        const start = richOffsetOf(el, range.startContainer, range.startOffset);
+        const end = richOffsetOf(el, range.endContainer, range.endOffset);
+        if (start === null || end === null) return null;
+        return start <= end ? { start, end } : { start: end, end: start };
+    }
+
+    // richOffsetOf converts a (container, offset) pair into a document offset.
+    //
+    // The walk is the same one richDocText describes: every block contributes
+    // its text plus one newline, and every text node inside a block contributes
+    // its length. Doing it by walking rather than by measuring means the two
+    // cannot disagree about where a block boundary is.
+    function richOffsetOf(el, container, offset) {
+        let total = 0;
+        let found = null;
+
+        const walkBlock = (block) => {
+            const visit = (node) => {
+                if (found !== null) return;
+                if (node === container && node.nodeType !== 3) {
+                    // A container that is an element addresses its *children*,
+                    // so the offset counts child nodes rather than characters.
+                    let seen = 0;
+                    for (const child of richChildNodes(node)) {
+                        if (seen >= offset) break;
+                        total += richTextOf(child).length;
+                        seen++;
+                    }
+                    found = total;
+                    return;
+                }
+                if (node.nodeType === 3) {
+                    if (node === container) {
+                        found = total + offset;
+                        return;
+                    }
+                    total += node.data.length;
+                    return;
+                }
+                if (node.tagName === "BR") return;
+                for (const child of richChildNodes(node)) visit(child);
+            };
+            visit(block);
+        };
+
+        for (const block of richBlockElements(el)) {
+            walkBlock(block);
+            if (found !== null) return found;
+            total += 1; // the newline between this block and the next
+        }
+        return found;
+    }
+
+    // richBlockElements is the editor's blocks in document order, flattening the
+    // <ul>/<ol> wrappers so that a list item is a block like any other — which
+    // is what the model says it is.
+    function richBlockElements(el) {
+        const out = [];
+        for (const child of el.children) {
+            if (child.tagName === "UL" || child.tagName === "OL") {
+                for (const item of child.children) out.push(item);
+                continue;
+            }
+            out.push(child);
+        }
+        return out;
+    }
+
+    // richRestoreSelection puts the caret back at two document offsets after a
+    // rebuild. Browser-only, and silent where there is no Selection API.
+    function richRestoreSelection(el, start, end) {
+        // Remembered whether or not there is a live selection to set, because
+        // the remembered one is what the next command will read — see
+        // richSelectionOffsets.
+        el.__richSelection = { start: Math.min(start, end), end: Math.max(start, end) };
+        if (typeof window.getSelection !== "function" || typeof document.createRange !== "function") {
+            return;
+        }
+        const from = richNodeAt(el, start);
+        const to = richNodeAt(el, end);
+        if (!from || !to) return;
+        const range = document.createRange();
+        range.setStart(from.node, from.offset);
+        range.setEnd(to.node, to.offset);
+        const selection = window.getSelection();
+        selection.removeAllRanges();
+        selection.addRange(range);
+        el.__richSelection = { start: Math.min(start, end), end: Math.max(start, end) };
+    }
+
+    // richNodeAt is richOffsetOf's inverse: a document offset to the text node
+    // and offset that holds it.
+    function richNodeAt(el, offset) {
+        let remaining = Math.max(0, offset);
+        const blocks = richBlockElements(el);
+        for (let i = 0; i < blocks.length; i++) {
+            const length = richTextOf(blocks[i]).length;
+            if (remaining <= length) {
+                const hit = richTextNodeAt(blocks[i], remaining);
+                if (hit) return hit;
+                // A block with no text node in it at all (an empty paragraph
+                // holding only its <br>) takes the caret at the block itself.
+                return { node: blocks[i], offset: 0 };
+            }
+            remaining -= length + 1;
+        }
+        const last = blocks[blocks.length - 1];
+        return last ? { node: last, offset: 0 } : null;
+    }
+
+    function richTextNodeAt(node, offset) {
+        let remaining = offset;
+        const visit = (current) => {
+            if (current.nodeType === 3) {
+                if (remaining <= current.data.length) return { node: current, offset: remaining };
+                remaining -= current.data.length;
+                return null;
+            }
+            for (const child of richChildNodes(current)) {
+                const hit = visit(child);
+                if (hit) return hit;
+            }
+            return null;
+        };
+        return visit(node);
+    }
+
+    // --- The element -------------------------------------------------------
+
+    // buildRichTextEditor makes the div editable and wires the four events an
+    // editor needs. Idempotent, like buildCodeEditor.
+    function buildRichTextEditor(el) {
+        if (el.dataset.richWired === "true") return;
+        el.dataset.richWired = "true";
+        el.setAttribute("role", "textbox");
+        el.setAttribute("aria-multiline", "true");
+        // The four that corrupt prose less than they corrupt code, and are still
+        // wrong here: a document is the user's words.
+        el.setAttribute("autocapitalize", "off");
+        el.setAttribute("autocorrect", "off");
+        el.setAttribute("spellcheck", "true"); // prose, unlike code, wants this
+
+        // The editor's own history, and the document it last sent upstream.
+        el.__richDoc = { b: [] };
+        el.__richEchoes = [];
+        el.__richUndo = [];
+        el.__richRedo = [];
+        el.__richPending = null;
+
+        el.addEventListener("input", () => richInputHappened(el));
+        el.addEventListener("paste", (e) => richPasteHappened(el, e));
+        for (const type of ["keyup", "mouseup", "focus"]) {
+            el.addEventListener(type, () => reportRichSelection(el));
+        }
+    }
+
+    // The typing path. The DOM is authoritative here and nothing is rebuilt —
+    // rebuilding on a keystroke would put the caret at the start of the document
+    // on every keystroke.
+    //
+    // The one exception is a pending mark: "press bold, then type" has to make
+    // the typed characters bold, and the browser knows nothing about the mark.
+    // So the inserted range is given the marks and the document *is* rebuilt,
+    // with the caret restored at exactly where it already was — which is
+    // invisible, and happens once per pending mark rather than once per
+    // keystroke.
+    function richInputHappened(el) {
+        if (el.isContentEditable === false) return;
+        let doc = richTextFromDOM(el);
+        const pending = el.__richPending;
+        if (pending) {
+            const where = richSelectionOffsets(el);
+            const grew = richDocText(doc).length - richDocText(el.__richDoc).length;
+            if (where && grew > 0) {
+                doc = richMapRange(doc, where.end - grew, where.end, (run) => ({ ...run, ...pending }));
+                richTextToDOM(el, doc);
+                richRestoreSelection(el, where.end, where.end);
+            }
+            el.__richPending = null;
+        }
+        richPushHistory(el, el.__richDoc);
+        richSendDoc(el, doc);
+        reportRichSelection(el);
+    }
+
+    // Paste, prevented and re-done as a text insertion. This is the edge foreign
+    // markup dies at: whatever a word processor put on the clipboard, what
+    // reaches the document is its text.
+    function richPasteHappened(el, e) {
+        if (!e.clipboardData || typeof e.preventDefault !== "function") return;
+        e.preventDefault();
+        const text = e.clipboardData.getData("text/plain");
+        if (!text) return;
+        const where = richSelectionOffsets(el) || { start: 0, end: 0 };
+        richPushHistory(el, el.__richDoc);
+        const doc = richInsertText(el.__richDoc, where.start, where.end, text);
+        richTextToDOM(el, doc);
+        const caret = where.start + text.replace(/\r\n/g, "\n").length;
+        richRestoreSelection(el, caret, caret);
+        richSendDoc(el, doc);
+        reportRichSelection(el);
+    }
+
+    // richSendDoc records a document as this editor's own and dispatches it.
+    //
+    // The echo ledger is the same one a CodeEditor keeps and a TextArea kept
+    // before it: every value sent upstream is queued, and Go's echo of one is
+    // dropped rather than applied.
+    function richSendDoc(el, doc) {
+        el.__richDoc = doc;
+        const json = JSON.stringify(doc);
+        (el.__richEchoes || (el.__richEchoes = [])).push(json);
+        const cbId = el.dataset.listener_onChange;
+        if (cbId) window.GoInvokeCallback(cbId, { value: json });
+    }
+
+    // The undo stack: documents, not operations. A stack of values needs no
+    // inverse for each command and cannot drift from what is on screen, which
+    // an operation log can; the cost is memory proportional to the edits, which
+    // for a note is nothing.
+    //
+    // A browser's native undo is not usable here — it does not survive the
+    // programmatic rebuilds a command makes — which is the one place the three
+    // live hosts genuinely differ in mechanism: the natives use UndoManager and
+    // EditText's own.
+    const RICH_HISTORY_LIMIT = 100;
+
+    function richPushHistory(el, doc) {
+        const stack = el.__richUndo || (el.__richUndo = []);
+        stack.push(JSON.stringify(doc));
+        if (stack.length > RICH_HISTORY_LIMIT) stack.shift();
+        el.__richRedo = [];
+    }
+
+    function richStep(el, from, to) {
+        if (!from.length) return;
+        to.push(JSON.stringify(el.__richDoc));
+        const doc = JSON.parse(from.pop());
+        richTextToDOM(el, doc);
+        richSendDoc(el, doc);
+        reportRichSelection(el);
+    }
+
+    // runRichCommand applies one core.RunEditorCommand.
+    function runRichCommand(el, command) {
+        if (el.dataset.readOnly === "true") return;
+        if (command === "undo") {
+            richStep(el, el.__richUndo || [], el.__richRedo || (el.__richRedo = []));
+            return;
+        }
+        if (command === "redo") {
+            richStep(el, el.__richRedo || [], el.__richUndo || (el.__richUndo = []));
+            return;
+        }
+        const where = richSelectionOffsets(el) || { start: 0, end: 0 };
+
+        // A mark command with nothing selected sets the typing attributes: the
+        // marks the next characters typed will carry. Held on the element until
+        // the next input, which is where they are applied — see
+        // richInputHappened. A block or link command with an empty selection
+        // still acts, because both are about the block or the run the caret is
+        // in rather than about a range.
+        if (where.end === where.start) {
+            for (const mark of RICH_MARKS) {
+                if (command !== richMarkCommand(mark.key)) continue;
+                const pending = el.__richPending || {};
+                if (pending[mark.key]) delete pending[mark.key];
+                else pending[mark.key] = 1;
+                el.__richPending = Object.keys(pending).length ? pending : null;
+                reportRichSelection(el);
+                return;
+            }
+        }
+
+        const doc = applyRichCommand(el.__richDoc, where.start, where.end, command);
+        // null is "this editor does not know that command", which is a no-op:
+        // a toolbar that outgrew its editor must not break the screen.
+        if (!doc) return;
+        richPushHistory(el, el.__richDoc);
+        richTextToDOM(el, doc);
+        richRestoreSelection(el, where.start, where.end);
+        richSendDoc(el, doc);
+        reportRichSelection(el);
+    }
+
+    // reportRichSelection sends the caret and the formatting active at it, in
+    // the shape core/richtext.go parses:
+    //
+    //	{"s":12,"e":18,"marks":["bold"],"link":"https://x","block":"h2"}
+    //
+    // Deduped against the last payload, because the events this is wired to
+    // overlap heavily and each dispatch is a Go render pass.
+    function reportRichSelection(el) {
+        const cbId = el.dataset.listener_onSelectionChange;
+        if (!cbId) return;
+        const where = richSelectionOffsets(el) || { start: 0, end: 0 };
+        const doc = el.__richDoc || { b: [] };
+        const at = richMarksAt(doc, where.start, where.end);
+        // A pending mark is part of what the toolbar should be showing: the user
+        // pressed bold and has not typed yet, and the button has to look pressed
+        // or the press looks like it did nothing.
+        const marks = new Set(at.marks);
+        for (const key of Object.keys(el.__richPending || {})) marks.add(richMarkCommand(key));
+
+        const block = ((doc.b || [])[richLocate(doc, where.start).block] || {}).k || "p";
+        const payload = JSON.stringify({
+            s: where.start, e: where.end,
+            marks: [...marks], link: at.link, block,
+        });
+        if (el.dataset.richSelection === payload) return;
+        el.dataset.richSelection = payload;
+        window.GoInvokeCallback(cbId, { value: payload });
+    }
+
+    // applyRichTextProps is the editor's whole prop surface, on both the create
+    // and the update path. See applyCodeEditorProps for why `created` exists.
+    function applyRichTextProps(el, props, created = false) {
+        if (!props) return;
+
+        if ("readOnly" in props) {
+            const readOnly = !!props.readOnly;
+            el.dataset.readOnly = readOnly ? "true" : "false";
+            // contenteditable, not `disabled`: a read-only document is still
+            // content the reader is meant to select and copy, which is the whole
+            // difference between read-only and disabled. A non-editable
+            // contenteditable is also out of the tab order by itself, which is
+            // what a page of read-only notes wants.
+            el.setAttribute("contenteditable", readOnly ? "false" : "true");
+            el.setAttribute("aria-readonly", readOnly ? "true" : "false");
+        }
+        if ("placeholder" in props) {
+            el.dataset.placeholder = String(props.placeholder ?? "");
+        }
+        if ("onChange" in props) el.dataset.listener_onChange = props.onChange;
+        if ("onSelectionChange" in props) {
+            el.dataset.listener_onSelectionChange = props.onSelectionChange;
+        }
+        if ("doc" in props) applyRichDoc(el, String(props.doc ?? "{}"));
+        if ("editorEpoch" in props) {
+            const changed = String(el.dataset.editorEpoch) !== String(props.editorEpoch);
+            el.dataset.editorEpoch = props.editorEpoch;
+            if (changed && !created && Number(props.editorEpoch) !== 0) {
+                runRichCommand(el, String(props.editorCommand ?? ""));
+            }
+        }
+        syncRichPlaceholder(el);
+    }
+
+    // The echo guard, over the document's JSON rather than over a string of
+    // text. Same bookkeeping, same three arms: an echo is dropped, a rewrite
+    // lands even mid-typing, and a blurred editor is Go's outright.
+    //
+    // The comparison is on the JSON string and not on the parsed value, which is
+    // what makes it exact and cheap: Go marshals the document with a fixed key
+    // order, so the same document is always the same bytes.
+    function applyRichDoc(el, json) {
+        const echoes = el.__richEchoes || (el.__richEchoes = []);
+        const focused = document.activeElement === el;
+        if (focused) {
+            const echo = echoes.indexOf(json);
+            if (echo >= 0) {
+                echoes.splice(0, echo + 1);
+                return;
+            }
+        }
+        echoes.length = 0;
+        let doc;
+        try {
+            doc = JSON.parse(json);
+        } catch (err) {
+            // A doc prop that is not a document leaves the editor as it was,
+            // rather than emptying a note because one patch was malformed.
+            return;
+        }
+        if (JSON.stringify(el.__richDoc) === json) return;
+        el.__richDoc = doc;
+        richTextToDOM(el, doc);
+        // A rewrite from Go replaced the text the remembered offsets described,
+        // so they describe nothing now. Dropped rather than clamped: a command
+        // issued after a rewrite should act on wherever the user next puts the
+        // caret, not on a position in a document that no longer exists.
+        el.__richSelection = null;
+        el.__richUndo = [];
+        el.__richRedo = [];
+    }
+
+    // The placeholder, which a contenteditable has no native spelling for.
+    //
+    // A real element rather than a ::before rule, because this runtime writes no
+    // stylesheet — every rule it applies is an inline style on an element it
+    // made — and a pseudo-element cannot be set inline. It is marked chrome and
+    // is skipped by the serializer like every other element the runtime draws,
+    // so it can never become part of the document.
+    function syncRichPlaceholder(el) {
+        const prompt = el.dataset.placeholder || "";
+        const empty = richDocText(el.__richDoc || { b: [] }).trim() === "";
+        let node = null;
+        for (const child of el.children) {
+            if (child.dataset.grmobChrome === "richplaceholder") node = child;
+        }
+        if (!prompt || !empty) {
+            if (node) node.remove();
+            return;
+        }
+        if (!node) {
+            node = document.createElement("span");
+            node.dataset.grmobChrome = "richplaceholder";
+            // Out of the document's flow and out of the pointer's way, so a tap
+            // on it lands in the editor behind it.
+            Object.assign(node.style, {
+                position: "absolute",
+                pointerEvents: "none",
+                opacity: "0.45",
+            });
+            node.setAttribute("contenteditable", "false");
+            el.insertBefore(node, el.children[0] || null);
+        }
+        if (node.textContent !== prompt) node.textContent = prompt;
+    }
+
     function pruneStaleListeners(el, props) {
         // Object.keys snapshots, so deleting inside the loop is safe.
         for (const key of Object.keys(el.dataset)) {
@@ -3296,6 +5084,40 @@ const GrMob = (() => {
         out.bottom = style.Bottom || "";
         out.left = style.Left || "";
         out.zIndex = style.ZIndex ? `${style.ZIndex}` : "";
+        // The editor chassis (core.CodeEditor): the grid's rules plus the two
+        // things an overlay needs. Written *after* the placement group above
+        // rather than beside the TextGrid/GridRow chassis, and that placement
+        // is load-bearing: `out.position` is assigned unconditionally up there
+        // from style.Position, so a relative set earlier would be wiped by the
+        // author's empty one. position:relative makes the box the containing
+        // block for the gutter and the transparent textarea — without it both
+        // escape to the nearest positioned ancestor, which is some screen — and
+        // overflow:auto lets a buffer wider or taller than its frame scroll in
+        // both directions rather than spill, which is what "no wrapping" costs
+        // and the reason a code editor scrolls sideways where prose does not.
+        //
+        // Same declarations as htmlout's codeEditorChassis. The gutter's own
+        // padding is not here: it is a function of the line count, so
+        // syncCodeGutter writes it after every batch.
+        if (nodeType === "CodeEditor") {
+            out.margin = out.margin || "0";
+            out.lineHeight = out.lineHeight || "1.2";
+            out.whiteSpace = out.whiteSpace || "normal";
+            out.overflow = out.overflow || "auto";
+            out.position = out.position || "relative";
+        }
+        // The prose editor's chassis, which is the opposite of the code one:
+        // a document wraps. position:relative is for the placeholder, which is
+        // an absolutely positioned element rather than a ::before rule because
+        // this runtime writes no stylesheet. htmlout states the same line height
+        // (richTextChassis) and needs neither of the other two, having no
+        // placeholder element and no caret.
+        if (nodeType === "RichTextEditor") {
+            out.lineHeight = out.lineHeight || "1.5";
+            out.whiteSpace = out.whiteSpace || "normal";
+            out.position = out.position || "relative";
+            out.outline = out.outline || "none";
+        }
         // Flex container properties that are deliberately NOT part of the
         // display:flex decision above. Unlike Gap/JustifyContent/AlignItems,
         // none of these does anything on its own — flex-wrap and the axis gaps
@@ -3469,6 +5291,19 @@ const GrMob = (() => {
             // applyGridRuns for the spans inside a row.
             TextGrid: "pre",
             GridRow: "div",
+
+            // The programmer's editor (core.CodeEditor). The same <pre> a
+            // TextGrid is, because its rows *are* a grid's rows — core builds
+            // them with the same gridRowNode — with the gutter and the
+            // transparent <textarea> added inside it as chrome. See the
+            // CodeEditor section above.
+            CodeEditor: "pre",
+
+            // The prose editor (core.RichTextEditor). A <div>, made
+            // contenteditable, holding the document's own block elements as
+            // chrome — there is no element that means "a document", and htmlout
+            // answers the same way for the same reason.
+            RichTextEditor: "div",
 
             Box: "div",
             Card: "div",
@@ -3915,7 +5750,29 @@ const GrMob = (() => {
                     // move and the map's own region, and doing the work per key
                     // would re-read the layer several times for one change.
                     applyMapProps(el, p.Changes, el.dataset.nodeType);
+                    // The editor's own props, before the per-key loop and for
+                    // the same reason the hint and the map's dataset are: they
+                    // are read together (the command's epoch and its string,
+                    // the gutter's flag and the line count) and the patch
+                    // carries the whole new map, so deciding them per key
+                    // would depend on the order Object.entries happened to
+                    // yield them in. The loop below skips every key this
+                    // consumed.
+                    if (el.dataset.nodeType === "CodeEditor") {
+                        buildCodeEditor(el);
+                        applyCodeEditorProps(el, p.Changes);
+                    }
+                    if (el.dataset.nodeType === "RichTextEditor") {
+                        buildRichTextEditor(el);
+                        applyRichTextProps(el, p.Changes);
+                    }
                     for (const [k, v] of Object.entries(p.Changes)) {
+                        if (el.dataset.nodeType === "CodeEditor" && CODE_EDITOR_PROPS.has(k)) {
+                            continue;
+                        }
+                        if (el.dataset.nodeType === "RichTextEditor" && RICH_EDITOR_PROPS.has(k)) {
+                            continue;
+                        }
                         if (k === "value") {
                             // Loose equality on purpose: a range input's
                             // value reads back as a string ("12.5") while Go
@@ -3949,6 +5806,7 @@ const GrMob = (() => {
                         } else if (k === "rows") {
                             applyRows(el, v);
                         } else if (k === "runs") {
+                            el.__grmobRuns = v;
                             applyGridRuns(el, v);
                         } else if (k === "size" && el.dataset.nodeType === "Spacer") {
                             // The update half of the Spacer sizing in
@@ -4085,12 +5943,10 @@ const GrMob = (() => {
                     break;
 
                 case "add-child":
-                    // The new child's *node* index, which is the DOM child
-                    // count minus whatever chrome sits ahead of the pages —
-                    // see the "add" case above. A TabView with a bar would
-                    // otherwise name its first page "…/1" and leave nothing
-                    // answering to "…/0".
-                    const index = el.children.length - chromeOffset(el);
+                    // The new child's *node* index — see the "add" case above.
+                    // A TabView with a bar would otherwise name its first page
+                    // "…/1" and leave nothing answering to "…/0".
+                    const index = nodeChildCount(el);
                     const newChild = renderNode(p.Changes, `${p.TargetID}/${index}`);
                     el.appendChild(newChild);
                     break;
@@ -4108,6 +5964,11 @@ const GrMob = (() => {
         // the observation target is the list's last child, and this batch is
         // exactly what may have replaced it.
         syncTouchedEndReached(touched);
+        // After every structural patch for the same reason the map pass is:
+        // an editor re-decides the stale-line rule against the rows this batch
+        // added, changed or removed, and draws a gutter sized to how many
+        // there now are.
+        syncTouchedCodeEditors(touched);
         // Last, and after every structural patch for the same reason: a map's
         // Leaflet layer is reconciled against the Marker children this batch
         // added, moved or removed.

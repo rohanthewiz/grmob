@@ -947,6 +947,58 @@
       caught three arms in had it existed first
 - [x] `core.TextGrid` — a monospace grid of styled runs on all four targets,
       rows as children so a terminal diff patches one row, not the grid
+- [x] **`highlight` — the lexers, lifted out of the tutorial** (`highlight/`) —
+      `go/scanner` over Go and a deliberately tolerant hand lexer over JSON,
+      both producing `[]core.GridRow` against a named `Scheme` (Darcula, or a
+      light one for a light theme). One hard contract, checked over every lexer
+      and a corpus of half-written input: the rows are line-for-line with the
+      source, because both consumers address them by line. The tutorial's
+      private highlighter is now a caller, and its tests still pin that the
+      Darcula rows are what they always were
+- [x] **`core.CodeEditor` — an editable buffer Go colours** (`core/codeeditor.go`,
+      `core/editor.go`, all four renderers, `wasm/verify/codeeditor_test.mjs`,
+      `mobile/verify/codeeditor_test.go`) — a transparent buffer laid over a
+      mirror of the grid's own rows, built by each renderer because `core.Style`
+      has no font family and nothing in Go can pitch-match an overlay from
+      outside. Three rules, one per host: the echo guard `core.TextArea` already
+      had, decoration that is advisory **per line** (so a lexer a keystroke
+      behind costs one line's colour for one frame), and commands as an
+      epoch-stamped prop pair — `core.Focus`'s mechanism, with the one
+      difference that an editor adopts a standing epoch without running it.
+      Selection rides the text channel as `"start:end"` in UTF-8 bytes and is
+      parsed in core, so no bridge channel was added
+- [x] **`components.CodeEditor` — and the tutorial's code block with it**
+      (`components/code_editor.go`, lesson 4.13) — runs the highlighter, picks a
+      scheme from the theme's own background, and builds the toolbar. It
+      consumes **no hook slot**: the `core.EditorRef` a toolbar needs is the
+      caller's, precisely so that a read-only editor can be what a code block is
+      — rendered inside an `if`, inside a loop, inside a lesson body. The
+      tutorial's own `codeBlock` is now one, and dropped its private `TextGrid`
+      path
+- [x] **`richtext` — a formatted document as Go values** (`richtext/`) — seven
+      block kinds and six marks, with JSON as the wire *and* the storage (short
+      keys, `bytdb` takes it as-is), Markdown as the import/export door, and
+      HTML for the one target that draws a document without being able to edit
+      it. Markdown loses exactly two things — an empty paragraph and the other
+      marks on a code span — and both are pinned by tests rather than discovered
+- [x] **`core.RichTextEditor` — the document is Go's on every target**
+      (`core/richtext.go`, all four renderers, `wasm/verify/richtext_test.mjs`,
+      `mobile/verify/richtext_test.go`) — an NSAttributedString, a Spannable and
+      a contenteditable's innerHTML are three vocabularies, and an app that
+      stored whichever one the user typed on would have a database its other two
+      targets could not read. So one model, and each host maps to and from it:
+      iOS edits marks into `textStorage` in place, Android reaches past Compose
+      to an `EditText` because `Spannable` has had every span this needs for a
+      decade, and the browser treats every command as a *pure transformation of
+      the document* — the selection is only read and restored, never operated
+      on, which is also what makes the whole command vocabulary testable against
+      a DOM with no Selection API
+- [x] **`components.RichTextEditor` and lesson 4.14**
+      (`components/rich_text_editor.go`) — a wrapping toolbar whose buttons draw
+      themselves from the host's own selection report, because Go owns the
+      document and the host owns the caret. `UseRichToolbar` is the hook and it
+      is the *caller's*, so a read-only note — a comment, a description, a card
+      body — is free of hook obligations and can be rendered inside an `if`
 - [x] **The overlay `Layout`'s three decisions are run off-device**
       (`ios/GrMob/Runtime/GrMobStack.swift`, `ios/verify/stack.swift`) — the
       arithmetic was already checkable; what stayed inside the SwiftUI `Layout`
