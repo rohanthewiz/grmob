@@ -972,6 +972,15 @@ var batchRetireGrace = 5 * time.Second
 // its first day accidentally exercising exactly that case, through a shell that
 // forked instead of exec'ing, and the symptom was a retire that never returned.
 //
+// And the precondition is held rather than only stated.
+// TestTheProcessBehindARetiredPipeDoesNotFork is a census over this package's
+// source: one place attaches a process to a batchReader, and the process there
+// is `git cat-file --batch` and nothing else. Every sentence above is true of
+// that command and of no command in general, so the day somebody puts a shell,
+// a porcelain that pages, or this one with `--filters` behind these pipes, the
+// argument stops holding — and until that test, the only thing that would have
+// noticed is a run that hung.
+//
 // Errors are dropped on purpose. Every caller is already on its way to
 // starting a fresh reader, and there is no answer this could give that would
 // change that.

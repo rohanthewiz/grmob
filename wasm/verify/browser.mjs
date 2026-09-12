@@ -467,14 +467,47 @@ const INK_MARGIN = 4;
 // side of the comparison" means here: the other side is the run's own ink
 // extent, and this file now reads the rows off it.
 //
-// A quarter, a half and three quarters: evenly spaced, with a quarter of the
-// band clear at each end so the outermost rows are not sitting on the baseline
-// or on the x-height line itself, where a rounding either way lands on a
-// horizontal edge of every glyph at once.
+// Three tenths, a half and seven tenths: evenly spaced, with three tenths of
+// the band clear at each end so the outermost rows are not sitting on the
+// baseline or on the x-height line itself, where a rounding either way lands on
+// a horizontal edge of every glyph at once.
+//
+// # It was a quarter, and a quarter was one face's number
+//
+// The argument above is about the band's EDGES, and the band's edges are metric
+// — the baseline of the inline text box and the x-height of the resolved face.
+// What a scan reads is the rasterized ink, and the two are not the same rect:
+// a face whose outlines reach its own baseline fills the bottom row of that
+// band, and a face whose outlines stop short of it leaves that row empty. A
+// quarter of the band was enough clearance on the first kind and not on the
+// second, which is a fact about Times' serif feet rather than about type.
+//
+// Measured, on the grid's 28 boxes, on both faces this file is calibrated for
+// (see INK_CALIBRATED_ON). The reading is what one device row of rounding
+// leaves a scanned row looking at — inkRoundingVerdict's own number, at its
+// worst across every box:
+//
+//	                    Times      Liberation Serif
+//	a quarter           0.239      0.027   ← the whole of the Linux failure
+//	three tenths        0.330      0.330
+//
+// Liberation Serif's bottom scanned row sat one device row above a baseline row
+// with 3% ink in it, so the rounding the clearance exists to survive would have
+// taken that row off the glyphs entirely — on a grid where nothing was wrong
+// and every word was drawn. Three tenths puts the same row two device rows up,
+// where both faces read a third of the window, and it costs the scan nothing:
+// the three rows are still distinct, still strictly inside the band, still
+// evenly spaced, and still spread over the part of the band where a lower-case
+// run has ink in every column.
+//
+// Not a third, though a third measures identically. A tenth is the smaller
+// claim: these are numbers a measurement picked out of a bracket, and spelling
+// them as a repeating fraction would put 0.3333333333333333 into every message
+// this file prints them in.
 //
 // What still has to be checked is the other half of the old pair — that three
 // fractions are three ROWS. See inkRows.
-const INK_ROWS = [0.25, 0.5, 0.75];
+const INK_ROWS = [0.3, 0.5, 0.7];
 
 // Whether INK_ROWS is a set of fractions OF the band, which is the whole of
 // what makes "the rows are inside the ink" true without a check.
@@ -539,7 +572,7 @@ function inkRowsFault() {
 // PIXELS, and the two are joined by a font size and a display. The tall-caption
 // theme in this grid is here precisely because that join moves.
 //
-// # Measured
+// # Measured, while INK_ROWS was a quarter
 //
 // Across the twenty bands and their eight count pills, at dpr 1:
 //
@@ -550,18 +583,39 @@ function inkRowsFault() {
 //	tall label        8.75px   2 and 2
 //	tall count       12.77px   3 and 4
 //
-// The tightest is one device pixel, on the two bundled palettes' labels — a
+// The tightest was one device pixel, on the two bundled palettes' labels — a
 // 5.5px band with three rows a quarter apart has nowhere else to put them. So
-// the floor is 1: a row must be OFF both edges, and a band too short for that
+// the floor was 1: a row must be OFF both edges, and a band too short for that
 // is one where a quarter of it buys no clearance at all.
 //
-// Deliberately not 2. That would fail two of the three bundled palettes this
-// grid exists to check, which would make it a number chosen against nothing
-// rather than a claim about rounding — the shape of thing the last several of
-// these have been about. What 1 rules out is the case the argument was really
-// against: a band short enough, or a display coarse enough, that a quarter
-// rounds onto the edge itself and all three rows share a glyph's horizontal
-// boundary.
+// It was deliberately not 2, because 2 would have failed two of the three
+// bundled palettes this grid exists to check, which would have made it a number
+// chosen against nothing rather than a claim about rounding.
+//
+// # And why three tenths did not make it 2
+//
+// The fractions moved to three tenths (see INK_ROWS) and the first guess was
+// that 2 came with them: a 6-row band with rows three tenths in is two rows off
+// each edge, so the objection above would be spent. It is not, and the reason
+// is a rounding this file has been caught by before. The band's edges are
+// FRACTIONAL — AmberTheme's disclosure label runs y=62.51 to 68.50 — and the
+// rows are rounded independently of them:
+//
+//	the x-height line    round(62.51)                  = 63
+//	the first row        round(62.51 + 5.99 × 0.3)     = 64
+//
+// One device row clear, not two, on four of the twenty-eight boxes. The
+// arithmetic that predicted 2 was done on the ROUNDED edges, where the same
+// band starts at 63 and the first row lands at 65, and a model of a rounding is
+// not a rounding. What settled it was running the grid: four bands failed this
+// guard the moment the constant was raised, each naming its own two numbers.
+//
+// So 1 stands, and what protects the outer rows is not this constant at all —
+// it is the coverage the rows one out actually hold, which is INK_ROW_ROUNDING
+// and which three tenths did move, from 0.027 to 0.330 on the face that was
+// failing. What 1 rules out is the case the argument was really against: a band
+// short enough, or a display coarse enough, that the fractions round onto the
+// edge itself and all three rows share a glyph's horizontal boundary.
 const INK_EDGE_CLEARANCE = 1;
 
 // How much of a scanned row's own window has to still be glyph one device row
@@ -595,6 +649,24 @@ const INK_EDGE_CLEARANCE = 1;
 // baseline fails it in every one of the twenty-eight boxes, and below 0.239, so
 // every row the scan actually reads clears it. 0.15 sits in that gap with the
 // wider margin on the side that has the measurements from more than one face.
+//
+// # Re-taken on two faces, with the rows where they are now
+//
+// That table is Times under a quarter, which is where the number came from and
+// why it is left standing. The same two readings, on both calibrated faces,
+// with INK_ROWS at three tenths:
+//
+//	                                 Times    Liberation Serif
+//	the three the scan reads         0.330    0.330
+//	the row below the band           0.100    0.060
+//
+// The floor still sits in the gap, on both, and with more room than it was
+// chosen with — which is the outcome that says three tenths bought the scan
+// something rather than merely moving it. Note the second row: a face's ink
+// stopping short of its baseline makes the reading BELOW the band smaller, not
+// larger, so the bracket the census holds (something in the grid must fall
+// under the floor — see where inkOutsideBand is asked) tightens on Times and
+// not on the face that forced the change.
 //
 // # What it does not settle, said plainly
 //
@@ -964,8 +1036,9 @@ function inkRoundingVerdict(where, subject, img, dpr, band, x0, x1, fill) {
                 `edge of every glyph in the run at once, and one rounding either way ` +
                 `takes all three rows off the ink together. This is that argument measured, and this row is on such an ` +
                 `edge: over the twenty bands and eight pills the rows this scan reads ` +
-                `come back at 0.239 at worst by the same reading, and a row on the ` +
-                `baseline comes back at 0.100 and under` };
+                `come back at 0.330 at worst by the same reading, on both faces ` +
+                `this scan is calibrated for, and the row below the band comes back ` +
+                `at 0.100 and under` };
         }
     }
     const outside = inkRowCoverage(img, dpr, band.bottom + 1, x0, x1, fill);
@@ -2849,7 +2922,7 @@ const INK_OWN_MEASURED_ON = {
     props: 476,
 };
 
-// The platform face every number in the ink scan was measured on.
+// The platform faces every number in the ink scan has been measured on.
 //
 // # Why the scan has to know this, when nothing above it did
 //
@@ -2870,6 +2943,23 @@ const INK_OWN_MEASURED_ON = {
 // its baseline and x-height somewhere else, so a fraction calibrated on Times
 // picks a different row, and a row on an edge is the case INK_EDGE_CLEARANCE
 // exists to avoid — measured, on Times.
+//
+// # And what the second face turned out to cost
+//
+// One constant, not a table. The skip below was written expecting that a second
+// face would need its own copy of every number, and the measurement said
+// otherwise: the whole of Liberation Serif's disagreement with Times is that
+// its outlines stop short of its own metric baseline, so the fractions came in
+// from a quarter to three tenths — after which the rows one out read 0.330 on
+// Times where they had read 0.239, and 0.330 on Liberation Serif where they had
+// read 0.027. The floor (INK_ROW_ROUNDING), the clearance and the ascender
+// separation did not move at all; both faces sit inside all three with room.
+//
+// That is a better outcome than a per-face table and it was not the likely one.
+// A table keyed by face would have recorded two calibrations neither of which
+// anybody could check on the machine they were not taken on; one set of numbers
+// that clears both faces is a claim that can fail on either, and the grid runs
+// on both every time master moves.
 //
 // # Why "Times" and not the family the grid asks for
 //
@@ -2896,8 +2986,23 @@ const INK_OWN_MEASURED_ON = {
 // and are as true on one face as another. What goes quiet is the two readings
 // that are about glyphs — that the words are there in their own ink, and that
 // the counts are digits — and the tail says so instead of reciting zero.
-const INK_MEASURED_ON = {
-    face: "Times",
+//
+// # How a face gets into this list
+//
+// By being measured, with the instrument that prints the readings under the
+// skip — inkCalibrationReport. Liberation Serif's entry came off a GitHub
+// ubuntu-latest runner (run 34678496106), where the grid resolves it because
+// Chrome there has none of core.Theme's typography and Liberation Serif is
+// Linux's metric-compatible Times substitute. Times' came off this project's
+// macOS machine, the same way and by the same route.
+//
+// What "measured" has to mean before a name is added: the readings clear
+// INK_ROW_ROUNDING and INK_ASCENDER_SEPARATION with the brackets the report
+// prints, on every box in the grid, with the constants as they stand. A face
+// that needs a number moved is not an entry here — it is a re-derivation of
+// that number against every face already listed, the way three tenths was.
+const INK_CALIBRATED_ON = {
+    faces: ["Times"],
 };
 
 // Every platform face this grid's glyphs and its probes resolved to.
@@ -2917,34 +3022,44 @@ function inkFacesSeen(bandFaces, probeFaces) {
     return seen;
 }
 
-// Whether every glyph the ink scan reads was drawn by the face its numbers came
-// from. Returns null when it was, and the sentence to skip with when it was
-// not.
+// Whether every glyph the ink scan reads was drawn by a face its numbers have
+// been measured on. Returns null when it was, and the sentence to skip with
+// when it was not.
 //
 // The bands are what is scanned and the probes are what the scan's tolerance
 // comes from, so both are asked. Only distinct names are reported: a grid where
 // all twenty bands fell to one other face is one fact, and printing it twenty
 // times would bury it.
+//
+// A grid drawn by two calibrated faces at once still passes here, and that is
+// deliberate rather than overlooked: this guard is about whether the NUMBERS
+// apply, and they do if every face present has been held to them. Whether the
+// grid is uniform is a different question with a different answer —
+// inkFaceFault's — and collapsing the two would make this the reason a mixed
+// grid is reported, which is not the reason.
 function inkFaceCalibration(bandFaces, probeFaces) {
     const seen = inkFacesSeen(bandFaces, probeFaces);
     // No face read at all is not this guard's business. inkFaceFault reports a
     // box the browser names no platform font for, and answering "uncalibrated"
     // here would take that failure and turn it into a skip.
     if (seen.size === 0) return null;
-    const others = [...seen].filter((f) => f !== INK_MEASURED_ON.face).sort();
+    const known = new Set(INK_CALIBRATED_ON.faces);
+    const others = [...seen].filter((f) => !known.has(f)).sort();
     if (others.length === 0) return null;
     return `this grid's glyphs are drawn by ${others.join(", ")} and every number ` +
-        `in the ink scan was measured on ${INK_MEASURED_ON.face} — the three rows are ` +
-        `fractions of that face's ink band, the clearance that keeps them off its ` +
-        `baseline is one device row of it, and the glyph-coverage floor is what a row ` +
-        `of its outlines comes to. On another face those fractions pick a different ` +
-        `row and a correct band reads as a failure, which is what this used to do on ` +
-        `every Linux runner. The layout assertions, the fill and the antialiasing ` +
-        `probes all ran; what is unread is that the words are in their own ink and ` +
-        `that the counts are digits. To check them here, install ` +
-        `${INK_MEASURED_ON.face} — or take the readings printed under this skip, ` +
-        `which are INK_ROW_ROUNDING's and INK_ASCENDER_SEPARATION's own brackets ` +
-        `measured on this face, and record them beside ${INK_MEASURED_ON.face}'s`;
+        `in the ink scan has been measured on ${INK_CALIBRATED_ON.faces.join(" and ")} ` +
+        `— the three rows are fractions of the face's own ink band, the clearance ` +
+        `that keeps them off its baseline is a device row of it, and the ` +
+        `glyph-coverage floor is what a row of its outlines comes to. Those are ` +
+        `readings of an outline, and an outline is what changes here: a face whose ` +
+        `ink stops short of its own metric baseline reads a correct band as a ` +
+        `failure, which is what this did on every Linux runner until Liberation ` +
+        `Serif was measured too. The layout assertions, the fill and the ` +
+        `antialiasing probes all ran; what is unread is that the words are in their ` +
+        `own ink and that the counts are digits. To check them here, install one of ` +
+        `those faces — or take the readings printed under this skip, which are ` +
+        `INK_ROW_ROUNDING's and INK_ASCENDER_SEPARATION's own brackets measured on ` +
+        `this one, and add it to INK_CALIBRATED_ON if they clear`;
 }
 
 // How many string values make a computed style, taken from the enumeration
@@ -8265,7 +8380,8 @@ async function main() {
                     `movement, and the number is set above what a row ON the baseline ` +
                     `scores (0.100 at worst when it was measured, and 0.000 in every ` +
                     `count pill) and below what the rows a clearance of ` +
-                    `${INK_EDGE_CLEARANCE} lands on score (0.239 at worst). With ` +
+                    `${INK_EDGE_CLEARANCE} lands on score (0.330 at worst, on both ` +
+                    `calibrated faces). With ` +
                     `nothing in the grid under the floor, the first of those two ` +
                     `brackets has gone: the rows would pass wherever they were put, and ` +
                     `the clearance would be a preference again`);
