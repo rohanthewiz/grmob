@@ -8,10 +8,10 @@
 //
 //	a transcript      gen.go's output, which run.sh generates and points at
 //	                  through GRMOB_TRANSCRIPT. It carries the widget swatches —
-//	                  real components.Chip and core.Input trees rendered by Go —
+//	                  real comps.Chip and core.Input trees rendered by Go —
 //	                  which is the half of the palette check no table of hexes
 //	                  in a .mjs file can reach, the band cases, which are a real
-//	                  components.GroupHeader's own geometry, and the rendered
+//	                  comps.GroupHeader's own geometry, and the rendered
 //	                  bands, which are the widget itself.
 //
 //	a Chrome, and a   the browser to drive and the WebSocket global to drive it
@@ -81,7 +81,7 @@ export function startupVerdict({
             action: "fail",
             why: "the transcript carries no widget swatches — gen.go's widgetCases() " +
                 "produced nothing, so the half of the palette check that goes through " +
-                "`components` would pass by having no subject.",
+                "`comps` would pass by having no subject.",
         };
     }
     if (!bands) {

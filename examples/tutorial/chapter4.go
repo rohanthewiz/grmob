@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/rohanthewiz/grmob/components"
+	"github.com/rohanthewiz/grmob/comps"
 	"github.com/rohanthewiz/grmob/core"
 	"github.com/rohanthewiz/grmob/hooks"
 	"github.com/rohanthewiz/grmob/permission"
@@ -50,24 +50,24 @@ func chapter4() Chapter {
 // --- 4.1 -----------------------------------------------------------------
 
 // variantNames double as the 4.1 segment captions and the constant-name
-// suffixes ("Success" → components.VariantSuccess): the demo's printed struct
+// suffixes ("Success" → comps.VariantSuccess): the demo's printed struct
 // literal is built by pasting them onto the type prefix, so captions and code
 // cannot disagree. variantValues is the parallel value table; 4.2 reuses it
 // with its own captions, which is the point of Variant being shared — one
 // vocabulary across the whole package.
 var (
 	variantNames  = []string{"Default", "Success", "Warning", "Error"}
-	variantValues = []components.Variant{
-		components.VariantDefault,
-		components.VariantSuccess,
-		components.VariantWarning,
-		components.VariantError,
+	variantValues = []comps.Variant{
+		comps.VariantDefault,
+		comps.VariantSuccess,
+		comps.VariantWarning,
+		comps.VariantError,
 	}
 	emphasisNames  = []string{"Filled", "Outlined", "Ghost"}
-	emphasisValues = []components.Emphasis{
-		components.EmphasisFilled,
-		components.EmphasisOutlined,
-		components.EmphasisGhost,
+	emphasisValues = []comps.Emphasis{
+		comps.EmphasisFilled,
+		comps.EmphasisOutlined,
+		comps.EmphasisGhost,
 	}
 )
 
@@ -77,15 +77,15 @@ var (
 // the button on screen.
 func buttonSnippet(variant, emphasis int, disabled, fullWidth bool) string {
 	lines := []string{
-		"components.Button{",
+		"comps.Button{",
 		`    Label: "Save changes",`,
 		"    OnTap: save,",
 	}
 	if variant != 0 {
-		lines = append(lines, "    Variant: components.Variant"+variantNames[variant]+",")
+		lines = append(lines, "    Variant: comps.Variant"+variantNames[variant]+",")
 	}
 	if emphasis != 0 {
-		lines = append(lines, "    Emphasis: components.Emphasis"+emphasisNames[emphasis]+",")
+		lines = append(lines, "    Emphasis: comps.Emphasis"+emphasisNames[emphasis]+",")
 	}
 	if disabled {
 		lines = append(lines, "    Disabled: true,")
@@ -110,17 +110,17 @@ func lessonButtons() Lesson {
 
 			return core.Column(
 				core.Gap(14),
-				prose("Every button you have tapped in this tutorial was a components.Button. "+
+				prose("Every button you have tapped in this tutorial was a comps.Button. "+
 					"The widget library is structs with named fields, each implementing core.View, "+
 					"so widgets compose exactly like the primitives do — and a field can be added "+
 					"without breaking a single call site:"),
-				codeBlock(`components.Button{Label: "Save", OnTap: save}   // the theme's Button, untouched
+				codeBlock(`comps.Button{Label: "Save", OnTap: save}   // the theme's Button, untouched
 
-components.Button{Label: "Delete", OnTap: rm,
-    Variant: components.VariantError}            // meaning: a palette status role
+comps.Button{Label: "Delete", OnTap: rm,
+    Variant: comps.VariantError}            // meaning: a palette status role
 
-components.Button{Label: "Cancel", OnTap: back,
-    Emphasis: components.EmphasisOutlined}       // weight: how much color it spends`),
+comps.Button{Label: "Cancel", OnTap: back,
+    Emphasis: comps.EmphasisOutlined}       // weight: how much color it spends`),
 				prose("Color is two orthogonal axes, not one enum. Variant picks which role the "+
 					"button spends — Success, Warning, Error, or Default for the theme's Primary. "+
 					"Emphasis picks how much of it: Filled, Outlined, or Ghost. A flat enum would "+
@@ -130,7 +130,7 @@ components.Button{Label: "Cancel", OnTap: back,
 					"for its Button base shows through untouched."),
 				demoPanel("Every knob re-renders one struct — and prints the literal that would build it.",
 					caption("Variant — what the action means:"),
-					components.SegmentedControl{
+					comps.SegmentedControl{
 						Style:     segWrap,
 						Labels:    variantNames,
 						Selected:  variant.Get(),
@@ -138,7 +138,7 @@ components.Button{Label: "Cancel", OnTap: back,
 						KeyPrefix: "btn-variant-",
 					},
 					caption("Emphasis — how loudly it says it:"),
-					components.SegmentedControl{
+					comps.SegmentedControl{
 						Style:     segWrap,
 						Labels:    emphasisNames,
 						Selected:  emphasis.Get(),
@@ -147,7 +147,7 @@ components.Button{Label: "Cancel", OnTap: back,
 					},
 					checkRow("Disabled", disabled),
 					checkRow("Full width", fullWidth),
-					components.Button{
+					comps.Button{
 						Label:     "Save changes",
 						Variant:   variantValues[variant.Get()],
 						Emphasis:  emphasisValues[emphasis.Get()],
@@ -237,7 +237,7 @@ func lessonPills() Lesson {
 			// point is that you can see what you picked.
 			chips := []core.PropsAndChildren{core.Gap(8), core.FlexWrap(true)}
 			for _, topic := range pillTopics {
-				chips = append(chips, core.Keyed("topic-"+topic, components.Chip{
+				chips = append(chips, core.Keyed("topic-"+topic, comps.Chip{
 					Label:             topic,
 					Selected:          picked.Get()[topic],
 					OnTap:             togglePick(topic),
@@ -252,15 +252,15 @@ func lessonPills() Lesson {
 					"your Selected and reports taps. SegmentedControl is what falls out of writing "+
 					"\"a row of chips plus a loop\" enough times: single-select, where Selected is an "+
 					"index into Labels."),
-				codeBlock(`components.Badge{Text: "Live", Variant: components.VariantSuccess}
+				codeBlock(`comps.Badge{Text: "Live", Variant: comps.VariantSuccess}
 
-components.Chip{
+comps.Chip{
     Label:    topic,
     Selected: picked[topic], // caller state — the chip holds none
     OnTap:    toggle(topic),
 }
 
-components.SegmentedControl{
+comps.SegmentedControl{
 	Style:     segWrap,
     Labels:   []string{"Draft", "Live", "Expiring", "Failed"},
     Selected: status.Get(),
@@ -283,14 +283,14 @@ components.SegmentedControl{
 					"field comes out as aria-selected — one of a set, where choosing one unchooses "+
 					"the rest. Two props, no new field, and neither widget knows which arrangement "+
 					"it is in:"),
-				codeBlock(`components.SegmentedControl{
+				codeBlock(`comps.SegmentedControl{
     Labels:   []string{"Sermons", "Articles"},
     Selected: tab.Get(),
     OnSelect: func(i int) { tab.Set(i) },
     // Without these two: a group of toggle buttons (aria-pressed).
     // With them: a tab strip (aria-selected).
     Style:   []core.StyleProp{core.AccessibilityRole(core.RoleTabList)},
-    Segment: components.Chip{Style: []core.StyleProp{core.AccessibilityRole(core.RoleTab)}},
+    Segment: comps.Chip{Style: []core.StyleProp{core.AccessibilityRole(core.RoleTab)}},
 }`),
 				prose("Two things that does not buy, and both are ARIA's rules rather than the "+
 					"widget's. A tablist claims its children are tabs, so a row that also holds a "+
@@ -300,7 +300,7 @@ components.SegmentedControl{
 					"which owns both ends of that relationship and writes the whole wiring itself."),
 				demoPanel("A badge fed by a segmented control, and a chip group over one map.",
 					caption("Pick a status — the Badge takes its variant from the same index:"),
-					components.SegmentedControl{
+					comps.SegmentedControl{
 						Style:     segWrap,
 						Labels:    pillStatusLabels,
 						Selected:  status.Get(),
@@ -310,24 +310,24 @@ components.SegmentedControl{
 					core.Row(
 						core.Gap(8),
 						core.AlignItemsProp(core.AlignItemsCenter),
-						components.Badge{
+						comps.Badge{
 							Text:    pillStatusLabels[status.Get()],
 							Variant: variantValues[status.Get()],
 						},
-						caption(fmt.Sprintf("← Badge{Text: %q, Variant: components.Variant%s}",
+						caption(fmt.Sprintf("← Badge{Text: %q, Variant: comps.Variant%s}",
 							pillStatusLabels[status.Get()], variantNames[status.Get()])),
 					),
-					components.Separator{},
+					comps.Separator{},
 					caption("Chips — a multi-select over one map in this lesson's state:"),
 					core.Row(chips...),
 					core.IfElse(len(chosen) == 0,
 						caption("nothing picked — every chip renders Selected straight from the map"),
 						caption("picked: "+strings.Join(chosen, " · ")),
 					),
-					components.Separator{},
+					comps.Separator{},
 					caption("The same widget as a tab strip — two roles, and the state each chip "+
 						"already sets goes out as aria-selected instead of aria-pressed:"),
-					components.SegmentedControl{
+					comps.SegmentedControl{
 						Style: []core.StyleProp{
 							core.Gap(8),
 							core.FlexWrap(true),
@@ -337,7 +337,7 @@ components.SegmentedControl{
 						Selected:  pane.Get(),
 						OnSelect:  func(i int) { pane.Set(i) },
 						KeyPrefix: "pill-pane-",
-						Segment: components.Chip{
+						Segment: comps.Chip{
 							Style: []core.StyleProp{core.AccessibilityRole(core.RoleTab)},
 						},
 					},
@@ -409,10 +409,10 @@ func lessonListRow() Lesson {
 			for _, m := range teamMembers {
 				var trailing core.View = caption("›")
 				if m.badge != "" {
-					trailing = components.Badge{Text: m.badge, Variant: components.VariantWarning}
+					trailing = comps.Badge{Text: m.badge, Variant: comps.VariantWarning}
 				}
-				rows = append(rows, core.Keyed(m.name, components.ListRow{
-					Leading:  components.Avatar{Name: m.name, Size: 36},
+				rows = append(rows, core.Keyed(m.name, comps.ListRow{
+					Leading:  comps.Avatar{Name: m.name, Size: 36},
 					Title:    m.name,
 					Subtitle: m.role,
 					Trailing: trailing,
@@ -440,12 +440,12 @@ func lessonListRow() Lesson {
 					"amount. Its fields are slots — Leading, Trailing, and the Content override "+
 					"take any core.View — which is the library's composition idiom: where a struct "+
 					"field is a core.View, anything can sit in it."),
-				codeBlock(`components.ListRow{
-    Leading:  components.Avatar{Name: m.Name, Size: 36},
+				codeBlock(`comps.ListRow{
+    Leading:  comps.Avatar{Name: m.Name, Size: 36},
     Title:    m.Name,
     Subtitle: m.Role,
-    Trailing: components.Badge{Text: "on call",
-        Variant: components.VariantWarning},
+    Trailing: comps.Badge{Text: "on call",
+        Variant: comps.VariantWarning},
     Selected: selected.Get() == m.Name,
     OnTap:    func() { selected.Set(m.Name) },
 }`),
@@ -469,7 +469,7 @@ func lessonListRow() Lesson {
 					"row's OnTap."),
 				codeBlock(`core.Column(
     core.AccessibilityRole(core.RoleListBox),   // the container's half
-    components.ListRow{Title: m.Name, Selectable: true,
+    comps.ListRow{Title: m.Name, Selectable: true,
         Selected: selected.Get() == m.Name},    // the row's half
 )`),
 				demoPanel("Tap a row to select it; tap it again to clear. Rows are Keyed by name.",
@@ -499,8 +499,8 @@ func lessonListRow() Lesson {
 					"unroled box it has always been."),
 				codeBlock(`core.List(
     core.AccessibilityRole(core.RoleList),
-    components.ListRow{Title: "Gospels", NestingLevel: 2},
-    components.ListRow{Title: "Matthew", NestingLevel: 3,
+    comps.ListRow{Title: "Gospels", NestingLevel: 2},
+    comps.ListRow{Title: "Matthew", NestingLevel: 3,
         Style: []core.StyleProp{indentBy(3)}},   // pixels; the level is the announcement
 )`),
 				demoPanel("Six rows, one flat list, three depths. The indent is decoration; NestingLevel is what a reader hears.",
@@ -537,7 +537,7 @@ func outlineDemo() core.View {
 			core.AccessibilityRole(core.RoleList),
 		}
 		for _, n := range canonOutline {
-			items = append(items, core.Keyed(n.title, components.ListRow{
+			items = append(items, core.Keyed(n.title, comps.ListRow{
 				Title:        n.title,
 				NestingLevel: n.depth,
 				Style:        []core.StyleProp{indentBy(n.depth)},
@@ -597,7 +597,7 @@ func lessonAccordion() Lesson {
 		Body: func(ctx *core.Context) core.View {
 			faq := make([]core.View, 0, len(accordionFAQ)+1)
 			for _, f := range accordionFAQ {
-				faq = append(faq, components.Accordion{
+				faq = append(faq, comps.Accordion{
 					Title:             f.question,
 					InitiallyExpanded: f.expanded,
 					Content:           prose(f.answer),
@@ -613,7 +613,7 @@ func lessonAccordion() Lesson {
 					"There is no private slot for it to use — a widget's Render receives your "+
 					"Context, so that NewState claims a slot on this lesson's state exactly as if "+
 					"the lesson had called it directly."),
-				codeBlock(`components.Accordion{
+				codeBlock(`comps.Accordion{
     Title:             "Shipping & returns",
     InitiallyExpanded: true,
     Content:           core.Text("Orders ship within two days."),
@@ -634,8 +634,8 @@ func lessonAccordion() Lesson {
 					"is fixed by construction. This very screen is the three tiers at once: the "+
 					"lesson's name above, this accordion's questions below, and Key points "+
 					"between them at 2."),
-				codeBlock(`components.Accordion{Title: "Shipping", HeadingLevel: 4} // inside a card in a section
-components.GroupedList[Sermon]{GroupBy: byMonth, HeadingLevel: 1} // a feed with no bar`),
+				codeBlock(`comps.Accordion{Title: "Shipping", HeadingLevel: 4} // inside a card in a section
+comps.GroupedList[Sermon]{GroupBy: byMonth, HeadingLevel: 1} // a feed with no bar`),
 				prose("The heading is the only one in the package that does not ride the words, "+
 					"and the reason is the other half of what a disclosure has to announce. A "+
 					"header that says what it is called and not whether it is open is a control "+
@@ -700,13 +700,13 @@ func lessonTabs() Lesson {
 
 			return core.Column(
 				core.Gap(14),
-				prose("components.Tabs is a different kind of widget: a facade. core.TabView "+
+				prose("comps.Tabs is a different kind of widget: a facade. core.TabView "+
 					"defines a wire contract — a \"TabView\" node whose tabs, selectedIndex, and "+
 					"onTabChange props the native renderers consume — and node contracts live in "+
 					"core, next to the registry of types the renderers know. What core's four "+
 					"positional props lack is ergonomics, so the struct adds field names and "+
 					"delegates everything else. One tab implementation; one facade over it."),
-				codeBlock(`components.Tabs{
+				codeBlock(`comps.Tabs{
     Items: []core.TabItem{
         core.Tab("Info", "ℹ"),
         core.Tab("Stats", "📊"),
@@ -732,10 +732,10 @@ func lessonTabs() Lesson {
 					"the region, core.AccessibilityControls points every segment at it, and the "+
 					"row and the segments take RoleTabList and RoleTab. Without it a screen "+
 					"reader announces three tabs governing nothing."),
-				codeBlock(`components.SegmentedControl{
+				codeBlock(`comps.SegmentedControl{
     Labels: tabPageLabels, Selected: page.Get(), OnSelect: page.Set,
     Style:   []core.StyleProp{core.AccessibilityRole(core.RoleTabList)},
-    Segment: components.Chip{Style: []core.StyleProp{
+    Segment: comps.Chip{Style: []core.StyleProp{
         core.AccessibilityRole(core.RoleTab),
         core.AccessibilityControls("tabdemo-panel"),
     }},
@@ -752,7 +752,7 @@ core.Box(
 					"a role the label you just gave the panel would be dropped by every browser "+
 					"and read out by both phones. You never ask for that one; it is supplied."),
 				demoPanel("The strip writes an int; Match reads it — the tab contract, hand-assembled.",
-					components.SegmentedControl{
+					comps.SegmentedControl{
 						Style:     append(append([]core.StyleProp{}, segWrap...), core.AccessibilityRole(core.RoleTabList)),
 						Labels:    tabPageLabels,
 						Selected:  page.Get(),
@@ -760,7 +760,7 @@ core.Box(
 						KeyPrefix: "tabdemo-",
 						// The segment template: every chip is a tab, and every
 						// one of them points at the single region below.
-						Segment: components.Chip{Style: []core.StyleProp{
+						Segment: comps.Chip{Style: []core.StyleProp{
 							core.AccessibilityRole(core.RoleTab),
 							core.AccessibilityControls(tabDemoPanelID),
 						}},
@@ -779,14 +779,14 @@ core.Box(
 								core.Row(
 									core.Gap(8),
 									core.AlignItemsProp(core.AlignItemsCenter),
-									components.Badge{Text: "page 1 of 3"},
+									comps.Badge{Text: "page 1 of 3"},
 									caption("nothing here knows it lives in a tab"),
 								),
 							)),
 							core.Case(1, core.Column(
 								core.Gap(6),
 								caption("64% of the gopher quota used:"),
-								components.ProgressBar{Value: 0.64, AccessibilityLabel: "Gopher quota"},
+								comps.ProgressBar{Value: 0.64, AccessibilityLabel: "Gopher quota"},
 							)),
 							core.Default[int](core.Column(
 								core.Gap(6),
@@ -843,8 +843,8 @@ func archiveKey(e archiveEntry) string { return fmt.Sprintf("entry:%d", e.id) }
 
 // archiveMonth groups an entry by calendar month. Key is the sortable form,
 // Label the readable one.
-func archiveMonth(e archiveEntry) components.Group {
-	return components.Group{Key: e.date.Format("2006-01"), Label: e.date.Format("January 2006")}
+func archiveMonth(e archiveEntry) comps.Group {
+	return comps.Group{Key: e.date.Format("2006-01"), Label: e.date.Format("January 2006")}
 }
 
 // loadMorePageSize is how many rows each "Load more" tap reveals in the
@@ -858,7 +858,7 @@ func lessonCollections() Lesson {
 		Body: func(ctx *core.Context) core.View {
 			// The table's three controls, each a state the widget reads and
 			// reports back to. A nil sort means "the caller's order".
-			sortBy := core.NewState[*components.Sort](ctx, nil)
+			sortBy := core.NewState[*comps.Sort](ctx, nil)
 			page := core.NewState(ctx, 0)
 			compact := core.NewState(ctx, false)
 
@@ -871,8 +871,8 @@ func lessonCollections() Lesson {
 				loaded = loaded[:shown.Get()]
 			}
 
-			table := components.DataTable[archiveEntry]{
-				Columns: []components.Column[archiveEntry]{
+			table := comps.DataTable[archiveEntry]{
+				Columns: []comps.Column[archiveEntry]{
 					{Title: "Title", Weight: 2,
 						Text: func(e archiveEntry) string { return e.title },
 						Less: func(a, b archiveEntry) bool { return a.title < b.title }},
@@ -886,10 +886,10 @@ func lessonCollections() Lesson {
 				Rows:     archive,
 				Key:      archiveKey,
 				Sort:     sortBy.Get(),
-				OnSort:   func(s components.Sort) { sortBy.Set(&s) },
+				OnSort:   func(s comps.Sort) { sortBy.Set(&s) },
 				Compact:  compact.Get(),
 				Dividers: true,
-				Pagination: &components.Pagination{
+				Pagination: &comps.Pagination{
 					Page:     page.Get(),
 					PageSize: 4,
 					OnChange: page.Set,
@@ -900,12 +900,12 @@ func lessonCollections() Lesson {
 				},
 			}
 
-			grouped := components.GroupedList[archiveEntry]{
+			grouped := comps.GroupedList[archiveEntry]{
 				Items:   loaded,
 				Key:     archiveKey,
 				GroupBy: archiveMonth,
 				Row: func(e archiveEntry) core.View {
-					return components.ListRow{
+					return comps.ListRow{
 						Title:    e.title,
 						Subtitle: e.speaker,
 						Trailing: caption(e.date.Format("Jan 2")),
@@ -916,7 +916,7 @@ func lessonCollections() Lesson {
 				// is complete. Tap Load more and watch the number appear on
 				// the band that was open.
 				HideTrailingCount: shown.Get() < len(archive),
-				Footer: components.LoadMore{
+				Footer: comps.LoadMore{
 					HasMore:    shown.Get() < len(archive),
 					OnLoadMore: func() { shown.Set(shown.Get() + loadMorePageSize) },
 				},
@@ -924,7 +924,7 @@ func lessonCollections() Lesson {
 
 			// The banded demo's own state: which months are shut.
 			//
-			// A set held by the *screen*, which is the whole of components.
+			// A set held by the *screen*, which is the whole of comps.
 			// Collapse's argument for being caller-owned — the widget calls no
 			// hook, so it could not keep this without becoming un-renderable
 			// inside a core.IfElse, and "which months are shut" is screen state
@@ -940,9 +940,9 @@ func lessonCollections() Lesson {
 				allShut[archiveMonth(e).Key] = true
 			}
 			shutMonths := core.NewState(ctx, allShut)
-			collapse := components.Collapse{
-				IsCollapsed: func(g components.Group) bool { return shutMonths.Get()[g.Key] },
-				OnToggle: func(g components.Group) {
+			collapse := comps.Collapse{
+				IsCollapsed: func(g comps.Group) bool { return shutMonths.Get()[g.Key] },
+				OnToggle: func(g comps.Group) {
 					// Cloned rather than mutated: core.State compares by
 					// reference to decide whether anything changed, so writing
 					// into the live map would toggle nothing on screen.
@@ -952,13 +952,13 @@ func lessonCollections() Lesson {
 				},
 			}
 
-			banded := components.GroupedList[archiveEntry]{
+			banded := comps.GroupedList[archiveEntry]{
 				Items:    archive,
 				Key:      archiveKey,
 				GroupBy:  archiveMonth,
 				Collapse: collapse,
 				Row: func(e archiveEntry) core.View {
-					return components.ListRow{Title: e.title, Subtitle: e.speaker}
+					return comps.ListRow{Title: e.title, Subtitle: e.speaker}
 				},
 				// The override, and the reason CollapseBand exists. Collapse
 				// reaches past a Header for the row hiding and stops at it for
@@ -966,7 +966,7 @@ func lessonCollections() Lesson {
 				// a second control for the same run — so an override that
 				// wanted a collapsible band used to owe a button, an
 				// aria-expanded stated on every pass, and a heading wrapper.
-				Header: func(g components.Group) core.View {
+				Header: func(g comps.Group) core.View {
 					return core.Row(
 						core.AlignItemsProp(core.AlignItemsCenter),
 						// No padding on the row. The insets are on the
@@ -977,7 +977,7 @@ func lessonCollections() Lesson {
 						// place a press does nothing.
 						core.Padding(0),
 						core.PaddingRight(16),
-						components.CollapseBand{
+						comps.CollapseBand{
 							Collapse: collapse,
 							Group:    g,
 							// FlexGrow on the wrapper, so the tally sits hard
@@ -990,7 +990,7 @@ func lessonCollections() Lesson {
 								core.PaddingVertical(10),
 							},
 						},
-						components.Badge{Text: strconv.Itoa(g.Count)},
+						comps.Badge{Text: strconv.Itoa(g.Count)},
 					)
 				},
 			}
@@ -1003,8 +1003,8 @@ func lessonCollections() Lesson {
 					"They hold no state and call no hook — the sort, the page and the compact "+
 					"switch are yours, read from your state and reported back through callbacks, "+
 					"exactly as Chip and ListRow report a tap."),
-				codeBlock(`components.DataTable[Entry]{
-    Columns: []components.Column[Entry]{
+				codeBlock(`comps.DataTable[Entry]{
+    Columns: []comps.Column[Entry]{
         {Title: "Title", Weight: 2, Text: title, Less: byTitle},
         {Title: "Speaker", Narrow: true, Text: speaker},
         {Title: "Date", Align: core.JustifyEnd, Text: day},
@@ -1012,9 +1012,9 @@ func lessonCollections() Lesson {
     Rows:    entries,
     Key:     entryKey,
     Sort:    sortBy.Get(),
-    OnSort:  func(s components.Sort) { sortBy.Set(&s) },
+    OnSort:  func(s comps.Sort) { sortBy.Set(&s) },
     Compact: compact.Get(),
-    Pagination: &components.Pagination{
+    Pagination: &comps.Pagination{
         Page: page.Get(), PageSize: 4, OnChange: page.Set,
         PrevLabel: "‹ Newer", NextLabel: "Older ›"},
 }`),
@@ -1032,9 +1032,9 @@ func lessonCollections() Lesson {
 					"re-points the active sort."),
 				demoPanel("Tap a header to sort, again to flip. Page with the footer. Compact hides the Speaker column.",
 					core.Row(core.Gap(8), core.Padding(0),
-						components.Chip{Label: "Compact", Selected: compact.Get(),
+						comps.Chip{Label: "Compact", Selected: compact.Get(),
 							OnTap: func() { compact.Set(!compact.Get()) }},
-						core.If(sortBy.Get() != nil, components.Chip{Label: "Clear sort",
+						core.If(sortBy.Get() != nil, comps.Chip{Label: "Clear sort",
 							OnTap: func() { sortBy.Set(nil) }}),
 					),
 					table,
@@ -1045,17 +1045,17 @@ func lessonCollections() Lesson {
 					"changes — so a feed that arrives sorted by date gets its month headers for "+
 					"free, and an offset pager that appends a page can only ever grow the last "+
 					"group: nothing above the fold moves on Load more."),
-				codeBlock(`components.GroupedList[Entry]{
+				codeBlock(`comps.GroupedList[Entry]{
     Items:   pager.Items,
     Key:     entryKey,
-    GroupBy: func(e Entry) components.Group {
-        return components.Group{
+    GroupBy: func(e Entry) comps.Group {
+        return comps.Group{
             Key:   e.Date.Format("2006-01"),
             Label: e.Date.Format("January 2006")}
     },
     Row:    func(e Entry) core.View { return entryRow(e) },
     HideTrailingCount: pager.HasMore,
-    Footer: components.LoadMore{
+    Footer: comps.LoadMore{
         HasMore: pager.HasMore, Loading: pager.Loading,
         Err: pager.Err, OnLoadMore: pager.LoadMore},
 }`),
@@ -1078,33 +1078,33 @@ func lessonCollections() Lesson {
 				prose("A Header override changes what that costs. Collapse reaches past your "+
 					"header for the row hiding — your run still collapses — and stops at it for "+
 					"the control, because a band the widget also built would be a second control "+
-					"for the same run. components.CollapseBand is that control on its own: the "+
+					"for the same run. comps.CollapseBand is that control on its own: the "+
 					"heading, the button, and the aria-expanded that has to be restated on every "+
 					"pass, with none of the default band's chrome. Its ControlStyle is where "+
 					"your insets go, and that is not a preference — padding put on the row "+
 					"around it is dead space, because the button fills the box it was handed and "+
 					"a press 16px into the margin does nothing."),
 				codeBlock(`shut := core.NewState(ctx, map[string]bool{})
-collapse := components.Collapse{
-    IsCollapsed: func(g components.Group) bool { return shut.Get()[g.Key] },
-    OnToggle: func(g components.Group) {
+collapse := comps.Collapse{
+    IsCollapsed: func(g comps.Group) bool { return shut.Get()[g.Key] },
+    OnToggle: func(g comps.Group) {
         next := maps.Clone(shut.Get())
         next[g.Key] = !next[g.Key]
         shut.Set(next)
     },
 }
 
-components.GroupedList[Entry]{
+comps.GroupedList[Entry]{
     Items: entries, Key: entryKey, GroupBy: byMonth,
     Collapse: collapse,
-    Header: func(g components.Group) core.View {
+    Header: func(g comps.Group) core.View {
         return core.Row(core.Padding(0), core.PaddingRight(16),
-            components.CollapseBand{
+            comps.CollapseBand{
                 Collapse: collapse, Group: g,
                 Style:        []core.StyleProp{core.FlexGrow(1)},
                 ControlStyle: []core.StyleProp{core.PaddingLeft(16), core.PaddingVertical(10)},
             },
-            components.Badge{Text: strconv.Itoa(g.Count)},
+            comps.Badge{Text: strconv.Itoa(g.Count)},
         )
     },
 }`),
@@ -1128,7 +1128,7 @@ components.GroupedList[Entry]{
 					"LoadMore is the four-state tail every paged screen hand-rolls: nothing, Load more, Loading…, or the error with Retry — Loading wins over Err, Err over HasMore.",
 					"Key must be unique across the list and stable across renders; core.List keeps row state attached to it through reorders.",
 					"Collapse is one type with two functions because either alone is broken; the set of shut keys is screen state, so the widget stays hook-free.",
-					"A Header override keeps the row hiding and owns the control: place a components.CollapseBand in your own row rather than rebuilding a button, an aria-expanded and a heading wrapper.",
+					"A Header override keeps the row hiding and owns the control: place a comps.CollapseBand in your own row rather than rebuilding a button, an aria-expanded and a heading wrapper.",
 					"Put your insets on CollapseBand.ControlStyle, not on the row around it — padding outside the button is a place a press does nothing.",
 				),
 			)
@@ -1192,9 +1192,9 @@ func lessonScreenFurniture() Lesson {
 			var body core.View
 			switch {
 			case loading.Get():
-				body = components.Skeleton{Lines: 3, AccessibilityLabel: "Loading the archive"}
+				body = comps.Skeleton{Lines: 3, AccessibilityLabel: "Loading the archive"}
 			case len(matches) == 0:
-				body = components.EmptyState{
+				body = comps.EmptyState{
 					Glyph: "🔎",
 					Title: "Nothing matches that",
 					Hint:  "Try a shorter word, or tap All.",
@@ -1212,7 +1212,7 @@ func lessonScreenFurniture() Lesson {
 			default:
 				rows := make([]core.PropsAndChildren, 0, len(matches))
 				for _, e := range matches {
-					rows = append(rows, components.ListRow{
+					rows = append(rows, comps.ListRow{
 						Title:    e.title,
 						Subtitle: e.speaker,
 						Trailing: caption(e.date.Format("Jan 2")),
@@ -1223,13 +1223,13 @@ func lessonScreenFurniture() Lesson {
 				}, rows...)...)
 			}
 
-			chips := make([]components.Chip, 0, len(archiveSpeakers))
+			chips := make([]comps.Chip, 0, len(archiveSpeakers))
 			for _, s := range archiveSpeakers {
 				label, value := s, s
 				if s == "" {
 					label = "All"
 				}
-				chips = append(chips, components.Chip{
+				chips = append(chips, comps.Chip{
 					Label:    label,
 					Selected: speaker.Get() == value,
 					OnTap:    func() { speaker.Set(value) },
@@ -1243,14 +1243,14 @@ func lessonScreenFurniture() Lesson {
 					"the list, a placeholder for the three moments the list has nothing to show. "+
 					"Seven widgets cover it, and none of them holds state — each renders what you "+
 					"pass and reports intent, exactly like Chip and DataTable."),
-				codeBlock(`components.AppBar{Title: "Archive", Subtitle: "9 sermons",
+				codeBlock(`comps.AppBar{Title: "Archive", Subtitle: "9 sermons",
     Actions: []core.View{refreshButton}}
 
-components.Banner{Text: "Reconnecting…",
-    Variant: components.VariantWarning,
+comps.Banner{Text: "Reconnecting…",
+    Variant: comps.VariantWarning,
     ActionLabel: "Retry now", OnAction: retry}
 
-components.EmptyState{Glyph: "🔎", Title: "Nothing matches that",
+comps.EmptyState{Glyph: "🔎", Title: "Nothing matches that",
     Hint: "Try a shorter word.", ActionLabel: "Clear filters",
     OnAction: clear}`),
 				prose("AppBar draws its back arrow exactly when core.CanPop says there is a screen "+
@@ -1268,26 +1268,26 @@ components.EmptyState{Glyph: "🔎", Title: "Nothing matches that",
 					"carries no muted container tone to fill with instead. It also means the "+
 					"banner's contrast does not depend on which variant it is."),
 				demoPanel("Type to search — the list moves a moment after you stop. Toggle the two simulations; tap ‹ to see OnBack replace Pop.",
-					components.AppBar{
+					comps.AppBar{
 						Title:    "Archive",
 						Subtitle: fmt.Sprintf("%d of %d sermons", len(matches), len(archive)),
 						OnBack:   func() { backNote.Set(true) },
-						Actions: []core.View{components.Button{
+						Actions: []core.View{comps.Button{
 							Label:              "↻",
-							Emphasis:           components.EmphasisGhost,
+							Emphasis:           comps.EmphasisGhost,
 							AccessibilityLabel: "Refresh",
 							OnTap:              func() { loading.Set(!loading.Get()) },
 						}},
 					},
 					core.If(backNote.Get(), caption("Back tapped — OnBack ran instead of core.Pop, so you are still here.")),
-					core.If(offline.Get(), components.Banner{
+					core.If(offline.Get(), comps.Banner{
 						Text:        "Offline. Showing a saved copy.",
-						Variant:     components.VariantWarning,
+						Variant:     comps.VariantWarning,
 						ActionLabel: "Reconnect",
 						OnAction:    func() { offline.Set(false) },
 						OnDismiss:   func() { offline.Set(false) },
 					}),
-					components.SearchField{
+					comps.SearchField{
 						Value:       query.Get(),
 						Placeholder: "Search the archive",
 						OnChange: func(s string) {
@@ -1308,24 +1308,24 @@ components.EmptyState{Glyph: "🔎", Title: "Nothing matches that",
 							applied.Set("")
 						},
 					},
-					components.ChipStrip{Chips: chips},
+					comps.ChipStrip{Chips: chips},
 					core.Row(
 						core.Gap(16), core.Padding(0),
-						components.StatTile{
+						comps.StatTile{
 							Label: "Showing", Value: itoaLen(len(matches)), Fill: true,
 							Delta:        fmt.Sprintf("of %d", len(archive)),
-							DeltaVariant: components.VariantDefault,
+							DeltaVariant: comps.VariantDefault,
 						},
-						components.StatTile{
+						comps.StatTile{
 							Label: "Filter", Value: chipValueLabel(speaker.Get()), Fill: true,
 						},
 					),
 					body,
 					core.Row(
 						core.Gap(8), core.Padding(0),
-						components.Chip{Label: "Simulate offline", Selected: offline.Get(),
+						comps.Chip{Label: "Simulate offline", Selected: offline.Get(),
 							OnTap: func() { offline.Set(!offline.Get()) }},
-						components.Chip{Label: "Simulate loading", Selected: loading.Get(),
+						comps.Chip{Label: "Simulate loading", Selected: loading.Get(),
 							OnTap: func() { loading.Set(!loading.Get()) }},
 					),
 				),
@@ -1337,7 +1337,7 @@ components.EmptyState{Glyph: "🔎", Title: "Nothing matches that",
 					"(Enter and the ✕ cancel, then act)."),
 				codeBlock(`d := hooks.UseDebounce(ctx, 250*time.Millisecond)
 
-components.SearchField{
+comps.SearchField{
     Value: query.Get(),
     OnChange: func(s string) {
         query.Set(s)                      // now: the field is controlled
@@ -1438,13 +1438,13 @@ func lessonEndlessFeeds() Lesson {
 				loaded.Set(loaded.Get() + endlessPageSize)
 			}
 
-			chips := make([]components.Chip, 0, len(archiveSpeakers))
+			chips := make([]comps.Chip, 0, len(archiveSpeakers))
 			for _, s := range archiveSpeakers {
 				label, value := s, s
 				if s == "" {
 					label = "Everyone"
 				}
-				chips = append(chips, components.Chip{
+				chips = append(chips, comps.Chip{
 					Label:    label,
 					Selected: speaker.Get() == value,
 					OnTap: func() {
@@ -1485,19 +1485,19 @@ core.List(
 					"debounce in Go, rather than four different notions of \"again\" in four "+
 					"renderers."),
 				demoPanel("Scroll the box: the month band pins, and the next two rows arrive before you reach the end. The strip pans sideways.",
-					components.ChipStrip{Scrollable: true, Chips: chips},
+					comps.ChipStrip{Scrollable: true, Chips: chips},
 					core.Box(
 						core.Height(endlessViewport),
 						core.Overflow("auto"),
 						core.BorderRadius(8),
-						components.GroupedList[archiveEntry]{
+						comps.GroupedList[archiveEntry]{
 							Items:             rows,
 							Key:               archiveKey,
 							GroupBy:           archiveMonth,
 							StickyHeaders:     true,
 							HideTrailingCount: hasMore,
 							Row: func(e archiveEntry) core.View {
-								return components.ListRow{
+								return comps.ListRow{
 									Title:    e.title,
 									Subtitle: e.speaker,
 									Trailing: caption(e.date.Format("Jan 2")),
@@ -1508,7 +1508,7 @@ core.List(
 							// not the tail: this is still where "Loading…" and
 							// a failed page's Retry live, and it is the manual
 							// fallback wherever the edge cannot be reported.
-							Footer: components.LoadMore{
+							Footer: comps.LoadMore{
 								HasMore:    hasMore,
 								OnLoadMore: loadNext,
 							},
@@ -1516,7 +1516,7 @@ core.List(
 					),
 					caption(fmt.Sprintf("%d of %d rows, %d fetches", len(rows), total, fetches.Get())),
 					core.Row(core.Gap(8), core.Padding(0),
-						components.Chip{Label: "Start over", OnTap: func() {
+						comps.Chip{Label: "Start over", OnTap: func() {
 							loaded.Set(endlessPageSize)
 							fetches.Set(0)
 						}},
@@ -1528,11 +1528,11 @@ core.List(
 					"IntersectionObserver. Handing the same load function to both is the intended "+
 					"shape: the debounce means a tap and a scroll cannot double-load, because "+
 					"neither can fire while the row count is unchanged."),
-				codeBlock(`components.GroupedList[Entry]{
+				codeBlock(`comps.GroupedList[Entry]{
     Items:         pager.Items,
     StickyHeaders: true,
     OnEndReached:  pager.LoadNext,   // the scroll
-    Footer: components.LoadMore{     // and the tap, and the states
+    Footer: comps.LoadMore{     // and the tap, and the states
         HasMore: pager.HasMore, Loading: pager.Loading,
         Err: pager.Err, OnLoadMore: pager.LoadNext},
 }`),
@@ -1558,7 +1558,7 @@ core.List(
 // --- 4.9 -----------------------------------------------------------------
 
 // tutorialToday is the demo's "today". Pinned rather than read from the clock
-// for the reason components.Calendar makes Today a field in the first place:
+// for the reason comps.Calendar makes Today a field in the first place:
 // a page whose picture changes at midnight cannot be snapshot-tested, and a
 // lesson about not consulting the clock should not consult the clock.
 var tutorialToday = time.Date(2026, time.March, 11, 12, 0, 0, 0, time.UTC)
@@ -1604,7 +1604,7 @@ func archiveOn(d time.Time) (archiveEntry, bool) {
 func lessonCalendars() Lesson {
 	return Lesson{
 		Title:   "Calendars: a month grid and a date field",
-		Summary: "components.Calendar and components.DatePicker — a controlled month, a today you supply, and cells built at midday for a reason.",
+		Summary: "comps.Calendar and comps.DatePicker — a controlled month, a today you supply, and cells built at midday for a reason.",
 		Body: func(ctx *core.Context) core.View {
 			// Which month is on screen, and which day is chosen. Both belong
 			// to the caller: this demo drives one calendar and one date field
@@ -1643,14 +1643,14 @@ func lessonCalendars() Lesson {
 			return core.Column(
 				core.Gap(14),
 				prose("A calendar is a grid of buttons over a little date arithmetic, and both are the "+
-					"kind of thing every app rewrites slightly differently. components.Calendar draws "+
+					"kind of thing every app rewrites slightly differently. comps.Calendar draws "+
 					"the month; you own what it shows. The month on screen, the selected day and the "+
 					"day that counts as today are three separate fields, because a screen that opens "+
 					"on the month of its next event needs to say so."),
 				codeBlock(`month  := core.NewState(ctx, someDate)
 picked := core.NewState(ctx, time.Time{})
 
-components.Calendar{
+comps.Calendar{
     Month:         month.Get(),   OnMonthChange: month.Set,
     Selected:      picked.Get(),  OnSelect:      picked.Set,
     Today:         today,                       // a field, not a clock read
@@ -1659,7 +1659,7 @@ components.Calendar{
     Deselectable:  true,                                               // a second tap on the chosen day reports the zero time
 }`),
 				demoPanel("The dots are the 4.6 archive. The ring is \"today\"; the fill is your selection; the arrows die at the ends of the range.",
-					components.Calendar{
+					comps.Calendar{
 						Month:         month.Get(),
 						OnMonthChange: month.Set,
 						Selected:      picked.Get(),
@@ -1675,16 +1675,16 @@ components.Calendar{
 						Deselectable: true,
 					},
 					caption(note),
-					components.FormField{
+					comps.FormField{
 						Label: "Same selection, as a field",
 						Hint:  "DatePicker is the grid behind a summary, with the two view states it needs of its own.",
-						Input: components.DatePicker{
+						Input: comps.DatePicker{
 							Selected:    picked.Get(),
 							OnSelect:    picked.Set,
 							OnClear:     func() { picked.Set(time.Time{}) },
 							Placeholder: "Choose a date",
 							Title:       "Service date",
-							Calendar: components.Calendar{
+							Calendar: comps.Calendar{
 								Today:  tutorialToday,
 								Min:    tutorialCalMin,
 								Max:    tutorialCalMax,
@@ -1729,13 +1729,13 @@ components.Calendar{
 					"grid built at midnight emits two cells that both read as the 5th, and the 6th "+
 					"can never be picked, in exactly the zones nobody testing in UTC will ever look "+
 					"at. Midday is skipped by no transition in the tz database."),
-				codeBlock(`components.FormField{
+				codeBlock(`comps.FormField{
     Label: "Event date",
-    Input: components.DatePicker{
+    Input: comps.DatePicker{
         Selected: date.Get(),
         OnSelect: date.Set,
         OnClear:  func() { date.Set(time.Time{}) },
-        Calendar: components.Calendar{Today: today, Min: today},  // the template
+        Calendar: comps.Calendar{Today: today, Min: today},  // the template
     },
 }`),
 				prose("DatePicker is the packaging, not a second calendar. It owns the two states no "+
@@ -1773,7 +1773,7 @@ var tutorialBearings = []float64{0, 45, 135, 217, 300, 359}
 func lessonCompass() Lesson {
 	return Lesson{
 		Title:   "Sensors: the compass",
-		Summary: "core.Rotate, hooks.UseHeading and components.Compass — a paint transform, a refcounted sensor, and the difference between \"no compass\" and \"no reading yet\".",
+		Summary: "core.Rotate, hooks.UseHeading and comps.Compass — a paint transform, a refcounted sensor, and the difference between \"no compass\" and \"no reading yet\".",
 		Body: func(ctx *core.Context) core.View {
 			// The hand-driven bearing: what the widget draws when a caller
 			// supplies the number itself. Compass takes a float and not a
@@ -1802,10 +1802,10 @@ func lessonCompass() Lesson {
 			// dialog on screen as a side effect of drawing.
 			locationStatus := hooks.UsePermission(ctx, permission.Location)
 
-			chips := make([]components.Chip, 0, len(tutorialBearings))
+			chips := make([]comps.Chip, 0, len(tutorialBearings))
 			for _, deg := range tutorialBearings {
 				value := deg
-				chips = append(chips, components.Chip{
+				chips = append(chips, comps.Chip{
 					Label:    fmt.Sprintf("%.0f°", value),
 					Selected: bearing.Get() == value,
 					OnTap:    func() { bearing.Set(value) },
@@ -1843,7 +1843,7 @@ func lessonCompass() Lesson {
 				}
 			case permission.Prompt:
 				permissionNote = "Undecided. Asking will show the platform's dialog."
-				permissionAction = components.Button{
+				permissionAction = comps.Button{
 					Label: "Use my location",
 					// From a tap, never from the render pass. Every platform
 					// here either requires that or punishes the alternative.
@@ -1871,8 +1871,8 @@ func lessonCompass() Lesson {
     core.Rotate(-heading),        // clockwise degrees, about the centre
 )`),
 				demoPanel("Pick a bearing. The rose turns the other way, which is what keeps N pointing at north.",
-					components.ChipStrip{Chips: chips},
-					components.Compass{Heading: bearing.Get(), ShowDegrees: true},
+					comps.ChipStrip{Chips: chips},
+					comps.Compass{Heading: bearing.Get(), ShowDegrees: true},
 					caption(fmt.Sprintf("Compass{Heading: %.0f} — the rose is drawn with Rotate(%.0f).",
 						bearing.Get(), -bearing.Get())),
 				),
@@ -1911,10 +1911,10 @@ switch {
 case !h.Received:  // the first reading has not landed yet  -> a spinner
 case !h.Available: // this device has no compass, h.Error says why
 default:
-    components.Compass{Heading: h.Magnetic, ShowDegrees: true}
+    comps.Compass{Heading: h.Magnetic, ShowDegrees: true}
 }`),
 				demoPanel("The live sensor, if this device has one.",
-					components.Compass{Heading: live.Magnetic, Size: 120, ShowDegrees: live.Available},
+					comps.Compass{Heading: live.Magnetic, Size: 120, ShowDegrees: live.Available},
 					caption(liveNote),
 					caption(fmt.Sprintf("Received=%v  Available=%v  Active=%v",
 						live.Received, live.Available, live.Active)),
@@ -1945,7 +1945,7 @@ case permission.Granted:     return mapView(ctx)
 case permission.Prompt:      return askButton()   // Request from a tap
 case permission.Denied:      return openSettingsHint()
 case permission.Unavailable: return nil           // nothing to ask for here
-default:                     return components.Skeleton{}   // the check is in flight
+default:                     return comps.Skeleton{}   // the check is in flight
 }`),
 				demoPanel("The live status. Unavailable in a browser preview; on a phone this is a real dialog.",
 					caption("permission.Location — "+string(locationStatus)),
@@ -2001,25 +2001,25 @@ var tutorialPlaces = []struct {
 func lessonStaticMap() Lesson {
 	return Lesson{
 		Title:   "Maps: a picture and a hand-off",
-		Summary: "components.StaticMap — a map image from a provider you choose, and a tap that leaves for the platform's own maps app.",
+		Summary: "comps.StaticMap — a map image from a provider you choose, and a tap that leaves for the platform's own maps app.",
 		Body: func(ctx *core.Context) core.View {
 			place := core.NewState(ctx, 0)
 			marker := core.NewState(ctx, true)
-			zoom := core.NewState(ctx, components.DefaultMapZoom)
+			zoom := core.NewState(ctx, comps.DefaultMapZoom)
 
 			current := tutorialPlaces[place.Get()%len(tutorialPlaces)]
 
-			chips := make([]components.Chip, 0, len(tutorialPlaces))
+			chips := make([]comps.Chip, 0, len(tutorialPlaces))
 			for i, p := range tutorialPlaces {
 				idx := i
-				chips = append(chips, components.Chip{
+				chips = append(chips, comps.Chip{
 					Label:    p.name,
 					Selected: place.Get() == idx,
 					OnTap:    func() { place.Set(idx) },
 				})
 			}
 
-			shown := components.StaticMap{
+			shown := comps.StaticMap{
 				Lat: current.lat, Lng: current.lng,
 				Zoom:   zoom.Get(),
 				Marker: marker.Get(),
@@ -2031,7 +2031,7 @@ func lessonStaticMap() Lesson {
 				// the prose below says why. A lesson that hid that behind a
 				// key nobody here has would teach the seam and not the
 				// decision.
-				Provider: components.OSMStaticMap,
+				Provider: comps.OSMStaticMap,
 			}
 			// The URL the widget will request, asked for rather than rebuilt:
 			// Area() is the widget's own resolution of the defaults and the
@@ -2039,15 +2039,15 @@ func lessonStaticMap() Lesson {
 			// disagree about what was fetched. Doing this by hand — defaulting
 			// the zoom here, clamping the size here — is exactly the second
 			// answer Area() exists to prevent.
-			requested := components.OSMStaticMap(shown.Area())
+			requested := comps.OSMStaticMap(shown.Area())
 
 			return core.Column(
 				core.Gap(14),
 				prose("A map is the first widget in this package that draws something nobody here "+
-					"drew. components.StaticMap builds a URL, hands it to core.Image, and makes the "+
+					"drew. comps.StaticMap builds a URL, hands it to core.Image, and makes the "+
 					"whole thing tappable — so what you see is a picture a tile service rendered, and "+
 					"what a tap does is leave for the platform's own maps app."),
-				codeBlock(`components.StaticMap{
+				codeBlock(`comps.StaticMap{
     Lat: 38.7223, Lng: -9.1393,
     Label:  "Lisbon Baptist Church",
     Marker: true,
@@ -2058,13 +2058,13 @@ func lessonStaticMap() Lesson {
 					"type with MapKit, osmdroid and Leaflet behind it — and the question it answers "+
 					"is \"interact with a map\", not \"where is this\"."),
 				demoPanel("Pick a place. The switch is a setting, so the marker changes on the tap.",
-					components.ChipStrip{Chips: chips},
-					components.ListRow{
+					comps.ChipStrip{Chips: chips},
+					comps.ListRow{
 						Title:    "Marker",
 						Subtitle: "A pin at the centre",
 						Trailing: core.Switch(marker.Get(), func(v bool) { marker.Set(v) }),
 					},
-					components.ChipStrip{Chips: zoomChips(zoom)},
+					comps.ChipStrip{Chips: zoomChips(zoom)},
 					shown,
 					caption(fmt.Sprintf("%s — %g, %g at zoom %d",
 						current.name, current.lat, current.lng, zoom.Get())),
@@ -2080,11 +2080,11 @@ func lessonStaticMap() Lesson {
 				prose("So the provider is the seam, and it is a policy an app owns. GoogleStaticMap(key) "+
 					"is in the box and resolves; anything else is one function. A StaticMap with no "+
 					"Provider at all renders this same empty frame and reports "+
-					"components.ConcernNoMapProvider in debug mode, so a build that has not chosen "+
+					"comps.ConcernNoMapProvider in debug mode, so a build that has not chosen "+
 					"says so during development rather than shipping a grey rectangle."),
 				codeBlock(`// A provider is one function, and it sees values already
 // defaulted and already clamped — no zero Zoom, no 4000px width.
-Provider: func(a components.StaticMapArea) string {
+Provider: func(a comps.StaticMapArea) string {
     return "https://tiles.example.com/" + ...
 }`),
 				prose("The hand-off is one URL for three platforms, because nothing in this framework "+
@@ -2129,19 +2129,19 @@ Provider: func(a components.StaticMapArea) string {
 
 // zoomChips is the zoom picker for 4.11: three scales far enough apart that the
 // image visibly changes, named for what each one shows rather than by number.
-func zoomChips(zoom core.State[int]) []components.Chip {
+func zoomChips(zoom core.State[int]) []comps.Chip {
 	levels := []struct {
 		label string
 		value int
 	}{
 		{"City", 11},
-		{"Street", components.DefaultMapZoom},
+		{"Street", comps.DefaultMapZoom},
 		{"Building", 18},
 	}
-	chips := make([]components.Chip, 0, len(levels))
+	chips := make([]comps.Chip, 0, len(levels))
 	for _, l := range levels {
 		value := l.value
-		chips = append(chips, components.Chip{
+		chips = append(chips, comps.Chip{
 			Label:    l.label,
 			Selected: zoom.Get() == value,
 			OnTap:    func() { zoom.Set(value) },
@@ -2297,9 +2297,9 @@ func lessonLiveMap() Lesson {
 			case permission.Prompt:
 				fixPermissionNote = "Undecided, so the sensor has nothing to report yet. " +
 					"Asking shows the platform's dialog."
-				fixPermissionAction = components.Button{
+				fixPermissionAction = comps.Button{
 					Label:    "Use my location",
-					Emphasis: components.EmphasisOutlined,
+					Emphasis: comps.EmphasisOutlined,
 					// From a tap, never from the render pass — see the
 					// permission package. The readout above recovers on its own
 					// once this is granted: the hosts hold a refused start open
@@ -2325,7 +2325,7 @@ func lessonLiveMap() Lesson {
 					"OpenStreetMap on Android, Leaflet in the browser, and a placeholder box in "+
 					"a static export. It is the node to reach for when the map is part of the "+
 					"screen — a set of markers to compare, a region to explore, a place to pick "+
-					"by tapping. For \"where is this\", components.StaticMap is an image and a "+
+					"by tapping. For \"where is this\", comps.StaticMap is an image and a "+
 					"hand-off, and it is almost always the right answer."),
 				codeBlock(`core.MapView(core.Region{Lat: 38.7139, Lng: -9.1394, Zoom: 13},
     core.Width("100%"), core.Height("260px"),
@@ -2348,14 +2348,14 @@ func lessonLiveMap() Lesson {
 						len(pins.Get()), selectedNote(selected.Get()))),
 					core.Row(
 						core.Gap(8),
-						components.Button{Label: "Back to the centre", OnTap: func() {
+						comps.Button{Label: "Back to the centre", OnTap: func() {
 							region.Set(core.Region{Lat: 38.7139, Lng: -9.1394, Zoom: 13})
 						}},
-						components.Button{Label: "Show Belém", Emphasis: components.EmphasisOutlined,
+						comps.Button{Label: "Show Belém", Emphasis: comps.EmphasisOutlined,
 							OnTap: func() {
 								region.Set(core.Region{Lat: 38.6970, Lng: -9.2065, Zoom: 15})
 							}},
-						components.Button{Label: "Reset pins", Emphasis: components.EmphasisGhost,
+						comps.Button{Label: "Reset pins", Emphasis: comps.EmphasisGhost,
 							OnTap: func() {
 								pins.Set(tutorialPins)
 								selected.Set("")
@@ -2413,9 +2413,9 @@ if loc.Received && loc.Available {
 					core.Row(
 						core.Gap(8),
 						fixPermissionAction,
-						components.Button{
+						comps.Button{
 							Label:    "Centre the map on me",
-							Emphasis: components.EmphasisGhost,
+							Emphasis: comps.EmphasisGhost,
 							// Disabled rather than hidden, so the button is a
 							// visible statement about the state rather than a
 							// control that comes and goes. A tap with no fix
@@ -2431,7 +2431,7 @@ if loc.Received && loc.Available {
 					// rather than a button because it shows its own state:
 					// "the GPS is on" is a fact about right now, and a button
 					// would only say what tapping it does.
-					components.ListRow{
+					comps.ListRow{
 						Title:    "Keep the GPS on",
 						Subtitle: "The flag hooks.UseLocationWhen takes",
 						Trailing: core.Switch(gpsOn.Get(), func(v bool) { gpsOn.Set(v) }),
@@ -2515,7 +2515,7 @@ func greet(name string) string {
 func lessonCodeEditor() Lesson {
 	return Lesson{
 		Title:   "Editing code: the decorated buffer",
-		Summary: "components.CodeEditor — a real buffer with Go's own lexer behind it, and the three rules that make a host-owned buffer controllable from Go.",
+		Summary: "comps.CodeEditor — a real buffer with Go's own lexer behind it, and the three rules that make a host-owned buffer controllable from Go.",
 		Body: func(ctx *core.Context) core.View {
 			src := core.NewState(ctx, codeEditorSeed)
 			// The toolbar's ref. A hook, and therefore called unconditionally
@@ -2534,12 +2534,12 @@ func lessonCodeEditor() Lesson {
 				prose("Everything up to here has been a picture of code. core.TextGrid draws "+
 					"rows of coloured runs and nothing can be typed into it, which is right "+
 					"for a snippet in a document and useless for a config screen, a snippet "+
-					"runner, or a rule the user is meant to write. components.CodeEditor is "+
+					"runner, or a rule the user is meant to write. comps.CodeEditor is "+
 					"the other half: the same rows, over a buffer the platform owns."),
 				demoPanel("Edit it. The lexer re-runs on every keystroke.",
 					core.Column(
 						core.Gap(10),
-						components.CodeEditor{
+						comps.CodeEditor{
 							Value:       src.Get(),
 							OnChange:    src.Set,
 							Language:    "go",
@@ -2560,11 +2560,11 @@ func lessonCodeEditor() Lesson {
 					"handed the result to the node as one styled row per line. It painted the "+
 					"surface from highlight.Darcula, because the token colours and the "+
 					"background have to come from one scheme or the code is legible by "+
-					"accident. And it built that toolbar out of components.Buttons, each of "+
+					"accident. And it built that toolbar out of comps.Buttons, each of "+
 					"which sends one command to the ref you gave it."),
 				codeBlock(`ref := core.UseEditorRef(ctx)      // the toolbar's address
 
-components.CodeEditor{
+comps.CodeEditor{
     Value:       src.Get(),
     OnChange:    src.Set,
     Language:    "go",        // or Highlighter: a highlight.Highlighter
@@ -2579,7 +2579,7 @@ components.CodeEditor{
 					"for a read-only code block — which is what every snippet in this tutorial "+
 					"now is, rendered inside conditionals and loops and lesson bodies. So the "+
 					"toolbar names the ref, and an editor without one touches no hook."),
-				components.Separator{},
+				comps.Separator{},
 				prose("Underneath, the hard part is not the colours. It is that the buffer "+
 					"belongs to the platform — a UITextView, a BasicTextField, a <textarea> — "+
 					"while the value belongs to Go, and the round trip between them takes a "+
@@ -2625,7 +2625,7 @@ core.Button("Indent", func() {
 					"the UTF-8 value, which is the one unit all four hosts can agree on: "+
 					"Android and the browser count UTF-16, and iOS counts String.Index."),
 				keyPoints(
-					"components.CodeEditor is the widget; core.CodeEditor is the node and highlight is the lexer.",
+					"comps.CodeEditor is the widget; core.CodeEditor is the node and highlight is the lexer.",
 					"A read-only editor with no toolbar is the display half — a code block you can select and copy.",
 					"No toolbar, no hook: the ref is the caller's, so an editor can be rendered inside a conditional.",
 					"Language picks the lexer by name; Highlighter takes one of your own, including one that caches.",
@@ -2690,7 +2690,7 @@ var richNoteSeed = richtext.Doc{Blocks: []richtext.Block{
 func lessonRichText() Lesson {
 	return Lesson{
 		Title:   "Rich text: a document as the value",
-		Summary: "components.RichTextEditor — formatted text whose value is a richtext.Doc, owned by Go and mapped by each host.",
+		Summary: "comps.RichTextEditor — formatted text whose value is a richtext.Doc, owned by Go and mapped by each host.",
 		Body: func(ctx *core.Context) core.View {
 			note := core.NewState(ctx, richNoteSeed)
 			// The toolbar's state: the ref its buttons command, the last
@@ -2698,7 +2698,7 @@ func lessonRichText() Lesson {
 			// hook slots, called unconditionally and before anything that could
 			// return early — the same rule every other hook in this tutorial is
 			// under.
-			bar := components.UseRichToolbar(ctx)
+			bar := comps.UseRichToolbar(ctx)
 			showMarkdown := core.NewState(ctx, false)
 
 			return core.Column(
@@ -2711,20 +2711,20 @@ func lessonRichText() Lesson {
 				demoPanel("Write in it. The toolbar shows what is active under the caret.",
 					core.Column(
 						core.Gap(10),
-						components.RichTextEditor{
+						comps.RichTextEditor{
 							Doc:         note.Get(),
 							OnChange:    note.Set,
 							Placeholder: "Write something…",
 							Toolbar:     bar,
 							MinHeight:   "150px",
 						},
-						components.Button{
+						comps.Button{
 							Label:    markdownToggleLabel(showMarkdown.Get()),
-							Emphasis: components.EmphasisGhost,
+							Emphasis: comps.EmphasisGhost,
 							OnTap:    func() { showMarkdown.Set(!showMarkdown.Get()) },
 						},
 						core.If(showMarkdown.Get(),
-							components.CodeEditor{
+							comps.CodeEditor{
 								Value:    note.Get().Markdown(),
 								ReadOnly: true,
 								Height:   "150px",
@@ -2738,9 +2738,9 @@ func lessonRichText() Lesson {
 					"value would put a Markdown parser in four hosts. What actually crosses "+
 					"is the document's JSON, and that is also what you persist — bytdb takes "+
 					"it as it is."),
-				codeBlock(`bar := components.UseRichToolbar(ctx)    // ref + selection + link prompt
+				codeBlock(`bar := comps.UseRichToolbar(ctx)    // ref + selection + link prompt
 
-components.RichTextEditor{
+comps.RichTextEditor{
     Doc:         note.Get(),
     OnChange:    note.Set,
     Placeholder: "Write something…",
@@ -2756,7 +2756,7 @@ components.RichTextEditor{
 					"and there is no separate \"RichTextView\" node because there does not "+
 					"need to be one: the renderer's own text engine draws the document either "+
 					"way."),
-				components.Separator{},
+				comps.Separator{},
 				prose("Which buttons look pressed is the one thing Go cannot work out. Go "+
 					"owns the document and the host owns the caret, so \"is the text under "+
 					"the cursor bold\" is a question only the host can answer — it comes back "+

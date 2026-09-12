@@ -16,7 +16,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/rohanthewiz/grmob/components"
+	"github.com/rohanthewiz/grmob/comps"
 	"github.com/rohanthewiz/grmob/core"
 	"github.com/rohanthewiz/grmob/hooks"
 	"github.com/rohanthewiz/grmob/mobile"
@@ -52,7 +52,7 @@ func App(ctx *core.Context) core.View {
 	// No Gap and no Fill: the header sits directly on the tab view, and the
 	// TabView owns the height it needs. The zero value is the whole scaffold
 	// here, which is exactly the case that used to be four lines of nesting.
-	return components.Screen{
+	return comps.Screen{
 		Children: []core.View{
 			appHeader,
 			tabs(tab),
@@ -135,9 +135,9 @@ func feedTab() core.View {
 				FontSize:  13,
 				TextColor: "#3C3C4399",
 			})),
-			// Decorative divider. components.Separator supplies the hairline
+			// Decorative divider. comps.Separator supplies the hairline
 			// tint, so the color is no longer written out per package.
-			components.Separator{},
+			comps.Separator{},
 			core.List(
 				core.FlexGrow(1),
 				// A listbox, because that is what this list is: one choice
@@ -153,7 +153,7 @@ func feedTab() core.View {
 					if starred.Get() == n {
 						title += " ★"
 					}
-					// A components.ListRow, which collapses what this used to
+					// A comps.ListRow, which collapses what this used to
 					// hand-roll in two ways. The row was built by appending to
 					// a []core.PropsAndChildren so the selected background
 					// could be added conditionally — core.If emits a real
@@ -167,7 +167,7 @@ func feedTab() core.View {
 					// Selectable the row is an `option` carrying a real
 					// aria-selected, so the name stays the name and the state
 					// is announced as a state.
-					return core.Keyed(fmt.Sprintf("article-%d", n), components.ListRow{
+					return core.Keyed(fmt.Sprintf("article-%d", n), comps.ListRow{
 						Title:       title,
 						Selected:    selected.Get() == n,
 						Selectable:  true,
@@ -227,7 +227,7 @@ func formTab() core.View {
 			// widget even here, because it is ListRow that vertically centres
 			// the box against the text — the bare Row this replaced left both
 			// on their top edges.
-			components.ListRow{
+			comps.ListRow{
 				Leading: core.Checkbox(subscribed.Get(), func(v bool) { subscribed.Set(v) }),
 				Title:   subLabel,
 			},
@@ -242,7 +242,7 @@ func formTab() core.View {
 			// the conformance replay wants from it: the envelope a switch
 			// sends is a boolean, like a checkbox's, and nothing but the node
 			// type tells the two apart on the wire.
-			components.ListRow{
+			comps.ListRow{
 				Title:    notifyLabel,
 				Trailing: core.Switch(notify.Get(), func(v bool) { notify.Set(v) }),
 			},

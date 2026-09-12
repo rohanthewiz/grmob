@@ -3,7 +3,7 @@ package tutorial
 import (
 	"fmt"
 
-	"github.com/rohanthewiz/grmob/components"
+	"github.com/rohanthewiz/grmob/comps"
 	"github.com/rohanthewiz/grmob/core"
 )
 
@@ -106,7 +106,7 @@ func helloHeader() core.View {
 	return core.Row(
 		core.Gap(10),
 		core.AlignItemsProp(core.AlignItemsCenter),
-		components.Avatar{Name: "Gopher McGrMob"},
+		comps.Avatar{Name: "Gopher McGrMob"},
 		core.Column(
 			core.Text("Gopher McGrMob", core.FontWeight(core.Bold)),
 			caption("Wrote this profile in pure Go"),
@@ -187,7 +187,7 @@ core.Text("Read me", core.UseStyle(ctx.Theme().Typography.Title))`),
 						core.AlignItemsProp(core.AlignItemsCenter),
 						checkRow("Bold", bold),
 					),
-					components.SegmentedControl{
+					comps.SegmentedControl{
 						Style:     segWrap,
 						Labels:    inkRoles,
 						Selected:  colorIdx.Get(),
@@ -252,7 +252,7 @@ core.Column(
 					"container, not to margins sprinkled on children. Spacer is the one-off version: "+
 					"a fixed empty block between two specific siblings."),
 				demoPanel("Flip the axis and stretch the gap.",
-					components.SegmentedControl{
+					comps.SegmentedControl{
 						Style:     segWrap,
 						Labels:    []string{"Row", "Column"},
 						Selected:  axis.Get(),
@@ -328,7 +328,7 @@ func lessonAlignment() Lesson {
 					core.Column(
 						core.Gap(6),
 						caption("Justify — main axis"),
-						components.SegmentedControl{
+						comps.SegmentedControl{
 							Style:     segWrap,
 							Labels:    justifyLabels,
 							Selected:  justifyIdx.Get(),
@@ -339,7 +339,7 @@ func lessonAlignment() Lesson {
 					core.Column(
 						core.Gap(6),
 						caption("AlignItems — cross axis"),
-						components.SegmentedControl{
+						comps.SegmentedControl{
 							Style:     segWrap,
 							Labels:    alignLabels,
 							Selected:  alignIdx.Get(),
@@ -392,14 +392,14 @@ func lessonSurfaces() Lesson {
 core.Card(core.Gap(8), title, body) // themed surface
 
 // A whole screen, scaffolded: safe area + scroll + column.
-components.Screen{
+comps.Screen{
     Scroll:   true,
     Gap:      16,
     Children: []core.View{hero, section, footer},
 }`),
 				prose("Style props override the theme base per use — the demo below drives Card's "+
 					"radius and shadow directly. For a screen's outer frame, reach for "+
-					"components.Screen instead of hand-stacking SafeArea, Scroll, and Column; this "+
+					"comps.Screen instead of hand-stacking SafeArea, Scroll, and Column; this "+
 					"very lesson renders inside one."),
 				demoPanel("Same content, two surfaces. The steppers restyle only the Card.",
 					core.Row(
@@ -418,7 +418,7 @@ components.Screen{
 				keyPoints(
 					"Box is the escape hatch with no theme base; Card is the themed surface.",
 					"Per-use style props layer over the theme's component base and win.",
-					"components.Screen is the root scaffold: safe area, optional scroll region, content column.",
+					"comps.Screen is the root scaffold: safe area, optional scroll region, content column.",
 					"Use Scroll for short content and core.List for long data-driven collections — never nest them.",
 				),
 			)

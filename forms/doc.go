@@ -3,7 +3,7 @@
 // bound input builders that tie a field's value and its onChange to the same
 // name in one call.
 //
-// components.FormField has always had an Error slot and nothing ever filled
+// comps.FormField has always had an Error slot and nothing ever filled
 // it — the widget renders feedback, but deciding *what* the feedback is, and
 // *when* the user should see it, is not a widget's job. This package is that
 // decision, kept out of core (validation touches no node type and no
@@ -32,19 +32,19 @@
 //	    },
 //	})
 //
-//	components.Screen{Children: []core.View{
-//	    components.FormField{
+//	comps.Screen{Children: []core.View{
+//	    comps.FormField{
 //	        Label: "Email",
 //	        Hint:  "We never share it",
 //	        Error: form.Error("email"),
 //	        Input: form.Input("email", "you@example.com"),
 //	    },
-//	    components.FormField{
+//	    comps.FormField{
 //	        Label: "Password",
 //	        Error: form.Error("password"),
 //	        Input: form.Password("password", "••••••••"),
 //	    },
-//	    components.Button{
+//	    comps.Button{
 //	        Label: "Create account",
 //	        OnTap: form.OnSubmit(func(v forms.Values) { createAccount(v) }),
 //	    },

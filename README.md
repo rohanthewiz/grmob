@@ -155,12 +155,12 @@ root view; rows are pure functions of their data.
 ```go
 // A controlled input: the value goes in, changes come out. The keyboard's
 // return key and the Add button are two paths into the same handler.
-components.InputRow{
+comps.InputRow{
     Value:       draft.Get(),
     Placeholder: "What needs doing?",
     OnChange:    func(v string) { draft.Set(v) },
     OnSubmit:    addTodo,
-    Button:      components.Button{Label: "Add"},
+    Button:      comps.Button{Label: "Add"},
 },
 
 // The list is virtualized — LazyColumn on Android, LazyVStack on iOS — so it
@@ -230,7 +230,7 @@ someone fill in four fields before hearing about the first. See
 
 ### Tabs, widgets and native lists
 
-`components` is a widget library built on `core` — buttons, cards, chips,
+`comps` is a widget library built on `core` — buttons, cards, chips,
 tabs, accordions, form fields and more — so you are not hand-rolling a card
 before you can build a screen.
 
@@ -380,7 +380,7 @@ Gradle or Xcode — no global gomobile install.
   `UseMemo`, `UseReducer`, `UsePermission`
 - **Styling & theming** — functional styling, centralized design tokens,
   inheritance
-- **Widget library** — `components`: buttons, cards, chips, tabs, accordions,
+- **Widget library** — `comps`: buttons, cards, chips, tabs, accordions,
   form fields
 - **Forms** — validation rules, cross-field checks, reveal policies, server
   errors
@@ -395,7 +395,7 @@ Gradle or Xcode — no global gomobile install.
 
 - `core/` – Node, View, Context, State, Style, theming, navigation, focus, error boundaries, debug mode
 - `hooks/` – `UseInterval`, `UseTimeout`, `UseEffect`, `UseMemo`, `UseReducer`
-- `components/` – the widget library built on `core`
+- `comps/` – the widget library built on `core`
 - `forms/` – form state and validation
 - `permission/` – ask the platform for the camera, the microphone, location or the media store
 - `reconcile/` – the diff engine that turns two trees into a patch list
@@ -489,7 +489,7 @@ go run ./serve -dev
 | 1 — Views & Layout | 5 | Views as plain Go values, and the flex layout system |
 | 2 — State, Events & Lists | 6 | `NewState`, callbacks, keyed and virtualized lists |
 | 3 — Hooks & Effects | 5 | Timers, effects, memos and reducers |
-| 4 — The Widget Library | 14 | Everything in `components`, screen by screen |
+| 4 — The Widget Library | 14 | Everything in `comps`, screen by screen |
 | 5 — Forms & Validation | 6 | Rules, cross-field checks and reveal policies |
 | 6 — Navigation & Overlays | 5 | The `Navigator`, modals and toasts |
 | 7 — Theming & Styling | 5 | Tokens, themes and style inheritance |

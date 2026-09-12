@@ -60,7 +60,7 @@ type Debouncer struct {
 //
 //	d := hooks.UseDebounce(ctx, 300*time.Millisecond)
 //	...
-//	components.SearchField{
+//	comps.SearchField{
 //	    Value: query.Get(),
 //	    OnChange: func(s string) {
 //	        query.Set(s)                       // the field is controlled: now

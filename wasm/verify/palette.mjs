@@ -3,7 +3,7 @@
 // # Why this table exists
 //
 // core.ColorPalette.ControlBorder has WCAG 1.4.11's 3:1 floor under it, and
-// components/variant_test.go measures the tone against every fill a control
+// comps/variant_test.go measures the tone against every fill a control
 // can be drawn on. That census is arithmetic over hex strings — it says
 // #89898E is 3.12:1 on #F2F2F7 — and until this file nothing in the repository
 // had ever *looked* at the result. Two retints deep, with a whole third

@@ -120,12 +120,12 @@ core.Row(
   `Gap`, `JustifyContent`, `AlignItems` and `FlexDirection` are inert on a
   `ZStack`: there is one cell and nothing to space along. They do not promote
   it to a flex container, which would silently cost it the overlay.
-  `components.Compass` is the widget this was added for — its index mark spent
+  `comps.Compass` is the widget this was added for — its index mark spent
   three releases stacked *above* the rose because nothing portable could draw
   it over.
 - `Spacer(px)`, `Divider(height, color)`, `Fragment`.
   (`Divider` force-applies `Margin(8)`; for a rule inside a list use
-  `components.Separator`, which leaves spacing to the caller and defaults
+  `comps.Separator`, which leaves spacing to the caller and defaults
   its own hairline tint.)
 
 Behavior props (`OnClick`, `OnTouch`, `OnLongPress`, `OnFocus`, `OnBlur`, or
@@ -155,7 +155,7 @@ content does not move by itself — but with the viewport now ending above the
 keyboard, the platform's own scroll-the-focused-field-into-view has somewhere
 visible to put the field, which it cannot do while the viewport still claims
 the rows the keyboard is sitting on. This is the form case, and
-`components.Screen{Scroll: true, KeyboardAware: true}` is the short way to say
+`comps.Screen{Scroll: true, KeyboardAware: true}` is the short way to say
 it (`examples/signup`).
 
 On **any other** node it lifts that subtree whole — the case for a screen with
@@ -254,8 +254,8 @@ the page, or a row helper that calls `view.Render(ctx)` itself instead of
 returning a `View`. Then each page starts its guard afresh under a key
 something else held last pass, and the double-load comes back.
 
-`components.GroupedList` wraps both (`StickyHeaders`, `OnEndReached`) and
-`components.ChipStrip{Scrollable: true}` wraps the horizontal scroll.
+`comps.GroupedList` wraps both (`StickyHeaders`, `OnEndReached`) and
+`comps.ChipStrip{Scrollable: true}` wraps the horizontal scroll.
 
 ## Leaves
 
@@ -270,12 +270,12 @@ something else held last pass, and the double-load comes back.
 | `Slider` | `Slider(value, min, max, onChange, ...)` with `OnSliderChangeEnd(fn)` (fires once on release — the one a seek bar acts on) and `SliderStep(s)` |
 | `Image` | `Image(src, styleProps...)` |
 | `TextGrid` | `TextGrid(rows []GridRow, props...)` — a monospace grid of styled runs (a terminal pane, a log tail); each `GridRun` has `Text`, `Fg`, `Bg` and `Attr` bits (`GridBold`, `GridDim`, `GridItalic`, `GridUnderline`, `GridStrike`). Rows are children, so a changed row is one patch |
-| `CodeEditor` | `CodeEditor(value, onChange, rows []GridRow, props...)` — an editable monospace buffer whose decoration is a `TextGrid`'s rows. `LineNumbers()`, `ReadOnly()`, `TabSize(n)`, `CommentPrefix(s)`, `OnSelectionChange(fn)`, `EditorTarget(ref)`. A node type rather than a composition because `Style` has no font family, so a transparent `TextArea` over a `TextGrid` cannot be pitch-matched from outside — see below. Prefer the [`components.CodeEditor`](../components.md#codeeditor) facade, which runs the lexer for you |
-| `RichTextEditor` | `RichTextEditor(doc richtext.Doc, onChange, props...)` — an editable formatted document. `Placeholder(s)`, `ReadOnly()`, `OnRichSelectionChange(fn)`, `EditorTarget(ref)`. The value is a `richtext.Doc` on every target, crossing as JSON, so storage never sees a platform's own markup. Prefer the [`components.RichTextEditor`](../components.md#richtexteditor) facade |
+| `CodeEditor` | `CodeEditor(value, onChange, rows []GridRow, props...)` — an editable monospace buffer whose decoration is a `TextGrid`'s rows. `LineNumbers()`, `ReadOnly()`, `TabSize(n)`, `CommentPrefix(s)`, `OnSelectionChange(fn)`, `EditorTarget(ref)`. A node type rather than a composition because `Style` has no font family, so a transparent `TextArea` over a `TextGrid` cannot be pitch-matched from outside — see below. Prefer the [`comps.CodeEditor`](../components.md#codeeditor) facade, which runs the lexer for you |
+| `RichTextEditor` | `RichTextEditor(doc richtext.Doc, onChange, props...)` — an editable formatted document. `Placeholder(s)`, `ReadOnly()`, `OnRichSelectionChange(fn)`, `EditorTarget(ref)`. The value is a `richtext.Doc` on every target, crossing as JSON, so storage never sees a platform's own markup. Prefer the [`comps.RichTextEditor`](../components.md#richtexteditor) facade |
 | `CameraView` | `CameraView(props...)` with `OnCapture`, `WithOverlay`, `SetFacing`, ... |
-| `MapView` | `MapView(Region{Lat, Lng, Zoom}, props...)` — the platform's own live map (MapKit, osmdroid, Leaflet). Pins are **child nodes**: `Marker(id, lat, lng, title)`, keyed by their id, so a marker that moves is one patch rather than a rebuilt annotation layer. `ShowUserLocation()`, `OnRegionChange(fn)`, `OnMarkerTap(fn)`, `OnMapTap(fn)`. Go's `Region` is applied only when it **changes** — see below. For "where is this", [`components.StaticMap`](../components.md#staticmap) is the smaller answer |
+| `MapView` | `MapView(Region{Lat, Lng, Zoom}, props...)` — the platform's own live map (MapKit, osmdroid, Leaflet). Pins are **child nodes**: `Marker(id, lat, lng, title)`, keyed by their id, so a marker that moves is one patch rather than a rebuilt annotation layer. `ShowUserLocation()`, `OnRegionChange(fn)`, `OnMarkerTap(fn)`, `OnMapTap(fn)`. Go's `Region` is applied only when it **changes** — see below. For "where is this", [`comps.StaticMap`](../components.md#staticmap) is the smaller answer |
 | `Modal` | `Modal(Visible(b), OnDismiss(fn), Backdrop(color), ...)` |
-| `TabView` | native tab bar — prefer the [`components.Tabs`](../components.md#tabs) facade |
+| `TabView` | native tab bar — prefer the [`comps.Tabs`](../components.md#tabs) facade |
 
 Inputs are **controlled**: you pass the current value in and receive changes
 through `onChange`; the value on screen is whatever your state says it is.

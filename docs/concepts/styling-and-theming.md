@@ -93,7 +93,7 @@ Two node-specific escapes from that rule are closed rather than documented as
 quirks. A `core.Button` draws its own container on both natives, so it is
 handed a style with the box-drawing fields stripped and each one fed back
 through the platform control's own slot; the border used to be stripped and
-not fed back, which is why `components.Button`'s outlined emphasis had no rule
+not fed back, which is why `comps.Button`'s outlined emphasis had no rule
 on device. And on the web a `<button>`, an `<input>`, a `<textarea>` and a `<select>` carry
 the *user agent's* border, which no `BorderWidth(0)` could remove, because
 emitting no declaration is exactly what leaves the browser in charge — so both
@@ -109,7 +109,7 @@ replaces would have left every web field an unmarked rectangle, which is what
 both phones already showed. The tone is `Colors.ControlBorder` and not the
 palette's `Border` hairline: a divider between rows may be 1.26:1 and a rule
 that identifies a control may not, since WCAG 1.4.11 puts a 3:1 floor under it.
-`components.DatePicker`'s trigger inherits the whole frame off the same
+`comps.DatePicker`'s trigger inherits the whole frame off the same
 `Components.Input` base, so a picker between two text fields wears what they
 wear.
 
@@ -343,7 +343,7 @@ these things belong together and this is what they are called, and nothing
 else — which is what lets it be given to a container nothing has looked inside.
 `region` would add six entries to a screen's table of contents; `button` would
 claim a control and would silence a heading inside it; `img` claims the node is
-a picture whose parts should be hidden, which is true of `components.Compass`
+a picture whose parts should be hidden, which is true of `comps.Compass`
 and false of a list row.
 
 You can also set it yourself, which is worth doing where the grouping is the
@@ -359,7 +359,7 @@ difference is not a shade of meaning: `aria-selected` is scoped to `gridcell`,
 `option`, `row`, `tab` and `columnheader` and *not* to `listitem`, so a list
 item that says it is chosen says it into a void on both web targets. A list is
 content; a listbox is a control, and only the control side has the state. That
-is why `components.ListRow` spelled `", selected"` into its own accessible name
+is why `comps.ListRow` spelled `", selected"` into its own accessible name
 for three versions of the widget — `RoleButton` would have made it a foreign
 child of the enclosing list, and `RoleListItem` cannot carry the state at all.
 `ListRow.Selectable` is the door this pair opened.
@@ -513,7 +513,7 @@ the screen's name from a band inside it.
 
 ##### The package's heading outline
 
-`components` fills the range in rather than leaving it to call sites, so the
+`comps` fills the range in rather than leaving it to call sites, so the
 ordinary screen needs none:
 
 | widget | tier | fixed? |
@@ -601,7 +601,7 @@ The two can never contend for the attribute, because the exporters dispatch on
 the role and a node has exactly one. Set both fields and the role decides which
 is read; the other is simply not looked at.
 
-**The widget that spends it** is `components.ListRow`, through its
+**The widget that spends it** is `comps.ListRow`, through its
 `NestingLevel` field, which makes the row a `listitem` at that depth. It is the
 one thing a flattened outline cannot say any other way: a list is a flat run of
 siblings — which is also what makes it virtualizable — so an indent is pixels a
@@ -610,8 +610,8 @@ screen reader never sees, and the nesting has to travel as data.
 ```go
 core.List(
     core.AccessibilityRole(core.RoleList),          // the caller's half
-    components.ListRow{Title: "Gospels", NestingLevel: 2},
-    components.ListRow{Title: "Matthew", NestingLevel: 3, Style: indent},
+    comps.ListRow{Title: "Gospels", NestingLevel: 2},
+    comps.ListRow{Title: "Matthew", NestingLevel: 3, Style: indent},
 )
 ```
 
@@ -680,10 +680,10 @@ pressed; a tab is selected.
 `option` is the arm a row reaches for. It is the only role in the vocabulary
 that lets a *collection item* carry a selection — `listitem`, which describes
 the same visual row, is not scoped for either attribute — and it is why
-`components.ListRow.Selectable` exists and why the widget appended `",
+`comps.ListRow.Selectable` exists and why the widget appended `",
 selected"` to its own name before it did.
 
-That is why `components.SegmentedControl` becomes a tab strip with two props
+That is why `comps.SegmentedControl` becomes a tab strip with two props
 and no new field: give the row `RoleTabList` and the segment template
 `RoleTab`, and the state each `Chip` already sets goes out as `aria-selected`
 instead. Neither widget knows which arrangement it is in.
@@ -765,7 +765,7 @@ one that carries no `core.Role`.
 is the same one the selection has. `group` is not among the roles above, so
 there is no value the exporter could supply that both fits any container and
 carries a disclosure. A widget that wants this attribute has to *be* a control
-— which is what `components.Accordion`'s header row became when it adopted it,
+— which is what `comps.Accordion`'s header row became when it adopted it,
 along with ARIA's own accordion nesting:
 
 ```
@@ -778,13 +778,13 @@ Box  role=heading  aria-level=3  aria-label="What is a hook"
 `aria-expanded` says the content is here, in the page, and can be shown or
 hidden. A trigger that opens a modal is a different relationship — ARIA spells
 that `aria-haspopup`, which this vocabulary does not carry — so
-`components.DatePicker`'s trigger, which looks exactly like a disclosure and
+`comps.DatePicker`'s trigger, which looks exactly like a disclosure and
 even flips a glyph, deliberately states nothing.
 
 | target | what it becomes |
 |---|---|
 | Android | the `expand()` / `collapse()` semantics action the state calls for, wired to the node's own click callback. TalkBack offers "double-tap to expand" on a closed one. A node with a state and no `OnClick` gets neither — an action nothing can perform is worse than none |
-| iOS | nothing. `AccessibilityTraits` has no expanded member, and SwiftUI's own `DisclosureGroup` announces through a *localized accessibility value* this framework has no channel for. Emitting an English "expanded" from the renderer is the move `components.Chip`'s `", selected"` name suffix was deleted for |
+| iOS | nothing. `AccessibilityTraits` has no expanded member, and SwiftUI's own `DisclosureGroup` announces through a *localized accessibility value* this framework has no channel for. Emitting an English "expanded" from the renderer is the move `comps.Chip`'s `", selected"` name suffix was deleted for |
 | HTML / WASM | `aria-expanded`, per the role table above |
 
 That split runs the opposite way to the usual one, where the two phones agree
@@ -800,7 +800,7 @@ points at *that element*.
 ```go
 // the strip
 core.Row(core.AccessibilityRole(core.RoleTabList),
-    components.Chip{Label: "Home", Style: []core.StyleProp{
+    comps.Chip{Label: "Home", Style: []core.StyleProp{
         core.AccessibilityRole(core.RoleTab),
         core.AccessibilitySelected(core.SelectedWhen(tab == "home")),
         core.AccessibilityID("home-tab"),
@@ -927,7 +927,7 @@ Two consequences worth knowing:
   single declaration.
 
 What it does **not** do is change any colors. How a disabled control looks is
-a palette decision — `components.Button` spends the theme's `Surface` and
+a palette decision — `comps.Button` spends the theme's `Surface` and
 `TextSecondary` on it — while `Disabled` says only what the control *is*.
 
 Note the signature: `Disabled(false)` is meaningful, unlike the no-argument
@@ -1035,7 +1035,7 @@ Two distinctions the names do not make obvious:
   The split shipped in two steps and the second one is the instructive half.
   The field frames moved first and lived in `Components.Input` and
   `Components.TextArea` alone, with no palette role, because nothing else
-  spent a boundary. `components.Chip` is what made that false: a quiet chip's
+  spent a boundary. `comps.Chip` is what made that false: a quiet chip's
   ring is not a rule between things, it is the only edge a filter control has,
   and it was drawing it out of the divider role. A second spender is what a
   role is for.
@@ -1154,8 +1154,8 @@ Two distinctions the names do not make obvious:
 
   **And real widgets draw them.** Those swatches are a model of a control
   boundary, built by the harness itself; the route from the palette role to the
-  hex runs through `components`, which the browser pass cannot call. So
-  `wasm/verify/gen.go` renders one quiet `components.Chip` **and** one
+  hex runs through `comps`, which the browser pass cannot call. So
+  `wasm/verify/gen.go` renders one quiet `comps.Chip` **and** one
   `core.Input` per bundled theme, reads the page fill, the widget's own fill and
   its boundary off the **rendered node**, and the browser samples all three —
   while `widget_test.go` holds each boundary to its own Go authority and both
@@ -1163,7 +1163,7 @@ Two distinctions the names do not make obvious:
   paint perfectly and pass every string comparison; this is what notices.
 
   The two are there because the tone has two spenders that read it from two
-  different places. `components.chipRing` takes `Colors.ControlBorderColor()`,
+  different places. `comps.chipRing` takes `Colors.ControlBorderColor()`,
   the role; `core.Input` takes `Components.Input.BorderColor`, a literal each
   theme states and `core/theme_test.go` pins to the role separately (a
   `core.Style` is a value, so a component default cannot call a resolver). They
@@ -1226,7 +1226,7 @@ A palette role is one hex, and one hex cannot do both jobs a role is asked to
 do:
 
 - **As a fill**, with an ink chosen over it, a mid-tone works.
-  `components.Variant.Ink` resolves that ink (see
+  `comps.Variant.Ink` resolves that ink (see
   [the ink over a fill](#the-ink-over-a-fill) below), and a filled `Badge` or
   `Button` clears WCAG AA on both bundled themes.
 - **As ink itself** — an outlined button's label and rule, a loud chip's
@@ -1272,7 +1272,7 @@ ink = ctx.Theme().Colors.OnLight(someAccent)      // by colour, for a widget
                                                   // name for it
 ```
 
-`components.Variant.OnLight(theme)` is the same lookup keyed by variant, and is
+`comps.Variant.OnLight(theme)` is the same lookup keyed by variant, and is
 what `Button`'s outlined and ghost treatments, `Chip`'s loud prominence and
 `Banner`'s edges now spend.
 
@@ -1291,14 +1291,14 @@ to fill in twice.
 #### The ink over a fill
 
 The other half of the same problem: a widget that *paints* a role needs a label
-colour to go over it, and the palette names none. `components.Variant.Ink`
+colour to go over it, and the palette names none. `comps.Variant.Ink`
 answers, in two steps and in this order.
 
 **Ask the theme.** `Components.Button` is the one place a palette states a fill
 and an ink *together* — a filled button is the control a theme cannot describe
 without answering the question — so a fill that matches `Button.Background`
 takes `Button.TextColor`. It is a reverse lookup, like `Colors.OnLight` one
-property over, and it is why `components.Chip` reads its accent off the Button
+property over, and it is why `comps.Chip` reads its accent off the Button
 base rather than off `Colors.Primary`: a theme whose buttons are not
 primary-coloured has said something, and the button is where it said it.
 
@@ -1311,8 +1311,8 @@ shipped a badge nobody can read.
 Measurement alone is the wrong rule for a role the theme has an opinion about,
 and `DefaultTheme`'s `Primary` was the case that showed it: against iOS
 systemBlue `#007AFF` white measures 4.02:1 and black 5.23:1, so a pure contrast
-rule picks **black** — while every filled `components.Button` in the framework
-paints white, because that is the pair the theme declares. `components.Calendar`
+rule picks **black** — while every filled `comps.Button` in the framework
+paints white, because that is the pair the theme declares. `comps.Calendar`
 used to compute its selected day's ink and so drew a black numeral on iOS
 system blue. No third ink role was added to settle it, and the reason is
 arithmetic rather than taste: nothing a theme could name would outscore black
@@ -1333,7 +1333,7 @@ declared pair is 7.56:1.
     that maximising contrast would pick white too, so neither of them can
     *show* the declaration being preferred: an implementation that deleted the
     first step and only measured would paint identical pixels under both. For
-    two releases the evidence lived entirely in a test fixture — `components`'
+    two releases the evidence lived entirely in a test fixture — `comps`'
     `midTonePrimaryTheme`, which is `DefaultTheme` as it stood before the role
     was darkened.
 
@@ -1407,7 +1407,7 @@ declared pair is 7.56:1.
     than a default. `examples/fintechapp` shipped for months with no
     `Components` block at all, invisibly, because every widget in it was
     hand-styled at the call site — the omission surfaced only when its action
-    row moved onto [`components.Button`](../components.md#button), whose zero
+    row moved onto [`comps.Button`](../components.md#button), whose zero
     value deliberately applies nothing so a theme's own base carries through.
 
     When you write a theme, fill in `Components.Button` at minimum.

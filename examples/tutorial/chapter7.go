@@ -5,7 +5,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/rohanthewiz/grmob/components"
+	"github.com/rohanthewiz/grmob/comps"
 	"github.com/rohanthewiz/grmob/core"
 )
 
@@ -430,7 +430,7 @@ core.BorderColor(t.Colors.BorderColor()) // late roles resolve through methods`)
 					"component bases still state the hex directly, since a Style is a value "+
 					"and cannot call a resolver, and a test pins them to the role."),
 				demoPanel("Pick a bundled theme and read its data — nothing is installed here; installing is the next lesson.",
-					components.SegmentedControl{
+					comps.SegmentedControl{
 						Style:     segWrap,
 						Labels:    themeLabels(names),
 						Selected:  inspect.Get(),
@@ -485,7 +485,7 @@ func themePreview(following bool, onFollow func()) core.View {
 				core.AlignItemsProp(core.AlignItemsCenter),
 				core.Text("Gopher McGrMob", core.UseStyle(t.Typography.Title)),
 				core.Box(core.FlexGrow(1)), // slack, so the badge pins right
-				components.Badge{Text: "PRO"},
+				comps.Badge{Text: "PRO"},
 			),
 			core.Text("Every color, size and corner on this card resolves from the theme "+
 				"this subtree was handed — the card base, the title's scale, the button "+
@@ -496,10 +496,10 @@ func themePreview(following bool, onFollow func()) core.View {
 			),
 			core.Row(
 				core.Gap(8),
-				components.Button{Label: followLabel, OnTap: onFollow},
-				components.Button{
+				comps.Button{Label: followLabel, OnTap: onFollow},
+				comps.Button{
 					Label:    "Message",
-					Emphasis: components.EmphasisOutlined,
+					Emphasis: comps.EmphasisOutlined,
 					// A toast, as 6.5 taught: fire-and-forget confirmation,
 					// drawn by the host above everything — themes included.
 					OnTap: func() { core.ShowToast("Message sent to the gopher") },
@@ -554,7 +554,7 @@ core.BundledThemes() // every palette the package ships, keyed by identifier`),
 					"blocks keep their fixed editor palette under any theme for exactly that "+
 					"reason: a literal is a promise the theme can't touch."),
 				demoPanel("Flip the card between themes — then notice the chips you're tapping don't change.",
-					components.SegmentedControl{
+					comps.SegmentedControl{
 						Style:     segWrap,
 						Labels:    themeLabels(installedNames),
 						Selected:  pick.Get(),
@@ -640,11 +640,11 @@ func lessonTransitions() Lesson {
 					core.Row(
 						core.Gap(8),
 						core.AlignItemsProp(core.AlignItemsCenter),
-						components.Button{
+						comps.Button{
 							Label: "Flip the look",
 							OnTap: func() { alert.Set(!alert.Get()) },
 						},
-						components.SegmentedControl{
+						comps.SegmentedControl{
 							Style:     segWrap,
 							Labels:    []string{"Snap", "250 ms", "800 ms"},
 							Selected:  pace.Get(),

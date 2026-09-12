@@ -342,7 +342,7 @@ test("a state on a role that cannot carry one is dropped", () => {
 
 test("a Button node carries a pressed state with no role of its own", () => {
     // The node type is the role — the same rule that gives a Modal its dialog
-    // role. components.Chip renders as a core.Button and sets no role, so
+    // role. comps.Chip renders as a core.Button and sets no role, so
     // without this the widget that most wants aria-pressed is the one node
     // that could not have it.
     const { at } = mount([
@@ -448,7 +448,7 @@ test("aria-expanded is scoped to its own roles, which are not the selection's", 
 test("a Button node carries an expanded state with no role of its own", () => {
     // ARIA's disclosure pattern *is* a button, so without this arm the
     // attribute would be defined for exactly the node type that could not have
-    // it. components.Accordion's header row states the role explicitly; a
+    // it. comps.Accordion's header row states the role explicitly; a
     // hand-built disclosure out of core.Button does not have to.
     const { at } = mount([
         { Type: "Button", Props: { label: "What is a hook" }, Style: { AccessibilityExpanded: "false" } },
@@ -731,7 +731,7 @@ test("aria-hidden beats the orientation too", () => {
 // --------------------------------------------------------------------------
 //
 // core.ValueRange, the fourth accessibility state and the first that is four
-// attributes at once. What it closes: components.ProgressBar had nowhere to put
+// attributes at once. What it closes: comps.ProgressBar had nowhere to put
 // its percentage but the accessible *name*, so a bar ticking from 44 to 45
 // re-announced "Upload, 45 percent" whole rather than the part that changed.
 

@@ -36,7 +36,7 @@ import CoreGraphics
 /// SIZE. An overflowing row therefore overflows on the web — it does not grind
 /// its children down to nothing. This solver had no such floor, and the
 /// difference was visible on the first screen of the tutorial: a
-/// components.ListRow is a Row with a FlexGrow(1) centre column and a bare
+/// comps.ListRow is a Row with a FlexGrow(1) centre column and a bare
 /// `core.Text("4.12")` beside it, the two-line titles overflow a phone's
 /// width, and with no floor the number was compressed to one glyph and wrapped
 /// down the side of the row as 4 / . / 1 / 2. The same tree on Android and in

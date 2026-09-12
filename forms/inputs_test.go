@@ -3,7 +3,7 @@ package forms_test
 import (
 	"testing"
 
-	"github.com/rohanthewiz/grmob/components"
+	"github.com/rohanthewiz/grmob/comps"
 	"github.com/rohanthewiz/grmob/core"
 	"github.com/rohanthewiz/grmob/forms"
 )
@@ -172,7 +172,7 @@ func TestInputWithSubmitValidatesBeforeCallingTheHandler(t *testing.T) {
 }
 
 // The end-to-end shape the package exists for: the form produces exactly the
-// string components.FormField's Error slot has always rendered, and nothing
+// string comps.FormField's Error slot has always rendered, and nothing
 // in either package had to learn about the other.
 func TestFormFieldRendersTheFormsError(t *testing.T) {
 	ctx := core.NewContext()
@@ -181,7 +181,7 @@ func TestFormFieldRendersTheFormsError(t *testing.T) {
 	}}
 
 	field := func(f *forms.Form) *core.Node {
-		return components.FormField{
+		return comps.FormField{
 			Label: "Email",
 			Hint:  "We never share it",
 			Error: f.Error("email"),

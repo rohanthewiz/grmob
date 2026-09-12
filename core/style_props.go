@@ -342,7 +342,7 @@ func AccessibilityRole(role Role) StyleProp {
 // What a level buys is the outline. Without one, a screen with a bar title
 // over a run of section bands announces a flat list of peers, and a reader
 // navigating by heading cannot tell the screen's name from the band inside
-// it. components.AppBar and components.GroupedList set 1 and 2 for exactly
+// it. comps.AppBar and comps.GroupedList set 1 and 2 for exactly
 // that pair, so the common case needs no call site at all.
 //
 // See Style.AccessibilityHeadingLevel for the range rule (out-of-range is
@@ -378,7 +378,7 @@ func AccessibilityHeadingLevel(level int) StyleProp {
 //
 // Nothing in the framework sets one. Neither DataTable's rows (a flat table)
 // nor any bundled widget nests a collection inside itself, so unlike the
-// heading pair — which components.AppBar and components.GroupedList set for
+// heading pair — which comps.AppBar and comps.GroupedList set for
 // every app without a call site — this is a prop an application reaches for
 // when it builds the nesting itself.
 //

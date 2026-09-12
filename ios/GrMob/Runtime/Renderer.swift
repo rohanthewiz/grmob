@@ -110,7 +110,7 @@ struct RenderNode: View {
                 // explicit about it and so an ignoresSafeArea escape hatch has
                 // a home later. One thing does reach past the inset: the
                 // node's background, painted edge to edge so a screen that
-                // colours its safe area (components.Screen forwards its
+                // colours its safe area (comps.Screen forwards its
                 // background here) has no light strip under the status bar.
                 // The box's own background is painted by grMobBox as well,
                 // inside the inset; the two are the same colour, so the
@@ -826,7 +826,7 @@ private struct GrMobFlexLayout: Layout {
 ///
 /// A ScrollView proposes its content no height at all, so a FlexGrow child
 /// inside one has nothing to grow into and wraps its content — which is why
-/// components.Screen{Fill, Scroll}, the ordinary form-shaped screen, stopped
+/// comps.Screen{Fill, Scroll}, the ordinary form-shaped screen, stopped
 /// short of the bottom on iOS: the column's background ended where its last
 /// field did. Compose had the same collapse (worse: a weight under an
 /// unbounded constraint resolves to zero) and fixed it by measuring the
@@ -1263,13 +1263,13 @@ private func columnStretches(_ cross: String) -> Bool {
 ///    the fixed one grMobDimension adds and win, so the child has to skip
 ///    the stretch rather than override it. A percentage is not fixed: it is
 ///    relative to the parent's extent, so the child must be *proposed* that
-///    extent (Width("100%") is how components.Button spells FullWidth, and
+///    extent (Width("100%") is how comps.Button spells FullWidth, and
 ///    a button proposed only its label's width had nothing to fill).
 ///  - An inline Display. The bundled themes give Button (and Badge) an
 ///    inline display as their way of saying "hug your content", and
 ///    grmob-runtime.js turns that into `width: fit-content` for exactly this
 ///    case — a flex column would otherwise spread every button across the
-///    screen. components.Button's FullWidth is the documented way to ask
+///    screen. comps.Button's FullWidth is the documented way to ask
 ///    for the stretch back (it sets both Width and a block display).
 ///
 /// Text is not exempt: a stretched Text is the same picture as a hugging

@@ -3,19 +3,19 @@ package main
 import (
 	"os"
 
-	"github.com/rohanthewiz/grmob/components"
+	"github.com/rohanthewiz/grmob/comps"
 	"github.com/rohanthewiz/grmob/core"
 	"github.com/rohanthewiz/grmob/htmlout"
 )
 
 func AppLayoutExample() core.View {
 	return core.WithTheme(core.DefaultTheme,
-		// components.Screen is the SafeArea > Column scaffold every app root
+		// comps.Screen is the SafeArea > Column scaffold every app root
 		// here was spelling by hand. Gap on the container replaces interleaved
 		// Spacers: the spacing here is uniform, so one field expresses it
 		// instead of N-1 filler views — fewer nodes to diff, and no way to add
 		// a child and forget its separator.
-		components.Screen{
+		comps.Screen{
 			Gap: 8,
 			Children: []core.View{
 				Header(),

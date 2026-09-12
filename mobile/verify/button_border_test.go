@@ -19,7 +19,7 @@ import (
 // that would have drawn it (Modifier.border in boxModifier, grMobBorder in
 // grMobBox) never ran for a Button on either platform.
 //
-// The visible cost was components.Button's EmphasisOutlined, documented as "a
+// The visible cost was comps.Button's EmphasisOutlined, documented as "a
 // transparent fill, a 1px rule and a label both in the variant's color" and
 // drawing its rule on the two web targets and nothing at all on either phone.
 // It is the mirror image of the gap borderResetTypes (htmlout/tag.go) closes in

@@ -16,9 +16,9 @@ import (
 //
 // # What asked for it
 //
-// components.ProgressBar, which had no way to say any of it. Its accessible
+// comps.ProgressBar, which had no way to say any of it. Its accessible
 // name was built as "Upload, 45 percent" — the value spelled into the *name*
-// channel, which is the exact move components.Chip's ", selected" suffix was
+// channel, which is the exact move comps.Chip's ", selected" suffix was
 // deleted for. A name is meant to be stable: a reader that re-announces a
 // control says the whole altered name rather than the changed part, so a bar
 // ticking from 44 to 45 re-announced "Upload, 45 percent" instead of "45

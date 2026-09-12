@@ -11,7 +11,7 @@
 // is the empty string, which drops the inline declaration and lets the
 // cascade decide. For a <button>'s border, letting the cascade decide is the
 // bug — the user-agent stylesheet is what draws the 2px outset rule
-// components.Button's EmphasisGhost was documented as not having. So this one
+// comps.Button's EmphasisGhost was documented as not having. So this one
 // property has three values rather than two, and the third is what these
 // tests hold.
 

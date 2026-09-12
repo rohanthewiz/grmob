@@ -3,7 +3,7 @@
 //
 // It was lifted out of the tutorial, where a private go/scanner highlighter
 // had been colouring the lesson snippets. Two callers now want the same thing
-// and neither is the tutorial — components.CodeEditor colours an editable
+// and neither is the tutorial — comps.CodeEditor colours an editable
 // buffer, and any screen that shows a config file or a payload wants the same
 // rows — so the lexers live here, behind one interface, and the tutorial is a
 // caller like the rest.
@@ -57,7 +57,7 @@ type Highlighter interface {
 // Ink and Bg are not used by Rows at all — a run in the default ink carries no
 // colour, which is what keeps a full screen of plain code from putting the
 // same hex on the wire a thousand times. They are here because the *surface*
-// is part of a scheme: components.CodeEditor paints Bg behind the buffer and
+// is part of a scheme: comps.CodeEditor paints Bg behind the buffer and
 // sets Ink as the grid's TextColor, so a caller who names a scheme gets one
 // coherent picture rather than Darcula's token colours over the app's own
 // background.
@@ -99,7 +99,7 @@ var Darcula = Scheme{
 // without becoming a dark rectangle in the middle of a light screen, and no
 // palette *role* means "the colour of a keyword": the theme has Ink, Surface
 // and the accents, and none of them is about syntax. So a scheme is a scheme,
-// and components.CodeEditor picks between these two by the brightness of the
+// and comps.CodeEditor picks between these two by the brightness of the
 // theme's own Surface rather than by inventing token colours from roles.
 var Light = Scheme{
 	Keyword:    "#CF222E",

@@ -22,7 +22,7 @@ pieces fit together; these pages are the exact surface.
 
 | Package | Import | What it is for |
 | --- | --- | --- |
-| [components](components.md) | `github.com/rohanthewiz/grmob/components` | The widget library — cards, tabs, accordions and friends, built on the public core API. |
+| [comps](comps.md) | `github.com/rohanthewiz/grmob/comps` | The widget library — cards, tabs, accordions and friends, built on the public core API. |
 | [forms](forms.md) | `github.com/rohanthewiz/grmob/forms` | Validation rules, the form hook that owns values and error visibility, and bound inputs. |
 | [richtext](richtext.md) | `github.com/rohanthewiz/grmob/richtext` | The document model behind core.RichTextEditor: a formatted document as Go values. |
 | [highlight](highlight.md) | `github.com/rohanthewiz/grmob/highlight` | Go syntax highlighting, for the code editor and the tutorial's listings. |

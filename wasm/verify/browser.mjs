@@ -24,7 +24,7 @@
 //      are out of the tab order, and this says they are still reachable — by
 //      the browser's own focus algorithm rather than by an assignment.
 //   5. the palette reaches the screen. core.ColorPalette.ControlBorder has
-//      WCAG 1.4.11's 3:1 floor under it and components/variant_test.go
+//      WCAG 1.4.11's 3:1 floor under it and comps/variant_test.go
 //      measures every pair — as arithmetic over hex strings, which is all Go
 //      can do. Two retints and a whole third palette later, no pass had ever
 //      *looked* at the result. This one paints the pairs and reads the pixels
@@ -40,9 +40,9 @@
 //   7. a real widget draws the palette. Check 5 paints the census's pairs as
 //      boxes this file builds — a model of a control boundary, and a good one.
 //      Everything between the palette role and a chip's actual ring goes
-//      through `components`, which is Go, so a widget that had stopped
+//      through `comps`, which is Go, so a widget that had stopped
 //      declaring the boundary tone would leave every swatch painting perfectly.
-//      gen.go renders a real components.Chip and a real core.Input through each
+//      gen.go renders a real comps.Chip and a real core.Input through each
 //      bundled theme and reads the colours off the rendered nodes; this mounts
 //      those trees and reads the pixels back. The two are the tone's two
 //      spenders and they read it from two different places in Go, which is why
@@ -57,7 +57,7 @@
 //      repository held the rule to one target and asserted the web's half by
 //      reasoning. This asks Chrome, through its own accessibility tree.
 //   9. two arrangements of the same band lay out the same way, overflow
-//      included. components.GroupHeader moved its padding from the Row onto
+//      included. comps.GroupHeader moved its padding from the Row onto
 //      the growing control inside it so that a press lands on the whole band,
 //      and the warrant for the move is that it costs nothing. ios/verify checks
 //      that through GrMobFlexSolver and records one place it is not free: under
@@ -78,7 +78,7 @@
 //      about text: every SameHeight case rests on the padded control being the
 //      band's tallest child, half of which is "a bold caption is no shorter
 //      than a plain one" — a measurement no Go test can take. gen.go renders
-//      real components.GroupHeaders through every bundled theme and this mounts
+//      real comps.GroupHeaders through every bundled theme and this mounts
 //      them with real glyphs in them. It reads the paint as well as the rects:
 //      the band's own fill, the ink its words are set in, the count pill, and
 //      the digits inside it. A band is those things, and for a while only the
@@ -199,10 +199,10 @@ const TRANSCRIPT_JSON = TRANSCRIPT_EXISTS
     : {};
 const WIDGETS = TRANSCRIPT_JSON.widgets || [];
 // internal/bandfixture, for check 9. Same file, same reason: a real
-// components.GroupHeader's geometry, read off the rendered band by Go, which is
+// comps.GroupHeader's geometry, read off the rendered band by Go, which is
 // not something a table of numbers in a .mjs file could be.
 const BANDS = TRANSCRIPT_JSON.bands || [];
-// Real components.GroupHeaders, for check 10. Same file, same reason as the
+// Real comps.GroupHeaders, for check 10. Same file, same reason as the
 // three tables above it — and a different subject from BANDS, which is the same
 // band as arithmetic over synthetic sizes. See bandRender in gen.go: these are
 // the two band claims that are measurements of a rendered widget with glyphs in
@@ -2065,7 +2065,7 @@ const LISTBOX = {
 };
 
 // A filter bar: a Row carrying role="toolbar" over three real <button> chips,
-// which is what components.ChipStrip renders and what a caller puts the role on.
+// which is what comps.ChipStrip renders and what a caller puts the role on.
 //
 // This is the fixture the tab-order claim needs a browser for, and it is a
 // stronger case than the tablist above. A tablist's members are <button
@@ -2228,7 +2228,7 @@ const STICKY = {
 //
 // Boxes rather than any widget: what is under test is what a *browser* does
 // with the four aria-value* attributes, so the tree has to be the attributes
-// and nothing else. components.ProgressBar would bring a fill, a track and a
+// and nothing else. comps.ProgressBar would bring a fill, a track and a
 // theme, none of which the accessibility tree can see, and would only ever
 // produce the one range it builds by construction.
 //
@@ -2343,7 +2343,7 @@ const widgetPath = (i) =>
 // The bands
 // --------------------------------------------------------------------------
 //
-// components.GroupHeader's two inset arrangements, laid out by a real browser
+// comps.GroupHeader's two inset arrangements, laid out by a real browser
 // at every offer internal/bandfixture states.
 //
 // # The claim, and the one target that had never been asked
@@ -2819,7 +2819,7 @@ const INK_OWN_MAY_DIFFER = {
 // span with no element child and direct text.
 //
 // The count is the interesting one. It reads as a pill with digits inside it,
-// and it is not: components.Badge is `core.Text` with a fill, a radius and
+// and it is not: comps.Badge is `core.Text` with a fill, a radius and
 // paddings on it, so the pill and the digits are ONE element and reading
 // `badgeOwn` at the pill is reading it at the digits. That was true by
 // accident — nothing said it, and a badge that grew an icon beside its number
@@ -2872,7 +2872,7 @@ function inkSubjectFault(where, subject, read) {
 // `r.chevron` are read as rects and none of them is read as a declaration, so
 // the confusion the guard is about is simply not available at any of them
 // today. What makes that true is that nobody has added a declaration read to
-// one — the same sentence that was true of the badge until components.Badge
+// one — the same sentence that was true of the badge until comps.Badge
 // was asked to grow.
 //
 // The read is now driven by one list (see `declarations` in the evaluate), so
@@ -4857,7 +4857,7 @@ function bandTargetTally(where, target, asked, hasWrapper) {
 // The rendered bands
 // --------------------------------------------------------------------------
 //
-// Real components.GroupHeaders, laid out with real glyphs in them, for the two
+// Real comps.GroupHeaders, laid out with real glyphs in them, for the two
 // band claims that are not arithmetic.
 //
 // # The tap target (the cross-axis question)
@@ -4881,7 +4881,7 @@ function bandTargetTally(where, target, asked, hasWrapper) {
 // *cross* axis of a vertical container, and GrMobFlexSolver — the arithmetic
 // ios/verify checks the band with — is a main-axis distributor. It has no
 // answer, and internal/bandfixture's arrangementOf renders the plain band
-// deliberately to stay out of its way. So the picture in components.bandInsets
+// deliberately to stay out of its way. So the picture in comps.bandInsets
 // has been assuming it. A browser can be asked, and this asks one.
 //
 // # The taller child (the question about text)
@@ -5255,7 +5255,7 @@ function mixHex(a, b, f) {
 //
 // Not a pair of hexes written here. The question is about a COUNT that lost its
 // declaration and inherited a dimmer colour, so the two ends of the segment
-// have to be the ones a real components.Badge actually paints — and gen.go
+// have to be the ones a real comps.Badge actually paints — and gen.go
 // already reads them off the rendered node for every band in the grid. A
 // literal pair would be this check agreeing with itself about a widget it had
 // stopped describing.
@@ -5818,7 +5818,7 @@ async function main() {
         // ------------------------------------------------------------------
         // 5. the palette reaches the screen
         // ------------------------------------------------------------------
-        // components/variant_test.go crosses every theme's ControlBorder with
+        // comps/variant_test.go crosses every theme's ControlBorder with
         // every fill a control can be drawn on and checks the pair against
         // WCAG 1.4.11's 3:1 floor. All of that is arithmetic over hex strings:
         // it proves #89898E is 3.12:1 on #F2F2F7 and it cannot prove either
@@ -6030,9 +6030,9 @@ async function main() {
         // screen. It cannot prove that anything in the framework asks it to:
         // the boxes are built here, and every widget's route from
         // core.ColorPalette.ControlBorder to a border declaration runs through
-        // `components`, which this file cannot call.
+        // `comps`, which this file cannot call.
         //
-        // So gen.go renders one quiet components.Chip and one core.Input per
+        // So gen.go renders one quiet comps.Chip and one core.Input per
         // bundled theme, on a page painted in that theme's own Background, and
         // reads the three colours off the rendered nodes. What is mounted below
         // is those trees, unmodified; what is asserted is that each widget's own
@@ -6041,7 +6041,7 @@ async function main() {
         // # What the field adds that the chip did not
         //
         // Not "a widget on a tag the user agent draws a border on" — the chip
-        // was already that. components.Chip is a tappable control and exports
+        // was already that. comps.Chip is a tappable control and exports
         // as a <button>, which is the first member borderResetTypes ever had.
         // Both widgets are therefore drawing over a user-agent rule, and if the
         // runtime had ever left one in force the chip would have shown it.
@@ -6050,7 +6050,7 @@ async function main() {
         // *tag* with a different user-agent rule (<button> is given `outset`,
         // <input> `inset`, and an <input> also arrives with a fill and padding
         // of its own), and it reads the tone from a second *authority* in Go:
-        // components.chipRing takes Colors.ControlBorderColor, the role, while
+        // comps.chipRing takes Colors.ControlBorderColor, the role, while
         // core.Input takes Components.Input.BorderColor, a literal the theme
         // states and core/theme_test.go pins to the role separately. Those two
         // hold the same hex in every bundled theme, which is exactly why each
@@ -8223,7 +8223,7 @@ async function main() {
                     } else if (!scan.ink) {
                         problems.push(`${where}: the label's box has ink in it and the ` +
                             `pixel furthest from the band's ${b.fill} is ${scan.darkest}. ` +
-                            `components.GroupHeader declares ${b.labelInk} for the words ` +
+                            `comps.GroupHeader declares ${b.labelInk} for the words ` +
                             `(core.TextColor(TextSecondary)), which over this band ` +
                             `composites to ${want}. Something is drawn there in another ` +
                             `colour, which is what a label that lost its declaration and ` +
@@ -8313,7 +8313,7 @@ async function main() {
                             `worth anything while the two colours are an order further ` +
                             `apart than that (${INK_EPSILON * INK_MARGIN}) — and a count ` +
                             `this close to its pill is one nobody can read either. ` +
-                            `components.Badge picks the ink against the fill ` +
+                            `comps.Badge picks the ink against the fill ` +
                             `(Variant.Ink) precisely so this does not happen`);
                     } else {
                         // The two numbers the window is built from, held to
@@ -8396,7 +8396,7 @@ async function main() {
                                     `${(scan.reach * 100).toFixed(1)}% of the way to ` +
                                     `the ink against a floor of ` +
                                     `${(INK_STEM_REACH * 100).toFixed(0)}%. ` +
-                                    `components.Badge declares ` +
+                                    `comps.Badge declares ` +
                                     `${b.badgeInk} for the digits, which over the pill ` +
                                     `composites to ${ink}. Something is drawn there in ` +
                                     `another colour, which is what a count that lost ` +
@@ -8457,7 +8457,7 @@ async function main() {
             //
             // The line above says the tap target reaches the band's edge; this
             // says the words do not. Both matter, and they are what makes
-            // components.GroupHeader.ControlStyle a safe thing to hand a
+            // comps.GroupHeader.ControlStyle a safe thing to hand a
             // caller: an indent through it moves the content and MUST NOT move
             // the target, which is the whole reason the chrome sits on the
             // control rather than on the Row.
@@ -8486,7 +8486,7 @@ async function main() {
                         `padding is ${b.controlPadLeft}px. ` +
                         (b.controlIndent > 0
                             ? `That inset is the caller's own indent through ` +
-                              `components.GroupHeader.ControlStyle — the declaration ` +
+                              `comps.GroupHeader.ControlStyle — the declaration ` +
                               `this shape is in the grid to exercise, and the one that ` +
                               `is supposed to move the label without moving the tap ` +
                               `target the line above just measured`
@@ -8520,7 +8520,7 @@ async function main() {
                         ? `The button carries no weight of its own, so it reaches the ` +
                           `growing wrapper's edge only by being stretched to it; a ` +
                           `wrapper that stopped stretching its child makes the picture ` +
-                          `in components.bandInsets wrong about this branch`
+                          `in comps.bandInsets wrong about this branch`
                         : `The control is the band Row's growing child, so this is the ` +
                           `distribution check 9 measures, in a band with real text`));
             }
@@ -8786,7 +8786,7 @@ async function main() {
         // The two branches are the same band — and the measurement is what says
         // in what sense.
         //
-        // components.GroupHeader spells its insets once for both branches, on
+        // comps.GroupHeader spells its insets once for both branches, on
         // the argument that "a caller who adds OnToggle to a GroupHeader gets a
         // control and not a relayout". Held to pixels, that is true of the
         // chrome and NOT true of the height: the disclosure band is a point

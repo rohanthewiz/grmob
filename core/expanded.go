@@ -4,7 +4,7 @@ package core
 // showing its body, the twisty that has been turned.
 //
 // It is the third of the state types, after SelectedState, and it exists
-// because a control can be on and open at the same time. components.Accordion
+// because a control can be on and open at the same time. comps.Accordion
 // is the widget that asked for it: it is the one stateful widget in the
 // components package, its header is the only thing on screen that knows
 // whether the section is showing, and until this type existed the only thing
@@ -72,7 +72,7 @@ const (
 // ExpandedWhen turns the bool a disclosure already holds into the stated pair.
 //
 // The twin of SelectedWhen, and it earns its place the same way: the widget
-// owns a `expanded bool` (components.Accordion holds one in NewState), so the
+// owns a `expanded bool` (comps.Accordion holds one in NewState), so the
 // conversion would otherwise be written by hand at each call site, and the
 // tempting hand-rolled version — set ExpandedOpen when open, leave it alone
 // otherwise — is exactly the silence the third value exists to prevent.

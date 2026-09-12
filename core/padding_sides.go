@@ -86,7 +86,7 @@ package core
 // one the rule silently rests on: a widget appends its own inset defaults
 // before the caller's Style, never after. A caller therefore always has the
 // last word and can always state their side prop after whatever axis default
-// the widget set — see components.TestACallerStylePropOutranksAWidgetsOwnInsets,
+// the widget set — see comps.TestACallerStylePropOutranksAWidgetsOwnInsets,
 // which is where that contract is checked rather than merely documented on
 // each widget's Style field.
 

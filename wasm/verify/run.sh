@@ -16,8 +16,8 @@
 # ARIA's value rules and one about the CSSOM — that every bundled palette's
 # ControlBorder reaches the
 # screen as the hex the contrast census did its arithmetic about, that a real
-# components.Chip still draws that tone, that a sticky band pins, that
-# components.GroupHeader's two inset arrangements lay out identically at every
+# comps.Chip still draws that tone, that a sticky band pins, that
+# comps.GroupHeader's two inset arrangements lay out identically at every
 # offer (overflow included, which is where ios/verify's flex solver says they
 # do not), that a real band's tap target spans the band and its control is
 # taller than its badge once there are glyphs in both, that a fixed-size

@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/rohanthewiz/grmob/components"
+	"github.com/rohanthewiz/grmob/comps"
 	"github.com/rohanthewiz/grmob/core"
 )
 
@@ -213,10 +213,10 @@ func lessonHandlerGuard() Lesson {
 					caption(status),
 					core.Row(
 						core.Gap(8),
-						components.Button{Label: "Advance both counters", OnTap: advance},
-						components.Button{
+						comps.Button{Label: "Advance both counters", OnTap: advance},
+						comps.Button{
 							Label:    "Repair (set B = A)",
-							Emphasis: components.EmphasisOutlined,
+							Emphasis: comps.EmphasisOutlined,
 							OnTap:    func() { b.Set(a.Get()) },
 						},
 					),
@@ -327,9 +327,9 @@ func TestMain(m *testing.M) { core.SetDebugMode(true); m.Run() }
 						core.Keyed("dup", core.Text("Row B — Keyed(\"dup\", …)")),
 					)),
 					inspector,
-					components.Button{
+					comps.Button{
 						Label:    "Clear concerns",
-						Emphasis: components.EmphasisOutlined,
+						Emphasis: comps.EmphasisOutlined,
 						OnTap: func() {
 							core.ClearConcerns()
 							repaint()
@@ -435,7 +435,7 @@ var header = core.Cached(core.Text("My App"))
 					core.Row(
 						core.Gap(8),
 						core.AlignItemsProp(core.AlignItemsCenter),
-						components.Button{
+						comps.Button{
 							Label: "Force another pass",
 							OnTap: func() { passes.Set(passes.Get() + 1) },
 						},
@@ -505,9 +505,9 @@ func lessonFinale() Lesson {
 								len(flatLessons), len(Chapters))),
 						).Render(c)
 					}),
-					components.Button{
+					comps.Button{
 						Label:   "Take a bow 🎉",
-						Variant: components.VariantSuccess,
+						Variant: comps.VariantSuccess,
 						OnTap: func() {
 							core.ShowToast("Tutorial complete — now go build something")
 						},

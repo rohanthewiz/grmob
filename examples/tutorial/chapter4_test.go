@@ -46,8 +46,8 @@ func TestButtonDemoAxesDisableDispatch(t *testing.T) {
 	// With both axes at zero the printed literal must not name them — the
 	// zero-value-contributes-nothing claim, checked against the demo's own
 	// code block (the static intro block names Error/Outlined, never these).
-	if hasTextContaining(cur, "components.VariantWarning") ||
-		hasTextContaining(cur, "components.EmphasisGhost") {
+	if hasTextContaining(cur, "comps.VariantWarning") ||
+		hasTextContaining(cur, "comps.EmphasisGhost") {
 		t.Fatal("the printed literal should omit zero-value axes")
 	}
 
@@ -55,10 +55,10 @@ func TestButtonDemoAxesDisableDispatch(t *testing.T) {
 	tap(t, mgr, "Warning")
 	tap(t, mgr, "Ghost")
 	cur = tree(t, mgr)
-	if !hasTextContaining(cur, "components.VariantWarning") {
+	if !hasTextContaining(cur, "comps.VariantWarning") {
 		t.Fatal("selecting the Warning variant should print Variant in the literal")
 	}
-	if !hasTextContaining(cur, "components.EmphasisGhost") {
+	if !hasTextContaining(cur, "comps.EmphasisGhost") {
 		t.Fatal("selecting Ghost emphasis should print Emphasis in the literal")
 	}
 
@@ -461,7 +461,7 @@ func TestTabsDemoWiresTheStripToItsPanel(t *testing.T) {
 
 // --- 4.6 Collections --------------------------------------------------------
 
-// The banded demo: a Header override placing a components.CollapseBand.
+// The banded demo: a Header override placing a comps.CollapseBand.
 //
 // The lesson is the first thing in the repository that uses CollapseBand at
 // all — its only readers were its own tests, which is a slightly bigger hole
@@ -564,7 +564,7 @@ func TestTheBandedDemoCollapsesUnderItsOwnHeader(t *testing.T) {
 
 // The disclosure control of the band whose heading reads label.
 //
-// A node carrying core.RoleButton rather than a Button node: components.
+// A node carrying core.RoleButton rather than a Button node: comps.
 // disclosure builds the control as a styled Box, because ARIA's pattern nests
 // the button *inside* the heading and the two have to be separate nodes for
 // the tier and the name to land on the right one. Matching on the role is
@@ -1323,7 +1323,7 @@ func TestTheAccordionDemoAnnouncesEachHeaderAsADisclosure(t *testing.T) {
 // live at once, which is what makes it the place to assert them: the lesson's
 // own name is level 1 (lessonHeader, a call site — a lesson screen has no
 // AppBar to claim it), "Key points" is level 2 (keyPoints, also a call site),
-// and each FAQ question is level 3 straight out of components.Accordion's
+// and each FAQ question is level 3 straight out of comps.Accordion's
 // default. Before that default existed the third tier had no consumer anywhere
 // in the framework and levels 3 through 6 were plumbing nothing reached.
 //
@@ -1337,7 +1337,7 @@ func TestALessonScreenHasAThreeTierOutline(t *testing.T) {
 	cur := tree(t, mgr)
 
 	// Two shapes of heading, because the third tier changed shape when
-	// components.Accordion's header became a button. Levels 1 and 2 ride the
+	// comps.Accordion's header became a button. Levels 1 and 2 ride the
 	// words, which is where every heading in the components package lives;
 	// level 3 rides the Box wrapped around an accordion's header row, named by
 	// an explicit AccessibilityLabel, because the row itself has to be the

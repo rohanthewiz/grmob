@@ -26,13 +26,13 @@ type permissionRecord struct {
 //	case permission.Granted:
 //	    return mapView(ctx)
 //	case permission.Prompt:
-//	    return components.Button{Label: "Use my location",
+//	    return comps.Button{Label: "Use my location",
 //	        OnClick: func() { permission.Request(permission.Location) }}
 //	case permission.Denied:
-//	    return components.EmptyState{Hint: "Location is off — turn it on in Settings"}
+//	    return comps.EmptyState{Hint: "Location is off — turn it on in Settings"}
 //	default: // Unknown while the check is in flight, Unavailable on a device
 //	         // that cannot do it at all
-//	    return components.Skeleton{}
+//	    return comps.Skeleton{}
 //	}
 //
 // # It checks and does not ask
@@ -142,9 +142,9 @@ func UsePermission(ctx *core.Context, p permission.Permission) permission.Status
 //	case permission.Granted:
 //	    return scanner(ctx)
 //	case permission.Denied:
-//	    return components.EmptyState{
+//	    return comps.EmptyState{
 //	        Hint:   "Camera is off",
-//	        Action: components.Button{Label: "Open Settings", OnTap: openSettings},
+//	        Action: comps.Button{Label: "Open Settings", OnTap: openSettings},
 //	    }
 //	...
 //	}

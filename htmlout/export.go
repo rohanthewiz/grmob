@@ -871,7 +871,7 @@ func ModalChassis() [][2]string {
 // Both natives have read these since they existed (Compose contentDescription
 // / clearAndSetSemantics, SwiftUI accessibilityLabel / accessibilityHint /
 // accessibilityHidden), and the two web targets read none of them — so a
-// components.Separator marked AccessibilityHidden was correctly skipped by
+// comps.Separator marked AccessibilityHidden was correctly skipped by
 // TalkBack and VoiceOver and announced as a stray element by every screen
 // reader on the web.
 //
@@ -1205,14 +1205,14 @@ func ariaLevel(s *core.Style) string {
 // are still not interchangeable: a list item is *content* and an option is a
 // *control in a listbox*, so a row that wants to announce a selection has to
 // take the option role and give up the listitem one — along with aria-level,
-// which ARIA defines for listitem and not for option. components.ListRow is
+// which ARIA defines for listitem and not for option. comps.ListRow is
 // where that trade is made and its Selectable field is where it is written
 // down.
 //
 // aria-pressed is defined for button alone. A core.Button gets it without a
 // role because the node type already is one — the same rule that gives a
 // core.Modal its dialog role — which is why this takes the node type beside
-// the style. That case is not an optimisation: components.Chip renders as a
+// the style. That case is not an optimisation: comps.Chip renders as a
 // core.Button with no role set, so without it the widget that most wants this
 // attribute would be the one node that could not have it.
 //
@@ -1288,7 +1288,7 @@ func ariaSelected(s *core.Style, nodeType string) (string, string) {
 // ariaRole supplies `group` to a named container so its name has something
 // legal to sit on; `group` is not among the roles above, so there is no value
 // that both fits any container and carries a disclosure. A widget that wants
-// this attribute has to *be* a control, which is what components.Accordion's
+// this attribute has to *be* a control, which is what comps.Accordion's
 // header row became when it adopted it.
 func ariaExpanded(s *core.Style, nodeType string) string {
 	if s.AccessibilityExpanded == core.ExpandedUnset {
@@ -1621,7 +1621,7 @@ func styleValue(s *core.Style, nodeType string) string {
 	}
 	// Both natives already honor BorderColor/BorderWidth — Compose applies a
 	// Modifier.border, SwiftUI a .grMobBorder overlay — so a widget that draws
-	// a rule (components.Button's outlined emphasis) had an edge on device and
+	// a rule (comps.Button's outlined emphasis) had an edge on device and
 	// none in the HTML export. Same class of silent disagreement the Width and
 	// Height emission above fixed.
 	//

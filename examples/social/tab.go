@@ -1,7 +1,7 @@
 package social
 
 import (
-	"github.com/rohanthewiz/grmob/components"
+	"github.com/rohanthewiz/grmob/comps"
 	"github.com/rohanthewiz/grmob/core"
 )
 
@@ -75,10 +75,10 @@ const TabPanelID = "social-tab-panel"
 func TabButton(icon, tab, name string, selected core.State[string]) core.View {
 	return core.ComponentFunc(func(ctx *core.Context) *core.Node {
 		on := selected.Get() == tab
-		b := components.Button{
+		b := comps.Button{
 			Label:    icon,
 			OnTap:    func() { selected.Set(tab) },
-			Emphasis: components.EmphasisGhost,
+			Emphasis: comps.EmphasisGhost,
 			// AccessibilityLabel rather than a hidden glyph plus text: the
 			// Button widget names the control and the label replaces what the
 			// reader would otherwise make of the emoji.

@@ -12,7 +12,7 @@ It is lexical only. There is no type information here and no parse tree, so this
 
 Package highlight turns source text into core.GridRow values: one styled row per line, ready for a core.TextGrid or a core.CodeEditor.
 
-It was lifted out of the tutorial, where a private go/scanner highlighter had been colouring the lesson snippets. Two callers now want the same thing and neither is the tutorial — components.CodeEditor colours an editable buffer, and any screen that shows a config file or a payload wants the same rows — so the lexers live here, behind one interface, and the tutorial is a caller like the rest.
+It was lifted out of the tutorial, where a private go/scanner highlighter had been colouring the lesson snippets. Two callers now want the same thing and neither is the tutorial — comps.CodeEditor colours an editable buffer, and any screen that shows a config file or a payload wants the same rows — so the lexers live here, behind one interface, and the tutorial is a caller like the rest.
 
 ## The shape, and why it is rows rather than spans
 
@@ -67,7 +67,7 @@ var Darcula = Scheme{
 
 Light is the same six roles chosen for a light surface. It is not a mechanical inversion of Darcula — inverting a hue gives a colour, not a legible one — but the GitHub-light family, which is the scheme most readers have seen on a light background.
 
-It exists because a code surface on a light theme has to read as code without becoming a dark rectangle in the middle of a light screen, and no palette \*role\* means "the colour of a keyword": the theme has Ink, Surface and the accents, and none of them is about syntax. So a scheme is a scheme, and components.CodeEditor picks between these two by the brightness of the theme's own Surface rather than by inventing token colours from roles.
+It exists because a code surface on a light theme has to read as code without becoming a dark rectangle in the middle of a light screen, and no palette \*role\* means "the colour of a keyword": the theme has Ink, Surface and the accents, and none of them is about syntax. So a scheme is a scheme, and comps.CodeEditor picks between these two by the brightness of the theme's own Surface rather than by inventing token colours from roles.
 
 ```go
 var Light = Scheme{
@@ -163,7 +163,7 @@ type Scheme struct {
 
 Scheme is the palette a highlighter paints with. Every field is a CSS colour ("#rrggbb"); an empty field means "inherit", which on the wire is an empty GridRun.Fg and in every renderer is the grid's own text colour.
 
-Ink and Bg are not used by Rows at all — a run in the default ink carries no colour, which is what keeps a full screen of plain code from putting the same hex on the wire a thousand times. They are here because the \*surface\* is part of a scheme: components.CodeEditor paints Bg behind the buffer and sets Ink as the grid's TextColor, so a caller who names a scheme gets one coherent picture rather than Darcula's token colours over the app's own background.
+Ink and Bg are not used by Rows at all — a run in the default ink carries no colour, which is what keeps a full screen of plain code from putting the same hex on the wire a thousand times. They are here because the \*surface\* is part of a scheme: comps.CodeEditor paints Bg behind the buffer and sets Ink as the grid's TextColor, so a caller who names a scheme gets one coherent picture rather than Darcula's token colours over the app's own background.
 
 <small>[highlight/highlight.go:64](https://github.com/rohanthewiz/grmob/blob/master/highlight/highlight.go#L64)</small>
 

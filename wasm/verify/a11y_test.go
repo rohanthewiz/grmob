@@ -102,7 +102,7 @@ func TestRuntimeGuardsTheLevelsTheSameWay(t *testing.T) {
 // is as load-bearing as the arms that are there.
 //
 // The Button node type is the one arm that is not ARIA's: a core.Button
-// already is a button, which is what lets components.Chip carry a state
+// already is a button, which is what lets comps.Chip carry a state
 // without setting a role. Same rule that gives a Modal its dialog role, and
 // the reason this function takes the node type at all.
 func TestRuntimeGuardsTheSelectedStateTheSameWay(t *testing.T) {
@@ -114,7 +114,7 @@ func TestRuntimeGuardsTheSelectedStateTheSameWay(t *testing.T) {
 			"the zero value writing nothing at all, which is what every node in every " +
 				"existing tree carries"},
 		{`case "option":`, "the option arm — the one that lets a selectable row in a " +
-			"listbox announce its state, which is what components.ListRow.Selectable buys"},
+			"listbox announce its state, which is what comps.ListRow.Selectable buys"},
 		{`case "tab":`, "the tab arm"},
 		{`case "row":`, "the row arm"},
 		{`case "columnheader":`, "the column-header arm"},
@@ -122,7 +122,7 @@ func TestRuntimeGuardsTheSelectedStateTheSameWay(t *testing.T) {
                 return ["", value];`,
 			"the button arm, which is the one that becomes aria-pressed"},
 		{`return nodeType === "Button" ? ["", value] : ["", ""];`,
-			"the node type standing in for an unstated role — without it, a components.Chip " +
+			"the node type standing in for an unstated role — without it, a comps.Chip " +
 				"would be the one node that could not carry the attribute it most wants"},
 		{`default:
                 return ["", ""];`,

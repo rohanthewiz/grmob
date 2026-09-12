@@ -62,8 +62,8 @@ type tutorial struct {
 	//
 	// # Why the contents screen does not own this
 	//
-	// components.Accordion owns its own expansion and is the right answer for
-	// a single section; components.Collapse's doc says where that stops, and
+	// comps.Accordion owns its own expansion and is the right answer for
+	// a single section; comps.Collapse's doc says where that stops, and
 	// this is the case it names. Eight cards means eight independent NewStates
 	// that the screen cannot address — no way to open the chapter a reader just
 	// came back from, and no way to shut them all. Holding the map here makes

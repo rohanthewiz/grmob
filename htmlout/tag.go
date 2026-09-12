@@ -310,7 +310,7 @@ func OwnRoleFor(nodeType string) string {
 // off, since core.BorderWidth(0) emits nothing and nothing is exactly what
 // leaves the user agent in charge.
 //
-// The visible cost was components.Button's EmphasisGhost, documented as
+// The visible cost was comps.Button's EmphasisGhost, documented as
 // "EmphasisOutlined without the rule" and drawing a rule on both web targets
 // and none on both phones. There was no call-site workaround.
 //

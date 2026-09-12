@@ -5,7 +5,7 @@
 //	cross-field      the confirmation must match the password
 //	reveal policy    each field complains when the user leaves it, then live
 //	server errors    a uniqueness check only the back end can make
-//	the widget       components.FormField, whose Error slot has been waiting
+//	the widget       comps.FormField, whose Error slot has been waiting
 //	                 for something to fill it since it was written
 //
 // Every field is declared once, in the Spec, and rendered through a bound
@@ -16,7 +16,7 @@ package signup
 import (
 	"strings"
 
-	"github.com/rohanthewiz/grmob/components"
+	"github.com/rohanthewiz/grmob/comps"
 	"github.com/rohanthewiz/grmob/core"
 	"github.com/rohanthewiz/grmob/forms"
 )
@@ -120,7 +120,7 @@ func App(ctx *core.Context) core.View {
 		})
 	}
 
-	return components.Screen{
+	return comps.Screen{
 		Scroll: true,
 		// The form is taller than a phone with the keyboard up, and the
 		// terms row and the button are the parts that go under it. Set here,
@@ -137,21 +137,21 @@ func App(ctx *core.Context) core.View {
 			// forms.Required from the spec above takes the asterisk with it
 			// instead of leaving a screen that stars a field it will happily
 			// accept empty.
-			components.FormField{
+			comps.FormField{
 				Label:    "Email",
 				Required: form.Required("email"),
 				Hint:     "We never share it",
 				Error:    form.Error("email"),
 				Input:    form.Input("email", "you@example.com", core.FocusTarget(emailField)),
 			},
-			components.FormField{
+			comps.FormField{
 				Label:    "Password",
 				Required: form.Required("password"),
 				Hint:     "At least 8 characters",
 				Error:    form.Error("password"),
 				Input:    form.Password("password", "••••••••", core.FocusTarget(passwordField)),
 			},
-			components.FormField{
+			comps.FormField{
 				Label:    "Confirm password",
 				Required: form.Required("confirm"),
 				Error:    form.Error("confirm"),
@@ -163,7 +163,7 @@ func App(ctx *core.Context) core.View {
 			// picker takes no keyboard focus on either phone — a fourth entry
 			// would advertise a Next that lands nowhere, which is the same
 			// reason the terms checkbox is left out.
-			components.FormField{
+			comps.FormField{
 				Label: "Plan",
 				Hint:  "You can change this later",
 				Error: form.Error("plan"),
@@ -183,15 +183,15 @@ func App(ctx *core.Context) core.View {
 			// left off, since the marker has nothing to sit beside. (The field
 			// *is* required: Accepted rejects an unticked box, and
 			// form.Required("terms") would say so.)
-			components.FormField{
+			comps.FormField{
 				Error: form.Error("terms"),
-				Input: components.ListRow{
+				Input: comps.ListRow{
 					Leading: form.Checkbox("terms"),
 					Title:   "I accept the terms of service",
 				},
 			},
 
-			components.Button{
+			comps.Button{
 				Label:     "Create account",
 				FullWidth: true,
 				// Deliberately *not* core.Disabled(!form.Valid()). Under the
@@ -257,16 +257,16 @@ func submit(form *forms.Form, created core.State[string], emailField *core.Focus
 // built inside a branch, and anything that allocated a slot in here would
 // shift every slot on the passes where the branch is not taken.
 func confirmation(addr string, again func()) core.View {
-	return components.Screen{
+	return comps.Screen{
 		Gap: 16,
 		Children: []core.View{
-			components.Card{
+			comps.Card{
 				Title: "Account created",
 				Body:  core.Text("A confirmation is on its way to " + addr + "."),
 			},
-			components.Button{
+			comps.Button{
 				Label:    "Create another",
-				Emphasis: components.EmphasisOutlined,
+				Emphasis: comps.EmphasisOutlined,
 				OnTap:    again,
 			},
 		},

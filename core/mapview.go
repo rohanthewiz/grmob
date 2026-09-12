@@ -25,7 +25,7 @@ import (
 //	htmlout   a placeholder box, as CameraView is: a static snapshot has no
 //	          engine to run and no tiles to fetch
 //
-// # When to use components.StaticMap instead
+// # When to use comps.StaticMap instead
 //
 // Almost always, if the question is "where is this". A static map is an image
 // and a hand-off to the platform's maps app: no engine, no tile budget, no
@@ -165,7 +165,7 @@ type Region struct {
 	//
 	// A zero Zoom means DefaultMapZoom rather than "the whole world", which is
 	// the one legitimate value this type spends on a default. It is the same
-	// trade components.StaticMap.Zoom makes and for the same reason: a map with
+	// trade comps.StaticMap.Zoom makes and for the same reason: a map with
 	// no zoom stated is a map somebody forgot to scale, and the world is never
 	// what they meant.
 	Zoom float64
@@ -175,7 +175,7 @@ type Region struct {
 // neighbourhood, which is close enough to read street names and wide enough to
 // hold more than one marker.
 //
-// 14 rather than components.DefaultMapZoom's 15, and the difference is the
+// 14 rather than comps.DefaultMapZoom's 15, and the difference is the
 // difference between the two widgets. A static map answers "where is this
 // one place"; a live map is usually showing a set, and one level out is about
 // four times the area.

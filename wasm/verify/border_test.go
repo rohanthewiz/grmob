@@ -86,6 +86,6 @@ func TestRuntimeResetsTheUserAgentBorder(t *testing.T) {
 	if !strings.Contains(src, expr) {
 		t.Errorf("grmob-runtime.js: styleFromGrMob is missing %q — without it a <button> with no "+
 			"border in its style keeps the browser's, which is the divergence "+
-			"components.Button's EmphasisGhost exposed", expr)
+			"comps.Button's EmphasisGhost exposed", expr)
 	}
 }

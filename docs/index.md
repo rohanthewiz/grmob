@@ -66,7 +66,7 @@ flowchart LR
   brand, `Error`/`Success`/`Warning` for status, `Border` for strokes — and
   widgets like `Badge{Variant:}` and `Button{Variant:}` select a role rather
   than a color.
-- **Widget library** — the [`components` package](components.md) adds
+- **Widget library** — the [`comps` package](components.md) adds
   struct-configured widgets with composition slots: `Screen`, `Button`,
   `InputRow`, `SegmentedControl`, `Card`, `ListRow`, `Separator`, `Avatar`,
   `ProgressBar`, `Chip`, `Badge`, `FormField`, `Accordion`, `Tabs`.

@@ -358,7 +358,7 @@ func TestDerivedContextsShareFocusState(t *testing.T) {
 func TestButtonKeepsItsOwnProps(t *testing.T) {
 	// Going through leafNode must not have cost Button its intrinsic props,
 	// and in particular must not have cost it the unconditional onClick
-	// registration components.Button relies on.
+	// registration comps.Button relies on.
 	ctx := NewContext()
 	ctx.BeginRenderPass()
 
@@ -388,7 +388,7 @@ func TestButtonKeepsItsOwnProps(t *testing.T) {
 }
 
 func TestButtonRegistersANilHandler(t *testing.T) {
-	// components.Button substitutes a no-op for a disabled button's handler
+	// comps.Button substitutes a no-op for a disabled button's handler
 	// precisely because core.Button registers whatever it is handed. If this
 	// started dropping nil the "onClick" prop would disappear, changing what
 	// a disabled button diffs to and leaving a live tap with nowhere to go.

@@ -26,7 +26,7 @@ package core
 // core.Padding(8)) call compiles untouched. The shape it does break is
 // forwarding — a []StyleProp cannot be spread into a ...PropsAndChildren — so
 // a wrapper that collected style props into a slice has to widen its own
-// slice to []core.PropsAndChildren. components.Button and components.Chip are
+// slice to []core.PropsAndChildren. comps.Button and comps.Chip are
 // the two in this tree that did.
 //
 // See leafNode for the ordering and nil contracts, and for why a View passed
@@ -41,7 +41,7 @@ func Button(label string, onClick func(), props ...PropsAndChildren) View {
 		return leafNode(ctx, "Button", ctx.Theme().Components.Button, map[string]any{
 			"label": label,
 			// Registered unconditionally, nil handler included: the renderers
-			// key off the prop's presence, and components.Button relies on
+			// key off the prop's presence, and comps.Button relies on
 			// core.Button accepting whatever it is handed rather than
 			// second-guessing a nil. Changing that here would silently drop
 			// the "on" prop and change what a disabled button diffs to.

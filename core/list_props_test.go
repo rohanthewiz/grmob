@@ -211,7 +211,7 @@ func TestOnEndReachedFiresOnceUntilTheRowCountChanges(t *testing.T) {
 // A page that comes back with nothing — the feed is exhausted, or the fetch
 // failed — leaves the count where it was, and the guard therefore stays shut.
 // Scrolling at the bottom of a list that just came back empty must not re-ask
-// forever; components.LoadMore's error arm is where the retry lives.
+// forever; comps.LoadMore's error arm is where the retry lives.
 func TestOnEndReachedStaysQuietWhenAPageAddsNothing(t *testing.T) {
 	ctx := NewContext()
 

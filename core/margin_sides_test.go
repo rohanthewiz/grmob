@@ -236,7 +236,7 @@ func TestTheMarginAndPaddingFamiliesDoNotReachIntoEachOther(t *testing.T) {
 // replace them. Both used to go through UseStyle with a whole EdgeInsets,
 // which on this field silently clears the three sides it does not mention.
 func TestTheMarginWorkaroundShapesAreOnePropEach(t *testing.T) {
-	// components/separator.go: an inset rule.
+	// comps/separator.go: an inset rule.
 	s := Style{}
 	MarginHorizontal(16).Apply(&s)
 	if s.Margin.Left != 16 || s.Margin.Right != 16 || s.Margin.Top != 0 || s.Margin.Bottom != 0 {

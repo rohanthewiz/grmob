@@ -8,7 +8,7 @@ import (
 
 // The fixture is the band the framework actually builds.
 //
-// Cases reads its numbers off a rendered components.GroupHeader, which is what
+// Cases reads its numbers off a rendered comps.GroupHeader, which is what
 // keeps it from being a copy — but "reads them off the widget" is only worth
 // anything if the numbers are the theme's recipe rather than whatever happened
 // to come back. This is that half: the band's chrome is

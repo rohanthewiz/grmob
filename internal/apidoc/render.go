@@ -316,8 +316,8 @@ func (g *gen) typeValue(b *strings.Builder, l *Loaded, v *doc.Value) {
 //     symbol's own heading instead of competing with it.
 //   - the two lookups, which decide what counts as a doc link. The parser's
 //     default only recognises packages the *documented file* imports, which
-//     would make "[components.Tabs]" a literal bracket in any package that does
-//     not import components. Widening it to every documented package makes a
+//     would make "[comps.Tabs]" a literal bracket in any package that does
+//     not import comps. Widening it to every documented package makes a
 //     symbol reference resolvable from anywhere in the module.
 func (g *gen) comment(l *Loaded, text string, headingLevel int) string {
 	p := l.Doc.Parser()
@@ -352,7 +352,7 @@ func (g *gen) comment(l *Loaded, text string, headingLevel int) string {
 // and into a pkg.go.dev URL where it cannot.
 //
 // The in-module case relies on the pages being flat siblings under docs/api/:
-// "components.md#type-tabs" resolves correctly from every other page in the
+// "comps.md#type-tabs" resolves correctly from every other page in the
 // directory, and gkdocs' link rewriter strips the ".md" on the way out. A link
 // whose target exists but whose *kind* is unknown to the symbol index — an
 // unexported symbol, or one in a package deliberately left undocumented —

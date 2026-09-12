@@ -723,7 +723,7 @@ private fun GrMobButton(node: GrMobNode, extra: Modifier) {
         // background and padding do: marginAndSize strips the box-drawing
         // fields, so boxModifier's Modifier.border never runs for a Button and
         // core.BorderWidth/BorderColor were silently dropped here. That is what
-        // made components.Button's EmphasisOutlined — documented as "a 1px rule
+        // made comps.Button's EmphasisOutlined — documented as "a 1px rule
         // in the variant's color" — draw its rule on the web and nothing on
         // device. material3 insets the stroke inside `shape`, which is the same
         // placement Modifier.border and SwiftUI's strokeBorder give it.
@@ -733,7 +733,7 @@ private fun GrMobButton(node: GrMobNode, extra: Modifier) {
             contentColor = s?.textColor ?: Color.Unspecified,
             // material3 would otherwise paint its own disabled tones (the
             // container color at 12% alpha) over whatever the Go theme chose,
-            // so a widget that styles its own disabled look — components.
+            // so a widget that styles its own disabled look — comps.
             // Button spends Surface/TextSecondary on it — would be silently
             // overruled. Feeding the same colors into both slots keeps Go the
             // single source of truth for the palette.
@@ -767,7 +767,7 @@ private fun GrMobButton(node: GrMobNode, extra: Modifier) {
  * only — the same property gestureModifier relies on for non-control nodes.
  *
  * Disabled behaves as it does on the material3 path: the colors are left
- * alone (the Go theme owns the palette, and components.Button spends
+ * alone (the Go theme owns the palette, and comps.Button spends
  * Surface/TextSecondary on its own disabled look) and only the interaction is
  * dropped, which also drops the ripple and the accessibility actions.
  */
@@ -1546,7 +1546,7 @@ private fun ColumnScope.ColumnChildren(node: GrMobNode, growMinHeight: Dp? = nul
  * BoxWithConstraints exists to learn the viewport height before the scroll
  * makes it unbounded, so ColumnChildren can hand a FlexGrow child a real
  * minimum height (see its growMinHeight parameter for why weight cannot be
- * used there). components.Screen{Fill, Scroll} — the ordinary form-shaped
+ * used there). comps.Screen{Fill, Scroll} — the ordinary form-shaped
  * screen — is exactly that shape, SafeArea → Scroll → Column(FlexGrow 1), and
  * rendered as a blank page until this. The Box carries the node's own
  * modifiers (the parent's weight/fill, background, padding, the keyboard
@@ -1649,7 +1649,7 @@ private fun isColumnStretch(s: GrMobStyle?): Boolean =
  *    display as their way of saying "hug your content", and grmob-runtime.js
  *    turns that into `width: fit-content` for exactly this case — a flex
  *    column would otherwise spread every button across the screen.
- *    components.Button's FullWidth is the documented way to ask for the
+ *    comps.Button's FullWidth is the documented way to ask for the
  *    stretch back (it sets both Width and a block display).
  *
  * Text is not exempt: a stretched Text is the same picture as a hugging one

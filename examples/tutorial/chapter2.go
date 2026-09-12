@@ -5,7 +5,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"github.com/rohanthewiz/grmob/components"
+	"github.com/rohanthewiz/grmob/comps"
 	"github.com/rohanthewiz/grmob/core"
 )
 
@@ -51,7 +51,7 @@ func lessonCounter() Lesson {
 				codeBlock(`count := core.NewState(ctx, 0) // slot 0, seeded once
 
 core.Text(fmt.Sprintf("%d", count.Get()))
-components.Button{Label: "+1", OnTap: func() {
+comps.Button{Label: "+1", OnTap: func() {
     count.Set(count.Get() + 1) // write → dirty → re-render
 }}`),
 				prose("There is no update call to make afterwards: Set marks the tree dirty and "+
@@ -74,11 +74,11 @@ components.Button{Label: "+1", OnTap: func() {
 					),
 					core.Row(
 						core.Gap(8),
-						components.Button{Label: "−1", Emphasis: components.EmphasisOutlined,
+						comps.Button{Label: "−1", Emphasis: comps.EmphasisOutlined,
 							OnTap: func() { count.Set(count.Get() - 1) }},
-						components.Button{Label: "+1",
+						comps.Button{Label: "+1",
 							OnTap: func() { count.Set(count.Get() + 1) }},
-						components.Button{Label: "Reset", Emphasis: components.EmphasisGhost,
+						comps.Button{Label: "Reset", Emphasis: comps.EmphasisGhost,
 							OnTap: func() { count.Set(0) }},
 					),
 				),
@@ -159,7 +159,7 @@ func lessonEvents() Lesson {
 							}),
 						),
 					),
-					components.Button{Label: "Clear log", Emphasis: components.EmphasisGhost,
+					comps.Button{Label: "Clear log", Emphasis: comps.EmphasisGhost,
 						OnTap: func() { log.Set([]string{}); total.Set(0) }},
 				),
 				keyPoints(
@@ -212,7 +212,7 @@ core.Input(name.Get(), "Your name", func(v string) {
 							caption(fmt.Sprintf("%d characters, straight from state", utf8.RuneCountInString(name.Get()))),
 						),
 					),
-					components.Button{Label: "Clear", Emphasis: components.EmphasisOutlined,
+					comps.Button{Label: "Clear", Emphasis: comps.EmphasisOutlined,
 						OnTap: func() { name.Set("") }},
 				),
 				keyPoints(
@@ -258,7 +258,7 @@ core.Match(status,                 // a switch over the tree
 					"control writes the status state. Keep hooks out of the branches, though: "+
 					"condition the views, never the NewState calls, or slots shift between passes."),
 				demoPanel("One Match over a status value; the checkbox drives a separate If.",
-					components.SegmentedControl{
+					comps.SegmentedControl{
 						Style:     segWrap,
 						Labels:    statusLabels,
 						Selected:  status.Get(),
@@ -269,14 +269,14 @@ core.Match(status,                 // a switch over the tree
 						core.Case(0, core.Column(
 							core.Gap(8),
 							caption("Fetching gophers…"),
-							components.ProgressBar{Value: 0.4, AccessibilityLabel: "Loading"},
+							comps.ProgressBar{Value: 0.4, AccessibilityLabel: "Loading"},
 						)),
 						core.Case(1, core.Card(
 							core.Gap(6),
 							core.Row(
 								core.Gap(8),
 								core.AlignItemsProp(core.AlignItemsCenter),
-								components.Badge{Text: "ready", Variant: components.VariantSuccess},
+								comps.Badge{Text: "ready", Variant: comps.VariantSuccess},
 								core.Text("All systems go", core.FontWeight(core.Bold)),
 							),
 							caption("42 gophers loaded."),
@@ -372,7 +372,7 @@ func lessonLists() Lesson {
 					"functions of their item — per-row NewState in a list that grows or reorders "+
 					"would read a neighbor's slot after any structural change."),
 				demoPanel("Insert at the top and remove anywhere; the ids don't renumber.",
-					components.Button{Label: "＋ Add to top", Emphasis: components.EmphasisOutlined,
+					comps.Button{Label: "＋ Add to top", Emphasis: comps.EmphasisOutlined,
 						OnTap: addToTop},
 					core.IfElse(len(tasks.Get()) == 0,
 						caption("All done — add a task to refill the list."),
@@ -410,7 +410,7 @@ func taskRow(t demoTask, remove func()) core.View {
 				core.FontWeight(core.Bold),
 			),
 			core.Text(t.title, core.FlexGrow(1)),
-			components.Button{Label: "✕", Emphasis: components.EmphasisGhost, OnTap: remove},
+			comps.Button{Label: "✕", Emphasis: comps.EmphasisGhost, OnTap: remove},
 		).Render(ctx)
 	})
 }
@@ -451,7 +451,7 @@ core.Switch(notify.Get(), func(v bool) { notify.Set(v) })`),
 				demoPanel("The switch changes the line under it; the checkbox changes nothing until Save.",
 					// The trailing slot is where a switch belongs: it is the
 					// row's setting, not a value being collected at its head.
-					components.ListRow{
+					comps.ListRow{
 						Title:    "Notifications",
 						Subtitle: notifyState(notify.Get()),
 						Trailing: core.Switch(notify.Get(), func(v bool) {
@@ -461,7 +461,7 @@ core.Switch(notify.Get(), func(v bool) { notify.Set(v) })`),
 					caption(notifyEffect(notify.Get())),
 					// And the head is where a checkbox belongs, with the thing
 					// that commits it below.
-					components.ListRow{
+					comps.ListRow{
 						Leading: core.Checkbox(terms.Get(), func(v bool) {
 							terms.Set(v)
 							// A tick revokes a save rather than keeping it: the
@@ -474,7 +474,7 @@ core.Switch(notify.Get(), func(v bool) { notify.Set(v) })`),
 					core.Row(
 						core.Gap(10),
 						core.AlignItemsProp(core.AlignItemsCenter),
-						components.Button{Label: "Save", OnTap: func() { saved.Set(terms.Get()) }},
+						comps.Button{Label: "Save", OnTap: func() { saved.Set(terms.Get()) }},
 						caption(termsState(terms.Get(), saved.Get())),
 					),
 				),

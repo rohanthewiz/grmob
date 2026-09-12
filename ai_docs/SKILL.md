@@ -155,7 +155,7 @@ if expanded { /* read detail */ }
 - Call every hook on **every** pass, in the **same order**.
 - Never call a hook inside `if`, `for`, `switch`, or after an early return.
 - A conditional **view** is fine (`core.If`) — it is a conditional **hook** that
-  is not. Widgets that hold hooks (`components.Accordion`, `DatePicker`) count
+  is not. Widgets that hold hooks (`comps.Accordion`, `DatePicker`) count
   as hook callers and must be rendered unconditionally too.
 - `core.SetDebugMode(true)` detects the drift and reports it; see Debug mode.
 
@@ -390,7 +390,7 @@ form := forms.UseForm(ctx, forms.Spec{
     },
 })
 
-components.FormField{
+comps.FormField{
     Label: "Email",
     Error: form.Error("email"),                   // "" until the user should see it
     Input: form.Input("email", "you@example.com"),
@@ -416,21 +416,21 @@ build that logic yourself.
 ## The widget library
 
 ```go
-import "github.com/rohanthewiz/grmob/components"
+import "github.com/rohanthewiz/grmob/comps"
 ```
 
 Struct widgets configured by named field, with `core.View` composition slots:
 
 ```go
-components.Screen{
+comps.Screen{
     Children: []core.View{
-        components.AppBar{Title: "Account", Subtitle: "4 cards"},
-        components.Card{
+        comps.AppBar{Title: "Account", Subtitle: "4 cards"},
+        comps.Card{
             Title:  "Balance",
             Body:   core.Text("$42.00"),
-            Footer: components.Badge{Text: "verified"},
+            Footer: comps.Badge{Text: "verified"},
         },
-        components.SegmentedControl{Labels: tabs, Selected: sel, OnSelect: pick},
+        comps.SegmentedControl{Labels: tabs, Selected: sel, OnSelect: pick},
     },
 }
 ```

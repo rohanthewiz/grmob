@@ -23,9 +23,9 @@ type headingRecord struct {
 //
 //	h := hooks.UseHeading(ctx)
 //	if !h.Available && h.Received {
-//	    return components.EmptyState{Hint: "This device has no compass"}
+//	    return comps.EmptyState{Hint: "This device has no compass"}
 //	}
-//	return components.Compass{Heading: h.Magnetic, ShowDegrees: true}
+//	return comps.Compass{Heading: h.Magnetic, ShowDegrees: true}
 //
 // # What it owns
 //

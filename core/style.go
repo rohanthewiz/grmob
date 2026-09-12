@@ -414,7 +414,7 @@ type Style struct {
 	// does not define aria-expanded there, and a reader drops it. This gets no
 	// RoleGroup-shaped rescue for the reason a selection does not: `group` is
 	// not among the roles above, so there is no role that both fits any
-	// container and carries a disclosure. components.Accordion is what happens
+	// container and carries a disclosure. comps.Accordion is what happens
 	// when a widget takes that seriously — its header row is a button inside a
 	// heading, which is ARIA's own accordion shape, rather than a named div
 	// with a state a browser throws away.
@@ -424,7 +424,7 @@ type Style struct {
 	// aria-expanded says the content is here, in the page, and can be shown or
 	// hidden. A trigger that opens a modal is a different relationship —
 	// ARIA spells that aria-haspopup, which this vocabulary does not carry —
-	// so components.DatePicker's trigger, which looks exactly like a
+	// so comps.DatePicker's trigger, which looks exactly like a
 	// disclosure and even flips a glyph, deliberately sets nothing.
 	//
 	// # One native maps it and one cannot, which is the reverse of usual
@@ -441,7 +441,7 @@ type Style struct {
 	// DisclosureGroup announces the state by writing a localized accessibility
 	// *value* — a string SwiftUI supplies and this framework has no channel
 	// for. Emitting an English "expanded" from the renderer would be the same
-	// move components.Chip's ", selected" name suffix was deleted for. So the
+	// move comps.Chip's ", selected" name suffix was deleted for. So the
 	// key crosses the bridge, is deliberately not parsed, and the note in
 	// GrMobStyle.swift says which property it is turning down.
 	AccessibilityExpanded ExpandedState `json:",omitzero"`
@@ -660,7 +660,7 @@ type Style struct {
 	// state already does that, which is what closes the race properly.
 	//
 	// Visual muting is deliberately not implied. What "disabled" looks like
-	// is a palette decision (components.Button spends Surface/TextSecondary
+	// is a palette decision (comps.Button spends Surface/TextSecondary
 	// on it); what it *means* is this flag.
 	Disabled bool `json:",omitzero"`
 }

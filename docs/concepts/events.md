@@ -105,7 +105,7 @@ core.Button("Delete", onDelete,
     not — Go will not spread a `[]StyleProp` into a `...PropsAndChildren`.
     Widen the wrapper's own slice to `[]core.PropsAndChildren`, or convert at
     the call site if the wrapper's public field should stay style-only
-    (`components.Button` and `components.Chip` take the second route).
+    (`comps.Button` and `comps.Chip` take the second route).
 
 ## Focus and blur
 

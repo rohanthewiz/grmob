@@ -16,7 +16,7 @@ import (
 //	    core.OnRichSelectionChange(func(sel core.RichSelection) { bar.Set(sel) }),
 //	)
 //
-// components.RichTextEditor is the widget over it — it builds the toolbar and
+// comps.RichTextEditor is the widget over it — it builds the toolbar and
 // wires the link prompt — and is what application code should reach for.
 //
 // # The value is a document, and the document is Go's

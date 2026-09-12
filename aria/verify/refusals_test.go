@@ -142,12 +142,12 @@ var refusals = []refusal{
 		Nesting: "direct",
 		Shape: "recursion, and an expansion state per node — a tree's arrows " +
 			"collapse and expand as well as move",
-		Why: "components.disclosure is the heading-around-button shape a twisty " +
+		Why: "comps.disclosure is the heading-around-button shape a twisty " +
 			"needs and Collapse is the caller-owned expansion state a node would " +
 			"want, so the pieces exist and nothing assembles them. What ends this " +
 			"is a widget, not a constant: `treeitem` is also the only role that " +
 			"carries aria-level and aria-selected together, which is the pairing " +
-			"components.ListRow.Selectable has to refuse today",
+			"comps.ListRow.Selectable has to refuse today",
 	},
 	{
 		Role:    "treegrid",
@@ -170,7 +170,7 @@ var refusals = []refusal{
 		Nesting: "through",
 		Shape: "two dimensions. A grid's arrows move by row and by column, and " +
 			"Home/End mean the ends of a row rather than of a list",
-		Why: "components.Calendar is the widget that would be one — forty-two " +
+		Why: "comps.Calendar is the widget that would be one — forty-two " +
 			"tappable day cells laid out in six rows of seven — and it is built as " +
 			"a run of role=button toggle cells instead, with the argument written " +
 			"at its cell builder. The vocabulary is closer than it looks: core " +
@@ -187,7 +187,7 @@ var refusals = []refusal{
 		Why: "the one pattern here whose walk this machinery could already do — " +
 			"a flat run of members, one selected, arrows between them, which is a " +
 			"listbox with a different word. It is absent because nothing builds a " +
-			"radio group: components.SegmentedControl is the one-of-N control this " +
+			"radio group: comps.SegmentedControl is the one-of-N control this " +
 			"framework has, and it is drawn as a joined strip rather than as a " +
 			"column of radios. Adding it means core.RoleRadio and " +
 			"core.RoleRadioGroup and a widget that writes them",

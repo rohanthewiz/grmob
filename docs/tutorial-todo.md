@@ -11,7 +11,7 @@ framework surface. Each feature maps to a concept:
 
 | App feature | Framework concept |
 |---|---|
-| The entry field | Controlled inputs, `components.InputRow`, the echo/rewrite contract |
+| The entry field | Controlled inputs, `comps.InputRow`, the echo/rewrite contract |
 | Add / toggle / delete | State via `NewState`, the rules of hooks, immutable updates |
 | The task list | Virtualized `List`, `For`, `Keyed`, reconciler semantics |
 | Filter chips | Derived state, style-driven selection, `Transition` |
@@ -87,8 +87,8 @@ func AppName() string { return "GrMob Todo" }
 ```
 
 That is the minimum. The real file also imports `fmt`, `strings` and
-`github.com/rohanthewiz/grmob/components`, which is where the widgets in
-section 4 come from — `core` is the vocabulary, `components` is the
+`github.com/rohanthewiz/grmob/comps`, which is where the widgets in
+section 4 come from — `core` is the vocabulary, `comps` is the
 struct-configured widget library built on top of it.
 
 The `init` is the whole integration: gomobile runs package inits when the
@@ -191,7 +191,7 @@ render passes are cheap; drifted state is not.
 ### Layout and styling
 
 ```go
-	return components.Screen{
+	return comps.Screen{
 		Fill: true,
 		Gap:  12,
 		Children: []core.View{
@@ -202,7 +202,7 @@ render passes are cheap; drifted state is not.
 			...
 ```
 
-`components.Screen` is the root scaffold — the safe-area inset, an optional
+`comps.Screen` is the root scaffold — the safe-area inset, an optional
 scroll region, and the vertical column that holds the content:
 
 ```
@@ -242,12 +242,12 @@ Two theme facts to know early:
 ### The entry row: controlled input with a submit action
 
 ```go
-			components.InputRow{
+			comps.InputRow{
 				Value:       draft.Get(),
 				Placeholder: "What needs doing?",
 				OnChange:    func(v string) { draft.Set(v) },
 				OnSubmit:    addTodo,
-				Button: components.Button{
+				Button: comps.Button{
 					Label:             "Add",
 					AccessibilityHint: "Adds the task typed in the field",
 				},
@@ -303,14 +303,14 @@ and the contract holds. (If you're curious, the mechanism lives in
 
 ```go
 func filterBar(active int, onSelect func(int)) core.View {
-	return components.SegmentedControl{
+	return comps.SegmentedControl{
 		Labels:    filterLabels,
 		Selected:  active,
 		OnSelect:  onSelect,
 		KeyPrefix: "filter-",
 		// The template: everything every chip shares. Label, Selected and
 		// OnTap are the control's to fill in.
-		Segment: components.Chip{
+		Segment: comps.Chip{
 			Style: []core.StyleProp{
 				core.FontSize(13),
 				core.Transition(200, core.EaseInOut),
@@ -345,7 +345,7 @@ Three ideas at work:
   vanishes. `SelectedStyle` overrides background *and* text color together.
   (This screenshot-verified lesson repeats with the delete buttons.)
 
-Between the bar and the list sits `components.Separator{}` — the hairline
+Between the bar and the list sits `comps.Separator{}` — the hairline
 rule. The zero value is the whole call: the widget owns the thickness, takes
 its tint from the theme's `Border` role (so the rule retints with a theme
 swap instead of staying pinned to a local constant), and hides itself from
@@ -383,16 +383,16 @@ func todoRow(t Todo, setDone func(int, bool), remove func(int)) core.View {
 	}
 	id := t.ID
 
-	return core.Keyed(fmt.Sprintf("todo-%d", t.ID), components.ListRow{
+	return core.Keyed(fmt.Sprintf("todo-%d", t.ID), comps.ListRow{
 		Leading: core.Checkbox(t.Done, func(v bool) { setDone(id, v) }),
 		Content: core.Text(t.Title, core.UseStyle(core.Style{
 			FontSize:  16,
 			TextColor: titleColor,
 		})),
-		Trailing: components.Button{
+		Trailing: comps.Button{
 			Label:              "✕",
 			OnTap:              func() { remove(id) },
-			Variant:            components.VariantError,
+			Variant:            comps.VariantError,
 			Style:              []core.StyleProp{core.FontSize(13)},
 			AccessibilityLabel: "Delete " + t.Title,
 		},
@@ -406,7 +406,7 @@ func todoRow(t Todo, setDone func(int, bool), remove func(int)) core.View {
 }
 ```
 
-`components.ListRow` is the leading / content / trailing shape: it owns the
+`comps.ListRow` is the leading / content / trailing shape: it owns the
 `FlexGrow(1)` that pins the ✕ to the trailing edge and the vertical centring
 of a checkbox against a text line. The title goes in `Content` rather than
 `Title` because it is *conditionally styled* — `Title` takes the theme's Body
@@ -441,10 +441,10 @@ the feed tab in `examples/mobileapp` for that pattern, and
 ### Destructive actions and the theme base
 
 ```go
-		Trailing: components.Button{
+		Trailing: comps.Button{
 			Label:   "✕",
 			OnTap:   func() { remove(id) },
-			Variant: components.VariantError,
+			Variant: comps.VariantError,
 			...
 ```
 
@@ -454,7 +454,7 @@ button base is a medium blue. The rule of thumb: **when a widget's meaning
 departs from the theme's default (a destructive action on a primary-styled
 base), override the full color pair, not one half.**
 
-`Variant` is that rule packaged. `components.VariantError` names the *intent*
+`Variant` is that rule packaged. `comps.VariantError` names the *intent*
 and lets the widget resolve both halves — the fill from the theme's `Error`
 role and an ink picked for legibility against it. That is why this app has no
 `colorDanger` constant: the destructive red is now the same red an error
@@ -462,10 +462,10 @@ role and an ink picked for legibility against it. That is why this app has no
 "Clear completed" button is literally the same declaration:
 
 ```go
-		clearButton = components.Button{
+		clearButton = comps.Button{
 			Label:   "Clear completed",
 			OnTap:   clearDone,
-			Variant: components.VariantError,
+			Variant: comps.VariantError,
 			Style:   []core.StyleProp{core.FontSize(13)},
 		}
 ```
@@ -487,7 +487,7 @@ pipeline as everything else:
 - `AccessibilityHidden()` removes decoration from the screen-reader tree.
 - `AccessibilityRole(core.RoleHeading)` says what a node *is* — the question
   a label and a hint between them never answer.
-  The hairline never needs it here: `components.Separator` applies it itself,
+  The hairline never needs it here: `comps.Separator` applies it itself,
   because a rule is always decoration and announcing one between every pair
   of rows turns a 20-row feed into 39 utterances.
 
@@ -686,5 +686,5 @@ For the internals referenced throughout:
 [`docs/concepts/reconciliation.md`](concepts/reconciliation.md) covers the
 diffing engine, [`docs/concepts/styling-and-theming.md`](concepts/styling-and-theming.md)
 covers the styling and theme system, and
-[`docs/components.md`](components.md) documents the `components` widgets this
+[`docs/components.md`](components.md) documents the `comps` widgets this
 app is built from.

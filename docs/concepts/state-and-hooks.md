@@ -151,7 +151,7 @@ state takes effect on the next `Call`. `Cancel()` drops a pending call;
 ```go
 d := hooks.UseDebounce(ctx, 250*time.Millisecond)
 
-components.SearchField{
+comps.SearchField{
     Value: query.Get(),
     OnChange: func(s string) {
         query.Set(s)                      // now: the field is controlled
@@ -367,7 +367,7 @@ case permission.Granted:     return mapView(ctx)
 case permission.Prompt:      return askButton()          // Request from a tap
 case permission.Denied:      return openSettingsHint()
 case permission.Unavailable: return nil
-default:                     return components.Skeleton{}   // the check is in flight
+default:                     return comps.Skeleton{}   // the check is in flight
 }
 ```
 

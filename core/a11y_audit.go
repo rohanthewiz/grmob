@@ -388,7 +388,7 @@ func (a *a11yAudit) checkFollowsFocus(n *Node, path string) {
 // fine and "5" between 9 and 1 is not.
 //
 // This is also the audit's first use of Progress, which until now had no Go
-// consumer: components.ProgressBar states all three numbers itself and is
+// consumer: comps.ProgressBar states all three numbers itself and is
 // determinate by construction, so the only readers of the reading were a test
 // and a Kotlin transliteration.
 func (a *a11yAudit) checkValueRange(n *Node, path string) {

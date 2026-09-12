@@ -1,10 +1,10 @@
-// Checks for components.GroupHeader's insets, solved through GrMobFlexSolver —
+// Checks for comps.GroupHeader's insets, solved through GrMobFlexSolver —
 // the CSS flex arithmetic behind the iOS renderer's Row layout.
 //
 // # The claim
 //
 // The band's padding used to be on the Row and is now on the growing control
-// inside it (components.bandInsets). The move's whole justification is that a
+// inside it (comps.bandInsets). The move's whole justification is that a
 // press should land on the band rather than on a strip in the middle of it, and
 // its whole warrant is that it costs nothing: padding on a stretched child
 // fills exactly the space the same padding on its parent held.

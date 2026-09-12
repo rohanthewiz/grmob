@@ -3,7 +3,7 @@
 // Everything that used to be in this file — the go/scanner pass, the
 // class-per-source-byte array, the Darcula palette, the row and run splitting
 // — moved to github.com/rohanthewiz/grmob/highlight when a second consumer
-// appeared (components.CodeEditor colours an editable buffer with the same
+// appeared (comps.CodeEditor colours an editable buffer with the same
 // lexer). What is left here is the tutorial's own two decisions: that snippets
 // are Go, and that they are drawn in Darcula.
 //

@@ -3,7 +3,7 @@ package tutorial
 import (
 	"fmt"
 
-	"github.com/rohanthewiz/grmob/components"
+	"github.com/rohanthewiz/grmob/comps"
 	"github.com/rohanthewiz/grmob/core"
 )
 
@@ -19,14 +19,14 @@ import (
 func (t *tutorial) lessonRoute(index int) func(*core.Context) core.View {
 	e := flatLessons[index]
 	return func(ctx *core.Context) core.View {
-		return components.Screen{
+		return comps.Screen{
 			Scroll: true,
 			Gap:    16,
 			Children: []core.View{
 				t.lessonTopBar(ctx, e),
 				lessonHeader(e),
 				e.Body(ctx),
-				components.Separator{},
+				comps.Separator{},
 				t.lessonNav(ctx, e),
 			},
 		}
@@ -39,13 +39,13 @@ func (t *tutorial) lessonRoute(index int) func(*core.Context) core.View {
 func (t *tutorial) lessonTopBar(ctx *core.Context, e lessonEntry) core.View {
 	return core.Row(
 		core.AlignItemsProp(core.AlignItemsCenter),
-		components.Button{
+		comps.Button{
 			Label:    "‹ Contents",
 			OnTap:    func() { t.toContents(ctx) },
-			Emphasis: components.EmphasisGhost,
+			Emphasis: comps.EmphasisGhost,
 		},
 		core.Box(core.FlexGrow(1)), // slack, so the tag pins right
-		components.Badge{Text: fmt.Sprintf("Chapter %d · %s", e.ChapterNum, e.ChapterTitle)},
+		comps.Badge{Text: fmt.Sprintf("Chapter %d · %s", e.ChapterNum, e.ChapterTitle)},
 	)
 }
 
@@ -54,7 +54,7 @@ func (t *tutorial) lessonTopBar(ctx *core.Context, e lessonEntry) core.View {
 // The title is the screen's heading at level 1. A lesson screen has no AppBar
 // — the top bar here is a back button and a chapter badge, not a titled bar —
 // so this is the top of the outline by construction, and it is the tier
-// components.AppBar would have claimed if there were one. Below it a lesson's
+// comps.AppBar would have claimed if there were one. Below it a lesson's
 // "Key points" recap takes 2 and any Accordion in the body takes 3, which is
 // the whole range the framework fills in without a call site.
 func lessonHeader(e lessonEntry) core.View {
@@ -88,9 +88,9 @@ func (t *tutorial) lessonNav(ctx *core.Context, e lessonEntry) core.View {
 	var prev core.View
 	if e.Index > 0 {
 		target := flatLessons[e.Index-1]
-		prev = components.Button{
+		prev = comps.Button{
 			Label:    "‹ Prev",
-			Emphasis: components.EmphasisOutlined,
+			Emphasis: comps.EmphasisOutlined,
 			OnTap:    func() { t.open(ctx, target.Index, true) },
 		}
 	}
@@ -98,14 +98,14 @@ func (t *tutorial) lessonNav(ctx *core.Context, e lessonEntry) core.View {
 	var next core.View
 	if e.Index < len(flatLessons)-1 {
 		target := flatLessons[e.Index+1]
-		next = components.Button{
+		next = comps.Button{
 			Label: "Next ›",
 			OnTap: func() { t.open(ctx, target.Index, true) },
 		}
 	} else {
-		next = components.Button{
+		next = comps.Button{
 			Label:   "Finish ✓",
-			Variant: components.VariantSuccess,
+			Variant: comps.VariantSuccess,
 			OnTap:   func() { t.toContents(ctx) },
 		}
 	}

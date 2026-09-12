@@ -1,0 +1,333 @@
+package comps
+
+import (
+	"reflect"
+	"testing"
+
+	"github.com/rohanthewiz/grmob/core"
+)
+
+// The load-bearing property of both new axes: their zero values contribute
+// nothing, so the widget's output is the theme's Button base byte for byte.
+func TestButtonZeroValueIsExactlyCoreButton(t *testing.T) {
+	for name, theme := range core.BundledThemes() {
+		t.Run(name, func(t *testing.T) {
+			ctx := core.NewContext().WithTheme(theme)
+			ctx.BeginRenderPass()
+			want := core.Button("Save", func() {}).Render(ctx)
+
+			ctx = core.NewContext().WithTheme(theme)
+			ctx.BeginRenderPass()
+			got := Button{Label: "Save", OnTap: func() {}}.Render(ctx)
+
+			// reflect.DeepEqual, not ==: Style carries a PseudoStates map and
+			// is therefore not comparable.
+			if !reflect.DeepEqual(*got.Style, *want.Style) {
+				t.Fatalf("zero-value Button restyles the theme base:\n got %+v\nwant %+v",
+					*got.Style, *want.Style)
+			}
+			if got.Props["label"] != want.Props["label"] {
+				t.Fatalf("label = %v, want %v", got.Props["label"], want.Props["label"])
+			}
+		})
+	}
+}
+
+// The previous test cannot tell "apply nothing" from "reapply the palette",
+// because both bundled themes pair Components.Button with Colors.Primary and
+// Colors.Background — so the two implementations agree there by coincidence.
+//
+// This is the case that separates them: a theme whose Button base deliberately
+// differs from its palette roles, which is legal and is exactly what a
+// re-deriving implementation would silently overwrite. It is also the shape a
+// third-party theme is most likely to have, since Components.Button is where a
+// theme expresses a house button style.
+func TestButtonZeroValueDoesNotRederiveFromThePalette(t *testing.T) {
+	// Palette says blue-on-white; the Button base says charcoal-on-amber. A
+	// widget that "applies the default variant" lands on the palette pair.
+	theme := &core.Theme{
+		Colors: core.ColorPalette{
+			Primary:    "#0000FF",
+			Background: "#FFFFFF",
+			Surface:    "#EEEEEE",
+			Error:      "#FF0000",
+		},
+		Components: core.ComponentDefaults{
+			Button: core.Style{Background: "#FFBF00", TextColor: "#222222"},
+		},
+	}
+
+	ctx := core.NewContext().WithTheme(theme)
+	ctx.BeginRenderPass()
+	n := Button{Label: "Save", OnTap: func() {}}.Render(ctx)
+
+	if n.Style.Background != "#FFBF00" || n.Style.TextColor != "#222222" {
+		t.Fatalf("zero-value Button rendered %q on %q, want the theme's own Button "+
+			"base (#222222 on #FFBF00) — the palette was re-derived over it",
+			n.Style.TextColor, n.Style.Background)
+	}
+}
+
+// Filled owns both the fill and the label, so it is the one emphasis whose
+// contrast the widget can promise. This is Badge's guard applied through the
+// widget rather than to Variant directly: a naive white ink would ship
+// DefaultTheme's success and warning at ~2.2:1.
+//
+// # VariantDefault is in the loop now
+//
+// It was excluded, and the exclusion was pointed: the default variant's
+// pairing is not the widget's but the theme's own Components.Button, which
+// under DefaultTheme was white on systemBlue at 4.02:1. Button applies no
+// colour props at all in that case, so failing here would have reported a
+// palette decision as a widget defect, and "fixing" it in the widget would
+// have meant the zero value silently repainting every button in every tree.
+// It was recorded as a backlog item against the theme instead.
+//
+// The theme paid it: Primary is Apple's accessible blue and the declared pair
+// is 7.56:1. What the variant adds to this loop is the case the status
+// variants cannot cover — the one whose colours the *palette* chose rather
+// than the widget — so a later retint of either bundled theme's button is now
+// caught by number here rather than by eye on a screen.
+func TestButtonFilledStatusVariantsAreLegibleOnEveryTheme(t *testing.T) {
+	const wcagAA = 4.5
+	for themeName, theme := range core.BundledThemes() {
+		for _, v := range []Variant{VariantDefault, VariantSuccess, VariantWarning, VariantError} {
+			ctx := core.NewContext().WithTheme(theme)
+			ctx.BeginRenderPass()
+			n := Button{Label: "Act", Variant: v, OnTap: func() {}}.Render(ctx)
+
+			bgLum, ok := relativeLuminance(n.Style.Background)
+			if !ok {
+				t.Fatalf("%s/%s: unparseable background %q", themeName, v, n.Style.Background)
+			}
+			inkLum, ok := relativeLuminance(n.Style.TextColor)
+			if !ok {
+				t.Fatalf("%s/%s: unparseable ink %q", themeName, v, n.Style.TextColor)
+			}
+			if r := contrastRatio(bgLum, inkLum); r < wcagAA {
+				t.Errorf("%s/%s: ink %q on %q is %.2f:1, below WCAG AA",
+					themeName, v, n.Style.TextColor, n.Style.Background, r)
+			}
+		}
+	}
+}
+
+// Outlined and Ghost both punch a real hole rather than omitting the fill: an
+// empty Background inherits the theme's solid Button base, which is the
+// opposite of the intent.
+//
+// Their label is the role's *on-light* tone, not the fill colour. A treatment
+// that owns no background cannot pick its ink by contrast the way the filled
+// one does, so the palette has to supply a value that stands on a light
+// surface unaided; see the contrast table on the Button type.
+//
+// # Two themes, because one variant lost its split
+//
+// The assertion that matters is `tone != fill`: a widget that quietly went
+// back to v.Color would look plausible everywhere the two happen to agree.
+// They agree for the default variant under both bundled themes now, because
+// Primary was darkened to a hex that is ink-weight on its own — so
+// DefaultTheme alone can no longer tell the two implementations apart for
+// that variant, and midTonePrimaryTheme (variant_test.go) carries the case
+// that can. The census at the end is what holds the matrix honest: every
+// variant tested must split under at least one theme in it.
+func TestButtonOutlinedAndGhostAreTransparentWithVariantInk(t *testing.T) {
+	themes := map[string]*core.Theme{
+		"DefaultTheme":   core.DefaultTheme,
+		"midTonePrimary": midTonePrimaryTheme(),
+	}
+	variants := []Variant{VariantDefault, VariantError}
+
+	// Which variants were seen splitting, under any theme in the matrix.
+	split := map[Variant]bool{}
+
+	for themeName, theme := range themes {
+		for _, v := range variants {
+			t.Run(themeName+"/v="+string(v), func(t *testing.T) {
+				ctx := core.NewContext().WithTheme(theme)
+				ctx.BeginRenderPass()
+
+				out := Button{Label: "Cancel", Variant: v, Emphasis: EmphasisOutlined}.Render(ctx)
+				if out.Style.Background != ColorTransparent {
+					t.Errorf("outlined fill = %q, want transparent", out.Style.Background)
+				}
+				want := v.OnLight(theme)
+				if out.Style.TextColor != want {
+					t.Errorf("outlined ink = %q, want the role's on-light tone %q",
+						out.Style.TextColor, want)
+				}
+				if out.Style.BorderWidth == 0 || out.Style.BorderColor != want {
+					t.Errorf("outlined rule = %vpx %q, want 1px in the on-light tone %q",
+						out.Style.BorderWidth, out.Style.BorderColor, want)
+				}
+				if want != v.Color(theme) {
+					split[v] = true
+				}
+
+				ghost := Button{Label: "Skip", Variant: v, Emphasis: EmphasisGhost}.Render(ctx)
+				if ghost.Style.Background != ColorTransparent {
+					t.Errorf("ghost fill = %q, want transparent", ghost.Style.Background)
+				}
+				if ghost.Style.BorderWidth != 0 {
+					t.Errorf("ghost drew a rule of %vpx", ghost.Style.BorderWidth)
+				}
+				if ghost.Style.TextColor != want {
+					t.Errorf("ghost ink = %q, want the role's on-light tone %q",
+						ghost.Style.TextColor, want)
+				}
+			})
+		}
+	}
+
+	for _, v := range variants {
+		if !split[v] {
+			t.Errorf("no theme in the matrix gives variant %q a tone that differs from its "+
+				"fill; the assertions for it would pass on a widget that spent v.Color", v)
+		}
+	}
+}
+
+// ColorTransparent has to survive every export path or the hole becomes an
+// opaque black rectangle. The natives parse #RRGGBBAA in their own parseColor;
+// this pins the HTML half, which emits the string verbatim.
+func TestTransparentFillSurvivesTheHTMLExport(t *testing.T) {
+	ctx := core.NewContext()
+	ctx.BeginRenderPass()
+	n := Button{Label: "Skip", Emphasis: EmphasisGhost}.Render(ctx)
+	if n.Style.Background != "#00000000" {
+		t.Fatalf("ColorTransparent = %q; the 8-digit CSS byte order (alpha last) "+
+			"is what both native parseColor implementations expect", n.Style.Background)
+	}
+}
+
+func TestButtonStyleOverridesTheVariant(t *testing.T) {
+	ctx := core.NewContext()
+	ctx.BeginRenderPass()
+	n := Button{
+		Label:   "Delete",
+		Variant: VariantError,
+		Style:   []core.StyleProp{core.BackgroundColor("#123456")},
+	}.Render(ctx)
+
+	if n.Style.Background != "#123456" {
+		t.Fatalf("explicit Style lost to the variant: %q", n.Style.Background)
+	}
+}
+
+// FullWidth needs the block display as well as the width: both bundled themes
+// give Button an inline display, and width has no effect on an inline box.
+func TestButtonFullWidthSetsWidthAndBlockDisplay(t *testing.T) {
+	if core.DefaultTheme.Components.Button.Display != core.DisplayInline {
+		t.Skip("theme Button base is no longer inline; the block half may be redundant")
+	}
+	ctx := core.NewContext()
+	ctx.BeginRenderPass()
+	n := Button{Label: "Continue", FullWidth: true}.Render(ctx)
+
+	if n.Style.Width != "100%" {
+		t.Errorf("width = %q, want 100%%", n.Style.Width)
+	}
+	if n.Style.Display != core.DisplayBlock {
+		t.Errorf("display = %q, want block — width does nothing on an inline box",
+			n.Style.Display)
+	}
+}
+
+func TestButtonDisabled(t *testing.T) {
+	theme := core.DefaultTheme
+
+	t.Run("swallows taps", func(t *testing.T) {
+		ctx := core.NewContext().WithTheme(theme)
+		ctx.BeginRenderPass()
+		tapped := false
+		n := Button{Label: "Send", Disabled: true, OnTap: func() { tapped = true }}.Render(ctx)
+
+		id, ok := n.Props["onClick"].(string)
+		if !ok || id == "" {
+			t.Fatalf("no onClick registered: %#v", n.Props)
+		}
+		// Dispatched rather than merely inspected: the handler must be a no-op
+		// and not a nil func, which the registry would happily store and then
+		// panic on when a late native tap arrives.
+		ctx.TriggerCallback(id)
+		if tapped {
+			t.Fatal("a disabled button ran its handler")
+		}
+	})
+
+	t.Run("nil OnTap is also safe to dispatch", func(t *testing.T) {
+		ctx := core.NewContext()
+		ctx.BeginRenderPass()
+		n := Button{Label: "Inert"}.Render(ctx)
+		ctx.TriggerCallback(n.Props["onClick"].(string)) // must not panic
+	})
+
+	t.Run("muted treatment overrides the variant", func(t *testing.T) {
+		ctx := core.NewContext().WithTheme(theme)
+		ctx.BeginRenderPass()
+		n := Button{Label: "Delete", Variant: VariantError, Disabled: true}.Render(ctx)
+
+		if n.Style.Background == theme.Colors.Error {
+			t.Error("a disabled button still reads as danger")
+		}
+		if n.Style.Background != theme.Colors.Surface {
+			t.Errorf("background = %q, want the palette's muted Surface", n.Style.Background)
+		}
+	})
+
+	// The state travels as core.Style.Disabled, which every renderer hands to
+	// the platform's own disabled state — that is what makes a screen reader
+	// announce it. The widget used to synthesize a ", disabled" suffix on the
+	// accessibility label because no renderer carried the state; keeping both
+	// now would announce it twice.
+	t.Run("sets the platform disabled state", func(t *testing.T) {
+		ctx := core.NewContext()
+		ctx.BeginRenderPass()
+
+		n := Button{Label: "Send", Disabled: true}.Render(ctx)
+		if !n.Style.Disabled {
+			t.Error("a disabled button did not set Style.Disabled")
+		}
+		// No label is synthesized to carry the announcement any more.
+		if n.Style.AccessibilityLabel != "" {
+			t.Errorf("label = %q, want it left to the platform", n.Style.AccessibilityLabel)
+		}
+
+		// An explicit label is the button's name and nothing else: the state
+		// is no longer appended to it.
+		n = Button{Label: "✕", AccessibilityLabel: "Delete task", Disabled: true}.Render(ctx)
+		if got := n.Style.AccessibilityLabel; got != "Delete task" {
+			t.Errorf("label = %q, want %q", got, "Delete task")
+		}
+
+		n = Button{Label: "Send"}.Render(ctx)
+		if n.Style.Disabled {
+			t.Error("an enabled button set Style.Disabled")
+		}
+		if n.Style.AccessibilityLabel != "" {
+			t.Errorf("enabled button synthesized a label: %q", n.Style.AccessibilityLabel)
+		}
+	})
+
+	t.Run("the state cannot be cleared by Style", func(t *testing.T) {
+		ctx := core.NewContext()
+		ctx.BeginRenderPass()
+		n := Button{
+			Label:    "Send",
+			Disabled: true,
+			Style:    []core.StyleProp{core.Disabled(false)},
+		}.Render(ctx)
+		if !n.Style.Disabled {
+			t.Error("a caller style re-enabled a disabled button")
+		}
+	})
+}
+
+func TestButtonAccessibilityHint(t *testing.T) {
+	ctx := core.NewContext()
+	ctx.BeginRenderPass()
+	n := Button{Label: "Add", AccessibilityHint: "Adds the task typed in the field"}.Render(ctx)
+	if n.Style.AccessibilityHint != "Adds the task typed in the field" {
+		t.Fatalf("hint = %q", n.Style.AccessibilityHint)
+	}
+}

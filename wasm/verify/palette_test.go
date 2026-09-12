@@ -27,7 +27,7 @@ import (
 //
 // # What the browser adds that Go cannot
 //
-// components/variant_test.go's census is arithmetic over strings. It proves
+// comps/variant_test.go's census is arithmetic over strings. It proves
 // #89898E is 3.12:1 on #F2F2F7 and it cannot prove that either of those
 // colours ever reaches a screen. Everything between the palette and the pixel
 // — the runtime's style mapping, CSS shorthand parsing, alpha, a hairline

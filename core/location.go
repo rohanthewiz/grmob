@@ -499,7 +499,7 @@ func clampLatitude(lat float64) float64 {
 //
 // Exported because every consumer of a coordinate needs it and getting it
 // wrong is silent — a map centred 20 degrees from where it was asked to be
-// still looks like a map. components.StaticMap does the same arithmetic for the
+// still looks like a map. comps.StaticMap does the same arithmetic for the
 // same reason.
 //
 // math.Mod keeps the sign of its first argument, so a negative input stays

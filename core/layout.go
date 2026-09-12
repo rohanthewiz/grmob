@@ -169,7 +169,7 @@ func Scroll(stylePropsAndChildren ...PropsAndChildren) View {
 }
 
 // SafeArea insets its content from the system bars and the display cutout.
-// It is the root of every screen (components.Screen builds one) and takes
+// It is the root of every screen (comps.Screen builds one) and takes
 // the same mixed argument list as the other containers, so a style can land
 // on the inset box itself.
 //
@@ -254,7 +254,7 @@ func Box(stylePropsAndChildren ...PropsAndChildren) View {
 // they are CSS spellings that only the two DOM targets read — Renderer.swift
 // and Renderer.kt consult none of the five. So anything built out of them is a
 // web-only widget wearing a portable name, which is exactly why
-// components.Compass parked its index mark *above* the rose instead of over
+// comps.Compass parked its index mark *above* the rose instead of over
 // it. An overlay has a first-class construct on each of the other three
 // targets (a SwiftUI ZStack, a Compose Box, a single-cell CSS grid), and
 // naming the container is what lets each renderer reach for its own.
@@ -284,7 +284,7 @@ func Box(stylePropsAndChildren ...PropsAndChildren) View {
 // property existed.
 //
 // It arrived a good while after this container did, and the reason is worth
-// recording: while components.Compass was the only consumer, the escape was to
+// recording: while comps.Compass was the only consumer, the escape was to
 // give the layer *its own box* — the index mark was a full-height Column
 // justifying its glyph to the start, which lands the mark at top centre while
 // the Column itself is centred like everything else. That works, and one

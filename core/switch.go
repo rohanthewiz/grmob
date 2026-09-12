@@ -73,7 +73,7 @@ package core
 // contrast census as though some surface were drawn from it.
 //
 // Like Checkbox it carries no label: a control's label is the caller's, and
-// components.FormField and components.InputRow already own that slot.
+// comps.FormField and comps.InputRow already own that slot.
 //
 // # Keyboard focus
 //

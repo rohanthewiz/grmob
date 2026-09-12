@@ -110,7 +110,7 @@ func (f *Form) TextArea(name string, rows int, props ...core.PropsAndChildren) c
 // A checkbox has no label of its own; the usual pairing is a ListRow, which
 // centers the box against its title:
 //
-//	components.ListRow{Leading: form.Checkbox("terms"), Title: "I accept the terms"}
+//	comps.ListRow{Leading: form.Checkbox("terms"), Title: "I accept the terms"}
 //
 // No blur binding, unlike the text builders: a tick is a commit, not a draft,
 // so there is no moment where the user is "still working on" a checkbox and

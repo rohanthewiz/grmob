@@ -116,7 +116,7 @@
       previously documented the gap it could not close from where it sat
 
 - [x] The **ink over a fill**, resolved by asking the theme before measuring
-      (`components.Variant.Ink`). `Components.Button` is the one place a
+      (`comps.Variant.Ink`). `Components.Button` is the one place a
       palette states a fill and an ink together, so a fill matching it takes
       the ink it was declared with; everything else falls to the higher WCAG
       contrast of the theme's two ink roles. Pure measurement picks *black* on
@@ -145,7 +145,7 @@
 - [x] gomobile bridge with a four-channel event surface (`mobile/bridge.go`),
       plus system events out and host events in
 
-### 🧩 Widget Library (`components`)
+### 🧩 Widget Library (`comps`)
 - [x] `Screen`, `Button`, `InputRow`, `SegmentedControl`, `Card`, `ListRow`
 - [x] `Badge`, `Chip`, `Separator`, `Avatar`, `ProgressBar`
 - [x] `FormField`, `Accordion`, `Tabs`
@@ -235,7 +235,7 @@
       member role, which is the whole rule for a listbox and a tablist and no
       rule at all for a toolbar; the runtime has a second one now
       (`COMPOSITE_FOCUSABLE`, `focusableMembers`): every focusable control not
-      inside a nested composite. `components.ChipStrip` is a `Row` of
+      inside a nested composite. `comps.ChipStrip` is a `Row` of
       `core.Button`s, so a twelve-chip filter bar was twelve stops in the page's
       tab order where ARIA promises one. A nested composite stops the walk and
       keeps its own stop, which is two stops rather than one and is the honest
@@ -252,7 +252,7 @@
       on a member has reached Go since the day the pattern was written.
       Web-only, unreachable from the patch pass (a selection fired there would
       call into Go, produce a patch, and fire again)
-- [x] **`components.CollapseBand`** — the disclosure the default band builds, on
+- [x] **`comps.CollapseBand`** — the disclosure the default band builds, on
       its own, for a `GroupedList` `Header` override. `Collapse` reaches past an
       override for the row emission and stops at it for the control, which left
       the override author rebuilding a button, an `aria-expanded` and a heading
@@ -417,14 +417,14 @@
       key: no such relationship exists in their vocabularies, and the near miss
       (`accessibilityIdentifier` / `testTag`) is a test selector rather than an
       accessibility property
-- [x] **A disclosure has a second consumer** (`components.Collapse`) — a
+- [x] **A disclosure has a second consumer** (`comps.Collapse`) — a
       `GroupedList` band can be shut, and `Accordion` stopped being the only
       widget in the package that says whether something is open. What the
       second consumer bought is the shared shape: ARIA's disclosure
       arrangement — a heading wrapping a button carrying `aria-expanded`, named
       explicitly so the chevron never reaches the outline entry — took three
       attempts to land, and both rejected versions looked correct in an export.
-      It is one value now (`components.disclosure`) and the two widgets are
+      It is one value now (`comps.disclosure`) and the two widgets are
       rendered side by side and compared. The collapse state is the *caller's*,
       which keeps `GroupedList` hook-free and is the right owner anyway: which
       months are shut is screen state that wants to survive a pager reload. A
@@ -439,7 +439,7 @@
       sides are usually zero, so the struct looks like it set one gap while
       clearing the rest. Nothing in any renderer changed — the same
       `EdgeInsets`, the same two settle helpers, the same resolution — and both
-      live workarounds (`components.Separator`'s inset, `examples/chat`'s
+      live workarounds (`comps.Separator`'s inset, `examples/chat`'s
       bubble gap) are one prop each
 - [x] **The bridge stand-in is pinned by signature, not just by name**
       (`mobile/verify`) — `ios/verify` type-checks the iOS app layer against a
@@ -478,7 +478,7 @@
       checked: a widget applies its own insets before the caller's `Style`,
       never after. Six widgets now assert it from the outside
 - [x] **A single-widget knob in `rowsSpec` has an admission test**
-      (`components/rows_spec_test.go`) — the census counted the two
+      (`comps/rows_spec_test.go`) — the census counted the two
       widget-specific fields in the shared parameter list and said a third was
       "worth asking about", which is a prompt without an answer. The answer is
       a property of `appendRows`' output rather than a matter of taste: every
@@ -491,7 +491,7 @@
       be produced*. The owner column is now derived from the widgets rather
       than trusted as a string
 - [x] **Every palette rule has a recorded witness**
-      (`components/palette_witness_test.go`) — two rules were invisible under
+      (`comps/palette_witness_test.go`) — two rules were invisible under
       both bundled themes: `inkOn`'s first step (read the theme's declared
       pair before measuring) and `Colors.OnLight`'s `Primary` arm. An
       implementation that deleted either would paint identical pixels and pass
@@ -550,7 +550,7 @@
       anchors, the bounds' origin, an oversized layer overhanging) where before
       it could only check that the file compiled
 - [x] **Every shared `rowsSpec` knob has an effect assertion of its own**
-      (`components/rows_spec_test.go`) — the census required a new field to have
+      (`comps/rows_spec_test.go`) — the census required a new field to have
       a *row*; nothing required it to have an *assertion*, so a knob marked
       "both", forwarded by one widget and never asserted passed everything. The
       nine shared knobs are now a table keyed by field name, driven from the
@@ -558,7 +558,7 @@
       bought `Row` and `Header` the assertions they never had, and separated
       `Rows` (the row count) from `Key` (the row keys)
 - [x] **Every control boundary is measured, not just the two named ones**
-      (`components/variant_test.go`) — `Colors.ControlBorder` clears WCAG
+      (`comps/variant_test.go`) — `Colors.ControlBorder` clears WCAG
       1.4.11's 3:1 floor against a page and falls 0.08 short against
       `DefaultTheme`'s `Surface`, which is the quiet chip's own fill. That was
       argued in two prose blocks and asserted nowhere, so a *second* widget
@@ -580,7 +580,7 @@
       announcement and no keyboard, since ARIA does not say what a toolbar owns
 - [x] **A progress bar is a progress bar** (`core.RoleProgressBar` +
       `core.ValueRange`) — the fourth accessibility state vocabulary, and the
-      first that is four attributes at once. `components.ProgressBar` had
+      first that is four attributes at once. `comps.ProgressBar` had
       nowhere to put its percentage but the accessible *name* ("Upload, 45
       percent"), which is the channel `Chip`'s `", selected"` suffix was
       deleted from and for the same reason: a name is meant to be stable, so a
@@ -642,7 +642,7 @@
       is given the one the state calls for, wired to the node's own click
       callback, while SwiftUI has no expanded trait and its near miss
       (`accessibilityValue`) would mean shipping an English literal to every
-      locale. Adopted by `components.Accordion`, whose header row became a
+      locale. Adopted by `comps.Accordion`, whose header row became a
       button inside a heading — ARIA's own accordion shape, reachable once
       `AccessibilityLabel` was noticed to override the content-derived name the
       wrapper had been turned down for
@@ -692,7 +692,7 @@
       list. It lands where the selected state could not, and the difference is
       the role rather than the widget — a depth's is `listitem`, a selection's
       is `option`, which `core.Role` still does not carry
-- [x] `components.Button`'s border means the same thing on all four targets —
+- [x] `comps.Button`'s border means the same thing on all four targets —
       both natives now feed `BorderColor`/`BorderWidth` into the platform
       control's own slot (they were stripped with the rest of the box-drawing
       fields and never fed back, so outlined buttons had no rule on device),
@@ -742,7 +742,7 @@
       `enterkeyhint`). The action rides the existing `onSubmit` channel, so it
       costs one string prop and no new bridge surface (`examples/signup`)
 - [x] Keyboard-aware regions (`core.KeyboardAware`,
-      `components.Screen.KeyboardAware`) — a scrolling region shortens its
+      `comps.Screen.KeyboardAware`) — a scrolling region shortens its
       viewport, a fixed one lifts whole, so a docked composer stays reachable
       (`examples/signup`, `examples/chat`)
 - [x] Camera: `CameraView`, capture event
@@ -841,7 +841,7 @@
 - [x] **The palette on a screenshot** (`wasm/verify/palette.mjs`,
       `wasm/verify/browser.mjs`) — the fifth browser check, and the first that
       is not about the keyboard. `ControlBorder` has WCAG 1.4.11's 3:1 floor
-      under it and the census in `components/variant_test.go` measures every
+      under it and the census in `comps/variant_test.go` measures every
       pair as arithmetic over hex strings — which proves the number and cannot
       prove either colour reaches a screen. Two retints and a third palette
       later, nothing had ever looked. Now one swatch per pair is painted,
@@ -864,14 +864,14 @@
       and `gomobilestub_test.go` holds each to what it describes: the version
       to `go.mod`, the names to the checker's own, each type row to
       `swiftType`, each result row to what `swiftResult` does with that shape
-- [x] **A band's insets are its tap target** (`components.bandInsets`,
+- [x] **A band's insets are its tap target** (`comps.bandInsets`,
       `GroupHeader.ControlStyle`, `CollapseBand.ControlStyle`) — the chrome was
       padding on the row that held the button, so a press in the 16px before
       the chevron did nothing. It is padding on the control now: identical
       pixels, a different node. The row keeps its fill, its centering,
       `StickyHeader` and the badge's own trailing inset, which is the one past
       the control's edge
-- [x] **A shut trailing group withholds `OnEndReached`** (`components.GroupedList`)
+- [x] **A shut trailing group withholds `OnEndReached`** (`comps.GroupedList`)
       — an append pager extends the last run and a shut run emits nothing, so a
       page fetched into a collapsed bottom group landed nowhere and closed the
       guard behind it: one page spent, every fire after it refused, the feed
@@ -967,8 +967,8 @@
       difference that an editor adopts a standing epoch without running it.
       Selection rides the text channel as `"start:end"` in UTF-8 bytes and is
       parsed in core, so no bridge channel was added
-- [x] **`components.CodeEditor` — and the tutorial's code block with it**
-      (`components/code_editor.go`, lesson 4.13) — runs the highlighter, picks a
+- [x] **`comps.CodeEditor` — and the tutorial's code block with it**
+      (`comps/code_editor.go`, lesson 4.13) — runs the highlighter, picks a
       scheme from the theme's own background, and builds the toolbar. It
       consumes **no hook slot**: the `core.EditorRef` a toolbar needs is the
       caller's, precisely so that a read-only editor can be what a code block is
@@ -993,8 +993,8 @@
       the document* — the selection is only read and restored, never operated
       on, which is also what makes the whole command vocabulary testable against
       a DOM with no Selection API
-- [x] **`components.RichTextEditor` and lesson 4.14**
-      (`components/rich_text_editor.go`) — a wrapping toolbar whose buttons draw
+- [x] **`comps.RichTextEditor` and lesson 4.14**
+      (`comps/rich_text_editor.go`) — a wrapping toolbar whose buttons draw
       themselves from the host's own selection report, because Go owns the
       document and the host owns the caret. `UseRichToolbar` is the hook and it
       is the *caller's*, so a read-only note — a comment, a description, a card
@@ -1047,7 +1047,7 @@
       and asked twice: through the rects the browser reports, and through the
       pixels at a point an unpinned band would have left a row behind
 - [x] **The wrapper test is asked about the slice callers really get**
-      (`components/rows_spec_test.go`) — `appendRows` appends into the
+      (`comps/rows_spec_test.go`) — `appendRows` appends into the
       container's own argument list and returns it, so the admission rule was
       being answered against a fixture that held children alone. It now takes
       the prop prefix both widgets pass, and the first leg is that a core prop
@@ -1055,7 +1055,7 @@
       the only sound filter is the `core.View` assertion, checked in both
       directions before the children are looked at
 - [x] **The witness census is read down its columns as well as across its
-      rows** (`components/palette_witness_test.go`) — a row now states what its
+      rows** (`comps/palette_witness_test.go`) — a row now states what its
       witnesses amount to (a bundled theme, the fixture alone, or nothing) and
       the test derives the same value and compares, which caught the file's own
       prose already claiming two fixture-only rules that `AmberTheme` had
@@ -1093,7 +1093,7 @@
       four facts 1.2 changed. Left to the diff that reads as a broken fixture.
       `spec.Version` and the document's own title heading make it one line
       about the fetch instead; `aria/fetch.sh`'s URL is held to the constant
-- [x] **`components.CollapseBand` is built by an example** — its only readers
+- [x] **`comps.CollapseBand` is built by an example** — its only readers
       were its own tests, and `ControlStyle`'s whole justification is how a
       *real* custom band is assembled. Lesson 4.6 assembles one, with every
       band starting shut so the half a `Header` override does not own — the
@@ -1199,7 +1199,7 @@
       that stopped fetching looks exactly like one that ran out; a screen whose
       footer is conditional had no way to tell
 - [x] **The browser pass paints a real widget, not only swatches** — `gen.go`
-      renders a quiet `components.Chip` per bundled theme and reads its three
+      renders a quiet `comps.Chip` per bundled theme and reads its three
       colours off the rendered node; `widget_test.go` holds the ring to
       `Colors.ControlBorderColor()` and both backdrops to `internal/palette`'s
       derived list
@@ -1291,10 +1291,10 @@
       collapsible branch puts the insets on a button one level inside the Row's
       growing heading wrapper, so whether a press lands on the whole band is a
       *cross-axis* question and `GrMobFlexSolver` is a main-axis distributor.
-      `gen.go` renders real `components.GroupHeader`s through every bundled
+      `gen.go` renders real `comps.GroupHeader`s through every bundled
       theme and `browser.mjs` measures the rects: the button does fill the
       wrapper, and it does so by a cross-axis default rather than by anything
-      the widget declares. The picture in `components.bandInsets` had been
+      the widget declares. The picture in `comps.bandInsets` had been
       assuming it
 - [x] **The two band branches are the same chrome and not the same height** —
       measured against pixels, `GroupHeader.ControlStyle`'s "a control and not a
@@ -1364,7 +1364,7 @@
       arrangement itself instead of one of the mechanisms that could produce it
 - [x] **Whether any real screen can produce a nested composite** — the five
       descending pairs `core.CompositeWalkStopsAt` sorts had an example nobody
-      called realistic. Nothing in `components` declares a composite *container*
+      called realistic. Nothing in `comps` declares a composite *container*
       role: `RoleOption` and `RoleTab` are member roles, and every listbox,
       tablist and toolbar is a container the caller built and roled themselves.
       So the pair needs two deliberate declarations by one author — reachable,

@@ -1,12 +1,12 @@
-# Widget Library — the `components` package
+# Widget Library — the `comps` package
 
-`components` is GrMob's higher-level widget library, built **entirely on the
+`comps` is GrMob's higher-level widget library, built **entirely on the
 public core API** — a deliberate dogfooding discipline: if a widget can't be
 built out here, that is a gap in core's primitives, not a reason to reach
 inside.
 
 ```go
-import "github.com/rohanthewiz/grmob/components"
+import "github.com/rohanthewiz/grmob/comps"
 ```
 
 ## The struct-widget idiom
@@ -15,10 +15,10 @@ Every widget is a struct implementing `core.View`, configured through named
 fields:
 
 ```go
-components.Card{
+comps.Card{
     Title:  "Account",
     Body:   balanceSummary,
-    Footer: components.Badge{Text: "verified"},
+    Footer: comps.Badge{Text: "verified"},
 }
 ```
 
@@ -51,18 +51,18 @@ SafeArea
 
 ```go
 // The zero value: SafeArea(Column(children...)), nothing else.
-components.Screen{
+comps.Screen{
     Children: []core.View{header, body, composer},
 }
 
 // A screen that scrolls as a whole.
-components.Screen{
+comps.Screen{
     Scroll:   true,
     Children: []core.View{hero, section1, section2},
 }
 
 // A screen whose list fills the space and pushes a footer down.
-components.Screen{
+comps.Screen{
     Fill: true,
     Gap:  12,
     Children: []core.View{title, entryRow, list, footer},
@@ -113,7 +113,7 @@ scaffold drops its own inset when its content is a single scrolling page:
 
 ```go
 // Inset once, by the List. No Padding(0) needed.
-components.Screen{Fill: true, Children: []core.View{core.List(rows...)}}
+comps.Screen{Fill: true, Children: []core.View{core.List(rows...)}}
 ```
 
 Three things about the rule:
@@ -121,7 +121,7 @@ Three things about the rule:
 - **"Only child" is counted after `nil` entries are skipped**, so the
   conditional-slot idiom below still qualifies — an absent banner beside a list
   is a single-child screen, exactly as the tree the reconciler walks is. The
-  decision is taken on the *rendered* child, so `components.GroupedList` counts
+  decision is taken on the *rendered* child, so `comps.GroupedList` counts
   too: it is a `List` once it renders.
 - **The set is node types that scroll and arrive pre-inset**, which today is
   `core.List` alone. `core.Scroll` is deliberately outside it: it carries no
@@ -144,10 +144,10 @@ platform does with it.
 
 ```go
 // A form: the viewport ends where the keyboard begins.
-components.Screen{Scroll: true, KeyboardAware: true, Children: fields}
+comps.Screen{Scroll: true, KeyboardAware: true, Children: fields}
 
 // A chat: no scroll here, so the column lifts and the composer rides up.
-components.Screen{KeyboardAware: true, Children: []core.View{header, thread, composer}}
+comps.Screen{KeyboardAware: true, Children: []core.View{header, thread, composer}}
 ```
 
 **`Fill` is load-bearing wherever a child grows.** A `FlexGrow` child can only
@@ -167,7 +167,7 @@ var banner core.View
 if offline {
     banner = OfflineBanner()
 }
-components.Screen{Children: []core.View{banner, body}}
+comps.Screen{Children: []core.View{banner, body}}
 ```
 
 That is the same contract behind [`core.MaybeProp`](concepts/views.md) — no
@@ -179,10 +179,10 @@ node, no flex slot, no stray `Gap` — where a `core.If` would leave an empty
 A themed action button with **two orthogonal color axes** and no per-call hex.
 
 ```go
-components.Button{Label: "Save",   OnTap: save}                                   // theme Button base
-components.Button{Label: "Delete", OnTap: rm,   Variant: components.VariantError}
-components.Button{Label: "Cancel", OnTap: back, Emphasis: components.EmphasisOutlined}
-components.Button{Label: "Skip",   OnTap: skip, Emphasis: components.EmphasisGhost}
+comps.Button{Label: "Save",   OnTap: save}                                   // theme Button base
+comps.Button{Label: "Delete", OnTap: rm,   Variant: comps.VariantError}
+comps.Button{Label: "Cancel", OnTap: back, Emphasis: comps.EmphasisOutlined}
+comps.Button{Label: "Skip",   OnTap: skip, Emphasis: comps.EmphasisGhost}
 ```
 
 `Variant` says **which** color (the meaning) and is the same enum
@@ -226,8 +226,8 @@ no `Components` block at all.
 anything. `Style` is the escape hatch for the brand case:
 
 ```go
-components.Button{
-    Label: "Recharge", Emphasis: components.EmphasisOutlined,
+comps.Button{
+    Label: "Recharge", Emphasis: comps.EmphasisOutlined,
     Style: []core.StyleProp{
         core.TextColor(t.Colors.Secondary),
         core.BorderColor(t.Colors.Secondary),
@@ -310,16 +310,16 @@ Row (Gap)
 
 ```go
 // A field and a Send button, one commit action.
-components.InputRow{
+comps.InputRow{
     Value:       draft.Get(),
     Placeholder: "What needs doing?",
     OnChange:    func(v string) { draft.Set(v) },
     OnSubmit:    addTodo,
-    Button:      components.Button{Label: "Add"},
+    Button:      comps.Button{Label: "Add"},
 }
 
 // A search field with no button: the return key commits it.
-components.InputRow{
+comps.InputRow{
     Value:       query.Get(),
     Placeholder: "Search",
     OnChange:    func(v string) { query.Set(v) },
@@ -327,11 +327,11 @@ components.InputRow{
 }
 
 // A docked composer, with the bar treatment this widget has no opinion about.
-components.InputRow{
+comps.InputRow{
     Value: draft.Get(), Placeholder: "Mensagem…",
     OnChange: func(v string) { draft.Set(v) },
     OnSubmit: send,
-    Button:   components.Button{Label: "Enviar"},
+    Button:   comps.Button{Label: "Enviar"},
     Style: []core.StyleProp{
         core.BackgroundColor("#FFFFFF"),
         core.Padding(12),
@@ -385,13 +385,13 @@ A surface with optional header, body, and footer regions, on the theme's
 Card base (background, padding, radius, shadow).
 
 ```go
-components.Card{
+comps.Card{
     Title: "Recent activity",        // simple path: themed bold subtitle
     Body:  activityList,
     Footer: core.Text("Updated 2m ago"),
 }
 
-components.Card{
+comps.Card{
     Header: customHeaderRow,          // escape hatch — overrides Title
     Body:   content,
     Style:  []core.StyleProp{core.Margin(0)},
@@ -413,7 +413,7 @@ needs: a checkbox and a task with a delete button, an avatar and a name with
 a chevron, a label and an amount.
 
 ```go
-components.ListRow{
+comps.ListRow{
     Leading:  core.Checkbox(t.Done, func(v bool) { setDone(id, v) }),
     Title:    t.Title,
     Subtitle: "Due today",
@@ -467,8 +467,8 @@ Other notes:
     ```go
     core.List(
         core.AccessibilityRole(core.RoleListBox),       // the caller's half
-        components.ListRow{Title: "Weekly",  Selectable: true, Selected: plan == weekly},
-        components.ListRow{Title: "Monthly", Selectable: true, Selected: plan == monthly},
+        comps.ListRow{Title: "Weekly",  Selectable: true, Selected: plan == weekly},
+        comps.ListRow{Title: "Monthly", Selectable: true, Selected: plan == monthly},
     )
     ```
 
@@ -511,8 +511,8 @@ Other notes:
     ```go
     core.List(
         core.AccessibilityRole(core.RoleList),          // the caller's half
-        components.ListRow{Title: "Gospels", NestingLevel: 2},
-        components.ListRow{Title: "Matthew", NestingLevel: 3, Style: indent},
+        comps.ListRow{Title: "Gospels", NestingLevel: 2},
+        comps.ListRow{Title: "Matthew", NestingLevel: 3, Style: indent},
     )
     ```
 
@@ -549,8 +549,8 @@ state label. Defaults: theme Primary background, theme Background ink,
 caption-sized, stadium-shaped.
 
 ```go
-components.Badge{Text: "3"}
-components.Badge{Text: "beta", Color: "#7B1FA2"}
+comps.Badge{Text: "3"}
+comps.Badge{Text: "beta", Color: "#7B1FA2"}
 ```
 
 ### Variants
@@ -559,9 +559,9 @@ components.Badge{Text: "beta", Color: "#7B1FA2"}
 palette's status roles, so a status pill carries no literal hex:
 
 ```go
-components.Badge{Text: "Paid",     Variant: components.VariantSuccess}
-components.Badge{Text: "Expiring", Variant: components.VariantWarning}
-components.Badge{Text: "Failed",   Variant: components.VariantError}
+comps.Badge{Text: "Paid",     Variant: comps.VariantSuccess}
+comps.Badge{Text: "Expiring", Variant: comps.VariantWarning}
+comps.Badge{Text: "Failed",   Variant: comps.VariantError}
 ```
 
 | variant | fill |
@@ -604,7 +604,7 @@ holds no state; it renders `Selected` and reports taps through `OnTap`, so a
 chip group is one piece of parent state plus a loop.
 
 ```go
-components.Chip{
+comps.Chip{
     Label:    label,
     Selected: i == active,
     OnTap:    func() { onSelect(i) },
@@ -647,7 +647,7 @@ this field touches. *How much* quieter the other one is has two right answers:
 | `ProminenceLoud` | The chip's accent, in its on-light tone, as ink and as a 1px rule over a transparent fill — the outlined treatment. Right for a row of **suggestions** the reader is meant to reach into: grey pills over an empty amount field do not read as "tap one of these". |
 
 ```go
-components.Chip{Label: "$25", Prominence: components.ProminenceLoud,
+comps.Chip{Label: "$25", Prominence: comps.ProminenceLoud,
     Selected: cents == 2500, OnTap: func() { set(2500) }}
 ```
 
@@ -689,7 +689,7 @@ primary-coloured.
 
 `UnselectedStyle` wins where both are set — it replaces the treatment,
 `Prominence` picks between them. And because `SegmentedControl.Segment` is a
-whole `Chip`, `Segment: components.Chip{Prominence: components.ProminenceLoud}`
+whole `Chip`, `Segment: comps.Chip{Prominence: comps.ProminenceLoud}`
 carries it to every segment.
 
 The todoapp filter bar is built on Chip; `examples/todoapp/chip_migration_test.go`
@@ -709,7 +709,7 @@ Row (Gap)
 ```
 
 ```go
-components.SegmentedControl{
+comps.SegmentedControl{
     Labels:   []string{"All", "Active", "Done"},
     Selected: filter.Get(),
     OnSelect: func(i int) { filter.Set(i) },
@@ -742,12 +742,12 @@ defensive check: a scope picker that starts with no scope chosen says so with
 applies to all of them:
 
 ```go
-components.SegmentedControl{
+comps.SegmentedControl{
     Labels:    filterLabels,
     Selected:  active,
     OnSelect:  onSelect,
     KeyPrefix: "filter-",
-    Segment: components.Chip{
+    Segment: comps.Chip{
         Style:             []core.StyleProp{core.FontSize(13)},
         SelectedStyle:     []core.StyleProp{core.BackgroundColor(colorAccent)},
         AccessibilityHint: "Filters the task list",
@@ -779,11 +779,11 @@ already sets goes out as `aria-selected` instead of `aria-pressed`, because the
 web exporters pick the attribute from the role:
 
 ```go
-components.SegmentedControl{
+comps.SegmentedControl{
     Labels:   []string{"Sermons", "Articles"},
     Selected: tab.Get(), OnSelect: func(i int) { tab.Set(i) },
     Style:   []core.StyleProp{core.AccessibilityRole(core.RoleTabList)},
-    Segment: components.Chip{Style: []core.StyleProp{core.AccessibilityRole(core.RoleTab)}},
+    Segment: comps.Chip{Style: []core.StyleProp{core.AccessibilityRole(core.RoleTab)}},
 }
 ```
 
@@ -803,11 +803,11 @@ segment at it, which is the pair of references `core.Style` grew for exactly
 this shape:
 
 ```go
-components.SegmentedControl{
+comps.SegmentedControl{
     Labels:   []string{"Sermons", "Articles"},
     Selected: tab.Get(), OnSelect: func(i int) { tab.Set(i) },
     Style:   []core.StyleProp{core.AccessibilityRole(core.RoleTabList)},
-    Segment: components.Chip{Style: []core.StyleProp{
+    Segment: comps.Chip{Style: []core.StyleProp{
         core.AccessibilityRole(core.RoleTab),
         core.AccessibilityControls("library-panel"),
     }},
@@ -837,9 +837,9 @@ The hairline rule between rows and between sections. The zero value is the
 common case:
 
 ```go
-components.Separator{}
-components.Separator{Inset: 56}          // starts under the text, not the avatar
-components.Separator{Thickness: 0.5}     // sub-pixel hairline on a 2x display
+comps.Separator{}
+comps.Separator{Inset: 56}          // starts under the text, not the avatar
+comps.Separator{Thickness: 0.5}     // sub-pixel hairline on a 2x display
 ```
 
 - Always hidden from assistive technology. A rule carries no information,
@@ -875,9 +875,9 @@ The circular portrait: a remote image when there is one, initials on a
 colored disc when there is not.
 
 ```go
-components.Avatar{Src: user.PhotoURL, Name: user.Name}  // image, labelled
-components.Avatar{Name: "Ada Lovelace"}                 // "AL" on a disc
-components.Avatar{Name: "Ada Lovelace", Size: 64}
+comps.Avatar{Src: user.PhotoURL, Name: user.Name}  // image, labelled
+comps.Avatar{Name: "Ada Lovelace"}                 // "AL" on a disc
+comps.Avatar{Name: "Ada Lovelace", Size: 64}
 ```
 
 - Both branches are the same square with `BorderRadius = Size/2`, so `Size`
@@ -918,8 +918,8 @@ change that, though the underlying prop now exists:
 The determinate track-and-fill bar.
 
 ```go
-components.ProgressBar{Value: 0.45, AccessibilityLabel: "Upload"}
-components.ProgressBar{Value: done / total, Thickness: 10, Color: "#34C759"}
+comps.ProgressBar{Value: 0.45, AccessibilityLabel: "Upload"}
+comps.ProgressBar{Value: done / total, Thickness: 10, Color: "#34C759"}
 ```
 
 - `Value` is clamped to 0–1 rather than rejected (NaN reads as 0): a bar fed
@@ -970,7 +970,7 @@ parent rather than the nearest container.
 The label / input / hint-or-error frame around any input:
 
 ```go
-components.FormField{
+comps.FormField{
     Label: "Email",
     Hint:  "We never share it",
     Input: core.Input(email.Get(), "you@example.com", func(v string) { email.Set(v) }),
@@ -987,7 +987,7 @@ The widget renders feedback; it does not produce any. What fills `Error` is
 visible:
 
 ```go
-components.FormField{
+comps.FormField{
     Label:    "Email",
     Required: form.Required("email"),
     Hint:     "We never share it",
@@ -1014,9 +1014,9 @@ no error line of its own gets one — a checkbox row, for instance, with the
 `ListRow` title standing in for the label:
 
 ```go
-components.FormField{
+comps.FormField{
     Error: form.Error("terms"),
-    Input: components.ListRow{
+    Input: comps.ListRow{
         Leading: form.Checkbox("terms"),
         Title:   "I accept the terms of service",
     },
@@ -1029,7 +1029,7 @@ A collapsible section — tappable chevron header, content shown while
 expanded.
 
 ```go
-components.Accordion{
+comps.Accordion{
     Title:   "Advanced options",
     Content: advancedPanel,
     InitiallyExpanded: false,
@@ -1092,7 +1092,7 @@ widget will not stamp an outline entry named by a `Title` that is not on screen.
 
 ### It is now a shared shape
 
-The arrangement above is `components.disclosure`, and the collapsible
+The arrangement above is `comps.disclosure`, and the collapsible
 `GroupedList` band is built out of the same value. It moved there when the
 second consumer arrived: the argument took three attempts and both rejected
 ones looked correct in an export, so a hand-copied second version would have
@@ -1112,7 +1112,7 @@ disclosure.
 The named-field facade over `core.TabView`:
 
 ```go
-components.Tabs{
+comps.Tabs{
     Items:    []core.TabItem{core.Tab("Home", "🏠"), core.Tab("Search", "🔍")},
     Selected: tab.Get(),
     OnChange: func(i int) { tab.Set(i) },
@@ -1144,14 +1144,14 @@ headers, controlled sort, compact mode and client- or server-side paging.
 Load more / Loading… / error + Retry) are the footers.
 
 ```go
-components.DataTable[Entry]{
-    Columns: []components.Column[Entry]{
+comps.DataTable[Entry]{
+    Columns: []comps.Column[Entry]{
         {Title: "Title", Weight: 2, Text: title, Less: byTitle},
         {Title: "Speaker", Narrow: true, Text: speaker},
     },
     Rows: entries, Key: entryKey,
-    Sort: sortBy.Get(), OnSort: func(s components.Sort) { sortBy.Set(&s) },
-    Pagination: &components.Pagination{Page: page.Get(), PageSize: 20, OnChange: page.Set},
+    Sort: sortBy.Get(), OnSort: func(s comps.Sort) { sortBy.Set(&s) },
+    Pagination: &comps.Pagination{Page: page.Get(), PageSize: 20, OnChange: page.Set},
 }
 ```
 
@@ -1173,12 +1173,12 @@ within a few rows of the bottom, so the next page arrives without a tap
 (`GroupedList`).
 
 ```go
-components.GroupedList[Entry]{
+comps.GroupedList[Entry]{
     Items:         pager.Items,
     GroupBy:       byMonth,
     StickyHeaders: true,
     OnEndReached:  pager.LoadNext,   // the scroll
-    Footer: components.LoadMore{     // and the tap, and the states
+    Footer: comps.LoadMore{     // and the tap, and the states
         HasMore: pager.HasMore, Loading: pager.Loading,
         Err: pager.Err, OnLoadMore: pager.LoadNext},
 }
@@ -1211,13 +1211,13 @@ strength of auto-loading doing the work. The answer is composed from `Items`,
 the widget is the one that can give it:
 
 ```go
-list := components.GroupedList[Sermon]{
+list := comps.GroupedList[Sermon]{
     Items: pager.Items, GroupBy: byMonth, Collapse: shut,
     OnEndReached: pager.LoadMore,
 }
 // Shown when there is more to fetch *and* nothing is fetching it.
 if pager.HasMore && list.AutoLoadWithheld() {
-    list.Footer = components.LoadMore{HasMore: true, OnLoadMore: pager.LoadMore}
+    list.Footer = comps.LoadMore{HasMore: true, OnLoadMore: pager.LoadMore}
 }
 ```
 
@@ -1236,10 +1236,10 @@ the two facts only the widget knows:
 | `AutoLoadWithheld` | this run being shut is why the list has no edge sensor |
 
 ```go
-Header: func(g components.Group) core.View {
-    band := core.Row(components.CollapseBand{Collapse: shut, Group: g})
+Header: func(g comps.Group) core.View {
+    band := core.Row(comps.CollapseBand{Collapse: shut, Group: g})
     if g.AutoLoadWithheld {
-        band = core.Row(band, components.Badge{Text: "paused"})
+        band = core.Row(band, comps.Badge{Text: "paused"})
     }
     return band
 },
@@ -1305,11 +1305,11 @@ can shut. The state is the caller's:
 ```go
 shut := core.NewState(ctx, map[string]bool{})
 
-components.GroupedList[Entry]{
+comps.GroupedList[Entry]{
     Items: entries, GroupBy: byMonth,
-    Collapse: components.Collapse{
-        IsCollapsed: func(g components.Group) bool { return shut.Get()[g.Key] },
-        OnToggle: func(g components.Group) {
+    Collapse: comps.Collapse{
+        IsCollapsed: func(g comps.Group) bool { return shut.Get()[g.Key] },
+        OnToggle: func(g comps.Group) {
             next := maps.Clone(shut.Get())
             next[g.Key] = !next[g.Key]
             shut.Set(next)
@@ -1380,17 +1380,17 @@ disclosure alone, with no `Surface`, no padding and no count badge, for placing
 in a row of your own:
 
 ```go
-Header: func(g components.Group) core.View {
+Header: func(g comps.Group) core.View {
     return core.Row(
-        components.CollapseBand{
+        comps.CollapseBand{
             Collapse: shut, Group: g,
             // Your chrome, on the control — not on the Row, where a press
             // would do nothing. This is the same move the default band makes.
             ControlStyle: []core.StyleProp{
                 core.PaddingLeft(16), core.PaddingRight(8)},
         },
-        components.Avatar{Name: leader[g.Key]},
-        components.Badge{Text: strconv.Itoa(g.Count)},
+        comps.Avatar{Name: leader[g.Key]},
+        comps.Badge{Text: strconv.Itoa(g.Count)},
         core.PaddingRight(16),
     )
 },
@@ -1428,7 +1428,7 @@ The title strip at the top of a screen: an optional back affordance, the
 screen's name, and trailing actions.
 
 ```go
-components.AppBar{
+comps.AppBar{
     Title:    "Sermon",
     Subtitle: "22 March 2026",
     Actions:  []core.View{shareButton},
@@ -1469,9 +1469,9 @@ a failed refresh over content that is still good, an offline notice, a
 "Reconnecting…".
 
 ```go
-components.Banner{
+comps.Banner{
     Text:        "Could not refresh. Showing a saved copy.",
-    Variant:     components.VariantWarning,
+    Variant:     comps.VariantWarning,
     ActionLabel: "Retry", OnAction: reload,
     OnDismiss:   func() { notice.Set(false) },
 }
@@ -1513,9 +1513,9 @@ The centered placeholder for content a screen does not have — and for the
 other two moments with the same shape:
 
 ```go
-empty   components.EmptyState{Glyph: "📭", Title: "No messages yet"}
-busy    components.EmptyState{Title: "Loading sermons…"}
-failed  components.EmptyState{Glyph: "☁", Title: "Could not reach the server.",
+empty   comps.EmptyState{Glyph: "📭", Title: "No messages yet"}
+busy    comps.EmptyState{Title: "Loading sermons…"}
+failed  comps.EmptyState{Glyph: "☁", Title: "Could not reach the server.",
             ActionLabel: "Retry", OnAction: reload}
 ```
 
@@ -1531,7 +1531,7 @@ more row, so there it goes in `Hint` with `Title` left empty, usually with the
 padding brought in too:
 
 ```go
-tail  components.EmptyState{Hint: "Loading more…",
+tail  comps.EmptyState{Hint: "Loading more…",
           Style: []core.StyleProp{core.Padding(t.Spacing.SM)}}
 ```
 
@@ -1559,7 +1559,7 @@ and a clear button that appears once there is something to clear.
 ```go
 d := hooks.UseDebounce(ctx, 250*time.Millisecond)
 
-components.SearchField{
+comps.SearchField{
     Value: query.Get(),
     OnChange: func(s string) {
         query.Set(s)                      // now: the field is controlled
@@ -1595,7 +1595,7 @@ A run of `Chip`s that wraps onto as many lines as it needs — a filter bar,
 tags on an article, quick amounts on a form.
 
 ```go
-components.ChipStrip{Chips: []components.Chip{
+comps.ChipStrip{Chips: []comps.Chip{
     {Label: "All",      Selected: f == "",        OnTap: func() { filter.Set("") }},
     {Label: "Sermons",  Selected: f == "sermon",  OnTap: func() { filter.Set("sermon") }},
 }}
@@ -1614,7 +1614,7 @@ case — any number selected including none, a set that comes from data.
 that wraps:
 
 ```go
-components.ChipStrip{Scrollable: true, Chips: years}
+comps.ChipStrip{Scrollable: true, Chips: years}
 ```
 
 Wrapping is right for a set the reader should see all of — the tags on an
@@ -1639,9 +1639,9 @@ apart — nor does it implement the roving focus a toolbar implies.
 The grey placeholder that holds a screen's shape while its content loads.
 
 ```go
-components.Skeleton{}                                        // one line
-components.Skeleton{Lines: 3}                                // a paragraph
-components.Skeleton{Width: "44px", Height: 44, Radius: 999}  // an avatar
+comps.Skeleton{}                                        // one line
+comps.Skeleton{Lines: 3}                                // a paragraph
+comps.Skeleton{Width: "44px", Height: 44, Radius: 999}  // an avatar
 ```
 
 A stack's last bar is short (`LastLineWidth`, 60% by default), which is what
@@ -1679,9 +1679,9 @@ One figure with its name and, optionally, its movement.
 
 ```go
 core.Row(core.Gap(12),
-    components.StatTile{Label: "Attendance", Value: "412", Fill: true,
-        Delta: "+18 vs last week", DeltaVariant: components.VariantSuccess},
-    components.StatTile{Label: "Giving", Value: "MZN 42,750", Fill: true},
+    comps.StatTile{Label: "Attendance", Value: "412", Fill: true,
+        Delta: "+18 vs last week", DeltaVariant: comps.VariantSuccess},
+    comps.StatTile{Label: "Giving", Value: "MZN 42,750", Fill: true},
 )
 ```
 
@@ -1714,9 +1714,9 @@ A bearing drawn as a compass rose.
 h := hooks.UseHeading(ctx)   // starts the device compass, releases it on unmount
 
 switch {
-case !h.Received:  return components.Skeleton{}            // no reading yet
-case !h.Available: return components.EmptyState{Hint: h.Error}
-default:           return components.Compass{Heading: h.Magnetic, ShowDegrees: true}
+case !h.Received:  return comps.Skeleton{}            // no reading yet
+case !h.Available: return comps.EmptyState{Hint: h.Error}
+default:           return comps.Compass{Heading: h.Magnetic, ShowDegrees: true}
 }
 ```
 
@@ -1766,7 +1766,7 @@ A map image of one point, which hands off to the platform's own maps app when
 it is tapped.
 
 ```go
-components.StaticMap{
+comps.StaticMap{
     Lat: 38.7223, Lng: -9.1393,
     Label:  "Lisbon Baptist Church",
     Marker: true,
@@ -1784,8 +1784,8 @@ type with MapKit, osmdroid and Leaflet behind it, and it is the thing to build
 when an app needs to *interact* with a map.
 
 **The provider is required, and there is no default.** `Provider` is one
-function — `func(components.StaticMapArea) string` — and a widget with none
-renders its frame, no image, and `components.ConcernNoMapProvider` in debug
+function — `func(comps.StaticMapArea) string` — and a widget with none
+renders its frame, no image, and `comps.ConcernNoMapProvider` in debug
 mode. It used to default to `OSMStaticMap`, the OpenStreetMap community's
 keyless service, on the argument that a widget nobody can render without first
 buying something is a widget nobody evaluates. That service has been
@@ -1844,13 +1844,13 @@ yet renders a `Skeleton` rather than this widget.
 A live map over a set of points, opened at a view that contains all of them.
 
 ```go
-components.MapPanel{
-    Pins: []components.MapPin{
+comps.MapPanel{
+    Pins: []comps.MapPin{
         {ID: "hall", Lat: 38.7223, Lng: -9.1393, Title: "The hall"},
         {ID: "annex", Lat: 38.7251, Lng: -9.1402, Title: "The annex"},
     },
     OnPinTap: func(id string) { open(id) },
-    Caption:  components.PlaceCount(2),
+    Caption:  comps.PlaceCount(2),
 }
 ```
 
@@ -1858,7 +1858,7 @@ components.MapPanel{
 its whole case.** The *opening region*. `core.MapView` takes a `Region` and
 applies it only when it changes, which is correct and leaves the caller holding
 a question — what region shows all my points? — whose answer is a bounding box,
-a projection correction and a logarithm. `components.FitRegion(pins)` is that
+a projection correction and a logarithm. `comps.FitRegion(pins)` is that
 arithmetic, exported for a caller who wants it without the widget. Everything
 else here is arrangement: the pins as keyed children, the empty state for a set
 with nothing in it, an optional caption.
@@ -1905,7 +1905,7 @@ surface needs.
 ```go
 ref := core.UseEditorRef(ctx)      // the toolbar's address
 
-components.CodeEditor{
+comps.CodeEditor{
     Value:       src.Get(),
     OnChange:    src.Set,
     Language:    "go",             // or Highlighter: a highlight.Highlighter
@@ -2016,9 +2016,9 @@ Formatted text — bold, italics, headings, lists, quotes, links — whose value
 a document rather than a string.
 
 ```go
-bar := components.UseRichToolbar(ctx)
+bar := comps.UseRichToolbar(ctx)
 
-components.RichTextEditor{
+comps.RichTextEditor{
     Doc:         note.Get(),
     OnChange:    note.Set,
     Placeholder: "Write something…",
@@ -2051,7 +2051,7 @@ sheet is: presentation only, nothing an app would want to read.
 `RichToolbarDefault` is the list of buttons; `bar.Items` is a copy of it, so
 append to it, reorder it or replace it per screen. A `RichToolItem`'s `Command`
 is a core `Edit*` constant or one of the two builders, plus one sentinel:
-`components.RichToolLink` opens the link prompt, because a URL has to be typed
+`comps.RichToolLink` opens the link prompt, because a URL has to be typed
 before there is a command to send.
 
 The strip carries no `core.RoleToolbar`, and that is deliberate: a widget in
@@ -2117,7 +2117,7 @@ Each host does genuinely different work, and it is worth knowing which:
 
 ## Writing your own
 
-The package doc (`components/doc.go`) is the reference for the idiom. In
+The package doc (`comps/doc.go`) is the reference for the idiom. In
 short:
 
 1. A struct with named fields; `core.View`-typed fields for slots.

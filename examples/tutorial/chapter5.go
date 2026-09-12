@@ -5,7 +5,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/rohanthewiz/grmob/components"
+	"github.com/rohanthewiz/grmob/comps"
 	"github.com/rohanthewiz/grmob/core"
 	"github.com/rohanthewiz/grmob/forms"
 )
@@ -59,7 +59,7 @@ func lessonFirstForm() Lesson {
 
 			return core.Column(
 				core.Gap(14),
-				prose("components.FormField has always had an Error slot, and package forms is "+
+				prose("comps.FormField has always had an Error slot, and package forms is "+
 					"what fills it. A whole form is four calls: declare the fields and their rules "+
 					"in a Spec handed to UseForm; frame each input in a FormField; bind the input "+
 					"with a bound builder, which writes the field name once instead of three times "+
@@ -74,7 +74,7 @@ func lessonFirstForm() Lesson {
     },
 })
 
-components.FormField{
+comps.FormField{
     Label:    "Email",
     Required: form.Required("email"),  // derived from the rules, not declared
     Hint:     "We never share it",
@@ -82,7 +82,7 @@ components.FormField{
     Input:    form.Input("email", "you@example.com"),
 }
 
-components.Button{Label: "Sign up", OnTap: form.OnSubmit(create)}`),
+comps.Button{Label: "Sign up", OnTap: form.OnSubmit(create)}`),
 				prose("UseForm is a hook — it consumes exactly one slot on this lesson's context, "+
 					"so the rules of hooks apply: unconditional, stable position, every pass. What "+
 					"the slot stores is only the values and a few facts (touched, blurred, "+
@@ -92,20 +92,20 @@ components.Button{Label: "Sign up", OnTap: form.OnSubmit(create)}`),
 					"be stale by construction. And because the spec is re-read each pass, a rule "+
 					"may close over live state and take effect next pass with no re-registration."),
 				demoPanel("Tap RSVP while everything is empty — the failed submit is what turns the explanations on.",
-					components.FormField{
+					comps.FormField{
 						Label:    "Name",
 						Required: form.Required("name"),
 						Error:    form.Error("name"),
 						Input:    form.Input("name", "June Gopher"),
 					},
-					components.FormField{
+					comps.FormField{
 						Label:    "Email",
 						Required: form.Required("email"),
 						Hint:     "Used once, for the invite",
 						Error:    form.Error("email"),
 						Input:    form.Input("email", "june@burrow.dev"),
 					},
-					components.Button{
+					comps.Button{
 						Label: "RSVP",
 						// Trimmed, not raw: Required trims before deciding a
 						// field is empty, so a value that passed validation may
@@ -216,7 +216,7 @@ func lessonRules() Lesson {
 					checkRow("Required", reqOn),
 					checkRow("MinLen(5)", minOn),
 					checkRow("Pattern: lowercase only", patOn),
-					components.FormField{
+					comps.FormField{
 						Label:    "Handle",
 						Required: form.Required("handle"),
 						Error:    form.Error("handle"),
@@ -308,14 +308,14 @@ core.Input(form.Value("email"), "you@example.com",
 					"can happen while the button is disabled. Let the submit run and fail; "+
 					"failing is the event that turns the explanations on."),
 				demoPanel("Pick a policy, type an unfinished address, leave the field, submit — watch when it speaks.",
-					components.SegmentedControl{
+					comps.SegmentedControl{
 						Style:     segWrap,
 						Labels:    revealNames,
 						Selected:  policy.Get(),
 						OnSelect:  func(i int) { policy.Set(i) },
 						KeyPrefix: "reveal-",
 					},
-					components.FormField{
+					comps.FormField{
 						Label:    "Email",
 						Required: form.Required("email"),
 						Hint:     "Errors replace this hint when revealed",
@@ -333,15 +333,15 @@ core.Input(form.Value("email"), "you@example.com",
 					),
 					core.Row(
 						core.Gap(8),
-						components.Button{
+						comps.Button{
 							Label: "Check the form",
 							// A nil handler still records the attempt — which
 							// is the half of Submit this lesson is about.
 							OnTap: form.OnSubmit(nil),
 						},
-						components.Button{
+						comps.Button{
 							Label:    "Start over",
-							Emphasis: components.EmphasisOutlined,
+							Emphasis: comps.EmphasisOutlined,
 							OnTap:    func() { form.Reset() },
 						},
 					),
@@ -434,26 +434,26 @@ form.SetErrors(map[string]string{
 					"closed the keyboard on the field, so the message alone would leave the user "+
 					"to find it again."),
 				demoPanel("taken@example.com already has an account — try claiming it.",
-					components.FormField{
+					comps.FormField{
 						Label:    "Email",
 						Required: form.Required("email"),
 						Error:    form.Error("email"),
 						Input:    form.Input("email", "gopher@burrow.dev", core.FocusTarget(emailRef)),
 					},
-					components.FormField{
+					comps.FormField{
 						Label:    "Password",
 						Required: form.Required("password"),
 						Hint:     "At least 8 characters",
 						Error:    form.Error("password"),
 						Input:    form.Password("password", "choose a password"),
 					},
-					components.FormField{
+					comps.FormField{
 						Label:    "Confirm password",
 						Required: form.Required("confirm"),
 						Error:    form.Error("confirm"),
 						Input:    form.Password("confirm", "type it again"),
 					},
-					components.Button{
+					comps.Button{
 						Label: "Claim address",
 						OnTap: form.OnSubmit(func(v forms.Values) {
 							addr := v.Trimmed("email")
@@ -538,7 +538,7 @@ form.Reset()  // back to the declaration: values, touched, submitted, errors`),
 					"pass's spec, which is also the prefill trick for data that arrives late: "+
 					"render the loaded values as Initial and Reset once they land."),
 				demoPanel("The quantity field is free text — feed it \"12x\" and watch Range complain while Int reports (0, false).",
-					components.FormField{
+					comps.FormField{
 						Label:    "Quantity",
 						Required: form.Required("quantity"),
 						Hint:     "1–12 per order",
@@ -549,13 +549,13 @@ form.Reset()  // back to the declaration: values, touched, submitted, errors`),
 					// The checkbox's label belongs to the ListRow, which is why
 					// this field carries no FormField label (and no marker) —
 					// the signup example's terms row, same reasoning.
-					components.ListRow{
+					comps.ListRow{
 						Leading: form.Checkbox("gift"),
 						Title:   "Gift-wrap the shipment",
 					},
 					core.Row(
 						core.Gap(8),
-						components.Button{
+						comps.Button{
 							Label: "Place order",
 							OnTap: form.OnSubmit(func(v forms.Values) {
 								n, _ := v.Int("quantity")
@@ -566,9 +566,9 @@ form.Reset()  // back to the declaration: values, touched, submitted, errors`),
 								placed.Set(order)
 							}),
 						},
-						components.Button{
+						comps.Button{
 							Label:    "Start over",
-							Emphasis: components.EmphasisOutlined,
+							Emphasis: comps.EmphasisOutlined,
 							OnTap: func() {
 								form.Reset()
 								placed.Set("")
@@ -638,7 +638,7 @@ func lessonPicker() Lesson {
 					"asking someone to choose a shipping speed before you will let them in is a "+
 					"choice, and so is opening on the cheapest one."),
 				demoPanel("Leave the seat picker without choosing: under RevealOnBlur a text field would complain, and this one does not.",
-					components.FormField{
+					comps.FormField{
 						Label: "Cabin",
 						Hint:  "Opens on its Initial",
 						Error: form.Error("class"),
@@ -648,7 +648,7 @@ func lessonPicker() Lesson {
 							{Value: "First"},
 						}),
 					},
-					components.FormField{
+					comps.FormField{
 						Label:    "Seat",
 						Required: form.Required("seat"),
 						Error:    form.Error("seat"),
@@ -666,7 +666,7 @@ func lessonPicker() Lesson {
 					},
 					caption(fmt.Sprintf("class = %q   seat = %q",
 						form.Values()["class"], form.Values()["seat"])),
-					components.Button{
+					comps.Button{
 						Label: "Book it",
 						OnTap: form.OnSubmit(func(v forms.Values) {
 							booked.Set(fmt.Sprintf("%s, %s seat", v["class"], v["seat"]))

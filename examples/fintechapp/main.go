@@ -3,7 +3,7 @@ package main
 import (
 	"os"
 
-	"github.com/rohanthewiz/grmob/components"
+	"github.com/rohanthewiz/grmob/comps"
 	"github.com/rohanthewiz/grmob/core"
 	"github.com/rohanthewiz/grmob/htmlout"
 )
@@ -38,7 +38,7 @@ func App(ctx *core.Context) core.View {
 	// a container, and Spacer stays the right tool exactly when the gaps
 	// differ. That is the whole rule: Gap for uniform runs, Spacer for the
 	// deliberate exception.
-	return components.Screen{
+	return comps.Screen{
 		Scroll: true,
 		Children: []core.View{
 			HeaderSection(ctx),
@@ -65,9 +65,9 @@ func HeaderSection(ctx *core.Context) core.View {
 	)
 }
 
-// BalanceCard stays on core.Card rather than components.Card. The component
+// BalanceCard stays on core.Card rather than comps.Card. The component
 // earns its keep when a card has distinct header/body/footer regions; this one
-// is a caption above a figure, and components.Card would render the caption in
+// is a caption above a figure, and comps.Card would render the caption in
 // the theme's *Subtitle* role — visibly wrong for what is a caption. Reaching
 // for a component that does not fit teaches the wrong lesson.
 func BalanceCard(ctx *core.Context) core.View {
@@ -86,19 +86,19 @@ func ActionsSection(ctx *core.Context) core.View {
 	return core.Row(
 		core.Gap(12),
 		// The local MaterialButton helper this replaces took a background and
-		// a matching foreground per call — the two obligations components.Button
+		// a matching foreground per call — the two obligations comps.Button
 		// removes. "Transfer" is the primary action and takes the theme's
 		// Button base untouched.
-		components.Button{Label: "Transfer", OnTap: func() {}},
+		comps.Button{Label: "Transfer", OnTap: func() {}},
 		// "Recharge" is the secondary action, and its treatment is the one
 		// case the semantic variants deliberately do not cover: Secondary is a
 		// brand slot, not a status role, so there is no VariantSecondary to
 		// ask for. Style is the documented escape hatch — an outlined button
 		// re-tinted to the brand's second color.
-		components.Button{
+		comps.Button{
 			Label:    "Recharge",
 			OnTap:    func() {},
-			Emphasis: components.EmphasisOutlined,
+			Emphasis: comps.EmphasisOutlined,
 			Style: []core.StyleProp{
 				core.TextColor(t.Colors.Secondary),
 				core.BorderColor(t.Colors.Secondary),
@@ -122,20 +122,20 @@ func TransactionList(ctx *core.Context) core.View {
 			// unusable anywhere the spacing differed. Gap is what replaces
 			// that pattern.
 			core.Gap(12),
-			TransactionItem("Farmácia", "-750 MZN", components.VariantError),
+			TransactionItem("Farmácia", "-750 MZN", comps.VariantError),
 			// Credits take Success, not Secondary. They read the same under
 			// the old palette only by accident: Secondary is a *brand* slot a
 			// theme may set to any hue, so a rebrand to magenta would have
 			// turned "money in" magenta. Success carries the meaning.
-			TransactionItem("Transferência recebida", "+10,000 MZN", components.VariantSuccess),
-			TransactionItem("Recarga de saldo", "+3,500 MZN", components.VariantSuccess),
+			TransactionItem("Transferência recebida", "+10,000 MZN", comps.VariantSuccess),
+			TransactionItem("Recarga de saldo", "+3,500 MZN", comps.VariantSuccess),
 		),
 	)
 }
 
-// TransactionItem is built from two components: components.ListRow supplies
+// TransactionItem is built from two components: comps.ListRow supplies
 // the label-left / amount-right frame, and the amount itself is a
-// components.Badge — a non-interactive status pill rather than a hand-styled
+// comps.Badge — a non-interactive status pill rather than a hand-styled
 // Text. Badge owns the pill shape (an oversized radius that clamps to a
 // stadium at any height) and the padding, so this example is left expressing
 // only what is actually its subject: which status each row carries.
@@ -153,10 +153,10 @@ func TransactionList(ctx *core.Context) core.View {
 // fill comes from the palette's status role and the ink is picked by contrast
 // against it — so this function is left expressing only its actual subject,
 // which is that a debit is an error and a credit is a success.
-func TransactionItem(label, amount string, variant components.Variant) core.View {
-	return components.ListRow{
+func TransactionItem(label, amount string, variant comps.Variant) core.View {
+	return comps.ListRow{
 		Title:    label,
-		Trailing: components.Badge{Text: amount, Variant: variant},
+		Trailing: comps.Badge{Text: amount, Variant: variant},
 	}
 }
 
@@ -187,7 +187,7 @@ func MaterialTheme() *core.Theme {
 		Spacing: core.SpacingScale{XS: 4, SM: 8, MD: 16, LG: 24, XL: 32},
 		// This theme had no Components block at all, which stayed invisible
 		// only because every widget in the app was hand-styled at the call
-		// site. Moving the action row onto components.Button made it visible
+		// site. Moving the action row onto comps.Button made it visible
 		// immediately: the widget's zero value deliberately applies *nothing*
 		// so a theme's own Button base carries the look, and here there was no
 		// base — so the button rendered with no style whatsoever.

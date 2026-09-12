@@ -6,7 +6,7 @@
 //
 // core.ColorPalette.ControlBorder has a 3:1 floor under it (WCAG 1.4.11), and
 // a floor is meaningless without the other half of the pair: the fill the
-// boundary is drawn *on*. The census in components/variant_test.go crosses the
+// boundary is drawn *on*. The census in comps/variant_test.go crosses the
 // tone with every such fill, and wasm/verify/browser.mjs paints the same pairs
 // in a real browser and measures what Chrome actually painted. Both need the
 // same list, and a list written out twice proves only that one person made the
@@ -47,7 +47,7 @@
 //
 // # The contrast arithmetic
 //
-// Luminance and Ratio were in components/variant.go, where Variant.inkOn uses
+// Luminance and Ratio were in comps/variant.go, where Variant.inkOn uses
 // them to pick the readable ink for a fill. They moved here when a second
 // consumer arrived that could not reach them: wasm/verify pins a table of
 // (tone, backdrop, ratio) into browser.mjs so a real Chrome paints the pairs
@@ -56,7 +56,7 @@
 // least able to survive, since both copies would look right and only one would
 // be.
 //
-// components/variant.go keeps its own spellings as one-line forwarders, so
+// comps/variant.go keeps its own spellings as one-line forwarders, so
 // every call site and every test that named them is untouched.
 //
 // It lives under internal/ for the reason menufixture does: it is not part of
@@ -75,7 +75,7 @@ import (
 // Backdrop is one fill a control boundary can land on, with the name a
 // failure reports it by and the reason it is in the list at all.
 //
-// What is the census key — knownBoundaryShortfalls in components/variant_test.go
+// What is the census key — knownBoundaryShortfalls in comps/variant_test.go
 // is keyed by "<theme>/<What>" — so the spelling is part of the contract and
 // not a label. The component rows are "<field> fill", which is what the
 // hand-written list said before this package derived them, so the existing
@@ -247,10 +247,10 @@ func Backdrops(theme *core.Theme) []Backdrop {
 		{"Background", theme.Colors.Background,
 			"the page. Every screen is drawn on it, so every control that is not " +
 				"inside a Card, a panel or a field is drawn on it too — this is the " +
-				"pair a bare components.Input on a Screen produces"},
+				"pair a bare comps.Input on a Screen produces"},
 		{"Surface", theme.Colors.Surface,
-			"the raised fill: a quiet components.Chip's interior, a " +
-				"components.GroupHeader band, a Card in the themes that give the two " +
+			"the raised fill: a quiet comps.Chip's interior, a " +
+				"comps.GroupHeader band, a Card in the themes that give the two " +
 				"the same hex. The quiet Chip is the one that decided " +
 				"core.ColorPalette.ControlBorder's own value — its ring is drawn on " +
 				"this fill and on the page at once"},

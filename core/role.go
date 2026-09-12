@@ -259,7 +259,7 @@ const (
 // anything. A list is *content* and a listbox is a *control*, and the state
 // only exists on the control side.
 //
-// components.ListRow is what asked. Its selected row spelled the state into
+// comps.ListRow is what asked. Its selected row spelled the state into
 // its own accessible name (", selected") because both other doors were shut:
 // `listitem` cannot carry the state, and `button` — which carries the
 // neighbouring `aria-pressed` — would make the row a foreign child of any
@@ -308,7 +308,7 @@ const (
 // inside a `tree`, which supports aria-level and aria-selected together — and
 // it is deliberately not here, because a tree is a third pattern with its own
 // expansion state and its own keyboard contract, and nothing in this
-// repository has one. See components.ListRow.Selectable, which is where the
+// repository has one. See comps.ListRow.Selectable, which is where the
 // two fields meet and where the precedence is written down.
 const (
 	RoleListBox Role = "listbox"
@@ -454,7 +454,7 @@ const (
 // RoleImg is for a node that is a *picture* — something whose meaning is
 // carried by its arrangement rather than by any text inside it, and which
 // therefore needs one text alternative standing in for the whole thing.
-// components.Compass is the case that asked for it: a rose read in tree order
+// comps.Compass is the case that asked for it: a rose read in tree order
 // is "N W E S" whatever direction it is pointing, so the widget hides its
 // parts and speaks once.
 //
@@ -489,7 +489,7 @@ const (
 //
 // # What it closes
 //
-// components.ProgressBar had no way to say it was a progress bar or how far
+// comps.ProgressBar had no way to say it was a progress bar or how far
 // along it was, so it said both into its accessible *name*: "Upload, 45
 // percent". That is the move Chip's ", selected" suffix was deleted for — a
 // name is meant to be stable, so a bar ticking from 44 to 45 re-announced the
@@ -535,7 +535,7 @@ const RoleProgressBar Role = "progressbar"
 //
 // RoleImg was the first door out and it is the wrong shape for most rows. It
 // says the node is a *picture* whose parts should be hidden behind one
-// alternative, which is true of components.Compass and false of a list row, a
+// alternative, which is true of comps.Compass and false of a list row, a
 // disclosure header or a stat tile — all of which want their contents read as
 // well as their name.
 //
@@ -546,7 +546,7 @@ const RoleProgressBar Role = "progressbar"
 //	           entries in a screen's table of contents.
 //	button     claims a control, makes its children presentational (a heading
 //	           inside one stops being a heading), and is a foreign child of any
-//	           list around it — see components.ListRow, which turned it down
+//	           list around it — see comps.ListRow, which turned it down
 //	           for exactly that.
 //	group      "a set of user interface objects", nameable, not a landmark,
 //	           and with no required children and no presentational-children

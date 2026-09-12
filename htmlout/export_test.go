@@ -1039,7 +1039,7 @@ func TestSelectedStateBecomesTheAttributeTheRoleCallsFor(t *testing.T) {
 
 // The one node type that needs no role, because it already is one.
 //
-// components.Chip renders as a core.Button and sets no AccessibilityRole — the
+// comps.Chip renders as a core.Button and sets no AccessibilityRole — the
 // node type carries it, which is the rule core/role.go states for RoleButton
 // and RoleDialog. Without this arm the widget that most wants aria-pressed
 // would be the single node that could not have it, and nothing would say so:
@@ -1528,7 +1528,7 @@ func TestCarriesOwnRoleAgreesWithTheExport(t *testing.T) {
 // The fourth pair — the DOM targets — used the same guard and got the negative
 // case wrong: emitting nothing leaves the user-agent stylesheet in charge, and
 // for a <button> that stylesheet draws a 2px outset rule. See borderResetTypes
-// in tag.go, and components.Button's EmphasisGhost, which is documented as
+// in tag.go, and comps.Button's EmphasisGhost, which is documented as
 // "EmphasisOutlined without the rule" and had one on the web.
 
 func TestButtonWithNoBorderIsTalkedOutOfTheBrowsers(t *testing.T) {

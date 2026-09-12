@@ -10,7 +10,7 @@ package core
 //	    core.Height("240px"),
 //	)
 //
-// components.CodeEditor is the widget over it — it runs the highlighter, wires
+// comps.CodeEditor is the widget over it — it runs the highlighter, wires
 // a toolbar and picks a scheme from the theme — and is what application code
 // should reach for. This is the primitive it is built on.
 //

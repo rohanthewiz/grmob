@@ -3,7 +3,7 @@ package tutorial
 import (
 	"fmt"
 
-	"github.com/rohanthewiz/grmob/components"
+	"github.com/rohanthewiz/grmob/comps"
 	"github.com/rohanthewiz/grmob/core"
 )
 
@@ -81,8 +81,8 @@ func (t *tutorial) Home(ctx *core.Context) core.View {
 
 	// No Padding(0) here any more: the scaffold drops its own inset when its
 	// whole content is a scrolling page, so the List insets this screen once.
-	// See components.Screen, "A scrolling child is the page".
-	return components.Screen{
+	// See comps.Screen, "A scrolling child is the page".
+	return comps.Screen{
 		Fill:     true,
 		Children: []core.View{core.List(page...)},
 	}
@@ -104,7 +104,7 @@ func progressCard(opened, total int) core.View {
 	return core.Card(
 		core.Gap(8),
 		caption(fmt.Sprintf("%d of %d lessons opened", opened, total)),
-		components.ProgressBar{
+		comps.ProgressBar{
 			Value:              float64(opened) / float64(total),
 			AccessibilityLabel: "Tutorial progress",
 		},
@@ -157,12 +157,12 @@ func (t *tutorial) chapterCardViews(ctx *core.Context) []core.View {
 			core.Row(
 				core.AlignItemsProp(core.AlignItemsCenter),
 				core.Gap(8),
-				components.CollapseBand{
-					Collapse: components.Collapse{
-						IsCollapsed: func(g components.Group) bool { return !open[chapter] },
-						OnToggle:    func(g components.Group) { t.setExpanded(chapter, !open[chapter]) },
+				comps.CollapseBand{
+					Collapse: comps.Collapse{
+						IsCollapsed: func(g comps.Group) bool { return !open[chapter] },
+						OnToggle:    func(g comps.Group) { t.setExpanded(chapter, !open[chapter]) },
 					},
-					Group: components.Group{Key: fmt.Sprintf("chapter-%d", ci), Label: label},
+					Group: comps.Group{Key: fmt.Sprintf("chapter-%d", ci), Label: label},
 					// The tutorial's own title typing, so collapsing a card did
 					// not also restyle it: a CollapseBand with no Content draws
 					// the label in Caption weight and secondary ink, which is
@@ -236,7 +236,7 @@ func (t *tutorial) lessonRow(ctx *core.Context, e lessonEntry) core.View {
 	entry := e // capture a copy: the range variable's fields feed closures below
 	var trailing core.View
 	if t.visited.Get()[entry.ID] {
-		trailing = components.Badge{Text: "opened", Variant: components.VariantSuccess}
+		trailing = comps.Badge{Text: "opened", Variant: comps.VariantSuccess}
 	} else {
 		trailing = core.ComponentFunc(func(ctx *core.Context) *core.Node {
 			return core.Text("›",
@@ -254,7 +254,7 @@ func (t *tutorial) lessonRow(ctx *core.Context, e lessonEntry) core.View {
 		})
 	}
 
-	return core.Keyed("lesson-"+entry.ID, components.ListRow{
+	return core.Keyed("lesson-"+entry.ID, comps.ListRow{
 		Leading: core.ComponentFunc(func(ctx *core.Context) *core.Node {
 			return core.Text(entry.ID,
 				core.TextColor(ctx.Theme().Colors.Primary),

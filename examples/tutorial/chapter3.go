@@ -5,7 +5,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/rohanthewiz/grmob/components"
+	"github.com/rohanthewiz/grmob/comps"
 	"github.com/rohanthewiz/grmob/core"
 	"github.com/rohanthewiz/grmob/hooks"
 )
@@ -144,7 +144,7 @@ hooks.UseTimeout(ctx, func() {
 						}),
 						caption("Nothing yet — the timer is pending…"),
 					),
-					components.Button{Label: "Poke a render", Emphasis: components.EmphasisOutlined,
+					comps.Button{Label: "Poke a render", Emphasis: comps.EmphasisOutlined,
 						OnTap: func() { pokes.Set(pokes.Get() + 1) }},
 					caption(fmt.Sprintf("renders poked: %d — the timeout stays fired-once regardless", pokes.Get())),
 				),
@@ -229,7 +229,7 @@ hooks.UseEffect(ctx, func() {
 					"the profile trails it by a simulated network delay — and re-picking the same "+
 					"gopher re-renders without re-fetching, because the dep didn't change."),
 				demoPanel("The selection is sync state; the profile arrives async, from the effect.",
-					components.SegmentedControl{
+					comps.SegmentedControl{
 						Style:     segWrap,
 						Labels:    gopherNames,
 						Selected:  sel.Get(),
@@ -322,7 +322,7 @@ func lessonMemo() Lesson {
 							core.Text(strings.Join(matches, " · "), core.FontWeight(core.Bold)),
 						),
 					),
-					components.Button{Label: "Re-render (changes no dep)", Emphasis: components.EmphasisGhost,
+					comps.Button{Label: "Re-render (changes no dep)", Emphasis: comps.EmphasisGhost,
 						OnTap: func() { forced.Set(forced.Get() + 1) }},
 					caption(fmt.Sprintf("compute() calls: %d · forced re-renders: %d", meter.Get().n, forced.Get())),
 				),
@@ -387,7 +387,7 @@ func lessonReducer() Lesson {
         return s
     }, scoreState{})
 
-components.Button{Label: "+5", OnTap: func() { dispatch(scorePlusFive) }}`),
+comps.Button{Label: "+5", OnTap: func() { dispatch(scorePlusFive) }}`),
 				prose("The draw over hand-rolled s.Set(reduce(s.Get(), a)) is atomicity: the "+
 					"reducer runs under the hook's own lock, so two dispatches racing in from "+
 					"different goroutines both land instead of one overwriting the other. Here "+
@@ -404,11 +404,11 @@ components.Button{Label: "+5", OnTap: func() { dispatch(scorePlusFive) }}`),
 					caption(fmt.Sprintf("%d moves", score.moves)),
 					core.Row(
 						core.Gap(8),
-						components.Button{Label: "+1",
+						comps.Button{Label: "+1",
 							OnTap: func() { dispatch(scorePlusOne) }},
-						components.Button{Label: "+5",
+						comps.Button{Label: "+5",
 							OnTap: func() { dispatch(scorePlusFive) }},
-						components.Button{Label: "Reset", Emphasis: components.EmphasisGhost,
+						comps.Button{Label: "Reset", Emphasis: comps.EmphasisGhost,
 							OnTap: func() { dispatch(scoreReset) }},
 					),
 				),

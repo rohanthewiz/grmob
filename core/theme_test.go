@@ -263,7 +263,7 @@ func TestOnLightTonesInheritTheRoleFallbacks(t *testing.T) {
 }
 
 // OnLight is the reverse lookup, for a widget holding a colour rather than a
-// role — components.Chip's accent, read off the theme's Button base.
+// role — comps.Chip's accent, read off the theme's Button base.
 func TestOnLightResolvesAColourToItsRolesTone(t *testing.T) {
 	p := DefaultTheme.Colors
 
@@ -358,7 +358,7 @@ func TestBundledFieldFramesAreTheControlBorderRole(t *testing.T) {
 // Each bundled theme's Button base is filled with its own Primary role.
 //
 // Components.Button is the one place a palette states a fill and an ink
-// together, and components.declaredInk reads that pair back as "the ink for
+// together, and comps.declaredInk reads that pair back as "the ink for
 // this fill" — so every widget that paints Colors.Primary (Badge, Avatar,
 // ProgressBar, Calendar's selected day, Chip's accent) gets its label colour
 // from this base, and gets it only while the two hexes match.

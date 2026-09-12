@@ -16,7 +16,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/rohanthewiz/grmob/components"
+	"github.com/rohanthewiz/grmob/comps"
 	"github.com/rohanthewiz/grmob/core"
 	"github.com/rohanthewiz/grmob/mobile"
 )
@@ -63,7 +63,7 @@ const (
 	// role, which is the same #E5E5EA this app used to spell out by hand.
 	//
 	// No danger constant either. The delete and bulk-clear buttons used to
-	// pin #B3261E; they now ask for components.VariantError and take the
+	// pin #B3261E; they now ask for comps.VariantError and take the
 	// theme's Error role. That *is* a visible change — white on #B3261E
 	// became the contrast-picked ink on #FF3B30 — and it is the point: the
 	// app's destructive red is now the same red its error Badge would use,
@@ -201,10 +201,10 @@ func App(ctx *core.Context) core.View {
 		// picks both the fill and a legible ink from the palette. What this
 		// replaced spelled the pair out by hand, in a different shape from the
 		// delete button that meant the same thing.
-		clearButton = components.Button{
+		clearButton = comps.Button{
 			Label:   "Clear completed",
 			OnTap:   clearDone,
-			Variant: components.VariantError,
+			Variant: comps.VariantError,
 			Style:   []core.StyleProp{core.FontSize(13)},
 		}
 	}
@@ -218,7 +218,7 @@ func App(ctx *core.Context) core.View {
 	//
 	// Scroll stays false for the same reason chat's does — the List is
 	// virtualized and scrolls itself.
-	return components.Screen{
+	return comps.Screen{
 		Fill: true,
 		Gap:  12,
 		Children: []core.View{
@@ -233,12 +233,12 @@ func App(ctx *core.Context) core.View {
 			// since the button inherits OnSubmit rather than repeating it.
 			// Gap is unset: the widget defaults to the theme's SM step,
 			// which is the 8 this row used to spell out.
-			components.InputRow{
+			comps.InputRow{
 				Value:       draft.Get(),
 				Placeholder: "What needs doing?",
 				OnChange:    func(v string) { draft.Set(v) },
 				OnSubmit:    addTodo,
-				Button: components.Button{
+				Button: comps.Button{
 					Label:             "Add",
 					AccessibilityHint: "Adds the task typed in the field",
 				},
@@ -250,7 +250,7 @@ func App(ctx *core.Context) core.View {
 			// the decorative-only accessibility treatment — the tint by
 			// reading the theme's Border role, so this app's rule retints with
 			// a theme swap instead of staying pinned to a local constant.
-			components.Separator{},
+			comps.Separator{},
 
 			// The list is virtualized (LazyColumn / LazyVStack natively), so
 			// it stays cheap even with many rows. Rows are keyed by todo ID:
@@ -277,7 +277,7 @@ func App(ctx *core.Context) core.View {
 			// node for the absent button at all, where the core.If this
 			// replaced emitted a real (empty) child for the reconciler to
 			// diff on every pass.
-			components.ListRow{
+			comps.ListRow{
 				Content: core.Text(fmt.Sprintf("%d %s left", remaining, itemWord), core.UseStyle(core.Style{
 					FontSize:  13,
 					TextColor: colorDim,
@@ -288,7 +288,7 @@ func App(ctx *core.Context) core.View {
 	}
 }
 
-// filterBar is a components.SegmentedControl. The widget owns the row, the
+// filterBar is a comps.SegmentedControl. The widget owns the row, the
 // 8pt gap, the per-segment key, and the index comparison that decides which
 // chip is selected; what stays here is what is actually this app's — the
 // palette override and the sentence a screen reader reads.
@@ -297,14 +297,14 @@ func App(ctx *core.Context) core.View {
 // so the app's own enum is the control's Selected value with no mapping in
 // between.
 func filterBar(active int, onSelect func(int)) core.View {
-	return components.SegmentedControl{
+	return comps.SegmentedControl{
 		Labels:    filterLabels,
 		Selected:  active,
 		OnSelect:  onSelect,
 		KeyPrefix: "filter-",
 		// The template: everything every chip shares. Label, Selected and
 		// OnTap are the control's to fill in.
-		Segment: components.Chip{
+		Segment: comps.Chip{
 			Style: []core.StyleProp{
 				core.FontSize(13),
 				core.Transition(200, core.EaseInOut),
@@ -333,7 +333,7 @@ func filterBar(active int, onSelect func(int)) core.View {
 // constraint explained on App. Completion is conveyed by dimming the title;
 // the Style struct has no strikethrough field yet.
 //
-// It is a components.ListRow: checkbox leading, title in the growing middle,
+// It is a comps.ListRow: checkbox leading, title in the growing middle,
 // delete button trailing. The widget owns what used to be hand-rolled here —
 // the FlexGrow(1) that pins the ✕ to the trailing edge, and the vertical
 // centring of a checkbox against a text line.
@@ -353,7 +353,7 @@ func todoRow(t Todo, setDone func(int, bool), remove func(int)) core.View {
 	// visible slice is rebuilt under a different filter.
 	id := t.ID
 
-	return core.Keyed(fmt.Sprintf("todo-%d", t.ID), components.ListRow{
+	return core.Keyed(fmt.Sprintf("todo-%d", t.ID), comps.ListRow{
 		Leading: core.Checkbox(t.Done, func(v bool) { setDone(id, v) }),
 		Content: core.Text(t.Title, core.UseStyle(core.Style{
 			FontSize:  16,
@@ -363,10 +363,10 @@ func todoRow(t Todo, setDone func(int, bool), remove func(int)) core.View {
 		// which both hides the red glyph and reads as a primary action. The
 		// variant says which role to take instead; the widget resolves the
 		// fill and a legible ink for it.
-		Trailing: components.Button{
+		Trailing: comps.Button{
 			Label:              "✕",
 			OnTap:              func() { remove(id) },
-			Variant:            components.VariantError,
+			Variant:            comps.VariantError,
 			Style:              []core.StyleProp{core.FontSize(13)},
 			AccessibilityLabel: "Delete " + t.Title,
 		},

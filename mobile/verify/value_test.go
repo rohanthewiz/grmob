@@ -213,7 +213,7 @@ func TestSwiftDoesNotInventWordsForTheNumbers(t *testing.T) {
 			t.Errorf("%s: grMobValueText reads %s — a renderer that spells a number "+
 				"out loud is choosing a language for every app that uses it, and it "+
 				"is overwriting a value slot that belongs to the app. "+
-				"components.ProgressBar.ValueText is where an app supplies its own "+
+				"comps.ProgressBar.ValueText is where an app supplies its own "+
 				"words", swiftStyle, member)
 		}
 	}

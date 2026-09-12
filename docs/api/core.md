@@ -658,7 +658,7 @@ const ConcernInertPlacement = "inert-stack-placement"
 
 DefaultMapZoom is the scale a Region with no Zoom is drawn at: a neighbourhood, which is close enough to read street names and wide enough to hold more than one marker.
 
-14 rather than components.DefaultMapZoom's 15, and the difference is the difference between the two widgets. A static map answers "where is this one place"; a live map is usually showing a set, and one level out is about four times the area.
+14 rather than comps.DefaultMapZoom's 15, and the difference is the difference between the two widgets. A static map answers "where is this one place"; a live map is usually showing a set, and one level out is about four times the area.
 
 ```go
 const DefaultMapZoom = 14.0
@@ -1932,7 +1932,7 @@ func WrapLongitude(lng float64) float64
 
 WrapLongitude folds a longitude into (-180, 180] by going round rather than by stopping at the edge: 190° east is 170° west, the same meridian, and a clamp would move the point to the antimeridian instead.
 
-Exported because every consumer of a coordinate needs it and getting it wrong is silent — a map centred 20 degrees from where it was asked to be still looks like a map. components.StaticMap does the same arithmetic for the same reason.
+Exported because every consumer of a coordinate needs it and getting it wrong is silent — a map centred 20 degrees from where it was asked to be still looks like a map. comps.StaticMap does the same arithmetic for the same reason.
 
 math.Mod keeps the sign of its first argument, so a negative input stays west, and the two adjustments are what carry a value past ±180 round to the other side.
 
@@ -2331,7 +2331,7 @@ func OnClick(handler func()) BehaviorProp
 func OnEndReached(handler func()) BehaviorProp
 ```
 
-OnEndReached fires when the user scrolls within a few rows of the bottom of a List: the "fetch the next page" edge that turns a manual components.LoadMore button into an infinite feed.
+OnEndReached fires when the user scrolls within a few rows of the bottom of a List: the "fetch the next page" edge that turns a manual comps.LoadMore button into an infinite feed.
 
 	core.List(
 	    core.OnEndReached(pager.LoadNext),
@@ -2342,7 +2342,7 @@ OnEndReached fires when the user scrolls within a few rows of the bottom of a Li
 
 The edge is a \*scroll position\*, so every renderer reports it more than once for the same bottom: Compose's snapshot flow emits on each new last-visible index, SwiftUI's .onAppear re-fires when a row is recycled back into view, and an IntersectionObserver fires on entry and on every resize that keeps the sentinel visible. A slow fetch therefore sees two or three calls before its first page lands, and an offset pager answers that by loading page 2 twice.
 
-The fix is one line of state and it belongs on this side of the bridge: remember how many rows the list held when the handler last ran, and refuse to run again until that number changes. A fetch that appends rows unlocks the next fire; a fetch that returns nothing (the feed is exhausted, or it failed) leaves the guard closed, which is exactly right — scrolling at the bottom of a list that just came back empty should not re-ask forever. A caller that wants the retry offers a button; that is what components.LoadMore's error arm has always been for.
+The fix is one line of state and it belongs on this side of the bridge: remember how many rows the list held when the handler last ran, and refuse to run again until that number changes. A fetch that appends rows unlocks the next fire; a fetch that returns nothing (the feed is exhausted, or it failed) leaves the guard closed, which is exactly right — scrolling at the bottom of a list that just came back empty should not re-ask forever. A caller that wants the retry offers a button; that is what comps.LoadMore's error arm has always been for.
 
 Doing it in Go also means the four renderers each get to be as naive as their platform makes convenient, and none of them has to agree with the others about what "once" means.
 
@@ -2660,7 +2660,7 @@ type ColorPalette struct {
 	// boundary. That split used to have no second field in it — the frames
 	// lived in Components.Input and Components.TextArea alone, and the note
 	// here said no palette role was needed because nothing outside those two
-	// component defaults spent one. components.Chip is what made that false:
+	// component defaults spent one. comps.Chip is what made that false:
 	// a quiet chip's hairline is not a rule *between* things, it is the only
 	// edge a filter control has, and it was drawing it out of this role.
 	//
@@ -2695,7 +2695,7 @@ type ColorPalette struct {
 	// not a property of the tone, it is a property of a *pair*.
 	//
 	// Every pair a bundled theme can produce is enumerated and measured by
-	// TestEveryControlBoundaryPairIsAccountedFor in components/variant_test.go
+	// TestEveryControlBoundaryPairIsAccountedFor in comps/variant_test.go
 	// (the arithmetic lives there, beside the on-light census, for the reason
 	// that one gives). Every pair clears, and the census's
 	// knownBoundaryShortfalls table — the place a defended shortfall would be
@@ -2724,7 +2724,7 @@ type ColorPalette struct {
 	// ControlBorderRole rather than by the type system.
 	//
 	// A widget that wants to look like a text field still reads the Input base
-	// itself (components.DatePicker does), because it wants the radius and the
+	// itself (comps.DatePicker does), because it wants the radius and the
 	// fill too. This role is for a widget that wants only the edge.
 	//
 	// Read via ControlBorderColor.
@@ -2748,7 +2748,7 @@ type ColorPalette struct {
 	//
 	// A palette role is one hex, and one hex cannot do both jobs a role is
 	// asked to do. Spent as a fill with a chosen ink over it, a mid-tone
-	// works — components.Variant.Ink picks the more legible of the theme's
+	// works — comps.Variant.Ink picks the more legible of the theme's
 	// two inks and a filled Badge or Button clears WCAG AA on every bundled
 	// theme. Spent as ink *itself* — an outlined button's label and rule, a
 	// loud chip's outline, a banner's leading glyph — the backdrop is
@@ -2761,8 +2761,8 @@ type ColorPalette struct {
 	//	warning      2.20:1    3.08:1
 	//	error        3.55:1    7.33:1
 	//
-	// Five of those eight fail. This is the fix components.Button and
-	// components.Chip both name in their own docs and could not make: the
+	// Five of those eight fail. This is the fix comps.Button and
+	// comps.Chip both name in their own docs and could not make: the
 	// widgets have the number and not the authority. Darkening a role until
 	// it passes would repaint a hex the theme author chose, so the second
 	// tone is the theme's to declare.
@@ -2886,7 +2886,7 @@ func (c ColorPalette) OnLight(color string) string
 
 OnLight returns the ink-weight tone paired with color, when color is one of this palette's four toned roles, and color itself otherwise.
 
-The four resolvers above answer for a widget that knows which \*role\* it is spending. This answers for one that knows only a \*colour\*, which is the commoner case than it sounds: components.Chip's accent is read off the theme's Button base rather than off Colors.Primary, precisely so that a theme whose buttons are not primary-coloured still gets its own look, and a widget in that position has a hex and no name for it.
+The four resolvers above answer for a widget that knows which \*role\* it is spending. This answers for one that knows only a \*colour\*, which is the commoner case than it sounds: comps.Chip's accent is read off the theme's Button base rather than off Colors.Primary, precisely so that a theme whose buttons are not primary-coloured still gets its own look, and a widget in that position has a hex and no name for it.
 
 So it is a reverse lookup, and it is honest about being one. A colour that is not one of the four roles comes back unchanged, which is the same fallback an unset tone gets and the same pixels every widget painted before these fields existed.
 
@@ -2902,7 +2902,7 @@ A role whose colour is already ink-weight sets its tone equal to itself, deliber
 
 Primary's used to be exactly that, and AmberTheme is what put it back: amber 700 is a fill that cannot be ink (2.04:1 on white), so its role and its tone are genuinely different colours and deleting this arm repaints every outlined button and loud chip in that theme.
 
-Which arms have a bundled witness and which rest on a test fixture is recorded and checked per role by TestEveryPaletteRuleStillHasAWitness in components/palette\_witness\_test.go, so a retint that leaves an arm with no evidence anywhere is reported rather than merely true.
+Which arms have a bundled witness and which rest on a test fixture is recorded and checked per role by TestEveryPaletteRuleStillHasAWitness in comps/palette\_witness\_test.go, so a retint that leaves an arm with no evidence anywhere is reported rather than merely true.
 
 <small>[core/theme.go:375](https://github.com/rohanthewiz/grmob/blob/master/core/theme.go#L375)</small>
 
@@ -2957,10 +2957,10 @@ func (c ColorPalette) WarningOnLightColor() string
 ```go
 type ComponentDefaults struct {
 	Button   Style `notbackdrop:"a control's own fill, not a surface: Colors.Primary. A bordered control is never drawn on top of a filled button — an outline Button draws its own edge over whatever is behind it, which is the page or a panel, and both of those are already measured. Excluded because the pair is unreachable, not because it is close"`
-	Card     Style `backdrop:"a panel: a Card is a container, so anything a screen puts inside one is drawn on this fill. components.FormField's Input inside a components.Card is the commonest screen this framework builds, and its frame is a control boundary against exactly this colour"`
+	Card     Style `backdrop:"a panel: a Card is a container, so anything a screen puts inside one is drawn on this fill. comps.FormField's Input inside a comps.Card is the commonest screen this framework builds, and its frame is a control boundary against exactly this colour"`
 	Input    Style `backdrop:"a field's own interior, enclosed by its own frame: the pair here is a boundary against the fill it encircles rather than one control on top of another. Reachable by construction, not by composition — every Input that states a BorderColor builds it, and there is no arrangement of widgets that avoids it"`
 	Column   Style `backdrop:"a layout container. It states no fill in any bundled theme, so it contributes no pair today — that is a fact about the themes and not about the geometry. A theme that fills its Column has made it a page region, and every control laid out in one is then drawn on it"`
-	Row      Style `backdrop:"a layout container, on the other axis and for the same reason as Column. components.GroupHeader's band is a filled Row with a bordered control in it the moment a caller styles one, which is the shape that makes this a real pair rather than a hypothetical"`
+	Row      Style `backdrop:"a layout container, on the other axis and for the same reason as Column. comps.GroupHeader's band is a filled Row with a bordered control in it the moment a caller styles one, which is the shape that makes this a real pair rather than a hypothetical"`
 	Camera   Style `notbackdrop:"a viewfinder: its fill is black in every theme because it is what shows for the frame before the first camera frame arrives, and nothing draws a control boundary on top of a preview. Excluded by name rather than by a lightness test, because a rule that skipped dark fills would also skip a dark theme's page"`
 	CheckBox Style `backdrop:"the box's own interior, enclosed by its own boundary — the same by-construction pair as Input. Two of the three bundled themes state a fill here and the third does not, so the pair exists in some palettes and not others, which is what a derived census handles and a hand-written list does not"`
 	TextArea Style `backdrop:"a field's own interior, as Input, one tag over. The two are separate fields because a theme may want a taller field to read differently, and they are separate rows in the census for the same reason"`
@@ -2971,7 +2971,7 @@ ComponentDefaults is the per-component base Style a theme supplies. Every widget
 
 #### The notbackdrop tag
 
-A field's Background is, by default, a fill a bordered control can be drawn on — and core.ColorPalette.ControlBorder has WCAG 1.4.11's 3:1 floor against every such fill. internal/palette derives that list by reflecting over this struct, precisely so that adding a field (a Sheet, a Popover) adds a backdrop with nobody having to remember, and components/variant\_test.go measures the pair.
+A field's Background is, by default, a fill a bordered control can be drawn on — and core.ColorPalette.ControlBorder has WCAG 1.4.11's 3:1 floor against every such fill. internal/palette derives that list by reflecting over this struct, precisely so that adding a field (a Sheet, a Popover) adds a backdrop with nobody having to remember, and comps/variant\_test.go measures the pair.
 
 Every field carries exactly one of two tags, and both are claims about the \*geometry\* of the framework rather than about any number:
 
@@ -3578,7 +3578,7 @@ UseEditorRef returns an EditorRef that is stable for the lifetime of this hook s
 
 A hook rather than a bare constructor for exactly FocusRef's reason: a ref built inline in a render function is a new pointer every pass, so EditorTarget would stamp one identity and the toolbar's handler would bump another — and the command would silently never reach a node. NewState both pins the pointer and reserves the cursor slot properly.
 
-A widget that calls this consumes a positional hook slot on the caller's context and must therefore be rendered unconditionally, like any other hook user; components.CodeEditor says so in its own doc.
+A widget that calls this consumes a positional hook slot on the caller's context and must therefore be rendered unconditionally, like any other hook user; comps.CodeEditor says so in its own doc.
 
 <small>[core/editor.go:98](https://github.com/rohanthewiz/grmob/blob/master/core/editor.go#L98)</small>
 
@@ -3590,7 +3590,7 @@ type ExpandedState string
 
 ExpandedState is whether a disclosure is \*open\* — the accordion section showing its body, the twisty that has been turned.
 
-It is the third of the state types, after SelectedState, and it exists because a control can be on and open at the same time. components.Accordion is the widget that asked for it: it is the one stateful widget in the components package, its header is the only thing on screen that knows whether the section is showing, and until this type existed the only thing that said so was a chevron glyph — which a screen reader announces as "black right-pointing small triangle" or, more often, not at all.
+It is the third of the state types, after SelectedState, and it exists because a control can be on and open at the same time. comps.Accordion is the widget that asked for it: it is the one stateful widget in the components package, its header is the only thing on screen that knows whether the section is showing, and until this type existed the only thing that said so was a chevron glyph — which a screen reader announces as "black right-pointing small triangle" or, more often, not at all.
 
 #### Why this is a second type and not SelectedState reused
 
@@ -3656,7 +3656,7 @@ func ExpandedWhen(open bool) ExpandedState
 
 ExpandedWhen turns the bool a disclosure already holds into the stated pair.
 
-The twin of SelectedWhen, and it earns its place the same way: the widget owns a \`expanded bool\` (components.Accordion holds one in NewState), so the conversion would otherwise be written by hand at each call site, and the tempting hand-rolled version — set ExpandedOpen when open, leave it alone otherwise — is exactly the silence the third value exists to prevent.
+The twin of SelectedWhen, and it earns its place the same way: the widget owns a \`expanded bool\` (comps.Accordion holds one in NewState), so the conversion would otherwise be written by hand at each call site, and the tempting hand-rolled version — set ExpandedOpen when open, leave it alone otherwise — is exactly the silence the third value exists to prevent.
 
 <small>[core/expanded.go:79](https://github.com/rohanthewiz/grmob/blob/master/core/expanded.go#L79)</small>
 
@@ -4211,7 +4211,7 @@ type Region struct {
 	//
 	// A zero Zoom means DefaultMapZoom rather than "the whole world", which is
 	// the one legitimate value this type spends on a default. It is the same
-	// trade components.StaticMap.Zoom makes and for the same reason: a map with
+	// trade comps.StaticMap.Zoom makes and for the same reason: a map with
 	// no zoom stated is a map somebody forgot to scale, and the world is never
 	// what they meant.
 	Zoom float64
@@ -4494,7 +4494,7 @@ The selectable collection: a run of choices, and one choice in it. The fourth st
 
 Because ARIA will not carry it. \`aria-selected\` is defined for gridcell, option, row, tab and columnheader — not for \`listitem\` — so a list item that says it is chosen says it into a void on both web targets: the attribute is written, the DOM inspector shows it, and no reader announces anything. A list is \*content\* and a listbox is a \*control\*, and the state only exists on the control side.
 
-components.ListRow is what asked. Its selected row spelled the state into its own accessible name (", selected") because both other doors were shut: \`listitem\` cannot carry the state, and \`button\` — which carries the neighbouring \`aria-pressed\` — would make the row a foreign child of any role="list" around it, costing the whole list its shape for one row's announcement. This pair is the door that was left.
+comps.ListRow is what asked. Its selected row spelled the state into its own accessible name (", selected") because both other doors were shut: \`listitem\` cannot carry the state, and \`button\` — which carries the neighbouring \`aria-pressed\` — would make the row a foreign child of any role="list" around it, costing the whole list its shape for one row's announcement. This pair is the door that was left.
 
 ##### What a listbox promises, and who keeps the promise
 
@@ -4514,7 +4514,7 @@ On the two phones there was never a gap — VoiceOver and TalkBack navigate a co
 
 ##### The depth question, answered the other way
 
-\`listitem\` carries aria-level and \`option\` does not, so a row cannot be both a choice and a depth: the two roles are exclusive and only one of them takes a level. ARIA does have a role for an item that is both — \`treeitem\` inside a \`tree\`, which supports aria-level and aria-selected together — and it is deliberately not here, because a tree is a third pattern with its own expansion state and its own keyboard contract, and nothing in this repository has one. See components.ListRow.Selectable, which is where the two fields meet and where the precedence is written down.
+\`listitem\` carries aria-level and \`option\` does not, so a row cannot be both a choice and a depth: the two roles are exclusive and only one of them takes a level. ARIA does have a role for an item that is both — \`treeitem\` inside a \`tree\`, which supports aria-level and aria-selected together — and it is deliberately not here, because a tree is a third pattern with its own expansion state and its own keyboard contract, and nothing in this repository has one. See comps.ListRow.Selectable, which is where the two fields meet and where the precedence is written down.
 
 ```go
 const (
@@ -4580,7 +4580,7 @@ RoleButton is for a tappable container — a Box or a Row with an OnTap, which e
 
 RoleLink is the other half of that pair, and the distinction is not cosmetic: a button does something \*here\* and a link goes somewhere else. A reader deciding whether to follow a control needs to know which, and the framework has no node type that carries the difference — core.OpenURL is a callback like any other, so a row that dials a phone number and a row that files a form are the same tappable Box until one of them says otherwise. RoleHeading is the one value here with a second question attached: how deep the heading sits. That is Style.AccessibilityHeadingLevel, a separate int rather than a lettered set of constants — see its doc for why six more spellings of "heading" would cost both DOM renderers the mapping table this vocabulary exists to avoid.
 
-RoleImg is for a node that is a \*picture\* — something whose meaning is carried by its arrangement rather than by any text inside it, and which therefore needs one text alternative standing in for the whole thing. components.Compass is the case that asked for it: a rose read in tree order is "N W E S" whatever direction it is pointing, so the widget hides its parts and speaks once.
+RoleImg is for a node that is a \*picture\* — something whose meaning is carried by its arrangement rather than by any text inside it, and which therefore needs one text alternative standing in for the whole thing. comps.Compass is the case that asked for it: a rose read in tree order is "N W E S" whatever direction it is pointing, so the widget hides its parts and speaks once.
 
 It was also, for a while, the only role that made such a label \*work at all\* on the web: ARIA forbids an accessible name on a generic element, so an AccessibilityLabel on a plain container was dropped by screen readers rather than announced. RoleGroup below is now the general answer to that, and the division between the two is what the node is rather than what it needs — an img stands in for its parts and should hide them, a group names them and leaves them readable. Reach for this one only when the picture reading is true.
 
@@ -4605,7 +4605,7 @@ Every layout node in this framework exports as a \<div> or a \<span>, and both t
 
 wrote a correct-looking attribute that no screen reader on either web target announced, while VoiceOver and TalkBack read it out perfectly, because a SwiftUI accessibilityLabel and a Compose contentDescription are honoured on any node without asking what it is. Two targets silent, two fine — which is what let it ship: the two that work are the two a developer is most likely to be testing on.
 
-RoleImg was the first door out and it is the wrong shape for most rows. It says the node is a \*picture\* whose parts should be hidden behind one alternative, which is true of components.Compass and false of a list row, a disclosure header or a stat tile — all of which want their contents read as well as their name.
+RoleImg was the first door out and it is the wrong shape for most rows. It says the node is a \*picture\* whose parts should be hidden behind one alternative, which is true of comps.Compass and false of a list row, a disclosure header or a stat tile — all of which want their contents read as well as their name.
 
 ##### Why \`group\` and not one of the louder candidates
 
@@ -4614,7 +4614,7 @@ RoleImg was the first door out and it is the wrong shape for most rows. It says 
 	           entries in a screen's table of contents.
 	button     claims a control, makes its children presentational (a heading
 	           inside one stops being a heading), and is a foreign child of any
-	           list around it — see components.ListRow, which turned it down
+	           list around it — see comps.ListRow, which turned it down
 	           for exactly that.
 	group      "a set of user interface objects", nameable, not a landmark,
 	           and with no required children and no presentational-children
@@ -4649,7 +4649,7 @@ It is the only value in this vocabulary that reads Style.AccessibilityValue, and
 
 ##### What it closes
 
-components.ProgressBar had no way to say it was a progress bar or how far along it was, so it said both into its accessible \*name\*: "Upload, 45 percent". That is the move Chip's ", selected" suffix was deleted for — a name is meant to be stable, so a bar ticking from 44 to 45 re-announced the whole thing, and nothing could act on a number buried in a string. With the role and the range, a reader announces the name once and the value as it moves.
+comps.ProgressBar had no way to say it was a progress bar or how far along it was, so it said both into its accessible \*name\*: "Upload, 45 percent". That is the move Chip's ", selected" suffix was deleted for — a name is meant to be stable, so a bar ticking from 44 to 45 re-announced the whole thing, and nothing could act on a number buried in a string. With the role and the range, a reader announces the name once and the value as it moves.
 
 ##### A determinate bar and an indeterminate one are the same role
 
@@ -5000,7 +5000,7 @@ type SelectedState string
 
 SelectedState is whether a control is \*on\* — the tab that is showing, the filter chip that is applied, the calendar day that is chosen.
 
-It is the state half of core.Role. A role says what a control is and the label says what it is called; neither can say that this one of five chips is the one in effect, and until this type existed nothing in the framework could. What a widget did instead was write the state into the name — components.Chip appended ", selected" to its AccessibilityLabel — which announces once, in the wrong place (a name is meant to be stable, and a reader that re-announces the control after a tap says the whole altered name rather than the changed state), and which no platform can act on.
+It is the state half of core.Role. A role says what a control is and the label says what it is called; neither can say that this one of five chips is the one in effect, and until this type existed nothing in the framework could. What a widget did instead was write the state into the name — comps.Chip appended ", selected" to its AccessibilityLabel — which announces once, in the wrong place (a name is meant to be stable, and a reader that re-announces the control after a tap says the whole altered name rather than the changed state), and which no platform can act on.
 
 #### Why three values and not a bool
 
@@ -5523,7 +5523,7 @@ type Style struct {
 	// does not define aria-expanded there, and a reader drops it. This gets no
 	// RoleGroup-shaped rescue for the reason a selection does not: `group` is
 	// not among the roles above, so there is no role that both fits any
-	// container and carries a disclosure. components.Accordion is what happens
+	// container and carries a disclosure. comps.Accordion is what happens
 	// when a widget takes that seriously — its header row is a button inside a
 	// heading, which is ARIA's own accordion shape, rather than a named div
 	// with a state a browser throws away.
@@ -5533,7 +5533,7 @@ type Style struct {
 	// aria-expanded says the content is here, in the page, and can be shown or
 	// hidden. A trigger that opens a modal is a different relationship —
 	// ARIA spells that aria-haspopup, which this vocabulary does not carry —
-	// so components.DatePicker's trigger, which looks exactly like a
+	// so comps.DatePicker's trigger, which looks exactly like a
 	// disclosure and even flips a glyph, deliberately sets nothing.
 	//
 	// # One native maps it and one cannot, which is the reverse of usual
@@ -5550,7 +5550,7 @@ type Style struct {
 	// DisclosureGroup announces the state by writing a localized accessibility
 	// *value* — a string SwiftUI supplies and this framework has no channel
 	// for. Emitting an English "expanded" from the renderer would be the same
-	// move components.Chip's ", selected" name suffix was deleted for. So the
+	// move comps.Chip's ", selected" name suffix was deleted for. So the
 	// key crosses the bridge, is deliberately not parsed, and the note in
 	// GrMobStyle.swift says which property it is turning down.
 	AccessibilityExpanded ExpandedState `json:",omitzero"`
@@ -5769,7 +5769,7 @@ type Style struct {
 	// state already does that, which is what closes the race properly.
 	//
 	// Visual muting is deliberately not implied. What "disabled" looks like
-	// is a palette decision (components.Button spends Surface/TextSecondary
+	// is a palette decision (comps.Button spends Surface/TextSecondary
 	// on it); what it *means* is this flag.
 	Disabled bool `json:",omitzero"`
 }
@@ -5911,7 +5911,7 @@ AccessibilityHeadingLevel says how deep a heading sits — 1 for the screen's na
 
 Paired with RoleHeading, never alone: the role says the node is a heading and this says which tier, so a level with no role describes the depth of something that is not a heading and every renderer drops it. The two are separate props rather than one because the tier is genuinely optional — every heading written before this existed is still a correct heading, it just does not say where it sits.
 
-What a level buys is the outline. Without one, a screen with a bar title over a run of section bands announces a flat list of peers, and a reader navigating by heading cannot tell the screen's name from the band inside it. components.AppBar and components.GroupedList set 1 and 2 for exactly that pair, so the common case needs no call site at all.
+What a level buys is the outline. Without one, a screen with a bar title over a run of section bands announces a flat list of peers, and a reader navigating by heading cannot tell the screen's name from the band inside it. comps.AppBar and comps.GroupedList set 1 and 2 for exactly that pair, so the common case needs no call site at all.
 
 See Style.AccessibilityHeadingLevel for the range rule (out-of-range is dropped, not clamped) and for which of the four renderers can express a level — Compose cannot, and that is stated rather than faked.
 
@@ -5979,7 +5979,7 @@ Paired with RoleListItem or RoleRow, never alone, and never with RoleHeading —
 
 What a depth buys is the shape of the tree. A flattened nested list — every item a sibling of every other — is what a reader gets from a run of divs, and it is also what it gets from a correctly roled list whose items do not say how deep they are: "list, twelve items" for something the eye reads as three groups of four.
 
-Nothing in the framework sets one. Neither DataTable's rows (a flat table) nor any bundled widget nests a collection inside itself, so unlike the heading pair — which components.AppBar and components.GroupedList set for every app without a call site — this is a prop an application reaches for when it builds the nesting itself.
+Nothing in the framework sets one. Neither DataTable's rows (a flat table) nor any bundled widget nests a collection inside itself, so unlike the heading pair — which comps.AppBar and comps.GroupedList set for every app without a call site — this is a prop an application reaches for when it builds the nesting itself.
 
 See Style.AccessibilityNestingLevel for why this is a second field rather than a widened first one, and for the two natives that cannot express a depth at all.
 
@@ -6319,7 +6319,7 @@ func MarginHorizontal(px int) StyleProp
 
 MarginHorizontal sets the left and right margins.
 
-This is the inset prop: a rule that stops short of the screen edge, which is what components.Separator's Inset wanted.
+This is the inset prop: a rule that stops short of the screen edge, which is what comps.Separator's Inset wanted.
 
 	core.Box(core.MarginHorizontal(16), rule)
 
@@ -6570,7 +6570,7 @@ StickyHeader pins a List child to the top of the viewport while the rows it intr
 	    core.Keyed("s1", row), core.Keyed("s2", row),
 	)
 
-components.GroupedList{StickyHeaders: true} is the widget spelling; this is the primitive underneath it.
+comps.GroupedList{StickyHeaders: true} is the widget spelling; this is the primitive underneath it.
 
 ##### Why a StyleProp, and why no new field
 
@@ -6824,7 +6824,7 @@ It is the fourth of core's accessibility state vocabularies, after SelectedState
 
 #### What asked for it
 
-components.ProgressBar, which had no way to say any of it. Its accessible name was built as "Upload, 45 percent" — the value spelled into the \*name\* channel, which is the exact move components.Chip's ", selected" suffix was deleted for. A name is meant to be stable: a reader that re-announces a control says the whole altered name rather than the changed part, so a bar ticking from 44 to 45 re-announced "Upload, 45 percent" instead of "45 percent", and no platform could act on the number because no platform could find it.
+comps.ProgressBar, which had no way to say any of it. Its accessible name was built as "Upload, 45 percent" — the value spelled into the \*name\* channel, which is the exact move comps.Chip's ", selected" suffix was deleted for. A name is meant to be stable: a reader that re-announces a control says the whole altered name rather than the changed part, so a bar ticking from 44 to 45 re-announced "Upload, 45 percent" instead of "45 percent", and no platform could act on the number because no platform could find it.
 
 #### Why the numbers are strings
 
@@ -6969,7 +6969,7 @@ It was the last leaf that could not carry a behavior prop, which meant OnLongPre
 
 The renderers had the matching half of that gap: both natives read the gesture off containers and leaves but not off a Button, because a Button draws its own control and does not go through the generic gesture path. Both now wire it on the button itself (a Surface + combinedClickable on Compose, a simultaneousGesture on SwiftUI), as does the DOM runtime, which synthesizes the gesture from pointer events.
 
-The widening is source-compatible for the same reason the inputs' was: a StyleProp is a PropsAndChildren, so every existing core.Button(label, fn, core.Padding(8)) call compiles untouched. The shape it does break is forwarding — a \[]StyleProp cannot be spread into a ...PropsAndChildren — so a wrapper that collected style props into a slice has to widen its own slice to \[]core.PropsAndChildren. components.Button and components.Chip are the two in this tree that did.
+The widening is source-compatible for the same reason the inputs' was: a StyleProp is a PropsAndChildren, so every existing core.Button(label, fn, core.Padding(8)) call compiles untouched. The shape it does break is forwarding — a \[]StyleProp cannot be spread into a ...PropsAndChildren — so a wrapper that collected style props into a slice has to widen its own slice to \[]core.PropsAndChildren. comps.Button and comps.Chip are the two in this tree that did.
 
 See leafNode for the ordering and nil contracts, and for why a View passed here is a debug-mode concern rather than a silent no-op.
 
@@ -7036,7 +7036,7 @@ CodeEditor is an editable monospace buffer with syntax colour, a line-number gut
 	    core.Height("240px"),
 	)
 
-components.CodeEditor is the widget over it — it runs the highlighter, wires a toolbar and picks a scheme from the theme — and is what application code should reach for. This is the primitive it is built on.
+comps.CodeEditor is the widget over it — it runs the highlighter, wires a toolbar and picks a scheme from the theme — and is what application code should reach for. This is the primitive it is built on.
 
 ##### Why a node type rather than a composition
 
@@ -7275,7 +7275,7 @@ Each host draws its platform's map:
 	htmlout   a placeholder box, as CameraView is: a static snapshot has no
 	          engine to run and no tiles to fetch
 
-##### When to use components.StaticMap instead
+##### When to use comps.StaticMap instead
 
 Almost always, if the question is "where is this". A static map is an image and a hand-off to the platform's maps app: no engine, no tile budget, no key, nothing to keep in step, and the directions the user actually wanted come from the app that has their home address in it.
 
@@ -7403,7 +7403,7 @@ RichTextEditor is an editable formatted document: bold, italics, headings, lists
 	    core.OnRichSelectionChange(func(sel core.RichSelection) { bar.Set(sel) }),
 	)
 
-components.RichTextEditor is the widget over it — it builds the toolbar and wires the link prompt — and is what application code should reach for.
+comps.RichTextEditor is the widget over it — it builds the toolbar and wires the link prompt — and is what application code should reach for.
 
 ##### The value is a document, and the document is Go's
 
@@ -7437,7 +7437,7 @@ func Row(stylePropsAndChildren ...PropsAndChildren) View
 func SafeArea(stylePropsAndChildren ...PropsAndChildren) View
 ```
 
-SafeArea insets its content from the system bars and the display cutout. It is the root of every screen (components.Screen builds one) and takes the same mixed argument list as the other containers, so a style can land on the inset box itself.
+SafeArea insets its content from the system bars and the display cutout. It is the root of every screen (comps.Screen builds one) and takes the same mixed argument list as the other containers, so a style can land on the inset box itself.
 
 The one style worth putting there is a background. The inset is padding on this node, so a background here paints under the status bar while the content stays clear of it — whereas a background on the content column stops at the inset and leaves the strip behind the bar in the window's own colour, which on a dark screen is a light band along the top. Each native renderer paints this node's background edge to edge (Compose orders the background before the inset padding; SwiftUI extends it with ignoresSafeArea); the DOM targets have no system bars and treat it as any other container. Padding and margin here are honoured too but rarely wanted, since they inset the whole screen a second time.
 
@@ -7498,7 +7498,7 @@ The natives are deliberately \*not\* built from a platform picker control (Swift
 
 ##### It reads the theme's Input base
 
-A picker is a field: it sits in a form beside text inputs, and a picker that did not match the fields around it would look like a mistake. Reading Components.Input is also how it inherits the frame those fields grew — the same move components.DatePicker makes for the same reason, and the reason this widget needs no palette role of its own.
+A picker is a field: it sits in a form beside text inputs, and a picker that did not match the fields around it would look like a mistake. Reading Components.Input is also how it inherits the frame those fields grew — the same move comps.DatePicker makes for the same reason, and the reason this widget needs no palette role of its own.
 
 ##### Options are a prop, not children
 
@@ -7583,7 +7583,7 @@ That role is written from the \*node type\*, with no Style involved, which makes
 
 The same base the other boolean control reads, and not a field of its own. What that style actually contributes is geometry and display — both natives read only margin and size off a control's style (marginAndSize in the Compose renderer, marginAndSizeOnly in SwiftUI), and on the web a control drawn by the user agent ignores a fill. A Components.Switch field would therefore be a palette entry no palette could spend, measured by the contrast census as though some surface were drawn from it.
 
-Like Checkbox it carries no label: a control's label is the caller's, and components.FormField and components.InputRow already own that slot.
+Like Checkbox it carries no label: a control's label is the caller's, and comps.FormField and comps.InputRow already own that slot.
 
 ##### Keyboard focus
 
@@ -7663,7 +7663,7 @@ ZStack overlays its children: every child is drawn in the same box, in tree orde
 
 ##### Why this is a node type and not a style
 
-core.Style already carries Position, Top/Right/Bottom/Left and ZIndex, and they are CSS spellings that only the two DOM targets read — Renderer.swift and Renderer.kt consult none of the five. So anything built out of them is a web-only widget wearing a portable name, which is exactly why components.Compass parked its index mark \*above\* the rose instead of over it. An overlay has a first-class construct on each of the other three targets (a SwiftUI ZStack, a Compose Box, a single-cell CSS grid), and naming the container is what lets each renderer reach for its own.
+core.Style already carries Position, Top/Right/Bottom/Left and ZIndex, and they are CSS spellings that only the two DOM targets read — Renderer.swift and Renderer.kt consult none of the five. So anything built out of them is a web-only widget wearing a portable name, which is exactly why comps.Compass parked its index mark \*above\* the rose instead of over it. An overlay has a first-class construct on each of the other three targets (a SwiftUI ZStack, a Compose Box, a single-cell CSS grid), and naming the container is what lets each renderer reach for its own.
 
 ##### The alignment contract: centred by default
 
@@ -7679,7 +7679,7 @@ A child that wants to sit somewhere else says so with StackAlign, the per-layer 
 
 The nine placements and what each target makes of one are in core/stack\_align.go. The centre is the zero value and has no spelling, so a layer that says nothing is placed exactly as every layer was before the property existed.
 
-It arrived a good while after this container did, and the reason is worth recording: while components.Compass was the only consumer, the escape was to give the layer \*its own box\* — the index mark was a full-height Column justifying its glyph to the start, which lands the mark at top centre while the Column itself is centred like everything else. That works, and one consumer is not a vocabulary. What made it a vocabulary is that all three constructs turned out to have the same nine-value 2D placement enum, so the prop could be portable rather than a CSS property with two renderers ignoring it — which is what Style.AlignSelf beside it still is.
+It arrived a good while after this container did, and the reason is worth recording: while comps.Compass was the only consumer, the escape was to give the layer \*its own box\* — the index mark was a full-height Column justifying its glyph to the start, which lands the mark at top centre while the Column itself is centred like everything else. That works, and one consumer is not a vocabulary. What made it a vocabulary is that all three constructs turned out to have the same nine-value 2D placement enum, so the prop could be portable rather than a CSS property with two renderers ignoring it — which is what Style.AlignSelf beside it still is.
 
 ##### What the stack sizes to
 

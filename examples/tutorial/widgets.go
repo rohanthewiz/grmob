@@ -12,7 +12,7 @@ package tutorial
 import (
 	"strings"
 
-	"github.com/rohanthewiz/grmob/components"
+	"github.com/rohanthewiz/grmob/comps"
 	"github.com/rohanthewiz/grmob/core"
 	"github.com/rohanthewiz/grmob/highlight"
 )
@@ -46,7 +46,7 @@ func caption(text string) core.View {
 
 // codeBlock renders a Go snippet, syntax-highlighted.
 //
-// It is a read-only components.CodeEditor, which is the widget's display half:
+// It is a read-only comps.CodeEditor, which is the widget's display half:
 // the same monospace rows a core.TextGrid draws, plus a caret the reader can
 // put in the code and a selection they can copy out of. A code block in a
 // tutorial is exactly that — something to read and to take away — and the
@@ -77,7 +77,7 @@ func caption(text string) core.View {
 //
 // # No hooks, which is why this can be called anywhere
 //
-// components.CodeEditor consumes no hook slot unless it is given a toolbar, and
+// comps.CodeEditor consumes no hook slot unless it is given a toolbar, and
 // this one is not. That matters here more than anywhere: code blocks are built
 // inside lesson bodies, inside conditionals, inside loops over a demo's state,
 // and a widget with hook obligations could not be.
@@ -86,7 +86,7 @@ func caption(text string) core.View {
 // that starts and ends with a newline, and those two newlines are formatting.
 // See highlightGo, which says why the highlight package must not do it.
 func codeBlock(code string) core.View {
-	return components.CodeEditor{
+	return comps.CodeEditor{
 		Value:    strings.Trim(code, "\n"),
 		Language: "go",
 		Scheme:   highlight.Darcula,
@@ -116,7 +116,7 @@ func demoPanel(hint string, children ...core.View) core.View {
 			core.Row(
 				core.Gap(8),
 				core.AlignItemsProp(core.AlignItemsCenter),
-				components.Badge{Text: "TRY IT"},
+				comps.Badge{Text: "TRY IT"},
 				caption(hint),
 			),
 		}
@@ -193,7 +193,7 @@ const (
 // sideways, on a control whose entire job is to show the available choices at
 // a glance.
 //
-// It is set here per call site rather than inside components.SegmentedControl
+// It is set here per call site rather than inside comps.SegmentedControl
 // because that component is held to byte-for-byte parity with the hand-rolled
 // bar it replaced (examples/todoapp's TestFilterBarMatchesLegacyMarkup), and
 // a default flex-wrap would change the markup of every app using it to fix a
@@ -209,9 +209,9 @@ func stepper(label string, value string, onDelta func(delta int)) core.View {
 			core.Gap(8),
 			core.AlignItemsProp(core.AlignItemsCenter),
 			caption(label),
-			components.Button{Label: "−", OnTap: func() { onDelta(-1) }, Emphasis: components.EmphasisOutlined},
+			comps.Button{Label: "−", OnTap: func() { onDelta(-1) }, Emphasis: comps.EmphasisOutlined},
 			core.Text(value, core.FontWeight(core.Bold)),
-			components.Button{Label: "+", OnTap: func() { onDelta(+1) }, Emphasis: components.EmphasisOutlined},
+			comps.Button{Label: "+", OnTap: func() { onDelta(+1) }, Emphasis: comps.EmphasisOutlined},
 		).Render(ctx)
 	})
 }

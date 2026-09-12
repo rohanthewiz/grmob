@@ -14,7 +14,7 @@ import (
 //
 // browser.mjs mounts these trees and reads their pixels back, which settles
 // that the colours the *rendered node* declares reach the screen. It has no way
-// to know whether those colours are the ones components/variant_test.go
+// to know whether those colours are the ones comps/variant_test.go
 // measured — it is handed three hexes and it compares three hexes.
 //
 // That is the gap this closes, and it is the one the whole exercise is about.
@@ -93,7 +93,7 @@ func TestEveryBundledThemeHasAWidgetSwatch(t *testing.T) {
 // The ring a real widget draws is the palette role, not a colour that happens
 // to look like it.
 //
-// This is the assertion the browser cannot make. components.chipRing reads
+// This is the assertion the browser cannot make. comps.chipRing reads
 // Colors.ControlBorderColor rather than Components.Input.BorderColor
 // deliberately — the two hold the same hex in every bundled theme today, and
 // tying a chip's edge to a text field's is exactly the drift that argument was
@@ -235,7 +235,7 @@ func TestTheWidgetSwatchRatiosAreThePaletteArithmetic(t *testing.T) {
 // Colors.ControlBorder in all three bundled themes (core/theme_test.go's
 // TestBundledFieldFramesAreTheControlBorderRole is what makes that true), so
 // the comparison passes whichever of the two a case names. A chip that had
-// started reading the field base — the exact drift components.chipRing's
+// started reading the field base — the exact drift comps.chipRing's
 // argument was written to prevent — renders an identical tone, paints an
 // identical pixel, and satisfies every check in this file and in browser.mjs.
 // The failure only becomes visible on the day somebody restyles their fields,

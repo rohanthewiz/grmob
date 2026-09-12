@@ -22,7 +22,7 @@ package core
 // Padding's version of that mistake shows up as a squashed row; margin's
 // shows up as two elements touching, three screens away.
 //
-// Both live workarounds were of exactly that shape — components/separator.go
+// Both live workarounds were of exactly that shape — comps/separator.go
 // asking for an inset with Margin: EdgeInsets{Horizontal: s.Inset}, and
 // examples/chat asking for a gap between bubbles with
 // Margin: EdgeInsets{Bottom: 8}. Both are one prop now.
@@ -103,7 +103,7 @@ func MarginRight(px int) StyleProp {
 // MarginHorizontal sets the left and right margins.
 //
 // This is the inset prop: a rule that stops short of the screen edge, which
-// is what components.Separator's Inset wanted.
+// is what comps.Separator's Inset wanted.
 //
 //	core.Box(core.MarginHorizontal(16), rule)
 //

@@ -88,9 +88,9 @@ UseHeading turns the compass on for as long as this component is mounted, and re
 
 	h := hooks.UseHeading(ctx)
 	if !h.Available && h.Received {
-	    return components.EmptyState{Hint: "This device has no compass"}
+	    return comps.EmptyState{Hint: "This device has no compass"}
 	}
-	return components.Compass{Heading: h.Magnetic, ShowDegrees: true}
+	return comps.Compass{Heading: h.Magnetic, ShowDegrees: true}
 
 #### What it owns
 
@@ -157,9 +157,9 @@ UseLocation turns the device's positioning on for as long as this component is m
 
 	loc := hooks.UseLocation(ctx)
 	switch {
-	case !loc.Received:  return components.Skeleton{}          // acquiring
-	case !loc.Available: return components.EmptyState{Hint: loc.Error}
-	default:             return components.StaticMap{Lat: loc.Lat, Lng: loc.Lng}
+	case !loc.Received:  return comps.Skeleton{}          // acquiring
+	case !loc.Available: return comps.EmptyState{Hint: loc.Error}
+	default:             return comps.StaticMap{Lat: loc.Lat, Lng: loc.Lng}
 	}
 
 It is UseHeading with a different sensor, and every argument in that hook's doc applies here — the refcounted Start/Stop, the subscribe-before-start ordering, why the reading is not kept in the slot. What follows is only what differs, and the two differences are the two expensive things about location.
@@ -178,7 +178,7 @@ So a screen that can be reached cold draws the permission's state beside the fix
 	case permission.Prompt:      return askButton()      // permission.Request
 	case permission.Denied:      return settingsHint()
 	case permission.Unavailable: return nil
-	default:                     return components.Skeleton{}
+	default:                     return comps.Skeleton{}
 	}
 
 #### Both hooks run on every pass, and the branch is about drawing
@@ -273,13 +273,13 @@ UsePermission reports what the platform currently says about p, checking it once
 	case permission.Granted:
 	    return mapView(ctx)
 	case permission.Prompt:
-	    return components.Button{Label: "Use my location",
+	    return comps.Button{Label: "Use my location",
 	        OnClick: func() { permission.Request(permission.Location) }}
 	case permission.Denied:
-	    return components.EmptyState{Hint: "Location is off — turn it on in Settings"}
+	    return comps.EmptyState{Hint: "Location is off — turn it on in Settings"}
 	default: // Unknown while the check is in flight, Unavailable on a device
 	         // that cannot do it at all
-	    return components.Skeleton{}
+	    return comps.Skeleton{}
 	}
 
 #### It checks and does not ask
@@ -320,9 +320,9 @@ UsePermissionLive is UsePermission that also re-checks p every time the app retu
 	case permission.Granted:
 	    return scanner(ctx)
 	case permission.Denied:
-	    return components.EmptyState{
+	    return comps.EmptyState{
 	        Hint:   "Camera is off",
-	        Action: components.Button{Label: "Open Settings", OnTap: openSettings},
+	        Action: comps.Button{Label: "Open Settings", OnTap: openSettings},
 	    }
 	...
 	}
@@ -431,7 +431,7 @@ Like every hook it must be called unconditionally, in a stable order, on every p
 
 	d := hooks.UseDebounce(ctx, 300*time.Millisecond)
 	...
-	components.SearchField{
+	comps.SearchField{
 	    Value: query.Get(),
 	    OnChange: func(s string) {
 	        query.Set(s)                       // the field is controlled: now

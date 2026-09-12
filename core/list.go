@@ -33,7 +33,7 @@ func List(stylePropsAndChildren ...PropsAndChildren) View {
 //	    core.Keyed("s1", row), core.Keyed("s2", row),
 //	)
 //
-// components.GroupedList{StickyHeaders: true} is the widget spelling; this
+// comps.GroupedList{StickyHeaders: true} is the widget spelling; this
 // is the primitive underneath it.
 //
 // # Why a StyleProp, and why no new field
@@ -80,7 +80,7 @@ func StickyHeader() StyleProp {
 
 // OnEndReached fires when the user scrolls within a few rows of the bottom of
 // a List: the "fetch the next page" edge that turns a manual
-// components.LoadMore button into an infinite feed.
+// comps.LoadMore button into an infinite feed.
 //
 //	core.List(
 //	    core.OnEndReached(pager.LoadNext),
@@ -104,7 +104,7 @@ func StickyHeader() StyleProp {
 // failed) leaves the guard closed, which is exactly right — scrolling at the
 // bottom of a list that just came back empty should not re-ask forever. A
 // caller that wants the retry offers a button; that is what
-// components.LoadMore's error arm has always been for.
+// comps.LoadMore's error arm has always been for.
 //
 // Doing it in Go also means the four renderers each get to be as naive as
 // their platform makes convenient, and none of them has to agree with the

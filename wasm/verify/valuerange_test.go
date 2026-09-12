@@ -33,7 +33,7 @@ import (
 // until this pass nothing in the repository had ever watched one do it:
 //
 //	the implicit 0..100        a bare aria-valuenow announcing as a percentage
-//	                           is the premise components.ProgressBar rests on
+//	                           is the premise comps.ProgressBar rests on
 //	one bound stated           "3" with only a max of 5 is step 3 of 5, and the
 //	                           other end is ARIA's, not zero
 //	indeterminate by omission  a progressbar with no aria-valuenow is a bar

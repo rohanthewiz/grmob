@@ -22,7 +22,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/rohanthewiz/grmob/components"
+	"github.com/rohanthewiz/grmob/comps"
 	"github.com/rohanthewiz/grmob/core"
 	"github.com/rohanthewiz/grmob/htmlout"
 )
@@ -79,7 +79,7 @@ func ChatApp(ctx *core.Context) core.View {
 	// own Scroll, which is what lets the header and composer stay put while
 	// only the thread moves. A scrolling screen would put a scroll view inside
 	// a scroll view, and the two would fight over the same drag natively.
-	return components.Screen{
+	return comps.Screen{
 		// The other half of KeyboardAware, and the reason it is not tied to
 		// Scroll: there is no scrolling region at this level to shorten, and
 		// the thing the keyboard covers is the composer — docked at the
@@ -208,7 +208,7 @@ func MessageBubble(m Message) core.View {
 // two paths cannot drift apart, and what is left is what is actually specific
 // to this screen: the white bar it sits in.
 func Composer(draft core.State[string], send func()) core.View {
-	return components.InputRow{
+	return comps.InputRow{
 		Value:       draft.Get(),
 		Placeholder: "Mensagem…",
 		OnChange:    func(val string) { draft.Set(val) },
@@ -216,7 +216,7 @@ func Composer(draft core.State[string], send func()) core.View {
 		// The theme's Button base already is a filled Primary with padding
 		// and a radius, so no color props here; OnTap is left unset and
 		// inherits OnSubmit above.
-		Button: components.Button{Label: "Enviar"},
+		Button: comps.Button{Label: "Enviar"},
 		// Gap is unset: the widget's default is the theme's SM step, which
 		// is the 8 this row used to write by hand. The background and the
 		// padding are this screen's own — a docked composer reads as a bar

@@ -1,11 +1,11 @@
-// Package bandfixture states the geometry of components.GroupHeader's band in
+// Package bandfixture states the geometry of comps.GroupHeader's band in
 // the two arrangements its insets have had, so a renderer other than the web
 // can be asked whether they are the same band.
 //
 // # The claim this exists to settle
 //
 // The band's padding used to be on the Row and is now on the control inside it
-// (see components.bandInsets). The argument for the move is that a press should
+// (see comps.bandInsets). The argument for the move is that a press should
 // land on the whole band rather than on a strip in the middle of it, and the
 // argument that the move is *free* is that padding on a stretched child fills
 // exactly the space the same padding on its parent held:
@@ -43,7 +43,7 @@
 // # Why the numbers are read off a rendered band
 //
 // A transcribed 16 is a copy, and the whole point is to check the arrangement
-// the widget actually builds. Cases renders a real components.GroupHeader and
+// the widget actually builds. Cases renders a real comps.GroupHeader and
 // reads the insets, the gap and the flex-grow off the resulting nodes, so a
 // band whose recipe changed changes the fixture, and the Swift check is about
 // the new band rather than about a picture of the old one.
@@ -81,7 +81,7 @@
 // child of a real band, and every SameHeight case here would be describing a
 // layout the framework does not build.
 //
-// wasm/verify's gen.go renders real components.GroupHeaders through every
+// wasm/verify's gen.go renders real comps.GroupHeaders through every
 // bundled theme and browser.mjs measures them with real glyphs in them (see
 // bandRender there, and check 10). That is where this half is checked, and it is
 // the only place it can be.
@@ -95,7 +95,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/rohanthewiz/grmob/components"
+	"github.com/rohanthewiz/grmob/comps"
 	"github.com/rohanthewiz/grmob/core"
 	"github.com/rohanthewiz/grmob/htmlout"
 )
@@ -163,7 +163,7 @@ type Arrangement struct {
 // things depending on that: with a badge it *is* the gap before the badge — it
 // was a Gap on the Row before the move — and with the count hidden there is
 // nothing to be a gap before, so it is the band's own trailing breathing room
-// and belongs on the Row beside the leading one. components.bandInsets' own
+// and belongs on the Row beside the leading one. comps.bandInsets' own
 // `trailing` parameter is the same fact from the other side, and this is why it
 // takes 0 to mean "whatever the leading inset is".
 //
@@ -196,7 +196,7 @@ func (a Arrangement) Rewind(trailing bool) Arrangement {
 // Case is one band, both ways, with the sizes and offers to solve it at.
 type Case struct {
 	What string `json:"what"`
-	// Now is the arrangement components.GroupHeader builds today; Before is
+	// Now is the arrangement comps.GroupHeader builds today; Before is
 	// Now.Rewind().
 	Now    Arrangement `json:"now"`
 	Before Arrangement `json:"before"`
@@ -274,7 +274,7 @@ type Case struct {
 	SharesADeficit bool `json:"sharesADeficit"`
 }
 
-// Cases returns the band cases, read off real components.GroupHeader renders.
+// Cases returns the band cases, read off real comps.GroupHeader renders.
 func Cases() []Case {
 	withBadge := arrangementOf("GroupHeader, with a count badge", true)
 	noBadge := arrangementOf("GroupHeader, count hidden", false)
@@ -335,8 +335,8 @@ type read struct {
 func arrangementOf(what string, badge bool) read {
 	ctx := core.NewContext()
 	ctx.BeginRenderPass()
-	row := components.GroupHeader{
-		Group:     components.Group{Key: "2026-01", Label: "January 2026", Count: 3},
+	row := comps.GroupHeader{
+		Group:     comps.Group{Key: "2026-01", Label: "January 2026", Count: 3},
 		HideCount: !badge,
 	}.Render(ctx)
 

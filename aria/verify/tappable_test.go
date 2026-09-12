@@ -103,7 +103,7 @@ var notTappable = map[core.Role]nonControl{
 	// Structure. A table, a row, a cell, a list, a listitem, a rowgroup:
 	// these say how content is arranged. Putting one on a container makes it
 	// readable, not operable, and a tap handler on a row is a shortcut rather
-	// than the row's own semantics — components.ListRow's Selectable rows
+	// than the row's own semantics — comps.ListRow's Selectable rows
 	// carry RoleOption when they are members of something and nothing when
 	// they are not.
 	core.RoleTable:        {kindStructure, "arrangement, not operation"},

@@ -31,13 +31,13 @@
 //	           carries a fourth one, selectMenuSections in grmob-runtime.js, and
 //	           select_test.mjs rebuilds the sections back out of the DOM to
 //	           compare with Go's answer.
-//	widgets    real components.Chip and core.Input trees rendered through every
+//	widgets    real comps.Chip and core.Input trees rendered through every
 //	           bundled theme, for the browser pass to paint and sample. See
 //	           widgetCase.
-//	bands      internal/bandfixture, components.GroupHeader's two inset
+//	bands      internal/bandfixture, comps.GroupHeader's two inset
 //	           arrangements, for the browser pass to lay out and measure against
 //	           the answers ios/verify's flex solver gives.
-//	bandRenders real components.GroupHeaders, one per bundled theme per shape,
+//	bandRenders real comps.GroupHeaders, one per bundled theme per shape,
 //	           for the two band questions that are measurements of a rendered
 //	           widget rather than arithmetic over numbers. See bandRender.
 //	pins       internal/pinfixture, one overflowing Row in four arrangements,
@@ -54,7 +54,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/rohanthewiz/grmob/components"
+	"github.com/rohanthewiz/grmob/comps"
 	"github.com/rohanthewiz/grmob/core"
 	"github.com/rohanthewiz/grmob/examples/mobileapp"
 	"github.com/rohanthewiz/grmob/examples/signup"
@@ -88,7 +88,7 @@ type transcript struct {
 	// this file, and for the same reason as the second — run.sh generates one
 	// file and every consumer reads it.
 	Widgets []widgetCase `json:"widgets"`
-	// Bands are components.GroupHeader's two inset arrangements, for the
+	// Bands are comps.GroupHeader's two inset arrangements, for the
 	// browser pass to lay out and measure. The fourth table, same reason.
 	//
 	// ios/verify already solves these through GrMobFlexSolver and records that
@@ -99,7 +99,7 @@ type transcript struct {
 	// stated that in a comment and never asked a browser. browser.mjs mounts
 	// them and measures the rects.
 	Bands []bandfixture.Case `json:"bands"`
-	// BandRenders are real components.GroupHeaders, rendered through every
+	// BandRenders are real comps.GroupHeaders, rendered through every
 	// bundled theme, for the browser to lay out with real glyphs in them. The
 	// fifth table, same reason as the fourth.
 	//
@@ -383,13 +383,13 @@ func main() {
 // management in between.
 //
 // What it could not prove is that any widget draws them. Everything between
-// core.ColorPalette.ControlBorder and a pixel goes through `components`, and
-// `components` is Go: the browser pass mounts JSON and cannot call it. So a
+// core.ColorPalette.ControlBorder and a pixel goes through `comps`, and
+// `comps` is Go: the browser pass mounts JSON and cannot call it. So a
 // chip whose ring had stopped being the boundary tone — a Style override, a
 // dropped BorderWidth, a fallback taken — would leave every swatch in
 // palette.mjs painting perfectly and every Go test passing on hex strings.
 //
-// This closes that: the tree below is a real components.Chip rendered through
+// This closes that: the tree below is a real comps.Chip rendered through
 // a real theme, and the three colours are read off the *rendered node* rather
 // than off the palette. What the browser then checks is that the widget's own
 // declarations reach the screen.
@@ -415,7 +415,7 @@ type widgetCase struct {
 	// come from, so widget_test.go can hold each case to its own.
 	//
 	// It exists because the two widgets here read the tone from two different
-	// places, deliberately. components.chipRing reads
+	// places, deliberately. comps.chipRing reads
 	// Colors.ControlBorderColor — the role — while core.Input reads
 	// Components.Input.BorderColor, the field base, which is a *literal* that
 	// core/theme_test.go pins to the role separately. The two hold the same hex
@@ -443,7 +443,7 @@ const (
 //
 // # Why a chip and why quiet
 //
-// components.Chip is the widget core.ColorPalette.ControlBorder was introduced
+// comps.Chip is the widget core.ColorPalette.ControlBorder was introduced
 // for (see chipRing), and ProminenceQuiet is the arm that draws the ring: a
 // filter row is chrome that is meant to recede, and the ring is the whole of
 // what says the control is there. It is also the widget with *two* backdrops —
@@ -455,7 +455,7 @@ const (
 // # Why a field as well
 //
 // The chip is the role's second spender; the field frame is the first, and it
-// spends the tone through a different Go value. components.chipRing reads
+// spends the tone through a different Go value. comps.chipRing reads
 // Colors.ControlBorderColor — the role — while core.Input reads
 // Components.Input.BorderColor, a literal each theme states and
 // core/theme_test.go pins to the role separately, because a core.Style is a
@@ -521,7 +521,7 @@ type widgetBuilder struct {
 // be a second set of widgets, and the provenance it proved would be theirs.
 var widgetBuilders = []widgetBuilder{
 	{"quiet Chip", ringFromRole, func(*core.Theme) core.View {
-		return components.Chip{Label: "Sermons"}
+		return comps.Chip{Label: "Sermons"}
 	}},
 	// Empty value and no handler: what is under test is the frame, and a
 	// field with text in it puts ink near the fill sample. The placeholder
@@ -583,7 +583,7 @@ func renderWidgetCase(name string, theme *core.Theme, w widgetBuilder) (widgetCa
 }
 
 // ratioBetween is the census's own arithmetic, through internal/palette, so
-// the number travelling to the browser is the number components/variant_test.go
+// the number travelling to the browser is the number comps/variant_test.go
 // measures. A colour that does not parse is an error rather than zero: a ratio
 // of 0 would print in a failure as a claim somebody made.
 func ratioBetween(theme, a, b string) (float64, error) {
@@ -598,7 +598,7 @@ func ratioBetween(theme, a, b string) (float64, error) {
 
 // --- The rendered bands -----------------------------------------------------
 
-// bandRender is one real components.GroupHeader, rendered through one bundled
+// bandRender is one real comps.GroupHeader, rendered through one bundled
 // theme, with the paths of the nodes a browser has to measure.
 //
 // # The two questions the arithmetic fixture cannot reach
@@ -617,7 +617,7 @@ func ratioBetween(theme, a, b string) (float64, error) {
 //	                 CROSS-axis question, and GrMobFlexSolver is a main-axis
 //	                 distributor: it has no answer, and bandfixture's own
 //	                 arrangementOf renders the plain band precisely to stay out
-//	                 of its way. The picture in components.bandInsets assumes
+//	                 of its way. The picture in comps.bandInsets assumes
 //	                 the answer.
 //
 //	the taller child bandfixture's third case turns on the padded control being
@@ -1281,9 +1281,9 @@ func inkProbeColor(ink string) (string, error) {
 //
 // The plain band with a badge is the baseline the disclosure is compared
 // against — the two branches are supposed to be the same band geometrically,
-// which is what components.GroupHeader.ControlStyle promises a caller who adds
+// which is what comps.GroupHeader.ControlStyle promises a caller who adds
 // a handler. The disclosure with a badge is the tap-target case. Hiding the
-// count is the asymmetric side components.bandInsets' `trailing` parameter
+// count is the asymmetric side comps.bandInsets' `trailing` parameter
 // exists for: the control's trailing edge becomes the band's own inset rather
 // than the gap before a badge.
 //
@@ -1324,28 +1324,28 @@ var bandRenderBuilders = []struct {
 	// failure here rather than a shape that quietly exercises nothing. See
 	// bandRender.Leading for the pixel half of the same claim.
 	indent int
-	build  func() components.GroupHeader
+	build  func() comps.GroupHeader
 }{
-	{"a plain band", false, "badged", 0, func() components.GroupHeader {
-		return components.GroupHeader{Group: bandRenderGroup}
+	{"a plain band", false, "badged", 0, func() comps.GroupHeader {
+		return comps.GroupHeader{Group: bandRenderGroup}
 	}},
-	{"a disclosure band", true, "badged", 0, func() components.GroupHeader {
-		return components.GroupHeader{
+	{"a disclosure band", true, "badged", 0, func() comps.GroupHeader {
+		return comps.GroupHeader{
 			Group: bandRenderGroup, Expanded: true, OnToggle: func() {},
 		}
 	}},
-	{"a plain band, count hidden", false, "unbadged", 0, func() components.GroupHeader {
-		return components.GroupHeader{Group: bandRenderGroup, HideCount: true}
+	{"a plain band, count hidden", false, "unbadged", 0, func() comps.GroupHeader {
+		return comps.GroupHeader{Group: bandRenderGroup, HideCount: true}
 	}},
-	{"a disclosure band, count hidden", true, "unbadged", 0, func() components.GroupHeader {
-		return components.GroupHeader{
+	{"a disclosure band, count hidden", true, "unbadged", 0, func() comps.GroupHeader {
+		return comps.GroupHeader{
 			Group: bandRenderGroup, Expanded: true, OnToggle: func() {},
 			HideCount: true,
 		}
 	}},
 	{"a plain band, indented, long title, no count", false, "", bandRenderIndent,
-		func() components.GroupHeader {
-			return components.GroupHeader{
+		func() comps.GroupHeader {
+			return comps.GroupHeader{
 				Group: bandRenderLongGroup, HideCount: true,
 				ControlStyle: []core.StyleProp{core.PaddingLeft(bandRenderIndent)},
 			}
@@ -1354,7 +1354,7 @@ var bandRenderBuilders = []struct {
 
 // The group every rendered band titles. The same one internal/bandfixture
 // reads its numbers off, so the two tables are describing one band.
-var bandRenderGroup = components.Group{Key: "2026-01", Label: "January 2026", Count: 3}
+var bandRenderGroup = comps.Group{Key: "2026-01", Label: "January 2026", Count: 3}
 
 // The group the odd shape titles: the same band, named at a length a real feed
 // produces, so the label's rect is most of the band rather than a short run at
@@ -1363,7 +1363,7 @@ var bandRenderGroup = components.Group{Key: "2026-01", Label: "January 2026", Co
 // Short enough to stay on one line inside bandRenderWidth at a caption size —
 // the scan reads three rows of ONE line box — and long enough that its rect
 // bears no resemblance to the other four.
-var bandRenderLongGroup = components.Group{
+var bandRenderLongGroup = comps.Group{
 	Key: "2026-01-long", Label: "January 2026, week by week", Count: 3,
 }
 
@@ -2188,7 +2188,7 @@ func bandRenders() ([]bandRender, []inkProbe, []inkLigature) {
 // `go test`, and os.Exit does the first and takes the whole test binary down
 // doing the second.
 func renderBandCase(name string, theme *core.Theme, what string, collapsible bool,
-	indent int, band components.GroupHeader) (bandRender, []inkProbe, error) {
+	indent int, band comps.GroupHeader) (bandRender, []inkProbe, error) {
 
 	ctx := core.NewContext().WithTheme(theme)
 	ctx.BeginRenderPass()
@@ -2316,7 +2316,7 @@ func renderBandCase(name string, theme *core.Theme, what string, collapsible boo
 			return bandRender{}, nil, fmt.Errorf(
 				"%s/%s: the count pill declares no text colour, so what a browser draws "+
 					"the number in is whatever it inherits and there is nothing to read "+
-					"back. components.Badge resolves an ink against its own fill "+
+					"back. comps.Badge resolves an ink against its own fill "+
 					"(Variant.Ink) precisely so the digits are legible on it — a pill "+
 					"that stopped declaring one would still lay out identically",
 				name, what)

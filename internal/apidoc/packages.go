@@ -99,7 +99,7 @@ var Packages = []Pkg{
 		Blurb: "The tree diff and the patch vocabulary every host applies.",
 	},
 	{
-		Dir:   "components",
+		Dir:   "comps",
 		Group: "Widgets",
 		Blurb: "The widget library — cards, tabs, accordions and friends, built on the public core API.",
 	},

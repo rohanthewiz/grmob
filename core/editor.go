@@ -94,7 +94,7 @@ type EditorRef struct {
 //
 // A widget that calls this consumes a positional hook slot on the caller's
 // context and must therefore be rendered unconditionally, like any other hook
-// user; components.CodeEditor says so in its own doc.
+// user; comps.CodeEditor says so in its own doc.
 func UseEditorRef(ctx *Context) *EditorRef {
 	// NewState keeps only the first value handed to it, so the ref allocated
 	// on later passes is discarded and Get returns the original pointer. The

@@ -41,7 +41,7 @@ flowchart TB
 | `reconcile` | `Diff(old, new, path)` — computes the patch set between two trees |
 | `render` | `Manager` — drives render passes, serializes them, pushes async diffs |
 | `hooks` | `UseEffect`, `UseInterval`, `UseTimeout`, `UseMemo`, `UseReducer` — side effects and derived state bound to hook slots |
-| `components` | Struct-configured widget library built on the public core API |
+| `comps` | Struct-configured widget library built on the public core API |
 | `mobile` | The gomobile-bindable bridge surface for the native shells |
 | `wasm` | The browser runtime entry point |
 | `htmlout`, `jsonout` | Tree exporters for previews, tests, and tooling |

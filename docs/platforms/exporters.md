@@ -151,7 +151,7 @@ indented HTML. Properties worth relying on:
   `ariaExpanded` answers a *third* role list that is neither of theirs — it
   drops `option` and adds `link` and `listbox`. A `core.Button` carries all
   three with no role at all, the node type being one, which is what lets a
-  `components.Chip` be pressed and an `components.Accordion` header be a
+  `comps.Chip` be pressed and an `comps.Accordion` header be a
   disclosure. There is no `role="group"`-shaped rescue for either state, and
   that asymmetry with the name is deliberate. See
   [Styling & Theming](../concepts/styling-and-theming.md#accessibilityexpanded).
@@ -175,7 +175,7 @@ indented HTML. Properties worth relying on:
 - **A form control is told it has no border** when the style declares none.
   The border guard is "a width *and* a color" on all four targets; emitting
   nothing on the web left the user agent's own rule standing, which is what
-  gave `components.Button`'s ghost emphasis an outline the natives never drew.
+  gave `comps.Button`'s ghost emphasis an outline the natives never drew.
   `htmlout.ResetsUABorder` is the set, keyed by **node type** rather than by
   tag: `Button`, the three text inputs, `TextArea` and `Select` are in, and
   `Checkbox`, `Switch` and `Slider` — which share `<input>` with the text
@@ -216,7 +216,7 @@ if got, want := render(newImpl), render(oldImpl); got != want {
 ```
 
 `examples/todoapp/chip_migration_test.go` uses exactly this: it proved the
-filter bar's extraction into `components.Chip` was byte-identical, and now
+filter bar's extraction into `comps.Chip` was byte-identical, and now
 holds the widget's output against the same bar written by hand.
 
 ## jsonout — JSON export

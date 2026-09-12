@@ -9,7 +9,7 @@ import (
 )
 
 // legacyFilterBar is the filter bar hand-rolled, as it was before the
-// extraction into components.Chip. It is the acceptance check from the
+// extraction into comps.Chip. It is the acceptance check from the
 // element-lessons plan (Workstream 3): the components package must be able to
 // reproduce what apps were building by hand, byte for byte.
 //

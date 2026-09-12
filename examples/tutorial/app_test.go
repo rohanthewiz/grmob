@@ -439,10 +439,10 @@ func expandChapter(t *testing.T, mgr *render.Manager, chapter int) {
 //
 // This was a real 16-point shift, found by measuring ink columns in simulator
 // screenshots rather than by eye, and it survived a code review because
-// neither inset is written in any source file: components.Screen's column and
+// neither inset is written in any source file: comps.Screen's column and
 // core.List are both built on the theme's Components.Column, so moving this
 // page from a scrolled Column to a List silently added a second copy of the
-// same padding. components.Screen now drops its own when its whole content is
+// same padding. comps.Screen now drops its own when its whole content is
 // a scrolling page; what that rule is worth is exactly this screen, so the
 // assertion lives here as well as in the widget's own tests.
 //
@@ -987,7 +987,7 @@ func findList(n *wireNode) (*wireNode, bool) {
 // The chapter a reader came out of is open when they land back on the contents.
 //
 // This is the whole reason the expansion is session state rather than eight
-// widgets' own: a components.Accordion would have collapsed itself again on the
+// widgets' own: a comps.Accordion would have collapsed itself again on the
 // way back, and nothing on the contents screen could have reached in to say
 // otherwise. Both doors into a lesson are checked, because there are two and
 // the rule lives in neither of them — see markVisited.

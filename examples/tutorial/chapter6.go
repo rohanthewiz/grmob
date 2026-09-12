@@ -3,7 +3,7 @@ package tutorial
 import (
 	"fmt"
 
-	"github.com/rohanthewiz/grmob/components"
+	"github.com/rohanthewiz/grmob/comps"
 	"github.com/rohanthewiz/grmob/core"
 	"github.com/rohanthewiz/grmob/forms"
 )
@@ -47,14 +47,14 @@ func navDemoScreen(title string, body func(ctx *core.Context) []core.View) func(
 		children := []core.View{
 			core.Row(
 				core.AlignItemsProp(core.AlignItemsCenter),
-				components.Badge{Text: "NAV DEMO"},
+				comps.Badge{Text: "NAV DEMO"},
 				core.Box(core.FlexGrow(1)), // slack, so the telemetry pins right
 				stackCaption(ctx),
 			),
 			titleText(title),
 		}
 		children = append(children, body(ctx)...)
-		return components.Screen{Scroll: true, Gap: 16, Children: children}
+		return comps.Screen{Scroll: true, Gap: 16, Children: children}
 	}
 }
 
@@ -88,10 +88,10 @@ func detailScreen() func(*core.Context) core.View {
 				caption(fmt.Sprintf("This frame's taps: %d", taps.Get())),
 				core.Row(
 					core.Gap(8),
-					components.Button{Label: "+1", OnTap: func() { taps.Set(taps.Get() + 1) }},
-					components.Button{
+					comps.Button{Label: "+1", OnTap: func() { taps.Set(taps.Get() + 1) }},
+					comps.Button{
 						Label:    "‹ Pop back to the lesson",
-						Emphasis: components.EmphasisOutlined,
+						Emphasis: comps.EmphasisOutlined,
 						OnTap:    func() { core.Pop(ctx) },
 					},
 				),
@@ -147,8 +147,8 @@ func DetailsScreen(ctx *core.Context) core.View {
 					caption(fmt.Sprintf("This lesson frame's taps: %d", taps.Get())),
 					core.Row(
 						core.Gap(8),
-						components.Button{Label: "+1", OnTap: func() { taps.Set(taps.Get() + 1) }},
-						components.Button{
+						comps.Button{Label: "+1", OnTap: func() { taps.Set(taps.Get() + 1) }},
+						comps.Button{
 							Label: "Push the detail screen ›",
 							OnTap: func() { core.Push(ctx, detailScreen()) },
 						},
@@ -183,19 +183,19 @@ func checkoutStep1() func(*core.Context) core.View {
 				"is discarded. Pop from the confirmation and you land on the lesson, not " +
 				"here; abandon checkout and re-enter, and the note is gone, because a new " +
 				"Push is a new frame."),
-			components.FormField{
+			comps.FormField{
 				Label: "Gift note",
 				Input: form.Input("note", "A line for the card"),
 			},
 			core.Row(
 				core.Gap(8),
-				components.Button{
+				comps.Button{
 					Label: "Place the order",
 					OnTap: func() { core.Replace(ctx, orderConfirmed()) },
 				},
-				components.Button{
+				comps.Button{
 					Label:    "‹ Abandon checkout",
-					Emphasis: components.EmphasisOutlined,
+					Emphasis: comps.EmphasisOutlined,
 					OnTap:    func() { core.Pop(ctx) },
 				},
 			),
@@ -210,9 +210,9 @@ func orderConfirmed() func(*core.Context) core.View {
 				"swapped the top frame instead of stacking a new one. The step-1 frame is " +
 				"gone — Pop from here goes straight to the lesson, and the half-filled " +
 				"checkout can never be revisited by walking back."),
-			components.Button{
+			comps.Button{
 				Label:    "‹ Back to the lesson",
-				Emphasis: components.EmphasisOutlined,
+				Emphasis: comps.EmphasisOutlined,
 				OnTap:    func() { core.Pop(ctx) },
 			},
 		}
@@ -249,7 +249,7 @@ OnTap: func() {
 					"existed."),
 				demoPanel("Run the checkout: type a note, place the order, note the depth, then pop from the confirmation.",
 					stackCaption(ctx),
-					components.Button{
+					comps.Button{
 						Label: "Start checkout ›",
 						OnTap: func() { core.Push(ctx, checkoutStep1()) },
 					},
@@ -281,19 +281,19 @@ func drillRoute(level int) func(*core.Context) core.View {
 				"chats are all this shape.", level)),
 			core.Row(
 				core.Gap(8),
-				components.Button{
+				comps.Button{
 					Label: "Deeper ›",
 					OnTap: func() { core.Push(ctx, drillRoute(level+1)) },
 				},
-				components.Button{
+				comps.Button{
 					Label:    "‹ Pop one level",
-					Emphasis: components.EmphasisOutlined,
+					Emphasis: comps.EmphasisOutlined,
 					OnTap:    func() { core.Pop(ctx) },
 				},
 			),
-			components.Button{
+			comps.Button{
 				Label:   "Done — back to contents",
-				Variant: components.VariantSuccess,
+				Variant: comps.VariantSuccess,
 				// One call unwinds everything: this level, every level under
 				// it, and the lesson frame too — the root is the contents
 				// screen. Progress survives because it lives above the
@@ -339,7 +339,7 @@ return core.Navigator(t.Home)`),
 					"that still knows what you've opened."),
 				demoPanel("Go three levels deep, pop one to feel the difference, then hit Done and watch the whole stack unwind.",
 					stackCaption(ctx),
-					components.Button{
+					comps.Button{
 						Label: "Enter the drill-down ›",
 						OnTap: func() { core.Push(ctx, drillRoute(1)) },
 					},
@@ -400,7 +400,7 @@ core.Modal(
     core.ModalContent(
         core.Card(
             core.Text("Discard this draft?"),
-            components.Button{Label: "Discard", OnTap: discard},
+            comps.Button{Label: "Discard", OnTap: discard},
         ),
     ),
 )`),
@@ -413,7 +413,7 @@ core.Modal(
 					"the intent is recorded."),
 				demoPanel("Open the dialog, tick the box, then dismiss by tapping the dark backdrop — and reopen.",
 					stackCaption(ctx),
-					components.Button{
+					comps.Button{
 						Label: "Open the modal",
 						OnTap: func() { open.Set(true) },
 					},
@@ -431,12 +431,12 @@ core.Modal(
 								checkRow("Add a gift receipt", giftReceipt),
 								core.Row(
 									core.Gap(8),
-									components.Button{
+									comps.Button{
 										Label:    "Cancel",
-										Emphasis: components.EmphasisGhost,
+										Emphasis: comps.EmphasisGhost,
 										OnTap:    func() { open.Set(false) },
 									},
-									components.Button{
+									comps.Button{
 										Label: "Confirm",
 										OnTap: confirm("Order confirmed" + map[bool]string{
 											true: ", gift receipt included", false: "",
@@ -508,21 +508,21 @@ core.SetSystemEventHandler(func(name string, data map[string]any) { ... })`),
 				demoPanel("Fire a few — watch the bottom of the screen, and note the tree only ever sees the counter.",
 					core.Row(
 						core.Gap(8),
-						components.Button{
+						comps.Button{
 							Label: "Show a toast",
 							OnTap: toast(func() { core.ShowToast("Nicely done — that landed") }),
 						},
-						components.Button{
+						comps.Button{
 							Label:    "Linger for five seconds",
-							Emphasis: components.EmphasisOutlined,
+							Emphasis: comps.EmphasisOutlined,
 							OnTap: toast(func() {
 								core.ShowToast("This one waits around", core.Duration(5000))
 							}),
 						},
 					),
-					components.Button{
+					comps.Button{
 						Label:    "Show it styled",
-						Emphasis: components.EmphasisOutlined,
+						Emphasis: comps.EmphasisOutlined,
 						OnTap: toast(func() {
 							core.ShowToast("Success, in green", core.UseToastStyle(core.Style{
 								Background: "#1F8A70",

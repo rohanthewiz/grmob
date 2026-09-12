@@ -9,7 +9,7 @@ import (
 //
 // # What the census is
 //
-// components.GroupHeader moved its padding from the band Row onto the growing
+// comps.GroupHeader moved its padding from the band Row onto the growing
 // control inside it, so that a press lands on the whole band. The warrant is
 // that the move is free — padding on a stretched child fills exactly the space
 // the same padding on its parent held — and internal/bandfixture carries the

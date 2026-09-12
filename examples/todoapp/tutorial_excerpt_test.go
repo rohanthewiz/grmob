@@ -79,7 +79,7 @@ func goFences(md string) []string {
 var appSymbols = []string{
 	"todos", "draft", "filterBar", "todoRow", "addTodo",
 	"clearButton", "setDone", "visible",
-	"components.Screen", "components.InputRow",
+	"comps.Screen", "comps.InputRow",
 }
 
 func aboutThisApp(fence string) bool {

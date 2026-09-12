@@ -483,7 +483,7 @@ runs the full width in the browser, and on a phone it used to hug its
 placeholder. Two kinds of child keep their own width, exactly as on the web:
 one with an explicit `Width`, and one whose `Display` is inline — which is
 how the bundled themes make `Button` and `Badge` hug their content (the web
-runtime turns that into `width: fit-content`); `components.Button{FullWidth:
+runtime turns that into `width: fit-content`); `comps.Button{FullWidth:
 true}` asks for the stretch back. An explicit `AlignItems(AlignFlexStart)`
 still packs. Rows keep their top-aligned default: the intrinsic-height
 measurement above has real costs inside a List, so nothing turns it on
@@ -798,7 +798,7 @@ above, because `accessibilityValue` is a real accessibility channel that the
 platform genuinely uses for this. What makes it wrong for a framework is that
 this renderer would have to supply the literal "expanded" or "collapsed" in
 English, for every app in every locale, in a slot the app may want for a value
-of its own. It is the same move `components.Chip`'s `", selected"` name suffix
+of its own. It is the same move `comps.Chip`'s `", selected"` name suffix
 was deleted for.
 
 So the key crosses the bridge and `GrMobStyle.swift` does not parse it, with a
@@ -818,7 +818,7 @@ of the field they can say.
 mappings in this framework — TalkBack turns a position and its bounds into a
 percentage it localizes itself, so a bar reports "45 percent" in the user's own
 language with no string ever crossing the bridge. That is exactly what
-`components.ProgressBar` could not do while its value lived in the accessible
+`comps.ProgressBar` could not do while its value lived in the accessible
 name. A range with bounds and no position becomes
 `ProgressBarRangeInfo.Indeterminate`, which is ARIA's indeterminate bar said in
 Compose's words; a range that states nothing numeric leaves the property alone,
@@ -891,7 +891,7 @@ the JVM pass and send the check back to searching source text.
 
 ### The field with a widget spending it
 
-The field now has a widget spending it — `components.ListRow`'s `NestingLevel`,
+The field now has a widget spending it — `comps.ListRow`'s `NestingLevel`,
 for an outline flattened into one list — and that changes nothing here, which
 is worth saying plainly rather than leaving to be inferred. Such a row goes out
 with `role="listitem"` and a depth; on device the role reaches the `when`/
@@ -909,7 +909,7 @@ style with the box-drawing fields stripped (`marginAndSize` on Android,
 own slots — Compose's `Button(colors:, shape:, contentPadding:)`, SwiftUI's
 `GrMobButtonStyle`. The border was the one field stripped and never fed back,
 so `core.BorderColor`/`BorderWidth` were silently dropped on Buttons alone and
-`components.Button`'s outlined emphasis had no rule on device.
+`comps.Button`'s outlined emphasis had no rule on device.
 
 Both now carry it: a `BorderStroke` into material3's `border` slot (and into
 the `Surface` the long-press path rebuilds the button out of), and a
@@ -1237,7 +1237,7 @@ SwiftUI `Layout`s precisely so they can be exercised without mounting anything.
 That makes them the one thing in the repository that can answer a question the
 web answers with a screenshot: **did this layout change move any pixels?**
 
-`components.GroupHeader`'s band is the case it was first asked about. The band's
+`comps.GroupHeader`'s band is the case it was first asked about. The band's
 padding used to be on the `Row` and is now on the growing control inside it, so
 that a press lands on the whole band rather than a strip in the middle of it —
 and the argument that the move is *free* is that padding on a stretched child

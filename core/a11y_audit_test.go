@@ -394,7 +394,7 @@ func TestAnEmptyValueRangeIsReported(t *testing.T) {
 // The second pair is the whole reason this check asks core.ValueRange rather
 // than testing strings: an unstated position *is* ARIA's indeterminate bar, and
 // an unstated bound *is* ARIA's 0..100 — both are the vocabulary working, and a
-// check that reported them would fire on components.ProgressBar's own output
+// check that reported them would fire on comps.ProgressBar's own output
 // and on every indeterminate spinner in every app.
 func TestAUsableValueRangeIsSilent(t *testing.T) {
 	for _, c := range []struct {

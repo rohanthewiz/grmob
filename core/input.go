@@ -241,7 +241,7 @@ func Option(value, label string) SelectOption {
 // A picker is a field: it sits in a form beside text inputs, and a picker that
 // did not match the fields around it would look like a mistake. Reading
 // Components.Input is also how it inherits the frame those fields grew — the
-// same move components.DatePicker makes for the same reason, and the reason
+// same move comps.DatePicker makes for the same reason, and the reason
 // this widget needs no palette role of its own.
 //
 // # Options are a prop, not children

@@ -545,7 +545,7 @@ style carries a width **and** a color; the web guard was the same, but its
 negative arm handed the element back to the user-agent stylesheet — and a
 `<button>` has a 2px outset rule there. No `core.BorderWidth(0)` could remove
 it, because emitting nothing is exactly what left the browser in charge. The
-visible cost was `components.Button`'s ghost emphasis, documented as "outlined
+visible cost was `comps.Button`'s ghost emphasis, documented as "outlined
 without the rule" and drawing one on both web targets.
 
 So the property has three values rather than two: the styled border, `""` for
@@ -780,7 +780,7 @@ What the runtime does with that:
 its axis was announced and no tab stop moved. The reason was real — ARIA calls a
 toolbar "a collection of commonly used function buttons or controls" and defines
 no `toolbaritem`, so unlike the two pairs above there is no role to look for.
-The cost was equally real: `components.ChipStrip` is a `Row` of `core.Button`s,
+The cost was equally real: `comps.ChipStrip` is a `Row` of `core.Button`s,
 so a twelve-chip filter bar was twelve stops in the page's tab order where ARIA
 promises one.
 
@@ -996,7 +996,7 @@ role with an unstated range is not corrected — ARIA spells an *indeterminate*
 bar by leaving `aria-valuenow` off, so defaulting a `0` in would pin every one
 of them at the start.
 
-What it closed: `components.ProgressBar` had nowhere to put its percentage but
+What it closed: `comps.ProgressBar` had nowhere to put its percentage but
 the accessible *name*, so a bar ticking from 44 to 45 re-announced "Upload, 45
 percent" whole rather than the part that changed, and nothing could act on a
 number buried in a string.
@@ -1072,7 +1072,7 @@ all five are below.
 ### The palette, on a screenshot
 
 The fifth check is not about the keyboard. `core.ColorPalette.ControlBorder`
-has WCAG 1.4.11's 3:1 floor under it and `components/variant_test.go` measures
+has WCAG 1.4.11's 3:1 floor under it and `comps/variant_test.go` measures
 the tone against every fill a control can be drawn on — but all of that is
 arithmetic over hex strings. It proves `#89898E` is 3.12:1 on `#F2F2F7`; it
 cannot prove either colour ever reaches a screen. Two retints and a whole third
@@ -1104,14 +1104,14 @@ The swatch grid is a *model* of a control boundary: a box in the backdrop
 holding a smaller box with a 1px frame, both built by `browser.mjs` itself. It
 answers everything about the route from a hex to a pixel and nothing about the
 route from the palette role to the hex — because that route runs through
-`components`, which is Go, and this file mounts JSON.
+`comps`, which is Go, and this file mounts JSON.
 
 So a chip whose ring had drifted off `Colors.ControlBorder` — a `Style`
 override, a fallback taken, `Components.Input.BorderColor` read instead of the
 role — would leave every swatch painting perfectly and every Go test passing on
 strings.
 
-`gen.go` therefore renders one quiet `components.Chip` **and** one `core.Input`
+`gen.go` therefore renders one quiet `comps.Chip` **and** one `core.Input`
 per bundled theme, on a page painted in that theme's own `Colors.Background`,
 and reads three colours off the **rendered node**: the page behind the boundary,
 the widget's own fill inside it, and the boundary itself. Those trees travel in
@@ -1120,7 +1120,7 @@ the transcript (which is why `run.sh` now hands `browser.mjs`
 browser mounts them unmodified and samples all three.
 
 **Two widgets, because the tone has two spenders reading it from two places.**
-`components.chipRing` takes `Colors.ControlBorderColor()`, the role;
+`comps.chipRing` takes `Colors.ControlBorderColor()`, the role;
 `core.Input` takes `Components.Input.BorderColor`, a literal each theme states
 and `core/theme_test.go` pins to the role separately — a `core.Style` is a
 value, so a component default cannot call a resolver. They hold the same hex in
@@ -1268,7 +1268,7 @@ accessibility tree and does nothing else.
 The ninth check is the second layout question, and the first that exists to
 settle a disagreement between two renderers.
 
-`components.GroupHeader` moved its padding from the band `Row` onto the growing
+`comps.GroupHeader` moved its padding from the band `Row` onto the growing
 control inside it, so that a press lands on the whole band rather than on a
 strip in the middle of it. The warrant is that the move costs nothing: padding
 on a stretched child fills exactly the space the same padding on its parent
@@ -1345,7 +1345,7 @@ The `Row`'s growing child is a heading wrapper with no chrome at all, and the
 button carrying the insets sits inside it with **no weight of its own**. Whether
 it reaches the wrapper's edges is a question about the *cross* axis of a vertical
 container, and `GrMobFlexSolver` — the arithmetic `ios/verify` runs — is a
-main-axis distributor. The picture in `components.bandInsets` had been assuming
+main-axis distributor. The picture in `comps.bandInsets` had been assuming
 the answer.
 
 **The taller child is a question about text.** Every `SameHeight` case in
@@ -1358,7 +1358,7 @@ bold caption shorter than a plain one by more than that would make the badge the
 tallest child of a real band, and every `SameHeight` case would be describing a
 layout the framework does not build.
 
-So `gen.go` renders **real** `components.GroupHeader`s — five shapes (a plain
+So `gen.go` renders **real** `comps.GroupHeader`s — five shapes (a plain
 band with a badge, a disclosure with a badge, each of those two again with the
 count hidden, and one plain band indented through `ControlStyle` under a title
 long enough to be most of the band) through each of four palettes — and emits
@@ -1404,7 +1404,7 @@ declares — a wrapper that stopped stretching its child would leave the target 
 the label's own width with the rest of the band dead.
 
 **And the two branches are not quite the same band.**
-`components.GroupHeader.ControlStyle` promises that "a caller who adds
+`comps.GroupHeader.ControlStyle` promises that "a caller who adds
 `OnToggle` gets a control and not a relayout", and measured against pixels that
 is exactly true of the chrome and false of the height by one point, in every
 bundled theme: the disclosure's button holds a chevron the plain band does not,

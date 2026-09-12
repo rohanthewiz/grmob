@@ -43,7 +43,7 @@ type Case struct {
 func Cases() []Case {
 	return []Case{
 		// The ordinary bar: a bare position, under ARIA's implicit 0..100.
-		// This is what components.ProgressBar emits.
+		// This is what comps.ProgressBar emits.
 		{"a bare percentage", core.ValueRange{Now: "45", Min: "0", Max: "100"}},
 		// The defaults, actually defaulted. A renderer that read a missing
 		// bound as 0 on both sides would produce an empty range here.

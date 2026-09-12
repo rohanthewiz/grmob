@@ -607,7 +607,7 @@ extension View {
     ///
     /// Turning them into a string here is the move this file has already
     /// turned down twice, for AccessibilityExpanded and for the `, selected`
-    /// suffix components.Chip used to append: a renderer that emits "45
+    /// suffix comps.Chip used to append: a renderer that emits "45
     /// percent" is inventing English for every app in every locale, and the
     /// value slot belongs to the app besides.
     ///
@@ -653,7 +653,7 @@ extension View {
     /// needs the same stroke. A Button draws its own container, so it is handed
     /// a style stripped of the box-drawing fields (marginAndSizeOnly) and never
     /// reaches grMobBox — which is how core.BorderWidth/BorderColor came to be
-    /// dropped on Buttons alone, and why the rule components.Button's
+    /// dropped on Buttons alone, and why the rule comps.Button's
     /// EmphasisOutlined documents drew on the web and not on device.
     @ViewBuilder func grMobBorder(_ shape: RoundedRectangle?, color: Color?, width: CGFloat) -> some View {
         if let color, width > 0 {
@@ -908,7 +908,7 @@ private func grMobHeadingLevel(_ s: GrMobStyle) -> AccessibilityHeadingLevel {
 ///
 /// The near miss is therefore `accessibilityValue`, and taking it would mean
 /// this renderer emitting the literal "expanded" or "collapsed" in English,
-/// for every app, in every locale. That is the same move `components.Chip`
+/// for every app, in every locale. That is the same move `comps.Chip`
 /// deleted when it stopped appending ", selected" to its accessibility label:
 /// a state written into a text channel, announced in the wrong place and in a
 /// language nobody chose. The value slot also belongs to the app — a slider

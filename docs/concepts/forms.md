@@ -1,6 +1,6 @@
 # Forms & Validation
 
-`components.FormField` has always had an `Error` slot, and until now nothing
+`comps.FormField` has always had an `Error` slot, and until now nothing
 ever filled it. Package `forms` is what fills it: a vocabulary of rules, a hook
 that owns a form's values and decides **when** its errors become visible, and
 bound input builders that tie a field's value and its `onChange` to the same
@@ -20,14 +20,14 @@ form := forms.UseForm(ctx, forms.Spec{
     },
 })
 
-components.FormField{
+comps.FormField{
     Label: "Email",
     Hint:  "We never share it",
     Error: form.Error("email"),
     Input: form.Input("email", "you@example.com"),
 }
 
-components.Button{
+comps.Button{
     Label: "Create account",
     OnTap: form.OnSubmit(func(v forms.Values) { createAccount(v) }),
 }
@@ -403,11 +403,11 @@ they land.
 
 ## The required marker
 
-`components.FormField` draws an asterisk after the label when its `Required`
+`comps.FormField` draws an asterisk after the label when its `Required`
 field is set — and the value to set it to comes from the form:
 
 ```go
-components.FormField{
+comps.FormField{
     Label:    "Email",
     Required: form.Required("email"),
     Error:    form.Error("email"),

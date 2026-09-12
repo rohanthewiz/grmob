@@ -78,9 +78,9 @@ func (r *locationRecord) release() {
 //
 //	loc := hooks.UseLocation(ctx)
 //	switch {
-//	case !loc.Received:  return components.Skeleton{}          // acquiring
-//	case !loc.Available: return components.EmptyState{Hint: loc.Error}
-//	default:             return components.StaticMap{Lat: loc.Lat, Lng: loc.Lng}
+//	case !loc.Received:  return comps.Skeleton{}          // acquiring
+//	case !loc.Available: return comps.EmptyState{Hint: loc.Error}
+//	default:             return comps.StaticMap{Lat: loc.Lat, Lng: loc.Lng}
 //	}
 //
 // It is UseHeading with a different sensor, and every argument in that hook's
@@ -109,7 +109,7 @@ func (r *locationRecord) release() {
 //	case permission.Prompt:      return askButton()      // permission.Request
 //	case permission.Denied:      return settingsHint()
 //	case permission.Unavailable: return nil
-//	default:                     return components.Skeleton{}
+//	default:                     return comps.Skeleton{}
 //	}
 //
 // # Both hooks run on every pass, and the branch is about drawing

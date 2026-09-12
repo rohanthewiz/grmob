@@ -54,7 +54,7 @@ type ColorPalette struct {
 	// boundary. That split used to have no second field in it — the frames
 	// lived in Components.Input and Components.TextArea alone, and the note
 	// here said no palette role was needed because nothing outside those two
-	// component defaults spent one. components.Chip is what made that false:
+	// component defaults spent one. comps.Chip is what made that false:
 	// a quiet chip's hairline is not a rule *between* things, it is the only
 	// edge a filter control has, and it was drawing it out of this role.
 	//
@@ -89,7 +89,7 @@ type ColorPalette struct {
 	// not a property of the tone, it is a property of a *pair*.
 	//
 	// Every pair a bundled theme can produce is enumerated and measured by
-	// TestEveryControlBoundaryPairIsAccountedFor in components/variant_test.go
+	// TestEveryControlBoundaryPairIsAccountedFor in comps/variant_test.go
 	// (the arithmetic lives there, beside the on-light census, for the reason
 	// that one gives). Every pair clears, and the census's
 	// knownBoundaryShortfalls table — the place a defended shortfall would be
@@ -118,7 +118,7 @@ type ColorPalette struct {
 	// ControlBorderRole rather than by the type system.
 	//
 	// A widget that wants to look like a text field still reads the Input base
-	// itself (components.DatePicker does), because it wants the radius and the
+	// itself (comps.DatePicker does), because it wants the radius and the
 	// fill too. This role is for a widget that wants only the edge.
 	//
 	// Read via ControlBorderColor.
@@ -142,7 +142,7 @@ type ColorPalette struct {
 	//
 	// A palette role is one hex, and one hex cannot do both jobs a role is
 	// asked to do. Spent as a fill with a chosen ink over it, a mid-tone
-	// works — components.Variant.Ink picks the more legible of the theme's
+	// works — comps.Variant.Ink picks the more legible of the theme's
 	// two inks and a filled Badge or Button clears WCAG AA on every bundled
 	// theme. Spent as ink *itself* — an outlined button's label and rule, a
 	// loud chip's outline, a banner's leading glyph — the backdrop is
@@ -155,8 +155,8 @@ type ColorPalette struct {
 	//	warning      2.20:1    3.08:1
 	//	error        3.55:1    7.33:1
 	//
-	// Five of those eight fail. This is the fix components.Button and
-	// components.Chip both name in their own docs and could not make: the
+	// Five of those eight fail. This is the fix comps.Button and
+	// comps.Chip both name in their own docs and could not make: the
 	// widgets have the number and not the authority. Darkening a role until
 	// it passes would repaint a hex the theme author chose, so the second
 	// tone is the theme's to declare.
@@ -331,7 +331,7 @@ func (c ColorPalette) ErrorOnLightColor() string {
 //
 // The four resolvers above answer for a widget that knows which *role* it is
 // spending. This answers for one that knows only a *colour*, which is the
-// commoner case than it sounds: components.Chip's accent is read off the
+// commoner case than it sounds: comps.Chip's accent is read off the
 // theme's Button base rather than off Colors.Primary, precisely so that a
 // theme whose buttons are not primary-coloured still gets its own look, and a
 // widget in that position has a hex and no name for it.
@@ -370,7 +370,7 @@ func (c ColorPalette) ErrorOnLightColor() string {
 //
 // Which arms have a bundled witness and which rest on a test fixture is
 // recorded and checked per role by TestEveryPaletteRuleStillHasAWitness in
-// components/palette_witness_test.go, so a retint that leaves an arm with no
+// comps/palette_witness_test.go, so a retint that leaves an arm with no
 // evidence anywhere is reported rather than merely true.
 func (c ColorPalette) OnLight(color string) string {
 	switch {
@@ -406,7 +406,7 @@ type SpacingScale struct {
 // on — and core.ColorPalette.ControlBorder has WCAG 1.4.11's 3:1 floor against
 // every such fill. internal/palette derives that list by reflecting over this
 // struct, precisely so that adding a field (a Sheet, a Popover) adds a
-// backdrop with nobody having to remember, and components/variant_test.go
+// backdrop with nobody having to remember, and comps/variant_test.go
 // measures the pair.
 //
 // Every field carries exactly one of two tags, and both are claims about the
@@ -446,10 +446,10 @@ type SpacingScale struct {
 // prints it when a pair falls short.
 type ComponentDefaults struct {
 	Button   Style `notbackdrop:"a control's own fill, not a surface: Colors.Primary. A bordered control is never drawn on top of a filled button — an outline Button draws its own edge over whatever is behind it, which is the page or a panel, and both of those are already measured. Excluded because the pair is unreachable, not because it is close"`
-	Card     Style `backdrop:"a panel: a Card is a container, so anything a screen puts inside one is drawn on this fill. components.FormField's Input inside a components.Card is the commonest screen this framework builds, and its frame is a control boundary against exactly this colour"`
+	Card     Style `backdrop:"a panel: a Card is a container, so anything a screen puts inside one is drawn on this fill. comps.FormField's Input inside a comps.Card is the commonest screen this framework builds, and its frame is a control boundary against exactly this colour"`
 	Input    Style `backdrop:"a field's own interior, enclosed by its own frame: the pair here is a boundary against the fill it encircles rather than one control on top of another. Reachable by construction, not by composition — every Input that states a BorderColor builds it, and there is no arrangement of widgets that avoids it"`
 	Column   Style `backdrop:"a layout container. It states no fill in any bundled theme, so it contributes no pair today — that is a fact about the themes and not about the geometry. A theme that fills its Column has made it a page region, and every control laid out in one is then drawn on it"`
-	Row      Style `backdrop:"a layout container, on the other axis and for the same reason as Column. components.GroupHeader's band is a filled Row with a bordered control in it the moment a caller styles one, which is the shape that makes this a real pair rather than a hypothetical"`
+	Row      Style `backdrop:"a layout container, on the other axis and for the same reason as Column. comps.GroupHeader's band is a filled Row with a bordered control in it the moment a caller styles one, which is the shape that makes this a real pair rather than a hypothetical"`
 	Camera   Style `notbackdrop:"a viewfinder: its fill is black in every theme because it is what shows for the frame before the first camera frame arrives, and nothing draws a control boundary on top of a preview. Excluded by name rather than by a lightness test, because a rule that skipped dark fills would also skip a dark theme's page"`
 	CheckBox Style `backdrop:"the box's own interior, enclosed by its own boundary — the same by-construction pair as Input. Two of the three bundled themes state a fill here and the third does not, so the pair exists in some palettes and not others, which is what a derived census handles and a hand-written list does not"`
 	TextArea Style `backdrop:"a field's own interior, as Input, one tag over. The two are separate fields because a theme may want a taller field to read differently, and they are separate rows in the census for the same reason"`
@@ -511,7 +511,7 @@ var DefaultTheme = &Theme{
 		// The alternative was to darken Components.Button alone and leave the
 		// role at systemBlue, and it is worth saying why that is wrong rather
 		// than merely narrower: the button base is what declares the ink for
-		// *this* fill (see components.declaredInk). Move one without the
+		// *this* fill (see comps.declaredInk). Move one without the
 		// other and Primary becomes a fill the theme has paired nothing with,
 		// so Calendar's selected day falls back to measurement and picks
 		// black on system blue — exactly the disagreement inkOn was written
@@ -534,7 +534,7 @@ var DefaultTheme = &Theme{
 		// Measured against both backdrops a control has here: the page and a
 		// field's fill are the same white, and a quiet Chip's fill is Surface.
 		// Both clear WCAG 1.4.11's 3:1 floor, which is the whole census in
-		// components/variant_test.go for this theme.
+		// comps/variant_test.go for this theme.
 		//
 		// This is *not* Apple's systemGray, and the two digits are the only
 		// value in this palette that leaves its published source. systemGray
@@ -607,7 +607,7 @@ var DefaultTheme = &Theme{
 			FontSize:   17,
 			FontWeight: Normal,
 			// The declared pair, and the only place this theme states a fill
-			// and an ink together — which is what components.declaredInk
+			// and an ink together — which is what comps.declaredInk
 			// reads back for every widget that paints Primary. Two things
 			// have to hold and neither is expressible in the type system:
 			// the fill stays Colors.Primary (TestBundledButtonFillsAreThe

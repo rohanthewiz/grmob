@@ -438,7 +438,7 @@ const GrMob = (() => {
     // case wrong on the web: a <button> with no border in its style keeps the
     // browser's own 2px outset rule, which no core.BorderWidth(0) can remove
     // because emitting nothing is exactly what leaves the user agent in charge.
-    // components.Button's EmphasisGhost — "outlined without the rule" — is what
+    // comps.Button's EmphasisGhost — "outlined without the rule" — is what
     // made that visible, drawing a rule on both web targets and none on either
     // phone.
     //
@@ -991,7 +991,7 @@ const GrMob = (() => {
     // The second rule is the one this whole section was restructured for. For
     // two releases `toolbar` was in the orientation table and out of the
     // keyboard: the axis was announced and no tab stop moved, which left
-    // components.ChipStrip a run of controls a keyboard crosses one Tab at a
+    // comps.ChipStrip a run of controls a keyboard crosses one Tab at a
     // time — twelve stops on a twelve-chip filter bar, where ARIA promises one.
     //
     // The rule for a toolbar's members is the one the absence forces: every
@@ -1156,7 +1156,7 @@ const GrMob = (() => {
     // The members of one composite, in document order.
     //
     // A subtree walk rather than a children scan, because nothing says a
-    // member is a direct child: components.ListRow renders a row inside
+    // member is a direct child: comps.ListRow renders a row inside
     // whatever core.For and core.Keyed wrap it in, and a tab strip may have
     // its buttons inside a scroller. The walk stops at three things:
     //
@@ -1980,7 +1980,7 @@ const GrMob = (() => {
     // clear the other attribute either way — see the note at the call site.
     //
     // The Button node type is checked only when the style names no role: a
-    // core.Button already is a button, which is what lets components.Chip —
+    // core.Button already is a button, which is what lets comps.Chip —
     // which renders as one and sets no role — carry a state at all. Same rule
     // that gives a Modal its dialog role.
     function ariaSelected(style, nodeType) {
@@ -2246,7 +2246,7 @@ const GrMob = (() => {
     // IntersectionObserver is guarded rather than assumed, the same way
     // getComputedStyle is in toastLayerHost: a host without it (an older
     // embedder, a minimal test DOM) renders the list correctly and simply
-    // never reports the edge, which leaves a components.LoadMore button as the
+    // never reports the edge, which leaves a comps.LoadMore button as the
     // manual fallback it was designed to be.
     const END_REACHED_MARGIN = "200px";
 
@@ -2477,7 +2477,7 @@ const GrMob = (() => {
             console.warn(
                 "grmob: core.MapView needs Leaflet on the host page. Add " +
                 "leaflet.css and leaflet.js to your index.html (see wasm/index.html) " +
-                "or use components.StaticMap, which needs no engine."
+                "or use comps.StaticMap, which needs no engine."
             );
         }
     }
@@ -5135,7 +5135,7 @@ const GrMob = (() => {
             : "";
         // One more reading of Display, translated rather than emitted:
         // an inline display is the themes' way of saying "hug your content"
-        // (components.Button documents FullWidth as block display + width
+        // (comps.Button documents FullWidth as block display + width
         // precisely because the bundled themes give Button an inline one).
         // Inside this runtime's always-flex stacks the inline keyword itself
         // is inert — flex items are blockified — and the cross-axis default

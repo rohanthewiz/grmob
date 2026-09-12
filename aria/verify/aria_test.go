@@ -261,7 +261,7 @@ func TestTheNearMissesAreRealDistinctions(t *testing.T) {
 				"and core.Role has no grid"},
 		{"listitem", "option", "aria-selected",
 			"a list item is content and an option is a control in a listbox, which is " +
-				"why components.ListRow has to give up one role to take the other"},
+				"why comps.ListRow has to give up one role to take the other"},
 		{"option", "listbox", "aria-expanded",
 			"an option is a leaf choice; the thing that expands is the listbox around it"},
 		{"progressbar", "slider", "aria-orientation",

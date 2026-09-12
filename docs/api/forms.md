@@ -6,7 +6,7 @@ import "github.com/rohanthewiz/grmob/forms"
 
 Package forms is grmob's validation layer: a vocabulary of rules, a hook that owns a form's values and decides when its errors become visible, and bound input builders that tie a field's value and its onChange to the same name in one call.
 
-components.FormField has always had an Error slot and nothing ever filled it — the widget renders feedback, but deciding \*what\* the feedback is, and \*when\* the user should see it, is not a widget's job. This package is that decision, kept out of core (validation touches no node type and no renderer) and out of components (a struct widget cannot own state that outlives one field).
+comps.FormField has always had an Error slot and nothing ever filled it — the widget renders feedback, but deciding \*what\* the feedback is, and \*when\* the user should see it, is not a widget's job. This package is that decision, kept out of core (validation touches no node type and no renderer) and out of components (a struct widget cannot own state that outlives one field).
 
 	form := forms.UseForm(ctx, forms.Spec{
 	    Fields: []forms.Field{
@@ -30,19 +30,19 @@ components.FormField has always had an Error slot and nothing ever filled it —
 	    },
 	})
 
-	components.Screen{Children: []core.View{
-	    components.FormField{
+	comps.Screen{Children: []core.View{
+	    comps.FormField{
 	        Label: "Email",
 	        Hint:  "We never share it",
 	        Error: form.Error("email"),
 	        Input: form.Input("email", "you@example.com"),
 	    },
-	    components.FormField{
+	    comps.FormField{
 	        Label: "Password",
 	        Error: form.Error("password"),
 	        Input: form.Password("password", "••••••••"),
 	    },
-	    components.Button{
+	    comps.Button{
 	        Label: "Create account",
 	        OnTap: form.OnSubmit(func(v forms.Values) { createAccount(v) }),
 	    },
@@ -127,7 +127,7 @@ UseForm consumes exactly one slot on the context it is given (see core.NewState)
 type Field struct {
 	// Name is the field's key in Values and the handle every method on Form
 	// takes. It is not shown to the user — the label lives on the
-	// components.FormField that wraps the input.
+	// comps.FormField that wraps the input.
 	Name string
 
 	// Initial seeds the value the first time this name is seen, and again
@@ -196,7 +196,7 @@ Checkbox is a boolean control bound to name, storing "true"/"false" as the field
 
 A checkbox has no label of its own; the usual pairing is a ListRow, which centers the box against its title:
 
-	components.ListRow{Leading: form.Checkbox("terms"), Title: "I accept the terms"}
+	comps.ListRow{Leading: form.Checkbox("terms"), Title: "I accept the terms"}
 
 No blur binding, unlike the text builders: a tick is a commit, not a draft, so there is no moment where the user is "still working on" a checkbox and nothing for leaving it to signal. Neither native platform gives a checkbox keyboard focus anyway. Under RevealOnBlur a required-but-unticked box therefore says nothing until the submit reveals it, which is the same treatment a field the user never visited gets.
 
@@ -218,9 +218,9 @@ Checked reads a field as a checkbox. See Values.Bool for what counts.
 func (f *Form) Error(name string) string
 ```
 
-Error is the message to show for one field, or "" when there is nothing to show — which is exactly what components.FormField.Error wants:
+Error is the message to show for one field, or "" when there is nothing to show — which is exactly what comps.FormField.Error wants:
 
-	components.FormField{
+	comps.FormField{
 	    Label: "Email",
 	    Hint:  "We never share it",
 	    Error: form.Error("email"),
@@ -316,7 +316,7 @@ func (f *Form) OnSubmit(handler func(Values)) func()
 
 OnSubmit adapts Submit to the void-callback shape every commit affordance takes — a Button's OnTap, an InputRow's OnSubmit, the keyboard's return key:
 
-	components.Button{Label: "Create account", OnTap: form.OnSubmit(createAccount)}
+	comps.Button{Label: "Create account", OnTap: form.OnSubmit(createAccount)}
 
 <small>[forms/form.go:599](https://github.com/rohanthewiz/grmob/blob/master/forms/form.go#L599)</small>
 
@@ -346,9 +346,9 @@ Password is a masked single-line field bound to name.
 func (f *Form) Required(name string) bool
 ```
 
-Required reports whether the field rejects an empty value — which is what components.FormField.Required wants, so the marker beside a label and the rule that justifies it cannot disagree:
+Required reports whether the field rejects an empty value — which is what comps.FormField.Required wants, so the marker beside a label and the rule that justifies it cannot disagree:
 
-	components.FormField{
+	comps.FormField{
 	    Label:    "Email",
 	    Required: form.Required("email"),
 	    Error:    form.Error("email"),

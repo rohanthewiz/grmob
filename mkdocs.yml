@@ -63,7 +63,7 @@ nav:
       - hooks: api/hooks.md
       - render: api/render.md
       - reconcile: api/reconcile.md
-      - components: api/components.md
+      - comps: api/comps.md
       - forms: api/forms.md
       - richtext: api/richtext.md
       - highlight: api/highlight.md

@@ -7,7 +7,7 @@ package core
 // label says what it is called; neither can say that this one of five chips
 // is the one in effect, and until this type existed nothing in the framework
 // could. What a widget did instead was write the state into the name —
-// components.Chip appended ", selected" to its AccessibilityLabel — which
+// comps.Chip appended ", selected" to its AccessibilityLabel — which
 // announces once, in the wrong place (a name is meant to be stable, and a
 // reader that re-announces the control after a tap says the whole altered
 // name rather than the changed state), and which no platform can act on.

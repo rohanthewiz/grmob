@@ -39,7 +39,7 @@ import assert from "node:assert/strict";
 import { loadRuntime, nodeAt } from "./load.mjs";
 
 // One member of a composite: a Box carrying the member role, an optional
-// selection state, and an onClick — which is what components.ListRow's
+// selection state, and an onClick — which is what comps.ListRow's
 // Selectable rows and examples/social's tab buttons both come across as.
 function member(role, { selected, onClick, type = "Box", disabled } = {}) {
     const Style = { AccessibilityRole: role };
@@ -100,7 +100,7 @@ function tablist({ selected = 0, count = 3 } = {}) {
     return mountTree(composite("tablist", members));
 }
 
-// A toolbar's control: a real <button>, which is what components.Chip renders
+// A toolbar's control: a real <button>, which is what comps.Chip renders
 // as and what FOCUSABLE_TAGS is about.
 function control(label, { onClick, disabled } = {}) {
     const Style = {};
@@ -112,7 +112,7 @@ function control(label, { onClick, disabled } = {}) {
 
 // The filter bar, near enough: a Row carrying role="toolbar" over n chips.
 //
-// components.ChipStrip is a Row of components.Chip, each of which renders as a
+// comps.ChipStrip is a Row of comps.Chip, each of which renders as a
 // core.Button, and the toolbar role is what a caller puts on the strip. So this
 // is the shipped shape rather than a shape invented for the test.
 function toolbar(children) {
@@ -1031,7 +1031,7 @@ test("a search in another widget starts over", () => {
 // focusable control inside it that is not inside a nested composite.
 
 test("a toolbar is one tab stop over a run of controls", () => {
-    // The claim the whole thing exists for. components.ChipStrip is a Row of
+    // The claim the whole thing exists for. comps.ChipStrip is a Row of
     // core.Buttons, so before this a twelve-chip filter bar was twelve stops in
     // the page's tab order and ARIA promises one.
     const tb = toolbar([

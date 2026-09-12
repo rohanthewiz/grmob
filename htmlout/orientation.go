@@ -68,7 +68,7 @@ import (
 // both ends: a toolbar announces its axis here and the arrows follow that same
 // axis there. Nothing in this file changed for it, which is the argument for
 // the row having been written before the keyboard existed —
-// components.ChipStrip is a Row and horizontal was right either way.
+// comps.ChipStrip is a Row and horizontal was right either way.
 //
 // htmlout still writes no tabindex for a toolbar, on the rule that applies to
 // all three composites: a roving tabindex with no key handler to move it takes

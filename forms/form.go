@@ -59,7 +59,7 @@ const (
 type Field struct {
 	// Name is the field's key in Values and the handle every method on Form
 	// takes. It is not shown to the user — the label lives on the
-	// components.FormField that wraps the input.
+	// comps.FormField that wraps the input.
 	Name string
 
 	// Initial seeds the value the first time this name is seen, and again
@@ -334,10 +334,10 @@ func (f *Form) OnBlur(name string) func() {
 }
 
 // Required reports whether the field rejects an empty value — which is what
-// components.FormField.Required wants, so the marker beside a label and the
+// comps.FormField.Required wants, so the marker beside a label and the
 // rule that justifies it cannot disagree:
 //
-//	components.FormField{
+//	comps.FormField{
 //	    Label:    "Email",
 //	    Required: form.Required("email"),
 //	    Error:    form.Error("email"),
@@ -519,9 +519,9 @@ func (f *Form) Errors() map[string]string {
 }
 
 // Error is the message to show for one field, or "" when there is nothing to
-// show — which is exactly what components.FormField.Error wants:
+// show — which is exactly what comps.FormField.Error wants:
 //
-//	components.FormField{
+//	comps.FormField{
 //	    Label: "Email",
 //	    Hint:  "We never share it",
 //	    Error: form.Error("email"),
@@ -595,7 +595,7 @@ func (f *Form) Submit(handler func(Values)) bool {
 // OnSubmit adapts Submit to the void-callback shape every commit affordance
 // takes — a Button's OnTap, an InputRow's OnSubmit, the keyboard's return key:
 //
-//	components.Button{Label: "Create account", OnTap: form.OnSubmit(createAccount)}
+//	comps.Button{Label: "Create account", OnTap: form.OnSubmit(createAccount)}
 func (f *Form) OnSubmit(handler func(Values)) func() {
 	return func() { f.Submit(handler) }
 }
