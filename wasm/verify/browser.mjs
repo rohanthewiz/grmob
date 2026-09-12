@@ -4640,6 +4640,35 @@ async function main() {
         // page reported for them.
         "--force-color-profile=srgb",
         "--hide-scrollbars",
+        // Grayscale antialiasing, which the band grid's whole ink arithmetic
+        // rests on: offSegment holds every pixel in a label's box to the line
+        // between the fill and the ink on the argument that coverage is one
+        // scalar, and INK_EPSILON's exact match on a stem's interior rests on
+        // the same thing. Under LCD subpixel rendering each channel gets its
+        // own coverage, ordinary correct text is off that line, and every box
+        // those probes answer for reports a third colour.
+        //
+        // # Why this is a flag and not a belief
+        //
+        // It was a belief. The probe verdict below used to end "Headless Chrome
+        // disables it; something about this browser, its flags, or that
+        // declaration has changed" — a statement about a default, and the
+        // default is not the same everywhere:
+        //
+        //	macOS headless Chrome      grayscale     20 of 20 bands read
+        //	Linux headless Chrome      subpixel       0 of 20 bands read
+        //
+        // So this pass was green on the machine it was written on and red on
+        // every CI runner, and the message sent a reader looking for a change
+        // that had not happened. Every other flag in this list is here because
+        // something downstream needs it; this was the one precondition the list
+        // assumed instead of asking for.
+        //
+        // Asked for rather than detected-and-skipped, deliberately. A skip
+        // would make the ink scan silently absent exactly where nobody is
+        // watching, and the probes stay either way — they are what says the
+        // flag did what it claims, on a build where it might one day not.
+        "--disable-lcd-text",
         "about:blank",
     ], { stdio: ["ignore", "ignore", "ignore"] });
 
@@ -6795,8 +6824,12 @@ async function main() {
                     `thing. With subpixel rendering on, ordinary correct text is off ` +
                     `that line and every box this probe answers for would report a ` +
                     `third colour. ` +
-                    `Headless Chrome disables it; something about this browser, its ` +
-                    `flags, or that declaration has changed.`);
+                    `This browser is launched with --disable-lcd-text for exactly ` +
+                    `that reason (see the flag, which carries the argument), so the ` +
+                    `flag has stopped having its effect on this build, or something ` +
+                    `about that declaration has changed. It is not a default any ` +
+                    `more: it used to be, and this check was green on macOS and red ` +
+                    `on every Linux runner for as long as both existed.`);
             } else if (worst > SUBPIXEL_FLOOR) {
                 // Below the ceiling and above the floor: still grey, and no
                 // longer grey for the reason written down. See SUBPIXEL_FLOOR.
