@@ -79,8 +79,18 @@ const EXEMPTIONS = [
 // Overflow was missing, and its absence is how a TextGrid's Overflow went
 // half-erased with every sweep here green: the grid chassis followed the
 // `overflow` shorthand with an overflowX of "" whenever the author set one.
-// Nothing checks this list against the fields styleFromGrMob reads, so an
-// addition to the mapping has to be added here by hand.
+// The list is now held to styleFromGrMob's source in both directions by
+// "FULL_STYLE is every Style field the mapping reads" below. Its first run found
+// nine more fields missing (Display to WhiteSpace on the last three lines) and
+// two present that nothing reads: Opacity and ObjectFit, which are not
+// core.Style fields at all, so the sweep had been exercising neither.
+//
+// Display is "hidden" rather than "none": "none" replaces the flex display
+// every stack container is given, so a stale display:flex would pass under it
+// unseen, while "hidden" leaves the display alone and exercises visibility,
+// the property this field otherwise never reaches. FlexDirection is "row" for
+// the same kind of reason — a value that differs from every node type's own
+// axis, so a direction left standing is a visible difference.
 const FULL_STYLE = {
     Overflow: "hidden",
     FontSize: 14, FontWeight: 700, TextColor: "#111111", Align: "center",
@@ -90,10 +100,13 @@ const FULL_STYLE = {
     BorderRadius: 6, Rotate: 10, Shadow: 4, LineHeight: 20,
     Width: "10px", Height: "11px",
     Gap: 5, JustifyContent: "center", AlignItems: "center",
-    FlexGrow: 1, Opacity: 0.5, BorderWidth: 1, BorderColor: "#000000",
+    FlexGrow: 1, BorderWidth: 1, BorderColor: "#000000",
     Position: "absolute", Top: "1px", Right: "2px", Bottom: "3px", Left: "4px",
     ZIndex: 3, FlexWrap: "wrap", AlignSelf: "center", FlexBasis: "5px",
-    FlexShrink: 2, RowGap: 2, ColumnGap: 3, ObjectFit: "cover",
+    FlexShrink: 2, RowGap: 2, ColumnGap: 3,
+    Display: "hidden", FlexDirection: "row",
+    Transition: "200ms ease", Animation: "pulse 2s infinite",
+    MinWidth: "1px", MinHeight: "2px", MaxWidth: "300px", MaxHeight: "400px", WhiteSpace: "nowrap",
 };
 
 // Every node type the runtime draws.
@@ -111,11 +124,17 @@ const FULL_STYLE = {
 // any other — the sweep mounts it without a size prop, where the chassis is
 // inert, and the chassis's own behaviour is checked by name in
 // runtime_test.mjs.
+//
+// CodeEditor was left out too, and its gutter cleared an author's left
+// padding on exactly the path this sweep exists for: syncCodeGutter runs after
+// the style pass and wrote "" to padding-left whenever line numbers were off.
+// It is mounted here with no props, which is line numbers off.
 const NODE_TYPES = [
     "Box", "Column", "Row", "Card", "Scroll", "SafeArea", "List", "ZStack",
     "Text", "Button", "Input", "InputPassword", "NumericInput", "Checkbox",
-    "Slider", "Select", "TextArea", "TextGrid", "GridRow", "Modal", "TabView",
-    "Image", "CameraView", "Fragment", "Theme", "Spacer",
+    "Switch", "Slider", "Select", "TextArea", "TextGrid", "GridRow", "CodeEditor",
+    "RichTextEditor", "Modal", "TabView", "Image", "CameraView", "MapView",
+    "Marker", "Fragment", "Theme", "Spacer",
 ];
 
 function mountOne(type, style, props = {}) {
@@ -155,6 +174,43 @@ test("the source deletes exactly the properties the table names", () => {
         "styleFromGrMob abstains from a property EXEMPTIONS does not name, or names " +
         "one it no longer abstains from — see the rule at the delete site",
     );
+});
+
+test("FULL_STYLE is every Style field the mapping reads", () => {
+    // The sweeps below are only as total as the Style they drive: a field
+    // FULL_STYLE never sets is a field whose clearing and whose shorthand
+    // interactions go untested, with every sweep green. That is how the
+    // TextGrid's Overflow bug hid. So the list is held to the source.
+    //
+    // Both directions. A field the mapping reads and the list lacks is the
+    // coverage gap; a key the list has and nothing reads is worse than
+    // useless, because it reads as coverage — Opacity and ObjectFit sat here
+    // for a long time, and neither is a core.Style field.
+    //
+    // The function's extent is its declaration to the first line that closes a
+    // block at its own four-space indent, and comments are stripped first so a
+    // `style.X` mentioned in prose (there are several) is not counted as a read.
+    const src = readFileSync(RUNTIME, "utf8");
+    const start = src.indexOf("function styleFromGrMob(");
+    const end = src.indexOf("\n    }\n", start);
+    assert.ok(start >= 0 && end > start, "styleFromGrMob was not found where this scan looks for it");
+    const code = src.slice(start, end).split("\n").map((l) => l.replace(/\/\/.*$/, "")).join("\n");
+    const read = new Set([...code.matchAll(/\bstyle\.([A-Z]\w*)/g)].map((m) => m[1]));
+
+    // A floor, so a scan broken into finding nothing cannot pass by agreeing
+    // with an empty list. The mapping reads over forty fields today.
+    assert.ok(read.size >= 30, `the scan found only ${read.size} Style reads in styleFromGrMob`);
+
+    const missing = [...read].filter((f) => !Object.hasOwn(FULL_STYLE, f)).sort();
+    assert.deepEqual(missing, [],
+        "styleFromGrMob reads Style fields FULL_STYLE does not set, so no sweep here " +
+        "checks that they are cleared or that they erase nothing — add each with a " +
+        "value that differs from every default");
+
+    const unread = Object.keys(FULL_STYLE).filter((f) => !read.has(f)).sort();
+    assert.deepEqual(unread, [],
+        "FULL_STYLE sets fields styleFromGrMob never reads — they look like coverage " +
+        "and are not; remove them, or find what renamed them");
 });
 
 test("after an empty style patch every node type is a freshly built styleless one", () => {

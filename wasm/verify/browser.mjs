@@ -1,12 +1,13 @@
 // The facts a shimmed DOM cannot check, checked in a browser: four about the
-// keyboard, three about paint, five about layout, and one about what a browser
-// does with an accessibility value nobody here resolves.
+// keyboard, three about paint, five about layout, one about what a browser
+// does with an accessibility value nobody here resolves, and one about how it
+// reads a CSS shorthand back.
 //
 // wasm/verify's other suites run the real grmob-runtime.js against dom.mjs — a
 // few hundred lines that model element trees, attributes, listeners and which
 // element holds focus. That is enough for almost everything, and its limits
 // are stated in its own header: there is no layout, no bubbling, and `focus()`
-// is an assignment, and nothing is ever painted. Thirteen claims sit exactly in
+// is an assignment, and nothing is ever painted. Fourteen claims sit exactly in
 // that blind spot, and no amount of widening the shim would settle them,
 // because each one is a claim about what a *browser* does:
 //
@@ -125,6 +126,16 @@
 //      the dilution it is. It also measures why the floor is needed beside the
 //      stronger catch: a dilution sits ON the segment between fill and ink, so
 //      offSegment cannot see it, and that had been reasoning too.
+//  14. a real browser reads a shorthand back the way cssstyle.mjs's table
+//      says. dom.mjs's inline style expands shorthands into longhands
+//      (cssstyle.mjs), because styleFromGrMob's totality rule twice erased a
+//      shorthand with a "" longhand and a plain object could not notice. That
+//      model was written against CSSOM_READS — assignment sequences and the
+//      reads Chrome returned for them — and the table was taken from a browser
+//      console once, by hand. shorthand_test.mjs holds the model to the table;
+//      this holds the table to the browser, on every run, so a serialization
+//      that changes under it fails here instead of leaving the shim modelling a
+//      browser that no longer exists.
 //
 // The numbering is one sequence, and it is the order the checks run in rather
 // than the order they were written. It is also load-bearing: a dozen comments
@@ -168,6 +179,7 @@ import { VALUE_RANGES, axRange, valueRangeProblem } from "./valuerange.mjs";
 import { startupVerdict } from "./startup.mjs";
 import { foldVerdict } from "./fold.mjs";
 import { bandTargetCensus, bandTargetRead } from "./bandtarget.mjs";
+import { CSSOM_READS } from "./cssstyle.mjs";
 
 // The widget swatches come from the transcript rather than from a .mjs table,
 // because they are real components rendered by Go: gen.go builds the trees and
@@ -5469,6 +5481,9 @@ async function main() {
         // are what the census reports. See the note above `declared`.
         targets: 0, targetLead: 0, targetTrail: 0, targetStretch: 0,
         insets: 0, fills: 0, words: 0, counts: 0,
+        // CSSOM_READS rows whose every read matched, for check 14's line in
+        // the tail.
+        cssomRows: 0,
         // The thinnest stem in the grid, as a fraction of the way from its
         // backdrop to its own declared ink. Recited by the tail rather than
         // asserted, which is a different thing from the pair below it: this is
@@ -9401,6 +9416,44 @@ async function main() {
             }
         }
 
+        // ------------------------------------------------------------------
+        // 14. a real browser reads a shorthand back the way cssstyle.mjs's
+        //     table says
+        // ------------------------------------------------------------------
+        //
+        // No mount: the subject is CSSStyleDeclaration itself, on a fresh
+        // element that is never attached, which is what each row was taken
+        // against by hand. A row's sets run in order inside one evaluate and
+        // every property the row reads comes back; the comparison is made on
+        // this side so a failure names the row, the property and both values.
+        //
+        // This settles the model's premise, not the model: shorthand_test.mjs
+        // holds cssstyle.mjs to the table, this holds the table to Chrome, and
+        // neither alone says the shim behaves like a browser.
+        const cssomGot = await evaluate(`${JSON.stringify(CSSOM_READS)}.map(({ sets, reads }) => {
+            const style = document.createElement("div").style;
+            for (const [p, v] of sets) style[p] = v;
+            const got = {};
+            for (const p of Object.keys(reads)) got[p] = style[p];
+            return got;
+        })`);
+        CSSOM_READS.forEach(({ sets, reads }, i) => {
+            const label = sets.map(([p, v]) => `${p}=${JSON.stringify(v)}`).join(", ");
+            let held = true;
+            for (const [p, want] of Object.entries(reads)) {
+                const got = cssomGot?.[i]?.[p];
+                if (got === want) continue;
+                held = false;
+                problems.push(`the CSSOM table: after ${label} this browser reads ` +
+                    `${p} as ${JSON.stringify(got)}, and CSSOM_READS in cssstyle.mjs ` +
+                    `says ${JSON.stringify(want)}. The shim was written to that table, ` +
+                    `so either the row was taken wrongly or this browser serializes ` +
+                    `differently; correct the row from this reading, then make ` +
+                    `shorthand_test.mjs pass against it`);
+            }
+            if (held) asked.cssomRows++;
+        });
+
     } finally {
         if (session) session.close();
         chrome.kill();
@@ -9510,7 +9563,8 @@ async function main() {
     ${PINS.filter((c) => c.mainsAgreeWithCSS).length} case internal/pinfixture says
     they agree and differing in the ${PINS.filter((c) => !c.mainsAgreeWithCSS).length}
     it says they differ, and charging the spacing a flex line charges where a
-    Compose Row charges none`);
+    Compose Row charges none, and ${asked.cssomRows} sequences of inline-style
+    assignments read their shorthands back the way cssstyle.mjs's table says`);
 }
 
 await main();

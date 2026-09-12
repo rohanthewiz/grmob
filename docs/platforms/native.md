@@ -115,6 +115,24 @@ from the app's module graph, bind `mobile` plus `./app`, and finish with
 Gradle `assembleDebug` or `xcodegen` and a simulator `xcodebuild`. The copied
 shell belongs to the app from then on; `-refresh` copies a newer one over it.
 
+The copy is made the app's own in three more places than its name:
+
+- **Deep links.** The shells claim the `grmob://` scheme for the demo; a copy
+  claims the application ID in lower case (`com.example.hello://`), so two
+  GrMob apps on one device do not fight over a link.
+- **Permission prompts (iOS).** The four `NS*UsageDescription` strings are
+  replaced with a neutral one naming the app ("Hello uses the camera when you
+  allow it."). The keys
+  stay, because iOS terminates an app that requests a permission whose key is
+  missing. Rewrite them to say *why* before shipping — App Review reads them.
+- **UI tests (iOS).** `GrMobUITests` drives the demo by its labels, so it is not
+  copied and its target and scheme test action are removed from `project.yml`.
+
+gomobile and gobind are recorded in the app's `go.mod` as `tool` directives,
+the way this repository records them, so `go mod tidy` keeps
+`golang.org/x/mobile` rather than dropping it until the next native build adds
+it back.
+
 ## Text grids
 
 `core.TextGrid` renders one monospace `Text` per row: Compose builds an

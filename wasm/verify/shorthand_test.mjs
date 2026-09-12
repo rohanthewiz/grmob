@@ -5,57 +5,25 @@
 // are two views of the same declarations — because styleFromGrMob's totality
 // rule can break it and a plain object could not notice (the gap and TextGrid
 // overflow bugs; see that file's header). A model of a browser fact is only as
-// good as its agreement with a browser, so the rows below are sequences of
-// assignments and the reads a real Chrome returned for them.
+// good as its agreement with a browser, so the rows it is held to are
+// sequences of assignments and the reads a real Chrome returned for them.
 //
 // # Where the expected values came from
 //
-// Each row was run as written against document.createElement("div").style in
-// Chrome while cssstyle.mjs was being written, and the values here are
-// Chrome's. The reads are chosen where Chrome and the model are meant to agree
-// exactly: longhand values, the empty string a browser returns for a
-// shorthand it can no longer serialize, and serializations after a longhand
-// changed. A shorthand read back unchanged is left out on purpose — Chrome
-// returns its own shortest spelling and the model returns the author's text,
-// a difference cssstyle.mjs states and the other suites depend on.
-//
-// To re-check a row after changing the model, paste its sets into a browser
-// console against a fresh element's style and compare the reads.
+// CSSOM_READS, in cssstyle.mjs. Each row was first run as written against
+// document.createElement("div").style in a Chrome console while the model was
+// being written; browser.mjs check 14 now replays every row in headless Chrome
+// on each run of run.sh, so a row is re-checked by adding it rather than by
+// pasting it into a console. The table sits beside the model because both of
+// those readers need it and neither is a test file the other could import.
 
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { makeStyle, erasedShorthands, isShorthand } from "./cssstyle.mjs";
+import { makeStyle, erasedShorthands, isShorthand, CSSOM_READS } from "./cssstyle.mjs";
 import { loadRuntime, nodeAt } from "./load.mjs";
 
-const CSSOM = [
-    // The two bugs, as the CSSOM sees them.
-    { sets: [["gap", "12px"], ["rowGap", ""]], reads: { gap: "", rowGap: "", columnGap: "12px" } },
-    { sets: [["gap", "12px"], ["rowGap", ""], ["columnGap", ""]], reads: { gap: "" } },
-    { sets: [["overflow", "hidden"], ["overflowX", ""]], reads: { overflow: "", overflowX: "", overflowY: "hidden" } },
-
-    { sets: [["overflow", "hidden"], ["overflowX", "auto"]], reads: { overflow: "auto hidden", overflowY: "hidden" } },
-    { sets: [["overflow", "hidden"], ["overflowX", "hidden"]], reads: { overflow: "hidden" } },
-    { sets: [["padding", "1px 2px"], ["paddingLeft", "5px"]], reads: { padding: "1px 2px 1px 5px", paddingTop: "1px", paddingRight: "2px", paddingBottom: "1px" } },
-    { sets: [["padding", "1px"], ["paddingTop", ""]], reads: { padding: "", paddingRight: "1px" } },
-    { sets: [["padding", "1px 2px"], ["paddingLeft", "2px"]], reads: { padding: "1px 2px" } },
-    { sets: [["margin", "1px 2px 3px"]], reads: { marginLeft: "2px", marginBottom: "3px", marginRight: "2px" } },
-    { sets: [["inset", "1px"], ["left", ""]], reads: { inset: "", top: "1px" } },
-    { sets: [["border", "1px solid red"], ["borderBottomColor", "blue"]], reads: { border: "", borderBottom: "1px solid blue", borderTopWidth: "1px", borderTopStyle: "solid", borderBottomColor: "blue" } },
-    // The tab strip's own sequence (TAB_STYLE in grmob-runtime.js).
-    { sets: [["border", "none"], ["borderBottom", "2px solid transparent"]], reads: { borderTopStyle: "none", borderTopWidth: "medium", borderTopColor: "currentcolor", borderBottomWidth: "2px", border: "" } },
-    { sets: [["border", "1px solid red"], ["border", ""]], reads: { borderTop: "", borderLeftColor: "" } },
-    { sets: [["borderTop", "2px solid"]], reads: { borderTopColor: "currentcolor", borderTopWidth: "2px" } },
-    { sets: [["borderRadius", "8px"], ["borderTopLeftRadius", ""]], reads: { borderRadius: "", borderBottomRightRadius: "8px" } },
-    { sets: [["flex", "1 1 0px"], ["flexGrow", "2"]], reads: { flex: "2 1 0px", flexShrink: "1", flexBasis: "0px" } },
-    { sets: [["flex", "none"]], reads: { flexGrow: "0", flexShrink: "0", flexBasis: "auto" } },
-    // The overlay's stamp (OVERLAY_CHILD_AREA).
-    { sets: [["gridArea", "1/1"]], reads: { gridRowStart: "1", gridColumnStart: "1", gridRowEnd: "auto", gridColumnEnd: "auto" } },
-    // The code buffer's and the tab's `font: inherit` followed by a longhand.
-    { sets: [["font", "inherit"], ["fontWeight", "600"]], reads: { font: "", fontSize: "inherit", fontWeight: "600" } },
-];
-
-for (const { sets, reads } of CSSOM) {
+for (const { sets, reads } of CSSOM_READS) {
     const label = sets.map(([p, v]) => `${p}=${JSON.stringify(v)}`).join(", ");
     test(`CSSOM: ${label}`, () => {
         const style = makeStyle();

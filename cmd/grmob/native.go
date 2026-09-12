@@ -57,9 +57,12 @@ var androidShell = shellSpec{
 	executable: []string{"gradlew"},
 }
 
+// GrMobUITests is skipped as well: those tests drive grmob's demo app
+// (examples/mobileapp) by its labels, so in any other app they fail on the first
+// lookup. iosPatches removes the target that builds them.
 var iosShell = shellSpec{
 	dir:  "ios",
-	skip: []string{"build", "Frameworks", "GrMobApp.xcodeproj", "DerivedData", "xcuserdata", "verify", "build.sh", "GrMob/Info.plist"},
+	skip: []string{"build", "Frameworks", "GrMobApp.xcodeproj", "DerivedData", "xcuserdata", "verify", "build.sh", "GrMob/Info.plist", "GrMobUITests"},
 }
 
 // patch rewrites one file of a freshly copied shell. Each is anchored on a
@@ -106,27 +109,164 @@ func insertLineBefore(anchor, line string) func(string) (string, error) {
 	}
 }
 
-// androidPatches set the app's identity in the Android shell. Only the
-// applicationId changes: the Gradle namespace (and the Kotlin package) stays
-// com.grmob.app, because it names the shell's own classes, not the app, and
-// Android allows the two to differ.
+// replaceLine returns a patch function replacing the single line containing
+// anchor with line, at that line's indentation. Used where the value after a
+// YAML key is the demo's own prose and differs in every key, so no literal
+// short of the whole line would anchor it.
+func replaceLine(anchor, line string) func(string) (string, error) {
+	return func(s string) (string, error) {
+		lines := strings.Split(s, "\n")
+		at, err := uniqueLine(lines, func(l string) bool { return strings.Contains(l, anchor) }, anchor)
+		if err != nil {
+			return "", err
+		}
+		indent := lines[at][:len(lines[at])-len(strings.TrimLeft(lines[at], " \t"))]
+		lines[at] = indent + line
+		return strings.Join(lines, "\n"), nil
+	}
+}
+
+// removeLines returns a patch function deleting a run of lines: from the single
+// line whose trimmed text starts with from, through the first line at or after
+// it whose trimmed text starts with through.
+//
+// Prefix-of-trimmed rather than contains, because the runs this removes are
+// YAML blocks whose keys also appear inside comments ("test:" is in "smoke
+// test: drives…"); a key starts its line and a mention in prose does not.
+func removeLines(from, through string) func(string) (string, error) {
+	return func(s string) (string, error) {
+		lines := strings.Split(s, "\n")
+		starts := func(prefix string) func(string) bool {
+			return func(l string) bool { return strings.HasPrefix(strings.TrimSpace(l), prefix) }
+		}
+		at, err := uniqueLine(lines, starts(from), from)
+		if err != nil {
+			return "", err
+		}
+		end := -1
+		for i := at; i < len(lines); i++ {
+			if starts(through)(lines[i]) {
+				end = i
+				break
+			}
+		}
+		if end < 0 {
+			return "", fmt.Errorf("no line starting %q after the line starting %q", through, from)
+		}
+		return strings.Join(append(lines[:at], lines[end+1:]...), "\n"), nil
+	}
+}
+
+// uniqueLine finds the one line match accepts, naming what it looked for when
+// there is none or more than one.
+func uniqueLine(lines []string, match func(string) bool, what string) (int, error) {
+	at := -1
+	for i, l := range lines {
+		if match(l) {
+			if at >= 0 {
+				return -1, fmt.Errorf("expected one line matching %q, found several", what)
+			}
+			at = i
+		}
+	}
+	if at < 0 {
+		return -1, fmt.Errorf("no line matches %q", what)
+	}
+	return at, nil
+}
+
+// urlScheme is the private URL scheme an app claims for core.OpenURL's inbound
+// half: its application ID in lower case, e.g. com.example.hello.
+//
+// The shells claim "grmob", which is right for grmob's demo and wrong for
+// every app copied from it — two installed apps claiming one scheme is a
+// conflict the OS resolves arbitrarily, so a link meant for one opens the
+// other. A reverse-DNS scheme is the form Apple recommends for exactly that
+// reason, and an ID that passed validateID (letters and digits, each segment
+// starting with a letter) is already a valid RFC 3986 scheme. Lower case
+// because Android matches schemes case-sensitively and expects them lowered.
+func urlScheme(cfg appConfig) string { return strings.ToLower(cfg.ID) }
+
+// androidPatches set the app's identity in the Android shell. The
+// applicationId, the launcher label and the deep-link scheme change: the Gradle
+// namespace (and the Kotlin package) stays com.grmob.app, because it names the
+// shell's own classes, not the app, and Android allows the two to differ.
+//
+// The permission declarations are left as they are. Android declarations carry
+// no user-facing text, and removing one makes permission.Request answer
+// "unavailable" for it — a build-time fact an app should choose to create, not
+// inherit from a scaffold.
 func androidPatches(cfg appConfig) []patch {
 	return []patch{
 		{"app/build.gradle", replaceOnce(`applicationId = "com.grmob.app"`, `applicationId = "`+cfg.ID+`"`)},
 		{"app/src/main/AndroidManifest.xml", replaceOnce(`android:label="GrMob"`, `android:label="`+xmlEscape(cfg.Name)+`"`)},
+		{"app/src/main/AndroidManifest.xml", replaceOnce(`<data android:scheme="grmob" />`, `<data android:scheme="`+urlScheme(cfg)+`" />`)},
 	}
+}
+
+// iosUsageKeys are the permission prompts' usage descriptions in project.yml,
+// and what the app is said to use for each.
+//
+// The shell's own strings describe grmob's demo ("Demonstrates
+// permission.Camera. Nothing is captured or stored."), which is a false
+// sentence in someone else's app and the one piece of shell text a user reads
+// in a system dialog. The keys themselves stay: iOS terminates an app that
+// requests a permission whose key is missing, so dropping them would turn
+// permission.Request into a crash rather than a prompt. The replacement names
+// the app and the capability and nothing more, since only the app knows why it
+// asks; docs/platforms/native.md says to rewrite them before shipping.
+var iosUsageKeys = []struct{ key, use string }{
+	{"NSCameraUsageDescription", "the camera"},
+	{"NSMicrophoneUsageDescription", "the microphone"},
+	{"NSLocationWhenInUseUsageDescription", "your location"},
+	{"NSPhotoLibraryUsageDescription", "your photo library"},
 }
 
 // iosPatches set the app's identity in project.yml. The target stays
 // GrMobApp (it names the Xcode target and scheme this command builds); the
 // launcher label is CFBundleDisplayName, which is what iOS shows under the
 // icon.
+//
+// Beyond identity, three things the demo carries are made the app's own or
+// taken out: the deep-link scheme (see urlScheme), the usage descriptions (see
+// iosUsageKeys), and the GrMobUITests target, whose sources iosShell does not
+// copy — xcodegen fails on a target with a missing source directory, and the
+// GrMobApp scheme's test action names that target, so both go.
+//
+//	project.yml, before                   after
+//	targets:                              targets:
+//	  GrMobApp: …                           GrMobApp: …
+//	  # Simulator smoke test: …           schemes:
+//	  GrMobUITests: …                       GrMobApp:
+//	schemes:                                  build:
+//	  GrMobApp:                                 targets:
+//	    build:                                    GrMobApp: all
+//	      targets:
+//	        GrMobApp: all
+//	        GrMobUITests: [test]
+//	    test:
+//	      targets:
+//	        - GrMobUITests
 func iosPatches(cfg appConfig) []patch {
-	return []patch{
+	patches := []patch{
 		{"project.yml", replaceOnce("PRODUCT_BUNDLE_IDENTIFIER: com.grmob.demo", "PRODUCT_BUNDLE_IDENTIFIER: "+cfg.ID)},
 		// strconv.Quote output is a valid YAML double-quoted scalar.
 		{"project.yml", insertLineBefore("UILaunchScreen: {}", "CFBundleDisplayName: "+strconv.Quote(cfg.Name))},
+		{"project.yml", replaceOnce("CFBundleURLName: com.grmob.deeplink", "CFBundleURLName: "+cfg.ID+".deeplink")},
+		{"project.yml", replaceOnce("CFBundleURLSchemes: [grmob]", "CFBundleURLSchemes: ["+urlScheme(cfg)+"]")},
 	}
+	for _, u := range iosUsageKeys {
+		patches = append(patches, patch{"project.yml",
+			replaceLine(u.key+":", u.key+": "+strconv.Quote(cfg.Name+" uses "+u.use+" when you allow it."))})
+	}
+	// Order matters for the last one: "GrMobUITests: [test]" is only unique by
+	// its full text, and the target block removed first is the other line
+	// starting "GrMobUITests:".
+	return append(patches,
+		patch{"project.yml", removeLines("# Simulator smoke test", "- target: GrMobApp")},
+		patch{"project.yml", removeLines("GrMobUITests: [test]", "GrMobUITests: [test]")},
+		patch{"project.yml", removeLines("test:", "- GrMobUITests")},
+	)
 }
 
 func xmlEscape(s string) string {
@@ -399,22 +539,33 @@ func copyTree(src, dst string, spec shellSpec) error {
 // the step gomobile's own error message would otherwise ask for.
 //
 // gobind has to be on PATH, not merely built: gomobile finds it by name.
+//
+// # Why `go get -tool`
+//
+// A plain `go get` of the three packages added golang.org/x/mobile to the
+// app's go.mod as `// indirect` — and since no Go file in the app imports it,
+// the app's next `go mod tidy` removed it again, and the next native build put
+// it back. The two commands disagreed about the app's go.mod on every round.
+// A `tool` directive is a requirement tidy keeps, so both are recorded that way
+// — the same arrangement grmob's own go.mod uses, for the same reason. The bind
+// package needs no directive of its own: it is in the module the tools already
+// hold.
 func ensureGomobile(root string) (string, error) {
 	fmt.Println("Preparing gomobile (built from this module's graph)…")
 	version, err := output(root, "go", "list", "-m", "-f", "{{.Version}}", "golang.org/x/mobile")
 	if err != nil || version == "" {
 		version = "latest"
 	}
-	pkgs := []string{"golang.org/x/mobile/bind", "golang.org/x/mobile/cmd/gomobile", "golang.org/x/mobile/cmd/gobind"}
-	get := []string{"get"}
-	for _, p := range pkgs {
+	tools := []string{"golang.org/x/mobile/cmd/gomobile", "golang.org/x/mobile/cmd/gobind"}
+	get := []string{"get", "-tool"}
+	for _, p := range tools {
 		get = append(get, p+"@"+version)
 	}
 	if err := run(root, nil, "go", get...); err != nil {
 		return "", err
 	}
 	bin := filepath.Join(root, ".grmob", "bin")
-	if err := run(root, nil, "go", "build", "-o", bin+string(filepath.Separator), pkgs[1], pkgs[2]); err != nil {
+	if err := run(root, nil, "go", "build", "-o", bin+string(filepath.Separator), tools[0], tools[1]); err != nil {
 		return "", err
 	}
 	return "PATH=" + bin + string(filepath.ListSeparator) + os.Getenv("PATH"), nil

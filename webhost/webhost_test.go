@@ -10,45 +10,38 @@ import (
 	"testing"
 )
 
-// The two hand-written browser hosts in this repository, and how each is held
-// to the library.
+// The two hand-written browser hosts in this repository. Each must install
+// exactly Bindings: a binding added to the library and not to a host (or the
+// other way round) is a page contract that differs between that host and every
+// app built on webhost.
 //
-// wasm/main.go is the full host the tutorial site ships, so it must install
-// exactly Bindings: a binding added to the library and not to it (or the other
-// way round) is a page contract that differs between the site and every app
-// built on webhost.
-//
-// wasm/shots/host is a local screenshot harness that never hot-reloads, so it
-// has no Shutdown and is allowed a subset — but not a name the library does not
-// know, which would be a contract only the harness speaks.
-var hosts = []struct {
-	path   string
-	subset bool
-}{
-	{filepath.Join("..", "wasm", "main.go"), false},
-	{filepath.Join("..", "wasm", "shots", "host", "main.go"), true},
+// wasm/shots/host used to be allowed a subset, on the grounds that the
+// screenshot driver never hot-reloads it and so it needed no Shutdown. That
+// held only while shoot.sh was the one way to load it; under serve -dev a host
+// with no Shutdown turns every rebuild into a page reload. It installs the
+// whole set now, and the allowance went with the reason for it.
+var hosts = []string{
+	filepath.Join("..", "wasm", "main.go"),
+	filepath.Join("..", "wasm", "shots", "host", "main.go"),
 }
 
 func TestHandWrittenHostsInstallTheLibrarysBindings(t *testing.T) {
-	for _, h := range hosts {
-		got := grmobWASMKeys(t, h.path)
+	for _, path := range hosts {
+		got := grmobWASMKeys(t, path)
 		if len(got) == 0 {
 			t.Fatalf("%s: found no js.Global().Set(\"GrMobWASM\", map[string]any{...}); "+
-				"the host changed shape and this test is no longer reading it", h.path)
+				"the host changed shape and this test is no longer reading it", path)
 		}
 		for _, name := range got {
 			if !slices.Contains(Bindings, name) {
 				t.Errorf("%s installs GrMobWASM.%s, which webhost.Bindings does not name. "+
 					"Add it to webhost (bindings.go and host.go) so apps built on the library get it too.",
-					h.path, name)
+					path, name)
 			}
-		}
-		if h.subset {
-			continue
 		}
 		for _, name := range Bindings {
 			if !slices.Contains(got, name) {
-				t.Errorf("%s does not install GrMobWASM.%s, which webhost.Bindings names", h.path, name)
+				t.Errorf("%s does not install GrMobWASM.%s, which webhost.Bindings names", path, name)
 			}
 		}
 	}

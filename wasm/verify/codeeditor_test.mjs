@@ -126,6 +126,54 @@ test("the gutter widens with the line count and disappears when asked to", () =>
     assert.equal(editor.style.paddingLeft, "", "and the padding it opened goes with it");
 });
 
+// The gutter owns padding-left only while it is showing. With the numbers off
+// the author's own left padding is the one that stands — htmlout's
+// codeEditorPadding writes nothing in that case — and switching the numbers
+// off hands it back rather than clearing it. Clearing it was the TextGrid
+// overflowX bug's shape: a "" written to a longhand of a shorthand the style
+// pass had just set, which removes that side of the author's declaration.
+test("the gutter hands padding-left back to the author's Style when the numbers go", () => {
+    const rt = loadRuntime();
+    rt.GrMob.mount(JSON.stringify({
+        Type: "Column",
+        Children: [{
+            Type: "CodeEditor",
+            Style: { Padding: { Top: 1, Right: 2, Bottom: 3, Left: 7 } },
+            Props: { value: "x", onChange: "cb-change", lineNumbers: false },
+            Children: [{ Type: "GridRow", Props: { runs: [run("x")] } }],
+        }],
+    }));
+    rt.drainFrames();
+    const editor = nodeAt(rt.document, "root/0");
+    const lineNumbers = (on) => {
+        rt.GrMob.patch(JSON.stringify([{
+            Type: "update-props", TargetID: "root/0", Changes: { lineNumbers: on },
+        }]));
+        rt.drainFrames();
+    };
+
+    assert.equal(editor.style.paddingLeft, "7px", "no gutter, so the author's left padding stands");
+    assert.equal(editor.style.paddingTop, "1px");
+
+    lineNumbers(true);
+    assert.equal(editor.style.paddingLeft, "3ch", "the gutter's inset wins while it is drawn");
+    assert.equal(editor.style.paddingTop, "1px", "and takes only the left side");
+
+    lineNumbers(false);
+    assert.equal(editor.style.paddingLeft, "7px", "switching the numbers off restores the author's value");
+
+    // A restyle with the numbers off: the value handed back is the new one.
+    rt.GrMob.patch(JSON.stringify([{
+        Type: "update-style", TargetID: "root/0",
+        Changes: { Padding: { Top: 1, Right: 2, Bottom: 3, Left: 9 } },
+    }]));
+    rt.drainFrames();
+    assert.equal(editor.style.paddingLeft, "9px");
+    lineNumbers(true);
+    lineNumbers(false);
+    assert.equal(editor.style.paddingLeft, "9px", "the restored value is the latest Style's, not the first");
+});
+
 // Rule 2 of the shared editor design: decoration is advisory and *per line*.
 test("a line the buffer has moved past is drawn plain until Go catches up", () => {
     const { rt, editor, buffer } = mountEditor("alpha\nbeta", {}, [

@@ -35,7 +35,8 @@
 //	                               serialization of the longhands
 //
 // The expansion rules come from CSS itself, and the ones the tests lean on are
-// pinned against a real Chrome in shorthand_test.mjs's CSSOM table.
+// pinned against a real Chrome by CSSOM_READS below: shorthand_test.mjs holds
+// this model to that table, and browser.mjs check 14 holds the table to Chrome.
 //
 // # Deliberate differences from a browser, each because a test depends on it
 //
@@ -60,6 +61,54 @@
 // missing expansion would change an answer. Either is a signal to extend this
 // file, and a loud one, which is the same stance dom.mjs takes throughout:
 // a shim that quietly lies is worse than no shim.
+
+/**
+ * CSSOM_READS is what a real CSSStyleDeclaration answers, as rows of
+ * assignment sequences and the reads that follow them.
+ *
+ * It lives beside the model rather than in the model's test because it has two
+ * readers: shorthand_test.mjs replays every row against makeStyle, and
+ * browser.mjs check 14 replays every row against a fresh element's style in
+ * headless Chrome. The rows were first taken by hand in a Chrome console; the
+ * second reader is what keeps them true.
+ *
+ * The reads are chosen where Chrome and the model are meant to agree exactly:
+ * longhand values, the empty string a browser returns for a shorthand it can no
+ * longer serialize, and serializations after a longhand changed. A shorthand
+ * read back unchanged is left out on purpose — Chrome returns its own shortest
+ * spelling and the model returns the author's text (see "Deliberate
+ * differences" above).
+ */
+export const CSSOM_READS = [
+    // The two bugs, as the CSSOM sees them.
+    { sets: [["gap", "12px"], ["rowGap", ""]], reads: { gap: "", rowGap: "", columnGap: "12px" } },
+    { sets: [["gap", "12px"], ["rowGap", ""], ["columnGap", ""]], reads: { gap: "" } },
+    { sets: [["overflow", "hidden"], ["overflowX", ""]], reads: { overflow: "", overflowX: "", overflowY: "hidden" } },
+
+    { sets: [["overflow", "hidden"], ["overflowX", "auto"]], reads: { overflow: "auto hidden", overflowY: "hidden" } },
+    { sets: [["overflow", "hidden"], ["overflowX", "hidden"]], reads: { overflow: "hidden" } },
+    { sets: [["padding", "1px 2px"], ["paddingLeft", "5px"]], reads: { padding: "1px 2px 1px 5px", paddingTop: "1px", paddingRight: "2px", paddingBottom: "1px" } },
+    { sets: [["padding", "1px"], ["paddingTop", ""]], reads: { padding: "", paddingRight: "1px" } },
+    { sets: [["padding", "1px 2px"], ["paddingLeft", "2px"]], reads: { padding: "1px 2px" } },
+    { sets: [["margin", "1px 2px 3px"]], reads: { marginLeft: "2px", marginBottom: "3px", marginRight: "2px" } },
+    { sets: [["inset", "1px"], ["left", ""]], reads: { inset: "", top: "1px" } },
+    { sets: [["border", "1px solid red"], ["borderBottomColor", "blue"]], reads: { border: "", borderBottom: "1px solid blue", borderTopWidth: "1px", borderTopStyle: "solid", borderBottomColor: "blue" } },
+    // The tab strip's own sequence (TAB_STYLE in grmob-runtime.js).
+    { sets: [["border", "none"], ["borderBottom", "2px solid transparent"]], reads: { borderTopStyle: "none", borderTopWidth: "medium", borderTopColor: "currentcolor", borderBottomWidth: "2px", border: "" } },
+    { sets: [["border", "1px solid red"], ["border", ""]], reads: { borderTop: "", borderLeftColor: "" } },
+    { sets: [["borderTop", "2px solid"]], reads: { borderTopColor: "currentcolor", borderTopWidth: "2px" } },
+    { sets: [["borderRadius", "8px"], ["borderTopLeftRadius", ""]], reads: { borderRadius: "", borderBottomRightRadius: "8px" } },
+    { sets: [["flex", "1 1 0px"], ["flexGrow", "2"]], reads: { flex: "2 1 0px", flexShrink: "1", flexBasis: "0px" } },
+    { sets: [["flex", "none"]], reads: { flexGrow: "0", flexShrink: "0", flexBasis: "auto" } },
+    // The overlay's stamp (OVERLAY_CHILD_AREA).
+    { sets: [["gridArea", "1/1"]], reads: { gridRowStart: "1", gridColumnStart: "1", gridRowEnd: "auto", gridColumnEnd: "auto" } },
+    // The code buffer's and the tab's `font: inherit` followed by a longhand.
+    { sets: [["font", "inherit"], ["fontWeight", "600"]], reads: { font: "", fontSize: "inherit", fontWeight: "600" } },
+    // The code editor's gutter handing padding-left back (syncCodeGutter):
+    // the author's padding, the gutter's inset over its left side, then the
+    // author's left value restored.
+    { sets: [["padding", "1px 2px 3px 7px"], ["paddingLeft", "3ch"], ["paddingLeft", "7px"]], reads: { padding: "1px 2px 3px 7px", paddingLeft: "7px", paddingTop: "1px" } },
+];
 
 const CSS_WIDE = new Set(["inherit", "initial", "unset", "revert", "revert-layer"]);
 

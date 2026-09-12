@@ -54,18 +54,36 @@ func TestDerivedIdentities(t *testing.T) {
 // applicationId, reformats project.yml) fails this test rather than failing a
 // user's first native build.
 func TestShellPatchesStillApply(t *testing.T) {
-	cfg := appConfig{Name: `Tom & "Jerry"`, ID: "com.example.tomjerry"}
+	// An upper-case letter in the ID, so the scheme's lowering is exercised.
+	cfg := appConfig{Name: `Tom & "Jerry"`, ID: "com.example.TomJerry"}
 	for _, tc := range []struct {
 		spec    shellSpec
 		patches []patch
-		expect  map[string]string // file → substring the patched file must contain
+		expect  map[string][]string // file → substrings the patched file must contain
+		refuse  map[string][]string // file → demo text that must be gone from it
 	}{
-		{androidShell, androidPatches(cfg), map[string]string{
-			"app/build.gradle":                 `applicationId = "com.example.tomjerry"`,
-			"app/src/main/AndroidManifest.xml": `android:label="Tom &amp; &quot;Jerry&quot;"`,
+		{androidShell, androidPatches(cfg), map[string][]string{
+			"app/build.gradle": {`applicationId = "com.example.TomJerry"`},
+			"app/src/main/AndroidManifest.xml": {
+				`android:label="Tom &amp; &quot;Jerry&quot;"`,
+				`<data android:scheme="com.example.tomjerry" />`,
+			},
+		}, map[string][]string{
+			"app/src/main/AndroidManifest.xml": {`android:scheme="grmob"`},
 		}},
-		{iosShell, iosPatches(cfg), map[string]string{
-			"project.yml": `CFBundleDisplayName: "Tom & \"Jerry\""`,
+		{iosShell, iosPatches(cfg), map[string][]string{
+			"project.yml": {
+				`CFBundleDisplayName: "Tom & \"Jerry\""`,
+				"CFBundleURLName: com.example.TomJerry.deeplink",
+				"CFBundleURLSchemes: [com.example.tomjerry]",
+				`NSCameraUsageDescription: "Tom & \"Jerry\" uses the camera when you allow it."`,
+				`NSPhotoLibraryUsageDescription: "Tom & \"Jerry\" uses your photo library when you allow it."`,
+				// What removing the UI tests must leave behind: the app target's
+				// last setting, then the scheme building it.
+				"      OTHER_LDFLAGS: -ObjC\nschemes:\n  GrMobApp:\n    build:\n      targets:\n        GrMobApp: all\n",
+			},
+		}, map[string][]string{
+			"project.yml": {"GrMobUITests", "Demonstrates permission", "[grmob]", "com.grmob.deeplink"},
 		}},
 	} {
 		files := map[string]string{}
@@ -84,9 +102,18 @@ func TestShellPatchesStillApply(t *testing.T) {
 			}
 			files[p.file] = out
 		}
-		for file, want := range tc.expect {
-			if !strings.Contains(files[file], want) {
-				t.Errorf("%s/%s after patching does not contain %s", tc.spec.dir, file, want)
+		for file, wants := range tc.expect {
+			for _, want := range wants {
+				if !strings.Contains(files[file], want) {
+					t.Errorf("%s/%s after patching does not contain %q", tc.spec.dir, file, want)
+				}
+			}
+		}
+		for file, gone := range tc.refuse {
+			for _, g := range gone {
+				if strings.Contains(files[file], g) {
+					t.Errorf("%s/%s after patching still contains %q, which is grmob's demo and not the app's", tc.spec.dir, file, g)
+				}
 			}
 		}
 	}

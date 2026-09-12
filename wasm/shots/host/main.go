@@ -41,6 +41,7 @@ import (
 	"net/url"
 	"sort"
 	"strings"
+	"sync"
 	"syscall/js"
 
 	"github.com/rohanthewiz/grmob/core"
@@ -69,6 +70,10 @@ var apps = map[string]func(*core.Context) core.View{
 var (
 	ctx     = core.NewContext().WithTheme(core.DefaultTheme)
 	manager *render.Manager
+
+	// done parks main until the page calls Shutdown. See shutdown below.
+	done     = make(chan struct{})
+	doneOnce sync.Once
 )
 
 // mounted is the app named by the page's query string.
@@ -205,6 +210,28 @@ func hostEvent(this js.Value, args []js.Value) any {
 	return nil
 }
 
+// shutdown is the hot-reload hook, the same two steps in the same order as
+// wasm/main.go's (which carries the long version): close the manager so no
+// hook-owned timer keeps pushing patches into a tree the next module replaces,
+// then release main so the instance's memory is dropped and go.run's promise
+// settles.
+//
+// The screenshot driver never calls it — it closes the browser — so this is
+// here for the other way the host can be loaded: under `serve -dev`, whose
+// client calls Shutdown before booting a new build and falls back to a full
+// page reload when there is none. A reload loses the state being set up for a
+// shot. It also means the host installs exactly webhost.Bindings, so the
+// three browser hosts in this repository speak one page contract with no
+// exceptions to remember (webhost_test.go).
+func shutdown(this js.Value, args []js.Value) any {
+	if manager != nil {
+		manager.Close()
+		manager = nil
+	}
+	doneOnce.Do(func() { close(done) })
+	return nil
+}
+
 func main() {
 	js.Global().Set("GrMobWASM", map[string]any{
 		"RenderInitial": js.FuncOf(renderInitial),
@@ -212,6 +239,7 @@ func main() {
 		"ReceiveEvent":  js.FuncOf(receiveEvent),
 		"IsDirty":       js.FuncOf(isDirty),
 		"HostEvent":     js.FuncOf(hostEvent),
+		"Shutdown":      js.FuncOf(shutdown),
 	})
 	if js.Global().Get("GrMobSystemEvent").Type() == js.TypeFunction {
 		core.SetSystemEventHandler(func(name string, data map[string]any) {
@@ -223,8 +251,8 @@ func main() {
 		})
 	}
 	println("GrMob shots host ready.")
-	// Parked forever: returning from main on js/wasm drops the instance,
-	// and this host has no hot-reload contract to honour — the driver
-	// closes the browser when it is done.
-	select {}
+	// Parked until Shutdown. The screenshot driver closes the browser rather
+	// than calling it, so under shoot.sh this waits forever, as it always did.
+	<-done
+	println("GrMob shots host stopped.")
 }

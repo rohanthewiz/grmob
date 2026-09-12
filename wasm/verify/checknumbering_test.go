@@ -1917,8 +1917,13 @@ func isSequence(t *testing.T, what string, list []numbered) bool {
 }
 
 // The two sentences that count the checks in prose.
+//
+// The fourth kind's own phrase is matched loosely (`[^,]+`) because it is a
+// clause rather than a noun — "what a browser does with an accessibility value
+// nobody here resolves" — and the count in front of it is the only part of it
+// this reads.
 var tallyByKind = regexp.MustCompile(
-	`(\w+) about the keyboard, (\w+) about paint, (\w+) about layout, and (\w+) about`)
+	`(\w+) about the keyboard, (\w+) about paint, (\w+) about layout, (\w+) about [^,]+, and (\w+) about`)
 var tallyOutright = regexp.MustCompile(`(\w+) claims sit exactly in that blind spot`)
 
 // checkTallies holds both to the sequence's length.
@@ -1932,7 +1937,7 @@ func checkTallies(t *testing.T, src string, want int) {
 	words := map[string]int{
 		"one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6,
 		"seven": 7, "eight": 8, "nine": 9, "ten": 10, "eleven": 11, "twelve": 12,
-		"thirteen": 13,
+		"thirteen": 13, "fourteen": 14,
 	}
 
 	if m := tallyByKind.FindStringSubmatch(src); m == nil {
@@ -1953,7 +1958,7 @@ func checkTallies(t *testing.T, src string, want int) {
 		}
 		if sum != want {
 			t.Errorf("%s: the opening sentence counts %d checks by kind (%s) and there "+
-				"are %d. Every check belongs to exactly one of those four kinds, so the "+
+				"are %d. Every check belongs to exactly one of those five kinds, so the "+
 				"tally is the sequence's length written a second way.",
 				browserChecks, sum, strings.Join(m[1:], "+"), want)
 		}

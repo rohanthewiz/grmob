@@ -1709,6 +1709,16 @@ const GrMob = (() => {
         // string "undefined" in the attribute, which is not a display and is
         // worse than the empty string a modal has always recorded here.
         el.dataset.baseDisplay = css.display ?? "";
+        // The author's own left padding on a code editor, kept for the same
+        // reason as baseDisplay: syncCodeGutter overwrites padding-left while
+        // line numbers are drawn, and switching them off has to put back what
+        // the style pass computed. Read off the element rather than parsed out
+        // of css.padding, because the `padding` shorthand's four-value string
+        // is the browser's to split. Refreshed on every style patch, so it is
+        // never older than the Style on the wire.
+        if (nodeType === "CodeEditor") {
+            el.dataset.basePaddingLeft = css.padding ? el.style.paddingLeft : "";
+        }
         // core.Style.StackAlign, parked on the element rather than turned into
         // a declaration here. It is a *layer* property, and only the overlay
         // above knows whether this node is a layer — so syncOverlay reads it
@@ -3497,7 +3507,13 @@ const GrMob = (() => {
         if (!gutter) return;
         if (el.dataset.lineNumbers !== "true") {
             gutter.style.display = "none";
-            el.style.paddingLeft = "";
+            // The author's value, not "". padding-left is a longhand of the
+            // `padding` the style pass assigned, so "" does not mean "the
+            // gutter's inset is gone" — it removes the left side of the
+            // author's Padding too (the TextGrid overflowX bug's shape).
+            // htmlout writes no padding-left at all when the numbers are off,
+            // so the author's declaration is what stands there as well.
+            el.style.paddingLeft = el.dataset.basePaddingLeft ?? "";
             return;
         }
         gutter.style.display = "";
