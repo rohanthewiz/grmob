@@ -94,6 +94,21 @@ jobs:
         # pushes from different goroutines, which is exactly what -race is for.
         run: go test -race ./...
 
+      - name: Build the docs server
+        # cmd/docs is a module of its own — deliberately, so that gkdocs and
+        # its dependencies stay out of the framework's go.mod (see its
+        # main.go). The consequence is that neither `go vet ./...` nor
+        # `go test -race ./...` above reaches it, so it gets a step. Without
+        # one, the only thing standing between a compile error here and a
+        # release is somebody happening to run ./docs.sh.
+        #
+        # gofmt is not repeated: `gofmt -l .` above walks directories, not
+        # modules, so these files are already covered by it.
+        working-directory: cmd/docs
+        run: |
+          go vet ./...
+          go build -o "$RUNNER_TEMP/docs" .
+
       - name: Build the WASM target
         # -o is mandatory: the package path ./wasm is also a directory named
         # `wasm`, and without -o the compiler refuses to overwrite a directory

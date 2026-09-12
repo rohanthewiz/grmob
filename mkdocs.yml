@@ -53,3 +53,22 @@ nav:
       - Native Android & iOS: platforms/native.md
       - WebAssembly: platforms/wasm.md
       - Exporters: platforms/exporters.md
+  # docs/api is generated: `go run ./internal/apidoc/gen`. The nav below is
+  # hand-kept so that the order is editorial rather than alphabetical, and
+  # internal/apidoc's TestNavListsEveryPage fails if a generated page is
+  # missing from it.
+  - API Reference:
+      - Overview: api/index.md
+      - core: api/core.md
+      - hooks: api/hooks.md
+      - render: api/render.md
+      - reconcile: api/reconcile.md
+      - components: api/components.md
+      - forms: api/forms.md
+      - richtext: api/richtext.md
+      - highlight: api/highlight.md
+      - htmlout: api/htmlout.md
+      - jsonout: api/jsonout.md
+      - mobile: api/mobile.md
+      - permission: api/permission.md
+      - aria/spec: api/aria-spec.md

@@ -407,6 +407,17 @@ anything; the test that holds it to the specification skips when no download
 is present. Generating it the first time corrected four facts that had been
 hand-transcribed and that no test could contradict — see `aria/verify/doc.go`.
 
+The API reference is generated the same way, from the packages' own doc
+comments, and needs neither the network nor anything but the toolchain:
+
+```bash
+go run ./internal/apidoc/gen   # -> docs/api/
+```
+
+It too is committed, and `go test ./...` fails when it has drifted from the
+declarations it describes — so changing an exported signature and forgetting to
+regenerate is a red build rather than a docs site that quietly lies.
+
 ---
 
 ## Next: the full tutorial
@@ -450,7 +461,21 @@ testing at three levels, and shipping the same Go code to the iOS simulator and
 the Android emulator.
 
 The rest of the documentation lives in [`docs/`](docs), starting with
-[Getting Started](docs/getting-started.md).
+[Getting Started](docs/getting-started.md). For exact signatures there is the
+[API Reference](docs/api/index.md) — one page per public package, generated
+from the packages' own doc comments and committed, so it is readable here as
+markdown and never out of step with the source.
+
+To read it all as a site, with a sidebar, search-friendly URLs and rendered
+mermaid diagrams:
+
+```sh
+./docs.sh            # http://localhost:8000/
+```
+
+That serves `mkdocs.yml` and `docs/` with [gkdocs](https://github.com/rohanthewiz/gkdocs).
+The pages are ordinary mkdocs-compatible markdown, so mkdocs itself works just
+as well.
 
 ---
 
