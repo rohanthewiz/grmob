@@ -489,7 +489,7 @@ const INK_MARGIN = 4;
 //
 //	                    Times      Liberation Serif
 //	a quarter           0.239      0.027   ← the whole of the Linux failure
-//	three tenths        0.330      0.330
+//	three tenths        0.333      0.333
 //
 // Liberation Serif's bottom scanned row sat one device row above a baseline row
 // with 3% ink in it, so the rounding the clearance exists to survive would have
@@ -657,8 +657,8 @@ const INK_EDGE_CLEARANCE = 1;
 // with INK_ROWS at three tenths:
 //
 //	                                 Times    Liberation Serif
-//	the three the scan reads         0.330    0.330
-//	the row below the band           0.100    0.060
+//	the three the scan reads         0.333    0.333
+//	the row below the band           0.100    0.063
 //
 // The floor still sits in the gap, on both, and with more room than it was
 // chosen with — which is the outcome that says three tenths bought the scan
@@ -1036,7 +1036,7 @@ function inkRoundingVerdict(where, subject, img, dpr, band, x0, x1, fill) {
                 `edge of every glyph in the run at once, and one rounding either way ` +
                 `takes all three rows off the ink together. This is that argument measured, and this row is on such an ` +
                 `edge: over the twenty bands and eight pills the rows this scan reads ` +
-                `come back at 0.330 at worst by the same reading, on both faces ` +
+                `come back at 0.333 at worst by the same reading, on both faces ` +
                 `this scan is calibrated for, and the row below the band comes back ` +
                 `at 0.100 and under` };
         }
@@ -1074,10 +1074,11 @@ const INK_PROFILE_MARGIN = 2;
 //
 // INK_ROWS, INK_EDGE_CLEARANCE, INK_ROW_ROUNDING and INK_ASCENDER_SEPARATION
 // are each a number with a table under it, and every one of those tables was
-// read off one face (see INK_CALIBRATIONS). A machine that resolves another
-// face gets the skip, and the skip's remedy is "re-measure them against this
-// face" — which, until this function, meant editing the file, adding print
-// statements, and running the grid by hand on a machine that has the face. On a
+// read off one face (see INK_CALIBRATED_ON). A machine that resolves a face
+// nothing here was measured on gets the skip, and that skip's remedy is
+// "re-measure them against this face" — which, until this function, meant
+// editing the file, adding print statements, and running the grid by hand on a
+// machine that has the face. On a
 // CI runner nobody can attach to, that is not a remedy anybody was ever going
 // to carry out, and the two sessions that met the skip did not.
 //
@@ -1085,7 +1086,7 @@ const INK_PROFILE_MARGIN = 2;
 // this face; what it does instead is hand back the table the judgement would
 // need, from the same pixels, through the same coverage predicate the verdicts
 // use (inkRowCoverage — a pixel within INK_EPSILON of the fill is backdrop).
-// The numbers a reader writes into INK_CALIBRATIONS are therefore the numbers
+// The numbers a reader checks these against are therefore the numbers
 // the checks will compare against, rather than a second measurement of the same
 // thing by a different route.
 //
@@ -1220,7 +1221,7 @@ function inkCalibrationBrackets(profiles) {
 //
 // The one judgement it does make is about the brackets: a bracket that does not
 // separate is called out, because that is the case where copying a midpoint
-// into INK_CALIBRATIONS would produce a constant that passes and means nothing,
+// into a constant would produce one that passes and means nothing,
 // which is the failure mode this whole apparatus is built against.
 //
 // Percentages to one decimal, matching every message the verdicts print, so a
@@ -2950,8 +2951,8 @@ const INK_OWN_MEASURED_ON = {
 // face would need its own copy of every number, and the measurement said
 // otherwise: the whole of Liberation Serif's disagreement with Times is that
 // its outlines stop short of its own metric baseline, so the fractions came in
-// from a quarter to three tenths — after which the rows one out read 0.330 on
-// Times where they had read 0.239, and 0.330 on Liberation Serif where they had
+// from a quarter to three tenths — after which the rows one out read 0.333 on
+// Times where they had read 0.239, and 0.333 on Liberation Serif where they had
 // read 0.027. The floor (INK_ROW_ROUNDING), the clearance and the ascender
 // separation did not move at all; both faces sit inside all three with room.
 //
@@ -2991,7 +2992,7 @@ const INK_OWN_MEASURED_ON = {
 //
 // By being measured, with the instrument that prints the readings under the
 // skip — inkCalibrationReport. Liberation Serif's entry came off a GitHub
-// ubuntu-latest runner (run 34678496106), where the grid resolves it because
+// ubuntu-latest runner (run 34678874169), where the grid resolves it because
 // Chrome there has none of core.Theme's typography and Liberation Serif is
 // Linux's metric-compatible Times substitute. Times' came off this project's
 // macOS machine, the same way and by the same route.
@@ -3002,7 +3003,7 @@ const INK_OWN_MEASURED_ON = {
 // that needs a number moved is not an entry here — it is a re-derivation of
 // that number against every face already listed, the way three tenths was.
 const INK_CALIBRATED_ON = {
-    faces: ["Times"],
+    faces: ["Liberation Serif", "Times"],
 };
 
 // Every platform face this grid's glyphs and its probes resolved to.
@@ -8380,7 +8381,7 @@ async function main() {
                     `movement, and the number is set above what a row ON the baseline ` +
                     `scores (0.100 at worst when it was measured, and 0.000 in every ` +
                     `count pill) and below what the rows a clearance of ` +
-                    `${INK_EDGE_CLEARANCE} lands on score (0.330 at worst, on both ` +
+                    `${INK_EDGE_CLEARANCE} lands on score (0.333 at worst, on both ` +
                     `calibrated faces). With ` +
                     `nothing in the grid under the floor, the first of those two ` +
                     `brackets has gone: the rows would pass wherever they were put, and ` +
