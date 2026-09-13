@@ -69,7 +69,7 @@ func TestShellPatchesStillApply(t *testing.T) {
 				`<data android:scheme="com.example.tomjerry" />`,
 			},
 		}, map[string][]string{
-			"app/src/main/AndroidManifest.xml": {`android:scheme="grmob"`},
+			"app/src/main/AndroidManifest.xml": {`android:scheme="grmob"`, "grmob://"},
 		}},
 		{iosShell, iosPatches(cfg), map[string][]string{
 			"project.yml": {
@@ -83,7 +83,7 @@ func TestShellPatchesStillApply(t *testing.T) {
 				"      OTHER_LDFLAGS: -ObjC\nschemes:\n  GrMobApp:\n    build:\n      targets:\n        GrMobApp: all\n",
 			},
 		}, map[string][]string{
-			"project.yml": {"GrMobUITests", "Demonstrates permission", "[grmob]", "com.grmob.deeplink"},
+			"project.yml": {"GrMobUITests", "Demonstrates permission", "[grmob]", "com.grmob.deeplink", "grmob://"},
 		}},
 	} {
 		files := map[string]string{}

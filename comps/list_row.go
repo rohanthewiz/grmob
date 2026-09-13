@@ -258,7 +258,8 @@ type ListRow struct {
 	//
 	// The web writes aria-level. Neither native has a nesting-depth property
 	// at all, so the role goes out and the depth does not, which is the honest
-	// gap nine of core's twenty roles already have.
+	// gap several of core's roles already have (see
+	// core.Style's AccessibilityRole table for which).
 	NestingLevel int
 
 	// Style is applied to the row container after ListRow's own defaults

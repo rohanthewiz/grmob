@@ -112,7 +112,9 @@ prerequisites (the same table `grmob doctor` prints), copy this repository's
 shell into the app's `android/` or `ios/` once — setting the application ID
 and launcher name from the app's `grmob.json` — build gomobile and gobind
 from the app's module graph, bind `mobile` plus `./app`, and finish with
-Gradle `assembleDebug` or `xcodegen` and a simulator `xcodebuild`. The copied
+Gradle `assembleDebug` or `xcodegen` and a simulator `xcodebuild`. `-install`
+puts the APK on a connected device or emulator; `-run` installs and launches
+the iOS build on the booted simulator. The copied
 shell belongs to the app from then on; `-refresh` copies a newer one over it.
 
 The copy is made the app's own in three more places than its name:

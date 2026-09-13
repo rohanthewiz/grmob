@@ -1503,3 +1503,25 @@ test("an arrow checks the radio it lands on, with no flag set", () => {
         "ARIA's radio group has no focus-without-checking state: the arrows " +
         "move the check, through the radio's own OnTap");
 });
+
+test("an arrow steps over a disabled radio", () => {
+    // Before: the disabled radio was a member, so ArrowDown focused it and
+    // called its OnTap, which Go ignores. Focus then sat on a radio that could
+    // not be checked while the check stayed where it was. A listbox keeps its
+    // disabled options reachable; a radio group cannot, because landing is
+    // choosing.
+    const rg = mountTree(composite("radiogroup", [
+        member("radio", { selected: true, onClick: "cb_0" }),
+        member("radio", { selected: false, onClick: "cb_1", disabled: true }),
+        member("radio", { selected: false, onClick: "cb_2" }),
+    ], { type: "Column" }));
+    const radios = rg.root.children;
+    assert.equal(radios[1].getAttribute("aria-disabled"), "true");
+    radios[0].focus();
+
+    radios[0].dispatch("keydown", { key: "ArrowDown" });
+    assert.equal(rg.focused(), radios[2]);
+    assert.deepEqual(rg.rt.dispatched, [{ id: "cb_2", payload: {} }]);
+    assert.equal(radios[1].getAttribute("tabindex"), null,
+        "a radio the walk skips is not given a stop to rove through");
+});

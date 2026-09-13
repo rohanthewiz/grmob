@@ -116,6 +116,10 @@ type CodeEditor struct {
 	// this widget's.
 	Toolbar *core.EditorRef
 
+	// ToolbarLabel names the toolbar for a screen reader, which announces it
+	// as "<label>, toolbar". Empty is "Editing". Ignored without Toolbar.
+	ToolbarLabel string
+
 	// OnSelectionChange reports the caret as byte offsets into Value. Useful
 	// for a status line ("line 12, column 4") and for a toolbar that has to
 	// know whether anything is selected.
@@ -207,6 +211,16 @@ func (c CodeEditor) editorProps(t *core.Theme, scheme highlight.Scheme) []core.P
 // The comment button is dropped rather than disabled when the language has no
 // line comment (JSON): a permanently inert control is a question the reader has
 // to answer every time they see it, and the command would do nothing anyway.
+//
+// # The row is a toolbar
+//
+// It carries core.RoleToolbar and a name (ToolbarLabel, "Editing" by default),
+// so the WASM runtime gives it one tab stop and arrow keys between the buttons,
+// the same keyboard RichTextEditor's strip has. Declaring a composite container
+// is allowed here for the reason it is there: every member is a Button this
+// function builds, and CodeEditor holds no core.View, so no caller can put a
+// second composite inside the row. TestOnlyClosedWidgetsDeclareACompositeContainerRole
+// holds that.
 func (c CodeEditor) toolbar(t *core.Theme) core.View {
 	glyph := func(label, hint string, command string) core.View {
 		return Button{
@@ -226,6 +240,8 @@ func (c CodeEditor) toolbar(t *core.Theme) core.View {
 	items := []core.PropsAndChildren{
 		core.Gap(float64(t.Spacing.XS)),
 		core.AlignItemsProp(core.AlignItemsCenter),
+		core.AccessibilityRole(core.RoleToolbar),
+		core.AccessibilityLabel(orDefault(c.ToolbarLabel, "Editing")),
 		glyph("⇥", "Indent", core.EditIndent),
 		glyph("⇤", "Outdent", core.EditOutdent),
 	}

@@ -29,8 +29,8 @@ const SourceBaseURL = "https://github.com/rohanthewiz/grmob/blob/master/"
 // Pkg is one documented package: where its source lives, what the nav calls
 // it, and which group it sits in on the overview page.
 type Pkg struct {
-	// Dir is the package directory relative to the module root ("core",
-	// "aria/spec"). It is also the key everything else is derived from: the
+	// Dir is the package directory relative to the module root ("core", or a
+	// nested one such as "a/b"). It is also the key everything else is derived from: the
 	// import path, the page filename, the nav entry.
 	Dir string
 
@@ -55,7 +55,7 @@ func (p Pkg) ImportPath() string { return ModulePath + "/" + p.Dir }
 func (p Pkg) Name() string { return path.Base(p.Dir) }
 
 // Page is the generated file's name under docs/api/. Nested directories are
-// flattened with a dash ("aria/spec" -> "aria-spec.md") so every page is a
+// flattened with a dash ("a/b" -> "a-b.md") so every page is a
 // sibling of every other one, which is what lets an in-page cross-reference be
 // a bare relative link with no "../" to get wrong.
 func (p Pkg) Page() string { return strings.ReplaceAll(p.Dir, "/", "-") + ".md" }
@@ -70,6 +70,9 @@ func (p Pkg) Page() string { return strings.ReplaceAll(p.Dir, "/", "-") + ".md" 
 //	examples/...        programs, and the tutorial's lessons are prose already
 //	*/verify, aria/gen  test harnesses and generators — developer tooling whose
 //	                    audience reads the source, not a reference page
+//	aria/...            importable, but spec-parsing machinery that feeds the
+//	                    accessibility fixture rather than framework API; no app
+//	                    imports it, so a page for it read as something to learn
 //	serve, wasm         package main
 //
 // TestPackagesCoversEveryPublicPackage holds the list to that rule: it walks
@@ -137,11 +140,6 @@ var Packages = []Pkg{
 		Dir:   "permission",
 		Group: "Platform",
 		Blurb: "Asking the platform for the camera, the microphone, location, the media store.",
-	},
-	{
-		Dir:   "aria/spec",
-		Group: "Tools",
-		Blurb: "Reads the W3C ARIA specification's own role definitions; feeds the accessibility fixture.",
 	},
 }
 

@@ -110,7 +110,7 @@ for every target. When you want it on a phone:
 ```bash
 go run github.com/rohanthewiz/grmob/cmd/grmob doctor    # what this machine can build, and what to install
 go run github.com/rohanthewiz/grmob/cmd/grmob android   # APK: Android SDK + NDK, JDK 17+ (-install puts it on a device)
-go run github.com/rohanthewiz/grmob/cmd/grmob ios       # simulator build: Xcode + xcodegen (-open opens Xcode)
+go run github.com/rohanthewiz/grmob/cmd/grmob ios       # simulator build: Xcode + xcodegen (-run launches it, -open opens Xcode)
 ```
 
 Everything GrMob owns — the browser host (`webhost`), the runtime JavaScript,
@@ -466,6 +466,31 @@ regenerate is a red build rather than a docs site that quietly lies.
 ---
 
 ## Upgrading
+
+### Apps scaffolded with v0.3.0: two host-page rules
+
+`grmob new` copies `wasm/index.html` into your app once, and later versions of
+grmob do not touch it. The page that shipped with v0.3.0 gives every `Scroll`
+the fixed-height viewport rule `flex: 1 1 0; min-height: 0`. In a column that
+is a zero-height basis, so a **horizontal** `Scroll` (a scrollable `ChipStrip`,
+a `StepIndicator`) collapses to 0px tall and its content spills out of it.
+
+Add these two rules after the existing `#app [data-node-type="Scroll"]` rule in
+your app's `wasm/index.html`:
+
+```css
+#app [data-node-type="Scroll"][style*="flex-direction: row"] {
+  flex: 0 0 auto;
+}
+#app [style*="flex-direction: row"] > [data-node-type="Scroll"][style*="flex-direction: row"] {
+  flex: 1 1 0; min-width: 0;
+}
+```
+
+The first keeps a sideways Scroll as tall as its content. The second lets one
+inside a row take the row's width again. Both select on the inline
+`flex-direction: row` the runtime writes; see
+[the WASM host page](docs/platforms/wasm.md) for the full rule set.
 
 ### v0.2.x → v0.3.0: `components` is now `comps`
 

@@ -1179,6 +1179,18 @@ const GrMob = (() => {
     //                                         and ARIA keeps a disabled option
     //                                         reachable so a user can tell it
     //                                         is there.
+    //   an aria-disabled radio                the one exception to the line
+    //                                         above. A radio group's arrows
+    //                                         move the check, not just focus
+    //                                         (see moveCompositeFocus), so a
+    //                                         disabled radio in the member list
+    //                                         is a stop whose check Go refuses:
+    //                                         focus would sit on a choice that
+    //                                         cannot be made. ARIA's radio group
+    //                                         pattern skips disabled radios for
+    //                                         that reason; a listbox can keep
+    //                                         its disabled options because
+    //                                         moving onto one checks nothing.
     function compositeMembers(container, memberRole, out = []) {
         for (const child of container.children) {
             if (!child.getAttribute) continue;
@@ -1189,7 +1201,9 @@ const GrMob = (() => {
             // the accessibility tree along with it.
             if (child.getAttribute("aria-hidden") === "true") continue;
             if (child.getAttribute("role") === memberRole) {
-                if (!child.disabled) out.push(child);
+                const unchoosable = memberRole === "radio" &&
+                    child.getAttribute("aria-disabled") === "true";
+                if (!child.disabled && !unchoosable) out.push(child);
                 // A member is a leaf of this walk even when it holds elements:
                 // its contents belong to it, and a tab inside a tab is not a
                 // shape ARIA has.

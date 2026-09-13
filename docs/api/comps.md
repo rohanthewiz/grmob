@@ -1618,6 +1618,10 @@ type CodeEditor struct {
 	// this widget's.
 	Toolbar *core.EditorRef
 
+	// ToolbarLabel names the toolbar for a screen reader, which announces it
+	// as "<label>, toolbar". Empty is "Editing". Ignored without Toolbar.
+	ToolbarLabel string
+
 	// OnSelectionChange reports the caret as byte offsets into Value. Useful
 	// for a status line ("line 12, column 4") and for a toolbar that has to
 	// know whether anything is selected.
@@ -1675,7 +1679,7 @@ No memoization. go/scanner over a thousand lines is well under a millisecond —
 func (c CodeEditor) Render(ctx *core.Context) *core.Node
 ```
 
-<small>[comps/code_editor.go:129](https://github.com/rohanthewiz/grmob/blob/master/comps/code_editor.go#L129)</small>
+<small>[comps/code_editor.go:133](https://github.com/rohanthewiz/grmob/blob/master/comps/code_editor.go#L133)</small>
 
 ### type Collapse
 
@@ -3197,7 +3201,8 @@ type ListRow struct {
 	//
 	// The web writes aria-level. Neither native has a nesting-depth property
 	// at all, so the role goes out and the depth does not, which is the honest
-	// gap nine of core's twenty roles already have.
+	// gap several of core's roles already have (see
+	// core.Style's AccessibilityRole table for which).
 	NestingLevel int
 
 	// Style is applied to the row container after ListRow's own defaults
@@ -3286,7 +3291,7 @@ Both are opt-in, and that is the ownership rule rather than caution: a \`listite
 func (r ListRow) Render(ctx *core.Context) *core.Node
 ```
 
-<small>[comps/list_row.go:290](https://github.com/rohanthewiz/grmob/blob/master/comps/list_row.go#L290)</small>
+<small>[comps/list_row.go:291](https://github.com/rohanthewiz/grmob/blob/master/comps/list_row.go#L291)</small>
 
 ### type LoadMore
 

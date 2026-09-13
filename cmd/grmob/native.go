@@ -91,17 +91,9 @@ func replaceOnce(old, new string) func(string) (string, error) {
 func insertLineBefore(anchor, line string) func(string) (string, error) {
 	return func(s string) (string, error) {
 		lines := strings.Split(s, "\n")
-		at := -1
-		for i, l := range lines {
-			if strings.Contains(l, anchor) {
-				if at >= 0 {
-					return "", fmt.Errorf("expected one line containing %q, found several", anchor)
-				}
-				at = i
-			}
-		}
-		if at < 0 {
-			return "", fmt.Errorf("no line contains %q", anchor)
+		at, err := uniqueLine(lines, func(l string) bool { return strings.Contains(l, anchor) }, anchor)
+		if err != nil {
+			return "", err
 		}
 		indent := lines[at][:len(lines[at])-len(strings.TrimLeft(lines[at], " \t"))]
 		lines = append(lines[:at], append([]string{indent + line}, lines[at:]...)...)
@@ -201,6 +193,11 @@ func androidPatches(cfg appConfig) []patch {
 		{"app/build.gradle", replaceOnce(`applicationId = "com.grmob.app"`, `applicationId = "`+cfg.ID+`"`)},
 		{"app/src/main/AndroidManifest.xml", replaceOnce(`android:label="GrMob"`, `android:label="`+xmlEscape(cfg.Name)+`"`)},
 		{"app/src/main/AndroidManifest.xml", replaceOnce(`<data android:scheme="grmob" />`, `<data android:scheme="`+urlScheme(cfg)+`" />`)},
+		// The comment above the filter shows an adb line opening a tutorial
+		// lesson. In the app it has to name the app's scheme, or the example
+		// launches whichever installed app still claims grmob://. The lesson
+		// path is the demo's, so it goes too.
+		{"app/src/main/AndroidManifest.xml", replaceOnce(`-d "grmob://lesson/4.12"`, `-d "`+urlScheme(cfg)+`://"`)},
 	}
 }
 
@@ -254,6 +251,12 @@ func iosPatches(cfg appConfig) []patch {
 		{"project.yml", insertLineBefore("UILaunchScreen: {}", "CFBundleDisplayName: "+strconv.Quote(cfg.Name))},
 		{"project.yml", replaceOnce("CFBundleURLName: com.grmob.deeplink", "CFBundleURLName: "+cfg.ID+".deeplink")},
 		{"project.yml", replaceOnce("CFBundleURLSchemes: [grmob]", "CFBundleURLSchemes: ["+urlScheme(cfg)+"]")},
+		// The comment above the URL types names the scheme twice, once in prose
+		// and once in a simctl line opening a tutorial lesson. Both have to
+		// name the app's scheme, or the example opens another app. The lesson
+		// path is the demo's, so it goes too.
+		{"project.yml", replaceOnce("OS hands it grmob:// links.", "OS hands it "+urlScheme(cfg)+":// links.")},
+		{"project.yml", replaceOnce(`openurl booted "grmob://lesson/4.12"`, `openurl booted "`+urlScheme(cfg)+`://"`)},
 	}
 	for _, u := range iosUsageKeys {
 		patches = append(patches, patch{"project.yml",
@@ -346,6 +349,7 @@ func cmdAndroid(args []string) error {
 func cmdIOS(args []string) error {
 	fset := flag.NewFlagSet("ios", flag.ContinueOnError)
 	open := fset.Bool("open", false, "open the Xcode project after building")
+	launch := fset.Bool("run", false, "install and launch the app on the booted iOS Simulator")
 	refresh := fset.Bool("refresh", false, "copy grmob's iOS shell over ios/ again (overwrites edits to copied files)")
 	if err := fset.Parse(args); err != nil {
 		return err
@@ -396,7 +400,23 @@ func cmdIOS(args []string) error {
 	}
 	app := filepath.Join(shell, "build", "Build", "Products", "Debug-iphonesimulator", "GrMobApp.app")
 	fmt.Printf("\nApp: %s\n", app)
-	fmt.Printf("Run it on a booted simulator:\n  xcrun simctl install booted %q && xcrun simctl launch booted %s\n", app, cfg.ID)
+
+	// -run is -install's counterpart on Android: the two simctl steps, against
+	// whichever simulator is booted. "booted" rather than a device name,
+	// because picking one would mean choosing a model and runtime the user may
+	// not have installed, and booting one is slow enough that doing it
+	// silently looks like a hang. With none booted, simctl fails at install
+	// and the error says what to do.
+	if *launch {
+		if err := run(root, nil, "xcrun", "simctl", "install", "booted", app); err != nil {
+			return fmt.Errorf("%w\n(is a simulator booted? `xcrun simctl list devices booted` lists them; `open -a Simulator` boots one)", err)
+		}
+		if err := run(root, nil, "xcrun", "simctl", "launch", "booted", cfg.ID); err != nil {
+			return err
+		}
+	} else {
+		fmt.Printf("Run it on a booted simulator with -run, or:\n  xcrun simctl install booted %q && xcrun simctl launch booted %s\n", app, cfg.ID)
+	}
 
 	if *open {
 		return run(root, nil, "open", filepath.Join(shell, "GrMobApp.xcodeproj"))

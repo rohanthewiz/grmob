@@ -14,7 +14,7 @@ string, wrapped, proportional font, no decoration.
 
 ## What exists today (constraints the plan works within)
 
-- `components` is pure Go over the public core API. Anything that can be built there
+- `comps` is pure Go over the public core API. Anything that can be built there
   costs no renderer work and runs on all four targets. Neither editor can be: both need
   an editable surface that carries *styled runs*, and no primitive has one.
 - `core.TextArea` is the only multiline input. Its three live hosts share one contract
@@ -33,7 +33,7 @@ string, wrapped, proportional font, no decoration.
 - `core.Style` has **no font family**. A pure-Go overlay (transparent `TextArea` in a
   `ZStack` over a `TextGrid`) cannot line its glyphs up with the grid, and SwiftUI's
   `TextEditor` / Compose's `BasicTextField` cannot be pitch-matched to a separate text
-  view from outside. That is the argument that closes the "do it in components" door
+  view from outside. That is the argument that closes the "do it in comps" door
   for both editors.
 - Imperative commands ride the tree, not a bridge call: `core/focus.go` stamps
   `focusEpoch` + `focusAction` on leaves and each renderer fires the action once when
@@ -157,10 +157,10 @@ classpath, which this plan does not take on.
 > textual contract test could not have said so: it checks that the right calls
 > are made, not that they resolve.
 
-### A3. `components.CodeEditor` widget (pure Go)
+### A3. `comps.CodeEditor` widget (pure Go)
 
 ```go
-components.CodeEditor{
+comps.CodeEditor{
     Value:       state.Src,
     OnChange:    func(s string) { state.Src = s },
     Language:    "go",                // or Highlighter: a highlight.Highlighter
@@ -174,7 +174,7 @@ components.CodeEditor{
 
 Runs the highlighter each render under `UseMemo` keyed on `Value`; `go/scanner` on a
 thousand lines is well under a millisecond, so no debounce. The toolbar is
-`components.Button`s driving A2's commands. A `ReadOnly` editor with `Toolbar: false`
+`comps.Button`s driving A2's commands. A `ReadOnly` editor with `Toolbar: false`
 is the tutorial's code block, which then drops its private `TextGrid` path.
 
 ### A4. Docs and lesson
@@ -254,20 +254,20 @@ Undo on the web is the runtime's own stack of Docs (native undo managers do not
 survive programmatic attribute edits reliably); the natives use `UndoManager` /
 `EditText`'s.
 
-### B3. `components.RichTextEditor` widget (pure Go)
+### B3. `comps.RichTextEditor` widget (pure Go)
 
 ```go
-components.RichTextEditor{
+comps.RichTextEditor{
     Doc:         state.Doc,
     OnChange:    func(d richtext.Doc) { state.Doc = d },
     Placeholder: "Write something…",
-    Toolbar:     components.RichToolbarDefault,   // or a custom []RichToolItem
+    Toolbar:     comps.RichToolbarDefault,   // or a custom []RichToolItem
     MinHeight:   "160px",
     ReadOnly:    false,
 }
 ```
 
-The toolbar is a `components.ChipStrip`-style row of toggle buttons whose selected
+The toolbar is a `comps.ChipStrip`-style row of toggle buttons whose selected
 state comes from the last `OnSelectionChange` (widget-private state, the DatePicker
 bar: presentation only). "Link" opens a `core` modal with an `Input` and dispatches
 `link:<url>`. A `ReadOnly` editor with no toolbar is the display half: a comment, a
@@ -307,7 +307,7 @@ Android, hardware-keyboard Tab on iPad, paste from another app.
   Reconsider if autocomplete or folding become drivers.
 - **Android RichText = `EditText`/`Spannable` via `AndroidView`, not Compose.** See B2.
 - **Package names:** `highlight` and `richtext` at the module root, beside `hooks` and
-  `permission`, rather than under `components`, because both are models with no view.
+  `permission`, rather than under `comps`, because both are models with no view.
 
 ## Non-goals (v1)
 
@@ -332,7 +332,7 @@ thing rendered inside an `if`, inside a loop, inside a lesson body: the plan's
 own closing line for A3 asks the tutorial's `codeBlock` to become one.
 
 So the ref is the caller's and it *is* the Toolbar field:
-`Toolbar: ref` for `CodeEditor`, `Toolbar: components.UseRichToolbar(ctx)` for
+`Toolbar: ref` for `CodeEditor`, `Toolbar: comps.UseRichToolbar(ctx)` for
 `RichTextEditor`. An editor with no toolbar touches no hook. Same reasoning
 retired A3's `UseMemo`: the highlighter runs every pass, as the tutorial's has
 since it had snippets, and a buffer big enough to change that arithmetic wants a

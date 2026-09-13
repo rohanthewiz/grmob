@@ -2083,7 +2083,8 @@ on the strip itself either way.
 The strip claims **no** role of its own. A filter bar is a toolbar and can say
 so with `Style: []core.StyleProp{core.AccessibilityRole(core.RoleToolbar)}`,
 but the tags on an article are not one, and the widget cannot tell them
-apart — nor does it implement the roving focus a toolbar implies.
+apart. Once you declare the role, the WASM runtime supplies the toolbar
+keyboard: one tab stop for the strip and the arrow keys between its chips.
 
 ## Skeleton
 
@@ -2428,6 +2429,13 @@ and `"json"` in v1; anything else, including `""`, is uncoloured rather than an
 error, so a screen whose editor mis-spells its language still renders. JSON has
 no line comment, so the toolbar drops its comment button rather than showing a
 permanently inert one.
+
+**The toolbar is a toolbar.** The row carries `core.RoleToolbar` and is named by
+`ToolbarLabel`, which defaults to "Editing". In the browser it is one tab stop,
+and the arrow keys move between its buttons. It holds only the buttons the
+widget builds, which is what lets it declare a keyboard container role without
+making nested composites reachable, so do not wrap the editor in a toolbar of
+your own.
 
 **The zero `Scheme` is derived from the theme's own `Background`.** A code
 surface has to be a deliberate colour — `highlight.Darcula` on a dark app,

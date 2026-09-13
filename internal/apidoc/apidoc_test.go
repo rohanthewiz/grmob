@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"go/build"
 	"os"
+	"path"
 	"path/filepath"
 	"regexp"
 	"strconv"
@@ -176,11 +177,15 @@ var linkRe = regexp.MustCompile(`\]\(([^)\s]+)\)`)
 // stays inside docs/api/, and checks that its page exists and that its fragment
 // is an id some heading on that page produces.
 //
-// Links out of the directory (../concepts/..., pkg.go.dev, the source links on
-// every declaration) are not followed: the first are checked by the docs link
-// walk, and the last two point off this site.
+// Links up out of the directory into the narrative pages (../concepts/...) are
+// followed too: the file must exist under docs/, and a fragment must be an id
+// one of its headings produces. Nothing else checks them. They were left to "the
+// docs link walk", which was an ad-hoc script run once rather than a committed
+// check. Absolute links (pkg.go.dev, the source links on every declaration)
+// point off this site and are not followed.
 func TestEveryGeneratedLinkResolves(t *testing.T) {
-	pages, err := Generate(root(t))
+	r := root(t)
+	pages, err := Generate(r)
 	if err != nil {
 		t.Fatalf("generate: %v", err)
 	}
@@ -194,10 +199,49 @@ func TestEveryGeneratedLinkResolves(t *testing.T) {
 		anchors[name] = set
 	}
 
+	// Narrative pages, read lazily and cached by their docs/-relative path.
+	// A nil entry is a page that does not exist, so it is reported once per
+	// link rather than re-read for each.
+	narrative := map[string]map[string]bool{}
+	narrativeAnchors := func(rel string) map[string]bool {
+		if set, done := narrative[rel]; done {
+			return set
+		}
+		var set map[string]bool
+		if body, err := os.ReadFile(filepath.Join(r, "docs", filepath.FromSlash(rel))); err == nil {
+			set = map[string]bool{}
+			for _, h := range headings(string(body)) {
+				set[h.ID] = true
+			}
+		}
+		narrative[rel] = set
+		return set
+	}
+
 	for name, body := range pages {
 		for _, m := range linkRe.FindAllStringSubmatch(string(body), -1) {
 			dest := m[1]
-			if strings.Contains(dest, "://") || strings.HasPrefix(dest, "../") {
+			if strings.Contains(dest, "://") {
+				continue
+			}
+			if strings.HasPrefix(dest, "../") {
+				// Resolved against the page's own directory, then required to
+				// stay under docs/: a link that climbs out of the site is
+				// broken on the published site whether or not a file is there.
+				target, frag, _ := strings.Cut(dest, "#")
+				rel := path.Clean(path.Join(path.Dir(name), target))
+				if strings.HasPrefix(rel, "../") {
+					t.Errorf("docs/%s: link to %q leaves docs/", name, dest)
+					continue
+				}
+				set := narrativeAnchors(rel)
+				if set == nil {
+					t.Errorf("docs/%s: link to %q, but docs/%s does not exist", name, dest, rel)
+					continue
+				}
+				if frag != "" && !set[frag] {
+					t.Errorf("docs/%s: link to %q — no heading on docs/%s has that anchor", name, dest, rel)
+				}
 				continue
 			}
 
@@ -312,6 +356,8 @@ func excluded(rel string) bool {
 		return true // the docs server, a module of its own
 	case strings.HasSuffix(rel, "/verify") || strings.HasSuffix(rel, "/gen"):
 		return true // conformance harnesses and generators
+	case rel == "aria" || strings.HasPrefix(rel, "aria/"):
+		return true // the ARIA fixture's spec parser: tooling, not framework API
 	case rel == "android" || rel == "ios" || rel == "wasm" || rel == "serve":
 		return true // native shells and package main
 	case rel == "webhost":

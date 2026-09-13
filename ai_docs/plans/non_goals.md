@@ -794,9 +794,9 @@ own, and the XCUITest that taps the alert is then paying for itself.
 
 ---
 
-## `components.MapPanel` is not rearranged until it has a second consumer
+## `comps.MapPanel` is not rearranged until it has a second consumer
 
-*Raised: 2026-09-09 · Moved here: 2026-09-11 · Code: `components/map_panel.go`*
+*Raised: 2026-09-09 · Moved here: 2026-09-11 · Code: `comps/map_panel.go`*
 
 **What was declined.** `MapPanel` was extracted from one screen and still has
 exactly one consumer. The standing question is whether its arrangement — which
@@ -850,7 +850,7 @@ obvious from outside the file and the answer is inside it.
 
 *Raised: 2026-09-09 · Moved here: 2026-09-11 · Code:
 `android/.../runtime/GrMobMapView.kt`, `wasm/grmob-runtime.js`, and
-`components/map_panel.go`'s own doc*
+`comps/map_panel.go`'s own doc*
 
 **What was declined.** Both the Android host (osmdroid) and the browser host
 (Leaflet) draw from `tile.openstreetmap.org`, which is the OpenStreetMap
@@ -1004,10 +1004,10 @@ staying mounted. The day one exists this is a short function, and
 ## `church_mobile`'s static maps stay unconfigured here
 
 *Raised: 2026-09-11 · Moved here: 2026-09-11 · Code:
-`components/static_map.go` (`GoogleStaticMap`, `ConcernNoMapProvider`),
+`comps/static_map.go` (`GoogleStaticMap`, `ConcernNoMapProvider`),
 consumer in `../church/church_mobile`*
 
-**What was declined.** `components.StaticMap` draws an empty box in
+**What was declined.** `comps.StaticMap` draws an empty box in
 `church_mobile`'s event detail screen, because no `Provider` is configured. The
 obvious completion is to configure one — the widget takes a single function,
 `GoogleStaticMap(key)` is written and tested, and the app is one line from
