@@ -148,16 +148,19 @@ type SheetAction struct {
 
 	// Checked marks the action as the current choice, for the "Sort by"
 	// shape where each action sets one value (see Menu). The label gains a
-	// leading ✓ and the accessible name a ", selected" suffix.
+	// leading ✓ and the button states core.CurrentTrue: aria-current="true"
+	// on the web, the selected state on both natives.
 	//
-	// The suffix rather than core.AccessibilitySelected, because the action
-	// is a button and ARIA defines aria-pressed there, which would announce a
-	// toggle ("Newest, pressed") that a second tap does not turn off. The
-	// radio pair was the other candidate and is rejected for the reason the
-	// type doc gives for the listbox one: inside a radiogroup the WASM
-	// runtime checks the radio an arrow lands on, which here would run the
-	// action and close the sheet on the first ArrowDown. It is the same
-	// English fallback BottomBar uses for its current item.
+	// A current item rather than core.AccessibilitySelected, because the
+	// action is a button and ARIA defines aria-pressed there, which would
+	// announce a toggle ("Newest, pressed") that a second tap does not turn
+	// off. The radio pair was the other candidate and is rejected for the
+	// reason the type doc gives for the listbox one: inside a radiogroup the
+	// WASM runtime checks the radio an arrow lands on, which here would run
+	// the action and close the sheet on the first ArrowDown. The action used
+	// to say this with a ", selected" name suffix, before core had
+	// CurrentKind; true rather than page or step, since a sort order is
+	// neither.
 	Checked bool
 }
 
@@ -225,11 +228,14 @@ func (s ActionSheet) actions(t *core.Theme) core.View {
 	items = append(items, core.Padding(0), core.Gap(float64(t.Spacing.XS)))
 	for _, a := range s.Actions {
 		label, name := a.Label, ""
+		var style []core.StyleProp
 		if a.Checked {
 			// The mark leads so it lines up down the list whatever the label
 			// lengths; the name drops it, since "check mark" read aloud
-			// before every chosen label is noise the suffix already carries.
-			label, name = "✓ "+a.Label, a.Label+", selected"
+			// before every chosen label is noise the current state already
+			// carries.
+			label, name = "✓ "+a.Label, a.Label
+			style = []core.StyleProp{core.AccessibilityCurrent(core.CurrentTrue)}
 		}
 		items = append(items, Button{
 			Label:              label,
@@ -239,6 +245,7 @@ func (s ActionSheet) actions(t *core.Theme) core.View {
 			Emphasis:           EmphasisGhost,
 			FullWidth:          true,
 			Disabled:           a.Disabled,
+			Style:              style,
 		})
 	}
 	return core.Column(items...)

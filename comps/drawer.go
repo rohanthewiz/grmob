@@ -136,10 +136,12 @@ import "github.com/rohanthewiz/grmob/core"
 // and as Material's navigation drawer does. A caller would otherwise write
 // open.Set(false) into every destination.
 //
-// The current destination is announced the way BottomBar's is: ListRow's
-// ", selected" name suffix, because core has no current-page state. Selected
-// also follows BottomBar and Tabs: the zero value selects the first item, and
-// a negative Selected selects none.
+// The current destination is announced the way BottomBar's is: its row states
+// core.CurrentPage through ListRow.Current, which is aria-current="page" on
+// the web and the selected state on both natives. It used to take ListRow's
+// ", selected" name suffix, before core had a current state. Selected also
+// follows BottomBar and Tabs: the zero value selects the first item, and a
+// negative Selected selects none.
 //
 // # No hooks
 //
@@ -378,10 +380,11 @@ func (d Drawer) row(t *core.Theme, it DrawerItem, current bool) core.View {
 		Subtitle: it.Subtitle,
 		OnTap:    d.pick(it),
 		Selected: current,
-		// ListRow appends its ", selected" suffix to an explicit name only,
-		// so the label is restated here to get the current destination
-		// announced. The subtitle stays out of the name, as on any ListRow
-		// whose name is set: a count that changes would change the name.
+		Current:  currentKind(current, core.CurrentPage),
+		// The label is restated as the row's name so the row reads as one
+		// destination rather than as its parts. The subtitle stays out of the
+		// name, as on any ListRow whose name is set: a count that changes
+		// would change the name.
 		AccessibilityLabel: it.Label,
 	}
 }

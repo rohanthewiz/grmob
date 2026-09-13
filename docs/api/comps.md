@@ -613,7 +613,7 @@ func (s ActionSheet) Render(ctx *core.Context) *core.Node
 
 Render builds Modal > (filler, Card) as drawn in the type doc.
 
-<small>[comps/action_sheet.go:165](https://github.com/rohanthewiz/grmob/blob/master/comps/action_sheet.go#L165)</small>
+<small>[comps/action_sheet.go:168](https://github.com/rohanthewiz/grmob/blob/master/comps/action_sheet.go#L168)</small>
 
 ### type AppBar
 
@@ -953,7 +953,7 @@ type BarItem struct {
 
 BarItem is one cell of a BottomBar.
 
-<small>[comps/bottom_bar.go:72](https://github.com/rohanthewiz/grmob/blob/master/comps/bottom_bar.go#L72)</small>
+<small>[comps/bottom_bar.go:75](https://github.com/rohanthewiz/grmob/blob/master/comps/bottom_bar.go#L75)</small>
 
 ### type BottomBar
 
@@ -1002,7 +1002,7 @@ Each item is a Column with FlexGrow(1), so the tap targets tile the whole bar. J
 
 #### How the current item is announced
 
-There is no aria-current in core's vocabulary and RoleTab would claim a tab panel this bar does not control (examples/social builds that relationship explicitly when it wants it). So the current item takes ListRow's fallback: its accessible name gains ", selected". The Icon is decoration and is hidden from assistive technology, so the Label is what is read.
+The current cell states core.CurrentPage: aria-current="page" on the web, and the selected state on Compose and SwiftUI, which is how both platforms' own navigation bars announce the destination they show. It used to append ", selected" to its name, because core had no current state and RoleTab would claim a tab panel this bar does not control (examples/social builds that relationship explicitly when it wants it). The name is now the label alone, and stays the same as the selection moves. The Icon is decoration and is hidden from assistive technology, so the Label is what is read.
 
 #### Theme roles read
 
@@ -1012,7 +1012,7 @@ There is no aria-current in core's vocabulary and RoleTab would claim a tab pane
 	Label text       Typography.Caption; Icon uses Typography.Subtitle
 	Padding          Spacing.XS
 
-<small>[comps/bottom_bar.go:59](https://github.com/rohanthewiz/grmob/blob/master/comps/bottom_bar.go#L59)</small>
+<small>[comps/bottom_bar.go:62](https://github.com/rohanthewiz/grmob/blob/master/comps/bottom_bar.go#L62)</small>
 
 #### func (BottomBar) Render
 
@@ -1022,7 +1022,7 @@ func (b BottomBar) Render(ctx *core.Context) *core.Node
 
 Render builds Row(Column(icon, label)...) with the role chosen by Selected.
 
-<small>[comps/bottom_bar.go:88](https://github.com/rohanthewiz/grmob/blob/master/comps/bottom_bar.go#L88)</small>
+<small>[comps/bottom_bar.go:91](https://github.com/rohanthewiz/grmob/blob/master/comps/bottom_bar.go#L91)</small>
 
 ### type Button
 
@@ -2495,7 +2495,7 @@ So a slide needs a translate style plus either an appear transition in core or a
 
 A row calls its item's OnTap, then OnDismiss, as an ActionSheet action does and as Material's navigation drawer does. A caller would otherwise write open.Set(false) into every destination.
 
-The current destination is announced the way BottomBar's is: ListRow's ", selected" name suffix, because core has no current-page state. Selected also follows BottomBar and Tabs: the zero value selects the first item, and a negative Selected selects none.
+The current destination is announced the way BottomBar's is: its row states core.CurrentPage through ListRow.Current, which is aria-current="page" on the web and the selected state on both natives. It used to take ListRow's ", selected" name suffix, before core had a current state. Selected also follows BottomBar and Tabs: the zero value selects the first item, and a negative Selected selects none.
 
 #### No hooks
 
@@ -2510,7 +2510,7 @@ Open and focus are both the caller's, so Drawer takes no hook slot and is condit
 	Icon       Typography.Subtitle
 	Scrim      Backdrop, else core.Modal's default #00000088
 
-<small>[comps/drawer.go:157](https://github.com/rohanthewiz/grmob/blob/master/comps/drawer.go#L157)</small>
+<small>[comps/drawer.go:159](https://github.com/rohanthewiz/grmob/blob/master/comps/drawer.go#L159)</small>
 
 #### func (Drawer) Render
 
@@ -2520,7 +2520,7 @@ func (d Drawer) Render(ctx *core.Context) *core.Node
 
 Render builds ZStack(content layer, panel layer) as drawn in the type doc.
 
-<small>[comps/drawer.go:235](https://github.com/rohanthewiz/grmob/blob/master/comps/drawer.go#L235)</small>
+<small>[comps/drawer.go:237](https://github.com/rohanthewiz/grmob/blob/master/comps/drawer.go#L237)</small>
 
 ### type DrawerItem
 
@@ -2543,7 +2543,7 @@ type DrawerItem struct {
 
 DrawerItem is one destination in a Drawer.
 
-<small>[comps/drawer.go:214](https://github.com/rohanthewiz/grmob/blob/master/comps/drawer.go#L214)</small>
+<small>[comps/drawer.go:216](https://github.com/rohanthewiz/grmob/blob/master/comps/drawer.go#L216)</small>
 
 ### type Emphasis
 
@@ -3302,6 +3302,14 @@ type ListRow struct {
 	// state is announced" in the type comment for why there are two answers.
 	Selected bool
 
+	// Current says this row is the current item of its set — the destination
+	// a navigation list is showing. It is written as core.AccessibilityCurrent,
+	// which ARIA defines on every role, so it needs none of the role
+	// negotiation Selected goes through, and a row stating it takes no
+	// ", selected" suffix. comps.Drawer sets it on its current destination.
+	// It changes nothing a sighted user sees; Selected still draws the tint.
+	Current core.CurrentKind
+
 	// Selectable says this row is one choice in a listbox: it takes
 	// core.RoleOption and states core.AccessibilitySelected for *both* values
 	// of Selected, so a reader announces "selected" and "not selected" rather
@@ -3500,7 +3508,7 @@ Both are opt-in, and that is the ownership rule rather than caution: a \`listite
 func (r ListRow) Render(ctx *core.Context) *core.Node
 ```
 
-<small>[comps/list_row.go:291](https://github.com/rohanthewiz/grmob/blob/master/comps/list_row.go#L291)</small>
+<small>[comps/list_row.go:309](https://github.com/rohanthewiz/grmob/blob/master/comps/list_row.go#L309)</small>
 
 ### type LoadMore
 
@@ -4876,16 +4884,19 @@ type SheetAction struct {
 
 	// Checked marks the action as the current choice, for the "Sort by"
 	// shape where each action sets one value (see Menu). The label gains a
-	// leading ✓ and the accessible name a ", selected" suffix.
+	// leading ✓ and the button states core.CurrentTrue: aria-current="true"
+	// on the web, the selected state on both natives.
 	//
-	// The suffix rather than core.AccessibilitySelected, because the action
-	// is a button and ARIA defines aria-pressed there, which would announce a
-	// toggle ("Newest, pressed") that a second tap does not turn off. The
-	// radio pair was the other candidate and is rejected for the reason the
-	// type doc gives for the listbox one: inside a radiogroup the WASM
-	// runtime checks the radio an arrow lands on, which here would run the
-	// action and close the sheet on the first ArrowDown. It is the same
-	// English fallback BottomBar uses for its current item.
+	// A current item rather than core.AccessibilitySelected, because the
+	// action is a button and ARIA defines aria-pressed there, which would
+	// announce a toggle ("Newest, pressed") that a second tap does not turn
+	// off. The radio pair was the other candidate and is rejected for the
+	// reason the type doc gives for the listbox one: inside a radiogroup the
+	// WASM runtime checks the radio an arrow lands on, which here would run
+	// the action and close the sheet on the first ArrowDown. The action used
+	// to say this with a ", selected" name suffix, before core had
+	// CurrentKind; true rather than page or step, since a sort order is
+	// neither.
 	Checked bool
 }
 ```
@@ -5571,9 +5582,9 @@ Only done steps, and only when OnTap is set. Going back to fix an address is wha
 
 #### Accessibility
 
-The strip is RoleNavigation when OnTap is set, because done steps then are destinations, and RoleGroup when it is not, because a picture of progress is not navigation. Either way its name states the position: "Step 2 of 4: Address", prefixed by Label when one is given. Each step is named ("Step 1: Account, done", "Step 2: Address, current", "Step 3: Payment") and a tappable one is RoleButton. The circle, its glyph and the rules are drawn for sighted users and hidden from assistive technology, so a step is read once.
+The strip is RoleNavigation when OnTap is set, because done steps then are destinations, and RoleGroup when it is not, because a picture of progress is not navigation. Either way its name states the position: "Step 2 of 4: Address", prefixed by Label when one is given. Each step is named ("Step 1: Account, done", "Step 2: Address", "Step 3: Payment") and a tappable one is RoleButton. The circle, its glyph and the rules are drawn for sighted users and hidden from assistive technology, so a step is read once.
 
-The ", done" and ", current" suffixes are English, the fallback ListRow and BottomBar already take; there is no aria-current in core's vocabulary.
+The current step states core.CurrentStep: aria-current="step" on the web and the selected state on both natives. It used to be a ", current" name suffix. ", done" stays an English suffix, because no platform has a completed state: ARIA has no attribute for it, and Compose's and SwiftUI's semantics have no property either.
 
 #### Theme roles read
 
@@ -5588,7 +5599,7 @@ The ", done" and ", current" suffixes are English, the fallback ListRow and Bott
 	Glyphs             Typography.Caption, bold
 	Gap                Spacing.XS
 
-<small>[comps/step_indicator.go:73](https://github.com/rohanthewiz/grmob/blob/master/comps/step_indicator.go#L73)</small>
+<small>[comps/step_indicator.go:76](https://github.com/rohanthewiz/grmob/blob/master/comps/step_indicator.go#L76)</small>
 
 #### func (StepIndicator) Render
 
@@ -5598,7 +5609,7 @@ func (s StepIndicator) Render(ctx *core.Context) *core.Node
 
 Render builds the horizontal Scroll of steps and rules.
 
-<small>[comps/step_indicator.go:107](https://github.com/rohanthewiz/grmob/blob/master/comps/step_indicator.go#L107)</small>
+<small>[comps/step_indicator.go:110](https://github.com/rohanthewiz/grmob/blob/master/comps/step_indicator.go#L110)</small>
 
 ### type Stepper
 

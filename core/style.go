@@ -495,6 +495,29 @@ type Style struct {
 	// unparsed; the notes in GrMobStyle.kt and GrMobStyle.swift say so.
 	AccessibilityHasPopup PopupKind `json:",omitzero"`
 
+	// AccessibilityCurrent is whether this item is the current one of its set
+	// — the page a bottom bar is showing, the step a wizard is on. See
+	// CurrentKind for the vocabulary and for why it is not a selection.
+	//
+	// # The one state field with no role guard
+	//
+	// Every other state here is scoped by ARIA to a list of roles, and both
+	// web exporters switch on the role to honour it. aria-current is a
+	// global: ARIA defines it on every role, including the `group` a named
+	// container falls back to. So both web targets write it whenever it is
+	// stated and the node is not hidden, and comps.Drawer's rows, which carry
+	// no control role, can say it.
+	//
+	// # Both natives fold it into the selected state
+	//
+	// Compose's semantics and SwiftUI's traits have no current property. Both
+	// platforms' own navigation bars announce the current destination as
+	// selected, so a node stating a kind gets `selected = true` on Compose and
+	// `.isSelected` on SwiftUI. A stated AccessibilitySelected wins over the
+	// fold, because it is the more specific claim and a node carrying both
+	// would otherwise be announced twice or contradict itself.
+	AccessibilityCurrent CurrentKind `json:",omitzero"`
+
 	// AccessibilityValue is where a valued control sits inside its range —
 	// how far an upload has got, which step a wizard is on. See ValueRange
 	// for the vocabulary, for why the numbers are strings, and for why the
@@ -1094,6 +1117,10 @@ func (s Style) applyTo(target *Style) {
 	// leaves the target alone, the rule every field in this block follows.
 	if s.AccessibilityHasPopup != PopupNone {
 		target.AccessibilityHasPopup = s.AccessibilityHasPopup
+	}
+	// CurrentNone is the only zero, so the same rule again.
+	if s.AccessibilityCurrent != CurrentNone {
+		target.AccessibilityCurrent = s.AccessibilityCurrent
 	}
 	// As a unit, which is the one place this block departs from the
 	// field-at-a-time rule around it. The two levels merge independently

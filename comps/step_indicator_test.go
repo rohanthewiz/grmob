@@ -47,9 +47,16 @@ func TestStepIndicatorIsAHorizontalScrollNamedByPosition(t *testing.T) {
 	if len(cells) != 4 || len(n.Children) != 7 {
 		t.Fatalf("want 4 steps joined by 3 rules, got %d cells in %d children", len(cells), len(n.Children))
 	}
-	for i, want := range []string{"Step 1: Account, done", "Step 2: Address, current", "Step 3: Payment", "Step 4: Review"} {
+	for i, want := range []string{"Step 1: Account, done", "Step 2: Address", "Step 3: Payment", "Step 4: Review"} {
 		if cells[i].Style.AccessibilityLabel != want {
 			t.Errorf("cell %d name = %q, want %q", i, cells[i].Style.AccessibilityLabel, want)
+		}
+	}
+	// The current step is a state on its cell, not a word in its name; no
+	// other cell states one.
+	for i, want := range []core.CurrentKind{core.CurrentNone, core.CurrentStep, core.CurrentNone, core.CurrentNone} {
+		if got := cells[i].Style.AccessibilityCurrent; got != want {
+			t.Errorf("cell %d AccessibilityCurrent = %q, want %q", i, got, want)
 		}
 	}
 }

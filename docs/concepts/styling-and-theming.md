@@ -247,6 +247,7 @@ core.AccessibilityNestingLevel(2)                // the same question for a nest
 core.AccessibilitySelected(core.SelectedOn)      // and whether this control is *on*
 core.AccessibilityExpanded(core.ExpandedOpen)    // ...and whether this disclosure is *open*
 core.AccessibilityHasPopup(core.PopupDialog)     // ...or that it opens a dialog instead
+core.AccessibilityCurrent(core.CurrentPage)      // the current item of its set
 core.AccessibilityID("app-panel")                // names this element so another can point at it
 core.AccessibilityControls("app-panel")          // ...and the pointing
 ```
@@ -824,6 +825,36 @@ ARIA 1.2 retired the attribute as a global, so it is written only on `button`,
 `link`, `tab`, `columnheader` and `combobox` (and on a `core.Button` with no role).
 Neither native reads it: both present a Modal as a platform dialog that announces
 itself when it opens.
+
+#### `AccessibilityCurrent`
+
+Whether an item is the **current** one of its set: the page a bottom bar is
+showing, the step a wizard is on, the value a picker holds.
+
+```go
+core.Column(core.AccessibilityRole(core.RoleButton),
+    core.AccessibilityCurrent(core.CurrentPage), …)
+```
+
+It is not a selection. `AccessibilitySelected` means one of a set of choices,
+and ARIA ties it to particular roles: `aria-pressed` on a button would announce
+a toggle a second tap does not undo. `aria-current` is a global, so both web
+targets write it on any role and need no guard.
+
+`core.CurrentKind` carries `CurrentPage`, `CurrentStep` and `CurrentTrue`. ARIA's
+`location`, `date` and `time` are left out until a widget uses them. `date` in
+particular would fit `comps.Calendar`'s today cell, but the natives' mapping
+(below) would announce today as the selected day, so that cell keeps its
+", today" suffix.
+
+Neither native has a current property. Both fold the state into their selected
+state (`selected = true` on Compose, `.isSelected` on SwiftUI), which is how
+their own navigation bars announce the current destination. A stated
+`AccessibilitySelected` wins over the fold.
+
+`comps.BottomBar`, `comps.Drawer`, `comps.StepIndicator` and
+`comps.ActionSheet`'s `Checked` action set it for you, and no longer add
+", selected" or ", current" to the spoken name.
 
 #### `AccessibilityID` and `AccessibilityControls`
 

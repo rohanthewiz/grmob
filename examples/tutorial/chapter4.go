@@ -3252,7 +3252,7 @@ func lessonMenus() Lesson {
 					"its own flag in a hook would take a slot per row, and those slots drift as "+
 					"soon as the row count changes."),
 				prose("A picker is the same widget with a checked item. Checked leads the label "+
-					"with ✓ and names the item \"Newest, selected\". Each item sets the value in "+
+					"with ✓ and marks the item as the current one (core.CurrentTrue). Each item sets the value in "+
 					"its own OnTap, and the trigger's label shows the current choice."),
 				codeBlock(`comps.SheetAction{
     Label:   "Newest",
@@ -3332,7 +3332,7 @@ func lessonMenus() Lesson {
 					"No popover is anchored to the trigger: no host sends Go its position, so the list is the bottom-edge sheet on every target.",
 					"Trigger is a Button template: its label, emphasis and names apply, and OnOpen replaces its OnTap.",
 					"Open is controlled, so one state can say which row's menu is open, and a list of menus holds no hook slots.",
-					"A picker is a menu whose current item is Checked: a leading ✓ and a \", selected\" name.",
+					"A picker is a menu whose current item is Checked: a leading ✓ and core.CurrentTrue.",
 					"The trigger says it opens a dialog (aria-haspopup) and states no expanded state: a control that opens a dialog is not a disclosure.",
 					"SearchableSelect lists matches while the field's text is not the chosen label; a pick reports Value, writes the label and closes the list.",
 					"The list never takes focus and has no field of its own, so the return key's Next skips it and moves on through the form.",

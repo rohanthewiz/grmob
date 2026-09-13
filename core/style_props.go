@@ -476,6 +476,20 @@ func AccessibilityHasPopup(kind PopupKind) StyleProp {
 	})
 }
 
+// AccessibilityCurrent says this item is the current one of its set.
+//
+//	core.Column(core.AccessibilityRole(core.RoleButton),
+//		core.AccessibilityCurrent(core.CurrentPage), …)
+//
+// aria-current on both web targets, on any role. Both natives announce it as
+// selected unless AccessibilitySelected is stated. See CurrentKind and
+// Style.AccessibilityCurrent.
+func AccessibilityCurrent(kind CurrentKind) StyleProp {
+	return styleFunc(func(s *Style) {
+		s.AccessibilityCurrent = kind
+	})
+}
+
 // AccessibilityValue says where a valued control sits inside its range — how
 // far an upload has got, which step a wizard is on.
 //

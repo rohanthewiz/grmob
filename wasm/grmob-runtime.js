@@ -2372,6 +2372,11 @@ const GrMob = (() => {
         setOrRemove(el, "aria-checked", selected[2]);
         setOrRemove(el, "aria-expanded", hidden ? "" : ariaExpanded(style, nodeType));
         setOrRemove(el, "aria-haspopup", hidden ? "" : ariaHasPopup(style, nodeType));
+        // The one state with no role guard: aria-current is an ARIA global.
+        // Written on every call for the totality rule, so a bar cell that stops
+        // being the current destination stops saying so. htmlout writes the
+        // same; see core.Style.AccessibilityCurrent.
+        setOrRemove(el, "aria-current", hidden ? "" : (style.AccessibilityCurrent || ""));
         // The combobox keyboard's listeners, stamped once, and the one
         // attribute this pass takes back from them when the popup closes. See
         // "The combobox pattern".
