@@ -20,7 +20,7 @@ func chapter6() Chapter {
 	return Chapter{
 		Title:   "Navigation & Overlays",
 		Icon:    "🧭",
-		Summary: "Push, Pop, Replace and the two unwinds — plus Modal, Toast, Dialog and ActionSheet, the overlays that never touch the stack.",
+		Summary: "Push, Pop, Replace and the two unwinds — plus Modal, Toast, Dialog, ActionSheet and Snackbar, the overlays that never touch the stack.",
 		Lessons: []Lesson{
 			lessonStack(),
 			lessonReplace(),
@@ -672,21 +672,24 @@ comps.CheckboxRow{Title: "Also delete attachments",
 
 // --- 6.7 -----------------------------------------------------------------
 
-// lessonActionSheet teaches the bottom-edge list of actions. The demo is one
-// note with three things to do to it, so a reader sees the two behaviours that
-// separate a sheet from a Dialog: picking an action closes the sheet without
-// the handler saying so, and every way out (Cancel, a tap above the panel, the
-// scrim) reports through the one OnDismiss.
+// lessonActionSheet teaches the bottom-edge list of actions and the Undo strip
+// that follows a destructive one. The demo is one note with three things to do
+// to it, so a reader sees the two behaviours that separate a sheet from a
+// Dialog: picking an action closes the sheet without the handler saying so,
+// and every way out (Cancel, a tap above the panel, the scrim) reports through
+// the one OnDismiss. Delete then raises a Snackbar whose Undo puts the copy
+// back, which is the reason a snackbar exists rather than a toast.
 func lessonActionSheet() Lesson {
 	return Lesson{
-		Title:   "Action sheets",
-		Summary: "comps.ActionSheet puts a list of actions on the bottom edge; picking one runs it and closes the sheet.",
+		Title:   "Action sheets & snackbars",
+		Summary: "comps.ActionSheet puts a list of actions on the bottom edge; comps.Snackbar offers the Undo afterwards.",
 		Body: func(ctx *core.Context) core.View {
 			// Hooks first and unconditionally; the sheet's visibility is a
 			// prop, never a branch around the widget.
 			open := core.NewState(ctx, false)
 			copies := core.NewState(ctx, 1)
 			last := core.NewState(ctx, "")
+			undoable := core.NewState(ctx, false)
 
 			return core.Column(
 				core.Gap(14),
@@ -711,7 +714,19 @@ func lessonActionSheet() Lesson {
 					"places a growing, invisible filler above its card, which pushes the card to "+
 					"the bottom edge there and reports a tap above the panel as a dismiss. iOS "+
 					"already presents every Modal as a bottom sheet, and the filler has no height."),
-				demoPanel("Open the actions, pick one, and try each way of closing the sheet.",
+				prose("A destructive action wants an Undo, and core.ShowToast cannot carry a "+
+					"button. comps.Snackbar is a strip you render: Visible is your state, "+
+					"OnAction is the Undo, and OnTimeout reports when its Duration has passed "+
+					"so you can hide it. It holds a timer hook, so render it on every pass and "+
+					"drive Visible. A new Message while it is up restarts the timer."),
+				codeBlock(`comps.Snackbar{
+    Visible:   undoable.Get(),
+    Message:   "Deleted a copy",
+    Action:    "Undo",
+    OnAction:  restore,
+    OnTimeout: func() { undoable.Set(false) },
+}`),
+				demoPanel("Open the actions, pick one, and try each way of closing the sheet. Delete a copy, then Undo it.",
 					comps.ListRow{
 						Title:    "Groceries",
 						Subtitle: copiesLabel(copies.Get()),
@@ -736,11 +751,26 @@ func lessonActionSheet() Lesson {
 								OnTap: func() {
 									copies.Set(copies.Get() - 1)
 									last.Set("deleted a copy")
+									undoable.Set(true)
 								}},
 						},
 						Cancel:    "Cancel",
 						OnDismiss: func() { open.Set(false) },
 						Style:     []core.StyleProp{core.MaxWidth("520px")},
+					},
+					comps.Snackbar{
+						Visible: undoable.Get(),
+						// The count is in the message so a second delete while the
+						// strip is up restarts its timer rather than inheriting
+						// the first one's.
+						Message: "Deleted a copy · " + copiesLabel(copies.Get()) + " left",
+						Action:  "Undo",
+						OnAction: func() {
+							copies.Set(copies.Get() + 1)
+							last.Set("restored a copy")
+							undoable.Set(false)
+						},
+						OnTimeout: func() { undoable.Set(false) },
 					},
 				),
 				keyPoints(
@@ -749,6 +779,8 @@ func lessonActionSheet() Lesson {
 					"Cancel, a tap above the panel and the scrim all report through OnDismiss; leave it nil and only Visible closes the sheet.",
 					"Actions are buttons, not listbox options: they are commands, and an option would be announced \"not selected\".",
 					"VariantError tints a destructive action; Disabled holds one back, and a disabled action does not dismiss either.",
+					"Snackbar carries the Undo a toast cannot: OnAction undoes, OnTimeout reports the Duration has passed, and the caller owns Visible.",
+					"Snackbar holds a timer hook: render it every pass, hide it with Visible, and a new Message restarts its timer.",
 				),
 			)
 		},

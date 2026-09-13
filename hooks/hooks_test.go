@@ -385,3 +385,80 @@ func TestUseIntervalWhilePausedRequestsNoRender(t *testing.T) {
 	assertQuiet(t, renders, 80*time.Millisecond, "render requested by a paused interval")
 	ctx.Close()
 }
+
+// timeoutWhilePass renders one UseTimeoutWhile with the given activation and
+// deps, signalling on fired each time fn runs.
+func timeoutWhilePass(ctx *core.Context, fired chan struct{}, active bool, delay time.Duration, deps ...any) {
+	renderPass(ctx, func(ctx *core.Context) {
+		hooks.UseTimeoutWhile(ctx, active, func() { fired <- struct{}{} }, delay, deps...)
+	})
+}
+
+// Fires once per activation: not while inactive, once after the rising edge,
+// and not again on later active renders with the same deps.
+func TestUseTimeoutWhileFiresOncePerActivation(t *testing.T) {
+	ctx := core.NewContext()
+	defer ctx.Close()
+	fired := make(chan struct{}, 8)
+
+	timeoutWhilePass(ctx, fired, false, 10*time.Millisecond)
+	assertQuiet(t, fired, 60*time.Millisecond, "fire while inactive")
+
+	timeoutWhilePass(ctx, fired, true, 10*time.Millisecond)
+	awaitSignal(t, fired, "fire after activation")
+
+	timeoutWhilePass(ctx, fired, true, 10*time.Millisecond)
+	assertQuiet(t, fired, 60*time.Millisecond, "second fire in one activation")
+}
+
+func TestUseTimeoutWhileDeactivationCancels(t *testing.T) {
+	ctx := core.NewContext()
+	defer ctx.Close()
+	fired := make(chan struct{}, 8)
+
+	timeoutWhilePass(ctx, fired, true, 40*time.Millisecond)
+	timeoutWhilePass(ctx, fired, false, 40*time.Millisecond)
+	assertQuiet(t, fired, 120*time.Millisecond, "fire after the activation was withdrawn")
+}
+
+func TestUseTimeoutWhileRearmsOnTheNextActivation(t *testing.T) {
+	ctx := core.NewContext()
+	defer ctx.Close()
+	fired := make(chan struct{}, 8)
+
+	timeoutWhilePass(ctx, fired, true, 10*time.Millisecond)
+	awaitSignal(t, fired, "first activation")
+	timeoutWhilePass(ctx, fired, false, 10*time.Millisecond)
+	timeoutWhilePass(ctx, fired, true, 10*time.Millisecond)
+	awaitSignal(t, fired, "second activation")
+}
+
+// A deps change while active restarts the delay: the pending fire for the old
+// deps is dropped and exactly one fire follows for the new ones.
+func TestUseTimeoutWhileDepsChangeRestarts(t *testing.T) {
+	ctx := core.NewContext()
+	defer ctx.Close()
+	fired := make(chan struct{}, 8)
+
+	timeoutWhilePass(ctx, fired, true, 60*time.Millisecond, "first")
+	time.Sleep(30 * time.Millisecond)
+	timeoutWhilePass(ctx, fired, true, 60*time.Millisecond, "second")
+	// The original deadline passes 30ms from here; the restarted one at 60ms.
+	assertQuiet(t, fired, 45*time.Millisecond, "fire on the superseded deadline")
+	awaitSignal(t, fired, "fire for the new deps")
+	assertQuiet(t, fired, 90*time.Millisecond, "a second fire for one deps value")
+}
+
+func TestUseTimeoutWhileCancelledByClose(t *testing.T) {
+	ctx := core.NewContext()
+	fired := make(chan struct{}, 8)
+
+	timeoutWhilePass(ctx, fired, true, 40*time.Millisecond)
+	ctx.Close()
+	assertQuiet(t, fired, 120*time.Millisecond, "fire after Close")
+
+	// Drain, not terminal: a re-mount over the same context arms again.
+	timeoutWhilePass(ctx, fired, true, 10*time.Millisecond)
+	awaitSignal(t, fired, "fire after re-mount")
+	ctx.Close()
+}

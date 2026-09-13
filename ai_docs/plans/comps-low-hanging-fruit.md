@@ -4,7 +4,9 @@
 `SwitchRow`/`CheckboxRow` shipped with tutorial lesson 6.6 "Dialog and settings
 rows". A3 `Stepper`, A4 `BottomBar` + `Screen.Footer`, A5 `Spinner` and A6
 `Rating` shipped with lesson 4.15 "Small controls". Tier B is landing one
-widget per commit: B1 `ActionSheet` shipped with lesson 6.7 "Action sheets".
+widget per commit: B1 `ActionSheet` shipped with lesson 6.7, and B3
+`Snackbar` (with `hooks.UseTimeoutWhile`) joined it as "Action sheets &
+snackbars".
 Tier C is open.
 
 **Decisions that differ from the Tier A sketches below:**
@@ -35,6 +37,15 @@ Tier C is open.
   web and Compose. The actions are `comps.Button`s, not
   `RoleListBox`/`RoleOption`: an option announces "not selected", and these
   are commands. Picking an action calls `OnTap` then `OnDismiss`.
+- B3 `Snackbar` runs on a new `hooks.UseTimeoutWhile(ctx, active, fn, delay,
+  deps...)`, not `hooks.UseTimeout`. `UseTimeout` arms once per slot for the
+  life of the app, so a snackbar built on it would time out only the first
+  time it was shown. The new hook arms on each rising edge of `active`,
+  cancels when `active` falls, and restarts when `deps` change. The snackbar
+  passes its `Message` as the dep. Visibility is `Visible` rather than
+  conditional rendering, because the widget holds that hook. The widget does
+  not place itself: `Screen.Footer` or a bottom-aligned `ZStack` layer is the
+  caller's choice.
 
 **Correction found while landing A2:** rendering the row's control
 `core.Disabled(true)` (the approach sketched under A2) was rejected. Disabled

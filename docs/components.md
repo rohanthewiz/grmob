@@ -1784,6 +1784,54 @@ Other notes:
 - The Android and iOS placement comes from reading the renderers. It has not
   been checked on a device.
 
+## Snackbar
+
+The "Note deleted · Undo" strip: one line of text and at most one action,
+shown for a few seconds.
+
+```go
+comps.Snackbar{
+    Visible:   undo.Get() != nil,
+    Message:   "Note deleted",
+    Action:    "Undo",
+    OnAction:  restore,
+    OnTimeout: func() { undo.Set(nil) },
+}
+```
+
+**Why not `core.ShowToast`.** A toast is drawn and removed by the host and
+cannot carry a button. An action callback on the toast would be a change to
+all four renderers. A widget needs none of them.
+
+**Controlled, and it holds one hook.** The caller owns `Visible`. `OnTimeout`
+fires once, `Duration` after `Visible` turns true, and `OnAction` fires when
+the action is tapped. Neither hides the strip. The timer is
+`hooks.UseTimeoutWhile`, keyed on `Message`:
+
+- hiding the snackbar cancels a pending timeout
+- a new `Message` while it is up restarts the timer
+
+Like `Spinner`, render it on every pass and drive `Visible`. Leaving it out of
+the tree moves its hook slot.
+
+**Where it goes.** It is a strip, not an overlay, so the caller places it.
+
+| Placement | Behaviour |
+|---|---|
+| `Screen.Footer: core.Column(snackbar, bottomBar)` | pinned above the bar; the scroll region shrinks while it is up, so it never covers a row |
+| a `core.ZStack` layer with `core.StackAlign(core.StackAlignBottom)` | floats over content that fills the stack |
+
+Other notes:
+
+- `Duration` zero means `SnackbarDuration` (4 seconds). A negative value, or a
+  nil `OnTimeout`, never times out.
+- The strip is a `RoleStatus` live region, read at the next pause.
+  `VariantError` makes it `RoleAlert`, which interrupts. It carries no
+  accessible name, because a label would replace the message.
+- The default look is the page inverted: `TextPrimary` fill, `Background` ink.
+  A `Variant` fills with its colour and picks a contrasting ink.
+- An `Action` with a nil `OnAction` draws no button.
+
 ## EmptyState
 
 The centered placeholder for content a screen does not have — and for the

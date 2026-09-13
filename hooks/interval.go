@@ -1,6 +1,7 @@
 package hooks
 
 import (
+	"reflect"
 	"sync"
 	"time"
 
@@ -205,4 +206,122 @@ func UseTimeout(ctx *core.Context, fn func(), delay time.Duration) {
 		rec.scheduled = false
 		rec.mu.Unlock()
 	})
+}
+
+// timeoutWhileRecord is the per-slot state of one UseTimeoutWhile. It differs
+// from timeoutRecord in holding the pending timer, because this hook cancels
+// and re-arms where UseTimeout only ever fires once.
+//
+// gen is what makes a cancel safe against a timer that has already fired and
+// is waiting on mu: every disarm bumps it, and a fire that finds its captured
+// generation stale returns without calling fn. time.Timer.Stop alone cannot
+// promise that, since Stop reports false once the timer's goroutine has
+// started.
+//
+// mu guards every field. The render goroutine arms and disarms; the timer
+// goroutine reads fn and gen; the close path disarms from whichever goroutine
+// called Close.
+type timeoutWhileRecord struct {
+	mu    sync.Mutex
+	fn    func()
+	timer *time.Timer
+	gen   uint64
+	// armed is true from the render that armed the timer until a render passes
+	// active = false. It stays true after the timer fires, which is what makes
+	// the timeout fire once per activation rather than once per render.
+	armed bool
+	deps  []any
+	// closeHooked records that an OnClose cleanup is registered for this
+	// slot, so a render does not add one per pass.
+	closeHooked bool
+}
+
+// disarm stops any pending fire and ends the current activation. The caller
+// holds mu.
+func (r *timeoutWhileRecord) disarm() {
+	if r.timer != nil {
+		r.timer.Stop()
+		r.timer = nil
+	}
+	r.gen++
+	r.armed = false
+}
+
+// UseTimeoutWhile calls fn once, delay after a render first passes
+// active = true. A render that passes active = false cancels a pending call,
+// and the next render that passes true arms a fresh one. While active, a
+// change in deps (compared with reflect.DeepEqual, as UseEffect does) restarts
+// the delay.
+//
+//	hooks.UseTimeoutWhile(ctx, visible, onTimeout, 4*time.Second, message)
+//
+//	render:  active=false   true ──── true ──── true(deps changed) ── false
+//	timer:        ·         arm ───────────────  re-arm ───────────── cancel
+//	fn:           ·                  (fires once)          (fires once)
+//
+// # Why UseTimeout could not do this
+//
+// UseTimeout arms on the first render and never again, which suits a splash
+// screen and not a widget that is shown, hidden and shown again: a snackbar
+// built on it would time out once for the life of the app. This hook is to
+// UseTimeout what UseIntervalWhile is to UseInterval, with deps added because
+// a snackbar whose message is replaced while it is up should get its full
+// delay for the new message.
+//
+// # What it shares with the other timer hooks
+//
+// It takes one slot and must be called unconditionally in a stable position.
+// fn is refreshed every render and the fire runs the latest closure, then
+// requests a render so the change reaches the screen with no native event in
+// flight. A pending timer is cancelled when the context tree is closed.
+func UseTimeoutWhile(ctx *core.Context, active bool, fn func(), delay time.Duration, deps ...any) {
+	slot := core.NewState(ctx, &timeoutWhileRecord{})
+	rec := slot.Get()
+
+	rec.mu.Lock()
+	rec.fn = fn
+	switch {
+	case !active:
+		if rec.armed {
+			rec.disarm()
+		}
+	case rec.armed && reflect.DeepEqual(rec.deps, deps):
+		// Same activation, same deps: pending or already fired, nothing to do.
+	default:
+		rec.disarm()
+		rec.armed = true
+		// Copied for the reason UseEffect copies: a caller spreading a slice
+		// it later mutates would otherwise change the stored deps in step.
+		rec.deps = append([]any(nil), deps...)
+		gen := rec.gen
+		rec.timer = time.AfterFunc(delay, func() {
+			rec.mu.Lock()
+			if rec.gen != gen {
+				rec.mu.Unlock()
+				return
+			}
+			rec.timer = nil
+			f := rec.fn
+			rec.mu.Unlock()
+			f()
+			ctx.RequestRender()
+		})
+	}
+	needHook := !rec.closeHooked
+	rec.closeHooked = true
+	rec.mu.Unlock()
+
+	// Registered outside mu: Close runs cleanups and each one takes mu, so
+	// holding mu while reaching into the context's cleanup registry would
+	// order the two locks one way here and the other way there.
+	if needHook {
+		ctx.OnClose(func() {
+			rec.mu.Lock()
+			rec.disarm()
+			// Cleared so a re-mount over the same context registers again,
+			// the drain-not-terminal rule UseInterval's OnClose describes.
+			rec.closeHooked = false
+			rec.mu.Unlock()
+		})
+	}
 }

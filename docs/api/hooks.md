@@ -40,6 +40,7 @@ Comparison is by value equality on the dependency list. A dependency that is a f
 - [`func UsePermissionLive`](#func-usepermissionlive)
 - [`func UseReducer`](#func-usereducer)
 - [`func UseTimeout`](#func-usetimeout)
+- [`func UseTimeoutWhile`](#func-usetimeoutwhile)
 - [`type Debouncer`](#type-debouncer)
     - [`func UseDebounce`](#func-usedebounce)
     - [`func (*Debouncer) Call`](#func-debouncer-call)
@@ -127,7 +128,7 @@ UseInterval invokes fn every interval for as long as the app lives. The ticker s
 
 The ticker is owned by the context tree: it stops when the tree is closed (ctx.Close, normally reached via render.Manager.Close), not when the component leaves the view tree — hooks have no unmount signal today.
 
-<small>[hooks/interval.go:50](https://github.com/rohanthewiz/grmob/blob/master/hooks/interval.go#L50)</small>
+<small>[hooks/interval.go:51](https://github.com/rohanthewiz/grmob/blob/master/hooks/interval.go#L51)</small>
 
 ### func UseIntervalWhile
 
@@ -147,7 +148,7 @@ UseInterval requests a render after every tick, because it cannot know whether f
 
 The hook still occupies one slot and must be called unconditionally in a stable position; the ticker still starts on the first render (even a paused one) and stops only on ctx.Close. The duration is fixed by the first render, as with UseInterval. Resuming is not immediate: the first effective tick arrives on the ticker's next beat after a render passes active = true.
 
-<small>[hooks/interval.go:78](https://github.com/rohanthewiz/grmob/blob/master/hooks/interval.go#L78)</small>
+<small>[hooks/interval.go:79](https://github.com/rohanthewiz/grmob/blob/master/hooks/interval.go#L79)</small>
 
 ### func UseLifecycle
 
@@ -411,7 +412,31 @@ UseTimeout invokes fn once, delay after the hook's first render. Renders while t
 
 A pending timer is cancelled when the context tree is closed, so a Manager shutdown cannot leak a late fn call into a dead app.
 
-<small>[hooks/interval.go:172](https://github.com/rohanthewiz/grmob/blob/master/hooks/interval.go#L172)</small>
+<small>[hooks/interval.go:173](https://github.com/rohanthewiz/grmob/blob/master/hooks/interval.go#L173)</small>
+
+### func UseTimeoutWhile
+
+```go
+func UseTimeoutWhile(ctx *core.Context, active bool, fn func(), delay time.Duration, deps ...any)
+```
+
+UseTimeoutWhile calls fn once, delay after a render first passes active = true. A render that passes active = false cancels a pending call, and the next render that passes true arms a fresh one. While active, a change in deps (compared with reflect.DeepEqual, as UseEffect does) restarts the delay.
+
+	hooks.UseTimeoutWhile(ctx, visible, onTimeout, 4*time.Second, message)
+
+	render:  active=false   true ──── true ──── true(deps changed) ── false
+	timer:        ·         arm ───────────────  re-arm ───────────── cancel
+	fn:           ·                  (fires once)          (fires once)
+
+#### Why UseTimeout could not do this
+
+UseTimeout arms on the first render and never again, which suits a splash screen and not a widget that is shown, hidden and shown again: a snackbar built on it would time out once for the life of the app. This hook is to UseTimeout what UseIntervalWhile is to UseInterval, with deps added because a snackbar whose message is replaced while it is up should get its full delay for the new message.
+
+#### What it shares with the other timer hooks
+
+It takes one slot and must be called unconditionally in a stable position. fn is refreshed every render and the fire runs the latest closure, then requests a render so the change reaches the screen with no native event in flight. A pending timer is cancelled when the context tree is closed.
+
+<small>[hooks/interval.go:277](https://github.com/rohanthewiz/grmob/blob/master/hooks/interval.go#L277)</small>
 
 ## Types
 

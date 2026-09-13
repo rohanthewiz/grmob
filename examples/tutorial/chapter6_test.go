@@ -351,7 +351,7 @@ func TestDialogLessonSwitchTapReachingGoTwiceFlipsOnce(t *testing.T) {
 	}
 }
 
-// --- 6.7 Action sheets --------------------------------------------------------
+// --- 6.7 Action sheets & snackbars --------------------------------------------
 
 // sheetFiller is the ActionSheet's growing first child: the only clickable Box
 // directly inside the Modal.
@@ -366,7 +366,7 @@ func sheetFiller(t *testing.T, root *node) *node {
 
 func TestActionSheetLessonPicksAndDismisses(t *testing.T) {
 	mgr := newApp(t)
-	openLesson(t, mgr, "Action sheets")
+	openLesson(t, mgr, "Action sheets & snackbars")
 
 	open := func() {
 		t.Helper()
@@ -408,5 +408,46 @@ func TestActionSheetLessonPicksAndDismisses(t *testing.T) {
 	mgr.DispatchCallback(modalNode(t, tree(t, mgr)).Props["onDismiss"].(string))
 	closed("the scrim must close the sheet")
 
+	assertNoConcerns(t)
+}
+
+// snackbarNode is the lesson's Snackbar strip: the only status region in 6.7.
+func snackbarNode(t *testing.T, root *node) *node {
+	t.Helper()
+	n := findNode(root, func(n *node) bool {
+		return n.Style != nil && n.Style.AccessibilityRole == string(core.RoleStatus)
+	})
+	if n == nil {
+		t.Fatal("no Snackbar status strip in the lesson")
+	}
+	return n
+}
+
+func TestActionSheetLessonDeleteOffersUndo(t *testing.T) {
+	mgr := newApp(t)
+	openLesson(t, mgr, "Action sheets & snackbars")
+
+	if snackbarNode(t, tree(t, mgr)).Style.Display != core.DisplayNone {
+		t.Fatal("the snackbar is in the tree from the start, hidden")
+	}
+
+	tapLabelled(t, mgr, "Open note actions")
+	tap(t, mgr, "Delete")
+	cur := tree(t, mgr)
+	if s := snackbarNode(t, cur); s.Style.Display == core.DisplayNone {
+		t.Fatal("Delete should raise the snackbar")
+	}
+	if !hasText(cur, "0 copies") || !hasText(cur, "Deleted a copy · 0 copies left") {
+		t.Fatal("Delete should remove the copy and say so in the snackbar")
+	}
+
+	tap(t, mgr, "Undo")
+	cur = tree(t, mgr)
+	if snackbarNode(t, cur).Style.Display != core.DisplayNone {
+		t.Fatal("Undo's handler hides the snackbar")
+	}
+	if !hasText(cur, "1 copy") || !hasText(cur, "✓ restored a copy") {
+		t.Fatal("Undo should restore the copy")
+	}
 	assertNoConcerns(t)
 }
