@@ -65,7 +65,10 @@ import (
 // reach AND make it something this repository is responsible for. Either way
 // somebody has to look, and this is where they are told to.
 func TestTheComposeRowDelegatesItsDistributionToCompose(t *testing.T) {
-	body := codeOf(t, kotlinRenderer, "private fun RowScope.RowChildren(node: GrMobNode)")
+	// The anchor stops at the open parenthesis, as shrink_test's does: the
+	// parameter list is not what this test is about, and RowChildren has grown
+	// an intrinsicHeight flag (LocalGrMobUnboundedHeight) since it was written.
+	body := codeOf(t, kotlinRenderer, "private fun RowScope.RowChildren(")
 
 	if !strings.Contains(body, "Modifier.weight(grow)") {
 		t.Errorf("%s: RowChildren no longer hands a FlexGrow child Modifier.weight.\n\n"+

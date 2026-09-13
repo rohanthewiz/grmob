@@ -143,6 +143,56 @@ val LocalGrMobRuntime = compositionLocalOf<GrMobRuntime> {
 val LocalGrMobDisabled = compositionLocalOf { false }
 
 /**
+ * Whether the Column being composed has no height of its own to divide among
+ * FlexGrow children: true inside a vertical scroll's content, until something
+ * on the way down gives a height back.
+ *
+ * # The defect it exists for
+ *
+ * FlexGrow reaches Compose as Modifier.weight, and a Column divides weight out
+ * of its *maximum* height — or, when that is infinite, out of its minimum. A
+ * Column inside a scrolled page with no minimum has neither, so every weighted
+ * child was measured at zero. comps.DataTable gives its rows List FlexGrow(1)
+ * (to fill a table that has a Height), and on lesson 4.6 — a table in a
+ * scrolled page — the header sat directly on the pager with no rows between
+ * them. CSS sizes a flex-grow item in an auto-height column to its content,
+ * and so does GrMobFlexLayout on iOS; with this local, ColumnChildren does the
+ * same instead of applying the weight.
+ *
+ * # Who sets it, and who clears it
+ *
+ * ```
+ *   root / Dialog window / bounded parent      false (the default)
+ *   └ Scroll's content (GrMobScroll)            true: measured unbounded
+ *     ├ FlexGrow child, heightIn(min=viewport)  false: weights divide the min
+ *     │                                               (Screen{Fill, Scroll})
+ *     ├ node with a points Height (RenderNode)  false: a definite height
+ *     ├ stretched Row's children (GrMobRow)     false: IntrinsicSize.Max pins
+ *     └ Card > DataTable Column                 true, inherited
+ *       └ List FlexGrow(1)                      no weight: content height
+ * ```
+ *
+ * A Modal decides for its own content column (GrMobModal): true when the
+ * column scrolls with no minimum, false when a growing child has been given
+ * the window as a minimum. A percentage Height inherits, because it resolves
+ * to something only when the parent's height is already definite.
+ *
+ * A composition local rather than BoxWithConstraints in every Column: a
+ * SubcomposeLayout cannot answer intrinsic measurements, and a Row with
+ * AlignItems(stretch) measures its children's intrinsic height
+ * (stretchRowHeight), so a Column with a growing Spacer inside such a Row would
+ * have thrown.
+ */
+val LocalGrMobUnboundedHeight = compositionLocalOf { false }
+
+/** A Height that is a definite length on its own: points, not "auto" or a percentage. */
+private fun hasPointsHeight(s: GrMobStyle?): Boolean {
+    val h = s?.height ?: return false
+    if (h.isEmpty() || h == "auto" || h.endsWith("%")) return false
+    return h.removeSuffix("px").toFloatOrNull() != null
+}
+
+/**
  * This node's effective disabled state: its own flag, or an ancestor's.
  *
  * `internal` rather than `private`: Kotlin's `private` on a top-level
@@ -207,12 +257,24 @@ fun RenderNode(node: GrMobNode, extra: Modifier = Modifier) {
     // means a container's flag reaches leaves it does not know about — and
     // the provider is skipped when nothing changes, so an enabled tree pays
     // nothing for the mechanism.
-    if (node.style?.disabled == true && !LocalGrMobDisabled.current) {
-        CompositionLocalProvider(LocalGrMobDisabled provides true) {
+    //
+    // The unbounded-height local is closed the same way, and only where it
+    // changes: a node with a points Height gives its subtree a definite height
+    // to divide again (see LocalGrMobUnboundedHeight).
+    val disable = node.style?.disabled == true && !LocalGrMobDisabled.current
+    val bound = LocalGrMobUnboundedHeight.current && hasPointsHeight(node.style)
+    when {
+        disable && bound -> CompositionLocalProvider(
+            LocalGrMobDisabled provides true,
+            LocalGrMobUnboundedHeight provides false,
+        ) { RenderNodeContent(node, mods) }
+        disable -> CompositionLocalProvider(LocalGrMobDisabled provides true) {
             RenderNodeContent(node, mods)
         }
-    } else {
-        RenderNodeContent(node, mods)
+        bound -> CompositionLocalProvider(LocalGrMobUnboundedHeight provides false) {
+            RenderNodeContent(node, mods)
+        }
+        else -> RenderNodeContent(node, mods)
     }
 }
 
@@ -1344,7 +1406,7 @@ private fun GrMobRow(node: GrMobNode, extra: Modifier) {
             "stretch" -> Alignment.Top
             else -> Alignment.Top
         },
-    ) { RowChildren(node) }
+    ) { RowChildren(node, intrinsicHeight = isStretch(s) && s?.height.isNullOrEmpty()) }
 }
 
 /**
@@ -1470,8 +1532,12 @@ private fun GrMobColumn(node: GrMobNode, extra: Modifier, outer: Modifier = Modi
  * Column, weight distributes height and fillMaxWidth sets width.
  */
 @Composable
-private fun RowScope.RowChildren(node: GrMobNode) {
+private fun RowScope.RowChildren(node: GrMobNode, intrinsicHeight: Boolean = false) {
     val stretch = isStretch(node.style)
+    // A Row pinned to its tallest child (stretchRowHeight) measures every
+    // child at that one height, so a Column inside it has a definite height
+    // even in a scrolled page; see LocalGrMobUnboundedHeight.
+    val rebound = intrinsicHeight && LocalGrMobUnboundedHeight.current
     node.children.forEachIndexed { i, child ->
         key(child.key.ifEmpty { i }) {
             val grow = child.style?.flexGrow ?: 0f
@@ -1487,7 +1553,11 @@ private fun RowScope.RowChildren(node: GrMobNode) {
             // no growth to hand out either way.
             if (grow <= 0f && child.style?.shrinkPinned == true) m = m.pinMainAxis(horizontal = true)
             if (stretch) m = m.fillMaxHeight()
-            RenderNode(child, m)
+            if (rebound) {
+                CompositionLocalProvider(LocalGrMobUnboundedHeight provides false) { RenderNode(child, m) }
+            } else {
+                RenderNode(child, m)
+            }
         }
     }
 }
@@ -1583,12 +1653,16 @@ private fun ColumnScope.ColumnChildren(
     centreCapped: Boolean = false,
 ) {
     val stretch = isColumnStretch(node.style)
+    // No height to divide: a grow child keeps its content height, as CSS sizes
+    // a flex-grow item in an auto-height column. See LocalGrMobUnboundedHeight.
+    val unbounded = LocalGrMobUnboundedHeight.current
     node.children.forEachIndexed { i, child ->
         key(child.key.ifEmpty { i }) {
             val grow = child.style?.flexGrow ?: 0f
             var m: Modifier = when {
                 grow <= 0f -> Modifier
                 growMinHeight != null -> Modifier.heightIn(min = growMinHeight)
+                unbounded -> Modifier
                 else -> Modifier.weight(grow)
             }
             // The vertical half of core.FlexShrink(0); see pinMainAxis. Same
@@ -1609,7 +1683,13 @@ private fun ColumnScope.ColumnChildren(
             if (centreCapped && child.style?.maxWidth?.isNotEmpty() == true) {
                 m = m.wrapContentWidth(Alignment.CenterHorizontally)
             }
-            RenderNode(child, m)
+            // A grow child given the viewport as a minimum has a height its own
+            // FlexGrow children can divide, even inside a scroll's content.
+            if (grow > 0f && growMinHeight != null && unbounded) {
+                CompositionLocalProvider(LocalGrMobUnboundedHeight provides false) { RenderNode(child, m) }
+            } else {
+                RenderNode(child, m)
+            }
         }
     }
 }
@@ -1673,7 +1753,11 @@ private fun GrMobScroll(node: GrMobNode, extra: Modifier) {
             Modifier.verticalScrollWhenBounded(rememberScrollState()),
             verticalArrangement = packedVertically(node.style),
         ) {
-            ColumnChildren(node, growMinHeight = viewport)
+            // The content is measured with no maximum height: true for every
+            // child below that is not handed the viewport as a minimum.
+            CompositionLocalProvider(LocalGrMobUnboundedHeight provides true) {
+                ColumnChildren(node, growMinHeight = viewport)
+            }
         }
     }
 }
@@ -2337,7 +2421,15 @@ private fun GrMobModal(node: GrMobNode) {
                     .fillMaxWidth()
                     .verticalScrollWhenBounded(rememberScrollState())
                     .then(if (grows && viewport != null) Modifier.heightIn(min = viewport) else Modifier)
-            ) { ColumnChildren(node, centreCapped = true) }
+            ) {
+                // The column scrolls, so it has no maximum; it has a height to
+                // divide only when a growing child made the window its minimum.
+                // A Dialog is a fresh window, so the page's own local is not
+                // what applies here. See LocalGrMobUnboundedHeight.
+                CompositionLocalProvider(LocalGrMobUnboundedHeight provides !(grows && viewport != null)) {
+                    ColumnChildren(node, centreCapped = true)
+                }
+            }
         }
     }
 }
