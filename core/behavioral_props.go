@@ -57,6 +57,61 @@ func OnLongPress(handler func()) BehaviorProp {
 	return On("LongPress", handler)
 }
 
+// OnBack claims the platform's system back — Android's back button and back
+// gesture — for as long as the node carrying it is on screen. While any such
+// node is, a back press runs the innermost one's handler instead of the
+// platform default; when none is, back does what the platform would have done
+// anyway, which on Android is to leave the app.
+//
+// core.Navigator attaches one to the route it shows whenever core.CanPop is
+// true, so a pushed screen pops on back with no app code. comps.AppBar
+// attaches its back arrow's action, and comps.Drawer its OnDismiss while open.
+//
+// # A prop, not a host event
+//
+// The other things a shell reports without a callback — lifecycle, a deep
+// link — arrive as host events. Back cannot, because Android has to know
+// before the press whether the app will take it: OnBackPressedDispatcher
+// consults its callbacks' enabled flags synchronously on the UI thread, and
+// falls through to finishing the Activity if none is enabled. A host event
+// reaches Go after that decision, so a shell built on one would need a second,
+// Go→host "enabled" signal kept in step with the app's state. A prop already
+// is that signal: its presence in the tree is the enabled flag, and the tree
+// diff keeps the shell's copy current with no channel of its own.
+//
+// # Innermost wins
+//
+// Compose's BackHandler gives priority to the handler registered most
+// recently. Handlers composed in one pass register parent before child, so
+// the innermost wins; one composed later — a drawer that has just opened —
+// outranks every handler already on screen.
+//
+//	Navigator route root  onBack = Pop            outermost, runs last
+//	  AppBar row          onBack = AppBar.OnBack
+//	  Drawer panel layer  onBack = OnDismiss      while Open; runs first
+//
+// The one ordering this gets wrong is a parent that gains the prop after its
+// descendants already hold one: it registers last and outranks them. Keep
+// OnBack on nodes whose lifetimes nest the way their handlers should, which
+// the three above do.
+//
+// # Hosts
+//
+//	Android  RenderNode wraps the node in androidx's BackHandler. A node
+//	         hidden with Display none is not composed, so its handler is
+//	         inactive while hidden. A Modal needs none: the Dialog window
+//	         reports back through the Modal's own onDismiss.
+//	iOS      nothing. There is no system back; the edge swipe belongs to a
+//	         UINavigationController, which the SwiftUI renderer does not use.
+//	Web      nothing. The browser's back button moves the page's history,
+//	         which the page owns (examples/tutorial/deeplink.go's "route"
+//	         host event is that arrangement). The runtime skips the prop
+//	         rather than attach a listener for a "back" DOM event that does
+//	         not exist, and htmlout does not export it.
+func OnBack(handler func()) BehaviorProp {
+	return On("Back", handler)
+}
+
 // OnFocus fires when the node becomes the input focus — a text field the user
 // has tapped into, with the software keyboard on its way up.
 //

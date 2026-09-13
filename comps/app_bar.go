@@ -71,6 +71,12 @@ type AppBar struct {
 	// OnBack replaces core.Pop as what the automatic back control does. Set
 	// it to confirm before leaving, or to pop more than one frame; call
 	// core.Pop yourself from inside it when the answer is yes.
+	//
+	// Android's system back runs it too, whenever the automatic control is
+	// drawn: the bar row carries it as core.OnBack, which outranks the plain
+	// pop core.Navigator attaches to the route around it. A Leading slot or
+	// HideBack draws no control and attaches nothing, so back there is the
+	// Navigator's pop.
 	OnBack func()
 
 	// BackGlyph is the back control's label. Empty is "‹". It is the one
@@ -128,7 +134,16 @@ func (a AppBar) Render(ctx *core.Context) *core.Node {
 		items = append(items, sp)
 	}
 
-	if lead := a.leading(ctx); lead != nil {
+	// Resolved once so the arrow and the system back cannot disagree: both
+	// are handed the same func, or neither is drawn.
+	back := a.backAction(ctx)
+	if back != nil {
+		// On the row rather than the arrow Button, whose comps wrapper takes
+		// style props only. The row is present in both the separator and the
+		// HideSeparator shapes, so the handler lands on the same node in both.
+		items = append(items, core.OnBack(back))
+	}
+	if lead := a.leading(back); lead != nil {
 		items = append(items, lead)
 	}
 	items = append(items, a.middle(t))
@@ -150,13 +165,28 @@ func (a AppBar) Render(ctx *core.Context) *core.Node {
 	return core.Box(bar, Separator{}).Render(ctx)
 }
 
+// backAction is what the automatic back control does, or nil when no control
+// is drawn: a Leading slot replaces it, HideBack suppresses it, and a stack
+// with nothing beneath has nowhere to go.
+func (a AppBar) backAction(ctx *core.Context) func() {
+	if a.Leading != nil || a.HideBack || !core.CanPop(ctx) {
+		return nil
+	}
+	if a.OnBack != nil {
+		return a.OnBack
+	}
+	// Captured rather than passed: Pop needs the context, and the callback
+	// outlives this render pass in the registry.
+	return func() { core.Pop(ctx) }
+}
+
 // leading resolves the start of the bar: the caller's slot, the automatic
-// back control, or nothing at all.
-func (a AppBar) leading(ctx *core.Context) core.View {
+// back control for back (see backAction), or nothing at all.
+func (a AppBar) leading(back func()) core.View {
 	if a.Leading != nil {
 		return a.Leading
 	}
-	if a.HideBack || !core.CanPop(ctx) {
+	if back == nil {
 		return nil
 	}
 
@@ -164,16 +194,10 @@ func (a AppBar) leading(ctx *core.Context) core.View {
 	if glyph == "" {
 		glyph = "‹"
 	}
-	onBack := a.OnBack
-	if onBack == nil {
-		// Captured rather than passed: Pop needs the context, and the
-		// callback outlives this render pass in the registry.
-		onBack = func() { core.Pop(ctx) }
-	}
 	return Button{
 		Label:    glyph,
 		Emphasis: EmphasisGhost,
-		OnTap:    onBack,
+		OnTap:    back,
 		// A screen reader announcing "‹" announces nothing. Every glyph
 		// control in this package carries a real name; see Button.
 		AccessibilityLabel: "Back",

@@ -107,6 +107,17 @@ core.Button("Delete", onDelete,
     the call site if the wrapper's public field should stay style-only
     (`comps.Button` and `comps.Chip` take the second route).
 
+## System back
+
+`core.OnBack` claims Android's back button and back gesture while the node
+carrying it is on screen. The innermost node wins, and with none on screen back
+leaves the app. `Navigator`, `AppBar` and an open `Drawer` attach it for you;
+see [Navigation](navigation.md#androids-system-back).
+
+It is a prop rather than a host event because Android decides whether the app
+takes a press before the press is delivered. The prop's presence in the tree is
+that decision, and patches keep the shell's copy current.
+
 ## Focus and blur
 
 `core.OnFocus` and `core.OnBlur` report the input focus arriving at and

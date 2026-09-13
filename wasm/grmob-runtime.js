@@ -216,6 +216,12 @@ const GrMob = (() => {
                     // child, pointed at it by syncEndReached once renderNode
                     // has built the children.
                     attachEndReached(el, value);
+                } else if (key === "onBack") {
+                    // core.OnBack is Android's system back. A page has no
+                    // such event — its back button moves history, which the
+                    // page owns — so there is nothing to wire, and the
+                    // generic branch would attach a "back" listener that
+                    // never fires.
                 } else if (key.startsWith("on")) {
                     const event = mapEventName(key);
                     el.dataset[`listener_${key}`] = value;
@@ -6076,6 +6082,9 @@ const GrMob = (() => {
                             // syncTouchedEndReached's question, once the whole
                             // batch has landed and the children have settled.
                             attachEndReached(el, v);
+                        } else if (k === "onBack") {
+                            // Nothing to wire, as on the create path: see
+                            // the onBack branch there.
                         } else if (k.startsWith("on")) {
                             const event = mapEventName(k);
                             el.dataset[`listener_${k}`] = v;

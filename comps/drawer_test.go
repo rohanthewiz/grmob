@@ -218,3 +218,30 @@ func TestDrawerCloseRefTakesAFocusCommand(t *testing.T) {
 		t.Errorf("✕ focusAction = %v, want \"focus\" after core.Focus(CloseRef)", close.Props["focusAction"])
 	}
 }
+
+// Android's system back closes an open drawer. The handler rides the panel
+// layer, so it is present exactly while the panel is, and absent when there is
+// no OnDismiss to call.
+func TestDrawerClaimsSystemBackOnlyWhileOpen(t *testing.T) {
+	dismissed := 0
+	ctx, n := renderDebug(t, sampleDrawer(true, nil, func() { dismissed++ }))
+	_, layer, _, _ := drawerParts(t, n)
+	id, ok := layer.Props["onBack"].(string)
+	if !ok || id == "" {
+		t.Fatalf("an open drawer's panel layer must claim back, props = %v", layer.Props)
+	}
+	ctx.TriggerCallback(id)
+	if dismissed != 1 {
+		t.Errorf("system back ran OnDismiss %d times, want 1", dismissed)
+	}
+
+	_, n = renderDebug(t, sampleDrawer(false, nil, func() {}))
+	if _, layer, _, _ := drawerParts(t, n); layer.Props["onBack"] != nil {
+		t.Error("a shut drawer must not claim back")
+	}
+
+	_, n = renderDebug(t, sampleDrawer(true, nil, nil))
+	if _, layer, _, _ := drawerParts(t, n); layer.Props["onBack"] != nil {
+		t.Error("with no OnDismiss there is nothing to call, so back must fall through")
+	}
+}

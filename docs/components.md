@@ -1809,7 +1809,7 @@ What a Modal would have supplied, and what the drawer does instead:
 | Screen-reader confinement | The screen layer is `AccessibilityHidden` while open |
 | Focus inside the dialog | `CloseRef` names the ✕; the opener calls `core.Focus` on it |
 | Tab stays inside (web) | Not contained: core has no `inert`, and `aria-hidden` does not stop Tab |
-| Android back closes it | Not wired: core has no back-press hook |
+| Android back closes it | `core.OnBack(OnDismiss)` on the panel layer while open |
 
 **Give it a box to cover.** The drawer covers its ZStack, which is as big as its
 largest layer. At the app root or in a bounded parent it covers that. Inside a

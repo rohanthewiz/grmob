@@ -129,8 +129,38 @@ func Header(ctx *core.Context, title string) core.View {
 }
 ```
 
-The same check answers Android's hardware back button: pop if `CanPop`,
-otherwise let the platform close the app.
+## Android's system back
+
+The back button and back gesture pop without app code. Whenever `CanPop` is
+true, `Navigator` puts `core.OnBack(Pop)` on the root node of the route it
+shows. On the root frame it attaches nothing, so back falls through to the
+platform and leaves the app.
+
+A handler inside the route outranks the Navigator's, because Compose runs the
+innermost `BackHandler` first. That is how the pieces combine:
+
+| On screen | Back does |
+|---|---|
+| Root frame | Leaves the app |
+| Pushed frame | `Pop` |
+| `comps.AppBar` drawing its arrow | The arrow's action, including a custom `OnBack` |
+| An open `comps.Drawer` | `OnDismiss`; the next back is the screen's |
+| A `core.Modal` | Its `OnDismiss`, reported by the Dialog window |
+
+To confirm before leaving, put `core.OnBack` on the route's root node yourself.
+Navigator keeps a handler it finds there instead of adding its pop:
+
+```go
+func EditScreen(ctx *core.Context) core.View {
+    return core.Column(
+        core.OnBack(func() { confirmDiscard.Set(true) }),
+        ...,
+    )
+}
+```
+
+iOS has no system back, and a browser's back button moves the page's history,
+so neither host reads the prop.
 
 ## Where the Navigator sits
 

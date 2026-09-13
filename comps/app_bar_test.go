@@ -303,3 +303,51 @@ func TestAppBarBannerSitsOnTheRowInBothShapes(t *testing.T) {
 		}
 	}
 }
+
+// appBarRow returns the banner row in either of AppBar's two shapes.
+func appBarRow(n *core.Node) *core.Node {
+	if n.Type == "Box" {
+		return n.Children[0]
+	}
+	return n
+}
+
+// System back does what the drawn back arrow does, including a custom OnBack,
+// and nothing is claimed when no arrow is drawn.
+func TestAppBarSystemBackMatchesTheArrow(t *testing.T) {
+	ctx := pushedContext(t)
+	confirmed := 0
+	n := AppBar{Title: "Edit", OnBack: func() { confirmed++ }}.Render(ctx)
+	id, ok := appBarRow(n).Props["onBack"].(string)
+	if !ok || id == "" {
+		t.Fatalf("a bar drawing the back arrow must claim back, props = %v", appBarRow(n).Props)
+	}
+	ctx.TriggerCallback(id)
+	if confirmed != 1 {
+		t.Errorf("system back ran OnBack %d times, want 1", confirmed)
+	}
+	if !core.CanPop(ctx) {
+		t.Error("a custom OnBack replaces Pop for system back too, but the stack was popped")
+	}
+
+	// The HideSeparator shape carries it on the same row.
+	n = AppBar{Title: "Edit", HideSeparator: true}.Render(ctx)
+	if _, ok := appBarRow(n).Props["onBack"]; !ok {
+		t.Error("the HideSeparator shape must claim back on its row as well")
+	}
+
+	for name, bar := range map[string]AppBar{
+		"Leading":  {Title: "Edit", Leading: core.Text("☰")},
+		"HideBack": {Title: "Edit", HideBack: true},
+	} {
+		if _, ok := appBarRow(bar.Render(ctx)).Props["onBack"]; ok {
+			t.Errorf("%s draws no arrow, so the bar must leave back to the Navigator", name)
+		}
+	}
+
+	root := core.NewContext()
+	root.BeginRenderPass()
+	if _, ok := appBarRow(AppBar{Title: "Home"}.Render(root)).Props["onBack"]; ok {
+		t.Error("a bar with nothing to pop must not claim back")
+	}
+}

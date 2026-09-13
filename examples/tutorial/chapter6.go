@@ -354,7 +354,7 @@ return core.Navigator(t.Home)`),
 					"Reset mints a fresh root even for the same route function — reach for it at logout, where surviving state would be a leak.",
 					"Route parameters are closure captures: drillRoute(level+1) is the whole deep-linking mechanism.",
 					"Session state belongs above the Navigator, in a scope of its host context — frames die, that scope doesn't.",
-					"CanPop answers the hardware back button too: pop if true, otherwise let the platform close the app.",
+					"Android back pops on its own: Navigator puts core.OnBack on any frame CanPop is true for, and the root lets the platform close the app.",
 				),
 			)
 		},

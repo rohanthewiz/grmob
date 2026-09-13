@@ -111,7 +111,12 @@ func (n *navigatorState) retireLocked(entries ...routeEntry) {
 }
 
 // takeTop installs the initial route on first use, then returns the frame to
-// render along with the ids whose scopes the caller must now drop.
+// render, the ids whose scopes the caller must now drop, and whether there is
+// a frame beneath it to pop back to.
+//
+// canPop is answered here, under the same lock as the top frame, rather than
+// by a later CanPop call: a Push from another goroutine between the two reads
+// would pair this frame with the next frame's depth.
 //
 // Seeding lazily (rather than in newNavigatorState) is what lets the initial
 // route be a property of the Navigator view instead of the context: a context
@@ -120,16 +125,16 @@ func (n *navigatorState) retireLocked(entries ...routeEntry) {
 // The seed is spliced *beneath* whatever is already on the stack rather than
 // only filling an empty one, so routes pushed before this first render sit on
 // top of the initial screen instead of replacing it — see the `rooted` field.
-func (n *navigatorState) takeTop(initial func(*Context) View) (routeEntry, []int) {
+func (n *navigatorState) takeTop(initial func(*Context) View) (top routeEntry, retired []int, canPop bool) {
 	n.mu.Lock()
 	defer n.mu.Unlock()
 	if !n.rooted {
 		n.rooted = true
 		n.stack = append([]routeEntry{n.newEntryLocked(initial)}, n.stack...)
 	}
-	retired := n.retired
+	retired = n.retired
 	n.retired = nil
-	return n.stack[len(n.stack)-1], retired
+	return n.stack[len(n.stack)-1], retired, len(n.stack) > 1
 }
 
 // Navigator renders the top of the route stack, seeding the stack with initial
@@ -155,7 +160,7 @@ func (n *navigatorState) takeTop(initial func(*Context) View) (routeEntry, []int
 // already consumed slots that the rewind hands out again.
 func Navigator(initial func(*Context) View) View {
 	return ComponentFunc(func(ctx *Context) *Node {
-		entry, retired := ctx.nav.takeTop(initial)
+		entry, retired, canPop := ctx.nav.takeTop(initial)
 
 		// Deferred disposal, executed here because this is the render
 		// goroutine — see navigatorState.retired for why the mutations could
@@ -165,8 +170,50 @@ func Navigator(initial func(*Context) View) View {
 		}
 
 		frame := ctx.disposableScope(routeScopeKey(entry.id))
-		return entry.route(frame).Render(frame)
+		n := entry.route(frame).Render(frame)
+		if canPop {
+			n = withSystemBackPop(ctx, n)
+		}
+		return n
 	})
+}
+
+// withSystemBackPop gives a poppable route's root node a core.OnBack that
+// pops, so Android's system back returns to the screen underneath and only
+// leaves the app from the root frame, where no handler is attached.
+//
+// # Why the route's own node, and why a copy
+//
+// Navigator emits no wrapper node (see its doc), so the prop goes on the node
+// the route rendered. That node is not Navigator's to change: a route may
+// return core.Cached, whose node is built once and handed back on every pass,
+// and writing a callback ID into it would leave the ID from the pass that
+// happened to write it. So the node is copied one level deep — Type, Key,
+// Style and Children are shared, and only the Props map is fresh.
+//
+// # A route that claims back itself
+//
+// A root node that already carries onBack keeps it: the route asked for back
+// on purpose (a form that confirms before leaving), and a pop layered over it
+// would discard the form either way. Handlers deeper in the route need no such
+// check — they outrank this one by being composed inside it (see core.OnBack,
+// "Innermost wins").
+func withSystemBackPop(ctx *Context, n *Node) *Node {
+	if n == nil {
+		return nil
+	}
+	if _, claimed := n.Props["onBack"]; claimed {
+		return n
+	}
+	cp := *n
+	cp.Props = make(map[string]any, len(n.Props)+1)
+	for k, v := range n.Props {
+		cp.Props[k] = v
+	}
+	// The host context, not the frame: Pop acts on the stack every context in
+	// the tree shares, and the frame's scope is exactly what the pop discards.
+	OnBack(func() { Pop(ctx) }).Apply(ctx, &cp)
+	return &cp
 }
 
 // Push adds a route on top of the stack. The screen underneath keeps its state

@@ -645,6 +645,12 @@ type AppBar struct {
 	// OnBack replaces core.Pop as what the automatic back control does. Set
 	// it to confirm before leaving, or to pop more than one frame; call
 	// core.Pop yourself from inside it when the answer is yes.
+	//
+	// Android's system back runs it too, whenever the automatic control is
+	// drawn: the bar row carries it as core.OnBack, which outranks the plain
+	// pop core.Navigator attaches to the route around it. A Leading slot or
+	// HideBack draws no control and attaches nothing, so back there is the
+	// Navigator's pop.
 	OnBack func()
 
 	// BackGlyph is the back control's label. Empty is "‹". It is the one
@@ -711,7 +717,7 @@ Content overrides Title/Subtitle and Leading overrides the back control, the sam
 func (a AppBar) Render(ctx *core.Context) *core.Node
 ```
 
-<small>[comps/app_bar.go:103](https://github.com/rohanthewiz/grmob/blob/master/comps/app_bar.go#L103)</small>
+<small>[comps/app_bar.go:109](https://github.com/rohanthewiz/grmob/blob/master/comps/app_bar.go#L109)</small>
 
 ### type Avatar
 
@@ -2357,9 +2363,10 @@ type Drawer struct {
 	// Open is the caller's open/shut state.
 	Open bool
 
-	// OnDismiss is called for the ✕, for a scrim tap, and after any
-	// destination. Nil draws no ✕ and leaves the scrim inert, so the drawer
-	// closes only when the caller flips Open.
+	// OnDismiss is called for the ✕, for a scrim tap, after any destination,
+	// and for Android's system back while open. Nil draws no ✕, leaves the
+	// scrim inert and claims no back, so the drawer closes only when the
+	// caller flips Open.
 	OnDismiss func()
 
 	// Title names the panel: its heading and the navigation landmark's
@@ -2465,7 +2472,7 @@ What the Modal chassis would have supplied is the cost, and the widget buys back
   - Screen-reader confinement. A Dialog window and a sheet confine TalkBack and VoiceOver, and the DOM overlay says aria-modal. Here the content layer takes AccessibilityHidden while the drawer is open, which takes the screen behind out of the accessibility tree on every target, so exploration stays in the panel.
   - Focus. Nothing moves it on open, and the ☰ that had it is now inside a hidden layer. CloseRef names the ✕ so the opener can call core.Focus on it, as the example does; OnDismiss can hand focus back to the ☰ through that button's own FocusRef. The widget holds no ref itself, because a ref is a hook (see "No hooks").
   - Keyboard containment on the web. aria-hidden does not stop Tab and core has no inert, so Tab past the panel's last control still reaches the hidden screen. Recorded, not fixed: it needs a renderer.
-  - The Android back button. A Dialog closes on it; a layer does not, and core has no back-press hook to take. The ✕, a destination and the scrim are the ways out.
+  - The Android back button. A Dialog closes on it; a layer does not, so the panel layer carries core.OnBack(OnDismiss) while open. The panel is inside the screen and composed after it, so back closes the drawer before a Navigator pops or an AppBar's back runs; the next back is theirs. With OnDismiss nil there is nothing to call and back falls through to them.
 
 #### It covers its own box, so give it one
 
@@ -2494,7 +2501,7 @@ Open and focus are both the caller's, so Drawer takes no hook slot and is condit
 	Icon       Typography.Subtitle
 	Scrim      Backdrop, else core.Modal's default #00000088
 
-<small>[comps/drawer.go:128](https://github.com/rohanthewiz/grmob/blob/master/comps/drawer.go#L128)</small>
+<small>[comps/drawer.go:131](https://github.com/rohanthewiz/grmob/blob/master/comps/drawer.go#L131)</small>
 
 #### func (Drawer) Render
 
@@ -2504,7 +2511,7 @@ func (d Drawer) Render(ctx *core.Context) *core.Node
 
 Render builds ZStack(content layer, panel layer) as drawn in the type doc.
 
-<small>[comps/drawer.go:205](https://github.com/rohanthewiz/grmob/blob/master/comps/drawer.go#L205)</small>
+<small>[comps/drawer.go:209](https://github.com/rohanthewiz/grmob/blob/master/comps/drawer.go#L209)</small>
 
 ### type DrawerItem
 
@@ -2527,7 +2534,7 @@ type DrawerItem struct {
 
 DrawerItem is one destination in a Drawer.
 
-<small>[comps/drawer.go:184](https://github.com/rohanthewiz/grmob/blob/master/comps/drawer.go#L184)</small>
+<small>[comps/drawer.go:188](https://github.com/rohanthewiz/grmob/blob/master/comps/drawer.go#L188)</small>
 
 ### type Emphasis
 

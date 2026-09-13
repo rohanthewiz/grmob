@@ -1,5 +1,6 @@
 package com.grmob.runtime
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.Animatable
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -160,6 +161,31 @@ fun GrMobRoot(runtime: GrMobRuntime) {
 @Composable
 fun RenderNode(node: GrMobNode, extra: Modifier = Modifier) {
     if (node.style?.display == "none") return // not composed at all; "hidden" keeps space
+
+    // core.OnBack: the system back button and gesture, at the funnel every node
+    // passes through, so any node type can claim it.
+    //
+    // BackHandler registers with the Activity's OnBackPressedDispatcher while
+    // it is composed and unregisters when it leaves, so presence of the prop is
+    // the whole enabled state — no flag crosses the bridge. The dispatcher runs
+    // the most recently registered enabled callback, which is what makes the
+    // innermost node win (see core.OnBack). With none composed, the dispatcher
+    // falls through to the Activity's default and the app is left.
+    //
+    // Called only when the prop is present, not as BackHandler(enabled = ...)
+    // on every node: a registered-but-disabled callback per node would put the
+    // whole tree in the dispatcher. The `if` is a group of its own in the
+    // Compose compiler's output, so toggling it leaves RenderNodeContent's
+    // positional state below it intact.
+    //
+    // The lambda reads `onBack` from this composition; BackHandler holds it
+    // through rememberUpdatedState, so a callback ID that changes on a later
+    // pass is the one dispatched without re-registering.
+    val onBack = node.stringProp("onBack")
+    if (onBack.isNotEmpty()) {
+        val runtime = LocalGrMobRuntime.current
+        BackHandler { runtime.click(onBack) }
+    }
 
     // core.KeyboardAware, applied at the one funnel every node passes through
     // rather than at each container that might want it. It lands between the

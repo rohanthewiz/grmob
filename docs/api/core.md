@@ -136,6 +136,7 @@ The narrative documentation covers the parts a reference cannot: the architectur
     - [`func KeyboardAware`](#func-keyboardaware)
     - [`func LineNumbers`](#func-linenumbers)
     - [`func On`](#func-on)
+    - [`func OnBack`](#func-onback)
     - [`func OnBlur`](#func-onblur)
     - [`func OnClick`](#func-onclick)
     - [`func OnEndReached`](#func-onendreached)
@@ -1200,7 +1201,7 @@ func CanPop(ctx *Context) bool
 
 CanPop reports whether there is a screen to go back to, which is what a back button or a hardware-back handler needs in order to decide between popping and exiting the app. Pop is a safe no-op when this is false; the point of asking first is to avoid rendering a control that does nothing.
 
-<small>[core/navigation.go:309](https://github.com/rohanthewiz/grmob/blob/master/core/navigation.go#L309)</small>
+<small>[core/navigation.go:356](https://github.com/rohanthewiz/grmob/blob/master/core/navigation.go#L356)</small>
 
 ### func Cardinal
 
@@ -1628,7 +1629,7 @@ func Pop(ctx *Context)
 
 Pop removes the top route, discarding its state, and reveals the one below. It is a no-op at the root — the stack is never left empty, because Navigator has nothing to render then.
 
-<small>[core/navigation.go:193](https://github.com/rohanthewiz/grmob/blob/master/core/navigation.go#L193)</small>
+<small>[core/navigation.go:240](https://github.com/rohanthewiz/grmob/blob/master/core/navigation.go#L240)</small>
 
 ### func PopToRoot
 
@@ -1640,7 +1641,7 @@ PopToRoot unwinds to the bottom of the stack, discarding the state of every fram
 
 It differs from Reset in exactly one way, and it is the way that matters: the root frame is the one already there, state and all. Reset(ctx, root) would look identical on screen and quietly reset the root's scroll position, selected tab and form contents. Reach for PopToRoot to escape a deep drill-down ("Done" out of a five-level settings tree), and for Reset to end a session.
 
-<small>[core/navigation.go:274](https://github.com/rohanthewiz/grmob/blob/master/core/navigation.go#L274)</small>
+<small>[core/navigation.go:321](https://github.com/rohanthewiz/grmob/blob/master/core/navigation.go#L321)</small>
 
 ### func PrimaryColor
 
@@ -1664,7 +1665,7 @@ Push adds a route on top of the stack. The screen underneath keeps its state and
 
 Like every mutation here it ends in RequestRender rather than a bare MarkDirty, which these used to do. Marking alone is enough only when a pass is already guaranteed to follow — true for a tap, since the native dispatch path re-renders on the way out, and false for a navigation triggered from anywhere else: an effect goroutine resolving a deep link, a timeout dismissing a splash screen, a websocket pushing the user to a call screen. Those marked the tree dirty and then waited for an unrelated event to notice.
 
-<small>[core/navigation.go:183](https://github.com/rohanthewiz/grmob/blob/master/core/navigation.go#L183)</small>
+<small>[core/navigation.go:230](https://github.com/rohanthewiz/grmob/blob/master/core/navigation.go#L230)</small>
 
 ### func ReceiveAudioStatus
 
@@ -1738,7 +1739,7 @@ func Replace(ctx *Context, route func(*Context) View)
 
 Replace swaps the top route for another without changing the stack depth, discarding the outgoing route's state. Use it for a step that should not be returned to — the "logged in" screen after a login form, so Back skips the form rather than showing it again.
 
-<small>[core/navigation.go:217](https://github.com/rohanthewiz/grmob/blob/master/core/navigation.go#L217)</small>
+<small>[core/navigation.go:264](https://github.com/rohanthewiz/grmob/blob/master/core/navigation.go#L264)</small>
 
 ### func ReportConcern
 
@@ -1766,7 +1767,7 @@ The new root is a fresh frame even when route is the same function the old root 
 
 What Reset does not touch is state the app deliberately kept outside the stack: hooks on the context hosting the Navigator, package-level stores, the database. Those outlive navigation by construction, and clearing them is the app's call, not the router's.
 
-<small>[core/navigation.go:253](https://github.com/rohanthewiz/grmob/blob/master/core/navigation.go#L253)</small>
+<small>[core/navigation.go:300](https://github.com/rohanthewiz/grmob/blob/master/core/navigation.go#L300)</small>
 
 ### func RunEditorCommand
 
@@ -1836,7 +1837,7 @@ StackDepth reports how many frames are on the stack.
 
 Before the Navigator's first render it counts only what the app itself pushed — 0 for an app that has not navigated yet, because the initial route is installed lazily by that first render. Afterwards it is at least 1.
 
-<small>[core/navigation.go:299](https://github.com/rohanthewiz/grmob/blob/master/core/navigation.go#L299)</small>
+<small>[core/navigation.go:346](https://github.com/rohanthewiz/grmob/blob/master/core/navigation.go#L346)</small>
 
 ### func StartHeading
 
@@ -2307,6 +2308,46 @@ func On(event string, handler func()) BehaviorProp
 
 <small>[core/behavioral_props.go:16](https://github.com/rohanthewiz/grmob/blob/master/core/behavioral_props.go#L16)</small>
 
+#### func OnBack
+
+```go
+func OnBack(handler func()) BehaviorProp
+```
+
+OnBack claims the platform's system back — Android's back button and back gesture — for as long as the node carrying it is on screen. While any such node is, a back press runs the innermost one's handler instead of the platform default; when none is, back does what the platform would have done anyway, which on Android is to leave the app.
+
+core.Navigator attaches one to the route it shows whenever core.CanPop is true, so a pushed screen pops on back with no app code. comps.AppBar attaches its back arrow's action, and comps.Drawer its OnDismiss while open.
+
+##### A prop, not a host event
+
+The other things a shell reports without a callback — lifecycle, a deep link — arrive as host events. Back cannot, because Android has to know before the press whether the app will take it: OnBackPressedDispatcher consults its callbacks' enabled flags synchronously on the UI thread, and falls through to finishing the Activity if none is enabled. A host event reaches Go after that decision, so a shell built on one would need a second, Go→host "enabled" signal kept in step with the app's state. A prop already is that signal: its presence in the tree is the enabled flag, and the tree diff keeps the shell's copy current with no channel of its own.
+
+##### Innermost wins
+
+Compose's BackHandler gives priority to the handler registered most recently. Handlers composed in one pass register parent before child, so the innermost wins; one composed later — a drawer that has just opened — outranks every handler already on screen.
+
+	Navigator route root  onBack = Pop            outermost, runs last
+	  AppBar row          onBack = AppBar.OnBack
+	  Drawer panel layer  onBack = OnDismiss      while Open; runs first
+
+The one ordering this gets wrong is a parent that gains the prop after its descendants already hold one: it registers last and outranks them. Keep OnBack on nodes whose lifetimes nest the way their handlers should, which the three above do.
+
+##### Hosts
+
+	Android  RenderNode wraps the node in androidx's BackHandler. A node
+	         hidden with Display none is not composed, so its handler is
+	         inactive while hidden. A Modal needs none: the Dialog window
+	         reports back through the Modal's own onDismiss.
+	iOS      nothing. There is no system back; the edge swipe belongs to a
+	         UINavigationController, which the SwiftUI renderer does not use.
+	Web      nothing. The browser's back button moves the page's history,
+	         which the page owns (examples/tutorial/deeplink.go's "route"
+	         host event is that arrangement). The runtime skips the prop
+	         rather than attach a listener for a "back" DOM event that does
+	         not exist, and htmlout does not export it.
+
+<small>[core/behavioral_props.go:111](https://github.com/rohanthewiz/grmob/blob/master/core/behavioral_props.go#L111)</small>
+
 #### func OnBlur
 
 ```go
@@ -2315,7 +2356,7 @@ func OnBlur(handler func()) BehaviorProp
 
 OnBlur fires when the node loses input focus. See OnFocus for the pairing and the ordering caveat.
 
-<small>[core/behavioral_props.go:91](https://github.com/rohanthewiz/grmob/blob/master/core/behavioral_props.go#L91)</small>
+<small>[core/behavioral_props.go:146](https://github.com/rohanthewiz/grmob/blob/master/core/behavioral_props.go#L146)</small>
 
 #### func OnClick
 
@@ -2381,7 +2422,7 @@ Focus is a leaf concern in practice: the renderers wire these on the text input 
 
 Ordering note: the framework guarantees the edges are dispatched in the order they happened, but \*not\* that a blur on the field being left arrives before the focus on the field being entered — that ordering is the platform's, and Android and iOS do not agree on it. Handlers must therefore be independent: read the field the callback belongs to, never "the field that is focused now".
 
-<small>[core/behavioral_props.go:85](https://github.com/rohanthewiz/grmob/blob/master/core/behavioral_props.go#L85)</small>
+<small>[core/behavioral_props.go:140](https://github.com/rohanthewiz/grmob/blob/master/core/behavioral_props.go#L140)</small>
 
 #### func OnLongPress
 
@@ -4070,7 +4111,7 @@ func Render(ctx *Context, view View) *Node
 
 Render renders view into ctx after restarting ctx's hook cursors. It is the entry point for a host driving passes by hand; render.Manager does the same two steps itself (with the debug pass boundary around them) and does not call this.
 
-<small>[core/navigation.go:317](https://github.com/rohanthewiz/grmob/blob/master/core/navigation.go#L317)</small>
+<small>[core/navigation.go:364](https://github.com/rohanthewiz/grmob/blob/master/core/navigation.go#L364)</small>
 
 ### type Position
 
@@ -7412,7 +7453,7 @@ Each frame renders into its own scope of the host context, which has three conse
 
 Note that Navigator does not call ctx.Reset(): cursors are restarted once per pass by the render driver, before the root render. A second, partial Reset from inside the tree would rewind the cursor of every context at or below this one mid-pass — harmless when the Navigator is the root view and silently corrupting when it is not, since siblings rendered before it have already consumed slots that the rewind hands out again.
 
-<small>[core/navigation.go:156](https://github.com/rohanthewiz/grmob/blob/master/core/navigation.go#L156)</small>
+<small>[core/navigation.go:161](https://github.com/rohanthewiz/grmob/blob/master/core/navigation.go#L161)</small>
 
 #### func NumericInput
 

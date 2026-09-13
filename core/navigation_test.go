@@ -602,3 +602,75 @@ func TestResetBeforeFirstRenderSupersedesTheInitialRoute(t *testing.T) {
 		t.Errorf("stack depth = %d, want 1", got)
 	}
 }
+
+// --- system back ---------------------------------------------------------
+//
+// Navigator answers Android's system back by putting core.OnBack on the route
+// it shows, and only when there is somewhere to go: the root frame must carry
+// no handler, because a handler there would swallow the press that is meant
+// to leave the app.
+
+func TestNavigatorClaimsBackOnlyWhenItCanPop(t *testing.T) {
+	ctx := NewContext()
+	app := Navigator(counterRoute("home"))
+
+	root := Render(ctx, app)
+	if _, ok := root.Props["onBack"]; ok {
+		t.Fatal("the root frame must not claim back — Android would never leave the app")
+	}
+
+	Push(ctx, counterRoute("detail"))
+	top := Render(ctx, app)
+	id, ok := top.Props["onBack"].(string)
+	if !ok || id == "" {
+		t.Fatalf("a pushed frame must claim back, props = %v", top.Props)
+	}
+
+	ctx.TriggerCallback(id)
+	if d := StackDepth(ctx); d != 1 {
+		t.Fatalf("system back on a pushed frame should pop to depth 1, got %d", d)
+	}
+	if got := rendered(t, ctx, app); got != "home:0" {
+		t.Errorf("after back, rendered %q, want the home frame", got)
+	}
+}
+
+// A route whose root node already claims back keeps its own handler: it asked
+// on purpose, and a pop layered on top would leave the screen regardless.
+func TestNavigatorLeavesARoutesOwnBackHandlerAlone(t *testing.T) {
+	ctx := NewContext()
+	asked := 0
+	app := Navigator(counterRoute("home"))
+	Render(ctx, app)
+	Push(ctx, func(*Context) View {
+		return Column(OnBack(func() { asked++ }), Text("form"))
+	})
+
+	n := Render(ctx, app)
+	ctx.TriggerCallback(n.Props["onBack"].(string))
+	if asked != 1 {
+		t.Errorf("the route's own OnBack ran %d times, want 1", asked)
+	}
+	if d := StackDepth(ctx); d != 2 {
+		t.Errorf("the route claimed back, so Navigator must not also pop; depth = %d", d)
+	}
+}
+
+// A Cached route hands back the same node every pass. Navigator must copy it
+// before adding onBack, or the cached node would keep whichever callback ID the
+// first poppable pass wrote into it.
+func TestNavigatorDoesNotWriteBackIntoACachedNode(t *testing.T) {
+	ctx := NewContext()
+	cached := Cached(Text("detail"))
+	app := Navigator(counterRoute("home"))
+	Render(ctx, app)
+	Push(ctx, func(*Context) View { return cached })
+
+	n := Render(ctx, app)
+	if _, ok := n.Props["onBack"]; !ok {
+		t.Fatal("the pushed Cached route should still claim back")
+	}
+	if _, leaked := cached.Render(ctx).Props["onBack"]; leaked {
+		t.Error("Navigator wrote onBack into the shared Cached node")
+	}
+}

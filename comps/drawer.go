@@ -77,9 +77,12 @@ import "github.com/rohanthewiz/grmob/core"
 //   - Keyboard containment on the web. aria-hidden does not stop Tab and core
 //     has no inert, so Tab past the panel's last control still reaches the
 //     hidden screen. Recorded, not fixed: it needs a renderer.
-//   - The Android back button. A Dialog closes on it; a layer does not, and
-//     core has no back-press hook to take. The ✕, a destination and the scrim
-//     are the ways out.
+//   - The Android back button. A Dialog closes on it; a layer does not, so
+//     the panel layer carries core.OnBack(OnDismiss) while open. The panel is
+//     inside the screen and composed after it, so back closes the drawer
+//     before a Navigator pops or an AppBar's back runs; the next back is
+//     theirs. With OnDismiss nil there is nothing to call and back falls
+//     through to them.
 //
 // # It covers its own box, so give it one
 //
@@ -129,9 +132,10 @@ type Drawer struct {
 	// Open is the caller's open/shut state.
 	Open bool
 
-	// OnDismiss is called for the ✕, for a scrim tap, and after any
-	// destination. Nil draws no ✕ and leaves the scrim inert, so the drawer
-	// closes only when the caller flips Open.
+	// OnDismiss is called for the ✕, for a scrim tap, after any destination,
+	// and for Android's system back while open. Nil draws no ✕, leaves the
+	// scrim inert and claims no back, so the drawer closes only when the
+	// caller flips Open.
 	OnDismiss func()
 
 	// Title names the panel: its heading and the navigation landmark's
@@ -243,6 +247,14 @@ func (d Drawer) panelLayer(t *core.Theme) core.View {
 		// Row's own flex display comes back on the web's total style pass
 		// rather than being overwritten by a block or inline keyword.
 		items = append(items, core.Display(core.DisplayNone))
+	} else if d.OnDismiss != nil {
+		// System back, on the layer rather than the ✕ because comps.Button
+		// takes style props only, and the layer is the node Display toggles.
+		// Open only: a shut panel is not composed on Android anyway, but the
+		// prop left on would register a callback every pass for a drawer
+		// nobody can see, and any other reader of the tree would see back
+		// claimed by a closed drawer.
+		items = append(items, core.OnBack(d.OnDismiss))
 	}
 	items = append(items, d.panel(t), d.scrim())
 	return core.Row(items...)
