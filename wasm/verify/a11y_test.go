@@ -1,8 +1,12 @@
 package main
 
 import (
+	"regexp"
 	"strings"
 	"testing"
+
+	"github.com/rohanthewiz/grmob/core"
+	"github.com/rohanthewiz/grmob/htmlout"
 )
 
 // The accessibility attributes are authored twice — htmlout builds a static
@@ -171,6 +175,10 @@ func TestRuntimeGuardsTheExpandedStateTheSameWay(t *testing.T) {
 			"selection's does not"},
 		{`case "listbox":`, "the listbox arm — the popup half of a combobox, and the other " +
 			"role the two lists disagree about"},
+		{`case "tab":
+            case "combobox":
+                return value;`, "the combobox arm, which ARIA *requires* the attribute on: " +
+			"whether the popup shows is the one state a combobox cannot leave unsaid"},
 		{`return nodeType === "Button" ? value : "";`,
 			"the node type standing in for an unstated role. ARIA's disclosure pattern is a " +
 				"button, so without this the attribute would be defined for exactly the node " +
@@ -193,6 +201,59 @@ func TestRuntimeGuardsTheExpandedStateTheSameWay(t *testing.T) {
 		t.Error("grmob-runtime.js: applyAccessibility does not write aria-expanded " +
 			"unconditionally — an update-style patch carries the whole new Style, so a " +
 			"guarded write leaves a stale state standing")
+	}
+}
+
+// The popup kind's guard, which htmlout's ariaHasPopup applies as well.
+//
+// A fifth role list, and the one ARIA 1.2 shortened by retiring the attribute
+// as a global. Pinned by behaviour as well as by quotation: the arms are read
+// out of the runtime's switch and compared with the roles htmlout writes the
+// attribute for, over every core.Role, so the two cannot disagree at a role
+// nobody thought to list — and aria/verify holds htmlout's side to ARIA.
+func TestRuntimeGuardsThePopupTheSameWay(t *testing.T) {
+	src := runtimeSource(t)
+	for _, want := range []struct{ expr, why string }{
+		{`function ariaHasPopup(style, nodeType) {`,
+			"the function htmlout's ariaHasPopup mirrors"},
+		{`const value = style.AccessibilityHasPopup || "";`,
+			"reading the field at all — an unread key is not an error in JavaScript"},
+		{`setOrRemove(el, "aria-haspopup", hidden ? "" : ariaHasPopup(style, nodeType));`,
+			"the totality rule: written on every call, so a trigger that stops opening " +
+				"anything stops saying so"},
+	} {
+		if !strings.Contains(src, want.expr) {
+			t.Errorf("grmob-runtime.js: missing %q — %s", want.expr, want.why)
+		}
+	}
+
+	const head = "function ariaHasPopup(style, nodeType) {"
+	start := strings.Index(src, head)
+	if start < 0 {
+		return
+	}
+	end := strings.Index(src[start:], "\n    }\n")
+	if end < 0 {
+		t.Fatal("grmob-runtime.js: ariaHasPopup has no closing brace at function depth")
+	}
+	body := src[start : start+end]
+	arms := map[string]bool{}
+	for _, m := range regexp.MustCompile(`case "([a-z]+)":`).FindAllStringSubmatch(body, -1) {
+		arms[m[1]] = true
+	}
+	for _, role := range core.Roles() {
+		out := htmlout.ExportHTML(&core.Node{Type: "Box", Style: &core.Style{
+			AccessibilityRole:     role,
+			AccessibilityHasPopup: core.PopupDialog,
+		}})
+		if exported := strings.Contains(out, "aria-haspopup="); exported != arms[string(role)] {
+			t.Errorf("role %q: htmlout writes aria-haspopup %v, the runtime's switch has an "+
+				"arm %v — the two web targets disagree about a popup", role, exported, arms[string(role)])
+		}
+	}
+	if !strings.Contains(body, `return nodeType === "Button" ? value : "";`) {
+		t.Error("grmob-runtime.js: ariaHasPopup does not let a Button node carry the popup " +
+			"with no role — comps.Menu's trigger is exactly that node")
 	}
 }
 

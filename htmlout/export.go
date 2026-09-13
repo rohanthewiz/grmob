@@ -982,6 +982,10 @@ func ModalChassis() [][2]string {
 // is neither of the other two — see ariaExpanded, which is where the three
 // lists are set against each other.
 //
+// A popup kind maps to aria-haspopup, guarded by a list of its own again — see
+// ariaHasPopup. aria-activedescendant is not written here at all: which option
+// a combobox's arrows reached is behaviour, and only the runtime has it.
+//
 // A Modal gets role="dialog" and aria-modal="true" from its node type rather
 // than from a Style, which is modalSemantics' subject; a Switch gets
 // role="switch" the same way. selfRoleSemantics is the seam both arrive
@@ -1048,6 +1052,9 @@ func accessibilityAttrs(s *core.Style, nodeType string, roleImposed bool) []stri
 	}
 	if expanded := ariaExpanded(s, nodeType); expanded != "" {
 		attrs = append(attrs, "aria-expanded", expanded)
+	}
+	if popup := ariaHasPopup(s, nodeType); popup != "" {
+		attrs = append(attrs, "aria-haspopup", popup)
 	}
 	attrs = append(attrs, ariaValue(s)...)
 	if s.AccessibilityID != "" {
@@ -1339,7 +1346,9 @@ func ariaSelected(s *core.Style, nodeType string) (string, string) {
 // aria-expanded is defined for application, button, checkbox, combobox,
 // gridcell, link, listbox, menuitem, row, rowheader, tab and treeitem, and
 // inherits into columnheader, menuitemcheckbox, menuitemradio and switch. Of
-// those, core.Role carries button, link, listbox, row, tab and columnheader.
+// those, core.Role carries button, link, listbox, row, tab, columnheader and
+// combobox — the last of which ARIA *requires* it on, since whether the popup
+// is showing is the one state a combobox cannot leave unsaid.
 //
 // The overlap with ariaSelected's list is partial in both directions, which is
 // the fact worth stating because the two guards look like they should be one:
@@ -1373,11 +1382,52 @@ func ariaExpanded(s *core.Style, nodeType string) string {
 	}
 	value := string(s.AccessibilityExpanded)
 	switch s.AccessibilityRole {
-	case core.RoleButton, core.RoleLink, core.RoleListBox, core.RoleRow, core.RoleColumnHeader, core.RoleTab:
+	case core.RoleButton, core.RoleLink, core.RoleListBox, core.RoleRow, core.RoleColumnHeader, core.RoleTab,
+		core.RoleComboBox:
 		return value
 	case core.RoleNone:
 		// No role of its own: the node type is the only thing left that can
 		// say what this is, and <button> is the one that discloses.
+		if nodeType == "Button" {
+			return value
+		}
+	}
+	return ""
+}
+
+// ariaHasPopup renders core.Style.AccessibilityHasPopup as the aria-haspopup
+// value, or "" when there is nothing valid to write.
+//
+// # A fifth role list, and the one ARIA 1.2 shortened
+//
+// aria-haspopup was a global in ARIA 1.1. ARIA 1.2 kept it on the roles that
+// state it — application, button, combobox, gridcell, link, menuitem, slider,
+// tab, textbox and treeitem — let columnheader, rowheader and the two checkable
+// menu items inherit it, and deprecated it everywhere else. Of those, core.Role
+// carries button, link, tab, columnheader and combobox, which is the switch.
+//
+// The deprecation is published as prose beside each inherited anchor, and the
+// fixture generator reads it (aria/spec's deprecatedHere) — before it did, the
+// generated fixture reported the attribute on every role. aria/verify's
+// state-guard test asks this switch about every role in core.Roles(), so a
+// sixth role here, or a missing one, fails against the specification.
+//
+// Of the five, columnheader is the one no widget uses and is kept anyway: the
+// exporter's job is to write what ARIA allows, and a shortlist of the roles
+// this framework happens to use is the list the fixture exists to replace.
+//
+// A combobox's popup is a listbox by default, so RoleComboBox needs no value to
+// say so. A core.Button gets it with no role, on ariaExpanded's rule: the node
+// type already is a button, and comps.Menu's trigger is one.
+func ariaHasPopup(s *core.Style, nodeType string) string {
+	if s.AccessibilityHasPopup == core.PopupNone {
+		return ""
+	}
+	value := string(s.AccessibilityHasPopup)
+	switch s.AccessibilityRole {
+	case core.RoleButton, core.RoleLink, core.RoleTab, core.RoleColumnHeader, core.RoleComboBox:
+		return value
+	case core.RoleNone:
 		if nodeType == "Button" {
 			return value
 		}

@@ -55,6 +55,10 @@ func TestMenuIsATriggerBesideAnActionSheet(t *testing.T) {
 	if trigger.Style.AccessibilityExpanded != core.ExpandedUnset {
 		t.Error("a trigger that opens a dialog states no expanded state (core.Style's near miss)")
 	}
+	if trigger.Style.AccessibilityHasPopup != core.PopupDialog {
+		t.Errorf("trigger popup = %q, want dialog: the sheet is a Modal, and aria-haspopup "+
+			"is how a reader hears that before the press", trigger.Style.AccessibilityHasPopup)
+	}
 	if modal.Props["visible"] != false {
 		t.Error("Open false must render a closed sheet")
 	}

@@ -17,11 +17,11 @@
       "requiredOwned": ["row"]
     },
     "row": {
-      "attributes": ["aria-level", "aria-selected", "aria-expanded"],
+      "attributes": ["aria-level", "aria-selected", "aria-expanded", "aria-activedescendant"],
       "requiredOwned": ["cell", "columnheader", "gridcell", "rowheader"]
     },
     "columnheader": {
-      "attributes": ["aria-selected", "aria-expanded"]
+      "attributes": ["aria-selected", "aria-expanded", "aria-haspopup"]
     },
     "cell": {
       "attributes": []
@@ -34,7 +34,7 @@
       "attributes": ["aria-level"]
     },
     "listbox": {
-      "attributes": ["aria-expanded", "aria-orientation"],
+      "attributes": ["aria-expanded", "aria-activedescendant", "aria-orientation"],
       "orientation": "vertical",
       "requiredOwned": ["group", "option"]
     },
@@ -42,17 +42,17 @@
       "attributes": ["aria-selected", "aria-checked"]
     },
     "radiogroup": {
-      "attributes": ["aria-orientation"],
+      "attributes": ["aria-activedescendant", "aria-orientation"],
       "requiredOwned": ["radio"]
     },
     "radio": {
       "attributes": ["aria-checked"]
     },
     "tab": {
-      "attributes": ["aria-selected", "aria-expanded"]
+      "attributes": ["aria-selected", "aria-expanded", "aria-haspopup"]
     },
     "tablist": {
-      "attributes": ["aria-orientation"],
+      "attributes": ["aria-activedescendant", "aria-orientation"],
       "orientation": "horizontal",
       "requiredOwned": ["tab"]
     },
@@ -69,7 +69,7 @@
       "attributes": []
     },
     "toolbar": {
-      "attributes": ["aria-orientation"],
+      "attributes": ["aria-activedescendant", "aria-orientation"],
       "orientation": "horizontal"
     },
     "status": {
@@ -85,10 +85,10 @@
       "attributes": ["aria-level"]
     },
     "button": {
-      "attributes": ["aria-pressed", "aria-expanded"]
+      "attributes": ["aria-pressed", "aria-expanded", "aria-haspopup"]
     },
     "link": {
-      "attributes": ["aria-expanded"]
+      "attributes": ["aria-expanded", "aria-haspopup"]
     },
     "img": {
       "attributes": []
@@ -96,8 +96,11 @@
     "progressbar": {
       "attributes": ["aria-valuenow", "aria-valuemin", "aria-valuemax", "aria-valuetext"]
     },
+    "combobox": {
+      "attributes": ["aria-expanded", "aria-haspopup", "aria-activedescendant"]
+    },
     "group": {
-      "attributes": []
+      "attributes": ["aria-activedescendant"]
     },
     "generic": {
       "attributes": []
@@ -109,7 +112,7 @@
       "attributes": ["aria-checked", "aria-expanded"]
     },
     "gridcell": {
-      "attributes": ["aria-selected", "aria-expanded"]
+      "attributes": ["aria-selected", "aria-expanded", "aria-haspopup"]
     },
     "meter": {
       "attributes": ["aria-valuenow", "aria-valuemin", "aria-valuemax", "aria-valuetext"]
@@ -119,19 +122,19 @@
       "orientation": "vertical"
     },
     "slider": {
-      "attributes": ["aria-orientation", "aria-valuenow", "aria-valuemin", "aria-valuemax", "aria-valuetext"],
+      "attributes": ["aria-haspopup", "aria-orientation", "aria-valuenow", "aria-valuemin", "aria-valuemax", "aria-valuetext"],
       "orientation": "horizontal"
     },
     "spinbutton": {
-      "attributes": ["aria-valuenow", "aria-valuemin", "aria-valuemax", "aria-valuetext"]
+      "attributes": ["aria-activedescendant", "aria-valuenow", "aria-valuemin", "aria-valuemax", "aria-valuetext"]
     },
     "menu": {
-      "attributes": ["aria-orientation"],
+      "attributes": ["aria-activedescendant", "aria-orientation"],
       "orientation": "vertical",
       "requiredOwned": ["group", "menuitem", "menuitemcheckbox", "menuitemradio"]
     },
     "menubar": {
-      "attributes": ["aria-orientation"],
+      "attributes": ["aria-activedescendant", "aria-orientation"],
       "orientation": "horizontal",
       "requiredOwned": ["group", "menuitem", "menuitemcheckbox", "menuitemradio"]
     },
@@ -140,35 +143,32 @@
       "orientation": "horizontal"
     },
     "tree": {
-      "attributes": ["aria-orientation"],
+      "attributes": ["aria-activedescendant", "aria-orientation"],
       "orientation": "vertical",
       "requiredOwned": ["group", "treeitem"]
     },
     "treegrid": {
-      "attributes": ["aria-orientation"],
+      "attributes": ["aria-activedescendant", "aria-orientation"],
       "requiredOwned": ["row", "rowgroup"]
     },
     "treeitem": {
-      "attributes": ["aria-level", "aria-selected", "aria-checked", "aria-expanded"]
+      "attributes": ["aria-level", "aria-selected", "aria-checked", "aria-expanded", "aria-haspopup"]
     },
     "rowheader": {
-      "attributes": ["aria-selected", "aria-expanded"]
-    },
-    "combobox": {
-      "attributes": ["aria-expanded"]
+      "attributes": ["aria-selected", "aria-expanded", "aria-haspopup"]
     },
     "grid": {
-      "attributes": [],
+      "attributes": ["aria-activedescendant"],
       "requiredOwned": ["row", "rowgroup"]
     },
     "menuitem": {
-      "attributes": ["aria-expanded"]
+      "attributes": ["aria-expanded", "aria-haspopup"]
     },
     "menuitemcheckbox": {
-      "attributes": ["aria-checked", "aria-expanded"]
+      "attributes": ["aria-checked", "aria-expanded", "aria-haspopup"]
     },
     "menuitemradio": {
-      "attributes": ["aria-checked", "aria-expanded"]
+      "attributes": ["aria-checked", "aria-expanded", "aria-haspopup"]
     }
   }
 }

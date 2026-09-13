@@ -84,7 +84,9 @@ import (
 // package exists to stop producing.
 type Role struct {
 	// Attributes are the aria-* attributes the role supports, inherits or
-	// requires, with the ones it explicitly prohibits removed. Sorted.
+	// requires, with the ones it explicitly prohibits removed, and the
+	// inherited ones ARIA 1.2 deprecates on this role dropped (see
+	// deprecatedHere). Sorted.
 	//
 	// The three sources are unioned because ARIA's own guards do not
 	// distinguish them: an author may write aria-selected on an `option`
@@ -263,6 +265,51 @@ func uniqueSorted(in []string) []string {
 	return out
 }
 
+// deprecatedHere returns the attributes an inherited-attributes cell marks as
+// deprecated on the role it belongs to.
+//
+// # Why the parser has to read the annotation at all
+//
+// ARIA 1.2 retired four attributes as globals — aria-disabled,
+// aria-errormessage, aria-haspopup and aria-invalid — while keeping them on the
+// roles that state them. The retirement is published as prose beside the
+// anchor, in every role that still inherits the attribute from `roletype`:
+//
+//	<li><a href="#aria-haspopup" …><code>aria-haspopup</code></a>
+//	    <strong>(deprecated on this role in ARIA 1.2)</strong></li>
+//
+// The union in parseDoc read only anchors, so until aria-haspopup came into
+// scope it reported that attribute on every role in the specification —
+// `table`, `heading`, `img` — which is exactly the reading ARIA 1.2 turned
+// down. None of the other three is in scope, which is why the omission was
+// invisible: nothing had asked.
+//
+// Treated like a prohibition rather than like support, but narrower: only the
+// inherited half is filtered. A role that states the attribute in its own
+// Supported cell keeps it however the inherited cell reads, because a
+// deprecation "on this role" of the global cannot retract the role's own
+// statement — `button` lists aria-haspopup as supported and is the case this
+// attribute exists for.
+//
+// Split on <li> rather than matched by one regex, because the annotation is a
+// sibling of the anchor inside the same list item, and Go's regexp has no
+// lookahead to keep a match from running on into the next item. A markup change
+// that dropped the <li>s would make this find nothing and put aria-haspopup
+// back on every role — which aria/verify's state-guard test reports loudly, as
+// every role in core.Roles() demanding the attribute at once.
+func deprecatedHere(frag string) map[string]bool {
+	out := map[string]bool{}
+	for _, item := range strings.Split(frag, "<li>") {
+		if !strings.Contains(item, "(deprecated on this role") {
+			continue
+		}
+		if m := attrRef.FindStringSubmatch(item); m != nil {
+			out[m[1]] = true
+		}
+	}
+	return out
+}
+
 func refs(re *regexp.Regexp, frag string) []string {
 	var out []string
 	for _, m := range re.FindAllStringSubmatch(frag, -1) {
@@ -345,8 +392,17 @@ func parseDoc(html string) (Doc, int) {
 		var r Role
 
 		// Supported, inherited and required are one question; see Role.Attributes.
+		//
+		// Except where the inherited cell says an attribute is deprecated on
+		// this role, which it drops before the union. See deprecatedHere.
 		attrs := refs(attrRef, cell(body, "role-properties"))
-		attrs = append(attrs, refs(attrRef, cell(body, "role-inherited"))...)
+		inherited := cell(body, "role-inherited")
+		stale := deprecatedHere(inherited)
+		for _, a := range refs(attrRef, inherited) {
+			if !stale[a] {
+				attrs = append(attrs, a)
+			}
+		}
 		attrs = append(attrs, refs(attrRef, cell(body, "role-required-properties"))...)
 
 		// Prohibited comes off the top. `caption` inherits aria-label from its

@@ -80,12 +80,16 @@ import "github.com/rohanthewiz/grmob/core"
 //
 // # What the trigger announces
 //
-// Its own label and hint, and no expanded state. core.Style's disclosure
-// table names this exact near miss: a control that opens a dialog is not
-// expanded, ARIA spells the relationship aria-haspopup, and core does not
-// carry it. Once the sheet is open the Modal's dialog role is what a reader
-// is inside. An icon trigger such as "⋯" needs Trigger.AccessibilityLabel,
-// and a picker's trigger reads best with the current value in its label.
+// Its own label and hint, and that it opens a dialog: the trigger carries
+// core.AccessibilityHasPopup(core.PopupDialog), which both web targets write
+// as aria-haspopup="dialog". It states no expanded state, which is
+// core.Style's disclosure near miss: a control that opens a dialog is not
+// expanded. The value is dialog and not menu because the sheet is a dialog of
+// buttons to a reader, not an ARIA menu with a menu's keyboard; see
+// core.PopupKind. Once the sheet is open the Modal's dialog role is what a
+// reader is inside. An icon trigger such as "⋯" needs
+// Trigger.AccessibilityLabel, and a picker's trigger reads best with the
+// current value in its label.
 //
 // # Theme roles read
 //
@@ -132,6 +136,10 @@ func (m Menu) Render(ctx *core.Context) *core.Node {
 	// Button already swaps a nil OnTap for a no-op before registering it, so
 	// a nil OnOpen needs no guard here.
 	trigger.OnTap = m.OnOpen
+	// It opens a dialog, and says so. Stated ahead of the template's own
+	// Style so a caller can still restate it, and on a fresh slice so the
+	// caller's backing array is never written through.
+	trigger.Style = append([]core.StyleProp{core.AccessibilityHasPopup(core.PopupDialog)}, m.Trigger.Style...)
 
 	return core.Row(
 		// The wrapper exists only because Render returns one node. No padding

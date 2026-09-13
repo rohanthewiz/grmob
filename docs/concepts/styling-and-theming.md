@@ -246,6 +246,7 @@ core.AccessibilityHeadingLevel(2)                // and how deep it sits
 core.AccessibilityNestingLevel(2)                // the same question for a nested list item
 core.AccessibilitySelected(core.SelectedOn)      // and whether this control is *on*
 core.AccessibilityExpanded(core.ExpandedOpen)    // ...and whether this disclosure is *open*
+core.AccessibilityHasPopup(core.PopupDialog)     // ...or that it opens a dialog instead
 core.AccessibilityID("app-panel")                // names this element so another can point at it
 core.AccessibilityControls("app-panel")          // ...and the pointing
 ```
@@ -761,6 +762,7 @@ down on two grounds, and the second is the one you will hit:
   | `tab`, `row`, `columnheader` | `aria-selected` | ✅ |
   | `option` | `aria-selected` | ❌ |
   | `link`, `listbox` | ❌ | ✅ |
+  | `combobox` | ❌ | ✅ (required) |
 
   An `option` is a leaf choice — the thing that expands is the `listbox` around
   it. A shared guard would be wrong at four roles, and wrong silently.
@@ -799,6 +801,29 @@ even flips a glyph, deliberately states nothing.
 That split runs the opposite way to the usual one, where the two phones agree
 and the web is the strict target. Here the web and Android both say something
 and iOS says nothing.
+
+#### `AccessibilityHasPopup`
+
+What a control **opens**, for the trigger that is not a disclosure. An
+accordion header's content is in the page and `AccessibilityExpanded` says
+whether it shows; a button that presents a `core.Modal` moves the reader into a
+new surface, and ARIA's word for that is `aria-haspopup`.
+
+```go
+comps.Button{Label: "⋯", AccessibilityLabel: "Note actions",
+    Style: []core.StyleProp{core.AccessibilityHasPopup(core.PopupDialog)}}
+```
+
+`core.PopupKind` carries one value, `PopupDialog`, where ARIA has seven. The
+others are left out on purpose: `menu` (and its synonym `true`) would announce a
+menu keyboard nothing supplies, `listbox` is a combobox's implicit popup and needs
+no attribute, and `tree` and `grid` are patterns core refuses. `comps.Menu` and
+`comps.DatePicker` set it for you — both open a Modal.
+
+ARIA 1.2 retired the attribute as a global, so it is written only on `button`,
+`link`, `tab`, `columnheader` and `combobox` (and on a `core.Button` with no role).
+Neither native reads it: both present a Modal as a platform dialog that announces
+itself when it opens.
 
 #### `AccessibilityID` and `AccessibilityControls`
 

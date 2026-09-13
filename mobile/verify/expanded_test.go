@@ -225,3 +225,39 @@ func TestSwiftNamesTheValueChannelItIsNotUsing(t *testing.T) {
 			"grows the member, this fails and hands over the paragraph to rewrite", swiftStyle)
 	}
 }
+
+// core.Style.AccessibilityHasPopup — the near miss the expanded field turns
+// down, given a field of its own — is a gap on *both* natives, and is pinned the
+// way idref_test.go pins its pair: a note in each file where the mapping would
+// be looked for, and no parse. Neither platform has a property for what a
+// control opens, and both present a Modal as a platform dialog that announces
+// itself, so the warning arrives there one step late rather than not at all.
+func TestBothNativesWriteDownThePopupGap(t *testing.T) {
+	for _, pin := range []struct{ file, property string }{
+		// The near miss each note turns down, named because it is the specific
+		// wrong mapping: a TextField announced as a drop-down, and an English
+		// hint written into the app's own slot.
+		{kotlinStyle, "Role.DropdownList"},
+		{swiftStyle, "`accessibilityHint`"},
+	} {
+		prose := proseIn(t, pin.file)
+		if !strings.Contains(prose, "AccessibilityHasPopup is not read here either") {
+			t.Errorf("%s: no note saying AccessibilityHasPopup is not read — a field a "+
+				"renderer silently ignores is indistinguishable from one nobody had heard of",
+				pin.file)
+		}
+		if !strings.Contains(prose, pin.property) {
+			t.Errorf("%s: the popup note does not name %s, the mapping it is turning down",
+				pin.file, pin.property)
+		}
+	}
+}
+
+func TestNeitherNativeParsesThePopupField(t *testing.T) {
+	for _, file := range []string{kotlinStyle, swiftStyle} {
+		if strings.Contains(codeIn(t, file), `AccessibilityHasPopup"`) {
+			t.Errorf("%s: parses AccessibilityHasPopup — if the platform grew a popup "+
+				"property, the note that says it has none has to go too", file)
+		}
+	}
+}

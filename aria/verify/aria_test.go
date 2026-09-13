@@ -65,7 +65,7 @@ func TestEveryCoreRoleIsAnARIARole(t *testing.T) {
 	}
 }
 
-// The four state guards, each checked in both directions against the fixture.
+// The five state guards, each checked in both directions against the fixture.
 //
 // This is the check the prose could not be: a role list in a doc comment agrees
 // with the switch beside it only if a person compared them, and the two web
@@ -88,12 +88,13 @@ func TestTheStateGuardsMatchARIAsScoping(t *testing.T) {
 			AccessibilityNestingLevel: 3,
 			AccessibilitySelected:     core.SelectedOn,
 			AccessibilityExpanded:     core.ExpandedOpen,
+			AccessibilityHasPopup:     core.PopupDialog,
 			AccessibilityValue:        core.ValueOf(45, 0, 100).WithText("45 percent"),
 		}
 		out := htmlout.ExportHTML(&core.Node{Type: "Box", Style: style})
 
 		for _, attr := range []string{
-			"aria-level", "aria-expanded",
+			"aria-level", "aria-expanded", "aria-haspopup",
 			"aria-valuenow", "aria-valuemin", "aria-valuemax", "aria-valuetext",
 		} {
 			want := spec.supports(string(role), attr)
@@ -136,6 +137,33 @@ func TestTheStateGuardsMatchARIAsScoping(t *testing.T) {
 				"is one state, stated in exactly one of the spellings the role takes\n%s",
 				role, supported, written, out)
 		}
+	}
+}
+
+// The combobox pattern's attributes are ARIA's own on the role core gives the
+// field. Two are written by both exporters and already reach the state-guard
+// test above; aria-activedescendant has one writer, the runtime's combobox
+// keyboard, and this is the half of that claim the fixture can check — that
+// ARIA defines the attribute on the role the runtime writes it onto.
+// wasm/verify/keynav_test.go holds the other half: that it is written nowhere
+// else.
+func TestTheComboboxStatesWhatARIADefinesForIt(t *testing.T) {
+	spec := loadSpec(t)
+	for _, attr := range []string{"aria-expanded", "aria-activedescendant", "aria-haspopup"} {
+		if !spec.supports(string(core.RoleComboBox), attr) {
+			t.Errorf("the fixture says %q does not take %s — the combobox pattern "+
+				"(core.RoleComboBox) states it there, so either the pattern or the "+
+				"fixture is wrong", core.RoleComboBox, attr)
+		}
+	}
+	// And the reason core.PopupKind has no listbox: ARIA 1.2 removed the
+	// attribute as a global, so the popup a combobox's field names is only
+	// ever described by the combobox's own implicit value.
+	if spec.supports(string(core.RoleListBox), "aria-haspopup") {
+		t.Error("the fixture says a listbox takes aria-haspopup — ARIA 1.2 deprecates " +
+			"it there, and aria/spec's deprecatedHere is what reads that; a fixture " +
+			"that disagrees has probably lost the annotation and reports the attribute " +
+			"on every role")
 	}
 }
 

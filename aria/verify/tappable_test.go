@@ -49,8 +49,8 @@ import (
 // value, derive it independently, and let the two disagree in a test rather
 // than in somebody's memory.
 
-// roleKind is why a role is not a tappable container. Four of the seven are
-// derived below; three are prose, and the split is the point of the type.
+// roleKind is why a role is not a tappable container. Four of the eight are
+// derived below; four are prose, and the split is the point of the type.
 type roleKind string
 
 const (
@@ -65,7 +65,7 @@ const (
 	// range to.
 	kindValued roleKind = "valued"
 
-	// The three with no authority in the fixture. ARIA's landmark and live
+	// The four with no authority in the fixture. ARIA's landmark and live
 	// region groupings are prose in the specification's own text rather than
 	// rows in a role definition, and `aria/gen` reads role definitions — so
 	// nothing generated from the specification can contradict these three, and
@@ -78,6 +78,10 @@ const (
 	// is what a role is when it is none of the above, so a derivation for it
 	// would be the negation of the other six and would agree with anything.
 	kindContent roleKind = "content"
+	// And a field: a role for the element a caret is in. ARIA files combobox
+	// under `input`, a superclass chain aria/gen does not read, so nothing
+	// generated can say "this is typed into" either.
+	kindField roleKind = "field"
 )
 
 // derivedKinds are the four the fixture and core can answer for. A set rather
@@ -155,6 +159,12 @@ var notTappable = map[core.Role]nonControl{
 	// which core has no role for because core.Slider is a node type that
 	// exports as <input type="range">.
 	core.RoleProgressBar: {kindValued, "ARIA's own progressbar/slider division"},
+
+	// The field that owns a popup list. It goes on a core.Input, whose tab stop
+	// is the <input>'s own, and a toolbar already takes that stop over by tag;
+	// a Box with this role and an OnTap would be a text field nobody can type
+	// into.
+	core.RoleComboBox: {kindField, "a field is typed into, not pressed"},
 }
 
 // The census: every role decided, in one direction and the other.

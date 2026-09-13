@@ -20,7 +20,8 @@ import (
 //
 // Each role here is a case:
 //
-//	widget      the ordinary shape: supported + inherited + required, unioned
+//	widget      the ordinary shape: supported + inherited + required, unioned,
+//	            with one inherited attribute marked deprecated on the role
 //	oriented    an implicit-orientation sentence, which is prose and not a cell
 //	nested      a <section> inside the role description, which a naive scan for
 //	            the next </section> would truncate at — taking the feature table
@@ -44,6 +45,7 @@ const sample = specHeading + `
     <tr><th class="role-inherited-head" scope="row">Inherited States and Properties:</th>
         <td class="role-inherited"><ul>
         <li><a href="#aria-hidden" class="state-reference"><code>aria-hidden</code></a> (state)</li>
+        <li><a href="#aria-haspopup" class="property-reference"><code>aria-haspopup</code></a> <strong>(deprecated on this role in ARIA 1.2)</strong></li>
         </ul></td></tr>
     <tr><th class="role-required-properties-head" scope="row">Required States and Properties:</th>
         <td class="role-required-properties"><ul>
@@ -138,6 +140,45 @@ func TestTheThreeAttributeCellsAreUnioned(t *testing.T) {
 	want := []string{"aria-expanded", "aria-hidden", "aria-selected"}
 	if strings.Join(got, ",") != strings.Join(want, ",") {
 		t.Errorf("widget.Attributes = %v, want %v", got, want)
+	}
+}
+
+// ARIA 1.2 retired aria-haspopup as a global and says so beside the anchor in
+// every role that still inherits it: "(deprecated on this role in ARIA 1.2)".
+// Read as anchors alone, that cell put the attribute on every role in the
+// specification — `table`, `heading`, `img` — which is the reading 1.2 turned
+// down, and it went unnoticed only because nothing in scope had asked.
+//
+// The widget above inherits it marked deprecated, and
+// TestTheThreeAttributeCellsAreUnioned already expects it absent; this adds
+// the other half, that a role's own Supported cell is not retracted by the
+// marker — `button` states aria-haspopup, and a deprecation of the global
+// cannot take it back.
+func TestAnAttributeDeprecatedOnTheRoleIsNotInherited(t *testing.T) {
+	for _, a := range parseSample(t)["widget"].Attributes {
+		if a == "aria-haspopup" {
+			t.Errorf("widget inherits aria-haspopup marked deprecated on this role, " +
+				"and the parse kept it — every role in ARIA would report the attribute")
+		}
+	}
+
+	doc, _ := parseDoc(`<section class="role notoc" id="trigger">
+  <table class="role-features"><tbody>
+    <tr><th class="role-properties-head" scope="row">Supported States and Properties:</th>
+        <td class="role-properties"><a href="#aria-haspopup" class="property-reference"><code>aria-haspopup</code></a></td></tr>
+    <tr><th class="role-inherited-head" scope="row">Inherited States and Properties:</th>
+        <td class="role-inherited"><ul>
+        <li><a href="#aria-haspopup" class="property-reference"><code>aria-haspopup</code></a> <strong>(deprecated on this role in ARIA 1.2)</strong></li>
+        <li><a href="#aria-hidden" class="state-reference"><code>aria-hidden</code></a> (state)</li>
+        </ul></td></tr>
+    <tr><th class="role-namefrom-head" scope="row">Name From:</th>
+        <td class="role-namefrom">author</td></tr>
+  </tbody></table>
+</section>`)
+	got := strings.Join(doc["trigger"].Attributes, ",")
+	if want := "aria-haspopup,aria-hidden"; got != want {
+		t.Errorf("trigger.Attributes = %s, want %s — a role that states the attribute "+
+			"keeps it, and the neighbouring inherited item is not swept up with it", got, want)
 	}
 }
 

@@ -501,3 +501,87 @@ func TestBothNestedCompositeOutcomesAreReachable(t *testing.T) {
 			len(core.KeyboardComposites())*len(core.KeyboardComposites()))
 	}
 }
+
+// The combobox pattern, where a tidy-up would undo it.
+//
+// Three structural claims and one census. The claims are that a listbox which
+// is a combobox's popup stands down before the composite pass writes a tab stop
+// onto its options; that applyFocusCommand declines the blur a keyboard pick
+// caused; and that applyAccessibility is what stamps the keyboard and clears a
+// stale active option when the popup closes. Each is one line whose removal
+// compiles and runs — the options become tab stops again, or focus falls onto
+// the page after Enter, which is the bug the pattern was adopted to close.
+//
+// The census is aria-activedescendant's writers. ARIA defines the attribute on
+// combobox (aria/verify checks that), and the runtime must write it nowhere
+// else: on a listbox or a tablist it would be a second statement of which member
+// is active, beside the roving tabindex that already says so.
+//
+// And the static export writes the semantic half and none of the behaviour,
+// the same line TestTheStaticExportWritesNoRovingTabindex holds.
+func TestTheComboboxKeyboardIsWiredWhereItClaims(t *testing.T) {
+	src := runtimeSource(t)
+	for _, want := range []struct{ expr, why string }{
+		{`        if (isComboboxPopup(container)) {
+            standDownPopup(container);
+            return;
+        }
+        const members = compositeMembersOf(container);`,
+			"syncComposite asking whether a listbox is a popup before it writes a roving tabindex"},
+		{`if (comboboxClaimsEnter(el, e)) return false;`,
+			"the onSubmit filter yielding Enter to a combobox that has reached an option — " +
+				"without it a pick in a focus order also runs the Next action"},
+		{`document.activeElement === target && !keptByComboboxPick(target)`,
+			"applyFocusCommand declining the one blur a keyboard pick caused"},
+		{`syncCombobox(el, role, hidden ? "" : ariaExpanded(style, nodeType));`,
+			"applyAccessibility stamping the keyboard and clearing the active option as the popup closes"},
+	} {
+		if !strings.Contains(src, want.expr) {
+			t.Errorf("grmob-runtime.js: missing %q — %s", want.expr, want.why)
+		}
+	}
+
+	fn := regexp.MustCompile(`function (\w+)\(`)
+	writers := 0
+	for i := 0; ; {
+		at := strings.Index(src[i:], `"aria-activedescendant"`)
+		if at < 0 {
+			break
+		}
+		at += i
+		names := fn.FindAllStringSubmatch(src[:at], -1)
+		name := ""
+		if len(names) > 0 {
+			name = names[len(names)-1][1]
+		}
+		if !strings.Contains(strings.ToLower(name), "combobox") {
+			t.Errorf("grmob-runtime.js: aria-activedescendant is touched in %q, which is not "+
+				"part of the combobox pattern — the attribute has one writer", name)
+		}
+		writers++
+		i = at + 1
+	}
+	if writers == 0 {
+		t.Error("grmob-runtime.js: nothing touches aria-activedescendant — the combobox " +
+			"keyboard has lost the attribute that tells a reader which option is active")
+	}
+
+	out := htmlout.ExportHTML(&core.Node{
+		Type:  "Input",
+		Props: map[string]any{"value": "an", "placeholder": "Country"},
+		Style: &core.Style{
+			AccessibilityRole:     core.RoleComboBox,
+			AccessibilityExpanded: core.ExpandedOpen,
+			AccessibilityControls: "country-list",
+		},
+	})
+	for _, want := range []string{`role="combobox"`, `aria-expanded="true"`, `aria-controls="country-list"`} {
+		if !strings.Contains(out, want) {
+			t.Errorf("htmlout: a combobox field exports without %s\n%s", want, out)
+		}
+	}
+	if strings.Contains(out, "aria-activedescendant") {
+		t.Errorf("htmlout wrote aria-activedescendant — which option a keystroke reached is "+
+			"behaviour, and a static page has no keystrokes\n%s", out)
+	}
+}

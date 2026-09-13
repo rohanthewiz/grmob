@@ -1344,6 +1344,13 @@ const GrMob = (() => {
     // replace has no stamp and gets one, which is the case the stamp exists
     // for.
     function syncComposite(container) {
+        // A listbox that is a combobox's popup holds no tab stop: focus stays
+        // in the field and the options are reached through
+        // aria-activedescendant. See "The combobox pattern".
+        if (isComboboxPopup(container)) {
+            standDownPopup(container);
+            return;
+        }
         const members = compositeMembersOf(container);
         if (members.length === 0) return;
 
@@ -1598,6 +1605,296 @@ const GrMob = (() => {
         // while the document scrolled underneath is the same widget twice.
         e.preventDefault();
         moveCompositeFocus(container, members, to);
+    }
+
+    // --- The combobox pattern ------------------------------------------------
+    //
+    // A combobox is a text field that owns a popup list, and the one thing its
+    // keyboard must not do is move focus. core.RoleComboBox argues the role;
+    // this is the behaviour, which, like the roving tabindex above, is this
+    // runtime's alone. htmlout writes the role, aria-expanded and aria-controls
+    // and none of what follows.
+    //
+    //	the field (role="combobox")      keeps DOM focus throughout. The caret
+    //	                                 stays put and typing carries on.
+    //	aria-controls -> the listbox     the popup, looked up by id at the
+    //	                                 moment a key arrives.
+    //	aria-activedescendant -> option  which option the arrows reached. A
+    //	                                 reader announces it as though it were
+    //	                                 focused; nothing else is.
+    //	an outline on that option        the sighted half of the same fact: a
+    //	                                 browser draws no focus ring on an
+    //	                                 element that does not have focus.
+    //
+    // # Keys, from ARIA's "list autocomplete with manual selection"
+    //
+    //	ArrowDown / ArrowUp   the next or previous option, wrapping; from none,
+    //	                      the first or the last. Prevented, so the caret
+    //	                      does not also jump to an end of the text.
+    //	Enter                 with an option active, picks it by running its
+    //	                      onClick; with none, left to the field.
+    //	Escape                with an option active, clears it; otherwise left
+    //	                      to the page. ARIA also has Escape close the popup,
+    //	                      and whether the popup shows is Go state that this
+    //	                      runtime cannot change without a render.
+    //	Home, End, Left,      clear the active option and do their editing job:
+    //	Right                 the user has gone back to the text.
+    //	typing                clears it too (the input listener), because the
+    //	                      list is about to be re-filtered under it.
+    //	a modified key        the browser's, as in the typeahead above.
+    //
+    // Selection never follows the arrows. The pick is Go's, through the
+    // option's own OnTap, exactly as a tap is — which is why a disabled option
+    // can be reached and Enter on it changes nothing: comps.SearchableSelect's
+    // handler refuses it, the rule RadioGroup's rows follow.
+    //
+    // Enter is shared with onSubmit. A field in a core.UseFocusOrder carries
+    // one even when the app wrote none — stampTraversal makes it the Next
+    // action — and comps.SearchableSelect's field is exactly that field in the
+    // tutorial's form. Both listeners are on keydown, so the onSubmit filter
+    // asks comboboxClaimsEnter first: Enter with an option reached is the pick
+    // and nothing else, and Enter with none is the form's, as it always was.
+    // A real Chrome is what found this: the first version picked France and
+    // then moved focus on to the City field.
+    //
+    // # State: the DOM again
+    //
+    // Nothing is held. The active option is whatever the field's
+    // aria-activedescendant names, resolved against the popup's options when a
+    // key arrives, so a patch that re-filtered the list or removed it leaves
+    // at worst a reference to an id that is no longer an option, which
+    // resolves to "none" and starts the arrows over. The ids name slots
+    // (comps.SearchableSelect writes ID-option-N), so a reference that
+    // survived a re-filter would name whatever option now fills the slot;
+    // that is why typing clears it, typing being what re-filters.
+    //
+    // # The listbox stands down
+    //
+    // A listbox is otherwise a composite with its own tab stop, and a popup
+    // must not have one: Tab from the field goes on to the next control, past
+    // the list, and the options are reached through the field. So
+    // syncComposite asks isComboboxPopup first and removes any tabindex an
+    // earlier sync wrote.
+    //
+    // Asked from the listbox's side, by a document query for the field that
+    // names it, rather than by the field marking its popup. The popup is
+    // inserted and patched on its own (every keystroke re-filters the rows),
+    // and a batch that touches only the list never reaches the field, so a
+    // mark written from the field's side would be missing exactly when the
+    // list was rebuilt. Both live paths run the composite pass with the tree
+    // attached — mount appends first, and a batch lands every patch first —
+    // which is what lets a document query see both halves.
+    //
+    // # A keyboard pick keeps focus in the field
+    //
+    // comps.SearchableSelect's pick calls core.DismissKeyboard, because on a
+    // phone the choice is made and the keyboard is in the way. On the web that
+    // command blurs the focused field, and after a pick by Enter the focused
+    // field is this one, so a keyboard user who never left the field was
+    // dropped onto the page. Go cannot tell a key from a tap and should not
+    // have to; this runtime can. Enter records the field it picked from, and
+    // applyFocusCommand declines the one blur that arrives for that field
+    // within COMBOBOX_PICK_KEEP_MS. A tap records nothing and is dismissed as
+    // before — a tap on an option has taken focus from the field already.
+    //
+    // A window rather than "the next blur, whenever": the host page's
+    // GoInvokeCallback renders and patches synchronously and the blur runs a
+    // frame later, so the command arrives within milliseconds or not at all,
+    // and a pick whose handler never dismissed must not leave behind a token
+    // that swallows a legitimate dismiss later. The next key in the field, or
+    // the next edit, clears it as well.
+
+    // How long a keyboard pick protects its field from the dismiss it causes:
+    // generous against a slow frame, short against anything a person does.
+    const COMBOBOX_PICK_KEEP_MS = 500;
+
+    // The field a keyboard pick was made from, when, and the keydown that made
+    // it. One record, for the reason the typeahead buffer is one: only one
+    // element has focus. The event is for comboboxClaimsEnter, which may be
+    // asked about the same keydown after the pick has already closed the list.
+    const comboboxPick = { field: null, at: 0, event: null };
+
+    // The active option's look. Inline, because this runtime writes no
+    // stylesheet, and on a property styleFromGrMob never assigns for a Box or a
+    // Row, so a style patch on the option does not wipe it.
+    //
+    // currentColor rather than a fixed colour or the Highlight system colour.
+    // The runtime has no theme to read, and Highlight was the first choice and
+    // measured badly: headless Chrome resolves it to a 60%-alpha pale blue,
+    // well under the 3:1 a focus indicator needs against a white row. The
+    // option's own text colour is the theme's primary ink, which already
+    // clears 4.5:1 against the row it sits on, in a light theme and a dark one
+    // alike. The negative offset draws it inside the row, where the list's
+    // border and radius cannot clip it.
+    const COMBOBOX_ACTIVE_OUTLINE = "2px solid currentColor";
+
+    // Called from applyAccessibility for every element, with the role it just
+    // wrote and the aria-expanded value it just wrote.
+    function syncCombobox(el, role, expanded) {
+        if (role === "combobox" && !el.dataset.grmobCombobox) {
+            // Stamped, because applyAccessibility runs on every style patch
+            // and a second listener would move the arrows two options at a
+            // time. The handlers check the role at fire time, so a field that
+            // stops being a combobox keeps a listener that does nothing.
+            el.dataset.grmobCombobox = "true";
+            el.addEventListener("keydown", handleComboboxKey);
+            el.addEventListener("input", onComboboxInput);
+        }
+        // No active option on a field that is not a combobox, or whose popup
+        // is not showing. This is the pass that sees the popup close: a
+        // pick's render shuts the list and patches the field's aria-expanded
+        // in the same batch.
+        if (role !== "combobox" || expanded !== "true") {
+            clearComboboxActive(el);
+        }
+    }
+
+    // A quoted CSS string for an attribute selector. Ids reach here verbatim
+    // from Go, where core's audit refuses whitespace in one but not a quote.
+    function cssString(value) {
+        return '"' + String(value).replace(/["\\]/g, "\\$&") + '"';
+    }
+
+    // The listbox a combobox controls, or null. Only a listbox counts: an
+    // aria-controls naming anything else is not a popup this keyboard can walk.
+    function comboboxPopup(field) {
+        const id = field.getAttribute("aria-controls");
+        if (!id) return null;
+        const popup = document.querySelector(`[id=${cssString(id)}]`);
+        return popup && popup.getAttribute("role") === "listbox" ? popup : null;
+    }
+
+    // Whether this listbox is some combobox's popup. See "The listbox stands
+    // down" for why the question is asked from this side.
+    function isComboboxPopup(listbox) {
+        if (listbox.getAttribute("role") !== "listbox") return false;
+        const id = listbox.getAttribute("id");
+        if (!id) return false;
+        const field = document.querySelector(`[aria-controls=${cssString(id)}]`);
+        return !!field && field.getAttribute("role") === "combobox";
+    }
+
+    // Takes a popup's options out of the tab order, including any tabindex a
+    // sync from before the field named it had written.
+    function standDownPopup(listbox) {
+        for (const option of compositeMembers(listbox, "option")) {
+            option.removeAttribute("tabindex");
+        }
+    }
+
+    function clearComboboxActive(field) {
+        const id = field.getAttribute("aria-activedescendant");
+        if (!id) return;
+        field.removeAttribute("aria-activedescendant");
+        const option = document.querySelector(`[id=${cssString(id)}]`);
+        if (option && option.dataset.grmobActiveOption) {
+            delete option.dataset.grmobActiveOption;
+            option.style.outline = "";
+            option.style.outlineOffset = "";
+        }
+    }
+
+    function setComboboxActive(field, options, index) {
+        clearComboboxActive(field);
+        const option = options[index];
+        const id = option.getAttribute("id");
+        // An option with no id cannot be named by aria-activedescendant, so it
+        // cannot be the active one; a reader would hear nothing. A combobox
+        // built by hand has to give its options ids, which is what
+        // comps.SearchableSelect does.
+        if (!id) return;
+        field.setAttribute("aria-activedescendant", id);
+        option.dataset.grmobActiveOption = "true";
+        option.style.outline = COMBOBOX_ACTIVE_OUTLINE;
+        option.style.outlineOffset = "-2px";
+        if (option.scrollIntoView) option.scrollIntoView({ block: "nearest" });
+    }
+
+    // Declines the blur a keyboard pick caused, once. See "A keyboard pick
+    // keeps focus in the field".
+    function keptByComboboxPick(target) {
+        if (comboboxPick.field !== target) return false;
+        comboboxPick.field = null;
+        return Date.now() - comboboxPick.at <= COMBOBOX_PICK_KEEP_MS;
+    }
+
+    // Whether Enter on this field belongs to the combobox keyboard rather than
+    // to the field's onSubmit. The two listeners are on the same element and
+    // fire in attachment order, which renderNode's props and style passes do
+    // not promise, so this answers either way round: the keydown already was
+    // a pick (the pick's render has since closed the list and cleared the
+    // active option), or it is about to be one (an option is active).
+    function comboboxClaimsEnter(el, e) {
+        if (!el || !el.getAttribute || el.getAttribute("role") !== "combobox") return false;
+        if (comboboxPick.event === e) return true;
+        return comboboxActive(el).at >= 0;
+    }
+
+    // The popup's options and the index of the active one, or -1. The
+    // listbox's own member walk, so an aria-hidden subtree and a nested
+    // listbox are skipped by the rule the composite keyboard uses.
+    function comboboxActive(field) {
+        const popup = comboboxPopup(field);
+        const options = popup ? compositeMembers(popup, "option") : [];
+        const activeId = field.getAttribute("aria-activedescendant");
+        const at = activeId ? options.findIndex((o) => o.getAttribute("id") === activeId) : -1;
+        return { options, at };
+    }
+
+    function onComboboxInput(e) {
+        comboboxPick.field = null;
+        clearComboboxActive(e.currentTarget);
+    }
+
+    // The field's keydown. See the key table above.
+    function handleComboboxKey(e) {
+        const field = e.currentTarget;
+        comboboxPick.field = null;
+        comboboxPick.event = null;
+        if (field.getAttribute("role") !== "combobox") return;
+        if (e.ctrlKey || e.metaKey || e.altKey) return;
+
+        const { options, at } = comboboxActive(field);
+        const activeId = field.getAttribute("aria-activedescendant");
+
+        switch (e.key) {
+            case "ArrowDown":
+            case "ArrowUp": {
+                if (options.length === 0) return;
+                e.preventDefault();
+                const down = e.key === "ArrowDown";
+                const to = at < 0
+                    ? (down ? 0 : options.length - 1)
+                    : (at + (down ? 1 : options.length - 1)) % options.length;
+                setComboboxActive(field, options, to);
+                return;
+            }
+            case "Enter": {
+                if (at < 0) return;
+                // Prevented even for an option with no handler: Enter with an
+                // option active means that option, and a surrounding form
+                // must not be submitted instead.
+                e.preventDefault();
+                const cbId = options[at].dataset.listener_onClick;
+                if (!cbId) return;
+                comboboxPick.field = field;
+                comboboxPick.at = Date.now();
+                comboboxPick.event = e;
+                window.GoInvokeCallback(cbId, {});
+                return;
+            }
+            case "Escape":
+                if (!activeId) return;
+                e.preventDefault();
+                clearComboboxActive(field);
+                return;
+            case "Home":
+            case "End":
+            case "ArrowLeft":
+            case "ArrowRight":
+                clearComboboxActive(field);
+                return;
+        }
     }
 
     // Syncs every composite in a subtree, skipping anything already visited in
@@ -1936,6 +2233,11 @@ const GrMob = (() => {
         setOrRemove(el, "aria-pressed", selected[1]);
         setOrRemove(el, "aria-checked", selected[2]);
         setOrRemove(el, "aria-expanded", hidden ? "" : ariaExpanded(style, nodeType));
+        setOrRemove(el, "aria-haspopup", hidden ? "" : ariaHasPopup(style, nodeType));
+        // The combobox keyboard's listeners, stamped once, and the one
+        // attribute this pass takes back from them when the popup closes. See
+        // "The combobox pattern".
+        syncCombobox(el, role, hidden ? "" : ariaExpanded(style, nodeType));
         // All four of the value family on every call, for the reason both
         // selection attributes are written: the role can change between passes,
         // and a bar that stops being a progressbar must not keep a range.
@@ -2089,6 +2391,34 @@ const GrMob = (() => {
             case "row":
             case "columnheader":
             case "tab":
+            case "combobox":
+                return value;
+            case "":
+            case undefined:
+                return nodeType === "Button" ? value : "";
+            default:
+                return "";
+        }
+    }
+
+    // core.Style.AccessibilityHasPopup as the aria-haspopup value, or "" when
+    // there is nothing valid to write. The htmlout twin is ariaHasPopup in
+    // export.go, where the role list is argued; aria/verify holds that one to
+    // the generated fixture, and wasm/verify holds this one to that one.
+    //
+    // A fifth role list and the shortest: ARIA 1.2 retired the attribute as a
+    // global, so among core's roles it is defined only where button, link,
+    // tab and combobox state it, and on columnheader, which inherits it.
+    // Written on every call like its neighbours, for the totality rule.
+    function ariaHasPopup(style, nodeType) {
+        const value = style.AccessibilityHasPopup || "";
+        if (!value) return "";
+        switch (style.AccessibilityRole) {
+            case "button":
+            case "link":
+            case "tab":
+            case "columnheader":
+            case "combobox":
                 return value;
             case "":
             case undefined:
@@ -4804,6 +5134,10 @@ const GrMob = (() => {
     // reaches every field on the page and exactly one of them is the one to
     // release. Only the target is told "focus"; every other field is told ""
     // and does nothing, because focusing over there already blurs this one.
+    //
+    // And on one exception: a combobox that a pick was just made from with
+    // Enter keeps its focus through the dismiss that pick issues. See "A
+    // keyboard pick keeps focus in the field", under the combobox pattern.
     function applyFocusCommand(el, epoch, action) {
         if (!epoch) return;
         if (action !== "focus" && action !== "blur") return;
@@ -4812,7 +5146,7 @@ const GrMob = (() => {
             if (!target) return;
             if (action === "focus") {
                 target.focus();
-            } else if (document.activeElement === target) {
+            } else if (document.activeElement === target && !keptByComboboxPick(target)) {
                 target.blur();
             }
         });
@@ -5860,6 +6194,10 @@ const GrMob = (() => {
         }
         if (propKey !== "onSubmit") return true;
         if (e.key !== "Enter" || e.shiftKey) return false;
+        // Enter on a combobox that has reached an option is the pick and
+        // nothing else: not the field's Next, not its submit. See
+        // comboboxClaimsEnter.
+        if (comboboxClaimsEnter(el, e)) return false;
         // Nothing else should also act on this keypress — inside a <form> the
         // browser would otherwise submit the page out from under the app.
         e.preventDefault();

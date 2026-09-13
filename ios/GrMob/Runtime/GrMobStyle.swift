@@ -1004,6 +1004,17 @@ private func grMobHeadingLevel(_ s: GrMobStyle) -> AccessibilityHeadingLevel {
 /// usual one for this framework, where the natives agree and the web is the
 /// strict target. mobile/verify/expanded_test.go pins the note, the absence of
 /// a parse, and the property it is turning down.
+///
+/// # AccessibilityHasPopup is not read here either
+///
+/// Go's popup kind says a control opens a dialog before it is pressed.
+/// `AccessibilityTraits` has no popup member. The near miss is
+/// `accessibilityHint`, which belongs to the app and would need this renderer
+/// to write the English words "opens a dialog" into it — the move the note
+/// above refuses for "expanded". A Modal presents here as a sheet, which
+/// VoiceOver announces as it appears, so the warning arrives one step late
+/// rather than not at all. The key is deliberately not parsed;
+/// mobile/verify/expanded_test.go pins both halves.
 private func grMobTraitsFor(_ role: String) -> AccessibilityTraits {
     switch role {
     case "heading", "columnheader": .isHeader
@@ -1057,6 +1068,10 @@ private func grMobTraitsFor(_ role: String) -> AccessibilityTraits {
     // the app put in core.ValueRange.Text; see grMobValueText.
     case "progressbar": []
     case "banner", "navigation", "toolbar": []
+    // The field that owns a popup list. No trait names one; the field is a
+    // TextField, which VoiceOver already announces as editable, and the list
+    // under it is reached by swiping. See core.RoleComboBox.
+    case "combobox": []
     // Nor these: SwiftUI announces a change through
     // AccessibilityNotification, which is an imperative call at the moment of
     // the change and not a property of the view that changed. "log" is the

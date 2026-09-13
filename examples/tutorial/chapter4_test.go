@@ -1959,6 +1959,11 @@ func TestMenusLessonSortPickerChecksTheCurrentOrder(t *testing.T) {
 	mgr := newApp(t)
 	openLesson(t, mgr, "Menus & searchable selects")
 
+	if trigger := findNode(tree(t, mgr), func(n *node) bool {
+		return n.Type == "Button" && n.Style != nil && n.Style.AccessibilityLabel == "Sort: Newest"
+	}); trigger == nil || trigger.Style.AccessibilityHasPopup != string(core.PopupDialog) {
+		t.Fatal("the sort menu's trigger says it opens a dialog")
+	}
 	tapLabelled(t, mgr, "Sort: Newest")
 	sheet := openSheets(tree(t, mgr))
 	if len(sheet) != 1 {
@@ -2039,6 +2044,12 @@ func TestSearchableSelectLessonFiltersPicksAndClears(t *testing.T) {
 	}
 	if !hasText(tree(t, mgr), "5 of 6 matches") {
 		t.Fatal("the status line should say five of six matched")
+	}
+	// The field is the combobox, pointing at the list it filters.
+	if f := countryField(t, tree(t, mgr)); f.Style.AccessibilityRole != string(core.RoleComboBox) ||
+		f.Style.AccessibilityExpanded != string(core.ExpandedOpen) ||
+		f.Style.AccessibilityControls == "" {
+		t.Fatalf("the Country field should be an expanded combobox controlling its list, got %+v", f.Style)
 	}
 
 	tapLabelled(t, mgr, "Japan")

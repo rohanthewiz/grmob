@@ -106,6 +106,11 @@ type nodeStyle struct {
 	AccessibilityID       string
 	AccessibilityControls string
 
+	// What a trigger opens, for 4.17's menus. A Menu's "⋯" draws the same
+	// whether or not it says it opens a dialog, so this is the only place the
+	// warning a reader hears before the press exists.
+	AccessibilityHasPopup string
+
 	// Chapter 4's drawer lesson asserts on this one. An open drawer hides the
 	// screen layer beneath it from assistive technology and changes nothing
 	// visible about that layer, so the flag is the only evidence it happened.

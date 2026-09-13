@@ -215,6 +215,13 @@ func (p DatePicker) trigger(ctx *core.Context, open core.State[bool], month core
 	items = append(items,
 		core.AccessibilityLabel(name),
 		core.AccessibilityHint(p.AccessibilityHint),
+		// A button that opens a dialog. The Row is scenery on every target
+		// until a role says otherwise, and the role is also what gives
+		// aria-haspopup somewhere ARIA defines it: on a named Row with no role
+		// it would sit on the `group` fallback, which announces nothing a
+		// reader can press. Popup rather than expanded; see core.PopupKind.
+		core.AccessibilityRole(core.RoleButton),
+		core.AccessibilityHasPopup(core.PopupDialog),
 	)
 
 	// Registered even when disabled, and a no-op then: core.Disabled is what

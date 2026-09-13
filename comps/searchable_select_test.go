@@ -100,6 +100,84 @@ func TestSearchableSelectFiltersIntoALabelledListbox(t *testing.T) {
 	}
 }
 
+func selectField(t *testing.T, n *core.Node) *core.Node {
+	t.Helper()
+	f := findFirst(n, func(n *core.Node) bool { return n.Type == "Input" })
+	if f == nil {
+		t.Fatal("no field in the select")
+	}
+	return f
+}
+
+// The field is the combobox: expanded and pointing at the list while rows show,
+// collapsed and pointing nowhere while they do not. Each row carries the slot id
+// the runtime's aria-activedescendant names.
+func TestSearchableSelectFieldIsAComboboxControllingTheList(t *testing.T) {
+	_, n := renderDebug(t, sampleSelect("", "an"))
+	field := selectField(t, n)
+	if field.Style.AccessibilityRole != core.RoleComboBox {
+		t.Fatalf("field role = %q, want combobox on the input itself", field.Style.AccessibilityRole)
+	}
+	if field.Style.AccessibilityExpanded != core.ExpandedOpen {
+		t.Error("the field says expanded while the list shows")
+	}
+	lb := selectListbox(n)
+	if lb.Style.AccessibilityID != "searchable-select-country" ||
+		field.Style.AccessibilityControls != lb.Style.AccessibilityID {
+		t.Errorf("list id %q, field controls %q; want both searchable-select-country",
+			lb.Style.AccessibilityID, field.Style.AccessibilityControls)
+	}
+	for i, want := range []string{
+		"searchable-select-country-option-0",
+		"searchable-select-country-option-1",
+		"searchable-select-country-option-2",
+	} {
+		if got := selectRows(n)[i].Style.AccessibilityID; got != want {
+			t.Errorf("row %d id = %q, want %q", i, got, want)
+		}
+	}
+	if search := findFirst(n, func(n *core.Node) bool {
+		return n.Style != nil && n.Style.AccessibilityRole == core.RoleSearch
+	}); search == nil || search.Type == "Input" {
+		t.Error("the search landmark stays on the row around the field")
+	}
+
+	// Shut and no-match alike: collapsed, and no aria-controls to dangle.
+	// renderDebug audits the tree, so a dangling reference would fail there too.
+	for _, query := range []string{"", "zz", "Japan"} {
+		value := ""
+		if query == "Japan" {
+			value = "jp"
+		}
+		_, n := renderDebug(t, sampleSelect(value, query))
+		field := selectField(t, n)
+		if field.Style.AccessibilityExpanded != core.ExpandedClosed || field.Style.AccessibilityControls != "" {
+			t.Errorf("query %q: expanded %q controls %q, want false and none",
+				query, field.Style.AccessibilityExpanded, field.Style.AccessibilityControls)
+		}
+	}
+}
+
+// ID replaces the derived list id; the derivation keeps only letters and digits.
+func TestSearchableSelectIDNamesTheList(t *testing.T) {
+	s := sampleSelect("", "an")
+	s.ID = "ship-country"
+	_, n := renderDebug(t, s)
+	if got := selectListbox(n).Style.AccessibilityID; got != "ship-country" {
+		t.Errorf("list id = %q, want the caller's ID", got)
+	}
+	if got := selectRows(n)[0].Style.AccessibilityID; got != "ship-country-option-0" {
+		t.Errorf("row id = %q, want it prefixed by ID", got)
+	}
+
+	s.ID = ""
+	s.Label = "  Ship to: country!"
+	_, n = renderDebug(t, s)
+	if got := selectListbox(n).Style.AccessibilityID; got != "searchable-select-ship-to-country" {
+		t.Errorf("derived list id = %q", got)
+	}
+}
+
 func TestSearchableSelectCapsRowsAndSaysSo(t *testing.T) {
 	s := sampleSelect("", "an")
 	s.MaxResults = 2

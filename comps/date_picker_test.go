@@ -53,6 +53,22 @@ func TestDatePickerTriggerSummarizesTheSelection(t *testing.T) {
 	}
 }
 
+// The trigger is a button that says it opens a dialog, and not a disclosure.
+func TestDatePickerTriggerIsAButtonThatOpensADialog(t *testing.T) {
+	n := renderPass(core.NewContext(), DatePicker{Selected: pickerDay, OnSelect: func(time.Time) {}})
+	trigger := pickerTrigger(t, n)
+	if trigger.Style.AccessibilityRole != core.RoleButton {
+		t.Errorf("trigger role = %q, want button: a Row is scenery until a role says otherwise",
+			trigger.Style.AccessibilityRole)
+	}
+	if trigger.Style.AccessibilityHasPopup != core.PopupDialog {
+		t.Errorf("trigger popup = %q, want dialog", trigger.Style.AccessibilityHasPopup)
+	}
+	if trigger.Style.AccessibilityExpanded != core.ExpandedUnset {
+		t.Error("a trigger that opens a dialog states no expanded state (core.Style's near miss)")
+	}
+}
+
 func TestDatePickerPlaceholderWhenEmpty(t *testing.T) {
 	theme := core.DefaultTheme
 	ctx := core.NewContext()
