@@ -37,7 +37,7 @@ import (
 //   - OnAction, when the action is tapped. The caller usually undoes the work
 //     and hides the snackbar in the same handler.
 //
-// Because of the hook, the rules Spinner documents apply: render a Snackbar
+// Because of the hook, the rules Accordion documents apply: render a Snackbar
 // in a stable position on every pass and drive Visible, rather than leaving
 // it out of the tree. A hidden snackbar is Display none and its timer is
 // cancelled, so it costs nothing.

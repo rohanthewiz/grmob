@@ -26,6 +26,7 @@ func ExportHTML(node *core.Node) string {
 	b := element.NewBuilder()
 	// b.Html writes the <!DOCTYPE html> declaration itself.
 	b.Html("lang", "en").R(
+		spinStylesheet(b, node),
 		b.Body().R(
 			// "root" is the node path of the tree's root, the same name Go's
 			// reconciler gives it (reconcile.Patch's TargetIDs are "root/1/0")
@@ -41,6 +42,66 @@ func ExportHTML(node *core.Node) string {
 	// Pretty re-indents the compact single-pass output for human readers.
 	// Escaped content is inert entities by this point, so re-parsing is safe.
 	return b.Pretty()
+}
+
+// spinStylesheet writes a <head> holding core.SpinKeyframes when any node in
+// the tree spins, and nothing otherwise.
+//
+// Conditional rather than always present so that every export without a
+// spinning node is byte-for-byte what it was before Spin existed: the head is
+// the one stylesheet this exporter writes, and it exists only because an
+// `animation` naming grmob-spin is inert without its rule (the gap the
+// Style.Animation note below describes for author-named animations). The
+// constant is core's, not a copy, and the WASM runtime's restatement is held
+// to it by wasm/verify. Returns any for the same reason renderNode does.
+func spinStylesheet(b *element.Builder, node *core.Node) (x any) {
+	if !treeSpins(node) {
+		return
+	}
+	b.Head().R(
+		// T, not TE: the rule is a constant of this module, not user text,
+		// and entity-escaping would break the braces' meaning for no gain.
+		b.Style().R(b.T(core.SpinKeyframes)),
+	)
+	return
+}
+
+// treeSpins reports whether any node in the tree declares core.Spin. A full
+// walk, transparent grouping nodes included: a Fragment's children still
+// render, so a spin under one still needs the rule.
+func treeSpins(n *core.Node) bool {
+	if n == nil {
+		return false
+	}
+	if n.Style != nil && n.Style.Spin != 0 {
+		return true
+	}
+	for _, c := range n.Children {
+		if treeSpins(c) {
+			return true
+		}
+	}
+	return false
+}
+
+// animationDecl is the value of the CSS `animation` property for a style: the
+// core.Spin entry first, then Style.Animation verbatim, comma-joined, or ""
+// when there is neither. It mirrors styleFromGrMob in the WASM runtime,
+// including the reverse keyword that turns a negative period anticlockwise.
+func animationDecl(s *core.Style) string {
+	var parts []string
+	if s.Spin != 0 {
+		period := s.Spin
+		dir := ""
+		if period < 0 {
+			period, dir = -period, " reverse"
+		}
+		parts = append(parts, fmt.Sprintf("grmob-spin %dms linear infinite%s", period, dir))
+	}
+	if s.Animation != "" {
+		parts = append(parts, s.Animation)
+	}
+	return strings.Join(parts, ", ")
 }
 
 // imposed is what a *parent* puts on the element standing in for one of its
@@ -1672,8 +1733,14 @@ func styleValue(s *core.Style, nodeType string) string {
 	// name. That is still strictly better than dropping it — the name is the
 	// author's, and a target that can honor it now receives it. Neither native
 	// reads the field.
-	if s.Animation != "" {
-		styles = append(styles, "animation:"+s.Animation)
+	//
+	// core.Spin shares the property as the first entry of one list — a second
+	// `animation` declaration would replace the first — and, unlike Animation,
+	// it does come with its keyframes: ExportHTML writes core.SpinKeyframes
+	// into the document head whenever any node in the tree spins. The
+	// arithmetic matches the WASM runtime's styleFromGrMob string for string.
+	if anim := animationDecl(s); anim != "" {
+		styles = append(styles, "animation:"+anim)
 	}
 	// The remaining CSS-shaped fields of core.Style. Every one of them existed
 	// on the struct with a StyleProp constructor and no reader on any of the

@@ -162,6 +162,12 @@ type Style struct {
 	// for accumulating an unwrapped angle when a caller wants one.
 	Rotate float64 `json:",omitzero"`
 
+	// Spin is a continuous rotation: one revolution every Spin milliseconds,
+	// clockwise for a positive period and anticlockwise for a negative one,
+	// added to Rotate. Zero holds still. See core.Spin for what each renderer
+	// maps it onto and why it is a rotation rather than a general loop.
+	Spin int `json:",omitzero"`
+
 	HoverStyle   *Style           `json:",omitzero"`
 	FocusStyle   *Style           `json:",omitzero"`
 	PseudoStates map[string]Style `json:",omitzero"` // ":hover", ":focus"
@@ -982,6 +988,11 @@ func (s Style) applyTo(target *Style) {
 	}
 	if s.Animation != "" {
 		target.Animation = s.Animation
+	}
+	// Spin merges on "non-zero wins" like Rotate, with the same edge: a role
+	// style cannot merge a node back to still. The Spin(0) prop can.
+	if s.Spin != 0 {
+		target.Spin = s.Spin
 	}
 
 	// Accessibility semantics.

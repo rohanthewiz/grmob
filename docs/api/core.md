@@ -47,7 +47,7 @@ Package core's reference is split into 10 topic pages by source file. The index 
 | --- | --- | --- |
 | [Views & state](core-views.md) | View, Node, Context and state slots; conditionals, caching, error boundaries and debug-mode concerns. | 11 types, 58 functions and methods |
 | [Layout](core-layout.md) | Rows, columns, stacks, scrolls and lists, and the alignment vocabulary they are placed with. | 2 types, 25 functions and methods |
-| [Styling](core-style.md) | Style and its props: spacing, flex, typography, colour, borders and transitions. | 12 types, 73 functions and methods |
+| [Styling](core-style.md) | Style and its props: spacing, flex, typography, colour, borders and transitions. | 12 types, 74 functions and methods |
 | [Theming](core-theme.md) | Themes, palettes, typography and spacing scales, and per-component defaults. | 5 types, 11 functions and methods |
 | [Controls](core-controls.md) | Buttons, text inputs, switches, sliders, selects, images, tab views and text grids. | 9 types, 26 functions and methods |
 | [Editors](core-editors.md) | The code editor and the rich text editor, and the refs and commands that drive them. | 2 types, 15 functions and methods |
@@ -130,7 +130,7 @@ Package core's reference is split into 10 topic pages by source file. The index 
     - [`type StackAlignment`](core-layout.md#type-stackalignment)
         - [`func StackAlignments`](core-layout.md#func-stackalignments)
 - [Styling](core-style.md)
-    - [Constants](core-style.md#constants) — `AlignItemsCenter`, `AlignItemsEnd`, `AlignItemsStart`, `AlignItemsStretch`, `DisplayFlex`, `FlexColumn`, `FlexRow`, `JustifyAround`, `JustifyBetween`, `JustifyCenter`, `JustifyEnd`, `JustifyEvenly`, and 2 more
+    - [Constants](core-style.md#constants) — `AlignItemsCenter`, `AlignItemsEnd`, `AlignItemsStart`, `AlignItemsStretch`, `DisplayFlex`, `FlexColumn`, `FlexRow`, `JustifyAround`, `JustifyBetween`, `JustifyCenter`, `JustifyEnd`, `JustifyEvenly`, and 3 more
     - [Variables](core-style.md#variables) — `TextInputStyle`
     - [`func DangerColor`](core-style.md#func-dangercolor)
     - [`func LinearGradient`](core-style.md#func-lineargradient)
@@ -205,6 +205,7 @@ Package core's reference is split into 10 topic pages by source file. The index 
         - [`func RoundedShadowBox`](core-style.md#func-roundedshadowbox)
         - [`func RowGap`](core-style.md#func-rowgap)
         - [`func Shadow`](core-style.md#func-shadow)
+        - [`func Spin`](core-style.md#func-spin)
         - [`func TextColor`](core-style.md#func-textcolor)
         - [`func Transition`](core-style.md#func-transition)
         - [`func UseStyle`](core-style.md#func-usestyle)

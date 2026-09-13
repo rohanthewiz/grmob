@@ -51,6 +51,9 @@ struct GrMobStyle: Equatable {
     /// `transform` and Compose's `Modifier.rotate`. Carried unnormalised; see
     /// core.Style.Rotate for why the winding is the caller's to choose.
     var rotate: CGFloat = 0
+    /// core.Spin: milliseconds per revolution, negative for anticlockwise, 0
+    /// for still. Applied by GrMobSpin beside `rotate`.
+    var spin: Int = 0
     var align: String = ""
     var display: String = ""
     var width: String = ""
@@ -200,6 +203,7 @@ struct GrMobStyle: Equatable {
         s.borderRadius = num("BorderRadius")
         s.shadow = num("Shadow")
         s.rotate = num("Rotate")
+        s.spin = int("Spin")
         s.align = str("Align")
         s.display = str("Display")
         s.width = str("Width")
@@ -405,6 +409,55 @@ extension View {
     }
 }
 
+/// core.Spin: the box turns one revolution every `periodMs`, forever.
+///
+/// # Why TimelineView and not repeatForever
+///
+/// The textbook spinner — a @State angle flipped to 360 in onAppear under
+/// `.linear.repeatForever(autoreverses: false)` — attaches the repeating
+/// animation to a transaction, and every other change committed in that
+/// transaction's scope rides it too: a patch that moves or resizes the node
+/// would start repeating as well. It also restarts from wherever SwiftUI's
+/// presentation value happens to be when the view is re-identified. A
+/// TimelineView owns no animation at all: each frame the angle is recomputed
+/// from the timeline's date, modulo the period, so it cannot leak into other
+/// changes and cannot drift or accumulate. The same elapsed-time rule is what
+/// the Compose and CSS mappings follow.
+///
+/// # Always applied, paused when still
+///
+/// Not a conditional wrapper, for the reason `grMobRotate` gives, and for one
+/// more that is specific to this modifier: the TimelineView is a container,
+/// and wrapping a node in one only while it spins would change the node's
+/// structural identity the moment Spin flips — resetting @State in every view
+/// beneath it (a focused text field would lose its text). A paused schedule
+/// never ticks, so a still node evaluates the closure once and draws at 0°,
+/// the identity rotation.
+///
+/// Unmeasured: what a TimelineView per node costs across a long tree. The
+/// alternative, a conditional, costs correctness instead.
+struct GrMobSpin: ViewModifier {
+    let periodMs: Int
+
+    func body(content: Content) -> some View {
+        TimelineView(.animation(minimumInterval: nil, paused: periodMs == 0)) { timeline in
+            content.rotationEffect(.degrees(angle(at: timeline.date)), anchor: .center)
+        }
+    }
+
+    /// Degrees at `date`: the fraction of the current period elapsed since
+    /// the reference date, times 360, negated for an anticlockwise spin.
+    /// Measured from a fixed epoch rather than from appearance, so two
+    /// spinners on one screen turn in step.
+    private func angle(at date: Date) -> Double {
+        guard periodMs != 0 else { return 0 }
+        let period = Double(abs(periodMs)) / 1000
+        let fraction = date.timeIntervalSinceReferenceDate
+            .truncatingRemainder(dividingBy: period) / period
+        return fraction * 360 * (periodMs < 0 ? -1 : 1)
+    }
+}
+
 /// The box chain as a named modifier rather than as a chain of generic
 /// `some View` extensions applied at each call site.
 ///
@@ -476,6 +529,10 @@ struct GrMobBoxModifier: ViewModifier {
             // modifier further in keeps a touch target that turns with the
             // pixels rather than staying square.
             .grMobRotate(s?.rotate ?? 0)
+            // core.Spin, just outside the fixed angle and inside the margin,
+            // for the same reasons. Rotations about one centre commute, so
+            // the order against grMobRotate does not change the pixels.
+            .modifier(GrMobSpin(periodMs: s?.spin ?? 0))
             .padding((s?.margin ?? .zero).insets)
             .grMobGrow(grow, alignment: alignment)
             // core.MaxWidth, outermost of the sizing layers and after

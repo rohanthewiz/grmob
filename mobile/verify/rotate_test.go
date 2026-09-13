@@ -99,3 +99,59 @@ func TestRotationWrapsThePaintedBoxOnBothNatives(t *testing.T) {
 			swiftStyle)
 	}
 }
+
+// core.Spin on both natives: the same two halves as Rotate, and the same layer
+// position, since a spin is a rotation that keeps going.
+//
+// Neither native runs under `go test ./...`, so a Spin that is parsed and never
+// applied — or applied inside the background, spinning the dot in a square
+// that stays put — would be invisible here without these pins.
+func TestBothNativesParseAndApplySpin(t *testing.T) {
+	for _, pin := range []struct{ file, key string }{
+		{swiftStyle, `int("Spin")`},
+		{kotlinStyle, `optInt("Spin"`},
+	} {
+		if src := valuesIn(t, pin.file); !strings.Contains(src, pin.key) {
+			t.Errorf("%s: does not parse %s — core.Spin crosses the bridge and "+
+				"the ring never turns on this target", pin.file, pin.key)
+		}
+	}
+
+	kotlin := codeIn(t, kotlinStyle)
+	for _, want := range []string{
+		"if (spinMs != 0) m = m.then(SpinElement(spinMs))",
+		// The frame loop and the layer read that make it a paint-only spin.
+		"withInfiniteAnimationFrameMillis",
+		"placeWithLayer(0, 0) { rotationZ = angle }",
+	} {
+		if !strings.Contains(kotlin, want) {
+			t.Errorf("%s: missing %q", kotlinStyle, want)
+		}
+	}
+	spinAt := strings.Index(kotlin, "m = m.then(SpinElement(spinMs))")
+	bgAt := strings.Index(kotlin, "background?.let { m = m.background(it) }")
+	if spinAt < 0 || bgAt < 0 || spinAt > bgAt {
+		t.Errorf("%s: the spin layer must come before the background in "+
+			"boxModifier (spin=%d background=%d), or only the content turns",
+			kotlinStyle, spinAt, bgAt)
+	}
+
+	swift := codeIn(t, swiftStyle)
+	for _, want := range []string{
+		".modifier(GrMobSpin(periodMs: s?.spin ?? 0))",
+		"TimelineView(.animation(minimumInterval: nil, paused: periodMs == 0))",
+		"content.rotationEffect(.degrees(angle(at: timeline.date)), anchor: .center)",
+	} {
+		if !strings.Contains(swift, want) {
+			t.Errorf("%s: missing %q", swiftStyle, want)
+		}
+	}
+	spinAt = strings.Index(swift, ".modifier(GrMobSpin(")
+	shadowAt := strings.Index(swift, ".grMobShadow(s?.shadow ?? 0)")
+	marginAt := strings.Index(swift, ".padding((s?.margin ?? .zero).insets)")
+	if spinAt < 0 || spinAt < shadowAt || spinAt > marginAt {
+		t.Errorf("%s: GrMobSpin must sit between the painted box and the margin "+
+			"in grMobBox (spin=%d shadow=%d margin=%d)",
+			swiftStyle, spinAt, shadowAt, marginAt)
+	}
+}

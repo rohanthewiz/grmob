@@ -4998,6 +4998,29 @@ const GrMob = (() => {
         }[nodeType] || "";
     }
 
+    // core.SpinKeyframes, restated: the rule every core.Spin animation names.
+    // It turns the individual `rotate` property, not `transform`, so a node
+    // with both Rotate and Spin keeps its fixed angle under the spin instead of
+    // having the animation overwrite it (the two compose as rotate-then-
+    // transform about the same centre). wasm/verify holds this string to the
+    // Go constant, so the export and the live page cannot drift apart.
+    const SPIN_KEYFRAMES = "@keyframes grmob-spin{from{rotate:0deg}to{rotate:360deg}}";
+
+    // ensureSpinKeyframes adds SPIN_KEYFRAMES to the document once, the first
+    // time any node spins. Lazily rather than at load, so a page that never
+    // spins carries no stylesheet it did not ask for; once rather than per
+    // node, because a keyframes rule is document-wide and a duplicate would
+    // only be a second copy of the same name. Never removed: a node that stops
+    // spinning clears its own `animation`, and the idle rule costs nothing.
+    let spinKeyframesAdded = false;
+    function ensureSpinKeyframes() {
+        if (spinKeyframesAdded) return;
+        const sheet = document.createElement("style");
+        sheet.textContent = SPIN_KEYFRAMES;
+        document.head.appendChild(sheet);
+        spinKeyframesAdded = true;
+    }
+
     // The Style -> CSS mapping. nodeType decides the default flex axis, the
     // same rule htmlout's styleValue uses: a Row stacks horizontally, every
     // other container vertically.
@@ -5241,7 +5264,17 @@ const GrMob = (() => {
         // something the runtime does not supply: a matching @keyframes rule,
         // which has to come from the hosting page's stylesheet. The
         // declaration is inert until it does. Neither native reads the field.
-        out.animation = style.Animation || "";
+        //
+        // core.Spin shares the property, as the first entry of the list, and
+        // unlike Animation it brings its own keyframes (ensureSpinKeyframes).
+        // One comma-separated list rather than two declarations, because a
+        // second `animation` assignment would replace the first. A negative
+        // period is the same rule played in reverse, which is anticlockwise.
+        const spin = style.Spin
+            ? `grmob-spin ${Math.abs(style.Spin)}ms linear infinite${style.Spin < 0 ? " reverse" : ""}`
+            : "";
+        if (spin) ensureSpinKeyframes();
+        out.animation = [spin, style.Animation || ""].filter(Boolean).join(", ");
         // The remaining CSS-shaped fields of core.Style. Every one of them had
         // a StyleProp constructor in Go and no reader on any of the four
         // targets — declared and dropped. They are one property each here and

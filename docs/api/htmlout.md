@@ -281,7 +281,7 @@ display and background are deliberately not in it. Both are prop-driven, and the
 
 A copy, not the slice itself, for the reason StackAxes returns one: a package-level slice is reachable and writable by any importer.
 
-<small>[htmlout/export.go:868](https://github.com/rohanthewiz/grmob/blob/master/htmlout/export.go#L868)</small>
+<small>[htmlout/export.go:929](https://github.com/rohanthewiz/grmob/blob/master/htmlout/export.go#L929)</small>
 
 ### func ObjectFitFor
 

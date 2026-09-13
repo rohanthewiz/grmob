@@ -6,6 +6,8 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+
+	"github.com/rohanthewiz/grmob/core"
 )
 
 // Shared machinery for the tests that pin the WASM runtime's lookup tables to
@@ -57,6 +59,19 @@ func runtimeSource(t *testing.T) string {
 		t.Fatalf("reading %s: %v", path, err)
 	}
 	return string(src)
+}
+
+// The runtime's SPIN_KEYFRAMES is core.SpinKeyframes, restated. It is the one
+// string both web targets must agree on for a spin to move at all: a name that
+// differs by a character leaves every spinning node on the page standing still
+// with valid CSS, and a rule on `transform` instead of `rotate` would make a
+// spin overwrite core.Rotate on the live page only.
+func TestRuntimeSpinKeyframesMatchCore(t *testing.T) {
+	want := `const SPIN_KEYFRAMES = "` + core.SpinKeyframes + `";`
+	if !strings.Contains(runtimeSource(t), want) {
+		t.Errorf("grmob-runtime.js: no %s — the live page's spin rule has drifted "+
+			"from core.SpinKeyframes, which htmlout writes into exports", want)
+	}
 }
 
 // parseRuntimeTable lifts the object literal out of the named runtime lookup

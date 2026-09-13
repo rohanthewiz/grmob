@@ -2480,7 +2480,16 @@ The drawer covers the ZStack, not the window, and a ZStack is as big as its larg
 
 #### The panel is hidden when shut, not removed
 
-The panel layer renders on every pass and takes Display none while shut, which both natives read as "do not compose" and the web as display:none. The tree is then the same shape open or shut, so opening is a style patch, and any hooks inside Body keep their slots: Body left out of a pass would shift every hook rendered after it, which is Spinner's rule. The content layer is always wrapped in its Box for the same reason. Toggling a prop is a patch; adding a wrapper around the screen would replace the screen.
+The panel layer renders on every pass and takes Display none while shut, which both natives read as "do not compose" and the web as display:none. The tree is then the same shape open or shut, so opening is a style patch, and any hooks inside Body keep their slots: Body left out of a pass would shift every hook rendered after it, which is Accordion's rule. The content layer is always wrapped in its Box for the same reason. Toggling a prop is a patch; adding a wrapper around the screen would replace the screen.
+
+#### It appears; it does not slide
+
+A Material drawer slides in from the edge. This one is drawn at its place on the first frame it is shown, and core.Spin (the looping motion core gained for Spinner) does not change that, because a slide is neither a loop nor something core.Transition can express today. Two pieces are missing:
+
+  - A translation. core.Style has Rotate and no offset or translate, so there is no animatable property whose change would carry the panel from off-screen to its place. Left/Right are positioning, read by the web targets only (see core.Style.Position).
+  - An entry. Transition animates a change on a node that is already displayed. A shut panel is Display none, which both natives read as "not composed", so opening creates the panel rather than changing it, and a created node has no previous value to animate from on any target (CSS does not transition out of display:none either). Keeping the panel composed off-screen instead would keep a hidden, focusable subtree in the tree on every target.
+
+So a slide needs a translate style plus either an appear transition in core or a panel that stays displayed and off-screen while shut, with the accessibility and focus containment that would then require.
 
 #### Picking a destination closes the drawer
 
@@ -2501,7 +2510,7 @@ Open and focus are both the caller's, so Drawer takes no hook slot and is condit
 	Icon       Typography.Subtitle
 	Scrim      Backdrop, else core.Modal's default #00000088
 
-<small>[comps/drawer.go:134](https://github.com/rohanthewiz/grmob/blob/master/comps/drawer.go#L134)</small>
+<small>[comps/drawer.go:157](https://github.com/rohanthewiz/grmob/blob/master/comps/drawer.go#L157)</small>
 
 #### func (Drawer) Render
 
@@ -2511,7 +2520,7 @@ func (d Drawer) Render(ctx *core.Context) *core.Node
 
 Render builds ZStack(content layer, panel layer) as drawn in the type doc.
 
-<small>[comps/drawer.go:212](https://github.com/rohanthewiz/grmob/blob/master/comps/drawer.go#L212)</small>
+<small>[comps/drawer.go:235](https://github.com/rohanthewiz/grmob/blob/master/comps/drawer.go#L235)</small>
 
 ### type DrawerItem
 
@@ -2534,7 +2543,7 @@ type DrawerItem struct {
 
 DrawerItem is one destination in a Drawer.
 
-<small>[comps/drawer.go:191](https://github.com/rohanthewiz/grmob/blob/master/comps/drawer.go#L191)</small>
+<small>[comps/drawer.go:214](https://github.com/rohanthewiz/grmob/blob/master/comps/drawer.go#L214)</small>
 
 ### type Emphasis
 
@@ -5009,7 +5018,7 @@ The caller owns visibility, as with Dialog. Snackbar never hides itself; it repo
   - OnTimeout, Duration after Visible turns true. The timer is hooks.UseTimeoutWhile keyed on Message, so a replaced message gets its full Duration, and hiding the snackbar cancels a pending timeout.
   - OnAction, when the action is tapped. The caller usually undoes the work and hides the snackbar in the same handler.
 
-Because of the hook, the rules Spinner documents apply: render a Snackbar in a stable position on every pass and drive Visible, rather than leaving it out of the tree. A hidden snackbar is Display none and its timer is cancelled, so it costs nothing.
+Because of the hook, the rules Accordion documents apply: render a Snackbar in a stable position on every pass and drive Visible, rather than leaving it out of the tree. A hidden snackbar is Display none and its timer is cancelled, so it costs nothing.
 
 #### Where it goes
 
@@ -5065,8 +5074,9 @@ Sort names the active sort column and direction. DataTable.Sort is a pointer so 
 
 ```go
 type Spinner struct {
-	// Hidden removes the spinner from display and pauses its ticks. Use it
-	// instead of conditionally rendering the widget; see the type doc.
+	// Hidden removes the spinner from display, which also stops its frames.
+	// Prefer it to leaving the widget out where the spinner has a fixed place
+	// in the layout; see the type doc.
 	Hidden bool
 
 	// Size picks the diameter. The zero value is SpinnerMedium.
@@ -5087,28 +5097,30 @@ Spinner is the "something is happening, shape unknown" indicator: a ring with a 
 
 It completes the loading trio. Skeleton is for content whose layout is known and whose data is not; ProgressBar is for work that knows how far it has got; Spinner is for everything else.
 
-#### It holds hooks, so render it unconditionally
+#### The platform turns it
 
-There is no looping animation any renderer draws on its own: core.Transition animates one change and stops, Style.Rotate is applied without interpolation on both natives, and Style.Animation is honoured only by the two web targets. So the spin is stepped from Go: one core.NewState for the angle and one hooks.UseIntervalWhile advancing it by stepDegrees every stepEvery.
+The ring carries core.Spin(spinPeriodMs), so each renderer's own frame clock drives the rotation: CSS keyframes on the web, a graphics layer on Compose, a TimelineView on SwiftUI. Go declares the spin once, in the style of the first pass, and sends nothing afterwards.
 
-That makes this the third widget in the package with hook obligations, after Accordion and DatePicker, and the rules are theirs: render a Spinner in a stable position on every pass. To stop showing it, set Hidden rather than leaving it out of the tree; leaving it out moves the two hook slots and every hook after them.
+It used to be stepped from Go instead — a state slot holding the angle and hooks.UseIntervalWhile adding 30 degrees every 80ms — because no renderer could draw a loop on its own. That cost a render pass of the whole app per step (twelve a second) while visible, drew twelve discrete positions rather than a turn, and gave the widget two hook slots with the ordering rule that comes with them. core.Spin removed all three.
 
-#### What it costs, and why Hidden is the switch
+#### No hooks, so it is conditional-safe
 
-Each step is a state change, so a visible spinner costs a render pass per step (about twelve a second). Hidden both hides the node and pauses the interval; UseIntervalWhile drops a paused tick before it can request a render, so a hidden spinner costs nothing but a goroutine wake. That is the reason the hook exists: with plain UseInterval, a spinner that had ever been mounted would re-render the whole app on every tick for the life of the process. A looping transition prop on all four renderers would remove the stepping altogether and is recorded as a follow-up.
+Spinner takes no hook slot, so core.If(loading, comps.Spinner{}) is as correct as Hidden. Hidden remains the switch to prefer where the spinner has a fixed place in a layout: a hidden spinner is Display none, which keeps the tree the same shape both ways, so showing it is a style patch rather than an inserted subtree. Either way a hidden or absent spinner draws no frames on any target (see core.Spin, "What it costs").
 
 	┌ Box  role=status  label="Loading" ┐
-	│  ┌ Column  ring, Rotate(angle) ┐  │
-	│  │            ●                │  │
-	│  │                             │  │
-	│  └─────────────────────────────┘  │
+	│  ┌ Column  ring, Spin(1000) ────┐ │
+	│  │            ●                 │ │
+	│  │                              │ │
+	│  └──────────────────────────────┘ │
 	└───────────────────────────────────┘
 
 The dot is what makes the rotation visible. A ring of uniform colour turned about its centre draws the same pixels at every angle, and core has no per-side border colour to draw a gap in the ring with.
 
 #### Accessibility
 
-The outer Box is RoleStatus with Label (default "Loading"), a polite live region announced when it appears. The ring beneath it changes style every step and is hidden from assistive technology, so the steps are never read. A hidden spinner is display:none and so is not announced at all.
+The outer Box is RoleStatus with Label (default "Loading"), a polite live region announced when it appears. The ring beneath it is decoration and is hidden from assistive technology. A hidden spinner is display:none and so is not announced at all.
+
+No target slows or stops the spin for a reduce-motion setting, because core has no signal for it yet; see core.Spin, "Reduced motion".
 
 #### Theme roles read
 
@@ -5116,7 +5128,7 @@ The outer Box is RoleStatus with Label (default "Loading"), a polite live region
 	Dot        Colors.Primary
 	Diameter   Spacing.MD / LG / XL for Small / Medium / Large
 
-<small>[comps/spinner.go:69](https://github.com/rohanthewiz/grmob/blob/master/comps/spinner.go#L69)</small>
+<small>[comps/spinner.go:68](https://github.com/rohanthewiz/grmob/blob/master/comps/spinner.go#L68)</small>
 
 #### func (Spinner) Render
 
@@ -5124,9 +5136,9 @@ The outer Box is RoleStatus with Label (default "Loading"), a polite live region
 func (s Spinner) Render(ctx *core.Context) *core.Node
 ```
 
-Render builds the status box and the rotating ring.
+Render builds the status box and the spinning ring.
 
-<small>[comps/spinner.go:118](https://github.com/rohanthewiz/grmob/blob/master/comps/spinner.go#L118)</small>
+<small>[comps/spinner.go:117](https://github.com/rohanthewiz/grmob/blob/master/comps/spinner.go#L117)</small>
 
 ### type SpinnerSize
 

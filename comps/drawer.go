@@ -103,9 +103,32 @@ import "github.com/rohanthewiz/grmob/core"
 // which both natives read as "do not compose" and the web as display:none. The
 // tree is then the same shape open or shut, so opening is a style patch, and
 // any hooks inside Body keep their slots: Body left out of a pass would shift
-// every hook rendered after it, which is Spinner's rule. The content layer is
+// every hook rendered after it, which is Accordion's rule. The content layer is
 // always wrapped in its Box for the same reason. Toggling a prop is a patch;
 // adding a wrapper around the screen would replace the screen.
+//
+// # It appears; it does not slide
+//
+// A Material drawer slides in from the edge. This one is drawn at its place on
+// the first frame it is shown, and core.Spin (the looping motion core gained
+// for Spinner) does not change that, because a slide is neither a loop nor
+// something core.Transition can express today. Two pieces are missing:
+//
+//   - A translation. core.Style has Rotate and no offset or translate, so
+//     there is no animatable property whose change would carry the panel from
+//     off-screen to its place. Left/Right are positioning, read by the web
+//     targets only (see core.Style.Position).
+//   - An entry. Transition animates a change on a node that is already
+//     displayed. A shut panel is Display none, which both natives read as "not
+//     composed", so opening creates the panel rather than changing it, and a
+//     created node has no previous value to animate from on any target (CSS
+//     does not transition out of display:none either). Keeping the panel
+//     composed off-screen instead would keep a hidden, focusable subtree in
+//     the tree on every target.
+//
+// So a slide needs a translate style plus either an appear transition in core
+// or a panel that stays displayed and off-screen while shut, with the
+// accessibility and focus containment that would then require.
 //
 // # Picking a destination closes the drawer
 //
