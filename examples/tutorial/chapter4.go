@@ -2918,19 +2918,31 @@ func lessonSmallControls() Lesson {
 }
 
 // lessonChoicesAndProgress is Tier B's in-page widgets: RadioGroup, the
-// vertical form of a choice, and StepIndicator, the header of a multi-screen
-// flow. The demo is one small checkout whose shipping step is the radio group,
-// so the two widgets read as parts of one flow. It is appended at the end of
+// vertical form of a choice, StepIndicator, the header of a multi-screen flow,
+// and Timeline, the record of what happened after it. The demo is one small
+// checkout whose shipping step is the radio group, followed by the order's
+// history, so the three widgets read as parts of one purchase. It is appended at the end of
 // the chapter for the reason 4.15 was: lesson numbers already in deep links do
 // not move.
 func lessonChoicesAndProgress() Lesson {
 	return Lesson{
-		Title:   "Radio groups & step indicators",
-		Summary: "comps.RadioGroup shows every option at once; comps.StepIndicator shows where a flow is and lets a user go back.",
+		Title:   "Radio groups, steps & timelines",
+		Summary: "RadioGroup shows every option at once, StepIndicator shows where a flow is, and Timeline shows what happened since.",
 		Body: func(ctx *core.Context) core.View {
 			ship := core.NewState(ctx, "std")
 			step := core.NewState(ctx, 0)
 			steps := []string{"Account", "Shipping", "Payment", "Review"}
+			stage := core.NewState(ctx, 1)
+
+			// The order's history so far: the first stage+1 of these, the
+			// delivered event in Success once it is reached.
+			history := []comps.TimelineEvent{
+				{Time: "09:12", Title: "Order placed", Subtitle: "4 items"},
+				{Time: "11:40", Title: "Packed", Subtitle: "Warehouse 3"},
+				{Time: "14:05", Title: "Out for delivery", Subtitle: "Driver: Sam"},
+				{Time: "16:30", Title: "Delivered", Subtitle: "Left at the front door", Variant: comps.VariantSuccess},
+			}
+			shown := history[:stage.Get()+1]
 
 			options := []comps.RadioOption{
 				{Value: "std", Label: "Standard", Subtitle: "3–5 days · free"},
@@ -3004,6 +3016,26 @@ func lessonChoicesAndProgress() Lesson {
 						},
 					),
 				),
+				prose("A Timeline is the record after the flow: events down a line, a dot per "+
+					"event. No renderer draws a line across siblings, so each row draws its own "+
+					"piece — a stretched rail whose bottom segment grows through the space "+
+					"below the event and meets the next row's top segment."),
+				codeBlock(`comps.Timeline{
+    Label: "Order history",
+    Events: []comps.TimelineEvent{
+        {Time: "09:12", Title: "Order placed"},
+        {Time: "11:40", Title: "Packed", Subtitle: "Warehouse 3"},
+    },
+}`),
+				demoPanel("Advance the order and watch the line extend to each new event.",
+					comps.Timeline{Label: "Order history", Events: shown},
+					comps.Button{
+						Label:    "Advance the order",
+						Emphasis: comps.EmphasisOutlined,
+						Disabled: stage.Get() == len(history)-1,
+						OnTap:    func() { stage.Set(stage.Get() + 1) },
+					},
+				),
 				keyPoints(
 					"RadioGroup is the vertical, every-option-visible choice; Select is compact and SegmentedControl is horizontal.",
 					"Each row is the tap target and the ring is drawn, so there is no second control to double-dispatch.",
@@ -3011,6 +3043,8 @@ func lessonChoicesAndProgress() Lesson {
 					"It is a labelled listbox of options that state their selection, with the browser's listbox keyboard; a radio role is a follow-up.",
 					"StepIndicator ticks done steps, fills the current one and makes only done steps tappable.",
 					"Its strip is named \"Step 2 of 4: Shipping\": navigation when OnTap is set, a group when it is not, and it scrolls sideways when the flow is long.",
+					"Timeline draws the line per row: a stretched rail whose bottom segment grows through the event's spacing to meet the next row's.",
+					"Timeline is a list of list items; the rail is hidden, and Variant colours an event's dot.",
 				),
 			)
 		},

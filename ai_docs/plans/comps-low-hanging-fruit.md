@@ -3,12 +3,11 @@
 **Status:** Tier A landed 2026-09-12. A1 `Dialog` and A2
 `SwitchRow`/`CheckboxRow` shipped with tutorial lesson 6.6 "Dialog and settings
 rows". A3 `Stepper`, A4 `BottomBar` + `Screen.Footer`, A5 `Spinner` and A6
-`Rating` shipped with lesson 4.15 "Small controls". Tier B is landing one
-widget per commit: B1 `ActionSheet` shipped with lesson 6.7, and B3
-`Snackbar` (with `hooks.UseTimeoutWhile`) joined it as "Action sheets &
-snackbars". B2 `RadioGroup` shipped with lesson 4.16, and B4 `StepIndicator` joined it as
-"Radio groups & step indicators".
-Tier C is open.
+`Rating` shipped with lesson 4.15 "Small controls". **Tier B landed
+2026-09-12**, one widget per commit. B1 `ActionSheet` and B3 `Snackbar` (with
+`hooks.UseTimeoutWhile`) shipped with lesson 6.7 "Action sheets & snackbars".
+B2 `RadioGroup`, B4 `StepIndicator` and B5 `Timeline` shipped with lesson 4.16
+"Radio groups, steps & timelines". Tier C is open.
 
 **Decisions that differ from the Tier A sketches below:**
 
@@ -66,6 +65,19 @@ Tier C is open.
   `RoleNavigation` only when `OnTap` is set, because a picture of progress is
   not navigation, and `RoleGroup` otherwise. The plan named `RoleNavigation`
   unconditionally. Done steps are tappable and upcoming ones never are.
+  The Scroll is wrapped in a zero-padding Row. The web host pages
+  (`wasm/index.html`, `wasm/shots/index.html`) give every Scroll
+  `flex: 1 1 0; min-height: 0`, so a horizontal strip whose parent is a column
+  measured 0px tall in Chrome. **The same collapse hits
+  `ChipStrip{Scrollable: true}`**: a probe of lesson 4.8 measured its strip at
+  0px with 22px chips. That bug predates Tier B and is not fixed here.
+- B5 `Timeline` is not built on `ListRow`. `ListRow`'s theme row padding sits
+  outside its slots and would break the line between rows. Each event is a
+  `Row` with `AlignItems` stretch and `Padding(0)`. Its rail has a fixed top
+  segment that centres the dot on the first line of text, the dot, and a
+  bottom segment that grows. The space below an event is padding inside the
+  body, so the line runs through it. The first top and last bottom segments
+  keep their size and paint nothing.
 
 **Correction found while landing A2:** rendering the row's control
 `core.Disabled(true)` (the approach sketched under A2) was rejected. Disabled

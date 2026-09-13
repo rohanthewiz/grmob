@@ -149,6 +149,9 @@ Two widgets do: Accordion (expanded or collapsed) and DatePicker (is the sheet o
     - [`func (SwitchRow) Render`](#func-switchrow-render)
 - [`type Tabs`](#type-tabs)
     - [`func (Tabs) Render`](#func-tabs-render)
+- [`type Timeline`](#type-timeline)
+    - [`func (Timeline) Render`](#func-timeline-render)
+- [`type TimelineEvent`](#type-timelineevent)
 - [`type Variant`](#type-variant)
     - [`func (Variant) Color`](#func-variant-color)
     - [`func (Variant) Ink`](#func-variant-ink)
@@ -5282,6 +5285,106 @@ func (t Tabs) Render(ctx *core.Context) *core.Node
 ```
 
 <small>[comps/tabs.go:26](https://github.com/rohanthewiz/grmob/blob/master/comps/tabs.go#L26)</small>
+
+### type Timeline
+
+```go
+type Timeline struct {
+	// Events are drawn top to bottom, oldest or newest first as the caller
+	// orders them.
+	Events []TimelineEvent
+
+	// Label is the list's accessible name.
+	Label string
+
+	// Style is applied to the list column after the widget's own props.
+	Style []core.StyleProp
+}
+```
+
+Timeline is a vertical list of events joined by a line down the leading edge, a dot per event: order tracking, an activity feed, a changelog.
+
+	comps.Timeline{
+	    Label: "Order history",
+	    Events: []comps.TimelineEvent{
+	        {Time: "09:12", Title: "Order placed"},
+	        {Time: "11:40", Title: "Packed", Subtitle: "Warehouse 3"},
+	        {Time: "14:05", Title: "Out for delivery", Variant: comps.VariantSuccess},
+	    },
+	}
+
+#### The line is drawn per row, and that is the hard part
+
+No renderer draws a line that spans siblings, so each row draws its own piece of it. The row is a Row with AlignItems stretch, so its leading rail column is exactly as tall as the event's text, and the rail is three parts:
+
+	┌ Row  AlignItems(stretch)  role=listitem ──────────────────┐
+	│ ┌ rail Column ┐ ┌ body Column FlexGrow(1) ───────────────┐ │
+	│ │  │ top      │ │ 11:40                   (Time)         │ │
+	│ │  ●  dot     │ │ Packed                  (Title)        │ │
+	│ │  │          │ │ Warehouse 3             (Subtitle)     │ │
+	│ │  │ bottom   │ │ [Content]                              │ │
+	│ │  │ FlexGrow │ │                    PaddingBottom(MD)   │ │
+	│ └─────────────┘ └────────────────────────────────────────┘ │
+	└────────────────────────────────────────────────────────────┘
+
+The top segment is a fixed height that puts the dot's centre on the centre of the body's first line. The bottom segment grows to the row's full height, and the row's spacing below an event is the body's bottom padding, not a gap between rows, so the bottom segment runs through it and meets the next row's top segment with no break. The first row's top segment and the last row's bottom segment keep their size and paint nothing, so every dot sits at the same offset.
+
+#### Why not ListRow
+
+The plan sketched this as ListRow with a stretched leading slot. ListRow centres its slots by default (overridable) and, more to the point, carries the theme's Row padding above and below. That padding sits outside the rail, so the line would break between every pair of rows. The rows here are plain Rows with Padding(0), and the spacing moves inside the body where the rail can run through it.
+
+Cross-axis stretch on a Row is honoured on every target: the web by align-items, Compose through stretchRowHeight's intrinsic measurement and fillMaxHeight, and iOS through the flex layout's stretch. The native half comes from reading Renderer.kt and GrMobFlex.swift, not from a device run.
+
+#### Accessibility
+
+The Timeline is RoleList and each event RoleListItem, so a reader announces "list, 3 items" and moves event by event; Label names the list. The rail is drawing and is hidden from assistive technology. A list item holds no button role, so an event is read, not operated; put a control in Content if an event needs one.
+
+#### Theme roles read
+
+	Line       Colors.BorderColor()
+	Dot        Variant.Color — Colors.Primary unless the event sets a Variant
+	Time       Typography.Caption
+	Title      Typography.Body, bold
+	Subtitle   Typography.Caption
+	Spacing    Spacing.SM between rail and body, Spacing.MD below an event
+
+<small>[comps/timeline.go:76](https://github.com/rohanthewiz/grmob/blob/master/comps/timeline.go#L76)</small>
+
+#### func (Timeline) Render
+
+```go
+func (tl Timeline) Render(ctx *core.Context) *core.Node
+```
+
+Render builds Column(list) > Row(listitem)... as drawn in the type doc.
+
+<small>[comps/timeline.go:114](https://github.com/rohanthewiz/grmob/blob/master/comps/timeline.go#L114)</small>
+
+### type TimelineEvent
+
+```go
+type TimelineEvent struct {
+	// Time is an optional caption above the title: "09:12", "Yesterday".
+	Time string
+
+	// Title is the event's primary line.
+	Title string
+
+	// Subtitle is the quieter line under the title.
+	Subtitle string
+
+	// Content is an optional view under the text: a thumbnail, a quote, a
+	// button.
+	Content core.View
+
+	// Variant colours the dot. The zero value is Primary.
+	Variant Variant
+}
+```
+
+TimelineEvent is one row of a Timeline.
+
+<small>[comps/timeline.go:89](https://github.com/rohanthewiz/grmob/blob/master/comps/timeline.go#L89)</small>
 
 ### type Variant
 

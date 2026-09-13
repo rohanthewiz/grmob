@@ -1177,6 +1177,50 @@ Other notes:
 - Done steps and the rules after them use the Success colour; the current step
   uses Primary. Both discs pick a contrasting ink.
 
+## Timeline
+
+A vertical list of events joined by a line down the leading edge, a dot per
+event: order tracking, an activity feed, a changelog.
+
+```go
+comps.Timeline{
+    Label: "Order history",
+    Events: []comps.TimelineEvent{
+        {Time: "09:12", Title: "Order placed"},
+        {Time: "11:40", Title: "Packed", Subtitle: "Warehouse 3"},
+        {Time: "14:05", Title: "Out for delivery", Variant: comps.VariantSuccess},
+    },
+}
+```
+
+**Each row draws its own piece of the line.** No renderer draws a line across
+siblings. Each event is a Row with `AlignItems` stretch, so its leading rail
+is as tall as the event's text. The rail has three parts:
+
+| Part | Size | Paints |
+|---|---|---|
+| top segment | fixed, centres the dot on the first line of text | the line, except on the first event |
+| dot | 12 points | the event's `Variant` colour, Primary by default |
+| bottom segment | grows to the row's height | the line, except on the last event |
+
+The space below an event is bottom padding inside its body, not a gap between
+rows. The bottom segment runs through it and meets the next row's top segment
+with no break.
+
+**Not built on `ListRow`.** `ListRow` carries the theme's row padding outside
+its slots, which would break the line between every pair of rows. The rows
+here are plain Rows with no padding.
+
+Other notes:
+
+- `Time` is a caption above the title. The dot lines up with whichever comes
+  first.
+- `Content` puts any view under the text: a thumbnail, a quote, a button.
+- The Timeline is a `RoleList` named by `Label`, and each event is a
+  `RoleListItem`. The rail is hidden from assistive technology.
+- Row stretch on Android and iOS comes from reading their renderers. It has not
+  been checked on a device.
+
 ## FormField
 
 The label / input / hint-or-error frame around any input:

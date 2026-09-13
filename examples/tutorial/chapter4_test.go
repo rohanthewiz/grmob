@@ -1766,7 +1766,7 @@ func TestSmallControlsDemoDrivesAllFourWidgets(t *testing.T) {
 
 func TestChoicesLessonRadioGroupPicksByRow(t *testing.T) {
 	mgr := newApp(t)
-	openLesson(t, mgr, "Radio groups & step indicators")
+	openLesson(t, mgr, "Radio groups, steps & timelines")
 
 	// The radio group is the flow's Shipping step.
 	tap(t, mgr, "Next")
@@ -1793,7 +1793,7 @@ func TestChoicesLessonRadioGroupPicksByRow(t *testing.T) {
 
 func TestChoicesLessonStepIndicatorGoesBackOnlyToDoneSteps(t *testing.T) {
 	mgr := newApp(t)
-	openLesson(t, mgr, "Radio groups & step indicators")
+	openLesson(t, mgr, "Radio groups, steps & timelines")
 
 	strip := func() *node {
 		return findNode(tree(t, mgr), func(n *node) bool {
@@ -1820,6 +1820,37 @@ func TestChoicesLessonStepIndicatorGoesBackOnlyToDoneSteps(t *testing.T) {
 	tapLabelled(t, mgr, "Step 1: Account, done")
 	if strip().Style.AccessibilityLabel != "Checkout, step 1 of 4: Account" {
 		t.Fatal("tapping a done step should go back to it")
+	}
+	assertNoConcerns(t)
+}
+
+func TestChoicesLessonTimelineGrowsWithTheOrder(t *testing.T) {
+	mgr := newApp(t)
+	openLesson(t, mgr, "Radio groups, steps & timelines")
+
+	events := func() int {
+		list := findNode(tree(t, mgr), func(n *node) bool {
+			return n.Style != nil && n.Style.AccessibilityRole == string(core.RoleList) &&
+				n.Style.AccessibilityLabel == "Order history"
+		})
+		if list == nil {
+			t.Fatal("no Order history list")
+		}
+		return len(list.Children)
+	}
+
+	if events() != 2 {
+		t.Fatalf("the order starts with 2 events, got %d", events())
+	}
+	tap(t, mgr, "Advance the order")
+	tap(t, mgr, "Advance the order")
+	if events() != 4 || !hasText(tree(t, mgr), "Delivered") {
+		t.Fatal("two advances should reach Delivered")
+	}
+	// Disabled at the end: the handler stays registered but the flow stops.
+	tap(t, mgr, "Advance the order")
+	if events() != 4 {
+		t.Fatal("the order cannot advance past Delivered")
 	}
 	assertNoConcerns(t)
 }
