@@ -2064,10 +2064,13 @@ func lessonStaticMap() Lesson {
 					"is \"interact with a map\", not \"where is this\"."),
 				demoPanel("Pick a place. The switch is a setting, so the marker changes on the tap.",
 					comps.ChipStrip{Chips: chips},
-					comps.ListRow{
+					// SwitchRow rather than a ListRow with a trailing core.Switch:
+					// the whole row is the target, and the switch is named after it.
+					comps.SwitchRow{
 						Title:    "Marker",
 						Subtitle: "A pin at the centre",
-						Trailing: core.Switch(marker.Get(), func(v bool) { marker.Set(v) }),
+						On:       marker.Get(),
+						OnToggle: marker.Set,
 					},
 					comps.ChipStrip{Chips: zoomChips(zoom)},
 					shown,
@@ -2435,11 +2438,13 @@ if loc.Received && loc.Available {
 					// The flag, as a control the reader can flick. A switch
 					// rather than a button because it shows its own state:
 					// "the GPS is on" is a fact about right now, and a button
-					// would only say what tapping it does.
-					comps.ListRow{
+					// would only say what tapping it does. A SwitchRow, so the whole
+					// row flicks it rather than only the control at its edge.
+					comps.SwitchRow{
 						Title:    "Keep the GPS on",
 						Subtitle: "The flag hooks.UseLocationWhen takes",
-						Trailing: core.Switch(gpsOn.Get(), func(v bool) { gpsOn.Set(v) }),
+						On:       gpsOn.Get(),
+						OnToggle: gpsOn.Set,
 					},
 				),
 				prose("That panel is the one place in this tutorial that asks the OS for "+

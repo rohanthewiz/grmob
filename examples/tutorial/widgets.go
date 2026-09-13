@@ -201,17 +201,24 @@ const (
 var segWrap = []core.StyleProp{core.FlexWrap(true)}
 
 // stepper is the −/+ control the demos use for numeric knobs (gap, font
-// size, radius). Controlled like every GrMob input: it renders value and
-// reports intent through onDelta; clamping is the caller's policy.
-func stepper(label string, value string, onDelta func(delta int)) core.View {
-	return core.ComponentFunc(func(ctx *core.Context) *core.Node {
-		return core.Row(
-			core.Gap(8),
-			core.AlignItemsProp(core.AlignItemsCenter),
-			caption(label),
-			comps.Button{Label: "−", OnTap: func() { onDelta(-1) }, Emphasis: comps.EmphasisOutlined},
-			core.Text(value, core.FontWeight(core.Bold)),
-			comps.Button{Label: "+", OnTap: func() { onDelta(+1) }, Emphasis: comps.EmphasisOutlined},
-		).Render(ctx)
-	})
+// size, radius): a caption naming the knob, then a comps.Stepper bound to one
+// int state.
+//
+// It hand-rolled the two buttons and the number until comps.Stepper existed.
+// The widget now owns what each call site used to pass as a closure: the step
+// size and the clamp into [lo, hi]. It also disables the button that would
+// leave the range, and names the buttons "Decrease"/"Increase" for screen
+// readers, where a bare "−" is read as "minus" or not at all.
+//
+// The caption stays outside the widget because Stepper deliberately draws no
+// label (its Label is only the group's accessible name), and a knob in a demo
+// panel needs its name on screen. The same string is passed as that name, so
+// what is seen and what is announced cannot drift apart.
+func stepper(label string, s core.State[int], lo, hi, step int) core.View {
+	return core.Row(
+		core.Gap(8),
+		core.AlignItemsProp(core.AlignItemsCenter),
+		caption(label),
+		comps.Stepper{Value: s.Get(), Min: lo, Max: hi, Step: step, OnChange: s.Set, Label: label},
+	)
 }

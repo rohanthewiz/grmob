@@ -91,8 +91,8 @@ func TestTheTutorialContentsScreenshotStillShowsWhatItClaims(t *testing.T) {
 // a camera sees, not what the tree holds, so a claim naming text the
 // reader cannot actually see would be held by this test and by nothing a
 // person could check against the image. The strings here are the ones in
-// the frame: the opening paragraph, the highlighted code, and the TRY IT
-// panel under it.
+// the frame: the highlighted code, the paragraph under it, and the TRY IT
+// panel with the profile card its toggles recompose.
 func TestTheTutorialLessonScreenshotStillShowsWhatItClaims(t *testing.T) {
 	mgr := newApp(t)
 	openLesson(t, mgr, "Hello, GrMob")
