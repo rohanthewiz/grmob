@@ -15,6 +15,7 @@ import { join } from "node:path";
 import {
     INK_FACE_FAMILIES,
     INK_FACE_SCRIPT,
+    INK_FACE_SCRIPTS,
     inkFacePreferences,
     writeInkFaceOverride,
 } from "./inkface.mjs";
@@ -29,11 +30,13 @@ function readPrefs(profile) {
     return JSON.parse(readFileSync(join(profile, "Default", "Preferences"), "utf8"));
 }
 
-test("the families are standard and serif, under the Common script", () => {
+test("the families are standard and serif, under the Common and Latin scripts", () => {
     // Pinned rather than derived: both are facts about Chrome, and a change to
     // either list is a change someone should have to make on purpose.
     assert.deepEqual(INK_FACE_FAMILIES, ["standard", "serif"]);
     assert.equal(INK_FACE_SCRIPT, "Zyyy");
+    // Common first: it is the key the calibration table names.
+    assert.deepEqual(INK_FACE_SCRIPTS, ["Zyyy", "Latn"]);
 });
 
 test("no face writes nothing and creates no directory", (t) => {
@@ -48,9 +51,31 @@ test("a fresh profile gets Default/Preferences with the face on both families", 
     assert.equal(writeInkFaceOverride(profile, "Georgia"), "Georgia");
     assert.deepEqual(readPrefs(profile), {
         webkit: { webprefs: { fonts: {
-            standard: { Zyyy: "Georgia" },
-            serif: { Zyyy: "Georgia" },
+            standard: { Zyyy: "Georgia", Latn: "Georgia" },
+            serif: { Zyyy: "Georgia", Latn: "Georgia" },
         } } },
+    });
+});
+
+test("a Latn face already in the profile is overwritten, since Chrome reads it before Zyyy", (t) => {
+    // The shadowing case inkface.mjs measured: with Latn left at Didot, Latin
+    // text drew in Didot whatever Zyyy said. So an existing Latn is the one
+    // sibling the merge must not keep.
+    const profile = scratchProfile(t);
+    mkdirSync(join(profile, "Default"));
+    writeFileSync(join(profile, "Default", "Preferences"), JSON.stringify({
+        webkit: { webprefs: { fonts: {
+            standard: { Latn: "Didot" },
+            serif: { Latn: "Didot", Cyrl: "Times" },
+        } } },
+    }));
+
+    writeInkFaceOverride(profile, "Papyrus");
+
+    assert.deepEqual(readPrefs(profile).webkit.webprefs.fonts, {
+        standard: { Latn: "Papyrus", Zyyy: "Papyrus" },
+        // Other scripts' faces are still carried over.
+        serif: { Latn: "Papyrus", Cyrl: "Times", Zyyy: "Papyrus" },
     });
 });
 
@@ -80,11 +105,11 @@ test("an existing Preferences file keeps everything the face does not replace", 
             webprefs: {
                 default_font_size: 16,
                 fonts: {
-                    // Replaced for the script the grid draws in, kept for the rest.
-                    standard: { Zyyy: "Didot", Hans: "PingFang SC" },
+                    // Replaced for the scripts the grid draws in, kept for the rest.
+                    standard: { Zyyy: "Didot", Hans: "PingFang SC", Latn: "Didot" },
                     // A family this write does not own is left alone.
                     sansserif: { Zyyy: "Helvetica" },
-                    serif: { Zyyy: "Didot" },
+                    serif: { Zyyy: "Didot", Latn: "Didot" },
                 },
             },
         },
@@ -110,7 +135,7 @@ test("inkFacePreferences does not modify its argument", () => {
 test("a non-object at a step of the path is replaced like a missing key", () => {
     const got = inkFacePreferences({ webkit: { webprefs: { fonts: null } } }, "Baskerville");
     assert.deepEqual(got.webkit.webprefs.fonts, {
-        standard: { Zyyy: "Baskerville" },
-        serif: { Zyyy: "Baskerville" },
+        standard: { Zyyy: "Baskerville", Latn: "Baskerville" },
+        serif: { Zyyy: "Baskerville", Latn: "Baskerville" },
     });
 });

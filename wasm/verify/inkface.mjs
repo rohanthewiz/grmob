@@ -35,6 +35,29 @@
 // It is also the key 94583a3's eight-face table was measured through, so the
 // test pins it: the key is part of the fact the table records, not a detail.
 //
+// # Why "Latn" as well
+//
+// Zyyy is the fallback, not the first key read. Chrome looks the face up under
+// the text's own script first and falls back to Zyyy only when that key is
+// unset. Measured on headless Chrome 153 (macOS) with
+// CSS.getPlatformFontsForNode over Latin text in `serif` and in a family list
+// with no generic keyword, with and without lang="en":
+//
+//	Preferences wrote                 Latin text drew in
+//	nothing                           Times
+//	Zyyy: Papyrus                     Papyrus
+//	Latn: Papyrus                     Papyrus
+//	Zyyy and Latn: Papyrus            Papyrus
+//	Zyyy: Papyrus, Latn: Didot        Didot
+//
+// So Zyyy alone works only while nothing else set Latn. The last row is the
+// failure: a merged Preferences (see below), or a Chrome build whose own
+// defaults ship a Latn face, leaves the grid in that face while the log says
+// the override took. Writing both keys closes that and changes nothing else:
+// the both-keys row matched Zyyy alone for every element measured, Cyrillic
+// and Han included. Zyyy stays in the pair because a page with no Latin-script
+// lang still reaches it, and because the eight-face table was taken through it.
+//
 // # Why a merge and not a fresh file
 //
 // Today the profile is always a new mkdtemp directory and there is nothing to
@@ -52,25 +75,35 @@
 import { mkdirSync, writeFileSync, readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 
-// The generic families the face is set for, and the script key it is set
-// under. Exported so the test asserts against the list rather than a copy.
+// The generic families the face is set for, and the script keys it is set
+// under. Exported so the test asserts against the lists rather than a copy.
+//
+// INK_FACE_SCRIPT is the Common key the calibration table was measured
+// through; INK_FACE_SCRIPTS is every key written, Common first. Both are kept
+// so a reader of the table has the one key it names, and the write has the
+// pair the section above measured.
 export const INK_FACE_FAMILIES = ["standard", "serif"];
 export const INK_FACE_SCRIPT = "Zyyy";
+export const INK_FACE_SCRIPTS = [INK_FACE_SCRIPT, "Latn"];
 
 // inkFacePreferences returns `existing` with the face set for every family in
-// INK_FACE_FAMILIES. Pure: the argument is not modified, so a caller holding
-// the parsed file can compare before and after.
+// INK_FACE_FAMILIES, under every key in INK_FACE_SCRIPTS. Pure: the argument
+// is not modified, so a caller holding the parsed file can compare before and
+// after.
 //
-// Only the path webkit.webprefs.fonts.<family>.<script> is created; every
-// sibling at every level along it is carried over, including other scripts'
-// faces within a family this write touches.
+// Only the paths webkit.webprefs.fonts.<family>.<script> are created; every
+// sibling at every level along them is carried over, including other scripts'
+// faces within a family this write touches. A Latn face already there is
+// overwritten, not kept: it is the one sibling that would shadow the override.
 export function inkFacePreferences(existing, face) {
     const prefs = structuredClone(isObject(existing) ? existing : {});
     const webkit = (prefs.webkit = isObject(prefs.webkit) ? prefs.webkit : {});
     const webprefs = (webkit.webprefs = isObject(webkit.webprefs) ? webkit.webprefs : {});
     const fonts = (webprefs.fonts = isObject(webprefs.fonts) ? webprefs.fonts : {});
     for (const family of INK_FACE_FAMILIES) {
-        fonts[family] = { ...(isObject(fonts[family]) ? fonts[family] : {}), [INK_FACE_SCRIPT]: face };
+        const byScript = { ...(isObject(fonts[family]) ? fonts[family] : {}) };
+        for (const script of INK_FACE_SCRIPTS) byScript[script] = face;
+        fonts[family] = byScript;
     }
     return prefs;
 }

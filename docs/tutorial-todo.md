@@ -499,7 +499,7 @@ test suite doubles as proof the accessibility wiring works.
 ## 5. Persistence: write-through to an embedded database
 
 Todos survive relaunch. The whole persistence layer is
-[`store.go`](../examples/todoapp/store.go) — a thin wrapper around
+[`store.go`](https://github.com/rohanthewiz/grmob/blob/master/examples/todoapp/store.go) — a thin wrapper around
 [bytdb](https://github.com/rohanthewiz/bytdb), an embedded Postgres-dialect
 SQL database in pure Go. Pure Go is the point: the store compiles through
 gomobile like any other framework code — no cgo, no per-ABI SQLite binary,

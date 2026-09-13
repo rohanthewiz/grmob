@@ -84,7 +84,7 @@ core.Row(
 
   It is honoured on all four targets, which is what separates it from the
   flexbox `AlignSelf` in the
-  [style reference](styling-and-theming.md#what-each-target-reads): a SwiftUI
+  [style reference](styling-and-theming.md#what-each-target-honors): a SwiftUI
   `Alignment`, a Compose `Alignment` and a CSS grid item's
   `justify-self`/`align-self` turn out to be the same nine values, so the prop
   could be portable rather than a CSS property two renderers ignore.

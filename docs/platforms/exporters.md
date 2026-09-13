@@ -131,7 +131,7 @@ indented HTML. Properties worth relying on:
   merely tolerated: `core.SetDebugMode` walks the finished tree, which is the
   one place a whole document is visible, and flags a reference nothing answers
   to, an id claimed twice, and an id that is not a usable HTML id. See
-  [State & Hooks](../concepts/state-and-hooks.md#debug-mode). They are what
+  [Debug Mode](../concepts/debug-mode.md#the-accessibility-audit). They are what
   lets a hand-built tab strip say which region each tab governs, together with
   `core.RoleTabPanel` on the region itself; see
   [Styling & Theming](../concepts/styling-and-theming.md#accessibilityid-and-accessibilitycontrols).
