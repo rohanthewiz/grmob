@@ -344,7 +344,7 @@ type Style struct {
 	//	role                         attribute
 	//	-------------------------    -------------------------------------
 	//	tab, row, columnheader,      aria-selected
-	//	option
+	//	option, gridcell
 	//	radio                        aria-checked
 	//	button (or a core.Button)    aria-pressed
 	//	anything else                nothing at all
@@ -376,7 +376,7 @@ type Style struct {
 	// point rather than an omission. `group` is a role that fits any
 	// container, so supplying it invents nothing; there is no role that
 	// carries a selection and fits any container — aria-selected is scoped to
-	// option, tab, row and columnheader, and picking one of those for a node
+	// option, tab, row, columnheader and gridcell, and picking one of those for a node
 	// would be deciding what the node is. A name is a fact about the node the
 	// author already stated; a role is not.
 	//
@@ -413,6 +413,7 @@ type Style struct {
 	//	tab             aria-selected              yes
 	//	row             aria-selected              yes
 	//	columnheader    aria-selected              yes
+	//	gridcell        aria-selected              yes
 	//	option          aria-selected              no
 	//	link            no                         yes
 	//	listbox         no                         yes

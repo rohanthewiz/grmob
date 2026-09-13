@@ -231,7 +231,7 @@ func TestDatePickerCalendarTemplatePassesThrough(t *testing.T) {
 	if findText(cal, "Setembro de 2026") == nil {
 		t.Error("the template's MonthLabel should reach the grid — and its Month should not")
 	}
-	if got := cal.Children[1].Children[0].Children[0].Props["content"]; got != "Mo" {
+	if got := captionRow(t, cal).Children[0].Children[0].Props["content"]; got != "Mo" {
 		t.Errorf("first caption = %v, want the template's Monday start", got)
 	}
 	// Monday start, September 1 a Tuesday: one leading day, so the 9th sits at

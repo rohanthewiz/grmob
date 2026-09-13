@@ -1353,11 +1353,13 @@ func ariaLevel(s *core.Style) string {
 // # The role list is ARIA's own scoping, not a shortlist
 //
 // aria-selected is defined for gridcell, option, row, tab, columnheader and
-// rowheader; of those, core.Role carries option, tab, row and columnheader.
-// The one near miss is worth naming because it looks like it belongs:
+// rowheader; of those, core.Role carries gridcell, option, tab, row and
+// columnheader. The one near miss is worth naming because it looks like it
+// belongs:
 //
 //	cell       is not gridcell. A table cell is not selectable; a grid cell
-//	           in an interactive grid is, and core.Role has no grid.
+//	           in an interactive grid is — which is why comps.DataTable's
+//	           cells are RoleCell and comps.Calendar's days are RoleGridCell.
 //
 // listitem was a second near miss until core.RoleOption existed, and the two
 // are still not interchangeable: a list item is *content* and an option is a
@@ -1399,7 +1401,7 @@ func ariaSelected(s *core.Style, nodeType string) (string, string) {
 	}
 	value := string(s.AccessibilitySelected)
 	switch s.AccessibilityRole {
-	case core.RoleOption, core.RoleTab, core.RoleRow, core.RoleColumnHeader:
+	case core.RoleGridCell, core.RoleOption, core.RoleTab, core.RoleRow, core.RoleColumnHeader:
 		return "aria-selected", value
 	case core.RoleRadio:
 		return "aria-checked", value
@@ -1465,7 +1467,7 @@ func ariaExpanded(s *core.Style, nodeType string) string {
 	}
 	value := string(s.AccessibilityExpanded)
 	switch s.AccessibilityRole {
-	case core.RoleButton, core.RoleLink, core.RoleListBox, core.RoleRow, core.RoleColumnHeader, core.RoleTab,
+	case core.RoleButton, core.RoleLink, core.RoleListBox, core.RoleRow, core.RoleColumnHeader, core.RoleGridCell, core.RoleTab,
 		core.RoleComboBox:
 		return value
 	case core.RoleNone:
@@ -1508,7 +1510,7 @@ func ariaHasPopup(s *core.Style, nodeType string) string {
 	}
 	value := string(s.AccessibilityHasPopup)
 	switch s.AccessibilityRole {
-	case core.RoleButton, core.RoleLink, core.RoleTab, core.RoleColumnHeader, core.RoleComboBox:
+	case core.RoleButton, core.RoleLink, core.RoleTab, core.RoleColumnHeader, core.RoleGridCell, core.RoleComboBox:
 		return value
 	case core.RoleNone:
 		if nodeType == "Button" {

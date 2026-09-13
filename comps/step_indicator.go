@@ -59,7 +59,19 @@ import (
 // the selected state on both natives. It used to be a ", current" name suffix.
 // ", done" stays an English suffix, because no platform has a completed state:
 // ARIA has no attribute for it, and Compose's and SwiftUI's semantics have no
-// property either.
+// property either. The three ARIA near misses each say something false:
+//
+//	aria-current    names the one step the flow is on. A done step is exactly
+//	                the one it is not on, and core.CurrentStep already marks
+//	                the step that is.
+//	aria-checked    a checkbox's state. It announces a control the user ticks
+//	                and unticks, and no step is ticked by being tapped.
+//	aria-selected   one choice of a set. Every done step is done at once, so
+//	                there is no set for it to be one of — and a tappable done
+//	                step is a button, which ARIA does not give aria-selected.
+//
+// comps.Calendar's ", today" left its name when core.CurrentDate gave the web
+// targets a word for it; ", done" has no such word to move to.
 //
 // # Theme roles read
 //

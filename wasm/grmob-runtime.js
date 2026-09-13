@@ -1013,18 +1013,22 @@ const GrMob = (() => {
     // Kept to the two roles that name their members *and* own their children.
     // `list`/`listitem` is content rather than a control and has no pattern.
     //
-    // `menu`, `tree` and `grid` are the three patterns still absent, and they
-    // are absent for two different reasons that aria/verify/refusals_test.go
-    // now holds apart: `menu` and `tree` need member roles core does not carry
-    // (`menuitem`, `treeitem`), where `grid` needs no new member role at all —
-    // core already has `row` and `cell` — and needs a two-dimensional walk this
-    // one-dimensional machinery has no shape for.
+    // `menu` and `tree` are the patterns still absent: they need member roles
+    // core does not carry (`menuitem`, `treeitem`), and
+    // aria/verify/refusals_test.go holds each refusal to what it is blocked on.
+    //
+    // `grid` joined as the fourth pair once core carried RoleGrid and
+    // RoleGridCell. Its members are found by this same walk — compositeMembers
+    // descends through the rows ARIA puts between a grid and its cells exactly
+    // as it descends through any wrapper — and what it needed beyond the walk
+    // was a second axis in the arrow keys. See "A grid: the same stop, a
+    // second axis".
     //
     // `radiogroup` joined as the third pair once core carried RoleRadioGroup and
     // RoleRadio. Its walk is the listbox's with two differences, both below:
     // the checked radio (aria-checked, not aria-selected) holds the stop, and
     // the arrows always move the check — see moveCompositeFocus.
-    const COMPOSITE_MEMBERS = { listbox: "option", radiogroup: "radio", tablist: "tab" };
+    const COMPOSITE_MEMBERS = { listbox: "option", radiogroup: "radio", grid: "gridcell", tablist: "tab" };
 
     // Composites whose members ARIA does not name. See focusableMembers.
     //
@@ -1449,8 +1453,20 @@ const GrMob = (() => {
     //   nothing selected     whatever already holds the stop, so a widget with
     //                        no selection at all still remembers where the
     //                        user left it.
-    //   nothing at all       the first member, so the widget is enterable on
-    //                        its very first render.
+    //   no stop yet          the member stating aria-current: today in a date
+    //                        grid, the page a bar is showing. It is where ARIA's
+    //                        date-picker pattern puts focus when no day is
+    //                        chosen, and a current item is the natural way in
+    //                        to any set. Below the held stop, not above it: a
+    //                        current item does not move because the user did
+    //                        something, so ranking it higher would only yank
+    //                        the stop back to it on every unrelated patch.
+    //   nothing at all       the first member that is not aria-disabled, so
+    //                        the widget is enterable on its very first render
+    //                        and a month grid does not open its way in on a
+    //                        greyed day of the previous month. The very first
+    //                        member when every one is disabled, since a
+    //                        reachable widget beats a perfect entry point.
     function activeMemberIndex(members) {
         const focused = document.activeElement;
         const held = members.indexOf(focused);
@@ -1462,7 +1478,17 @@ const GrMob = (() => {
                 m.getAttribute("aria-checked") === "true");
         if (selected >= 0) return selected;
         const stop = members.findIndex((m) => m.getAttribute("tabindex") === "0");
-        return stop >= 0 ? stop : 0;
+        if (stop >= 0) return stop;
+        // aria-current is a token list whose "false" is ARIA's spelling of no
+        // claim; applyAccessibility never writes it, but a member built by hand
+        // could, and "false" must not win the stop.
+        const current = members.findIndex((m) => {
+            const v = m.getAttribute("aria-current");
+            return !!v && v !== "false";
+        });
+        if (current >= 0) return current;
+        const enabled = members.findIndex((m) => m.getAttribute("aria-disabled") !== "true");
+        return enabled >= 0 ? enabled : 0;
     }
 
     // Writes the roving tabindex and wires the members' keys.
@@ -1684,6 +1710,135 @@ const GrMob = (() => {
         return false;
     }
 
+    // --- A grid: the same stop, a second axis --------------------------------
+    //
+    // A grid's members are found by the walk every named composite uses — the
+    // cells carry role="gridcell", and compositeMembers descends through the
+    // rows between them and the container. What a grid adds is where the
+    // arrows go, and that needs one fact the flat member list does not carry:
+    // which row each cell is in.
+    //
+    //	grid
+    //	├── row   [0] [1] [2] [3] [4] [5] [6]      members, in document order,
+    //	├── row   [7] [8] [9] ...                  grouped by their row
+    //	└── row   ...
+    //
+    // # Keys, from ARIA's grid and date-picker patterns
+    //
+    //	ArrowRight / ArrowLeft   the next or previous cell in the same row. No
+    //	                         wrap: ARIA's grid stops at the edge, and in a
+    //	                         month the step from Saturday to the next Sunday
+    //	                         is ArrowDown then Home, not Right.
+    //	ArrowDown / ArrowUp      the cell in the same column one row over,
+    //	                         clamped to a shorter row's last cell. No wrap.
+    //	Home / End               the first or last cell of the current row.
+    //	Ctrl+Home / Ctrl+End     the first or last cell of the whole grid.
+    //	Enter / Space            the cell's own onClick, as for every composite.
+    //	PageUp / PageDown        left to the page. The date-picker pattern pages
+    //	                         months with them, and the month is Go state
+    //	                         this runtime cannot change without a render —
+    //	                         comps.Calendar's month arrows are ordinary
+    //	                         buttons a Shift+Tab away.
+    //
+    // An arrow at an edge is still taken from the page (preventDefault) and
+    // moves nothing. The four arrows all belong to a grid, unlike a one-axis
+    // composite whose other pair scrolls the page; a Down at the bottom row
+    // that scrolled the document instead would be the widget changing what the
+    // key means depending on where focus happens to be.
+    //
+    // # Rows are read off the DOM on every keystroke
+    //
+    // The nearest role="row" ancestor inside the container, the same "derive,
+    // don't hold" rule as the rest of this section, which is what lets a patch
+    // swap a whole month under the same six rows with nothing to invalidate. A
+    // run of cells with no row around them — a grid built without the middle
+    // level, which core/role.go's structural rule calls a mistake — is
+    // treated as one row, so the widget still moves instead of trapping focus.
+    //
+    // # Not mirrored for right-to-left
+    //
+    // ArrowRight is "next" whatever the writing direction, as it is for the
+    // one-axis composites above. A grid that mirrored while the tab strip
+    // beside it did not would be the inconsistency; mirroring is a question for
+    // every composite at once.
+    function gridRowOf(cell, container) {
+        for (let el = cell.parentNode; el && el !== container; el = el.parentNode) {
+            if (el.getAttribute && el.getAttribute("role") === "row") return el;
+        }
+        return null;
+    }
+
+    // The member indexes grouped by row, in document order. A new group starts
+    // whenever the row changes, so cells that share a row are contiguous — the
+    // walk visits a row's subtree whole before the next one.
+    function gridRows(container, members) {
+        const rows = [];
+        let last;
+        members.forEach((member, i) => {
+            const row = gridRowOf(member, container);
+            if (rows.length === 0 || row !== last) rows.push([]);
+            last = row;
+            rows[rows.length - 1].push(i);
+        });
+        return rows;
+    }
+
+    // A grid cell's keydown. Called from handleCompositeKey once it has found
+    // the container and the member's index, so the walk out and the walk in are
+    // the ones every composite shares.
+    function handleGridKey(e, container, members, at) {
+        // Alt and Meta combinations are the browser's and the page's (Cmd+Left
+        // is "back" in some browsers). Ctrl is read below, for Home and End.
+        if (e.altKey || e.metaKey) return;
+
+        const rows = gridRows(container, members);
+        let r = 0;
+        let c = 0;
+        rows.forEach((row, ri) => {
+            const ci = row.indexOf(at);
+            if (ci >= 0) {
+                r = ri;
+                c = ci;
+            }
+        });
+        const row = rows[r];
+
+        let to;
+        switch (e.key) {
+            case "ArrowRight":
+                to = row[Math.min(c + 1, row.length - 1)];
+                break;
+            case "ArrowLeft":
+                to = row[Math.max(c - 1, 0)];
+                break;
+            case "ArrowDown":
+            case "ArrowUp": {
+                const next = rows[r + (e.key === "ArrowDown" ? 1 : -1)];
+                to = next ? next[Math.min(c, next.length - 1)] : at;
+                break;
+            }
+            case "Home":
+                to = e.ctrlKey ? 0 : row[0];
+                break;
+            case "End":
+                to = e.ctrlKey ? members.length - 1 : row[row.length - 1];
+                break;
+            case "Enter":
+            case " ":
+                activateCompositeMember(members[at], e);
+                return;
+            default:
+                // No typeahead: a grid's cells are not a list of names to
+                // search, and a printable key belongs to the page.
+                return;
+        }
+        e.preventDefault();
+        // Staying put is not a move. Calling moveCompositeFocus with the same
+        // index would re-run a selection-follows-focus grid's handler on an
+        // edge keystroke, choosing again what is already chosen.
+        if (to !== at) moveCompositeFocus(container, members, to);
+    }
+
     // One member's keydown.
     //
     // currentTarget rather than target: in a browser the key arrives at
@@ -1702,6 +1857,14 @@ const GrMob = (() => {
         const members = compositeMembersOf(container);
         const at = members.indexOf(member);
         if (at < 0) return;
+
+        // A grid has two axes, so neither arrow pair below is its own. It shares
+        // everything up to here — the walk out, the member list — and nothing
+        // after.
+        if (container.getAttribute("role") === "grid") {
+            handleGridKey(e, container, members, at);
+            return;
+        }
 
         const vertical = compositeIsVertical(container);
         let to = -1;
@@ -2485,6 +2648,7 @@ const GrMob = (() => {
         const value = style.AccessibilitySelected || "";
         if (!value) return ["", "", ""];
         switch (style.AccessibilityRole) {
+            case "gridcell":
             case "option":
             case "tab":
             case "row":
@@ -2533,6 +2697,7 @@ const GrMob = (() => {
             case "listbox":
             case "row":
             case "columnheader":
+            case "gridcell":
             case "tab":
             case "combobox":
                 return value;
@@ -2561,6 +2726,7 @@ const GrMob = (() => {
             case "link":
             case "tab":
             case "columnheader":
+            case "gridcell":
             case "combobox":
                 return value;
             case "":

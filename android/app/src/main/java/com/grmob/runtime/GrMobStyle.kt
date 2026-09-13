@@ -533,7 +533,7 @@ fun GrMobStyle?.boxModifier(extra: Modifier = Modifier, gestures: Modifier = Mod
         isDisabled || kind.isNotEmpty() || selectedState.isNotEmpty() ||
         currentKind.isNotEmpty() || valueRange.stated()
     ) {
-        val description = listOf(accessibilityLabel, accessibilityHint)
+        val description = listOf(grMobCurrentLabel(accessibilityLabel, currentKind), accessibilityHint)
             .filter { it.isNotEmpty() }.joinToString(". ")
         m = m.semantics {
             if (description.isNotEmpty()) contentDescription = description
@@ -933,6 +933,16 @@ fun SemanticsPropertyReceiver.grMobRole(kind: String) {
         // RadioButton reports through Modifier.selectable.
         "radiogroup" -> selectableGroup()
         "radio" -> role = Role.RadioButton
+        // An interactive grid and one cell in it. Compose has no container
+        // semantics for a grid — collectionInfo describes row and column
+        // counts this prop does not carry — and TalkBack moves through one by
+        // swipe rather than by arrow key, so the container's word is the loss.
+        "grid" -> {}
+        // The cell is a control, and Role.Button is the control word Compose
+        // has. It is also what comps.Calendar's days announced as here while
+        // they were RoleButton, so moving the widget onto the grid pair
+        // changed nothing a TalkBack user hears.
+        "gridcell" -> role = Role.Button
         // A determinate or indeterminate progress bar. The *role* has no
         // Compose member — Role has Button, Checkbox, Switch, RadioButton,
         // Tab, Image and DropdownList — but unlike the empty arms around it
@@ -1078,10 +1088,31 @@ fun SemanticsPropertyReceiver.grMobSelected(state: String) {
  *
  * A stated core.SelectedState wins: grMobSelected has already written it, and
  * a node that says both is making the more specific claim with that field.
+ *
+ * "date" is not folded. A calendar's today cell stating selected would be
+ * announced as the chosen day, and a calendar has a chosen day of its own; the
+ * fact goes into the name instead, through [grMobCurrentLabel]. See Go's
+ * core.CurrentKind, "CurrentDate is the exception to the fold".
  */
 fun SemanticsPropertyReceiver.grMobCurrent(kind: String, state: String) {
-    if (kind.isNotEmpty() && state.isEmpty()) selected = true
+    if (kind.isNotEmpty() && kind != "date" && state.isEmpty()) selected = true
 }
+
+/**
+ * The accessible name with core.CurrentDate spoken into it.
+ *
+ * Compose has no current property and "today" must not become `selected`
+ * (see [grMobCurrent]), so the name is the one channel left. The suffix is the
+ * one comps.Calendar used to write in Go for every target; it moved here when
+ * the web targets gained aria-current="date", which a browser's screen reader
+ * announces in the user's own language. It is still English on this platform,
+ * as it was before.
+ *
+ * A node with no name gets none: ", today" on its own would be a name that
+ * says only the suffix.
+ */
+fun grMobCurrentLabel(label: String, kind: String): String =
+    if (kind == "date" && label.isNotEmpty()) "$label, today" else label
 
 /**
  * core.Spin on Compose: the box turns one revolution every [periodMs],

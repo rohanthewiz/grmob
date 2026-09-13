@@ -53,6 +53,11 @@ import (
 //	             toolbar, on its formatting strip. It carried no role while
 //	             the rule was "no widget declares one"; the strip's buttons are
 //	             built from RichToolItem data, so it met the closed rule.
+//	Calendar     grid. Its cells are built from the month, so the grid is
+//	             closed; its one caller view, Header, renders as the grid's
+//	             sibling rather than inside it. viewsOutsideTheComposite
+//	             excuses exactly that field, and calendar_test.go's
+//	             TestCalendarIsAGridOfRowsOfCells holds the placement.
 //
 // Both are CLOSED: every member is built by the widget from data (BarItem,
 // RadioOption), and no struct the widget declares holds a core.View. A closed
@@ -95,6 +100,7 @@ func TestOnlyClosedWidgetsDeclareACompositeContainerRole(t *testing.T) {
 	// The closed widgets allowed to declare a container role, by file.
 	closedComposites := map[string]string{
 		"bottom_bar.go":        "toolbar when Selected < 0; cells are built from BarItem data",
+		"calendar.go":          "grid; cells are built from the month, and Header renders beside the grid",
 		"code_editor.go":       "toolbar; its three buttons are built by the widget",
 		"radio_group.go":       "radiogroup; rows are built from RadioOption data",
 		"rich_text_editor.go":  "toolbar; buttons are built from RichToolItem data",
@@ -134,7 +140,7 @@ func TestOnlyClosedWidgetsDeclareACompositeContainerRole(t *testing.T) {
 		})
 
 		if _, listed := closedComposites[name]; listed {
-			if fields := viewFields(file); len(fields) > 0 {
+			if fields := unexcusedViews(viewFields(file)); len(fields) > 0 {
 				t.Errorf("%s declares a composite container role and holds caller views in %v.\n\n"+
 					"A widget on the closed list must build every member itself. One that "+
 					"takes a core.View can hold another composite, so two of it nest by "+
@@ -199,6 +205,34 @@ func viewFields(file *ast.File) []string {
 	return out
 }
 
+// Views a closed widget holds that render *beside* its composite container
+// rather than inside it, by "Type.Field".
+//
+// The closed rule's premise is that nothing a caller supplies can end up
+// inside the composite, and a view field is how it would get there. A field
+// that the widget places outside the container cannot, so it does not break
+// the premise — but only while the placement holds, which is why every entry
+// names the test that holds it. An entry here with no such test is the rule
+// being switched off one field at a time.
+var viewsOutsideTheComposite = map[string]string{
+	// The month row. A grid owns only rows, so the header is outside the grid
+	// container for the structure's sake as well; calendar_test.go's
+	// TestCalendarIsAGridOfRowsOfCells renders a caller Header and checks it
+	// lands beside the grid and nowhere inside it.
+	"Calendar.Header": "rendered above the role=grid container, never inside it",
+}
+
+// unexcusedViews drops the fields viewsOutsideTheComposite excuses.
+func unexcusedViews(fields []string) []string {
+	var out []string
+	for _, f := range fields {
+		if _, excused := viewsOutsideTheComposite[f]; !excused {
+			out = append(out, f)
+		}
+	}
+	return out
+}
+
 // roleConstName maps a core.Role value back to the identifier core declares it
 // under, which is what a source scan can see.
 //
@@ -212,6 +246,8 @@ func roleConstName(t *testing.T, r core.Role) string {
 		return "RoleListBox"
 	case core.RoleRadioGroup:
 		return "RoleRadioGroup"
+	case core.RoleGrid:
+		return "RoleGrid"
 	case core.RoleTabList:
 		return "RoleTabList"
 	case core.RoleToolbar:

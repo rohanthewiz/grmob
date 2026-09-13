@@ -96,7 +96,6 @@ func TestBothNativesFoldTheCurrentItemIntoSelected(t *testing.T) {
 	swift := codeIn(t, swiftStyle)
 	for _, expr := range []string{
 		"private func grMobCurrentTrait(",
-		"!kind.isEmpty && selected.isEmpty ? .isSelected : []",
 		"grMobCurrentTrait(s.accessibilityCurrent, selected: s.accessibilitySelected)",
 	} {
 		if !strings.Contains(swift, expr) {
@@ -106,13 +105,60 @@ func TestBothNativesFoldTheCurrentItemIntoSelected(t *testing.T) {
 	kotlin := codeIn(t, kotlinStyle)
 	for _, expr := range []string{
 		"fun SemanticsPropertyReceiver.grMobCurrent(",
-		"if (kind.isNotEmpty() && state.isEmpty()) selected = true",
 		"grMobCurrent(currentKind, selectedState)",
 		"currentKind.isNotEmpty()",
 	} {
 		if !strings.Contains(kotlin, expr) {
 			t.Errorf("%s: %q not found — the fold of a current item into selected, or the "+
 				"semantics lambda opening for one", kotlinStyle, expr)
+		}
+	}
+
+	// The fold expressions themselves, read with their literals intact: each
+	// now names "date" as the kind it leaves out, and codeIn blanks string
+	// literals. See TestBothNativesSpeakTheCurrentDateIntoTheName for why.
+	for _, pin := range []struct{ file, expr string }{
+		{swiftStyle, `!kind.isEmpty && kind != "date" && selected.isEmpty ? .isSelected : []`},
+		{kotlinStyle, `if (kind.isNotEmpty() && kind != "date" && state.isEmpty()) selected = true`},
+	} {
+		if !strings.Contains(valuesIn(t, pin.file), pin.expr) {
+			t.Errorf("%s: %q not found — the fold of a current item into the selected "+
+				"state, with the current date left out of it", pin.file, pin.expr)
+		}
+	}
+}
+
+// core.CurrentDate is the one kind neither native folds into selected: a
+// calendar's today cell announced as selected would name the wrong day as the
+// chosen one, and a calendar has a chosen day of its own. Both speak it into
+// the name instead, as the ", today" comps.Calendar used to write in Go for
+// every target (see core.CurrentKind, "CurrentDate is the exception to the
+// fold").
+//
+// Three links on each platform, and every one of them fails silently: the fold
+// could fold it again (TestBothNativesFoldTheCurrentItemIntoSelected holds the
+// exclusion), the helper could stop appending, or the name could stop being
+// routed through the helper — in which case today on a phone would simply be a
+// day, with nothing anywhere saying so. Read with literals intact, because the
+// suffix and the kind are both string literals.
+func TestBothNativesSpeakTheCurrentDateIntoTheName(t *testing.T) {
+	for _, pin := range []struct{ file, expr, why string }{
+		{swiftStyle, `private func grMobCurrentLabel(_ label: String, kind: String) -> String {`,
+			"the helper that speaks the current date into the label"},
+		{swiftStyle, `kind == "date" ? label + ", today" : label`,
+			"the suffix itself"},
+		{swiftStyle, `.accessibilityLabel(grMobCurrentLabel(s.accessibilityLabel, kind: s.accessibilityCurrent))`,
+			"grMobAccessibility routing the label through the helper"},
+		{kotlinStyle, `fun grMobCurrentLabel(label: String, kind: String): String =`,
+			"the helper that speaks the current date into the contentDescription"},
+		{kotlinStyle, `if (kind == "date" && label.isNotEmpty()) "$label, today" else label`,
+			"the suffix itself, and no bare suffix on a node with no name"},
+		{kotlinStyle, `listOf(grMobCurrentLabel(accessibilityLabel, currentKind), accessibilityHint)`,
+			"boxModifier routing the description through the helper"},
+	} {
+		if !strings.Contains(valuesIn(t, pin.file), pin.expr) {
+			t.Errorf("%s: %q not found — %s. comps.Calendar's today cell would be "+
+				"announced as an ordinary day on this platform", pin.file, pin.expr, pin.why)
 		}
 	}
 }

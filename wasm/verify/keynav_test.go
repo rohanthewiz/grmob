@@ -39,8 +39,18 @@ import (
 var compositeRoles = []struct{ container, member core.Role }{
 	{core.RoleListBox, core.RoleOption},
 	{core.RoleRadioGroup, core.RoleRadio},
+	{core.RoleGrid, core.RoleGridCell},
 	{core.RoleTabList, core.RoleTab},
 }
+
+// The composites whose arrows run on both axes. ARIA does not define
+// aria-orientation on a grid at all, so the rule below — every composite has
+// an orientation default, or its arrow pair is chosen by accident — does not
+// apply: handleGridKey takes all four arrows and never reads the attribute.
+//
+// Held in the other direction too: a two-axis composite that did gain a row in
+// the orientation table would announce an axis the widget does not have.
+var twoAxisComposites = map[core.Role]bool{core.RoleGrid: true}
 
 // COMPOSITE_MEMBERS is a const object literal rather than a lookup function,
 // so it is read directly instead of through parseRuntimeTable — which requires
@@ -85,7 +95,17 @@ func TestRuntimeCompositeRolesMatchCore(t *testing.T) {
 	// TestRuntimeOrientationTableMatchesGo in orientation_test.go; what is
 	// checked here is only that the two tables cover the same containers.
 	for _, want := range compositeRoles {
-		if _, ok := htmlout.AriaOrientationDefaults()[string(want.container)]; !ok {
+		_, oriented := htmlout.AriaOrientationDefaults()[string(want.container)]
+		if twoAxisComposites[want.container] {
+			if oriented {
+				t.Errorf("core.Role %q moves on both axes and has an aria-orientation "+
+					"default — ARIA does not define the attribute there, and the "+
+					"announcement would claim one axis for a widget that has two",
+					want.container)
+			}
+			continue
+		}
+		if !oriented {
 			t.Errorf("core.Role %q has a keyboard pattern but no aria-orientation "+
 				"default — a container of that role whose axis nothing set would "+
 				"take the horizontal arrows by accident, and would announce nothing",
@@ -583,6 +603,36 @@ func TestTheComboboxKeyboardIsWiredWhereItClaims(t *testing.T) {
 	if strings.Contains(out, "aria-activedescendant") {
 		t.Errorf("htmlout wrote aria-activedescendant — which option a keystroke reached is "+
 			"behaviour, and a static page has no keystrokes\n%s", out)
+	}
+}
+
+// A grid's keyboard is its own function, reached before the one-axis arrows.
+//
+// keynav_test.mjs holds the behaviour (arrows by cell and by row, no wrap,
+// Home/End in the row, the corners on Ctrl). What is pinned from Go is the
+// dispatch, because its removal is silent in the worst way: a grid would fall
+// through to compositeIsVertical, read no aria-orientation, take the
+// horizontal pair as one flat run of 42 cells, and still pass every check that
+// only asks whether an arrow moved focus.
+func TestTheGridTakesItsOwnKeyboard(t *testing.T) {
+	src := runtimeSource(t)
+	for _, want := range []struct{ expr, why string }{
+		{`        if (container.getAttribute("role") === "grid") {
+            handleGridKey(e, container, members, at);
+            return;
+        }`,
+			"handleCompositeKey handing a grid to its two-axis handler before the " +
+				"one-axis arrows are chosen"},
+		{`if (el.getAttribute && el.getAttribute("role") === "row") return el;`,
+			"the row lookup, read off the DOM on every keystroke, that gives the " +
+				"arrows their second axis"},
+		{`if (to !== at) moveCompositeFocus(container, members, to);`,
+			"an edge keystroke moving nothing — without the guard a " +
+				"selection-follows-focus grid re-chooses the cell it is on"},
+	} {
+		if !strings.Contains(src, want.expr) {
+			t.Errorf("grmob-runtime.js: %q not found — %s", want.expr, want.why)
+		}
 	}
 }
 

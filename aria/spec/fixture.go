@@ -66,12 +66,14 @@ var InScopeAttributes = []string{
 // (`combobox` sat here as `listbox`'s near miss until core.RoleComboBox made
 // it vocabulary, and is now in the fixture as one of core's own roles.)
 //
-// `menu`, `menubar`, `tree`, `treegrid` and `grid` are the composite patterns
-// core has no vocabulary for, and `menuitem`, `menuitemcheckbox`,
-// `menuitemradio` and `treeitem` are the member roles those patterns move
-// between. (`radiogroup` and `radio` sat here until core.RoleRadioGroup and
-// core.RoleRadio made them vocabulary; they are now in the fixture as core's
-// own roles.) Both halves are here because
+// `menu`, `menubar`, `tree` and `treegrid` are the composite patterns core has
+// no vocabulary for, and `menuitem`, `menuitemcheckbox`, `menuitemradio` and
+// `treeitem` are the member roles those patterns move between. (`radiogroup`
+// and `radio` sat here until core.RoleRadioGroup and core.RoleRadio made them
+// vocabulary, and `grid` and `gridcell` until core.RoleGrid and
+// core.RoleGridCell did; all four are now in the fixture as core's own roles,
+// and `cell` is not `gridcell` is still an assertion — between two of them.)
+// Both halves are here because
 // aria/verify/refusals_test.go holds each refusal to what the pattern actually
 // requires rather than to a sentence somebody wrote once — and the member roles
 // are the half that decides which blocker a refusal is still standing on.
@@ -79,7 +81,6 @@ var NearMisses = []string{
 	"generic",
 	"dialog",
 	"switch",
-	"gridcell",
 	"meter",
 	"scrollbar",
 	"slider",
@@ -91,7 +92,6 @@ var NearMisses = []string{
 	"treegrid",
 	"treeitem",
 	"rowheader",
-	"grid",
 	"menuitem",
 	"menuitemcheckbox",
 	"menuitemradio",

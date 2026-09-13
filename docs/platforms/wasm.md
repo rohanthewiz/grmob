@@ -891,6 +891,42 @@ roving `tabindex`: that shape is two tab stops rather than one, which is not wha
 ARIA describes and is the honest outcome of a rule that will not guess. Every
 control stays reachable, which the alternatives lose.
 
+#### A grid, whose members sit a level down
+
+`role="grid"` is the fourth pair, and `comps.Calendar` is the widget that asked:
+its forty-two days were `role="button"` toggles, so a keyboard crossed a month
+one `Tab` per day. A grid's members are named — `gridcell` — but ARIA puts a
+`row` between them and the container, so the member walk finds them exactly as
+it finds an option inside a wrapper, and what the grid needed was a second
+axis in the arrows.
+
+| key | effect |
+|---|---|
+| `ArrowRight` / `ArrowLeft` | next or previous cell in the same row; no wrap |
+| `ArrowDown` / `ArrowUp` | same column one row over, clamped to a shorter row; no wrap |
+| `Home` / `End` | first or last cell of the row |
+| `Ctrl+Home` / `Ctrl+End` | first or last cell of the grid |
+| `Enter` / `Space` | the cell's own `onClick` |
+| `PageUp` / `PageDown` | left to the page: the visible month is Go state, and `Calendar`'s month arrows are a `Shift+Tab` away |
+| a printable key | left to the page; a grid has no typeahead |
+
+An arrow at an edge is taken from the page and moves nothing — all four arrows
+belong to a grid, where a one-axis composite leaves the other pair to scroll.
+Rows are read off the DOM (the nearest `role="row"`) on every keystroke, so a
+month swapped in under the same six rows needs nothing invalidated. Left and
+Right are not mirrored in right-to-left text, as for every composite here.
+
+ARIA defines no `aria-orientation` on a grid, and neither web target writes one.
+
+#### Where the tab stop starts
+
+Every composite chooses its one stop in the same order: the member holding
+focus, else the selected member, else whichever member already holds the stop,
+else the member stating `aria-current` (a date grid's today, a bar's current
+page), else the first member that is not `aria-disabled`, else the first
+member. The last two steps are what keep `Calendar` from opening its way in on a
+greyed day of the previous month when nothing is chosen.
+
 **Two tab stops is the half that never varies; the reach is the half that does.**
 `core.CompositeWalkStopsAt` is the one statement of which, and it has three
 cases: a `toolbar` stops at anything (its members are named by no role), a
