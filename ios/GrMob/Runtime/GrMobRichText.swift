@@ -100,6 +100,35 @@ private struct GrMobRichTextRepresentable: UIViewRepresentable {
         return view
     }
 
+    /// The document's size when its parent does not bound the height: the
+    /// text's own height at the width on offer, so the viewport equals the
+    /// content and nothing scrolls.
+    ///
+    /// A scroll-enabled UITextView has no intrinsic height — scrolling is the
+    /// reason it has none — so SwiftUI's default for a representable asked for
+    /// an ideal size gave the editor almost none. Lesson 4.14's editor, with no
+    /// Height inside a scrolling lesson page, drew as a bar a few points tall
+    /// under its toolbar. GrMobCodeEditorRepresentable had the same fault and
+    /// has the same contract:
+    ///
+    ///     proposed height      reported
+    ///     ---------------      --------
+    ///     nil or infinite      content height, wrapped at the offered width
+    ///     finite               nil — the default, which fills the proposal
+    ///                          (a real viewport, e.g. core.Height("240px"))
+    ///
+    /// Unlike a code buffer this text wraps, so the width is the input to the
+    /// measurement rather than an output of it. An ideal-size query with no
+    /// width measures unwrapped, which is what a SwiftUI Text answers too.
+    func sizeThatFits(_ proposal: ProposedViewSize, uiView: UITextView,
+                      context: Context) -> CGSize? {
+        if let height = proposal.height, height.isFinite { return nil }
+        let width = proposal.width.flatMap { $0.isFinite ? $0 : nil }
+        let fitted = uiView.sizeThatFits(CGSize(width: width ?? .greatestFiniteMagnitude,
+                                                height: .greatestFiniteMagnitude))
+        return CGSize(width: width ?? fitted.width, height: ceil(fitted.height))
+    }
+
     func updateUIView(_ view: UITextView, context: Context) {
         let coordinator = context.coordinator
         coordinator.runtime = runtime

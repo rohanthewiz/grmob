@@ -42,7 +42,7 @@ RichToolLink is the sentinel Command that opens the link prompt. Not a core comm
 const RichToolLink = "components:link"
 ```
 
-<small>[comps/rich_text_editor.go:105](https://github.com/rohanthewiz/grmob/blob/master/comps/rich_text_editor.go#L105)</small>
+<small>[comps/rich_text_editor.go:110](https://github.com/rohanthewiz/grmob/blob/master/comps/rich_text_editor.go#L110)</small>
 
 ## Variables
 
@@ -67,7 +67,7 @@ var RichToolbarDefault = []RichToolItem{
 }
 ```
 
-<small>[comps/rich_text_editor.go:114](https://github.com/rohanthewiz/grmob/blob/master/comps/rich_text_editor.go#L114)</small>
+<small>[comps/rich_text_editor.go:119](https://github.com/rohanthewiz/grmob/blob/master/comps/rich_text_editor.go#L119)</small>
 
 ## Types
 
@@ -688,6 +688,11 @@ type RichTextEditor struct {
 	// MinHeight gives an empty editor something to be. Without it a document
 	// with one line in it is one line tall, which reads as a text field rather
 	// than as a place to write.
+	//
+	// It is core.MinHeight underneath, which the two DOM targets honour and the
+	// natives do not yet (see the platform table in
+	// docs/concepts/styling-and-theming.md). On iOS and Android the editor is
+	// as tall as its document — one line when empty — unless Height is set.
 	MinHeight string
 
 	// Height fixes the editor's height instead, so a long document scrolls
@@ -739,7 +744,7 @@ That is a fine obligation for an editor with a toolbar and a bad one for a note 
 func (r RichTextEditor) Render(ctx *core.Context) *core.Node
 ```
 
-<small>[comps/rich_text_editor.go:185](https://github.com/rohanthewiz/grmob/blob/master/comps/rich_text_editor.go#L185)</small>
+<small>[comps/rich_text_editor.go:190](https://github.com/rohanthewiz/grmob/blob/master/comps/rich_text_editor.go#L190)</small>
 
 ### type RichToolItem
 
@@ -757,7 +762,7 @@ RichToolItem is one button on the toolbar: what it says, and what it sends.
 
 Command is a core Edit\* constant or one of the two builders (core.EditBlock, core.EditLink) — except for RichToolLink, which is this package's own sentinel for "open the link prompt", because a URL has to be typed before there is a command to send.
 
-<small>[comps/rich_text_editor.go:95](https://github.com/rohanthewiz/grmob/blob/master/comps/rich_text_editor.go#L95)</small>
+<small>[comps/rich_text_editor.go:100](https://github.com/rohanthewiz/grmob/blob/master/comps/rich_text_editor.go#L100)</small>
 
 ### type RichToolbar
 
@@ -779,7 +784,7 @@ RichToolbar is everything a toolbar needs that has to survive a render pass.
 
 Built by UseRichToolbar, which is a hook: the ref must be the same pointer every pass or the buttons would command an editor nobody is listening to, and the selection has to be remembered between the report arriving and the next render drawing the buttons from it.
 
-<small>[comps/rich_text_editor.go:135](https://github.com/rohanthewiz/grmob/blob/master/comps/rich_text_editor.go#L135)</small>
+<small>[comps/rich_text_editor.go:140](https://github.com/rohanthewiz/grmob/blob/master/comps/rich_text_editor.go#L140)</small>
 
 #### func UseRichToolbar
 
@@ -797,7 +802,7 @@ Four hook slots, in a fixed order, so — like any hook user — it must be call
 	    return comps.RichTextEditor{Doc: note.Get(), OnChange: note.Set, Toolbar: bar}
 	}
 
-<small>[comps/rich_text_editor.go:161](https://github.com/rohanthewiz/grmob/blob/master/comps/rich_text_editor.go#L161)</small>
+<small>[comps/rich_text_editor.go:166](https://github.com/rohanthewiz/grmob/blob/master/comps/rich_text_editor.go#L166)</small>
 
 #### func (*RichToolbar) Selection
 
@@ -807,7 +812,7 @@ func (b *RichToolbar) Selection() core.RichSelection
 
 Selection is the last selection the editor reported, which is what the toolbar draws its pressed state from — and is worth reading directly for a status line, or to decide whether a "Link" action makes sense.
 
-<small>[comps/rich_text_editor.go:183](https://github.com/rohanthewiz/grmob/blob/master/comps/rich_text_editor.go#L183)</small>
+<small>[comps/rich_text_editor.go:188](https://github.com/rohanthewiz/grmob/blob/master/comps/rich_text_editor.go#L188)</small>
 
 ### type SearchField
 
