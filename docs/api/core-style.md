@@ -33,6 +33,7 @@ One of 10 topic pages of [package core](core.md), which has the package overview
 - [`type StyleProp`](#type-styleprop)
     - [`func AccessibilityControls`](#func-accessibilitycontrols)
     - [`func AccessibilityExpanded`](#func-accessibilityexpanded)
+    - [`func AccessibilityHasPopup`](#func-accessibilityhaspopup)
     - [`func AccessibilityHeadingLevel`](#func-accessibilityheadinglevel)
     - [`func AccessibilityHidden`](#func-accessibilityhidden)
     - [`func AccessibilityHint`](#func-accessibilityhint)
@@ -121,7 +122,7 @@ const (
 )
 ```
 
-<small>[core/style.go:1189](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L1189)</small>
+<small>[core/style.go:1236](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L1236)</small>
 
 ShrinkNone is what core.FlexShrink(0) stores, and what every renderer must read as a shrink factor of zero.
 
@@ -159,7 +160,7 @@ The Compose arm is the one that needed an argument, and it is worth having here 
 const ShrinkNone = -1
 ```
 
-<small>[core/style.go:1288](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L1288)</small>
+<small>[core/style.go:1335](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L1335)</small>
 
 SpinKeyframes is the stylesheet rule both web targets pair with Style.Spin. It animates the individual \`rotate\` property rather than \`transform\`, so the spin composes with Style.Rotate's \`transform: rotate()\` instead of replacing it (see Spin). One constant, read by htmlout and restated in the WASM runtime, because the two web targets must name and shape it identically for an export and a live page to turn the same way.
 
@@ -182,7 +183,7 @@ var TextInputStyle = UseStyle(Style{
 })
 ```
 
-<small>[core/style.go:1134](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L1134)</small>
+<small>[core/style.go:1181](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L1181)</small>
 
 ## Functions
 
@@ -192,7 +193,7 @@ var TextInputStyle = UseStyle(Style{
 func DangerColor() string
 ```
 
-<small>[core/style.go:1125](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L1125)</small>
+<small>[core/style.go:1172](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L1172)</small>
 
 ### func LinearGradient
 
@@ -212,7 +213,7 @@ PrimaryColor and DangerColor are the theme-blind convenience accessors that pred
 
 They read DefaultTheme rather than repeating its literals. Both used to be hard-coded, and the copy was not free: when Colors.Primary moved to Apple's accessible blue (white over systemBlue was 4.02:1, under WCAG AA, and the theme's own Button base declares white), this function kept the old hex — so examples/chat, its one caller, went on painting white on a fill nobody could read it on, in the one place the fix could not reach.
 
-<small>[core/style.go:1124](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L1124)</small>
+<small>[core/style.go:1171](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L1171)</small>
 
 ## Types
 
@@ -222,7 +223,7 @@ They read DefaultTheme rather than repeating its literals. Both used to be hard-
 type AlignItems string
 ```
 
-<small>[core/style.go:1187](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L1187)</small>
+<small>[core/style.go:1234](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L1234)</small>
 
 #### func (AlignItems) Apply
 
@@ -244,7 +245,7 @@ Without these methods that expression is a type conversion producing a bare stri
 type Alignment string
 ```
 
-<small>[core/style.go:1164](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L1164)</small>
+<small>[core/style.go:1211](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L1211)</small>
 
 ```go
 const (
@@ -263,7 +264,7 @@ const (
 type DisplayMode string
 ```
 
-<small>[core/style.go:1175](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L1175)</small>
+<small>[core/style.go:1222](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L1222)</small>
 
 ```go
 const (
@@ -341,7 +342,7 @@ Six untagged ints wrote all six every time. On the tutorial's contents screen, 7
 
 Small next to the 370KB the Style-level tags took off, and free in a way that one was not: no renderer changed, because none of them could tell the difference.
 
-<small>[core/style.go:772](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L772)</small>
+<small>[core/style.go:814](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L814)</small>
 
 ### type FlexDirection
 
@@ -349,7 +350,7 @@ Small next to the 370KB the Style-level tags took off, and free in a way that on
 type FlexDirection string
 ```
 
-<small>[core/style.go:1186](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L1186)</small>
+<small>[core/style.go:1233](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L1233)</small>
 
 #### func (FlexDirection) Apply
 
@@ -365,7 +366,7 @@ func (d FlexDirection) Apply(s *Style)
 type JustifyContent string
 ```
 
-<small>[core/style.go:1185](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L1185)</small>
+<small>[core/style.go:1232](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L1232)</small>
 
 #### func (JustifyContent) Apply
 
@@ -381,7 +382,7 @@ func (j JustifyContent) Apply(s *Style)
 type Position string
 ```
 
-<small>[core/style.go:1207](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L1207)</small>
+<small>[core/style.go:1254](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L1254)</small>
 
 ```go
 const (
@@ -398,7 +399,7 @@ const (
 type ResponsiveStyle map[string]Style
 ```
 
-<small>[core/style.go:1162](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L1162)</small>
+<small>[core/style.go:1209](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L1209)</small>
 
 ### type Style
 
@@ -719,6 +720,7 @@ type Style struct {
 	//	option          aria-selected              no
 	//	link            no                         yes
 	//	listbox         no                         yes
+	//	combobox        no                         yes, and required
 	//
 	// Both lists are ARIA's own scoping rather than a shortlist of what seemed
 	// useful, and the two disagree at both ends. So the two fields cannot
@@ -744,9 +746,9 @@ type Style struct {
 	//
 	// aria-expanded says the content is here, in the page, and can be shown or
 	// hidden. A trigger that opens a modal is a different relationship —
-	// ARIA spells that aria-haspopup, which this vocabulary does not carry —
-	// so comps.DatePicker's trigger, which looks exactly like a
-	// disclosure and even flips a glyph, deliberately sets nothing.
+	// ARIA spells that aria-haspopup, which is AccessibilityHasPopup below —
+	// so comps.DatePicker's trigger, which looks exactly like a disclosure
+	// and even flips a glyph, states a popup and leaves this field unset.
 	//
 	// # One native maps it and one cannot, which is the reverse of usual
 	//
@@ -766,6 +768,46 @@ type Style struct {
 	// key crosses the bridge, is deliberately not parsed, and the note in
 	// GrMobStyle.swift says which property it is turning down.
 	AccessibilityExpanded ExpandedState `json:",omitzero"`
+
+	// AccessibilityHasPopup is what this control opens — today, only ever a
+	// dialog. See PopupKind for the vocabulary and for why ARIA's other six
+	// values are not in it.
+	//
+	// # The near miss above, given its own field
+	//
+	// AccessibilityExpanded turns down a trigger that opens a modal, because a
+	// disclosure's content is in the page and a dialog is a new surface. That
+	// left comps.Menu and comps.DatePicker saying nothing at all, which is
+	// the silence this closes: aria-haspopup is ARIA's spelling of exactly that
+	// relationship, and a reader announces it with the name ("Sort, pop-up
+	// button").
+	//
+	// # The role guard, which is a fifth list
+	//
+	// ARIA 1.2 defines aria-haspopup for application, button, combobox,
+	// gridcell, link, menuitem, slider, tab, textbox and treeitem, lets
+	// columnheader inherit it from gridcell, and deprecates it everywhere
+	// else. Of those, core.Role carries button, link, tab, columnheader and
+	// combobox. Both web exporters write it for exactly the roles the
+	// generated fixture gives it among core's own —
+	// aria/verify/aria_test.go's state-guard test asks every role in both
+	// directions, so the arms of ariaHasPopup cannot drift from the
+	// specification. A core.Button needs no role, the node type being one,
+	// which is the case comps.Menu's trigger is.
+	//
+	// comps.DatePicker's trigger is a Row with an OnTap, so it states
+	// RoleButton alongside this. Without a role the attribute would have
+	// nothing to sit on but ariaRole's `group` fallback, and "group, pop-up"
+	// describes nothing a reader can press.
+	//
+	// # Neither native reads it
+	//
+	// Compose's SemanticsProperties and SwiftUI's AccessibilityTraits have no
+	// popup member. Both platforms present a Modal as a platform dialog that
+	// announces itself on opening, so the warning arrives one step later there
+	// rather than not at all. The key crosses the bridge and is deliberately
+	// unparsed; the notes in GrMobStyle.kt and GrMobStyle.swift say so.
+	AccessibilityHasPopup PopupKind `json:",omitzero"`
 
 	// AccessibilityValue is where a valued control sits inside its range —
 	// how far an upload has got, which step a wizard is on. See ValueRange
@@ -791,7 +833,8 @@ type Style struct {
 	//	aria-level        heading, listitem, row     — two fields, one attribute
 	//	aria-selected     option, tab, row, columnheader
 	//	aria-pressed      button
-	//	aria-expanded     button, link, listbox, row, columnheader, tab
+	//	aria-expanded     button, link, listbox, row, columnheader, tab, combobox
+	//	aria-haspopup     button, link, tab, columnheader, combobox
 	//	aria-value*       progressbar
 	//
 	// No two of those lists are the same list, which is the argument for each
@@ -1092,7 +1135,7 @@ The two returns are the two questions a renderer has, and they are separate beca
 
 It exists so the ShrinkNone rule is stated once rather than in each renderer. The two DOM renderers spell their guards independently — that is deliberate elsewhere in this framework — but the mapping from a stored number to a meaning is not a spelling, it is the contract, and three copies of it is how this field got into trouble in the first place.
 
-<small>[core/style.go:1305](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L1305)</small>
+<small>[core/style.go:1352](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L1352)</small>
 
 #### func (Style) With
 
@@ -1100,7 +1143,7 @@ It exists so the ShrinkNone rule is stated once rather than in each renderer. Th
 func (s Style) With(other Style) Style
 ```
 
-<small>[core/style_props.go:590](https://github.com/rohanthewiz/grmob/blob/master/core/style_props.go#L590)</small>
+<small>[core/style_props.go:607](https://github.com/rohanthewiz/grmob/blob/master/core/style_props.go#L607)</small>
 
 ### type StyleProp
 
@@ -1110,7 +1153,7 @@ type StyleProp interface {
 }
 ```
 
-<small>[core/style.go:787](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L787)</small>
+<small>[core/style.go:829](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L829)</small>
 
 #### func AccessibilityControls
 
@@ -1130,7 +1173,7 @@ AccessibilityControls says which element this control switches, by the Accessibi
 
 It is written verbatim and nothing checks that the target exists: an export is one document at a time and a runtime patch is one element at a time, so neither target can see the whole page at the moment the attribute is written. A reference to an id nothing answers to is inert rather than harmful, which is the same trade aria-description makes. See Style.AccessibilityID for why this is the one relationship the vocabulary carries.
 
-<small>[core/style_props.go:529](https://github.com/rohanthewiz/grmob/blob/master/core/style_props.go#L529)</small>
+<small>[core/style_props.go:546](https://github.com/rohanthewiz/grmob/blob/master/core/style_props.go#L546)</small>
 
 #### func AccessibilityExpanded
 
@@ -1146,9 +1189,24 @@ AccessibilityExpanded says whether this disclosure is open — the accordion sec
 
 Use core.ExpandedWhen to convert the bool the widget already holds. Setting only the open case and leaving the shut one unset is the mistake the three-valued type exists to prevent: a closed disclosure that says nothing is announced as an ordinary button, and "collapsed" is the whole of what invites the press.
 
-Paired with a role that can carry it, as a level and a selection both are — and \*not\* the same list a selection takes. aria-expanded is defined for button, link, listbox, row and columnheader among the roles this framework carries, which drops option and adds link and listbox. A core.Button needs no role of its own, the node type being one; anything else is dropped by both web targets. See Style.AccessibilityExpanded for the full table, for the dialog-shaped near miss it deliberately does not cover, and for why one native maps this and the other cannot.
+Paired with a role that can carry it, as a level and a selection both are — and \*not\* the same list a selection takes. aria-expanded is defined for button, link, listbox, row, columnheader and combobox among the roles this framework carries, which drops option and adds link and listbox. A core.Button needs no role of its own, the node type being one; anything else is dropped by both web targets. See Style.AccessibilityExpanded for the full table, for the dialog-shaped near miss it deliberately does not cover, and for why one native maps this and the other cannot.
 
 <small>[core/style_props.go:456](https://github.com/rohanthewiz/grmob/blob/master/core/style_props.go#L456)</small>
+
+#### func AccessibilityHasPopup
+
+```go
+func AccessibilityHasPopup(kind PopupKind) StyleProp
+```
+
+AccessibilityHasPopup says what activating this control opens.
+
+	comps.Button{Label: "⋯", AccessibilityLabel: "Note actions",
+		Style: []core.StyleProp{core.AccessibilityHasPopup(core.PopupDialog)}}
+
+It is the relationship AccessibilityExpanded deliberately does not cover: a trigger that presents a core.Modal is not a disclosure, and says so with this instead. Paired with a role ARIA 1.2 defines the attribute on — button, link, tab, columnheader and combobox among core's — or with a core.Button, whose node type is one; anything else is dropped by both web targets. Neither native reads it. See PopupKind and Style.AccessibilityHasPopup.
+
+<small>[core/style_props.go:473](https://github.com/rohanthewiz/grmob/blob/master/core/style_props.go#L473)</small>
 
 #### func AccessibilityHeadingLevel
 
@@ -1180,7 +1238,7 @@ func AccessibilityHidden() StyleProp
 
 AccessibilityHidden removes the element (and its subtree) from the accessibility tree — for decorative content a screen reader should skip.
 
-<small>[core/style_props.go:537](https://github.com/rohanthewiz/grmob/blob/master/core/style_props.go#L537)</small>
+<small>[core/style_props.go:554](https://github.com/rohanthewiz/grmob/blob/master/core/style_props.go#L554)</small>
 
 #### func AccessibilityHint
 
@@ -1204,7 +1262,7 @@ AccessibilityID gives this element a document-global name that another element c
 
 Uniqueness is the caller's, as it is in hand-written HTML, and the "grmob-" prefix is reserved for core.TabView's own wiring. See Style.AccessibilityID for the whole argument — including why this and AccessibilityControls are the only two IDREF props in the vocabulary.
 
-<small>[core/style_props.go:504](https://github.com/rohanthewiz/grmob/blob/master/core/style_props.go#L504)</small>
+<small>[core/style_props.go:521](https://github.com/rohanthewiz/grmob/blob/master/core/style_props.go#L521)</small>
 
 #### func AccessibilityLabel
 
@@ -1288,7 +1346,7 @@ Set on the container — the listbox or the tablist — not on the members. See 
 
 A no-arg flag rather than a bool, like AccessibilityHidden and unlike Disabled: a caller does not have this in a variable, and there is no case for forcing it back off — a widget that does not want it writes no prop.
 
-<small>[core/style_props.go:553](https://github.com/rohanthewiz/grmob/blob/master/core/style_props.go#L553)</small>
+<small>[core/style_props.go:570](https://github.com/rohanthewiz/grmob/blob/master/core/style_props.go#L570)</small>
 
 #### func AccessibilityValue
 
@@ -1311,7 +1369,7 @@ Paired with a role that can carry it, as the level, the selection and the disclo
 
 ValueRange.Text is the half that is not web-only: it reaches Compose's stateDescription and SwiftUI's accessibilityValue, neither of which asks what the node is. See Style.AccessibilityValue for the guard table and core.ValueRange for why the numbers are strings.
 
-<small>[core/style_props.go:488](https://github.com/rohanthewiz/grmob/blob/master/core/style_props.go#L488)</small>
+<small>[core/style_props.go:505](https://github.com/rohanthewiz/grmob/blob/master/core/style_props.go#L505)</small>
 
 #### func Align
 
@@ -1387,7 +1445,7 @@ Disabled hands the node to the platform's own disabled state: it stops accepting
 
 It takes the value rather than being a no-arg flag (unlike AccessibilityHidden) because the caller almost always has a bool in hand — \`core.Disabled(sending.Get())\` — and because passing false is the only way to force a node back to enabled: UseStyle's "a zero value means unset" rule means a Style{Disabled: false} cannot clear a flag already on the target.
 
-<small>[core/style_props.go:569](https://github.com/rohanthewiz/grmob/blob/master/core/style_props.go#L569)</small>
+<small>[core/style_props.go:586](https://github.com/rohanthewiz/grmob/blob/master/core/style_props.go#L586)</small>
 
 #### func Display
 
@@ -1485,7 +1543,7 @@ Inert takes the node and everything inside it out of reach on the web: out of th
 
 A bool for Disabled's reason: passing false is the only way to clear a flag UseStyle has already put on the target.
 
-<small>[core/style_props.go:584](https://github.com/rohanthewiz/grmob/blob/master/core/style_props.go#L584)</small>
+<small>[core/style_props.go:601](https://github.com/rohanthewiz/grmob/blob/master/core/style_props.go#L601)</small>
 
 #### func Justify
 
@@ -1655,7 +1713,7 @@ PaddingHorizontal sets the left and right insets.
 
 It writes the explicit Left/Right sides as well as the Horizontal shorthand. The renderers resolve a side as "the explicit value if non-zero, otherwise the axis shorthand" (see htmlout.EdgeCSS), so a prop that wrote only the shorthand could never override a side that was already set: a theme Column carries Left/Right 16, and PaddingHorizontal(0) after it used to leave the 16 in place — and PaddingHorizontal(24) used to render as 16. Writing the sides too gives this prop the same last-one-wins ordering every other StyleProp has, and a zero clears the theme value in all four renderers without any of them changing their resolution rule.
 
-<small>[core/style.go:1154](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L1154)</small>
+<small>[core/style.go:1201](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L1201)</small>
 
 #### func PaddingLeft
 
@@ -1739,7 +1797,7 @@ Unlike UseStyle, this setter can force zero: Rotate(0) writes the field, which i
 func RoundedShadowBox() StyleProp
 ```
 
-<small>[core/style.go:1126](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L1126)</small>
+<small>[core/style.go:1173](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L1173)</small>
 
 #### func RowGap
 
@@ -1830,7 +1888,7 @@ The rule's one unavoidable edge is that a zero value is indistinguishable from "
 
 This merges every field of Style. It previously covered only fourteen of them, which meant Width, Height, the whole flex group, and the accessibility fields were silently dropped — a style value carrying them applied cleanly and did nothing. Any field added to Style must be added here too; TestUseStyleMergesEveryField walks the struct reflectively and fails if one is missed.
 
-<small>[core/style.go:819](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L819)</small>
+<small>[core/style.go:861](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L861)</small>
 
 #### func WhiteSpace
 
@@ -1868,7 +1926,7 @@ func ZIndex(v int) StyleProp
 type Weight int
 ```
 
-<small>[core/style.go:719](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L719)</small>
+<small>[core/style.go:761](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L761)</small>
 
 ```go
 const (

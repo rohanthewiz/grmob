@@ -6,7 +6,7 @@ import "github.com/rohanthewiz/grmob/core"
 
 Roles, selected and expanded states, value ranges and the accessibility audit.
 
-One of 10 topic pages of [package core](core.md), which has the package overview and an index of every topic. This page documents the declarations in `core/role.go`, `core/selected.go`, `core/expanded.go`, `core/value.go`, `core/a11y_audit.go`.
+One of 10 topic pages of [package core](core.md), which has the package overview and an index of every topic. This page documents the declarations in `core/role.go`, `core/popup.go`, `core/selected.go`, `core/expanded.go`, `core/value.go`, `core/a11y_audit.go`.
 
 ## Index
 
@@ -19,6 +19,8 @@ One of 10 topic pages of [package core](core.md), which has the package overview
 - [`type ExpandedState`](#type-expandedstate)
     - [`func ExpandedStates`](#func-expandedstates)
     - [`func ExpandedWhen`](#func-expandedwhen)
+- [`type PopupKind`](#type-popupkind)
+    - [`func PopupKinds`](#func-popupkinds)
 - [`type Progress`](#type-progress)
 - [`type ProgressReading`](#type-progressreading)
 - [`type Role`](#type-role)
@@ -126,7 +128,7 @@ CompositeWalkStopsAt is CompositeWalkAt for a caller that only wants the bool, a
 
 It answers true for both non-descending values, which is exactly the conflation CompositeWalkAt exists to undo — so this is safe only for a caller that has already established both roles are composites, and every caller in this repository has (AuditTree tests hasKeyboard on both ends before it asks, and wasm/verify's pins iterate KeyboardComposites()). A caller that has not should ask CompositeWalkAt and handle the third value, because for a role with no walk this returns a confident \`true\` about a rotation that does not exist.
 
-<small>[core/role.go:845](https://github.com/rohanthewiz/grmob/blob/master/core/role.go#L845)</small>
+<small>[core/role.go:912](https://github.com/rohanthewiz/grmob/blob/master/core/role.go#L912)</small>
 
 ## Types
 
@@ -144,7 +146,7 @@ This started as CompositeWalkStopsAt alone, returning a bool. Two of its three a
 
 Making it a value rather than a doc note is the same move CompositeMemberRole made one function up when its two empty answers became (member, composite): the fact is put where the compiler and the caller can both see it, instead of in a sentence asking the caller to have already checked something.
 
-<small>[core/role.go:868](https://github.com/rohanthewiz/grmob/blob/master/core/role.go#L868)</small>
+<small>[core/role.go:935](https://github.com/rohanthewiz/grmob/blob/master/core/role.go#L935)</small>
 
 ```go
 const (
@@ -208,7 +210,7 @@ Member roles are unique per container, so the middle case is the same set of pai
 
 A descending pair is still two tab stops — both containers keep a roving tabindex either way, which is the part of the finding that never varies. What differs is the reach: where a stopping pair's outer arrows step over the inner widget whole, a descending pair's outer arrows can land \*inside\* it, on any element of the outer's member role buried in the inner's subtree. Neither is what ARIA describes for nested composites, and the framework's refusal to guess is documented at ConcernNestedComposite.
 
-<small>[core/role.go:809](https://github.com/rohanthewiz/grmob/blob/master/core/role.go#L809)</small>
+<small>[core/role.go:876](https://github.com/rohanthewiz/grmob/blob/master/core/role.go#L876)</small>
 
 #### func (CompositeWalk) String
 
@@ -218,7 +220,7 @@ func (w CompositeWalk) String() string
 
 String names the value for a message. The three spellings are the words the audit's finding and this file's docs already use, so a report built from a %v and a report written by hand read the same.
 
-<small>[core/role.go:895](https://github.com/rohanthewiz/grmob/blob/master/core/role.go#L895)</small>
+<small>[core/role.go:962](https://github.com/rohanthewiz/grmob/blob/master/core/role.go#L962)</small>
 
 ### type ExpandedState
 
@@ -297,6 +299,70 @@ ExpandedWhen turns the bool a disclosure already holds into the stated pair.
 The twin of SelectedWhen, and it earns its place the same way: the widget owns a \`expanded bool\` (comps.Accordion holds one in NewState), so the conversion would otherwise be written by hand at each call site, and the tempting hand-rolled version — set ExpandedOpen when open, leave it alone otherwise — is exactly the silence the third value exists to prevent.
 
 <small>[core/expanded.go:79](https://github.com/rohanthewiz/grmob/blob/master/core/expanded.go#L79)</small>
+
+### type PopupKind
+
+```go
+type PopupKind string
+```
+
+PopupKind is what a control opens: the kind of element that appears when it is activated, stated so a reader can say so before the press.
+
+It is the vocabulary of aria-haspopup, and it exists for the near miss Style.AccessibilityExpanded names and turns down. A trigger that opens a modal looks exactly like a disclosure — comps.DatePicker's even flips a glyph — and it is not one: aria-expanded says the content is here, in the page, and can be shown or hidden, where a popup is a new surface the reader is moved into. Before this type the honest thing was to say nothing, and a reader pressing comps.Menu's "⋯" was told "button" and then found itself in a dialog with no warning.
+
+#### Why one value, when ARIA has seven
+
+ARIA's attribute takes false, true, menu, listbox, tree, grid and dialog. This carries the one a widget here can honestly say:
+
+	dialog    comps.Menu and comps.DatePicker both present through core.Modal,
+	          which both web targets write as role="dialog". The value names
+	          what the reader actually lands in.
+	menu      also `true`, its synonym. comps.Menu is *called* a menu and is
+	          not one to a reader: its sheet is a dialog of buttons, and
+	          core.Role has no `menu`/`menuitem` pair
+	          (aria/verify/refusals_test.go records why). Saying menu would
+	          announce a menu keyboard — arrows between items, Escape back to
+	          the trigger — that nothing supplies.
+	listbox   a combobox's popup is a listbox implicitly, so the one widget
+	          with a listbox popup (comps.SearchableSelect, through
+	          RoleComboBox) needs no attribute, and no other trigger opens one.
+	tree      no widget has either, and both are refused patterns.
+	grid
+	false     the absence of a claim, which is PopupNone.
+
+A value is added when a widget opens that kind of surface, not before: a constant naming a popup nothing presents would be a claim the framework cannot keep.
+
+#### Why the values are ARIA's own spellings
+
+The same trade core.Role, SelectedState and ExpandedState made: both web targets write the value verbatim and need no table.
+
+#### What each target does with it
+
+The two web targets write aria-haspopup, scoped to the roles ARIA defines it on (see Style.AccessibilityHasPopup). Neither native has anything to put it in — Compose's semantics and SwiftUI's traits have no popup property — and both present a Modal through a platform dialog that announces itself when it opens, which is the half of the warning that matters most there. The key crosses the bridge and is deliberately unparsed on both.
+
+<small>[core/popup.go:53](https://github.com/rohanthewiz/grmob/blob/master/core/popup.go#L53)</small>
+
+```go
+const (
+	// PopupNone is the zero value: this control opens nothing, or says
+	// nothing about what it opens. Both web targets write no attribute.
+	PopupNone PopupKind = ""
+
+	// PopupDialog — activating this control opens a dialog. See the type doc
+	// for why this is the only kind a widget here can say.
+	PopupDialog PopupKind = "dialog"
+)
+```
+
+#### func PopupKinds
+
+```go
+func PopupKinds() []PopupKind
+```
+
+PopupKinds returns every stated value, in declaration order. PopupNone is excluded for the reason ExpandedStates() excludes its own zero value: it is the absence of a claim rather than one of the kinds.
+
+<small>[core/popup.go:68](https://github.com/rohanthewiz/grmob/blob/master/core/popup.go#L68)</small>
 
 ### type Progress
 
@@ -389,17 +455,17 @@ The set has to be \*some\* vocabulary, and the four renderers do not share one. 
 	alert         | role="alert"    | —              | liveRegion = Assertive
 	log           | role="log"      | —              | liveRegion = Polite
 	progressbar   | role=…          | —              | — (but see below)
-	the other 13  | role=…          | —              | —
+	the other 14  | role=…          | —              | —
 
-The other thirteen are table, rowgroup, row, cell, list, listitem, listbox, option, tabpanel, banner, navigation, toolbar and group — the tabular set, both collection pairs, the region a tab shows, the landmarks, and the naming role.
+The other fourteen are table, rowgroup, row, cell, list, listitem, listbox, option, tabpanel, banner, navigation, toolbar, combobox and group — the tabular set, both collection pairs, the region a tab shows, the landmarks, the field that owns a popup list, and the naming role.
 
 progressbar has a row of its own because its dashes mean less than the others'. The \*role\* maps to nothing on either phone — neither has a word for what a progress bar is — while the value beside it maps to Compose's progressBarRangeInfo, which is one of the better mappings in this framework: TalkBack turns the numbers into a percentage it localizes itself. So the thing a reader most wants to hear does arrive on one native; it arrives through Style.AccessibilityValue rather than through this field. See core.ValueRange.
 
 The tab pair is the one row of that table where the two natives disagree about \*which half\* they can say, and it is a useful illustration of why the vocabulary is ARIA's rather than either platform's. Compose has a Role.Tab for the control and nothing for the strip around it; SwiftUI has .isTabBar for the strip and nothing for the control. Neither could have supplied the pair, and a caller marking up a tab strip sets both and gets whichever half each platform knows.
 
-Fourteen of the twenty-seven do nothing on either native, and that is the honest state of those platforms rather than a gap to be filled later: neither has a tabular semantics vocabulary a role can be mapped onto (Compose has collectionInfo, which describes counts and indices this prop does not carry), neither has a listbox in its semantics vocabulary (both spell a chosen item as a \*state\* instead, which is why the selectable pair costs them nothing to leave out — see RoleListBox), and neither has landmarks at all — VoiceOver's rotor navigates by heading, not by banner.
+Fifteen of the twenty-eight do nothing on either native, and that is the honest state of those platforms rather than a gap to be filled later: neither has a tabular semantics vocabulary a role can be mapped onto (Compose has collectionInfo, which describes counts and indices this prop does not carry), neither has a listbox in its semantics vocabulary (both spell a chosen item as a \*state\* instead, which is why the selectable pair costs them nothing to leave out — see RoleListBox), and neither has landmarks at all — VoiceOver's rotor navigates by heading, not by banner.
 
-RoleGroup is the one empty pair in that fourteen that is empty for the opposite reason, and it is worth telling apart. The other thirteen are silent because the platform has no way to say the thing; \`group\` is silent because neither platform \*needs\* it — both honour an accessibility label on any node at all, and making that label legal is the whole of what the role does. See its own block below.
+RoleGroup is the one empty pair in that fifteen that is empty for the opposite reason, and it is worth telling apart. The other fourteen are silent because the platform has no way to say the thing; \`group\` is silent because neither platform \*needs\* it — both honour an accessibility label on any node at all, and making that label legal is the whole of what the role does. See its own block below.
 
 A role that maps to nothing is still worth setting. The web is a first-class target here, the mapping can improve later without the call sites changing, and a role that is right on one platform and inert on two is strictly better than a div.
 
@@ -605,6 +671,50 @@ const (
 )
 ```
 
+The field that owns a popup list: a text input whose typing filters the options under it, with the keyboard moving through them while focus stays in the field.
+
+##### Why a role of its own when the listbox pair already carries a choice
+
+Because the listbox pattern answers the wrong question for a field. A listbox is its own tab stop: Tab moves focus \*into\* it and the arrows move among its options. comps.SearchableSelect shipped that way, and it cost the field its focus — the list sits under a field the user is typing in, so reaching an option meant leaving the caret, and a keyboard pick removed the focused option with the list and dropped focus onto the page.
+
+ARIA's combobox pattern is the shape that keeps both: the field keeps DOM focus the whole time, and aria-activedescendant names which option the arrows have reached. A reader announces that option as if it were focused, the caret stays where it was, and typing carries on. The listbox is still there and still RoleListBox — it is the \*popup\*, named by the field's aria-controls, and the runtime takes it out of the tab order (see "The combobox pattern" in wasm/grmob-runtime.js).
+
+##### What a combobox states, and where each part lives
+
+	aria-expanded           Style.AccessibilityExpanded — whether the list is
+	                        showing. ARIA *requires* it on this role, so a
+	                        combobox with the field unset is incomplete.
+	aria-controls           Style.AccessibilityControls — the listbox's
+	                        AccessibilityID. Also required while the popup
+	                        shows.
+	aria-activedescendant   written by the WASM runtime alone, per keystroke.
+	                        It is behaviour rather than a fact about the tree
+	                        (which option the arrows reached changes with no
+	                        render in between), the same argument that keeps
+	                        a roving tabindex out of core and out of htmlout.
+	aria-haspopup           implicit: a combobox's popup is a listbox unless
+	                        it says otherwise, so nothing is written.
+
+##### It goes on the field, not the container
+
+ARIA 1.2 moved the role onto the input itself (1.1 put it on a wrapper that owned both the input and the list), and the reason is the one above: the element with focus has to be the one carrying the state. So the node that takes this role is a core.Input, exported as \<input role="combobox">, which the HTML-ARIA mapping allows for a text input.
+
+##### What each target does with it
+
+	web       role="combobox"; the runtime adds the keyboard (arrows move the
+	          active option, Enter picks, focus never leaves the field)
+	Compose   nothing. Role.DropdownList is the near miss and is turned down:
+	          TalkBack would announce the text field as a drop-down list,
+	          which is a control you open rather than one you type into
+	SwiftUI   nothing; the field is a TextField, which VoiceOver already
+	          announces as editable, and no trait names a popup
+
+On both phones the list is reached by swiping, as every collection is, so the pattern's keyboard half has nothing to replace there.
+
+```go
+const RoleComboBox Role = "combobox"
+```
+
 The naming role: the least a container can be, and the only thing that makes an accessible name on one legal at all.
 
 ##### The silence it closes
@@ -727,7 +837,7 @@ So the two cases are separated where they are made:
 
 \`composite\` is exactly membership of KeyboardComposites, and role\_control\_test.go holds the two to each other — a container added to that list and not here would report false for a role that has a keyboard, which is the same class of quiet wrong answer one table over.
 
-<small>[core/role.go:746](https://github.com/rohanthewiz/grmob/blob/master/core/role.go#L746)</small>
+<small>[core/role.go:813](https://github.com/rohanthewiz/grmob/blob/master/core/role.go#L813)</small>
 
 #### func KeyboardComposites
 
@@ -749,9 +859,11 @@ The runtime keeps the same four in two tables split by a different question (whe
 
 \`menu\`, \`menubar\`, \`tree\`, \`treegrid\` and \`grid\` are the patterns ARIA describes that this framework refuses, each for a stated reason — aria/verify/refusals\_test.go holds every refusal to what the pattern actually requires. \`list\` is deliberately absent and is the near miss worth naming: it is content rather than a control, and ARIA gives it no keyboard at all.
 
+\`combobox\` is absent for the opposite reason: it has a keyboard, and the keyboard is not a composite's. Its focus never moves — the field keeps it and aria-activedescendant names the option the arrows reached — so there is no tab stop to rove and nothing for the member walk or the audit's nested-composite rule to say. The listbox it controls is in this list, and the runtime stands it down while it is a combobox's popup; see RoleComboBox.
+
 Container order matches Roles(); the members are not here, because being a member is a fact about a role's parent rather than about the role.
 
-<small>[core/role.go:701](https://github.com/rohanthewiz/grmob/blob/master/core/role.go#L701)</small>
+<small>[core/role.go:768](https://github.com/rohanthewiz/grmob/blob/master/core/role.go#L768)</small>
 
 #### func Roles
 
@@ -767,7 +879,7 @@ A fresh slice per call rather than a package-level var, which any importer could
 
 Pinned to the const blocks above by role\_enum\_test.go, which reads this file's syntax tree: adding a constant without adding it here should fail \`go test ./...\` rather than silently shrink the set every renderer's coverage check rests on.
 
-<small>[core/role.go:645](https://github.com/rohanthewiz/grmob/blob/master/core/role.go#L645)</small>
+<small>[core/role.go:704](https://github.com/rohanthewiz/grmob/blob/master/core/role.go#L704)</small>
 
 #### func TappableContainerRoles
 
@@ -789,7 +901,7 @@ The fact is here now, and role\_control\_test.go is what makes it a property rat
 
 Because the question is narrower than it looks: not "is this thing interactive" but "does putting this role on a plain container make it a control the browser should give a tab stop to". RoleOption and RoleTab are interactive and are \*not\* here — they are members of a composite, whose tab stop belongs to their container and not to them, and taking one as a toolbar's control would put a second keyboard on a widget that has one.
 
-<small>[core/role.go:944](https://github.com/rohanthewiz/grmob/blob/master/core/role.go#L944)</small>
+<small>[core/role.go:1011](https://github.com/rohanthewiz/grmob/blob/master/core/role.go#L1011)</small>
 
 ### type SelectedState
 

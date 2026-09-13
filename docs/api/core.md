@@ -47,13 +47,13 @@ Package core's reference is split into 10 topic pages by source file. The index 
 | --- | --- | --- |
 | [Views & state](core-views.md) | View, Node, Context and state slots; conditionals, caching, error boundaries and debug-mode concerns. | 11 types, 58 functions and methods |
 | [Layout](core-layout.md) | Rows, columns, stacks, scrolls and lists, and the alignment vocabulary they are placed with. | 2 types, 25 functions and methods |
-| [Styling](core-style.md) | Style and its props: spacing, flex, typography, colour, borders and transitions. | 12 types, 74 functions and methods |
+| [Styling](core-style.md) | Style and its props: spacing, flex, typography, colour, borders and transitions. | 12 types, 75 functions and methods |
 | [Theming](core-theme.md) | Themes, palettes, typography and spacing scales, and per-component defaults. | 5 types, 11 functions and methods |
 | [Controls](core-controls.md) | Buttons, text inputs, switches, sliders, selects, images, tab views and text grids. | 9 types, 26 functions and methods |
 | [Editors](core-editors.md) | The code editor and the rich text editor, and the refs and commands that drive them. | 2 types, 15 functions and methods |
 | [Events & focus](core-events.md) | Event props, host and system events, focus refs and focus order. | 2 types, 19 functions and methods |
 | [Navigation & overlays](core-navigation.md) | The navigator stack, modals, toasts, deep links and opening URLs. | 4 types, 19 functions and methods |
-| [Accessibility](core-accessibility.md) | Roles, selected and expanded states, value ranges and the accessibility audit. | 7 types, 17 functions and methods |
+| [Accessibility](core-accessibility.md) | Roles, selected and expanded states, value ranges and the accessibility audit. | 8 types, 18 functions and methods |
 | [Device services](core-device.md) | Audio, camera, compass heading, location, maps and the app lifecycle. | 10 types, 55 functions and methods |
 
 ## Index
@@ -148,6 +148,7 @@ Package core's reference is split into 10 topic pages by source file. The index 
     - [`type StyleProp`](core-style.md#type-styleprop)
         - [`func AccessibilityControls`](core-style.md#func-accessibilitycontrols)
         - [`func AccessibilityExpanded`](core-style.md#func-accessibilityexpanded)
+        - [`func AccessibilityHasPopup`](core-style.md#func-accessibilityhaspopup)
         - [`func AccessibilityHeadingLevel`](core-style.md#func-accessibilityheadinglevel)
         - [`func AccessibilityHidden`](core-style.md#func-accessibilityhidden)
         - [`func AccessibilityHint`](core-style.md#func-accessibilityhint)
@@ -332,6 +333,8 @@ Package core's reference is split into 10 topic pages by source file. The index 
     - [`type ExpandedState`](core-accessibility.md#type-expandedstate)
         - [`func ExpandedStates`](core-accessibility.md#func-expandedstates)
         - [`func ExpandedWhen`](core-accessibility.md#func-expandedwhen)
+    - [`type PopupKind`](core-accessibility.md#type-popupkind)
+        - [`func PopupKinds`](core-accessibility.md#func-popupkinds)
     - [`type Progress`](core-accessibility.md#type-progress)
     - [`type ProgressReading`](core-accessibility.md#type-progressreading)
     - [`type Role`](core-accessibility.md#type-role)
