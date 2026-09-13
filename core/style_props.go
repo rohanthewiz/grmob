@@ -245,6 +245,7 @@ func Width(w string) StyleProp {
 		s.Width = w
 	})
 }
+
 // MaxWidth caps a node's width: CSS `max-width`, honoured on all four targets.
 //
 // The value is a dimension string: "320px" (or a bare number, in points on the

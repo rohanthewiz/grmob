@@ -155,7 +155,7 @@ The three named flex-container types are StyleProps in their own right, so the s
 
 Without these methods that expression is a type conversion producing a bare string value, which containerNode's PropsAndChildren dispatch cannot recognize and drops — silently outside debug mode. It was the most natural thing to write and it compiled, so an app shipped with every one of its AlignItems lost and its columns left-packed on both natives. Making the value itself apply removes the trap rather than documenting it.
 
-<small>[core/style_props.go:326](https://github.com/rohanthewiz/grmob/blob/master/core/style_props.go#L326)</small>
+<small>[core/style_props.go:327](https://github.com/rohanthewiz/grmob/blob/master/core/style_props.go#L327)</small>
 
 ### type Alignment
 
@@ -256,7 +256,7 @@ type FlexDirection string
 func (d FlexDirection) Apply(s *Style)
 ```
 
-<small>[core/style_props.go:328](https://github.com/rohanthewiz/grmob/blob/master/core/style_props.go#L328)</small>
+<small>[core/style_props.go:329](https://github.com/rohanthewiz/grmob/blob/master/core/style_props.go#L329)</small>
 
 ### type JustifyContent
 
@@ -272,7 +272,7 @@ type JustifyContent string
 func (j JustifyContent) Apply(s *Style)
 ```
 
-<small>[core/style_props.go:327](https://github.com/rohanthewiz/grmob/blob/master/core/style_props.go#L327)</small>
+<small>[core/style_props.go:328](https://github.com/rohanthewiz/grmob/blob/master/core/style_props.go#L328)</small>
 
 ### type Position
 
@@ -1075,7 +1075,7 @@ It exists so the ShrinkNone rule is stated once rather than in each renderer. Th
 func (s Style) With(other Style) Style
 ```
 
-<small>[core/style_props.go:682](https://github.com/rohanthewiz/grmob/blob/master/core/style_props.go#L682)</small>
+<small>[core/style_props.go:683](https://github.com/rohanthewiz/grmob/blob/master/core/style_props.go#L683)</small>
 
 ### type StyleProp
 
