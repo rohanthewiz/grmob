@@ -46,6 +46,8 @@ import { tmpdir } from "node:os";
 import { basename, dirname, extname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { CLIPPED } from "./clipped.mjs";
+
 const HERE = dirname(fileURLToPath(import.meta.url));
 
 // Where a Chrome might be. The same list wasm/verify/browser.mjs uses, env
@@ -199,127 +201,9 @@ const scrollTo = async (text) => {
 
 // --- Claimed text must be whole in the frame -----------------------------
 
-// CLIPPED is evaluated in the page with the claimed strings and the clip
-// selector, and returns one line per string that no occurrence shows whole.
-//
-// # Why this exists
-//
-// internal/shotclaims holds each picture to the strings its app renders, by
-// reading a node tree in a Go test. A tree has no layout, so a string can be
-// in the tree whole and in the picture cut off: a code line wider than the
-// phone scrolls sideways inside its CodeEditor, and tutorial-lesson.png
-// claimed "func Profile(ctx *core.Context) core.View {" while the frame
-// showed "…core.Vie". The camera is the one place the layout exists.
-//
-// # How "whole" is decided
-//
-// The text of every text node is concatenated in document order, each
-// occurrence of the string becomes a DOM Range over the nodes it spans, and
-// the Range's line boxes (getClientRects — one per wrapped line, so "TRY IT"
-// broken over two lines still counts) must each lie inside:
-//
-//	the clip rect (the bezel)
-//	  └─ every ancestor whose overflow on that axis is not visible
-//	       (the app's scroll view vertically, a CodeEditor's <pre>
-//	        sideways) — the boxes that actually cut the glyphs off
-//
-// One whole occurrence is enough: "Header()" is both a code token and a
-// checkbox label, and the claim is that the reader can see it, not where.
-// A Range with no boxes at all is text that is not laid out (the CodeEditor's
-// transparent textarea, a display:none subtree) and never counts as shown.
-//
-// Some claimed text is not a text node at all: a field's placeholder or typed
-// value, and a <select>'s chosen option, are painted by the control. Those are
-// checked as the control's whole box against the same frame and clipping
-// ancestors — coarser, since a long value can still scroll inside its own
-// field, but a field cut by the frame is caught. The CodeEditor's buffer is a
-// textarea too and is skipped: its ink is transparent.
-//
-// Concatenating across elements can match a string that straddles two
-// unrelated nodes. That can only make the check more lenient, never report a
-// visible string as clipped, which is the direction a shutter check should
-// err in.
-const CLIPPED = `(shows, clipSel) => {
-    const frame = document.querySelector(clipSel).getBoundingClientRect();
-    const nodes = [];
-    let text = "";
-    const walk = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
-    for (let n = walk.nextNode(); n; n = walk.nextNode()) {
-        nodes.push({ n, start: text.length });
-        text += n.data;
-    }
-    // The text node holding character offset off, and the offset within it.
-    const at = (off) => {
-        let lo = 0, hi = nodes.length - 1;
-        while (lo < hi) {
-            const mid = (lo + hi + 1) >> 1;
-            if (nodes[mid].start <= off) lo = mid; else hi = mid - 1;
-        }
-        return { node: nodes[lo].n, offset: off - nodes[lo].start };
-    };
-    // Sub-pixel glyph overhang is not a clipped letter.
-    const SLACK = 0.5;
-    const inside = (r, box) =>
-        r.left >= box.left - SLACK && r.right <= box.right + SLACK &&
-        r.top >= box.top - SLACK && r.bottom <= box.bottom + SLACK;
-    // Why a set of boxes is not whole: the first box that cuts one, or "".
-    // el is the innermost element whose overflow could clip them.
-    const cutRects = (rects, el) => {
-        if (rects.length === 0) return "not laid out";
-        for (const r of rects) {
-            if (!inside(r, frame)) return "outside the frame";
-            for (let a = el; a && a !== document.body; a = a.parentElement) {
-                const cs = getComputedStyle(a);
-                const box = a.getBoundingClientRect();
-                const cutX = cs.overflowX !== "visible" && (r.left < box.left - SLACK || r.right > box.right + SLACK);
-                const cutY = cs.overflowY !== "visible" && (r.top < box.top - SLACK || r.bottom > box.bottom + SLACK);
-                if (cutX || cutY) {
-                    const name = a.getAttribute("data-node-type") || a.tagName.toLowerCase();
-                    return (cutX ? "cut sideways" : "cut vertically") + " by its " + name;
-                }
-            }
-        }
-        return "";
-    };
-    const laidOut = (rs) => Array.from(rs).filter((r) => r.width > 0 && r.height > 0);
-    const cutBy = (range) => {
-        let el = range.commonAncestorContainer;
-        if (el.nodeType !== 1) el = el.parentElement;
-        return cutRects(laidOut(range.getClientRects()), el);
-    };
-    // The texts a form control paints itself, which no text node holds.
-    const painted = (el) => {
-        if (el.getAttribute("data-grmob-chrome") === "codebuffer") return [];
-        if (el.tagName === "SELECT") return el.selectedOptions[0] ? [el.selectedOptions[0].text] : [];
-        return [el.value || "", el.placeholder || ""];
-    };
-    const controls = Array.from(document.querySelectorAll("input, textarea, select"));
-    const out = [];
-    for (const s of shows) {
-        const why = [];
-        let whole = false;
-        for (let i = text.indexOf(s); i >= 0 && !whole; i = text.indexOf(s, i + 1)) {
-            const a = at(i), b = at(i + s.length - 1);
-            const range = document.createRange();
-            range.setStart(a.node, a.offset);
-            range.setEnd(b.node, b.offset + 1);
-            const reason = cutBy(range);
-            if (reason === "") whole = true; else why.push(reason);
-        }
-        for (const c of controls) {
-            if (whole) break;
-            if (!painted(c).some((t) => t.includes(s))) continue;
-            // The box's own overflow clips what is inside it, not the box,
-            // so the clipping ancestors start at its parent.
-            const reason = cutRects(laidOut(c.getClientRects()), c.parentElement);
-            if (reason === "") whole = true; else why.push(reason);
-        }
-        if (!whole) {
-            out.push(JSON.stringify(s) + ": " + (why.length ? [...new Set(why)].join("; ") : "not in the page"));
-        }
-    }
-    return out;
-}`;
+// CLIPPED is the check, evaluated in the page with the claimed strings and the
+// clip selector. It is in clipped.mjs, with the account of how "whole" is
+// decided, so clipped_test.mjs can run it against pages built to fail.
 
 // --- The shot's own header line ------------------------------------------
 

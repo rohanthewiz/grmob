@@ -62,3 +62,10 @@ echo "OK: grmob-runtime.js replays Go's transcripts and passes its unit tests"
 # are the bands it measures (bandRenders), which are the widget itself rather
 # than a model of it.
 GRMOB_TRANSCRIPT="$out/transcript.json" node ./browser.mjs
+
+# The screenshot harness's clipping check (wasm/shots/clipped.mjs), against
+# pages built to fail. Here rather than in shoot.sh because shoot.sh is run to
+# take pictures, rarely, and a check that is only exercised when it is needed
+# is the check nobody has seen fire. Skips without a Chrome, like the pass
+# above.
+node --test --test-reporter=dot ../shots/*_test.mjs
