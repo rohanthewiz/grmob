@@ -111,6 +111,13 @@ const (
 // version (see localChromeMajor): on a different one it logs the difference,
 // and a failure names both versions.
 //
+// Re-measured on Chrome 153 (153.0.8010.37, same machine) by re-taking every
+// shot with wasm/shots/shoot.sh into a scratch directory: all seven PNGs,
+// hero.png included, came out byte-identical to the committed ones, so the
+// readings are the Chrome 152 readings exactly — worst channel difference 5.2
+// (todo), 9.3 (signup) and 7.9 (tabs-list) against 13. The number moved to 153
+// on that evidence; the tolerance did not need to.
+//
 // A log and not a failure, for two reasons. The test reads committed PNGs and
 // launches nothing, so the local Chrome is only a proxy for the one that shot
 // them — right after a re-shoot here, stale on a machine that never re-shot.
@@ -120,7 +127,7 @@ const (
 // ask, answered in the output.
 const (
 	compositeTolerance        = 13.0
-	compositeMeasuredOnChrome = 152
+	compositeMeasuredOnChrome = 153
 )
 
 // compositeLayout is what a composite page says about where its parts go.
