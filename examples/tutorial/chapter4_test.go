@@ -2093,3 +2093,112 @@ func TestSearchableSelectLessonReturnKeyMovesToCity(t *testing.T) {
 	}
 	assertNoConcerns(t)
 }
+
+// --- 4.18 Drawers ------------------------------------------------------------
+
+// drawerLayers returns the demo drawer's two ZStack layers: the screen Box and
+// the Row holding the panel and the scrim.
+func drawerLayers(t *testing.T, mgr *render.Manager) (screen, layer *node) {
+	t.Helper()
+	stack := findNode(tree(t, mgr), func(n *node) bool {
+		return n.Type == "ZStack" && len(n.Children) == 2 &&
+			len(n.Children[1].Children) == 2 &&
+			n.Children[1].Children[0].Style != nil &&
+			n.Children[1].Children[0].Style.AccessibilityLabel == "Notebook"
+	})
+	if stack == nil {
+		t.Fatal("no drawer ZStack with a panel named Notebook")
+	}
+	return stack.Children[0], stack.Children[1]
+}
+
+// drawerIsOpen reads the open state the way a user sees it, from the panel
+// layer's Display, and checks the screen layer's hidden flag agrees with it.
+func drawerIsOpen(t *testing.T, mgr *render.Manager) bool {
+	t.Helper()
+	screen, layer := drawerLayers(t, mgr)
+	open := layer.Style.Display != core.DisplayNone
+	if screen.Style.AccessibilityHidden != open {
+		t.Fatalf("panel open=%v but screen hidden=%v; they must agree", open, screen.Style.AccessibilityHidden)
+	}
+	return open
+}
+
+// focusActionOf is the focus command the node labelled name carries, or "".
+func focusActionOf(t *testing.T, mgr *render.Manager, name string) string {
+	t.Helper()
+	n := findNode(tree(t, mgr), func(n *node) bool {
+		return n.Style != nil && n.Style.AccessibilityLabel == name
+	})
+	if n == nil {
+		t.Fatalf("no node labelled %q", name)
+	}
+	a, _ := n.Props["focusAction"].(string)
+	return a
+}
+
+func TestDrawersLessonPicksASectionAndCloses(t *testing.T) {
+	mgr := newApp(t)
+	openLesson(t, mgr, "Drawers")
+
+	if drawerIsOpen(t, mgr) {
+		t.Fatal("the drawer must start shut")
+	}
+	if !hasText(tree(t, mgr), "Showing Inbox") {
+		t.Fatal("the first section shows first")
+	}
+
+	tapLabelled(t, mgr, "Open navigation")
+	if !drawerIsOpen(t, mgr) {
+		t.Fatal("☰ must open the drawer")
+	}
+	if got := focusActionOf(t, mgr, "Close Notebook"); got != "focus" {
+		t.Errorf("opening must focus the ✕, its focusAction = %q", got)
+	}
+	// The current section carries the name suffix; picking another moves it.
+	tapLabelled(t, mgr, "Inbox, selected")
+	if drawerIsOpen(t, mgr) {
+		t.Fatal("picking a destination must close the drawer")
+	}
+	if got := focusActionOf(t, mgr, "Open navigation"); got != "focus" {
+		t.Errorf("dismissing must hand focus back to the ☰, its focusAction = %q", got)
+	}
+
+	tapLabelled(t, mgr, "Open navigation")
+	tapLabelled(t, mgr, "Starred")
+	if drawerIsOpen(t, mgr) || !hasText(tree(t, mgr), "Showing Starred") {
+		t.Fatal("picking Starred must show it and close the drawer")
+	}
+	if findNode(tree(t, mgr), func(n *node) bool {
+		return n.Style != nil && n.Style.AccessibilityLabel == "Starred, selected"
+	}) == nil {
+		t.Error("Starred must now be the selected row")
+	}
+	assertNoConcerns(t)
+}
+
+func TestDrawersLessonClosesOnTheCrossAndTheScrim(t *testing.T) {
+	mgr := newApp(t)
+	openLesson(t, mgr, "Drawers")
+
+	tapLabelled(t, mgr, "Open navigation")
+	tapLabelled(t, mgr, "Close Notebook")
+	if drawerIsOpen(t, mgr) {
+		t.Fatal("the ✕ must close the drawer")
+	}
+
+	tapLabelled(t, mgr, "Open navigation")
+	_, layer := drawerLayers(t, mgr)
+	scrim := layer.Children[1]
+	if !scrim.Style.AccessibilityHidden {
+		t.Error("the scrim must be hidden from assistive technology")
+	}
+	mgr.DispatchCallback(scrim.Props["onClick"].(string))
+	if drawerIsOpen(t, mgr) {
+		t.Fatal("a scrim tap must close the drawer")
+	}
+	if !hasText(tree(t, mgr), "Showing Inbox") {
+		t.Error("closing without a pick must leave the section alone")
+	}
+	assertNoConcerns(t)
+}

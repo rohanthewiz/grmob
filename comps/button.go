@@ -190,6 +190,13 @@ type Button struct {
 	// of tapping.
 	AccessibilityLabel string
 	AccessibilityHint  string
+
+	// FocusRef names the button for core.Focus, so a handler elsewhere can
+	// move focus onto it: Drawer's close button, which the control that
+	// opened the drawer focuses so a keyboard or screen-reader user lands
+	// inside the panel rather than on a control now hidden behind it. Nil
+	// names nothing.
+	FocusRef *core.FocusRef
 }
 
 func (b Button) Render(ctx *core.Context) *core.Node {
@@ -224,7 +231,13 @@ func (b Button) Render(ctx *core.Context) *core.Node {
 		onTap = func() {}
 	}
 
-	return core.Button(b.Label, onTap, asProps(styles)...).Render(ctx)
+	props := asProps(styles)
+	// FocusTarget is a BehaviorProp, not a look, so it cannot ride Style.
+	// A nil ref yields a nil prop, which core.Button skips.
+	if b.FocusRef != nil {
+		props = append(props, core.FocusTarget(b.FocusRef))
+	}
+	return core.Button(b.Label, onTap, props...).Render(ctx)
 }
 
 // colorProps resolves the two axes into style props, or into nothing at all.

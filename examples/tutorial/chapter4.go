@@ -47,6 +47,7 @@ func chapter4() Chapter {
 			lessonSmallControls(),
 			lessonChoicesAndProgress(),
 			lessonMenus(),
+			lessonDrawers(),
 		},
 	}
 }
@@ -3341,4 +3342,136 @@ func menuAge(days int) string {
 		return "Edited 1 day ago"
 	}
 	return fmt.Sprintf("Edited %d days ago", days)
+}
+
+// --- 4.18 Drawers ------------------------------------------------------------
+
+// drawerSections are the 4.18 demo's destinations: the drawer's rows, the
+// app bar's title and the body caption all read from one table, so the three
+// cannot disagree about which section is showing.
+var drawerSections = []struct {
+	Icon, Label, Subtitle string
+}{
+	{"📥", "Inbox", "12 notes"},
+	{"⭐", "Starred", "3 notes"},
+	{"🗄", "Archive", "40 notes"},
+	{"🗑", "Trash", "empty"},
+}
+
+// lessonDrawers teaches comps.Drawer on a small pretend screen: an app bar with
+// a ☰, a body naming the current section, and the drawer over both. The demo
+// pins the drawer's height because a lesson scrolls, which is the one sizing
+// rule a caller has to know, and it wires the focus handoff both ways so the
+// keyboard path can be tried in a browser: ☰ focuses the ✕, dismissing
+// focuses the ☰. It is appended at the end of the chapter for the reason 4.15
+// was: lesson numbers already in deep links do not move.
+func lessonDrawers() Lesson {
+	return Lesson{
+		Title:   "Drawers",
+		Summary: "comps.Drawer pins a panel of destinations to the leading edge over the screen, opened by a ☰ and closed by a pick.",
+		Body: func(ctx *core.Context) core.View {
+			// Hooks first and unconditionally, as in every lesson.
+			open := core.NewState(ctx, false)
+			section := core.NewState(ctx, 0)
+			closeRef := core.UseFocusRef(ctx)
+			menuRef := core.UseFocusRef(ctx)
+
+			t := ctx.Theme()
+			current := drawerSections[section.Get()]
+
+			items := make([]comps.DrawerItem, len(drawerSections))
+			for i, s := range drawerSections {
+				items[i] = comps.DrawerItem{
+					Icon:     s.Icon,
+					Label:    s.Label,
+					Subtitle: s.Subtitle,
+					OnTap:    func() { section.Set(i) },
+				}
+			}
+
+			// The pretend screen under the drawer. Its own fill so the scrim
+			// visibly dims something, and no inset so the app bar meets the
+			// edges the way it would at a real screen's top.
+			screen := core.Column(
+				core.Padding(0),
+				core.Gap(0),
+				core.Width("100%"),
+				core.Height("100%"),
+				core.BackgroundColor(t.Colors.Surface),
+				comps.AppBar{
+					Title: current.Label,
+					Leading: comps.Button{
+						Label:              "☰",
+						AccessibilityLabel: "Open navigation",
+						Emphasis:           comps.EmphasisGhost,
+						FocusRef:           menuRef,
+						OnTap: func() {
+							open.Set(true)
+							// The ☰ is inside the layer the drawer hides, so
+							// focus moves to the panel's ✕ with it.
+							core.Focus(closeRef)
+						},
+					},
+				},
+				core.Column(
+					core.Gap(8),
+					caption("Showing "+current.Label),
+					prose(current.Subtitle+" in this section."),
+				),
+			)
+
+			return core.Column(
+				core.Gap(14),
+				prose("A Drawer is side navigation: a panel of destinations pinned to the "+
+					"leading edge over the screen. It is a ZStack of two layers, the screen "+
+					"and the panel, not a Modal. A Modal is a centred Dialog window on Android "+
+					"and a bottom sheet on iOS, so only the web could put it at an edge; a "+
+					"ZStack layer fills its box on all four targets."),
+				codeBlock(`comps.Drawer{
+    Open:      open.Get(),
+    OnDismiss: func() { open.Set(false); core.Focus(menuRef) },
+    Title:     "Notebook",
+    Width:     "75%",            // default 280px
+    Items:     items,            // []comps.DrawerItem{Icon, Label, Subtitle, OnTap}
+    Selected:  section.Get(),
+    CloseRef:  closeRef,
+    Content:   screen,           // its AppBar's ☰ opens and focuses closeRef
+    Style:     []core.StyleProp{core.Height("340px")},
+}`),
+				prose("Picking a destination runs its OnTap and then OnDismiss, so no handler "+
+					"closes the drawer itself. While it is open the screen layer is hidden "+
+					"from assistive technology, which keeps a screen reader inside the panel."),
+				prose("A layer has no dialog to move focus into, so the handoff is yours: the "+
+					"☰ focuses the ✕ through CloseRef, and OnDismiss focuses the ☰ through "+
+					"Button.FocusRef. The drawer covers its own box, so inside a scrolling "+
+					"page like this one it needs a pinned height."),
+				demoPanel("Open the drawer, pick a section, then open it again and close it with ✕ or the dimmed area.",
+					comps.Drawer{
+						Open: open.Get(),
+						OnDismiss: func() {
+							open.Set(false)
+							core.Focus(menuRef)
+						},
+						Title: "Notebook",
+						// A share rather than the 280px default: the demo
+						// panel is narrower than a phone, and the scrim has to
+						// stay wide enough to see and to tap.
+						Width:    "75%",
+						Items:    items,
+						Selected: section.Get(),
+						CloseRef: closeRef,
+						Content:  screen,
+						Style:    []core.StyleProp{core.Height("340px")},
+					},
+				),
+				keyPoints(
+					"Drawer is a ZStack layer over Content, so it sits at the leading edge on every target.",
+					"Picking a row calls its OnTap, then OnDismiss; the ✕ and the scrim call OnDismiss.",
+					"While open, Content is hidden from assistive technology; CloseRef and Button.FocusRef move the keyboard focus.",
+					"The drawer covers its ZStack: pin a height when it sits in a scrolling column.",
+					"Tab is not contained on the web and Android back does not close it; core has no inert and no back-press hook.",
+				),
+			)
+		},
+	}
 }

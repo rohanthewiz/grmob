@@ -79,6 +79,9 @@ Two widgets do: Accordion (expanded or collapsed) and DatePicker (is the sheet o
 - [`type Dialog`](#type-dialog)
     - [`func (Dialog) Render`](#func-dialog-render)
 - [`type DialogAction`](#type-dialogaction)
+- [`type Drawer`](#type-drawer)
+    - [`func (Drawer) Render`](#func-drawer-render)
+- [`type DrawerItem`](#type-draweritem)
 - [`type Emphasis`](#type-emphasis)
 - [`type EmptyState`](#type-emptystate)
     - [`func (EmptyState) Render`](#func-emptystate-render)
@@ -1066,6 +1069,13 @@ type Button struct {
 	// of tapping.
 	AccessibilityLabel string
 	AccessibilityHint  string
+
+	// FocusRef names the button for core.Focus, so a handler elsewhere can
+	// move focus onto it: Drawer's close button, which the control that
+	// opened the drawer focuses so a keyboard or screen-reader user lands
+	// inside the panel rather than on a control now hidden behind it. Nil
+	// names nothing.
+	FocusRef *core.FocusRef
 }
 ```
 
@@ -1115,7 +1125,7 @@ A theme that declares no on-light tones falls back to the role colour, i.e. to t
 func (b Button) Render(ctx *core.Context) *core.Node
 ```
 
-<small>[comps/button.go:195](https://github.com/rohanthewiz/grmob/blob/master/comps/button.go#L195)</small>
+<small>[comps/button.go:202](https://github.com/rohanthewiz/grmob/blob/master/comps/button.go#L202)</small>
 
 ### type Calendar
 
@@ -2339,6 +2349,185 @@ type DialogAction struct {
 DialogAction is one button in a Dialog's footer.
 
 <small>[comps/dialog.go:133](https://github.com/rohanthewiz/grmob/blob/master/comps/dialog.go#L133)</small>
+
+### type Drawer
+
+```go
+type Drawer struct {
+	// Open is the caller's open/shut state.
+	Open bool
+
+	// OnDismiss is called for the ✕, for a scrim tap, and after any
+	// destination. Nil draws no ✕ and leaves the scrim inert, so the drawer
+	// closes only when the caller flips Open.
+	OnDismiss func()
+
+	// Title names the panel: its heading and the navigation landmark's
+	// accessible name. Empty draws no heading and leaves the landmark
+	// unnamed; set it.
+	Title string
+
+	// Items are the destinations, top to bottom, each a full-width ListRow.
+	Items []DrawerItem
+
+	// Selected is the index of the current destination. Zero is the first
+	// item; negative marks none.
+	Selected int
+
+	// Body replaces the Items rows with arbitrary content under the heading:
+	// grouped destinations, an account row. Picking from it closes nothing
+	// unless its own handlers call OnDismiss.
+	Body core.View
+
+	// Content is the screen the drawer is drawn over.
+	Content core.View
+
+	// CloseLabel is the ✕'s accessible name. Empty is "Close " + Title, or
+	// "Close navigation" with no Title.
+	CloseLabel string
+
+	// CloseRef names the ✕ for core.Focus. It has no node to name when
+	// OnDismiss is nil, since the ✕ is not drawn.
+	CloseRef *core.FocusRef
+
+	// Width is the panel's width. Empty is "280px", which leaves a tappable
+	// scrim beside it on a 320-point phone. A percentage is honoured on all
+	// four targets; core.MaxWidth is read by the web targets only, so cap a
+	// percentage through PanelStyle for the browser alone.
+	Width string
+
+	// Backdrop overrides the scrim colour. Empty is core.Modal's default.
+	Backdrop string
+
+	// PanelStyle is applied to the panel column after the widget's props,
+	// so it can repaint the panel or replace the landmark's name.
+	PanelStyle []core.StyleProp
+
+	// Style is applied to the ZStack after its Width, so it can pin the
+	// height the drawer covers (see the type doc).
+	Style []core.StyleProp
+}
+```
+
+Drawer is side navigation: a panel of destinations pinned to the leading edge over the screen, opened by a ☰ button and closed by picking a destination, by its ✕, or by a tap on the scrim beside it.
+
+	open := core.NewState(ctx, false)
+	closeRef := core.UseFocusRef(ctx)
+	comps.Drawer{
+	    Open:      open.Get(),
+	    OnDismiss: func() { open.Set(false) },
+	    Title:     "Notebook",
+	    Items: []comps.DrawerItem{
+	        {Icon: "📥", Label: "Inbox",   OnTap: func() { section.Set(0) }},
+	        {Icon: "⭐", Label: "Starred", OnTap: func() { section.Set(1) }},
+	    },
+	    Selected: section.Get(),
+	    CloseRef: closeRef,
+	    Content: comps.Screen{Children: []core.View{
+	        comps.AppBar{Title: "Inbox", Leading: comps.Button{
+	            Label: "☰", AccessibilityLabel: "Open navigation",
+	            Emphasis: comps.EmphasisGhost,
+	            OnTap: func() { open.Set(true); core.Focus(closeRef) },
+	        }},
+	        body,
+	    }},
+	}
+
+	┌ ZStack  Width 100%, then Style ──────────────────────────────┐
+	│ ┌ Box 100% × 100%   AccessibilityHidden while Open ────────┐ │ layer 1:
+	│ │ Content                                                  │ │ the screen
+	│ └──────────────────────────────────────────────────────────┘ │
+	│ ┌ Row 100% × 100%   Display none while shut ───────────────┐ │ layer 2:
+	│ │ ┌ Column  Width 280px ──┐ ┌ Box FlexGrow(1) ───────────┐ │ │ drawn over
+	│ │ │ navigation, "Notebook"│ │ scrim: Backdrop fill,      │ │ │ layer 1
+	│ │ │ Notebook          [✕] │ │ tap = OnDismiss,           │ │ │
+	│ │ │ 📥 Inbox   (selected) │ │ hidden from assistive tech │ │ │
+	│ │ │ ⭐ Starred            │ │                            │ │ │
+	│ │ └───────────────────────┘ └────────────────────────────┘ │ │
+	│ └──────────────────────────────────────────────────────────┘ │
+	└──────────────────────────────────────────────────────────────┘
+
+#### A layer over the content, not a Modal
+
+ActionSheet and Menu present through core.Modal, and a drawer could too. It does not, because a Modal's content lands wherever each host puts a dialog, and only the web puts it anywhere a leading edge could be reached from:
+
+	target    Modal presents as                  a leading panel would be
+	───────   ────────────────────────────────   ──────────────────────────
+	web ×2    fixed overlay, flex column         possible: a Row filling it
+	Compose   Dialog window at platform width,   a panel inside a centred
+	          inset from every screen edge       window, off the edge
+	SwiftUI   .sheet, medium/large detents       a bottom sheet
+
+A ZStack draws its layers in one box on all four targets (a single-cell grid on the web, a Box on Compose, a stack Layout on SwiftUI), and a layer sized Width/Height "100%" fills that box on each. So the panel is the stack's second layer, and it is a drawer at the leading edge everywhere, with no host change.
+
+What the Modal chassis would have supplied is the cost, and the widget buys back what it can:
+
+  - Screen-reader confinement. A Dialog window and a sheet confine TalkBack and VoiceOver, and the DOM overlay says aria-modal. Here the content layer takes AccessibilityHidden while the drawer is open, which takes the screen behind out of the accessibility tree on every target, so exploration stays in the panel.
+  - Focus. Nothing moves it on open, and the ☰ that had it is now inside a hidden layer. CloseRef names the ✕ so the opener can call core.Focus on it, as the example does; OnDismiss can hand focus back to the ☰ through that button's own FocusRef. The widget holds no ref itself, because a ref is a hook (see "No hooks").
+  - Keyboard containment on the web. aria-hidden does not stop Tab and core has no inert, so Tab past the panel's last control still reaches the hidden screen. Recorded, not fixed: it needs a renderer.
+  - The Android back button. A Dialog closes on it; a layer does not, and core has no back-press hook to take. The ✕, a destination and the scrim are the ways out.
+
+#### It covers its own box, so give it one
+
+The drawer covers the ZStack, not the window, and a ZStack is as big as its largest layer. Both layers ask for 100% of what the parent offers, so where the parent bounds the height (the app root, a Screen with Fill, a pinned Height) the drawer covers exactly that. In a scrolling column nothing bounds it: Compose's fill height is ignored under an unbounded constraint and the panel would sit centred at its own height. Pin a height through Style there, as the tutorial's demo does with core.Height.
+
+#### The panel is hidden when shut, not removed
+
+The panel layer renders on every pass and takes Display none while shut, which both natives read as "do not compose" and the web as display:none. The tree is then the same shape open or shut, so opening is a style patch, and any hooks inside Body keep their slots: Body left out of a pass would shift every hook rendered after it, which is Spinner's rule. The content layer is always wrapped in its Box for the same reason. Toggling a prop is a patch; adding a wrapper around the screen would replace the screen.
+
+#### Picking a destination closes the drawer
+
+A row calls its item's OnTap, then OnDismiss, as an ActionSheet action does and as Material's navigation drawer does. A caller would otherwise write open.Set(false) into every destination.
+
+The current destination is announced the way BottomBar's is: ListRow's ", selected" name suffix, because core has no current-page state. Selected also follows BottomBar and Tabs: the zero value selects the first item, and a negative Selected selects none.
+
+#### No hooks
+
+Open and focus are both the caller's, so Drawer takes no hook slot and is conditional-safe, like Menu.
+
+#### Theme roles read
+
+	Panel      Colors.Background
+	Title      Typography.Subtitle, bold, Colors.TextPrimary
+	Close      as comps.Button, ghost
+	Rows       as comps.ListRow, whose selected look marks the current one
+	Icon       Typography.Subtitle
+	Scrim      Backdrop, else core.Modal's default #00000088
+
+<small>[comps/drawer.go:128](https://github.com/rohanthewiz/grmob/blob/master/comps/drawer.go#L128)</small>
+
+#### func (Drawer) Render
+
+```go
+func (d Drawer) Render(ctx *core.Context) *core.Node
+```
+
+Render builds ZStack(content layer, panel layer) as drawn in the type doc.
+
+<small>[comps/drawer.go:205](https://github.com/rohanthewiz/grmob/blob/master/comps/drawer.go#L205)</small>
+
+### type DrawerItem
+
+```go
+type DrawerItem struct {
+	// Icon is an optional glyph or emoji before the label. It is decoration
+	// and hidden from assistive technology.
+	Icon string
+
+	// Label is the row's title and its accessible name.
+	Label string
+
+	// Subtitle is an optional quieter second line, such as a count.
+	Subtitle string
+
+	// OnTap is called before the drawer's OnDismiss.
+	OnTap func()
+}
+```
+
+DrawerItem is one destination in a Drawer.
+
+<small>[comps/drawer.go:184](https://github.com/rohanthewiz/grmob/blob/master/comps/drawer.go#L184)</small>
 
 ### type Emphasis
 

@@ -106,6 +106,11 @@ type nodeStyle struct {
 	AccessibilityID       string
 	AccessibilityControls string
 
+	// Chapter 4's drawer lesson asserts on this one. An open drawer hides the
+	// screen layer beneath it from assistive technology and changes nothing
+	// visible about that layer, so the flag is the only evidence it happened.
+	AccessibilityHidden bool
+
 	// The inset set, for 7.2's box-model half. The lesson there is entirely
 	// about which of the four sides a layer leaves behind, so the sides have
 	// to be readable individually — a rendered box does not say in its props
@@ -684,7 +689,7 @@ func TestStacksDemoSwitchesAxis(t *testing.T) {
 // widget from putting a kilobyte in Props, and the parse is still the largest
 // single stage of an Android launch — it is simply now proportional to
 // something small. The bound is a factor of ten in each direction because the
-// number is a fact about 56 lessons of prose, which is edited: a new chapter
+// number is a fact about 57 lessons of prose, which is edited: a new chapter
 // should not fail a test, and a screen that suddenly sends four megabytes
 // should.
 func TestHomeTreeSize(t *testing.T) {

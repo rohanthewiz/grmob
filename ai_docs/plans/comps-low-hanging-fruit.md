@@ -9,9 +9,9 @@ rows". A3 `Stepper`, A4 `BottomBar` + `Screen.Footer`, A5 `Spinner` and A6
 B2 `RadioGroup`, B4 `StepIndicator` and B5 `Timeline` shipped with lesson 4.16
 "Radio groups, steps & timelines". **Tier C landed 2026-09-12** as far as it
 can without a renderer: C1 `Menu` and C3 `SearchableSelect` shipped with
-lesson 4.17 "Menus & searchable selects". C2
-`Drawer` stays skipped (a recorded non-goal) and C4 `Carousel` stays blocked on
-a scroll-offset signal.
+lesson 4.17 "Menus & searchable selects". C2 `Drawer` followed once asked
+for, with lesson 4.18 "Drawers". C4 `Carousel` stays blocked on a
+scroll-offset signal.
 
 **Decisions that differ from the Tier A sketches below:**
 
@@ -118,6 +118,19 @@ a scroll-offset signal.
   work. A `RoleStatus` count line stands in for what the combobox
   announces. Options are `core.SelectOption`, with `Group` as the row's
   subtitle.
+- C2 `Drawer` is the sketched `ZStack`, and the sketch was right not to use a
+  Modal, for a reason found only after B1. A Modal is a centred Dialog window
+  on Compose and a bottom sheet on SwiftUI, so only the web could pin it to
+  an edge, while a 100% × 100% ZStack layer fills the stack on all four. The
+  layer gives up what the Modal chassis supplied. Screen-reader confinement
+  is bought back by hiding the content layer while open. Focus is handed to
+  the caller through `CloseRef` and the new, additive `Button.FocusRef`. Tab
+  containment on the web and the Android back button are recorded as gaps:
+  core has no `inert` and no back-press hook. The panel layer is hidden with
+  `Display none`, never left out, so opening is a style patch and hooks in
+  `Body` keep their slots. The drawer covers its own box, so a drawer inside
+  a scrolling column pins a height. It holds no hooks. `BottomBar` still
+  covers the same need with no overlay, which is why it was not first.
 
 **Correction found while landing A2:** rendering the row's control
 `core.Disabled(true)` (the approach sketched under A2) was rejected. Disabled

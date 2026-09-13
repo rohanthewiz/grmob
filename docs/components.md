@@ -318,6 +318,10 @@ followed the same path once
 [`core.AccessibilitySelected`](concepts/styling-and-theming.md#accessibilityselected)
 existed; `ListRow` did not, and its own entry says why.
 
+**`FocusRef` names the button for `core.Focus`.** A handler elsewhere can move
+focus onto it, as `Drawer`'s opener does with the drawer's ✕ and its
+`OnDismiss` does with the ☰. Nil names nothing.
+
 ## InputRow
 
 The composer: a text field that fills the row, and an optional trailing button
@@ -1759,6 +1763,75 @@ Other notes:
   role would claim a panel the bar does not control.
 - The icon is decoration and hidden from assistive technology.
 - `BarItem.AccessibilityLabel` replaces an abbreviated label as the spoken name.
+
+## Drawer
+
+Side navigation: a panel of destinations pinned to the leading edge over the
+screen. A ☰ button opens it, and picking a destination, the ✕ or a tap on the
+scrim closes it.
+
+```go
+open := core.NewState(ctx, false)
+section := core.NewState(ctx, 0)
+closeRef := core.UseFocusRef(ctx)
+
+comps.Drawer{
+    Open:      open.Get(),
+    OnDismiss: func() { open.Set(false) },
+    Title:     "Notebook",
+    Items: []comps.DrawerItem{
+        {Icon: "📥", Label: "Inbox",   OnTap: func() { section.Set(0) }},
+        {Icon: "⭐", Label: "Starred", OnTap: func() { section.Set(1) }},
+    },
+    Selected: section.Get(),
+    CloseRef: closeRef,
+    Content: comps.Screen{Children: []core.View{
+        comps.AppBar{Title: "Inbox", Leading: comps.Button{
+            Label: "☰", AccessibilityLabel: "Open navigation",
+            Emphasis: comps.EmphasisGhost,
+            OnTap: func() { open.Set(true); core.Focus(closeRef) },
+        }},
+        body,
+    }},
+}
+```
+
+**It is a layer, not a Modal.** The drawer is a `ZStack` of two layers: the
+screen, and a Row holding the panel and the scrim. A Modal would be a centred
+Dialog window on Compose and a bottom sheet on SwiftUI, so only the web could
+pin it to an edge. A ZStack layer at 100% × 100% fills the stack on all four
+targets.
+
+What a Modal would have supplied, and what the drawer does instead:
+
+| Modal gives | Drawer |
+|---|---|
+| Screen-reader confinement | The screen layer is `AccessibilityHidden` while open |
+| Focus inside the dialog | `CloseRef` names the ✕; the opener calls `core.Focus` on it |
+| Tab stays inside (web) | Not contained: core has no `inert`, and `aria-hidden` does not stop Tab |
+| Android back closes it | Not wired: core has no back-press hook |
+
+**Give it a box to cover.** The drawer covers its ZStack, which is as big as its
+largest layer. At the app root or in a bounded parent it covers that. Inside a
+scrolling column nothing bounds the height, so pin one with
+`Style: []core.StyleProp{core.Height("360px")}`.
+
+**Shut is hidden, not removed.** The panel layer is rendered every pass with
+`Display none` while shut. Opening is a style patch, and hooks inside `Body` keep
+their slots.
+
+Other notes:
+
+- Picking a destination runs its `OnTap` and then `OnDismiss`.
+- `Selected` follows `BottomBar`: the zero value selects the first item and a
+  negative value selects none. The current row's name gains ", selected".
+- The panel is a `RoleNavigation` landmark named by `Title`.
+- `Body` replaces the rows with any content. Its handlers close nothing unless
+  they call `OnDismiss`.
+- `Width` defaults to `280px`. `MaxWidth` is read by the web targets only, so
+  cap a percentage through `PanelStyle` for the browser.
+- No `OnDismiss` draws no ✕ and leaves the scrim inert.
+- Drawer holds no hooks.
 
 ## Banner
 

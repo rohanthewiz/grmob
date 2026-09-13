@@ -527,14 +527,14 @@ will say so.
 ## Next: the full tutorial
 
 <p align="center">
-  <img src="docs/images/tutorial-contents.png" alt="The tutorial's contents screen, showing 0 of 56 lessons opened and the Chapter 1 lesson list" width="360">
+  <img src="docs/images/tutorial-contents.png" alt="The tutorial's contents screen, showing 0 of 57 lessons opened and the Chapter 1 lesson list" width="360">
   &nbsp;&nbsp;
   <img src="docs/images/tutorial-lesson.png" alt="Tutorial lesson 1.1, with syntax-highlighted Go and a live TRY IT panel below it" width="360">
 </p>
 
 This README is the short version. The real introduction is the
 **[interactive tutorial](docs/tutorial-interactive.md)** — a GrMob app that
-teaches GrMob, in 56 lessons across 8 chapters. Every lesson is a live screen:
+teaches GrMob, in 57 lessons across 8 chapters. Every lesson is a live screen:
 the explanation, the code under discussion, and a "TRY IT" panel wired to real
 state and callbacks, from your first `Column` through theming, navigation and
 error boundaries.
