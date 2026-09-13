@@ -178,20 +178,6 @@ var refusals = []refusal{
 			"container role and one member role rather than five. What it does not " +
 			"have is the walk",
 	},
-	{
-		Role:    "radiogroup",
-		Members: []string{"radio"},
-		Blocked: "vocabulary",
-		Nesting: "direct",
-		Shape:   "",
-		Why: "the one pattern here whose walk this machinery could already do — " +
-			"a flat run of members, one selected, arrows between them, which is a " +
-			"listbox with a different word. It is absent because nothing builds a " +
-			"radio group: comps.SegmentedControl is the one-of-N control this " +
-			"framework has, and it is drawn as a joined strip rather than as a " +
-			"column of radios. Adding it means core.RoleRadio and " +
-			"core.RoleRadioGroup and a widget that writes them",
-	},
 }
 
 // Every refusal is a refusal of something real, and is still in force.

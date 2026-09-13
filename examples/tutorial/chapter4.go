@@ -2974,10 +2974,10 @@ func lessonChoicesAndProgress() Lesson {
 				prose("The whole row is the target, and the ring is drawn rather than a platform "+
 					"control, so one tap reaches Go once on every target. OnChange fires only "+
 					"for a different option, so it can be a plain setter."),
-				prose("core has no radio role yet, so the group is a listbox and each row an "+
-					"option that states selected or not selected. A reader hears \"option, "+
-					"selected\" rather than \"radio button, checked\", and in the browser the "+
-					"group is one tab stop that the arrow keys move through."),
+				prose("The group is a radiogroup and each row a radio, so a reader hears \"radio "+
+					"button, checked\". In the browser the group is one tab stop, sitting on the "+
+					"checked radio, and the arrow keys move the check itself — OnChange fires as "+
+					"you arrow, which is why it is a setter."),
 				prose("A StepIndicator is the header of a flow: done steps ticked, the current "+
 					"step filled, the rest outlined. Only done steps are tappable, so going "+
 					"back is free and skipping ahead is not something you have to guard. A "+
@@ -3040,7 +3040,7 @@ func lessonChoicesAndProgress() Lesson {
 					"RadioGroup is the vertical, every-option-visible choice; Select is compact and SegmentedControl is horizontal.",
 					"Each row is the tap target and the ring is drawn, so there is no second control to double-dispatch.",
 					"OnChange fires only for a different, enabled option.",
-					"It is a labelled listbox of options that state their selection, with the browser's listbox keyboard; a radio role is a follow-up.",
+					"It is a labelled radiogroup of radios; in the browser the arrows move the check, so OnChange fires as a user arrows through.",
 					"StepIndicator ticks done steps, fills the current one and makes only done steps tappable.",
 					"Its strip is named \"Step 2 of 4: Shipping\": navigation when OnTap is set, a group when it is not, and it scrolls sideways when the flow is long.",
 					"Timeline draws the line per row: a stretched rail whose bottom segment grows through the event's spacing to meet the next row's.",

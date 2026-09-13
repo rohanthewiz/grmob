@@ -38,6 +38,8 @@ import "strconv"
 //	img           | role="img"      | .isImage       | role = Role.Image
 //	tab           | role="tab"      | —              | role = Role.Tab
 //	tablist       | role="tablist"  | .isTabBar      | —
+//	radiogroup    | role=…          | —              | selectableGroup()
+//	radio         | role="radio"    | —              | role = Role.RadioButton
 //	status        | role="status"   | —              | liveRegion = Polite
 //	alert         | role="alert"    | —              | liveRegion = Assertive
 //	log           | role="log"      | —              | liveRegion = Polite
@@ -66,7 +68,7 @@ import "strconv"
 // supplied the pair, and a caller marking up a tab strip sets both and gets
 // whichever half each platform knows.
 //
-// Fourteen of the twenty-five do nothing on either native, and that is the
+// Fourteen of the twenty-seven do nothing on either native, and that is the
 // honest state of those platforms rather than a gap to be filled later:
 // neither has a tabular semantics vocabulary a role can be mapped onto (Compose
 // has collectionInfo, which describes counts and indices this prop does not
@@ -89,7 +91,7 @@ import "strconv"
 //
 // # A structural role owns what is inside it
 //
-// The tabular five and the two collection pairs are not labels on a container
+// The tabular five and the three collection pairs are not labels on a container
 // — they are claims about what the container holds. role="list" says its
 // children are listitems; role="listbox" says its children are options;
 // role="table" says its children are rows, or rowgroups holding rows. A reader acts on the claim rather than re-deriving
@@ -131,9 +133,9 @@ import "strconv"
 // and are not subject to this. A banner, a navigation region or a log owns
 // whatever it likes; RoleHeading, RoleButton, RoleLink, RoleImg and RoleTab
 // describe the node itself.
-// Four of the const blocks below hold a role that makes a claim about its
-// children — the tabular set, both collection pairs, and the tablist half of
-// the tab pair — which is where to look rather than here if a role is ever
+// Five of the const blocks below hold a role that makes a claim about its
+// children — the tabular set, the three collection pairs, and the tablist half
+// of the tab pair — which is where to look rather than here if a role is ever
 // added to any of them. (RoleTab itself does not: it describes one control, the way
 // RoleButton does, and only the strip around it claims what it contains.)
 //
@@ -313,6 +315,47 @@ const (
 const (
 	RoleListBox Role = "listbox"
 	RoleOption  Role = "option"
+)
+
+// The radio pair: a set of mutually exclusive choices that are all on screen,
+// and one choice in it. The third collection pair, and the third structural
+// block that makes a claim about its children — role="radiogroup" says the
+// things inside it are radios. See "A structural role owns what is inside it"
+// above.
+//
+// # Why a pair of its own when listbox and option already carry a choice
+//
+// Because the two patterns promise different things, and a widget that wears
+// the wrong one is announced as the wrong control. An option is *selected*; a
+// radio is *checked*. A listbox is one tab stop whose arrows move a highlight
+// and leave the choice alone unless the widget asks otherwise
+// (AccessibilitySelectionFollowsFocus); a radio group is one tab stop whose
+// arrows move the check itself, always. comps.RadioGroup shipped as a listbox
+// for want of this pair and said "option, selected" for "radio button,
+// checked" — true, and the weaker of the two words.
+//
+// # One state field, a third attribute
+//
+// The state is Style.AccessibilitySelected, the field every other choice uses,
+// and not a new AccessibilityChecked. The two web exporters write it as
+// aria-checked for a radio, beside aria-selected for an option and a tab and
+// aria-pressed for a button; the natives have one spelling of "this one is
+// on" each and use it for all of them. A second field would let a radio carry
+// both a selection and a check, which is a state no control has.
+//
+// # What each target does with it
+//
+//	web       role="radiogroup" / role="radio" and aria-checked; the WASM
+//	          runtime adds the keyboard (one tab stop on the checked radio,
+//	          the arrows move and check), htmlout writes no tabindex, as for
+//	          every composite
+//	Compose   radiogroup is selectableGroup(), radio is Role.RadioButton, and
+//	          the state is the `selected` property grMobSelected sets
+//	SwiftUI   no trait for either; the state arrives as .isSelected, the same
+//	          loss the listbox pair has on this platform
+const (
+	RoleRadioGroup Role = "radiogroup"
+	RoleRadio      Role = "radio"
 )
 
 // The tab pair: a strip of controls that switches what the screen is showing,
@@ -590,10 +633,10 @@ const RoleGroup Role = "group"
 // them: it is the field's zero value, no renderer has an arm for it, and a
 // coverage check that demanded one would be asking each renderer to implement
 // "unset". Everything downstream that iterates roles — the native dispatch
-// pins, the DOM export test — wants the twenty-five that do something.
+// pins, the DOM export test — wants the twenty-seven that do something.
 //
 // A fresh slice per call rather than a package-level var, which any importer
-// could write to. Twenty-five elements are cheaper to build than to defend.
+// could write to. Twenty-seven elements are cheaper to build than to defend.
 //
 // Pinned to the const blocks above by role_enum_test.go, which reads this
 // file's syntax tree: adding a constant without adding it here should fail
@@ -604,6 +647,7 @@ func Roles() []Role {
 		RoleTable, RoleRowGroup, RoleRow, RoleColumnHeader, RoleCell,
 		RoleList, RoleListItem,
 		RoleListBox, RoleOption,
+		RoleRadioGroup, RoleRadio,
 		RoleTab, RoleTabList, RoleTabPanel,
 		RoleBanner, RoleNavigation, RoleSearch, RoleToolbar,
 		RoleStatus, RoleAlert, RoleLog,
@@ -624,26 +668,29 @@ func Roles() []Role {
 // all*, and that is a question a caller asks of core. AuditTree is the first
 // reader: core.AccessibilitySelectionFollowsFocus is a statement about what a
 // widget's keyboard does, and on a role with no keyboard it is a claim about
-// nothing — which no exporter can notice, because knowing these three roles
+// nothing — which no exporter can notice, because knowing these four roles
 // where an attribute is written would put the list in two places.
 //
-// The runtime keeps the same three in two tables split by a different
+// The runtime keeps the same four in two tables split by a different
 // question (whether ARIA names the members), and wasm/verify holds their union
 // to this function. So a fourth pattern is one edit here and a failing check
 // there, rather than a role that quietly gains a keyboard the audit still
 // calls inert.
 //
-// # Why these three and not the rest of ARIA's patterns
+// # Why these four and not the rest of ARIA's patterns
 //
-// `listbox` and `tablist` are the two ARIA structures that both name their
-// members and own their children, so the runtime can find a container's
-// members by role. `toolbar` names no member role — ARIA defines no
+// `listbox`, `radiogroup` and `tablist` are the three ARIA structures that both
+// name their members and own their children, so the runtime can find a
+// container's members by role. A radio group differs from a listbox in one
+// behaviour rather than in its walk: its arrows move the check itself, so the
+// runtime follows focus inside one without being asked, and
+// AccessibilitySelectionFollowsFocus on it states what it already does. `toolbar` names no member role — ARIA defines no
 // `toolbaritem` — and is here anyway because the pattern is real and the
 // runtime supplies the membership rule itself: a toolbar's controls are the
 // natively focusable tags plus the containers that say they are controls.
 //
-// `menu`, `menubar`, `tree`, `treegrid`, `grid` and `radiogroup` are the
-// patterns ARIA describes that this framework refuses, each for a stated
+// `menu`, `menubar`, `tree`, `treegrid` and `grid` are the patterns ARIA
+// describes that this framework refuses, each for a stated
 // reason — aria/verify/refusals_test.go holds every refusal to what the
 // pattern actually requires. `list` is deliberately absent and is the near
 // miss worth naming: it is content rather than a control, and ARIA gives it no
@@ -652,15 +699,16 @@ func Roles() []Role {
 // Container order matches Roles(); the members are not here, because being a
 // member is a fact about a role's parent rather than about the role.
 func KeyboardComposites() []Role {
-	return []Role{RoleListBox, RoleTabList, RoleToolbar}
+	return []Role{RoleListBox, RoleRadioGroup, RoleTabList, RoleToolbar}
 }
 
 // CompositeMemberRole returns the role ARIA gives the members of a composite
 // container, or "" for a composite whose members ARIA does not name.
 //
-//	listbox   option
-//	tablist   tab
-//	toolbar   ""      ARIA defines no `toolbaritem`
+//	listbox      option
+//	radiogroup   radio
+//	tablist      tab
+//	toolbar      ""      ARIA defines no `toolbaritem`
 //
 // It is the second half of what KeyboardComposites states — that list says
 // which containers have a keyboard, this says how each one recognises the
@@ -699,6 +747,8 @@ func CompositeMemberRole(container Role) (member Role, composite bool) {
 	switch container {
 	case RoleListBox:
 		return RoleOption, true
+	case RoleRadioGroup:
+		return RoleRadio, true
 	case RoleTabList:
 		return RoleTab, true
 	case RoleToolbar:

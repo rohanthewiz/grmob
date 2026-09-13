@@ -933,18 +933,20 @@ row's tap is the only handler. There is no second dispatch to guard against,
 unlike `SwitchRow`. `OnChange` fires only when the tapped option differs from
 `Value` and is enabled.
 
-**A listbox, for now.** `core.Role` has no radio roles. The group is a
-`RoleListBox` and each row a `ListRow` with `Selectable`, so every option
-states selected or not selected. A reader hears "option, selected" rather than
-"radio button, checked". The browser runtime supplies the listbox keyboard:
-one tab stop, Up and Down, Home and End, and Enter or Space to choose. Adding
-`RoleRadio` and `RoleRadioGroup` to core is a follow-up.
+**Radio roles.** The group is a `RoleRadioGroup` and each row a `RoleRadio`.
+The choice is `AccessibilitySelected`, which the web writes as `aria-checked`
+on a radio, so a reader hears "radio button, checked". The browser runtime
+supplies the radio group keyboard: one tab stop on the checked radio, and the
+arrow keys move the check. `OnChange` therefore fires as a user arrows through
+the options. On Android the group and rows map to `selectableGroup()` and
+`Role.RadioButton`; iOS has no radio trait and announces the checked row as
+selected.
 
 Other notes:
 
-- Set `Label`. A listbox with no name is announced as a bare list of options.
-- The selected row takes no background tint, because the ring already shows
-  the selection.
+- Set `Label`. A radio group with no name is announced as a bare run of radio
+  buttons.
+- No row takes a background tint, because the ring already shows the choice.
 - `Disabled` on the group or on one `RadioOption` greys it and drops its taps.
 - A nil `OnChange` draws a display-only group with no handlers.
 

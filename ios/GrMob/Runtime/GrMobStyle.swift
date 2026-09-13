@@ -958,6 +958,12 @@ private func grMobTraitsFor(_ role: String) -> AccessibilityTraits {
     // word for what the choice is among — which VoiceOver, navigating by
     // swipe rather than by arrow key, does not use the way a browser does.
     case "listbox", "option": []
+    // A radio group and one radio in it. SwiftUI has no trait for either —
+    // no radio-button trait, no container word for a set of them — so this is
+    // the listbox pair's loss again: the checked radio is announced through
+    // .isSelected, which grMobSelectedTrait adds on any view, and the word
+    // "radio button" is what this platform cannot say.
+    case "radiogroup", "radio": []
     // A progress bar. No trait names one, and — unlike `tab` above, whose
     // state VoiceOver can at least be told — there is nothing this platform
     // can be told about the position either: `accessibilityValue` takes a

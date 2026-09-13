@@ -30,6 +30,7 @@ import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.progressBarRangeInfo
 import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.selectableGroup
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
@@ -697,6 +698,14 @@ fun SemanticsPropertyReceiver.grMobRole(kind: String) {
         // which TalkBack, navigating by swipe rather than by arrow key, does
         // not use the way a browser does.
         "listbox", "option" -> {}
+        // A radio group and one radio in it — the one choice pair Compose can
+        // name at both ends. selectableGroup() is the container semantics
+        // Modifier.selectableGroup() writes, which TalkBack reads as "these
+        // are one set", and Role.RadioButton is the control. The checked
+        // state is grMobSelected's `selected`, which is what Compose's own
+        // RadioButton reports through Modifier.selectable.
+        "radiogroup" -> selectableGroup()
+        "radio" -> role = Role.RadioButton
         // A determinate or indeterminate progress bar. The *role* has no
         // Compose member — Role has Button, Checkbox, Switch, RadioButton,
         // Tab, Image and DropdownList — but unlike the empty arms around it

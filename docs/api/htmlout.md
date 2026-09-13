@@ -102,7 +102,7 @@ AriaOrientationDefaults returns a copy of the role â†’ ARIA-default table, for t
 
 A copy, not the map itself, for the reason StackAxes and Tags return one: a package-level map is reachable and writable by any importer.
 
-<small>[htmlout/orientation.go:89](https://github.com/rohanthewiz/grmob/blob/master/htmlout/orientation.go#L89)</small>
+<small>[htmlout/orientation.go:96](https://github.com/rohanthewiz/grmob/blob/master/htmlout/orientation.go#L96)</small>
 
 ### func AriaOrientationFor
 
@@ -116,7 +116,7 @@ The axis is resolved exactly as styleValue resolves it for the CSS declaration â
 
 grmob-runtime.js restates this as ariaOrientation, and the table it dispatches on is pinned to AriaOrientationDefaults by TestRuntimeOrientationTableMatchesGo.
 
-<small>[htmlout/orientation.go:106](https://github.com/rohanthewiz/grmob/blob/master/htmlout/orientation.go#L106)</small>
+<small>[htmlout/orientation.go:113](https://github.com/rohanthewiz/grmob/blob/master/htmlout/orientation.go#L113)</small>
 
 ### func BorderResetTypes
 

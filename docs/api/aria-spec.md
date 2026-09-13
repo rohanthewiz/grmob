@@ -86,7 +86,7 @@ const (
 )
 ```
 
-<small>[aria/spec/fixture.go:267](https://github.com/rohanthewiz/grmob/blob/master/aria/spec/fixture.go#L267)</small>
+<small>[aria/spec/fixture.go:268](https://github.com/rohanthewiz/grmob/blob/master/aria/spec/fixture.go#L268)</small>
 
 Version is the ARIA revision this package reads, and the one every fact in the committed fixture came from.
 
@@ -110,7 +110,7 @@ InScopeAttributes are the aria-\* attributes this framework can write, in the or
 
 The fixture is deliberately partial and this list is the whole of why: a fixture is worth exactly what is checked against it, and an entry no guard argues with is prose again with braces around it. Every attribute here is written by htmlout, by the WASM runtime, or by both, and has a test in aria/verify holding that writer to this fixture's answer.
 
-The order is the reading order rather than alphabetical: the level, then the two selection spellings, then the disclosure, then the axis, then the value family. Emitted in this order into every role's "attributes" list, so a regenerated fixture diffs against the previous one line for line.
+The order is the reading order rather than alphabetical: the level, then the three selection spellings, then the disclosure, then the axis, then the value family. Emitted in this order into every role's "attributes" list, so a regenerated fixture diffs against the previous one line for line.
 
 Adding a row here widens every generated entry and nothing else; it does not add a guard. Adding a \*guard\* is what makes the row worth having.
 
@@ -119,6 +119,7 @@ var InScopeAttributes = []string{
 	"aria-level",
 	"aria-selected",
 	"aria-pressed",
+	"aria-checked",
 	"aria-expanded",
 	"aria-orientation",
 	"aria-valuenow",
@@ -136,7 +137,7 @@ Every one of these is a role some comment in this repository names as the thing 
 
 \`generic\`, \`dialog\` and \`switch\` are here for a second reason. \`generic\` is the premise of the RoleGroup fallback both web exporters supply: a name on it is prohibited, which is why \`group\` exists in the vocabulary at all. \`dialog\` and \`switch\` are the two roles a node \*type\* writes rather than a core.Role — core.Modal's chassis and core.Switch, the whole of htmlout.ownRoles — so they are roles this framework emits and does not name. Being here is what lets TestEveryCoreRoleIsAnARIARole's sibling checks argue about them at all: a role no fixture carries is a string two renderers happen to agree on.
 
-\`menu\`, \`menubar\`, \`tree\`, \`treegrid\`, \`grid\` and \`radiogroup\` are the composite patterns core has no vocabulary for, and \`menuitem\`, \`menuitemcheckbox\`, \`menuitemradio\`, \`radio\` and \`treeitem\` are the member roles those patterns move between. Both halves are here because aria/verify/refusals\_test.go holds each refusal to what the pattern actually requires rather than to a sentence somebody wrote once — and the member roles are the half that decides which blocker a refusal is still standing on.
+\`menu\`, \`menubar\`, \`tree\`, \`treegrid\` and \`grid\` are the composite patterns core has no vocabulary for, and \`menuitem\`, \`menuitemcheckbox\`, \`menuitemradio\` and \`treeitem\` are the member roles those patterns move between. (\`radiogroup\` and \`radio\` sat here until core.RoleRadioGroup and core.RoleRadio made them vocabulary; they are now in the fixture as core's own roles.) Both halves are here because aria/verify/refusals\_test.go holds each refusal to what the pattern actually requires rather than to a sentence somebody wrote once — and the member roles are the half that decides which blocker a refusal is still standing on.
 
 ```go
 var NearMisses = []string{
@@ -150,7 +151,6 @@ var NearMisses = []string{
 	"spinbutton",
 	"menu",
 	"menubar",
-	"radiogroup",
 	"separator",
 	"tree",
 	"treegrid",
@@ -161,11 +161,10 @@ var NearMisses = []string{
 	"menuitem",
 	"menuitemcheckbox",
 	"menuitemradio",
-	"radio",
 }
 ```
 
-<small>[aria/spec/fixture.go:65](https://github.com/rohanthewiz/grmob/blob/master/aria/spec/fixture.go#L65)</small>
+<small>[aria/spec/fixture.go:68](https://github.com/rohanthewiz/grmob/blob/master/aria/spec/fixture.go#L68)</small>
 
 ## Functions
 
@@ -179,7 +178,7 @@ ScopedRoles is every role the fixture carries, in the order it carries them: cor
 
 core.Roles() rather than a second list, so a role added to the vocabulary is in the fixture the next time it is generated and nobody has to remember.
 
-<small>[aria/spec/fixture.go:95](https://github.com/rohanthewiz/grmob/blob/master/aria/spec/fixture.go#L95)</small>
+<small>[aria/spec/fixture.go:96](https://github.com/rohanthewiz/grmob/blob/master/aria/spec/fixture.go#L96)</small>
 
 ### func SpecVersion
 
@@ -229,7 +228,7 @@ type Entry struct {
 
 Entry is one role as the fixture states it: the in-scope attributes only.
 
-<small>[aria/spec/fixture.go:104](https://github.com/rohanthewiz/grmob/blob/master/aria/spec/fixture.go#L104)</small>
+<small>[aria/spec/fixture.go:105](https://github.com/rohanthewiz/grmob/blob/master/aria/spec/fixture.go#L105)</small>
 
 ### type Fixture
 
@@ -245,7 +244,7 @@ type Fixture struct {
 
 Fixture is the whole file: the roles in scope, plus every role ARIA forbids a name on.
 
-<small>[aria/spec/fixture.go:112](https://github.com/rohanthewiz/grmob/blob/master/aria/spec/fixture.go#L112)</small>
+<small>[aria/spec/fixture.go:113](https://github.com/rohanthewiz/grmob/blob/master/aria/spec/fixture.go#L113)</small>
 
 #### func Scope
 
@@ -257,7 +256,7 @@ Scope reduces a parsed specification to the fixture this framework checks agains
 
 A role in scope that the specification has no section for is an error rather than an omission. It means core carries a role ARIA does not define — which the two web exporters would write into the attribute verbatim and every browser would drop — and finding that at generation time is better than finding it in TestEveryCoreRoleIsAnARIARole, because here it names the file.
 
-<small>[aria/spec/fixture.go:129](https://github.com/rohanthewiz/grmob/blob/master/aria/spec/fixture.go#L129)</small>
+<small>[aria/spec/fixture.go:130](https://github.com/rohanthewiz/grmob/blob/master/aria/spec/fixture.go#L130)</small>
 
 #### func (Fixture) Render
 
@@ -269,7 +268,7 @@ Render writes the fixture as the JSON aria/verify reads.
 
 Hand-emitted rather than encoding/json, for one reason: order. The roles are listed in core.Roles() order followed by the near misses, which is the order somebody reading the file wants and the order a diff between two generations stays legible in; a map marshals sorted by key and would reshuffle the whole file the first time a role was renamed. Each role's arrays are kept on one line for the same reason — an entry is a row, and a row that spans nine lines makes a one-attribute change look like a rewrite.
 
-<small>[aria/spec/fixture.go:206](https://github.com/rohanthewiz/grmob/blob/master/aria/spec/fixture.go#L206)</small>
+<small>[aria/spec/fixture.go:207](https://github.com/rohanthewiz/grmob/blob/master/aria/spec/fixture.go#L207)</small>
 
 ### type Role
 

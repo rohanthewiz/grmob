@@ -93,7 +93,7 @@ func TestTheStateGuardsMatchARIAsScoping(t *testing.T) {
 		out := htmlout.ExportHTML(&core.Node{Type: "Box", Style: style})
 
 		for _, attr := range []string{
-			"aria-level", "aria-selected", "aria-pressed", "aria-expanded",
+			"aria-level", "aria-expanded",
 			"aria-valuenow", "aria-valuemin", "aria-valuemax", "aria-valuetext",
 		} {
 			want := spec.supports(string(role), attr)
@@ -109,6 +109,32 @@ func TestTheStateGuardsMatchARIAsScoping(t *testing.T) {
 					"there — invalid ARIA, which a reader drops, so it changes nothing a "+
 					"user hears and everything a developer believes\n%s", role, attr, out)
 			}
+		}
+
+		// The selection family is one Go field with three spellings, so it is
+		// checked as a family rather than attribute by attribute. A node states
+		// one choice in one word: `option` is defined for both aria-selected
+		// and aria-checked (a checkable option in a multi-select listbox), and
+		// writing both would describe two states the field cannot hold. So the
+		// rule is: never a spelling ARIA does not define on the role, and
+		// exactly one when it defines any.
+		var supported, written []string
+		for _, attr := range []string{"aria-selected", "aria-pressed", "aria-checked"} {
+			if spec.supports(string(role), attr) {
+				supported = append(supported, attr)
+			}
+			if strings.Contains(out, attr+"=") {
+				written = append(written, attr)
+				if !spec.supports(string(role), attr) {
+					t.Errorf("role %q: the export writes %s and ARIA does not define it "+
+						"there — invalid ARIA\n%s", role, attr, out)
+				}
+			}
+		}
+		if len(supported) > 0 && len(written) != 1 {
+			t.Errorf("role %q: ARIA defines %v and the export writes %v — a selection "+
+				"is one state, stated in exactly one of the spellings the role takes\n%s",
+				role, supported, written, out)
 		}
 	}
 }
@@ -230,6 +256,7 @@ func TestTheCompositeMembersAreARIAsRequiredChildren(t *testing.T) {
 	spec := loadSpec(t)
 	for _, pair := range []struct{ container, member core.Role }{
 		{core.RoleListBox, core.RoleOption},
+		{core.RoleRadioGroup, core.RoleRadio},
 		{core.RoleTabList, core.RoleTab},
 	} {
 		owned := spec.Roles[string(pair.container)].RequiredOwned

@@ -19,30 +19,30 @@ func shippingGroup(value string, onChange func(string)) RadioGroup {
 	}
 }
 
-// optionRows returns the option rows in order.
+// optionRows returns the radio rows in order.
 func optionRows(n *core.Node) []*core.Node {
 	var out []*core.Node
 	for _, c := range n.Children {
-		if c.Style != nil && c.Style.AccessibilityRole == core.RoleOption {
+		if c.Style != nil && c.Style.AccessibilityRole == core.RoleRadio {
 			out = append(out, c)
 		}
 	}
 	return out
 }
 
-func TestRadioGroupIsALabelledListboxOfOptions(t *testing.T) {
+func TestRadioGroupIsALabelledRadioGroupOfRadios(t *testing.T) {
 	_, n := renderDebug(t, shippingGroup("exp", func(string) {}))
 
-	if n.Type != "Column" || n.Style.AccessibilityRole != core.RoleListBox || n.Style.AccessibilityLabel != "Shipping" {
+	if n.Type != "Column" || n.Style.AccessibilityRole != core.RoleRadioGroup || n.Style.AccessibilityLabel != "Shipping" {
 		t.Fatalf("root = %q role %q label %q", n.Type, n.Style.AccessibilityRole, n.Style.AccessibilityLabel)
 	}
 	rows := optionRows(n)
 	if len(rows) != 3 {
-		t.Fatalf("want 3 option rows, got %d", len(rows))
+		t.Fatalf("want 3 radio rows, got %d", len(rows))
 	}
 	for i, want := range []core.SelectedState{core.SelectedWhen(false), core.SelectedWhen(true), core.SelectedWhen(false)} {
 		if rows[i].Style.AccessibilitySelected != want {
-			t.Errorf("row %d selected = %q, want %q: every option states its selection",
+			t.Errorf("row %d checked = %q, want %q: every radio states whether it is checked",
 				i, rows[i].Style.AccessibilitySelected, want)
 		}
 	}
@@ -50,7 +50,7 @@ func TestRadioGroupIsALabelledListboxOfOptions(t *testing.T) {
 		t.Errorf("row name/hint = %q / %q", rows[0].Style.AccessibilityLabel, rows[0].Style.AccessibilityHint)
 	}
 	if rows[1].Style.AccessibilityLabel != "Express" {
-		t.Errorf("a Selectable row must not append \", selected\", got %q", rows[1].Style.AccessibilityLabel)
+		t.Errorf("the checked radio's name must not gain \", selected\", got %q", rows[1].Style.AccessibilityLabel)
 	}
 	if rows[1].Style.Background == core.DefaultTheme.Colors.Surface {
 		t.Error("the ring is the selection cue; the selected row takes no tint")

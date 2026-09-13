@@ -46,9 +46,9 @@ import (
 //	             argument of core.AccessibilityRole. The scan below looks at
 //	             every reference to a container constant in code, so a role
 //	             reaching the call by any route is found.
-//	RadioGroup   listbox (Tier B). The widget is the container; making every
-//	             caller role it by hand would be the recipe the widget exists
-//	             to replace.
+//	RadioGroup   radiogroup (Tier B; a listbox until core carried the radio
+//	             pair). The widget is the container; making every caller role
+//	             it by hand would be the recipe the widget exists to replace.
 //
 // Both are CLOSED: every member is built by the widget from data (BarItem,
 // RadioOption), and no struct the widget declares holds a core.View. A closed
@@ -91,7 +91,7 @@ func TestOnlyClosedWidgetsDeclareACompositeContainerRole(t *testing.T) {
 	// The closed widgets allowed to declare a container role, by file.
 	closedComposites := map[string]string{
 		"bottom_bar.go":  "toolbar when Selected < 0; cells are built from BarItem data",
-		"radio_group.go": "listbox; rows are built from RadioOption data",
+		"radio_group.go": "radiogroup; rows are built from RadioOption data",
 	}
 
 	files, err := filepath.Glob("*.go")
@@ -195,7 +195,7 @@ func viewFields(file *ast.File) []string {
 // roleConstName maps a core.Role value back to the identifier core declares it
 // under, which is what a source scan can see.
 //
-// A switch rather than a lookup, because the mapping is exactly the three
+// A switch rather than a lookup, because the mapping is exactly the four
 // containers and a fourth added to core.KeyboardComposites() should fail here
 // rather than be silently skipped by a scan that cannot name it.
 func roleConstName(t *testing.T, r core.Role) string {
@@ -203,6 +203,8 @@ func roleConstName(t *testing.T, r core.Role) string {
 	switch r {
 	case core.RoleListBox:
 		return "RoleListBox"
+	case core.RoleRadioGroup:
+		return "RoleRadioGroup"
 	case core.RoleTabList:
 		return "RoleTabList"
 	case core.RoleToolbar:

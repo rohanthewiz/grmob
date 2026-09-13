@@ -21,29 +21,38 @@ import "github.com/rohanthewiz/grmob/core"
 //	SegmentedControl    horizontal, short labels, two to four options
 //	RadioGroup          vertical, every option visible, room for a subtitle
 //
-// # The role decision: listbox and option, not radiogroup and radio
+// # Radio roles, and what they changed
 //
-// core.Role has no RoleRadio or RoleRadioGroup. The plan weighed two answers:
-// add the pair to core (core/role.go, both web exporters' role tables and
-// the trait mapping on both natives), or use RoleListBox and RoleOption with
-// AccessibilitySelected, which every target already announces. This ships
-// the second, through ListRow.Selectable, and records the first as a
-// follow-up. What the choice costs is the word: a reader says "option, 2 of
-// 3, selected" where a radio group would say "radio button, checked". What it
-// keeps is everything that matters for operating it: one choice is announced
-// as selected and the rest as not selected (SelectedWhen, never unset), and
-// the WASM runtime's listbox keyboard (one tab stop, Up/Down, Home/End,
-// Enter or Space to choose) arrives with the container's role.
+// The group is core.RoleRadioGroup and each row core.RoleRadio, with the
+// choice stated through AccessibilitySelected — which the web exporters write
+// as aria-checked on a radio. A reader says "radio button, checked", 2 of 3.
+//
+// It shipped first as RoleListBox and RoleOption through ListRow.Selectable,
+// because core had no radio pair. That announced "option, selected" and gave
+// the browser's listbox keyboard, where the arrows move a highlight and leave
+// the choice alone. The radio pair is what ARIA calls this control, and its
+// keyboard is the one a radio group should have: one tab stop on the checked
+// radio, and the arrows move the check, so OnChange fires as a user arrows
+// through the options. OnChange is a setter and fires only on a change, so
+// that costs a caller nothing.
+//
+// The rows are ListRows with the role and state passed through Style rather
+// than through Selectable, which would make them options. Selected stays
+// false, so ListRow adds neither its ", selected" name suffix nor its tint.
+//
+// On the natives, Compose names both ends (selectableGroup() and
+// Role.RadioButton) and SwiftUI names neither; the checked row is announced
+// through .isSelected there, as the listbox rows were.
 //
 // # A closed composite: do not put it inside another
 //
-// RadioGroup declares its own listbox, which makes it one of the two widgets
-// in this package that declare a keyboard container role (BottomBar's toolbar
-// is the other). It holds no core.View, so nothing can be nested inside it.
-// Placing it inside a container you roled as a listbox, tablist or toolbar
-// yourself is the one way to nest it, and core.AuditTree reports that as a
-// nested composite in debug mode. comps/nested_composite_test.go holds the
-// "closed" half of this.
+// RadioGroup declares its own radiogroup, which makes it one of the widgets in
+// this package that declare a keyboard container role (BottomBar's toolbar is
+// another). It holds no core.View, so nothing can be nested inside it.
+// Placing it inside a container you roled as a listbox, radiogroup, tablist or
+// toolbar yourself is the one way to nest it, and core.AuditTree reports that
+// as a nested composite in debug mode. comps/nested_composite_test.go holds
+// the "closed" half of this.
 //
 // # The whole row is the target, and there is no second control
 //
@@ -54,9 +63,9 @@ import "github.com/rohanthewiz/grmob/core"
 // selected option does nothing; OnChange fires only for a change, the rule
 // Stepper and Rating follow.
 //
-// The selected row takes no background tint. ListRow's Surface tint is its
-// only selection cue; here the ring already says it, and a tinted row on top
-// reads as a second, different state.
+// No row takes a background tint. ListRow's Surface tint is its selection cue
+// for a Selected row; these rows are never Selected (see above), and the ring
+// already shows the choice.
 //
 // # Theme roles read
 //
@@ -78,9 +87,9 @@ type RadioGroup struct {
 	// Value. Nil draws a display-only group with no handlers.
 	OnChange func(string)
 
-	// Label is the group's accessible name. A listbox with no name is
-	// announced as a bare list of options, so set it unless a visible heading
-	// directly above names the group.
+	// Label is the group's accessible name. A radio group with no name is
+	// announced as a bare run of radio buttons, so set it unless a visible
+	// heading directly above names the group.
 	Label string
 
 	// Disabled disables every option.
@@ -111,8 +120,8 @@ type RadioOption struct {
 // core.Checkbox does not look like a different family.
 const ringSize = 20
 
-// Render builds Column(listbox) > ListRow(option)... as described in the type
-// doc.
+// Render builds Column(radiogroup) > ListRow(radio)... as described in the
+// type doc.
 func (g RadioGroup) Render(ctx *core.Context) *core.Node {
 	t := ctx.Theme()
 
@@ -123,7 +132,7 @@ func (g RadioGroup) Render(ctx *core.Context) *core.Node {
 		// targets.
 		core.Padding(0),
 		core.Gap(0),
-		core.AccessibilityRole(core.RoleListBox),
+		core.AccessibilityRole(core.RoleRadioGroup),
 	)
 	if g.Label != "" {
 		items = append(items, core.AccessibilityLabel(g.Label))
@@ -146,9 +155,14 @@ func (g RadioGroup) row(t *core.Theme, opt RadioOption) ListRow {
 	selected := opt.Value == g.Value
 	disabled := g.Disabled || opt.Disabled
 
-	var style []core.StyleProp
+	// The role and its state travel together, as ListRow's own pairs do: a
+	// checked state on an unroled row is dropped on the web.
+	style := []core.StyleProp{
+		core.AccessibilityRole(core.RoleRadio),
+		core.AccessibilitySelected(core.SelectedWhen(selected)),
+	}
 	if disabled {
-		style = []core.StyleProp{core.Disabled(true)}
+		style = append(style, core.Disabled(true))
 	}
 
 	var onTap func()
@@ -166,9 +180,6 @@ func (g RadioGroup) row(t *core.Theme, opt RadioOption) ListRow {
 		Title:              opt.Label,
 		Subtitle:           opt.Subtitle,
 		OnTap:              onTap,
-		Selected:           selected,
-		Selectable:         true,
-		SelectedStyle:      []core.StyleProp{}, // non-nil: no Surface tint; see the type doc
 		Style:              style,
 		AccessibilityLabel: opt.Label,
 		AccessibilityHint:  opt.Subtitle,

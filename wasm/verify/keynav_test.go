@@ -38,6 +38,7 @@ import (
 // widget silently loses its keyboard again.
 var compositeRoles = []struct{ container, member core.Role }{
 	{core.RoleListBox, core.RoleOption},
+	{core.RoleRadioGroup, core.RoleRadio},
 	{core.RoleTabList, core.RoleTab},
 }
 
@@ -278,12 +279,18 @@ func TestTheStaticExportWritesNoRovingTabindex(t *testing.T) {
 				pair.container, out)
 		}
 		// The semantic half is still there, and is the reason the runtime can
-		// do the rest without a single new prop.
+		// do the rest without a single new prop. A radio states its choice as
+		// aria-checked; every other member as aria-selected — the runtime's
+		// activeMemberIndex reads both.
+		state := "aria-selected"
+		if pair.member == core.RoleRadio {
+			state = "aria-checked"
+		}
 		for _, want := range []string{
 			`role="` + string(pair.container) + `"`,
 			`role="` + string(pair.member) + `"`,
-			`aria-selected="true"`,
-			`aria-selected="false"`,
+			state + `="true"`,
+			state + `="false"`,
 		} {
 			if !strings.Contains(out, want) {
 				t.Errorf("htmlout dropped %s from a %s:\n%s", want, pair.container, out)

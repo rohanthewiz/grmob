@@ -1209,6 +1209,13 @@ func ariaLevel(s *core.Style) string {
 // where that trade is made and its Selectable field is where it is written
 // down.
 //
+// aria-checked is the third spelling, for the radio. ARIA defines it for
+// checkbox, menuitemcheckbox, menuitemradio, radio and switch; core.Role
+// carries radio alone, because a checkbox and a switch are node types that
+// export as <input>s holding their own checked state. A radio is checked where
+// an option is selected: the same "one of these" as aria-selected, in the word
+// ARIA gives a radio group's members.
+//
 // aria-pressed is defined for button alone. A core.Button gets it without a
 // role because the node type already is one — the same rule that gives a
 // core.Modal its dialog role — which is why this takes the node type beside
@@ -1236,6 +1243,8 @@ func ariaSelected(s *core.Style, nodeType string) (string, string) {
 	switch s.AccessibilityRole {
 	case core.RoleOption, core.RoleTab, core.RoleRow, core.RoleColumnHeader:
 		return "aria-selected", value
+	case core.RoleRadio:
+		return "aria-checked", value
 	case core.RoleButton:
 		return "aria-pressed", value
 	case core.RoleNone:

@@ -1009,7 +1009,12 @@ const GrMob = (() => {
     // (`menuitem`, `treeitem`), where `grid` needs no new member role at all —
     // core already has `row` and `cell` — and needs a two-dimensional walk this
     // one-dimensional machinery has no shape for.
-    const COMPOSITE_MEMBERS = { listbox: "option", tablist: "tab" };
+    //
+    // `radiogroup` joined as the third pair once core carried RoleRadioGroup and
+    // RoleRadio. Its walk is the listbox's with two differences, both below:
+    // the checked radio (aria-checked, not aria-selected) holds the stop, and
+    // the arrows always move the check — see moveCompositeFocus.
+    const COMPOSITE_MEMBERS = { listbox: "option", radiogroup: "radio", tablist: "tab" };
 
     // Composites whose members ARIA does not name. See focusableMembers.
     //
@@ -1295,8 +1300,11 @@ const GrMob = (() => {
         const focused = document.activeElement;
         const held = members.indexOf(focused);
         if (held >= 0) return held;
+        // A radio states its choice as aria-checked; every other member as
+        // aria-selected. A member carries at most one of the two.
         const selected = members.findIndex(
-            (m) => m.getAttribute("aria-selected") === "true");
+            (m) => m.getAttribute("aria-selected") === "true" ||
+                m.getAttribute("aria-checked") === "true");
         if (selected >= 0) return selected;
         const stop = members.findIndex((m) => m.getAttribute("tabindex") === "0");
         return stop >= 0 ? stop : 0;
@@ -1370,7 +1378,12 @@ const GrMob = (() => {
             member.setAttribute("tabindex", i === index ? "0" : "-1");
         });
         members[index].focus();
-        if (container.getAttribute("data-grmob-selection-follows-focus") === "true") {
+        // A radio group follows focus unasked. ARIA's radio group pattern has
+        // no "focus without checking" state — the arrows move the check — so
+        // there is no flag to consult and nothing an author could set that
+        // would make the other behaviour correct.
+        if (container.getAttribute("data-grmob-selection-follows-focus") === "true" ||
+            container.getAttribute("role") === "radiogroup") {
             selectCompositeMember(members[index]);
         }
     }
@@ -1877,15 +1890,16 @@ const GrMob = (() => {
         // tables by wasm/verify's keynav_test.go.
         setOrRemove(el, "data-grmob-selection-follows-focus",
             hidden ? "" : (style.AccessibilitySelectionFollowsFocus ? "true" : ""));
-        // Both selection attributes are written on every call, not just the
-        // one this role calls for. The role can change between passes — a
+        // All three selection attributes are written on every call, not just
+        // the one this role calls for. The role can change between passes — a
         // patch can turn a tab into a button — and the totality rule has to
-        // hold across the *pair*: writing only the new one would leave the
-        // other standing, so a node that had been a tab would be announced as
+        // hold across the *set*: writing only the new one would leave the
+        // others standing, so a node that had been a tab would be announced as
         // a selected tab and a pressed button at once.
-        const selected = hidden ? ["", ""] : ariaSelected(style, nodeType);
+        const selected = hidden ? ["", "", ""] : ariaSelected(style, nodeType);
         setOrRemove(el, "aria-selected", selected[0]);
         setOrRemove(el, "aria-pressed", selected[1]);
+        setOrRemove(el, "aria-checked", selected[2]);
         setOrRemove(el, "aria-expanded", hidden ? "" : ariaExpanded(style, nodeType));
         // All four of the value family on every call, for the reason both
         // selection attributes are written: the role can change between passes,
@@ -1965,8 +1979,8 @@ const GrMob = (() => {
         return GENERIC_TAGS.has(el.tagName.toLowerCase()) ? "group" : "";
     }
 
-    // core.Style.AccessibilitySelected as the pair [aria-selected,
-    // aria-pressed], at most one of which is non-empty. The htmlout twin of
+    // core.Style.AccessibilitySelected as the triple [aria-selected,
+    // aria-pressed, aria-checked], at most one of which is non-empty. The htmlout twin of
     // this is ariaSelected in export.go and the two must agree; the reasoning
     // for every guard here lives there and in core.Style.
     //
@@ -1976,8 +1990,12 @@ const GrMob = (() => {
     // synonyms: aria-selected is one of a set (a tab among tabs), aria-pressed
     // is a toggle answering only for itself (a filter chip).
     //
-    // A pair is returned rather than a name/value because the caller has to
-    // clear the other attribute either way — see the note at the call site.
+    // A radio is the third spelling: aria-checked, ARIA's word for the chosen
+    // member of a radio group, where an option is selected and a button is
+    // pressed.
+    //
+    // A triple is returned rather than a name/value because the caller has to
+    // clear the other attributes either way — see the note at the call site.
     //
     // The Button node type is checked only when the style names no role: a
     // core.Button already is a button, which is what lets comps.Chip —
@@ -1985,20 +2003,22 @@ const GrMob = (() => {
     // that gives a Modal its dialog role.
     function ariaSelected(style, nodeType) {
         const value = style.AccessibilitySelected || "";
-        if (!value) return ["", ""];
+        if (!value) return ["", "", ""];
         switch (style.AccessibilityRole) {
             case "option":
             case "tab":
             case "row":
             case "columnheader":
-                return [value, ""];
+                return [value, "", ""];
+            case "radio":
+                return ["", "", value];
             case "button":
-                return ["", value];
+                return ["", value, ""];
             case "":
             case undefined:
-                return nodeType === "Button" ? ["", value] : ["", ""];
+                return nodeType === "Button" ? ["", value, ""] : ["", "", ""];
             default:
-                return ["", ""];
+                return ["", "", ""];
         }
     }
 
@@ -2054,7 +2074,12 @@ const GrMob = (() => {
     // It is also the table compositeIsVertical falls back to, which is why
     // there is one table here and not two: the keyboard's default and the
     // announcement's default were always the same fact.
-    const ARIA_ORIENTATIONS = { listbox: "vertical", tablist: "horizontal", toolbar: "horizontal" };
+    //
+    // `radiogroup` maps to "": ARIA gives a radio group no default, so its axis
+    // always comes from the layout. The row still has to exist, because
+    // ariaOrientation asks whether the role is oriented at all before it asks
+    // which way.
+    const ARIA_ORIENTATIONS = { listbox: "vertical", radiogroup: "", tablist: "horizontal", toolbar: "horizontal" };
 
     // core.Style's role and layout axis as the aria-orientation value, or ""
     // for a role the attribute is not defined on. The htmlout twin of this is
@@ -2074,8 +2099,12 @@ const GrMob = (() => {
     // applyAccessibility can supply where the style stated none — `group` from
     // ariaRole and `dialog` for a Modal — are not oriented roles.
     function ariaOrientation(style, nodeType) {
-        const def = ARIA_ORIENTATIONS[style.AccessibilityRole || ""];
-        if (!def) return "";
+        // Membership, not truthiness: radiogroup's default is "" and it is
+        // still an oriented role. htmlout's AriaOrientationFor makes the same
+        // distinction with its map lookup's second return.
+        const role = style.AccessibilityRole || "";
+        if (!Object.prototype.hasOwnProperty.call(ARIA_ORIENTATIONS, role)) return "";
+        const def = ARIA_ORIENTATIONS[role];
         const axis = style.FlexDirection || stackAxisFor(nodeType);
         if (axis.startsWith("column")) return "vertical";
         if (axis.startsWith("row")) return "horizontal";

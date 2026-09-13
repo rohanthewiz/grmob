@@ -52,7 +52,13 @@ import (
 //
 // ARIA scopes aria-orientation to listbox, menu, menubar, radiogroup,
 // scrollbar, select, separator, slider, tablist, toolbar, tree and treegrid. Of
-// those, core.Role carries exactly three. The rest are absent from the
+// those, core.Role carries exactly four.
+//
+// `radiogroup` is the one row with an empty default, and the empty string is
+// ARIA's answer rather than a placeholder: the specification gives a radio
+// group no default orientation. Its axis therefore always comes from the
+// layout, which a comps.RadioGroup has (it is a Column), and a radiogroup role
+// on a node with no axis to read writes no attribute at all. The rest are absent from the
 // vocabulary rather than from this table — see core/role.go — and a role that
 // does not exist needs no row here.
 //
@@ -75,9 +81,10 @@ import (
 // every member but one out of the tab order and reaches none of them. See
 // wasm/verify/keynav_test.go.
 var ariaOrientations = map[string]string{
-	string(core.RoleListBox): "vertical",
-	string(core.RoleTabList): "horizontal",
-	string(core.RoleToolbar): "horizontal",
+	string(core.RoleListBox):    "vertical",
+	string(core.RoleRadioGroup): "",
+	string(core.RoleTabList):    "horizontal",
+	string(core.RoleToolbar):    "horizontal",
 }
 
 // AriaOrientationDefaults returns a copy of the role → ARIA-default table, for

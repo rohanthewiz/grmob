@@ -35,9 +35,11 @@ func TestRuntimeWritesTheSameAccessibilityAttributes(t *testing.T) {
 		{`setOrRemove(el, "aria-selected", selected[0])`,
 			"the selection half of the state, for a tab, a row or a column header"},
 		{`setOrRemove(el, "aria-pressed", selected[1])`,
-			"the toggle half, for a button. Both are written on every call rather than only " +
-				"the one the role asks for: a role can change between passes, and writing " +
-				"one would leave the other standing"},
+			"the toggle spelling, for a button. All three are written on every call rather " +
+				"than only the one the role asks for: a role can change between passes, and " +
+				"writing one would leave the others standing"},
+		{`setOrRemove(el, "aria-checked", selected[2])`,
+			"the radio spelling, for a radio in a radio group"},
 		{`setOrRemove(el, "id", hidden ? "" : (style.AccessibilityID || ""))`,
 			"the element identity an aria-controls somewhere else on the page points at. " +
 				"core.Style.AccessibilityID is written verbatim, and a page that carries one " +
@@ -95,7 +97,8 @@ func TestRuntimeGuardsTheLevelsTheSameWay(t *testing.T) {
 //
 // The role list is ARIA's own scoping and not a shortlist: aria-selected is
 // defined for gridcell, option, row, tab, columnheader and rowheader, of which
-// core.Role carries four, and aria-pressed for button alone. The near miss is
+// core.Role carries four, aria-pressed for button alone, and aria-checked for
+// radio among core's roles. The near miss is
 // the one a reader of the switch will wonder about — a `cell` is not a
 // gridcell — and so is the pair the switch now splits: `option` is here and
 // `listitem`, which reads like its synonym, is deliberately not. Their absence
@@ -110,7 +113,7 @@ func TestRuntimeGuardsTheSelectedStateTheSameWay(t *testing.T) {
 	for _, want := range []struct{ expr, why string }{
 		{`function ariaSelected(style, nodeType) {`,
 			"the function htmlout's ariaSelected mirrors"},
-		{`if (!value) return ["", ""];`,
+		{`if (!value) return ["", "", ""];`,
 			"the zero value writing nothing at all, which is what every node in every " +
 				"existing tree carries"},
 		{`case "option":`, "the option arm — the one that lets a selectable row in a " +
@@ -118,16 +121,19 @@ func TestRuntimeGuardsTheSelectedStateTheSameWay(t *testing.T) {
 		{`case "tab":`, "the tab arm"},
 		{`case "row":`, "the row arm"},
 		{`case "columnheader":`, "the column-header arm"},
+		{`case "radio":
+                return ["", "", value];`,
+			"the radio arm, which is the one that becomes aria-checked"},
 		{`case "button":
-                return ["", value];`,
+                return ["", value, ""];`,
 			"the button arm, which is the one that becomes aria-pressed"},
-		{`return nodeType === "Button" ? ["", value] : ["", ""];`,
+		{`return nodeType === "Button" ? ["", value, ""] : ["", "", ""];`,
 			"the node type standing in for an unstated role — without it, a comps.Chip " +
 				"would be the one node that could not carry the attribute it most wants"},
 		{`default:
-                return ["", ""];`,
-			"the catch-all. A role ARIA does not scope either attribute to must write " +
-				"neither, rather than falling through to one"},
+                return ["", "", ""];`,
+			"the catch-all. A role ARIA does not scope any of the three attributes to must " +
+				"write none, rather than falling through to one"},
 	} {
 		if !strings.Contains(src, want.expr) {
 			t.Errorf("grmob-runtime.js: ariaSelected is missing %q — %s", want.expr, want.why)

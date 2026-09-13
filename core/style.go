@@ -304,7 +304,7 @@ type Style struct {
 	// collectionItemInfo — describes an item's index and span within one
 	// collection rather than its depth within nested ones, so mapping onto it
 	// would state something the field does not mean. This is the same honest
-	// gap fourteen of the twenty-five roles have, and it is written down in
+	// gap fourteen of the twenty-seven roles have, and it is written down in
 	// GrMobStyle.kt and GrMobStyle.swift beside the role dispatch rather than
 	// left for the next person to rediscover.
 	//
@@ -327,7 +327,9 @@ type Style struct {
 	//
 	//	role                         attribute
 	//	-------------------------    -------------------------------------
-	//	tab, row, columnheader       aria-selected
+	//	tab, row, columnheader,      aria-selected
+	//	option
+	//	radio                        aria-checked
 	//	button (or a core.Button)    aria-pressed
 	//	anything else                nothing at all
 	//

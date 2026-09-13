@@ -47,7 +47,11 @@ B2 `RadioGroup`, B4 `StepIndicator` and B5 `Timeline` shipped with lesson 4.16
   not place itself: `Screen.Footer` or a bottom-aligned `ZStack` layer is the
   caller's choice.
 - B2 `RadioGroup` took option (b), `RoleListBox` + `ListRow.Selectable`, as
-  planned. The ring is a drawn Column rather than a platform control, so the
+  planned. **Option (a) followed:** core now carries `RoleRadioGroup` and
+  `RoleRadio` as a fourth keyboard composite. A radio's state is written as
+  `aria-checked`, the runtime always follows focus inside a radio group, and
+  Compose maps the pair to `selectableGroup()` and `Role.RadioButton`.
+  `RadioGroup` uses them. The ring is a drawn Column rather than a platform control, so the
   row is the only handler and the web double dispatch `SwitchRow` guards
   against cannot occur. The selected row passes an empty `SelectedStyle`
   because the ring already carries the selection and a Surface tint on top

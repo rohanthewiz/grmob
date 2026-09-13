@@ -118,15 +118,17 @@ var notTappable = map[core.Role]nonControl{
 	// own — see core.KeyboardComposites(). A toolbar taking one as a *control*
 	// would put a second keyboard on a widget that already has one, which is
 	// the same collision ConcernNestedComposite reports.
-	core.RoleListBox: {kindComposite, "it owns a keyboard, it is not a control"},
-	core.RoleTabList: {kindComposite, "it owns a keyboard, it is not a control"},
-	core.RoleToolbar: {kindComposite, "it owns a keyboard, it is not a control"},
+	core.RoleListBox:    {kindComposite, "it owns a keyboard, it is not a control"},
+	core.RoleRadioGroup: {kindComposite, "it owns a keyboard, it is not a control"},
+	core.RoleTabList:    {kindComposite, "it owns a keyboard, it is not a control"},
+	core.RoleToolbar:    {kindComposite, "it owns a keyboard, it is not a control"},
 
 	// The members of those containers. Interactive, and deliberately not
 	// tappable containers: a member's tab stop belongs to its container's
 	// roving tabindex, so a walk that took one as a toolbar control would hand
 	// the same element two owners writing tabindex onto it.
 	core.RoleOption: {kindMember, "its tab stop belongs to its container"},
+	core.RoleRadio:  {kindMember, "its tab stop belongs to its container"},
 	core.RoleTab:    {kindMember, "its tab stop belongs to its container"},
 
 	// Regions. A screen's landmarks, which a reader jumps between rather than

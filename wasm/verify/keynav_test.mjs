@@ -539,11 +539,11 @@ test("a nested composite keeps its own members", () => {
     // Two listboxes, one inside the other. Pooling both sets would let an
     // arrow key in the inner one walk out into the outer one's rows.
     //
-    // Not contrived: comps.RadioGroup declares its own listbox, so a
-    // RadioGroup placed inside a caller's hand-roled listbox is this tree.
-    // RadioGroup and BottomBar are the only widgets that declare a container
-    // role, and both are closed (no core.View slot), so two widgets cannot
-    // nest on their own; comps/nested_composite_test.go holds that premise.
+    // Reachable from real widgets: comps.RadioGroup (radiogroup) and
+    // comps.BottomBar (toolbar) declare their own container roles, so one
+    // placed inside a caller's hand-roled composite is a nested composite.
+    // Both are closed (no core.View slot), so two widgets cannot nest on
+    // their own; comps/nested_composite_test.go holds that premise.
     const lb = mountTree({
         Type: "Column",
         Style: { AccessibilityRole: "listbox" },
@@ -1452,4 +1452,53 @@ test("the flag on a container that is not a composite does nothing", () => {
     });
     assert.deepEqual(l.tabindexes(), [null]);
     assert.deepEqual(l.rt.dispatched, []);
+});
+
+// Radio groups
+// --------------------------------------------------------------------------
+//
+// The fourth composite, and the listbox's walk with two differences that are
+// the whole of the radio group pattern: a radio's choice is aria-checked, so
+// that is where the tab stop has to find it, and the arrows move the check
+// itself, so a radio group follows focus without any flag.
+
+function radiogroup({ checked = 1, count = 3 } = {}) {
+    return mountTree(composite("radiogroup",
+        Array.from({ length: count }, (_, i) =>
+            member("radio", { selected: i === checked, onClick: `cb_${i}` })),
+        { type: "Column" }));
+}
+
+test("a radio's choice is aria-checked, never aria-selected", () => {
+    const rg = radiogroup({ checked: 1 });
+    const radios = rg.root.children;
+    assert.equal(radios[1].getAttribute("aria-checked"), "true");
+    assert.equal(radios[0].getAttribute("aria-checked"), "false");
+    for (const r of radios) {
+        assert.equal(r.getAttribute("aria-selected"), null,
+            "one choice, one word: a radio that also said aria-selected would " +
+            "describe two states the Go field cannot hold");
+    }
+});
+
+test("the tab stop sits on the checked radio", () => {
+    // activeMemberIndex used to look for aria-selected alone, which a radio
+    // never writes, so the stop would have fallen back to the first radio and
+    // Tab would enter the group away from its choice.
+    const rg = radiogroup({ checked: 2 });
+    assert.deepEqual(rg.tabindexes(), ["-1", "-1", "0"]);
+});
+
+test("an arrow checks the radio it lands on, with no flag set", () => {
+    const rg = radiogroup({ checked: 0 });
+    const radios = rg.root.children;
+    assert.equal(rg.root.getAttribute("data-grmob-selection-follows-focus"), null,
+        "the flag is not what makes this work");
+    radios[0].focus();
+
+    radios[0].dispatch("keydown", { key: "ArrowDown" });
+    assert.equal(rg.focused(), radios[1]);
+    assert.deepEqual(rg.rt.dispatched, [{ id: "cb_1", payload: {} }],
+        "ARIA's radio group has no focus-without-checking state: the arrows " +
+        "move the check, through the radio's own OnTap");
 });

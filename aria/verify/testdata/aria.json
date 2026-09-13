@@ -39,7 +39,14 @@
       "requiredOwned": ["group", "option"]
     },
     "option": {
-      "attributes": ["aria-selected"]
+      "attributes": ["aria-selected", "aria-checked"]
+    },
+    "radiogroup": {
+      "attributes": ["aria-orientation"],
+      "requiredOwned": ["radio"]
+    },
+    "radio": {
+      "attributes": ["aria-checked"]
     },
     "tab": {
       "attributes": ["aria-selected", "aria-expanded"]
@@ -99,7 +106,7 @@
       "attributes": []
     },
     "switch": {
-      "attributes": ["aria-expanded"]
+      "attributes": ["aria-checked", "aria-expanded"]
     },
     "gridcell": {
       "attributes": ["aria-selected", "aria-expanded"]
@@ -128,10 +135,6 @@
       "orientation": "horizontal",
       "requiredOwned": ["group", "menuitem", "menuitemcheckbox", "menuitemradio"]
     },
-    "radiogroup": {
-      "attributes": ["aria-orientation"],
-      "requiredOwned": ["radio"]
-    },
     "separator": {
       "attributes": ["aria-orientation", "aria-valuenow", "aria-valuemin", "aria-valuemax", "aria-valuetext"],
       "orientation": "horizontal"
@@ -146,7 +149,7 @@
       "requiredOwned": ["row", "rowgroup"]
     },
     "treeitem": {
-      "attributes": ["aria-level", "aria-selected", "aria-expanded"]
+      "attributes": ["aria-level", "aria-selected", "aria-checked", "aria-expanded"]
     },
     "rowheader": {
       "attributes": ["aria-selected", "aria-expanded"]
@@ -162,13 +165,10 @@
       "attributes": ["aria-expanded"]
     },
     "menuitemcheckbox": {
-      "attributes": ["aria-expanded"]
+      "attributes": ["aria-checked", "aria-expanded"]
     },
     "menuitemradio": {
-      "attributes": ["aria-expanded"]
-    },
-    "radio": {
-      "attributes": []
+      "attributes": ["aria-checked", "aria-expanded"]
     }
   }
 }

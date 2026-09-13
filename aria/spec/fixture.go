@@ -17,7 +17,7 @@ import (
 // aria/verify holding that writer to this fixture's answer.
 //
 // The order is the reading order rather than alphabetical: the level, then the
-// two selection spellings, then the disclosure, then the axis, then the value
+// three selection spellings, then the disclosure, then the axis, then the value
 // family. Emitted in this order into every role's "attributes" list, so a
 // regenerated fixture diffs against the previous one line for line.
 //
@@ -27,6 +27,7 @@ var InScopeAttributes = []string{
 	"aria-level",
 	"aria-selected",
 	"aria-pressed",
+	"aria-checked",
 	"aria-expanded",
 	"aria-orientation",
 	"aria-valuenow",
@@ -55,10 +56,12 @@ var InScopeAttributes = []string{
 // about them at all: a role no fixture carries is a string two renderers happen
 // to agree on.
 //
-// `menu`, `menubar`, `tree`, `treegrid`, `grid` and `radiogroup` are the
-// composite patterns core has no vocabulary for, and `menuitem`,
-// `menuitemcheckbox`, `menuitemradio`, `radio` and `treeitem` are the member
-// roles those patterns move between. Both halves are here because
+// `menu`, `menubar`, `tree`, `treegrid` and `grid` are the composite patterns
+// core has no vocabulary for, and `menuitem`, `menuitemcheckbox`,
+// `menuitemradio` and `treeitem` are the member roles those patterns move
+// between. (`radiogroup` and `radio` sat here until core.RoleRadioGroup and
+// core.RoleRadio made them vocabulary; they are now in the fixture as core's
+// own roles.) Both halves are here because
 // aria/verify/refusals_test.go holds each refusal to what the pattern actually
 // requires rather than to a sentence somebody wrote once — and the member roles
 // are the half that decides which blocker a refusal is still standing on.
@@ -73,7 +76,6 @@ var NearMisses = []string{
 	"spinbutton",
 	"menu",
 	"menubar",
-	"radiogroup",
 	"separator",
 	"tree",
 	"treegrid",
@@ -84,7 +86,6 @@ var NearMisses = []string{
 	"menuitem",
 	"menuitemcheckbox",
 	"menuitemradio",
-	"radio",
 }
 
 // ScopedRoles is every role the fixture carries, in the order it carries them:

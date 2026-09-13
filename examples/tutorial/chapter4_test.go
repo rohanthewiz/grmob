@@ -1785,8 +1785,8 @@ func TestChoicesLessonRadioGroupPicksByRow(t *testing.T) {
 	express := findNode(tree(t, mgr), func(n *node) bool {
 		return n.Style != nil && n.Style.AccessibilityLabel == "Express"
 	})
-	if express.Style.AccessibilityRole != string(core.RoleOption) {
-		t.Fatalf("option role = %q", express.Style.AccessibilityRole)
+	if express.Style.AccessibilityRole != string(core.RoleRadio) {
+		t.Fatalf("row role = %q, want radio", express.Style.AccessibilityRole)
 	}
 	assertNoConcerns(t)
 }
