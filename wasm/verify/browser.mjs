@@ -167,7 +167,7 @@
 // missing an optional tool is a pass people learn to ignore.
 
 import { spawn } from "node:child_process";
-import { mkdtempSync, writeFileSync, readFileSync, existsSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -237,6 +237,44 @@ const CHROME_CANDIDATES = [
 
 function findChrome() {
     return CHROME_CANDIDATES.find((p) => existsSync(p)) || null;
+}
+
+// GRMOB_INK_FACE: draw the grid in a face this machine has installed rather
+// than in its platform default, by writing it into the scratch profile as
+// Chrome's standard and serif font before Chrome starts.
+//
+// # Why this exists
+//
+// INK_CALIBRATED_ON's skip, and the calibration report printed under it, were
+// only reachable on a machine whose DEFAULT serif is a face nothing here was
+// measured on — and every machine this project met resolved Times or
+// Liberation Serif. So the report's "WHICH DOES NOT SEPARATE" arm had fired
+// once, under fractions since retired, and a third face was a thing to wait
+// for. Any installed face can be the third one on demand this way, with the
+// same Chrome, flags and grid, so the skip and the report are drills rather
+// than accidents.
+//
+// # Why the profile, and why both families
+//
+// Chrome has no command-line flag for a default font; the preference is the
+// only lever, and the profile is already a fresh directory per run, so nothing
+// outside it is touched. The grid asks for core.Theme's typography, which this
+// Chrome does not have, and a family list with no generic keyword falls back to
+// the STANDARD font, not the serif one — so both are set, or the override would
+// hold only for text that happens to say `serif`.
+//
+// Unset, nothing is written and the run is the one CI takes.
+function writeInkFaceOverride(profile) {
+    const face = process.env.GRMOB_INK_FACE;
+    if (!face) return null;
+    mkdirSync(join(profile, "Default"), { recursive: true });
+    writeFileSync(join(profile, "Default", "Preferences"), JSON.stringify({
+        webkit: { webprefs: { fonts: {
+            standard: { Zyyy: face },
+            serif: { Zyyy: face },
+        } } },
+    }));
+    return face;
 }
 
 // Carry out startup.mjs's decision. The stances live there; what is here is
@@ -3134,6 +3172,40 @@ const INK_OWN_MEASURED_ON = {
 // Linux's metric-compatible Times substitute. Times' came off this project's
 // macOS machine, the same way and by the same route.
 //
+// # The third face, which is now a drill rather than a wait
+//
+// For a long time no machine this project met resolved a third face, so the
+// report's "WHICH DOES NOT SEPARATE" arm had fired once, under fractions since
+// retired. GRMOB_INK_FACE (see writeInkFaceOverride) makes any installed face
+// the grid's default, and on this project's macOS machine (Chrome 152) every
+// serif it has installed was run through the grid — the report's brackets, in
+// percent, over and at-or-under:
+//
+//	GRMOB_INK_FACE      INK_ROW_ROUNDING         INK_ASCENDER_SEPARATION
+//	Times *             10.0 / 33.3  bracket     12.8 / 65.8  bracket
+//	Times New Roman      6.2 / 22.2  bracket     75.0 / 63.7  DOES NOT
+//	Charter              6.3 / 27.3  bracket     74.1 / 67.0  DOES NOT
+//	Didot                6.4 / 30.0  bracket     70.9 / 58.2  DOES NOT
+//	Bodoni 72            9.6 / 30.0  bracket     77.6 / 70.0  DOES NOT
+//	Baskerville         11.0 / 25.9  bracket     78.9 / 70.6  DOES NOT
+//	Georgia             85.7 / 40.0  DOES NOT    77.1 / 68.8  DOES NOT
+//	Big Caslon          80.0 / 25.0  DOES NOT    79.8 / 70.0  DOES NOT
+//	Hoefler Text        80.0 / 40.0  DOES NOT    81.5 / 79.7  DOES NOT
+//
+//	* taken from a throwaway copy of this file with Times removed from the
+//	  list below, so the report ran on the face the constants were set on.
+//
+// The starred row is the control, and it is what makes the other eight
+// findings rather than an instrument fault: on Times the report brackets both
+// constants, with 0.15 and 0.43 inside, as the numbers were derived. On every
+// other face the ascender reading one row above the x-height line is already
+// most of the window — INK_ROWS' fractions put the partition inside those
+// faces' x-heights — and on three the row under the band is mostly ink too. So
+// none of the eight is an entry for the list below: each would be a
+// re-derivation of INK_ROWS against both calibrated faces, which is what the
+// arm says. The skip is the right answer for all of them, and all of them are
+// available to re-run it with.
+//
 // What "measured" has to mean before a name is added: the readings clear
 // INK_ROW_ROUNDING and INK_ASCENDER_SEPARATION with the brackets the report
 // prints, on every box in the grid, with the constants as they stand. A face
@@ -5373,6 +5445,8 @@ async function main() {
     const origin = `http://127.0.0.1:${server.address().port}`;
 
     const profile = mkdtempSync(join(tmpdir(), "grmob-chrome-"));
+    const inkFace = writeInkFaceOverride(profile);
+    if (inkFace) console.log(`GRMOB_INK_FACE: the grid's default face is set to ${inkFace}`);
     const chrome = spawn(chromePath, [
         "--headless=new",
         "--remote-debugging-port=0",

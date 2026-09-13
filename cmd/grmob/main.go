@@ -4,6 +4,7 @@
 //	grmob doctor             which targets this machine can build, and what is missing
 //	grmob android [-install] bind the app into the Android shell and assemble an APK
 //	grmob ios [-open] [-run] bind the app into the iOS shell and build it for the simulator
+//	grmob web [-refresh]     check the host page against go.mod's grmob, then build for the browser
 //
 // Install or run it at the same version as the framework the app uses:
 //
@@ -28,15 +29,17 @@
 //	──────────────────                     ─────────────────────────────
 //	app/app.go         ─── imports ──────▶ core, mobile, ...
 //	wasm/main.go       ─── webhost.Run ──▶ webhost
-//	wasm/index.html                        wasm/grmob-runtime.js ┐
+//	                                       wasm/grmob-runtime.js ┐
 //	build.sh           ─── copies ◀──────── wasm/camera.js        ┘ each build, if changed
 //	dev server         ─── go run ───────▶ serve -dev
 //	android/, ios/     ◀── vendored once ── android/, ios/  (re-vendor with -refresh)
+//	wasm/index.html    ◀── rendered once ── cmd/grmob/templates  (re-render with web -refresh)
 //
-// The one thing that is copied into the app and kept there is the native
-// shells, because an app is expected to edit them (icons, permissions, its own
-// name), and a record of the version they came from lets the build warn when
-// go.mod has moved past it.
+// The things copied into the app and kept there are the native shells and the
+// host page, because an app is expected to edit them (icons, permissions, its
+// own name, its page frame). A record of the version the shells came from lets
+// a native build warn when go.mod has moved past it; `grmob web` compares the
+// host page with a fresh render instead (see cmdWeb for why no record).
 package main
 
 import (
@@ -73,6 +76,8 @@ func main() {
 		err = cmdAndroid(args)
 	case "ios":
 		err = cmdIOS(args)
+	case "web":
+		err = cmdWeb(args)
 	case "help", "-h", "-help", "--help":
 		usage()
 	default:
@@ -93,6 +98,8 @@ func usage() {
   doctor        report which targets this machine can build
   android       build the app for Android (needs Android SDK + NDK, JDK 17+)
   ios           build the app for iOS (needs Xcode + xcodegen, macOS only)
+  web           build the app for the browser; warns when wasm/index.html
+                differs from go.mod's grmob page (-refresh re-renders it)
 
 Run "grmob <command> -h" for a command's flags.
 `)

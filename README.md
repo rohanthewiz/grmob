@@ -111,6 +111,7 @@ for every target. When you want it on a phone:
 go run github.com/rohanthewiz/grmob/cmd/grmob doctor    # what this machine can build, and what to install
 go run github.com/rohanthewiz/grmob/cmd/grmob android   # APK: Android SDK + NDK, JDK 17+ (-install puts it on a device)
 go run github.com/rohanthewiz/grmob/cmd/grmob ios       # simulator build: Xcode + xcodegen (-run launches it, -open opens Xcode)
+go run github.com/rohanthewiz/grmob/cmd/grmob web       # browser build; warns when wasm/index.html is not go.mod's grmob page (-refresh re-renders it)
 ```
 
 Everything GrMob owns — the browser host (`webhost`), the runtime JavaScript,
@@ -470,12 +471,19 @@ regenerate is a red build rather than a docs site that quietly lies.
 ### Apps scaffolded with v0.3.0: two host-page rules
 
 `grmob new` copies `wasm/index.html` into your app once, and later versions of
-grmob do not touch it. The page that shipped with v0.3.0 gives every `Scroll`
+grmob do not touch it unless you ask. The page that shipped with v0.3.0 gives every `Scroll`
 the fixed-height viewport rule `flex: 1 1 0; min-height: 0`. In a column that
 is a zero-height basis, so a **horizontal** `Scroll` (a scrollable `ChipStrip`,
 a `StepIndicator`) collapses to 0px tall and its content spills out of it.
 
-Add these two rules after the existing `#app [data-node-type="Scroll"]` rule in
+If you have not edited the page, re-render it from the grmob in your `go.mod`
+(this overwrites the file, so commit first):
+
+```bash
+go run github.com/rohanthewiz/grmob/cmd/grmob web -refresh
+```
+
+Otherwise, add these two rules after the existing `#app [data-node-type="Scroll"]` rule in
 your app's `wasm/index.html`:
 
 ```css

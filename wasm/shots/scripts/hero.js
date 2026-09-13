@@ -15,3 +15,7 @@
 // It must run AFTER the three it is made of. shoot.sh with no arguments
 // orders them; running hero on its own composites whatever is currently
 // in docs/images, which is the right behaviour and worth knowing about.
+// Re-taking a part WITHOUT re-running hero afterwards is the failure:
+// internal/shotclaims compares the composite's pixels with the parts' and
+// fails until hero is shot again. So does any edit to hero.html that crops
+// or re-proportions a part.

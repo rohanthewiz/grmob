@@ -241,13 +241,9 @@ func renderTemplates(dir string, data scaffoldData) error {
 		if err != nil {
 			return err
 		}
-		tmpl, err := template.New(p).Delims("[[", "]]").Option("missingkey=error").Parse(string(src))
+		rendered, err := renderTemplate(p, src, data)
 		if err != nil {
-			return fmt.Errorf("template %s: %w", p, err)
-		}
-		var buf bytes.Buffer
-		if err := tmpl.Execute(&buf, data); err != nil {
-			return fmt.Errorf("template %s: %w", p, err)
+			return err
 		}
 		out := filepath.Join(dir, outputPath(strings.TrimPrefix(p, "templates/")))
 		if err := os.MkdirAll(filepath.Dir(out), 0o755); err != nil {
@@ -259,8 +255,160 @@ func renderTemplates(dir string, data scaffoldData) error {
 		if strings.HasSuffix(out, ".sh") {
 			mode = 0o755
 		}
-		return os.WriteFile(out, buf.Bytes(), mode)
+		return os.WriteFile(out, rendered, mode)
 	})
+}
+
+// renderTemplate executes one scaffold template with the scaffold's
+// delimiters and strictness.
+//
+// One function for both callers — new, rendering the embedded copies, and web
+// -refresh, rendering the host page from the grmob module go.mod resolves — so
+// that a page refreshed later is byte-for-byte what new would write today.
+// web's "differs" warning is only meaningful while that holds.
+func renderTemplate(name string, src []byte, data scaffoldData) ([]byte, error) {
+	tmpl, err := template.New(name).Delims("[[", "]]").Option("missingkey=error").Parse(string(src))
+	if err != nil {
+		return nil, fmt.Errorf("template %s: %w", name, err)
+	}
+	var buf bytes.Buffer
+	if err := tmpl.Execute(&buf, data); err != nil {
+		return nil, fmt.Errorf("template %s: %w", name, err)
+	}
+	return buf.Bytes(), nil
+}
+
+// --- web -------------------------------------------------------------------
+
+// The host page's place in an app, and the template it is rendered from,
+// relative to the grmob module's directory. The template path is the same one
+// the embed above reads, which is what lets a published grmob serve it: the
+// module zip carries cmd/grmob/templates like any other directory of the
+// root module.
+const (
+	hostPagePath     = "wasm/index.html"
+	hostPageTemplate = "cmd/grmob/templates/wasm/index.html.tmpl"
+)
+
+// cmdWeb builds the browser target, first comparing the app's host page with
+// the one the grmob module in go.mod scaffolds.
+//
+// # Why the host page needs a command at all
+//
+// Everything else grmob owns on the browser side follows go.mod by itself:
+// webhost is imported, and build.sh re-copies grmob-runtime.js and camera.js
+// on every build. The host page is the exception. new renders it once, because
+// an app is expected to edit it, and nothing afterwards compares it with a
+// newer grmob's — so v0.3.0's page, whose Scroll rule collapses a horizontal
+// Scroll to 0px, stays in every app scaffolded then through every upgrade,
+// unless someone reads the Upgrading notes and pastes CSS by hand.
+//
+// # Why a diff and not a version record, as the native shells have
+//
+// The shells carry a record file inside android/ and ios/, directories grmob
+// creates and fills. The host page is one file in wasm/, beside the app's own
+// main.go, and a record would be a second file the app has to keep next to it.
+// Comparing against a fresh render needs no record and is exact: the same
+// bytes mean current. Different bytes mean an older grmob's page OR the app's
+// own edits, which this cannot tell apart — so it says "differs", names both,
+// and only -refresh writes.
+//
+//	wasm/index.html missing   → render and write it
+//	same bytes as the render  → nothing to say; build
+//	differs, no -refresh      → warn (an older page, or local edits); build
+//	differs, -refresh         → overwrite with the render; build
+func cmdWeb(args []string) error {
+	fset := flag.NewFlagSet("web", flag.ContinueOnError)
+	refresh := fset.Bool("refresh", false, "re-render wasm/index.html from the grmob module in go.mod (overwrites edits to it)")
+	noBuild := fset.Bool("no-build", false, "check (or with -refresh, re-render) the host page only; skip build.sh")
+	if err := fset.Parse(args); err != nil {
+		return err
+	}
+
+	root, cfg, err := appContext()
+	if err != nil {
+		return err
+	}
+	if _, err := syncHostPage(root, cfg, *refresh); err != nil {
+		return err
+	}
+	if *noBuild {
+		return nil
+	}
+	fmt.Println("Building the browser target (build.sh)…")
+	return run(root, nil, "sh", "build.sh")
+}
+
+// hostPageState is what syncHostPage found and did, one value per arm of the
+// table on cmdWeb. Returned rather than only printed so a test can walk the
+// arms without reading stdout.
+type hostPageState int
+
+const (
+	hostPageCurrent   hostPageState = iota // same bytes as the render
+	hostPageWritten                        // was missing; rendered
+	hostPageDiffers                        // differs; left alone, warned
+	hostPageRefreshed                      // differed; overwritten
+)
+
+// syncHostPage renders the host page from the grmob module the app at root
+// resolves and applies cmdWeb's table to wasm/index.html.
+//
+// The template is read from that module's directory rather than from this
+// command's embed. The two differ whenever the grmob command is run at a
+// version other than go.mod's (`@latest` against an app pinned older, say),
+// and the page has to match the runtime build.sh copies — which is go.mod's.
+func syncHostPage(root string, cfg appConfig, refresh bool) (hostPageState, error) {
+	src, err := grmobDir(root)
+	if err != nil {
+		return 0, err
+	}
+	version, err := grmobVersion(root)
+	if err != nil {
+		return 0, err
+	}
+	tmpl, err := os.ReadFile(filepath.Join(src, filepath.FromSlash(hostPageTemplate)))
+	if errors.Is(err, fs.ErrNotExist) {
+		return 0, fmt.Errorf("grmob %s has no host-page template (%s): it predates `grmob new`, so there is nothing to refresh from — upgrade grmob in go.mod first", version, hostPageTemplate)
+	}
+	if err != nil {
+		return 0, err
+	}
+	// The app's module path, for the template data new had. The host page does
+	// not use it today, but renderTemplate is strict (missingkey=error), and a
+	// later template that did would otherwise render differently here than in
+	// new — which is the one thing the "differs" comparison cannot afford.
+	module, err := output(root, "go", "list", "-m")
+	if err != nil {
+		return 0, err
+	}
+	want, err := renderTemplate(hostPageTemplate, tmpl, scaffoldData{Module: module, Name: cfg.Name, ID: cfg.ID})
+	if err != nil {
+		return 0, err
+	}
+
+	dst := filepath.Join(root, filepath.FromSlash(hostPagePath))
+	got, err := os.ReadFile(dst)
+	switch {
+	case errors.Is(err, fs.ErrNotExist):
+		fmt.Printf("Rendering %s from grmob %s…\n", hostPagePath, version)
+		if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
+			return 0, err
+		}
+		return hostPageWritten, os.WriteFile(dst, want, 0o644)
+	case err != nil:
+		return 0, err
+	case bytes.Equal(got, want):
+		return hostPageCurrent, nil
+	case !refresh:
+		fmt.Printf("\nwarning: %s differs from the host page grmob %s scaffolds.\n"+
+			"Either it came from an older grmob or it was edited here. Re-render it with -refresh\n"+
+			"(edits to it will be overwritten — commit them first).\n\n",
+			hostPagePath, version)
+		return hostPageDiffers, nil
+	}
+	fmt.Printf("Re-rendering %s from grmob %s…\n", hostPagePath, version)
+	return hostPageRefreshed, os.WriteFile(dst, want, 0o644)
 }
 
 // outputPath maps a template's name to the file it produces:

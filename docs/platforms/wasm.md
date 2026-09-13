@@ -39,7 +39,10 @@ func main() { webhost.Run(nil, app.App) } // nil: a fresh context with core.Defa
 generates that file, a host page, and a `build.sh` that copies
 `grmob-runtime.js` and `camera.js` from the grmob module in `go.mod` on every
 build — only when their content changed, because the dev server reads a
-changed `.js` in the served directory as a page edit. `wasm/main.go` and the
+changed `.js` in the served directory as a page edit. The host page is the
+one piece rendered once and then left to the app; `grmob web` compares it with
+the page the grmob in `go.mod` scaffolds, and `grmob web -refresh` re-renders
+it. `wasm/main.go` and the
 screenshot host keep their own copies of the wiring; `webhost`'s tests hold
 both to installing the same bindings.
 
