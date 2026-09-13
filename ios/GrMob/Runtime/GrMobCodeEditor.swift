@@ -79,6 +79,39 @@ private struct GrMobCodeEditorRepresentable: UIViewRepresentable {
         return view
     }
 
+    /// The editor's size when its parent does not bound the height: the text's
+    /// own height, so the viewport equals the content and nothing scrolls.
+    ///
+    /// A scroll-enabled UITextView has no intrinsic height — scrolling is the
+    /// reason it has none — so without this SwiftUI's default for a
+    /// representable asked for an ideal size gave the editor zero height. A
+    /// comps.CodeEditor with no Height inside a scrolling screen (every code
+    /// block in every tutorial lesson) drew as its padding and background
+    /// alone: a dark bar with no text.
+    ///
+    ///     proposed height      reported
+    ///     ---------------      --------
+    ///     nil or infinite      content height at the width on offer
+    ///     finite               nil — the default, which fills the proposal
+    ///                          (a real viewport, e.g. core.Height("240px"))
+    ///
+    /// The same contract as Compose's verticalScrollWhenBounded in
+    /// Renderer.kt, which fixed the Android form of this (a crash rather than
+    /// an empty box), and as the DOM, where an overflow:auto box of auto
+    /// height is as tall as its content.
+    ///
+    /// Width follows the proposal when there is one: text never wraps here
+    /// (see GrMobCodeEditorView.init), so a line wider than the box scrolls
+    /// sideways rather than widening the editor. Only an ideal-size query with
+    /// no width gets the widest line plus the gutter.
+    func sizeThatFits(_ proposal: ProposedViewSize, uiView: GrMobCodeEditorView,
+                      context: Context) -> CGSize? {
+        if let height = proposal.height, height.isFinite { return nil }
+        let offeredWidth = proposal.width.flatMap { $0.isFinite ? $0 : nil }
+        let content = uiView.contentSize()
+        return CGSize(width: offeredWidth ?? content.width, height: content.height)
+    }
+
     /// Order matters here and is worth reading top to bottom.
     ///
     /// The coordinator's settings go first because everything below may call
@@ -129,8 +162,33 @@ private struct GrMobCodeEditorRepresentable: UIViewRepresentable {
 /// copyable and editable, and a buffer whose first columns are not the user's
 /// is not the buffer. It scrolls with the text view instead, which is what
 /// `scrollViewDidScroll` re-lays it out for.
+///
+///     ┌ GrMobCodeEditorView ─────────────────────────────┐
+///     │┌ gutter ┐┌ sideways (UIScrollView, x only) ──────┐│
+///     ││ 1      ││┌ textView (UITextView, y only) ───────┼┼──┐
+///     ││ 2      │││ as wide as the longest line          ││  │
+///     ││ 3      │││                                      ││  │
+///     │└────────┘│└──────────────────────────────────────┼┼──┘
+///     │          └───────────────────────────────────────┘│
+///     └──────────────────────────────────────────────────┘
+///
+/// Two scroll views, one per axis, because UITextView scrolls vertically only.
+/// Given a contentSize wider than itself it does move sideways, but it draws
+/// text only inside its own width — measured on the iOS 26 simulator, a swipe
+/// revealed an empty band where the rest of each line should be. So the text
+/// view is made as wide as the longest line, which it draws whole, and the
+/// sideways scroll view clips it to the box. The gutter sits outside that
+/// scroll view, so the numbers stay put while the code moves left.
 final class GrMobCodeEditorView: UIView {
-    let textView = UITextView()
+    /// TextKit 1, asked for by name. A plain `UITextView()` has been TextKit 2
+    /// since iOS 16, and TextKit 2 wraps to the view's width whatever the
+    /// text container is told: the unbounded container size and
+    /// `widthTracksTextView = false` below were ignored, so long lines wrapped
+    /// to column zero on device, and the height sizeThatFits measured (the
+    /// unwrapped lines) cut the wrapped buffer's last lines off. TextKit 1
+    /// honours the container, which is the whole no-wrap design.
+    let textView = GrMobUnwrappedTextView(usingTextLayoutManager: false)
+    private let sideways = UIScrollView()
     private let gutter = UILabel()
 
     var showsGutter = false {
@@ -156,14 +214,20 @@ final class GrMobCodeEditorView: UIView {
         textView.textContainer.lineFragmentPadding = 0
         // No wrapping: a code line is one line, and a wrapped one restarts at
         // column zero, which reads as a new statement at the outermost indent.
-        // So the container is given unbounded width and the text view scrolls
-        // sideways instead.
+        // So the container is given unbounded width, the text view is sized to
+        // the longest line, and `sideways` scrolls it (see the type doc).
         textView.textContainer.lineBreakMode = .byClipping
         textView.textContainer.widthTracksTextView = false
         textView.textContainer.size = CGSize(width: CGFloat.greatestFiniteMagnitude,
                                              height: CGFloat.greatestFiniteMagnitude)
         textView.isScrollEnabled = true
         textView.alwaysBounceHorizontal = false
+        textView.isDirectionalLockEnabled = true
+
+        sideways.showsVerticalScrollIndicator = false
+        sideways.alwaysBounceVertical = false
+        sideways.alwaysBounceHorizontal = false
+        sideways.isDirectionalLockEnabled = true
         // Every one of these corrupts source. Smart quotes turn " into “,
         // smart dashes turn -- into an em dash, autocorrect rewrites
         // identifiers, and autocapitalization capitalises the first keyword of
@@ -180,7 +244,8 @@ final class GrMobCodeEditorView: UIView {
         gutter.isUserInteractionEnabled = false
         gutter.isHidden = true
 
-        addSubview(textView)
+        sideways.addSubview(textView)
+        addSubview(sideways)
         addSubview(gutter)
     }
 
@@ -220,6 +285,47 @@ final class GrMobCodeEditorView: UIView {
         setNeedsLayout()
     }
 
+    /// The whole buffer's extent, gutter included: the widest line and every
+    /// line's height. Measured through the text view's own layout rather than
+    /// as lineCount × line height, so the syntax rows' attributes (which may
+    /// change a run's font) are what is measured.
+    func contentSize() -> CGSize {
+        let used = textExtent()
+        // An empty buffer has no line fragment, so usedRect is zero tall; one
+        // line of the editor's font keeps an empty editor from vanishing.
+        let height = max(used.height, font.lineHeight)
+        return CGSize(width: ceil(used.width + gutterWidth), height: ceil(height))
+    }
+
+    /// The laid-out text's extent with the container unbounded: the longest
+    /// line's width and the sum of the lines' heights.
+    private func textExtent() -> CGSize {
+        textView.holdContainerUnbounded()
+        let layout = textView.layoutManager
+        layout.ensureLayout(for: textView.textContainer)
+        return layout.usedRect(for: textView.textContainer).size
+    }
+
+    /// Scrolls `sideways` so the caret is on screen, a column of room either
+    /// side. UITextView keeps its caret visible vertically by itself; it
+    /// cannot horizontally, because as far as it knows it is already showing
+    /// its whole width.
+    ///
+    /// Laid out first: a keystroke that lengthens the line reaches here before
+    /// the layout pass that widens the text view, and scrolling towards a
+    /// caret beyond the old content width would stop short of it.
+    func revealCaret() {
+        guard let range = textView.selectedTextRange else { return }
+        layoutIfNeeded()
+        let caret = textView.caretRect(for: range.end)
+        guard caret.minX.isFinite else { return }
+        let room = ("0" as NSString).size(withAttributes: [.font: font]).width
+        sideways.scrollRectToVisible(
+            CGRect(x: caret.minX - room, y: 0, width: caret.width + 2 * room, height: 1),
+            animated: false)
+    }
+
+
     private var gutterWidth: CGFloat {
         guard showsGutter else { return 0 }
         let digits = String(lineCount).count
@@ -230,8 +336,19 @@ final class GrMobCodeEditorView: UIView {
     override func layoutSubviews() {
         super.layoutSubviews()
         let inset = gutterWidth
-        textView.frame = CGRect(x: inset, y: 0,
-                                width: max(0, bounds.width - inset), height: bounds.height)
+        let viewport = CGSize(width: max(0, bounds.width - inset), height: bounds.height)
+        sideways.frame = CGRect(x: inset, y: 0, width: viewport.width, height: viewport.height)
+        // The text view is at least the viewport wide, so a short buffer still
+        // takes taps across the whole box, and otherwise as wide as its longest
+        // line, which is what lets it draw that line whole.
+        let width = max(viewport.width, ceil(textExtent().width))
+        textView.frame = CGRect(x: 0, y: 0, width: width, height: viewport.height)
+        // After the frame, not before: assigning it is one of the UIKit paths
+        // that narrows the container. See GrMobUnwrappedTextView.
+        textView.holdContainerUnbounded()
+        // Exactly the viewport tall, so `sideways` never scrolls vertically;
+        // that axis belongs to the text view.
+        sideways.contentSize = CGSize(width: width, height: viewport.height)
         // The gutter is pinned to the left of the box and offset upward by
         // however far the buffer has scrolled, so number N stays beside line N.
         // Its height is the whole text, not the visible box, which is what lets
@@ -411,6 +528,9 @@ final class GrMobCodeCoordinator: NSObject, UITextViewDelegate {
     /// It is the same conversion the other three hosts make from their own
     /// unit, which is what lets app code see one number.
     func textViewDidChangeSelection(_ textView: UITextView) {
+        // Before the guard: keeping the caret on screen is the host's job
+        // whether or not Go listens for the selection.
+        view?.revealCaret()
         guard !onSelectionChange.isEmpty else { return }
         let text = textView.text ?? ""
         let range = textView.selectedRange
@@ -599,6 +719,38 @@ final class GrMobCodeCoordinator: NSObject, UITextViewDelegate {
         let clamped = max(0, min(utf16Offset, (text as NSString).length))
         let index = String.Index(utf16Offset: clamped, in: text)
         return text.utf8.distance(from: text.utf8.startIndex, to: index)
+    }
+}
+
+/// The editor's UITextView, holding its text container at unbounded width.
+///
+/// The no-wrap design (see GrMobCodeEditorView) is a text container wider
+/// than any line, so each code line lays out as one line fragment. Configuring
+/// the container once is not enough. Measured on the iOS 26 simulator, with
+/// `widthTracksTextView = false`:
+///
+///     pass                              container width
+///     ----                              ---------------
+///     init                              unbounded
+///     after the editor assigns frame    310  (the view's width)
+///     inside this view's layout         310  → lines wrapped to column zero
+///
+/// So the container is put back on both sides of UIKit's own layout pass, and
+/// after every frame assignment (GrMobCodeEditorView.layoutSubviews). Each is
+/// a size comparison when nothing has changed.
+final class GrMobUnwrappedTextView: UITextView {
+    override func layoutSubviews() {
+        holdContainerUnbounded()
+        super.layoutSubviews()
+        holdContainerUnbounded()
+    }
+
+    func holdContainerUnbounded() {
+        let unbounded = CGSize(width: CGFloat.greatestFiniteMagnitude,
+                               height: CGFloat.greatestFiniteMagnitude)
+        if textContainer.size != unbounded {
+            textContainer.size = unbounded
+        }
     }
 }
 
