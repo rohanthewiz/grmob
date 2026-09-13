@@ -32,6 +32,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyItemScope
 import androidx.compose.foundation.lazy.LazyListState
@@ -109,6 +110,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import coil.compose.AsyncImage
 
 /**
@@ -1575,7 +1577,11 @@ private fun Modifier.pinMainAxis(horizontal: Boolean): Modifier = layout { measu
  * remainder; a min-height in a bounded Column would only overflow it).
  */
 @Composable
-private fun ColumnScope.ColumnChildren(node: GrMobNode, growMinHeight: Dp? = null) {
+private fun ColumnScope.ColumnChildren(
+    node: GrMobNode,
+    growMinHeight: Dp? = null,
+    centreCapped: Boolean = false,
+) {
     val stretch = isColumnStretch(node.style)
     node.children.forEachIndexed { i, child ->
         key(child.key.ifEmpty { i }) {
@@ -1590,6 +1596,19 @@ private fun ColumnScope.ColumnChildren(node: GrMobNode, growMinHeight: Dp? = nul
             // child's main axis is already both fixed and asked for.
             if (grow <= 0f && child.style?.shrinkPinned == true) m = m.pinMainAxis(horizontal = false)
             if (stretch && !hugsContent(child.style)) m = m.fillMaxWidth()
+            // A Modal's overlay centres its content on the web
+            // (align-items: center) and SwiftUI's sheet centres a narrower
+            // VStack, so a capped child — a DatePicker card at its 360 cap in
+            // a window wider than that — belongs in the middle. A stretched
+            // Column instead puts a capped child at the start of the line
+            // (widthModifier, which is CSS's picture for a stretched item), so
+            // only a Modal asks for this. wrapContentWidth after fillMaxWidth
+            // relaxes the forced minimum for the capped content and centres
+            // what it measures; a child that does not bind its cap fills the
+            // line and the centring moves nothing.
+            if (centreCapped && child.style?.maxWidth?.isNotEmpty() == true) {
+                m = m.wrapContentWidth(Alignment.CenterHorizontally)
+            }
             RenderNode(child, m)
         }
     }
@@ -2227,8 +2246,31 @@ private fun GrMobModal(node: GrMobNode) {
     if (!node.boolProp("visible")) return
     val runtime = LocalGrMobRuntime.current
     val onDismiss = node.stringProp("onDismiss")
+    // Whose width the dialog is: the platform's, or the content's own.
+    //
+    // A Dialog window defaults to the platform's dialog width — 320dp on a
+    // phone, in portrait and landscape alike — and nothing inside the window
+    // can be wider than it. That is the right width for content that says
+    // nothing about its own (a confirm card, a link prompt), and it matches
+    // the compact dialog Android users expect. It is wrong for content that
+    // declared a width, because the declaration then silently loses:
+    //
+    //     child declares         web / iOS              Android, platform width
+    //     --------------         ---------              -----------------------
+    //     Width("100%")          edge to edge sheet     a 320dp floating card
+    //     MaxWidth("360px")      card reaches 360       card stops at ~304
+    //
+    // (comps.ActionSheet and comps.DatePicker, measured on the emulator.) So a
+    // direct child that declares Width or MaxWidth opts the window out of the
+    // platform width: the window spans the screen and the child's own
+    // declaration decides. MinWidth does not opt out — it is a floor, which the
+    // platform width already clears, not a claim on the whole width.
+    val sizesItself = node.children.any { c ->
+        c.style?.let { it.width.isNotEmpty() || it.maxWidth.isNotEmpty() } == true
+    }
     Dialog(
         onDismissRequest = { if (onDismiss.isNotEmpty()) runtime.click(onDismiss) },
+        properties = DialogProperties(usePlatformDefaultWidth = !sizesItself),
     ) {
         // The dialog window already scrims with the backdrop; the content gets
         // a card-like surface unless the app styled its children explicitly.
@@ -2295,7 +2337,7 @@ private fun GrMobModal(node: GrMobNode) {
                     .fillMaxWidth()
                     .verticalScrollWhenBounded(rememberScrollState())
                     .then(if (grows && viewport != null) Modifier.heightIn(min = viewport) else Modifier)
-            ) { ColumnChildren(node) }
+            ) { ColumnChildren(node, centreCapped = true) }
         }
     }
 }

@@ -30,7 +30,12 @@ import "github.com/rohanthewiz/grmob/core"
 //	Compose   Dialog window > Column(fillMaxWidth,    centred window;
 //	          scroll when taller; min height = the    children weighted
 //	          window while a child grows)
-//	          > ColumnChildren (FlexGrow → weight)
+//	          > ColumnChildren (FlexGrow → weight).
+//	          The window is the platform's dialog
+//	          width (320dp on a phone) unless a
+//	          direct child declares Width or
+//	          MaxWidth, as this card does; then it
+//	          spans the screen
 //	SwiftUI   .sheet, detents medium/large >          already the bottom
 //	          ScrollView > VStack > PlainChildren     sheet, top of it
 //	          (grow ignored)

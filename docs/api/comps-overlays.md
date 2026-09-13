@@ -102,7 +102,12 @@ core.Modal has no placement prop, and the four hosts do not agree on where a Mod
 	Compose   Dialog window > Column(fillMaxWidth,    centred window;
 	          scroll when taller; min height = the    children weighted
 	          window while a child grows)
-	          > ColumnChildren (FlexGrow → weight)
+	          > ColumnChildren (FlexGrow → weight).
+	          The window is the platform's dialog
+	          width (320dp on a phone) unless a
+	          direct child declares Width or
+	          MaxWidth, as this card does; then it
+	          spans the screen
 	SwiftUI   .sheet, detents medium/large >          already the bottom
 	          ScrollView > VStack > PlainChildren     sheet, top of it
 	          (grow ignored)
@@ -153,7 +158,7 @@ Cancel calls OnDismiss, like a scrim tap. There is no Cancel.OnTap to fall back 
 	Cancel         Colors.PrimaryOnLight, outlined
 	Rule           Colors.Border, through Separator
 
-<small>[comps/action_sheet.go:113](https://github.com/rohanthewiz/grmob/blob/master/comps/action_sheet.go#L113)</small>
+<small>[comps/action_sheet.go:118](https://github.com/rohanthewiz/grmob/blob/master/comps/action_sheet.go#L118)</small>
 
 #### func (ActionSheet) Render
 
@@ -163,7 +168,7 @@ func (s ActionSheet) Render(ctx *core.Context) *core.Node
 
 Render builds Modal > (filler, Card) as drawn in the type doc.
 
-<small>[comps/action_sheet.go:175](https://github.com/rohanthewiz/grmob/blob/master/comps/action_sheet.go#L175)</small>
+<small>[comps/action_sheet.go:180](https://github.com/rohanthewiz/grmob/blob/master/comps/action_sheet.go#L180)</small>
 
 ### type Banner
 
@@ -727,7 +732,7 @@ type SheetAction struct {
 
 SheetAction is one row of an ActionSheet.
 
-<small>[comps/action_sheet.go:142](https://github.com/rohanthewiz/grmob/blob/master/comps/action_sheet.go#L142)</small>
+<small>[comps/action_sheet.go:147](https://github.com/rohanthewiz/grmob/blob/master/comps/action_sheet.go#L147)</small>
 
 ### type Skeleton
 
