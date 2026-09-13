@@ -2,7 +2,7 @@
 #
 # The repo's release gate has always been a fixed list of checks run by hand
 # before a tag (see ai_docs/plans/fable-pre-0.1.0-analysis.md, Phase 7). This
-# workflow is that list, unchanged, split across three runners by what each
+# workflow is that list, unchanged, split across four runners by what each
 # check actually needs:
 #
 #   go       ubuntu   Go toolchain + Node        formatting, vet, tests, WASM
@@ -12,8 +12,9 @@
 #                                                drill over its gradle-cache
 #                                                gates, gomobile bind, Gradle,
 #                                                android/verify again
+#   docs     ubuntu   Python + mkdocs-material   mkdocs build --strict
 #
-# The three are independent and run in parallel; a red iOS job does not hide a
+# The four are independent and run in parallel; a red iOS job does not hide a
 # red Go job. The Go job is the fast one and is what a contributor watches.
 #
 # # The remedy drills, and why they are here and not in a test
@@ -121,6 +122,30 @@ jobs:
         # through the shipped wasm/grmob-runtime.js against a minimal DOM and
         # compares with Go's final render, then runs the event/focus unit tests.
         run: ./wasm/verify/run.sh
+
+  docs:
+    name: Docs site builds strictly
+    # docs/ is a site as well as a folder of Markdown, and mkdocs only notices a
+    # broken page link, an anchor that no longer exists or a page missing from
+    # the nav when it builds. --strict turns those warnings into a failure; left
+    # to someone running ./docs.sh they surface at the next publish, long after
+    # the rename that caused them. The versions are pinned to the ones the docs
+    # were last built strictly with, so a theme release cannot redden CI on a
+    # commit that touched no docs.
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install mkdocs
+        run: pip install mkdocs==1.6.1 mkdocs-material==9.7.7 pymdown-extensions==11.0.2
+
+      - name: mkdocs build --strict
+        run: mkdocs build --strict --site-dir "$RUNNER_TEMP/site"
 
   ios:
     name: iOS runtime conformance
