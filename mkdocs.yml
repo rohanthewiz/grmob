@@ -59,13 +59,14 @@ nav:
   # missing from it.
   - API Reference:
       - Overview: api/index.md
-      # core is split into topic pages (apidoc.Pkg.Topics); its package page
-      # is the topics' index.
+      # core and comps are split into topic pages (apidoc.Pkg.Topics); each
+      # package page is its topics' index.
       - core:
           - Overview: api/core.md
           - Views & state: api/core-views.md
           - Layout: api/core-layout.md
-          - Styling: api/core-style.md
+          - "Styling: the Style struct": api/core-style.md
+          - "Styling: style props": api/core-style-props.md
           - Theming: api/core-theme.md
           - Controls: api/core-controls.md
           - Editors: api/core-editors.md
@@ -76,7 +77,14 @@ nav:
       - hooks: api/hooks.md
       - render: api/render.md
       - reconcile: api/reconcile.md
-      - comps: api/comps.md
+      - comps:
+          - Overview: api/comps.md
+          - Screens & structure: api/comps-structure.md
+          - Lists & tables: api/comps-lists.md
+          - Inputs & pickers: api/comps-inputs.md
+          - Buttons & choices: api/comps-actions.md
+          - Overlays & feedback: api/comps-overlays.md
+          - Data display & maps: api/comps-display.md
       - forms: api/forms.md
       - richtext: api/richtext.md
       - highlight: api/highlight.md

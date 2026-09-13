@@ -144,7 +144,7 @@ var Packages = []Pkg{
 		Dir:   "core",
 		Group: "Core",
 		Blurb: "Views, nodes, state, styling, events — everything an app builds its UI out of.",
-		// core is the one package split into topics: as a single page it ran
+		// core was the first package split into topics: as a single page it ran
 		// to ~7,800 lines, past the point where its sidebar TOC (every type
 		// and function in the package, in alphabetical order) helps anyone
 		// find anything. The order below follows the narrative docs' order of
@@ -161,10 +161,22 @@ var Packages = []Pkg{
 			Blurb: "Rows, columns, stacks, scrolls and lists, and the alignment vocabulary they are placed with.",
 			Files: []string{"layout.go", "list.go", "stack_align.go", "alignment.go", "keyboard.go", "placement_audit.go"},
 		}, {
+			// Styling is two pages, split along the line style.go and
+			// style_props.go already draw: the Style struct and the enums its
+			// fields take, then the StyleProp constructors a view is written
+			// with. As one page it ran to ~1,900 lines, half of it the struct's
+			// field docs, so a reader after Padding scrolled past all of them.
+			// The first keeps the "style" slug so existing links to
+			// core-style.md still land on the Style type.
 			Slug:  "style",
-			Title: "Styling",
-			Blurb: "Style and its props: spacing, flex, typography, colour, borders and transitions.",
-			Files: []string{"style.go", "style_props.go", "margin_sides.go", "padding_sides.go", "animation.go"},
+			Title: "Styling: the Style struct",
+			Blurb: "Style and the value types its fields take: alignment, flex, position, weights and edge insets.",
+			Files: []string{"style.go"},
+		}, {
+			Slug:  "style-props",
+			Title: "Styling: style props",
+			Blurb: "The StyleProp constructors: spacing and per-side insets, flex, typography, colour, borders and animation.",
+			Files: []string{"style_props.go", "margin_sides.go", "padding_sides.go", "animation.go"},
 		}, {
 			Slug:  "theme",
 			Title: "Theming",
@@ -223,6 +235,48 @@ var Packages = []Pkg{
 		Dir:   "comps",
 		Group: "Widgets",
 		Blurb: "The widget library — cards, tabs, accordions and friends, built on the public core API.",
+		// comps is split for core's reason: as one page it ran to ~6,000
+		// lines. The topics are the questions a screen's author asks in
+		// order — what frames the screen, what goes in its lists, how a value
+		// is typed or picked, what a tap does, what floats over it, what
+		// shows data — rather than the alphabet, which puts AppBar beside
+		// Avatar. doc.go is left out: it declares nothing.
+		Topics: []Topic{{
+			Slug:  "structure",
+			Title: "Screens & structure",
+			Blurb: "Screen, app and bottom bars, tabs, drawers, step indicators, cards, accordions, headings and separators.",
+			Files: []string{"screen.go", "app_bar.go", "bottom_bar.go", "tabs.go", "drawer.go", "step_indicator.go",
+				"card.go", "accordion.go", "disclosure.go", "heading.go", "separator.go"},
+		}, {
+			Slug:  "lists",
+			Title: "Lists & tables",
+			Blurb: "List, settings and input rows, grouped and paged lists, data tables and timelines.",
+			Files: []string{"list_row.go", "settings_row.go", "input_row.go", "grouped_list.go", "grouping.go",
+				"paging.go", "data_table.go", "timeline.go"},
+		}, {
+			Slug:  "inputs",
+			Title: "Inputs & pickers",
+			Blurb: "Form fields, search, searchable selects, radio groups, dates and calendars, and the two editors.",
+			Files: []string{"form_field.go", "search_field.go", "searchable_select.go", "radio_group.go",
+				"date_picker.go", "calendar.go", "code_editor.go", "rich_text_editor.go"},
+		}, {
+			Slug:  "actions",
+			Title: "Buttons & choices",
+			Blurb: "Buttons and their variants, chips, segmented controls, steppers, ratings and badges.",
+			Files: []string{"button.go", "variant.go", "chip.go", "chip_strip.go", "segmented_control.go",
+				"stepper.go", "rating.go", "badge.go"},
+		}, {
+			Slug:  "overlays",
+			Title: "Overlays & feedback",
+			Blurb: "Dialogs, action sheets, menus, snackbars, banners, progress, spinners, skeletons and empty states.",
+			Files: []string{"dialog.go", "action_sheet.go", "menu.go", "snackbar.go", "banner.go",
+				"progress_bar.go", "spinner.go", "skeleton.go", "empty_state.go"},
+		}, {
+			Slug:  "display",
+			Title: "Data display & maps",
+			Blurb: "Avatars, stat tiles, the compass, map panels and static maps.",
+			Files: []string{"avatar.go", "stat_tile.go", "compass.go", "map_panel.go", "static_map.go"},
+		}},
 	},
 	{
 		Dir:   "forms",

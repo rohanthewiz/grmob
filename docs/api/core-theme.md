@@ -6,7 +6,7 @@ import "github.com/rohanthewiz/grmob/core"
 
 Themes, palettes, typography and spacing scales, and per-component defaults.
 
-One of 10 topic pages of [package core](core.md), which has the package overview and an index of every topic. This page documents the declarations in `core/theme.go`.
+One of 11 topic pages of [package core](core.md), which has the package overview and an index of every topic. This page documents the declarations in `core/theme.go`.
 
 ## Index
 

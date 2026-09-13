@@ -6,7 +6,7 @@ import "github.com/rohanthewiz/grmob/core"
 
 The code editor and the rich text editor, and the refs and commands that drive them.
 
-One of 10 topic pages of [package core](core.md), which has the package overview and an index of every topic. This page documents the declarations in `core/codeeditor.go`, `core/editor.go`, `core/richtext.go`.
+One of 11 topic pages of [package core](core.md), which has the package overview and an index of every topic. This page documents the declarations in `core/codeeditor.go`, `core/editor.go`, `core/richtext.go`.
 
 ## Index
 

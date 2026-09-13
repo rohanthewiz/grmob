@@ -6,7 +6,7 @@ import "github.com/rohanthewiz/grmob/core"
 
 Event props, host and system events, focus refs and focus order.
 
-One of 10 topic pages of [package core](core.md), which has the package overview and an index of every topic. This page documents the declarations in `core/event.go`, `core/behavioral_props.go`, `core/host_events.go`, `core/sys_events.go`, `core/focus.go`, `core/focus_order.go`.
+One of 11 topic pages of [package core](core.md), which has the package overview and an index of every topic. This page documents the declarations in `core/event.go`, `core/behavioral_props.go`, `core/host_events.go`, `core/sys_events.go`, `core/focus.go`, `core/focus_order.go`.
 
 ## Index
 

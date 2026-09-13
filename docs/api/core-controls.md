@@ -6,7 +6,7 @@ import "github.com/rohanthewiz/grmob/core"
 
 Buttons, text inputs, switches, sliders, selects, images, tab views and text grids.
 
-One of 10 topic pages of [package core](core.md), which has the package overview and an index of every topic. This page documents the declarations in `core/button.go`, `core/input.go`, `core/switch.go`, `core/slider.go`, `core/select_menu.go`, `core/image.go`, `core/tabview.go`, `core/textgrid.go`.
+One of 11 topic pages of [package core](core.md), which has the package overview and an index of every topic. This page documents the declarations in `core/button.go`, `core/input.go`, `core/switch.go`, `core/slider.go`, `core/select_menu.go`, `core/image.go`, `core/tabview.go`, `core/textgrid.go`.
 
 ## Index
 
