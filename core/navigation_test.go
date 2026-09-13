@@ -736,3 +736,55 @@ func TestTwoQuickBacksOnADeepStackPopTwice(t *testing.T) {
 		t.Errorf("stack depth = %d, want 1 after two back presses", d)
 	}
 }
+
+// --- frame keys ----------------------------------------------------------
+
+// Each frame's root carries a key naming the frame: stable across passes of
+// one frame, different for the frame a Push, Replace or Pop puts on screen.
+// This is what lets the reconciler replace the tree on navigation, so a host
+// cannot carry the previous screen's scroll offset into the next one.
+func TestNavigatorKeysTheRouteRootByFrame(t *testing.T) {
+	ctx := NewContext()
+	app := Navigator(counterRoute("home"))
+
+	home := Render(ctx, app).Key
+	if home == "" {
+		t.Fatal("the route root should carry a frame key")
+	}
+	if again := Render(ctx, app).Key; again != home {
+		t.Errorf("a second pass of the same frame changed its key: %q → %q", home, again)
+	}
+
+	Push(ctx, counterRoute("lesson"))
+	pushed := Render(ctx, app).Key
+	if pushed == home {
+		t.Errorf("a pushed frame reused the home frame's key %q", home)
+	}
+
+	Replace(ctx, counterRoute("lesson"))
+	replaced := Render(ctx, app).Key
+	if replaced == pushed {
+		t.Errorf("Replace with the same route function kept key %q; a new frame must get a new key", pushed)
+	}
+
+	Pop(ctx)
+	if back := Render(ctx, app).Key; back != home {
+		t.Errorf("after Pop the root frame's key = %q, want %q", back, home)
+	}
+}
+
+// A route's own root key survives as a suffix, and a Cached root is never
+// written: the stamp goes on a copy.
+func TestNavigatorFrameKeyKeepsTheAppKeyAndLeavesCachedNodesAlone(t *testing.T) {
+	ctx := NewContext()
+	cached := Cached(Keyed("form", Text("form")))
+	app := Navigator(func(*Context) View { return cached })
+
+	n := Render(ctx, app)
+	if !strings.HasPrefix(n.Key, "nav:frame:") || !strings.HasSuffix(n.Key, "/form") {
+		t.Errorf("frame key = %q, want nav:frame:<id>/form", n.Key)
+	}
+	if k := cached.Render(ctx).Key; k != "form" {
+		t.Errorf("Navigator wrote its frame key into the shared Cached node: %q", k)
+	}
+}

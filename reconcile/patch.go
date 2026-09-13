@@ -65,6 +65,23 @@ func Diff(old, new *core.Node, path string) []Patch {
 			TargetID: path,
 		}}
 	}
+	// Both keyed, keys differ: a logically different node now occupies this
+	// position, so rebuild rather than diff. Diffing across different keys
+	// would leak state between logically distinct items (the classic
+	// un-keyed-list bug this guards against).
+	//
+	// The check lives here rather than only in the child loop below so that it
+	// also covers the node Diff is first called with. core.Navigator keys each
+	// route's root by its stack frame and is usually the whole tree, so its
+	// root is exactly the node that must be replaced on navigation — see
+	// core.withFrameKey.
+	if old.Key != "" && new.Key != "" && old.Key != new.Key {
+		return []Patch{{
+			Type:     "replace",
+			TargetID: path,
+			Changes:  new,
+		}}
+	}
 	if old.Type != new.Type {
 		return []Patch{{
 			Type:     "replace",
@@ -94,23 +111,9 @@ func Diff(old, new *core.Node, path string) []Patch {
 	minLen := min(len(old.Children), len(new.Children))
 	for i := range minLen {
 		childPath := path + "/" + strconv.Itoa(i)
-		oldChild := old.Children[i]
-		newChild := new.Children[i]
-
-		if oldChild != nil && newChild != nil &&
-			oldChild.Key != "" && newChild.Key != "" &&
-			oldChild.Key != newChild.Key {
-			// Keyed slot whose occupant changed: rebuild rather than diff.
-			// Diffing across different keys would leak state between logically
-			// distinct items (the classic un-keyed-list bug this guards against).
-			patches = append(patches, Patch{
-				Type:     "replace",
-				TargetID: childPath,
-				Changes:  newChild,
-			})
-		} else {
-			patches = append(patches, Diff(oldChild, newChild, childPath)...)
-		}
+		// A keyed slot whose occupant changed becomes a replace inside the
+		// recursive call (the key check at the top of Diff).
+		patches = append(patches, Diff(old.Children[i], new.Children[i], childPath)...)
 	}
 
 	// New tree has extra children: append them in order. add-child targets the

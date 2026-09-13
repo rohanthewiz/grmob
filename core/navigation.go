@@ -170,12 +170,67 @@ func Navigator(initial func(*Context) View) View {
 		}
 
 		frame := ctx.disposableScope(routeScopeKey(entry.id))
-		n := entry.route(frame).Render(frame)
+		n := withFrameKey(entry.id, entry.route(frame).Render(frame))
 		if canPop {
 			n = withSystemBackPop(ctx, n)
 		}
 		return n
 	})
+}
+
+// withFrameKey stamps a route's root node with a key naming its stack frame, so
+// that a different frame on screen is a different view to every host.
+//
+// # The bug it closes
+//
+// Navigator emits no wrapper node, and a route's root rarely carries a key, so
+// before this the lesson that replaced another was the same unkeyed node type
+// at the same position. The reconciler diffed one into the other in place
+// (update-props, update-style, child patches), and each host kept the native
+// state it had attached to that position:
+//
+//	frame 7 (lesson 1.3)             frame 8 (lesson 1.4, via Replace)
+//	Screen            ── diffed ──▶  Screen            same Compose slot, so
+//	  Scroll (y=2400)  in place       Scroll (y=2400)  rememberScrollState
+//	    …                               …              survives: 1.4 opens
+//	                                                   mid-page
+//
+// Hook state was already per frame (routeScopeKey); native state — scroll
+// offset, focus, a text field's selection, an animation mid-flight — was not.
+//
+// # Why a key rather than a host-side rule
+//
+// With distinct keys, reconcile.Diff emits one "replace" for the root (see its
+// keyed-slot rule), and "replace" already means "fresh identity" on every host:
+// the DOM swaps the element, SwiftUI's ForEach/.id sees a new id, Compose's
+// key() starts a new group. The frame id is the right identity because it is
+// exactly as long-lived as the state it guards — stable across render passes
+// of one frame (so typing into a field is still an in-place diff) and never
+// reused by a later Push/Replace/Reset (see routeEntry).
+//
+// # Cost
+//
+// Every navigation is now a root replace carrying the whole new screen, where
+// it used to be a diff. A navigation changes nearly the whole screen anyway,
+// and this is the same payload size as the initial mount. Re-renders within a
+// frame are unaffected.
+//
+// # An app's own key
+//
+// A route that keys its root keeps that key as a suffix, so two keyed roots in
+// one frame (a route that swaps between keyed layouts) still rebuild when the
+// app's key changes. The node is copied, never written: it may be a
+// core.Cached node shared across passes (same reasoning as withSystemBackPop).
+func withFrameKey(id int, n *Node) *Node {
+	if n == nil {
+		return nil
+	}
+	cp := *n
+	cp.Key = routeScopeKey(id)
+	if n.Key != "" {
+		cp.Key += "/" + n.Key
+	}
+	return &cp
 }
 
 // withSystemBackPop gives a poppable route's root node a core.OnBack that

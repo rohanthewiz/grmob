@@ -38,6 +38,14 @@ struct GrMobRoot: View {
             // model (like the Android renderer's root Column) flows content
             // from the top and lets the tree decide its own extent.
             RenderNode(node: root)
+                // Root identity, the same rule ForEach applies to children
+                // (viewID). The root sits outside any ForEach, so without this
+                // SwiftUI keys it structurally and a whole-tree "replace" keeps
+                // the old tree's view state — a ScrollView's offset among it.
+                // core.Navigator keys each route's root by its stack frame, so
+                // navigation resets it; an unkeyed root uses object identity,
+                // which also changes only on a replace.
+                .id(root.viewID)
                 .environment(\.grMobRuntime, runtime)
                 // The style layer's gesture modifier dispatches through this
                 // plain closure instead of the runtime type; see

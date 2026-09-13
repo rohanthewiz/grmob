@@ -44,7 +44,7 @@ func CanPop(ctx *Context) bool
 
 CanPop reports whether there is a screen to go back to, which is what a back button or a hardware-back handler needs in order to decide between popping and exiting the app. Pop is a safe no-op when this is false; the point of asking first is to avoid rendering a control that does nothing.
 
-<small>[core/navigation.go:356](https://github.com/rohanthewiz/grmob/blob/master/core/navigation.go#L356)</small>
+<small>[core/navigation.go:411](https://github.com/rohanthewiz/grmob/blob/master/core/navigation.go#L411)</small>
 
 ### func Modal
 
@@ -141,7 +141,7 @@ func Pop(ctx *Context)
 
 Pop removes the top route, discarding its state, and reveals the one below. It is a no-op at the root — the stack is never left empty, because Navigator has nothing to render then.
 
-<small>[core/navigation.go:240](https://github.com/rohanthewiz/grmob/blob/master/core/navigation.go#L240)</small>
+<small>[core/navigation.go:295](https://github.com/rohanthewiz/grmob/blob/master/core/navigation.go#L295)</small>
 
 ### func PopToRoot
 
@@ -153,7 +153,7 @@ PopToRoot unwinds to the bottom of the stack, discarding the state of every fram
 
 It differs from Reset in exactly one way, and it is the way that matters: the root frame is the one already there, state and all. Reset(ctx, root) would look identical on screen and quietly reset the root's scroll position, selected tab and form contents. Reach for PopToRoot to escape a deep drill-down ("Done" out of a five-level settings tree), and for Reset to end a session.
 
-<small>[core/navigation.go:321](https://github.com/rohanthewiz/grmob/blob/master/core/navigation.go#L321)</small>
+<small>[core/navigation.go:376](https://github.com/rohanthewiz/grmob/blob/master/core/navigation.go#L376)</small>
 
 ### func Push
 
@@ -165,7 +165,7 @@ Push adds a route on top of the stack. The screen underneath keeps its state and
 
 Like every mutation here it ends in RequestRender rather than a bare MarkDirty, which these used to do. Marking alone is enough only when a pass is already guaranteed to follow — true for a tap, since the native dispatch path re-renders on the way out, and false for a navigation triggered from anywhere else: an effect goroutine resolving a deep link, a timeout dismissing a splash screen, a websocket pushing the user to a call screen. Those marked the tree dirty and then waited for an unrelated event to notice.
 
-<small>[core/navigation.go:230](https://github.com/rohanthewiz/grmob/blob/master/core/navigation.go#L230)</small>
+<small>[core/navigation.go:285](https://github.com/rohanthewiz/grmob/blob/master/core/navigation.go#L285)</small>
 
 ### func Render
 
@@ -175,7 +175,7 @@ func Render(ctx *Context, view View) *Node
 
 Render renders view into ctx after restarting ctx's hook cursors. It is the entry point for a host driving passes by hand; render.Manager does the same two steps itself (with the debug pass boundary around them) and does not call this.
 
-<small>[core/navigation.go:364](https://github.com/rohanthewiz/grmob/blob/master/core/navigation.go#L364)</small>
+<small>[core/navigation.go:419](https://github.com/rohanthewiz/grmob/blob/master/core/navigation.go#L419)</small>
 
 ### func Replace
 
@@ -185,7 +185,7 @@ func Replace(ctx *Context, route func(*Context) View)
 
 Replace swaps the top route for another without changing the stack depth, discarding the outgoing route's state. Use it for a step that should not be returned to — the "logged in" screen after a login form, so Back skips the form rather than showing it again.
 
-<small>[core/navigation.go:264](https://github.com/rohanthewiz/grmob/blob/master/core/navigation.go#L264)</small>
+<small>[core/navigation.go:319](https://github.com/rohanthewiz/grmob/blob/master/core/navigation.go#L319)</small>
 
 ### func Reset
 
@@ -199,7 +199,7 @@ The new root is a fresh frame even when route is the same function the old root 
 
 What Reset does not touch is state the app deliberately kept outside the stack: hooks on the context hosting the Navigator, package-level stores, the database. Those outlive navigation by construction, and clearing them is the app's call, not the router's.
 
-<small>[core/navigation.go:300](https://github.com/rohanthewiz/grmob/blob/master/core/navigation.go#L300)</small>
+<small>[core/navigation.go:355](https://github.com/rohanthewiz/grmob/blob/master/core/navigation.go#L355)</small>
 
 ### func ShowToast
 
@@ -219,7 +219,7 @@ StackDepth reports how many frames are on the stack.
 
 Before the Navigator's first render it counts only what the app itself pushed — 0 for an app that has not navigated yet, because the initial route is installed lazily by that first render. Afterwards it is at least 1.
 
-<small>[core/navigation.go:346](https://github.com/rohanthewiz/grmob/blob/master/core/navigation.go#L346)</small>
+<small>[core/navigation.go:401](https://github.com/rohanthewiz/grmob/blob/master/core/navigation.go#L401)</small>
 
 ## Types
 

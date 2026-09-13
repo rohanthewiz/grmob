@@ -207,7 +207,15 @@ internal fun GrMobNode.isDisabled(): Boolean =
 @Composable
 fun GrMobRoot(runtime: GrMobRuntime) {
     CompositionLocalProvider(LocalGrMobRuntime provides runtime) {
-        runtime.store.root?.let { RenderNode(it) }
+        // key() on the root's key, as RenderChildren does for every child. The
+        // root is otherwise always the same unkeyed slot, so a "replace" of the
+        // whole tree swapped the data but kept every remember{} below it —
+        // rememberScrollState included, which is how a lesson opened by
+        // "Next ›" inherited the previous lesson's scroll offset. core.Navigator
+        // keys each route's root by its stack frame (withFrameKey), so a new
+        // frame is a new group here and its state starts fresh. An empty key
+        // (no Navigator at the root) keys on "" and behaves as before.
+        runtime.store.root?.let { root -> key(root.key) { RenderNode(root) } }
     }
 }
 

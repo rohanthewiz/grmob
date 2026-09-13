@@ -343,3 +343,28 @@ func TestDiffCachedSubtreeEmitsNoPatches(t *testing.T) {
 		t.Errorf("patch target = %q, want root/1 (the dynamic sibling, never the cached subtree)", patches[0].TargetID)
 	}
 }
+
+// The keyed-replace rule must hold for the node Diff starts at, not only for
+// children: core.Navigator keys a route's root by its stack frame, and that
+// root is usually the whole tree. Same type, different key → one replace at
+// "root", so every host drops the previous screen's native state (scroll).
+func TestDiffKeyedRootMismatchReplacesTheRoot(t *testing.T) {
+	old := keyed(node("Column", nil, nil, node("Text", map[string]any{"content": "1.3"}, nil)), "nav:frame:7")
+	new := keyed(node("Column", nil, nil, node("Text", map[string]any{"content": "1.4"}, nil)), "nav:frame:8")
+	patches := Diff(old, new, "root")
+	requirePatchTypes(t, patches, "replace")
+	if patches[0].TargetID != "root" {
+		t.Errorf("replace should target the root, got %q", patches[0].TargetID)
+	}
+}
+
+// The same frame across passes keeps its key, so it still diffs in place.
+func TestDiffKeyedRootSameKeyDiffsInPlace(t *testing.T) {
+	old := keyed(node("Column", nil, nil, node("Text", map[string]any{"content": "a"}, nil)), "nav:frame:7")
+	new := keyed(node("Column", nil, nil, node("Text", map[string]any{"content": "b"}, nil)), "nav:frame:7")
+	patches := Diff(old, new, "root")
+	requirePatchTypes(t, patches, "update-props")
+	if patches[0].TargetID != "root/0" {
+		t.Errorf("update should target the child, got %q", patches[0].TargetID)
+	}
+}
