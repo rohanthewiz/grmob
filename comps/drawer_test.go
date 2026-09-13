@@ -43,6 +43,9 @@ func TestDrawerShutHidesThePanelAndLeavesTheScreenReadable(t *testing.T) {
 	if content.Style.AccessibilityHidden {
 		t.Error("a shut drawer must leave the screen in the accessibility tree")
 	}
+	if content.Style.Inert {
+		t.Error("a shut drawer must leave the screen reachable by keyboard and pointer")
+	}
 	if findText(content, "Screen body") == nil {
 		t.Error("Content must be inside the content layer")
 	}
@@ -64,6 +67,9 @@ func TestDrawerOpenShowsThePanelAndHidesTheScreen(t *testing.T) {
 	}
 	if !content.Style.AccessibilityHidden {
 		t.Error("an open drawer must hide the screen behind it from assistive technology")
+	}
+	if !content.Style.Inert {
+		t.Error("an open drawer must make the screen behind it inert, or Tab walks into it on the web")
 	}
 	if !scrim.Style.AccessibilityHidden || scrim.Style.Background != drawerDefaultBackdrop {
 		t.Errorf("scrim hidden=%v fill=%q, want hidden with Modal's default backdrop",

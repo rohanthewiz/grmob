@@ -62,6 +62,7 @@ One of 10 topic pages of [package core](core.md), which has the package overview
     - [`func FontWeight`](#func-fontweight)
     - [`func Gap`](#func-gap)
     - [`func Height`](#func-height)
+    - [`func Inert`](#func-inert)
     - [`func Justify`](#func-justify)
     - [`func Left`](#func-left)
     - [`func Margin`](#func-margin)
@@ -119,7 +120,7 @@ const (
 )
 ```
 
-<small>[core/style.go:1132](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L1132)</small>
+<small>[core/style.go:1178](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L1178)</small>
 
 ShrinkNone is what core.FlexShrink(0) stores, and what every renderer must read as a shrink factor of zero.
 
@@ -157,7 +158,7 @@ The Compose arm is the one that needed an argument, and it is worth having here 
 const ShrinkNone = -1
 ```
 
-<small>[core/style.go:1231](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L1231)</small>
+<small>[core/style.go:1277](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L1277)</small>
 
 ## Variables
 
@@ -172,7 +173,7 @@ var TextInputStyle = UseStyle(Style{
 })
 ```
 
-<small>[core/style.go:1077](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L1077)</small>
+<small>[core/style.go:1123](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L1123)</small>
 
 ## Functions
 
@@ -182,7 +183,7 @@ var TextInputStyle = UseStyle(Style{
 func DangerColor() string
 ```
 
-<small>[core/style.go:1068](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L1068)</small>
+<small>[core/style.go:1114](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L1114)</small>
 
 ### func LinearGradient
 
@@ -202,7 +203,7 @@ PrimaryColor and DangerColor are the theme-blind convenience accessors that pred
 
 They read DefaultTheme rather than repeating its literals. Both used to be hard-coded, and the copy was not free: when Colors.Primary moved to Apple's accessible blue (white over systemBlue was 4.02:1, under WCAG AA, and the theme's own Button base declares white), this function kept the old hex — so examples/chat, its one caller, went on painting white on a fill nobody could read it on, in the one place the fix could not reach.
 
-<small>[core/style.go:1067](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L1067)</small>
+<small>[core/style.go:1113](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L1113)</small>
 
 ## Types
 
@@ -212,7 +213,7 @@ They read DefaultTheme rather than repeating its literals. Both used to be hard-
 type AlignItems string
 ```
 
-<small>[core/style.go:1130](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L1130)</small>
+<small>[core/style.go:1176](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L1176)</small>
 
 #### func (AlignItems) Apply
 
@@ -234,7 +235,7 @@ Without these methods that expression is a type conversion producing a bare stri
 type Alignment string
 ```
 
-<small>[core/style.go:1107](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L1107)</small>
+<small>[core/style.go:1153](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L1153)</small>
 
 ```go
 const (
@@ -253,7 +254,7 @@ const (
 type DisplayMode string
 ```
 
-<small>[core/style.go:1118](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L1118)</small>
+<small>[core/style.go:1164](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L1164)</small>
 
 ```go
 const (
@@ -331,7 +332,7 @@ Six untagged ints wrote all six every time. On the tutorial's contents screen, 7
 
 Small next to the 370KB the Style-level tags took off, and free in a way that one was not: no renderer changed, because none of them could tell the difference.
 
-<small>[core/style.go:723](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L723)</small>
+<small>[core/style.go:766](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L766)</small>
 
 ### type FlexDirection
 
@@ -339,7 +340,7 @@ Small next to the 370KB the Style-level tags took off, and free in a way that on
 type FlexDirection string
 ```
 
-<small>[core/style.go:1129](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L1129)</small>
+<small>[core/style.go:1175](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L1175)</small>
 
 #### func (FlexDirection) Apply
 
@@ -355,7 +356,7 @@ func (d FlexDirection) Apply(s *Style)
 type JustifyContent string
 ```
 
-<small>[core/style.go:1128](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L1128)</small>
+<small>[core/style.go:1174](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L1174)</small>
 
 #### func (JustifyContent) Apply
 
@@ -371,7 +372,7 @@ func (j JustifyContent) Apply(s *Style)
 type Position string
 ```
 
-<small>[core/style.go:1150](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L1150)</small>
+<small>[core/style.go:1196](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L1196)</small>
 
 ```go
 const (
@@ -388,7 +389,7 @@ const (
 type ResponsiveStyle map[string]Style
 ```
 
-<small>[core/style.go:1105](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L1105)</small>
+<small>[core/style.go:1151](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L1151)</small>
 
 ### type Style
 
@@ -968,6 +969,49 @@ type Style struct {
 	// is a palette decision (comps.Button spends Surface/TextSecondary
 	// on it); what it *means* is this flag.
 	Disabled bool `json:",omitzero"`
+
+	// Inert takes the node and its whole subtree out of reach on the web: no
+	// focus, no Tab stop, no pointer events, and nothing in the accessibility
+	// tree. It is the HTML `inert` attribute, written by both web targets.
+	//
+	// # Why a field of its own, and not AccessibilityHidden or Disabled
+	//
+	// The screen behind comps.Drawer is what asked. The drawer hid it with
+	// AccessibilityHidden, and aria-hidden only prunes the accessibility tree;
+	// it does not stop Tab. So a keyboard user tabbing past the panel's last
+	// control walked into a screen that a reader could not see and the eye
+	// could see only dimmed. The three near neighbours each cover part of the
+	// job:
+	//
+	//	                     tree   Tab/focus   pointer   announced as
+	//	AccessibilityHidden  gone   kept        kept      nothing
+	//	Disabled             kept   gone        gone      "dimmed"/"disabled"
+	//	Inert                gone   gone        gone      nothing
+	//
+	// AccessibilityHidden could not simply start writing `inert`, because it
+	// also marks nodes that must stay interactive: a Drawer's scrim is hidden
+	// from readers (the ✕ is the accessible way out) and still dismisses on a
+	// tap. Disabled is the wrong claim, since a disabled control is announced
+	// as one, and a screen behind a drawer is not a disabled screen. So this
+	// is its own flag, the one the platform has.
+	//
+	// # What each target does with it
+	//
+	// Both web targets write the attribute, and the browser does the rest: it
+	// blurs focus already inside the subtree, skips the subtree in sequential
+	// navigation, drops pointer events and prunes the accessibility tree.
+	//
+	// Neither native reads it. On a phone the problem it solves is shaped
+	// differently: VoiceOver and TalkBack are kept out by AccessibilityHidden,
+	// and touch is kept out by whatever covers the layer (a Drawer's scrim).
+	// What remains is a hardware keyboard's focus traversal on an iPad or a
+	// Chromebook. SwiftUI's nearest tool, .disabled(true), dims system controls,
+	// and Compose's focusProperties cancel entry only on the node they sit on.
+	// Neither is the same claim, and neither can be checked here without a
+	// device, so the gap is recorded rather than approximated. Set
+	// AccessibilityHidden beside it when readers on the phones should be kept
+	// out too, as Drawer does.
+	Inert bool `json:",omitzero"`
 }
 ```
 
@@ -1033,7 +1077,7 @@ The two returns are the two questions a renderer has, and they are separate beca
 
 It exists so the ShrinkNone rule is stated once rather than in each renderer. The two DOM renderers spell their guards independently — that is deliberate elsewhere in this framework — but the mapping from a stored number to a meaning is not a spelling, it is the contract, and three copies of it is how this field got into trouble in the first place.
 
-<small>[core/style.go:1248](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L1248)</small>
+<small>[core/style.go:1294](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L1294)</small>
 
 #### func (Style) With
 
@@ -1041,7 +1085,7 @@ It exists so the ShrinkNone rule is stated once rather than in each renderer. Th
 func (s Style) With(other Style) Style
 ```
 
-<small>[core/style_props.go:559](https://github.com/rohanthewiz/grmob/blob/master/core/style_props.go#L559)</small>
+<small>[core/style_props.go:574](https://github.com/rohanthewiz/grmob/blob/master/core/style_props.go#L574)</small>
 
 ### type StyleProp
 
@@ -1051,7 +1095,7 @@ type StyleProp interface {
 }
 ```
 
-<small>[core/style.go:738](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L738)</small>
+<small>[core/style.go:781](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L781)</small>
 
 #### func AccessibilityControls
 
@@ -1414,6 +1458,20 @@ func Height(w string) StyleProp
 
 <small>[core/style_props.go:192](https://github.com/rohanthewiz/grmob/blob/master/core/style_props.go#L192)</small>
 
+#### func Inert
+
+```go
+func Inert(inert bool) StyleProp
+```
+
+Inert takes the node and everything inside it out of reach on the web: out of the tab order, out of pointer events and out of the accessibility tree (the HTML \`inert\` attribute). The phones do not read it. See Style.Inert for why it is a flag of its own and for what the natives lack.
+
+	core.Box(core.Inert(drawerOpen), screen)
+
+A bool for Disabled's reason: passing false is the only way to clear a flag UseStyle has already put on the target.
+
+<small>[core/style_props.go:568](https://github.com/rohanthewiz/grmob/blob/master/core/style_props.go#L568)</small>
+
 #### func Justify
 
 ```go
@@ -1576,7 +1634,7 @@ PaddingHorizontal sets the left and right insets.
 
 It writes the explicit Left/Right sides as well as the Horizontal shorthand. The renderers resolve a side as "the explicit value if non-zero, otherwise the axis shorthand" (see htmlout.EdgeCSS), so a prop that wrote only the shorthand could never override a side that was already set: a theme Column carries Left/Right 16, and PaddingHorizontal(0) after it used to leave the 16 in place — and PaddingHorizontal(24) used to render as 16. Writing the sides too gives this prop the same last-one-wins ordering every other StyleProp has, and a zero clears the theme value in all four renderers without any of them changing their resolution rule.
 
-<small>[core/style.go:1097](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L1097)</small>
+<small>[core/style.go:1143](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L1143)</small>
 
 #### func PaddingLeft
 
@@ -1660,7 +1718,7 @@ Unlike UseStyle, this setter can force zero: Rotate(0) writes the field, which i
 func RoundedShadowBox() StyleProp
 ```
 
-<small>[core/style.go:1069](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L1069)</small>
+<small>[core/style.go:1115](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L1115)</small>
 
 #### func RowGap
 
@@ -1712,7 +1770,7 @@ The rule's one unavoidable edge is that a zero value is indistinguishable from "
 
 This merges every field of Style. It previously covered only fourteen of them, which meant Width, Height, the whole flex group, and the accessibility fields were silently dropped — a style value carrying them applied cleanly and did nothing. Any field added to Style must be added here too; TestUseStyleMergesEveryField walks the struct reflectively and fails if one is missed.
 
-<small>[core/style.go:770](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L770)</small>
+<small>[core/style.go:813](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L813)</small>
 
 #### func WhiteSpace
 
@@ -1750,7 +1808,7 @@ func ZIndex(v int) StyleProp
 type Weight int
 ```
 
-<small>[core/style.go:670](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L670)</small>
+<small>[core/style.go:713](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L713)</small>
 
 ```go
 const (

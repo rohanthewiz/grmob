@@ -74,9 +74,12 @@ import "github.com/rohanthewiz/grmob/core"
 //     it, as the example does; OnDismiss can hand focus back to the ☰ through
 //     that button's own FocusRef. The widget holds no ref itself, because a
 //     ref is a hook (see "No hooks").
-//   - Keyboard containment on the web. aria-hidden does not stop Tab and core
-//     has no inert, so Tab past the panel's last control still reaches the
-//     hidden screen. Recorded, not fixed: it needs a renderer.
+//   - Keyboard containment on the web. aria-hidden does not stop Tab, so the
+//     content layer is also core.Inert while the drawer is open: Tab and
+//     Shift-Tab stay in the panel (and the browser's own chrome), and a
+//     pointer cannot reach the screen through a gap in the scrim. The phones
+//     do not read Inert; a hardware keyboard there can still reach the screen,
+//     which Style.Inert records.
 //   - The Android back button. A Dialog closes on it; a layer does not, so
 //     the panel layer carries core.OnBack(OnDismiss) while open. The panel is
 //     inside the screen and composed after it, so back closes the drawer
@@ -223,7 +226,10 @@ func (d Drawer) Render(ctx *core.Context) *core.Node {
 func (d Drawer) contentLayer() core.View {
 	items := []core.PropsAndChildren{core.Width("100%"), core.Height("100%")}
 	if d.Open {
-		items = append(items, core.AccessibilityHidden())
+		// Hidden for the readers on every target; inert for the web's
+		// keyboard and pointer, which aria-hidden alone does not stop. See
+		// "Keyboard containment on the web".
+		items = append(items, core.AccessibilityHidden(), core.Inert(true))
 	}
 	// A nil Content is skipped by the container, leaving an empty layer.
 	items = append(items, d.Content)

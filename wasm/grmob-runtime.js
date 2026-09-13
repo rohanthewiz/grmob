@@ -1787,6 +1787,17 @@ const GrMob = (() => {
             }
             el.style.pointerEvents = disabled ? "none" : "";
         }
+
+        // core.Style.Inert, the HTML attribute of the same name. Set or removed
+        // on every call, the totality rule: a drawer that shuts sends a Style
+        // without the flag, and the screen behind it has to come back. Not
+        // setOrRemove, which treats the empty string as "remove", and the
+        // attribute's value is empty.
+        if (style.Inert) {
+            el.setAttribute("inert", "");
+        } else {
+            el.removeAttribute("inert");
+        }
     }
 
     // core.Style's accessibility fields -> the ARIA attributes that mean

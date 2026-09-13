@@ -556,6 +556,21 @@ func Disabled(disabled bool) StyleProp {
 	})
 }
 
+// Inert takes the node and everything inside it out of reach on the web: out
+// of the tab order, out of pointer events and out of the accessibility tree
+// (the HTML `inert` attribute). The phones do not read it. See Style.Inert
+// for why it is a flag of its own and for what the natives lack.
+//
+//	core.Box(core.Inert(drawerOpen), screen)
+//
+// A bool for Disabled's reason: passing false is the only way to clear a flag
+// UseStyle has already put on the target.
+func Inert(inert bool) StyleProp {
+	return styleFunc(func(s *Style) {
+		s.Inert = inert
+	})
+}
+
 func (s Style) With(other Style) Style {
 	merged := s
 	UseStyle(other).Apply(&merged)

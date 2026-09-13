@@ -665,6 +665,49 @@ type Style struct {
 	// is a palette decision (comps.Button spends Surface/TextSecondary
 	// on it); what it *means* is this flag.
 	Disabled bool `json:",omitzero"`
+
+	// Inert takes the node and its whole subtree out of reach on the web: no
+	// focus, no Tab stop, no pointer events, and nothing in the accessibility
+	// tree. It is the HTML `inert` attribute, written by both web targets.
+	//
+	// # Why a field of its own, and not AccessibilityHidden or Disabled
+	//
+	// The screen behind comps.Drawer is what asked. The drawer hid it with
+	// AccessibilityHidden, and aria-hidden only prunes the accessibility tree;
+	// it does not stop Tab. So a keyboard user tabbing past the panel's last
+	// control walked into a screen that a reader could not see and the eye
+	// could see only dimmed. The three near neighbours each cover part of the
+	// job:
+	//
+	//	                     tree   Tab/focus   pointer   announced as
+	//	AccessibilityHidden  gone   kept        kept      nothing
+	//	Disabled             kept   gone        gone      "dimmed"/"disabled"
+	//	Inert                gone   gone        gone      nothing
+	//
+	// AccessibilityHidden could not simply start writing `inert`, because it
+	// also marks nodes that must stay interactive: a Drawer's scrim is hidden
+	// from readers (the ✕ is the accessible way out) and still dismisses on a
+	// tap. Disabled is the wrong claim, since a disabled control is announced
+	// as one, and a screen behind a drawer is not a disabled screen. So this
+	// is its own flag, the one the platform has.
+	//
+	// # What each target does with it
+	//
+	// Both web targets write the attribute, and the browser does the rest: it
+	// blurs focus already inside the subtree, skips the subtree in sequential
+	// navigation, drops pointer events and prunes the accessibility tree.
+	//
+	// Neither native reads it. On a phone the problem it solves is shaped
+	// differently: VoiceOver and TalkBack are kept out by AccessibilityHidden,
+	// and touch is kept out by whatever covers the layer (a Drawer's scrim).
+	// What remains is a hardware keyboard's focus traversal on an iPad or a
+	// Chromebook. SwiftUI's nearest tool, .disabled(true), dims system controls,
+	// and Compose's focusProperties cancel entry only on the node they sit on.
+	// Neither is the same claim, and neither can be checked here without a
+	// device, so the gap is recorded rather than approximated. Set
+	// AccessibilityHidden beside it when readers on the phones should be kept
+	// out too, as Drawer does.
+	Inert bool `json:",omitzero"`
 }
 
 type Weight int
@@ -1005,6 +1048,9 @@ func (s Style) applyTo(target *Style) {
 	}
 	if s.Disabled {
 		target.Disabled = true
+	}
+	if s.Inert {
+		target.Inert = true
 	}
 
 	// Nested styles. These three are reference types, and a Style value gets

@@ -821,3 +821,18 @@ test("aria-hidden beats the value too", () => {
     assert.equal(at(0).getAttribute("aria-valuenow"), null);
     assert.equal(at(0).getAttribute("aria-hidden"), "true");
 });
+
+// core.Inert on the patch path. The screen behind a Drawer gains it on open and
+// has to lose it on shut, when the update-style carries a Style without the
+// flag; an attribute left standing would leave the whole screen unreachable.
+test("inert is set with aria-hidden and removed when the style drops it", () => {
+    const { rt, at } = mount([{ Type: "Box", Style: {} }]);
+    assert.equal(at(0).hasAttribute("inert"), false);
+
+    rt.GrMob.patch(JSON.stringify([{ Type: "update-style", TargetID: "root/0", Changes: { AccessibilityHidden: true, Inert: true } }]));
+    assert.equal(at(0).getAttribute("inert"), "");
+    assert.equal(at(0).getAttribute("aria-hidden"), "true");
+
+    rt.GrMob.patch(JSON.stringify([{ Type: "update-style", TargetID: "root/0", Changes: {} }]));
+    assert.equal(at(0).hasAttribute("inert"), false, "a drawer that shuts must give the screen back");
+});

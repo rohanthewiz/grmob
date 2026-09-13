@@ -164,6 +164,13 @@ func renderNode(b *element.Builder, node *core.Node, from imposed, path string) 
 		sv = addDecl(sv, "pointer-events:none")
 		attrs = append(attrs, "aria-disabled", "true")
 	}
+	if node.Style != nil && node.Style.Inert {
+		// A boolean attribute, so its presence is the whole value. Outside
+		// accessibilityAttrs on purpose: that function returns early for an
+		// AccessibilityHidden node, and the node that most wants inert (the
+		// screen behind a Drawer) is hidden as well.
+		attrs = append(attrs, "inert", "")
+	}
 	// The gutter's inset, after the author's own declarations rather than
 	// before them like every other chassis above. The exception is deliberate:
 	// the other chassis rules are a *look* an author may disagree with, and

@@ -2066,3 +2066,16 @@ func TestASpacerReachesTheSharedAssembly(t *testing.T) {
 		}
 	}
 }
+
+// core.Inert is a boolean attribute, written even on an AccessibilityHidden
+// node, whose ARIA attributes stop at aria-hidden. That pairing is the one
+// comps.Drawer puts on the screen behind it, so it is the one pinned.
+func TestInertIsWrittenBesideAriaHidden(t *testing.T) {
+	hidden := ExportHTML(&core.Node{Type: "Box", Style: &core.Style{AccessibilityHidden: true, Inert: true}})
+	if !strings.Contains(hidden, `inert=""`) || !strings.Contains(hidden, `aria-hidden="true"`) {
+		t.Errorf("want inert and aria-hidden together:\n%s", hidden)
+	}
+	if plain := ExportHTML(&core.Node{Type: "Box", Style: &core.Style{}}); strings.Contains(plain, "inert") {
+		t.Errorf("a node that is not inert must not carry the attribute:\n%s", plain)
+	}
+}
