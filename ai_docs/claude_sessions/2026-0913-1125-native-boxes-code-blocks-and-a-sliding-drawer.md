@@ -200,7 +200,7 @@ arrived; **medium** means it blocks one named thing or is a visible defect;
 **low** means nobody has hit the gap yet. Sorted by age, oldest first; new items
 last.
 
-1. **(age ≥7 · value high) Tag a release.** v0.3.0 is the latest tag, now 71
+1. **(age ≥7 · value high) Tag a release.** v0.3.0 is the latest tag, now 73
    commits behind. This session adds native box sizing, the iOS code editor,
    reduced motion, Translate and a sliding Drawer, current-item state, and
    Tab-reachable controls. Pushing a tag needs the user's yes. Still open: run
