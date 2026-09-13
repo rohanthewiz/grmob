@@ -3901,7 +3901,7 @@ That is a fine obligation for an editor with a toolbar and a bad one for a note 
 func (r RichTextEditor) Render(ctx *core.Context) *core.Node
 ```
 
-<small>[comps/rich_text_editor.go:180](https://github.com/rohanthewiz/grmob/blob/master/comps/rich_text_editor.go#L180)</small>
+<small>[comps/rich_text_editor.go:185](https://github.com/rohanthewiz/grmob/blob/master/comps/rich_text_editor.go#L185)</small>
 
 ### type RichToolItem
 
@@ -3928,6 +3928,11 @@ type RichToolbar struct {
 	// Items is what the toolbar offers, in order. Defaults to a copy of
 	// RichToolbarDefault; assign to it to offer something else.
 	Items []RichToolItem
+
+	// Label names the strip for a screen reader. Empty uses "Formatting".
+	// Assign to it like Items: a screen with two editors wants two names, and
+	// an app in another language wants its own word.
+	Label string
 	// contains filtered or unexported fields
 }
 ```
@@ -3954,7 +3959,7 @@ Four hook slots, in a fixed order, so — like any hook user — it must be call
 	    return comps.RichTextEditor{Doc: note.Get(), OnChange: note.Set, Toolbar: bar}
 	}
 
-<small>[comps/rich_text_editor.go:156](https://github.com/rohanthewiz/grmob/blob/master/comps/rich_text_editor.go#L156)</small>
+<small>[comps/rich_text_editor.go:161](https://github.com/rohanthewiz/grmob/blob/master/comps/rich_text_editor.go#L161)</small>
 
 #### func (*RichToolbar) Selection
 
@@ -3964,7 +3969,7 @@ func (b *RichToolbar) Selection() core.RichSelection
 
 Selection is the last selection the editor reported, which is what the toolbar draws its pressed state from — and is worth reading directly for a status line, or to decide whether a "Link" action makes sense.
 
-<small>[comps/rich_text_editor.go:178](https://github.com/rohanthewiz/grmob/blob/master/comps/rich_text_editor.go#L178)</small>
+<small>[comps/rich_text_editor.go:183](https://github.com/rohanthewiz/grmob/blob/master/comps/rich_text_editor.go#L183)</small>
 
 ### type Screen
 

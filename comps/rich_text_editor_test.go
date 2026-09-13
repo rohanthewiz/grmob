@@ -87,6 +87,12 @@ func TestRichTextEditorToolbarCommandsReachTheEditor(t *testing.T) {
 		t.Fatalf("toolbar = %q with %d buttons, want a Row of %d",
 			strip.Type, len(strip.Children), len(RichToolbarDefault))
 	}
+	// The strip is a named toolbar: one tab stop on the web, arrows between
+	// the buttons, and "Formatting, toolbar" to a reader.
+	if strip.Style.AccessibilityRole != core.RoleToolbar || strip.Style.AccessibilityLabel != "Formatting" {
+		t.Errorf("strip role %q label %q, want a toolbar named Formatting",
+			strip.Style.AccessibilityRole, strip.Style.AccessibilityLabel)
+	}
 	editor := editorIn(t, n)
 	if _, ok := editor.Props["onSelectionChange"]; !ok {
 		t.Error("the toolbar's editor does not report its selection")
@@ -263,5 +269,21 @@ func TestRichTextEditorReadOnlyDisablesTheToolbar(t *testing.T) {
 		if button.Style == nil || !button.Style.Disabled {
 			t.Errorf("toolbar button %d is live on a read-only editor", i)
 		}
+	}
+}
+
+// RichToolbar.Label renames the strip, for a screen that has more than one
+// editor or a language other than English.
+func TestRichTextEditorToolbarLabelIsTheCallers(t *testing.T) {
+	ctx := core.NewContext()
+	view := core.ComponentFunc(func(c *core.Context) *core.Node {
+		bar := UseRichToolbar(c)
+		bar.Label = "Reply formatting"
+		return RichTextEditor{Doc: note, Toolbar: bar}.Render(c)
+	})
+	ctx.Reset()
+	strip := view.Render(ctx).Children[0]
+	if strip.Style.AccessibilityLabel != "Reply formatting" {
+		t.Errorf("label = %q, want the caller's", strip.Style.AccessibilityLabel)
 	}
 }

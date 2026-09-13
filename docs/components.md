@@ -2539,10 +2539,14 @@ is a core `Edit*` constant or one of the two builders, plus one sentinel:
 `comps.RichToolLink` opens the link prompt, because a URL has to be typed
 before there is a command to send.
 
-The strip carries no `core.RoleToolbar`, and that is deliberate: a widget in
-this package may not declare a keyboard composite's container role, because it
-would make a *nested* composite reachable by ordinary composition. Declare it on
-your own box if you want the landmark.
+The strip is a toolbar. It carries `core.RoleToolbar` and is named by
+`bar.Label`, which defaults to "Formatting", so a reader hears "Formatting,
+toolbar". In the browser it is one tab stop, and the arrow keys move between its
+buttons. The strip holds only buttons built from `RichToolItem` data, which is
+what lets a widget declare a keyboard container role without making nested
+composites reachable. Do not wrap the editor in a toolbar of your own: the strip
+already is one, and a toolbar inside a toolbar is a nested composite. A
+read-only editor disables every button, so its strip has no tab stop.
 
 ### The document
 

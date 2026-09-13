@@ -137,6 +137,11 @@ type RichToolbar struct {
 	// RichToolbarDefault; assign to it to offer something else.
 	Items []RichToolItem
 
+	// Label names the strip for a screen reader. Empty uses "Formatting".
+	// Assign to it like Items: a screen with two editors wants two names, and
+	// an app in another language wants its own word.
+	Label string
+
 	ref      *core.EditorRef
 	selected core.State[core.RichSelection]
 	linkOpen core.State[bool]
@@ -238,33 +243,40 @@ func (r RichTextEditor) editorProps(t *core.Theme) []core.PropsAndChildren {
 // reach it — so the row wraps onto as many lines as it needs, exactly as
 // ChipStrip does with a filter bar.
 //
-// # Why the strip carries no core.RoleToolbar
+// # The strip is a toolbar
 //
-// It would be the right role. RoleToolbar is one of core's keyboard
-// composites, and a widget that declares a composite container role can make a
-// *nested* composite reachable by ordinary composition, which is a finding
-// core.AuditTree exists to report. When this strip was written no widget in
-// the package declared one. The rule is now narrower: a closed widget, whose
-// members are all built from data and which holds no core.View, may declare
-// one (BottomBar and RadioGroup do). This strip is built from RichToolItem
-// data, so it qualifies; declaring the role here is a recorded follow-up
-// rather than part of the change that narrowed the rule.
-// TestOnlyClosedWidgetsDeclareACompositeContainerRole in this package is the
-// rule, with the argument written out.
+// It carries core.RoleToolbar and an accessible name (RichToolbar.Label,
+// "Formatting" by default), so a reader announces "Formatting, toolbar" and the
+// WASM runtime gives it the toolbar keyboard: one tab stop for the whole strip,
+// the arrow keys between its buttons, Home and End to the ends. Twelve buttons
+// used to be twelve tab stops between the text above and the note itself.
 //
-// A caller who wants the landmark declares it on their own box, which is what
-// makes the pairing deliberate:
+// For a while it carried no role, because a widget that declares a composite
+// container role can make a *nested* composite reachable by ordinary
+// composition. The rule that replaced that blanket refusal allows a closed
+// widget to declare one: every member built from data, and no core.View held.
+// This strip qualifies — its buttons come from RichToolItem, and neither
+// RichTextEditor nor RichToolbar holds a view — so nothing can be nested inside
+// it. TestOnlyClosedWidgetsDeclareACompositeContainerRole holds that.
 //
-//	core.Box(core.AccessibilityRole(core.RoleToolbar), editor)
+// The corollary for a caller: do not wrap the editor in a toolbar of your own.
+// The strip is already one, and a toolbar inside a toolbar is the nested
+// composite core.AuditTree reports.
+//
+// A read-only editor disables every button, and the browser will not focus a
+// disabled control, so its toolbar has no members and no tab stop at all —
+// which is right for a strip whose commands cannot run.
 func (r RichTextEditor) toolbar(ctx *core.Context, t *core.Theme) core.View {
 	bar := r.Toolbar
 	selection := bar.selected.Get()
 
-	items := make([]core.PropsAndChildren, 0, len(bar.Items)+4)
+	items := make([]core.PropsAndChildren, 0, len(bar.Items)+5)
 	items = append(items,
 		core.FlexWrap(true),
 		core.Gap(float64(t.Spacing.XS)),
 		core.AlignItemsProp(core.AlignItemsCenter),
+		core.AccessibilityRole(core.RoleToolbar),
+		core.AccessibilityLabel(orDefault(bar.Label, "Formatting")),
 	)
 	for _, item := range bar.Items {
 		items = append(items, r.toolButton(item, selection, t))

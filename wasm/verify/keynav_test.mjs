@@ -539,11 +539,12 @@ test("a nested composite keeps its own members", () => {
     // Two listboxes, one inside the other. Pooling both sets would let an
     // arrow key in the inner one walk out into the outer one's rows.
     //
-    // Reachable from real widgets: comps.RadioGroup (radiogroup) and
-    // comps.BottomBar (toolbar) declare their own container roles, so one
-    // placed inside a caller's hand-roled composite is a nested composite.
-    // Both are closed (no core.View slot), so two widgets cannot nest on
-    // their own; comps/nested_composite_test.go holds that premise.
+    // Reachable from real widgets: comps.RadioGroup (radiogroup),
+    // comps.BottomBar (toolbar) and comps.RichTextEditor's formatting strip
+    // (toolbar) declare their own container roles, so one placed inside a
+    // caller's hand-roled composite is a nested composite. All three are
+    // closed (no core.View slot), so two widgets cannot nest on their own;
+    // comps/nested_composite_test.go holds that premise.
     const lb = mountTree({
         Type: "Column",
         Style: { AccessibilityRole: "listbox" },

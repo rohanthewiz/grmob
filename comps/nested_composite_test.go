@@ -38,7 +38,7 @@ import (
 //
 // # What changed, and the answer now
 //
-// Two widgets declare a container role for themselves:
+// Three widgets declare a container role for themselves:
 //
 //	BottomBar    toolbar, when Selected < 0 (Tier A). It chose the role through
 //	             a variable, which the first version of this test did not see:
@@ -49,6 +49,10 @@ import (
 //	RadioGroup   radiogroup (Tier B; a listbox until core carried the radio
 //	             pair). The widget is the container; making every caller role
 //	             it by hand would be the recipe the widget exists to replace.
+//	RichTextEditor
+//	             toolbar, on its formatting strip. It carried no role while
+//	             the rule was "no widget declares one"; the strip's buttons are
+//	             built from RichToolItem data, so it met the closed rule.
 //
 // Both are CLOSED: every member is built by the widget from data (BarItem,
 // RadioOption), and no struct the widget declares holds a core.View. A closed
@@ -90,8 +94,9 @@ func TestOnlyClosedWidgetsDeclareACompositeContainerRole(t *testing.T) {
 
 	// The closed widgets allowed to declare a container role, by file.
 	closedComposites := map[string]string{
-		"bottom_bar.go":  "toolbar when Selected < 0; cells are built from BarItem data",
-		"radio_group.go": "radiogroup; rows are built from RadioOption data",
+		"bottom_bar.go":       "toolbar when Selected < 0; cells are built from BarItem data",
+		"radio_group.go":      "radiogroup; rows are built from RadioOption data",
+		"rich_text_editor.go": "toolbar; buttons are built from RichToolItem data",
 	}
 
 	files, err := filepath.Glob("*.go")
