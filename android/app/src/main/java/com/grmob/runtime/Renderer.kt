@@ -2251,11 +2251,51 @@ private fun GrMobModal(node: GrMobNode) {
                 .background(Color.White, RoundedCornerShape(12.dp))
                 .padding(16.dp)
         }
-        Column(
+        // Content taller than the window scrolls; content that fits lays out
+        // exactly as it did.
+        //
+        // The Dialog window is as tall as the screen allows and no taller, and
+        // this Column used to have no scroll: on a landscape phone a
+        // DatePicker's sheet was cut off after its third week with no way to
+        // reach the rest. The scroll sits inside the surface, so an unstyled
+        // dialog's white card stays put and its content moves within it.
+        //
+        // The one layout that needed care is a child that grows —
+        // comps.ActionSheet's filler, weighted so the card lands on the
+        // window's bottom edge. A scroll measures its content with an
+        // unbounded height, where a weight has nothing to divide. So when a
+        // child grows the content is given a minimum height of the viewport
+        // (read by BoxWithConstraints before the scroll unbounds it): a Column
+        // whose maximum is infinite divides its *minimum* among weights, so
+        // the filler still takes whatever the card leaves, and a card taller
+        // than the window leaves the filler nothing and scrolls.
+        //
+        //     children          content fits              content taller
+        //     --------          ------------              --------------
+        //     none grow         wraps, window centred     scrolls
+        //     one grows         fills window, as before   filler 0, scrolls
+        //
+        // The minimum is not applied when nothing grows: it would stretch
+        // every centred dialog to the full window height, and paint an
+        // unstyled one's white surface all the way down.
+        //
+        // heightIn after the scroll, not before: modifiers after
+        // verticalScrollWhenBounded constrain the scrolled content, which is
+        // what the weights read; before it they would size the viewport.
+        val grows = node.children.any { (it.style?.flexGrow ?: 0f) > 0f }
+        BoxWithConstraints(
             Modifier
                 .fillMaxWidth()
                 .padding(8.dp)
                 .then(surface)
-        ) { ColumnChildren(node) }
+        ) {
+            val viewport = if (constraints.hasBoundedHeight) maxHeight else null
+            Column(
+                Modifier
+                    .fillMaxWidth()
+                    .verticalScrollWhenBounded(rememberScrollState())
+                    .then(if (grows && viewport != null) Modifier.heightIn(min = viewport) else Modifier)
+            ) { ColumnChildren(node) }
+        }
     }
 }

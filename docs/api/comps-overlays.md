@@ -99,10 +99,15 @@ core.Modal has no placement prop, and the four hosts do not agree on where a Mod
 	web ×2    fixed inset-0 flex column, align and    centred
 	          justify center (htmlout modalChassis,
 	          styleFromGrMob)
-	Compose   Dialog window > Column(fillMaxWidth)    centred window;
-	          > ColumnChildren (FlexGrow → weight)    children weighted
+	Compose   Dialog window > Column(fillMaxWidth,    centred window;
+	          scroll when taller; min height = the    children weighted
+	          window while a child grows)
+	          > ColumnChildren (FlexGrow → weight)
 	SwiftUI   .sheet, detents medium/large >          already the bottom
-	          VStack > PlainChildren (grow ignored)   sheet, top of it
+	          ScrollView > VStack > PlainChildren     sheet, top of it
+	          (grow ignored)
+
+On every host, content taller than the space scrolls (the web overlay is overflow-y:auto with justify-content: safe center), so a long action list on a landscape phone is reachable rather than cut off.
 
 So the widget puts two children in the Modal instead of one:
 
@@ -148,7 +153,7 @@ Cancel calls OnDismiss, like a scrim tap. There is no Cancel.OnTap to fall back 
 	Cancel         Colors.PrimaryOnLight, outlined
 	Rule           Colors.Border, through Separator
 
-<small>[comps/action_sheet.go:106](https://github.com/rohanthewiz/grmob/blob/master/comps/action_sheet.go#L106)</small>
+<small>[comps/action_sheet.go:113](https://github.com/rohanthewiz/grmob/blob/master/comps/action_sheet.go#L113)</small>
 
 #### func (ActionSheet) Render
 
@@ -158,7 +163,7 @@ func (s ActionSheet) Render(ctx *core.Context) *core.Node
 
 Render builds Modal > (filler, Card) as drawn in the type doc.
 
-<small>[comps/action_sheet.go:168](https://github.com/rohanthewiz/grmob/blob/master/comps/action_sheet.go#L168)</small>
+<small>[comps/action_sheet.go:175](https://github.com/rohanthewiz/grmob/blob/master/comps/action_sheet.go#L175)</small>
 
 ### type Banner
 
@@ -722,7 +727,7 @@ type SheetAction struct {
 
 SheetAction is one row of an ActionSheet.
 
-<small>[comps/action_sheet.go:135](https://github.com/rohanthewiz/grmob/blob/master/comps/action_sheet.go#L135)</small>
+<small>[comps/action_sheet.go:142](https://github.com/rohanthewiz/grmob/blob/master/comps/action_sheet.go#L142)</small>
 
 ### type Skeleton
 

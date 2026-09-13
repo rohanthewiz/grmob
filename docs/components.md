@@ -1947,6 +1947,8 @@ Other notes:
   cap the width with `core.MaxWidth` or replace the label.
 - iOS presents a `core.Modal` as a sheet rather than a centred card. That is
   the host's rendering of the chassis, not something the widget chooses.
+- A `Body` taller than the screen scrolls inside the dialog on every target,
+  so a long form on a landscape phone is reachable rather than cut off.
 
 ## ActionSheet
 

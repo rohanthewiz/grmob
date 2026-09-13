@@ -152,7 +152,10 @@ test("a modal that carries a Style keeps the chassis it did not override", () =>
     assert.equal(at(0).style.position, "fixed");
     assert.equal(String(at(0).style.zIndex), "1000");
     assert.equal(at(0).style.alignItems, "center");
-    assert.equal(at(0).style.justifyContent, "center");
+    // safe center and overflow-y:auto together: content taller than the
+    // window scrolls from its top instead of being centred past both edges.
+    assert.equal(at(0).style.justifyContent, "safe center");
+    assert.equal(at(0).style.overflowY, "auto");
     assert.equal(at(0).style.display, "flex");
 });
 

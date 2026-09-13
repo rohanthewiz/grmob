@@ -5941,7 +5941,15 @@ const GrMob = (() => {
             // flex, not block: the overlay centres its content.
             out.flexDirection = out.flexDirection || "column";
             out.alignItems = out.alignItems || "center";
-            out.justifyContent = out.justifyContent || "center";
+            // "safe center" with overflow-y auto: content taller than the
+            // window scrolls instead of spilling past both edges. Plain
+            // "center" centres an overflowing column about the middle, so its
+            // top is above the fixed box's edge where no scroll can reach it;
+            // `safe` falls back to the start edge only while the content
+            // overflows, so a dialog that fits is centred exactly as before.
+            // The natives scroll the same overflow (GrMobModal on both).
+            out.justifyContent = out.justifyContent || "safe center";
+            out.overflowY = out.overflowY || "auto";
             out.zIndex = out.zIndex || "1000";
             // The one exemption this function makes to its own totality rule,
             // and it is deliberate: a Modal's `display` IS its open/closed

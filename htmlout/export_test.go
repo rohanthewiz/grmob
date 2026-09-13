@@ -1372,8 +1372,11 @@ func TestModalHonorsVisible(t *testing.T) {
 		t.Fatalf("the backdrop is the scrim; it must be emitted:\n%s", out)
 	}
 	// The chassis: a fixed inset-0 overlay above the app and below the toast
-	// layer, the same rules the WASM runtime assigns in createElement.
-	for _, want := range []string{"position:fixed", "z-index:1000", "justify-content:center"} {
+	// layer, the same rules the WASM runtime assigns in createElement. safe
+	// center and overflow-y:auto are the pair that lets content taller than
+	// the window scroll from its top instead of spilling past both edges.
+	for _, want := range []string{"position:fixed", "z-index:1000",
+		"justify-content:safe center", "overflow-y:auto"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("modal chassis missing %q:\n%s", want, out)
 		}

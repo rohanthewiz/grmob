@@ -2087,10 +2087,48 @@ private struct GrMobModal: View {
                 // its own so the app's surface is the dialog's edge on every
                 // target; unstyled content keeps the system surface.
                 let surface = node.children.compactMap { $0.style?.background }.first
-                VStack(alignment: .leading, spacing: 0) {
-                    PlainChildren(node: node)
+                // Content taller than the sheet scrolls; content that fits does
+                // not move.
+                //
+                // The sheet opens at the medium detent, about half the screen,
+                // and gives its content exactly that height. Without a scroll
+                // view the content was squeezed into it: GrMobFlexLayout floors
+                // a Row's children at their min-content width but a Column's
+                // at zero, so a DatePicker's six weeks were shrunk until each
+                // day cell's marker dots drew over its number, and on a
+                // landscape phone nothing could reach the rest. The other
+                // targets now scroll the same overflow (GrMobModal in
+                // Renderer.kt; the overlay's overflow-y on the web).
+                //
+                //     content height    before              now
+                //     --------------    ------              ---
+                //     fits the detent   top of the sheet    top of the sheet
+                //     taller            squeezed to fit     natural size, scrolls
+                //
+                // Content that fits was already at the top of the sheet (the
+                // placement comps.ActionSheet's type doc records), and a
+                // ScrollView puts it there too, so nothing short moves. The
+                // maxWidth frame keeps content narrower than the sheet centred
+                // across it, where the sheet used to centre it. bounce is
+                // basedOnSize so a short dialog does not rubber-band as though
+                // it scrolled.
+                //
+                // Always a ScrollView rather than one only when the content is
+                // too tall (ViewThatFits): switching containers changes the
+                // content's structural identity, which resets @State below it,
+                // and the switch would fire exactly when a keyboard rises and
+                // shortens the sheet — dropping a text field's focus mid-type.
+                //
+                // comps.ActionSheet's grow filler is unaffected: PlainChildren
+                // reads no grow, so it was zero-height here before and is now.
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 0) {
+                        PlainChildren(node: node)
+                    }
+                    .padding(16)
+                    .frame(maxWidth: .infinity)
                 }
-                .padding(16)
+                .scrollBounceBehavior(.basedOnSize)
                 .presentationDetents([.medium, .large])
                 .grMobPresentationSurface(surface)
             }

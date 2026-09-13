@@ -965,7 +965,7 @@ func modalChassis(props map[string]any) string {
 // visible prop) and background (the scrim, which comes from backdrop).
 //
 // A table rather than a string literal because the WASM runtime states the
-// same nine declarations, and two copies of one rule drift silently. Ordered
+// same ten declarations, and two copies of one rule drift silently. Ordered
 // pairs rather than a map so the declaration list this builds is stable, which
 // is what keeps the exporter's golden output from depending on map iteration.
 var modalChassisDecls = [][2]string{
@@ -976,7 +976,12 @@ var modalChassisDecls = [][2]string{
 	{"bottom", "0"},
 	{"flex-direction", "column"},
 	{"align-items", "center"},
-	{"justify-content", "center"},
+	// safe center plus overflow-y:auto: content taller than the window scrolls
+	// from its top instead of being centred past both edges of a fixed box,
+	// where the top half is unreachable. safe falls back to the start edge only
+	// while the content overflows, so a dialog that fits is centred as before.
+	{"justify-content", "safe center"},
+	{"overflow-y", "auto"},
 	// Under the toast layer's 2000, so a toast confirming a dialog's action is
 	// not drawn behind the dialog.
 	{"z-index", "1000"},

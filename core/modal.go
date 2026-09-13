@@ -11,6 +11,24 @@ type ModalNode struct {
 	Content   []View
 }
 
+// Modal draws its Content over the screen, above a scrim, while Visible is
+// true. It is controlled: OnDismiss reports a scrim tap or the platform's
+// dismiss gesture, and the modal closes only when Visible goes false.
+//
+// Each host presents it in its own idiom:
+//
+//	target    presentation                      content that fits
+//	───────   ───────────────────────────────   ───────────────────────
+//	web ×2    fixed overlay, flex column        centred in the window
+//	Compose   Dialog window                     centred window
+//	SwiftUI   sheet, medium and large detents   top of the sheet
+//
+// Content taller than the space it is given scrolls on every host, from its
+// top: the web overlay is overflow-y:auto with justify-content: safe center,
+// the Compose dialog and the SwiftUI sheet wrap their content in a vertical
+// scroll. Content that fits is laid out exactly as it would be without one. A
+// FlexGrow child still fills the Compose dialog's height when nothing
+// overflows (comps.ActionSheet's filler relies on it).
 func Modal(props ...ModalProp) View {
 	return ComponentFunc(func(ctx *Context) *Node {
 		node := &ModalNode{

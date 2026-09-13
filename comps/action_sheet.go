@@ -27,10 +27,17 @@ import "github.com/rohanthewiz/grmob/core"
 //	web ×2    fixed inset-0 flex column, align and    centred
 //	          justify center (htmlout modalChassis,
 //	          styleFromGrMob)
-//	Compose   Dialog window > Column(fillMaxWidth)    centred window;
-//	          > ColumnChildren (FlexGrow → weight)    children weighted
+//	Compose   Dialog window > Column(fillMaxWidth,    centred window;
+//	          scroll when taller; min height = the    children weighted
+//	          window while a child grows)
+//	          > ColumnChildren (FlexGrow → weight)
 //	SwiftUI   .sheet, detents medium/large >          already the bottom
-//	          VStack > PlainChildren (grow ignored)   sheet, top of it
+//	          ScrollView > VStack > PlainChildren     sheet, top of it
+//	          (grow ignored)
+//
+// On every host, content taller than the space scrolls (the web overlay is
+// overflow-y:auto with justify-content: safe center), so a long action list on
+// a landscape phone is reachable rather than cut off.
 //
 // So the widget puts two children in the Modal instead of one:
 //
