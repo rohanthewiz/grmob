@@ -5916,6 +5916,35 @@ const GrMob = (() => {
     //	claim still on screen   history: [ … page, runtime ]      pushState again
     //	claim left by other     history: [ … page ]               history.back(),
     //	means (an in-app ‹)                                        its popstate ignored
+    //	a hash typed or pasted  history: [ … page, runtime, typed ]
+    //	while a claim is shown           → popstate, no handler    fold: mark `typed`,
+    //	                        history: [ … page, runtime ]      history.back(), carry
+    //	                                 (+ typed, as Forward)     the typed URL down
+    //
+    // # A pushed entry is not a back press
+    //
+    // A popstate that lands off the runtime's entry used to mean one thing: the
+    // user pressed back. It can also mean the browser pushed a new entry above
+    // ours, which is what a hash typed or pasted into the address bar does (a
+    // same-document navigation fires popstate, then hashchange). Read as a back
+    // press, that ran the claim's handler, and the next sync pushed a second
+    // runtime entry above the typed one, so leaving the screen later took an
+    // extra press through a stale entry.
+    //
+    // So the landing is placed first. Entries above ours can only have been
+    // pushed after it became current, because pushState truncates Forward, so
+    // "above the runtime's entry" is the whole test. The Navigation API answers
+    // it exactly (currentEntry.index); without that API, a grown history.length
+    // stands in, which fails only at a browser's session-history cap (Chrome's
+    // 50), where a push stops growing the length and the old reading returns.
+    // An entry already folded carries FOLDED_STATE, so Forward onto it is
+    // recognised by either route.
+    //
+    // The fold reuses the unwind below. It steps back onto the runtime's entry
+    // and carries the typed URL down, so the entry left on top is ours and
+    // names what the address bar showed. The page's own hashchange for the typed
+    // URL still arrives and routes; the traversal's hashchange then reads the
+    // carried URL and changes nothing.
     //
     // # Why one entry rather than one per Push
     //
@@ -5946,6 +5975,11 @@ const GrMob = (() => {
     // outright opts out with window.GrMobBrowserBack = false.
     const BACK_STATE = "grmobBack";
 
+    // Marks an entry the runtime folded away (see "A pushed entry is not a back
+    // press"), so a Forward press that lands on it again is folded again rather
+    // than read as back.
+    const FOLDED_STATE = "grmobFolded";
+
     // Every element that has carried onBack, or a Modal onDismiss, since it
     // was created. A set of candidates rather than the claims themselves:
     // whether each one still claims is read from its dataset and its place in
@@ -5962,6 +5996,11 @@ const GrMob = (() => {
     // the entry the unwind lands on. See onBrowserBack.
     let backUnwindHref = "";
 
+    // Where the runtime's entry was the last time it was current: the
+    // Navigation API's index when there is one, and history.length always.
+    // null while the runtime has no entry on screen. See landedAboveRuntimeEntry.
+    let backEntryMark = null;
+
     function browserBackEnabled() {
         return window.GrMobBrowserBack !== false
             && typeof history !== "undefined"
@@ -5970,6 +6009,28 @@ const GrMob = (() => {
 
     function backEntryIsCurrent() {
         return !!(history.state && history.state[BACK_STATE]);
+    }
+
+    // The Navigation API's index of the current entry, or -1 without the API.
+    function navigationIndex() {
+        return typeof navigation !== "undefined" && navigation && navigation.currentEntry
+            ? navigation.currentEntry.index
+            : -1;
+    }
+
+    function markBackEntry() {
+        backEntryMark = { index: navigationIndex(), length: history.length };
+    }
+
+    // landedAboveRuntimeEntry reports whether a popstate that left the runtime's
+    // entry went up (a pushed entry, or Forward onto a folded one) rather than
+    // down (a back press). Only meaningful while a mark is held.
+    function landedAboveRuntimeEntry() {
+        if (!backEntryMark) return false;
+        if (history.state && history.state[FOLDED_STATE]) return true;
+        const index = navigationIndex();
+        if (index >= 0 && backEntryMark.index >= 0) return index > backEntryMark.index;
+        return history.length > backEntryMark.length;
     }
 
     // The callback ID el claims back with, or "" when it does not claim:
@@ -6050,7 +6111,13 @@ const GrMob = (() => {
         if (claimed && !current) {
             const state = Object.assign({}, history.state || {}, { [BACK_STATE]: true });
             history.pushState(state, "");
+            markBackEntry();
+        } else if (claimed && current) {
+            // Refreshed rather than kept from the push: a reload or a hot reload
+            // starts with the entry already current and no mark at all.
+            markBackEntry();
         } else if (!claimed && current) {
+            backEntryMark = null;
             // The claim ended some other way — an in-app back button popped
             // the frame. Take the entry back out, or the next back press would
             // consume it doing nothing and the user would need two to leave.
@@ -6080,6 +6147,15 @@ const GrMob = (() => {
             return;
         }
         if (!browserBackEnabled()) return;
+        // A new entry above ours, or Forward onto one folded earlier: nothing to
+        // run. Fold it; see "A pushed entry is not a back press".
+        if (!backEntryIsCurrent() && landedAboveRuntimeEntry()) {
+            history.replaceState(Object.assign({}, history.state || {}, { [FOLDED_STATE]: true }), "");
+            backUnwinding = true;
+            backUnwindHref = location.href;
+            history.back();
+            return;
+        }
         // Landing ON the runtime's entry is a Forward press, not a back: there
         // is nothing to run, only history to reconcile.
         if (!backEntryIsCurrent()) {
