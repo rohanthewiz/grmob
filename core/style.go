@@ -134,8 +134,11 @@ type Style struct {
 	// All four agree on the two things that would otherwise need a mapping
 	// table: degrees (not radians or turns), and positive meaning clockwise
 	// on screen. That agreement is why this is one float and not a Transform
-	// type — the moment translate and scale join it, the three platforms stop
-	// agreeing on composition order and the type has to say what it means.
+	// type — a single matrix field would have to say what order its parts
+	// compose in, and the three platforms do not agree on one. TranslateX/Y
+	// are separate fields for that reason, and every target applies them
+	// outside the rotation (CSS's individual-property order: translate, then
+	// rotate), so a turned box slides along the screen's axes, not its own.
 	//
 	// # Centre only
 	//
@@ -167,6 +170,13 @@ type Style struct {
 	// added to Rotate. Zero holds still. See core.Spin for what each renderer
 	// maps it onto and why it is a rotation rather than a general loop.
 	Spin int `json:",omitzero"`
+
+	// TranslateX and TranslateY shift the node's painted box, and its touch
+	// target with it, without moving anything around it. See core.Translate
+	// for the forms, the leading-relative direction rule and each renderer's
+	// mapping.
+	TranslateX string `json:",omitzero"`
+	TranslateY string `json:",omitzero"`
 
 	HoverStyle   *Style           `json:",omitzero"`
 	FocusStyle   *Style           `json:",omitzero"`
@@ -1058,6 +1068,15 @@ func (s Style) applyTo(target *Style) {
 	// style cannot merge a node back to still. The Spin(0) prop can.
 	if s.Spin != 0 {
 		target.Spin = s.Spin
+	}
+	// Translate merges per axis on "non-empty wins", so a role style can
+	// shift one axis and leave the other to the node. A node is put back
+	// with the Translate("", "") prop, not by a role style.
+	if s.TranslateX != "" {
+		target.TranslateX = s.TranslateX
+	}
+	if s.TranslateY != "" {
+		target.TranslateY = s.TranslateY
 	}
 
 	// Accessibility semantics.

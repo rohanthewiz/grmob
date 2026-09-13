@@ -29,6 +29,30 @@ const (
 // The canonical serialized form is "<ms>ms <easing>" (e.g. "250ms
 // ease-in-out"), which the native parsers read; they also tolerate the CSS
 // longhand ("all 0.3s ease") for styles written by hand.
+//
+// # Reduced motion
+//
+// When the platform's reduce-motion setting is on, a Transition snaps: the
+// change lands on the next frame, exactly as it would with no Transition
+// declared. The setting is read by each target rather than passed from Go,
+// so turning it on mid-session applies to the next change without a render.
+//
+//	CSS       ReducedMotionCSS: under prefers-reduced-motion: reduce, any
+//	          element whose inline style declares a transition gets
+//	          transition: none !important
+//	Compose   nothing to add: Android's "Remove animations" sets the
+//	          animator duration scale to 0, which Compose's frame clock
+//	          already reads (MotionDurationScale), and a tween under scale 0
+//	          plays straight to its end value
+//	SwiftUI   @Environment(\.accessibilityReduceMotion) swaps the node's
+//	          Animation for nil
+//
+// All properties snap, colour included, rather than only the ones that move
+// (size, placement, a translation). A colour fade is not the motion the
+// setting is about, and the web could keep it, but SwiftUI's Animation is
+// scoped to a value and not to a property, so keeping fades there means
+// splitting the box chain into per-property animations. One rule that every
+// target implements the same way beats a finer one that holds on two.
 func Transition(durationMs int, easing Easing) StyleProp {
 	return styleFunc(func(s *Style) {
 		if durationMs <= 0 {
@@ -49,6 +73,25 @@ func Transition(durationMs int, easing Easing) StyleProp {
 // runtime, because the two web targets must name and shape it identically for
 // an export and a live page to turn the same way.
 const SpinKeyframes = "@keyframes grmob-spin{from{rotate:0deg}to{rotate:360deg}}"
+
+// ReducedMotionCSS is the stylesheet rule both web targets pair with
+// Style.Transition: under the reduce-motion media query, every transition a
+// node declares inline is switched off. See Transition, "Reduced motion".
+//
+// A stylesheet rule rather than a check in the runtime, for three reasons.
+// The media query is live, so a reader who turns the setting on mid-session
+// is honoured on the next change without a render pass or a listener. It
+// works in an htmlout export, which has no script. And it is the only way to
+// reach an inline declaration from outside: `!important` in a sheet beats a
+// normal inline style.
+//
+// The selector matches on the inline style attribute rather than on `*`, so
+// the rule reaches only elements a grmob renderer gave a transition (a hosting
+// page's own transitions are the page's to manage). Both web targets write the
+// property inline as "transition", and an element with no transition has
+// nothing for the rule to switch off anyway, so the match is exact in the only
+// direction that matters.
+const ReducedMotionCSS = `@media (prefers-reduced-motion:reduce){[style*="transition"]{transition:none!important}}`
 
 // Spin turns the node one full revolution every periodMs milliseconds, round
 // and round, for as long as it is displayed. A negative period turns it
@@ -104,13 +147,38 @@ const SpinKeyframes = "@keyframes grmob-spin{from{rotate:0deg}to{rotate:360deg}}
 // and runs no CSS animation on the web, so a hidden spinning node draws no
 // frames either.
 //
-// # Reduced motion
+// # Reduced motion: it keeps turning
 //
-// No target reads the platform's reduce-motion setting today, for Transition
-// or for Spin. Android's "Remove animations" (animator duration scale 0) is not
-// consulted either, because the frame loop is not a scaled Compose animation
-// spec. core has no signal for the setting yet; that is recorded here rather
-// than faked on one target.
+// A spin is not stopped or slowed when the platform's reduce-motion setting is
+// on, on any target, while a Transition under the same setting snaps (see
+// Transition). The choice, and what it was weighed against:
+//
+//   - What a spin says. comps.Spinner is the one consumer, and its motion is
+//     the message: "still working". A ring frozen at an angle reads as a hung
+//     screen or as decoration, and nothing else on the widget says busy.
+//     WCAG 2.3.3 (Animation from Interactions) exempts motion that is
+//     essential to the information conveyed; an activity indicator is the
+//     textbook case of that.
+//   - What the setting is for. Reduce motion targets vestibular triggers:
+//     content sliding across the screen, zooms, parallax, large surfaces
+//     moving. A small glyph turning in place is none of those.
+//   - What the platforms do with their own spinner. UIActivityIndicatorView
+//     and SwiftUI's ProgressView keep spinning under Reduce Motion. The web
+//     has no built-in spinner, and Bootstrap's slows rather than stops.
+//     Android's indeterminate ProgressBar does freeze under "Remove
+//     animations", but that switch removes every animator in the system,
+//     including the ones apps rely on to show progress, and a frozen ring is
+//     the known cost of it rather than a design.
+//   - Why not slow it. A slower period is the web-library compromise, but the
+//     factor would be invented (twice? four times?), it would need a runtime
+//     read of the setting on Compose, where the loop is not a scaled
+//     animation, and a slow spin is still a spin to anyone it bothers.
+//
+// So the frame loops stay as they are: Compose's withInfiniteAnimationFrameMillis
+// does not read the animator duration scale, SwiftUI's TimelineView does not
+// read the environment, and ReducedMotionCSS touches `transition` only, never
+// `animation`. A caller for whom the motion is decoration rather than a status
+// should not use Spin for it.
 func Spin(periodMs int) StyleProp {
 	return styleFunc(func(s *Style) {
 		s.Spin = periodMs

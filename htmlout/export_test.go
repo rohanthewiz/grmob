@@ -1820,6 +1820,71 @@ func TestSpinExportsAnAnimationAndItsKeyframes(t *testing.T) {
 	}
 }
 
+// A Transition brings the reduced-motion rule, and only that rule: an inline
+// transition can be switched off from a sheet alone, so an export without it
+// would slide and resize for a reader who asked the system not to.
+func TestTransitionExportsTheReducedMotionRule(t *testing.T) {
+	out := ExportHTML(&core.Node{
+		Type:  "Box",
+		Props: map[string]any{},
+		Style: &core.Style{Transition: "250ms ease"},
+	})
+	if !strings.Contains(out, core.ReducedMotionCSS) {
+		t.Errorf("a transitioning export has no reduced-motion rule:\n%s", out)
+	}
+	if strings.Contains(out, core.SpinKeyframes) {
+		t.Errorf("nothing spins, yet the export carries the spin keyframes:\n%s", out)
+	}
+	// Inside the head, not before it: the builder writes tags as they are
+	// called, so a rule built ahead of Head() lands outside it.
+	head, rule := strings.Index(out, "<head>"), strings.Index(out, core.ReducedMotionCSS)
+	if head < 0 || rule < head || rule > strings.Index(out, "</head>") {
+		t.Errorf("the reduced-motion rule is not inside <head>:\n%s", out)
+	}
+}
+
+// Translate is the runtime's declaration, character for character, beside
+// Rotate's transform rather than in it, and only an x that moves brings the
+// direction rule. Zero and an unread unit write nothing, as on the natives.
+func TestTranslateExportsLeadingRelativeWithItsDirectionRule(t *testing.T) {
+	out := ExportHTML(&core.Node{
+		Type: "Column",
+		Children: []*core.Node{
+			{Type: "Box", Props: map[string]any{}, Style: &core.Style{TranslateX: "-100%", Rotate: 30}},
+			{Type: "Box", Props: map[string]any{}, Style: &core.Style{TranslateX: "0", TranslateY: "2em"}},
+		},
+	})
+	if !strings.Contains(out, "translate:calc(var(--grmob-inline, 1) * -100%) 0px") {
+		t.Errorf("no leading-relative translate on the first box:\n%s", out)
+	}
+	if !strings.Contains(out, "transform:rotate(30deg)") {
+		t.Errorf("Translate displaced Rotate's transform:\n%s", out)
+	}
+	if n := strings.Count(out, "translate:"); n != 1 {
+		t.Errorf("%d translate declarations, want 1 (zero and 2em write none):\n%s", n, out)
+	}
+	if !strings.Contains(out, core.TranslateDirectionCSS) {
+		t.Errorf("an x translate without the direction rule is physical, not leading:\n%s", out)
+	}
+
+	vertical := ExportHTML(&core.Node{Type: "Box", Props: map[string]any{}, Style: &core.Style{TranslateY: "8px"}})
+	if strings.Contains(vertical, core.TranslateDirectionCSS) {
+		t.Errorf("a y-only translate has no direction to flip, yet carries the rule:\n%s", vertical)
+	}
+}
+
+// A tree with no motion writes no head, so every such export is byte-for-byte
+// what it was before the motion rules existed.
+func TestStillExportWritesNoHead(t *testing.T) {
+	out := ExportHTML(&core.Node{
+		Type:     "Column",
+		Children: []*core.Node{{Type: "Box", Props: map[string]any{}, Style: &core.Style{Rotate: 10}}},
+	})
+	if strings.Contains(out, "<head") {
+		t.Errorf("a still export gained a head:\n%s", out)
+	}
+}
+
 // Anticlockwise is the same rule reversed, and an author's Animation rides in
 // the same list after the spin rather than in a second declaration that would
 // replace it.

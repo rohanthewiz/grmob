@@ -46,8 +46,9 @@ difference is structural rather than an oversight:
 
 | group | Android | iOS | WASM DOM | `htmlout` |
 |---|---|---|---|---|
-| typography, color, box model, borders, `Shadow`, `Gap`, `RowGap`/`ColumnGap`, `Justify`, `AlignItems`, `FlexWrap`, `StackAlign`, `Transition`, `Rotate`, `Spin`, accessibility, `Disabled` | yes | yes | yes | yes |
-| `Position` + `Top`/`Right`/`Bottom`/`Left`/`ZIndex`, `MinWidth`/`MinHeight`/`MaxHeight`, `Overflow`, `WhiteSpace`, `AlignSelf`, `FlexBasis`, `FlexDirection`, `Inert` | — | — | yes | yes |
+| typography, color, box model, borders, `Shadow`, `Gap`, `RowGap`/`ColumnGap`, `Justify`, `AlignItems`, `FlexWrap`, `StackAlign`, `Transition`, `Rotate`, `Spin`, `Translate`, accessibility, `Disabled` | yes | yes | yes | yes |
+| `Position` + `Top`/`Right`/`Bottom`/`Left`/`ZIndex`, `MinWidth`/`MinHeight`/`MaxHeight`, `WhiteSpace`, `AlignSelf`, `FlexBasis`, `FlexDirection`, `Inert` | — | — | yes | yes |
+| `Overflow` | `hidden` only | `hidden` only | yes | yes |
 | `FlexShrink` | `0` only | yes | yes | yes |
 | `MaxWidth` | px, % | px, % | yes | yes |
 | `HoverStyle`, `FocusStyle`, `PseudoStates` | — | — | — | — |
@@ -1559,6 +1560,39 @@ forwards and the second unwinds 340 the other way. Folding the value into
 which would unwind the whole rose every time the bearing passed north.
 `core.AngleDelta` is the arithmetic for accumulating an unwrapped angle.
 
+## Translate
+
+`Translate(x, y)` shifts a node's painted box, and its touch target, without
+moving anything around it. Paired with `Transition`, changing it slides the node;
+`comps.Drawer` brings its panel in this way.
+
+```go
+core.Box(core.Transition(250, core.EaseOut), core.Translate("-100%", ""))
+```
+
+Each axis takes `"Npx"`, a bare number (the same px), or `"N%"` of the node's own
+box on that axis. `""`, zero and any other unit leave the axis alone, on every
+target.
+
+| target | mapping |
+|---|---|
+| htmlout / WASM | the individual `translate` property, `calc(var(--grmob-inline, 1) * x) y` |
+| Compose | a layout modifier that places the box at `placeRelative(x, y)` |
+| SwiftUI | a `GeometryEffect` resolving percentages against the view's own size |
+
+**Leading, not left.** A positive x moves toward the trailing edge: right in a
+left-to-right layout, left in a right-to-left one, so a leading drawer hides at
+`"-100%"` in both. The natives mirror by themselves; CSS translate is physical, so
+the web multiplies x by `--grmob-inline`, which `core.TranslateDirectionCSS` sets to
+-1 under `dir="rtl"`.
+
+**Outside the rotations.** A node with `Rotate` or `Spin` as well slides along the
+screen's axes, which is CSS's fixed order (translate, then rotate).
+
+**Clip what leaves its parent.** A translated node overflows its parent like any
+paint. `Overflow("hidden")` on the parent clips it, and it is the one `Overflow`
+value both natives read.
+
 ## Transitions
 
 `Transition(durationMs, easing)` animates subsequent style changes on the
@@ -1572,6 +1606,20 @@ core.Button(label, onTap,
     core.BackgroundColor(bg), // animates when bg changes between renders
 )
 ```
+
+**Reduced motion snaps it.** With the platform's reduce-motion setting on, a
+transitioned change lands at once, on every target, and the setting is read
+live, so turning it on applies to the next change:
+
+| target | how |
+|---|---|
+| htmlout / WASM | `core.ReducedMotionCSS` in the document: `transition: none !important` on elements with an inline transition, under `prefers-reduced-motion: reduce` |
+| Compose | nothing added: "Remove animations" sets the animator duration scale to 0, and Compose's tweens already play straight to their end under it |
+| SwiftUI | `@Environment(\.accessibilityReduceMotion)` swaps the node's `Animation` for nil |
+
+Colour fades snap too. Only motion is the setting's concern, but SwiftUI scopes an
+animation to a value rather than a property, and one rule held by every target
+beats a finer one held by two.
 
 ## Spin
 
@@ -1600,5 +1648,8 @@ fixed angle and a spin together.
 **Hidden stops it.** A node with `Display` none is not composed on the natives
 and runs no CSS animation, so it draws no frames.
 
-**Reduced motion is not read.** No target consults the platform's reduce-motion
-setting, for `Transition` or for `Spin`.
+**Reduced motion: it keeps turning.** A spin is not stopped or slowed under the
+platform's reduce-motion setting. Its motion is the message ("still working"),
+an in-place turn of a small glyph is not the sliding or zooming the setting is
+for, and iOS's own activity indicator keeps spinning too. Use `Spin` for status,
+not for decoration. `Transition` is the opposite: see below.

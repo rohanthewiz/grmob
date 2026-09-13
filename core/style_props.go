@@ -173,6 +173,67 @@ func Rotate(deg float64) StyleProp {
 	})
 }
 
+// Translate shifts the node's painted box by x along the inline axis and y
+// down the block axis, without disturbing the layout around it. Its purpose is
+// motion: paired with core.Transition, changing it slides a node, which is how
+// comps.Drawer brings its panel in from the edge.
+//
+//	core.Box(core.Transition(250, core.EaseOut), core.Translate("-100%", ""))
+//
+// Each axis takes "Npx", a bare number (the same px), or "N%" of the node's
+// own box on that axis, so "-100%" moves a panel exactly its own width
+// whatever that width is. "" or any zero leaves the axis where it is; any
+// other form is ignored on all four targets alike.
+//
+// # Paint, not layout
+//
+// Like Rotate, the box keeps the size and place it laid out with and its
+// siblings never reflow; only the pixels, and the touch target with them,
+// move. A node translated out of its parent overflows it and is clipped by
+// the parent's Overflow("hidden"), which both natives read for exactly this.
+//
+//	CSS       translate: calc(var(--grmob-inline, 1) * x) y
+//	Compose   a layout modifier placing the box at placeRelative(x, y)
+//	SwiftUI   a GeometryEffect whose translation is resolved against the
+//	          view's own size
+//
+// All three hit-test the moved box where it is drawn. The CSS property is
+// the individual `translate`, not `transform`, so it composes with Rotate's
+// transform and Spin's `rotate` in CSS's fixed order: translate outermost.
+// The natives apply it outside both rotations for the same result.
+//
+// # Leading, not left
+//
+// A positive x moves toward the trailing edge: right in a left-to-right
+// layout, left in a right-to-left one. That is the natives' own rule
+// (Compose's placeRelative mirrors, and SwiftUI mirrors a GeometryEffect's
+// translation under RTL, measured with ImageRenderer), and it is what a
+// widget wants: a drawer on the leading edge hides at "-100%" in both
+// directions. CSS translate is physical, so both web targets multiply x by
+// --grmob-inline, a custom property TranslateDirectionCSS sets to -1 under
+// dir="rtl". Without the rule on the page the multiplier falls back to 1,
+// which is right for every left-to-right document. y has no such question.
+//
+// Zero on both axes writes no declaration on the web, so an untranslated node
+// never becomes a containing block for its fixed-position descendants, and a
+// transition to zero still animates, because CSS interpolates to none.
+func Translate(x, y string) StyleProp {
+	return styleFunc(func(s *Style) {
+		s.TranslateX = x
+		s.TranslateY = y
+	})
+}
+
+// TranslateDirectionCSS is the stylesheet rule both web targets pair with a
+// non-zero Style.TranslateX: it sets --grmob-inline to -1 under dir="rtl" and
+// back to 1 under dir="ltr", so the web's physical translate becomes
+// Translate's leading-relative one. Custom properties inherit, so matching the
+// dir attribute where it is written covers every element beneath it, and a
+// nested dir="ltr" inside an RTL page switches back. The attribute rather than
+// :dir(), which also reads only the attribute, because the plain selector is
+// supported everywhere and matches far fewer elements.
+const TranslateDirectionCSS = "[dir=rtl]{--grmob-inline:-1}[dir=ltr]{--grmob-inline:1}"
+
 func FontWeight(weight Weight) StyleProp {
 	return styleFunc(func(s *Style) {
 		s.FontWeight = weight

@@ -48,7 +48,7 @@ Package core's reference is split into 11 topic pages by source file. The index 
 | [Views & state](core-views.md) | View, Node, Context and state slots; conditionals, caching, error boundaries and debug-mode concerns. | 11 types, 58 functions and methods |
 | [Layout](core-layout.md) | Rows, columns, stacks, scrolls and lists, and the alignment vocabulary they are placed with. | 2 types, 25 functions and methods |
 | [Styling: the Style struct](core-style.md) | Style and the value types its fields take: alignment, flex, position, weights and edge insets. | 11 types, 10 functions and methods |
-| [Styling: style props](core-style-props.md) | The StyleProp constructors: spacing and per-side insets, flex, typography, colour, borders and animation. | 1 types, 66 functions and methods |
+| [Styling: style props](core-style-props.md) | The StyleProp constructors: spacing and per-side insets, flex, typography, colour, borders and animation. | 1 types, 67 functions and methods |
 | [Theming](core-theme.md) | Themes, palettes, typography and spacing scales, and per-component defaults. | 5 types, 11 functions and methods |
 | [Controls](core-controls.md) | Buttons, text inputs, switches, sliders, selects, images, tab views and text grids. | 9 types, 26 functions and methods |
 | [Editors](core-editors.md) | The code editor and the rich text editor, and the refs and commands that drive them. | 2 types, 15 functions and methods |
@@ -150,7 +150,7 @@ Package core's reference is split into 11 topic pages by source file. The index 
         - [`func UseStyle`](core-style.md#func-usestyle)
     - [`type Weight`](core-style.md#type-weight)
 - [Styling: style props](core-style-props.md)
-    - [Constants](core-style-props.md#constants) — `SpinKeyframes`
+    - [Constants](core-style-props.md#constants) — `ReducedMotionCSS`, `SpinKeyframes`, `TranslateDirectionCSS`
     - [`func AccessibilityControls`](core-style-props.md#func-accessibilitycontrols)
     - [`func AccessibilityCurrent`](core-style-props.md#func-accessibilitycurrent)
     - [`func AccessibilityExpanded`](core-style-props.md#func-accessibilityexpanded)
@@ -214,6 +214,7 @@ Package core's reference is split into 11 topic pages by source file. The index 
     - [`func Spin`](core-style-props.md#func-spin)
     - [`func TextColor`](core-style-props.md#func-textcolor)
     - [`func Transition`](core-style-props.md#func-transition)
+    - [`func Translate`](core-style-props.md#func-translate)
     - [`func WhiteSpace`](core-style-props.md#func-whitespace)
     - [`func Width`](core-style-props.md#func-width)
     - [`func ZIndex`](core-style-props.md#func-zindex)

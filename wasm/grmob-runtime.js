@@ -5483,19 +5483,50 @@ const GrMob = (() => {
     // Go constant, so the export and the live page cannot drift apart.
     const SPIN_KEYFRAMES = "@keyframes grmob-spin{from{rotate:0deg}to{rotate:360deg}}";
 
-    // ensureSpinKeyframes adds SPIN_KEYFRAMES to the document once, the first
-    // time any node spins. Lazily rather than at load, so a page that never
-    // spins carries no stylesheet it did not ask for; once rather than per
-    // node, because a keyframes rule is document-wide and a duplicate would
-    // only be a second copy of the same name. Never removed: a node that stops
-    // spinning clears its own `animation`, and the idle rule costs nothing.
-    let spinKeyframesAdded = false;
-    function ensureSpinKeyframes() {
-        if (spinKeyframesAdded) return;
+    // core.ReducedMotionCSS, restated: under prefers-reduced-motion, every
+    // transition a node declares inline is switched off, so a core.Transition
+    // snaps. A sheet rule rather than a matchMedia check here, because the
+    // media query stays live (turning the setting on applies to the next
+    // change, with no listener and no re-render), and because `!important` in
+    // a sheet is the only thing that beats an inline declaration. It touches
+    // `transition` only: core.Spin keeps turning, which core.Spin's doc argues.
+    // wasm/verify holds this string to the Go constant.
+    const REDUCED_MOTION_CSS = `@media (prefers-reduced-motion:reduce){[style*="transition"]{transition:none!important}}`;
+
+    // core.TranslateDirectionCSS, restated: --grmob-inline is -1 under
+    // dir="rtl" and 1 under dir="ltr", and a translate's x is multiplied by it,
+    // so core.Translate is leading-relative here as it is on both natives.
+    // Custom properties inherit, so the attribute's own element is the only
+    // one that has to match. wasm/verify holds this string to the Go constant.
+    const TRANSLATE_DIRECTION_CSS = "[dir=rtl]{--grmob-inline:-1}[dir=ltr]{--grmob-inline:1}";
+
+    // translateLength normalises one axis of core.Translate to a CSS length:
+    // "Npx" or a bare number to "Npx", "N%" to "N%", and zero or any other
+    // form to "", which is "this axis does not move". The natives parse the
+    // same three forms and treat the rest as zero, so the web must not pass an
+    // "em" through verbatim and move where the phones do not. htmlout's
+    // translateLength is the same function.
+    function translateLength(value) {
+        const m = /^\s*([+-]?(?:\d+\.?\d*|\.\d+)(?:e[+-]?\d+)?)\s*(px|%)?\s*$/i.exec(value || "");
+        if (!m || Number(m[1]) === 0) return "";
+        return `${Number(m[1])}${m[2] === "%" ? "%" : "px"}`;
+    }
+
+    // ensureRule adds one of the constant rules above to the document once,
+    // the first time any node needs it. Lazily rather than at load, so a page
+    // that never spins or transitions carries no stylesheet it did not ask
+    // for; once rather than per node, because these rules are document-wide
+    // and a duplicate would only be a second copy. Never removed: a node that
+    // stops moving clears its own declaration, and an idle rule costs nothing.
+    // One <style> per rule, so a page that only spins has exactly the sheet it
+    // had before the reduced-motion rule existed.
+    const rulesAdded = new Set();
+    function ensureRule(rule) {
+        if (rulesAdded.has(rule)) return;
         const sheet = document.createElement("style");
-        sheet.textContent = SPIN_KEYFRAMES;
+        sheet.textContent = rule;
         document.head.appendChild(sheet);
-        spinKeyframesAdded = true;
+        rulesAdded.add(rule);
     }
 
     // The Style -> CSS mapping. nodeType decides the default flex axis, the
@@ -5551,6 +5582,19 @@ const GrMob = (() => {
         // return. htmlout can omit the declaration instead because it builds a
         // fresh string per export and has no element to leave stale.
         out.transform = style.Rotate ? `rotate(${style.Rotate}deg)` : "";
+        // core.Translate, on the individual `translate` property so it composes
+        // with Rotate's transform and Spin's rotate (translate is applied
+        // outermost). Total like transform: a drawer that opens sends no
+        // TranslateX, and the declaration has to go, which is also what lets a
+        // transition interpolate the panel to `none`. Zero on both axes writes
+        // nothing, so an untranslated element is never made a containing block
+        // for its fixed-position descendants.
+        const tx = translateLength(style.TranslateX);
+        const ty = translateLength(style.TranslateY);
+        out.translate = (tx || ty)
+            ? `calc(var(--grmob-inline, 1) * ${tx || "0px"}) ${ty || "0px"}`
+            : "";
+        if (tx) ensureRule(TRANSLATE_DIRECTION_CSS);
         // A single elevation number on every target (Compose's
         // Modifier.shadow(elevation), SwiftUI's .shadow(radius:y:)) against a
         // CSS property that wants offsets, a blur and a color. The arithmetic
@@ -5736,6 +5780,7 @@ const GrMob = (() => {
         // the browser drives the frames, same declare-in-Go model as the
         // native renderers.
         out.transition = style.Transition ? `all ${style.Transition}` : "";
+        if (style.Transition) ensureRule(REDUCED_MOTION_CSS);
         // Style.Animation is a CSS animation shorthand ("bounce 2s infinite").
         // Emitted verbatim, and it is the one property here that depends on
         // something the runtime does not supply: a matching @keyframes rule,
@@ -5743,14 +5788,14 @@ const GrMob = (() => {
         // declaration is inert until it does. Neither native reads the field.
         //
         // core.Spin shares the property, as the first entry of the list, and
-        // unlike Animation it brings its own keyframes (ensureSpinKeyframes).
+        // unlike Animation it brings its own keyframes (ensureRule).
         // One comma-separated list rather than two declarations, because a
         // second `animation` assignment would replace the first. A negative
         // period is the same rule played in reverse, which is anticlockwise.
         const spin = style.Spin
             ? `grmob-spin ${Math.abs(style.Spin)}ms linear infinite${style.Spin < 0 ? " reverse" : ""}`
             : "";
-        if (spin) ensureSpinKeyframes();
+        if (spin) ensureRule(SPIN_KEYFRAMES);
         out.animation = [spin, style.Animation || ""].filter(Boolean).join(", ");
         // The remaining CSS-shaped fields of core.Style. Every one of them had
         // a StyleProp constructor in Go and no reader on any of the four

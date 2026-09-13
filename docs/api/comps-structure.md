@@ -428,7 +428,7 @@ Drawer is side navigation: a panel of destinations pinned to the leading edge ov
 	│ ┌ Box 100% × 100%   AccessibilityHidden while Open ────────┐ │ layer 1:
 	│ │ Content                                                  │ │ the screen
 	│ └──────────────────────────────────────────────────────────┘ │
-	│ ┌ Row 100% × 100%   Display none while shut ───────────────┐ │ layer 2:
+	│ ┌ Row 100% × 100%, clipped; inert + hidden while shut ─────┐ │ layer 2:
 	│ │ ┌ Column  Width 280px ──┐ ┌ Box FlexGrow(1) ───────────┐ │ │ drawn over
 	│ │ │ navigation, "Notebook"│ │ scrim: Backdrop fill,      │ │ │ layer 1
 	│ │ │ Notebook          [✕] │ │ tap = OnDismiss,           │ │ │
@@ -462,18 +462,25 @@ What the Modal chassis would have supplied is the cost, and the widget buys back
 
 The drawer covers the ZStack, not the window, and a ZStack is as big as its largest layer. Both layers ask for 100% of what the parent offers, so where the parent bounds the height (the app root, a Screen with Fill, a pinned Height) the drawer covers exactly that. In a scrolling column nothing bounds it: Compose's fill height is ignored under an unbounded constraint and the panel would sit centred at its own height. Pin a height through Style there, as the tutorial's demo does with core.Height.
 
-#### The panel is hidden when shut, not removed
+#### The panel is off-screen when shut, not removed
 
-The panel layer renders on every pass and takes Display none while shut, which both natives read as "do not compose" and the web as display:none. The tree is then the same shape open or shut, so opening is a style patch, and any hooks inside Body keep their slots: Body left out of a pass would shift every hook rendered after it, which is Accordion's rule. The content layer is always wrapped in its Box for the same reason. Toggling a prop is a patch; adding a wrapper around the screen would replace the screen.
+The panel layer renders on every pass and stays displayed while shut. The tree is then the same shape open or shut, so opening is a style patch, and any hooks inside Body keep their slots: Body left out of a pass would shift every hook rendered after it, which is Accordion's rule. The content layer is always wrapped in its Box for the same reason. Toggling a prop is a patch; adding a wrapper around the screen would replace the screen.
 
-#### It appears; it does not slide
+#### It slides
 
-A Material drawer slides in from the edge. This one is drawn at its place on the first frame it is shown, and core.Spin (the looping motion core gained for Spinner) does not change that, because a slide is neither a loop nor something core.Transition can express today. Two pieces are missing:
+The panel comes in from the leading edge and goes back out, and the scrim fades with it. Both are core.Transition on a style change, and a transition animates a change to a node that is displayed on both sides of it, so the shut panel is displayed and moved away rather than hidden with Display none (which both natives read as "not composed", and which CSS does not transition out of either):
 
-  - A translation. core.Style has Rotate and no offset or translate, so there is no animatable property whose change would carry the panel from off-screen to its place. Left/Right are positioning, read by the web targets only (see core.Style.Position).
-  - An entry. Transition animates a change on a node that is already displayed. A shut panel is Display none, which both natives read as "not composed", so opening creates the panel rather than changing it, and a created node has no previous value to animate from on any target (CSS does not transition out of display:none either). Keeping the panel composed off-screen instead would keep a hidden, focusable subtree in the tree on every target.
+  - The move is core.Translate("-100%", "") on the shut panel, and none on the open one. The percentage is of the panel's own width, so a percentage Width or a PanelStyle MaxWidth still hides it exactly, and Translate is leading-relative, so a right-to-left layout hides it off the right edge with no branch here.
+  - The layer clips (Overflow "hidden", which both natives read as a clip for this), so the shut panel does not draw over whatever sits beside the drawer's box: the page around the tutorial's pinned demo, say.
+  - Opening decelerates over 250ms (EaseOut) and closing accelerates over 200ms (EaseIn), the shape Material gives a panel that arrives and leaves. Every target times a change by the Transition of the style being moved to, so the shut style's own Transition times the close.
+  - Under the platform's reduce-motion setting both snap, which is core.Transition's rule; the drawer then appears and disappears as it used to.
 
-So a slide needs a translate style plus either an appear transition in core or a panel that stays displayed and off-screen while shut, with the accessibility and focus containment that would then require.
+What a displayed shut panel would otherwise cost, and what buys it back:
+
+  - Touch and pointer. The shut scrim has no fill and no tap handler, and the panel sits clipped away, so nothing on the layer takes a touch on the phones and taps reach the screen beneath. On the web the layer is Inert, which drops its pointer events, so clicks fall through too.
+  - Readers and Tab. The whole layer is AccessibilityHidden and Inert while shut, so no reader finds the panel and, on the web, Tab skips it.
+  - A hardware keyboard on the phones. The natives do not read Inert (see core.Style.Inert), so a shut panel's rows are composed and reachable by a keyboard's focus traversal on an iPad or a Chromebook, where a Display none panel was not composed at all. Disabled would stop that and is not used: it dims the ✕, a native Button, for the length of the slide out. Recorded rather than approximated, as Inert's own gap is.
+  - Composition. The panel's subtree is composed while shut. A handful of rows is cheap; a Body holding a long list would pay for it.
 
 #### Picking a destination closes the drawer
 
@@ -494,7 +501,7 @@ Open and focus are both the caller's, so Drawer takes no hook slot and is condit
 	Icon       Typography.Subtitle
 	Scrim      Backdrop, else core.Modal's default #00000088
 
-<small>[comps/drawer.go:159](https://github.com/rohanthewiz/grmob/blob/master/comps/drawer.go#L159)</small>
+<small>[comps/drawer.go:177](https://github.com/rohanthewiz/grmob/blob/master/comps/drawer.go#L177)</small>
 
 #### func (Drawer) Render
 
@@ -504,7 +511,7 @@ func (d Drawer) Render(ctx *core.Context) *core.Node
 
 Render builds ZStack(content layer, panel layer) as drawn in the type doc.
 
-<small>[comps/drawer.go:237](https://github.com/rohanthewiz/grmob/blob/master/comps/drawer.go#L237)</small>
+<small>[comps/drawer.go:265](https://github.com/rohanthewiz/grmob/blob/master/comps/drawer.go#L265)</small>
 
 ### type DrawerItem
 
@@ -527,7 +534,7 @@ type DrawerItem struct {
 
 DrawerItem is one destination in a Drawer.
 
-<small>[comps/drawer.go:216](https://github.com/rohanthewiz/grmob/blob/master/comps/drawer.go#L216)</small>
+<small>[comps/drawer.go:234](https://github.com/rohanthewiz/grmob/blob/master/comps/drawer.go#L234)</small>
 
 ### type Screen
 

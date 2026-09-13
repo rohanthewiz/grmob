@@ -138,7 +138,10 @@ func TestBothNativesParseAndApplySpin(t *testing.T) {
 
 	swift := codeIn(t, swiftStyle)
 	for _, want := range []string{
-		".modifier(GrMobSpin(periodMs: s?.spin ?? 0))",
+		// grMobBox applies Spin through GrMobMotion, which composes it with
+		// Translate as one chain layer (the compiler's opaque-type limit).
+		".modifier(GrMobMotion(spinMs: s?.spin ?? 0,",
+		".modifier(GrMobSpin(periodMs: spinMs))",
 		"TimelineView(.animation(minimumInterval: nil, paused: periodMs == 0))",
 		"content.rotationEffect(.degrees(angle(at: timeline.date)), anchor: .center)",
 	} {
@@ -146,12 +149,73 @@ func TestBothNativesParseAndApplySpin(t *testing.T) {
 			t.Errorf("%s: missing %q", swiftStyle, want)
 		}
 	}
-	spinAt = strings.Index(swift, ".modifier(GrMobSpin(")
+	spinAt = strings.Index(swift, ".modifier(GrMobMotion(")
 	shadowAt := strings.Index(swift, ".grMobShadow(s?.shadow ?? 0)")
 	marginAt := strings.Index(swift, ".padding((s?.margin ?? .zero).insets)")
 	if spinAt < 0 || spinAt < shadowAt || spinAt > marginAt {
-		t.Errorf("%s: GrMobSpin must sit between the painted box and the margin "+
+		t.Errorf("%s: GrMobMotion (Spin) must sit between the painted box and the margin "+
 			"in grMobBox (spin=%d shadow=%d margin=%d)",
 			swiftStyle, spinAt, shadowAt, marginAt)
+	}
+}
+
+// core.Translate and Overflow("hidden") on both natives. Drawer's slide rests
+// on all four halves: the two axes parsed, the offset applied outside the
+// rotations and inside the margin, and the clip that keeps a shut panel from
+// drawing beside the drawer. None of it runs under `go test ./...`.
+func TestBothNativesParseAndApplyTranslate(t *testing.T) {
+	for _, pin := range []struct{ file, key string }{
+		{swiftStyle, `GrMobShift.parse(str("TranslateX"))`},
+		{swiftStyle, `GrMobShift.parse(str("TranslateY"))`},
+		{swiftStyle, `str("Overflow")`},
+		{kotlinStyle, `GrMobShift.parse(obj.optString("TranslateX"))`},
+		{kotlinStyle, `GrMobShift.parse(obj.optString("TranslateY"))`},
+		{kotlinStyle, `optString("Overflow")`},
+	} {
+		if src := valuesIn(t, pin.file); !strings.Contains(src, pin.key) {
+			t.Errorf("%s: does not parse %s — core.Translate crosses the bridge "+
+				"and a drawer's panel never leaves or never clips on this target", pin.file, pin.key)
+		}
+	}
+
+	kotlin := codeIn(t, kotlinStyle)
+	for _, want := range []string{
+		"m = m.then(TranslateElement(translateX, translateY))",
+		// Mirrored under RTL: Translate is leading-relative.
+		"placeable.placeRelative(dx, dy)",
+		"m = m.clipToBounds()",
+	} {
+		if !strings.Contains(kotlin, want) {
+			t.Errorf("%s: missing %q", kotlinStyle, want)
+		}
+	}
+	translateAt := strings.Index(kotlin, "m = m.then(TranslateElement(")
+	rotateAt := strings.Index(kotlin, "if (rotate != 0f) m = m.rotate(rotate)")
+	if translateAt < 0 || rotateAt < 0 || translateAt > rotateAt {
+		t.Errorf("%s: the translation must come before the rotation in boxModifier "+
+			"(translate=%d rotate=%d), or a turned box slides along its own axes",
+			kotlinStyle, translateAt, rotateAt)
+	}
+	if renderer := codeIn(t, kotlinRenderer); !strings.Contains(renderer, "translateX = GrMobShift(tx.value, txf.value)") {
+		t.Errorf("%s: animatedStyle does not animate TranslateX, so a drawer "+
+			"jumps where the other targets slide", kotlinRenderer)
+	}
+
+	swift := codeIn(t, swiftStyle)
+	for _, want := range []string{
+		".modifier(GrMobTranslate(x: translateX, y: translateY))",
+		"struct GrMobTranslate: GeometryEffect",
+		// codeIn blanks string literals, so the "hidden" half is not matchable.
+		`clips: s?.overflow ==`,
+	} {
+		if !strings.Contains(swift, want) {
+			t.Errorf("%s: missing %q", swiftStyle, want)
+		}
+	}
+	spinAt := strings.Index(swift, ".modifier(GrMobSpin(periodMs: spinMs))")
+	translateAt = strings.Index(swift, ".modifier(GrMobTranslate(x: translateX, y: translateY))")
+	if spinAt < 0 || translateAt < spinAt {
+		t.Errorf("%s: GrMobMotion must apply Translate outside Spin "+
+			"(spin=%d translate=%d)", swiftStyle, spinAt, translateAt)
 	}
 }

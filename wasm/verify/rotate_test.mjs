@@ -75,6 +75,49 @@ test("a spinning node names grmob-spin and the document gains its keyframes once
         "@keyframes grmob-spin{from{rotate:0deg}to{rotate:360deg}}");
 });
 
+// core.Transition: the reduced-motion rule, once, in a sheet of its own so a
+// page that only spins keeps exactly the one sheet the test above counts.
+test("a transitioning node adds the reduced-motion rule once, beside the spin's", () => {
+    const { rt, at } = mount([
+        box({ Transition: "250ms ease" }),
+        box({ Transition: "100ms linear", Spin: 1000 }),
+    ]);
+    assert.equal(at(0).style.transition, "all 250ms ease");
+    const texts = rt.document.head.children.map((s) => s.textContent);
+    assert.equal(texts.length, 2, "one sheet per rule, however many nodes need it");
+    assert.ok(texts.includes(
+        `@media (prefers-reduced-motion:reduce){[style*="transition"]{transition:none!important}}`));
+    assert.ok(texts.includes("@keyframes grmob-spin{from{rotate:0deg}to{rotate:360deg}}"));
+});
+
+// core.Translate: the individual translate property, x through --grmob-inline,
+// the three forms the natives read and nothing for the rest, and the direction
+// rule only when x moves.
+test("a translated node gets a leading-relative translate and the direction rule", () => {
+    const { rt, at } = mount([
+        box({ TranslateX: "-100%", Rotate: 30 }),
+        box({ TranslateY: "12" }),
+        box({ TranslateX: "0px", TranslateY: "1em" }),
+    ]);
+    assert.equal(at(0).style.translate, "calc(var(--grmob-inline, 1) * -100%) 0px");
+    assert.equal(at(0).style.transform, "rotate(30deg)", "Translate displaced Rotate's transform");
+    assert.equal(at(1).style.translate, "calc(var(--grmob-inline, 1) * 0px) 12px");
+    assert.equal(at(2).style.translate, "", "zero and an unread unit must write nothing");
+    const texts = rt.document.head.children.map((s) => s.textContent);
+    assert.deepEqual(texts, ["[dir=rtl]{--grmob-inline:-1}[dir=ltr]{--grmob-inline:1}"]);
+});
+
+test("a panel that opens loses its translate on the live element", () => {
+    // Drawer's open style carries no TranslateX; a guarded write would leave
+    // the panel standing off-screen after the patch.
+    const { rt, at } = mount([box({ TranslateX: "-100%", Transition: "250ms ease-out" })]);
+    rt.GrMob.patch(JSON.stringify([
+        { Type: "update-style", TargetID: "root/0", Changes: { Transition: "250ms ease-out" } },
+    ]));
+    rt.drainFrames();
+    assert.equal(at(0).style.translate, "");
+});
+
 test("a still page adds no stylesheet", () => {
     const { rt } = mount([box({ Rotate: 10 })]);
     assert.equal(rt.document.head.children.length, 0);

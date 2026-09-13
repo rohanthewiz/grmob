@@ -36,10 +36,33 @@ func drawerParts(t *testing.T, n *core.Node) (content, layer, panel, scrim *core
 
 func TestDrawerShutHidesThePanelAndLeavesTheScreenReadable(t *testing.T) {
 	_, n := renderDebug(t, sampleDrawer(false, nil, func() {}))
-	content, layer, panel, _ := drawerParts(t, n)
+	content, layer, panel, scrim := drawerParts(t, n)
 
-	if layer.Style.Display != core.DisplayNone {
-		t.Errorf("a shut drawer's panel layer must be Display none, got %q", layer.Style.Display)
+	// Displayed, so the panel has somewhere to slide from, and out of reach
+	// every other way. See "It slides".
+	if layer.Style.Display == core.DisplayNone {
+		t.Error("a shut panel layer must stay displayed, or opening has nothing to animate from")
+	}
+	if !layer.Style.Inert || !layer.Style.AccessibilityHidden {
+		t.Errorf("a shut panel layer must be inert and hidden, got inert=%v hidden=%v",
+			layer.Style.Inert, layer.Style.AccessibilityHidden)
+	}
+	if layer.Style.Overflow != "hidden" {
+		t.Errorf("the panel layer must clip its translated panel, got Overflow %q", layer.Style.Overflow)
+	}
+	if panel.Style.TranslateX != "-100%" {
+		t.Errorf("a shut panel must sit its own width off the leading edge, got TranslateX %q", panel.Style.TranslateX)
+	}
+	// The phones do not read Inert, so a fill or a tap left on the shut scrim
+	// would dim the screen or swallow its touches.
+	if scrim.Style.Background != "" {
+		t.Errorf("a shut scrim must have no fill, got %q", scrim.Style.Background)
+	}
+	if _, ok := scrim.Props["onClick"]; ok {
+		t.Error("a shut scrim must not take taps meant for the screen beneath")
+	}
+	if _, ok := layer.Props["onBack"]; ok {
+		t.Error("a shut drawer must not claim system back")
 	}
 	if content.Style.AccessibilityHidden {
 		t.Error("a shut drawer must leave the screen in the accessibility tree")
@@ -61,10 +84,18 @@ func TestDrawerShutHidesThePanelAndLeavesTheScreenReadable(t *testing.T) {
 
 func TestDrawerOpenShowsThePanelAndHidesTheScreen(t *testing.T) {
 	_, n := renderDebug(t, sampleDrawer(true, nil, func() {}))
-	content, layer, _, scrim := drawerParts(t, n)
+	content, layer, panel, scrim := drawerParts(t, n)
 
 	if layer.Style.Display == core.DisplayNone {
 		t.Error("an open drawer must not hide its panel layer")
+	}
+	if layer.Style.Inert || layer.Style.AccessibilityHidden {
+		t.Errorf("an open panel layer must be reachable, got inert=%v hidden=%v",
+			layer.Style.Inert, layer.Style.AccessibilityHidden)
+	}
+	if panel.Style.TranslateX != "" || panel.Style.TranslateY != "" {
+		t.Errorf("an open panel must sit at its place, got Translate(%q, %q)",
+			panel.Style.TranslateX, panel.Style.TranslateY)
 	}
 	if !content.Style.AccessibilityHidden {
 		t.Error("an open drawer must hide the screen behind it from assistive technology")
@@ -75,6 +106,23 @@ func TestDrawerOpenShowsThePanelAndHidesTheScreen(t *testing.T) {
 	if !scrim.Style.AccessibilityHidden || scrim.Style.Background != drawerDefaultBackdrop {
 		t.Errorf("scrim hidden=%v fill=%q, want hidden with Modal's default backdrop",
 			scrim.Style.AccessibilityHidden, scrim.Style.Background)
+	}
+}
+
+// The panel and the scrim both carry a Transition in both states, the enter
+// curve open and the exit curve shut, because each target times a change by
+// the style it moves to. A state without one would snap in that direction.
+func TestDrawerSlidesInDeceleratingAndOutAccelerating(t *testing.T) {
+	for _, c := range []struct {
+		open bool
+		want string
+	}{{true, "250ms ease-out"}, {false, "200ms ease-in"}} {
+		_, n := renderDebug(t, sampleDrawer(c.open, nil, func() {}))
+		_, _, panel, scrim := drawerParts(t, n)
+		if panel.Style.Transition != c.want || scrim.Style.Transition != c.want {
+			t.Errorf("open=%v: panel %q, scrim %q; want both %q",
+				c.open, panel.Style.Transition, scrim.Style.Transition, c.want)
+		}
 	}
 }
 
@@ -181,7 +229,8 @@ func TestDrawerBodyReplacesTheRows(t *testing.T) {
 }
 
 func TestDrawerStylesReachTheirNodes(t *testing.T) {
-	d := sampleDrawer(false, nil, func() {})
+	// Open, because a shut scrim has no fill for Backdrop to set.
+	d := sampleDrawer(true, nil, func() {})
 	d.Style = []core.StyleProp{core.Height("360px")}
 	d.PanelStyle = []core.StyleProp{core.BackgroundColor("#123456")}
 	d.Width = "70%"
