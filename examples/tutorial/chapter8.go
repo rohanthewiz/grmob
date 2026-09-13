@@ -311,15 +311,18 @@ func TestMain(m *testing.M) { core.SetDebugMode(true); m.Run() }
 					"— the demo below proves that too: with the switch off, the same bad "+
 					"list records nothing at all."),
 				demoPanel("Flip the switch, render a bad list, and read the findings live.",
-					core.Row(
-						core.Gap(6),
-						core.AlignItemsProp(core.AlignItemsCenter),
-						core.Checkbox(core.IsDebugMode(), func(v bool) {
+					// CheckboxRow directly rather than checkRow: the value is core's
+					// process-wide flag, not a state slot, so the setter has to repaint
+					// as well. CheckboxRow drops a report of the value already drawn,
+					// so the web's two reports of one tap repaint once.
+					comps.CheckboxRow{
+						Title:   "Debug mode (core.SetDebugMode — process-wide)",
+						Checked: core.IsDebugMode(),
+						OnToggle: func(v bool) {
 							core.SetDebugMode(v)
 							repaint()
-						}),
-						caption("Debug mode (core.SetDebugMode — process-wide)"),
-					),
+						},
+					},
 					checkRow("Render two rows that share the key \"dup\"", provoke),
 					core.If(provoke.Get(), core.Column(
 						core.Gap(4),

@@ -187,10 +187,9 @@ var Claims = []Claim{{
 	File:    "tutorial-lesson.png",
 	Package: "examples/tutorial",
 	State: "lesson 1.1 opened from the contents screen and scrolled to " +
-		"the TRY IT panel, so the lesson's own title bar is above the " +
-		"top of the frame",
+		"its code block, so the lesson's title bar and opening sentence " +
+		"are above the top of the frame",
 	Shows: []string{
-		"A GrMob screen is not a template or a markup file",
 		"type View interface {",
 		"func Profile(ctx *core.Context) core.View {",
 		"Because views are values, composition is ordinary Go",

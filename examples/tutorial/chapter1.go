@@ -1,8 +1,6 @@
 package tutorial
 
 import (
-	"fmt"
-
 	"github.com/rohanthewiz/grmob/comps"
 	"github.com/rohanthewiz/grmob/core"
 )
@@ -68,8 +66,11 @@ func Profile(ctx *core.Context) core.View {
 					"include its subtree, don't call it to leave it out. Toggle the pieces below and "+
 					"watch the profile card recompose."),
 				demoPanel("Choose which sub-views Profile() composes. (The checkboxes use state — Chapter 2's topic.)",
-					core.Row(
-						core.Gap(14),
+					// A Column, not the Row these three once shared: each is now a
+					// full-width CheckboxRow, and three rows side by side do not fit a
+					// phone. Gap 0 because a ListRow carries the theme's row padding.
+					core.Column(
+						core.Gap(0),
 						checkRow("Header()", showHeader),
 						checkRow("Stats()", showStats),
 						checkRow("Bio text", showBio),
@@ -91,15 +92,22 @@ func Profile(ctx *core.Context) core.View {
 	}
 }
 
-// checkRow pairs a checkbox with its caption. Local to the chapter: the
-// widget library has FormField for the real thing; this is demo furniture.
+// checkRow is the demos' labelled checkbox: a comps.CheckboxRow bound to one
+// bool state.
+//
+// It was a hand-rolled Row of a core.Checkbox and a caption, where only the
+// box took a tap. CheckboxRow makes the whole row the target and names the
+// box after its title, which is what a toggle row on a phone is expected to
+// do, so every demo gets that from this one helper. The helper stays rather
+// than the struct being written out at each of its ~30 call sites: a demo's
+// point is the state it flips, and one line per toggle keeps that in view.
+//
+// OnToggle is s.Set, a setter, as CheckboxRow requires: on the web a tap on
+// the box reaches Go twice (the row's click, then the input's change), and a
+// setter turns the second report into a no-op where a flip would undo the
+// first.
 func checkRow(label string, s core.State[bool]) core.View {
-	return core.Row(
-		core.Gap(6),
-		core.AlignItemsProp(core.AlignItemsCenter),
-		core.Checkbox(s.Get(), func(v bool) { s.Set(v) }),
-		caption(label),
-	)
+	return comps.CheckboxRow{Title: label, Checked: s.Get(), OnToggle: s.Set}
 }
 
 func helloHeader() core.View {
@@ -179,14 +187,8 @@ core.Text("Read me", core.UseStyle(ctx.Theme().Typography.Title))`),
 						core.FontWeight(weight),
 						core.TextColor(inkFor[colorIdx.Get()]),
 					),
-					stepper("FontSize", fmt.Sprintf("%d", size.Get()), func(d int) {
-						size.Set(clamp(size.Get()+d*2, 12, 40))
-					}),
-					core.Row(
-						core.Gap(14),
-						core.AlignItemsProp(core.AlignItemsCenter),
-						checkRow("Bold", bold),
-					),
+					stepper("FontSize", size, 12, 40, 2),
+					checkRow("Bold", bold),
 					comps.SegmentedControl{
 						Style:     segWrap,
 						Labels:    inkRoles,
@@ -203,17 +205,6 @@ core.Text("Read me", core.UseStyle(ctx.Theme().Typography.Title))`),
 			)
 		},
 	}
-}
-
-// clamp keeps a stepped value inside the demo's sensible range.
-func clamp(v, lo, hi int) int {
-	if v < lo {
-		return lo
-	}
-	if v > hi {
-		return hi
-	}
-	return v
 }
 
 // --- 1.3 -----------------------------------------------------------------
@@ -259,9 +250,7 @@ core.Column(
 						OnSelect:  func(i int) { axis.Set(i) },
 						KeyPrefix: "axis-",
 					},
-					stepper("Gap", fmt.Sprintf("%d", gap.Get()), func(d int) {
-						gap.Set(clamp(gap.Get()+d*4, 0, 32))
-					}),
+					stepper("Gap", gap, 0, 32, 4),
 					core.IfElse(axis.Get() == 0,
 						core.Row(boxes...),
 						core.Column(boxes...),
@@ -410,9 +399,7 @@ comps.Screen{
 							core.Shadow(shadowElev),
 						)...),
 					),
-					stepper("BorderRadius", fmt.Sprintf("%d", radius.Get()), func(d int) {
-						radius.Set(clamp(radius.Get()+d*4, 0, 28))
-					}),
+					stepper("BorderRadius", radius, 0, 28, 4),
 					checkRow("Shadow", shadow),
 				),
 				keyPoints(
