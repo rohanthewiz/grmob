@@ -95,21 +95,41 @@ func OnLongPress(handler func()) BehaviorProp {
 // OnBack on nodes whose lifetimes nest the way their handlers should, which
 // the three above do.
 //
+// # Its own callback IDs
+//
+// The handler is an ordinary void callback on the wire, but its ID comes from
+// a sequence of its own ("back_cb_N" rather than "cb_N"). A second quick press
+// is dispatched with the ID from before the first press's patches landed, and
+// a shared sequence would have re-assigned that ID to a tap on the screen the
+// first press revealed. See callbackRegistry.registerBack.
+//
 // # Hosts
 //
 //	Android  RenderNode wraps the node in androidx's BackHandler. A node
 //	         hidden with Display none is not composed, so its handler is
 //	         inactive while hidden. A Modal needs none: the Dialog window
-//	         reports back through the Modal's own onDismiss.
+//	         reports back through the Modal's own onDismiss. The manifest
+//	         opts in to predictive back, which BackHandler supports.
 //	iOS      nothing. There is no system back; the edge swipe belongs to a
 //	         UINavigationController, which the SwiftUI renderer does not use.
-//	Web      nothing. The browser's back button moves the page's history,
-//	         which the page owns (examples/tutorial/deeplink.go's "route"
-//	         host event is that arrangement). The runtime skips the prop
-//	         rather than attach a listener for a "back" DOM event that does
-//	         not exist, and htmlout does not export it.
+//	Web      the browser's back button. While any node carrying the prop is
+//	         on screen, the runtime keeps one history entry of its own above
+//	         the page's; a back press consumes it and runs the innermost
+//	         handler (the last claimant in document order, which is the same
+//	         nesting Compose ranks by), and the entry is pushed again if a
+//	         claim is still on screen afterwards. An open Modal's onDismiss
+//	         counts as a claim, matching Android's Dialog. A page that owns
+//	         its history sets window.GrMobBrowserBack = false. htmlout does
+//	         not export the prop.
 func OnBack(handler func()) BehaviorProp {
-	return On("Back", handler)
+	return behaviorFunc(func(ctx *Context, n *Node) {
+		if n.Props == nil {
+			n.Props = map[string]any{}
+		}
+		// Same key On("Back", ...) would write, so the renderers read one
+		// spelling; only the registration differs.
+		n.Props["onBack"] = ctx.registerBackCallback(handler)
+	})
 }
 
 // OnFocus fires when the node becomes the input focus — a text field the user

@@ -3469,7 +3469,7 @@ func lessonDrawers() Lesson {
 					"Picking a row calls its OnTap, then OnDismiss; the ✕ and the scrim call OnDismiss.",
 					"While open, Content is hidden from assistive technology; CloseRef and Button.FocusRef move the keyboard focus.",
 					"The drawer covers its ZStack: pin a height when it sits in a scrolling column.",
-					"Android back closes an open drawer through core.OnBack; Tab is not contained on the web, since core has no inert.",
+					"Android back and browser back close an open drawer through core.OnBack; Tab is not contained on the web, since core has no inert.",
 				),
 			)
 		},

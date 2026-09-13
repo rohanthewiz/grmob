@@ -8,7 +8,7 @@ import (
 
 // core.OnBack, which is spelled in three places that never compile together:
 // core's prop, the Compose renderer that makes it a BackHandler, and the WASM
-// runtime that must decline to wire it.
+// runtime that makes it the browser's back button.
 //
 // # Why source text
 //
@@ -17,19 +17,25 @@ import (
 // or an open drawer — which is exactly what it did before the prop existed, so
 // nothing would look broken to anyone who had not seen it work. A web runtime
 // that lets the prop fall to its generic on* branch attaches a listener for a
-// "back" DOM event that never fires; no error, no dispatch.
+// "back" DOM event that never fires; no error, no dispatch, and the browser's
+// back button leaves the page from every screen.
 //
 // # What is pinned
 //
-//	core   the prop key, built by On("Back", ...), which is "onBack" on the wire
+//	core   the prop key, "onBack" on the wire, with its ID from registerBack
 //	kt     RenderNode, the funnel every node passes, reads it and hands it to
 //	       BackHandler — not a per-type arm, which would leave every other node
 //	       type unable to claim back
 //	js     both the create and the update path branch on it before the generic
-//	       on* branch
-func TestSystemBackIsWiredOnComposeAndDeclinedOnTheWeb(t *testing.T) {
-	if src := valuesIn(t, filepath.Join("..", "..", "core", "behavioral_props.go")); !strings.Contains(src, `On("Back", handler)`) {
-		t.Error(`core.OnBack no longer registers under On("Back") — the renderers read "onBack"`)
+//	       on* branch, and popstate is what runs it. The behavior itself is
+//	       wasm/verify/browserback_test.mjs's; this only keeps the wiring from
+//	       vanishing in a run that skips Node.
+func TestSystemBackIsWiredOnComposeAndTheWeb(t *testing.T) {
+	core := valuesIn(t, filepath.Join("..", "..", "core", "behavioral_props.go"))
+	for _, want := range []string{`n.Props["onBack"]`, "registerBackCallback(handler)"} {
+		if !strings.Contains(core, want) {
+			t.Errorf(`core.OnBack no longer writes %s — the renderers read "onBack", from the back_cb_ sequence`, want)
+		}
 	}
 
 	node := valuesOf(t, kotlinRenderer, "fun RenderNode(")
@@ -56,6 +62,11 @@ func TestSystemBackIsWiredOnComposeAndDeclinedOnTheWeb(t *testing.T) {
 		}
 		if g := strings.Index(js[i:], generic); g < 0 {
 			t.Errorf("wasm runtime: %s is not followed by the generic %s branch it must precede", branch, generic)
+		}
+	}
+	for _, want := range []string{`window.addEventListener("popstate", onBrowserBack)`, "backClaimants.add(el)"} {
+		if !strings.Contains(js, want) {
+			t.Errorf("wasm runtime: no %s — browser back is not wired to onBack", want)
 		}
 	}
 }

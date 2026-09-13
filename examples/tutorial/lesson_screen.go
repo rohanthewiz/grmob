@@ -19,17 +19,28 @@ import (
 func (t *tutorial) lessonRoute(index int) func(*core.Context) core.View {
 	e := flatLessons[index]
 	return func(ctx *core.Context) core.View {
-		return comps.Screen{
-			Scroll: true,
-			Gap:    16,
-			Children: []core.View{
-				t.lessonTopBar(ctx, e),
-				lessonHeader(e),
-				e.Body(ctx),
-				comps.Separator{},
-				t.lessonNav(ctx, e),
-			},
-		}
+		return core.ComponentFunc(func(*core.Context) *core.Node {
+			n := comps.Screen{
+				Scroll: true,
+				Gap:    16,
+				Children: []core.View{
+					t.lessonTopBar(ctx, e),
+					lessonHeader(e),
+					e.Body(ctx),
+					comps.Separator{},
+					t.lessonNav(ctx, e),
+				},
+			}.Render(ctx)
+			// System back (Android) and browser back (web) take the same door
+			// as ‹ Contents. Navigator's own pop would leave the stack right
+			// but t.current naming the lesson and the address bar still on
+			// its hash, so a link back to the same lesson would be ignored as
+			// the one already on screen. A claim on the route's root node
+			// replaces Navigator's (see core.withSystemBackPop), and Screen
+			// builds a fresh node every pass, so writing into it is safe.
+			core.OnBack(func() { t.toContents(ctx) }).Apply(ctx, n)
+			return n
+		})
 	}
 }
 

@@ -674,3 +674,65 @@ func TestNavigatorDoesNotWriteBackIntoACachedNode(t *testing.T) {
 		t.Error("Navigator wrote onBack into the shared Cached node")
 	}
 }
+
+// backPass is one render pass the way render.Manager drives it: counters
+// restart, the tree renders, and handlers the pass did not re-register are
+// purged. The stale-ID tests need all three, because the collision they guard
+// against is a counter restart handing an old ID to a new handler.
+func backPass(ctx *Context, app View) *Node {
+	ctx.BeginRenderPass()
+	n := Render(ctx, app)
+	ctx.PurgeUnusedCallbacks()
+	return n
+}
+
+// Two quick presses: the second is dispatched with the first press's onBack
+// ID, because the host has not applied the patches that removed it. The root
+// screen registers a tap at the position the pushed frame's back handler held
+// in the shared void sequence (cb_0 in both passes), so without a namespace
+// of its own the stale press would run that tap.
+func TestAStaleBackIDCannotRunTheRevealedScreensTap(t *testing.T) {
+	ctx := NewContext()
+	tapped := 0
+	app := Navigator(func(*Context) View {
+		return Column(OnClick(func() { tapped++ }), Text("home"))
+	})
+	backPass(ctx, app)
+	Push(ctx, func(*Context) View { return Column(Text("detail")) })
+
+	stale, _ := backPass(ctx, app).Props["onBack"].(string)
+	if !strings.HasPrefix(stale, "back_cb_") {
+		t.Fatalf("onBack ID = %q, want one from the back_cb_ sequence", stale)
+	}
+
+	ctx.TriggerCallback(stale) // press 1: pops
+	home := backPass(ctx, app)
+	ctx.TriggerCallback(stale) // press 2: the ID the host still holds
+
+	if tapped != 0 {
+		t.Errorf("the stale back ID ran the home screen's tap (%q) %d time(s)", home.Props["onClick"], tapped)
+	}
+	if d := StackDepth(ctx); d != 1 {
+		t.Errorf("stack depth = %d, want 1", d)
+	}
+}
+
+// The case the namespace leaves in place, and why that is fine: on a deeper
+// stack the stale ID resolves to the next frame's back handler, so two quick
+// presses pop twice, which is what two presses mean.
+func TestTwoQuickBacksOnADeepStackPopTwice(t *testing.T) {
+	ctx := NewContext()
+	app := Navigator(counterRoute("home"))
+	backPass(ctx, app)
+	Push(ctx, counterRoute("a"))
+	Push(ctx, counterRoute("b"))
+
+	stale := backPass(ctx, app).Props["onBack"].(string)
+	ctx.TriggerCallback(stale)
+	backPass(ctx, app)
+	ctx.TriggerCallback(stale)
+
+	if d := StackDepth(ctx); d != 1 {
+		t.Errorf("stack depth = %d, want 1 after two back presses", d)
+	}
+}

@@ -248,7 +248,10 @@
 
     const showRoute = (lesson) => {
         const url = location.pathname + location.search + (lesson ? "#" + lesson : "");
-        if (location.hash !== (lesson ? "#" + lesson : "")) history.replaceState(null, "", url);
+        // history.state, not null: while a lesson is open the current entry
+        // is the runtime's browser-back entry, which it recognises by its
+        // state (see the browser-back section of grmob-runtime.js).
+        if (location.hash !== (lesson ? "#" + lesson : "")) history.replaceState(history.state, "", url);
         copy.hidden = !lesson;
         copy.textContent = "🔗 Copy link";
         copy.classList.remove("done");

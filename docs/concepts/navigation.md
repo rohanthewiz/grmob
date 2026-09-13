@@ -159,8 +159,33 @@ func EditScreen(ctx *core.Context) core.View {
 }
 ```
 
-iOS has no system back, and a browser's back button moves the page's history,
-so neither host reads the prop.
+### Browser back
+
+On the web the same claims answer the browser's back button, so the table above
+holds there too (a Modal counts while open). The runtime keeps one history
+entry of its own while any claim is on screen. A back press consumes it and runs
+the innermost claim, which is the last one in document order. If a claim is
+still on screen afterwards, the entry is pushed again. When a claim ends some
+other way, such as an in-app ‹ button, the runtime takes its entry back out, so
+the next press leaves the page instead of doing nothing.
+
+It is one entry, not one per `Push`: Forward cannot replay a frame whose state
+`Pop` already discarded.
+
+A host page that rewrites its URL has to keep the entry's state, with
+`history.replaceState(history.state, "", url)`. A page that owns its history
+outright sets `window.GrMobBrowserBack = false` before mounting. See
+[WASM — Browser back](../platforms/wasm.md#browser-back).
+
+### Two quick presses
+
+The second press of a quick double back is dispatched with the ID the host
+still holds, from before the first press's patches landed. `core.OnBack`'s IDs
+come from their own sequence (`back_cb_N`), so that ID can only resolve to
+another back handler or to nothing. It cannot run a tap on the screen the first
+press revealed. On a three-deep stack two quick presses pop twice.
+
+iOS has no system back, so its renderer does not read the prop.
 
 ## Where the Navigator sits
 

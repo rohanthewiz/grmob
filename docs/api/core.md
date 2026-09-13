@@ -2332,21 +2332,30 @@ Compose's BackHandler gives priority to the handler registered most recently. Ha
 
 The one ordering this gets wrong is a parent that gains the prop after its descendants already hold one: it registers last and outranks them. Keep OnBack on nodes whose lifetimes nest the way their handlers should, which the three above do.
 
+##### Its own callback IDs
+
+The handler is an ordinary void callback on the wire, but its ID comes from a sequence of its own ("back\_cb\_N" rather than "cb\_N"). A second quick press is dispatched with the ID from before the first press's patches landed, and a shared sequence would have re-assigned that ID to a tap on the screen the first press revealed. See callbackRegistry.registerBack.
+
 ##### Hosts
 
 	Android  RenderNode wraps the node in androidx's BackHandler. A node
 	         hidden with Display none is not composed, so its handler is
 	         inactive while hidden. A Modal needs none: the Dialog window
-	         reports back through the Modal's own onDismiss.
+	         reports back through the Modal's own onDismiss. The manifest
+	         opts in to predictive back, which BackHandler supports.
 	iOS      nothing. There is no system back; the edge swipe belongs to a
 	         UINavigationController, which the SwiftUI renderer does not use.
-	Web      nothing. The browser's back button moves the page's history,
-	         which the page owns (examples/tutorial/deeplink.go's "route"
-	         host event is that arrangement). The runtime skips the prop
-	         rather than attach a listener for a "back" DOM event that does
-	         not exist, and htmlout does not export it.
+	Web      the browser's back button. While any node carrying the prop is
+	         on screen, the runtime keeps one history entry of its own above
+	         the page's; a back press consumes it and runs the innermost
+	         handler (the last claimant in document order, which is the same
+	         nesting Compose ranks by), and the entry is pushed again if a
+	         claim is still on screen afterwards. An open Modal's onDismiss
+	         counts as a claim, matching Android's Dialog. A page that owns
+	         its history sets window.GrMobBrowserBack = false. htmlout does
+	         not export the prop.
 
-<small>[core/behavioral_props.go:111](https://github.com/rohanthewiz/grmob/blob/master/core/behavioral_props.go#L111)</small>
+<small>[core/behavioral_props.go:124](https://github.com/rohanthewiz/grmob/blob/master/core/behavioral_props.go#L124)</small>
 
 #### func OnBlur
 
@@ -2356,7 +2365,7 @@ func OnBlur(handler func()) BehaviorProp
 
 OnBlur fires when the node loses input focus. See OnFocus for the pairing and the ordering caveat.
 
-<small>[core/behavioral_props.go:146](https://github.com/rohanthewiz/grmob/blob/master/core/behavioral_props.go#L146)</small>
+<small>[core/behavioral_props.go:166](https://github.com/rohanthewiz/grmob/blob/master/core/behavioral_props.go#L166)</small>
 
 #### func OnClick
 
@@ -2422,7 +2431,7 @@ Focus is a leaf concern in practice: the renderers wire these on the text input 
 
 Ordering note: the framework guarantees the edges are dispatched in the order they happened, but \*not\* that a blur on the field being left arrives before the focus on the field being entered — that ordering is the platform's, and Android and iOS do not agree on it. Handlers must therefore be independent: read the field the callback belongs to, never "the field that is focused now".
 
-<small>[core/behavioral_props.go:140](https://github.com/rohanthewiz/grmob/blob/master/core/behavioral_props.go#L140)</small>
+<small>[core/behavioral_props.go:160](https://github.com/rohanthewiz/grmob/blob/master/core/behavioral_props.go#L160)</small>
 
 #### func OnLongPress
 
@@ -3273,7 +3282,7 @@ func (ctx *Context) BeginRenderPass()
 
 BeginRenderPass starts a callback ID pass for this context tree; see callbackRegistry.beginPass for the stability contract.
 
-<small>[core/event.go:267](https://github.com/rohanthewiz/grmob/blob/master/core/event.go#L267)</small>
+<small>[core/event.go:316](https://github.com/rohanthewiz/grmob/blob/master/core/event.go#L316)</small>
 
 #### func (*Context) ClearDirty
 
@@ -3382,7 +3391,7 @@ PurgeUnusedCallbacks drops handlers not re-registered in the current pass; see c
 
 OnEndReached's debounce ledger is trimmed in the same breath and against the registry's own survivors, so the two can never disagree about which lists are still on screen — a guard outliving its handler would silently suppress the first page fetch of whatever list next inherits the ID.
 
-<small>[core/event.go:278](https://github.com/rohanthewiz/grmob/blob/master/core/event.go#L278)</small>
+<small>[core/event.go:327](https://github.com/rohanthewiz/grmob/blob/master/core/event.go#L327)</small>
 
 #### func (*Context) ReceiveEventPayload
 
@@ -3392,7 +3401,7 @@ func (ctx *Context) ReceiveEventPayload(payload map[string]any)
 
 ReceiveEventPayload dispatches a loosely typed event envelope ({"callback": id, "value": ...}) by sniffing the value's type — the shape the WASM host sends. Typed hosts should call the Trigger\* methods directly.
 
-<small>[core/event.go:316](https://github.com/rohanthewiz/grmob/blob/master/core/event.go#L316)</small>
+<small>[core/event.go:365](https://github.com/rohanthewiz/grmob/blob/master/core/event.go#L365)</small>
 
 #### func (*Context) RequestRender
 
@@ -3446,7 +3455,7 @@ func (ctx *Context) TriggerBoolCallback(id string, val bool)
 
 TriggerBoolCallback dispatches a bool-carrying event (e.g. a toggle).
 
-<small>[core/event.go:300](https://github.com/rohanthewiz/grmob/blob/master/core/event.go#L300)</small>
+<small>[core/event.go:349](https://github.com/rohanthewiz/grmob/blob/master/core/event.go#L349)</small>
 
 #### func (*Context) TriggerCallback
 
@@ -3456,7 +3465,7 @@ func (ctx *Context) TriggerCallback(id string)
 
 TriggerCallback dispatches a void event (e.g. a button tap) by callback ID. Unknown IDs are silent no-ops: a late native event racing a purge is expected traffic, not an error.
 
-<small>[core/event.go:286](https://github.com/rohanthewiz/grmob/blob/master/core/event.go#L286)</small>
+<small>[core/event.go:335](https://github.com/rohanthewiz/grmob/blob/master/core/event.go#L335)</small>
 
 #### func (*Context) TriggerIntCallback
 
@@ -3466,7 +3475,7 @@ func (ctx *Context) TriggerIntCallback(id string, val int)
 
 TriggerIntCallback dispatches an int-carrying event (e.g. tab selection).
 
-<small>[core/event.go:307](https://github.com/rohanthewiz/grmob/blob/master/core/event.go#L307)</small>
+<small>[core/event.go:356](https://github.com/rohanthewiz/grmob/blob/master/core/event.go#L356)</small>
 
 #### func (*Context) TriggerTextCallback
 
@@ -3476,7 +3485,7 @@ func (ctx *Context) TriggerTextCallback(id string, val string)
 
 TriggerTextCallback dispatches a string-carrying event (e.g. input change).
 
-<small>[core/event.go:293](https://github.com/rohanthewiz/grmob/blob/master/core/event.go#L293)</small>
+<small>[core/event.go:342](https://github.com/rohanthewiz/grmob/blob/master/core/event.go#L342)</small>
 
 #### func (*Context) With
 

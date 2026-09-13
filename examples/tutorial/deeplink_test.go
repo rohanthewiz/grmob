@@ -311,3 +311,52 @@ func TestLessonFromURLClaimsOnlyItsOwnShape(t *testing.T) {
 		}
 	}
 }
+
+// --- System back: the ‹ Contents door, not a bare pop ----------------------
+
+// outermostOnBack is the first onBack in preorder, which is the claim on the
+// route's root node: the lesson's own, since it replaces Navigator's.
+func outermostOnBack(n *node) string {
+	if n == nil {
+		return ""
+	}
+	if id, ok := n.Props["onBack"].(string); ok {
+		return id
+	}
+	for _, c := range n.Children {
+		if id := outermostOnBack(c); id != "" {
+			return id
+		}
+	}
+	return ""
+}
+
+// Back (Android's button, or the browser's through the runtime) on a lesson
+// must do what ‹ Contents does. Navigator's plain pop would leave t.current
+// on the lesson, so the address bar kept its hash and a link to the same
+// lesson was ignored as the one already on screen.
+func TestSystemBackOnALessonTakesTheContentsDoor(t *testing.T) {
+	routes := recordRoutes(t)
+	mgr, ctx := newAppWithContext(t)
+	first := flatLessons[0]
+
+	openLesson(t, mgr, first.Title)
+	id := outermostOnBack(tree(t, mgr))
+	if id == "" {
+		t.Fatal("a lesson screen should claim back")
+	}
+	mgr.DispatchCallback(id)
+
+	if d := core.StackDepth(ctx); d != 1 {
+		t.Fatalf("back on a lesson should return to the contents, depth %d", d)
+	}
+	if n := len(*routes); n != 2 || (*routes)[1] != "" {
+		t.Fatalf("back should report the contents route, got %v", *routes)
+	}
+	route(first.ID)
+	tree(t, mgr)
+	if d := core.StackDepth(ctx); d != 2 {
+		t.Fatalf("a link to the lesson just left should open it again, depth %d", d)
+	}
+	assertNoConcerns(t)
+}

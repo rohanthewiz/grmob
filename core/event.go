@@ -31,6 +31,12 @@ type callbackRegistry struct {
 	boolCounter int
 	intCounter  int
 
+	// backCounter numbers core.OnBack's handlers ("back_cb_N"). They are void
+	// callbacks and live in voidCBs, so every host dispatches them through the
+	// ordinary void path, but they take IDs from a sequence of their own. See
+	// registerBack for why.
+	backCounter int
+
 	// used marks IDs touched (registered or triggered) since the last
 	// beginPass; purge drops everything unmarked, so handlers for nodes that
 	// vanished from the tree cannot fire from a stale native event.
@@ -79,6 +85,7 @@ func (r *callbackRegistry) beginPass() {
 	r.textCounter = 0
 	r.boolCounter = 0
 	r.intCounter = 0
+	r.backCounter = 0
 	// Fresh liveness marks for this pass: only callbacks re-registered below
 	// survive the post-render purge.
 	r.used = make(map[string]bool)
@@ -91,6 +98,44 @@ func (r *callbackRegistry) registerVoid(fn func()) string {
 	id := "cb_" + strconv.Itoa(r.voidCounter)
 	r.voidCounter++
 	r.voidCBs[id] = fn // overwrites last pass's closure at this position, keeping the freshest captures
+	r.used[id] = true
+	return id
+}
+
+// registerBack registers a system-back handler (core.OnBack) as a void
+// callback with an ID from its own sequence, "back_cb_N".
+//
+// # Why back gets a namespace
+//
+// A back press is the one event a user reliably sends twice in quick
+// succession, and the second press is dispatched with the ID the host still
+// holds, which is the one from before the first press's patches landed. With
+// back handlers numbered among all void callbacks, that ID is re-assigned by
+// the pass the first press caused, and it usually lands on whatever the new
+// screen registered at that position:
+//
+//	pass 1  lesson screen   cb_7 = Navigator's Pop (onBack)
+//	press 1 → cb_7 → Pop → pass 2
+//	pass 2  contents screen cb_7 = the eighth row's onClick
+//	press 2 → cb_7 (stale, Compose has not recomposed yet) → opens a lesson
+//
+// With a sequence of their own, a stale back ID can only resolve to another
+// back handler registered at the same position, or to nothing:
+//
+//	pass 2  contents screen no back handlers, back_cb_0 is purged
+//	press 2 → back_cb_0 → unknown ID → silent no-op
+//
+// That narrows the framework-wide stale-ID window (see beginPass) for the
+// event most likely to hit it, without waiting for identity-keyed IDs. What is
+// left is benign by construction: "back" meeting a different back handler is
+// still a back, as when two quick presses on a three-deep stack pop twice.
+func (r *callbackRegistry) registerBack(fn func()) string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	id := "back_cb_" + strconv.Itoa(r.backCounter)
+	r.backCounter++
+	r.voidCBs[id] = fn
 	r.used[id] = true
 	return id
 }
@@ -129,14 +174,14 @@ func (r *callbackRegistry) registerInt(fn func(int)) string {
 }
 
 // registrationCount is the total callbacks registered so far in the current
-// pass, across all four kinds. The debug-mode Cached bypass samples it before
+// pass, across every kind (back handlers included). The debug-mode Cached bypass samples it before
 // and after rendering a cached subtree: any advance means the subtree
 // registers callbacks, which the production cache would break (see
 // ConcernCachedCallbacks).
 func (r *callbackRegistry) registrationCount() int {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	return r.voidCounter + r.textCounter + r.boolCounter + r.intCounter
+	return r.voidCounter + r.textCounter + r.boolCounter + r.intCounter + r.backCounter
 }
 
 // lookupVoid (and the sibling lookups below) fetch the handler and mark the
@@ -248,6 +293,10 @@ func (r *callbackRegistry) purge() {
 
 func (ctx *Context) registerCallback(fn func()) string {
 	return ctx.registry.registerVoid(fn)
+}
+
+func (ctx *Context) registerBackCallback(fn func()) string {
+	return ctx.registry.registerBack(fn)
 }
 
 func (ctx *Context) registerTextCallback(fn func(string)) string {
@@ -370,7 +419,7 @@ func (ctx *Context) ReceiveEventPayload(payload map[string]any) {
 
 // ---- Counter snapshot / rollback (ErrorBoundary) ----
 
-// counterSnapshot is the registry's four ID counters at one instant. It is
+// counterSnapshot is the registry's ID counters at one instant. It is
 // only ever produced and consumed inside a single render pass — the counters
 // restart at every beginPass, so a snapshot has no meaning across passes.
 type counterSnapshot struct {
@@ -378,6 +427,7 @@ type counterSnapshot struct {
 	text    int
 	boolean int
 	integer int
+	back    int
 }
 
 // snapshotCounters records where the next callback ID of each kind would be
@@ -391,6 +441,7 @@ func (r *callbackRegistry) snapshotCounters() counterSnapshot {
 		text:    r.textCounter,
 		boolean: r.boolCounter,
 		integer: r.intCounter,
+		back:    r.backCounter,
 	}
 }
 
@@ -429,9 +480,11 @@ func (r *callbackRegistry) rollbackCounters(s counterSnapshot) {
 	unmark("txt_cb_", s.text, r.textCounter)
 	unmark("bool_cb_", s.boolean, r.boolCounter)
 	unmark("int_cb_", s.integer, r.intCounter)
+	unmark("back_cb_", s.back, r.backCounter)
 
 	r.voidCounter = s.void
 	r.textCounter = s.text
 	r.boolCounter = s.boolean
 	r.intCounter = s.integer
+	r.backCounter = s.back
 }

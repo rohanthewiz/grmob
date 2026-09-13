@@ -130,6 +130,36 @@ state writes reach the screen through the push channel. See
 [Native — Audio](native.md#audio) and [Native — Lifecycle](native.md#lifecycle)
 for the shapes.
 
+### Browser back
+
+`core.OnBack` claims the browser's back button. The runtime needs nothing from
+the page for this, but a page has to know what it does to history:
+
+- While any node carrying `onBack` is on screen, or a `Modal` with `onDismiss`
+  is open, the runtime keeps **one** history entry above the page's own. It
+  pushes the entry with `history.pushState` and marks it with a `grmobBack`
+  field in `history.state`.
+- A back press consumes the entry. On `popstate` the runtime calls
+  `GoInvokeCallback` with the innermost claim's ID, which is the last claimant
+  in document order. After that the entry is pushed again if a claim is still
+  on screen.
+- When a claim leaves the screen another way, the runtime calls
+  `history.back()` itself and ignores the `popstate` that follows. The entry
+  it lands on gets the URL the runtime's entry had last. A deep-linked boot
+  starts both entries on the same URL, and without the carry the address bar
+  would go back to naming the screen just left, and a page routing on
+  `hashchange` would open it again.
+
+Two rules for the page follow from this:
+
+- A page that rewrites its URL must keep the entry's state. Call
+  `history.replaceState(history.state, "", url)`, not `replaceState(null, …)`,
+  or the runtime will not recognise its entry and will push a second one. The
+  tutorial's hash sync in `wasm/index.html` is written this way.
+- A page that routes history itself sets `window.GrMobBrowserBack = false`
+  before the first mount. The runtime then never touches history or listens
+  for `popstate`.
+
 ### Node types and tags
 
 Which element a node becomes is one table, stated once in Go

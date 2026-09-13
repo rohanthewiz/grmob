@@ -44,7 +44,15 @@
         android:name="android.permission.READ_EXTERNAL_STORAGE"
         android:maxSdkVersion="32" />
 
+    <!-- enableOnBackInvokedCallback opts in to predictive back: on Android 13+
+         a back gesture previews its destination (the home screen, from the
+         root frame) instead of committing blind. Every back handler in the
+         shell is androidx's, which supports it: core.OnBack's BackHandler
+         (Renderer.kt) and Compose's Dialog for a Modal. A key-event or
+         onBackPressed override would stop being called under this flag, and
+         there is none. -->
     <application
+        android:enableOnBackInvokedCallback="true"
         android:label="GrMob"
         android:allowBackup="true"
         android:supportsRtl="true"

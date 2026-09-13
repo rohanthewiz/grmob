@@ -58,6 +58,11 @@ expected traffic, not an error.
     a stale tree can hit a re-used ID; identity-keyed IDs are the planned
     fix, alongside identity-based node paths.
 
+    System back is where that window is most likely to be hit, because a
+    user presses it twice in quick succession. `core.OnBack` therefore
+    numbers its handlers separately (`back_cb_N`), so a stale back ID can
+    only reach another back handler or nothing, never a tap.
+
 ## Attaching handlers
 
 Leaf widgets take their primary handler as an argument:
@@ -117,6 +122,11 @@ see [Navigation](navigation.md#androids-system-back).
 It is a prop rather than a host event because Android decides whether the app
 takes a press before the press is delivered. The prop's presence in the tree is
 that decision, and patches keep the shell's copy current.
+
+On the web the browser's back button runs the same handlers. The runtime keeps
+one history entry of its own while a claim is on screen; see
+[Navigation](navigation.md#browser-back). Back handlers take IDs from their own
+sequence, `back_cb_N`, for the reason in the note below.
 
 ## Focus and blur
 

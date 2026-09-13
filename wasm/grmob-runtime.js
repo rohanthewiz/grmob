@@ -217,11 +217,15 @@ const GrMob = (() => {
                     // has built the children.
                     attachEndReached(el, value);
                 } else if (key === "onBack") {
-                    // core.OnBack is Android's system back. A page has no
-                    // such event — its back button moves history, which the
-                    // page owns — so there is nothing to wire, and the
-                    // generic branch would attach a "back" listener that
-                    // never fires.
+                    // core.OnBack, which on a page is the browser's back
+                    // button. There is no "back" DOM event, so the generic
+                    // branch would attach a listener that never fires; the
+                    // element is recorded as a claimant instead, and
+                    // syncBrowserBack decides at the end of the mount or
+                    // batch whether history needs an entry of the runtime's
+                    // own. See the browser-back section above mount.
+                    el.dataset.listener_onBack = value;
+                    backClaimants.add(el);
                 } else if (key.startsWith("on")) {
                     const event = mapEventName(key);
                     el.dataset[`listener_${key}`] = value;
@@ -2185,6 +2189,9 @@ const GrMob = (() => {
     // element too, but their target is the content, not the overlay.
     function attachModalDismiss(el, cbId) {
         el.dataset.listener_onDismiss = cbId;
+        // An open Modal answers browser back with its dismiss, as a Compose
+        // Dialog answers Android's. backClaimID decides "open" at sync time.
+        backClaimants.add(el);
         if (!el.dataset.has_listener_onDismiss) {
             el.dataset.has_listener_onDismiss = "true";
             el.addEventListener("click", (e) => {
@@ -5885,6 +5892,197 @@ const GrMob = (() => {
     }
 
 
+    // ---- Browser back (core.OnBack) -------------------------------------------
+    //
+    // On Android core.OnBack is a BackHandler; on a page the same prop claims
+    // the browser's back button. The mechanism is one history entry owned by
+    // the runtime, present exactly while some claim is on screen:
+    //
+    //	no claim on screen      history: [ … page ]
+    //	a claim appears         history: [ … page, runtime ]      pushState
+    //	back pressed            history: [ … page ]  → popstate   run the
+    //	                                                           innermost claim
+    //	claim still on screen   history: [ … page, runtime ]      pushState again
+    //	claim left by other     history: [ … page ]               history.back(),
+    //	means (an in-app ‹)                                        its popstate ignored
+    //
+    // # Why one entry rather than one per Push
+    //
+    // Mirroring the Navigator's stack in history would need the runtime to know
+    // what the stack is. It knows only what the tree says, which is whether a
+    // claim is on screen and which one is innermost, and that is enough: back
+    // runs that handler, and Go decides whether another claim follows (a
+    // three-deep stack pops to a two-deep one that still claims). It also keeps
+    // Forward from replaying a screen whose frame state Pop already discarded.
+    //
+    // # Which claim runs
+    //
+    // Compose ranks BackHandlers by registration, which for a tree composed in
+    // one pass is parent before child and earlier sibling before later: the
+    // same order as the document. So the innermost claim is the last claimant
+    // in document order: a Drawer's panel layer follows the screen it covers,
+    // and an AppBar row follows its route root, which contains it. An element
+    // hidden with display none does not claim, because Compose does not compose
+    // a hidden node.
+    //
+    // # The entry is recognised by its state
+    //
+    // "Is the runtime's entry the current one" is history.state carrying
+    // BACK_STATE, which survives a reload and a hot reload where a variable
+    // would not. A page that rewrites its URL must therefore keep the state
+    // (history.replaceState(history.state, "", url)); replacing it with null
+    // makes the runtime push a second entry. A page that owns its history
+    // outright opts out with window.GrMobBrowserBack = false.
+    const BACK_STATE = "grmobBack";
+
+    // Every element that has carried onBack, or a Modal onDismiss, since it
+    // was created. A set of candidates rather than the claims themselves:
+    // whether each one still claims is read from its dataset and its place in
+    // the document at sync time, and elements that have left the document are
+    // dropped then.
+    const backClaimants = new Set();
+
+    // True between the runtime's own history.back() and the popstate it
+    // produces, which is not a user's back press and must not run a handler.
+    let backUnwinding = false;
+    let backListening = false;
+
+    // The URL the runtime's entry had when the unwind began, carried down onto
+    // the entry the unwind lands on. See onBrowserBack.
+    let backUnwindHref = "";
+
+    function browserBackEnabled() {
+        return window.GrMobBrowserBack !== false
+            && typeof history !== "undefined"
+            && typeof history.pushState === "function";
+    }
+
+    function backEntryIsCurrent() {
+        return !!(history.state && history.state[BACK_STATE]);
+    }
+
+    // The callback ID el claims back with, or "" when it does not claim:
+    // detached, hidden, a closed Modal, or a prop since removed.
+    function backClaimID(el) {
+        let inDocument = false;
+        for (let n = el; n; n = n.parentNode) {
+            if (n.style && n.style.display === "none") return "";
+            if (n === document.body) {
+                inDocument = true;
+                break;
+            }
+        }
+        if (!inDocument) return "";
+        if (el.dataset.listener_onBack) return el.dataset.listener_onBack;
+        // A Modal's open state is its display, which the walk above has
+        // already checked on the Modal itself.
+        if (el.dataset.nodeType === "Modal") return el.dataset.listener_onDismiss || "";
+        return "";
+    }
+
+    // documentPath is el's child indices from the body down, which compare
+    // lexicographically in document order: a descendant extends its
+    // ancestor's path and so sorts after it. Claimants number a handful, so
+    // walking up is cheaper than a document-wide query per batch.
+    function documentPath(el) {
+        const path = [];
+        for (let n = el; n && n !== document.body && n.parentNode; n = n.parentNode) {
+            path.push(Array.prototype.indexOf.call(n.parentNode.children, n));
+        }
+        return path.reverse();
+    }
+
+    function followsInDocument(a, b) {
+        const pa = documentPath(a);
+        const pb = documentPath(b);
+        for (let i = 0; i < Math.min(pa.length, pb.length); i++) {
+            if (pa[i] !== pb[i]) return pa[i] > pb[i];
+        }
+        return pa.length > pb.length;
+    }
+
+    // innermostBackClaim returns the callback ID of the claim back should run,
+    // or "" when nothing on screen claims it. Detached candidates are pruned on
+    // the way, which is what keeps the set from growing with every screen ever
+    // shown.
+    function innermostBackClaim() {
+        let best = null;
+        let bestID = "";
+        for (const el of [...backClaimants]) {
+            const id = backClaimID(el);
+            if (!id) {
+                if (!el.parentNode) backClaimants.delete(el);
+                continue;
+            }
+            if (!best || followsInDocument(el, best)) {
+                best = el;
+                bestID = id;
+            }
+        }
+        return bestID;
+    }
+
+    // syncBrowserBack makes history agree with the tree: the runtime's entry
+    // is current exactly when a claim is on screen. Idempotent, so every mount,
+    // every batch and every popstate can simply call it.
+    function syncBrowserBack() {
+        if (!browserBackEnabled()) return;
+        if (!backListening) {
+            backListening = true;
+            window.addEventListener("popstate", onBrowserBack);
+        }
+        // Mid-unwind the current entry is about to change under us; the
+        // popstate that ends the unwind calls this again.
+        if (backUnwinding) return;
+        const claimed = innermostBackClaim() !== "";
+        const current = backEntryIsCurrent();
+        if (claimed && !current) {
+            const state = Object.assign({}, history.state || {}, { [BACK_STATE]: true });
+            history.pushState(state, "");
+        } else if (!claimed && current) {
+            // The claim ended some other way — an in-app back button popped
+            // the frame. Take the entry back out, or the next back press would
+            // consume it doing nothing and the user would need two to leave.
+            backUnwinding = true;
+            backUnwindHref = typeof location !== "undefined" ? location.href : "";
+            history.back();
+        }
+    }
+
+    function onBrowserBack() {
+        if (backUnwinding) {
+            backUnwinding = false;
+            // The page may have rewritten the runtime's entry on the way out
+            // (the tutorial clears its lesson hash when ‹ Contents pops), and
+            // the entry below still holds the URL from before the claim. A
+            // deep-linked boot is the usual case: both entries start as #2.3.
+            // Landing there unchanged would make the address bar lie, and a
+            // page that routes on hashchange would re-open the screen the user
+            // just left. So the URL comes down with the unwind. It is written
+            // here, inside popstate, which runs before the traversal's
+            // hashchange is handled, so a listener reading location sees it.
+            if (backUnwindHref && location.href !== backUnwindHref) {
+                history.replaceState(history.state, "", backUnwindHref);
+            }
+            backUnwindHref = "";
+            syncBrowserBack();
+            return;
+        }
+        if (!browserBackEnabled()) return;
+        // Landing ON the runtime's entry is a Forward press, not a back: there
+        // is nothing to run, only history to reconcile.
+        if (!backEntryIsCurrent()) {
+            const id = innermostBackClaim();
+            // Void callback: an empty envelope, as the Modal backdrop sends.
+            if (id) window.GoInvokeCallback(id, {});
+        }
+        // The host page applies the handler's patches synchronously (its
+        // GoInvokeCallback renders and patches), and patch() has synced
+        // already; this call covers a host whose patches arrive later, or a
+        // handler that changed nothing and so produced no batch.
+        syncBrowserBack();
+    }
+
     function mount(jsonTree, mountPointId = "app") {
         const tree = typeof jsonTree === "string" ? JSON.parse(jsonTree) : jsonTree;
         const root = renderNode(tree, "root");
@@ -5896,6 +6094,9 @@ const GrMob = (() => {
         // document.activeElement and writes a tab stop, and both are questions
         // about an element that is in the document.
         syncCompositesIn(root, new Set(), new Set());
+        // After the append: a claim counts only once its element is in the
+        // document. See syncBrowserBack.
+        syncBrowserBack();
     }
 
     function patch(patchList) {
@@ -5938,6 +6139,15 @@ const GrMob = (() => {
 
             switch (p.Type) {
                 case "update-props":
+                    // A node that lost every prop arrives with Changes null:
+                    // the reconciler sends the whole new props map, and a nil
+                    // Go map marshals as null. Normalised once here because
+                    // every read below (and pruneStaleListeners, which is what
+                    // ends a removed onBack's claim) expects an object. The
+                    // first transition to hit it was browser back from a
+                    // lesson, whose root carries onBack, to a contents root
+                    // that carries nothing.
+                    if (!p.Changes) p.Changes = {};
                     // Before the per-key loop, for the same reason
                     // createElement applies it after one: the hint reads two
                     // props at once, and the patch carries the whole new map.
@@ -6083,8 +6293,12 @@ const GrMob = (() => {
                             // batch has landed and the children have settled.
                             attachEndReached(el, v);
                         } else if (k === "onBack") {
-                            // Nothing to wire, as on the create path: see
-                            // the onBack branch there.
+                            // As on the create path: record the latest ID and
+                            // the claimant. A prop that went away is dropped
+                            // by pruneStaleListeners, which is what ends the
+                            // claim.
+                            el.dataset.listener_onBack = v;
+                            backClaimants.add(el);
                         } else if (k.startsWith("on")) {
                             const event = mapEventName(k);
                             el.dataset[`listener_${k}`] = v;
@@ -6182,6 +6396,9 @@ const GrMob = (() => {
         // Leaflet layer is reconciled against the Marker children this batch
         // added, moved or removed.
         syncTouchedMaps(touched);
+        // Truly last: whether any back claim is still on screen is a question
+        // about the tree this whole batch produced, removals included.
+        syncBrowserBack();
     }
 
     // --- Toast overlay -------------------------------------------------------
