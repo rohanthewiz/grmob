@@ -89,7 +89,10 @@ remedy_gone "the unresolved-classpath skip" "$classpath_skip"
 remedy_faulted "the missing-compiler skip" "$compiler_skip"
 
 echo "running what THAT sentence says — :app:fetchKotlinCompiler:"
-../gradlew --no-daemon -q -p .. :app:fetchKotlinCompiler
+# Quietened like the classpath remedy above: the task prints every jar it
+# fetched (ten lines of cache paths on the first local run of this drill), and
+# what the drill reports is the pass's answer afterwards, not the fetch.
+../gradlew --no-daemon -q -p .. :app:fetchKotlinCompiler > /dev/null
 
 echo "and the pass once more:"
 remedy_run sh ./sources.sh
