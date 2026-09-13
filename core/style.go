@@ -400,6 +400,7 @@ type Style struct {
 	//	option          aria-selected              no
 	//	link            no                         yes
 	//	listbox         no                         yes
+	//	combobox        no                         yes, and required
 	//
 	// Both lists are ARIA's own scoping rather than a shortlist of what seemed
 	// useful, and the two disagree at both ends. So the two fields cannot
@@ -425,9 +426,9 @@ type Style struct {
 	//
 	// aria-expanded says the content is here, in the page, and can be shown or
 	// hidden. A trigger that opens a modal is a different relationship —
-	// ARIA spells that aria-haspopup, which this vocabulary does not carry —
-	// so comps.DatePicker's trigger, which looks exactly like a
-	// disclosure and even flips a glyph, deliberately sets nothing.
+	// ARIA spells that aria-haspopup, which is AccessibilityHasPopup below —
+	// so comps.DatePicker's trigger, which looks exactly like a disclosure
+	// and even flips a glyph, states a popup and leaves this field unset.
 	//
 	// # One native maps it and one cannot, which is the reverse of usual
 	//
@@ -447,6 +448,46 @@ type Style struct {
 	// key crosses the bridge, is deliberately not parsed, and the note in
 	// GrMobStyle.swift says which property it is turning down.
 	AccessibilityExpanded ExpandedState `json:",omitzero"`
+
+	// AccessibilityHasPopup is what this control opens — today, only ever a
+	// dialog. See PopupKind for the vocabulary and for why ARIA's other six
+	// values are not in it.
+	//
+	// # The near miss above, given its own field
+	//
+	// AccessibilityExpanded turns down a trigger that opens a modal, because a
+	// disclosure's content is in the page and a dialog is a new surface. That
+	// left comps.Menu and comps.DatePicker saying nothing at all, which is
+	// the silence this closes: aria-haspopup is ARIA's spelling of exactly that
+	// relationship, and a reader announces it with the name ("Sort, pop-up
+	// button").
+	//
+	// # The role guard, which is a fifth list
+	//
+	// ARIA 1.2 defines aria-haspopup for application, button, combobox,
+	// gridcell, link, menuitem, slider, tab, textbox and treeitem, lets
+	// columnheader inherit it from gridcell, and deprecates it everywhere
+	// else. Of those, core.Role carries button, link, tab, columnheader and
+	// combobox. Both web exporters write it for exactly the roles the
+	// generated fixture gives it among core's own —
+	// aria/verify/aria_test.go's state-guard test asks every role in both
+	// directions, so the arms of ariaHasPopup cannot drift from the
+	// specification. A core.Button needs no role, the node type being one,
+	// which is the case comps.Menu's trigger is.
+	//
+	// comps.DatePicker's trigger is a Row with an OnTap, so it states
+	// RoleButton alongside this. Without a role the attribute would have
+	// nothing to sit on but ariaRole's `group` fallback, and "group, pop-up"
+	// describes nothing a reader can press.
+	//
+	// # Neither native reads it
+	//
+	// Compose's SemanticsProperties and SwiftUI's AccessibilityTraits have no
+	// popup member. Both platforms present a Modal as a platform dialog that
+	// announces itself on opening, so the warning arrives one step later there
+	// rather than not at all. The key crosses the bridge and is deliberately
+	// unparsed; the notes in GrMobStyle.kt and GrMobStyle.swift say so.
+	AccessibilityHasPopup PopupKind `json:",omitzero"`
 
 	// AccessibilityValue is where a valued control sits inside its range —
 	// how far an upload has got, which step a wizard is on. See ValueRange
@@ -472,7 +513,8 @@ type Style struct {
 	//	aria-level        heading, listitem, row     — two fields, one attribute
 	//	aria-selected     option, tab, row, columnheader
 	//	aria-pressed      button
-	//	aria-expanded     button, link, listbox, row, columnheader, tab
+	//	aria-expanded     button, link, listbox, row, columnheader, tab, combobox
+	//	aria-haspopup     button, link, tab, columnheader, combobox
 	//	aria-value*       progressbar
 	//
 	// No two of those lists are the same list, which is the argument for each
@@ -993,6 +1035,11 @@ func (s Style) applyTo(target *Style) {
 	// had opened. Only ExpandedUnset leaves the target alone.
 	if s.AccessibilityExpanded != ExpandedUnset {
 		target.AccessibilityExpanded = s.AccessibilityExpanded
+	}
+	// PopupNone is the only zero, so a stated kind merges and an unstated one
+	// leaves the target alone, the rule every field in this block follows.
+	if s.AccessibilityHasPopup != PopupNone {
+		target.AccessibilityHasPopup = s.AccessibilityHasPopup
 	}
 	// As a unit, which is the one place this block departs from the
 	// field-at-a-time rule around it. The two levels merge independently

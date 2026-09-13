@@ -879,6 +879,38 @@ sentinel — `COMPOSITE_MEMBERS` is a fact about ARIA's vocabulary that
 `wasm/verify/keynav_test.go` pins against `core.Role`, and `COMPOSITE_FOCUSABLE`
 is a decision about a walk.
 
+#### A combobox, whose focus never moves
+
+A `combobox` is a text field that owns a popup `listbox`, and its keyboard is the
+one pattern here that does **not** move focus. The field keeps it, and
+`aria-activedescendant` names the option the arrows reached, so the caret stays
+put and typing carries on. `comps.SearchableSelect` is the widget: its field
+carries `core.RoleComboBox`, `aria-expanded` and `aria-controls`, and the runtime
+supplies the rest.
+
+| key in the field | effect |
+|---|---|
+| `ArrowDown` / `ArrowUp` | the next or previous option, wrapping; from none, the first or the last. The option is outlined and named by `aria-activedescendant` |
+| `Enter` | with an option active, runs its `onClick` and nothing else, not the field's Next or submit; with none, left to the field |
+| `Escape` | with an option active, clears it; otherwise left to the page |
+| `Home`, `End`, `←`, `→`, typing | clear the active option: the user is back in the text, and typing re-filters the list |
+
+The listbox it controls **stands down**. It holds no tab stop, so `Tab` from the
+field moves past the list. The runtime asks from the listbox's side (does a
+`role="combobox"` name my id in `aria-controls`?) because every keystroke
+re-filters the rows in a patch that never touches the field.
+
+**A keyboard pick keeps focus in the field.** The pick's handler calls
+`core.DismissKeyboard`, which on the web blurs the focused field. That is right
+after a tap on a phone and wrong after `Enter`, where it used to drop a keyboard
+user onto the page. Go cannot tell the two apart and the runtime can, so a pick
+made with `Enter` declines the one blur that arrives for its field within half a
+second.
+
+`htmlout` writes the role, `aria-expanded` and `aria-controls`, and none of the
+behaviour: `aria-activedescendant` is which option a keystroke reached, and a
+static page has no keystrokes.
+
 #### Selection follows focus
 
 By default an arrow moves focus and chooses nothing, and the author's `onClick`

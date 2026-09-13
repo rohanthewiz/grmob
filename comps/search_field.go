@@ -111,6 +111,14 @@ type SearchField struct {
 	// Style is applied to the row after the widget's own frame, so the fill,
 	// the radius and the padding are all overridable.
 	Style []core.StyleProp
+
+	// InputStyle is applied to the input itself, after its own flattening,
+	// where Style reaches only the row around it. It exists for semantics
+	// that belong to the element with focus: comps.SearchableSelect puts
+	// core.RoleComboBox, the expanded state and aria-controls here, because
+	// ARIA 1.2 wants them on the field the caret is in rather than on its
+	// frame. Visual overrides still belong in Style.
+	InputStyle []core.StyleProp
 }
 
 func (s SearchField) Render(ctx *core.Context) *core.Node {
@@ -208,6 +216,9 @@ func (s SearchField) input(placeholder, label string) core.View {
 		// Nil-safe: FocusTarget(nil) is a nil prop, which the node builders
 		// skip.
 		core.FocusTarget(s.FocusRef),
+	}
+	for _, sp := range s.InputStyle {
+		flatten = append(flatten, sp)
 	}
 
 	if s.OnSubmit == nil {

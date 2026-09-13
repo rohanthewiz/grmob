@@ -3746,14 +3746,14 @@ It also leaves Menu conditional-safe, like every widget that takes no hook.
 
 #### What the trigger announces
 
-Its own label and hint, and no expanded state. core.Style's disclosure table names this exact near miss: a control that opens a dialog is not expanded, ARIA spells the relationship aria-haspopup, and core does not carry it. Once the sheet is open the Modal's dialog role is what a reader is inside. An icon trigger such as "⋯" needs Trigger.AccessibilityLabel, and a picker's trigger reads best with the current value in its label.
+Its own label and hint, and that it opens a dialog: the trigger carries core.AccessibilityHasPopup(core.PopupDialog), which both web targets write as aria-haspopup="dialog". It states no expanded state, which is core.Style's disclosure near miss: a control that opens a dialog is not expanded. The value is dialog and not menu because the sheet is a dialog of buttons to a reader, not an ARIA menu with a menu's keyboard; see core.PopupKind. Once the sheet is open the Modal's dialog role is what a reader is inside. An icon trigger such as "⋯" needs Trigger.AccessibilityLabel, and a picker's trigger reads best with the current value in its label.
 
 #### Theme roles read
 
 	Trigger    as comps.Button, from the template's Variant and Emphasis
 	Sheet      as ActionSheet
 
-<small>[comps/menu.go:94](https://github.com/rohanthewiz/grmob/blob/master/comps/menu.go#L94)</small>
+<small>[comps/menu.go:98](https://github.com/rohanthewiz/grmob/blob/master/comps/menu.go#L98)</small>
 
 #### func (Menu) Render
 
@@ -3763,7 +3763,7 @@ func (m Menu) Render(ctx *core.Context) *core.Node
 
 Render builds Row(trigger, ActionSheet) as drawn in the type doc.
 
-<small>[comps/menu.go:130](https://github.com/rohanthewiz/grmob/blob/master/comps/menu.go#L130)</small>
+<small>[comps/menu.go:134](https://github.com/rohanthewiz/grmob/blob/master/comps/menu.go#L134)</small>
 
 ### type Pagination
 
@@ -4475,6 +4475,14 @@ type SearchField struct {
 	// Style is applied to the row after the widget's own frame, so the fill,
 	// the radius and the padding are all overridable.
 	Style []core.StyleProp
+
+	// InputStyle is applied to the input itself, after its own flattening,
+	// where Style reaches only the row around it. It exists for semantics
+	// that belong to the element with focus: comps.SearchableSelect puts
+	// core.RoleComboBox, the expanded state and aria-controls here, because
+	// ARIA 1.2 wants them on the field the caret is in rather than on its
+	// frame. Visual overrides still belong in Style.
+	InputStyle []core.StyleProp
 }
 ```
 
@@ -4525,7 +4533,7 @@ The border half of that is newer than the rest and the reason is worth keeping: 
 func (s SearchField) Render(ctx *core.Context) *core.Node
 ```
 
-<small>[comps/search_field.go:116](https://github.com/rohanthewiz/grmob/blob/master/comps/search_field.go#L116)</small>
+<small>[comps/search_field.go:124](https://github.com/rohanthewiz/grmob/blob/master/comps/search_field.go#L124)</small>
 
 ### type SearchableSelect
 
@@ -4574,6 +4582,14 @@ type SearchableSelect struct {
 	// and be the target of core.Focus. See "Focus and the keyboard".
 	FocusRef *core.FocusRef
 
+	// ID names the list, so the field's aria-controls can point at it, and
+	// prefixes each row's id ("<ID>-option-0", …) for aria-activedescendant.
+	// Empty derives "searchable-select-" plus Label's letters and digits,
+	// lowercased and dash-joined, so two selects on one screen with the same
+	// Label need an ID each; core's audit reports the duplicate if they have
+	// none. The ids are read by the web targets alone.
+	ID string
+
 	// Style is applied to the outer column after the widget's own props.
 	Style []core.StyleProp
 }
@@ -4592,14 +4608,15 @@ SearchableSelect is a choice from a list too long to scroll: a search field whos
 
 	┌ Column ────────────────────────────────────────────┐
 	│ ┌ SearchField (RoleSearch) ──────────────────────┐ │
-	│ │ 🔍  an                                     ✕   │ │
-	│ └────────────────────────────────────────────────┘ │
-	│ ┌ Column RoleListBox "Country suggestions" ──────┐ │  only while the
-	│ │ Argentina        South America     (option)    │ │  query is not the
-	│ │ Canada           North America     (option)    │ │  chosen label
-	│ └────────────────────────────────────────────────┘ │
-	│ Text RoleStatus  "2 of 6 matches"                  │  hidden while shut
-	└────────────────────────────────────────────────────┘
+	│ │ 🔍  an                                     ✕   │ │  the input is the
+	│ └────────────────────────────────────────────────┘ │  RoleComboBox
+	│         │ aria-controls, while rows show           │
+	│ ┌ Column▼RoleListBox "Country suggestions" ──────┐ │  only while the
+	│ │ Argentina        South America     (option)    │ │  query matches and
+	│ │ Canada           North America     (option)    │ │  is not the chosen
+	│ └────────────────────────────────────────────────┘ │  label; id ID, rows
+	│ Text RoleStatus  "2 of 6 matches"                  │  ID-option-N
+	└────────────────────────────────────────────────────┘  status hidden while shut
 
 #### When the list shows
 
@@ -4612,14 +4629,29 @@ Nothing shows for an empty query. Listing every option on focus would need a foc
 The shape is a field and a list. What had to be decided is how the two share the keyboard. There are five parts:
 
  1. The list never takes focus. It appears under a field the user is typing in, and nothing issues a focus command, so typing carries on.
- 2. The return key belongs to the form, not to the list. The field has no OnSubmit, so with FocusRef in a core.UseFocusOrder the keyboard shows Next and moves on to the following field. The list is not in the order: core.FocusNext walks declared refs only, and no option is one. "Enter picks the top match" was the alternative. It was rejected because an explicit submit suppresses the Next action (see stampTraversal in core/focus\_order.go), and a field in the middle of a form cannot do both with one action key.
- 3. On the web, the list is a composite. Tab from the field lands on the listbox as one stop, the arrows move among the options, and Enter or Space picks. The WASM runtime supplies all of it from RoleListBox. The highlight does not pick: selection does not follow focus, because an arrow key that changed the value would close the list under the user.
+ 2. The return key belongs to the form, not to the list. The field has no OnSubmit, so with FocusRef in a core.UseFocusOrder the keyboard shows Next and moves on to the following field. The list is not in the order: core.FocusNext walks declared refs only, and no option is one. "Enter picks the top match" was the alternative. It was rejected because an explicit submit suppresses the Next action (see stampTraversal in core/focus\_order.go), and a field in the middle of a form cannot do both with one action key. On the web ARIA adds one exception: once the arrows have reached an option, Enter picks that option and does not also run Next. With no option reached, Enter is the form's again, so nothing is picked that the user did not arrow to.
+ 3. On the web, the field is an ARIA combobox and focus never leaves it. ArrowDown and ArrowUp move an active option, which the WASM runtime names through aria-activedescendant and outlines, and Enter picks it. Tab goes on to the next control, past the list: the listbox is the combobox's popup and holds no tab stop. The highlight does not pick, because an arrow key that changed the value would close the list under the user.
  4. Picking dismisses the keyboard. On a phone the choice is made, so the keyboard is in the way of the form. core.DismissKeyboard blurs only a field that has focus, so a web user who picked with the arrow keys keeps focus wherever it was.
- 5. On the web a keyboard pick removes the list, and the focused option with it, so focus falls back to the page. Returning it to the field would need core.Focus, which on a phone would raise the keyboard that part 4 just put away. The widget cannot tell the two apart. A caller that wants focus back can call core.Focus from OnChange.
+ 5. On the web a keyboard pick leaves focus in the field. Part 4's dismiss would blur it, and the widget cannot tell a key from a tap, so the runtime tells them apart instead: a pick made with Enter declines the one blur that follows it, and a tap is dismissed as on a phone. Before the combobox pattern the list itself held focus, so a pick removed the focused option with the list and dropped focus onto the page, and returning it with core.Focus would have raised a phone's keyboard again.
 
-#### It is not an ARIA combobox
+#### It is an ARIA combobox
 
-ARIA's pattern for this is role="combobox" on the field, with aria-expanded, aria-controls and aria-activedescendant naming the list and its active option. core.Role carries none of them, and adding the pattern means changes in both web exporters, the ARIA fixture and the runtime's keyboard. That is renderer work, which this plan excludes. What ships instead is a labelled search region, a labelled listbox, and a polite status line that says how many options match. The status is the part a screen reader user most needs, because the list appears silently under the field.
+ARIA's pattern for a field that filters a list under it is role="combobox" on the field, with aria-expanded saying whether the list shows, aria-controls naming it, and aria-activedescendant naming the option the arrows reached. The widget states the first two and the runtime writes the third per keystroke (core.RoleComboBox says why that one is behaviour):
+
+	the field (SearchField's input)   RoleComboBox, ExpandedWhen(rows show),
+	                                  and AccessibilityControls(ID) while
+	                                  they do
+	the list                          RoleListBox and AccessibilityID(ID)
+	each row                          RoleOption and
+	                                  AccessibilityID(ID-option-N)
+
+"Expanded" means the listbox is in the tree, not merely that the query is open: a query with no matches renders no listbox (see Render), and a field saying expanded, with an aria-controls naming nothing, would be the dangling reference core's audit reports.
+
+The rows' ids name slots rather than options, so an option's Value never has to be made into an id. That is safe because the runtime drops the active option on every edit of the field, and editing is what re-fills the slots.
+
+The role goes on the input and not on SearchField's row, because ARIA 1.2 wants the state on the element that has focus; SearchField.InputStyle is the door. The search landmark stays on the row around it.
+
+A polite status line still says how many options match. A combobox is announced as expanded, with no count, and the list appears silently under the field, so the count remains the part a screen reader user most needs.
 
 The status line is hidden while the list is shut, and a live region that becomes visible is not announced reliably. Later keystrokes change its text while it is showing, and those are announced.
 
@@ -4634,7 +4666,7 @@ Options are core.SelectOption, the type core.Select takes, so a list can move fr
 	Rows        as ListRow, with SelectedStyle for the current value
 	Status      Typography.Caption, Colors.TextSecondary
 
-<small>[comps/searchable_select.go:109](https://github.com/rohanthewiz/grmob/blob/master/comps/searchable_select.go#L109)</small>
+<small>[comps/searchable_select.go:137](https://github.com/rohanthewiz/grmob/blob/master/comps/searchable_select.go#L137)</small>
 
 #### func (SearchableSelect) Render
 
@@ -4644,7 +4676,7 @@ func (s SearchableSelect) Render(ctx *core.Context) *core.Node
 
 Render builds Column(SearchField, listbox?, status) as drawn in the type doc.
 
-<small>[comps/searchable_select.go:164](https://github.com/rohanthewiz/grmob/blob/master/comps/searchable_select.go#L164)</small>
+<small>[comps/searchable_select.go:200](https://github.com/rohanthewiz/grmob/blob/master/comps/searchable_select.go#L200)</small>
 
 ### type SegmentedControl
 

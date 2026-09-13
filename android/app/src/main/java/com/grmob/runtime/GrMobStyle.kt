@@ -646,6 +646,16 @@ private fun dimensionModifier(value: String, horizontal: Boolean): Modifier {
  * moved. Taking either would fire the app's onTap on every swipe past a row —
  * a selection nobody asked for, on the platform where the user is least able
  * to see it coming. mobile/verify/followsfocus_test.go pins both halves.
+ *
+ * AccessibilityHasPopup is not read here either.
+ *
+ * Go's popup kind says a control opens a dialog before it is pressed. Compose
+ * semantics has no property for what a control opens. The near miss is
+ * Role.DropdownList, which names a kind of control rather than what it opens,
+ * and would have TalkBack announce comps.Menu's "⋯" as a drop-down list. A
+ * Modal presents here as a Dialog window, which TalkBack announces as it
+ * opens, so the warning arrives one step late rather than not at all. The key
+ * is deliberately not parsed; mobile/verify/expanded_test.go pins both halves.
  */
 fun SemanticsPropertyReceiver.grMobRole(kind: String) {
     when (kind) {
@@ -716,6 +726,12 @@ fun SemanticsPropertyReceiver.grMobRole(kind: String) {
         // only vocabulary for one is a number.
         "progressbar" -> {}
         "banner", "navigation", "search", "toolbar" -> {}
+        // The field that owns a popup list. Role.DropdownList is the near miss
+        // and is turned down: TalkBack would announce the text field as a
+        // drop-down list, a control you open, where this one is typed into.
+        // The field stays the edit box it is, and the list under it is reached
+        // by swiping, as every collection is. See core.RoleComboBox.
+        "combobox" -> {}
         // Compose's Role has Button, Checkbox, Switch, RadioButton, Tab,
         // Image and DropdownList, and no Link — the one place SwiftUI's
         // vocabulary is the richer of the two.

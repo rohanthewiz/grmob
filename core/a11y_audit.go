@@ -277,6 +277,16 @@ func (a *a11yAudit) checkDisclosure(n *Node, path string) {
 	if n.Style.AccessibilityExpanded == ExpandedUnset {
 		return
 	}
+	// A combobox's expanded state is not a disclosure's. It says whether the
+	// popup list shows, which typing in the field decides rather than a press,
+	// so there is no handler for it to be missing: the field's own onChange is
+	// what opens and shuts it. Compose leaves the role unmapped and wires no
+	// expand()/collapse() onto a text field, so the concern's sentence — a
+	// disclosure TalkBack cannot operate — would describe nothing. See
+	// core.RoleComboBox.
+	if n.Style.AccessibilityRole == RoleComboBox {
+		return
+	}
 	if n.Props != nil {
 		if _, ok := n.Props["onClick"]; ok {
 			return

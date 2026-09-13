@@ -3299,8 +3299,9 @@ func lessonMenus() Lesson {
 				prose("The list never takes focus, so typing carries on while it changes. The "+
 					"return key belongs to the form: with FocusRef in core.UseFocusOrder the "+
 					"keyboard shows Next and moves to the City field, past the list. In a "+
-					"browser the list is a listbox. Tab reaches it as one stop, the arrows move, "+
-					"and Enter picks."),
+					"browser the field is an ARIA combobox: the arrows move through the "+
+					"matches while the caret stays in the field, Enter picks, and focus is "+
+					"still in the field afterwards."),
 				demoPanel("Type \"an\" and pick a country, then try Clear. Antarctica is disabled.",
 					comps.SearchableSelect{
 						Label:         "Country",
@@ -3325,10 +3326,10 @@ func lessonMenus() Lesson {
 					"Trigger is a Button template: its label, emphasis and names apply, and OnOpen replaces its OnTap.",
 					"Open is controlled, so one state can say which row's menu is open, and a list of menus holds no hook slots.",
 					"A picker is a menu whose current item is Checked: a leading ✓ and a \", selected\" name.",
-					"The trigger states no expanded state: a control that opens a dialog is not a disclosure.",
+					"The trigger says it opens a dialog (aria-haspopup) and states no expanded state: a control that opens a dialog is not a disclosure.",
 					"SearchableSelect lists matches while the field's text is not the chosen label; a pick reports Value, writes the label and closes the list.",
 					"The list never takes focus and has no field of its own, so the return key's Next skips it and moves on through the form.",
-					"The matches are a labelled listbox, and a status line says how many matched, since the list appears silently under the field.",
+					"The field is a combobox controlling a labelled listbox, and a status line says how many matched, since the list appears silently under the field.",
 				),
 			)
 		},

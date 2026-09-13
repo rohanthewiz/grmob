@@ -1110,6 +1110,7 @@ func TestExpandedStateIsScopedToItsOwnRoles(t *testing.T) {
 		core.RoleRow:          true,
 		core.RoleColumnHeader: true,
 		core.RoleTab:          true,
+		core.RoleComboBox:     true,
 	}
 
 	for _, role := range core.Roles() {

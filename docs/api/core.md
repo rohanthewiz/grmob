@@ -243,6 +243,8 @@ The narrative documentation covers the parts a reference cannot: the architectur
     - [`func Visible`](#func-visible)
 - [`type Node`](#type-node)
     - [`func Render`](#func-render)
+- [`type PopupKind`](#type-popupkind)
+    - [`func PopupKinds`](#func-popupkinds)
 - [`type Position`](#type-position)
 - [`type Progress`](#type-progress)
 - [`type ProgressReading`](#type-progressreading)
@@ -287,6 +289,7 @@ The narrative documentation covers the parts a reference cannot: the architectur
 - [`type StyleProp`](#type-styleprop)
     - [`func AccessibilityControls`](#func-accessibilitycontrols)
     - [`func AccessibilityExpanded`](#func-accessibilityexpanded)
+    - [`func AccessibilityHasPopup`](#func-accessibilityhaspopup)
     - [`func AccessibilityHeadingLevel`](#func-accessibilityheadinglevel)
     - [`func AccessibilityHidden`](#func-accessibilityhidden)
     - [`func AccessibilityHint`](#func-accessibilityhint)
@@ -610,7 +613,7 @@ const (
 )
 ```
 
-<small>[core/style.go:1132](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L1132)</small>
+<small>[core/style.go:1179](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L1179)</small>
 
 GridRun attribute bits. A renderer without a native spelling for one may drop it (there is no dim on the web's font-weight scale, say, so the DOM targets fake it with opacity), but must never fail the row.
 
@@ -703,7 +706,7 @@ The Compose arm is the one that needed an argument, and it is worth having here 
 const ShrinkNone = -1
 ```
 
-<small>[core/style.go:1231](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L1231)</small>
+<small>[core/style.go:1278](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L1278)</small>
 
 ## Variables
 
@@ -1061,7 +1064,7 @@ var TextInputStyle = UseStyle(Style{
 })
 ```
 
-<small>[core/style.go:1077](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L1077)</small>
+<small>[core/style.go:1124](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L1124)</small>
 
 ## Functions
 
@@ -1235,7 +1238,7 @@ CompositeWalkStopsAt is CompositeWalkAt for a caller that only wants the bool, a
 
 It answers true for both non-descending values, which is exactly the conflation CompositeWalkAt exists to undo — so this is safe only for a caller that has already established both roles are composites, and every caller in this repository has (AuditTree tests hasKeyboard on both ends before it asks, and wasm/verify's pins iterate KeyboardComposites()). A caller that has not should ask CompositeWalkAt and handle the third value, because for a role with no walk this returns a confident \`true\` about a rotation that does not exist.
 
-<small>[core/role.go:845](https://github.com/rohanthewiz/grmob/blob/master/core/role.go#L845)</small>
+<small>[core/role.go:912](https://github.com/rohanthewiz/grmob/blob/master/core/role.go#L912)</small>
 
 ### func DangerColor
 
@@ -1243,7 +1246,7 @@ It answers true for both non-descending values, which is exactly the conflation 
 func DangerColor() string
 ```
 
-<small>[core/style.go:1068](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L1068)</small>
+<small>[core/style.go:1115](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L1115)</small>
 
 ### func DismissKeyboard
 
@@ -1653,7 +1656,7 @@ PrimaryColor and DangerColor are the theme-blind convenience accessors that pred
 
 They read DefaultTheme rather than repeating its literals. Both used to be hard-coded, and the copy was not free: when Colors.Primary moved to Apple's accessible blue (white over systemBlue was 4.02:1, under WCAG AA, and the theme's own Button base declares white), this function kept the old hex — so examples/chat, its one caller, went on painting white on a fill nobody could read it on, in the one place the fix could not reach.
 
-<small>[core/style.go:1067](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L1067)</small>
+<small>[core/style.go:1114](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L1114)</small>
 
 ### func Push
 
@@ -1947,7 +1950,7 @@ math.Mod keeps the sign of its first argument, so a negative input stays west, a
 type AlignItems string
 ```
 
-<small>[core/style.go:1130](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L1130)</small>
+<small>[core/style.go:1177](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L1177)</small>
 
 #### func AlignItemsValues
 
@@ -1983,7 +1986,7 @@ Without these methods that expression is a type conversion producing a bare stri
 type Alignment string
 ```
 
-<small>[core/style.go:1107](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L1107)</small>
+<small>[core/style.go:1154](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L1154)</small>
 
 ```go
 const (
@@ -3072,7 +3075,7 @@ This started as CompositeWalkStopsAt alone, returning a bool. Two of its three a
 
 Making it a value rather than a doc note is the same move CompositeMemberRole made one function up when its two empty answers became (member, composite): the fact is put where the compiler and the caller can both see it, instead of in a sentence asking the caller to have already checked something.
 
-<small>[core/role.go:868](https://github.com/rohanthewiz/grmob/blob/master/core/role.go#L868)</small>
+<small>[core/role.go:935](https://github.com/rohanthewiz/grmob/blob/master/core/role.go#L935)</small>
 
 ```go
 const (
@@ -3136,7 +3139,7 @@ Member roles are unique per container, so the middle case is the same set of pai
 
 A descending pair is still two tab stops — both containers keep a roving tabindex either way, which is the part of the finding that never varies. What differs is the reach: where a stopping pair's outer arrows step over the inner widget whole, a descending pair's outer arrows can land \*inside\* it, on any element of the outer's member role buried in the inner's subtree. Neither is what ARIA describes for nested composites, and the framework's refusal to guess is documented at ConcernNestedComposite.
 
-<small>[core/role.go:809](https://github.com/rohanthewiz/grmob/blob/master/core/role.go#L809)</small>
+<small>[core/role.go:876](https://github.com/rohanthewiz/grmob/blob/master/core/role.go#L876)</small>
 
 #### func (CompositeWalk) String
 
@@ -3146,7 +3149,7 @@ func (w CompositeWalk) String() string
 
 String names the value for a message. The three spellings are the words the audit's finding and this file's docs already use, so a report built from a %v and a report written by hand read the same.
 
-<small>[core/role.go:895](https://github.com/rohanthewiz/grmob/blob/master/core/role.go#L895)</small>
+<small>[core/role.go:962](https://github.com/rohanthewiz/grmob/blob/master/core/role.go#L962)</small>
 
 ### type Concern
 
@@ -3517,7 +3520,7 @@ func (ctx *Context) WithTheme(theme *Theme) *Context
 type DisplayMode string
 ```
 
-<small>[core/style.go:1118](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L1118)</small>
+<small>[core/style.go:1165](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L1165)</small>
 
 ```go
 const (
@@ -3595,7 +3598,7 @@ Six untagged ints wrote all six every time. On the tutorial's contents screen, 7
 
 Small next to the 370KB the Style-level tags took off, and free in a way that one was not: no renderer changed, because none of them could tell the difference.
 
-<small>[core/style.go:723](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L723)</small>
+<small>[core/style.go:765](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L765)</small>
 
 ### type EditorRef
 
@@ -3716,7 +3719,7 @@ The twin of SelectedWhen, and it earns its place the same way: the widget owns a
 type FlexDirection string
 ```
 
-<small>[core/style.go:1129](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L1129)</small>
+<small>[core/style.go:1176](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L1176)</small>
 
 #### func (FlexDirection) Apply
 
@@ -3869,7 +3872,7 @@ Sixteen points rather than eight or thirty-two: eight is coarse enough that a be
 type JustifyContent string
 ```
 
-<small>[core/style.go:1128](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L1128)</small>
+<small>[core/style.go:1175](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L1175)</small>
 
 #### func JustifyContents
 
@@ -4122,13 +4125,77 @@ Render renders view into ctx after restarting ctx's hook cursors. It is the entr
 
 <small>[core/navigation.go:364](https://github.com/rohanthewiz/grmob/blob/master/core/navigation.go#L364)</small>
 
+### type PopupKind
+
+```go
+type PopupKind string
+```
+
+PopupKind is what a control opens: the kind of element that appears when it is activated, stated so a reader can say so before the press.
+
+It is the vocabulary of aria-haspopup, and it exists for the near miss Style.AccessibilityExpanded names and turns down. A trigger that opens a modal looks exactly like a disclosure — comps.DatePicker's even flips a glyph — and it is not one: aria-expanded says the content is here, in the page, and can be shown or hidden, where a popup is a new surface the reader is moved into. Before this type the honest thing was to say nothing, and a reader pressing comps.Menu's "⋯" was told "button" and then found itself in a dialog with no warning.
+
+#### Why one value, when ARIA has seven
+
+ARIA's attribute takes false, true, menu, listbox, tree, grid and dialog. This carries the one a widget here can honestly say:
+
+	dialog    comps.Menu and comps.DatePicker both present through core.Modal,
+	          which both web targets write as role="dialog". The value names
+	          what the reader actually lands in.
+	menu      also `true`, its synonym. comps.Menu is *called* a menu and is
+	          not one to a reader: its sheet is a dialog of buttons, and
+	          core.Role has no `menu`/`menuitem` pair
+	          (aria/verify/refusals_test.go records why). Saying menu would
+	          announce a menu keyboard — arrows between items, Escape back to
+	          the trigger — that nothing supplies.
+	listbox   a combobox's popup is a listbox implicitly, so the one widget
+	          with a listbox popup (comps.SearchableSelect, through
+	          RoleComboBox) needs no attribute, and no other trigger opens one.
+	tree      no widget has either, and both are refused patterns.
+	grid
+	false     the absence of a claim, which is PopupNone.
+
+A value is added when a widget opens that kind of surface, not before: a constant naming a popup nothing presents would be a claim the framework cannot keep.
+
+#### Why the values are ARIA's own spellings
+
+The same trade core.Role, SelectedState and ExpandedState made: both web targets write the value verbatim and need no table.
+
+#### What each target does with it
+
+The two web targets write aria-haspopup, scoped to the roles ARIA defines it on (see Style.AccessibilityHasPopup). Neither native has anything to put it in — Compose's semantics and SwiftUI's traits have no popup property — and both present a Modal through a platform dialog that announces itself when it opens, which is the half of the warning that matters most there. The key crosses the bridge and is deliberately unparsed on both.
+
+<small>[core/popup.go:53](https://github.com/rohanthewiz/grmob/blob/master/core/popup.go#L53)</small>
+
+```go
+const (
+	// PopupNone is the zero value: this control opens nothing, or says
+	// nothing about what it opens. Both web targets write no attribute.
+	PopupNone PopupKind = ""
+
+	// PopupDialog — activating this control opens a dialog. See the type doc
+	// for why this is the only kind a widget here can say.
+	PopupDialog PopupKind = "dialog"
+)
+```
+
+#### func PopupKinds
+
+```go
+func PopupKinds() []PopupKind
+```
+
+PopupKinds returns every stated value, in declaration order. PopupNone is excluded for the reason ExpandedStates() excludes its own zero value: it is the absence of a claim rather than one of the kinds.
+
+<small>[core/popup.go:68](https://github.com/rohanthewiz/grmob/blob/master/core/popup.go#L68)</small>
+
 ### type Position
 
 ```go
 type Position string
 ```
 
-<small>[core/style.go:1150](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L1150)</small>
+<small>[core/style.go:1197](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L1197)</small>
 
 ```go
 const (
@@ -4384,7 +4451,7 @@ TriggerRender invokes the handler registered under id, if any.
 type ResponsiveStyle map[string]Style
 ```
 
-<small>[core/style.go:1105](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L1105)</small>
+<small>[core/style.go:1152](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L1152)</small>
 
 ### type RichSelection
 
@@ -4459,17 +4526,17 @@ The set has to be \*some\* vocabulary, and the four renderers do not share one. 
 	alert         | role="alert"    | —              | liveRegion = Assertive
 	log           | role="log"      | —              | liveRegion = Polite
 	progressbar   | role=…          | —              | — (but see below)
-	the other 13  | role=…          | —              | —
+	the other 14  | role=…          | —              | —
 
-The other thirteen are table, rowgroup, row, cell, list, listitem, listbox, option, tabpanel, banner, navigation, toolbar and group — the tabular set, both collection pairs, the region a tab shows, the landmarks, and the naming role.
+The other fourteen are table, rowgroup, row, cell, list, listitem, listbox, option, tabpanel, banner, navigation, toolbar, combobox and group — the tabular set, both collection pairs, the region a tab shows, the landmarks, the field that owns a popup list, and the naming role.
 
 progressbar has a row of its own because its dashes mean less than the others'. The \*role\* maps to nothing on either phone — neither has a word for what a progress bar is — while the value beside it maps to Compose's progressBarRangeInfo, which is one of the better mappings in this framework: TalkBack turns the numbers into a percentage it localizes itself. So the thing a reader most wants to hear does arrive on one native; it arrives through Style.AccessibilityValue rather than through this field. See core.ValueRange.
 
 The tab pair is the one row of that table where the two natives disagree about \*which half\* they can say, and it is a useful illustration of why the vocabulary is ARIA's rather than either platform's. Compose has a Role.Tab for the control and nothing for the strip around it; SwiftUI has .isTabBar for the strip and nothing for the control. Neither could have supplied the pair, and a caller marking up a tab strip sets both and gets whichever half each platform knows.
 
-Fourteen of the twenty-seven do nothing on either native, and that is the honest state of those platforms rather than a gap to be filled later: neither has a tabular semantics vocabulary a role can be mapped onto (Compose has collectionInfo, which describes counts and indices this prop does not carry), neither has a listbox in its semantics vocabulary (both spell a chosen item as a \*state\* instead, which is why the selectable pair costs them nothing to leave out — see RoleListBox), and neither has landmarks at all — VoiceOver's rotor navigates by heading, not by banner.
+Fifteen of the twenty-eight do nothing on either native, and that is the honest state of those platforms rather than a gap to be filled later: neither has a tabular semantics vocabulary a role can be mapped onto (Compose has collectionInfo, which describes counts and indices this prop does not carry), neither has a listbox in its semantics vocabulary (both spell a chosen item as a \*state\* instead, which is why the selectable pair costs them nothing to leave out — see RoleListBox), and neither has landmarks at all — VoiceOver's rotor navigates by heading, not by banner.
 
-RoleGroup is the one empty pair in that fourteen that is empty for the opposite reason, and it is worth telling apart. The other thirteen are silent because the platform has no way to say the thing; \`group\` is silent because neither platform \*needs\* it — both honour an accessibility label on any node at all, and making that label legal is the whole of what the role does. See its own block below.
+RoleGroup is the one empty pair in that fifteen that is empty for the opposite reason, and it is worth telling apart. The other fourteen are silent because the platform has no way to say the thing; \`group\` is silent because neither platform \*needs\* it — both honour an accessibility label on any node at all, and making that label legal is the whole of what the role does. See its own block below.
 
 A role that maps to nothing is still worth setting. The web is a first-class target here, the mapping can improve later without the call sites changing, and a role that is right on one platform and inert on two is strictly better than a div.
 
@@ -4675,6 +4742,50 @@ const (
 )
 ```
 
+The field that owns a popup list: a text input whose typing filters the options under it, with the keyboard moving through them while focus stays in the field.
+
+##### Why a role of its own when the listbox pair already carries a choice
+
+Because the listbox pattern answers the wrong question for a field. A listbox is its own tab stop: Tab moves focus \*into\* it and the arrows move among its options. comps.SearchableSelect shipped that way, and it cost the field its focus — the list sits under a field the user is typing in, so reaching an option meant leaving the caret, and a keyboard pick removed the focused option with the list and dropped focus onto the page.
+
+ARIA's combobox pattern is the shape that keeps both: the field keeps DOM focus the whole time, and aria-activedescendant names which option the arrows have reached. A reader announces that option as if it were focused, the caret stays where it was, and typing carries on. The listbox is still there and still RoleListBox — it is the \*popup\*, named by the field's aria-controls, and the runtime takes it out of the tab order (see "The combobox pattern" in wasm/grmob-runtime.js).
+
+##### What a combobox states, and where each part lives
+
+	aria-expanded           Style.AccessibilityExpanded — whether the list is
+	                        showing. ARIA *requires* it on this role, so a
+	                        combobox with the field unset is incomplete.
+	aria-controls           Style.AccessibilityControls — the listbox's
+	                        AccessibilityID. Also required while the popup
+	                        shows.
+	aria-activedescendant   written by the WASM runtime alone, per keystroke.
+	                        It is behaviour rather than a fact about the tree
+	                        (which option the arrows reached changes with no
+	                        render in between), the same argument that keeps
+	                        a roving tabindex out of core and out of htmlout.
+	aria-haspopup           implicit: a combobox's popup is a listbox unless
+	                        it says otherwise, so nothing is written.
+
+##### It goes on the field, not the container
+
+ARIA 1.2 moved the role onto the input itself (1.1 put it on a wrapper that owned both the input and the list), and the reason is the one above: the element with focus has to be the one carrying the state. So the node that takes this role is a core.Input, exported as \<input role="combobox">, which the HTML-ARIA mapping allows for a text input.
+
+##### What each target does with it
+
+	web       role="combobox"; the runtime adds the keyboard (arrows move the
+	          active option, Enter picks, focus never leaves the field)
+	Compose   nothing. Role.DropdownList is the near miss and is turned down:
+	          TalkBack would announce the text field as a drop-down list,
+	          which is a control you open rather than one you type into
+	SwiftUI   nothing; the field is a TextField, which VoiceOver already
+	          announces as editable, and no trait names a popup
+
+On both phones the list is reached by swiping, as every collection is, so the pattern's keyboard half has nothing to replace there.
+
+```go
+const RoleComboBox Role = "combobox"
+```
+
 The naming role: the least a container can be, and the only thing that makes an accessible name on one legal at all.
 
 ##### The silence it closes
@@ -4797,7 +4908,7 @@ So the two cases are separated where they are made:
 
 \`composite\` is exactly membership of KeyboardComposites, and role\_control\_test.go holds the two to each other — a container added to that list and not here would report false for a role that has a keyboard, which is the same class of quiet wrong answer one table over.
 
-<small>[core/role.go:746](https://github.com/rohanthewiz/grmob/blob/master/core/role.go#L746)</small>
+<small>[core/role.go:813](https://github.com/rohanthewiz/grmob/blob/master/core/role.go#L813)</small>
 
 #### func KeyboardComposites
 
@@ -4819,9 +4930,11 @@ The runtime keeps the same four in two tables split by a different question (whe
 
 \`menu\`, \`menubar\`, \`tree\`, \`treegrid\` and \`grid\` are the patterns ARIA describes that this framework refuses, each for a stated reason — aria/verify/refusals\_test.go holds every refusal to what the pattern actually requires. \`list\` is deliberately absent and is the near miss worth naming: it is content rather than a control, and ARIA gives it no keyboard at all.
 
+\`combobox\` is absent for the opposite reason: it has a keyboard, and the keyboard is not a composite's. Its focus never moves — the field keeps it and aria-activedescendant names the option the arrows reached — so there is no tab stop to rove and nothing for the member walk or the audit's nested-composite rule to say. The listbox it controls is in this list, and the runtime stands it down while it is a combobox's popup; see RoleComboBox.
+
 Container order matches Roles(); the members are not here, because being a member is a fact about a role's parent rather than about the role.
 
-<small>[core/role.go:701](https://github.com/rohanthewiz/grmob/blob/master/core/role.go#L701)</small>
+<small>[core/role.go:768](https://github.com/rohanthewiz/grmob/blob/master/core/role.go#L768)</small>
 
 #### func Roles
 
@@ -4837,7 +4950,7 @@ A fresh slice per call rather than a package-level var, which any importer could
 
 Pinned to the const blocks above by role\_enum\_test.go, which reads this file's syntax tree: adding a constant without adding it here should fail \`go test ./...\` rather than silently shrink the set every renderer's coverage check rests on.
 
-<small>[core/role.go:645](https://github.com/rohanthewiz/grmob/blob/master/core/role.go#L645)</small>
+<small>[core/role.go:704](https://github.com/rohanthewiz/grmob/blob/master/core/role.go#L704)</small>
 
 #### func TappableContainerRoles
 
@@ -4859,7 +4972,7 @@ The fact is here now, and role\_control\_test.go is what makes it a property rat
 
 Because the question is narrower than it looks: not "is this thing interactive" but "does putting this role on a plain container make it a control the browser should give a tab stop to". RoleOption and RoleTab are interactive and are \*not\* here — they are members of a composite, whose tab stop belongs to their container and not to them, and taking one as a toolbar's control would put a second keyboard on a widget that has one.
 
-<small>[core/role.go:944](https://github.com/rohanthewiz/grmob/blob/master/core/role.go#L944)</small>
+<small>[core/role.go:1011](https://github.com/rohanthewiz/grmob/blob/master/core/role.go#L1011)</small>
 
 ### type SelectMenuItem
 
@@ -5590,6 +5703,7 @@ type Style struct {
 	//	option          aria-selected              no
 	//	link            no                         yes
 	//	listbox         no                         yes
+	//	combobox        no                         yes, and required
 	//
 	// Both lists are ARIA's own scoping rather than a shortlist of what seemed
 	// useful, and the two disagree at both ends. So the two fields cannot
@@ -5615,9 +5729,9 @@ type Style struct {
 	//
 	// aria-expanded says the content is here, in the page, and can be shown or
 	// hidden. A trigger that opens a modal is a different relationship —
-	// ARIA spells that aria-haspopup, which this vocabulary does not carry —
-	// so comps.DatePicker's trigger, which looks exactly like a
-	// disclosure and even flips a glyph, deliberately sets nothing.
+	// ARIA spells that aria-haspopup, which is AccessibilityHasPopup below —
+	// so comps.DatePicker's trigger, which looks exactly like a disclosure
+	// and even flips a glyph, states a popup and leaves this field unset.
 	//
 	// # One native maps it and one cannot, which is the reverse of usual
 	//
@@ -5637,6 +5751,46 @@ type Style struct {
 	// key crosses the bridge, is deliberately not parsed, and the note in
 	// GrMobStyle.swift says which property it is turning down.
 	AccessibilityExpanded ExpandedState `json:",omitzero"`
+
+	// AccessibilityHasPopup is what this control opens — today, only ever a
+	// dialog. See PopupKind for the vocabulary and for why ARIA's other six
+	// values are not in it.
+	//
+	// # The near miss above, given its own field
+	//
+	// AccessibilityExpanded turns down a trigger that opens a modal, because a
+	// disclosure's content is in the page and a dialog is a new surface. That
+	// left comps.Menu and comps.DatePicker saying nothing at all, which is
+	// the silence this closes: aria-haspopup is ARIA's spelling of exactly that
+	// relationship, and a reader announces it with the name ("Sort, pop-up
+	// button").
+	//
+	// # The role guard, which is a fifth list
+	//
+	// ARIA 1.2 defines aria-haspopup for application, button, combobox,
+	// gridcell, link, menuitem, slider, tab, textbox and treeitem, lets
+	// columnheader inherit it from gridcell, and deprecates it everywhere
+	// else. Of those, core.Role carries button, link, tab, columnheader and
+	// combobox. Both web exporters write it for exactly the roles the
+	// generated fixture gives it among core's own —
+	// aria/verify/aria_test.go's state-guard test asks every role in both
+	// directions, so the arms of ariaHasPopup cannot drift from the
+	// specification. A core.Button needs no role, the node type being one,
+	// which is the case comps.Menu's trigger is.
+	//
+	// comps.DatePicker's trigger is a Row with an OnTap, so it states
+	// RoleButton alongside this. Without a role the attribute would have
+	// nothing to sit on but ariaRole's `group` fallback, and "group, pop-up"
+	// describes nothing a reader can press.
+	//
+	// # Neither native reads it
+	//
+	// Compose's SemanticsProperties and SwiftUI's AccessibilityTraits have no
+	// popup member. Both platforms present a Modal as a platform dialog that
+	// announces itself on opening, so the warning arrives one step later there
+	// rather than not at all. The key crosses the bridge and is deliberately
+	// unparsed; the notes in GrMobStyle.kt and GrMobStyle.swift say so.
+	AccessibilityHasPopup PopupKind `json:",omitzero"`
 
 	// AccessibilityValue is where a valued control sits inside its range —
 	// how far an upload has got, which step a wizard is on. See ValueRange
@@ -5662,7 +5816,8 @@ type Style struct {
 	//	aria-level        heading, listitem, row     — two fields, one attribute
 	//	aria-selected     option, tab, row, columnheader
 	//	aria-pressed      button
-	//	aria-expanded     button, link, listbox, row, columnheader, tab
+	//	aria-expanded     button, link, listbox, row, columnheader, tab, combobox
+	//	aria-haspopup     button, link, tab, columnheader, combobox
 	//	aria-value*       progressbar
 	//
 	// No two of those lists are the same list, which is the argument for each
@@ -5920,7 +6075,7 @@ The two returns are the two questions a renderer has, and they are separate beca
 
 It exists so the ShrinkNone rule is stated once rather than in each renderer. The two DOM renderers spell their guards independently — that is deliberate elsewhere in this framework — but the mapping from a stored number to a meaning is not a spelling, it is the contract, and three copies of it is how this field got into trouble in the first place.
 
-<small>[core/style.go:1248](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L1248)</small>
+<small>[core/style.go:1295](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L1295)</small>
 
 #### func (Style) With
 
@@ -5928,7 +6083,7 @@ It exists so the ShrinkNone rule is stated once rather than in each renderer. Th
 func (s Style) With(other Style) Style
 ```
 
-<small>[core/style_props.go:559](https://github.com/rohanthewiz/grmob/blob/master/core/style_props.go#L559)</small>
+<small>[core/style_props.go:576](https://github.com/rohanthewiz/grmob/blob/master/core/style_props.go#L576)</small>
 
 ### type StyleProp
 
@@ -5938,7 +6093,7 @@ type StyleProp interface {
 }
 ```
 
-<small>[core/style.go:738](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L738)</small>
+<small>[core/style.go:780](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L780)</small>
 
 #### func AccessibilityControls
 
@@ -5958,7 +6113,7 @@ AccessibilityControls says which element this control switches, by the Accessibi
 
 It is written verbatim and nothing checks that the target exists: an export is one document at a time and a runtime patch is one element at a time, so neither target can see the whole page at the moment the attribute is written. A reference to an id nothing answers to is inert rather than harmful, which is the same trade aria-description makes. See Style.AccessibilityID for why this is the one relationship the vocabulary carries.
 
-<small>[core/style_props.go:513](https://github.com/rohanthewiz/grmob/blob/master/core/style_props.go#L513)</small>
+<small>[core/style_props.go:530](https://github.com/rohanthewiz/grmob/blob/master/core/style_props.go#L530)</small>
 
 #### func AccessibilityExpanded
 
@@ -5974,9 +6129,24 @@ AccessibilityExpanded says whether this disclosure is open — the accordion sec
 
 Use core.ExpandedWhen to convert the bool the widget already holds. Setting only the open case and leaving the shut one unset is the mistake the three-valued type exists to prevent: a closed disclosure that says nothing is announced as an ordinary button, and "collapsed" is the whole of what invites the press.
 
-Paired with a role that can carry it, as a level and a selection both are — and \*not\* the same list a selection takes. aria-expanded is defined for button, link, listbox, row and columnheader among the roles this framework carries, which drops option and adds link and listbox. A core.Button needs no role of its own, the node type being one; anything else is dropped by both web targets. See Style.AccessibilityExpanded for the full table, for the dialog-shaped near miss it deliberately does not cover, and for why one native maps this and the other cannot.
+Paired with a role that can carry it, as a level and a selection both are — and \*not\* the same list a selection takes. aria-expanded is defined for button, link, listbox, row, columnheader and combobox among the roles this framework carries, which drops option and adds link and listbox. A core.Button needs no role of its own, the node type being one; anything else is dropped by both web targets. See Style.AccessibilityExpanded for the full table, for the dialog-shaped near miss it deliberately does not cover, and for why one native maps this and the other cannot.
 
 <small>[core/style_props.go:440](https://github.com/rohanthewiz/grmob/blob/master/core/style_props.go#L440)</small>
+
+#### func AccessibilityHasPopup
+
+```go
+func AccessibilityHasPopup(kind PopupKind) StyleProp
+```
+
+AccessibilityHasPopup says what activating this control opens.
+
+	comps.Button{Label: "⋯", AccessibilityLabel: "Note actions",
+		Style: []core.StyleProp{core.AccessibilityHasPopup(core.PopupDialog)}}
+
+It is the relationship AccessibilityExpanded deliberately does not cover: a trigger that presents a core.Modal is not a disclosure, and says so with this instead. Paired with a role ARIA 1.2 defines the attribute on — button, link, tab, columnheader and combobox among core's — or with a core.Button, whose node type is one; anything else is dropped by both web targets. Neither native reads it. See PopupKind and Style.AccessibilityHasPopup.
+
+<small>[core/style_props.go:457](https://github.com/rohanthewiz/grmob/blob/master/core/style_props.go#L457)</small>
 
 #### func AccessibilityHeadingLevel
 
@@ -6008,7 +6178,7 @@ func AccessibilityHidden() StyleProp
 
 AccessibilityHidden removes the element (and its subtree) from the accessibility tree — for decorative content a screen reader should skip.
 
-<small>[core/style_props.go:521](https://github.com/rohanthewiz/grmob/blob/master/core/style_props.go#L521)</small>
+<small>[core/style_props.go:538](https://github.com/rohanthewiz/grmob/blob/master/core/style_props.go#L538)</small>
 
 #### func AccessibilityHint
 
@@ -6032,7 +6202,7 @@ AccessibilityID gives this element a document-global name that another element c
 
 Uniqueness is the caller's, as it is in hand-written HTML, and the "grmob-" prefix is reserved for core.TabView's own wiring. See Style.AccessibilityID for the whole argument — including why this and AccessibilityControls are the only two IDREF props in the vocabulary.
 
-<small>[core/style_props.go:488](https://github.com/rohanthewiz/grmob/blob/master/core/style_props.go#L488)</small>
+<small>[core/style_props.go:505](https://github.com/rohanthewiz/grmob/blob/master/core/style_props.go#L505)</small>
 
 #### func AccessibilityLabel
 
@@ -6116,7 +6286,7 @@ Set on the container — the listbox or the tablist — not on the members. See 
 
 A no-arg flag rather than a bool, like AccessibilityHidden and unlike Disabled: a caller does not have this in a variable, and there is no case for forcing it back off — a widget that does not want it writes no prop.
 
-<small>[core/style_props.go:537](https://github.com/rohanthewiz/grmob/blob/master/core/style_props.go#L537)</small>
+<small>[core/style_props.go:554](https://github.com/rohanthewiz/grmob/blob/master/core/style_props.go#L554)</small>
 
 #### func AccessibilityValue
 
@@ -6139,7 +6309,7 @@ Paired with a role that can carry it, as the level, the selection and the disclo
 
 ValueRange.Text is the half that is not web-only: it reaches Compose's stateDescription and SwiftUI's accessibilityValue, neither of which asks what the node is. See Style.AccessibilityValue for the guard table and core.ValueRange for why the numbers are strings.
 
-<small>[core/style_props.go:472](https://github.com/rohanthewiz/grmob/blob/master/core/style_props.go#L472)</small>
+<small>[core/style_props.go:489](https://github.com/rohanthewiz/grmob/blob/master/core/style_props.go#L489)</small>
 
 #### func Align
 
@@ -6231,7 +6401,7 @@ Disabled hands the node to the platform's own disabled state: it stops accepting
 
 It takes the value rather than being a no-arg flag (unlike AccessibilityHidden) because the caller almost always has a bool in hand — \`core.Disabled(sending.Get())\` — and because passing false is the only way to force a node back to enabled: UseStyle's "a zero value means unset" rule means a Style{Disabled: false} cannot clear a flag already on the target.
 
-<small>[core/style_props.go:553](https://github.com/rohanthewiz/grmob/blob/master/core/style_props.go#L553)</small>
+<small>[core/style_props.go:570](https://github.com/rohanthewiz/grmob/blob/master/core/style_props.go#L570)</small>
 
 #### func Display
 
@@ -6518,7 +6688,7 @@ PaddingHorizontal sets the left and right insets.
 
 It writes the explicit Left/Right sides as well as the Horizontal shorthand. The renderers resolve a side as "the explicit value if non-zero, otherwise the axis shorthand" (see htmlout.EdgeCSS), so a prop that wrote only the shorthand could never override a side that was already set: a theme Column carries Left/Right 16, and PaddingHorizontal(0) after it used to leave the 16 in place — and PaddingHorizontal(24) used to render as 16. Writing the sides too gives this prop the same last-one-wins ordering every other StyleProp has, and a zero clears the theme value in all four renderers without any of them changing their resolution rule.
 
-<small>[core/style.go:1097](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L1097)</small>
+<small>[core/style.go:1144](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L1144)</small>
 
 #### func PaddingLeft
 
@@ -6602,7 +6772,7 @@ Unlike UseStyle, this setter can force zero: Rotate(0) writes the field, which i
 func RoundedShadowBox() StyleProp
 ```
 
-<small>[core/style.go:1069](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L1069)</small>
+<small>[core/style.go:1116](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L1116)</small>
 
 #### func RowGap
 
@@ -6707,7 +6877,7 @@ The rule's one unavoidable edge is that a zero value is indistinguishable from "
 
 This merges every field of Style. It previously covered only fourteen of them, which meant Width, Height, the whole flex group, and the accessibility fields were silently dropped — a style value carrying them applied cleanly and did nothing. Any field added to Style must be added here too; TestUseStyleMergesEveryField walks the struct reflectively and fails if one is missed.
 
-<small>[core/style.go:770](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L770)</small>
+<small>[core/style.go:812](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L812)</small>
 
 #### func WhiteSpace
 
@@ -7786,7 +7956,7 @@ Like Box and Scroll it carries no theme base — a theme Column's screen inset a
 type Weight int
 ```
 
-<small>[core/style.go:670](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L670)</small>
+<small>[core/style.go:712](https://github.com/rohanthewiz/grmob/blob/master/core/style.go#L712)</small>
 
 ```go
 const (

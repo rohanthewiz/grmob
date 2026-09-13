@@ -44,12 +44,12 @@ import "strconv"
 //	alert         | role="alert"    | —              | liveRegion = Assertive
 //	log           | role="log"      | —              | liveRegion = Polite
 //	progressbar   | role=…          | —              | — (but see below)
-//	the other 13  | role=…          | —              | —
+//	the other 14  | role=…          | —              | —
 //
-// The other thirteen are table, rowgroup, row, cell, list, listitem, listbox,
-// option, tabpanel, banner, navigation, toolbar and group — the tabular set,
-// both collection pairs, the region a tab shows, the landmarks, and the naming
-// role.
+// The other fourteen are table, rowgroup, row, cell, list, listitem, listbox,
+// option, tabpanel, banner, navigation, toolbar, combobox and group — the
+// tabular set, both collection pairs, the region a tab shows, the landmarks,
+// the field that owns a popup list, and the naming role.
 //
 // progressbar has a row of its own because its dashes mean less than the
 // others'. The *role* maps to nothing on either phone — neither has a word for
@@ -68,7 +68,7 @@ import "strconv"
 // supplied the pair, and a caller marking up a tab strip sets both and gets
 // whichever half each platform knows.
 //
-// Fourteen of the twenty-seven do nothing on either native, and that is the
+// Fifteen of the twenty-eight do nothing on either native, and that is the
 // honest state of those platforms rather than a gap to be filled later:
 // neither has a tabular semantics vocabulary a role can be mapped onto (Compose
 // has collectionInfo, which describes counts and indices this prop does not
@@ -77,8 +77,8 @@ import "strconv"
 // them nothing to leave out — see RoleListBox), and neither has landmarks at
 // all — VoiceOver's rotor navigates by heading, not by banner.
 //
-// RoleGroup is the one empty pair in that fourteen that is empty for the
-// opposite reason, and it is worth telling apart. The other thirteen are silent
+// RoleGroup is the one empty pair in that fifteen that is empty for the
+// opposite reason, and it is worth telling apart. The other fourteen are silent
 // because the platform has no way to say the thing; `group` is silent because
 // neither platform *needs* it — both honour an accessibility label on any node
 // at all, and making that label legal is the whole of what the role does. See
@@ -556,6 +556,65 @@ const (
 // else, which is the honest half. See core.ValueRange.
 const RoleProgressBar Role = "progressbar"
 
+// The field that owns a popup list: a text input whose typing filters the
+// options under it, with the keyboard moving through them while focus stays in
+// the field.
+//
+// # Why a role of its own when the listbox pair already carries a choice
+//
+// Because the listbox pattern answers the wrong question for a field. A
+// listbox is its own tab stop: Tab moves focus *into* it and the arrows move
+// among its options. comps.SearchableSelect shipped that way, and it cost
+// the field its focus — the list sits under a field the user is typing in, so
+// reaching an option meant leaving the caret, and a keyboard pick removed the
+// focused option with the list and dropped focus onto the page.
+//
+// ARIA's combobox pattern is the shape that keeps both: the field keeps DOM
+// focus the whole time, and aria-activedescendant names which option the
+// arrows have reached. A reader announces that option as if it were focused,
+// the caret stays where it was, and typing carries on. The listbox is still
+// there and still RoleListBox — it is the *popup*, named by the field's
+// aria-controls, and the runtime takes it out of the tab order (see
+// "The combobox pattern" in wasm/grmob-runtime.js).
+//
+// # What a combobox states, and where each part lives
+//
+//	aria-expanded           Style.AccessibilityExpanded — whether the list is
+//	                        showing. ARIA *requires* it on this role, so a
+//	                        combobox with the field unset is incomplete.
+//	aria-controls           Style.AccessibilityControls — the listbox's
+//	                        AccessibilityID. Also required while the popup
+//	                        shows.
+//	aria-activedescendant   written by the WASM runtime alone, per keystroke.
+//	                        It is behaviour rather than a fact about the tree
+//	                        (which option the arrows reached changes with no
+//	                        render in between), the same argument that keeps
+//	                        a roving tabindex out of core and out of htmlout.
+//	aria-haspopup           implicit: a combobox's popup is a listbox unless
+//	                        it says otherwise, so nothing is written.
+//
+// # It goes on the field, not the container
+//
+// ARIA 1.2 moved the role onto the input itself (1.1 put it on a wrapper that
+// owned both the input and the list), and the reason is the one above: the
+// element with focus has to be the one carrying the state. So the node that
+// takes this role is a core.Input, exported as <input role="combobox">, which
+// the HTML-ARIA mapping allows for a text input.
+//
+// # What each target does with it
+//
+//	web       role="combobox"; the runtime adds the keyboard (arrows move the
+//	          active option, Enter picks, focus never leaves the field)
+//	Compose   nothing. Role.DropdownList is the near miss and is turned down:
+//	          TalkBack would announce the text field as a drop-down list,
+//	          which is a control you open rather than one you type into
+//	SwiftUI   nothing; the field is a TextField, which VoiceOver already
+//	          announces as editable, and no trait names a popup
+//
+// On both phones the list is reached by swiping, as every collection is, so the
+// pattern's keyboard half has nothing to replace there.
+const RoleComboBox Role = "combobox"
+
 // The naming role: the least a container can be, and the only thing that makes
 // an accessible name on one legal at all.
 //
@@ -653,6 +712,7 @@ func Roles() []Role {
 		RoleStatus, RoleAlert, RoleLog,
 		RoleHeading, RoleButton, RoleLink, RoleImg,
 		RoleProgressBar,
+		RoleComboBox,
 		RoleGroup,
 	}
 }
@@ -695,6 +755,13 @@ func Roles() []Role {
 // pattern actually requires. `list` is deliberately absent and is the near
 // miss worth naming: it is content rather than a control, and ARIA gives it no
 // keyboard at all.
+//
+// `combobox` is absent for the opposite reason: it has a keyboard, and the
+// keyboard is not a composite's. Its focus never moves — the field keeps it
+// and aria-activedescendant names the option the arrows reached — so there is
+// no tab stop to rove and nothing for the member walk or the audit's
+// nested-composite rule to say. The listbox it controls is in this list, and
+// the runtime stands it down while it is a combobox's popup; see RoleComboBox.
 //
 // Container order matches Roles(); the members are not here, because being a
 // member is a fact about a role's parent rather than about the role.

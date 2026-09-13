@@ -431,8 +431,8 @@ func AccessibilitySelected(state SelectedState) StyleProp {
 //
 // Paired with a role that can carry it, as a level and a selection both are —
 // and *not* the same list a selection takes. aria-expanded is defined for
-// button, link, listbox, row and columnheader among the roles this framework
-// carries, which drops option and adds link and listbox. A core.Button needs
+// button, link, listbox, row, columnheader and combobox among the roles this
+// framework carries, which drops option and adds link and listbox. A core.Button needs
 // no role of its own, the node type being one; anything else is dropped by
 // both web targets. See Style.AccessibilityExpanded for the full table, for
 // the dialog-shaped near miss it deliberately does not cover, and for why one
@@ -440,6 +440,23 @@ func AccessibilitySelected(state SelectedState) StyleProp {
 func AccessibilityExpanded(state ExpandedState) StyleProp {
 	return styleFunc(func(s *Style) {
 		s.AccessibilityExpanded = state
+	})
+}
+
+// AccessibilityHasPopup says what activating this control opens.
+//
+//	comps.Button{Label: "⋯", AccessibilityLabel: "Note actions",
+//		Style: []core.StyleProp{core.AccessibilityHasPopup(core.PopupDialog)}}
+//
+// It is the relationship AccessibilityExpanded deliberately does not cover: a
+// trigger that presents a core.Modal is not a disclosure, and says so with this
+// instead. Paired with a role ARIA 1.2 defines the attribute on — button,
+// link, tab, columnheader and combobox among core's — or with a core.Button,
+// whose node type is one; anything else is dropped by both web targets. Neither native reads it. See PopupKind and
+// Style.AccessibilityHasPopup.
+func AccessibilityHasPopup(kind PopupKind) StyleProp {
+	return styleFunc(func(s *Style) {
+		s.AccessibilityHasPopup = kind
 	})
 }
 

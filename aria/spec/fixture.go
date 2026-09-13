@@ -17,8 +17,13 @@ import (
 // aria/verify holding that writer to this fixture's answer.
 //
 // The order is the reading order rather than alphabetical: the level, then the
-// three selection spellings, then the disclosure, then the axis, then the value
-// family. Emitted in this order into every role's "attributes" list, so a
+// three selection spellings, then the disclosure and the two popup attributes,
+// then the axis, then the value family.
+//
+// aria-activedescendant is the one row whose only writer is the WASM runtime,
+// and it is held there rather than in an exporter: the runtime writes it onto a
+// combobox as the arrows move, and aria/verify checks both that ARIA defines it
+// on that role and that the runtime writes it nowhere else. Emitted in this order into every role's "attributes" list, so a
 // regenerated fixture diffs against the previous one line for line.
 //
 // Adding a row here widens every generated entry and nothing else; it does not
@@ -29,6 +34,8 @@ var InScopeAttributes = []string{
 	"aria-pressed",
 	"aria-checked",
 	"aria-expanded",
+	"aria-haspopup",
+	"aria-activedescendant",
 	"aria-orientation",
 	"aria-valuenow",
 	"aria-valuemin",
@@ -42,7 +49,7 @@ var InScopeAttributes = []string{
 // Every one of these is a role some comment in this repository names as the
 // thing a value is *not*: `cell` is not `gridcell`, `progressbar` is not
 // `meter` or `slider`, `option` is not `treeitem`, `columnheader` is not
-// `rowheader`, `listbox` is not `combobox`, `table` is not `grid`. Having them
+// `rowheader`, `table` is not `grid`. Having them
 // here turns each of those remarks into an assertion — see
 // TestTheNearMissesAreRealDistinctions.
 //
@@ -55,6 +62,9 @@ var InScopeAttributes = []string{
 // Being here is what lets TestEveryCoreRoleIsAnARIARole's sibling checks argue
 // about them at all: a role no fixture carries is a string two renderers happen
 // to agree on.
+//
+// (`combobox` sat here as `listbox`'s near miss until core.RoleComboBox made
+// it vocabulary, and is now in the fixture as one of core's own roles.)
 //
 // `menu`, `menubar`, `tree`, `treegrid` and `grid` are the composite patterns
 // core has no vocabulary for, and `menuitem`, `menuitemcheckbox`,
@@ -81,7 +91,6 @@ var NearMisses = []string{
 	"treegrid",
 	"treeitem",
 	"rowheader",
-	"combobox",
 	"grid",
 	"menuitem",
 	"menuitemcheckbox",

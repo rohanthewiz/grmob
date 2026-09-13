@@ -34,7 +34,7 @@
 //     children are the member roles it looks for
 //   - every core.Role is decided against the tappable-container question, and
 //     the *kind* of each answer agrees with the specification wherever the
-//     specification has one (tappable_test.go). Four of the seven kinds are
+//     specification has one (tappable_test.go). Four of the eight kinds are
 //     derivable — from Required Owned Elements, from core.KeyboardComposites(),
 //     from core.CompositeMemberRole() and from the attribute list that gives a
 //     role a value range — and three are prose with the reason stated, which is

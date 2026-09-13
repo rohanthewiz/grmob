@@ -2044,9 +2044,10 @@ Other notes:
   `Disabled`, `Style` and names apply, and `OnOpen` replaces its `OnTap`. A
   widget cannot attach a tap to a View it did not build, so the slot is a
   Button. An icon trigger needs `AccessibilityLabel`.
-- The trigger has no expanded state. A control that opens a dialog is not a
-  disclosure, and ARIA's word for it, `aria-haspopup`, is not in core's
-  vocabulary.
+- The trigger states `aria-haspopup="dialog"` (`core.AccessibilityHasPopup`)
+  and no expanded state. A control that opens a dialog is not a disclosure. The
+  value is `dialog`, not `menu`: the sheet is a dialog of buttons, not an ARIA
+  menu with a menu's keyboard.
 - `Checked` is a name suffix, not a selected state. On a button that state
   becomes `aria-pressed`, which announces a toggle.
 - `Style` lands on the sheet's card, as `ActionSheet.Style` does.
@@ -2213,20 +2214,21 @@ rendered conditionally.
 | Question | Answer |
 |---|---|
 | Does the list take focus when it appears? | No. Typing carries on in the field. |
-| What does the return key do? | It belongs to the form. The field has no submit, so with `FocusRef` in `core.UseFocusOrder` it shows Next and moves to the next field. |
+| What does the return key do? | It belongs to the form. The field has no submit, so with `FocusRef` in `core.UseFocusOrder` it shows Next and moves to the next field. On the web, once the arrows have reached an option, Enter picks it instead. |
 | Does Next stop on the list? | No. The order walks declared refs, and no option is a field. |
 | Does Enter pick the top match? | No. An explicit submit would suppress Next, and one key cannot do both. |
-| Keyboard on the web? | The list is a listbox: one tab stop after the field, arrows move, Enter or Space picks. Focus does not select. |
-| Where does focus go after a pick? | On a phone the keyboard is dismissed. On the web a keyboard pick removes the focused option, so focus falls back to the page. Call `core.Focus` from `OnChange` to return it to the field. |
+| Keyboard on the web? | The field is an ARIA combobox and keeps focus: the arrows move an active option (outlined, and named by `aria-activedescendant`), Enter picks it, Escape clears it. Tab moves past the list. The arrows do not select. |
+| Where does focus go after a pick? | On a phone the keyboard is dismissed. On the web a pick made with Enter leaves focus in the field: the runtime declines the dismiss that follows it. A tap dismisses as on a phone. |
 
 Other notes:
 
 - The matches are a `RoleListBox` named "<Label> suggestions", and each row is a
   selectable `ListRow`. A status line (`RoleStatus`) says "3 matches",
   "5 of 6 matches" or "No matches". It is hidden while the list is shut.
-- It is not an ARIA combobox. `core.Role` has no `combobox`, and the pattern's
-  `aria-expanded`, `aria-controls` and `aria-activedescendant` would mean
-  renderer changes.
+- The field is `core.RoleComboBox`, with `aria-expanded` while matches show and
+  `aria-controls` naming the list. The list's id is `ID`, or one derived from
+  `Label` (`searchable-select-country`), so two selects with the same label need
+  an `ID` each. Rows are `<ID>-option-N`.
 - `Options` are `core.SelectOption`, the type `core.Select` takes. `Group`
   becomes the row's subtitle, because a heading inside a listbox would be a
   foreign child. `Disabled` and `GroupDisabled` rows are listed but cannot be

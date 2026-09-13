@@ -183,6 +183,22 @@ func TestADisclosureWithAHandlerIsNotReported(t *testing.T) {
 	}
 }
 
+// A combobox's expanded state says whether its popup shows, which typing
+// decides, so it has no press to be missing. comps.SearchableSelect's field is
+// the shape: an Input with an onChange, a role, and a stated state.
+func TestAComboboxExpandedStateIsNotAnInertDisclosure(t *testing.T) {
+	for _, state := range ExpandedStates() {
+		found := auditWith(t, &Node{
+			Type:  "Input",
+			Props: map[string]any{"onChange": "txt_1"},
+			Style: &Style{AccessibilityRole: RoleComboBox, AccessibilityExpanded: state},
+		})
+		if n := kinds(found)[ConcernInertDisclosure]; n != 0 {
+			t.Errorf("%s: a combobox reported as an inert disclosure: %+v", state, found)
+		}
+	}
+}
+
 // A keyboard contract on a widget with no keyboard.
 //
 // This is the only finding here whose subject is a *data* attribute rather
