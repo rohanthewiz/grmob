@@ -40,6 +40,11 @@ func App(ctx *core.Context) core.View {
 			core.Text("[[.Name]]", core.FontSize(28), core.FontWeight(core.Bold)),
 			core.Text(fmt.Sprintf("Count: %d", count.Get())),
 			core.Row(
+				// The theme gives every Row its own inset (16 either side in
+				// DefaultTheme), which is right for a Row that is a screen's
+				// band and wrong for one inside a Column that is already
+				// padded: the buttons would sit indented from the text above.
+				core.Padding(0),
 				core.Gap(8),
 				core.Button("-", func() { count.Set(count.Get() - 1) }),
 				core.Button("+", func() { count.Set(count.Get() + 1) }),
