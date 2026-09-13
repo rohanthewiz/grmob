@@ -6,7 +6,7 @@ import "github.com/rohanthewiz/grmob/core"
 
 Rows, columns, stacks, scrolls and lists, and the alignment vocabulary they are placed with.
 
-One of 10 topic pages of [package core](core.md), which has the package overview and an index of every topic. This page documents the declarations in `core/layout.go`, `core/list.go`, `core/stack_align.go`, `core/alignment.go`, `core/keyboard.go`, `core/placement_audit.go`.
+One of 11 topic pages of [package core](core.md), which has the package overview and an index of every topic. This page documents the declarations in `core/layout.go`, `core/list.go`, `core/stack_align.go`, `core/alignment.go`, `core/keyboard.go`, `core/placement_audit.go`.
 
 ## Index
 

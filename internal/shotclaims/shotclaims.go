@@ -198,7 +198,11 @@ var Claims = []Claim{{
 		"are above the top of the frame",
 	Shows: []string{
 		"type View interface {",
-		"func Profile(ctx *core.Context) core.View {",
+		// Not the whole line: at a phone's width the CodeEditor scrolls it
+		// sideways and the frame ends at "core.Vie". shot.mjs refuses a
+		// picture in which a claimed string is cut, so a claim names only
+		// what is whole in the frame.
+		"func Profile(ctx *core.Context)",
 		"Because views are values, composition is ordinary Go",
 		"TRY IT",
 		"Header()", "Stats()", "Bio text",

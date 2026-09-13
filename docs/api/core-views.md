@@ -6,7 +6,7 @@ import "github.com/rohanthewiz/grmob/core"
 
 View, Node, Context and state slots; conditionals, caching, error boundaries and debug-mode concerns.
 
-One of 10 topic pages of [package core](core.md), which has the package overview and an index of every topic. This page documents the declarations in `core/view.go`, `core/node.go`, `core/text.go`, `core/context.go`, `core/cleanup.go`, `core/cached.go`, `core/conditionals.go`, `core/error_boundary.go`, `core/render_manager.go`, `core/debug.go`.
+One of 11 topic pages of [package core](core.md), which has the package overview and an index of every topic. This page documents the declarations in `core/view.go`, `core/node.go`, `core/text.go`, `core/context.go`, `core/cleanup.go`, `core/cached.go`, `core/conditionals.go`, `core/error_boundary.go`, `core/render_manager.go`, `core/debug.go`.
 
 ## Index
 

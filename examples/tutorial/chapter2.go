@@ -459,8 +459,12 @@ core.Switch(notify.Get(), func(v bool) { notify.Set(v) })`),
 						}),
 					},
 					caption(notifyEffect(notify.Get())),
-					// And the head is where a checkbox belongs, with the thing
-					// that commits it below.
+					// And the head is where this checkbox belongs, with the
+					// thing that commits it below: the row is the sentence
+					// being agreed to, so the mark is read first. A checkbox
+					// that is a named option instead (a filter, "also do X")
+					// trails, which is comps.CheckboxRow and the key point
+					// below.
 					comps.ListRow{
 						Leading: core.Checkbox(terms.Get(), func(v bool) {
 							terms.Set(v)
@@ -484,6 +488,7 @@ core.Switch(notify.Get(), func(v bool) { notify.Set(v) })`),
 					"Checkbox means a value something else will act on — a form field, a selection, a terms box.",
 					"The node types are separate so the reconciler can exchange one platform control for another: a changed type is a replace.",
 					"On the wire both carry `checked`, so the difference is the node type rather than the payload.",
+					"A checkbox leads a row that is the thing being marked, like this terms box; it trails a row that is a named option, which is comps.CheckboxRow — the demo toggles elsewhere in this tutorial.",
 				),
 			)
 		},

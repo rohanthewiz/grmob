@@ -104,11 +104,32 @@ func (r SwitchRow) Render(ctx *core.Context) *core.Node {
 	return toggleRow(r.Title, r.Subtitle, r.Leading, control, r.On, set, r.Disabled, r.Style).Render(ctx)
 }
 
-// CheckboxRow is SwitchRow with a core.Checkbox on the trailing edge: the
-// "I agree to the terms" row, or a filter a form will apply later. Everything
-// in SwitchRow's doc applies unchanged, including OnToggle being a setter.
+// CheckboxRow is SwitchRow with a core.Checkbox on the trailing edge: a named
+// option a form or a later action will read — "Also delete attachments", a
+// filter, a debug flag. Everything in SwitchRow's doc applies unchanged,
+// including OnToggle being a setter.
 //
-//	comps.CheckboxRow{Title: "I agree to the terms", Checked: ok.Get(), OnToggle: ok.Set}
+//	comps.CheckboxRow{Title: "Also delete attachments", Checked: purge.Get(), OnToggle: purge.Set}
+//
+// # Trailing here, leading in a ListRow
+//
+// A checkbox goes on one edge or the other depending on what the row is, and
+// grmob's examples keep to one rule:
+//
+//	the row is…                          checkbox   build it with
+//	──────────────────────────────────   ────────   ──────────────────────────
+//	an option with a name (a setting,    trailing   CheckboxRow
+//	a filter, "also do X")
+//	the thing being marked (a task       leading    ListRow{Leading: core.Checkbox}
+//	done, a sentence agreed to)
+//
+// An option trails because it shares its list with SwitchRows, and a column of
+// controls on one edge is what lets a reader scan a settings list; the title is
+// the label and the control its value. A marked item leads because the mark is
+// read before the content, as a form's "I agree to the terms" box is on every
+// platform, and a task list's ticks line up down the side the eye starts from.
+// Tutorial lesson 2.6, "Two booleans: checkbox and switch", draws the leading
+// form; the demo toggles across the tutorial are options and use this row.
 //
 // Inside a comps.FormField the field owns the label, so leave Title empty and
 // put the sentence in the field's Label, or keep Title and give the field no

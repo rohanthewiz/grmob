@@ -12,8 +12,9 @@ import (
 //	comps.Stepper{Value: qty.Get(), Min: 1, Max: 20, OnChange: qty.Set, Label: "Quantity"}
 //
 // core.NumericInput is the typing form of the same value. A Stepper is the
-// tapping form, for small ranges where two taps beat opening a keyboard; the
-// examples hand-rolled it three times in chapter 1 of the tutorial alone.
+// tapping form, for small ranges where two taps beat opening a keyboard.
+// Chapter 1 of the tutorial once hand-rolled it three times (FontSize, Gap and
+// BorderRadius); those lessons now build theirs from this type.
 //
 //	┌ Row  role=group  label=Label  value="3" ─┐
 //	│  [ − ]      3      [ + ]                 │
