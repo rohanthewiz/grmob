@@ -1,18 +1,22 @@
 package shotclaims
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"image"
 	_ "image/png"
 	"math"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 )
 
 // The three questions the manifest can answer about itself.
@@ -97,7 +101,27 @@ const (
 // machine whose Chrome resamples noticeably differently could need the
 // table re-taken. A crop or a re-proportioned part never reaches this reading
 // at all — the size check stops it first.
-const compositeTolerance = 13.0
+//
+// # Which Chrome
+//
+// The table was taken from images shot by Chrome 152 on this project's macOS
+// machine, and the resampling row is a property of that Chrome's image filter,
+// not of the images. So the version is recorded beside the number as
+// compositeMeasuredOnChrome, and the check reads the local Chrome's major
+// version (see localChromeMajor): on a different one it logs the difference,
+// and a failure names both versions.
+//
+// A log and not a failure, for two reasons. The test reads committed PNGs and
+// launches nothing, so the local Chrome is only a proxy for the one that shot
+// them — right after a re-shoot here, stale on a machine that never re-shot.
+// And a newer Chrome that resamples the same way is the common case; failing
+// on every Chrome release would be a check people learn to ignore. What the
+// log buys is the first question a reader of a resampling-sized failure should
+// ask, answered in the output.
+const (
+	compositeTolerance        = 13.0
+	compositeMeasuredOnChrome = 152
+)
 
 // compositeLayout is what a composite page says about where its parts go.
 // Read from the page itself, so a change to the page and a change to this
@@ -137,6 +161,13 @@ var (
 //	         area under it — a stale or swapped part moves it
 func checkCompositesAreTheirParts(t *testing.T, root string) {
 	t.Helper()
+
+	// Once per run, before any reading: a Chrome whose major version differs
+	// from the one the tolerance was measured on is logged whether or not a
+	// composite then fails, so a borderline reading has the context beside it.
+	if local, _, err := localChromeMajor(); err == nil && local != compositeMeasuredOnChrome {
+		t.Log(chromeProvenance())
+	}
 
 	checked := 0
 	for _, c := range Claims {
@@ -258,8 +289,9 @@ func checkComposite(t *testing.T, root string, c Claim) {
 				"claims hold them, which is only true while it is a picture of "+
 				"those parts. A difference this size is content, not resampling: "+
 				"a part re-taken without re-shooting the composite, or parts in a "+
-				"different order. Re-shoot it after its parts (wasm/shots/shoot.sh).",
-				c.File, c.MadeOf[i], worstAt, worst, compositeTolerance)
+				"different order. Re-shoot it after its parts (wasm/shots/shoot.sh).\n\n"+
+				"%s",
+				c.File, c.MadeOf[i], worstAt, worst, compositeTolerance, chromeProvenance())
 		}
 		x += widths[i] + layout.gap
 	}
@@ -724,5 +756,127 @@ func checkScriptDrivesTheClaimedApp(t *testing.T, root, base string, c Claim) {
 			"is held to, and the test that asserts its strings would go on "+
 			"passing either way — it renders the app the CLAIM names.",
 			"the manifest", c.File, c.Package, path, head.App)
+	}
+}
+
+// --------------------------------------------------------------------------
+// Which Chrome compositeTolerance was measured on
+// --------------------------------------------------------------------------
+
+// chromeCandidates is where a Chrome might be, in the order wasm/verify's
+// browser.mjs and wasm/shots/shot.mjs look: GRMOB_CHROME first, so a machine
+// that shoots with an unusual install is read the same way here.
+func chromeCandidates() []string {
+	var c []string
+	if env := os.Getenv("GRMOB_CHROME"); env != "" {
+		c = append(c, env)
+	}
+	return append(c,
+		"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+		"/Applications/Chromium.app/Contents/MacOS/Chromium",
+		"/usr/bin/google-chrome",
+		"/usr/bin/chromium",
+		"/usr/bin/chromium-browser",
+	)
+}
+
+// chromeVersion matches the first dotted version in `--version` output:
+// "Google Chrome 152.0.7843.41" and "Chromium 152.0.7843.41 built on …" alike.
+// At least one dot is required so a digit in a product name is not a version.
+var chromeVersion = regexp.MustCompile(`\b(\d+)\.\d+(?:\.\d+)*\b`)
+
+// localChromeMajor is the major version of the first Chrome found, with its
+// path. Memoised: the composite check asks once up front and again in any
+// failure message, and `--version` on macOS loads the browser's framework,
+// which is not free.
+//
+// Errors (no Chrome, a binary that will not run, unparseable output) are
+// returned rather than reported: the version is context for a reading, and a
+// machine with no Chrome can still check committed PNGs.
+//
+// sync.OnceValue over a struct because sync.OnceValues carries only two
+// results, and callers want all three.
+func localChromeMajor() (major int, path string, err error) {
+	r := localChromeRead()
+	return r.major, r.path, r.err
+}
+
+type chromeRead struct {
+	major int
+	path  string
+	err   error
+}
+
+var localChromeRead = sync.OnceValue(func() chromeRead {
+	major, path, err := chromeMajorAt(chromeCandidates(), 10*time.Second)
+	return chromeRead{major, path, err}
+})
+
+// chromeMajorAt runs `--version` on the first existing candidate and parses
+// its major version. Only the first existing one is asked, as the harnesses
+// launch only that one: a second install is not the Chrome that shot.
+func chromeMajorAt(candidates []string, timeout time.Duration) (major int, path string, err error) {
+	for _, path := range candidates {
+		if _, err := os.Stat(path); err != nil {
+			continue
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), timeout)
+		out, err := exec.CommandContext(ctx, path, "--version").Output()
+		cancel()
+		if err != nil {
+			return 0, path, fmt.Errorf("%s --version: %w", path, err)
+		}
+		major, err := parseChromeMajor(string(out))
+		return major, path, err
+	}
+	return 0, "", fmt.Errorf("no Chrome at any of %v", candidates)
+}
+
+func parseChromeMajor(out string) (int, error) {
+	m := chromeVersion.FindStringSubmatch(out)
+	if m == nil {
+		return 0, fmt.Errorf("no version in %q", strings.TrimSpace(out))
+	}
+	return strconv.Atoi(m[1])
+}
+
+// chromeProvenance is the sentence a log or a failure carries about which
+// Chrome compositeTolerance was measured on and which one this machine has.
+func chromeProvenance() string {
+	local, path, err := localChromeMajor()
+	switch {
+	case err != nil:
+		return fmt.Sprintf("compositeTolerance was measured on Chrome %d; this "+
+			"machine's Chrome could not be read (%v).", compositeMeasuredOnChrome, err)
+	case local == compositeMeasuredOnChrome:
+		return fmt.Sprintf("compositeTolerance was measured on Chrome %d, the "+
+			"major version at %s.", compositeMeasuredOnChrome, path)
+	default:
+		return fmt.Sprintf("compositeTolerance was measured on Chrome %d, and "+
+			"%s is Chrome %d. If the composite was re-shot with this Chrome and "+
+			"the reading is near the tolerance rather than far past it, its "+
+			"resampling may differ: re-take the table above compositeTolerance "+
+			"before moving the number.",
+			compositeMeasuredOnChrome, path, local)
+	}
+}
+
+// The parse is the one piece of the version read that can be wrong without a
+// Chrome to disagree with it, so it is held to the shapes the harnesses meet.
+func TestParseChromeMajor(t *testing.T) {
+	for out, want := range map[string]int{
+		"Google Chrome 152.0.7843.41\n":                 152,
+		"Chromium 131.0.6778.85 built on Debian 12.8\n": 131,
+		"Google Chrome for Testing 99.0.4844.51 \n":     99,
+	} {
+		if got, err := parseChromeMajor(out); err != nil || got != want {
+			t.Errorf("parseChromeMajor(%q) = %d, %v; want %d", out, got, err, want)
+		}
+	}
+	if _, err := parseChromeMajor("Google Chrome\n"); err == nil {
+		t.Error("parseChromeMajor accepted output with no version in it")
+	}
+	if _, _, err := chromeMajorAt([]string{filepath.Join(t.TempDir(), "absent")}, time.Second); err == nil {
+		t.Error("chromeMajorAt found a Chrome in an empty directory")
 	}
 }
