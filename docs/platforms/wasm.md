@@ -152,6 +152,15 @@ the page for this, but a page has to know what it does to history:
   starts both entries on the same URL, and without the carry the address bar
   would go back to naming the screen just left, and a page routing on
   `hashchange` would open it again.
+- A URL typed or pasted into the address bar while a claim is on screen pushes
+  an entry above the runtime's. Its `popstate` is not a back press, so no
+  handler runs. The runtime marks that entry `grmobFolded`, steps back onto its
+  own entry, and carries the typed URL down, so the entry on top is still the
+  runtime's and names what the address bar showed. The page's `hashchange` for
+  the typed URL still arrives. It tells "above" from "below" with the
+  Navigation API's `currentEntry.index`, or with a grown `history.length` where
+  that API is missing. The fallback misreads a push only at a browser's
+  session-history cap.
 
 Two rules for the page follow from this:
 
