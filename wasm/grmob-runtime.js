@@ -6341,7 +6341,15 @@ const GrMob = (() => {
                     // The patch carries only the changed Style, not the node
                     // type — and styleFromGrMob needs the type to pick a
                     // flex axis. It was recorded on the element at creation.
-                    applyStyle(el, p.Changes, el.dataset.nodeType || "");
+                    //
+                    // `|| {}` for the update-props reason: a node that lost its
+                    // whole Style used to arrive as Changes null, and
+                    // styleFromGrMob threw reading a field off it, killing the
+                    // rest of the batch. The reconciler now sends {} (wireStyle
+                    // in reconcile/patch.go); the guard stays for a Go side
+                    // older than that, and matches createElement's own
+                    // `node.Style || {}`.
+                    applyStyle(el, p.Changes || {}, el.dataset.nodeType || "");
                     break;
 
                 case "replace":

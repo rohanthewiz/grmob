@@ -205,3 +205,27 @@ test("a style patch cannot close an open modal, or open a closed one", () => {
     assert.equal(at(0).style.display, "flex");
     assert.equal(at(1).style.display, "none");
 });
+
+// The patch-path twin of the rule above. A node that loses its whole Style
+// sends update-style, and a Go side older than reconcile's wireStyle sent it
+// as Changes null, which threw inside styleFromGrMob and abandoned the rest of
+// the batch. Both spellings must land the element where a styleless create
+// would, and the patch after it in the same batch must still apply.
+for (const changes of [null, {}]) {
+    test(`an update-style carrying ${JSON.stringify(changes)} clears the style and the batch goes on`, () => {
+        const rt = loadRuntime();
+        rt.GrMob.mount(JSON.stringify({
+            Type: "Column",
+            Children: [
+                { Type: "Text", Props: { content: "a" }, Style: { FontSize: 16 } },
+                { Type: "Text", Props: { content: "b" } },
+            ],
+        }));
+        rt.GrMob.patch(JSON.stringify([
+            { Type: "update-style", TargetID: "root/0", Changes: changes },
+            { Type: "update-props", TargetID: "root/1", Changes: { content: "after" } },
+        ]));
+        assert.equal(nodeAt(rt.document, "root/0").style.fontSize, "", "the lost FontSize must be removed");
+        assert.equal(nodeAt(rt.document, "root/1").textContent, "after", "the batch must not stop at the style patch");
+    });
+}

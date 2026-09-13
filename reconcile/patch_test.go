@@ -1,6 +1,8 @@
 package reconcile
 
 import (
+	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/rohanthewiz/grmob/core"
@@ -104,6 +106,39 @@ func TestDiffStyleNilTransitions(t *testing.T) {
 	requirePatchTypes(t, Diff(styled(), bare(), "root"), "update-style")
 	if patches := Diff(bare(), bare(), "root"); len(patches) != 0 {
 		t.Fatalf("nil->nil style produced patches: %+v", patches)
+	}
+}
+
+// A node that loses every prop, or its whole Style, still sends a patch, and
+// the patch carries an empty value rather than JSON null. See wireProps for why
+// null is the spelling to avoid. Marshalled here because the wire bytes are the
+// contract: Changes being a nil map inside an interface is invisible to a
+// comparison against nil and visible to every host.
+func TestDiffLosingEverythingSendsEmptyNotNull(t *testing.T) {
+	cases := []struct {
+		name     string
+		old, new *core.Node
+		typ      string
+	}{
+		{"props", node("Column", map[string]any{"onBack": "back_cb_0"}, nil), node("Column", nil, nil), "update-props"},
+		{"style", node("Text", nil, &core.Style{FontSize: 16}), node("Text", nil, nil), "update-style"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			patches := Diff(c.old, c.new, "root")
+			requirePatchTypes(t, patches, c.typ)
+			wire, err := json.Marshal(patches[0])
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !strings.Contains(string(wire), `"Changes":{}`) {
+				t.Errorf("%s patch = %s, want Changes {}", c.typ, wire)
+			}
+			// The tree the view built keeps its nil.
+			if c.new.Props != nil || c.new.Style != nil {
+				t.Errorf("Diff wrote its wire substitute back into the new tree: %+v", c.new)
+			}
+		})
 	}
 }
 

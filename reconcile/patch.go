@@ -79,14 +79,14 @@ func Diff(old, new *core.Node, path string) []Patch {
 		patches = append(patches, Patch{
 			Type:     "update-props",
 			TargetID: path,
-			Changes:  new.Props,
+			Changes:  wireProps(new.Props),
 		})
 	}
 	if styleChanged(old.Style, new.Style) {
 		patches = append(patches, Patch{
 			Type:     "update-style",
 			TargetID: path,
-			Changes:  new.Style,
+			Changes:  wireStyle(new.Style),
 		})
 	}
 
@@ -158,6 +158,43 @@ func propsChanged(a, b map[string]any) bool {
 		}
 	}
 	return false
+}
+
+// wireProps is the Changes of an update-props patch: the node's whole new props
+// map, and an empty map rather than nil when the node has none left.
+//
+// Both update patches carry the *whole* new value, so "no props" is a real
+// value a host must apply (every prop removed), not an absence. A nil Go map
+// marshals as JSON null, and null is the one spelling of that value a host has
+// to special-case: the WASM runtime once threw on it mid-batch (a lesson root
+// carrying only onBack, replaced by a contents root carrying nothing) and left
+// the lesson on screen. Every host in this repository now guards against null,
+// so this is for the host that has not been written yet. An empty object means
+// the same thing and needs no guard. The node tree itself is left alone: the
+// substitution happens only on the wire, so a renderer comparing nodes still
+// sees the nil the view built.
+func wireProps(p map[string]any) map[string]any {
+	if p == nil {
+		return map[string]any{}
+	}
+	return p
+}
+
+// wireStyle is wireProps for update-style: an empty Style rather than nil when
+// the node has lost its Style. Nothing core builds is styleless, so only a
+// hand-assembled tree gets here, but when one did the WASM runtime threw on the
+// null exactly as it had for props (it now guards this case too; Compose and
+// SwiftUI always read a missing object as the default Style). Every field of core.Style is omitzero (held by
+// core's TestEveryWireFieldOmitsZero), so an empty Style marshals as {}, which
+// every host reads as every style property unset. That is what the initial
+// render does with a node that has no Style (the runtime's createElement
+// applies `node.Style || {}`), so the patch leaves the element as a fresh
+// render would.
+func wireStyle(s *core.Style) *core.Style {
+	if s == nil {
+		return &core.Style{}
+	}
+	return s
 }
 
 // styleChanged reports whether two styles differ by value.
