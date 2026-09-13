@@ -1835,8 +1835,8 @@ Other notes:
 - The panel is a `RoleNavigation` landmark named by `Title`.
 - `Body` replaces the rows with any content. Its handlers close nothing unless
   they call `OnDismiss`.
-- `Width` defaults to `280px`. `MaxWidth` is read by the web targets only, so
-  cap a percentage through `PanelStyle` for the browser.
+- `Width` defaults to `280px`. Cap a percentage with `core.MaxWidth` through
+  `PanelStyle`; all four targets honour it.
 - No `OnDismiss` draws no ✕ and leaves the scrim inert.
 - Drawer holds no hooks.
 
@@ -1988,7 +1988,7 @@ Other notes:
 - The card carries `AccessibilityLabel(Title)` and the title is a heading. The
   Modal chassis supplies the dialog semantics.
 - `Style` lands on the card last. `core.MaxWidth` keeps the panel from spanning
-  a wide browser window.
+  a wide browser window or a tablet.
 - The Android and iOS placement comes from reading the renderers. It has not
   been checked on a device.
 

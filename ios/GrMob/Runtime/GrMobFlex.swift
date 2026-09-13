@@ -392,3 +392,67 @@ struct GrMobWrapSolver {
         return lines
     }
 }
+
+/// core.MaxWidth as arithmetic: CSS `max-width` resolved to a number of points.
+///
+/// Lives beside the flex solver for the reason that one does: the SwiftUI side
+/// (GrMobMaxWidthLayout and grMobDimension in GrMobStyle.swift) can only run
+/// in a view hierarchy, while the part worth checking — which strings are a
+/// cap, what a percentage is a percentage OF, and how a cap meets a declared
+/// width — is numbers in, numbers out, and `ios/verify` runs it on macOS.
+///
+/// The accepted forms are the ones grMobDimension already reads for Width, so
+/// one string means the same thing in both properties on this host:
+///
+/// ```
+///   "320px", "320"   320 points
+///   "80%"            0.8 x the width the parent offers (nil when it offers none)
+///   "", "none",
+///   "auto"           no cap — "none" is CSS's initial value, "auto" is what
+///                    a caller copying a Width idiom would write
+///   anything else    no cap (a "vw" or "em" the web reads verbatim)
+/// ```
+///
+/// A percentage resolves against the parent's proposal, not against
+/// containerRelativeFrame's "nearest container" — the cap is applied by a
+/// Layout that receives that proposal, and in a flex parent the proposal IS
+/// the containing block's content width, which is what CSS resolves it
+/// against. Percent above 100 is kept (CSS allows it; it simply never binds);
+/// a negative number is invalid CSS and is ignored rather than clamped to 0,
+/// since a clamp would collapse the box instead of leaving it alone.
+enum GrMobMaxWidth {
+    /// The cap in points, or nil when `value` imposes none against `available`.
+    static func limit(_ value: String, available: CGFloat?) -> CGFloat? {
+        // Not trimmed: this file imports CoreGraphics alone (see the solver's
+        // doc), and core's dimension strings arrive unpadded.
+        let v = value
+        if v.isEmpty || v == "none" || v == "auto" { return nil }
+        if v.hasSuffix("%") {
+            guard let pct = Double(v.dropLast()), pct >= 0,
+                  let available, available.isFinite else { return nil }
+            return available * CGFloat(pct / 100)
+        }
+        guard let n = Double(v.hasSuffix("px") ? String(v.dropLast(2)) : v), n >= 0 else {
+            return nil
+        }
+        return CGFloat(n)
+    }
+
+    /// The cap when it needs no parent to resolve: points only.
+    ///
+    /// grMobDimension uses this to clamp a RIGID frame — `frame(width:)` and
+    /// containerRelativeFrame — because a rigid frame reports its own size
+    /// whatever it is proposed, so the Layout further out could narrow the
+    /// proposal and the box would still draw at the declared width, spilling
+    /// out of the space its parent reserved. A percentage cap has no length
+    /// at that point in the chain and is left to the Layout alone.
+    static func fixedLimit(_ value: String) -> CGFloat? {
+        value.hasSuffix("%") ? nil : limit(value, available: nil)
+    }
+
+    /// CSS's `min(width, max-width)` for a width the node declared.
+    static func clamp(_ width: CGFloat, to cap: CGFloat?) -> CGFloat {
+        guard let cap else { return width }
+        return min(width, cap)
+    }
+}

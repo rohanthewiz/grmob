@@ -54,6 +54,10 @@ struct GrMobStyle: Equatable {
     var align: String = ""
     var display: String = ""
     var width: String = ""
+    /// core.MaxWidth: CSS `max-width`, in the forms GrMobMaxWidth.limit reads.
+    /// Applied by GrMobMaxWidthLayout at the outside of grMobBox's chain, and
+    /// folded into grMobDimension when a rigid Width would otherwise ignore it.
+    var maxWidth: String = ""
     var height: String = ""
     var borderColor: Color?
     var borderWidth: CGFloat = 0
@@ -199,6 +203,7 @@ struct GrMobStyle: Equatable {
         s.align = str("Align")
         s.display = str("Display")
         s.width = str("Width")
+        s.maxWidth = str("MaxWidth")
         s.height = str("Height")
         s.borderColor = parseColor(str("BorderColor"))
         s.borderWidth = num("BorderWidth")
@@ -452,7 +457,12 @@ struct GrMobBoxModifier: ViewModifier {
             .grMobClip(shape)
             .grMobBorder(shape, color: s?.borderColor, width: s?.borderWidth ?? 0)
             .grMobShadow(s?.shadow ?? 0)
-            .grMobDimension(s?.width ?? "", axis: .horizontal, alignment: alignment)
+            // The cap is passed in as well as applied outside (below): a Width
+            // in points or a percentage is a rigid frame, which reports its
+            // own size whatever it is proposed, so only folding the cap into
+            // the frame itself gives CSS's min(width, max-width).
+            .grMobDimension(s?.width ?? "", axis: .horizontal, alignment: alignment,
+                            cap: GrMobMaxWidth.fixedLimit(s?.maxWidth ?? ""))
             .grMobDimension(s?.height ?? "", axis: .vertical, alignment: alignment)
             // Rotation wraps the whole painted box — padding, background,
             // gestures, corner clip, border, shadow and the explicit frame —
@@ -468,6 +478,17 @@ struct GrMobBoxModifier: ViewModifier {
             .grMobRotate(s?.rotate ?? 0)
             .padding((s?.margin ?? .zero).insets)
             .grMobGrow(grow, alignment: alignment)
+            // core.MaxWidth, outermost of the sizing layers and after
+            // grMobGrow on purpose. A stretched or FlexGrow child carries a
+            // flexible frame from grMobGrow that accepts whatever it is
+            // proposed; capping the proposal OUTSIDE that frame is what makes
+            // a stretched child fill min(extent, cap) — CSS's stretch clamped
+            // by max-width — rather than fill the extent and draw its capped
+            // content somewhere inside it. The margin is inside this layer,
+            // so it is added back to the cap: CSS's max-width limits the
+            // border box, and the space reserved around it is extra.
+            .modifier(GrMobMaxWidthModifier(value: s?.maxWidth ?? "",
+                                            margin: grMobHorizontalMargin(s)))
             // "hidden" keeps the node's space but not its pixels ("none" is
             // handled earlier by not rendering the node at all — see RenderNode).
             .opacity(s?.display == "hidden" ? 0 : 1)
@@ -697,8 +718,13 @@ extension View {
     /// (fraction of the nearest container — an approximation of
     /// fraction-of-parent, which SwiftUI cannot express without a
     /// GeometryReader), and ""/"auto" (intrinsic size, no frame).
+    ///
+    /// `cap` is core.MaxWidth in points (GrMobMaxWidth.fixedLimit), horizontal
+    /// only, and it clamps the two rigid arms. "100%" is left alone: it is a
+    /// flexible frame, it takes what it is proposed, and GrMobMaxWidthLayout
+    /// has already narrowed that proposal.
     @ViewBuilder fileprivate func grMobDimension(
-        _ value: String, axis: Axis, alignment: Alignment = .topLeading
+        _ value: String, axis: Axis, alignment: Alignment = .topLeading, cap: CGFloat? = nil
     ) -> some View {
         if value.isEmpty || value == "auto" {
             self
@@ -709,17 +735,19 @@ extension View {
             }
         } else if value.hasSuffix("%"), let pct = Double(value.dropLast()) {
             containerRelativeFrame(axis == .horizontal ? .horizontal : .vertical) { length, _ in
-                length * min(max(pct / 100, 0), 1)
+                GrMobMaxWidth.clamp(length * min(max(pct / 100, 0), 1),
+                                    to: axis == .horizontal ? cap : nil)
             }
         } else if let number = Double(value.hasSuffix("px") ? String(value.dropLast(2)) : value) {
             switch axis {
-            case .horizontal: frame(width: CGFloat(number))
+            case .horizontal: frame(width: GrMobMaxWidth.clamp(CGFloat(number), to: cap))
             case .vertical: frame(height: CGFloat(number))
             }
         } else {
             self
         }
     }
+
 
     /// Kept strictly conditional: the no-fill case must add no frame at all,
     /// or every leaf in the tree would gain a layout container that changes
@@ -1012,3 +1040,113 @@ private func grMobSelectedTrait(_ state: String) -> AccessibilityTraits {
     state == "true" ? .isSelected : []
 }
 
+
+/// core.MaxWidth as a proposal cap; see GrMobMaxWidthLayout.
+///
+/// A ViewModifier, not a `@ViewBuilder` extension on View like its neighbours,
+/// and the difference is the compiler's rather than the layout's. Called from
+/// grMobBox's chain as a generic extension, `GrMobMaxWidthLayout(...) { self }`
+/// crashed swiftc in SILGen (signal 6 in QueryReplacementTypeArray while
+/// lowering GrMobBoxModifier.body): a Layout's callAsFunction is itself generic
+/// over its content, and nesting that inside the chain's opaque types was one
+/// substitution too many. Inside a modifier the content is the one concrete
+/// `_ViewModifier_Content<Self>` type — the same reason GrMobBoxModifier
+/// exists — and the crash is gone.
+///
+/// The body stays strictly conditional, like grMobGrow: an uncapped node —
+/// nearly every node — gets its content back with no layout container around
+/// it, so its ideal size is not reported through one more layer for nothing.
+struct GrMobMaxWidthModifier: ViewModifier {
+    let value: String
+    let margin: CGFloat
+
+    @ViewBuilder func body(content: Content) -> some View {
+        if value.isEmpty || value == "none" || value == "auto" {
+            content
+        } else {
+            GrMobMaxWidthLayout(value: value, margin: margin) { content }
+        }
+    }
+}
+
+/// The horizontal margin grMobBox reserves outside a node's border box.
+func grMobHorizontalMargin(_ s: GrMobStyle?) -> CGFloat {
+    guard let s else { return 0 }
+    return CGFloat(s.margin.left + s.margin.right)
+}
+
+/// CSS `max-width` for one view: never propose more than the cap, never report
+/// more than the cap, and sit at the leading edge of a wider slot.
+///
+/// A Layout rather than `.frame(maxWidth: cap)`, because a flexible frame with
+/// only a maximum is greedy: it reports min(cap, proposal) even around content
+/// that wants less, so a hugging label given a 320-point cap would claim 320
+/// points of its row. CSS's max-width never grows a box. This proposes the
+/// capped width inward and reports what the child actually took.
+///
+/// ```
+///   proposal W     child is proposed              reports               places child
+///   ──────────     ─────────────────              ───────               ────────────
+///   definite       min(W, cap + margin)           min(child, that)      leading edge
+///   nil (ideal)    nil; cap + margin only if      min(child, cap + m)
+///                  the ideal overflows the cap
+/// ```
+///
+/// The nil row is what a flex parent's basis measurement asks (baseMains in
+/// Renderer.swift proposes nil on the main axis). A Text proposed nil answers
+/// with its one-line width; clamping that number without re-proposing would
+/// report a capped frame around a line that still draws uncapped, so an ideal
+/// wider than the cap is measured again at the cap and wraps there — CSS's
+/// hypothetical main size clamped by max-width.
+///
+/// Placement is leading, not centred: a parent that hands over bounds wider
+/// than this reported — a stretched Column child is placed at the whole cross
+/// extent — gets a capped box at the start of its slot, which is where CSS
+/// puts a stretched item that max-width stopped short. Centring is the
+/// author's to ask for with the parent's AlignItems, as on the web.
+///
+/// Not handled: a FlexGrow child in a Row whose cap binds keeps the share the
+/// solver gave it and leaves the rest of that share empty. CSS re-runs the
+/// distribution with that item frozen at its max; GrMobFlexSolver has no max
+/// input, and Compose has the same gap (see widthModifier in GrMobStyle.kt).
+struct GrMobMaxWidthLayout: Layout {
+    let value: String
+    /// Horizontal margin inside this layer, added back to the cap.
+    let margin: CGFloat
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        guard let child = subviews.first else { return .zero }
+        let size = child.sizeThatFits(childProposal(proposal, child: child))
+        guard let bound = outerLimit(proposal.width) else { return size }
+        return CGSize(width: min(size.width, bound), height: size.height)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        guard let child = subviews.first else { return }
+        // Resolved against the bounds actually drawn into, as GrMobFlexLayout
+        // does, so a parent that places this wider than it measured still
+        // gets a capped child rather than one proposed the whole slot.
+        let inner = childProposal(ProposedViewSize(width: bounds.width, height: bounds.height),
+                                  child: child)
+        child.place(at: bounds.origin, anchor: .topLeading, proposal: inner)
+    }
+
+    /// The cap plus the margin it must not eat, against an offered width.
+    private func outerLimit(_ offered: CGFloat?) -> CGFloat? {
+        GrMobMaxWidth.limit(value, available: offered).map { $0 + margin }
+    }
+
+    private func childProposal(_ p: ProposedViewSize, child: LayoutSubview) -> ProposedViewSize {
+        guard let offered = p.width else {
+            // Ideal-size query: only a points cap can bind (a percentage has
+            // nothing to resolve against), and only if the ideal overflows it.
+            guard let bound = outerLimit(nil),
+                  child.sizeThatFits(p).width > bound else { return p }
+            return ProposedViewSize(width: bound, height: p.height)
+        }
+        // `.infinity` is a proposal too (SwiftUI's max-size probe): a points
+        // cap binds it, and a percentage of it resolves to nothing.
+        guard let bound = outerLimit(offered.isFinite ? offered : nil) else { return p }
+        return ProposedViewSize(width: min(offered, bound), height: p.height)
+    }
+}

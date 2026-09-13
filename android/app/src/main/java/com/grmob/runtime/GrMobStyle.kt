@@ -19,6 +19,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.ProgressBarRangeInfo
 import androidx.compose.ui.semantics.Role
@@ -36,6 +37,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.unit.dp
 import org.json.JSONObject
+import kotlin.math.roundToInt
 
 /**
  * Kotlin mirror of Go's core.Style, decoded from the tree/patch JSON.
@@ -80,6 +82,8 @@ data class GrMobStyle(
     val align: String,
     val display: String,
     val width: String,
+    /** core.MaxWidth: CSS `max-width`, applied with Width in widthModifier. */
+    val maxWidth: String,
     val height: String,
     val borderColor: Color?,
     val borderWidth: Float,
@@ -267,6 +271,7 @@ data class GrMobStyle(
                 align = obj.optString("Align"),
                 display = obj.optString("Display"),
                 width = obj.optString("Width"),
+                maxWidth = obj.optString("MaxWidth"),
                 height = obj.optString("Height"),
                 borderColor = parseColor(obj.optString("BorderColor")),
                 borderWidth = obj.optDouble("BorderWidth", 0.0).toFloat(),
@@ -498,7 +503,11 @@ fun GrMobStyle?.boxModifier(extra: Modifier = Modifier, gestures: Modifier = Mod
     if (transitionMs > 0) {
         m = m.animateContentSize(transitionTween())
     }
-    m = m.then(dimensionModifier(width, horizontal = true))
+    // Width and MaxWidth are resolved together, inside the margin: CSS's
+    // max-width limits the border box, and the space reserved around it is
+    // not part of what it caps. See widthModifier for why the pair cannot be
+    // two independent modifiers.
+    m = m.then(widthModifier(width, maxWidth))
     m = m.then(dimensionModifier(height, horizontal = false))
 
     // Rotation goes here — after margin and the dimension modifiers, before
@@ -564,6 +573,119 @@ private fun dimensionModifier(value: String, horizontal: Boolean): Modifier {
     }
     val number = value.removeSuffix("px").toFloatOrNull() ?: return Modifier
     return if (horizontal) Modifier.width(number.dp) else Modifier.height(number.dp)
+}
+
+/**
+ * core.Width with core.MaxWidth: CSS's `min(width, max-width)`, and a capped
+ * box placed at the start of any wider slot its parent forces on it.
+ *
+ * Without a MaxWidth this is exactly dimensionModifier, so the uncapped chain —
+ * nearly every node — is unchanged by the cap's existence.
+ *
+ * Why not `Modifier.widthIn(max = cap)` beside the size modifier: every
+ * ordering of the two loses a case, because Compose's size modifiers enforce
+ * the incoming constraints and whichever runs outside wins.
+ *
+ * ```
+ *   chain (outer → inner)                  incoming   result    CSS
+ *   ─────────────────────                  ────────   ──────    ───
+ *   widthIn(max 520) . width(600)          0..400     400       400  ✓
+ *   width(600) . widthIn(max 520)          0..800     600       520  ✗ cap coerced away
+ *   widthIn(max 520) . fillMaxWidth(0.5)   0..800     260       400  ✗ half of the CAP
+ *   fillMaxWidth() [stretch, from the      800..800   800       520  ✗ fill forces min = max
+ *     parent] . widthIn(max 520)
+ * ```
+ *
+ * The last row is the common one: ColumnChildren stretches a child by handing
+ * it fillMaxWidth as `extra`, which boxModifier puts outermost, so the child
+ * arrives here with minWidth == maxWidth == the column's width. A size
+ * modifier cannot relax a minimum; a layout modifier can, by measuring the
+ * content at the cap and REPORTING the forced width with the content placed at
+ * x = 0. That is CSS's picture of a stretched item stopped by max-width: the
+ * box is the cap, at the start of the line, and the rest of the line is empty.
+ *
+ * The rules, in the order the lambda applies them:
+ *
+ * ```
+ *   limit     = cap in px                       (points × density)
+ *             | cap% × incoming maxWidth        (bounded only; else no limit)
+ *   width%    → min = max = width% × incoming maxWidth   (dimensionModifier's
+ *               fillMaxWidth(fraction), resolved against the SAME incoming width
+ *               as the cap rather than against the capped one)
+ *   maxWidth  = min(maxWidth, limit);  minWidth = min(minWidth, maxWidth)
+ *   measure; report width coerced into the INCOMING constraints; place at 0
+ * ```
+ *
+ * A points Width stays the plain `Modifier.width` and runs inside the layout:
+ * that ordering is the first row of the table, which is already right.
+ * `placeRelative` so that "start" is the right edge under RTL, as CSS's
+ * inline-start is.
+ *
+ * Not handled: a FlexGrow child in a Row whose cap binds. Modifier.weight
+ * fixes the child's share as both minimum and maximum, so the capped box sits
+ * at the start of its share and the remainder stays empty, where CSS would
+ * redistribute it to the other growers. iOS has the same gap
+ * (GrMobMaxWidthLayout).
+ */
+private fun widthModifier(width: String, maxWidth: String): Modifier {
+    val cap = parseWidthCap(maxWidth) ?: return dimensionModifier(width, horizontal = true)
+    val fraction = widthFraction(width)
+    val inner = if (fraction != null) Modifier else dimensionModifier(width, horizontal = true)
+    return Modifier.layout { measurable, constraints ->
+        val bounded = constraints.hasBoundedWidth
+        val limit: Int? = when {
+            !cap.isFraction -> cap.amount.dp.roundToPx()
+            bounded -> (constraints.maxWidth * cap.amount).roundToInt()
+            // A percentage of an unbounded width is CSS's percentage against
+            // an indefinite containing block: it behaves as `none`.
+            else -> null
+        }
+        var minW = constraints.minWidth
+        var maxW = constraints.maxWidth
+        if (fraction != null && bounded) {
+            val w = (constraints.maxWidth * fraction).roundToInt()
+            minW = w
+            maxW = w
+        }
+        if (limit != null) {
+            maxW = minOf(maxW, limit)
+            minW = minOf(minW, maxW)
+        }
+        val placeable = measurable.measure(constraints.copy(minWidth = minW, maxWidth = maxW))
+        // Reported inside the incoming constraints, which a layout must honour:
+        // a parent that forced a wider minimum gets that width, and the capped
+        // content sits at its start.
+        val reported = placeable.width.coerceIn(constraints.minWidth, constraints.maxWidth)
+        layout(reported, placeable.height) { placeable.placeRelative(0, 0) }
+    }.then(inner)
+}
+
+/**
+ * A parsed core.MaxWidth: points, or a fraction of the incoming max width.
+ *
+ * The accepted strings are dimensionModifier's for Width, plus the two
+ * spellings of "no cap": "none" (CSS's initial value) and "auto". A negative
+ * number is invalid CSS and is dropped rather than clamped to zero, which
+ * would collapse the box instead of leaving it uncapped. A percentage above
+ * 100 is kept; it never binds, as in CSS.
+ */
+private class WidthCap(val amount: Float, val isFraction: Boolean)
+
+private fun parseWidthCap(value: String): WidthCap? {
+    if (value.isEmpty() || value == "none" || value == "auto") return null
+    if (value.endsWith("%")) {
+        val pct = value.dropLast(1).toFloatOrNull() ?: return null
+        return if (pct < 0f) null else WidthCap(pct / 100f, isFraction = true)
+    }
+    val number = value.removeSuffix("px").toFloatOrNull() ?: return null
+    return if (number < 0f) null else WidthCap(number, isFraction = false)
+}
+
+/** A percentage Width as dimensionModifier reads it (clamped to 0..1), else null. */
+private fun widthFraction(value: String): Float? {
+    if (!value.endsWith("%")) return null
+    val pct = value.dropLast(1).toFloatOrNull() ?: return null
+    return (pct / 100f).coerceIn(0f, 1f)
 }
 
 /**

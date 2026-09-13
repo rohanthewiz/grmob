@@ -47,8 +47,9 @@ difference is structural rather than an oversight:
 | group | Android | iOS | WASM DOM | `htmlout` |
 |---|---|---|---|---|
 | typography, color, box model, borders, `Shadow`, `Gap`, `RowGap`/`ColumnGap`, `Justify`, `AlignItems`, `FlexWrap`, `StackAlign`, `Transition`, accessibility, `Disabled` | yes | yes | yes | yes |
-| `Position` + `Top`/`Right`/`Bottom`/`Left`/`ZIndex`, `MinWidth`/`MaxWidth`/`MinHeight`/`MaxHeight`, `Overflow`, `WhiteSpace`, `AlignSelf`, `FlexBasis`, `FlexDirection` | — | — | yes | yes |
+| `Position` + `Top`/`Right`/`Bottom`/`Left`/`ZIndex`, `MinWidth`/`MinHeight`/`MaxHeight`, `Overflow`, `WhiteSpace`, `AlignSelf`, `FlexBasis`, `FlexDirection` | — | — | yes | yes |
 | `FlexShrink` | `0` only | yes | yes | yes |
+| `MaxWidth` | px, % | px, % | yes | yes |
 | `HoverStyle`, `FocusStyle`, `PseudoStates` | — | — | — | — |
 
 `FlexShrink` has a row of its own because its gap is a different shape from the
@@ -60,6 +61,14 @@ scale. Zero is not a proportion but a refusal, and a refusal is expressible —
 `core.FlexShrink(0)` measures the child unbounded and lets the row overflow,
 which is what the other three targets do with it. A fractional factor is
 silently ignored on Android and honoured everywhere else.
+
+`MaxWidth` left the second row once both natives could say it. It caps the
+border box on all four targets, a stretched Column child fills up to the cap
+and sits at the start of the line, and a wider `Width` loses to it. The natives
+read the two forms `Width` takes there, points and percentages; any other CSS
+unit is passed through verbatim to the web and ignored on device. One case
+still differs: a `FlexGrow` child of a Row whose cap binds keeps its share and
+leaves the rest of it empty, where CSS gives the remainder to the other growers.
 
 The second row is CSS the natives have no direct equivalent for — Compose and
 SwiftUI take a stack's axis from the node type and have no out-of-flow

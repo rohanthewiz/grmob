@@ -115,7 +115,28 @@ enum GrMobMinContent {
         // and adding its padding to zero would floor an empty Box at its own
         // insets — which is not what a browser does with one.
         guard inner > 0 else { return 0 }
-        return inner + outerInsets(node.style)
+        return capped(inner, node.style) + outerInsets(node.style)
+    }
+
+    /// The content minimum clamped by core.MaxWidth, in points only.
+    ///
+    /// CSS: an item's content size suggestion "is further clamped by the max
+    /// main size if that is definite". A capped box can be narrower than its
+    /// longest word — the word overflows, as it does in a browser — so a
+    /// floor above the cap would hold a row open for a box that can never
+    /// grow to fill it.
+    ///
+    /// The cap limits the box grMobBox paints, padding included (the host's
+    /// Width and MaxWidth are both border-box, as the WASM page's
+    /// `box-sizing: border-box` makes them there), so the padding is folded
+    /// in before the clamp and only the margin is added outside it. A
+    /// percentage cap has no container here and does not clamp; a floor that
+    /// is too high overflows a line, but a floor guessed too low is the
+    /// crushed-badge bug this walk exists to prevent.
+    private static func capped(_ inner: CGFloat, _ s: GrMobStyle?) -> CGFloat {
+        guard let s, let cap = GrMobMaxWidth.fixedLimit(s.maxWidth) else { return inner }
+        let padding = CGFloat(s.padding.left + s.padding.right)
+        return min(inner + padding, cap) - padding
     }
 
     /// What a node's own box adds around its content along the main axis.
