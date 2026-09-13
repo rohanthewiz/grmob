@@ -1766,17 +1766,19 @@ func TestSmallControlsDemoDrivesAllFourWidgets(t *testing.T) {
 
 func TestChoicesLessonRadioGroupPicksByRow(t *testing.T) {
 	mgr := newApp(t)
-	openLesson(t, mgr, "Radio groups")
+	openLesson(t, mgr, "Radio groups & step indicators")
 
-	if !hasText(tree(t, mgr), "Shipping: Standard") {
+	// The radio group is the flow's Shipping step.
+	tap(t, mgr, "Next")
+	if !hasText(tree(t, mgr), "On Shipping · shipping: Standard") {
 		t.Fatal("the group starts on Standard")
 	}
 	tapLabelled(t, mgr, "Express")
-	if !hasText(tree(t, mgr), "Shipping: Express") {
+	if !hasText(tree(t, mgr), "On Shipping · shipping: Express") {
 		t.Fatal("tapping the Express row should choose it")
 	}
 	tapLabelled(t, mgr, "Pick up in store")
-	if !hasText(tree(t, mgr), "Shipping: Express") {
+	if !hasText(tree(t, mgr), "On Shipping · shipping: Express") {
 		t.Fatal("a disabled option must not be chosen")
 	}
 
@@ -1785,6 +1787,39 @@ func TestChoicesLessonRadioGroupPicksByRow(t *testing.T) {
 	})
 	if express.Style.AccessibilityRole != string(core.RoleOption) {
 		t.Fatalf("option role = %q", express.Style.AccessibilityRole)
+	}
+	assertNoConcerns(t)
+}
+
+func TestChoicesLessonStepIndicatorGoesBackOnlyToDoneSteps(t *testing.T) {
+	mgr := newApp(t)
+	openLesson(t, mgr, "Radio groups & step indicators")
+
+	strip := func() *node {
+		return findNode(tree(t, mgr), func(n *node) bool {
+			return n.Type == "Scroll" && n.Style != nil && n.Style.AccessibilityRole == string(core.RoleNavigation)
+		})
+	}
+	if s := strip(); s == nil || s.Style.AccessibilityLabel != "Checkout, step 1 of 4: Account" {
+		t.Fatal("the strip starts on Account and is named by its position")
+	}
+
+	tap(t, mgr, "Next")
+	tap(t, mgr, "Next")
+	if strip().Style.AccessibilityLabel != "Checkout, step 3 of 4: Payment" {
+		t.Fatal("two Nexts should reach Payment")
+	}
+
+	// An upcoming step has no handler; a done one takes the flow back.
+	if findNode(tree(t, mgr), func(n *node) bool {
+		_, clickable := n.Props["onClick"].(string)
+		return clickable && n.Style != nil && n.Style.AccessibilityLabel == "Step 4: Review"
+	}) != nil {
+		t.Fatal("an upcoming step must not be tappable")
+	}
+	tapLabelled(t, mgr, "Step 1: Account, done")
+	if strip().Style.AccessibilityLabel != "Checkout, step 1 of 4: Account" {
+		t.Fatal("tapping a done step should go back to it")
 	}
 	assertNoConcerns(t)
 }

@@ -6,7 +6,8 @@ rows". A3 `Stepper`, A4 `BottomBar` + `Screen.Footer`, A5 `Spinner` and A6
 `Rating` shipped with lesson 4.15 "Small controls". Tier B is landing one
 widget per commit: B1 `ActionSheet` shipped with lesson 6.7, and B3
 `Snackbar` (with `hooks.UseTimeoutWhile`) joined it as "Action sheets &
-snackbars". B2 `RadioGroup` shipped with lesson 4.16 "Radio groups".
+snackbars". B2 `RadioGroup` shipped with lesson 4.16, and B4 `StepIndicator` joined it as
+"Radio groups & step indicators".
 Tier C is open.
 
 **Decisions that differ from the Tier A sketches below:**
@@ -61,6 +62,10 @@ Tier C is open.
   struct holds a `core.View`. `BottomBar` and `RadioGroup` are the two
   listed. Two closed widgets cannot nest by composition, so a nested
   composite still needs at least one container the caller roled by hand.
+- B4 `StepIndicator` scrolls rather than collapsing, as planned. The strip is
+  `RoleNavigation` only when `OnTap` is set, because a picture of progress is
+  not navigation, and `RoleGroup` otherwise. The plan named `RoleNavigation`
+  unconditionally. Done steps are tappable and upcoming ones never are.
 
 **Correction found while landing A2:** rendering the row's control
 `core.Disabled(true)` (the approach sketched under A2) was rejected. Disabled

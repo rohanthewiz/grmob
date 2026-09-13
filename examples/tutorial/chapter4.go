@@ -2917,16 +2917,20 @@ func lessonSmallControls() Lesson {
 	}
 }
 
-// lessonChoicesAndProgress is Tier B's in-page widgets. It opens with
-// RadioGroup, the vertical form of a choice, and is appended at the end of the
-// chapter for the reason 4.15 was: lesson numbers already in deep links do not
-// move.
+// lessonChoicesAndProgress is Tier B's in-page widgets: RadioGroup, the
+// vertical form of a choice, and StepIndicator, the header of a multi-screen
+// flow. The demo is one small checkout whose shipping step is the radio group,
+// so the two widgets read as parts of one flow. It is appended at the end of
+// the chapter for the reason 4.15 was: lesson numbers already in deep links do
+// not move.
 func lessonChoicesAndProgress() Lesson {
 	return Lesson{
-		Title:   "Radio groups",
-		Summary: "comps.RadioGroup shows every option at once, with room for a subtitle, as a listbox a keyboard can drive.",
+		Title:   "Radio groups & step indicators",
+		Summary: "comps.RadioGroup shows every option at once; comps.StepIndicator shows where a flow is and lets a user go back.",
 		Body: func(ctx *core.Context) core.View {
 			ship := core.NewState(ctx, "std")
+			step := core.NewState(ctx, 0)
+			steps := []string{"Account", "Shipping", "Payment", "Review"}
 
 			options := []comps.RadioOption{
 				{Value: "std", Label: "Standard", Subtitle: "3–5 days · free"},
@@ -2962,20 +2966,51 @@ func lessonChoicesAndProgress() Lesson {
 					"option that states selected or not selected. A reader hears \"option, "+
 					"selected\" rather than \"radio button, checked\", and in the browser the "+
 					"group is one tab stop that the arrow keys move through."),
-				demoPanel("Tap a row anywhere. The store pickup option is disabled.",
-					comps.RadioGroup{
+				prose("A StepIndicator is the header of a flow: done steps ticked, the current "+
+					"step filled, the rest outlined. Only done steps are tappable, so going "+
+					"back is free and skipping ahead is not something you have to guard. A "+
+					"long flow scrolls sideways rather than guessing a width to collapse at."),
+				codeBlock(`comps.StepIndicator{
+    Steps:   []string{"Account", "Shipping", "Payment", "Review"},
+    Current: step.Get(),
+    OnTap:   step.Set,   // done steps only
+}`),
+				demoPanel("Step through the checkout with Next, then tap a ticked step to go back. The store pickup option is disabled.",
+					comps.StepIndicator{
+						Steps:   steps,
+						Current: step.Get(),
+						OnTap:   step.Set,
+						Label:   "Checkout",
+					},
+					core.If(steps[step.Get()] == "Shipping", comps.RadioGroup{
 						Label:    "Shipping",
 						Options:  options,
 						Value:    ship.Get(),
 						OnChange: ship.Set,
-					},
-					caption("Shipping: "+chosen),
+					}),
+					caption(fmt.Sprintf("On %s · shipping: %s", steps[step.Get()], chosen)),
+					core.Row(
+						core.Gap(8),
+						comps.Button{
+							Label:    "Back",
+							Emphasis: comps.EmphasisOutlined,
+							Disabled: step.Get() == 0,
+							OnTap:    func() { step.Set(step.Get() - 1) },
+						},
+						comps.Button{
+							Label:    "Next",
+							Disabled: step.Get() == len(steps)-1,
+							OnTap:    func() { step.Set(step.Get() + 1) },
+						},
+					),
 				),
 				keyPoints(
 					"RadioGroup is the vertical, every-option-visible choice; Select is compact and SegmentedControl is horizontal.",
 					"Each row is the tap target and the ring is drawn, so there is no second control to double-dispatch.",
 					"OnChange fires only for a different, enabled option.",
 					"It is a labelled listbox of options that state their selection, with the browser's listbox keyboard; a radio role is a follow-up.",
+					"StepIndicator ticks done steps, fills the current one and makes only done steps tappable.",
+					"Its strip is named \"Step 2 of 4: Shipping\": navigation when OnTap is set, a group when it is not, and it scrolls sideways when the flow is long.",
 				),
 			)
 		},

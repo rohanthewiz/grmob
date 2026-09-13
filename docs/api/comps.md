@@ -141,6 +141,8 @@ Two widgets do: Accordion (expanded or collapsed) and DatePicker (is the sheet o
 - [`type StaticMapArea`](#type-staticmaparea)
 - [`type StaticMapProvider`](#type-staticmapprovider)
     - [`func GoogleStaticMap`](#func-googlestaticmap)
+- [`type StepIndicator`](#type-stepindicator)
+    - [`func (StepIndicator) Render`](#func-stepindicator-render)
 - [`type Stepper`](#type-stepper)
     - [`func (Stepper) Render`](#func-stepper-render)
 - [`type SwitchRow`](#type-switchrow)
@@ -5004,6 +5006,87 @@ A constructor rather than a bare provider because the key is the caller's: it is
 An empty key yields a provider that returns "", which renders the widget as a box with no image in it rather than as a map of Google's "this request is not authorized" error tile. A misconfigured build should look unfinished, not broken.
 
 <small>[comps/static_map.go:380](https://github.com/rohanthewiz/grmob/blob/master/comps/static_map.go#L380)</small>
+
+### type StepIndicator
+
+```go
+type StepIndicator struct {
+	// Steps are the step names, in order.
+	Steps []string
+
+	// Current is the zero-based index of the step in progress. It is clamped
+	// into the Steps range, so a flow's "finished" index draws every step but
+	// the last as done.
+	Current int
+
+	// OnTap receives the index of a tapped done step. Nil makes the strip a
+	// display of progress with no targets.
+	OnTap func(int)
+
+	// Label prefixes the strip's accessible name, for a screen with more than
+	// one flow ("Checkout, step 2 of 4: Address").
+	Label string
+
+	// Style is applied to the strip after the widget's own props.
+	Style []core.StyleProp
+}
+```
+
+StepIndicator is the "step 2 of 4" header of a multi-screen flow: numbered circles joined by short rules, done steps ticked, the current step filled.
+
+	comps.StepIndicator{
+	    Steps:   []string{"Account", "Address", "Payment", "Review"},
+	    Current: step.Get(),
+	    OnTap:   step.Set, // done steps only
+	}
+
+	┌ Row  Padding(0) ──────────────────────────────────────────────────────┐
+	│┌ Scroll Horizontal  role=navigation  "Step 2 of 4: Address" ─────────┐│
+	││ (✓) Account ── (2) Address ── (3) Payment ── (4) Review             ││
+	││  done, button    current        upcoming       upcoming            ││
+	│└─────────────────────────────────────────────────────────────────────┘│
+	└───────────────────────────────────────────────────────────────────────┘
+
+#### The overflow decision: scroll, not collapse
+
+Five or six labelled steps do not fit a phone's width. The plan offered two answers: collapse to "2 / 4" past a threshold, or let the strip scroll sideways. Collapsing needs a width to compare against, which Go does not have, so any threshold would be a guess that is wrong on some screen. The strip is a core.Scroll with core.Horizontal, which every target already scrolls, and a flow short enough to fit simply does not move.
+
+The Scroll sits inside a Row for the web host pages. wasm/index.html (and the shots page) give every Scroll \`flex: 1 1 0; min-height: 0\` so a Screen's scroll region fills the viewport. Applied to a strip whose parent is a column, that rule is a zero basis on the vertical axis, and a Chrome probe of this widget's first version measured the strip at 0px tall with its 25px steps overflowing it. Inside a Row the same rule acts on the horizontal axis and means "take the row's width", which is what a strip wants; its height is then its content's. The natives and the static export apply no such rule, so the Row costs one node and changes nothing there.
+
+#### Which steps can be tapped
+
+Only done steps, and only when OnTap is set. Going back to fix an address is what a flow allows; jumping ahead past a step that has not been validated is not, and a widget that made upcoming steps tappable would push every caller to write that guard. The current step is not tappable either: tapping it would do nothing.
+
+#### Accessibility
+
+The strip is RoleNavigation when OnTap is set, because done steps then are destinations, and RoleGroup when it is not, because a picture of progress is not navigation. Either way its name states the position: "Step 2 of 4: Address", prefixed by Label when one is given. Each step is named ("Step 1: Account, done", "Step 2: Address, current", "Step 3: Payment") and a tappable one is RoleButton. The circle, its glyph and the rules are drawn for sighted users and hidden from assistive technology, so a step is read once.
+
+The ", done" and ", current" suffixes are English, the fallback ListRow and BottomBar already take; there is no aria-current in core's vocabulary.
+
+#### Theme roles read
+
+	Done circle        Colors.SuccessColor(), ink chosen by Variant.Ink
+	Current circle     Colors.Primary, ink chosen by Variant.Ink
+	Upcoming circle    Colors.ControlBorder ring (BorderColor() if unset),
+	                   Colors.TextSecondary number
+	Rule               Colors.SuccessColor() after a done step, else
+	                   Colors.BorderColor()
+	Labels             Typography.Body; the current step bold, upcoming steps
+	                   in Colors.TextSecondary
+	Glyphs             Typography.Caption, bold
+	Gap                Spacing.XS
+
+<small>[comps/step_indicator.go:79](https://github.com/rohanthewiz/grmob/blob/master/comps/step_indicator.go#L79)</small>
+
+#### func (StepIndicator) Render
+
+```go
+func (s StepIndicator) Render(ctx *core.Context) *core.Node
+```
+
+Render builds the horizontal Scroll of steps and rules.
+
+<small>[comps/step_indicator.go:113](https://github.com/rohanthewiz/grmob/blob/master/comps/step_indicator.go#L113)</small>
 
 ### type Stepper
 

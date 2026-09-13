@@ -1142,6 +1142,41 @@ describes what it does today — but the blocker is gone, and moving it to flex
 would remove the caveat, since a flex child is measured against its immediate
 parent rather than the nearest container.
 
+## StepIndicator
+
+The "step 2 of 4" header of a multi-screen flow. Done steps are ticked, the
+current step is filled, and the rest are outlined, joined by short rules.
+
+```go
+comps.StepIndicator{
+    Steps:   []string{"Account", "Address", "Payment", "Review"},
+    Current: step.Get(),
+    OnTap:   step.Set, // done steps only
+}
+```
+
+**Only done steps are tappable.** Going back to fix an address is normal.
+Jumping ahead past a step that has not been validated is not, so the widget
+never offers it, and no caller has to guard against it. The current step is
+not tappable either, because tapping it would do nothing.
+
+**A long flow scrolls.** The strip is a `core.Scroll` with `core.Horizontal`.
+Collapsing to "2 / 4" past some number of steps would need the screen width,
+which Go does not have, so any threshold would be wrong on some screen.
+
+Other notes:
+
+- The strip is `RoleNavigation` when `OnTap` is set and `RoleGroup` when it is
+  not. Its name states the position, "Step 2 of 4: Address", and `Label`
+  prefixes it ("Checkout, step 2 of 4: Address").
+- Each step is named "Step 1: Account, done", "Step 2: Address, current" or
+  "Step 3: Payment". A tappable step is a button. The circles and rules are
+  hidden from assistive technology.
+- `Current` is clamped into the steps, so an index past the end shows every
+  step before the last as done.
+- Done steps and the rules after them use the Success colour; the current step
+  uses Primary. Both discs pick a contrasting ink.
+
 ## FormField
 
 The label / input / hint-or-error frame around any input:
