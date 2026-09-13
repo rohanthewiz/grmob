@@ -8,13 +8,14 @@ import (
 
 var checkoutSteps = []string{"Account", "Address", "Payment", "Review"}
 
-// stripOf returns the Scroll strip inside the widget's wrapping Row.
+// stripOf asserts the widget renders its Scroll strip directly, with no
+// wrapper, and returns it.
 func stripOf(t *testing.T, root *core.Node) *core.Node {
 	t.Helper()
-	if root.Type != "Row" || len(root.Children) != 1 || root.Children[0].Type != "Scroll" {
-		t.Fatalf("root = %q with %d children, want a Row wrapping one Scroll", root.Type, len(root.Children))
+	if root.Type != "Scroll" {
+		t.Fatalf("root = %q, want the Scroll strip itself: the host pages no longer need a wrapper", root.Type)
 	}
-	return root.Children[0]
+	return root
 }
 
 // stepCells returns the named step cells in order, skipping the rules.
@@ -30,9 +31,6 @@ func stepCells(n *core.Node) []*core.Node {
 
 func TestStepIndicatorIsAHorizontalScrollNamedByPosition(t *testing.T) {
 	_, root := renderDebug(t, StepIndicator{Steps: checkoutSteps, Current: 1})
-	if root.Style.Padding.Top != 0 || root.Style.Padding.Left != 0 {
-		t.Errorf("wrapping Row padding = %+v, want none: it exists only to give the strip a row parent", root.Style.Padding)
-	}
 	n := stripOf(t, root)
 
 	if n.Type != "Scroll" || n.Style.FlexDirection != core.FlexRow {

@@ -16,11 +16,9 @@ import (
 //	    OnTap:   step.Set, // done steps only
 //	}
 //
-//	┌ Row  Padding(0) ──────────────────────────────────────────────────────┐
-//	│┌ Scroll Horizontal  role=navigation  "Step 2 of 4: Address" ─────────┐│
-//	││ (✓) Account ── (2) Address ── (3) Payment ── (4) Review             ││
-//	││  done, button    current        upcoming       upcoming            ││
-//	│└─────────────────────────────────────────────────────────────────────┘│
+//	┌ Scroll Horizontal  role=navigation  "Step 2 of 4: Address" ───────────┐
+//	│ (✓) Account ── (2) Address ── (3) Payment ── (4) Review               │
+//	│  done, button    current        upcoming       upcoming              │
 //	└───────────────────────────────────────────────────────────────────────┘
 //
 // # The overflow decision: scroll, not collapse
@@ -32,15 +30,11 @@ import (
 // strip is a core.Scroll with core.Horizontal, which every target already
 // scrolls, and a flow short enough to fit simply does not move.
 //
-// The Scroll sits inside a Row for the web host pages. wasm/index.html (and
-// the shots page) give every Scroll `flex: 1 1 0; min-height: 0` so a Screen's
-// scroll region fills the viewport. Applied to a strip whose parent is a
-// column, that rule is a zero basis on the vertical axis, and a Chrome probe of
-// this widget's first version measured the strip at 0px tall with its 25px
-// steps overflowing it. Inside a Row the same rule acts on the horizontal axis
-// and means "take the row's width", which is what a strip wants; its height is
-// then its content's. The natives and the static export apply no such rule, so
-// the Row costs one node and changes nothing there.
+// The Scroll is the strip, as it is in ChipStrip, and nothing wraps it. Its
+// first version sat inside a Row because the web host pages sized every
+// Scroll as a screen's vertical viewport, which collapsed a sideways strip to
+// 0px inside a column. That rule now leaves horizontal Scrolls their content
+// height (see the Scroll rules in wasm/index.html), so the wrapper went away.
 //
 // # Which steps can be tapped
 //
@@ -156,8 +150,7 @@ func (s StepIndicator) Render(ctx *core.Context) *core.Node {
 		}
 		items = append(items, s.step(t, i, step, state))
 	}
-	// See "The overflow decision" for why the strip is wrapped.
-	return core.Row(core.Padding(0), core.Gap(0), core.Scroll(items...)).Render(ctx)
+	return core.Scroll(items...).Render(ctx)
 }
 
 // step builds one circle-and-label cell. The cell, not the circle, is the

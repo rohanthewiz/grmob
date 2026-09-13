@@ -50,7 +50,14 @@ the document did — so `grmob-runtime.js` gives it no `overflow`. Inside a
 fixed-height screen the page adds the rule itself
 (`#app [data-node-type="Scroll"] { flex: 1 1 0; min-height: 0; overflow-y:
 auto }`), which is what makes the node the viewport the natives make of it.
-A hand-rolled host that constrains the app's height needs the same rule.
+
+That rule is for a vertical Scroll. A Scroll with `core.Horizontal` inside a
+column would get a zero-height basis from it and collapse, so the page follows
+it with two narrower rules. A horizontal Scroll keeps its content height
+(`flex: 0 0 auto`). Inside a row, it takes the row's width again
+(`flex: 1 1 0; min-width: 0`). Both rules select on the inline
+`flex-direction: row` the runtime writes. A hand-rolled host that constrains
+the app's height needs all three; `grmob new` scaffolds them.
 
 The same page shows how an app and its host can share vocabulary the
 framework does not define: the tutorial's deep links are a `"route"` host

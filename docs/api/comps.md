@@ -5043,18 +5043,16 @@ StepIndicator is the "step 2 of 4" header of a multi-screen flow: numbered circl
 	    OnTap:   step.Set, // done steps only
 	}
 
-	┌ Row  Padding(0) ──────────────────────────────────────────────────────┐
-	│┌ Scroll Horizontal  role=navigation  "Step 2 of 4: Address" ─────────┐│
-	││ (✓) Account ── (2) Address ── (3) Payment ── (4) Review             ││
-	││  done, button    current        upcoming       upcoming            ││
-	│└─────────────────────────────────────────────────────────────────────┘│
+	┌ Scroll Horizontal  role=navigation  "Step 2 of 4: Address" ───────────┐
+	│ (✓) Account ── (2) Address ── (3) Payment ── (4) Review               │
+	│  done, button    current        upcoming       upcoming              │
 	└───────────────────────────────────────────────────────────────────────┘
 
 #### The overflow decision: scroll, not collapse
 
 Five or six labelled steps do not fit a phone's width. The plan offered two answers: collapse to "2 / 4" past a threshold, or let the strip scroll sideways. Collapsing needs a width to compare against, which Go does not have, so any threshold would be a guess that is wrong on some screen. The strip is a core.Scroll with core.Horizontal, which every target already scrolls, and a flow short enough to fit simply does not move.
 
-The Scroll sits inside a Row for the web host pages. wasm/index.html (and the shots page) give every Scroll \`flex: 1 1 0; min-height: 0\` so a Screen's scroll region fills the viewport. Applied to a strip whose parent is a column, that rule is a zero basis on the vertical axis, and a Chrome probe of this widget's first version measured the strip at 0px tall with its 25px steps overflowing it. Inside a Row the same rule acts on the horizontal axis and means "take the row's width", which is what a strip wants; its height is then its content's. The natives and the static export apply no such rule, so the Row costs one node and changes nothing there.
+The Scroll is the strip, as it is in ChipStrip, and nothing wraps it. Its first version sat inside a Row because the web host pages sized every Scroll as a screen's vertical viewport, which collapsed a sideways strip to 0px inside a column. That rule now leaves horizontal Scrolls their content height (see the Scroll rules in wasm/index.html), so the wrapper went away.
 
 #### Which steps can be tapped
 
@@ -5079,7 +5077,7 @@ The ", done" and ", current" suffixes are English, the fallback ListRow and Bott
 	Glyphs             Typography.Caption, bold
 	Gap                Spacing.XS
 
-<small>[comps/step_indicator.go:79](https://github.com/rohanthewiz/grmob/blob/master/comps/step_indicator.go#L79)</small>
+<small>[comps/step_indicator.go:73](https://github.com/rohanthewiz/grmob/blob/master/comps/step_indicator.go#L73)</small>
 
 #### func (StepIndicator) Render
 
@@ -5089,7 +5087,7 @@ func (s StepIndicator) Render(ctx *core.Context) *core.Node
 
 Render builds the horizontal Scroll of steps and rules.
 
-<small>[comps/step_indicator.go:113](https://github.com/rohanthewiz/grmob/blob/master/comps/step_indicator.go#L113)</small>
+<small>[comps/step_indicator.go:107](https://github.com/rohanthewiz/grmob/blob/master/comps/step_indicator.go#L107)</small>
 
 ### type Stepper
 

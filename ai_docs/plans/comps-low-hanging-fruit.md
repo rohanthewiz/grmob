@@ -65,12 +65,14 @@ B2 `RadioGroup`, B4 `StepIndicator` and B5 `Timeline` shipped with lesson 4.16
   `RoleNavigation` only when `OnTap` is set, because a picture of progress is
   not navigation, and `RoleGroup` otherwise. The plan named `RoleNavigation`
   unconditionally. Done steps are tappable and upcoming ones never are.
-  The Scroll is wrapped in a zero-padding Row. The web host pages
-  (`wasm/index.html`, `wasm/shots/index.html`) give every Scroll
-  `flex: 1 1 0; min-height: 0`, so a horizontal strip whose parent is a column
-  measured 0px tall in Chrome. **The same collapse hits
-  `ChipStrip{Scrollable: true}`**: a probe of lesson 4.8 measured its strip at
-  0px with 22px chips. That bug predates Tier B and is not fixed here.
+  Its first version wrapped the Scroll in a zero-padding Row. The web host
+  pages (`wasm/index.html`, `wasm/shots/index.html`, and the `grmob new`
+  template) gave every Scroll `flex: 1 1 0; min-height: 0`, so a horizontal
+  strip whose parent is a column measured 0px tall in Chrome. The same bug
+  collapsed `ChipStrip{Scrollable: true}` in lesson 4.8, and it predated
+  Tier B. It was then fixed in the pages rather than per widget: a horizontal
+  Scroll keeps its content height, and inside a row it takes the row's width.
+  With that fix the wrapper was removed.
 - B5 `Timeline` is not built on `ListRow`. `ListRow`'s theme row padding sits
   outside its slots and would break the line between rows. Each event is a
   `Row` with `AlignItems` stretch and `Padding(0)`. Its rail has a fixed top

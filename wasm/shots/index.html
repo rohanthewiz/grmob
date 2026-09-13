@@ -60,6 +60,21 @@
   #app [data-node-type="Scroll"] {
     flex: 1 1 0; min-height: 0; overflow-y: auto; overscroll-behavior: contain;
   }
+  /* A Scroll with core.Horizontal pans sideways, and the viewport rule above
+     is wrong for it inside a column: flex 1 1 0 there is a zero-height basis,
+     so a scrollable ChipStrip measured 0px tall with its chips spilling out.
+     Here it is as tall as its content and keeps that height, which is what
+     both natives' horizontal scroll composites do. Inside a row the rule
+     above already meant "take the row's width", so that case is restated
+     rather than changed. The runtime marks the axis only in the inline style
+     (aria-orientation is written for composite roles alone), so the style
+     attribute is the hook. */
+  #app [data-node-type="Scroll"][style*="flex-direction: row"] {
+    flex: 0 0 auto;
+  }
+  #app [style*="flex-direction: row"] > [data-node-type="Scroll"][style*="flex-direction: row"] {
+    flex: 1 1 0; min-width: 0;
+  }
   .boot {
     position: absolute; inset: 0; display: flex;
     align-items: center; justify-content: center;
