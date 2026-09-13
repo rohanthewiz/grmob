@@ -203,11 +203,37 @@ final class GrMobCodeEditorView: UIView {
     /// without measuring anything: every line is exactly one line fragment
     /// tall, because nothing wraps.
     private(set) var font = UIFont.monospacedSystemFont(ofSize: 13, weight: .regular)
+
+    /// Every line's paragraph style: left aligned, with a left-to-right base
+    /// direction. `.natural` would take the base from the first strong
+    /// character, and a line with none ("}", an indent, a blank) would fall
+    /// back to the app language's direction.
+    static let leftToRight: NSParagraphStyle = {
+        let style = NSMutableParagraphStyle()
+        style.alignment = .left
+        style.baseWritingDirection = .leftToRight
+        return style
+    }()
     private var ink = UIColor.label
     private var lineCount = 1
 
     override init(frame: CGRect) {
         super.init(frame: frame)
+
+        // Code is left to right in every locale. Under an RTL app language
+        // UIKit mirrors a view's subview layout and a text view aligns and
+        // bidi-orders each line to the language, so the gutter moved to the
+        // right and a line opening with a neutral such as "}" put it at the
+        // far end. An editor's columns are what it means, so every view here
+        // is forced left to right, and each line's paragraph style (see
+        // GrMobCodeEditorView.leftToRight) fixes the base direction the bidi
+        // algorithm would otherwise take from the language. Compose pins its
+        // layout direction and both DOM targets write dir="ltr" for the same
+        // reason.
+        for view: UIView in [self, sideways, textView, gutter] {
+            view.semanticContentAttribute = .forceLeftToRight
+        }
+        textView.textAlignment = .left
 
         textView.backgroundColor = .clear
         textView.textContainerInset = .zero
@@ -432,6 +458,7 @@ final class GrMobCodeCoordinator: NSObject, UITextViewDelegate {
         let plain: [NSAttributedString.Key: Any] = [
             .font: editor.font,
             .foregroundColor: textView.textColor ?? UIColor.label,
+            .paragraphStyle: GrMobCodeEditorView.leftToRight,
         ]
         // Newly typed characters inherit the *base*, not whatever run the caret
         // happens to sit at the end of — otherwise typing after a string

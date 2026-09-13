@@ -3701,6 +3701,13 @@ const GrMob = (() => {
     function buildCodeEditor(el) {
         if (codeChrome(el, "codebuffer")) return;
 
+        // Code reads left to right whatever direction the page has: an RTL
+        // page would right-align the rows, bidi-reorder a line that opens with
+        // a neutral ("}" drawn at the far end), and mirror the textarea over
+        // the mirror rows. htmlout's renderCodeEditor writes the same
+        // attribute; both natives pin the same direction.
+        el.setAttribute("dir", "ltr");
+
         const gutter = document.createElement("div");
         gutter.dataset.grmobChrome = "codegutter";
         // The numbers are not content: a reader announcing "one two three"

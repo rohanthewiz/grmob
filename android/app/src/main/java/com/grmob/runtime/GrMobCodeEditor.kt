@@ -12,6 +12,10 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.unit.LayoutDirection
+import androidx.compose.ui.text.style.TextDirection
+import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -215,6 +219,9 @@ internal fun GrMobCodeEditor(node: GrMobNode, extra: Modifier) {
         // screen as it should. 13sp is the pitch both DOM targets and the iOS
         // renderer settle on.
         fontSize = if (s != null && s.fontSize > 0f) s.fontSize.sp else 13.sp,
+        // Source reads left to right whatever the locale; see the layout
+        // direction pinned around the Row below.
+        textDirection = TextDirection.Ltr,
     )
     val transformation = GrMobCodeRows(node.children, base.color)
 
@@ -268,84 +275,95 @@ internal fun GrMobCodeEditor(node: GrMobNode, extra: Modifier) {
     // constraints", on the first layout of every lesson. The helper caps the
     // viewport at the content in that case, which is the picture the web and
     // iOS already draw; see it in Renderer.kt.
-    Row(s.boxModifier(extra).verticalScrollWhenBounded(vertical)) {
-        if (lineNumbers) {
-            val lines = buffer.text.count { it == '\n' } + 1
-            // Wide enough for the largest number plus a column of room, in the
-            // same units the two DOM targets state as `Nch`: one monospace
-            // advance is about 0.6em, so the width is the digit count plus two,
-            // times that. Approximate on purpose — measuring the face would
-            // need a TextMeasurer and a font load for a column of digits whose
-            // only requirement is that it not clip.
-            val gutterWidth = (base.fontSize.value * 0.6f * (lines.toString().length + 2)).dp
-            val numberStyle = base.copy(
-                color = (base.color.takeIf { it != Color.Unspecified } ?: Color.Gray)
-                    .copy(alpha = 0.45f),
-                textAlign = TextAlign.End,
-            )
-            Column(Modifier.width(gutterWidth).padding(end = 4.dp)) {
-                for (i in 1..lines) {
-                    Text(
-                        text = "$i",
-                        style = numberStyle,
-                        maxLines = 1,
-                        modifier = Modifier.width(gutterWidth),
-                    )
+    //
+    // Code is left to right in every locale. Under an RTL app locale the Row
+    // put the gutter on the right, and the field right-aligned every line
+    // and ran the bidi algorithm over it, so a line that opens with a
+    // neutral such as "}" or "(" moved its punctuation to the far end —
+    // "}comps.Drawer". An editor is not prose: its columns are what it
+    // means. Both DOM targets pin the same thing with dir="ltr" on the
+    // editor box, and the iOS view forces left to right; the box's own
+    // padding reads left to right with it, as dir does on the web.
+    CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
+        Row(s.boxModifier(extra).verticalScrollWhenBounded(vertical)) {
+            if (lineNumbers) {
+                val lines = buffer.text.count { it == '\n' } + 1
+                // Wide enough for the largest number plus a column of room, in the
+                // same units the two DOM targets state as `Nch`: one monospace
+                // advance is about 0.6em, so the width is the digit count plus two,
+                // times that. Approximate on purpose — measuring the face would
+                // need a TextMeasurer and a font load for a column of digits whose
+                // only requirement is that it not clip.
+                val gutterWidth = (base.fontSize.value * 0.6f * (lines.toString().length + 2)).dp
+                val numberStyle = base.copy(
+                    color = (base.color.takeIf { it != Color.Unspecified } ?: Color.Gray)
+                        .copy(alpha = 0.45f),
+                    textAlign = TextAlign.End,
+                )
+                Column(Modifier.width(gutterWidth).padding(end = 4.dp)) {
+                    for (i in 1..lines) {
+                        Text(
+                            text = "$i",
+                            style = numberStyle,
+                            maxLines = 1,
+                            modifier = Modifier.width(gutterWidth),
+                        )
+                    }
                 }
             }
-        }
-        // horizontalScrollWhenBounded for the same reason as the Row's vertical
-        // helper, on the other axis. The Row hands the field whatever width is
-        // left beside the gutter, which is infinite when the editor sits in a
-        // sideways Scroll. A bare horizontalScroll throws there.
-        Box(Modifier.horizontalScrollWhenBounded(horizontal)) {
-            BasicTextField(
-                value = buffer,
-                onValueChange = { next ->
-                    // Return, from the soft keyboard as well as a hardware one.
-                    // Handled here rather than in onPreviewKeyEvent because an
-                    // IME inserts the newline through the text input session and
-                    // never as a key event, so a key handler would work on a
-                    // tablet with a keyboard and nowhere else.
-                    commit(autoIndent(buffer, next, indentUnit(tabSize)))
-                },
-                readOnly = readOnly,
-                // enabled stays true even when readOnly: a read-only buffer
-                // still focuses, still shows a caret and still selects, which is
-                // the whole difference between read-only and disabled.
-                enabled = !node.isDisabled(),
-                textStyle = base,
-                interactionSource = interactions,
-                visualTransformation = transformation,
-                // No wrapping: a code line is one line, and a wrapped one
-                // restarts at column zero, which reads as a new statement at the
-                // outermost indent. The horizontal scroll above is what it pans
-                // in instead.
-                singleLine = false,
-                keyboardOptions = KeyboardOptions(
-                    keyboardType = KeyboardType.Ascii,
-                    // Both corrupt source: autocorrect rewrites identifiers and
-                    // capitalization capitalises the first keyword of every line.
-                    autoCorrect = false,
-                    capitalization = KeyboardCapitalization.None,
-                ),
-                // The requester sits on the field and not on the Row above it:
-                // the Row is the scroll box and holds the gutter, which is
-                // chrome the caret must never reach. Compose would happily give
-                // focus to the container, and the keyboard would not come up.
-                modifier = Modifier.focusRequester(focusRequester).onPreviewKeyEvent { event ->
-                    // Tab, which would otherwise move focus out of the editor
-                    // and make indenting impossible. Hardware keyboards only —
-                    // a soft keyboard has no Tab — which is why this is the one
-                    // key handled here and Return is handled on the value.
-                    if (event.type != KeyEventType.KeyDown || event.key != Key.Tab) {
-                        return@onPreviewKeyEvent false
-                    }
-                    if (readOnly) return@onPreviewKeyEvent true
-                    commit(insertInCode(buffer, indentUnit(tabSize)))
-                    true
-                },
-            )
+            // horizontalScrollWhenBounded for the same reason as the Row's vertical
+            // helper, on the other axis. The Row hands the field whatever width is
+            // left beside the gutter, which is infinite when the editor sits in a
+            // sideways Scroll. A bare horizontalScroll throws there.
+            Box(Modifier.horizontalScrollWhenBounded(horizontal)) {
+                BasicTextField(
+                    value = buffer,
+                    onValueChange = { next ->
+                        // Return, from the soft keyboard as well as a hardware one.
+                        // Handled here rather than in onPreviewKeyEvent because an
+                        // IME inserts the newline through the text input session and
+                        // never as a key event, so a key handler would work on a
+                        // tablet with a keyboard and nowhere else.
+                        commit(autoIndent(buffer, next, indentUnit(tabSize)))
+                    },
+                    readOnly = readOnly,
+                    // enabled stays true even when readOnly: a read-only buffer
+                    // still focuses, still shows a caret and still selects, which is
+                    // the whole difference between read-only and disabled.
+                    enabled = !node.isDisabled(),
+                    textStyle = base,
+                    interactionSource = interactions,
+                    visualTransformation = transformation,
+                    // No wrapping: a code line is one line, and a wrapped one
+                    // restarts at column zero, which reads as a new statement at the
+                    // outermost indent. The horizontal scroll above is what it pans
+                    // in instead.
+                    singleLine = false,
+                    keyboardOptions = KeyboardOptions(
+                        keyboardType = KeyboardType.Ascii,
+                        // Both corrupt source: autocorrect rewrites identifiers and
+                        // capitalization capitalises the first keyword of every line.
+                        autoCorrect = false,
+                        capitalization = KeyboardCapitalization.None,
+                    ),
+                    // The requester sits on the field and not on the Row above it:
+                    // the Row is the scroll box and holds the gutter, which is
+                    // chrome the caret must never reach. Compose would happily give
+                    // focus to the container, and the keyboard would not come up.
+                    modifier = Modifier.focusRequester(focusRequester).onPreviewKeyEvent { event ->
+                        // Tab, which would otherwise move focus out of the editor
+                        // and make indenting impossible. Hardware keyboards only —
+                        // a soft keyboard has no Tab — which is why this is the one
+                        // key handled here and Return is handled on the value.
+                        if (event.type != KeyEventType.KeyDown || event.key != Key.Tab) {
+                            return@onPreviewKeyEvent false
+                        }
+                        if (readOnly) return@onPreviewKeyEvent true
+                        commit(insertInCode(buffer, indentUnit(tabSize)))
+                        true
+                    },
+                )
+            }
         }
     }
 }

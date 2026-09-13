@@ -50,6 +50,14 @@ func renderCodeEditor(b *element.Builder, node *core.Node, attrs []string, path 
 	lines := len(node.Children)
 	gutter := node.Props["lineNumbers"] == true && lines > 0
 
+	// dir="ltr": code reads left to right whatever direction the page has. An
+	// RTL page would otherwise right-align every row and let the bidi
+	// algorithm move a line's leading neutral ("}", "(") to its far end, and
+	// put the gutter on the wrong side of the padding it sits in. The live
+	// runtime's buildCodeEditor writes the same attribute and both natives pin
+	// the same direction. A full slice expression so the append copies rather
+	// than writing into the caller's backing array.
+	attrs = append(attrs[:len(attrs):len(attrs)], "dir", "ltr")
 	e := b.Ele(TagFor(node.Type), attrs...)
 	if gutter {
 		b.Div("style", codeGutterStyle(lines), "data-grmob-chrome", "gutter", "aria-hidden", "true").
